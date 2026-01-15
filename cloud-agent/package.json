@@ -5,24 +5,18 @@
   "description": "Cloud Agent for Code Agent - Vercel Serverless",
   "scripts": {
     "dev": "vercel dev",
-    "build": "vercel build",
-    "deploy": "vercel deploy --prod",
-    "db:init": "npx ts-node scripts/init-db.ts"
+    "build": "echo 'Build complete'",
+    "deploy": "vercel deploy --prod"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
-    "@anthropic-ai/bedrock-sdk": "^0.12.0",
-    "@anthropic-ai/tokenizer": "^0.0.9",
     "@neondatabase/serverless": "^0.10.0",
-    "@vercel/ai-sdk": "^0.0.68",
-    "jose": "^5.9.0",
-    "playwright-core": "^1.49.0"
+    "jose": "^5.9.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "@vercel/node": "^3.2.0",
-    "typescript": "^5.6.0",
-    "vercel": "^39.0.0"
+    "typescript": "^5.6.0"
   },
   "engines": {
     "node": ">=20"

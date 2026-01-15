@@ -1,0 +1,192 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # 构建 macOS 版本
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Package macOS app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS 代码签名（可选）
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # Apple 公证（可选）
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run dist:mac
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-mac
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/latest-mac.yml
+
+  # 构建 Windows 版本
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Package Windows app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run dist
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-win
+          path: |
+            release/*.exe
+            release/*.zip
+            release/latest.yml
+
+  # 构建 Linux 版本
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Package Linux app
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run dist
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/latest-linux.yml
+
+  # 发布到 GitHub Releases
+  publish:
+    needs: [build-mac, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: List artifacts
+        run: ls -la release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 通知云端 API 发布新版本
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Publish to Cloud API (macOS)
+        env:
+          CLOUD_API_URL: ${{ secrets.CLOUD_API_URL }}
+          CI_PUBLISH_TOKEN: ${{ secrets.CI_PUBLISH_TOKEN }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          REPO: ${{ github.repository }}
+        run: |
+          curl -X POST "${CLOUD_API_URL}/api/update/publish" \
+            -H "Authorization: Bearer ${CI_PUBLISH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"version\": \"${VERSION}\",
+              \"platform\": \"darwin\",
+              \"downloadUrl\": \"https://github.com/${REPO}/releases/download/v${VERSION}/Code-Agent-${VERSION}.dmg\",
+              \"releaseNotes\": \"See release notes on GitHub\"
+            }"
+
+      - name: Publish to Cloud API (Windows)
+        env:
+          CLOUD_API_URL: ${{ secrets.CLOUD_API_URL }}
+          CI_PUBLISH_TOKEN: ${{ secrets.CI_PUBLISH_TOKEN }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          REPO: ${{ github.repository }}
+        run: |
+          curl -X POST "${CLOUD_API_URL}/api/update/publish" \
+            -H "Authorization: Bearer ${CI_PUBLISH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"version\": \"${VERSION}\",
+              \"platform\": \"win32\",
+              \"downloadUrl\": \"https://github.com/${REPO}/releases/download/v${VERSION}/Code-Agent-${VERSION}-Setup.exe\",
+              \"releaseNotes\": \"See release notes on GitHub\"
+            }"
+
+      - name: Publish to Cloud API (Linux)
+        env:
+          CLOUD_API_URL: ${{ secrets.CLOUD_API_URL }}
+          CI_PUBLISH_TOKEN: ${{ secrets.CI_PUBLISH_TOKEN }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          REPO: ${{ github.repository }}
+        run: |
+          curl -X POST "${CLOUD_API_URL}/api/update/publish" \
+            -H "Authorization: Bearer ${CI_PUBLISH_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"version\": \"${VERSION}\",
+              \"platform\": \"linux\",
+              \"downloadUrl\": \"https://github.com/${REPO}/releases/download/v${VERSION}/Code-Agent-${VERSION}.AppImage\",
+              \"releaseNotes\": \"See release notes on GitHub\"
+            }"

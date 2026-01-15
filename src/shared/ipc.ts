@@ -1,0 +1,269 @@
+// ============================================================================
+// IPC Channel Definitions
+// Type-safe communication between main and renderer processes
+// ============================================================================
+
+import type {
+  Generation,
+  GenerationId,
+  GenerationDiff,
+  Message,
+  PermissionRequest,
+  PermissionResponse,
+  Session,
+  FileInfo,
+  AppSettings,
+  AgentEvent,
+  TodoItem,
+  TaskPlan,
+  Finding,
+  ErrorRecord,
+  PlanningState,
+  UserQuestionRequest,
+  UserQuestionResponse,
+} from './types';
+
+// ----------------------------------------------------------------------------
+// Additional Types for IPC
+// ----------------------------------------------------------------------------
+
+export interface SessionExport {
+  id: string;
+  title: string;
+  generationId: GenerationId;
+  modelConfig: any;
+  workingDirectory?: string;
+  messages: Message[];
+  todos: TodoItem[];
+}
+
+export interface SearchResult {
+  id: string;
+  content: string;
+  score: number;
+  metadata: {
+    source: 'file' | 'conversation' | 'knowledge';
+    path?: string;
+    sessionId?: string;
+    category?: string;
+    timestamp?: number;
+  };
+}
+
+export interface MemoryContextResult {
+  ragContext: string;
+  projectKnowledge: Array<{ key: string; value: any }>;
+  relevantCode: SearchResult[];
+  relevantConversations: SearchResult[];
+}
+
+export interface MemoryStats {
+  sessionCount: number;
+  messageCount: number;
+  toolCacheSize: number;
+  vectorStoreSize: number;
+  projectKnowledgeCount: number;
+}
+
+export interface MCPStatus {
+  connectedServers: string[];
+  toolCount: number;
+  resourceCount: number;
+  promptCount: number;
+}
+
+export interface MCPTool {
+  name: string;
+  description: string;
+  inputSchema: any;
+  serverName: string;
+}
+
+export interface MCPResource {
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+  serverName: string;
+}
+
+// ----------------------------------------------------------------------------
+// IPC Channel Names
+// ----------------------------------------------------------------------------
+
+export const IPC_CHANNELS = {
+  // Agent channels
+  AGENT_SEND_MESSAGE: 'agent:send-message',
+  AGENT_CANCEL: 'agent:cancel',
+  AGENT_EVENT: 'agent:event',
+  AGENT_PERMISSION_RESPONSE: 'agent:permission-response',
+
+  // Generation channels
+  GENERATION_LIST: 'generation:list',
+  GENERATION_SWITCH: 'generation:switch',
+  GENERATION_GET_PROMPT: 'generation:get-prompt',
+  GENERATION_COMPARE: 'generation:compare',
+  GENERATION_GET_CURRENT: 'generation:get-current',
+
+  // Session channels
+  SESSION_LIST: 'session:list',
+  SESSION_CREATE: 'session:create',
+  SESSION_LOAD: 'session:load',
+  SESSION_DELETE: 'session:delete',
+  SESSION_GET_MESSAGES: 'session:get-messages',
+  SESSION_EXPORT: 'session:export',
+  SESSION_IMPORT: 'session:import',
+
+  // Memory channels
+  MEMORY_GET_CONTEXT: 'memory:get-context',
+  MEMORY_SEARCH_CODE: 'memory:search-code',
+  MEMORY_SEARCH_CONVERSATIONS: 'memory:search-conversations',
+  MEMORY_GET_STATS: 'memory:get-stats',
+
+  // MCP channels
+  MCP_GET_STATUS: 'mcp:get-status',
+  MCP_LIST_TOOLS: 'mcp:list-tools',
+  MCP_LIST_RESOURCES: 'mcp:list-resources',
+
+  // Workspace channels
+  WORKSPACE_SELECT_DIRECTORY: 'workspace:select-directory',
+  WORKSPACE_LIST_FILES: 'workspace:list-files',
+  WORKSPACE_READ_FILE: 'workspace:read-file',
+  WORKSPACE_GET_CURRENT: 'workspace:get-current',
+
+  // Settings channels
+  SETTINGS_GET: 'settings:get',
+  SETTINGS_SET: 'settings:set',
+  SETTINGS_TEST_API_KEY: 'settings:test-api-key',
+
+  // Window channels
+  WINDOW_MINIMIZE: 'window:minimize',
+  WINDOW_MAXIMIZE: 'window:maximize',
+  WINDOW_CLOSE: 'window:close',
+
+  // Planning channels (Gen 3+ persistent planning)
+  PLANNING_GET_STATE: 'planning:get-state',
+  PLANNING_GET_PLAN: 'planning:get-plan',
+  PLANNING_GET_FINDINGS: 'planning:get-findings',
+  PLANNING_GET_ERRORS: 'planning:get-errors',
+  PLANNING_EVENT: 'planning:event',
+
+  // User question channels (Gen 3+ ask_user_question)
+  USER_QUESTION_ASK: 'user-question:ask',
+  USER_QUESTION_RESPONSE: 'user-question:response',
+} as const;
+
+// ----------------------------------------------------------------------------
+// Renderer -> Main: Invoke handlers (request/response)
+// ----------------------------------------------------------------------------
+
+export interface IpcInvokeHandlers {
+  // Agent
+  [IPC_CHANNELS.AGENT_SEND_MESSAGE]: (content: string) => Promise<void>;
+  [IPC_CHANNELS.AGENT_CANCEL]: () => Promise<void>;
+  [IPC_CHANNELS.AGENT_PERMISSION_RESPONSE]: (
+    requestId: string,
+    response: PermissionResponse
+  ) => Promise<void>;
+
+  // Generation
+  [IPC_CHANNELS.GENERATION_LIST]: () => Promise<Generation[]>;
+  [IPC_CHANNELS.GENERATION_SWITCH]: (id: GenerationId) => Promise<Generation>;
+  [IPC_CHANNELS.GENERATION_GET_PROMPT]: (id: GenerationId) => Promise<string>;
+  [IPC_CHANNELS.GENERATION_COMPARE]: (
+    id1: GenerationId,
+    id2: GenerationId
+  ) => Promise<GenerationDiff>;
+  [IPC_CHANNELS.GENERATION_GET_CURRENT]: () => Promise<Generation>;
+
+  // Session
+  [IPC_CHANNELS.SESSION_LIST]: () => Promise<Session[]>;
+  [IPC_CHANNELS.SESSION_CREATE]: (title?: string) => Promise<Session>;
+  [IPC_CHANNELS.SESSION_LOAD]: (id: string) => Promise<Session>;
+  [IPC_CHANNELS.SESSION_DELETE]: (id: string) => Promise<void>;
+  [IPC_CHANNELS.SESSION_GET_MESSAGES]: (sessionId: string) => Promise<Message[]>;
+  [IPC_CHANNELS.SESSION_EXPORT]: (sessionId: string) => Promise<SessionExport>;
+  [IPC_CHANNELS.SESSION_IMPORT]: (data: SessionExport) => Promise<string>;
+
+  // Memory
+  [IPC_CHANNELS.MEMORY_GET_CONTEXT]: (query: string) => Promise<MemoryContextResult>;
+  [IPC_CHANNELS.MEMORY_SEARCH_CODE]: (query: string, topK?: number) => Promise<SearchResult[]>;
+  [IPC_CHANNELS.MEMORY_SEARCH_CONVERSATIONS]: (query: string, topK?: number) => Promise<SearchResult[]>;
+  [IPC_CHANNELS.MEMORY_GET_STATS]: () => Promise<MemoryStats>;
+
+  // MCP
+  [IPC_CHANNELS.MCP_GET_STATUS]: () => Promise<MCPStatus>;
+  [IPC_CHANNELS.MCP_LIST_TOOLS]: () => Promise<MCPTool[]>;
+  [IPC_CHANNELS.MCP_LIST_RESOURCES]: () => Promise<MCPResource[]>;
+
+  // Workspace
+  [IPC_CHANNELS.WORKSPACE_SELECT_DIRECTORY]: () => Promise<string | null>;
+  [IPC_CHANNELS.WORKSPACE_LIST_FILES]: (path: string) => Promise<FileInfo[]>;
+  [IPC_CHANNELS.WORKSPACE_READ_FILE]: (path: string) => Promise<string>;
+  [IPC_CHANNELS.WORKSPACE_GET_CURRENT]: () => Promise<string | null>;
+
+  // Settings
+  [IPC_CHANNELS.SETTINGS_GET]: () => Promise<AppSettings>;
+  [IPC_CHANNELS.SETTINGS_SET]: (settings: Partial<AppSettings>) => Promise<void>;
+  [IPC_CHANNELS.SETTINGS_TEST_API_KEY]: (
+    provider: string,
+    apiKey: string
+  ) => Promise<boolean>;
+
+  // Window
+  [IPC_CHANNELS.WINDOW_MINIMIZE]: () => Promise<void>;
+  [IPC_CHANNELS.WINDOW_MAXIMIZE]: () => Promise<void>;
+  [IPC_CHANNELS.WINDOW_CLOSE]: () => Promise<void>;
+
+  // Planning (Gen 3+ persistent planning)
+  [IPC_CHANNELS.PLANNING_GET_STATE]: () => Promise<PlanningState>;
+  [IPC_CHANNELS.PLANNING_GET_PLAN]: () => Promise<TaskPlan | null>;
+  [IPC_CHANNELS.PLANNING_GET_FINDINGS]: () => Promise<Finding[]>;
+  [IPC_CHANNELS.PLANNING_GET_ERRORS]: () => Promise<ErrorRecord[]>;
+
+  // User question (Gen 3+ ask_user_question)
+  [IPC_CHANNELS.USER_QUESTION_RESPONSE]: (response: UserQuestionResponse) => Promise<void>;
+}
+
+// ----------------------------------------------------------------------------
+// Main -> Renderer: Event handlers (one-way)
+// ----------------------------------------------------------------------------
+
+export type PlanningEventType = 'plan_updated' | 'findings_updated' | 'errors_updated';
+
+export interface PlanningEvent {
+  type: PlanningEventType;
+  data: PlanningState;
+}
+
+export interface IpcEventHandlers {
+  [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEvent) => void;
+  [IPC_CHANNELS.PLANNING_EVENT]: (event: PlanningEvent) => void;
+  [IPC_CHANNELS.USER_QUESTION_ASK]: (request: UserQuestionRequest) => void;
+}
+
+// ----------------------------------------------------------------------------
+// Preload API exposed to renderer
+// ----------------------------------------------------------------------------
+
+export interface ElectronAPI {
+  // Invoke methods (async request/response)
+  invoke: <K extends keyof IpcInvokeHandlers>(
+    channel: K,
+    ...args: Parameters<IpcInvokeHandlers[K]>
+  ) => ReturnType<IpcInvokeHandlers[K]>;
+
+  // Event listeners
+  on: <K extends keyof IpcEventHandlers>(
+    channel: K,
+    callback: IpcEventHandlers[K]
+  ) => () => void;
+
+  // Remove event listener
+  off: <K extends keyof IpcEventHandlers>(
+    channel: K,
+    callback: IpcEventHandlers[K]
+  ) => void;
+}
+
+// Note: Window.electronAPI is declared in src/renderer/types/electron.d.ts

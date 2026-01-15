@@ -1,0 +1,22 @@
+mainConfig:
+  entryPoints:
+    - src/main/index.ts
+  outdir: dist/main
+  bundle: true
+  platform: node
+  external:
+    - electron
+    - better-sqlite3
+  sourcemap: true
+  target: node18
+
+preloadConfig:
+  entryPoints:
+    - src/preload/index.ts
+  outdir: dist/preload
+  bundle: true
+  platform: node
+  external:
+    - electron
+  sourcemap: true
+  target: chrome120

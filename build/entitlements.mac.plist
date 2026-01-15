@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 基础 Electron 运行权限 -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- 网络访问权限 -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
+
+    <!-- 文件访问权限 -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+
+    <!-- GUI Agent 需要的权限 -->
+    <!-- 屏幕录制权限（截图需要） -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
+
+    <!-- Apple Events 自动化权限 -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+
+    <!-- 辅助功能权限（键鼠控制需要） -->
+    <key>com.apple.security.personal-information.addressbook</key>
+    <false/>
+</dict>
+</plist>

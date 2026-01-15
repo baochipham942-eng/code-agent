@@ -1,0 +1,200 @@
+// ============================================================================
+// GenerationBadge - Display and Switch Generations
+// ============================================================================
+
+import React, { useState, useEffect } from 'react';
+import { useAppStore } from '../stores/appStore';
+import { ChevronDown, Zap, Layers, Brain, Sparkles, Database } from 'lucide-react';
+import type { Generation, GenerationId } from '@shared/types';
+import { IPC_CHANNELS } from '@shared/ipc';
+
+// Generation configurations with icons
+const generationConfigs: Record<string, { icon: React.ReactNode; color: string }> = {
+  gen1: { icon: <Zap className="w-3.5 h-3.5" />, color: 'text-green-400 bg-green-500/10' },
+  gen2: { icon: <Layers className="w-3.5 h-3.5" />, color: 'text-blue-400 bg-blue-500/10' },
+  gen3: { icon: <Brain className="w-3.5 h-3.5" />, color: 'text-purple-400 bg-purple-500/10' },
+  gen4: { icon: <Sparkles className="w-3.5 h-3.5" />, color: 'text-orange-400 bg-orange-500/10' },
+  gen5: { icon: <Database className="w-3.5 h-3.5" />, color: 'text-cyan-400 bg-cyan-500/10' },
+};
+
+// Default generations (will be loaded from main process)
+const defaultGenerations: Generation[] = [
+  {
+    id: 'gen1',
+    name: 'Generation 1',
+    version: 'v0.2 Beta',
+    description: 'Basic: bash, read_file, write_file, edit_file',
+    tools: ['bash', 'read_file', 'write_file', 'edit_file'],
+    systemPrompt: '',
+    promptMetadata: { lineCount: 0, toolCount: 4, ruleCount: 0 },
+  },
+  {
+    id: 'gen2',
+    name: 'Generation 2',
+    version: 'v1.0',
+    description: '+ glob, grep, list_directory, MCP',
+    tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory'],
+    systemPrompt: '',
+    promptMetadata: { lineCount: 0, toolCount: 7, ruleCount: 0 },
+  },
+  {
+    id: 'gen3',
+    name: 'Generation 3',
+    version: 'v1.0.60',
+    description: '+ task, todo_write, ask_user, Plan Mode',
+    tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory', 'task', 'todo_write', 'ask_user_question'],
+    systemPrompt: '',
+    promptMetadata: { lineCount: 0, toolCount: 10, ruleCount: 0 },
+  },
+  {
+    id: 'gen4',
+    name: 'Generation 4',
+    version: 'v2.0',
+    description: '+ skill, web_fetch, hooks, LSP',
+    tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory', 'task', 'todo_write', 'ask_user_question', 'skill', 'web_fetch'],
+    systemPrompt: '',
+    promptMetadata: { lineCount: 0, toolCount: 12, ruleCount: 0 },
+  },
+  {
+    id: 'gen5',
+    name: 'Generation 5',
+    version: 'v3.0',
+    description: '+ memory_store, memory_search, code_index, RAG',
+    tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory', 'task', 'todo_write', 'ask_user_question', 'skill', 'web_fetch', 'memory_store', 'memory_search', 'code_index'],
+    systemPrompt: '',
+    promptMetadata: { lineCount: 0, toolCount: 17, ruleCount: 0 },
+  },
+];
+
+export const GenerationBadge: React.FC = () => {
+  const { currentGeneration, setCurrentGeneration } = useAppStore();
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [generations, setGenerations] = useState<Generation[]>(defaultGenerations);
+
+  const config = generationConfigs[currentGeneration.id] || generationConfigs.gen1;
+
+  // Load generations from main process on mount
+  useEffect(() => {
+    const loadGenerations = async () => {
+      try {
+        const gens = await window.electronAPI?.invoke(IPC_CHANNELS.GENERATION_LIST);
+        if (gens && gens.length > 0) {
+          setGenerations(gens);
+        }
+      } catch (error) {
+        console.error('Failed to load generations:', error);
+      }
+    };
+    loadGenerations();
+  }, []);
+
+  const handleSelect = async (gen: Generation) => {
+    setShowDropdown(false);
+    try {
+      // Switch generation in main process first
+      const switched = await window.electronAPI?.invoke(IPC_CHANNELS.GENERATION_SWITCH, gen.id as GenerationId);
+      if (switched) {
+        setCurrentGeneration(switched);
+        console.log(`[GenerationBadge] Switched to ${switched.name}`);
+      }
+    } catch (error) {
+      console.error('Failed to switch generation:', error);
+      // Fallback to local state update
+      setCurrentGeneration(gen);
+    }
+  };
+
+  return (
+    <div className="relative">
+      {/* Badge Button */}
+      <button
+        onClick={() => setShowDropdown(!showDropdown)}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors ${config.color}`}
+      >
+        {config.icon}
+        <span className="font-medium">{currentGeneration.name}</span>
+        <span className="text-xs opacity-70">{currentGeneration.version}</span>
+        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
+      </button>
+
+      {/* Dropdown */}
+      {showDropdown && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-10"
+            onClick={() => setShowDropdown(false)}
+          />
+
+          {/* Menu */}
+          <div className="absolute top-full left-0 mt-2 w-80 bg-zinc-800 rounded-lg shadow-xl border border-zinc-700 z-20 overflow-hidden animate-fadeIn">
+            <div className="p-2">
+              <div className="text-xs font-medium text-zinc-500 px-2 py-1.5">
+                Select Generation
+              </div>
+
+              {generations.map((gen) => {
+                const genConfig = generationConfigs[gen.id];
+                const isSelected = currentGeneration.id === gen.id;
+
+                return (
+                  <button
+                    key={gen.id}
+                    onClick={() => handleSelect(gen)}
+                    className={`w-full flex items-start gap-3 p-3 rounded-lg transition-colors text-left ${
+                      isSelected
+                        ? 'bg-zinc-700'
+                        : 'hover:bg-zinc-700/50'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-lg ${genConfig.color}`}>
+                      {genConfig.icon}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-zinc-100">
+                          {gen.name}
+                        </span>
+                        <span className="text-xs text-zinc-500">
+                          {gen.version}
+                        </span>
+                      </div>
+                      <p className="text-xs text-zinc-400 mt-0.5">
+                        {gen.description}
+                      </p>
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {gen.tools.slice(0, 5).map((tool) => (
+                          <span
+                            key={tool}
+                            className="text-xs px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500"
+                          >
+                            {tool}
+                          </span>
+                        ))}
+                        {gen.tools.length > 5 && (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500">
+                            +{gen.tools.length - 5} more
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {isSelected && (
+                      <div className="w-2 h-2 rounded-full bg-blue-500 mt-2" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Footer with comparison hint */}
+            <div className="px-4 py-2 bg-zinc-900/50 border-t border-zinc-700">
+              <p className="text-xs text-zinc-500">
+                Switch generations to compare AI agent capabilities
+              </p>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};

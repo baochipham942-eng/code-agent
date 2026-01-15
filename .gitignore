@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+cloud-agent/node_modules/
+
+# Build outputs
+dist/
+release/
+*.dmg
+*.exe
+*.AppImage
+*.deb
+*.zip
+
+# Environment files
+.env
+.env.local
+.env.production
+cloud-agent/.env
+cloud-agent/.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test data
+.test-data/
+
+# Local config
+.code-agent/
+
+# Vercel
+.vercel/

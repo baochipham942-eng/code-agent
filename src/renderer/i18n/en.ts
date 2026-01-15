@@ -1,0 +1,149 @@
+// ============================================================================
+// English Translations
+// ============================================================================
+
+import type { Translations } from './zh';
+
+export const en: Translations = {
+  // Common
+  common: {
+    save: 'Save',
+    cancel: 'Cancel',
+    close: 'Close',
+    confirm: 'Confirm',
+    delete: 'Delete',
+    edit: 'Edit',
+    loading: 'Loading...',
+    error: 'Error',
+    success: 'Success',
+    active: 'Active',
+    coming: 'Coming',
+  },
+
+  // Settings Modal
+  settings: {
+    title: 'Settings',
+    tabs: {
+      model: 'Model',
+      disclosure: 'Disclosure',
+      appearance: 'Appearance',
+      language: 'Language',
+      about: 'About',
+    },
+  },
+
+  // Model Settings
+  model: {
+    title: 'Model Provider',
+    apiKey: 'API Key',
+    apiKeyPlaceholder: 'Enter your API key',
+    apiKeyHint: 'Your API key is stored locally and never sent to our servers.',
+    modelSelect: 'Model',
+    temperature: 'Temperature',
+    temperaturePrecise: 'Precise',
+    temperatureCreative: 'Creative',
+    providers: {
+      deepseek: {
+        name: 'DeepSeek',
+        description: 'DeepSeek Chat API',
+      },
+      anthropic: {
+        name: 'Claude',
+        description: 'Anthropic Claude API',
+      },
+      openai: {
+        name: 'OpenAI',
+        description: 'OpenAI GPT API',
+      },
+    },
+  },
+
+  // Disclosure Settings (Progressive Disclosure)
+  disclosure: {
+    title: 'Progressive Disclosure',
+    description:
+      'Control how much complexity is shown in the interface. Start simple and unlock more features as you need them.',
+    whyTitle: 'Why Progressive Disclosure?',
+    whyDescription:
+      'Progressive disclosure reduces cognitive load by showing only what\'s needed at each moment. Start with "Simple" to learn the basics, then gradually increase the level as you become more comfortable with the tool. This approach helps prevent overwhelming new users while still providing full power to experts.',
+    levels: {
+      simple: {
+        name: 'Simple',
+        description: 'Clean interface for beginners',
+        features: [
+          'Basic chat interface',
+          'Essential tools only',
+          'Minimal configuration',
+          'Auto-generated prompts',
+        ],
+      },
+      standard: {
+        name: 'Standard',
+        description: 'Balanced features for daily use',
+        features: ['Todo list panel', 'Generation selector', 'Model settings', 'Session history'],
+      },
+      advanced: {
+        name: 'Advanced',
+        description: 'Full control for power users',
+        features: [
+          'Planning panel',
+          'Findings & errors tracking',
+          'Tool execution details',
+          'Custom prompts',
+        ],
+      },
+      expert: {
+        name: 'Expert',
+        description: 'Complete access for developers',
+        features: [
+          'Raw API responses',
+          'Token usage metrics',
+          'Debug console',
+          'MCP server config',
+        ],
+      },
+    },
+  },
+
+  // Appearance Settings
+  appearance: {
+    theme: 'Theme',
+    themes: {
+      dark: 'Dark',
+      light: 'Light',
+      auto: 'Auto',
+    },
+    fontSize: 'Font Size',
+    fontSizes: {
+      small: 'Small',
+      medium: 'Medium',
+      large: 'Large',
+    },
+  },
+
+  // Language Settings
+  language: {
+    title: 'Interface Language',
+    description: 'Choose the language for the application interface',
+    options: {
+      zh: {
+        name: 'Chinese (Simplified)',
+        native: '简体中文',
+      },
+      en: {
+        name: 'English',
+        native: 'English',
+      },
+    },
+  },
+
+  // About Section
+  about: {
+    title: 'About',
+    version: 'Version',
+    description:
+      'Code Agent is an AI-powered coding assistant that demonstrates the evolution of AI agent capabilities across different generations. Built for learning and research purposes.',
+    technologies: 'Technologies',
+    madeWith: 'Made with AI assistance',
+  },
+};

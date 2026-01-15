@@ -6,14 +6,5 @@
     "api/**/*.ts": {
       "maxDuration": 60
     }
-  },
-  "env": {
-    "ANTHROPIC_API_KEY": "@anthropic-api-key",
-    "DATABASE_URL": "@database-url",
-    "AUTH_SECRET": "@auth-secret",
-    "DEEPSEEK_API_KEY": "@deepseek-api-key",
-    "GITHUB_CLIENT_ID": "@github-client-id",
-    "GITHUB_CLIENT_SECRET": "@github-client-secret",
-    "CI_PUBLISH_TOKEN": "@ci-publish-token"
   }
 }

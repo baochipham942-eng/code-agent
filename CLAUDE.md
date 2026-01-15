@@ -14,6 +14,8 @@ AI 编程助手桌面应用，用于学习和研究 AI Agent 能力演进。
 - **样式**: Tailwind CSS 3.4
 - **状态管理**: Zustand 5
 - **AI 模型**: DeepSeek API (主要)，支持 OpenAI/Claude 切换
+- **后端服务**: Supabase (认证 + 数据库 + 向量存储)
+- **向量数据库**: pgvector (语义搜索和长期记忆)
 
 ## 目录结构
 
@@ -33,7 +35,16 @@ src/
 │   │   ├── gen2/         # glob, grep, list_directory
 │   │   ├── gen3/         # task, todo_write, ask_user_question
 │   │   └── gen4/         # skill, web_fetch
-│   └── services/         # 配置服务
+│   ├── services/         # 核心服务
+│   │   ├── SupabaseService.ts    # Supabase 客户端
+│   │   ├── AuthService.ts        # 认证服务
+│   │   ├── SyncService.ts        # 云端同步引擎
+│   │   ├── SecureStorage.ts      # 安全存储
+│   │   └── DatabaseService.ts    # 本地 SQLite
+│   └── memory/           # 记忆系统
+│       ├── MemoryService.ts      # 统一记忆管理
+│       ├── EmbeddingService.ts   # 向量嵌入服务
+│       └── VectorStore.ts        # 向量存储
 ├── preload/              # 预加载脚本
 ├── renderer/             # React 前端
 │   ├── components/       # UI 组件
@@ -75,6 +86,8 @@ npm run typecheck
 项目使用 `.env` 文件配置 API：
 - `DEEPSEEK_API_KEY` - DeepSeek API 密钥
 - `DEEPSEEK_API_URL` - DeepSeek API 地址
+- `SUPABASE_URL` - Supabase 项目 URL
+- `SUPABASE_ANON_KEY` - Supabase 匿名密钥
 
 ## 开发要点
 
@@ -82,6 +95,44 @@ npm run typecheck
 2. **Agent 循环**: `AgentLoop.ts` 实现核心推理循环：用户输入 → 模型推理 → [工具调用]* → 响应
 3. **代际切换**: 通过 `GenerationManager` 切换不同代际，动态加载对应的工具集和 system prompt
 4. **工具权限**: `ToolExecutor` 控制危险操作的权限检查
+
+## 账户体系与云端同步
+
+### 认证方式
+- **邮箱/密码登录**: 标准认证流程
+- **GitHub OAuth**: 第三方登录
+- **快捷 Token**: 跨设备快速登录
+
+### 同步架构
+- **离线优先**: 本地 SQLite 存储，联网时同步
+- **增量同步**: 基于 `updated_at` 游标的增量更新
+- **冲突解决**: Last-Write-Wins 策略
+
+### 云端数据表
+| 表名 | 用途 |
+|------|------|
+| `profiles` | 用户资料 |
+| `devices` | 设备管理 |
+| `sessions` | 会话记录 |
+| `messages` | 对话消息 |
+| `user_preferences` | 用户偏好 |
+| `project_knowledge` | 项目知识 |
+| `todos` | 待办事项 |
+| `vector_documents` | 向量文档 (pgvector) |
+| `invite_codes` | 邀请码 |
+
+### 向量数据库
+- **扩展**: pgvector (Supabase 原生支持)
+- **维度**: 1024 (DeepSeek)，支持 384/1536
+- **索引**: HNSW (cosine 距离)
+- **用途**: 语义搜索、长期记忆、RAG 上下文
+
+### 相关文件
+- `supabase/migrations/` - 数据库迁移脚本
+- `src/main/services/AuthService.ts` - 认证逻辑
+- `src/main/services/SyncService.ts` - 同步引擎
+- `src/renderer/stores/authStore.ts` - 前端认证状态
+- `src/renderer/components/AuthModal.tsx` - 登录界面
 
 ## 相关文档
 

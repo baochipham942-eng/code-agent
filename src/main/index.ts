@@ -11,8 +11,11 @@ import { initDatabase, getDatabase } from './services/DatabaseService';
 import { getSessionManager, type SessionCreateOptions } from './services/SessionManager';
 import { initMemoryService, getMemoryService } from './memory/MemoryService';
 import { initMCPClient, getMCPClient, type MCPServerConfig } from './mcp/MCPClient';
+import { initSupabase, isSupabaseInitialized } from './services/SupabaseService';
+import { getAuthService } from './services/AuthService';
+import { getSyncService } from './services/SyncService';
 import { IPC_CHANNELS } from '../shared/ipc';
-import type { GenerationId, PermissionResponse, PlanningState } from '../shared/types';
+import type { GenerationId, PermissionResponse, PlanningState, AuthUser } from '../shared/types';
 import { createPlanningService, type PlanningService } from './planning';
 
 // ----------------------------------------------------------------------------
@@ -97,6 +100,46 @@ async function initializeServices(): Promise<void> {
     }
   }
 
+  // Initialize Supabase (if configured)
+  const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey;
+
+  if (supabaseUrl && supabaseAnonKey) {
+    try {
+      initSupabase(supabaseUrl, supabaseAnonKey);
+      console.log('Supabase initialized');
+
+      // Initialize auth service
+      const authService = getAuthService();
+      await authService.initialize();
+      console.log('Auth service initialized');
+
+      // Set up auth change callback
+      authService.addAuthChangeCallback((user) => {
+        if (mainWindow) {
+          mainWindow.webContents.send(IPC_CHANNELS.AUTH_EVENT, {
+            type: user ? 'signed_in' : 'signed_out',
+            user,
+          });
+        }
+
+        // Start/stop sync based on auth state
+        const syncService = getSyncService();
+        if (user) {
+          syncService.initialize().then(() => {
+            syncService.startAutoSync(5 * 60 * 1000); // 5 minutes
+          });
+        } else {
+          syncService.stopAutoSync();
+        }
+      });
+    } catch (error) {
+      console.error('Failed to initialize Supabase:', error);
+    }
+  } else {
+    console.log('Supabase not configured, skipping initialization');
+  }
+
   // Initialize generation manager
   generationManager = new GenerationManager();
 
@@ -141,10 +184,19 @@ async function initializePlanningService(): Promise<void> {
   if (!agentOrchestrator || !currentSessionId) return;
 
   const workingDir = agentOrchestrator.getWorkingDirectory();
-  if (!workingDir) return;
+  console.log('[Main] initializePlanningService - workingDir:', workingDir);
 
-  planningService = createPlanningService(workingDir, currentSessionId);
-  console.log('Planning service initialized');
+  // Fallback to app userData if workingDir is '/' (packaged Electron app issue)
+  const effectiveWorkingDir = workingDir && workingDir !== '/'
+    ? workingDir
+    : app.getPath('userData');
+
+  console.log('[Main] initializePlanningService - effectiveWorkingDir:', effectiveWorkingDir);
+
+  if (!effectiveWorkingDir) return;
+
+  planningService = createPlanningService(effectiveWorkingDir, currentSessionId);
+  console.log('Planning service initialized at:', effectiveWorkingDir);
 
   // Pass planning service to agent orchestrator
   agentOrchestrator.setPlanningService(planningService);
@@ -590,6 +642,124 @@ function setupIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.PLANNING_GET_ERRORS, async () => {
     if (!planningService) return [];
     return await planningService.errors.getAll();
+  });
+
+  // -------------------------------------------------------------------------
+  // Auth Handlers
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.AUTH_GET_STATUS, async () => {
+    const authService = getAuthService();
+    return authService.getStatus();
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.AUTH_SIGN_IN_EMAIL,
+    async (_, email: string, password: string) => {
+      const authService = getAuthService();
+      return authService.signInWithEmail(email, password);
+    }
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.AUTH_SIGN_UP_EMAIL,
+    async (_, email: string, password: string, inviteCode?: string) => {
+      const authService = getAuthService();
+      return authService.signUpWithEmail(email, password, inviteCode);
+    }
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.AUTH_SIGN_IN_OAUTH,
+    async (_, provider: 'github' | 'google') => {
+      const authService = getAuthService();
+      await authService.signInWithOAuth(provider);
+    }
+  );
+
+  ipcMain.handle(IPC_CHANNELS.AUTH_SIGN_IN_TOKEN, async (_, token: string) => {
+    const authService = getAuthService();
+    return authService.signInWithQuickToken(token);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AUTH_SIGN_OUT, async () => {
+    const authService = getAuthService();
+    await authService.signOut();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AUTH_GET_USER, async () => {
+    const authService = getAuthService();
+    return authService.getCurrentUser();
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.AUTH_UPDATE_PROFILE,
+    async (_, updates: Partial<AuthUser>) => {
+      const authService = getAuthService();
+      return authService.updateProfile(updates);
+    }
+  );
+
+  ipcMain.handle(IPC_CHANNELS.AUTH_GENERATE_QUICK_TOKEN, async () => {
+    const authService = getAuthService();
+    return authService.generateQuickLoginToken();
+  });
+
+  // -------------------------------------------------------------------------
+  // Sync Handlers
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.SYNC_GET_STATUS, async () => {
+    const syncService = getSyncService();
+    return syncService.getStatus();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SYNC_START, async () => {
+    const syncService = getSyncService();
+    await syncService.startAutoSync();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SYNC_STOP, async () => {
+    const syncService = getSyncService();
+    syncService.stopAutoSync();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SYNC_FORCE_FULL, async () => {
+    const syncService = getSyncService();
+    const result = await syncService.forceFullSync();
+    return { success: result.success, error: result.error };
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.SYNC_RESOLVE_CONFLICT,
+    async (_, conflictId: string, resolution: 'local' | 'remote' | 'merge') => {
+      const syncService = getSyncService();
+      await syncService.resolveConflict(conflictId, resolution);
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // Device Handlers
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.DEVICE_REGISTER, async () => {
+    const authService = getAuthService();
+    const syncService = getSyncService();
+    const user = authService.getCurrentUser();
+    if (!user) {
+      throw new Error('Not authenticated');
+    }
+    return syncService.registerDevice(user.id);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DEVICE_LIST, async () => {
+    const syncService = getSyncService();
+    return syncService.listDevices();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DEVICE_REMOVE, async (_, deviceId: string) => {
+    const syncService = getSyncService();
+    await syncService.removeDevice(deviceId);
   });
 }
 

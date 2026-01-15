@@ -4,6 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from './stores/appStore';
+import { useAuthStore, initializeAuthStore } from './stores/authStore';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { WorkspacePanel } from './components/WorkspacePanel';
@@ -15,7 +16,8 @@ import { FindingsPanel } from './components/FindingsPanel';
 import { ErrorsPanel } from './components/ErrorsPanel';
 import { MemoryPanel } from './components/MemoryPanel';
 import { UserQuestionModal } from './components/UserQuestionModal';
-import { useDisclosure } from './hooks/useDisclosure.js';
+import { AuthModal } from './components/AuthModal';
+import { useDisclosure } from './hooks/useDisclosure';
 import { Target, Lightbulb, AlertOctagon, Layers, Brain } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { UserQuestionRequest } from '@shared/types';
@@ -24,30 +26,6 @@ import type { UserQuestionRequest } from '@shared/types';
 type PlanningTab = 'plan' | 'findings' | 'errors';
 
 export const App: React.FC = () => {
-  // Debug: Check if electronAPI is available on mount
-  useEffect(() => {
-    console.log('[App] Mount - electronAPI available:', !!window.electronAPI);
-    if (window.electronAPI) {
-      console.log('[App] electronAPI methods:', Object.keys(window.electronAPI));
-    }
-  }, []);
-
-  // Load language setting from backend on mount
-  useEffect(() => {
-    const loadLanguageSetting = async () => {
-      try {
-        const settings = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET);
-        if (settings?.ui?.language) {
-          setLanguage(settings.ui.language);
-          console.log('[App] Loaded language setting:', settings.ui.language);
-        }
-      } catch (error) {
-        console.error('[App] Failed to load language setting:', error);
-      }
-    };
-    loadLanguageSetting();
-  }, [setLanguage]);
-
   const {
     showSettings,
     showWorkspace,
@@ -68,8 +46,42 @@ export const App: React.FC = () => {
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
 
+  // Auth store
+  const { showAuthModal } = useAuthStore();
+
   // 渐进披露 Hook
   const { isStandard, isAdvanced, isExpert, getLevelName, upgradeLevel } = useDisclosure();
+
+  // Debug: Check if electronAPI is available on mount
+  useEffect(() => {
+    console.log('[App] Mount - electronAPI available:', !!window.electronAPI);
+    if (window.electronAPI) {
+      console.log('[App] electronAPI methods:', Object.keys(window.electronAPI));
+    }
+  }, []);
+
+  // Initialize auth store on mount
+  useEffect(() => {
+    initializeAuthStore().catch((error) => {
+      console.error('[App] Failed to initialize auth store:', error);
+    });
+  }, []);
+
+  // Load language setting from backend on mount
+  useEffect(() => {
+    const loadLanguageSetting = async () => {
+      try {
+        const settings = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET);
+        if (settings?.ui?.language) {
+          setLanguage(settings.ui.language);
+          console.log('[App] Loaded language setting:', settings.ui.language);
+        }
+      } catch (error) {
+        console.error('[App] Failed to load language setting:', error);
+      }
+    };
+    loadLanguageSetting();
+  }, [setLanguage]);
 
   // Check if Gen 3+ (persistent planning available)
   const isPlanningAvailable =
@@ -316,6 +328,9 @@ export const App: React.FC = () => {
           onClose={() => setUserQuestion(null)}
         />
       )}
+
+      {/* Auth Modal */}
+      {showAuthModal && <AuthModal />}
     </div>
   );
 };

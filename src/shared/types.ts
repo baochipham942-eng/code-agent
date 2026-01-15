@@ -376,6 +376,11 @@ export interface AppSettings {
     temperature: number;
     maxTokens: number;
   };
+  // Supabase 配置 (云端同步)
+  supabase?: {
+    url: string;
+    anonKey: string;
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -494,4 +499,60 @@ export interface UserQuestionRequest {
 export interface UserQuestionResponse {
   requestId: string;
   answers: Record<string, string | string[]>; // question header -> selected option(s)
+}
+
+// ----------------------------------------------------------------------------
+// Auth Types
+// ----------------------------------------------------------------------------
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  username?: string;
+  nickname?: string;
+  avatarUrl?: string;
+}
+
+export interface AuthStatus {
+  isAuthenticated: boolean;
+  user: AuthUser | null;
+  isLoading: boolean;
+}
+
+// ----------------------------------------------------------------------------
+// Sync Types
+// ----------------------------------------------------------------------------
+
+export interface SyncStatus {
+  isEnabled: boolean;
+  isSyncing: boolean;
+  lastSyncAt: number | null;
+  pendingChanges: number;
+  syncProgress?: {
+    phase: 'pull' | 'push' | 'done';
+    current: number;
+    total: number;
+  };
+  error?: string;
+}
+
+export interface SyncConflict {
+  id: string;
+  table: string;
+  localRecord: unknown;
+  remoteRecord: unknown;
+  conflictType: 'update' | 'delete';
+}
+
+// ----------------------------------------------------------------------------
+// Device Types
+// ----------------------------------------------------------------------------
+
+export interface DeviceInfo {
+  id: string;
+  deviceId: string;
+  deviceName: string;
+  platform: string;
+  lastActiveAt: number;
+  isCurrent: boolean;
 }

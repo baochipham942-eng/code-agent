@@ -21,6 +21,11 @@ import type {
   PlanningState,
   UserQuestionRequest,
   UserQuestionResponse,
+  AuthUser,
+  AuthStatus,
+  SyncStatus,
+  SyncConflict,
+  DeviceInfo,
 } from './types';
 
 // ----------------------------------------------------------------------------
@@ -151,6 +156,31 @@ export const IPC_CHANNELS = {
   // User question channels (Gen 3+ ask_user_question)
   USER_QUESTION_ASK: 'user-question:ask',
   USER_QUESTION_RESPONSE: 'user-question:response',
+
+  // Auth channels
+  AUTH_GET_STATUS: 'auth:get-status',
+  AUTH_SIGN_IN_EMAIL: 'auth:sign-in-email',
+  AUTH_SIGN_UP_EMAIL: 'auth:sign-up-email',
+  AUTH_SIGN_IN_OAUTH: 'auth:sign-in-oauth',
+  AUTH_SIGN_IN_TOKEN: 'auth:sign-in-token',
+  AUTH_SIGN_OUT: 'auth:sign-out',
+  AUTH_GET_USER: 'auth:get-user',
+  AUTH_UPDATE_PROFILE: 'auth:update-profile',
+  AUTH_GENERATE_QUICK_TOKEN: 'auth:generate-quick-token',
+  AUTH_EVENT: 'auth:event',
+
+  // Sync channels
+  SYNC_GET_STATUS: 'sync:get-status',
+  SYNC_START: 'sync:start',
+  SYNC_STOP: 'sync:stop',
+  SYNC_FORCE_FULL: 'sync:force-full',
+  SYNC_RESOLVE_CONFLICT: 'sync:resolve-conflict',
+  SYNC_EVENT: 'sync:event',
+
+  // Device channels
+  DEVICE_REGISTER: 'device:register',
+  DEVICE_LIST: 'device:list',
+  DEVICE_REMOVE: 'device:remove',
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -223,6 +253,43 @@ export interface IpcInvokeHandlers {
 
   // User question (Gen 3+ ask_user_question)
   [IPC_CHANNELS.USER_QUESTION_RESPONSE]: (response: UserQuestionResponse) => Promise<void>;
+
+  // Auth
+  [IPC_CHANNELS.AUTH_GET_STATUS]: () => Promise<AuthStatus>;
+  [IPC_CHANNELS.AUTH_SIGN_IN_EMAIL]: (
+    email: string,
+    password: string
+  ) => Promise<{ success: boolean; user?: AuthUser; error?: string }>;
+  [IPC_CHANNELS.AUTH_SIGN_UP_EMAIL]: (
+    email: string,
+    password: string,
+    inviteCode?: string
+  ) => Promise<{ success: boolean; user?: AuthUser; error?: string }>;
+  [IPC_CHANNELS.AUTH_SIGN_IN_OAUTH]: (provider: 'github' | 'google') => Promise<void>;
+  [IPC_CHANNELS.AUTH_SIGN_IN_TOKEN]: (
+    token: string
+  ) => Promise<{ success: boolean; user?: AuthUser; error?: string }>;
+  [IPC_CHANNELS.AUTH_SIGN_OUT]: () => Promise<void>;
+  [IPC_CHANNELS.AUTH_GET_USER]: () => Promise<AuthUser | null>;
+  [IPC_CHANNELS.AUTH_UPDATE_PROFILE]: (
+    updates: Partial<AuthUser>
+  ) => Promise<{ success: boolean; user?: AuthUser; error?: string }>;
+  [IPC_CHANNELS.AUTH_GENERATE_QUICK_TOKEN]: () => Promise<string | null>;
+
+  // Sync
+  [IPC_CHANNELS.SYNC_GET_STATUS]: () => Promise<SyncStatus>;
+  [IPC_CHANNELS.SYNC_START]: () => Promise<void>;
+  [IPC_CHANNELS.SYNC_STOP]: () => Promise<void>;
+  [IPC_CHANNELS.SYNC_FORCE_FULL]: () => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.SYNC_RESOLVE_CONFLICT]: (
+    conflictId: string,
+    resolution: 'local' | 'remote' | 'merge'
+  ) => Promise<void>;
+
+  // Device
+  [IPC_CHANNELS.DEVICE_REGISTER]: () => Promise<DeviceInfo>;
+  [IPC_CHANNELS.DEVICE_LIST]: () => Promise<DeviceInfo[]>;
+  [IPC_CHANNELS.DEVICE_REMOVE]: (deviceId: string) => Promise<void>;
 }
 
 // ----------------------------------------------------------------------------
@@ -236,10 +303,19 @@ export interface PlanningEvent {
   data: PlanningState;
 }
 
+export type AuthEventType = 'signed_in' | 'signed_out' | 'token_refreshed' | 'user_updated';
+
+export interface AuthEvent {
+  type: AuthEventType;
+  user?: AuthUser;
+}
+
 export interface IpcEventHandlers {
   [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEvent) => void;
   [IPC_CHANNELS.PLANNING_EVENT]: (event: PlanningEvent) => void;
   [IPC_CHANNELS.USER_QUESTION_ASK]: (request: UserQuestionRequest) => void;
+  [IPC_CHANNELS.AUTH_EVENT]: (event: AuthEvent) => void;
+  [IPC_CHANNELS.SYNC_EVENT]: (status: SyncStatus) => void;
 }
 
 // ----------------------------------------------------------------------------

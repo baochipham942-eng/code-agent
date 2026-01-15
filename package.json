@@ -27,6 +27,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
     "@modelcontextprotocol/sdk": "^1.10.2",
+    "@supabase/supabase-js": "^2.90.1",
     "axios": "^1.13.2",
     "better-sqlite3": "^11.6.0",
     "diff": "^7.0.0",

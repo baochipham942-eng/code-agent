@@ -1,7 +1,6 @@
 {
   "version": 2,
-  "installCommand": "npm install",
-  "buildCommand": "echo 'Build complete'",
+  "framework": null,
   "functions": {
     "api/**/*.ts": {
       "maxDuration": 60

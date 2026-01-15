@@ -1,6 +1,7 @@
 {
   "version": 2,
-  "framework": null,
+  "buildCommand": "",
+  "outputDirectory": "public",
   "functions": {
     "api/**/*.ts": {
       "maxDuration": 60

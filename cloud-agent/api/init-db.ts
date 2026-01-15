@@ -12,15 +12,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // 验证初始化密钥（防止意外调用）
+  // 重要：必须单独配置 DB_INIT_KEY，不要复用 AUTH_SECRET
   const initKey = req.headers['x-init-key'];
-  const expectedKey = process.env.DB_INIT_KEY || process.env.AUTH_SECRET;
+  const expectedKey = process.env.DB_INIT_KEY;
 
   if (!expectedKey) {
-    return res.status(500).json({ error: 'DB_INIT_KEY or AUTH_SECRET not configured' });
+    return res.status(500).json({
+      error: 'DB_INIT_KEY not configured',
+      hint: 'Set a separate DB_INIT_KEY environment variable for database initialization'
+    });
   }
 
-  if (initKey !== expectedKey) {
-    return res.status(401).json({ error: 'Invalid init key' });
+  if (!initKey || initKey !== expectedKey) {
+    return res.status(401).json({ error: 'Invalid or missing init key' });
   }
 
   try {

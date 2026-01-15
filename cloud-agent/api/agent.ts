@@ -7,6 +7,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../lib/auth.js';
 import { CloudAgentLoop, type AgentRequest } from '../lib/agent/CloudAgentLoop.js';
+import { setCorsHeaders, handleOptions, applyRateLimit, handleError } from '../lib/middleware.js';
+import { RATE_LIMITS } from '../lib/rateLimit.js';
 
 export const config = {
   maxDuration: 60,
@@ -88,12 +90,10 @@ ${constraints?.length ? `## 约束条件\n${constraints.map((c: string) => `- ${
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  // CORS - 限制允许的来源
+  setCorsHeaders(req, res);
+  if (handleOptions(req, res)) return;
 
-  if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   // 验证用户（可选）
@@ -101,6 +101,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (process.env.REQUIRE_AUTH === 'true' && !authPayload) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+
+  // Rate limiting
+  if (applyRateLimit(req, res, authPayload?.userId, RATE_LIMITS.agent)) return;
 
   const action = req.query.action as string;
 
@@ -113,7 +116,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       default:
         return res.status(400).json({ error: 'Invalid action. Use: chat, plan' });
     }
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+  } catch (err) {
+    handleError(res, err, 'Agent operation failed');
   }
 }

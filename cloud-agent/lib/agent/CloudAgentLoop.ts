@@ -156,9 +156,11 @@ export class CloudAgentLoop {
   private model: string;
 
   constructor(apiKey?: string, model?: string) {
-    this.client = new Anthropic({
-      apiKey: apiKey || process.env.ANTHROPIC_API_KEY,
-    });
+    const key = apiKey || process.env.ANTHROPIC_API_KEY;
+    if (!key) {
+      throw new Error('ANTHROPIC_API_KEY is required. Set it in environment variables or pass it to the constructor.');
+    }
+    this.client = new Anthropic({ apiKey: key });
     this.model = model || 'claude-sonnet-4-20250514';
   }
 

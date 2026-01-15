@@ -1,8 +1,24 @@
 // ============================================================================
 // Browser Automation - 使用 Playwright 执行浏览器任务
 // ============================================================================
+//
+// ⚠️ 安全警告：此模块已禁用
+// 当前实现存在以下安全问题：
+// 1. SSRF - URL 未经验证，可访问内部网络
+// 2. XSS - evaluate action 允许执行任意 JavaScript
+// 3. 资源滥用 - 无请求限制
+//
+// 如需启用，请先实现：
+// - URL 白名单验证
+// - 移除 evaluate action 或严格限制
+// - 添加请求频率限制
+//
+// ============================================================================
 
-import { chromium, type Browser, type Page } from 'playwright-core';
+throw new Error('Browser module is disabled due to security concerns');
+
+// 以下代码已禁用
+// import { chromium, type Browser, type Page } from 'playwright-core';
 
 interface CloudTaskRequest {
   id: string;

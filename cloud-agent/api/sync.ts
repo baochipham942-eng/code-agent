@@ -7,6 +7,8 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../lib/auth.js';
+import { setCorsHeaders, handleOptions, applyRateLimit, handleError } from '../lib/middleware.js';
+import { RATE_LIMITS } from '../lib/rateLimit.js';
 import {
   syncSessions,
   syncMessages,
@@ -52,18 +54,18 @@ async function handleStats(req: VercelRequest, res: VercelResponse, userId: stri
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  // CORS - 限制允许的来源
+  setCorsHeaders(req, res);
+  if (handleOptions(req, res)) return;
 
   // 验证用户
   const payload = await authenticateRequest(req.headers.authorization);
   if (!payload) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+
+  // Rate limiting
+  if (applyRateLimit(req, res, payload.userId, RATE_LIMITS.sync)) return;
 
   const action = req.query.action as string;
 
@@ -81,7 +83,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       default:
         return res.status(400).json({ error: 'Invalid action. Use: push, pull, stats' });
     }
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+  } catch (err) {
+    handleError(res, err, 'Sync operation failed');
   }
 }

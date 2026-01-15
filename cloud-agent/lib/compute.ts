@@ -1,8 +1,18 @@
 // ============================================================================
 // Compute Task Executor - 执行云端计算任务
 // ============================================================================
+//
+// ⚠️ 安全警告：此模块已禁用
+// VM2 库存在已知安全漏洞（CVE-2023-37466, CVE-2023-37903等）
+// 攻击者可以逃逸沙箱执行任意代码
+// 如需此功能，请使用 isolated-vm 或 WebAssembly 沙箱替代
+//
+// ============================================================================
 
-import { VM } from 'vm2';
+throw new Error('Compute module is disabled due to security vulnerabilities in vm2');
+
+// 以下代码已禁用
+// import { VM } from 'vm2';
 
 interface CloudTaskRequest {
   id: string;

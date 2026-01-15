@@ -7,6 +7,8 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getDb, type Release } from '../lib/db.js';
+import { setCorsHeaders, handleOptions, applyRateLimit, handleError } from '../lib/middleware.js';
+import { RATE_LIMITS } from '../lib/rateLimit.js';
 
 // 版本比较
 function compareVersions(v1: string, v2: string): number {
@@ -114,12 +116,12 @@ async function handlePublish(req: VercelRequest, res: VercelResponse) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  // CORS - 限制允许的来源
+  setCorsHeaders(req, res);
+  if (handleOptions(req, res)) return;
 
-  if (req.method === 'OPTIONS') return res.status(200).end();
+  // Rate limiting
+  if (applyRateLimit(req, res, undefined, RATE_LIMITS.update)) return;
 
   const action = req.query.action as string;
 
@@ -135,7 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       default:
         return res.status(400).json({ error: 'Invalid action. Use: check, latest, publish' });
     }
-  } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+  } catch (err) {
+    handleError(res, err, 'Update operation failed');
   }
 }

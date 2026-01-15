@@ -5,8 +5,13 @@
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 import { getDb, type User } from './db.js';
 
+// JWT 密钥 - 必须在生产环境中设置
+const authSecret = process.env.AUTH_SECRET;
+if (!authSecret && process.env.NODE_ENV === 'production') {
+  throw new Error('AUTH_SECRET environment variable is required in production');
+}
 const JWT_SECRET = new TextEncoder().encode(
-  process.env.AUTH_SECRET || 'default-secret-change-in-production'
+  authSecret || 'dev-secret-only-for-local-development'
 );
 
 const JWT_ISSUER = 'code-agent';

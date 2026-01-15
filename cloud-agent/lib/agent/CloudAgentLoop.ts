@@ -358,9 +358,53 @@ export class CloudAgentLoop {
     });
   }
 
+  // 检查是否为内部/私有 IP 地址
+  private isInternalUrl(hostname: string): boolean {
+    // 阻止的主机名
+    const blockedHosts = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '169.254.169.254'];
+    if (blockedHosts.includes(hostname)) return true;
+
+    // 检查私有 IP 范围
+    const privateIpPatterns = [
+      /^10\./,                          // 10.0.0.0/8
+      /^172\.(1[6-9]|2\d|3[01])\./,     // 172.16.0.0/12
+      /^192\.168\./,                     // 192.168.0.0/16
+      /^127\./,                          // 127.0.0.0/8
+      /^169\.254\./,                     // 169.254.0.0/16 (link-local)
+      /^fc00:/i,                         // IPv6 unique local
+      /^fe80:/i,                         // IPv6 link-local
+    ];
+
+    return privateIpPatterns.some(pattern => pattern.test(hostname));
+  }
+
   private async toolWebFetch(url: string, selector?: string): Promise<string> {
     try {
-      const response = await fetch(url);
+      // URL 验证和 SSRF 防护
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(url);
+      } catch {
+        return JSON.stringify({ error: 'Invalid URL format' });
+      }
+
+      // 只允许 HTTP/HTTPS
+      if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+        return JSON.stringify({ error: 'Only HTTP(S) URLs are allowed' });
+      }
+
+      // 阻止内部网络访问
+      if (this.isInternalUrl(parsedUrl.hostname)) {
+        return JSON.stringify({ error: 'Access to internal URLs is not allowed' });
+      }
+
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'CodeAgent/1.0 (Cloud Agent)',
+        },
+        redirect: 'follow',
+      });
+
       const html = await response.text();
 
       // 简单提取文本内容（生产环境应使用 cheerio 或类似库）
@@ -378,7 +422,7 @@ export class CloudAgentLoop {
         truncated: html.length > 5000,
       });
     } catch (error: any) {
-      return JSON.stringify({ error: error.message });
+      return JSON.stringify({ error: 'Failed to fetch URL' });
     }
   }
 

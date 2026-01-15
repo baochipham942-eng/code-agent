@@ -4,6 +4,18 @@
 
 import { getDb, type Session, type Message } from './db.js';
 
+// UUID 格式验证
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUUID(id: string): boolean {
+  return typeof id === 'string' && UUID_REGEX.test(id);
+}
+
+// 请求大小限制
+const MAX_SESSIONS_PER_REQUEST = 100;
+const MAX_MESSAGES_PER_REQUEST = 500;
+const MAX_CONTENT_LENGTH = 100000; // 100KB
+
 export interface SyncSessionRequest {
   id: string;
   title: string;
@@ -39,7 +51,24 @@ export async function syncSessions(
   const errors: string[] = [];
   let synced = 0;
 
+  // 请求大小限制
+  if (sessions.length > MAX_SESSIONS_PER_REQUEST) {
+    return { synced: 0, errors: [`Too many sessions. Maximum ${MAX_SESSIONS_PER_REQUEST} per request`] };
+  }
+
   for (const session of sessions) {
+    // 验证 session ID 格式
+    if (!isValidUUID(session.id)) {
+      errors.push(`Invalid session ID format: ${session.id}`);
+      continue;
+    }
+
+    // 验证标题长度
+    if (session.title && session.title.length > 500) {
+      errors.push(`Session ${session.id}: Title too long`);
+      continue;
+    }
+
     try {
       await sql`
         INSERT INTO code_agent.sessions (id, user_id, title, generation, workspace_path, config, created_at, updated_at)
@@ -79,7 +108,31 @@ export async function syncMessages(
   const errors: string[] = [];
   let synced = 0;
 
+  // 请求大小限制
+  if (messages.length > MAX_MESSAGES_PER_REQUEST) {
+    return { synced: 0, errors: [`Too many messages. Maximum ${MAX_MESSAGES_PER_REQUEST} per request`] };
+  }
+
   for (const message of messages) {
+    // 验证 ID 格式
+    if (!isValidUUID(message.id) || !isValidUUID(message.sessionId)) {
+      errors.push(`Invalid ID format: message ${message.id}`);
+      continue;
+    }
+
+    // 验证内容大小
+    if (message.content && message.content.length > MAX_CONTENT_LENGTH) {
+      errors.push(`Message ${message.id}: Content too large`);
+      continue;
+    }
+
+    // 验证 role 值
+    const validRoles = ['user', 'assistant', 'system', 'tool'];
+    if (!validRoles.includes(message.role)) {
+      errors.push(`Message ${message.id}: Invalid role`);
+      continue;
+    }
+
     try {
       // 验证 session 属于当前用户
       const sessionCheck = await sql`

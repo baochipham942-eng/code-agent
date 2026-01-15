@@ -6,7 +6,7 @@
 // ============================================================================
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDb, type Release } from '../lib/db';
+import { getDb, type Release } from '../lib/db.js';
 
 // 版本比较
 function compareVersions(v1: string, v2: string): number {

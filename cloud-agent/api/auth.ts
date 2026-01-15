@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getOrCreateUser, generateToken, authenticateRequest, getUserById } from '../lib/auth';
+import { getOrCreateUser, generateToken, authenticateRequest, getUserById } from '../lib/auth.js';
 
 // GitHub OAuth 配置
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;

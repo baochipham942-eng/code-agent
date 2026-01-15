@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
-import { getDb, type User } from './db';
+import { getDb, type User } from './db.js';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET || 'default-secret-change-in-production'

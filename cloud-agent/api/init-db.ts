@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { initializeSchema } from '../lib/db';
+import { initializeSchema } from '../lib/db.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 只允许 POST 请求

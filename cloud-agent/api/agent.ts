@@ -5,8 +5,8 @@
 // ============================================================================
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../lib/auth';
-import { CloudAgentLoop, type AgentRequest } from '../lib/agent/CloudAgentLoop';
+import { authenticateRequest } from '../lib/auth.js';
+import { CloudAgentLoop, type AgentRequest } from '../lib/agent/CloudAgentLoop.js';
 
 export const config = {
   maxDuration: 60,

@@ -2,7 +2,7 @@
 // Sync Service - Session 和 Message 同步逻辑
 // ============================================================================
 
-import { getDb, type Session, type Message } from './db';
+import { getDb, type Session, type Message } from './db.js';
 
 export interface SyncSessionRequest {
   id: string;

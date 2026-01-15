@@ -6,7 +6,7 @@
 // ============================================================================
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { authenticateRequest } from '../lib/auth';
+import { authenticateRequest } from '../lib/auth.js';
 import {
   syncSessions,
   syncMessages,
@@ -14,7 +14,7 @@ import {
   getUserStats,
   type SyncSessionRequest,
   type SyncMessageRequest,
-} from '../lib/sync';
+} from '../lib/sync.js';
 
 // 推送数据
 async function handlePush(req: VercelRequest, res: VercelResponse, userId: string) {

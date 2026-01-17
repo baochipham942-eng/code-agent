@@ -74,21 +74,43 @@ export const App: React.FC = () => {
     });
   }, []);
 
-  // Load language setting from backend on mount
+  // Load settings from backend on mount
+  const { setModelConfig } = useAppStore();
+
   useEffect(() => {
-    const loadLanguageSetting = async () => {
+    const loadSettings = async () => {
       try {
         const settings = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET);
+
+        // 加载语言设置
         if (settings?.ui?.language) {
           setLanguage(settings.ui.language);
           console.log('[App] Loaded language setting:', settings.ui.language);
         }
+
+        // 加载模型配置
+        if (settings?.models) {
+          const defaultProvider = (settings.models.default || 'deepseek') as import('@shared/types').ModelProvider;
+          const providerConfig = settings.models.providers?.[defaultProvider];
+
+          if (providerConfig) {
+            setModelConfig({
+              provider: defaultProvider,
+              model: providerConfig.model || 'deepseek-chat',
+              apiKey: providerConfig.apiKey || '',
+              baseUrl: providerConfig.baseUrl || 'https://api.deepseek.com',
+              temperature: providerConfig.temperature ?? 0.7,
+              maxTokens: providerConfig.maxTokens ?? 4096,
+            });
+            console.log('[App] Loaded model config for provider:', defaultProvider);
+          }
+        }
       } catch (error) {
-        console.error('[App] Failed to load language setting:', error);
+        console.error('[App] Failed to load settings:', error);
       }
     };
-    loadLanguageSetting();
-  }, [setLanguage]);
+    loadSettings();
+  }, [setLanguage, setModelConfig]);
 
   // 应用启动时检查更新（强制更新检查）
   useEffect(() => {

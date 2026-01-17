@@ -181,14 +181,32 @@ export class AgentOrchestrator {
     const settings = this.configService.getSettings();
     const permissionLevel = this.getPermissionLevel(request.type);
 
+    // Dev mode: auto-approve all permissions (configurable)
+    if (settings.permissions.devModeAutoApprove) {
+      console.log(`[DevMode] Auto-approving permission: ${request.type} for ${request.tool}`);
+      return true;
+    }
+
     if (settings.permissions.autoApprove[permissionLevel]) {
       return true;
     }
 
-    // Send permission request to UI
+    // Send permission request to UI with timeout
+    const PERMISSION_TIMEOUT = 60000; // 60 seconds timeout
+
     return new Promise((resolve) => {
+      const timeoutId = setTimeout(() => {
+        // Timeout - deny permission
+        this.pendingPermissions.delete(fullRequest.id);
+        console.warn(`[Permission] Timeout for ${request.type} on ${request.tool}, denying`);
+        resolve(false);
+      }, PERMISSION_TIMEOUT);
+
       this.pendingPermissions.set(fullRequest.id, {
-        resolve: (response) => resolve(response === 'allow' || response === 'allow_session'),
+        resolve: (response) => {
+          clearTimeout(timeoutId);
+          resolve(response === 'allow' || response === 'allow_session');
+        },
         request: fullRequest,
       });
       this.onEvent({ type: 'permission_request', data: fullRequest });

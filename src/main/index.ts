@@ -1137,6 +1137,57 @@ function setupIpcHandlers(): void {
     const cache = getToolCache();
     return cache.cleanExpired();
   });
+
+  // -------------------------------------------------------------------------
+  // Data Management Handlers
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.DATA_GET_STATS, async () => {
+    const { getDatabase } = await import('./services/DatabaseService');
+    const { getToolCache } = await import('./services/ToolCache');
+    const fs = await import('fs');
+    const path = await import('path');
+
+    const db = getDatabase();
+    const cache = getToolCache();
+    const dbStats = db.getStats();
+    const cacheStats = cache.getStats();
+
+    // 获取数据库文件大小
+    const userDataPath = app.getPath('userData');
+    const dbPath = path.join(userDataPath, 'code-agent.db');
+    let databaseSize = 0;
+    try {
+      const stat = fs.statSync(dbPath);
+      databaseSize = stat.size;
+    } catch {
+      // 数据库文件可能不存在
+    }
+
+    return {
+      ...dbStats,
+      databaseSize,
+      cacheEntries: cacheStats.totalEntries,
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE, async () => {
+    const { getToolCache } = await import('./services/ToolCache');
+    const { getDatabase } = await import('./services/DatabaseService');
+
+    const cache = getToolCache();
+    const db = getDatabase();
+
+    // 清理内存缓存
+    const cacheStats = cache.getStats();
+    const clearedMemory = cacheStats.totalEntries;
+    cache.clear();
+
+    // 清理数据库中过期的工具执行缓存
+    const clearedDb = db.cleanExpiredCache();
+
+    return clearedMemory + clearedDb;
+  });
 }
 
 // ----------------------------------------------------------------------------

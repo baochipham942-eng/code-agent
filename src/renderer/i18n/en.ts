@@ -30,8 +30,23 @@ export const en: Translations = {
       disclosure: 'Disclosure',
       appearance: 'Appearance',
       language: 'Language',
+      data: 'Data',
+      update: 'Update',
       about: 'About',
     },
+  },
+
+  // Update Settings
+  update: {
+    title: 'Version Update',
+    description: 'Check and download the latest version of Code Agent',
+    currentVersion: 'Current Version',
+    checking: 'Checking...',
+    checkNow: 'Check for Updates',
+    checkError: 'Failed to check for updates, please try again later',
+    newVersion: 'New version available',
+    upToDate: 'You are up to date',
+    download: 'Update Now',
   },
 
   // Model Settings
@@ -104,6 +119,11 @@ export const en: Translations = {
           'MCP server config',
         ],
       },
+    },
+    devMode: {
+      title: 'Developer Options',
+      autoApprove: 'Auto-approve all permissions',
+      autoApproveDescription: 'Skip all permission dialogs in dev mode for faster testing. Recommended to disable in production.',
     },
   },
 

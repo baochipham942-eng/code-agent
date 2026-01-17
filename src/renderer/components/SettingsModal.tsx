@@ -5,9 +5,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore, type DisclosureLevel } from '../stores/appStore';
 import { useI18n, type Language } from '../hooks/useI18n';
-import { X, Key, Cpu, Palette, Info, Layers, Eye, EyeOff, Sparkles, Zap, Globe, Database, Download, RefreshCw, Trash2, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Key, Cpu, Palette, Info, Layers, Eye, EyeOff, Sparkles, Zap, Globe, Database, Download, RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import type { ModelProvider, UpdateInfo } from '@shared/types';
-import { IPC_CHANNELS, type CacheStats } from '@shared/ipc';
+import { IPC_CHANNELS } from '@shared/ipc';
 import { UpdateNotification } from './UpdateNotification';
 
 type SettingsTab = 'model' | 'disclosure' | 'appearance' | 'language' | 'cache' | 'update' | 'about';
@@ -42,7 +42,7 @@ export const SettingsModal: React.FC = () => {
     { id: 'disclosure', label: t.settings.tabs.disclosure, icon: <Layers className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'language', label: t.settings.tabs.language, icon: <Globe className="w-4 h-4" /> },
-    { id: 'cache', label: t.settings.tabs.cache || '缓存', icon: <Database className="w-4 h-4" /> },
+    { id: 'cache', label: t.settings.tabs.data || '数据', icon: <Database className="w-4 h-4" /> },
     { id: 'update', label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: optionalUpdateInfo?.hasUpdate },
     { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
   ];
@@ -142,11 +142,13 @@ const ModelSettings: React.FC<{
       // Use type assertion for partial update - backend handles merging
       await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
         models: {
+          default: config.provider,
           defaultProvider: config.provider,
           providers: {
             [config.provider]: {
               apiKey: config.apiKey,
               model: config.model,
+              temperature: config.temperature,
               enabled: true,
             },
           },
@@ -559,20 +561,29 @@ const AboutSection: React.FC = () => {
   );
 };
 
-// Cache Settings Tab - 缓存管理
+// Cache Settings Tab - 数据管理
+interface DataStats {
+  sessionCount: number;
+  messageCount: number;
+  toolExecutionCount: number;
+  knowledgeCount: number;
+  databaseSize: number;
+  cacheEntries: number;
+}
+
 const CacheSettings: React.FC = () => {
   const { t } = useI18n();
-  const [stats, setStats] = useState<CacheStats | null>(null);
+  const [stats, setStats] = useState<DataStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const loadStats = async () => {
     try {
-      const cacheStats = await window.electronAPI?.invoke(IPC_CHANNELS.CACHE_GET_STATS);
-      setStats(cacheStats);
+      const dataStats = await window.electronAPI?.invoke(IPC_CHANNELS.DATA_GET_STATS);
+      if (dataStats) setStats(dataStats);
     } catch (error) {
-      console.error('Failed to load cache stats:', error);
+      console.error('Failed to load data stats:', error);
     } finally {
       setIsLoading(false);
     }
@@ -582,32 +593,25 @@ const CacheSettings: React.FC = () => {
     loadStats();
   }, []);
 
-  const handleClearCache = async () => {
+  const handleClearToolCache = async () => {
     setIsClearing(true);
     setMessage(null);
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.CACHE_CLEAR);
-      setMessage({ type: 'success', text: t.cache?.cleared || '缓存已清除' });
+      const cleared = await window.electronAPI?.invoke(IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE);
+      setMessage({ type: 'success', text: `已清理 ${cleared} 条工具调用缓存` });
       await loadStats();
     } catch (error) {
-      setMessage({ type: 'error', text: t.cache?.clearError || '清除缓存失败' });
+      setMessage({ type: 'error', text: '清理失败' });
     } finally {
       setIsClearing(false);
     }
   };
 
-  const handleCleanExpired = async () => {
-    setIsClearing(true);
-    setMessage(null);
-    try {
-      const cleaned = await window.electronAPI?.invoke(IPC_CHANNELS.CACHE_CLEAN_EXPIRED);
-      setMessage({ type: 'success', text: `${t.cache?.expiredCleaned || '已清理过期缓存'}: ${cleaned} ${t.cache?.entries || '条'}` });
-      await loadStats();
-    } catch (error) {
-      setMessage({ type: 'error', text: t.cache?.cleanError || '清理失败' });
-    } finally {
-      setIsClearing(false);
-    }
+  // 格式化文件大小
+  const formatSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   if (isLoading) {
@@ -621,74 +625,60 @@ const CacheSettings: React.FC = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-sm font-medium text-zinc-100 mb-2">{t.cache?.title || '缓存管理'}</h3>
+        <h3 className="text-sm font-medium text-zinc-100 mb-2">数据管理</h3>
         <p className="text-xs text-zinc-400 mb-4">
-          {t.cache?.description || '工具调用结果会被缓存以提升响应速度。缓存的数据包括文件读取、目录列表、搜索结果等。'}
+          查看应用数据使用情况。会话、消息和生成的文件不会被清理。
         </p>
       </div>
 
-      {/* Cache Stats */}
+      {/* Data Stats */}
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-zinc-800/50 rounded-lg p-4">
-          <div className="text-2xl font-bold text-zinc-100">{stats?.totalEntries || 0}</div>
-          <div className="text-xs text-zinc-400">{t.cache?.totalEntries || '缓存条目'}</div>
+          <div className="text-2xl font-bold text-zinc-100">{stats?.sessionCount || 0}</div>
+          <div className="text-xs text-zinc-400">会话数</div>
         </div>
         <div className="bg-zinc-800/50 rounded-lg p-4">
-          <div className="text-2xl font-bold text-zinc-100">
-            {stats ? `${(stats.hitRate * 100).toFixed(1)}%` : '0%'}
-          </div>
-          <div className="text-xs text-zinc-400">{t.cache?.hitRate || '命中率'}</div>
+          <div className="text-2xl font-bold text-zinc-100">{stats?.messageCount || 0}</div>
+          <div className="text-xs text-zinc-400">消息数</div>
         </div>
         <div className="bg-zinc-800/50 rounded-lg p-4">
-          <div className="text-2xl font-bold text-green-400">{stats?.hitCount || 0}</div>
-          <div className="text-xs text-zinc-400">{t.cache?.hits || '缓存命中'}</div>
+          <div className="text-2xl font-bold text-indigo-400">{formatSize(stats?.databaseSize || 0)}</div>
+          <div className="text-xs text-zinc-400">数据库大小</div>
         </div>
         <div className="bg-zinc-800/50 rounded-lg p-4">
-          <div className="text-2xl font-bold text-orange-400">{stats?.missCount || 0}</div>
-          <div className="text-xs text-zinc-400">{t.cache?.misses || '缓存未命中'}</div>
+          <div className="text-2xl font-bold text-cyan-400">{stats?.cacheEntries || 0}</div>
+          <div className="text-xs text-zinc-400">内存缓存条目</div>
         </div>
       </div>
 
-      {/* Cache Policies */}
+      {/* Detailed Stats */}
       <div className="bg-zinc-800/50 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-zinc-100 mb-3">{t.cache?.policies || '缓存策略'}</h4>
+        <h4 className="text-sm font-medium text-zinc-100 mb-3">详细数据</h4>
         <div className="space-y-2 text-xs">
           <div className="flex justify-between text-zinc-400">
-            <span>read_file</span>
-            <span className="text-zinc-500">5 {t.cache?.minutes || '分钟'}</span>
+            <span>工具执行记录</span>
+            <span className="text-zinc-300">{stats?.toolExecutionCount || 0} 条</span>
           </div>
           <div className="flex justify-between text-zinc-400">
-            <span>glob, grep, list_directory</span>
-            <span className="text-zinc-500">2 {t.cache?.minutes || '分钟'}</span>
-          </div>
-          <div className="flex justify-between text-zinc-400">
-            <span>web_fetch</span>
-            <span className="text-zinc-500">15 {t.cache?.minutes || '分钟'}</span>
-          </div>
-          <div className="flex justify-between text-zinc-400">
-            <span>bash, write_file, edit_file</span>
-            <span className="text-zinc-500 text-rose-400">{t.cache?.notCached || '不缓存'}</span>
+            <span>项目知识库</span>
+            <span className="text-zinc-300">{stats?.knowledgeCount || 0} 条</span>
           </div>
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="flex gap-3">
+      {/* Cache Info */}
+      <div className="bg-zinc-800/50 rounded-lg p-4">
+        <h4 className="text-sm font-medium text-zinc-100 mb-3">可清理的缓存</h4>
+        <p className="text-xs text-zinc-400 mb-3">
+          工具调用的临时缓存（如文件读取、搜索结果）可以安全清理，不会影响您的会话和数据。
+        </p>
         <button
-          onClick={handleCleanExpired}
-          disabled={isClearing}
-          className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 transition-colors disabled:opacity-50"
+          onClick={handleClearToolCache}
+          disabled={isClearing || (stats?.cacheEntries || 0) === 0}
+          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RefreshCw className={`w-4 h-4 ${isClearing ? 'animate-spin' : ''}`} />
-          {t.cache?.cleanExpired || '清理过期'}
-        </button>
-        <button
-          onClick={handleClearCache}
-          disabled={isClearing}
-          className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 transition-colors disabled:opacity-50"
-        >
-          <Trash2 className="w-4 h-4" />
-          {t.cache?.clearAll || '清除全部'}
+          清理工具缓存
         </button>
       </div>
 

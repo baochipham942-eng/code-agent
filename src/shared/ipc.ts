@@ -101,6 +101,15 @@ export interface CacheStats {
   hitRate: number;
 }
 
+export interface DataStats {
+  sessionCount: number;
+  messageCount: number;
+  toolExecutionCount: number;
+  knowledgeCount: number;
+  databaseSize: number; // bytes
+  cacheEntries: number;
+}
+
 // ----------------------------------------------------------------------------
 // IPC Channel Names
 // ----------------------------------------------------------------------------
@@ -209,6 +218,10 @@ export const IPC_CHANNELS = {
   CACHE_GET_STATS: 'cache:get-stats',
   CACHE_CLEAR: 'cache:clear',
   CACHE_CLEAN_EXPIRED: 'cache:clean-expired',
+
+  // Data management channels
+  DATA_GET_STATS: 'data:get-stats',
+  DATA_CLEAR_TOOL_CACHE: 'data:clear-tool-cache',
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -335,6 +348,10 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CACHE_GET_STATS]: () => Promise<CacheStats>;
   [IPC_CHANNELS.CACHE_CLEAR]: () => Promise<void>;
   [IPC_CHANNELS.CACHE_CLEAN_EXPIRED]: () => Promise<number>;
+
+  // Data management
+  [IPC_CHANNELS.DATA_GET_STATS]: () => Promise<DataStats>;
+  [IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE]: () => Promise<number>;
 }
 
 // ----------------------------------------------------------------------------

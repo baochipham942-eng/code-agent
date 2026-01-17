@@ -28,8 +28,23 @@ export const zh = {
       disclosure: '界面',
       appearance: '外观',
       language: '语言',
+      data: '数据',
+      update: '更新',
       about: '关于',
     },
+  },
+
+  // Update Settings
+  update: {
+    title: '版本更新',
+    description: '检查并下载最新版本的 Code Agent',
+    currentVersion: '当前版本',
+    checking: '检查中...',
+    checkNow: '检查更新',
+    checkError: '检查更新失败，请稍后重试',
+    newVersion: '发现新版本',
+    upToDate: '已是最新版本',
+    download: '立即更新',
   },
 
   // Model Settings
@@ -86,6 +101,11 @@ export const zh = {
         description: '开发者的完整访问权限',
         features: ['原始 API 响应', 'Token 使用指标', '调试控制台', 'MCP 服务器配置'],
       },
+    },
+    devMode: {
+      title: '开发者选项',
+      autoApprove: '自动授权所有权限',
+      autoApproveDescription: '开发模式下跳过所有权限确认弹窗，方便快速测试。生产环境建议关闭。',
     },
   },
 

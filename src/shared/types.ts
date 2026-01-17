@@ -314,9 +314,14 @@ export type AgentEvent =
 export interface AppSettings {
   models: {
     default: string;
+    defaultProvider?: ModelProvider;
     providers: Record<ModelProvider, {
       apiKey?: string;
       enabled: boolean;
+      model?: string;
+      baseUrl?: string;
+      temperature?: number;
+      maxTokens?: number;
     }>;
     // 按用途选择模型
     routing: {
@@ -336,6 +341,7 @@ export interface AppSettings {
   permissions: {
     autoApprove: Record<PermissionLevel, boolean>;
     blockedCommands: string[];
+    devModeAutoApprove: boolean; // Development mode: auto-approve all permissions
   };
   ui: {
     theme: 'light' | 'dark' | 'system';

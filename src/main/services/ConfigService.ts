@@ -91,6 +91,7 @@ const DEFAULT_SETTINGS: AppSettings = {
       'sudo rm',
       ':(){:|:&};:',
     ],
+    devModeAutoApprove: true, // Default to true for development convenience
   },
   ui: {
     theme: 'system',

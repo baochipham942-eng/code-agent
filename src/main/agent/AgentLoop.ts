@@ -17,6 +17,7 @@ import { ModelRouter } from '../model/ModelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/MemoryService';
 import { logCollector } from '../mcp/LogCollector.js';
+import { generateMessageId, generateToolCallId } from '../../shared/utils/id';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -428,14 +429,15 @@ export class AgentLoop {
     for (const message of this.messages) {
       if (message.role === 'tool') {
         // Convert tool results to user message format
+        // Tool results are kept complete as they contain important execution context
         modelMessages.push({
           role: 'user',
           content: `Tool results:\n${message.content}`,
         });
       } else if (message.role === 'assistant' && message.toolCalls) {
-        // Format tool calls
+        // Format tool calls using optimized summary (saves tokens)
         const toolCallsStr = message.toolCalls
-          .map((tc) => `Calling ${tc.name}(${JSON.stringify(tc.arguments)})`)
+          .map((tc) => this.formatToolCallForHistory(tc))
           .join('\n');
         modelMessages.push({
           role: 'assistant',
@@ -525,6 +527,61 @@ export class AgentLoop {
   }
 
   private generateId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return generateMessageId();
+  }
+
+  /**
+   * 格式化工具调用用于历史记录
+   * 只保留关键信息，避免 token 浪费
+   */
+  private formatToolCallForHistory(tc: ToolCall): string {
+    const { name, arguments: args } = tc;
+
+    switch (name) {
+      case 'edit_file':
+        return `Edited ${args.file_path}`;
+
+      case 'bash': {
+        const cmd = (args.command as string) || '';
+        const shortCmd = cmd.length > 100 ? cmd.slice(0, 97) + '...' : cmd;
+        return `Ran: ${shortCmd}`;
+      }
+
+      case 'read_file':
+        return `Read ${args.file_path}`;
+
+      case 'write_file':
+        return `Created ${args.file_path}`;
+
+      case 'glob':
+        return `Found files matching: ${args.pattern}`;
+
+      case 'grep':
+        return `Searched for: ${args.pattern}`;
+
+      case 'list_directory':
+        return `Listed: ${args.path || '.'}`;
+
+      case 'task':
+        return `Delegated task: ${(args.description as string)?.slice(0, 50) || 'subagent'}`;
+
+      case 'todo_write':
+        return `Updated todo list`;
+
+      case 'ask_user_question':
+        return `Asked user a question`;
+
+      case 'skill':
+        return `Invoked skill: ${args.skill}`;
+
+      case 'web_fetch':
+        return `Fetched: ${args.url}`;
+
+      default:
+        // 对于其他工具，只显示名称和简短参数
+        const argsStr = JSON.stringify(args);
+        const shortArgs = argsStr.length > 80 ? argsStr.slice(0, 77) + '...' : argsStr;
+        return `Called ${name}(${shortArgs})`;
+    }
   }
 }

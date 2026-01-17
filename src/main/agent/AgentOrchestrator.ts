@@ -20,6 +20,7 @@ import type { GenerationManager } from '../generation/GenerationManager';
 import type { ConfigService } from '../services/ConfigService';
 import { getSessionManager } from '../services/SessionManager';
 import type { PlanningService } from '../planning';
+import { generateMessageId, generatePermissionRequestId } from '../../shared/utils/id';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -166,7 +167,7 @@ export class AgentOrchestrator {
   private async requestPermission(request: Omit<PermissionRequest, 'id' | 'timestamp'>): Promise<boolean> {
     const fullRequest: PermissionRequest = {
       ...request,
-      id: this.generateId(),
+      id: generatePermissionRequestId(),
       timestamp: Date.now(),
     };
 
@@ -229,6 +230,6 @@ export class AgentOrchestrator {
   }
 
   private generateId(): string {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return generateMessageId();
   }
 }

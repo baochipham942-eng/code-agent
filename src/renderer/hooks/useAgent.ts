@@ -5,7 +5,8 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
-import type { Message, ToolCall } from '@shared/types';
+import { generateMessageId } from '@shared/utils/id';
+import type { Message, ToolCall, ToolResult } from '@shared/types';
 
 export const useAgent = () => {
   const {
@@ -81,16 +82,43 @@ export const useAgent = () => {
             break;
 
           case 'tool_call_end':
-            // Update tool call result
+            // Update tool call result - search all messages to handle race conditions
             if (event.data) {
-              const lastMessage = currentMessages[currentMessages.length - 1];
-              if (lastMessage?.role === 'assistant' && lastMessage.toolCalls) {
-                const updatedToolCalls = lastMessage.toolCalls.map((tc: ToolCall) =>
-                  tc.id === event.data.toolCallId
-                    ? { ...tc, result: event.data }
-                    : tc
+              const toolResult = event.data as ToolResult;
+
+              if (import.meta.env.DEV) {
+                console.log('[useAgent] tool_call_end received:', {
+                  toolCallId: toolResult.toolCallId,
+                  success: toolResult.success,
+                  duration: toolResult.duration,
+                });
+              }
+
+              // Find and update the matching toolCall across all messages
+              let matched = false;
+              for (const msg of currentMessages) {
+                if (msg.role === 'assistant' && msg.toolCalls) {
+                  const hasMatch = msg.toolCalls.some((tc: ToolCall) => tc.id === toolResult.toolCallId);
+                  if (hasMatch) {
+                    matched = true;
+                    const updatedToolCalls = msg.toolCalls.map((tc: ToolCall) =>
+                      tc.id === toolResult.toolCallId
+                        ? { ...tc, result: toolResult }
+                        : tc
+                    );
+                    updateMessage(msg.id, { toolCalls: updatedToolCalls });
+                    break;
+                  }
+                }
+              }
+
+              if (import.meta.env.DEV && !matched) {
+                console.warn('[useAgent] No matching toolCall found for:', toolResult.toolCallId);
+                console.log('[useAgent] Available toolCalls:',
+                  currentMessages
+                    .filter(m => m.toolCalls)
+                    .flatMap(m => m.toolCalls!.map(tc => tc.id))
                 );
-                updateMessage(lastMessage.id, { toolCalls: updatedToolCalls });
               }
             }
             break;
@@ -149,19 +177,19 @@ export const useAgent = () => {
         return;
       }
 
-      // Add user message
+      // Add user message with UUID
       const userMessage: Message = {
-        id: Date.now().toString(),
+        id: generateMessageId(),
         role: 'user',
         content,
         timestamp: Date.now(),
       };
-      console.log('[useAgent] Adding user message');
+      console.log('[useAgent] Adding user message with id:', userMessage.id);
       addMessage(userMessage);
 
-      // Add placeholder assistant message for streaming
+      // Add placeholder assistant message for streaming with UUID
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: generateMessageId(),
         role: 'assistant',
         content: '',
         timestamp: Date.now(),

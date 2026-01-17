@@ -2,7 +2,7 @@
 // MessageBubble - Individual Chat Message Display (Enhanced UI/UX)
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   User,
   Bot,
@@ -20,10 +20,13 @@ import {
   Sparkles,
   AlertCircle,
   Play,
-  ExternalLink
+  ExternalLink,
+  Clock
 } from 'lucide-react';
 import type { Message, ToolCall, ToolResult } from '@shared/types';
 import { useAppStore } from '../stores/appStore';
+import { summarizeToolCall, getToolIcon as getToolIconEmoji, getToolStatusText, getToolStatusClass } from '../utils/toolSummary';
+import { DiffView, DiffPreview } from './DiffView';
 
 interface MessageBubbleProps {
   message: Message;
@@ -245,7 +248,9 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
   index,
   total
 }) => {
+  // 默认折叠，只有在执行中或出错时展开
   const [expanded, setExpanded] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
   const openPreview = useAppStore((state) => state.openPreview);
 
   // Get status from result
@@ -255,6 +260,20 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
   };
 
   const status = getStatus();
+
+  // 生成工具摘要
+  const summary = useMemo(() => summarizeToolCall(toolCall), [toolCall]);
+  const toolIcon = useMemo(() => getToolIconEmoji(toolCall.name), [toolCall.name]);
+  const statusText = useMemo(() => getToolStatusText(toolCall), [toolCall]);
+  const statusClass = useMemo(() => getToolStatusClass(toolCall), [toolCall]);
+
+  // 检测是否为 edit_file 工具调用
+  const isEditFile = toolCall.name === 'edit_file';
+  const editFileArgs = isEditFile ? {
+    filePath: (toolCall.arguments?.file_path as string) || '',
+    oldString: (toolCall.arguments?.old_string as string) || '',
+    newString: (toolCall.arguments?.new_string as string) || '',
+  } : null;
 
   const statusConfig = {
     success: {
@@ -307,7 +326,7 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
       }`}
       style={{ animationDelay: `${index * 50}ms` }}
     >
-      {/* Header */}
+      {/* Header - 显示摘要而非工具名 */}
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-700/20 transition-all duration-200"
@@ -317,9 +336,9 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
           <ChevronRight className="w-4 h-4 text-zinc-500" />
         </div>
 
-        {/* Tool icon with status indicator */}
-        <div className={`relative p-2 rounded-lg ${config.bg}`}>
-          <span className={config.text}>{getToolIcon(toolCall.name)}</span>
+        {/* Tool icon with emoji */}
+        <div className={`relative p-2 rounded-lg ${config.bg} text-lg`}>
+          <span>{toolIcon}</span>
           {/* Status dot */}
           <div className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${
             status === 'success' ? 'bg-emerald-400' :
@@ -328,15 +347,27 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
           }`} />
         </div>
 
-        {/* Tool name and meta */}
-        <div className="flex-1 text-left">
-          <span className="text-sm font-medium text-zinc-200">{toolCall.name}</span>
-          {total > 1 && (
-            <span className="ml-2 text-xs text-zinc-500">
-              ({index + 1}/{total})
-            </span>
-          )}
+        {/* Tool summary instead of just name */}
+        <div className="flex-1 text-left min-w-0">
+          <div className="text-sm font-medium text-zinc-200 truncate">{summary}</div>
+          <div className="flex items-center gap-2 text-xs text-zinc-500">
+            <span className="font-mono">{toolCall.name}</span>
+            {total > 1 && <span>({index + 1}/{total})</span>}
+          </div>
         </div>
+
+        {/* Diff preview for edit_file */}
+        {isEditFile && editFileArgs && (
+          <DiffPreview
+            oldText={editFileArgs.oldString}
+            newText={editFileArgs.newString}
+            onClick={(e) => {
+              e?.stopPropagation?.();
+              setShowDiff(true);
+              setExpanded(true);
+            }}
+          />
+        )}
 
         {/* Preview button for HTML files */}
         {htmlFilePath && (
@@ -353,24 +384,67 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
           </button>
         )}
 
-        {/* Status badge */}
+        {/* Status badge with duration */}
         <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text} ${config.border} border`}>
           {config.icon}
-          <span>{config.label}</span>
+          <span>{statusText}</span>
         </div>
       </button>
 
       {/* Expanded content */}
       {expanded && (
         <div className="px-4 pb-4 pt-2 border-t border-zinc-700/30 animate-fadeIn">
-          {/* Arguments */}
+          {/* Diff view for edit_file */}
+          {isEditFile && editFileArgs && showDiff && (
+            <div className="mb-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 mb-2">
+                <span>Changes</span>
+                <div className="flex-1 h-px bg-zinc-700/50" />
+                <button
+                  onClick={() => setShowDiff(false)}
+                  className="text-zinc-500 hover:text-zinc-300 px-2"
+                >
+                  隐藏
+                </button>
+              </div>
+              <DiffView
+                oldText={editFileArgs.oldString}
+                newText={editFileArgs.newString}
+                fileName={editFileArgs.filePath.split('/').pop()}
+                className="border border-zinc-700/50"
+              />
+            </div>
+          )}
+
+          {/* Arguments - 对 edit_file 显示简化版本 */}
           <div className="mb-3">
             <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 mb-2">
               <span>Arguments</span>
               <div className="flex-1 h-px bg-zinc-700/50" />
+              {isEditFile && !showDiff && (
+                <button
+                  onClick={() => setShowDiff(true)}
+                  className="text-primary-400 hover:text-primary-300 px-2"
+                >
+                  查看差异
+                </button>
+              )}
             </div>
             <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded-lg p-3 overflow-x-auto border border-zinc-800/50">
-              {JSON.stringify(toolCall.arguments, null, 2)}
+              {isEditFile && editFileArgs ? (
+                // 简化显示 edit_file 参数
+                JSON.stringify({
+                  file_path: editFileArgs.filePath,
+                  old_string: editFileArgs.oldString.length > 100
+                    ? `${editFileArgs.oldString.slice(0, 100)}... (${editFileArgs.oldString.length} chars)`
+                    : editFileArgs.oldString,
+                  new_string: editFileArgs.newString.length > 100
+                    ? `${editFileArgs.newString.slice(0, 100)}... (${editFileArgs.newString.length} chars)`
+                    : editFileArgs.newString,
+                }, null, 2)
+              ) : (
+                JSON.stringify(toolCall.arguments, null, 2)
+              )}
             </pre>
           </div>
 
@@ -380,6 +454,15 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
               <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 mb-2">
                 <span>Result</span>
                 <div className="flex-1 h-px bg-zinc-700/50" />
+                {toolCall.result.duration && (
+                  <span className="flex items-center gap-1 text-zinc-600">
+                    <Clock className="w-3 h-3" />
+                    {toolCall.result.duration < 1000
+                      ? `${toolCall.result.duration}ms`
+                      : `${(toolCall.result.duration / 1000).toFixed(1)}s`
+                    }
+                  </span>
+                )}
               </div>
               <pre className={`text-xs bg-zinc-900/50 rounded-lg p-3 overflow-x-auto max-h-48 border ${
                 status === 'error'

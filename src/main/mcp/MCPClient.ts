@@ -248,8 +248,13 @@ export class MCPClient {
 
   /**
    * 调用 MCP 工具
+   * @param toolCallId - 工具调用 ID（用于前端匹配）
+   * @param serverName - MCP 服务器名称
+   * @param toolName - 工具名称
+   * @param args - 工具参数
    */
   async callTool(
+    toolCallId: string,
     serverName: string,
     toolName: string,
     args: Record<string, unknown>
@@ -257,7 +262,7 @@ export class MCPClient {
     const client = this.clients.get(serverName);
     if (!client) {
       return {
-        toolCallId: '',
+        toolCallId,
         success: false,
         error: `MCP server ${serverName} not connected`,
       };
@@ -286,7 +291,7 @@ export class MCPClient {
       }
 
       return {
-        toolCallId: '',
+        toolCallId,
         success: !result.isError,
         output,
         duration: Date.now() - startTime,
@@ -294,7 +299,7 @@ export class MCPClient {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'MCP tool call failed';
       return {
-        toolCallId: '',
+        toolCallId,
         success: false,
         error: errorMessage,
         duration: Date.now() - startTime,

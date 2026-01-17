@@ -339,14 +339,8 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
         </div>
 
         {/* Tool icon with emoji */}
-        <div className={`relative p-2 rounded-lg ${config.bg} text-lg`}>
+        <div className={`p-2 rounded-lg ${config.bg} text-lg`}>
           <span>{toolIcon}</span>
-          {/* Status dot */}
-          <div className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${
-            status === 'success' ? 'bg-emerald-400' :
-            status === 'error' ? 'bg-red-400' :
-            'bg-amber-400 animate-pulse'
-          }`} />
         </div>
 
         {/* Tool summary instead of just name */}

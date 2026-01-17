@@ -186,14 +186,14 @@ export const GenerationBadge: React.FC = () => {
 
   return (
     <div className="relative">
-      {/* Badge Button - 格式: Gen X 代际名称 */}
+      {/* Badge Button - 格式: Gen1 基础工具期 */}
       <button
         onClick={() => setShowDropdown(!showDropdown)}
         className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors ${config.color}`}
       >
         {config.icon}
-        <span className="font-medium">Gen {currentGeneration.id.replace('gen', '')}</span>
-        <span className="text-xs opacity-70">{currentGeneration.name}</span>
+        <span className="font-medium">Gen{currentGeneration.id.replace('gen', '')}</span>
+        <span className="text-xs opacity-70">{generationConfigs[currentGeneration.id]?.theme || currentGeneration.name}</span>
         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
       </button>
 

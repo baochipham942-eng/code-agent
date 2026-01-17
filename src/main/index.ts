@@ -75,6 +75,29 @@ async function initializeServices(): Promise<void> {
   configService = new ConfigService();
   await configService.initialize();
 
+  // Restore devModeAutoApprove from persistent storage (SecureStorage)
+  // This ensures the setting survives data clear operations
+  try {
+    const { getSecureStorage } = await import('./services/SecureStorage');
+    const storage = getSecureStorage();
+    const persistedValue = storage.get('settings.devModeAutoApprove');
+    if (persistedValue !== undefined) {
+      const enabled = persistedValue === 'true';
+      const currentSettings = configService.getSettings();
+      if (currentSettings.permissions.devModeAutoApprove !== enabled) {
+        await configService.updateSettings({
+          permissions: {
+            ...currentSettings.permissions,
+            devModeAutoApprove: enabled,
+          },
+        });
+        console.log('[Init] Restored devModeAutoApprove from persistent storage:', enabled);
+      }
+    }
+  } catch (error) {
+    console.warn('[Init] Failed to restore devModeAutoApprove from persistent storage:', error);
+  }
+
   const settings = configService.getSettings();
 
   // Initialize database (SQLite persistence)
@@ -1187,6 +1210,32 @@ function setupIpcHandlers(): void {
     const clearedDb = db.cleanExpiredCache();
 
     return clearedMemory + clearedDb;
+  });
+
+  // Persistent settings (stored in secure storage, survive data clear)
+  ipcMain.handle(IPC_CHANNELS.PERSISTENT_GET_DEV_MODE, async () => {
+    const { getSecureStorage } = await import('./services/SecureStorage');
+    const storage = getSecureStorage();
+    const value = storage.get('settings.devModeAutoApprove');
+    // Default to true if not set
+    return value === undefined ? true : value === 'true';
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PERSISTENT_SET_DEV_MODE, async (_, enabled: boolean) => {
+    const { getSecureStorage } = await import('./services/SecureStorage');
+    const storage = getSecureStorage();
+    storage.set('settings.devModeAutoApprove', enabled ? 'true' : 'false');
+
+    // Also update ConfigService for runtime use
+    if (configService) {
+      const settings = configService.getSettings();
+      await configService.updateSettings({
+        permissions: {
+          ...settings.permissions,
+          devModeAutoApprove: enabled,
+        },
+      });
+    }
   });
 }
 

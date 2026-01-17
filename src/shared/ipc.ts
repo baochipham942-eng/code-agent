@@ -222,6 +222,10 @@ export const IPC_CHANNELS = {
   // Data management channels
   DATA_GET_STATS: 'data:get-stats',
   DATA_CLEAR_TOOL_CACHE: 'data:clear-tool-cache',
+
+  // Persistent settings (stored in secure storage, not affected by data clear)
+  PERSISTENT_GET_DEV_MODE: 'persistent:get-dev-mode',
+  PERSISTENT_SET_DEV_MODE: 'persistent:set-dev-mode',
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -352,6 +356,10 @@ export interface IpcInvokeHandlers {
   // Data management
   [IPC_CHANNELS.DATA_GET_STATS]: () => Promise<DataStats>;
   [IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE]: () => Promise<number>;
+
+  // Persistent settings (survive data clear)
+  [IPC_CHANNELS.PERSISTENT_GET_DEV_MODE]: () => Promise<boolean>;
+  [IPC_CHANNELS.PERSISTENT_SET_DEV_MODE]: (enabled: boolean) => Promise<void>;
 }
 
 // ----------------------------------------------------------------------------

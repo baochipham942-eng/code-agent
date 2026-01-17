@@ -20,6 +20,8 @@ interface SecureStorageData {
   'auth.quick_token'?: string;
   // User info cache
   'auth.user'?: string;
+  // Developer settings (persisted across data clears)
+  'settings.devModeAutoApprove'?: string;
 }
 
 // Generate a machine-specific encryption key

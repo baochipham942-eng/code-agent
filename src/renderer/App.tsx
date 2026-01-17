@@ -11,16 +11,14 @@ import { WorkspacePanel } from './components/WorkspacePanel';
 import { TitleBar } from './components/TitleBar';
 import { SettingsModal } from './components/SettingsModal';
 import { GenerationBadge } from './components/GenerationBadge';
-import { PlanningPanel } from './components/PlanningPanel';
-import { FindingsPanel } from './components/FindingsPanel';
-import { ErrorsPanel } from './components/ErrorsPanel';
 import { MemoryPanel } from './components/MemoryPanel';
+import { ObservabilityPanel } from './components/ObservabilityPanel';
 import { UserQuestionModal } from './components/UserQuestionModal';
 import { AuthModal } from './components/AuthModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
 import { PermissionModal } from './components/PermissionModal';
 import { useDisclosure } from './hooks/useDisclosure';
-import { Target, Lightbulb, AlertOctagon, Brain } from 'lucide-react';
+import { Activity, Brain } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 
@@ -138,9 +136,8 @@ export const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  // Check if Gen 3+ (persistent planning available)
-  const isPlanningAvailable =
-    (currentGeneration.id === 'gen3' || currentGeneration.id === 'gen4') && isAdvanced;
+  // Check if planning panel is available (Advanced+ disclosure level)
+  const isPlanningAvailable = isAdvanced;
 
   // Check if Gen 5 (memory features available)
   const isMemoryAvailable = currentGeneration.id === 'gen5';

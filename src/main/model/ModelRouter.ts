@@ -539,11 +539,15 @@ export class ModelRouter {
       },
     }));
 
+    // 根据模型能力获取推荐的 maxTokens
+    const modelInfo = this.getModelInfo('deepseek', config.model || 'deepseek-chat');
+    const recommendedMaxTokens = modelInfo?.maxTokens || 8192;
+
     const requestBody: Record<string, unknown> = {
       model: config.model || 'deepseek-chat',
       messages: this.convertToOpenAIMessages(messages),
       temperature: config.temperature ?? 0.7,
-      max_tokens: config.maxTokens ?? 4096,
+      max_tokens: config.maxTokens ?? recommendedMaxTokens,
       stream: false,
     };
 
@@ -659,9 +663,10 @@ export class ModelRouter {
       } as any);
     }
 
+    // Claude 模型使用更高的默认 maxTokens
     const requestBody: Record<string, unknown> = {
       model: config.model || 'claude-sonnet-4-20250514',
-      max_tokens: config.maxTokens ?? 4096,
+      max_tokens: config.maxTokens ?? 8192,
       messages: this.convertToClaudeMessages(otherMessages),
     };
 
@@ -720,11 +725,12 @@ export class ModelRouter {
       },
     }));
 
+    // OpenAI 模型使用更高的默认 maxTokens
     const requestBody: Record<string, unknown> = {
       model: config.model || 'gpt-4o',
       messages: this.convertToOpenAIMessages(messages),
       temperature: config.temperature ?? 0.7,
-      max_tokens: config.maxTokens ?? 4096,
+      max_tokens: config.maxTokens ?? 8192,
     };
 
     if (openaiTools.length > 0) {
@@ -767,11 +773,12 @@ export class ModelRouter {
       },
     }));
 
+    // Groq 模型使用更高的默认 maxTokens
     const requestBody: Record<string, unknown> = {
       model: config.model || 'llama-3.3-70b-versatile',
       messages: this.convertToOpenAIMessages(messages),
       temperature: config.temperature ?? 0.7,
-      max_tokens: config.maxTokens ?? 4096,
+      max_tokens: config.maxTokens ?? 8192,
       stream: !!onStream,
     };
 
@@ -1227,11 +1234,12 @@ export class ModelRouter {
       },
     }));
 
+    // 智谱模型使用更高的默认 maxTokens
     const requestBody: Record<string, unknown> = {
       model: config.model || 'glm-4-flash',
       messages: this.convertToOpenAIMessages(messages),
       temperature: config.temperature ?? 0.7,
-      max_tokens: config.maxTokens ?? 4096,
+      max_tokens: config.maxTokens ?? 8192,
       stream: !!onStream,
     };
 
@@ -1286,11 +1294,12 @@ export class ModelRouter {
       },
     }));
 
+    // 千问模型使用更高的默认 maxTokens
     const requestBody: Record<string, unknown> = {
       model: config.model || 'qwen-max',
       messages: this.convertToOpenAIMessages(messages),
       temperature: config.temperature ?? 0.7,
-      max_tokens: config.maxTokens ?? 4096,
+      max_tokens: config.maxTokens ?? 8192,
       stream: !!onStream,
     };
 
@@ -1344,11 +1353,12 @@ export class ModelRouter {
       },
     }));
 
+    // Moonshot 模型使用更高的默认 maxTokens
     const requestBody: Record<string, unknown> = {
       model: config.model || 'moonshot-v1-8k',
       messages: this.convertToOpenAIMessages(messages),
       temperature: config.temperature ?? 0.7,
-      max_tokens: config.maxTokens ?? 4096,
+      max_tokens: config.maxTokens ?? 8192,
       stream: !!onStream,
     };
 
@@ -1392,6 +1402,7 @@ export class ModelRouter {
     const baseUrl = config.baseUrl || 'https://api.perplexity.ai';
 
     // Perplexity 使用类 OpenAI 格式，但不支持工具调用
+    // Perplexity 用于搜索，通常不需要太大的 maxTokens
     const requestBody: Record<string, unknown> = {
       model: config.model || 'sonar-pro',
       messages: this.convertToOpenAIMessages(messages),

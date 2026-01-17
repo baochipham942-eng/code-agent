@@ -290,7 +290,7 @@ export const Sidebar: React.FC = () => {
         <div className="mt-3 pt-3 border-t border-zinc-800/50 flex items-center justify-center">
           <div className="flex items-center gap-2 text-xs text-zinc-600">
             <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span>Code Agent v0.2.2</span>
+            <span>Code Agent v0.2.3</span>
           </div>
         </div>
       </div>

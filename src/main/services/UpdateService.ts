@@ -433,19 +433,36 @@ export class UpdateService {
 
   private downloadFile(url: string, destPath: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const protocol = url.startsWith('https') ? https : http;
+      const parsedUrl = new URL(url);
+      const protocol = parsedUrl.protocol === 'https:' ? https : http;
       const file = fs.createWriteStream(destPath);
 
       const startTime = Date.now();
       let downloadedBytes = 0;
 
-      protocol.get(url, (res) => {
+      console.log(`[UpdateService] Downloading from: ${url}`);
+
+      const options = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Code-Agent-Updater/1.0',
+          'Accept': '*/*',
+        },
+      };
+
+      const req = protocol.request(options, (res) => {
+        console.log(`[UpdateService] Response status: ${res.statusCode}`);
+
         // Handle redirects
         if (res.statusCode === 301 || res.statusCode === 302) {
           const redirectUrl = res.headers.location;
+          console.log(`[UpdateService] Redirecting to: ${redirectUrl}`);
           if (redirectUrl) {
             file.close();
-            fs.unlinkSync(destPath);
+            try { fs.unlinkSync(destPath); } catch {}
             this.downloadFile(redirectUrl, destPath).then(resolve).catch(reject);
             return;
           }
@@ -453,19 +470,20 @@ export class UpdateService {
 
         if (res.statusCode !== 200) {
           file.close();
-          fs.unlinkSync(destPath);
+          try { fs.unlinkSync(destPath); } catch {}
           reject(new Error(`HTTP ${res.statusCode}: ${res.statusMessage}`));
           return;
         }
 
         const totalBytes = parseInt(res.headers['content-length'] || '0', 10);
+        console.log(`[UpdateService] Total size: ${totalBytes} bytes`);
 
         res.on('data', (chunk: Buffer) => {
           downloadedBytes += chunk.length;
 
           if (this.onProgress && totalBytes > 0) {
             const elapsed = (Date.now() - startTime) / 1000;
-            const bytesPerSecond = downloadedBytes / elapsed;
+            const bytesPerSecond = elapsed > 0 ? downloadedBytes / elapsed : 0;
 
             this.onProgress({
               percent: (downloadedBytes / totalBytes) * 100,
@@ -480,25 +498,33 @@ export class UpdateService {
 
         file.on('finish', () => {
           file.close();
+          console.log(`[UpdateService] Download finished: ${downloadedBytes} bytes`);
           resolve();
         });
 
         file.on('error', (err) => {
+          console.error(`[UpdateService] File write error:`, err);
           file.close();
           fs.unlink(destPath, () => {}); // Delete incomplete file
           reject(err);
         });
 
         res.on('error', (err) => {
+          console.error(`[UpdateService] Response error:`, err);
           file.close();
           fs.unlink(destPath, () => {});
           reject(err);
         });
-      }).on('error', (err) => {
+      });
+
+      req.on('error', (err) => {
+        console.error(`[UpdateService] Request error:`, err);
         file.close();
         fs.unlink(destPath, () => {});
         reject(err);
       });
+
+      req.end();
     });
   }
 }

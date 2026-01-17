@@ -276,13 +276,21 @@ class AuthService {
 
     const supabase = getSupabase();
     await supabase.auth.signOut();
-    getSecureStorage().clearAuthData();
+    const storage = getSecureStorage();
+    await storage.clearSessionFromKeychain(); // Also clear from Keychain
+    storage.clearAuthData();
     this.currentUser = null;
     this.notifyAuthChange(null);
   }
 
   getCurrentUser(): AuthUser | null {
     return this.currentUser;
+  }
+
+  // Clear current user without calling Supabase signOut (used when clearing cache)
+  clearCurrentUser(): void {
+    this.currentUser = null;
+    this.notifyAuthChange(null);
   }
 
   async updateProfile(updates: Partial<AuthUser>): Promise<AuthResult> {

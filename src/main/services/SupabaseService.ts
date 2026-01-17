@@ -322,9 +322,32 @@ export function initSupabase(url: string, anonKey: string): SupabaseClient<Datab
   supabaseInstance = createClient<Database>(url, anonKey, {
     auth: {
       storage: {
-        getItem: (key) => secureStorage.getItem(key),
-        setItem: (key, value) => secureStorage.setItem(key, value),
-        removeItem: (key) => secureStorage.removeItem(key),
+        getItem: async (key) => {
+          // For session, try Keychain first (survives app reinstall)
+          if (key === 'supabase.session') {
+            const keychainSession = await secureStorage.getSessionFromKeychain();
+            if (keychainSession) {
+              // Sync to electron-store for faster subsequent reads
+              secureStorage.set('supabase.session', keychainSession);
+              return keychainSession;
+            }
+          }
+          return secureStorage.getItem(key);
+        },
+        setItem: async (key, value) => {
+          secureStorage.setItem(key, value);
+          // Also save session to Keychain for persistence across reinstalls
+          if (key === 'supabase.session') {
+            await secureStorage.saveSessionToKeychain(value);
+          }
+        },
+        removeItem: async (key) => {
+          secureStorage.removeItem(key);
+          // Also clear from Keychain
+          if (key === 'supabase.session') {
+            await secureStorage.clearSessionFromKeychain();
+          }
+        },
       },
       autoRefreshToken: true,
       persistSession: true,

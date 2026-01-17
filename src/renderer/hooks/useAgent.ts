@@ -53,11 +53,18 @@ export const useAgent = () => {
 
           case 'message':
             // Message from assistant (could be text or tool calls)
+            // 注意：流式输出时，文本内容已经通过 stream_chunk 接收了
+            // 这里只需要更新工具调用，不要覆盖已有的流式内容
             if (event.data) {
               const lastMessage = currentMessages[currentMessages.length - 1];
               if (lastMessage?.role === 'assistant') {
+                // 如果已有流式内容，保留它；否则使用 event.data.content
+                const existingContent = lastMessage.content || '';
+                const newContent = event.data.content || '';
+
                 updateMessage(lastMessage.id, {
-                  content: event.data.content || lastMessage.content,
+                  // 优先保留已有的流式内容（通常更长）
+                  content: existingContent.length >= newContent.length ? existingContent : newContent,
                   toolCalls: event.data.toolCalls || lastMessage.toolCalls,
                 });
               }
@@ -69,14 +76,103 @@ export const useAgent = () => {
             }
             break;
 
-          case 'tool_call_start':
-            // Add tool call to the last message
+          case 'stream_tool_call_start':
+            // 流式工具调用开始 - 立即显示工具调用（带 streaming 标记）
             if (event.data) {
               const lastMessage = currentMessages[currentMessages.length - 1];
-              console.log('[useAgent] tool_call_start - lastMessage:', lastMessage?.id, 'event.data:', event.data);
+              console.log('[useAgent] stream_tool_call_start:', event.data);
               if (lastMessage?.role === 'assistant') {
+                const newToolCall: ToolCall = {
+                  id: event.data.id || `pending_${event.data.index}`,
+                  name: event.data.name || '',
+                  arguments: {},
+                  _streaming: true, // 标记为流式中
+                  _argumentsRaw: '', // 累积原始参数字符串
+                };
                 updateMessage(lastMessage.id, {
-                  toolCalls: [...(lastMessage.toolCalls || []), event.data],
+                  toolCalls: [...(lastMessage.toolCalls || []), newToolCall],
+                });
+              }
+            }
+            break;
+
+          case 'stream_tool_call_delta':
+            // 流式工具调用增量更新
+            if (event.data) {
+              const lastMessage = currentMessages[currentMessages.length - 1];
+              if (lastMessage?.role === 'assistant' && lastMessage.toolCalls) {
+                const index = event.data.index ?? 0;
+                const updatedToolCalls = lastMessage.toolCalls.map((tc: ToolCall, i: number) => {
+                  // 简单地按索引匹配
+                  if (i === index) {
+                    const newTc = { ...tc };
+                    if (event.data.name && !tc.name) {
+                      newTc.name = event.data.name;
+                    }
+                    if (event.data.argumentsDelta) {
+                      newTc._argumentsRaw = (tc._argumentsRaw || '') + event.data.argumentsDelta;
+                      // 尝试解析完整的 JSON
+                      try {
+                        newTc.arguments = JSON.parse(newTc._argumentsRaw);
+                      } catch {
+                        // JSON 还不完整，保持原样
+                      }
+                    }
+                    return newTc;
+                  }
+                  return tc;
+                });
+                updateMessage(lastMessage.id, { toolCalls: updatedToolCalls });
+              }
+            }
+            break;
+
+          case 'tool_call_start':
+            // 工具调用开始（来自 AgentLoop，表示工具即将执行）
+            // 此时需要用后端的真实 ID 更新前端的临时 ID
+            // event.data 包含: id, name, arguments, _index (工具在数组中的索引)
+            if (event.data) {
+              const lastMessage = currentMessages[currentMessages.length - 1];
+              const toolIndex = event.data._index;
+              console.log('[useAgent] tool_call_start - index:', toolIndex, 'id:', event.data.id, 'name:', event.data.name);
+
+              if (lastMessage?.role === 'assistant' && lastMessage.toolCalls) {
+                // 策略：优先用索引匹配，因为同一消息可能有多个同名工具调用
+                if (toolIndex !== undefined && toolIndex < lastMessage.toolCalls.length) {
+                  const updatedToolCalls = lastMessage.toolCalls.map((tc: ToolCall, idx: number) => {
+                    if (idx === toolIndex) {
+                      // 用后端的真实数据更新，保留前端已有的 arguments（流式解析的）
+                      console.log('[useAgent] Updating tool call at index', idx, ':', tc.id, '->', event.data.id);
+                      return {
+                        ...tc,
+                        id: event.data.id, // 关键：更新为后端的真实 ID
+                        name: event.data.name || tc.name,
+                        arguments: tc.arguments && Object.keys(tc.arguments).length > 0 ? tc.arguments : event.data.arguments,
+                        _streaming: false, // 标记为非流式（已确定）
+                      };
+                    }
+                    return tc;
+                  });
+                  updateMessage(lastMessage.id, { toolCalls: updatedToolCalls });
+                } else {
+                  // 索引不存在或超出范围，尝试按名称匹配 streaming 状态的工具调用
+                  const streamingIndex = lastMessage.toolCalls.findIndex(
+                    (tc: ToolCall) => tc._streaming && tc.name === event.data.name
+                  );
+                  if (streamingIndex >= 0) {
+                    const updatedToolCalls = lastMessage.toolCalls.map((tc: ToolCall, idx: number) => {
+                      if (idx === streamingIndex) {
+                        return { ...tc, id: event.data.id, _streaming: false };
+                      }
+                      return tc;
+                    });
+                    updateMessage(lastMessage.id, { toolCalls: updatedToolCalls });
+                  }
+                }
+              } else if (lastMessage?.role === 'assistant') {
+                // 没有工具调用列表，直接添加
+                updateMessage(lastMessage.id, {
+                  toolCalls: [event.data],
                 });
               }
             }

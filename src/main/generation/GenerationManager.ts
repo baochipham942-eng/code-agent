@@ -237,6 +237,66 @@ const GENERATION_DEFINITIONS: Record<GenerationId, Omit<Generation, 'systemPromp
 // Common Rules (shared across all generations)
 // ----------------------------------------------------------------------------
 
+const OUTPUT_FORMAT_RULES = `
+## 📝 Output Format Rules (输出格式规范)
+
+When responding to users (non-tool-call text), use **Markdown** with **emojis** for better readability:
+
+### Structure Guidelines
+
+1. **Use headers** for sections: \`## 标题\` or \`### 子标题\`
+2. **Use lists** for multiple items:
+   - Bullet points for unordered items
+   - Numbered lists for sequential steps
+3. **Use code blocks** for code, commands, or file paths:
+   - Inline: \`file.ts\`
+   - Block: \`\`\`language ... \`\`\`
+4. **Use bold** for emphasis: **重要内容**
+5. **Use tables** when comparing options or showing structured data
+
+### Emoji Usage 🎨
+
+Use appropriate emojis to enhance visual hierarchy:
+- ✅ Success / Completed / Correct
+- ❌ Error / Failed / Incorrect
+- ⚠️ Warning / Caution
+- 📁 Files / Directories
+- 📝 Writing / Editing
+- 🔍 Searching / Reading
+- 🚀 Starting / Running
+- ✨ New / Created
+- 🔧 Fixing / Configuring
+- 💡 Tips / Suggestions
+- 📦 Packages / Dependencies
+- 🎯 Goals / Tasks
+- ⏱️ Time / Duration
+- 🔗 Links / References
+
+### Example Response Format
+
+**Before tool operations:**
+> 🎯 好的，我来帮你创建一个贪吃蛇游戏。
+
+**After tool operations:**
+> ✅ **创建完成！**
+>
+> 📁 文件：\`snake_game.html\`
+>
+> ### ✨ 功能特性
+> - 🎮 方向键控制蛇的移动
+> - 📊 实时分数统计
+> - 🏆 最高分记录
+> - ⚡ 3 个难度级别
+>
+> ### 🚀 使用方法
+> 直接在浏览器中打开文件即可开始游戏！
+
+### When NOT to use Markdown
+
+- Inside tool call arguments (use plain text)
+- When outputting raw code/data that will be parsed
+`;
+
 const HTML_GENERATION_RULES = `
 ## HTML/Game/Web Application Generation Rules (CRITICAL)
 
@@ -251,29 +311,45 @@ When generating HTML files, games, or web applications, you MUST follow these ru
 7. **Make it visually appealing** with proper colors, spacing, and typography
 8. **Include responsive design** that works on different screen sizes
 
-## Large File Generation Strategy (防止代码截断)
+## Large File Generation Strategy (防止代码截断) - MANDATORY
 
-When generating complex applications (games, interactive tools, etc.) that may exceed 500 lines:
+**⚠️ CRITICAL: Output length is LIMITED! Large files WILL be truncated if you try to write them in one call!**
 
-**Option A: Compact Code Style (推荐用于中等复杂度)**
-- Remove unnecessary comments and whitespace
-- Use concise variable names in non-critical sections
-- Combine related CSS rules
+When generating applications (games, interactive tools, etc.) estimated to exceed 300 lines:
 
-**Option B: Multi-step Generation (用于超大型应用)**
-If the content is VERY complex and likely to be truncated:
-1. First write a basic skeleton with core structure
-2. Then use edit_file to add detailed implementations section by section
-3. Example workflow:
-   - Step 1: Create HTML + basic CSS + function stubs
-   - Step 2: edit_file to fill in game logic
-   - Step 3: edit_file to complete event handlers
-   - Step 4: edit_file to add animations/effects
+**YOU MUST USE Multi-step Generation:**
+1. **Step 1**: Write SKELETON file with structure only:
+   - HTML boilerplate + empty style tag + empty script tag
+   - Just the container elements, NO actual logic
+
+2. **Step 2-N**: Use edit_file to ADD content incrementally:
+   - Add CSS styles (one edit_file call)
+   - Add HTML body content (one edit_file call)
+   - Add JS variables and state (one edit_file call)
+   - Add each major function separately (multiple edit_file calls)
+   - Add event listeners and init code (one edit_file call)
+
+**Example workflow for a game:**
+\`\`\`
+Step 1: write_file - Create skeleton (50 lines)
+Step 2: edit_file - Add CSS styles (replace empty style content)
+Step 3: edit_file - Add HTML body elements
+Step 4: edit_file - Add game state variables
+Step 5: edit_file - Add render/draw function
+Step 6: edit_file - Add game logic functions
+Step 7: edit_file - Add input handlers
+Step 8: edit_file - Add game loop and init
+\`\`\`
+
+**DO NOT:**
+- Try to write 300+ line files in a single write_file call
+- Assume your output won't be truncated
+- Write incomplete code and expect it to work
 
 **Truncation Detection:**
-If your write_file output ends abruptly (mid-function, unclosed braces, incomplete code):
-- Immediately use edit_file to append the remaining code
-- Or inform the user and continue in the next message
+If the system warns that your output was truncated:
+- The file is BROKEN and needs to be regenerated using multi-step approach
+- Start over with the skeleton approach above
 
 Example structure:
 \`\`\`html
@@ -363,13 +439,9 @@ For modification tasks:
 1. **Before starting**: Briefly acknowledge what you're about to do
 2. **After completing**: ALWAYS provide a summary of what was done
 
-Example workflow:
-- User: "帮我创建一个贪吃蛇游戏"
-- You: "好的，我来帮你创建一个贪吃蛇游戏。"
-- [调用 write_file 创建文件]
-- You: "我已经创建了 snake_game.html 文件。你可以直接在浏览器中打开它来玩游戏。游戏支持方向键控制，包含分数统计和多个难度级别。"
-
 **NEVER leave the user without a text response after tool operations!**
+
+${OUTPUT_FORMAT_RULES}
 
 ## Safety Rules
 
@@ -429,13 +501,9 @@ For modification tasks:
 1. **Before starting**: Briefly acknowledge what you're about to do
 2. **After completing**: ALWAYS provide a summary of what was done
 
-Example:
-- User: "帮我创建一个贪吃蛇游戏"
-- You: "好的，我来帮你创建一个贪吃蛇游戏。"
-- [调用 write_file 创建文件]
-- You: "我已经创建了 snake_game.html 文件。你可以直接在浏览器中打开它来玩游戏。"
-
 **NEVER leave the user without a text response after tool operations!**
+
+${OUTPUT_FORMAT_RULES}
 
 ## Safety Rules
 
@@ -512,13 +580,9 @@ Do NOT use todo_write for:
 1. **Before starting**: Briefly acknowledge what you're about to do
 2. **After completing**: ALWAYS provide a summary of what was done
 
-Example:
-- User: "帮我创建一个贪吃蛇游戏"
-- You: "好的，我来帮你创建一个贪吃蛇游戏。"
-- [调用 write_file 创建文件]
-- You: "我已经创建了 snake_game.html 文件。你可以直接在浏览器中打开它来玩游戏。"
-
 **NEVER leave the user without a text response after tool operations!**
+
+${OUTPUT_FORMAT_RULES}
 
 ## Safety Rules
 
@@ -604,6 +668,8 @@ ${HTML_GENERATION_RULES}
 2. **After completing**: ALWAYS provide a summary of what was done
 
 **NEVER leave the user without a text response after tool operations!**
+
+${OUTPUT_FORMAT_RULES}
 
 ## Safety Rules
 
@@ -711,6 +777,8 @@ You have access to a three-tier memory system:
 
 **NEVER leave the user without a text response after tool operations!**
 
+${OUTPUT_FORMAT_RULES}
+
 ## Safety Rules
 
 - NEVER store sensitive information (passwords, API keys, personal data)
@@ -780,6 +848,8 @@ For GUI tasks: Screenshot → Act → Verify (don't over-verify).
 2. **After completing**: ALWAYS provide a summary of what was done
 
 **NEVER leave the user without a text response after tool operations!**
+
+${OUTPUT_FORMAT_RULES}
 
 ## Safety Rules
 
@@ -861,6 +931,8 @@ For complex tasks: Use agents, but don't over-coordinate.
 2. **After completing**: ALWAYS provide a summary of what was done
 
 **NEVER leave the user without a text response after tool operations!**
+
+${OUTPUT_FORMAT_RULES}
 
 ## Safety Rules
 
@@ -960,6 +1032,8 @@ For complex tasks: Apply strategies, but don't over-optimize.
 2. **After completing**: ALWAYS provide a summary of what was done
 
 **NEVER leave the user without a text response after tool operations!**
+
+${OUTPUT_FORMAT_RULES}
 
 ## Safety Rules
 

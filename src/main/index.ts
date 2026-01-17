@@ -1197,9 +1197,13 @@ function setupIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE, async () => {
     const { getToolCache } = await import('./services/ToolCache');
     const { getDatabase } = await import('./services/DatabaseService');
+    const { getSecureStorage } = await import('./services/SecureStorage');
+    const { getSupabase, isSupabaseInitialized } = await import('./services/SupabaseService');
+    const { getAuthService } = await import('./services/AuthService');
 
     const cache = getToolCache();
     const db = getDatabase();
+    const storage = getSecureStorage();
 
     // 清理内存缓存
     const cacheStats = cache.getStats();
@@ -1208,6 +1212,27 @@ function setupIpcHandlers(): void {
 
     // 清理数据库中过期的工具执行缓存
     const clearedDb = db.cleanExpiredCache();
+
+    // 清除认证状态 (从 Keychain 和 electron-store)
+    await storage.clearSessionFromKeychain();
+    storage.clearAuthData();
+
+    // 调用 Supabase 登出
+    if (isSupabaseInitialized()) {
+      try {
+        const supabase = getSupabase();
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.error('Failed to sign out from Supabase:', e);
+      }
+    }
+
+    // 清除 AuthService 状态
+    const authService = getAuthService();
+    authService.clearCurrentUser();
+
+    // 通知前端登出
+    mainWindow?.webContents.send(IPC_CHANNELS.AUTH_EVENT, { type: 'signed_out' });
 
     return clearedMemory + clearedDb;
   });

@@ -8,6 +8,7 @@ import { app } from 'electron';
 import type { AppSettings, GenerationId, ModelProvider } from '../../shared/types';
 import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
+import { getSecureStorage } from './SecureStorage';
 
 // Load .env file from project root or app resources
 import { app as electronApp } from 'electron';
@@ -134,8 +135,52 @@ export class ConfigService {
       }
       // Use default settings
       this.settings = { ...DEFAULT_SETTINGS };
-      // Save default settings
-      await this.save();
+    }
+
+    // Try to restore settings from Keychain (survives app reinstall)
+    await this.restoreFromKeychain();
+
+    // Save merged settings
+    await this.save();
+  }
+
+  // Restore user settings from Keychain (for app reinstall scenarios)
+  private async restoreFromKeychain(): Promise<void> {
+    try {
+      const storage = getSecureStorage();
+      const keychainSettings = await storage.getSettingsFromKeychain();
+
+      if (keychainSettings) {
+        console.log('[ConfigService] Restoring settings from Keychain:', Object.keys(keychainSettings));
+
+        // Restore generation
+        if (keychainSettings.generation && typeof keychainSettings.generation === 'string') {
+          this.settings.generation.default = keychainSettings.generation as GenerationId;
+        }
+
+        // Restore model settings
+        if (keychainSettings.modelProvider && typeof keychainSettings.modelProvider === 'string') {
+          this.settings.models.default = keychainSettings.modelProvider as ModelProvider;
+        }
+
+        // Restore language
+        if (keychainSettings.language && typeof keychainSettings.language === 'string') {
+          this.settings.ui.language = keychainSettings.language;
+        }
+
+        // Restore devModeAutoApprove
+        if (typeof keychainSettings.devModeAutoApprove === 'boolean') {
+          this.settings.permissions.devModeAutoApprove = keychainSettings.devModeAutoApprove;
+        }
+
+        // Restore maxTokens
+        if (typeof keychainSettings.maxTokens === 'number') {
+          // Store maxTokens for use when needed (not in default settings structure)
+          (this.settings as any).maxTokens = keychainSettings.maxTokens;
+        }
+      }
+    } catch (error) {
+      console.error('[ConfigService] Failed to restore from Keychain:', error);
     }
   }
 
@@ -253,8 +298,33 @@ export class ConfigService {
       };
 
       await fs.writeFile(this.configPath, JSON.stringify(toSave, null, 2));
+
+      // Also sync key settings to Keychain for persistence across reinstalls
+      await this.syncToKeychain();
     } catch (error) {
       console.error('Failed to save config:', error);
+    }
+  }
+
+  // Sync important user settings to Keychain (survives app reinstall)
+  private async syncToKeychain(): Promise<void> {
+    try {
+      const storage = getSecureStorage();
+      const settingsToSync: Record<string, unknown> = {
+        generation: this.settings.generation.default,
+        modelProvider: this.settings.models.default,
+        language: this.settings.ui.language,
+        devModeAutoApprove: this.settings.permissions.devModeAutoApprove,
+      };
+
+      // Include maxTokens if set
+      if ((this.settings as any).maxTokens) {
+        settingsToSync.maxTokens = (this.settings as any).maxTokens;
+      }
+
+      await storage.saveSettingsToKeychain(settingsToSync);
+    } catch (error) {
+      console.error('[ConfigService] Failed to sync to Keychain:', error);
     }
   }
 

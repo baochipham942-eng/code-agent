@@ -9,9 +9,10 @@ import { app } from 'electron';
 import os from 'os';
 import keytar from 'keytar';
 
-// Keychain constants for persistent auth storage (survives app reinstall)
+// Keychain constants for persistent storage (survives app reinstall)
 const KEYCHAIN_SERVICE = 'code-agent';
-const KEYCHAIN_ACCOUNT = 'supabase-session';
+const KEYCHAIN_ACCOUNT_SESSION = 'supabase-session';
+const KEYCHAIN_ACCOUNT_SETTINGS = 'user-settings';
 
 interface SecureStorageData {
   // Auth tokens
@@ -117,7 +118,7 @@ class SecureStorageService {
   // Save session to Keychain (survives app reinstall)
   async saveSessionToKeychain(session: string): Promise<void> {
     try {
-      await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, session);
+      await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SESSION, session);
     } catch (e) {
       console.error('Failed to save session to Keychain:', e);
     }
@@ -126,7 +127,7 @@ class SecureStorageService {
   // Get session from Keychain
   async getSessionFromKeychain(): Promise<string | null> {
     try {
-      return await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
+      return await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SESSION);
     } catch (e) {
       console.error('Failed to get session from Keychain:', e);
       return null;
@@ -136,9 +137,47 @@ class SecureStorageService {
   // Clear session from Keychain (called when clearing cache)
   async clearSessionFromKeychain(): Promise<void> {
     try {
-      await keytar.deletePassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
+      await keytar.deletePassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SESSION);
     } catch (e) {
       console.error('Failed to clear session from Keychain:', e);
+    }
+  }
+
+  // ========== User Settings Keychain Methods (persist across reinstalls) ==========
+
+  // Save user settings to Keychain
+  async saveSettingsToKeychain(settings: Record<string, unknown>): Promise<void> {
+    try {
+      await keytar.setPassword(
+        KEYCHAIN_SERVICE,
+        KEYCHAIN_ACCOUNT_SETTINGS,
+        JSON.stringify(settings)
+      );
+    } catch (e) {
+      console.error('Failed to save settings to Keychain:', e);
+    }
+  }
+
+  // Get user settings from Keychain
+  async getSettingsFromKeychain(): Promise<Record<string, unknown> | null> {
+    try {
+      const settingsJson = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SETTINGS);
+      if (settingsJson) {
+        return JSON.parse(settingsJson);
+      }
+      return null;
+    } catch (e) {
+      console.error('Failed to get settings from Keychain:', e);
+      return null;
+    }
+  }
+
+  // Clear settings from Keychain (called when clearing cache)
+  async clearSettingsFromKeychain(): Promise<void> {
+    try {
+      await keytar.deletePassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SETTINGS);
+    } catch (e) {
+      console.error('Failed to clear settings from Keychain:', e);
     }
   }
 }

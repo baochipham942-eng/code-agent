@@ -6,6 +6,139 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
 
+// ----------------------------------------------------------------------------
+// Code Completeness Detection
+// ----------------------------------------------------------------------------
+
+interface CompletenessCheck {
+  isComplete: boolean;
+  issues: string[];
+  fileType: string;
+}
+
+/**
+ * 检测代码文件是否完整（未被截断）
+ */
+function checkCodeCompleteness(content: string, filePath: string): CompletenessCheck {
+  const ext = path.extname(filePath).toLowerCase();
+  const issues: string[] = [];
+
+  // 通用检测：括号匹配
+  const brackets: Record<string, string> = { '{': '}', '[': ']', '(': ')' };
+  const stack: string[] = [];
+  let inString = false;
+  let stringChar = '';
+  let escaped = false;
+
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i];
+
+    // 处理转义字符
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+
+    // 处理字符串
+    if (!inString && (char === '"' || char === "'" || char === '`')) {
+      inString = true;
+      stringChar = char;
+    } else if (inString && char === stringChar) {
+      inString = false;
+    }
+
+    if (inString) continue;
+
+    // 括号匹配
+    if (brackets[char]) {
+      stack.push(brackets[char]);
+    } else if (Object.values(brackets).includes(char)) {
+      if (stack.length === 0 || stack.pop() !== char) {
+        // 括号不匹配，但可能是合法的（如闭合标签）
+      }
+    }
+  }
+
+  if (stack.length > 0) {
+    issues.push(`未闭合的括号: 缺少 ${stack.length} 个闭合符号 (${stack.join(', ')})`);
+  }
+
+  // HTML/JSX 特定检测
+  if (['.html', '.htm', '.jsx', '.tsx'].includes(ext)) {
+    // 检查 HTML 标签闭合
+    if (!content.includes('</html>') && content.includes('<html')) {
+      issues.push('HTML 文件缺少 </html> 闭合标签');
+    }
+    if (!content.includes('</body>') && content.includes('<body')) {
+      issues.push('HTML 文件缺少 </body> 闭合标签');
+    }
+    if (!content.includes('</script>') && content.includes('<script')) {
+      issues.push('HTML 文件缺少 </script> 闭合标签');
+    }
+    if (!content.includes('</style>') && content.includes('<style')) {
+      issues.push('HTML 文件缺少 </style> 闭合标签');
+    }
+  }
+
+  // JavaScript/TypeScript 特定检测
+  if (['.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs'].includes(ext)) {
+    // 检查常见的截断模式
+    const trimmedEnd = content.trimEnd();
+    const lastChars = trimmedEnd.slice(-20);
+
+    // 以逗号、运算符、未完成的语句结尾
+    if (/[,+\-*\/&|=<>!?:]$/.test(trimmedEnd) && !trimmedEnd.endsWith('*/')) {
+      issues.push(`代码可能在表达式中间被截断 (以 "${lastChars.slice(-5)}" 结尾)`);
+    }
+
+    // 函数定义未完成
+    if (/function\s+\w+\s*\([^)]*$/.test(trimmedEnd)) {
+      issues.push('函数定义未完成');
+    }
+
+    // 箭头函数未完成
+    if (/=>\s*$/.test(trimmedEnd) || /=>\s*\{[^}]*$/.test(lastChars)) {
+      issues.push('箭头函数未完成');
+    }
+  }
+
+  // CSS 特定检测
+  if (['.css', '.scss', '.less'].includes(ext)) {
+    const openBraces = (content.match(/\{/g) || []).length;
+    const closeBraces = (content.match(/\}/g) || []).length;
+    if (openBraces > closeBraces) {
+      issues.push(`CSS 缺少 ${openBraces - closeBraces} 个闭合大括号`);
+    }
+  }
+
+  // JSON 特定检测
+  if (ext === '.json') {
+    try {
+      JSON.parse(content);
+    } catch (e: any) {
+      issues.push(`JSON 格式错误: ${e.message}`);
+    }
+  }
+
+  // 检测明显的截断模式
+  const trimmed = content.trimEnd();
+  if (trimmed.endsWith('ctx.') || trimmed.endsWith('this.') || trimmed.endsWith('const ') ||
+      trimmed.endsWith('let ') || trimmed.endsWith('var ') || trimmed.endsWith('function ') ||
+      trimmed.endsWith('class ') || trimmed.endsWith('import ') || trimmed.endsWith('export ')) {
+    issues.push('代码在关键字后被截断');
+  }
+
+  return {
+    isComplete: issues.length === 0,
+    issues,
+    fileType: ext || 'unknown',
+  };
+}
+
 export const writeFileTool: Tool = {
   name: 'write_file',
   description: 'Create a new file or overwrite an existing file',
@@ -68,6 +201,26 @@ export const writeFileTool: Tool = {
       await fs.writeFile(filePath, content, 'utf-8');
 
       const action = existed ? 'Updated' : 'Created';
+
+      // 检查代码完整性（仅对代码文件）
+      const codeExtensions = ['.html', '.htm', '.js', '.ts', '.jsx', '.tsx', '.css', '.scss', '.less', '.json', '.mjs', '.cjs', '.vue', '.svelte'];
+      const ext = path.extname(filePath).toLowerCase();
+
+      if (codeExtensions.includes(ext)) {
+        const completenessCheck = checkCodeCompleteness(content, filePath);
+
+        if (!completenessCheck.isComplete) {
+          // 文件可能被截断，返回警告
+          console.warn(`[write_file] ⚠️ 代码完整性检查失败: ${filePath}`);
+          console.warn(`[write_file] 问题: ${completenessCheck.issues.join('; ')}`);
+
+          return {
+            success: true,
+            output: `${action} file: ${filePath} (${content.length} bytes)\n\n⚠️ **代码完整性警告**: 检测到文件可能不完整！\n问题:\n${completenessCheck.issues.map(i => `- ${i}`).join('\n')}\n\n**建议**: 请使用 edit_file 工具追加剩余代码，或重新生成完整文件。`,
+          };
+        }
+      }
+
       return {
         success: true,
         output: `${action} file: ${filePath} (${content.length} bytes)`,

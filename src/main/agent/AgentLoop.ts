@@ -45,6 +45,8 @@ interface ModelResponse {
   type: 'text' | 'tool_use';
   content?: string;
   toolCalls?: ToolCall[];
+  truncated?: boolean; // 标记输出是否因 max_tokens 限制被截断
+  finishReason?: string; // 原始的 finish_reason
 }
 
 // ----------------------------------------------------------------------------
@@ -225,6 +227,39 @@ export class AgentLoop {
       // 3. Handle tool calls
       if (response.type === 'tool_use' && response.toolCalls) {
         console.log(`[AgentLoop] Tool calls received: ${response.toolCalls.length} calls`);
+
+        // 检测工具调用是否因为 max_tokens 被截断
+        if (response.truncated) {
+          console.warn('[AgentLoop] ⚠️ Tool call was truncated due to max_tokens limit!');
+          logCollector.agent('WARN', 'Tool call truncated - content may be incomplete');
+
+          // 检查是否有 write_file 工具调用，其 content 可能被截断
+          const writeFileCall = response.toolCalls.find(tc => tc.name === 'write_file');
+          if (writeFileCall) {
+            const content = writeFileCall.arguments?.content as string;
+            if (content) {
+              console.warn(`[AgentLoop] write_file content length: ${content.length} chars - may be truncated!`);
+
+              // 注入系统消息强制使用分步生成
+              this.injectSystemMessage(
+                `<truncation-detected>\n` +
+                `⚠️ CRITICAL: Your previous tool call was TRUNCATED due to output length limits!\n` +
+                `The file content is INCOMPLETE and will not work correctly.\n\n` +
+                `You MUST use a MULTI-STEP approach for large files:\n` +
+                `1. First, create a SKELETON file with just the structure (HTML head, empty body, empty script tag)\n` +
+                `2. Then use edit_file to ADD sections one at a time:\n` +
+                `   - Step 1: Add CSS styles\n` +
+                `   - Step 2: Add HTML body content\n` +
+                `   - Step 3: Add JavaScript variables and constants\n` +
+                `   - Step 4: Add JavaScript functions (one or two at a time)\n` +
+                `   - Step 5: Add event listeners and initialization\n\n` +
+                `DO NOT try to write the entire file in one write_file call!\n` +
+                `</truncation-detected>`
+              );
+            }
+          }
+        }
+
         response.toolCalls.forEach((tc, i) => {
           console.log(`[AgentLoop]   Tool ${i + 1}: ${tc.name}, args keys: ${Object.keys(tc.arguments || {}).join(', ')}`);
           // Log tool calls to centralized collector
@@ -377,9 +412,9 @@ export class AgentLoop {
         }
       }
 
-      // Emit tool call start event
-      console.log(`[AgentLoop] Emitting tool_call_start for ${toolCall.name}`);
-      this.onEvent({ type: 'tool_call_start', data: toolCall });
+      // Emit tool call start event with index for frontend matching
+      console.log(`[AgentLoop] Emitting tool_call_start for ${toolCall.name} (index: ${i})`);
+      this.onEvent({ type: 'tool_call_start', data: { ...toolCall, _index: i } });
 
       // Langfuse: Start tool span
       const langfuse = getLangfuseService();
@@ -416,6 +451,25 @@ export class AgentLoop {
 
         results.push(toolResult);
         console.log(`[AgentLoop] Tool ${toolCall.name} completed in ${toolResult.duration}ms`);
+
+        // Auto-continuation detection for truncated files
+        if (toolCall.name === 'write_file' && result.success && result.output) {
+          const outputStr = result.output;
+          if (outputStr.includes('⚠️ **代码完整性警告**') || outputStr.includes('代码完整性警告')) {
+            console.log('[AgentLoop] ⚠️ Detected truncated file! Injecting auto-continuation prompt');
+            this.injectSystemMessage(
+              `<auto-continuation-required>\n` +
+              `CRITICAL: The file you just wrote appears to be INCOMPLETE (truncated).\n` +
+              `The write_file tool detected missing closing brackets/tags.\n\n` +
+              `You MUST immediately:\n` +
+              `1. Use edit_file to APPEND the remaining code to complete the file\n` +
+              `2. Start from where the code was cut off\n` +
+              `3. Ensure all functions, classes, and HTML tags are properly closed\n\n` +
+              `DO NOT start over or rewrite the entire file - just APPEND the missing parts!\n` +
+              `</auto-continuation-required>`
+            );
+          }
+        }
 
         // Track read vs write operations for anti-pattern detection
         const readOnlyTools = ['read_file', 'glob', 'grep', 'list_directory', 'web_fetch'];
@@ -588,8 +642,34 @@ export class AgentLoop {
         tools,
         this.modelConfig,
         (chunk) => {
-          // Handle streaming chunks
-          this.onEvent({ type: 'stream_chunk', data: { content: chunk } });
+          // Handle streaming chunks - 支持新的结构化流式事件
+          if (typeof chunk === 'string') {
+            // 兼容旧的字符串格式
+            this.onEvent({ type: 'stream_chunk', data: { content: chunk } });
+          } else if (chunk.type === 'text') {
+            // 文本流式更新
+            this.onEvent({ type: 'stream_chunk', data: { content: chunk.content } });
+          } else if (chunk.type === 'tool_call_start') {
+            // 工具调用开始 - 流式通知前端
+            this.onEvent({
+              type: 'stream_tool_call_start',
+              data: {
+                index: chunk.toolCall?.index,
+                id: chunk.toolCall?.id,
+                name: chunk.toolCall?.name,
+              },
+            });
+          } else if (chunk.type === 'tool_call_delta') {
+            // 工具调用参数增量更新
+            this.onEvent({
+              type: 'stream_tool_call_delta',
+              data: {
+                index: chunk.toolCall?.index,
+                name: chunk.toolCall?.name,
+                argumentsDelta: chunk.toolCall?.argumentsDelta,
+              },
+            });
+          }
         }
       );
 

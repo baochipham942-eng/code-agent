@@ -1,6 +1,6 @@
 {
   "name": "code-agent",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "AI Coding Assistant with Generation Comparison",
   "type": "module",
   "main": "dist/main/index.cjs",
@@ -8,12 +8,12 @@
   "license": "MIT",
   "scripts": {
     "dev": "concurrently -k \"npm run dev:main\" \"npm run dev:renderer\" \"npm run dev:electron\"",
-    "dev:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:playwright --external:playwright-core --outfile=dist/main/index.cjs --sourcemap --watch",
+    "dev:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:playwright --external:playwright-core --external:keytar --outfile=dist/main/index.cjs --sourcemap --watch",
     "dev:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/preload/index.cjs --sourcemap",
     "dev:renderer": "vite",
     "dev:electron": "sleep 3 && electron .",
     "build": "npm run build:main && npm run build:preload && npm run build:renderer",
-    "build:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:playwright --external:playwright-core --outfile=dist/main/index.cjs --minify",
+    "build:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:playwright --external:playwright-core --external:keytar --outfile=dist/main/index.cjs --minify",
     "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/preload/index.cjs --minify",
     "build:renderer": "vite build",
     "start": "npm run build:main && npm run build:preload && electron .",

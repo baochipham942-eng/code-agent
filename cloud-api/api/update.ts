@@ -27,19 +27,15 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.3.1',
-  publishedAt: '2026-01-17T23:30:00.000Z',
+  version: '0.3.2',
+  publishedAt: '2026-01-17T23:45:00.000Z',
   releaseNotes: `
-## Code Agent v0.3.1
+## Code Agent v0.3.2
 
-### 改进
-- 观测面板改为手风琴展示方式
-- 观测面板与代际工具集挂钩：
-  - Gen1-2: Bash、Tools
-  - Gen3-4: + Plan、Agent
-  - Gen5+: + Memory
-- 代际选择格式优化为「Gen1 基础工具期」
-- 移除工具图标右上角状态点
+### 修复
+- 修复观测面板无法显示工具调用记录的问题（从 sessionStore 读取消息）
+- 观测面板手风琴展示方式
+- 观测面板与代际工具集挂钩
   `.trim(),
   // 设置为 false 表示可选更新，设置为 true 表示强制更新
   forceUpdate: false,
@@ -47,7 +43,7 @@ const LATEST_RELEASE: ReleaseInfo = {
   // minRequiredVersion: '0.2.0',
   downloads: {
     darwin: {
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.3.1/Code.Agent-0.3.1-arm64.dmg',
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.3.2/Code.Agent-0.3.2-arm64.dmg',
       size: 130000000,
     },
   },

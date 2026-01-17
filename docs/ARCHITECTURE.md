@@ -2074,9 +2074,18 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
 
-const anthropic = new Anthropic({
-  apiKey: Deno.env.get('ANTHROPIC_API_KEY'),
-});
+// 支持多个模型提供商的 API 配置
+const MODEL_APIS = {
+  deepseek: {
+    baseUrl: Deno.env.get('DEEPSEEK_API_URL') || 'https://api.deepseek.com/v1',
+    apiKey: Deno.env.get('DEEPSEEK_API_KEY'),
+  },
+  openai: {
+    baseUrl: 'https://api.openai.com/v1',
+    apiKey: Deno.env.get('OPENAI_API_KEY'),
+  },
+  // 其他模型配置...
+};
 
 interface AgentMessage {
   role: 'user' | 'assistant';
@@ -2280,32 +2289,57 @@ async function executeMultiAgentTask(task: any) {
 
 /**
  * 运行单个 Agent
+ *
+ * 使用用户配置的模型（默认 DeepSeek）
+ * 通过 OpenAI 兼容 API 调用，支持多种模型提供商
  */
 async function runAgent(
   agentId: string,
-  context: AgentContext
+  context: AgentContext,
+  userModelConfig?: ModelConfig  // 可选：用户指定的模型配置
 ): Promise<{ output: string; tokensUsed: number }> {
   const spec = AGENT_SPECS[agentId];
   if (!spec) {
     throw new Error(`Unknown agent: ${agentId}`);
   }
 
-  const response = await anthropic.messages.create({
-    model: spec.modelPreference === 'claude-opus'
-      ? 'claude-opus-4-20250514'
-      : 'claude-sonnet-4-20250514',
-    max_tokens: spec.maxTokens,
-    system: spec.systemPrompt,
-    messages: context.messages.map(m => ({
-      role: m.role,
-      content: m.content,
-    })),
+  // 解析实际使用的模型配置
+  const modelConfig = userModelConfig
+    ? resolveAgentModelConfig(agentId, userModelConfig)
+    : spec.modelConfig;
+
+  // 获取 API 配置
+  const apiConfig = MODEL_APIS[modelConfig.provider] || MODEL_APIS.deepseek;
+
+  // 使用 OpenAI 兼容 API 调用 (DeepSeek/OpenAI/Groq 等都兼容)
+  const response = await fetch(`${apiConfig.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiConfig.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: modelConfig.model,
+      max_tokens: modelConfig.maxTokens,
+      temperature: modelConfig.temperature,
+      messages: [
+        { role: 'system', content: spec.systemPrompt },
+        ...context.messages.map(m => ({
+          role: m.role,
+          content: m.content,
+        })),
+      ],
+    }),
   });
 
-  const output = response.content
-    .filter(c => c.type === 'text')
-    .map(c => c.text)
-    .join('\n');
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(`Model API error: ${data.error?.message || 'Unknown error'}`);
+  }
+
+  const output = data.choices[0]?.message?.content || '';
+  const tokensUsed = (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0);
 
   // 记录日志
   await supabase.from('task_logs').insert({
@@ -2313,16 +2347,14 @@ async function runAgent(
     level: 'info',
     message: `Agent ${agentId} completed`,
     metadata: {
-      tokensUsed: response.usage.input_tokens + response.usage.output_tokens,
-      model: response.model,
+      tokensUsed,
+      model: modelConfig.model,
+      provider: modelConfig.provider,
     },
     agent_id: agentId,
   });
 
-  return {
-    output,
-    tokensUsed: response.usage.input_tokens + response.usage.output_tokens,
-  };
+  return { output, tokensUsed };
 }
 
 async function updateTaskProgress(
@@ -2662,30 +2694,227 @@ supabase/
 ### 11.9 配置与环境变量
 
 ```env
-# .env 新增配置
+# .env 云端服务配置 (Supabase Edge Function)
 
 # 云端任务配置
 CLOUD_TASK_ENABLED=true
 CLOUD_TASK_DEFAULT_TIMEOUT=3600
 CLOUD_TASK_MAX_RETRIES=3
 
-# Agent SDK 配置
-ANTHROPIC_API_KEY=sk-ant-xxx
-AGENT_MODEL_PLANNER=claude-sonnet-4-20250514
-AGENT_MODEL_CODER=claude-sonnet-4-20250514
-AGENT_MODEL_REVIEWER=claude-opus-4-20250514
-
 # 实时同步配置
 REALTIME_ENABLED=true
 SYNC_INTERVAL_MS=30000
+
+# API Key 加密密钥 (用于加解密用户的 API Key)
+ENCRYPTION_KEY=your-encryption-key-here
+
+# 注意：模型 API Key 由用户自己配置，不在服务端存储！
 ```
+
+### 11.9.1 用户 API Key 使用架构
+
+**重要设计原则**：云端 Agent 使用**用户自己配置的 API Key**，平台不代管密钥。
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                        API Key 流转架构                                          │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│   用户本地配置 (客户端)                                                           │
+│   ┌─────────────────────────────────────────────────────────────────────────┐   │
+│   │ Settings 页面                                                            │   │
+│   │ ┌─────────────────┐                                                     │   │
+│   │ │ DeepSeek API Key│  sk-xxxxxxxxxxxxxxxx  (用户自己的 Key)              │   │
+│   │ │ Model           │  deepseek-chat                                      │   │
+│   │ └─────────────────┘                                                     │   │
+│   │         │                                                                │   │
+│   │         ▼ 本地加密存储                                                   │   │
+│   │ ┌─────────────────┐                                                     │   │
+│   │ │ SecureStorage   │  macOS Keychain / Windows Credential Manager        │   │
+│   │ └─────────────────┘                                                     │   │
+│   └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│   提交云端任务时                                                                  │
+│   ┌─────────────────────────────────────────────────────────────────────────┐   │
+│   │ 1. 客户端从 SecureStorage 读取用户的 API Key                             │   │
+│   │ 2. AES-256 加密后随任务一起发送到云端                                     │   │
+│   │ 3. 云端 Edge Function 解密后使用                                         │   │
+│   │ 4. 任务完成后立即销毁，不持久化存储                                       │   │
+│   └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│   云端 Edge Function                                                             │
+│   ┌─────────────────────────────────────────────────────────────────────────┐   │
+│   │   Task Request (任务请求)                                                │   │
+│   │   {                                                                      │   │
+│   │     taskId: "xxx",                                                       │   │
+│   │     type: "code_review",                                                 │   │
+│   │     input: { ... },                                                      │   │
+│   │     modelConfig: {                    ◄── 用户的模型配置                  │   │
+│   │       provider: "deepseek",                                              │   │
+│   │       model: "deepseek-chat",                                            │   │
+│   │       apiKey: "encrypted:xxxxx",      ◄── 加密的用户 API Key             │   │
+│   │       baseUrl: "https://api.deepseek.com/v1"                             │   │
+│   │     }                                                                    │   │
+│   │   }                                                                      │   │
+│   │                                                                          │   │
+│   │   处理流程:                                                              │   │
+│   │   ┌─────────────────────────────────────────────────────────────────┐   │   │
+│   │   │ 1. 解密 API Key                                                 │   │   │
+│   │   │ 2. 调用用户配置的模型 API (费用由用户承担)                       │   │   │
+│   │   │ 3. 执行 Agent 任务                                               │   │   │
+│   │   │ 4. 返回结果                                                      │   │   │
+│   │   │ 5. 销毁解密后的 Key (仅存在于内存，不持久化)                     │   │   │
+│   │   └─────────────────────────────────────────────────────────────────┘   │   │
+│   └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 11.9.2 客户端提交任务代码
+
+```typescript
+// src/main/cloud/CloudTaskService.ts
+
+import { SecureStorage } from '../services/SecureStorage';
+import { encrypt } from '../utils/crypto';
+
+export class CloudTaskService {
+  /**
+   * 提交云端任务
+   *
+   * 用户的 API Key 从本地 SecureStorage 读取，
+   * 加密后随任务发送到云端
+   */
+  async submitTask(params: {
+    type: string;
+    name: string;
+    input: Record<string, unknown>;
+  }): Promise<string> {
+    // 1. 从本地安全存储读取用户的模型配置
+    const userModelConfig = await this.getUserModelConfig();
+
+    // 2. 加密 API Key (AES-256)
+    const encryptedApiKey = await encrypt(
+      userModelConfig.apiKey,
+      await this.getEncryptionKey()
+    );
+
+    // 3. 提交任务（API Key 加密传输）
+    const { data, error } = await this.supabase
+      .from('cloud_tasks')
+      .insert({
+        type: params.type,
+        name: params.name,
+        input: params.input,
+        device_id: await this.getDeviceId(),
+        // 模型配置随任务一起提交
+        agent_config: {
+          provider: userModelConfig.provider,
+          model: userModelConfig.model,
+          baseUrl: userModelConfig.baseUrl,
+          apiKey: encryptedApiKey,  // 加密后的用户 API Key
+        },
+      })
+      .select('id')
+      .single();
+
+    if (error) throw error;
+    return data.id;
+  }
+
+  private async getUserModelConfig(): Promise<ModelConfig> {
+    const secureStorage = SecureStorage.getInstance();
+
+    // 从本地安全存储读取用户配置的 API Key
+    const provider = await secureStorage.get('model_provider') || 'deepseek';
+    const apiKey = await secureStorage.get(`${provider}_api_key`);
+    const model = await secureStorage.get('model_id') || 'deepseek-chat';
+    const baseUrl = await secureStorage.get(`${provider}_base_url`);
+
+    if (!apiKey) {
+      throw new Error(`请先在设置中配置 ${provider} API Key`);
+    }
+
+    return { provider, model, apiKey, baseUrl };
+  }
+}
+```
+
+### 11.9.3 云端处理用户 API Key
+
+```typescript
+// supabase/functions/agent-scheduler/index.ts
+
+import { decrypt } from '../shared/crypto.ts';
+
+async function runAgent(
+  agentId: string,
+  context: AgentContext,
+  taskConfig: TaskConfig  // 包含加密的用户 API Key
+): Promise<{ output: string; tokensUsed: number }> {
+  const spec = AGENT_SPECS[agentId];
+
+  // 1. 解密用户的 API Key
+  const decryptedApiKey = await decrypt(
+    taskConfig.apiKey,
+    Deno.env.get('ENCRYPTION_KEY')!
+  );
+
+  // 2. 使用用户的 API Key 调用模型 (费用由用户承担)
+  const response = await fetch(
+    `${taskConfig.baseUrl || getDefaultBaseUrl(taskConfig.provider)}/chat/completions`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${decryptedApiKey}`,  // 用户自己的 Key
+      },
+      body: JSON.stringify({
+        model: taskConfig.model,
+        max_tokens: spec.modelConfig.maxTokens,
+        temperature: spec.modelConfig.temperature,
+        messages: [
+          { role: 'system', content: spec.systemPrompt },
+          ...context.messages,
+        ],
+      }),
+    }
+  );
+
+  const data = await response.json();
+
+  // 3. decryptedApiKey 在函数结束后自动销毁，不持久化
+  return {
+    output: data.choices[0]?.message?.content || '',
+    tokensUsed: (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0),
+  };
+}
+
+function getDefaultBaseUrl(provider: string): string {
+  const urls: Record<string, string> = {
+    deepseek: 'https://api.deepseek.com/v1',
+    openai: 'https://api.openai.com/v1',
+    groq: 'https://api.groq.com/openai/v1',
+    zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+    qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    moonshot: 'https://api.moonshot.cn/v1',
+  };
+  return urls[provider] || urls.deepseek;
+}
+```
+
+**设计优势**：
+- ✅ **用户完全控制密钥**：API Key 存储在用户本地，平台不代管
+- ✅ **费用透明**：用户直接向模型提供商付费，无中间商
+- ✅ **安全传输**：API Key 加密传输，云端仅在内存中解密使用
+- ✅ **无持久化风险**：云端不存储解密后的 Key，任务完成即销毁
 
 ### 11.10 安全考虑
 
 | 关注点 | 风险 | 缓解措施 |
 |--------|------|----------|
+| **用户 API Key** | 密钥泄露 | 本地 Keychain 存储，传输加密，云端不持久化 |
 | **敏感代码上传** | 代码泄露 | 本地执行敏感操作，只上传元数据 |
-| **凭证暴露** | 密钥泄露 | 凭证永不上传，使用 SecureStorage |
 | **云端任务注入** | 恶意代码执行 | 本地执行前用户确认，沙箱隔离 |
 | **跨设备数据同步** | 数据泄露 | 端到端加密 (可选)，RLS 策略 |
 | **Agent 输出验证** | 错误/恶意代码 | Reviewer Agent 审查，本地执行前预览 |

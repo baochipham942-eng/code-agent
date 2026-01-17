@@ -7,6 +7,11 @@ import Store from 'electron-store';
 import crypto from 'crypto';
 import { app } from 'electron';
 import os from 'os';
+import keytar from 'keytar';
+
+// Keychain constants for persistent auth storage (survives app reinstall)
+const KEYCHAIN_SERVICE = 'code-agent';
+const KEYCHAIN_ACCOUNT = 'supabase-session';
 
 interface SecureStorageData {
   // Auth tokens
@@ -105,6 +110,36 @@ class SecureStorageService {
 
   async removeItem(key: string): Promise<void> {
     this.store.delete(key as keyof SecureStorageData);
+  }
+
+  // ========== Keychain Methods (for persistent auth across reinstalls) ==========
+
+  // Save session to Keychain (survives app reinstall)
+  async saveSessionToKeychain(session: string): Promise<void> {
+    try {
+      await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, session);
+    } catch (e) {
+      console.error('Failed to save session to Keychain:', e);
+    }
+  }
+
+  // Get session from Keychain
+  async getSessionFromKeychain(): Promise<string | null> {
+    try {
+      return await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
+    } catch (e) {
+      console.error('Failed to get session from Keychain:', e);
+      return null;
+    }
+  }
+
+  // Clear session from Keychain (called when clearing cache)
+  async clearSessionFromKeychain(): Promise<void> {
+    try {
+      await keytar.deletePassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
+    } catch (e) {
+      console.error('Failed to clear session from Keychain:', e);
+    }
   }
 }
 

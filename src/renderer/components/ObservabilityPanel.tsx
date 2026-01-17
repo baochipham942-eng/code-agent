@@ -24,6 +24,7 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
+import { useSessionStore } from '../stores/sessionStore';
 import type { ToolCall } from '@shared/types';
 
 // 事件类型 - 5个核心分类
@@ -195,7 +196,8 @@ function getToolIcon(name: string): React.ReactNode {
 const categoryOrder: EventCategory[] = ['bash', 'tools', 'plan', 'agent', 'memory'];
 
 export const ObservabilityPanel: React.FC = () => {
-  const { messages, currentGeneration } = useAppStore();
+  const { currentGeneration } = useAppStore();
+  const { messages } = useSessionStore();
   const [expandedCategories, setExpandedCategories] = useState<Set<EventCategory>>(new Set(['bash', 'tools']));
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
 

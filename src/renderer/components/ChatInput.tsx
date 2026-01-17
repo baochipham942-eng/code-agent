@@ -56,7 +56,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
           <button
             type="button"
             className="p-2.5 ml-2 mb-2 rounded-xl hover:bg-zinc-700/50 text-zinc-500 hover:text-zinc-300 transition-all duration-200"
-            title="Attach file (coming soon)"
+            title="附加文件（即将推出）"
           >
             <Paperclip className="w-5 h-5" />
           </button>
@@ -69,7 +69,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
             onKeyDown={handleKeyDown}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder="Ask me anything about code..."
+            placeholder="问我任何关于代码的问题..."
             disabled={disabled}
             rows={1}
             className="flex-1 bg-transparent py-3.5 px-1 text-sm text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none disabled:opacity-50 max-h-[200px] leading-relaxed"
@@ -100,7 +100,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
               <kbd className="px-1.5 py-0.5 rounded-md bg-zinc-800/80 text-zinc-400 font-mono text-2xs border border-zinc-700/50">
                 <CornerDownLeft className="w-3 h-3 inline" />
               </kbd>
-              <span>to send</span>
+              <span>发送</span>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-zinc-500">
               <kbd className="px-1.5 py-0.5 rounded-md bg-zinc-800/80 text-zinc-400 font-mono text-2xs border border-zinc-700/50">
@@ -110,12 +110,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
               <kbd className="px-1.5 py-0.5 rounded-md bg-zinc-800/80 text-zinc-400 font-mono text-2xs border border-zinc-700/50">
                 <CornerDownLeft className="w-3 h-3 inline" />
               </kbd>
-              <span>new line</span>
+              <span>换行</span>
             </div>
           </div>
           <div className="flex items-center gap-1.5 text-xs text-zinc-500">
             <Sparkles className="w-3 h-3 text-primary-400" />
-            <span>Powered by DeepSeek</span>
+            <span>由 DeepSeek 驱动</span>
           </div>
         </div>
       </form>

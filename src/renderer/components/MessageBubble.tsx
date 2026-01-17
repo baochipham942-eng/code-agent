@@ -302,15 +302,17 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
   // Check if this is an HTML file creation
   const getHtmlFilePath = (): string | null => {
     if (toolCall.name === 'write_file' && toolCall.result?.success) {
+      // Prefer extracting the absolute path from result output (which is always absolute)
+      const output = toolCall.result?.output as string;
+      if (output && output.includes('.html')) {
+        // Match patterns like "Created file: /path/to/file.html" or "Updated file: /path/to/file.html"
+        const match = output.match(/(?:Created|Updated) file: (.+\.html)/);
+        if (match) return match[1];
+      }
+      // Fallback to arguments (may be relative)
       const filePath = toolCall.arguments?.file_path as string;
       if (filePath && filePath.endsWith('.html')) {
         return filePath;
-      }
-      // Also check result output for the path
-      const output = toolCall.result?.output as string;
-      if (output && output.includes('.html')) {
-        const match = output.match(/Created file: (.+\.html)/);
-        if (match) return match[1];
       }
     }
     return null;
@@ -352,7 +354,7 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
           <div className="text-sm font-medium text-zinc-200 truncate">{summary}</div>
           <div className="flex items-center gap-2 text-xs text-zinc-500">
             <span className="font-mono">{toolCall.name}</span>
-            {total > 1 && <span>({index + 1}/{total})</span>}
+            {total > 1 && <span className="text-zinc-600">#{index + 1}</span>}
           </div>
         </div>
 

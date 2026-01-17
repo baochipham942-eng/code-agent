@@ -60,6 +60,8 @@ export class AgentLoop {
   // Planning integration
   private planningService?: PlanningService;
   private enableHooks: boolean;
+  private stopHookRetryCount: number = 0;
+  private maxStopHookRetries: number = 3;
 
   constructor(config: AgentLoopConfig) {
     this.generation = config.generation;
@@ -110,20 +112,35 @@ export class AgentLoop {
           const stopResult = await this.planningService.hooks.onStop();
 
           if (!stopResult.shouldContinue && stopResult.injectContext) {
-            // Plan not complete, inject warning and continue
-            this.injectSystemMessage(stopResult.injectContext);
+            // Check retry limit to avoid infinite loops
+            this.stopHookRetryCount++;
 
-            if (stopResult.notification) {
+            if (this.stopHookRetryCount <= this.maxStopHookRetries) {
+              // Plan not complete, inject warning and continue
+              this.injectSystemMessage(stopResult.injectContext);
+
+              if (stopResult.notification) {
+                this.onEvent({
+                  type: 'notification',
+                  data: { message: stopResult.notification },
+                });
+              }
+
+              console.log(`[AgentLoop] Stop hook retry ${this.stopHookRetryCount}/${this.maxStopHookRetries}`);
+              continue; // Force another iteration
+            } else {
+              // Max retries reached, let AI stop with a warning
+              console.log('[AgentLoop] Stop hook max retries reached, allowing stop');
+              logCollector.agent('WARN', `Stop hook max retries (${this.maxStopHookRetries}) reached, plan may be incomplete`);
+
               this.onEvent({
                 type: 'notification',
-                data: { message: stopResult.notification },
+                data: { message: 'Plan may be incomplete - max verification retries reached' },
               });
             }
-
-            continue; // Force another iteration
           }
 
-          if (stopResult.notification) {
+          if (stopResult.notification && stopResult.shouldContinue) {
             this.onEvent({
               type: 'notification',
               data: { message: stopResult.notification },

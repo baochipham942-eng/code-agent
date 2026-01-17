@@ -48,6 +48,11 @@ const TOOL_ICONS: Record<string, string> = {
   tool_create: '🔧',
   self_evaluate: '🪞',
 
+  // Gen 3 - Planning 工具
+  plan_update: '📋',
+  plan_read: '📖',
+  findings_write: '📝',
+
   // MCP 工具
   mcp: '🔌',
 };
@@ -227,6 +232,29 @@ export function summarizeToolCall(toolCall: ToolCall): string {
 
     case 'self_evaluate': {
       return '自我评估';
+    }
+
+    // Gen 3 Planning 工具
+    case 'plan_update': {
+      const stepContent = (args?.stepContent as string) || '';
+      const status = (args?.status as string) || '';
+      const statusIcon = {
+        pending: '○',
+        in_progress: '◐',
+        completed: '●',
+        skipped: '⊘',
+      }[status] || '○';
+      const shortStep = stepContent.length > 35 ? stepContent.slice(0, 32) + '...' : stepContent;
+      return `${statusIcon} ${shortStep}`;
+    }
+
+    case 'plan_read': {
+      return '读取计划';
+    }
+
+    case 'findings_write': {
+      const title = (args?.title as string) || '';
+      return `记录发现: ${title}`;
     }
 
     // MCP 工具

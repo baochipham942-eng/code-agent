@@ -27,24 +27,24 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.4.0',
-  publishedAt: '2026-01-17T12:30:00.000Z',
+  version: '0.4.2',
+  publishedAt: '2026-01-18T00:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.4.0 🚀
+## Code Agent v0.4.2 🛡️
 
-### ✨ 新功能
-- **流式输出** - AI 回复逐字显示，不再等待完整响应
-- **流式工具调用** - 工具调用卡片实时出现，参数逐步填充
-- **Markdown + Emoji 输出** - AI 回复更美观、结构化展示
+### 🐛 Bug 修复
+- **修复大型代码文件被截断的问题** - 生成游戏等大文件时不再出现代码不完整
+  - 三层防护：ModelRouter 截断检测 + write_file 完整性验证 + AgentLoop 自动续写提示
+  - 增强 System Prompt 强制使用分步生成策略
 
 ### 🔧 改进
-- 优化 DeepSeek API 调用，启用 SSE 流式传输
-- 前端实时渲染流式内容
+- 优化大文件生成策略，自动使用 skeleton + edit_file 分步生成
+- 代码完整性检测支持 HTML/JS/CSS/JSON 等多种格式
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.4.0/Code.Agent-0.4.0-arm64.dmg',
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.4.2/Code.Agent-0.4.2-arm64.dmg',
       size: 130000000,
     },
   },

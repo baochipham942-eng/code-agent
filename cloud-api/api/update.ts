@@ -21,21 +21,21 @@ interface ReleaseInfo {
 
 // 当前最新版本 - 每次发布新版本时更新这里
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.2.4',
-  publishedAt: '2026-01-17T09:42:00.000Z',
+  version: '0.2.5',
+  publishedAt: '2026-01-17T09:50:00.000Z',
   releaseNotes: `
-## Code Agent v0.2.4
+## Code Agent v0.2.5
 
 ### 修复
-- 修复 Vercel 部署配置
-- 更新 Vercel API URL
+- 修复下载更新功能（支持 GitHub Releases 重定向）
+- 添加 User-Agent 请求头
 
 ### 改进
-- Vercel API 和 GitHub Releases 双重更新检查
+- 添加详细下载日志便于调试
   `.trim(),
   downloads: {
     darwin: {
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.2.4/Code.Agent-0.2.4-arm64.dmg',
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.2.5/Code.Agent-0.2.5-arm64.dmg',
       size: 129500000,
     },
   },

@@ -133,7 +133,7 @@ Parameters:
 - task: The overall task description
 - stages: (for custom) Array of stage definitions
 - parallel: (optional) Run independent stages in parallel`,
-  generations: ['gen7'],
+  generations: ['gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

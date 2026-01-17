@@ -21,7 +21,7 @@ export const todoWriteTool: Tool = {
   description:
     'Create or update a todo list to track task progress. ' +
     'Set persist=true to save to task_plan.md file for long-term tracking across sessions.',
-  generations: ['gen3', 'gen4'],
+  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

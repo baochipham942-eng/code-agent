@@ -20,7 +20,7 @@ export const planReadTool: Tool = {
     'Read the current task plan from task_plan.md. ' +
     'Use this to review your progress, objectives, and remaining tasks. ' +
     'Essential for staying on track during complex multi-step tasks.',
-  generations: ['gen3', 'gen4'],
+  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

@@ -9,7 +9,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
 export const writeFileTool: Tool = {
   name: 'write_file',
   description: 'Create a new file or overwrite an existing file',
-  generations: ['gen1', 'gen2', 'gen3', 'gen4'],
+  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

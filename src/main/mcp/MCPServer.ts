@@ -10,7 +10,7 @@ import {
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { logCollector, LogEntry, LogSource } from './LogCollector.js';
+import { logCollector, LogEntry, LogSource, LogStatus } from './LogCollector.js';
 
 // Log Bridge URL for fetching logs from running Electron app
 const LOG_BRIDGE_URL = 'http://127.0.0.1:51820';
@@ -179,7 +179,7 @@ export class CodeAgentMCPServer {
       }
 
       if (uri === 'code-agent://status') {
-        let status = await fetchStatusFromBridge();
+        let status: Record<string, unknown> | LogStatus | null = await fetchStatusFromBridge();
         if (!status) {
           status = logCollector.getStatus();
         }
@@ -276,7 +276,7 @@ export class CodeAgentMCPServer {
       const { name, arguments: args } = request.params;
 
       if (name === 'get_logs') {
-        const source = (args?.source as LogSource) || 'all';
+        const source = (args?.source as string) || 'all';
         const count = (args?.count as number) || 20;
         const level = args?.level as string | undefined;
 
@@ -284,7 +284,7 @@ export class CodeAgentMCPServer {
         if (source === 'all') {
           logs = logCollector.getAllLogs(count);
         } else {
-          logs = logCollector.getLogs(source, count);
+          logs = logCollector.getLogs(source as LogSource, count);
         }
 
         // Filter by level if specified
@@ -303,11 +303,11 @@ export class CodeAgentMCPServer {
       }
 
       if (name === 'clear_logs') {
-        const source = (args?.source as LogSource) || 'all';
+        const source = (args?.source as string) || 'all';
         if (source === 'all') {
           logCollector.clearAll();
         } else {
-          logCollector.clear(source);
+          logCollector.clear(source as LogSource);
         }
         return {
           content: [

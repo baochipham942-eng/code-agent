@@ -96,6 +96,7 @@ const ModelSettings: React.FC<{
     setIsSaving(true);
     setSaveStatus('idle');
     try {
+      // Use type assertion for partial update - backend handles merging
       await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
         models: {
           defaultProvider: config.provider,
@@ -107,7 +108,7 @@ const ModelSettings: React.FC<{
             },
           },
         },
-      });
+      } as any);
       console.log('[ModelSettings] Config saved:', config.provider);
       setSaveStatus('success');
       setTimeout(() => setSaveStatus('idle'), 2000);
@@ -399,9 +400,10 @@ const LanguageSettings: React.FC = () => {
     setLanguage(lang);
     // Persist to backend
     try {
+      // Use type assertion for partial update - backend handles merging
       await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
         ui: { language: lang },
-      });
+      } as any);
       console.log('[LanguageSettings] Language saved:', lang);
     } catch (error) {
       console.error('[LanguageSettings] Failed to save language:', error);

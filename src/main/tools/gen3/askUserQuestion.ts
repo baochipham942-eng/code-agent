@@ -34,7 +34,7 @@ function registerResponseHandler() {
 export const askUserQuestionTool: Tool = {
   name: 'ask_user_question',
   description: 'Ask the user a question to gather information or clarify requirements',
-  generations: ['gen3', 'gen4'],
+  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

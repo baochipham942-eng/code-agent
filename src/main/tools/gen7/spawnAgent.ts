@@ -129,7 +129,7 @@ Parameters:
 - task: Description of what the agent should do
 - customPrompt: (optional) Custom system prompt override
 - waitForCompletion: (optional) Whether to wait for agent to complete (default: true)`,
-  generations: ['gen7'],
+  generations: ['gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

@@ -9,7 +9,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
 export const editFileTool: Tool = {
   name: 'edit_file',
   description: 'Make precise edits to a file by replacing specific text',
-  generations: ['gen1', 'gen2', 'gen3', 'gen4'],
+  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

@@ -22,7 +22,7 @@ Parameters:
 - content (required): The specific insight or pattern to learn
 - context (optional): Additional context about when this applies
 - confidence (optional): How confident we are about this learning (0-1)`,
-  generations: ['gen5'],
+  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

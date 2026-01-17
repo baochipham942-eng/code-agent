@@ -8,6 +8,8 @@ export const en: Translations = {
   // Common
   common: {
     save: 'Save',
+    saving: 'Saving...',
+    saved: 'Saved!',
     cancel: 'Cancel',
     close: 'Close',
     confirm: 'Confirm',

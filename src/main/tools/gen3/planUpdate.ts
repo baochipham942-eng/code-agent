@@ -10,7 +10,7 @@ export const planUpdateTool: Tool = {
   description:
     'Update the status of a step or phase in the task plan. ' +
     'Use this after completing a task step or when a step is blocked.',
-  generations: ['gen3', 'gen4'],
+  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

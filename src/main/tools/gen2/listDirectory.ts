@@ -9,7 +9,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
 export const listDirectoryTool: Tool = {
   name: 'list_directory',
   description: 'List the contents of a directory',
-  generations: ['gen2', 'gen3', 'gen4'],
+  generations: ['gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

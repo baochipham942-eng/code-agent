@@ -21,7 +21,7 @@ Parameters:
 - category (required): Category for organizing memories
 - key (optional): A unique key for easy retrieval
 - confidence (optional): Confidence level 0-1 (default: 1.0)`,
-  generations: ['gen5'],
+  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

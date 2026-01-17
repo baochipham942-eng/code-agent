@@ -80,7 +80,7 @@ Provide specific feedback with file and line references when possible.`,
 export const taskTool: Tool = {
   name: 'task',
   description: 'Launch a specialized subagent to handle complex tasks. Types: explore, bash, plan, code-review',
-  generations: ['gen3', 'gen4'],
+  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

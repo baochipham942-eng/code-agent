@@ -11,7 +11,7 @@ const execAsync = promisify(exec);
 export const bashTool: Tool = {
   name: 'bash',
   description: 'Execute a shell command in the terminal',
-  generations: ['gen1', 'gen2', 'gen3', 'gen4'],
+  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
   inputSchema: {

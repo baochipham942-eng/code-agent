@@ -1,9 +1,25 @@
 // ============================================================================
-// MessageBubble - Individual Chat Message Display
+// MessageBubble - Individual Chat Message Display (Enhanced UI/UX)
 // ============================================================================
 
 import React, { useState } from 'react';
-import { User, Bot, ChevronDown, ChevronRight, Terminal, FileText, Copy, Check } from 'lucide-react';
+import {
+  User,
+  Bot,
+  ChevronDown,
+  ChevronRight,
+  Terminal,
+  FileText,
+  Copy,
+  Check,
+  Code2,
+  FolderSearch,
+  FileEdit,
+  Globe,
+  Zap,
+  Sparkles,
+  AlertCircle
+} from 'lucide-react';
 import type { Message, ToolCall, ToolResult } from '@shared/types';
 
 interface MessageBubbleProps {
@@ -21,10 +37,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
     >
       {/* Avatar */}
       <div
-        className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+        className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-lg ${
           isUser
-            ? 'bg-blue-500'
-            : 'bg-gradient-to-br from-purple-500 to-pink-500'
+            ? 'bg-gradient-to-br from-primary-500 to-primary-600 shadow-primary-500/20'
+            : 'bg-gradient-to-br from-accent-purple to-accent-pink shadow-purple-500/20'
         }`}
       >
         {isUser ? (
@@ -39,28 +55,33 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
         {/* Text content */}
         {message.content && (
           <div
-            className={`inline-block rounded-xl px-4 py-2.5 max-w-full ${
+            className={`inline-block rounded-2xl px-4 py-3 max-w-full shadow-lg ${
               isUser
-                ? 'bg-blue-600 text-white'
-                : 'bg-zinc-800 text-zinc-100'
+                ? 'bg-gradient-to-br from-primary-600 to-primary-500 text-white shadow-primary-500/10'
+                : 'bg-zinc-800/80 text-zinc-100 border border-zinc-700/50 shadow-black/20'
             }`}
           >
-            <MessageContent content={message.content} />
+            <MessageContent content={message.content} isUser={isUser} />
           </div>
         )}
 
         {/* Tool calls */}
         {message.toolCalls && message.toolCalls.length > 0 && (
-          <div className="mt-2 space-y-2">
-            {message.toolCalls.map((toolCall) => (
-              <ToolCallDisplay key={toolCall.id} toolCall={toolCall} />
+          <div className="mt-3 space-y-2">
+            {message.toolCalls.map((toolCall, index) => (
+              <ToolCallDisplay
+                key={toolCall.id}
+                toolCall={toolCall}
+                index={index}
+                total={message.toolCalls!.length}
+              />
             ))}
           </div>
         )}
 
         {/* Timestamp */}
         <div
-          className={`text-xs text-zinc-500 mt-1 ${
+          className={`text-xs text-zinc-500 mt-1.5 ${
             isUser ? 'text-right' : ''
           }`}
         >
@@ -72,8 +93,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
 };
 
 // Message content with markdown-like rendering
-const MessageContent: React.FC<{ content: string }> = ({ content }) => {
-  // Simple code block detection
+const MessageContent: React.FC<{ content: string; isUser?: boolean }> = ({ content, isUser }) => {
+  // Split by code blocks
   const parts = content.split(/(```[\s\S]*?```)/g);
 
   return (
@@ -82,20 +103,64 @@ const MessageContent: React.FC<{ content: string }> = ({ content }) => {
         if (part.startsWith('```')) {
           return <CodeBlock key={index} content={part} />;
         }
+        // Render inline code for non-user messages
+        if (!isUser) {
+          return <InlineTextWithCode key={index} text={part} />;
+        }
         return <span key={index}>{part}</span>;
       })}
     </div>
   );
 };
 
-// Code block component
+// Handle inline code within text
+const InlineTextWithCode: React.FC<{ text: string }> = ({ text }) => {
+  const parts = text.split(/(`[^`]+`)/g);
+
+  return (
+    <>
+      {parts.map((part, index) => {
+        if (part.startsWith('`') && part.endsWith('`')) {
+          const code = part.slice(1, -1);
+          return (
+            <code
+              key={index}
+              className="px-1.5 py-0.5 mx-0.5 rounded-md bg-zinc-900/80 text-primary-300 text-xs font-mono border border-zinc-700/50"
+            >
+              {code}
+            </code>
+          );
+        }
+        return <span key={index}>{part}</span>;
+      })}
+    </>
+  );
+};
+
+// Language colors and icons
+const languageConfig: Record<string, { color: string; icon?: React.ReactNode }> = {
+  typescript: { color: 'text-blue-400' },
+  javascript: { color: 'text-yellow-400' },
+  python: { color: 'text-green-400' },
+  rust: { color: 'text-orange-400' },
+  go: { color: 'text-cyan-400' },
+  bash: { color: 'text-emerald-400' },
+  shell: { color: 'text-emerald-400' },
+  json: { color: 'text-amber-400' },
+  html: { color: 'text-orange-400' },
+  css: { color: 'text-blue-400' },
+  sql: { color: 'text-purple-400' },
+};
+
+// Code block component with enhanced styling
 const CodeBlock: React.FC<{ content: string }> = ({ content }) => {
   const [copied, setCopied] = useState(false);
 
   // Extract language and code
   const match = content.match(/```(\w*)\n?([\s\S]*?)```/);
-  const language = match?.[1] || '';
+  const language = match?.[1]?.toLowerCase() || '';
   const code = match?.[2]?.trim() || content.replace(/```/g, '').trim();
+  const config = languageConfig[language] || { color: 'text-zinc-400' };
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(code);
@@ -103,101 +168,187 @@ const CodeBlock: React.FC<{ content: string }> = ({ content }) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Count lines for line numbers
+  const lines = code.split('\n');
+  const showLineNumbers = lines.length > 3;
+
   return (
-    <div className="my-2 rounded-lg bg-zinc-900 overflow-hidden">
+    <div className="my-3 rounded-xl bg-surface-950 overflow-hidden border border-zinc-800/50 shadow-lg">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-800/50 border-b border-zinc-700">
-        <span className="text-xs text-zinc-400">{language || 'code'}</span>
+      <div className="flex items-center justify-between px-4 py-2 bg-zinc-800/30 border-b border-zinc-800/50">
+        <div className="flex items-center gap-2">
+          <Code2 className={`w-3.5 h-3.5 ${config.color}`} />
+          <span className={`text-xs font-medium ${config.color}`}>
+            {language || 'code'}
+          </span>
+          <span className="text-xs text-zinc-600">
+            {lines.length} line{lines.length > 1 ? 's' : ''}
+          </span>
+        </div>
         <button
           onClick={handleCopy}
-          className="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-100 transition-colors"
+          className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700/50 text-zinc-400 hover:text-zinc-200 transition-all text-xs"
         >
           {copied ? (
-            <Check className="w-3.5 h-3.5 text-green-400" />
+            <>
+              <Check className="w-3.5 h-3.5 text-green-400" />
+              <span className="text-green-400">Copied!</span>
+            </>
           ) : (
-            <Copy className="w-3.5 h-3.5" />
+            <>
+              <Copy className="w-3.5 h-3.5" />
+              <span>Copy</span>
+            </>
           )}
         </button>
       </div>
-      {/* Code */}
-      <pre className="p-3 overflow-x-auto">
-        <code className="text-xs text-zinc-300">{code}</code>
-      </pre>
+      {/* Code with optional line numbers */}
+      <div className="relative">
+        <pre className={`p-4 overflow-x-auto ${showLineNumbers ? 'pl-12' : ''}`}>
+          {showLineNumbers && (
+            <div className="absolute left-0 top-0 bottom-0 w-10 flex flex-col items-end pr-3 pt-4 text-xs text-zinc-600 select-none bg-zinc-900/30 border-r border-zinc-800/30">
+              {lines.map((_, i) => (
+                <span key={i} className="leading-5">{i + 1}</span>
+              ))}
+            </div>
+          )}
+          <code className="text-xs text-zinc-300 font-mono leading-5">{code}</code>
+        </pre>
+      </div>
     </div>
   );
 };
 
-// Tool call display component
-const ToolCallDisplay: React.FC<{ toolCall: ToolCall }> = ({ toolCall }) => {
+// Tool icon mapping
+const getToolIcon = (name: string) => {
+  const iconMap: Record<string, React.ReactNode> = {
+    bash: <Terminal className="w-3.5 h-3.5" />,
+    read_file: <FileText className="w-3.5 h-3.5" />,
+    write_file: <FileEdit className="w-3.5 h-3.5" />,
+    edit_file: <FileEdit className="w-3.5 h-3.5" />,
+    glob: <FolderSearch className="w-3.5 h-3.5" />,
+    grep: <FolderSearch className="w-3.5 h-3.5" />,
+    list_directory: <FolderSearch className="w-3.5 h-3.5" />,
+    web_fetch: <Globe className="w-3.5 h-3.5" />,
+    task: <Zap className="w-3.5 h-3.5" />,
+    skill: <Sparkles className="w-3.5 h-3.5" />,
+  };
+  return iconMap[name] || <Code2 className="w-3.5 h-3.5" />;
+};
+
+// Tool call display component with enhanced design
+const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: number }> = ({
+  toolCall,
+  index,
+  total
+}) => {
   const [expanded, setExpanded] = useState(false);
 
-  const getToolIcon = (name: string) => {
-    if (name === 'bash') return <Terminal className="w-3.5 h-3.5" />;
-    return <FileText className="w-3.5 h-3.5" />;
-  };
-
-  // Get status from result - ToolResult has 'success: boolean', not 'status: string'
-  const getStatus = (): 'success' | 'error' | 'pending' | undefined => {
+  // Get status from result
+  const getStatus = (): 'success' | 'error' | 'pending' => {
     if (!toolCall.result) return 'pending';
     return toolCall.result.success ? 'success' : 'error';
   };
 
-  const getStatusColor = (status?: string) => {
-    switch (status) {
-      case 'success':
-        return 'text-green-400 bg-green-500/10';
-      case 'error':
-        return 'text-red-400 bg-red-500/10';
-      case 'pending':
-        return 'text-yellow-400 bg-yellow-500/10';
-      default:
-        return 'text-zinc-400 bg-zinc-500/10';
+  const status = getStatus();
+
+  const statusConfig = {
+    success: {
+      bg: 'bg-emerald-500/10',
+      text: 'text-emerald-400',
+      border: 'border-emerald-500/20',
+      icon: <Check className="w-3 h-3" />,
+      label: 'Success'
+    },
+    error: {
+      bg: 'bg-red-500/10',
+      text: 'text-red-400',
+      border: 'border-red-500/20',
+      icon: <AlertCircle className="w-3 h-3" />,
+      label: 'Error'
+    },
+    pending: {
+      bg: 'bg-amber-500/10',
+      text: 'text-amber-400',
+      border: 'border-amber-500/20',
+      icon: <Loader className="w-3 h-3 animate-spin" />,
+      label: 'Running'
     }
   };
 
-  const status = getStatus();
+  const config = statusConfig[status];
 
   return (
-    <div className="rounded-lg bg-zinc-800/50 border border-zinc-700 overflow-hidden">
+    <div
+      className={`rounded-xl bg-zinc-800/40 border border-zinc-700/50 overflow-hidden transition-all duration-200 ${
+        expanded ? 'shadow-lg' : ''
+      }`}
+      style={{ animationDelay: `${index * 50}ms` }}
+    >
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-700/30 transition-colors"
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-700/20 transition-all duration-200"
       >
-        {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
-        ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
-        )}
-        <span className={`p-1 rounded ${getStatusColor(status)}`}>
-          {getToolIcon(toolCall.name)}
-        </span>
-        <span className="text-sm font-medium text-zinc-300">{toolCall.name}</span>
-        {status && (
-          <span
-            className={`ml-auto text-xs px-2 py-0.5 rounded-full ${getStatusColor(status)}`}
-          >
-            {status}
-          </span>
-        )}
+        {/* Expand indicator */}
+        <div className={`transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}>
+          <ChevronRight className="w-4 h-4 text-zinc-500" />
+        </div>
+
+        {/* Tool icon with status indicator */}
+        <div className={`relative p-2 rounded-lg ${config.bg}`}>
+          <span className={config.text}>{getToolIcon(toolCall.name)}</span>
+          {/* Status dot */}
+          <div className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${
+            status === 'success' ? 'bg-emerald-400' :
+            status === 'error' ? 'bg-red-400' :
+            'bg-amber-400 animate-pulse'
+          }`} />
+        </div>
+
+        {/* Tool name and meta */}
+        <div className="flex-1 text-left">
+          <span className="text-sm font-medium text-zinc-200">{toolCall.name}</span>
+          {total > 1 && (
+            <span className="ml-2 text-xs text-zinc-500">
+              ({index + 1}/{total})
+            </span>
+          )}
+        </div>
+
+        {/* Status badge */}
+        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text} ${config.border} border`}>
+          {config.icon}
+          <span>{config.label}</span>
+        </div>
       </button>
 
       {/* Expanded content */}
       {expanded && (
-        <div className="px-3 pb-3 border-t border-zinc-700/50">
+        <div className="px-4 pb-4 pt-2 border-t border-zinc-700/30 animate-fadeIn">
           {/* Arguments */}
-          <div className="mt-2">
-            <div className="text-xs font-medium text-zinc-500 mb-1">Arguments</div>
-            <pre className="text-xs text-zinc-400 bg-zinc-900 rounded p-2 overflow-x-auto">
+          <div className="mb-3">
+            <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 mb-2">
+              <span>Arguments</span>
+              <div className="flex-1 h-px bg-zinc-700/50" />
+            </div>
+            <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded-lg p-3 overflow-x-auto border border-zinc-800/50">
               {JSON.stringify(toolCall.arguments, null, 2)}
             </pre>
           </div>
 
           {/* Result */}
           {toolCall.result && (
-            <div className="mt-2">
-              <div className="text-xs font-medium text-zinc-500 mb-1">Result</div>
-              <pre className="text-xs text-zinc-400 bg-zinc-900 rounded p-2 overflow-x-auto max-h-40">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 mb-2">
+                <span>Result</span>
+                <div className="flex-1 h-px bg-zinc-700/50" />
+              </div>
+              <pre className={`text-xs bg-zinc-900/50 rounded-lg p-3 overflow-x-auto max-h-48 border ${
+                status === 'error'
+                  ? 'text-red-300 border-red-500/20'
+                  : 'text-zinc-400 border-zinc-800/50'
+              }`}>
                 {toolCall.result.error
                   ? toolCall.result.error
                   : typeof toolCall.result.output === 'string'
@@ -211,6 +362,14 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall }> = ({ toolCall }) => {
     </div>
   );
 };
+
+// Loader component for pending state
+const Loader: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+    <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+  </svg>
+);
 
 // Helper function
 function formatTime(timestamp: number): string {

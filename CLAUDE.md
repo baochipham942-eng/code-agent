@@ -134,6 +134,46 @@ npm run typecheck
 - `src/renderer/stores/authStore.ts` - 前端认证状态
 - `src/renderer/components/AuthModal.tsx` - 登录界面
 
+## UI/UX 设计系统
+
+### Terminal Noir 设计语言
+
+项目采用 "Terminal Noir" 设计风格 —— 融合赛博朋克霓虹感与专业终端美学的深色主题。
+
+#### 配色方案
+
+| 层级 | 颜色 | 用途 |
+|------|------|------|
+| `void` | #08080a | 最深背景 |
+| `deep` | #0c0c10 | 深层背景 |
+| `surface` | #121218 | 主表面 |
+| `elevated` | #1a1a22 | 提升表面 |
+| `primary` | #6366f1 | 主色调 (靛蓝) |
+| `accent-cyan` | #22d3ee | 强调色 (青色) |
+| `accent-emerald` | #10b981 | 成功状态 |
+| `accent-rose` | #f43f5e | 错误状态 |
+
+#### 核心组件
+
+| 组件 | 文件 | 特性 |
+|------|------|------|
+| **Sidebar** | `Sidebar.tsx` | 会话分组、搜索过滤、时间标签 |
+| **ChatView** | `ChatView.tsx` | 渐变背景、卡片式建议、打字指示器 |
+| **ChatInput** | `ChatInput.tsx` | 焦点光效、快捷键提示、发送动画 |
+| **MessageBubble** | `MessageBubble.tsx` | 代码块高亮、工具调用折叠、状态徽章 |
+
+#### 动画系统
+
+- `fade-in-up` - 淡入上滑 (消息出现)
+- `glow-pulse` - 光晕脉冲 (焦点状态)
+- `scale-in` - 缩放进入 (卡片、按钮)
+- `typing-dot` - 打字点动画 (AI 思考中)
+
+#### 样式文件
+
+- `src/renderer/styles/global.css` - CSS 变量和全局样式
+- `tailwind.config.js` - Tailwind 扩展配置
+
 ## 相关文档
 
 - [产品需求文档](docs/PRD.md)

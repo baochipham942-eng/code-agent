@@ -43,6 +43,7 @@
     "groq-sdk": "^0.8.0",
     "highlight.js": "^11.10.0",
     "https-proxy-agent": "^7.0.6",
+    "langfuse": "^3.38.6",
     "marked": "^15.0.0",
     "node-fetch": "^3.3.2",
     "openai": "^4.70.0",

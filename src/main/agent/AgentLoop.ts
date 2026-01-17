@@ -18,6 +18,8 @@ import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/MemoryService';
 import { logCollector } from '../mcp/LogCollector.js';
 import { generateMessageId, generateToolCallId } from '../../shared/utils/id';
+import { taskComplexityAnalyzer } from '../planning/TaskComplexityAnalyzer';
+import { getLangfuseService } from '../services/LangfuseService';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -34,6 +36,9 @@ interface AgentLoopConfig {
   planningService?: PlanningService;
   // New: enable/disable hooks
   enableHooks?: boolean;
+  // Session metadata for tracing
+  sessionId?: string;
+  userId?: string;
 }
 
 interface ModelResponse {
@@ -63,6 +68,17 @@ export class AgentLoop {
   private stopHookRetryCount: number = 0;
   private maxStopHookRetries: number = 3;
 
+  // Anti-pattern detection: track consecutive read-only operations
+  private consecutiveReadOps: number = 0;
+  private maxConsecutiveReadsBeforeWarning: number = 5;
+  private hasWrittenFile: boolean = false;
+
+  // Langfuse tracing
+  private sessionId: string;
+  private userId?: string;
+  private traceId: string = '';
+  private currentIterationSpanId: string = '';
+
   constructor(config: AgentLoopConfig) {
     this.generation = config.generation;
     this.modelConfig = config.modelConfig;
@@ -75,6 +91,10 @@ export class AgentLoop {
     // Planning service integration
     this.planningService = config.planningService;
     this.enableHooks = config.enableHooks ?? true;
+
+    // Tracing metadata
+    this.sessionId = config.sessionId || `session-${Date.now()}`;
+    this.userId = config.userId;
   }
 
   // --------------------------------------------------------------------------
@@ -89,6 +109,30 @@ export class AgentLoop {
     logCollector.agent('INFO', `Agent run started: "${userMessage.substring(0, 80)}..."`);
     logCollector.agent('DEBUG', `Generation: ${this.generation.id}, Model: ${this.modelConfig.provider}`);
 
+    // Langfuse: Start trace for this agent run
+    const langfuse = getLangfuseService();
+    this.traceId = `trace-${this.sessionId}-${Date.now()}`;
+    langfuse.startTrace(this.traceId, {
+      sessionId: this.sessionId,
+      userId: this.userId,
+      generationId: this.generation.id,
+      modelProvider: this.modelConfig.provider,
+      modelName: this.modelConfig.model,
+    }, userMessage);
+
+    // Task Complexity Analysis - 自动检测任务复杂度并注入提示
+    const complexityAnalysis = taskComplexityAnalyzer.analyze(userMessage);
+    const complexityHint = taskComplexityAnalyzer.generateComplexityHint(complexityAnalysis);
+
+    console.log(`[AgentLoop] Task complexity: ${complexityAnalysis.complexity} (${Math.round(complexityAnalysis.confidence * 100)}%)`);
+    logCollector.agent('INFO', `Task complexity: ${complexityAnalysis.complexity}`, {
+      confidence: complexityAnalysis.confidence,
+      reasons: complexityAnalysis.reasons,
+    });
+
+    // Inject complexity hint as system message
+    this.injectSystemMessage(complexityHint);
+
     // Session Start Hook
     if (this.enableHooks && this.planningService) {
       await this.runSessionStartHook();
@@ -100,10 +144,26 @@ export class AgentLoop {
       iterations++;
       console.log(`[AgentLoop] >>>>>> Iteration ${iterations} START <<<<<<`);
 
+      // Langfuse: Start iteration span
+      this.currentIterationSpanId = `iteration-${this.traceId}-${iterations}`;
+      langfuse.startSpan(this.traceId, this.currentIterationSpanId, {
+        name: `Iteration ${iterations}`,
+        metadata: { iteration: iterations },
+      });
+
       // 1. Call model
       console.log('[AgentLoop] Calling inference...');
+      const inferenceStartTime = Date.now();
       const response = await this.inference();
+      const inferenceDuration = Date.now() - inferenceStartTime;
       console.log('[AgentLoop] Inference response type:', response.type);
+
+      // Langfuse: Log inference event
+      langfuse.logEvent(this.traceId, 'inference_complete', {
+        iteration: iterations,
+        responseType: response.type,
+        duration: inferenceDuration,
+      });
 
       // 2. Handle text response
       if (response.type === 'text' && response.content) {
@@ -156,6 +216,9 @@ export class AgentLoop {
         };
         this.messages.push(assistantMessage);
         this.onEvent({ type: 'message', data: assistantMessage });
+
+        // Langfuse: End iteration span and break
+        langfuse.endSpan(this.currentIterationSpanId, { type: 'text_response' });
         break;
       }
 
@@ -210,6 +273,13 @@ export class AgentLoop {
         };
         this.messages.push(toolMessage);
 
+        // Langfuse: End iteration span
+        langfuse.endSpan(this.currentIterationSpanId, {
+          type: 'tool_calls',
+          toolCount: response.toolCalls.length,
+          successCount: toolResults.filter(r => r.success).length,
+        });
+
         // Continue loop
         console.log(`[AgentLoop] >>>>>> Iteration ${iterations} END (continuing) <<<<<<`);
         continue;
@@ -226,12 +296,21 @@ export class AgentLoop {
         type: 'error',
         data: { message: 'Max iterations reached' },
       });
+
+      // Langfuse: End trace with warning
+      langfuse.endTrace(this.traceId, `Max iterations (${this.maxIterations}) reached`, 'WARNING');
+    } else {
+      // Langfuse: End trace normally
+      langfuse.endTrace(this.traceId, `Completed in ${iterations} iterations`);
     }
 
     // Signal completion to frontend
     console.log('[AgentLoop] ========== run() END, emitting agent_complete ==========');
     logCollector.agent('INFO', `Agent run completed, ${iterations} iterations`);
     this.onEvent({ type: 'agent_complete', data: null });
+
+    // Langfuse: Flush to ensure data is sent
+    langfuse.flush().catch((err) => console.error('[Langfuse] Flush error:', err));
   }
 
   cancel(): void {
@@ -302,6 +381,15 @@ export class AgentLoop {
       console.log(`[AgentLoop] Emitting tool_call_start for ${toolCall.name}`);
       this.onEvent({ type: 'tool_call_start', data: toolCall });
 
+      // Langfuse: Start tool span
+      const langfuse = getLangfuseService();
+      const toolSpanId = `tool-${toolCall.id}`;
+      langfuse.startNestedSpan(this.currentIterationSpanId, toolSpanId, {
+        name: `Tool: ${toolCall.name}`,
+        input: toolCall.arguments,
+        metadata: { toolId: toolCall.id, toolName: toolCall.name },
+      });
+
       const startTime = Date.now();
 
       try {
@@ -329,6 +417,52 @@ export class AgentLoop {
         results.push(toolResult);
         console.log(`[AgentLoop] Tool ${toolCall.name} completed in ${toolResult.duration}ms`);
 
+        // Track read vs write operations for anti-pattern detection
+        const readOnlyTools = ['read_file', 'glob', 'grep', 'list_directory', 'web_fetch'];
+        const writeTools = ['write_file', 'edit_file'];
+
+        if (writeTools.includes(toolCall.name) && result.success) {
+          this.hasWrittenFile = true;
+          this.consecutiveReadOps = 0;
+        } else if (readOnlyTools.includes(toolCall.name)) {
+          this.consecutiveReadOps++;
+
+          // Warning threshold: 5 reads before first write, 10 reads after first write
+          const warningThreshold = this.hasWrittenFile
+            ? this.maxConsecutiveReadsBeforeWarning * 2  // 10 after writing
+            : this.maxConsecutiveReadsBeforeWarning;      // 5 before writing
+
+          // Inject warning if too many consecutive reads
+          if (this.consecutiveReadOps >= warningThreshold) {
+            console.log(`[AgentLoop] WARNING: ${this.consecutiveReadOps} consecutive read ops! hasWritten=${this.hasWrittenFile}`);
+
+            if (this.hasWrittenFile) {
+              // Already wrote a file - stop over-verifying
+              this.injectSystemMessage(
+                `<critical-warning>\n` +
+                `WARNING: You have performed ${this.consecutiveReadOps} consecutive read operations!\n` +
+                `You have ALREADY created/modified files. The task may be COMPLETE.\n` +
+                `Options:\n` +
+                `1. If the task is done, respond with a completion message\n` +
+                `2. If you need to make ONE more edit, do it now and then STOP\n` +
+                `3. Do NOT keep reading the same file repeatedly\n` +
+                `</critical-warning>`
+              );
+            } else {
+              // Haven't written yet - need to start creating
+              this.injectSystemMessage(
+                `<critical-warning>\n` +
+                `WARNING: You have performed ${this.consecutiveReadOps} read operations without creating any files!\n` +
+                `If this is a CREATION task (like "create a snake game"), you must:\n` +
+                `1. STOP reading files\n` +
+                `2. IMMEDIATELY use write_file to create the requested content\n` +
+                `3. Do NOT continue researching - just CREATE!\n` +
+                `</critical-warning>`
+              );
+            }
+          }
+        }
+
         // Post-Tool Hook
         if (this.enableHooks && this.planningService) {
           try {
@@ -345,6 +479,13 @@ export class AgentLoop {
             console.error('Post-tool hook error:', error);
           }
         }
+
+        // Langfuse: End tool span (success)
+        langfuse.endSpan(toolSpanId, {
+          success: result.success,
+          outputLength: result.output?.length || 0,
+          duration: toolResult.duration,
+        });
 
         // Emit tool call end event
         console.log(`[AgentLoop] Emitting tool_call_end for ${toolCall.name} (success)`);
@@ -378,6 +519,13 @@ export class AgentLoop {
           }
         }
 
+        // Langfuse: End tool span (error)
+        langfuse.endSpan(toolSpanId, {
+          success: false,
+          error: toolResult.error,
+          duration: toolResult.duration,
+        }, 'ERROR', toolResult.error);
+
         console.log(`[AgentLoop] Emitting tool_call_end for ${toolCall.name} (error)`);
         this.onEvent({ type: 'tool_call_end', data: toolResult });
       }
@@ -405,6 +553,33 @@ export class AgentLoop {
       hasApiKey: !!this.modelConfig.apiKey,
     });
 
+    // Langfuse: Start generation tracking
+    const langfuse = getLangfuseService();
+    const generationId = `gen-${this.traceId}-${Date.now()}`;
+    const startTime = new Date();
+
+    // Create generation input (limit message content to avoid huge payloads)
+    const inputSummary = modelMessages.map(m => ({
+      role: m.role,
+      contentLength: m.content.length,
+      contentPreview: typeof m.content === 'string' ? m.content.substring(0, 200) : '[multimodal]',
+    }));
+
+    langfuse.startGenerationInSpan(this.currentIterationSpanId, generationId, `LLM: ${this.modelConfig.model}`, {
+      model: this.modelConfig.model,
+      modelParameters: {
+        provider: this.modelConfig.provider,
+        temperature: this.modelConfig.temperature,
+        maxTokens: this.modelConfig.maxTokens,
+      },
+      input: {
+        messageCount: modelMessages.length,
+        toolCount: tools.length,
+        messages: inputSummary,
+      },
+      startTime,
+    });
+
     try {
       // Call model through router
       console.log('[AgentLoop] Calling modelRouter.inference()...');
@@ -419,9 +594,27 @@ export class AgentLoop {
       );
 
       console.log('[AgentLoop] Model response received:', response.type);
+
+      // Langfuse: End generation (success)
+      langfuse.endGeneration(generationId, {
+        type: response.type,
+        contentLength: response.content?.length || 0,
+        toolCallCount: response.toolCalls?.length || 0,
+      });
+
       return response;
     } catch (error) {
       console.error('[AgentLoop] Model inference error:', error);
+
+      // Langfuse: End generation (error)
+      langfuse.endGeneration(
+        generationId,
+        { error: error instanceof Error ? error.message : 'Unknown error' },
+        undefined,
+        'ERROR',
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+
       throw error;
     }
   }

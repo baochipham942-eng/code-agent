@@ -387,6 +387,13 @@ export interface AppSettings {
   cloudApi?: {
     url: string;
   };
+  // Langfuse 配置 (可观测性)
+  langfuse?: {
+    publicKey: string;
+    secretKey: string;
+    baseUrl?: string;
+    enabled?: boolean;
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -569,6 +576,8 @@ export interface DeviceInfo {
 
 export interface UpdateInfo {
   hasUpdate: boolean;
+  /** 是否强制更新 - true 时弹出不可关闭的更新弹窗 */
+  forceUpdate?: boolean;
   currentVersion: string;
   latestVersion?: string;
   downloadUrl?: string;

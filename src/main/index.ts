@@ -16,6 +16,7 @@ import { initSupabase, isSupabaseInitialized } from './services/SupabaseService'
 import { getAuthService } from './services/AuthService';
 import { getSyncService } from './services/SyncService';
 import { initUpdateService, getUpdateService, isUpdateServiceInitialized } from './services/UpdateService';
+import { initLangfuse, getLangfuseService } from './services/LangfuseService';
 import { IPC_CHANNELS } from '../shared/ipc';
 import type { GenerationId, PermissionResponse, PlanningState, AuthUser, UpdateInfo } from '../shared/types';
 import { createPlanningService, type PlanningService } from './planning';
@@ -305,8 +306,32 @@ async function initializeServices(): Promise<void> {
     console.log('Supabase not configured, skipping initialization');
   }
 
+  // Initialize Langfuse (observability)
+  const langfusePublicKey = process.env.LANGFUSE_PUBLIC_KEY || settings.langfuse?.publicKey;
+  const langfuseSecretKey = process.env.LANGFUSE_SECRET_KEY || settings.langfuse?.secretKey;
+  const langfuseBaseUrl = process.env.LANGFUSE_BASE_URL || settings.langfuse?.baseUrl;
+
+  if (langfusePublicKey && langfuseSecretKey) {
+    try {
+      initLangfuse({
+        publicKey: langfusePublicKey,
+        secretKey: langfuseSecretKey,
+        baseUrl: langfuseBaseUrl,
+        enabled: settings.langfuse?.enabled !== false,
+      });
+      console.log('Langfuse initialized');
+    } catch (error) {
+      console.error('Failed to initialize Langfuse:', error);
+    }
+  } else {
+    console.log('Langfuse not configured, tracing disabled');
+  }
+
   // Initialize generation manager
   generationManager = new GenerationManager();
+
+  // Track current assistant message for updating tool results
+  let currentAssistantMessageId: string | null = null;
 
   // Initialize agent orchestrator
   agentOrchestrator = new AgentOrchestrator({
@@ -324,12 +349,40 @@ async function initializeServices(): Promise<void> {
 
       // 持久化保存 assistant 消息
       if (event.type === 'message' && event.data?.role === 'assistant') {
+        currentAssistantMessageId = event.data.id;
         try {
           const sessionManager = getSessionManager();
           await sessionManager.addMessage(event.data);
         } catch (error) {
           console.error('Failed to save assistant message:', error);
         }
+      }
+
+      // 更新工具调用结果
+      if (event.type === 'tool_call_end' && currentAssistantMessageId && event.data) {
+        try {
+          const sessionManager = getSessionManager();
+          const session = await sessionManager.getCurrentSession();
+          if (session) {
+            // 找到当前消息并更新 toolCalls
+            const currentMessage = session.messages.find((m) => m.id === currentAssistantMessageId);
+            if (currentMessage && currentMessage.toolCalls) {
+              const updatedToolCalls = currentMessage.toolCalls.map((tc) =>
+                tc.id === event.data.toolCallId
+                  ? { ...tc, result: event.data }
+                  : tc
+              );
+              await sessionManager.updateMessage(currentAssistantMessageId, { toolCalls: updatedToolCalls });
+            }
+          }
+        } catch (error) {
+          console.error('Failed to update tool call result:', error);
+        }
+      }
+
+      // 清理当前消息引用
+      if (event.type === 'agent_complete') {
+        currentAssistantMessageId = null;
       }
     },
   });
@@ -1167,6 +1220,16 @@ app.on('before-quit', async () => {
     console.log('Database closed');
   } catch (error) {
     console.error('Error closing database:', error);
+  }
+
+  // Cleanup Langfuse (flush remaining events)
+  try {
+    const langfuseService = getLangfuseService();
+    await langfuseService.cleanupAll();
+    await langfuseService.shutdown();
+    console.log('Langfuse cleaned up');
+  } catch (error) {
+    console.error('Error cleaning up Langfuse:', error);
   }
 });
 

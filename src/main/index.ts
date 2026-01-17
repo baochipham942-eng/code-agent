@@ -345,9 +345,7 @@ async function initializeServices(): Promise<void> {
   await initializePlanningService();
 
   // Initialize update service
-  // 更新服务器 URL - 你需要在 Vercel 控制台设置 Root Directory 为 cloud-api
-  // 或者在 .env 中设置 CLOUD_API_URL
-  const updateServerUrl = process.env.CLOUD_API_URL || settings.cloudApi?.url || 'https://code-agent-baochipham942-engs-projects.vercel.app';
+  const updateServerUrl = process.env.CLOUD_API_URL || settings.cloudApi?.url || 'https://cloud-api-henna.vercel.app';
   initUpdateService({
     updateServerUrl,
     checkInterval: 60 * 60 * 1000, // Check every hour

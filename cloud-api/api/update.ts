@@ -21,27 +21,24 @@ interface ReleaseInfo {
 
 // 当前最新版本 - 每次发布新版本时更新这里
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.2.2',
-  publishedAt: '2025-01-17T17:30:00.000Z',
+  version: '0.2.3',
+  publishedAt: '2026-01-17T09:31:00.000Z',
   releaseNotes: `
-## Code Agent v0.2.2
+## Code Agent v0.2.3
 
 ### 修复
-- 修复外层代际显示格式（Gen X vX.0）
-- 修复下拉菜单头部"选择代际"样式
-- 优化工具标签全部展示并自动换行
+- 修复更新检查服务：Vercel API 优先，GitHub Releases 后备
+- 修复 GitHub 仓库地址
+- 添加响应验证
 
 ### 改进
-- 下拉菜单支持显示所有工具（不再省略）
-- UI 文案本地化为中文
+- 优化更新检查逻辑，支持双重 API 回退机制
   `.trim(),
   downloads: {
     darwin: {
-      // 实际下载地址需要在打包后更新
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.2.2/Code-Agent-0.2.2-arm64.dmg',
-      size: 130 * 1024 * 1024, // 约 130MB
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.2.3/Code.Agent-0.2.3-arm64.dmg',
+      size: 129495207,
     },
-    // win32 和 linux 暂未提供
   },
 };
 

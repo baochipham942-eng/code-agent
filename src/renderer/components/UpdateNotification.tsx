@@ -1,13 +1,14 @@
 // ============================================================================
-// UpdateNotification - Update notification banner and download progress
+// UpdateNotification - Update Modal Dialog
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { X, Download, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type { UpdateInfo, DownloadProgress } from '../../shared/types';
 
 interface UpdateNotificationProps {
-  /** Position of the notification */
+  /** Position - kept for backwards compatibility but ignored */
   position?: 'top' | 'bottom';
   /** Auto-dismiss after update check (if no update available) */
   autoDismissNoUpdate?: boolean;
@@ -16,7 +17,6 @@ interface UpdateNotificationProps {
 type NotificationState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error';
 
 export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
-  position = 'top',
   autoDismissNoUpdate = true,
 }) => {
   const [state, setState] = useState<NotificationState>('idle');
@@ -110,11 +110,6 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
     await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_OPEN_FILE, downloadedFilePath);
   }, [downloadedFilePath]);
 
-  const handleOpenUrl = useCallback(async () => {
-    if (!updateInfo?.downloadUrl) return;
-    await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_OPEN_URL, updateInfo.downloadUrl);
-  }, [updateInfo?.downloadUrl]);
-
   const handleDismiss = useCallback(() => {
     setDismissed(true);
   }, []);
@@ -143,167 +138,193 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
     return null;
   }
 
-  const positionClasses = position === 'top'
-    ? 'top-0 left-0 right-0'
-    : 'bottom-0 left-0 right-0';
-
   return (
-    <div
-      className={`fixed ${positionClasses} z-50 px-4 py-2 animate-fade-in-up`}
-      style={{ background: 'linear-gradient(180deg, rgba(99, 102, 241, 0.15) 0%, transparent 100%)' }}
-    >
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-elevated/95 backdrop-blur-sm border border-primary/30 rounded-lg px-4 py-3 shadow-lg">
-          {/* Update Available */}
-          {state === 'available' && updateInfo && (
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                  <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-white">
-                    新版本可用: v{updateInfo.latestVersion}
-                  </p>
-                  <p className="text-xs text-white/60">
-                    当前版本: v{updateInfo.currentVersion}
-                    {updateInfo.fileSize && ` • 大小: ${formatSize(updateInfo.fileSize)}`}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleOpenUrl}
-                  className="px-3 py-1.5 text-xs text-white/70 hover:text-white hover:bg-white/10 rounded-md transition-colors"
-                >
-                  在浏览器中打开
-                </button>
-                <button
-                  onClick={handleDownload}
-                  className="px-3 py-1.5 text-xs bg-primary hover:bg-primary/80 text-white rounded-md transition-colors font-medium"
-                >
-                  下载更新
-                </button>
-                <button
-                  onClick={handleDismiss}
-                  className="p-1 text-white/50 hover:text-white hover:bg-white/10 rounded transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          )}
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
+        onClick={state !== 'downloading' ? handleDismiss : undefined}
+      />
 
-          {/* Downloading */}
-          {state === 'downloading' && downloadProgress && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-accent-cyan/20 flex items-center justify-center">
-                    <svg className="w-4 h-4 text-accent-cyan animate-spin" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
+      {/* Modal */}
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div
+          className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+            <h2 className="text-lg font-semibold text-white">软件更新</h2>
+            {state !== 'downloading' && (
+              <button
+                onClick={handleDismiss}
+                className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+
+          {/* Content */}
+          <div className="px-6 py-5">
+            {/* Update Available */}
+            {state === 'available' && updateInfo && (
+              <div className="space-y-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-full bg-indigo-500/20 flex items-center justify-center flex-shrink-0">
+                    <Download className="w-6 h-6 text-indigo-400" />
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-white">正在下载更新...</p>
-                    <p className="text-xs text-white/60">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-lg font-medium text-white">
+                      新版本 v{updateInfo.latestVersion} 可用
+                    </p>
+                    <p className="text-sm text-zinc-400 mt-1">
+                      当前版本: v{updateInfo.currentVersion}
+                    </p>
+                    {updateInfo.fileSize && (
+                      <p className="text-sm text-zinc-500 mt-0.5">
+                        文件大小: {formatSize(updateInfo.fileSize)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Release Notes */}
+                {updateInfo.releaseNotes && (
+                  <div className="bg-zinc-800/50 rounded-lg p-4 max-h-40 overflow-y-auto">
+                    <p className="text-xs font-medium text-zinc-400 mb-2">更新内容</p>
+                    <div className="text-sm text-zinc-300 whitespace-pre-wrap">
+                      {updateInfo.releaseNotes}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Downloading */}
+            {state === 'downloading' && downloadProgress && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
+                    <Loader2 className="w-6 h-6 text-cyan-400 animate-spin" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-lg font-medium text-white">正在下载更新</p>
+                    <p className="text-sm text-zinc-400 mt-1">
                       {formatSize(downloadProgress.transferred)} / {formatSize(downloadProgress.total)}
-                      {' • '}{formatSpeed(downloadProgress.bytesPerSecond)}
+                      {downloadProgress.bytesPerSecond > 0 && ` • ${formatSpeed(downloadProgress.bytesPerSecond)}`}
+                    </p>
+                  </div>
+                  <span className="text-xl font-mono font-bold text-cyan-400">
+                    {downloadProgress.percent.toFixed(0)}%
+                  </span>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-indigo-500 to-cyan-400 transition-all duration-300"
+                    style={{ width: `${downloadProgress.percent}%` }}
+                  />
+                </div>
+
+                <p className="text-xs text-zinc-500 text-center">
+                  请勿关闭此窗口，下载完成后可安装更新
+                </p>
+              </div>
+            )}
+
+            {/* Download Complete */}
+            {state === 'downloaded' && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                    <CheckCircle className="w-6 h-6 text-emerald-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-lg font-medium text-white">下载完成</p>
+                    <p className="text-sm text-zinc-400 mt-1">
+                      点击下方按钮启动安装程序
                     </p>
                   </div>
                 </div>
-                <span className="text-sm font-mono text-accent-cyan">
-                  {downloadProgress.percent.toFixed(1)}%
-                </span>
               </div>
-              <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-primary to-accent-cyan transition-all duration-300"
-                  style={{ width: `${downloadProgress.percent}%` }}
-                />
-              </div>
-            </div>
-          )}
+            )}
 
-          {/* Download Complete */}
-          {state === 'downloaded' && (
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-accent-emerald/20 flex items-center justify-center">
-                  <svg className="w-4 h-4 text-accent-emerald" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-white">下载完成!</p>
-                  <p className="text-xs text-white/60">点击"安装"启动安装程序</p>
+            {/* Error */}
+            {state === 'error' && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-rose-500/20 flex items-center justify-center flex-shrink-0">
+                    <AlertCircle className="w-6 h-6 text-rose-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-lg font-medium text-white">下载失败</p>
+                    <p className="text-sm text-zinc-400 mt-1">
+                      {error || '发生未知错误，请稍后重试'}
+                    </p>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-800 bg-zinc-900/50">
+            {state === 'available' && (
+              <>
+                <button
+                  onClick={handleDismiss}
+                  className="px-4 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                >
+                  稍后提醒
+                </button>
+                <button
+                  onClick={handleDownload}
+                  className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-medium"
+                >
+                  立即下载
+                </button>
+              </>
+            )}
+
+            {state === 'downloaded' && (
+              <>
+                <button
+                  onClick={handleDismiss}
+                  className="px-4 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                >
+                  稍后安装
+                </button>
                 <button
                   onClick={handleOpenFile}
-                  className="px-3 py-1.5 text-xs bg-accent-emerald hover:bg-accent-emerald/80 text-white rounded-md transition-colors font-medium"
+                  className="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors font-medium"
                 >
-                  安装更新
+                  立即安装
                 </button>
+              </>
+            )}
+
+            {state === 'error' && (
+              <>
                 <button
                   onClick={handleDismiss}
-                  className="p-1 text-white/50 hover:text-white hover:bg-white/10 rounded transition-colors"
+                  className="px-4 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  关闭
                 </button>
-              </div>
-            </div>
-          )}
-
-          {/* Error */}
-          {state === 'error' && (
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-accent-rose/20 flex items-center justify-center">
-                  <svg className="w-4 h-4 text-accent-rose" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-white">下载失败</p>
-                  <p className="text-xs text-white/60">{error || '未知错误'}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
                 <button
                   onClick={handleRetry}
-                  className="px-3 py-1.5 text-xs text-white/70 hover:text-white hover:bg-white/10 rounded-md transition-colors"
+                  className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-medium"
                 >
-                  重试
+                  重新下载
                 </button>
-                <button
-                  onClick={handleOpenUrl}
-                  className="px-3 py-1.5 text-xs bg-primary hover:bg-primary/80 text-white rounded-md transition-colors font-medium"
-                >
-                  手动下载
-                </button>
-                <button
-                  onClick={handleDismiss}
-                  className="p-1 text-white/50 hover:text-white hover:bg-white/10 rounded transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          )}
+              </>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 };
 

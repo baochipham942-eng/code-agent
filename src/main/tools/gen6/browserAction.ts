@@ -72,7 +72,7 @@ Examples:
 - {"action": "type", "selector": "#search", "text": "hello"}
 - {"action": "screenshot"}
 - {"action": "get_content"}`,
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
+  generations: ['gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
   inputSchema: {

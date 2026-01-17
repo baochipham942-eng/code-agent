@@ -204,3 +204,57 @@ npm run typecheck
 
 - [产品需求文档](docs/PRD.md)
 - [架构设计文档](docs/ARCHITECTURE.md)
+
+---
+
+## 🚨 错题本：常见错误与教训
+
+### 1. Vercel 部署：GitHub 自动部署 vs CLI 部署
+
+**问题描述**：
+- `code-agent` 项目的 Vercel 是连接到 GitHub 仓库的，**自动从 git push 部署**
+- `cloud-api` 项目的 Vercel 是独立的，需要用 **`npx vercel --prod` 手动部署**
+
+**真实案例**：
+- 2026-01-17：更新 `cloud-api/api/update.ts` 版本到 0.3.0 后，用 `npx vercel --prod` 部署了，但忘记 **git push**，导致 GitHub 连接的 Vercel 项目没有更新。来回折腾了好几轮才发现问题。
+
+**正确流程**：
+
+```bash
+# 1. 修改 cloud-api/api/update.ts 中的版本号
+# 2. 提交代码
+git add cloud-api/api/update.ts
+git commit -m "chore: 更新云端版本信息到 x.x.x"
+
+# 3. 关键步骤：push 到 GitHub（Vercel 会自动部署）
+git push origin main
+
+# 4. 等待 Vercel 自动部署完成（通常 10-30 秒）
+# 5. 验证部署结果
+curl -s "https://cloud-api-henna.vercel.app/api/update?action=health"
+```
+
+**验证清单**：
+- [ ] 本地代码已修改 ✓
+- [ ] 代码已 commit ✓
+- [ ] **代码已 push 到 GitHub** ← 关键！很容易漏掉
+- [ ] Vercel 部署页面显示新的 commit ✓
+- [ ] API 返回正确的版本号 ✓
+
+### 2. 版本发布完整流程
+
+每次发布新版本时，需要同步更新多个位置：
+
+```bash
+# 1. 更新 package.json 版本号
+# 2. 更新 cloud-api/api/update.ts 云端版本信息
+# 3. 提交并 push
+git add -A && git commit -m "chore: bump version to x.x.x" && git push
+
+# 4. 等待 Vercel 自动部署（检查 GitHub 连接的项目）
+# 5. 构建和打包
+npm run build && npm run dist:mac
+
+# 6. 验证
+curl -s "https://cloud-api-henna.vercel.app/api/update?action=health"
+```

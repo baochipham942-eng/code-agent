@@ -21,11 +21,12 @@ const generationConfigs: Record<string, { icon: React.ReactNode; color: string }
 };
 
 // Default generations (will be loaded from main process)
+// 版本号对应代际：Gen1=v1.0, Gen2=v2.0, ..., Gen8=v8.0
 const defaultGenerations: Generation[] = [
   {
     id: 'gen1',
     name: 'Generation 1',
-    version: 'v0.2 Beta',
+    version: 'v1.0',
     description: 'Basic: bash, read_file, write_file, edit_file',
     tools: ['bash', 'read_file', 'write_file', 'edit_file'],
     systemPrompt: '',
@@ -34,7 +35,7 @@ const defaultGenerations: Generation[] = [
   {
     id: 'gen2',
     name: 'Generation 2',
-    version: 'v1.0',
+    version: 'v2.0',
     description: '+ glob, grep, list_directory, MCP',
     tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory'],
     systemPrompt: '',
@@ -43,7 +44,7 @@ const defaultGenerations: Generation[] = [
   {
     id: 'gen3',
     name: 'Generation 3',
-    version: 'v1.0.60',
+    version: 'v3.0',
     description: '+ task, todo_write, ask_user, Plan Mode',
     tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory', 'task', 'todo_write', 'ask_user_question'],
     systemPrompt: '',
@@ -52,7 +53,7 @@ const defaultGenerations: Generation[] = [
   {
     id: 'gen4',
     name: 'Generation 4',
-    version: 'v2.0',
+    version: 'v4.0',
     description: '+ skill, web_fetch, hooks, LSP',
     tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory', 'task', 'todo_write', 'ask_user_question', 'skill', 'web_fetch'],
     systemPrompt: '',
@@ -61,7 +62,7 @@ const defaultGenerations: Generation[] = [
   {
     id: 'gen5',
     name: 'Generation 5',
-    version: 'v3.0',
+    version: 'v5.0',
     description: '+ memory_store, memory_search, code_index, RAG',
     tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory', 'task', 'todo_write', 'ask_user_question', 'skill', 'web_fetch', 'memory_store', 'memory_search', 'code_index'],
     systemPrompt: '',
@@ -70,7 +71,7 @@ const defaultGenerations: Generation[] = [
   {
     id: 'gen6',
     name: 'Generation 6',
-    version: 'v4.0',
+    version: 'v6.0',
     description: '+ screenshot, computer_use, browser_action (Computer Use)',
     tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory', 'task', 'todo_write', 'ask_user_question', 'skill', 'web_fetch', 'memory_store', 'memory_search', 'code_index', 'screenshot', 'computer_use', 'browser_navigate', 'browser_action'],
     systemPrompt: '',
@@ -79,7 +80,7 @@ const defaultGenerations: Generation[] = [
   {
     id: 'gen7',
     name: 'Generation 7',
-    version: 'v5.0',
+    version: 'v7.0',
     description: '+ spawn_agent, agent_message, workflow_orchestrate (Multi-Agent)',
     tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory', 'task', 'todo_write', 'ask_user_question', 'skill', 'web_fetch', 'memory_store', 'memory_search', 'code_index', 'screenshot', 'computer_use', 'browser_navigate', 'browser_action', 'spawn_agent', 'agent_message', 'workflow_orchestrate'],
     systemPrompt: '',
@@ -88,7 +89,7 @@ const defaultGenerations: Generation[] = [
   {
     id: 'gen8',
     name: 'Generation 8',
-    version: 'v6.0',
+    version: 'v8.0',
     description: '+ strategy_optimize, tool_create, self_evaluate, learn_pattern (Self-Evolution)',
     tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory', 'task', 'todo_write', 'ask_user_question', 'skill', 'web_fetch', 'memory_store', 'memory_search', 'code_index', 'screenshot', 'computer_use', 'browser_navigate', 'browser_action', 'spawn_agent', 'agent_message', 'workflow_orchestrate', 'strategy_optimize', 'tool_create', 'self_evaluate', 'learn_pattern'],
     systemPrompt: '',
@@ -107,12 +108,16 @@ export const GenerationBadge: React.FC = () => {
   useEffect(() => {
     const loadGenerations = async () => {
       try {
+        console.log('[GenerationBadge] Loading generations from IPC...');
         const gens = await window.electronAPI?.invoke(IPC_CHANNELS.GENERATION_LIST);
+        console.log('[GenerationBadge] Received generations:', gens?.length, gens?.map((g: Generation) => g.id));
         if (gens && gens.length > 0) {
           setGenerations(gens);
+        } else {
+          console.log('[GenerationBadge] Using default generations:', defaultGenerations.length);
         }
       } catch (error) {
-        console.error('Failed to load generations:', error);
+        console.error('[GenerationBadge] Failed to load generations:', error);
       }
     };
     loadGenerations();
@@ -157,7 +162,7 @@ export const GenerationBadge: React.FC = () => {
           />
 
           {/* Menu */}
-          <div className="absolute top-full left-0 mt-2 w-80 bg-zinc-800 rounded-lg shadow-xl border border-zinc-700 z-20 overflow-hidden animate-fadeIn">
+          <div className="absolute top-full left-0 mt-2 w-[800px] bg-zinc-800 rounded-lg shadow-xl border border-zinc-700 z-20 overflow-hidden animate-fadeIn">
             <div className="p-2 max-h-[420px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-600 scrollbar-track-transparent">
               <div className="text-xs font-medium text-zinc-500 px-2 py-1.5 sticky top-0 bg-zinc-800 z-10">
                 Select Generation

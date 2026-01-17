@@ -19,7 +19,7 @@ import { UserQuestionModal } from './components/UserQuestionModal';
 import { AuthModal } from './components/AuthModal';
 import { UpdateNotification } from './components/UpdateNotification';
 import { useDisclosure } from './hooks/useDisclosure';
-import { Target, Lightbulb, AlertOctagon, Layers, Brain } from 'lucide-react';
+import { Target, Lightbulb, AlertOctagon, Brain } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { UserQuestionRequest } from '@shared/types';
 
@@ -51,7 +51,7 @@ export const App: React.FC = () => {
   const { showAuthModal } = useAuthStore();
 
   // 渐进披露 Hook
-  const { isStandard, isAdvanced, isExpert, getLevelName, upgradeLevel } = useDisclosure();
+  const { isStandard, isAdvanced } = useDisclosure();
 
   // Debug: Check if electronAPI is available on mount
   useEffect(() => {
@@ -264,17 +264,6 @@ export const App: React.FC = () => {
     }
   };
 
-  // 披露级别指示器组件
-  const DisclosureLevelIndicator: React.FC = () => (
-    <button
-      onClick={() => setShowSettings(true)}
-      className="flex items-center gap-1.5 px-2 py-1 text-xs rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
-      title="Change disclosure level"
-    >
-      <Layers className="w-3.5 h-3.5" />
-      <span>{getLevelName()}</span>
-    </button>
-  );
 
   return (
     <div className="h-screen flex flex-col bg-zinc-900 text-zinc-100">
@@ -292,7 +281,6 @@ export const App: React.FC = () => {
           <div className="px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
               {isStandard && <GenerationBadge />}
-              <DisclosureLevelIndicator />
             </div>
             <div className="flex items-center gap-2">
               {isPlanningAvailable && <PlanningToggle />}

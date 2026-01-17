@@ -115,7 +115,7 @@ export class UpdateService {
   }
 
   /**
-   * Check for updates from the cloud API
+   * Check for updates from GitHub Releases API
    */
   async checkForUpdates(): Promise<UpdateInfo> {
     const currentVersion = this.getCurrentVersion();
@@ -124,18 +124,81 @@ export class UpdateService {
     console.log(`[UpdateService] Checking for updates... Current: ${currentVersion}, Platform: ${platform}`);
 
     try {
-      const url = `${this.config.updateServerUrl}/api/update?action=check&version=${currentVersion}&platform=${platform}`;
-      const response = await this.httpGet(url);
-      const data = JSON.parse(response);
+      // Try GitHub Releases API first
+      const githubUrl = 'https://api.github.com/repos/anthropics/code-agent/releases/latest';
+      let data: any;
+
+      try {
+        const response = await this.httpGet(githubUrl);
+        data = JSON.parse(response);
+      } catch (githubError) {
+        // If GitHub fails, try the configured server
+        const serverUrl = `${this.config.updateServerUrl}/api/update?action=check&version=${currentVersion}&platform=${platform}`;
+        try {
+          const response = await this.httpGet(serverUrl);
+          data = JSON.parse(response);
+
+          // Server API format
+          const updateInfo: UpdateInfo = {
+            hasUpdate: data.hasUpdate || false,
+            currentVersion,
+            latestVersion: data.latestVersion,
+            downloadUrl: data.downloadUrl,
+            releaseNotes: data.releaseNotes,
+            fileSize: data.fileSize,
+            publishedAt: data.publishedAt,
+          };
+
+          this.lastCheck = new Date();
+          this.cachedUpdateInfo = updateInfo;
+          return updateInfo;
+        } catch (serverError) {
+          // Both failed, return no update available
+          console.log('[UpdateService] Both GitHub and server checks failed, assuming up to date');
+          const updateInfo: UpdateInfo = {
+            hasUpdate: false,
+            currentVersion,
+          };
+          this.lastCheck = new Date();
+          this.cachedUpdateInfo = updateInfo;
+          return updateInfo;
+        }
+      }
+
+      // Parse GitHub Releases API response
+      const latestVersion = (data.tag_name || '').replace(/^v/, '');
+      const hasUpdate = this.compareVersions(latestVersion, currentVersion) > 0;
+
+      // Find the appropriate asset for the platform
+      let downloadUrl: string | undefined;
+      let fileSize: number | undefined;
+      const assets = data.assets || [];
+
+      for (const asset of assets) {
+        const name = asset.name.toLowerCase();
+        if (platform === 'darwin' && (name.includes('mac') || name.includes('darwin') || name.endsWith('.dmg'))) {
+          downloadUrl = asset.browser_download_url;
+          fileSize = asset.size;
+          break;
+        } else if (platform === 'win32' && (name.includes('win') || name.endsWith('.exe') || name.endsWith('.msi'))) {
+          downloadUrl = asset.browser_download_url;
+          fileSize = asset.size;
+          break;
+        } else if (platform === 'linux' && (name.includes('linux') || name.endsWith('.AppImage') || name.endsWith('.deb'))) {
+          downloadUrl = asset.browser_download_url;
+          fileSize = asset.size;
+          break;
+        }
+      }
 
       const updateInfo: UpdateInfo = {
-        hasUpdate: data.hasUpdate || false,
+        hasUpdate,
         currentVersion,
-        latestVersion: data.latestVersion,
-        downloadUrl: data.downloadUrl,
-        releaseNotes: data.releaseNotes,
-        fileSize: data.fileSize,
-        publishedAt: data.publishedAt,
+        latestVersion: latestVersion || undefined,
+        downloadUrl,
+        releaseNotes: data.body,
+        fileSize,
+        publishedAt: data.published_at,
       };
 
       this.lastCheck = new Date();
@@ -153,6 +216,22 @@ export class UpdateService {
       console.error('[UpdateService] Failed to check for updates:', error);
       throw error;
     }
+  }
+
+  /**
+   * Compare two version strings (returns 1 if v1 > v2, -1 if v1 < v2, 0 if equal)
+   */
+  private compareVersions(v1: string, v2: string): number {
+    const parts1 = v1.split('.').map(Number);
+    const parts2 = v2.split('.').map(Number);
+
+    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+      const p1 = parts1[i] || 0;
+      const p2 = parts2[i] || 0;
+      if (p1 > p2) return 1;
+      if (p1 < p2) return -1;
+    }
+    return 0;
   }
 
   /**
@@ -284,9 +363,21 @@ export class UpdateService {
 
   private httpGet(url: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      const protocol = url.startsWith('https') ? https : http;
+      const parsedUrl = new URL(url);
+      const protocol = parsedUrl.protocol === 'https:' ? https : http;
 
-      protocol.get(url, (res) => {
+      const options = {
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Code-Agent-Updater/1.0',
+          'Accept': 'application/json',
+        },
+      };
+
+      const req = protocol.request(options, (res) => {
         // Handle redirects
         if (res.statusCode === 301 || res.statusCode === 302) {
           const redirectUrl = res.headers.location;
@@ -309,7 +400,10 @@ export class UpdateService {
           resolve(data);
         });
         res.on('error', reject);
-      }).on('error', reject);
+      });
+
+      req.on('error', reject);
+      req.end();
     });
   }
 

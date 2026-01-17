@@ -94,6 +94,13 @@ export interface MCPResource {
   serverName: string;
 }
 
+export interface CacheStats {
+  totalEntries: number;
+  hitCount: number;
+  missCount: number;
+  hitRate: number;
+}
+
 // ----------------------------------------------------------------------------
 // IPC Channel Names
 // ----------------------------------------------------------------------------
@@ -194,6 +201,11 @@ export const IPC_CHANNELS = {
   UPDATE_START_AUTO_CHECK: 'update:start-auto-check',
   UPDATE_STOP_AUTO_CHECK: 'update:stop-auto-check',
   UPDATE_EVENT: 'update:event',
+
+  // Cache channels
+  CACHE_GET_STATS: 'cache:get-stats',
+  CACHE_CLEAR: 'cache:clear',
+  CACHE_CLEAN_EXPIRED: 'cache:clean-expired',
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -312,6 +324,11 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.UPDATE_OPEN_URL]: (url: string) => Promise<void>;
   [IPC_CHANNELS.UPDATE_START_AUTO_CHECK]: () => Promise<void>;
   [IPC_CHANNELS.UPDATE_STOP_AUTO_CHECK]: () => Promise<void>;
+
+  // Cache
+  [IPC_CHANNELS.CACHE_GET_STATS]: () => Promise<CacheStats>;
+  [IPC_CHANNELS.CACHE_CLEAR]: () => Promise<void>;
+  [IPC_CHANNELS.CACHE_CLEAN_EXPIRED]: () => Promise<number>;
 }
 
 // ----------------------------------------------------------------------------

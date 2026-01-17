@@ -286,18 +286,11 @@ export const Sidebar: React.FC = () => {
           </div>
         )}
 
-        {/* Settings & Version */}
-        <div className="mt-3 pt-3 border-t border-zinc-800/50 flex items-center justify-between">
-          <button
-            onClick={() => setShowSettings(true)}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors"
-            title="设置"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
+        {/* Version */}
+        <div className="mt-3 pt-3 border-t border-zinc-800/50 flex items-center justify-center">
           <div className="flex items-center gap-2 text-xs text-zinc-600">
             <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span>Code Agent v0.1.0</span>
+            <span>Code Agent v0.2.1</span>
           </div>
         </div>
       </div>

@@ -1054,6 +1054,28 @@ function setupIpcHandlers(): void {
     const updateService = getUpdateService();
     updateService.stopAutoCheck();
   });
+
+  // -------------------------------------------------------------------------
+  // Cache Handlers
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.CACHE_GET_STATS, async () => {
+    const { getToolCache } = await import('./services/ToolCache');
+    const cache = getToolCache();
+    return cache.getStats();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CACHE_CLEAR, async () => {
+    const { getToolCache } = await import('./services/ToolCache');
+    const cache = getToolCache();
+    cache.clear();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CACHE_CLEAN_EXPIRED, async () => {
+    const { getToolCache } = await import('./services/ToolCache');
+    const cache = getToolCache();
+    return cache.cleanExpired();
+  });
 }
 
 // ----------------------------------------------------------------------------

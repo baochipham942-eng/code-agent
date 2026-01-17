@@ -1,0 +1,14 @@
+{
+  "name": "code-agent-cloud-api",
+  "version": "1.0.0",
+  "description": "Code Agent 云端更新服务 API",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "vercel": "^37.0.0"
+  }
+}

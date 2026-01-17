@@ -2,14 +2,14 @@
 // SettingsModal - Application Settings
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore, type DisclosureLevel } from '../stores/appStore';
 import { useI18n, type Language } from '../hooks/useI18n';
-import { X, Key, Cpu, Palette, Info, Layers, Eye, EyeOff, Sparkles, Zap, Globe } from 'lucide-react';
+import { X, Key, Cpu, Palette, Info, Layers, Eye, EyeOff, Sparkles, Zap, Globe, Database, Download, RefreshCw, Trash2, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import type { ModelProvider } from '@shared/types';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, type CacheStats, type UpdateInfo } from '@shared/ipc';
 
-type SettingsTab = 'model' | 'disclosure' | 'appearance' | 'language' | 'about';
+type SettingsTab = 'model' | 'disclosure' | 'appearance' | 'language' | 'cache' | 'update' | 'about';
 
 export const SettingsModal: React.FC = () => {
   const { setShowSettings, modelConfig, setModelConfig, disclosureLevel, setDisclosureLevel } = useAppStore();
@@ -21,6 +21,8 @@ export const SettingsModal: React.FC = () => {
     { id: 'disclosure', label: t.settings.tabs.disclosure, icon: <Layers className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'language', label: t.settings.tabs.language, icon: <Globe className="w-4 h-4" /> },
+    { id: 'cache', label: t.settings.tabs.cache || '缓存', icon: <Database className="w-4 h-4" /> },
+    { id: 'update', label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" /> },
     { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
   ];
 
@@ -74,6 +76,8 @@ export const SettingsModal: React.FC = () => {
             )}
             {activeTab === 'appearance' && <AppearanceSettings />}
             {activeTab === 'language' && <LanguageSettings />}
+            {activeTab === 'cache' && <CacheSettings />}
+            {activeTab === 'update' && <UpdateSettings />}
             {activeTab === 'about' && <AboutSection />}
           </div>
         </div>
@@ -498,6 +502,338 @@ const AboutSection: React.FC = () => {
 
       <div className="text-center text-xs text-zinc-500">
         {t.about.madeWith}
+      </div>
+    </div>
+  );
+};
+
+// Cache Settings Tab - 缓存管理
+const CacheSettings: React.FC = () => {
+  const { t } = useI18n();
+  const [stats, setStats] = useState<CacheStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isClearing, setIsClearing] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const loadStats = async () => {
+    try {
+      const cacheStats = await window.electronAPI?.invoke(IPC_CHANNELS.CACHE_GET_STATS);
+      setStats(cacheStats);
+    } catch (error) {
+      console.error('Failed to load cache stats:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadStats();
+  }, []);
+
+  const handleClearCache = async () => {
+    setIsClearing(true);
+    setMessage(null);
+    try {
+      await window.electronAPI?.invoke(IPC_CHANNELS.CACHE_CLEAR);
+      setMessage({ type: 'success', text: t.cache?.cleared || '缓存已清除' });
+      await loadStats();
+    } catch (error) {
+      setMessage({ type: 'error', text: t.cache?.clearError || '清除缓存失败' });
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  const handleCleanExpired = async () => {
+    setIsClearing(true);
+    setMessage(null);
+    try {
+      const cleaned = await window.electronAPI?.invoke(IPC_CHANNELS.CACHE_CLEAN_EXPIRED);
+      setMessage({ type: 'success', text: `${t.cache?.expiredCleaned || '已清理过期缓存'}: ${cleaned} ${t.cache?.entries || '条'}` });
+      await loadStats();
+    } catch (error) {
+      setMessage({ type: 'error', text: t.cache?.cleanError || '清理失败' });
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-medium text-zinc-100 mb-2">{t.cache?.title || '缓存管理'}</h3>
+        <p className="text-xs text-zinc-400 mb-4">
+          {t.cache?.description || '工具调用结果会被缓存以提升响应速度。缓存的数据包括文件读取、目录列表、搜索结果等。'}
+        </p>
+      </div>
+
+      {/* Cache Stats */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-zinc-800/50 rounded-lg p-4">
+          <div className="text-2xl font-bold text-zinc-100">{stats?.totalEntries || 0}</div>
+          <div className="text-xs text-zinc-400">{t.cache?.totalEntries || '缓存条目'}</div>
+        </div>
+        <div className="bg-zinc-800/50 rounded-lg p-4">
+          <div className="text-2xl font-bold text-zinc-100">
+            {stats ? `${(stats.hitRate * 100).toFixed(1)}%` : '0%'}
+          </div>
+          <div className="text-xs text-zinc-400">{t.cache?.hitRate || '命中率'}</div>
+        </div>
+        <div className="bg-zinc-800/50 rounded-lg p-4">
+          <div className="text-2xl font-bold text-green-400">{stats?.hitCount || 0}</div>
+          <div className="text-xs text-zinc-400">{t.cache?.hits || '缓存命中'}</div>
+        </div>
+        <div className="bg-zinc-800/50 rounded-lg p-4">
+          <div className="text-2xl font-bold text-orange-400">{stats?.missCount || 0}</div>
+          <div className="text-xs text-zinc-400">{t.cache?.misses || '缓存未命中'}</div>
+        </div>
+      </div>
+
+      {/* Cache Policies */}
+      <div className="bg-zinc-800/50 rounded-lg p-4">
+        <h4 className="text-sm font-medium text-zinc-100 mb-3">{t.cache?.policies || '缓存策略'}</h4>
+        <div className="space-y-2 text-xs">
+          <div className="flex justify-between text-zinc-400">
+            <span>read_file</span>
+            <span className="text-zinc-500">5 {t.cache?.minutes || '分钟'}</span>
+          </div>
+          <div className="flex justify-between text-zinc-400">
+            <span>glob, grep, list_directory</span>
+            <span className="text-zinc-500">2 {t.cache?.minutes || '分钟'}</span>
+          </div>
+          <div className="flex justify-between text-zinc-400">
+            <span>web_fetch</span>
+            <span className="text-zinc-500">15 {t.cache?.minutes || '分钟'}</span>
+          </div>
+          <div className="flex justify-between text-zinc-400">
+            <span>bash, write_file, edit_file</span>
+            <span className="text-zinc-500 text-rose-400">{t.cache?.notCached || '不缓存'}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-3">
+        <button
+          onClick={handleCleanExpired}
+          disabled={isClearing}
+          className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 ${isClearing ? 'animate-spin' : ''}`} />
+          {t.cache?.cleanExpired || '清理过期'}
+        </button>
+        <button
+          onClick={handleClearCache}
+          disabled={isClearing}
+          className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 transition-colors disabled:opacity-50"
+        >
+          <Trash2 className="w-4 h-4" />
+          {t.cache?.clearAll || '清除全部'}
+        </button>
+      </div>
+
+      {/* Message */}
+      {message && (
+        <div className={`flex items-center gap-2 p-3 rounded-lg ${
+          message.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+        }`}>
+          {message.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+          <span className="text-sm">{message.text}</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Update Settings Tab - 版本更新
+const UpdateSettings: React.FC = () => {
+  const { t } = useI18n();
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadedPath, setDownloadedPath] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // 从 updateInfo 获取当前版本，如果没有则显示占位符
+  const currentVersion = updateInfo?.currentVersion || '...';
+
+  const checkForUpdates = async () => {
+    setIsChecking(true);
+    setError(null);
+    try {
+      const info = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_CHECK);
+      setUpdateInfo(info);
+    } catch (err) {
+      setError(t.update?.checkError || '检查更新失败，请稍后重试');
+      console.error('Update check failed:', err);
+    } finally {
+      setIsChecking(false);
+    }
+  };
+
+  const downloadUpdate = async () => {
+    if (!updateInfo?.downloadUrl) return;
+
+    setIsDownloading(true);
+    setDownloadProgress(0);
+    setError(null);
+
+    try {
+      const filePath = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_DOWNLOAD, updateInfo.downloadUrl);
+      setDownloadedPath(filePath);
+    } catch (err) {
+      setError(t.update?.downloadError || '下载更新失败');
+      console.error('Download failed:', err);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const openDownloadedFile = async () => {
+    if (!downloadedPath) return;
+    try {
+      await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_OPEN_FILE, downloadedPath);
+    } catch (err) {
+      console.error('Failed to open file:', err);
+    }
+  };
+
+  const openDownloadUrl = async () => {
+    if (!updateInfo?.downloadUrl) return;
+    try {
+      await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_OPEN_URL, updateInfo.downloadUrl);
+    } catch (err) {
+      console.error('Failed to open URL:', err);
+    }
+  };
+
+  useEffect(() => {
+    // Auto check on mount
+    checkForUpdates();
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-medium text-zinc-100 mb-2">{t.update?.title || '版本更新'}</h3>
+        <p className="text-xs text-zinc-400 mb-4">
+          {t.update?.description || '检查并下载最新版本的 Code Agent'}
+        </p>
+      </div>
+
+      {/* Current Version */}
+      <div className="bg-zinc-800/50 rounded-lg p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm text-zinc-400">{t.update?.currentVersion || '当前版本'}</div>
+            <div className="text-lg font-semibold text-zinc-100">v{currentVersion}</div>
+          </div>
+          <button
+            onClick={checkForUpdates}
+            disabled={isChecking}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
+            {isChecking ? (t.update?.checking || '检查中...') : (t.update?.checkNow || '检查更新')}
+          </button>
+        </div>
+      </div>
+
+      {/* Update Status */}
+      {updateInfo && (
+        <div className={`rounded-lg p-4 ${
+          updateInfo.hasUpdate ? 'bg-blue-500/10 border border-blue-500/30' : 'bg-green-500/10 border border-green-500/30'
+        }`}>
+          {updateInfo.hasUpdate ? (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3">
+                <Download className="w-5 h-5 text-blue-400 mt-0.5" />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-zinc-100">
+                    {t.update?.newVersion || '发现新版本'}: v{updateInfo.latestVersion}
+                  </div>
+                  {updateInfo.releaseNotes && (
+                    <p className="text-xs text-zinc-400 mt-1 whitespace-pre-line">
+                      {updateInfo.releaseNotes}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Download Actions */}
+              {!downloadedPath ? (
+                <div className="flex gap-3">
+                  <button
+                    onClick={downloadUpdate}
+                    disabled={isDownloading}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50"
+                  >
+                    {isDownloading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        {t.update?.downloading || '下载中...'}
+                      </>
+                    ) : (
+                      <>
+                        <Download className="w-4 h-4" />
+                        {t.update?.download || '下载更新'}
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={openDownloadUrl}
+                    className="px-4 py-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm transition-colors"
+                  >
+                    {t.update?.openInBrowser || '浏览器打开'}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-green-400">
+                    <CheckCircle className="w-4 h-4" />
+                    <span className="text-sm">{t.update?.downloadComplete || '下载完成'}</span>
+                  </div>
+                  <button
+                    onClick={openDownloadedFile}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-green-600 hover:bg-green-500 text-white transition-colors"
+                  >
+                    {t.update?.openInstaller || '打开安装包'}
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <CheckCircle className="w-5 h-5 text-green-400" />
+              <span className="text-sm text-zinc-100">{t.update?.upToDate || '已是最新版本'}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Error Message */}
+      {error && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 text-red-400">
+          <AlertCircle className="w-4 h-4" />
+          <span className="text-sm">{error}</span>
+        </div>
+      )}
+
+      {/* Auto Update Info */}
+      <div className="bg-zinc-800/50 rounded-lg p-4">
+        <h4 className="text-sm font-medium text-zinc-100 mb-2">{t.update?.autoUpdate || '自动更新'}</h4>
+        <p className="text-xs text-zinc-400">
+          {t.update?.autoUpdateDesc || '应用启动时会自动检查更新。下载后需要手动安装新版本。'}
+        </p>
       </div>
     </div>
   );

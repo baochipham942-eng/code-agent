@@ -53,14 +53,40 @@ src/
 └── shared/               # 共享类型和 IPC 定义
 ```
 
-## 4 代工具演进
+## 8 代工具演进
 
 | 代际 | 版本 | 工具集 | 核心能力 |
 |------|------|--------|----------|
-| Gen 1 | v0.2 Beta | bash, read_file, write_file, edit_file | 基础文件操作 |
-| Gen 2 | v1.0 | + glob, grep, list_directory | 搜索和导航 |
-| Gen 3 | v1.0.60 | + task, todo_write, ask_user_question | 子代理和规划 |
-| Gen 4 | v2.0 | + skill, web_fetch | 技能系统和网络 |
+| Gen 1 | v1.0 | bash, read_file, write_file, edit_file | 基础文件操作 |
+| Gen 2 | v2.0 | + glob, grep, list_directory | 搜索和导航 |
+| Gen 3 | v3.0 | + task, todo_write, ask_user_question | 子代理和规划 |
+| Gen 4 | v4.0 | + skill, web_fetch | 技能系统和网络 |
+| Gen 5 | v5.0 | + memory_store, memory_search, code_index | RAG 和长期记忆 |
+| Gen 6 | v6.0 | + screenshot, computer_use, browser_action | Computer Use |
+| Gen 7 | v7.0 | + spawn_agent, agent_message, workflow_orchestrate | 多代理协同 |
+| Gen 8 | v8.0 | + strategy_optimize, tool_create, self_evaluate | 自我进化 |
+
+## 版本号规范
+
+项目采用语义化版本号 (Semantic Versioning)：**MAJOR.MINOR.PATCH**
+
+| 位置 | 含义 | 范围 | 示例 |
+|------|------|------|------|
+| **MAJOR** (第1位) | 大架构升级、不兼容改动 | 0-99 | 1.x.x → 2.0.0 |
+| **MINOR** (第2位) | 新功能、向后兼容的改进 | 0-99 | 1.0.x → 1.1.0 |
+| **PATCH** (第3位) | Bug 修复、小改动 | 0-99 | 1.0.0 → 1.0.1 |
+
+### 版本号规则
+
+1. **PATCH 递增**：修复 bug、优化性能、改进文档
+2. **MINOR 递增**：添加新功能、改进 UI/UX（PATCH 归零）
+3. **MAJOR 递增**：架构重构、API 不兼容改动（MINOR 和 PATCH 归零）
+
+### 代际版本号
+
+代际版本号（v1.0 - v8.0）表示 AI Agent 能力代际，与应用版本号独立：
+- **代际版本**: 表示 Agent 工具集和能力等级（Gen1=v1.0, Gen8=v8.0）
+- **应用版本**: 表示软件发布版本（如 0.2.0, 1.0.0）
 
 ## 常用命令
 

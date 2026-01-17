@@ -9,11 +9,12 @@ import * as diff from 'diff';
 // Generation Definitions
 // ----------------------------------------------------------------------------
 
+// 版本号对应代际：Gen1=v1.0, Gen2=v2.0, ..., Gen8=v8.0
 const GENERATION_DEFINITIONS: Record<GenerationId, Omit<Generation, 'systemPrompt'>> = {
   gen1: {
     id: 'gen1',
     name: '基础工具期',
-    version: 'v0.2',
+    version: 'v1.0',
     description: '最小可用的编程助手，支持基础文件操作和命令执行',
     tools: ['bash', 'read_file', 'write_file', 'edit_file'],
     promptMetadata: {
@@ -25,7 +26,7 @@ const GENERATION_DEFINITIONS: Record<GenerationId, Omit<Generation, 'systemPromp
   gen2: {
     id: 'gen2',
     name: '生态融合期',
-    version: 'v1.0',
+    version: 'v2.0',
     description: '支持外部系统集成、文件搜索和 IDE 协作',
     tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory'],
     promptMetadata: {
@@ -37,7 +38,7 @@ const GENERATION_DEFINITIONS: Record<GenerationId, Omit<Generation, 'systemPromp
   gen3: {
     id: 'gen3',
     name: '智能规划期',
-    version: 'v1.0.60',
+    version: 'v3.0',
     description: '支持多代理编排、任务规划和进度追踪',
     tools: [
       'bash',
@@ -60,7 +61,7 @@ const GENERATION_DEFINITIONS: Record<GenerationId, Omit<Generation, 'systemPromp
   gen4: {
     id: 'gen4',
     name: '工业化系统期',
-    version: 'v2.0',
+    version: 'v4.0',
     description: '完整的插件生态、技能系统和高级自动化',
     tools: [
       'bash',
@@ -87,7 +88,7 @@ const GENERATION_DEFINITIONS: Record<GenerationId, Omit<Generation, 'systemPromp
   gen5: {
     id: 'gen5',
     name: '认知增强期',
-    version: 'v3.0',
+    version: 'v5.0',
     description: '长期记忆、RAG 检索增强、自主学习和代码索引',
     tools: [
       'bash',
@@ -118,7 +119,7 @@ const GENERATION_DEFINITIONS: Record<GenerationId, Omit<Generation, 'systemPromp
   gen6: {
     id: 'gen6',
     name: '视觉操控期',
-    version: 'v4.0',
+    version: 'v6.0',
     description: 'Computer Use - 直接操控桌面、浏览器和 GUI 界面',
     tools: [
       'bash',
@@ -153,7 +154,7 @@ const GENERATION_DEFINITIONS: Record<GenerationId, Omit<Generation, 'systemPromp
   gen7: {
     id: 'gen7',
     name: '多代理协同期',
-    version: 'v5.0',
+    version: 'v7.0',
     description: 'Multi-Agent - 多个专业代理协同完成复杂任务',
     tools: [
       'bash',
@@ -191,7 +192,7 @@ const GENERATION_DEFINITIONS: Record<GenerationId, Omit<Generation, 'systemPromp
   gen8: {
     id: 'gen8',
     name: '自我进化期',
-    version: 'v6.0',
+    version: 'v8.0',
     description: 'Self-Evolution - 从经验中学习、自我优化和动态创建工具',
     tools: [
       'bash',
@@ -760,6 +761,8 @@ export class GenerationManager {
   }
 
   private loadGenerations(): void {
+    console.log('[GenerationManager] Loading generations...');
+    console.log('[GenerationManager] GENERATION_DEFINITIONS keys:', Object.keys(GENERATION_DEFINITIONS));
     for (const [id, definition] of Object.entries(GENERATION_DEFINITIONS)) {
       const genId = id as GenerationId;
       this.generations.set(genId, {
@@ -767,6 +770,7 @@ export class GenerationManager {
         systemPrompt: SYSTEM_PROMPTS[genId],
       });
     }
+    console.log('[GenerationManager] Loaded generations:', Array.from(this.generations.keys()));
   }
 
   // --------------------------------------------------------------------------

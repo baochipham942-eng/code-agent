@@ -115,7 +115,7 @@ export class UpdateService {
   }
 
   /**
-   * Check for updates from GitHub Releases API
+   * Check for updates from Vercel API (primary) or GitHub Releases API (fallback)
    */
   async checkForUpdates(): Promise<UpdateInfo> {
     const currentVersion = this.getCurrentVersion();
@@ -124,21 +124,16 @@ export class UpdateService {
     console.log(`[UpdateService] Checking for updates... Current: ${currentVersion}, Platform: ${platform}`);
 
     try {
-      // Try GitHub Releases API first
-      const githubUrl = 'https://api.github.com/repos/anthropics/code-agent/releases/latest';
-      let data: any;
+      // Try our Vercel API first (primary source)
+      const serverUrl = `${this.config.updateServerUrl}/api/update?action=check&version=${currentVersion}&platform=${platform}`;
+      console.log(`[UpdateService] Checking Vercel API: ${serverUrl}`);
 
       try {
-        const response = await this.httpGet(githubUrl);
-        data = JSON.parse(response);
-      } catch (githubError) {
-        // If GitHub fails, try the configured server
-        const serverUrl = `${this.config.updateServerUrl}/api/update?action=check&version=${currentVersion}&platform=${platform}`;
-        try {
-          const response = await this.httpGet(serverUrl);
-          data = JSON.parse(response);
+        const response = await this.httpGet(serverUrl);
+        const data = JSON.parse(response);
 
-          // Server API format
+        // Check if response is valid (has success field)
+        if (data.success) {
           const updateInfo: UpdateInfo = {
             hasUpdate: data.hasUpdate || false,
             currentVersion,
@@ -151,66 +146,95 @@ export class UpdateService {
 
           this.lastCheck = new Date();
           this.cachedUpdateInfo = updateInfo;
-          return updateInfo;
-        } catch (serverError) {
-          // Both failed, return no update available
-          console.log('[UpdateService] Both GitHub and server checks failed, assuming up to date');
-          const updateInfo: UpdateInfo = {
-            hasUpdate: false,
-            currentVersion,
-          };
-          this.lastCheck = new Date();
-          this.cachedUpdateInfo = updateInfo;
+
+          console.log(`[UpdateService] Vercel API result:`, updateInfo.hasUpdate ? `New version ${updateInfo.latestVersion} available` : 'Already up to date');
+
+          // Auto-download if enabled
+          if (updateInfo.hasUpdate && this.config.autoDownload && updateInfo.downloadUrl) {
+            this.downloadUpdate(updateInfo.downloadUrl);
+          }
+
           return updateInfo;
         }
+
+        // Invalid response, try GitHub
+        throw new Error('Invalid Vercel API response');
+      } catch (serverError) {
+        console.log('[UpdateService] Vercel API failed, trying GitHub...', serverError);
       }
 
-      // Parse GitHub Releases API response
-      const latestVersion = (data.tag_name || '').replace(/^v/, '');
-      const hasUpdate = this.compareVersions(latestVersion, currentVersion) > 0;
+      // Fallback to GitHub Releases API
+      const githubUrl = 'https://api.github.com/repos/baochipham942-eng/code-agent/releases/latest';
+      console.log(`[UpdateService] Checking GitHub API: ${githubUrl}`);
 
-      // Find the appropriate asset for the platform
-      let downloadUrl: string | undefined;
-      let fileSize: number | undefined;
-      const assets = data.assets || [];
+      try {
+        const response = await this.httpGet(githubUrl);
+        const data = JSON.parse(response);
 
-      for (const asset of assets) {
-        const name = asset.name.toLowerCase();
-        if (platform === 'darwin' && (name.includes('mac') || name.includes('darwin') || name.endsWith('.dmg'))) {
-          downloadUrl = asset.browser_download_url;
-          fileSize = asset.size;
-          break;
-        } else if (platform === 'win32' && (name.includes('win') || name.endsWith('.exe') || name.endsWith('.msi'))) {
-          downloadUrl = asset.browser_download_url;
-          fileSize = asset.size;
-          break;
-        } else if (platform === 'linux' && (name.includes('linux') || name.endsWith('.AppImage') || name.endsWith('.deb'))) {
-          downloadUrl = asset.browser_download_url;
-          fileSize = asset.size;
-          break;
+        // Check if response has tag_name (valid release)
+        if (!data.tag_name) {
+          throw new Error('No release found on GitHub');
         }
+
+        // Parse GitHub Releases API response
+        const latestVersion = (data.tag_name || '').replace(/^v/, '');
+        const hasUpdate = this.compareVersions(latestVersion, currentVersion) > 0;
+
+        // Find the appropriate asset for the platform
+        let downloadUrl: string | undefined;
+        let fileSize: number | undefined;
+        const assets = data.assets || [];
+
+        for (const asset of assets) {
+          const name = asset.name.toLowerCase();
+          if (platform === 'darwin' && (name.includes('mac') || name.includes('darwin') || name.endsWith('.dmg'))) {
+            downloadUrl = asset.browser_download_url;
+            fileSize = asset.size;
+            break;
+          } else if (platform === 'win32' && (name.includes('win') || name.endsWith('.exe') || name.endsWith('.msi'))) {
+            downloadUrl = asset.browser_download_url;
+            fileSize = asset.size;
+            break;
+          } else if (platform === 'linux' && (name.includes('linux') || name.endsWith('.AppImage') || name.endsWith('.deb'))) {
+            downloadUrl = asset.browser_download_url;
+            fileSize = asset.size;
+            break;
+          }
+        }
+
+        const updateInfo: UpdateInfo = {
+          hasUpdate,
+          currentVersion,
+          latestVersion: latestVersion || undefined,
+          downloadUrl,
+          releaseNotes: data.body,
+          fileSize,
+          publishedAt: data.published_at,
+        };
+
+        this.lastCheck = new Date();
+        this.cachedUpdateInfo = updateInfo;
+
+        console.log(`[UpdateService] GitHub API result:`, updateInfo.hasUpdate ? `New version ${updateInfo.latestVersion} available` : 'Already up to date');
+
+        // Auto-download if enabled
+        if (updateInfo.hasUpdate && this.config.autoDownload && updateInfo.downloadUrl) {
+          this.downloadUpdate(updateInfo.downloadUrl);
+        }
+
+        return updateInfo;
+      } catch (githubError) {
+        console.log('[UpdateService] GitHub API also failed:', githubError);
       }
 
+      // Both failed, return no update available
+      console.log('[UpdateService] Both APIs failed, assuming up to date');
       const updateInfo: UpdateInfo = {
-        hasUpdate,
+        hasUpdate: false,
         currentVersion,
-        latestVersion: latestVersion || undefined,
-        downloadUrl,
-        releaseNotes: data.body,
-        fileSize,
-        publishedAt: data.published_at,
       };
-
       this.lastCheck = new Date();
       this.cachedUpdateInfo = updateInfo;
-
-      console.log(`[UpdateService] Update check result:`, updateInfo.hasUpdate ? `New version ${updateInfo.latestVersion} available` : 'Already up to date');
-
-      // Auto-download if enabled
-      if (updateInfo.hasUpdate && this.config.autoDownload && updateInfo.downloadUrl) {
-        this.downloadUpdate(updateInfo.downloadUrl);
-      }
-
       return updateInfo;
     } catch (error) {
       console.error('[UpdateService] Failed to check for updates:', error);

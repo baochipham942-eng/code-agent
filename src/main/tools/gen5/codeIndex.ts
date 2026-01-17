@@ -36,7 +36,7 @@ Parameters:
 - pattern (optional): Glob pattern for files to index
 - query (optional): Search query for finding code
 - limit (optional): Maximum search results (default: 5)`,
-  generations: ['gen5'],
+  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

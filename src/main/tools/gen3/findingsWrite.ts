@@ -20,7 +20,7 @@ export const findingsWriteTool: Tool = {
     'Save important findings and research notes to findings.md. ' +
     'Use this to persist discoveries that should not be lost. ' +
     'Helps maintain knowledge across long sessions and prevents context overflow.',
-  generations: ['gen3', 'gen4'],
+  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

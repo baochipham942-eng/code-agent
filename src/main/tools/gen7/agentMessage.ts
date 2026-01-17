@@ -21,7 +21,7 @@ Use this tool to:
 Parameters:
 - action: What to do (status, list, result, cancel)
 - agentId: Target agent ID (required for status, result, cancel)`,
-  generations: ['gen7'],
+  generations: ['gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

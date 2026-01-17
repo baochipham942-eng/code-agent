@@ -29,7 +29,7 @@ Parameters:
 - action: The browser action to perform
 - url: URL to open (for 'open' and 'navigate' actions)
 - browser: Specific browser to use (optional, default: system default)`,
-  generations: ['gen6'],
+  generations: ['gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

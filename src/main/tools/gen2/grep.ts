@@ -12,7 +12,7 @@ const execAsync = promisify(exec);
 export const grepTool: Tool = {
   name: 'grep',
   description: 'Search for patterns in file contents',
-  generations: ['gen2', 'gen3', 'gen4'],
+  generations: ['gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

@@ -9,7 +9,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
 export const globTool: Tool = {
   name: 'glob',
   description: 'Find files matching a glob pattern',
-  generations: ['gen2', 'gen3', 'gen4'],
+  generations: ['gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

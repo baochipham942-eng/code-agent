@@ -6,6 +6,8 @@ export const zh = {
   // Common
   common: {
     save: '保存',
+    saving: '保存中...',
+    saved: '已保存',
     cancel: '取消',
     close: '关闭',
     confirm: '确认',

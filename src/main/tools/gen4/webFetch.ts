@@ -7,7 +7,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
 export const webFetchTool: Tool = {
   name: 'web_fetch',
   description: 'Fetch and process content from a URL',
-  generations: ['gen4'],
+  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',
   inputSchema: {

@@ -45,7 +45,7 @@ Parameters:
 - amount: Scroll amount in pixels
 
 IMPORTANT: Use screenshot tool first to understand current screen state.`,
-  generations: ['gen6'],
+  generations: ['gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
   inputSchema: {

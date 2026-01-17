@@ -132,7 +132,7 @@ Always follow the project's existing patterns and conventions.`,
 export const skillTool: Tool = {
   name: 'skill',
   description: 'Execute a predefined skill or workflow. Available skills: commit, code-review, test, feature-dev',
-  generations: ['gen4'],
+  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

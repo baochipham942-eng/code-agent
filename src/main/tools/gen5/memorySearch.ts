@@ -21,7 +21,7 @@ Parameters:
 - category (optional): Filter by category
 - source (optional): Filter by source type ('knowledge', 'conversation', 'file', 'all')
 - limit (optional): Maximum number of results (default: 5)`,
-  generations: ['gen5'],
+  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

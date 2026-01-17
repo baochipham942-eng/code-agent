@@ -175,7 +175,7 @@ class BrowserService {
     page.on('console', (msg) => {
       if (msg.type() === 'error') {
         this.logger.log('ERROR', `[Page Console] ${msg.text()}`);
-      } else if (msg.type() === 'warn') {
+      } else if (msg.type() === 'warning') {
         this.logger.log('WARN', `[Page Console] ${msg.text()}`);
       }
     });
@@ -191,7 +191,7 @@ class BrowserService {
       await tab.page.close();
       this.tabs.delete(tabId);
       if (this.activeTabId === tabId) {
-        this.activeTabId = this.tabs.size > 0 ? this.tabs.keys().next().value : null;
+        this.activeTabId = this.tabs.size > 0 ? (this.tabs.keys().next().value ?? null) : null;
       }
       this.logger.log('INFO', `Tab closed. Remaining tabs: ${this.tabs.size}`);
     } else {
@@ -314,7 +314,7 @@ class BrowserService {
       page.$$eval('a[href]', (anchors) =>
         anchors.slice(0, 50).map((a) => ({
           text: a.textContent?.trim() || '',
-          href: a.href,
+          href: (a as HTMLAnchorElement).href,
         }))
       ).catch(() => []),
     ]);

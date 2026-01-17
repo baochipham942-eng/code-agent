@@ -26,7 +26,7 @@ Parameters:
 - outputPath (optional): Where to save the screenshot
 
 Returns the path to the saved screenshot file.`,
-  generations: ['gen6'],
+  generations: ['gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

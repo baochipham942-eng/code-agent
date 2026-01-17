@@ -27,18 +27,20 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.2.9',
-  publishedAt: '2026-01-17T18:00:00.000Z',
+  version: '0.3.0',
+  publishedAt: '2026-01-17T22:25:00.000Z',
   releaseNotes: `
-## Code Agent v0.2.9
+## Code Agent v0.3.0
 
 ### 新功能
-- 新增强制更新/可选更新机制
-- 强制更新时弹出不可关闭的弹窗
-- 可选更新在设置中显示提示徽章
+- 模型配置（API Key、温度等）持久化到本地，重装后自动加载
+- 数据管理页面：显示会话数、消息数、数据库大小等统计信息
 
 ### 改进
-- 优化版本检查逻辑
+- 修复更新徽章：只在有新版本时显示
+- 移除「更新说明」模块
+- 关于页面版本号改为动态获取
+- 完善中英文国际化翻译
   `.trim(),
   // 设置为 false 表示可选更新，设置为 true 表示强制更新
   forceUpdate: false,
@@ -46,8 +48,8 @@ const LATEST_RELEASE: ReleaseInfo = {
   // minRequiredVersion: '0.2.0',
   downloads: {
     darwin: {
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.2.9/Code.Agent-0.2.9-arm64.dmg',
-      size: 129500000,
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.3.0/Code.Agent-0.3.0-arm64.dmg',
+      size: 130000000,
     },
   },
 };

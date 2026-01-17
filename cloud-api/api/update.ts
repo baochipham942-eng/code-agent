@@ -21,20 +21,22 @@ interface ReleaseInfo {
 
 // 当前最新版本 - 每次发布新版本时更新这里
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.2.7',
-  publishedAt: '2026-01-17T12:00:00.000Z',
+  version: '0.2.8',
+  publishedAt: '2026-01-17T13:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.2.7
+## Code Agent v0.2.8
+
+### 修复
+- 修复代际徽章显示错误：Gen1 现在正确显示 v1.0（而非 v0.2 Beta）
+- 应用版本号现在从单一数据源读取（package.json）
 
 ### 改进
-- 移除应用启动时的弹窗更新通知
-- 更新下载进度整合到设置页面的下载按钮中
-- 移除"浏览器打开"按钮
-- 下载按钮显示实时进度、已下载大小和速度
+- 添加 APP_GET_VERSION IPC 通道
+- Sidebar 版本号动态获取，无需手动更新
   `.trim(),
   downloads: {
     darwin: {
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.2.7/Code.Agent-0.2.7-arm64.dmg',
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.2.8/Code.Agent-0.2.8-arm64.dmg',
       size: 129500000,
     },
   },

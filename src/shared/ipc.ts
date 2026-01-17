@@ -156,6 +156,9 @@ export const IPC_CHANNELS = {
   WINDOW_MAXIMIZE: 'window:maximize',
   WINDOW_CLOSE: 'window:close',
 
+  // App channels
+  APP_GET_VERSION: 'app:get-version',
+
   // Planning channels (Gen 3+ persistent planning)
   PLANNING_GET_STATE: 'planning:get-state',
   PLANNING_GET_PLAN: 'planning:get-plan',
@@ -269,6 +272,9 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.WINDOW_MINIMIZE]: () => Promise<void>;
   [IPC_CHANNELS.WINDOW_MAXIMIZE]: () => Promise<void>;
   [IPC_CHANNELS.WINDOW_CLOSE]: () => Promise<void>;
+
+  // App
+  [IPC_CHANNELS.APP_GET_VERSION]: () => Promise<string>;
 
   // Planning (Gen 3+ persistent planning)
   [IPC_CHANNELS.PLANNING_GET_STATE]: () => Promise<PlanningState>;

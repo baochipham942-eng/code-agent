@@ -80,10 +80,11 @@ interface AppState {
 }
 
 // Default generation (Gen 1)
+// 代际版本号：Gen1=v1.0, Gen2=v2.0, ..., Gen8=v8.0
 const defaultGeneration: Generation = {
   id: 'gen1',
   name: 'Generation 1',
-  version: 'v0.2 Beta',
+  version: 'v1.0',
   description: 'Basic file operations and shell commands',
   tools: ['bash', 'read_file', 'write_file', 'edit_file'],
   systemPrompt: '',

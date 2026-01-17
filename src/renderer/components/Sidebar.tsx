@@ -22,6 +22,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { UserMenu } from './UserMenu';
+import { IPC_CHANNELS } from '@shared/ipc';
 
 // 会话分组类型
 type SessionGroup = 'today' | 'yesterday' | 'week' | 'month' | 'older';
@@ -75,10 +76,26 @@ export const Sidebar: React.FC = () => {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
+  const [appVersion, setAppVersion] = useState<string>('');
 
   // 初始化：加载会话列表
   useEffect(() => {
     initializeSessionStore();
+  }, []);
+
+  // 获取应用版本号
+  useEffect(() => {
+    const loadVersion = async () => {
+      try {
+        const version = await window.electronAPI?.invoke(IPC_CHANNELS.APP_GET_VERSION);
+        if (version) {
+          setAppVersion(version);
+        }
+      } catch (error) {
+        console.error('[Sidebar] Failed to get app version:', error);
+      }
+    };
+    loadVersion();
   }, []);
 
   // 过滤和分组会话
@@ -286,11 +303,11 @@ export const Sidebar: React.FC = () => {
           </div>
         )}
 
-        {/* Version */}
+        {/* Version - 从 package.json 动态读取 */}
         <div className="mt-3 pt-3 border-t border-zinc-800/50 flex items-center justify-center">
           <div className="flex items-center gap-2 text-xs text-zinc-600">
             <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span>Code Agent v0.2.7</span>
+            <span>Code Agent {appVersion ? `v${appVersion}` : ''}</span>
           </div>
         </div>
       </div>

@@ -14,6 +14,8 @@ import path from 'path';
 
 export interface UpdateInfo {
   hasUpdate: boolean;
+  /** 是否强制更新 - true 时弹出不可关闭的更新弹窗 */
+  forceUpdate?: boolean;
   currentVersion: string;
   latestVersion?: string;
   downloadUrl?: string;
@@ -136,6 +138,7 @@ export class UpdateService {
         if (data.success) {
           const updateInfo: UpdateInfo = {
             hasUpdate: data.hasUpdate || false,
+            forceUpdate: data.forceUpdate || false,
             currentVersion,
             latestVersion: data.latestVersion,
             downloadUrl: data.downloadUrl,
@@ -147,7 +150,9 @@ export class UpdateService {
           this.lastCheck = new Date();
           this.cachedUpdateInfo = updateInfo;
 
-          console.log(`[UpdateService] Vercel API result:`, updateInfo.hasUpdate ? `New version ${updateInfo.latestVersion} available` : 'Already up to date');
+          console.log(`[UpdateService] Vercel API result:`, updateInfo.hasUpdate
+            ? `New version ${updateInfo.latestVersion} available (forceUpdate: ${updateInfo.forceUpdate})`
+            : 'Already up to date');
 
           // Auto-download if enabled
           if (updateInfo.hasUpdate && this.config.autoDownload && updateInfo.downloadUrl) {

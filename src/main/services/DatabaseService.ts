@@ -365,6 +365,32 @@ export class DatabaseService {
     this.db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(Date.now(), sessionId);
   }
 
+  updateMessage(messageId: string, updates: Partial<Message>): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const setClauses: string[] = [];
+    const values: unknown[] = [];
+
+    if (updates.content !== undefined) {
+      setClauses.push('content = ?');
+      values.push(updates.content);
+    }
+    if (updates.toolCalls !== undefined) {
+      setClauses.push('tool_calls = ?');
+      values.push(JSON.stringify(updates.toolCalls));
+    }
+    if (updates.toolResults !== undefined) {
+      setClauses.push('tool_results = ?');
+      values.push(JSON.stringify(updates.toolResults));
+    }
+
+    if (setClauses.length === 0) return;
+
+    values.push(messageId);
+    const sql = `UPDATE messages SET ${setClauses.join(', ')} WHERE id = ?`;
+    this.db.prepare(sql).run(...values);
+  }
+
   getMessages(sessionId: string, limit?: number, offset?: number): Message[] {
     if (!this.db) throw new Error('Database not initialized');
 

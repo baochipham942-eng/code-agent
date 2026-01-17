@@ -11,6 +11,7 @@ import type {
   TaskPlan,
   Finding,
   ErrorRecord,
+  PermissionRequest,
 } from '@shared/types';
 import { defaultLanguage, type Language } from '../i18n';
 
@@ -51,6 +52,9 @@ interface AppState {
   previewFilePath: string | null;
   showPreviewPanel: boolean;
 
+  // Permission Request State
+  pendingPermissionRequest: PermissionRequest | null;
+
   // Model Config
   modelConfig: ModelConfig;
 
@@ -74,6 +78,7 @@ interface AppState {
   setShowPreviewPanel: (show: boolean) => void;
   openPreview: (filePath: string) => void;
   closePreview: () => void;
+  setPendingPermissionRequest: (request: PermissionRequest | null) => void;
   setModelConfig: (config: ModelConfig) => void;
   clearChat: () => void;
   setCurrentSessionId: (id: string | null) => void;
@@ -135,6 +140,9 @@ export const useAppStore = create<AppState>((set) => ({
   previewFilePath: null,
   showPreviewPanel: false,
 
+  // Initial Permission Request State
+  pendingPermissionRequest: null,
+
   // Initial Model Config
   modelConfig: defaultModelConfig,
 
@@ -175,6 +183,8 @@ export const useAppStore = create<AppState>((set) => ({
   setShowPreviewPanel: (show) => set({ showPreviewPanel: show }),
   openPreview: (filePath) => set({ previewFilePath: filePath, showPreviewPanel: true }),
   closePreview: () => set({ previewFilePath: null, showPreviewPanel: false }),
+
+  setPendingPermissionRequest: (request) => set({ pendingPermissionRequest: request }),
 
   setModelConfig: (config) => set({ modelConfig: config }),
 

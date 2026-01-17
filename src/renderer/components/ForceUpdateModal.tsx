@@ -1,35 +1,28 @@
 // ============================================================================
-// UpdateNotification - 可选更新弹窗（可关闭）
-// 仅用于非强制更新场景，由用户在设置中手动触发
+// ForceUpdateModal - 强制更新弹窗（不可关闭）
 // ============================================================================
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Download, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Download, CheckCircle, AlertCircle, Loader2, ShieldAlert } from 'lucide-react';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type { UpdateInfo, DownloadProgress } from '../../shared/types';
 
-interface UpdateNotificationProps {
-  /** 更新信息 */
+interface ForceUpdateModalProps {
   updateInfo: UpdateInfo;
-  /** 关闭回调 */
-  onClose: () => void;
 }
 
 type DownloadState = 'idle' | 'downloading' | 'downloaded' | 'error';
 
-export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
-  updateInfo,
-  onClose,
-}) => {
+export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }) => {
   const [downloadState, setDownloadState] = useState<DownloadState>('idle');
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null);
   const [downloadedFilePath, setDownloadedFilePath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Listen for update events from main process
+  // Listen for download events from main process
   useEffect(() => {
     const handleUpdateEvent = (event: { type: string; data?: any }) => {
-      console.log('[UpdateNotification] Received event:', event.type, event.data);
+      console.log('[ForceUpdateModal] Received event:', event.type, event.data);
 
       switch (event.type) {
         case 'download_progress':
@@ -62,6 +55,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
     try {
       setDownloadState('downloading');
       setDownloadProgress({ percent: 0, transferred: 0, total: 0, bytesPerSecond: 0 });
+      setError(null);
       await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_DOWNLOAD, updateInfo.downloadUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : '下载失败');
@@ -93,34 +87,26 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
     return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
   };
 
-  // 下载中不允许关闭
-  const canClose = downloadState !== 'downloading';
-
   return (
     <>
-      {/* Backdrop */}
-      <div
-        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50"
-        onClick={canClose ? onClose : undefined}
-      />
+      {/* Backdrop - 不可点击关闭 */}
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100]" />
 
       {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
         <div
-          className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200"
+          className="bg-zinc-900 border border-rose-500/30 rounded-xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
-            <h2 className="text-lg font-semibold text-white">软件更新</h2>
-            {canClose && (
-              <button
-                onClick={onClose}
-                className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            )}
+          {/* Header - 没有关闭按钮 */}
+          <div className="flex items-center gap-3 px-6 py-4 border-b border-zinc-800 bg-rose-500/5">
+            <div className="w-10 h-10 rounded-full bg-rose-500/20 flex items-center justify-center">
+              <ShieldAlert className="w-5 h-5 text-rose-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-white">需要更新</h2>
+              <p className="text-xs text-zinc-400">请更新到最新版本以继续使用</p>
+            </div>
           </div>
 
           {/* Content */}
@@ -156,6 +142,12 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                     </div>
                   </div>
                 )}
+
+                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3">
+                  <p className="text-xs text-amber-200">
+                    此版本包含重要更新，需要安装后才能继续使用应用。
+                  </p>
+                </div>
               </div>
             )}
 
@@ -187,7 +179,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                 </div>
 
                 <p className="text-xs text-zinc-500 text-center">
-                  请勿关闭此窗口，下载完成后可安装更新
+                  请勿关闭应用，下载完成后可安装更新
                 </p>
               </div>
             )}
@@ -230,54 +222,30 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
           {/* Footer */}
           <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-800 bg-zinc-900/50">
             {downloadState === 'idle' && (
-              <>
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
-                >
-                  稍后提醒
-                </button>
-                <button
-                  onClick={handleDownload}
-                  className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-medium"
-                >
-                  立即下载
-                </button>
-              </>
+              <button
+                onClick={handleDownload}
+                className="w-full px-4 py-2.5 text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-medium"
+              >
+                立即下载更新
+              </button>
             )}
 
             {downloadState === 'downloaded' && (
-              <>
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
-                >
-                  稍后安装
-                </button>
-                <button
-                  onClick={handleOpenFile}
-                  className="px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors font-medium"
-                >
-                  立即安装
-                </button>
-              </>
+              <button
+                onClick={handleOpenFile}
+                className="w-full px-4 py-2.5 text-sm bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors font-medium"
+              >
+                立即安装
+              </button>
             )}
 
             {downloadState === 'error' && (
-              <>
-                <button
-                  onClick={onClose}
-                  className="px-4 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
-                >
-                  关闭
-                </button>
-                <button
-                  onClick={handleRetry}
-                  className="px-4 py-2 text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-medium"
-                >
-                  重新下载
-                </button>
-              </>
+              <button
+                onClick={handleRetry}
+                className="w-full px-4 py-2.5 text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors font-medium"
+              >
+                重新下载
+              </button>
             )}
           </div>
         </div>
@@ -286,4 +254,4 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
   );
 };
 
-export default UpdateNotification;
+export default ForceUpdateModal;

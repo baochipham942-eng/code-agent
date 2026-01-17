@@ -17,5 +17,6 @@ export { PlanningPanel } from './PlanningPanel';
 export { FindingsPanel } from './FindingsPanel';
 export { ErrorsPanel } from './ErrorsPanel';
 
-// Update notification
+// Update notifications
 export { UpdateNotification } from './UpdateNotification';
+export { ForceUpdateModal } from './ForceUpdateModal';

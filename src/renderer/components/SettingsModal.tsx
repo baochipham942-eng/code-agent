@@ -6,8 +6,9 @@ import React, { useState, useEffect } from 'react';
 import { useAppStore, type DisclosureLevel } from '../stores/appStore';
 import { useI18n, type Language } from '../hooks/useI18n';
 import { X, Key, Cpu, Palette, Info, Layers, Eye, EyeOff, Sparkles, Zap, Globe, Database, Download, RefreshCw, Trash2, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import type { ModelProvider } from '@shared/types';
-import { IPC_CHANNELS, type CacheStats, type UpdateInfo } from '@shared/ipc';
+import type { ModelProvider, UpdateInfo } from '@shared/types';
+import { IPC_CHANNELS, type CacheStats } from '@shared/ipc';
+import { UpdateNotification } from './UpdateNotification';
 
 type SettingsTab = 'model' | 'disclosure' | 'appearance' | 'language' | 'cache' | 'update' | 'about';
 
@@ -16,13 +17,33 @@ export const SettingsModal: React.FC = () => {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<SettingsTab>('model');
 
-  const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
+  // 可选更新状态
+  const [optionalUpdateInfo, setOptionalUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+
+  // 启动时检查更新状态（用于显示徽章）
+  useEffect(() => {
+    const checkUpdate = async () => {
+      try {
+        const info = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_CHECK);
+        // 只有非强制更新才在这里处理
+        if (info?.hasUpdate && !info?.forceUpdate) {
+          setOptionalUpdateInfo(info);
+        }
+      } catch (error) {
+        console.error('[SettingsModal] Failed to check update:', error);
+      }
+    };
+    checkUpdate();
+  }, []);
+
+  const tabs: { id: SettingsTab; label: string; icon: React.ReactNode; badge?: boolean }[] = [
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
     { id: 'disclosure', label: t.settings.tabs.disclosure, icon: <Layers className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'language', label: t.settings.tabs.language, icon: <Globe className="w-4 h-4" /> },
     { id: 'cache', label: t.settings.tabs.cache || '缓存', icon: <Database className="w-4 h-4" /> },
-    { id: 'update', label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" /> },
+    { id: 'update', label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: optionalUpdateInfo?.hasUpdate },
     { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
   ];
 
@@ -61,7 +82,11 @@ export const SettingsModal: React.FC = () => {
                 }`}
               >
                 {tab.icon}
-                <span className="text-sm">{tab.label}</span>
+                <span className="text-sm flex-1">{tab.label}</span>
+                {/* 更新徽章 */}
+                {tab.badge && (
+                  <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                )}
               </button>
             ))}
           </div>
@@ -77,11 +102,25 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'appearance' && <AppearanceSettings />}
             {activeTab === 'language' && <LanguageSettings />}
             {activeTab === 'cache' && <CacheSettings />}
-            {activeTab === 'update' && <UpdateSettings />}
+            {activeTab === 'update' && (
+              <UpdateSettings
+                updateInfo={optionalUpdateInfo}
+                onUpdateInfoChange={setOptionalUpdateInfo}
+                onShowUpdateModal={() => setShowUpdateModal(true)}
+              />
+            )}
             {activeTab === 'about' && <AboutSection />}
           </div>
         </div>
       </div>
+
+      {/* 可选更新弹窗 */}
+      {showUpdateModal && optionalUpdateInfo && (
+        <UpdateNotification
+          updateInfo={optionalUpdateInfo}
+          onClose={() => setShowUpdateModal(false)}
+        />
+      )}
     </div>
   );
 };
@@ -466,6 +505,19 @@ const LanguageSettings: React.FC = () => {
 // About Section
 const AboutSection: React.FC = () => {
   const { t } = useI18n();
+  const [version, setVersion] = useState<string>('...');
+
+  useEffect(() => {
+    const loadVersion = async () => {
+      try {
+        const v = await window.electronAPI?.invoke(IPC_CHANNELS.APP_GET_VERSION);
+        if (v) setVersion(v);
+      } catch (error) {
+        console.error('Failed to load version:', error);
+      }
+    };
+    loadVersion();
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -474,7 +526,7 @@ const AboutSection: React.FC = () => {
           <Cpu className="w-10 h-10 text-white" />
         </div>
         <h3 className="text-xl font-semibold text-zinc-100">Code Agent</h3>
-        <p className="text-sm text-zinc-400 mt-1">{t.about.version} 0.1.0</p>
+        <p className="text-sm text-zinc-400 mt-1">{t.about.version} {version}</p>
       </div>
 
       <div className="bg-zinc-800/50 rounded-lg p-4">
@@ -654,60 +706,35 @@ const CacheSettings: React.FC = () => {
 };
 
 // Update Settings Tab - 版本更新
-const UpdateSettings: React.FC = () => {
+interface UpdateSettingsProps {
+  updateInfo: UpdateInfo | null;
+  onUpdateInfoChange: (info: UpdateInfo | null) => void;
+  onShowUpdateModal: () => void;
+}
+
+const UpdateSettings: React.FC<UpdateSettingsProps> = ({
+  updateInfo,
+  onUpdateInfoChange,
+  onShowUpdateModal,
+}) => {
   const { t } = useI18n();
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isChecking, setIsChecking] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState<{
-    percent: number;
-    transferred: number;
-    total: number;
-    bytesPerSecond: number;
-  } | null>(null);
-  const [downloadedPath, setDownloadedPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // 从 updateInfo 获取当前版本，如果没有则显示占位符
   const currentVersion = updateInfo?.currentVersion || '...';
-
-  // 监听下载进度事件
-  useEffect(() => {
-    const handleUpdateEvent = (event: { type: string; data?: any }) => {
-      console.log('[UpdateSettings] Received event:', event.type, event.data);
-
-      switch (event.type) {
-        case 'download_progress':
-          setDownloadProgress(event.data);
-          break;
-
-        case 'download_complete':
-          setDownloadedPath(event.data.filePath);
-          setIsDownloading(false);
-          setDownloadProgress(null);
-          break;
-
-        case 'download_error':
-          setError(event.data.error);
-          setIsDownloading(false);
-          setDownloadProgress(null);
-          break;
-      }
-    };
-
-    const unsubscribe = window.electronAPI?.on(IPC_CHANNELS.UPDATE_EVENT, handleUpdateEvent);
-
-    return () => {
-      unsubscribe?.();
-    };
-  }, []);
 
   const checkForUpdates = async () => {
     setIsChecking(true);
     setError(null);
     try {
       const info = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_CHECK);
-      setUpdateInfo(info);
+      // 只处理非强制更新（强制更新由 App.tsx 处理）
+      if (info && !info.forceUpdate) {
+        onUpdateInfoChange(info);
+      } else if (info) {
+        onUpdateInfoChange(info);
+      }
     } catch (err) {
       setError(t.update?.checkError || '检查更新失败，请稍后重试');
       console.error('Update check failed:', err);
@@ -716,35 +743,11 @@ const UpdateSettings: React.FC = () => {
     }
   };
 
-  const downloadUpdate = async () => {
-    if (!updateInfo?.downloadUrl) return;
-
-    setIsDownloading(true);
-    setDownloadProgress({ percent: 0, transferred: 0, total: 0, bytesPerSecond: 0 });
-    setError(null);
-
-    try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_DOWNLOAD, updateInfo.downloadUrl);
-    } catch (err) {
-      setError(t.update?.downloadError || '下载更新失败');
-      console.error('Download failed:', err);
-      setIsDownloading(false);
-      setDownloadProgress(null);
-    }
-  };
-
-  const openDownloadedFile = async () => {
-    if (!downloadedPath) return;
-    try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_OPEN_FILE, downloadedPath);
-    } catch (err) {
-      console.error('Failed to open file:', err);
-    }
-  };
-
   useEffect(() => {
-    // Auto check on mount
-    checkForUpdates();
+    // 如果没有 updateInfo，自动检查
+    if (!updateInfo) {
+      checkForUpdates();
+    }
   }, []);
 
   // 格式化文件大小
@@ -752,13 +755,6 @@ const UpdateSettings: React.FC = () => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  // 格式化速度
-  const formatSpeed = (bytesPerSecond: number): string => {
-    if (bytesPerSecond < 1024) return `${bytesPerSecond.toFixed(0)} B/s`;
-    if (bytesPerSecond < 1024 * 1024) return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
-    return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
   };
 
   return (
@@ -779,8 +775,8 @@ const UpdateSettings: React.FC = () => {
           </div>
           <button
             onClick={checkForUpdates}
-            disabled={isChecking || isDownloading}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm transition-colors disabled:opacity-50"
+            disabled={isChecking}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white text-sm transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
             {isChecking ? (t.update?.checking || '检查中...') : (t.update?.checkNow || '检查更新')}
@@ -791,81 +787,39 @@ const UpdateSettings: React.FC = () => {
       {/* Update Status */}
       {updateInfo && (
         <div className={`rounded-lg p-4 ${
-          updateInfo.hasUpdate ? 'bg-blue-500/10 border border-blue-500/30' : 'bg-green-500/10 border border-green-500/30'
+          updateInfo.hasUpdate ? 'bg-indigo-500/10 border border-indigo-500/30' : 'bg-green-500/10 border border-green-500/30'
         }`}>
           {updateInfo.hasUpdate ? (
             <div className="space-y-4">
               <div className="flex items-start gap-3">
-                <Download className="w-5 h-5 text-blue-400 mt-0.5" />
+                <Download className="w-5 h-5 text-indigo-400 mt-0.5" />
                 <div className="flex-1">
                   <div className="text-sm font-medium text-zinc-100">
                     {t.update?.newVersion || '发现新版本'}: v{updateInfo.latestVersion}
                   </div>
-                  {updateInfo.releaseNotes && (
-                    <p className="text-xs text-zinc-400 mt-1 whitespace-pre-line">
-                      {updateInfo.releaseNotes}
+                  {updateInfo.fileSize && (
+                    <p className="text-xs text-zinc-500 mt-0.5">
+                      文件大小: {formatSize(updateInfo.fileSize)}
                     </p>
+                  )}
+                  {updateInfo.releaseNotes && (
+                    <div className="mt-2 p-2 bg-zinc-800/50 rounded text-xs text-zinc-400 max-h-24 overflow-y-auto whitespace-pre-line">
+                      {updateInfo.releaseNotes}
+                    </div>
                   )}
                 </div>
               </div>
 
-              {/* Download Actions */}
-              {!downloadedPath ? (
-                <div className="space-y-3">
-                  {/* 下载按钮（带进度） */}
-                  <button
-                    onClick={downloadUpdate}
-                    disabled={isDownloading}
-                    className="w-full relative overflow-hidden py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:cursor-not-allowed"
-                  >
-                    {/* 进度条背景 */}
-                    {isDownloading && downloadProgress && (
-                      <div
-                        className="absolute inset-0 bg-blue-400/30 transition-all duration-300"
-                        style={{ width: `${downloadProgress.percent}%` }}
-                      />
-                    )}
-                    {/* 按钮内容 */}
-                    <div className="relative flex items-center justify-center gap-2">
-                      {isDownloading ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>
-                            {downloadProgress ? (
-                              `${downloadProgress.percent.toFixed(0)}% · ${formatSize(downloadProgress.transferred)} / ${formatSize(downloadProgress.total)}`
-                            ) : (
-                              t.update?.downloading || '下载中...'
-                            )}
-                          </span>
-                          {downloadProgress && downloadProgress.bytesPerSecond > 0 && (
-                            <span className="text-blue-200 text-xs">
-                              {formatSpeed(downloadProgress.bytesPerSecond)}
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <Download className="w-4 h-4" />
-                          {t.update?.download || '下载更新'}
-                        </>
-                      )}
-                    </div>
-                  </button>
+              {/* 立即更新按钮 */}
+              <button
+                onClick={onShowUpdateModal}
+                className="w-full py-2.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors font-medium"
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <Download className="w-4 h-4" />
+                  {t.update?.download || '立即更新'}
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-green-400">
-                    <CheckCircle className="w-4 h-4" />
-                    <span className="text-sm">{t.update?.downloadComplete || '下载完成'}</span>
-                  </div>
-                  <button
-                    onClick={openDownloadedFile}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-green-600 hover:bg-green-500 text-white transition-colors"
-                  >
-                    {t.update?.openInstaller || '打开安装包'}
-                  </button>
-                </div>
-              )}
+              </button>
             </div>
           ) : (
             <div className="flex items-center gap-3">
@@ -884,13 +838,6 @@ const UpdateSettings: React.FC = () => {
         </div>
       )}
 
-      {/* Auto Update Info */}
-      <div className="bg-zinc-800/50 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-zinc-100 mb-2">{t.update?.autoUpdate || '自动更新'}</h4>
-        <p className="text-xs text-zinc-400">
-          {t.update?.autoUpdateDesc || '应用启动时会自动检查更新。下载后需要手动安装新版本。'}
-        </p>
-      </div>
     </div>
   );
 };

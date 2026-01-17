@@ -6,13 +6,14 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { generateMessageId } from '@shared/utils/id';
-import type { Message, ToolCall, ToolResult } from '@shared/types';
+import type { Message, ToolCall, ToolResult, PermissionRequest } from '@shared/types';
 
 export const useAgent = () => {
   const {
     setIsProcessing,
     isProcessing,
     currentGeneration,
+    setPendingPermissionRequest,
   } = useAppStore();
 
   const {
@@ -149,14 +150,11 @@ export const useAgent = () => {
 
           case 'permission_request':
             // Handle permission request from tools
-            // TODO: Show a proper permission dialog to the user
-            // For now, auto-approve all permissions (development mode)
+            // Show permission dialog to user for approval
             console.log('[useAgent] Permission request received:', event.data);
             if (event.data?.id) {
-              // Auto-approve the permission request
-              // IPC signature: (requestId: string, response: PermissionResponse)
-              console.log('[useAgent] Auto-approving permission:', event.data.id);
-              window.electronAPI?.invoke('agent:permission-response', event.data.id, 'allow');
+              // Set the pending permission request to show the modal
+              setPendingPermissionRequest(event.data as PermissionRequest);
             }
             break;
         }
@@ -166,7 +164,7 @@ export const useAgent = () => {
     return () => {
       unsubscribe?.();
     };
-  }, [updateMessage, setTodos, setIsProcessing]); // Remove messages from deps to avoid re-registering
+  }, [updateMessage, setTodos, setIsProcessing, setPendingPermissionRequest]); // Remove messages from deps to avoid re-registering
 
   // Send a message to the agent
   const sendMessage = useCallback(

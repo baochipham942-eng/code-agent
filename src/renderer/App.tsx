@@ -17,10 +17,12 @@ import { ErrorsPanel } from './components/ErrorsPanel';
 import { MemoryPanel } from './components/MemoryPanel';
 import { UserQuestionModal } from './components/UserQuestionModal';
 import { AuthModal } from './components/AuthModal';
+import { ForceUpdateModal } from './components/ForceUpdateModal';
+import { PermissionModal } from './components/PermissionModal';
 import { useDisclosure } from './hooks/useDisclosure';
 import { Target, Lightbulb, AlertOctagon, Brain } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
-import type { UserQuestionRequest } from '@shared/types';
+import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 
 // Planning panel tab type
 type PlanningTab = 'plan' | 'findings' | 'errors';
@@ -40,11 +42,16 @@ export const App: React.FC = () => {
     setFindings,
     setErrors,
     setLanguage,
+    pendingPermissionRequest,
+    setPendingPermissionRequest,
   } = useAppStore();
 
   const [activePlanningTab, setActivePlanningTab] = useState<PlanningTab>('plan');
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
+
+  // 强制更新状态
+  const [forceUpdateInfo, setForceUpdateInfo] = useState<UpdateInfo | null>(null);
 
   // Auth store
   const { showAuthModal } = useAuthStore();
@@ -82,6 +89,32 @@ export const App: React.FC = () => {
     };
     loadLanguageSetting();
   }, [setLanguage]);
+
+  // 应用启动时检查更新（强制更新检查）
+  useEffect(() => {
+    const checkForUpdates = async () => {
+      try {
+        console.log('[App] Checking for updates on startup...');
+        const updateInfo = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_CHECK);
+
+        if (updateInfo?.hasUpdate && updateInfo?.forceUpdate) {
+          console.log('[App] Force update required:', updateInfo.latestVersion);
+          setForceUpdateInfo(updateInfo);
+        } else if (updateInfo?.hasUpdate) {
+          console.log('[App] Optional update available:', updateInfo.latestVersion);
+          // 可选更新不弹窗，用户可以在设置中查看
+        } else {
+          console.log('[App] App is up to date');
+        }
+      } catch (error) {
+        console.error('[App] Failed to check for updates:', error);
+      }
+    };
+
+    // 延迟检查，等待应用完全加载
+    const timer = setTimeout(checkForUpdates, 2000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Check if Gen 3+ (persistent planning available)
   const isPlanningAvailable =
@@ -317,8 +350,34 @@ export const App: React.FC = () => {
         />
       )}
 
+      {/* Permission Modal */}
+      {pendingPermissionRequest && (
+        <PermissionModal
+          request={pendingPermissionRequest}
+          onAllow={() => {
+            window.electronAPI?.invoke(
+              IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
+              pendingPermissionRequest.id,
+              'allow'
+            );
+            setPendingPermissionRequest(null);
+          }}
+          onDeny={() => {
+            window.electronAPI?.invoke(
+              IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
+              pendingPermissionRequest.id,
+              'deny'
+            );
+            setPendingPermissionRequest(null);
+          }}
+        />
+      )}
+
       {/* Auth Modal */}
       {showAuthModal && <AuthModal />}
+
+      {/* Force Update Modal - 强制更新，不可关闭 */}
+      {forceUpdateInfo && <ForceUpdateModal updateInfo={forceUpdateInfo} />}
     </div>
   );
 };

@@ -49,7 +49,17 @@ export const ChatView: React.FC = () => {
             <EmptyState generation={currentGeneration.name} onSend={handleSendMessage} />
           ) : (
             <div className="max-w-3xl mx-auto py-6 px-4 space-y-6">
-              {messages.map((message, index) => (
+              {messages
+                // 过滤空的 assistant 占位消息（没有内容也没有工具调用）
+                .filter((message) => {
+                  if (message.role === 'assistant') {
+                    const hasContent = message.content && message.content.trim().length > 0;
+                    const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
+                    return hasContent || hasToolCalls;
+                  }
+                  return true;
+                })
+                .map((message, index) => (
                 <div
                   key={message.id}
                   className="animate-fade-in-up"

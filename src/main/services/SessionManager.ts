@@ -228,6 +228,23 @@ export class SessionManager {
   }
 
   /**
+   * 更新消息
+   */
+  async updateMessage(messageId: string, updates: Partial<Message>): Promise<void> {
+    const db = getDatabase();
+    db.updateMessage(messageId, updates);
+
+    // 更新缓存中的消息
+    if (this.currentSessionId && this.sessionCache.has(this.currentSessionId)) {
+      const cached = this.sessionCache.get(this.currentSessionId)!;
+      const msgIndex = cached.messages.findIndex((m) => m.id === messageId);
+      if (msgIndex !== -1) {
+        cached.messages[msgIndex] = { ...cached.messages[msgIndex], ...updates };
+      }
+    }
+  }
+
+  /**
    * 获取会话消息
    */
   async getMessages(sessionId: string, limit?: number): Promise<Message[]> {

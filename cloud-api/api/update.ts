@@ -12,6 +12,10 @@ interface ReleaseInfo {
   version: string;
   publishedAt: string;
   releaseNotes: string;
+  /** 是否强制更新 - 用户必须更新才能继续使用 */
+  forceUpdate: boolean;
+  /** 强制更新的最低版本 - 低于此版本的用户必须更新 */
+  minRequiredVersion?: string;
   downloads: {
     darwin: { url: string; size: number };
     win32?: { url: string; size: number };
@@ -20,23 +24,29 @@ interface ReleaseInfo {
 }
 
 // 当前最新版本 - 每次发布新版本时更新这里
+// forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
+// forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.2.8',
-  publishedAt: '2026-01-17T13:00:00.000Z',
+  version: '0.2.9',
+  publishedAt: '2026-01-17T18:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.2.8
+## Code Agent v0.2.9
 
-### 修复
-- 修复代际徽章显示错误：Gen1 现在正确显示 v1.0（而非 v0.2 Beta）
-- 应用版本号现在从单一数据源读取（package.json）
+### 新功能
+- 新增强制更新/可选更新机制
+- 强制更新时弹出不可关闭的弹窗
+- 可选更新在设置中显示提示徽章
 
 ### 改进
-- 添加 APP_GET_VERSION IPC 通道
-- Sidebar 版本号动态获取，无需手动更新
+- 优化版本检查逻辑
   `.trim(),
+  // 设置为 false 表示可选更新，设置为 true 表示强制更新
+  forceUpdate: false,
+  // 可选：设置最低要求版本，低于此版本的用户必须更新
+  // minRequiredVersion: '0.2.0',
   downloads: {
     darwin: {
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.2.8/Code.Agent-0.2.8-arm64.dmg',
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.2.9/Code.Agent-0.2.9-arm64.dmg',
       size: 129500000,
     },
   },
@@ -79,6 +89,8 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
       version: LATEST_RELEASE.version,
       publishedAt: LATEST_RELEASE.publishedAt,
       releaseNotes: LATEST_RELEASE.releaseNotes,
+      forceUpdate: LATEST_RELEASE.forceUpdate,
+      minRequiredVersion: LATEST_RELEASE.minRequiredVersion,
       downloads: LATEST_RELEASE.downloads,
     });
   }
@@ -91,9 +103,22 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     const hasUpdate = compareVersions(LATEST_RELEASE.version, currentVersion) > 0;
     const downloadInfo = LATEST_RELEASE.downloads[clientPlatform as keyof typeof LATEST_RELEASE.downloads];
 
+    // 判断是否需要强制更新
+    // 1. 如果 forceUpdate 为 true，且有新版本 -> 强制更新
+    // 2. 如果设置了 minRequiredVersion，且当前版本低于最低要求 -> 强制更新
+    let isForceUpdate = false;
+    if (hasUpdate) {
+      if (LATEST_RELEASE.forceUpdate) {
+        isForceUpdate = true;
+      } else if (LATEST_RELEASE.minRequiredVersion) {
+        isForceUpdate = compareVersions(LATEST_RELEASE.minRequiredVersion, currentVersion) > 0;
+      }
+    }
+
     return res.status(200).json({
       success: true,
       hasUpdate,
+      forceUpdate: isForceUpdate,
       currentVersion,
       latestVersion: LATEST_RELEASE.version,
       publishedAt: LATEST_RELEASE.publishedAt,

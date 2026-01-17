@@ -12,3 +12,9 @@ export {
   createPlanningService,
   type PlanningServiceOptions,
 } from './PlanningService';
+export {
+  TaskComplexityAnalyzer,
+  taskComplexityAnalyzer,
+  type TaskComplexity,
+  type ComplexityAnalysis,
+} from './TaskComplexityAnalyzer';

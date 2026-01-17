@@ -27,7 +27,7 @@ const DEFAULT_HOOKS_CONFIG: PlanningHooksConfig = {
 };
 
 const DEFAULT_RULES_CONFIG: PlanningRulesConfig = {
-  actionThreshold: 2,  // 2-Action Rule
+  actionThreshold: 5,  // Increased from 2 to reduce over-intervention
   errorStrikeLimit: 3, // 3-Strike Rule
 };
 
@@ -182,6 +182,8 @@ export class HooksEngine {
   /**
    * Stop Hook
    * - Verify all plan phases are complete before allowing stop
+   * - For simple tasks without plans, always allow stop
+   * - IMPORTANT: Don't force continuation too aggressively - better to finish than loop forever
    */
   async onStop(): Promise<HookResult> {
     if (!this.hooksConfig.onStop) {
@@ -190,13 +192,39 @@ export class HooksEngine {
 
     const plan = await this.planManager.read();
 
+    // No plan exists - allow stop freely (simple task completed)
     if (!plan) {
       return { shouldContinue: true };
     }
 
+    // Plan exists but has few steps - likely over-planned for a simple task, allow stop
+    // Increased threshold from 2 to 4 to avoid forcing continuation for small plans
+    if (plan.metadata.totalSteps <= 4) {
+      return { shouldContinue: true };
+    }
+
+    // If at least half the plan is done, allow stopping (user can always ask to continue)
+    if (plan.metadata.completedSteps >= plan.metadata.totalSteps / 2) {
+      const remaining = plan.metadata.totalSteps - plan.metadata.completedSteps;
+      return {
+        shouldContinue: true,
+        notification: `Good progress! ${remaining} items remaining - reply to continue.`,
+      };
+    }
+
     if (!this.planManager.isComplete()) {
       const incomplete = this.planManager.getIncompleteItems();
+      const incompleteCount = (incomplete.match(/\n/g) || []).length;
 
+      // If only a few remaining, suggest but don't force
+      if (incompleteCount <= 3) {
+        return {
+          shouldContinue: true,
+          notification: `Almost done! ${incompleteCount} items remaining.`,
+        };
+      }
+
+      // Only force continuation if very little progress made
       return {
         shouldContinue: false,
         injectContext: this.formatCompletionCheck(incomplete),
@@ -329,9 +357,8 @@ export class HooksEngine {
   private format2ActionReminder(): string {
     return (
       `\n<reminder>\n` +
-      `You've performed ${this.rulesConfig.actionThreshold} view operations. ` +
-      `Consider saving important findings to findings.md before continuing.\n` +
-      `Use the findings_write tool to persist discoveries.\n` +
+      `You've performed ${this.rulesConfig.actionThreshold} view operations without writing. ` +
+      `STOP READING AND START ACTING! If this is a creation task, use write_file NOW.\n` +
       `</reminder>\n`
     );
   }

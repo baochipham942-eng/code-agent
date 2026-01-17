@@ -16,3 +16,6 @@ export { SettingsModal } from './SettingsModal';
 export { PlanningPanel } from './PlanningPanel';
 export { FindingsPanel } from './FindingsPanel';
 export { ErrorsPanel } from './ErrorsPanel';
+
+// Update notification
+export { UpdateNotification } from './UpdateNotification';

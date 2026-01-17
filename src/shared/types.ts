@@ -383,6 +383,10 @@ export interface AppSettings {
     url: string;
     anonKey: string;
   };
+  // Cloud API 配置 (更新检查等)
+  cloudApi?: {
+    url: string;
+  };
 }
 
 // ----------------------------------------------------------------------------
@@ -557,4 +561,25 @@ export interface DeviceInfo {
   platform: string;
   lastActiveAt: number;
   isCurrent: boolean;
+}
+
+// ----------------------------------------------------------------------------
+// Update Types
+// ----------------------------------------------------------------------------
+
+export interface UpdateInfo {
+  hasUpdate: boolean;
+  currentVersion: string;
+  latestVersion?: string;
+  downloadUrl?: string;
+  releaseNotes?: string;
+  fileSize?: number;
+  publishedAt?: string;
+}
+
+export interface DownloadProgress {
+  percent: number;
+  transferred: number;
+  total: number;
+  bytesPerSecond: number;
 }

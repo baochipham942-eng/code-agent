@@ -26,6 +26,8 @@ import type {
   SyncStatus,
   SyncConflict,
   DeviceInfo,
+  UpdateInfo,
+  DownloadProgress,
 } from './types';
 
 // ----------------------------------------------------------------------------
@@ -182,6 +184,16 @@ export const IPC_CHANNELS = {
   DEVICE_REGISTER: 'device:register',
   DEVICE_LIST: 'device:list',
   DEVICE_REMOVE: 'device:remove',
+
+  // Update channels
+  UPDATE_CHECK: 'update:check',
+  UPDATE_GET_INFO: 'update:get-info',
+  UPDATE_DOWNLOAD: 'update:download',
+  UPDATE_OPEN_FILE: 'update:open-file',
+  UPDATE_OPEN_URL: 'update:open-url',
+  UPDATE_START_AUTO_CHECK: 'update:start-auto-check',
+  UPDATE_STOP_AUTO_CHECK: 'update:stop-auto-check',
+  UPDATE_EVENT: 'update:event',
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -291,6 +303,15 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.DEVICE_REGISTER]: () => Promise<DeviceInfo>;
   [IPC_CHANNELS.DEVICE_LIST]: () => Promise<DeviceInfo[]>;
   [IPC_CHANNELS.DEVICE_REMOVE]: (deviceId: string) => Promise<void>;
+
+  // Update
+  [IPC_CHANNELS.UPDATE_CHECK]: () => Promise<UpdateInfo>;
+  [IPC_CHANNELS.UPDATE_GET_INFO]: () => Promise<UpdateInfo | null>;
+  [IPC_CHANNELS.UPDATE_DOWNLOAD]: (downloadUrl: string) => Promise<string>;
+  [IPC_CHANNELS.UPDATE_OPEN_FILE]: (filePath: string) => Promise<void>;
+  [IPC_CHANNELS.UPDATE_OPEN_URL]: (url: string) => Promise<void>;
+  [IPC_CHANNELS.UPDATE_START_AUTO_CHECK]: () => Promise<void>;
+  [IPC_CHANNELS.UPDATE_STOP_AUTO_CHECK]: () => Promise<void>;
 }
 
 // ----------------------------------------------------------------------------
@@ -316,6 +337,13 @@ export interface SessionUpdatedEvent {
   updates: Partial<Session>;
 }
 
+export type UpdateEventType = 'update_available' | 'download_progress' | 'download_complete' | 'download_error';
+
+export interface UpdateEvent {
+  type: UpdateEventType;
+  data?: UpdateInfo | DownloadProgress | { filePath: string } | { error: string };
+}
+
 export interface IpcEventHandlers {
   [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEvent) => void;
   [IPC_CHANNELS.PLANNING_EVENT]: (event: PlanningEvent) => void;
@@ -323,6 +351,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.AUTH_EVENT]: (event: AuthEvent) => void;
   [IPC_CHANNELS.SYNC_EVENT]: (status: SyncStatus) => void;
   [IPC_CHANNELS.SESSION_UPDATED]: (event: SessionUpdatedEvent) => void;
+  [IPC_CHANNELS.UPDATE_EVENT]: (event: UpdateEvent) => void;
 }
 
 // ----------------------------------------------------------------------------

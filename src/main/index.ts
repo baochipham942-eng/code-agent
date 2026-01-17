@@ -15,8 +15,9 @@ import { logBridge } from './mcp/LogBridge.js';
 import { initSupabase, isSupabaseInitialized } from './services/SupabaseService';
 import { getAuthService } from './services/AuthService';
 import { getSyncService } from './services/SyncService';
+import { initUpdateService, getUpdateService, isUpdateServiceInitialized } from './services/UpdateService';
 import { IPC_CHANNELS } from '../shared/ipc';
-import type { GenerationId, PermissionResponse, PlanningState, AuthUser } from '../shared/types';
+import type { GenerationId, PermissionResponse, PlanningState, AuthUser, UpdateInfo } from '../shared/types';
 import { createPlanningService, type PlanningService } from './planning';
 
 // ----------------------------------------------------------------------------
@@ -342,6 +343,59 @@ async function initializeServices(): Promise<void> {
 
   // Initialize planning service for Gen 3+
   await initializePlanningService();
+
+  // Initialize update service
+  const updateServerUrl = process.env.CLOUD_API_URL || settings.cloudApi?.url || 'https://code-agent-cloud.vercel.app';
+  initUpdateService({
+    updateServerUrl,
+    checkInterval: 60 * 60 * 1000, // Check every hour
+    autoDownload: false,
+  });
+
+  // Set up update event callbacks
+  const updateService = getUpdateService();
+  updateService.setProgressCallback((progress) => {
+    if (mainWindow) {
+      mainWindow.webContents.send(IPC_CHANNELS.UPDATE_EVENT, {
+        type: 'download_progress',
+        data: progress,
+      });
+    }
+  });
+
+  updateService.setCompleteCallback((filePath) => {
+    if (mainWindow) {
+      mainWindow.webContents.send(IPC_CHANNELS.UPDATE_EVENT, {
+        type: 'download_complete',
+        data: { filePath },
+      });
+    }
+  });
+
+  updateService.setErrorCallback((error) => {
+    if (mainWindow) {
+      mainWindow.webContents.send(IPC_CHANNELS.UPDATE_EVENT, {
+        type: 'download_error',
+        data: { error: error.message },
+      });
+    }
+  });
+
+  // Start auto-check for updates (after a delay to not block startup)
+  setTimeout(() => {
+    updateService.checkForUpdates().then((info) => {
+      if (info.hasUpdate && mainWindow) {
+        mainWindow.webContents.send(IPC_CHANNELS.UPDATE_EVENT, {
+          type: 'update_available',
+          data: info,
+        });
+      }
+    }).catch((err) => {
+      console.error('[Main] Update check failed:', err);
+    });
+  }, 5000); // Check 5 seconds after startup
+
+  console.log('Update service initialized, server:', updateServerUrl);
 }
 
 async function initializePlanningService(): Promise<void> {
@@ -936,6 +990,69 @@ function setupIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.DEVICE_REMOVE, async (_, deviceId: string) => {
     const syncService = getSyncService();
     await syncService.removeDevice(deviceId);
+  });
+
+  // -------------------------------------------------------------------------
+  // Update Handlers
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK, async (): Promise<UpdateInfo> => {
+    if (!isUpdateServiceInitialized()) {
+      return {
+        hasUpdate: false,
+        currentVersion: app.getVersion(),
+      };
+    }
+    const updateService = getUpdateService();
+    return updateService.checkForUpdates();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATE_GET_INFO, async (): Promise<UpdateInfo | null> => {
+    if (!isUpdateServiceInitialized()) {
+      return null;
+    }
+    const updateService = getUpdateService();
+    return updateService.getCachedUpdateInfo();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATE_DOWNLOAD, async (_, downloadUrl: string): Promise<string> => {
+    if (!isUpdateServiceInitialized()) {
+      throw new Error('Update service not initialized');
+    }
+    const updateService = getUpdateService();
+    return updateService.downloadUpdate(downloadUrl);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATE_OPEN_FILE, async (_, filePath: string): Promise<void> => {
+    if (!isUpdateServiceInitialized()) {
+      throw new Error('Update service not initialized');
+    }
+    const updateService = getUpdateService();
+    await updateService.openDownloadedFile(filePath);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATE_OPEN_URL, async (_, url: string): Promise<void> => {
+    if (!isUpdateServiceInitialized()) {
+      throw new Error('Update service not initialized');
+    }
+    const updateService = getUpdateService();
+    await updateService.openDownloadUrl(url);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATE_START_AUTO_CHECK, async (): Promise<void> => {
+    if (!isUpdateServiceInitialized()) {
+      return;
+    }
+    const updateService = getUpdateService();
+    updateService.startAutoCheck();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATE_STOP_AUTO_CHECK, async (): Promise<void> => {
+    if (!isUpdateServiceInitialized()) {
+      return;
+    }
+    const updateService = getUpdateService();
+    updateService.stopAutoCheck();
   });
 }
 

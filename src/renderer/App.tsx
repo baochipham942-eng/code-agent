@@ -17,6 +17,7 @@ import { ErrorsPanel } from './components/ErrorsPanel';
 import { MemoryPanel } from './components/MemoryPanel';
 import { UserQuestionModal } from './components/UserQuestionModal';
 import { AuthModal } from './components/AuthModal';
+import { UpdateNotification } from './components/UpdateNotification';
 import { useDisclosure } from './hooks/useDisclosure';
 import { Target, Lightbulb, AlertOctagon, Layers, Brain } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -331,6 +332,9 @@ export const App: React.FC = () => {
 
       {/* Auth Modal */}
       {showAuthModal && <AuthModal />}
+
+      {/* Update Notification */}
+      <UpdateNotification position="top" />
     </div>
   );
 };

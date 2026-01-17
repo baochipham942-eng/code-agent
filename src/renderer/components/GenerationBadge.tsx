@@ -158,8 +158,8 @@ export const GenerationBadge: React.FC = () => {
 
           {/* Menu */}
           <div className="absolute top-full left-0 mt-2 w-80 bg-zinc-800 rounded-lg shadow-xl border border-zinc-700 z-20 overflow-hidden animate-fadeIn">
-            <div className="p-2">
-              <div className="text-xs font-medium text-zinc-500 px-2 py-1.5">
+            <div className="p-2 max-h-[420px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-600 scrollbar-track-transparent">
+              <div className="text-xs font-medium text-zinc-500 px-2 py-1.5 sticky top-0 bg-zinc-800 z-10">
                 Select Generation
               </div>
 

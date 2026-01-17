@@ -1,6 +1,6 @@
 {
   "name": "code-agent",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "AI Coding Assistant with Generation Comparison",
   "type": "module",
   "main": "dist/main/index.cjs",
@@ -47,6 +47,7 @@
     "node-fetch": "^3.3.2",
     "openai": "^4.70.0",
     "playwright": "^1.57.0",
+    "uuid": "^13.0.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
@@ -62,6 +63,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.3.0",
     "@vitest/coverage-v8": "^4.0.17",
     "autoprefixer": "^10.4.0",

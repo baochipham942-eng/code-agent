@@ -22,9 +22,6 @@ import { Activity, Brain } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 
-// Planning panel tab type
-type PlanningTab = 'plan' | 'findings' | 'errors';
-
 export const App: React.FC = () => {
   const {
     showSettings,
@@ -33,18 +30,11 @@ export const App: React.FC = () => {
     setShowPlanningPanel,
     setShowSettings,
     currentGeneration,
-    taskPlan,
-    findings,
-    errors,
-    setTaskPlan,
-    setFindings,
-    setErrors,
     setLanguage,
     pendingPermissionRequest,
     setPendingPermissionRequest,
   } = useAppStore();
 
-  const [activePlanningTab, setActivePlanningTab] = useState<PlanningTab>('plan');
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
 
@@ -136,57 +126,11 @@ export const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, []);
 
-  // Check if planning panel is available (Advanced+ disclosure level)
-  const isPlanningAvailable = isAdvanced;
+  // Check if observability panel is available (Advanced+ disclosure level)
+  const isObservabilityAvailable = isAdvanced;
 
   // Check if Gen 5 (memory features available)
   const isMemoryAvailable = currentGeneration.id === 'gen5';
-
-  // Listen for planning events from main process
-  useEffect(() => {
-    if (!isPlanningAvailable) return;
-
-    const unsubscribe = window.electronAPI?.on(
-      IPC_CHANNELS.PLANNING_EVENT,
-      (event) => {
-        if (event.data.plan !== undefined) {
-          setTaskPlan(event.data.plan);
-        }
-        if (event.data.findings !== undefined) {
-          setFindings(event.data.findings);
-        }
-        if (event.data.errors !== undefined) {
-          setErrors(event.data.errors);
-        }
-      }
-    );
-
-    return () => {
-      unsubscribe?.();
-    };
-  }, [isPlanningAvailable, setTaskPlan, setFindings, setErrors]);
-
-  // Fetch initial planning state
-  useEffect(() => {
-    if (!isPlanningAvailable) return;
-
-    const fetchPlanningState = async () => {
-      try {
-        const state = await window.electronAPI?.invoke(
-          IPC_CHANNELS.PLANNING_GET_STATE
-        );
-        if (state) {
-          setTaskPlan(state.plan);
-          setFindings(state.findings);
-          setErrors(state.errors);
-        }
-      } catch (error) {
-        console.error('Failed to fetch planning state:', error);
-      }
-    };
-
-    fetchPlanningState();
-  }, [isPlanningAvailable, setTaskPlan, setFindings, setErrors]);
 
   // Listen for user question events (Gen 3+)
   useEffect(() => {
@@ -203,32 +147,22 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Planning panel toggle button
-  const PlanningToggle: React.FC = () => {
-    if (!isPlanningAvailable) return null;
-
-    const hasContent = taskPlan || findings.length > 0 || errors.length > 0;
-    const errorCount = errors.filter((e) => e.count >= 3).length;
+  // Observability panel toggle button (Advanced+ mode)
+  const ObservabilityToggle: React.FC = () => {
+    if (!isObservabilityAvailable) return null;
 
     return (
       <button
         onClick={() => setShowPlanningPanel(!showPlanningPanel)}
         className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
           showPlanningPanel
-            ? 'bg-purple-500/20 text-purple-300'
-            : hasContent
-            ? 'text-purple-400 hover:bg-zinc-800'
+            ? 'bg-indigo-500/20 text-indigo-300'
             : 'text-zinc-500 hover:bg-zinc-800'
         }`}
-        title="Toggle Planning Panel"
+        title="执行追踪面板"
       >
-        <Target className="w-3.5 h-3.5" />
-        <span>Plan</span>
-        {errorCount > 0 && (
-          <span className="px-1 py-0.5 bg-red-500/20 text-red-400 rounded text-xs">
-            {errorCount}
-          </span>
-        )}
+        <Activity className="w-3.5 h-3.5" />
+        <span>追踪</span>
       </button>
     );
   };
@@ -253,69 +187,6 @@ export const App: React.FC = () => {
     );
   };
 
-  // Planning tab bar
-  const PlanningTabBar: React.FC = () => (
-    <div className="flex border-b border-zinc-800">
-      <button
-        onClick={() => setActivePlanningTab('plan')}
-        className={`flex items-center gap-1.5 px-3 py-2 text-xs transition-colors ${
-          activePlanningTab === 'plan'
-            ? 'text-purple-400 border-b-2 border-purple-400 -mb-px'
-            : 'text-zinc-400 hover:text-zinc-200'
-        }`}
-      >
-        <Target className="w-3.5 h-3.5" />
-        Plan
-        {taskPlan && (
-          <span className="text-zinc-500">
-            ({taskPlan.metadata.completedSteps}/{taskPlan.metadata.totalSteps})
-          </span>
-        )}
-      </button>
-      <button
-        onClick={() => setActivePlanningTab('findings')}
-        className={`flex items-center gap-1.5 px-3 py-2 text-xs transition-colors ${
-          activePlanningTab === 'findings'
-            ? 'text-yellow-400 border-b-2 border-yellow-400 -mb-px'
-            : 'text-zinc-400 hover:text-zinc-200'
-        }`}
-      >
-        <Lightbulb className="w-3.5 h-3.5" />
-        Findings
-        {findings.length > 0 && (
-          <span className="text-zinc-500">({findings.length})</span>
-        )}
-      </button>
-      <button
-        onClick={() => setActivePlanningTab('errors')}
-        className={`flex items-center gap-1.5 px-3 py-2 text-xs transition-colors ${
-          activePlanningTab === 'errors'
-            ? 'text-red-400 border-b-2 border-red-400 -mb-px'
-            : 'text-zinc-400 hover:text-zinc-200'
-        }`}
-      >
-        <AlertOctagon className="w-3.5 h-3.5" />
-        Errors
-        {errors.length > 0 && (
-          <span className="text-zinc-500">({errors.length})</span>
-        )}
-      </button>
-    </div>
-  );
-
-  // Render active planning panel
-  const renderPlanningPanel = () => {
-    switch (activePlanningTab) {
-      case 'plan':
-        return <PlanningPanel plan={taskPlan} />;
-      case 'findings':
-        return <FindingsPanel findings={findings} />;
-      case 'errors':
-        return <ErrorsPanel errors={errors} />;
-    }
-  };
-
-
   return (
     <div className="h-screen flex flex-col bg-zinc-900 text-zinc-100">
       {/* Title Bar for macOS */}
@@ -328,13 +199,13 @@ export const App: React.FC = () => {
 
         {/* Chat Area */}
         <div className="flex-1 flex flex-col min-w-0">
-          {/* Generation Badge with Planning Toggle */}
+          {/* Generation Badge with Observability Toggle */}
           <div className="px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
               {isStandard && <GenerationBadge />}
             </div>
             <div className="flex items-center gap-2">
-              {isPlanningAvailable && <PlanningToggle />}
+              {isObservabilityAvailable && <ObservabilityToggle />}
               {isMemoryAvailable && <MemoryToggle />}
             </div>
           </div>
@@ -343,13 +214,8 @@ export const App: React.FC = () => {
           <ChatView />
         </div>
 
-        {/* Planning Panel (Gen 3+ only, Advanced+ disclosure) */}
-        {showPlanningPanel && isPlanningAvailable && (
-          <div className="flex flex-col border-l border-zinc-800 bg-zinc-900/50">
-            <PlanningTabBar />
-            {renderPlanningPanel()}
-          </div>
-        )}
+        {/* Observability Panel (Advanced+ disclosure) */}
+        {showPlanningPanel && isObservabilityAvailable && <ObservabilityPanel />}
 
         {/* Memory Panel (Gen 5 only) */}
         {showMemoryPanel && isMemoryAvailable && <MemoryPanel isVisible={true} />}

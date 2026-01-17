@@ -1852,10 +1852,42 @@ export class HybridTaskCoordinator {
 
 ### 11.5 多代理云端调度 (Gen 7)
 
-#### 11.5.1 专业化 Agent 定义
+#### 11.5.1 专业化 Agent 设计理念
+
+**核心概念**: 专业化 Agent 不是使用不同的模型，而是**同一个底层模型 + 不同的 System Prompt + 不同的工具集**，让模型扮演不同的专业角色。
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           专业化 Agent 架构                                       │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│   底层模型 (用户配置的模型，如 DeepSeek / Claude / OpenAI / Groq / 智谱 / 通义)    │
+│   ═══════════════════════════════════════════════════════════                   │
+│                           │                                                      │
+│           ┌───────────────┼───────────────┬───────────────┐                     │
+│           ▼               ▼               ▼               ▼                     │
+│   ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐              │
+│   │  Planner    │ │   Coder     │ │  Reviewer   │ │ Researcher  │              │
+│   │  Agent      │ │   Agent     │ │   Agent     │ │   Agent     │              │
+│   ├─────────────┤ ├─────────────┤ ├─────────────┤ ├─────────────┤              │
+│   │ System:     │ │ System:     │ │ System:     │ │ System:     │              │
+│   │ "你是任务   │ │ "你是代码   │ │ "你是代码   │ │ "你是技术   │              │
+│   │  规划专家"  │ │  实现专家"  │ │  审查专家"  │ │  研究专家"  │              │
+│   ├─────────────┤ ├─────────────┤ ├─────────────┤ ├─────────────┤              │
+│   │ Tools:      │ │ Tools:      │ │ Tools:      │ │ Tools:      │              │
+│   │ - analyze   │ │ (无工具,   │ │ - analyze   │ │ - search    │              │
+│   │ - estimate  │ │  只生成)   │ │ - check     │ │ - web_fetch │              │
+│   └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘              │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 11.5.2 Agent 定义 (使用项目已配置的模型)
 
 ```typescript
 // supabase/functions/shared/agents.ts
+
+import { ModelProvider, ModelConfig } from '../../../src/shared/types';
 
 export interface AgentSpec {
   id: string;
@@ -1864,11 +1896,25 @@ export interface AgentSpec {
   description: string;
   capabilities: string[];
   systemPrompt: string;
-  modelPreference: 'claude-sonnet' | 'claude-opus' | 'deepseek';
-  maxTokens: number;
+  // 使用项目已支持的模型配置
+  modelConfig: {
+    provider: ModelProvider;  // 'deepseek' | 'claude' | 'openai' | 'groq' | 'zhipu' | 'qwen' | 'moonshot'
+    model: string;            // 具体模型 ID
+    maxTokens: number;
+    temperature?: number;
+  };
   tools: string[];
 }
 
+/**
+ * 专业化 Agent 定义
+ *
+ * 说明：
+ * - 每个 Agent 使用相同的底层模型（由用户配置决定）
+ * - 区别在于 System Prompt 和可用工具不同
+ * - modelConfig 是默认配置，实际使用时会被用户的模型选择覆盖
+ * - 默认使用 DeepSeek，因为它是项目的主要模型
+ */
 export const AGENT_SPECS: Record<string, AgentSpec> = {
   planner: {
     id: 'planner',
@@ -1884,8 +1930,12 @@ export const AGENT_SPECS: Record<string, AgentSpec> = {
 5. 估算每个步骤的资源需求
 
 输出格式要求 JSON 结构化计划。`,
-    modelPreference: 'claude-sonnet',
-    maxTokens: 8000,
+    modelConfig: {
+      provider: 'deepseek',
+      model: 'deepseek-chat',      // 或 'deepseek-reasoner' 用于复杂推理
+      maxTokens: 8000,
+      temperature: 0.3,            // 低温度，输出更稳定
+    },
     tools: ['analyze_codebase', 'estimate_complexity'],
   },
 
@@ -1902,9 +1952,13 @@ export const AGENT_SPECS: Record<string, AgentSpec> = {
 4. 处理边界情况和错误
 
 你生成的代码将由本地执行器写入文件。`,
-    modelPreference: 'claude-sonnet',
-    maxTokens: 16000,
-    tools: [],  // Coder 只生成代码，不执行
+    modelConfig: {
+      provider: 'deepseek',
+      model: 'deepseek-coder',     // 代码专用模型
+      maxTokens: 16000,
+      temperature: 0.2,            // 更低温度，代码生成更准确
+    },
+    tools: [],  // Coder 只生成代码，不执行工具
   },
 
   reviewer: {
@@ -1925,8 +1979,12 @@ export const AGENT_SPECS: Record<string, AgentSpec> = {
 - 安全性
 - 可维护性
 - 测试覆盖`,
-    modelPreference: 'claude-opus',
-    maxTokens: 8000,
+    modelConfig: {
+      provider: 'deepseek',
+      model: 'deepseek-reasoner',  // 使用推理模型做深度分析
+      maxTokens: 8000,
+      temperature: 0.4,
+    },
     tools: ['analyze_code', 'check_security'],
   },
 
@@ -1943,9 +2001,13 @@ export const AGENT_SPECS: Record<string, AgentSpec> = {
 4. 总结研究发现
 
 你可以访问向量数据库进行语义搜索。`,
-    modelPreference: 'claude-sonnet',
-    maxTokens: 4000,
-    tools: ['semantic_search', 'web_search'],
+    modelConfig: {
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      maxTokens: 4000,
+      temperature: 0.5,
+    },
+    tools: ['semantic_search', 'web_fetch'],
   },
 
   documenter: {
@@ -1961,21 +2023,51 @@ export const AGENT_SPECS: Record<string, AgentSpec> = {
 4. 保持文档与代码同步
 
 文档风格要求清晰、简洁、有示例。`,
-    modelPreference: 'claude-sonnet',
-    maxTokens: 8000,
+    modelConfig: {
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      maxTokens: 8000,
+      temperature: 0.6,            // 稍高温度，文档可以更自然
+    },
     tools: [],
   },
 };
+
+/**
+ * 根据用户配置覆盖 Agent 的模型设置
+ *
+ * 用户可以在设置中选择不同的模型提供商，
+ * 这个函数会用用户的选择覆盖默认配置
+ */
+export function resolveAgentModelConfig(
+  agentId: string,
+  userConfig: ModelConfig
+): ModelConfig {
+  const spec = AGENT_SPECS[agentId];
+  if (!spec) {
+    throw new Error(`Unknown agent: ${agentId}`);
+  }
+
+  // 用户配置优先，否则使用 Agent 默认配置
+  return {
+    provider: userConfig.provider || spec.modelConfig.provider,
+    model: userConfig.model || spec.modelConfig.model,
+    apiKey: userConfig.apiKey,
+    baseUrl: userConfig.baseUrl,
+    maxTokens: spec.modelConfig.maxTokens,
+    temperature: spec.modelConfig.temperature,
+  };
+}
 ```
 
-#### 11.5.2 多代理调度器 (Edge Function)
+#### 11.5.3 多代理调度器 (Edge Function)
 
 ```typescript
 // supabase/functions/agent-scheduler/index.ts
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import Anthropic from 'https://esm.sh/@anthropic-ai/sdk';
+import { AGENT_SPECS, resolveAgentModelConfig } from '../shared/agents.ts';
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,

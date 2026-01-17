@@ -21,29 +21,24 @@ interface ReleaseInfo {
 
 // 当前最新版本 - 每次发布新版本时更新这里
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.2.1',
-  publishedAt: '2025-01-17T17:00:00.000Z',
+  version: '0.2.2',
+  publishedAt: '2025-01-17T17:30:00.000Z',
   releaseNotes: `
-## Code Agent v0.2.1
-
-### 新功能
-- 支持 8 代 AI Agent 能力演进展示 (Gen1-Gen8)
-- 添加缓存管理设置页面，可查看缓存统计和清理缓存
-- 添加版本检查与自动更新功能
+## Code Agent v0.2.2
 
 ### 修复
-- 修复代际下拉菜单宽度问题（800px）
-- 移除重复的设置按钮和 Standard 指示器
-- 统一代际版本号显示（v1.0-v8.0）
+- 修复外层代际显示格式（Gen X vX.0）
+- 修复下拉菜单头部"选择代际"样式
+- 优化工具标签全部展示并自动换行
 
 ### 改进
-- 使用 GitHub Releases API + 云端 API 双重更新检查
-- 支持下载进度显示和安装
+- 下拉菜单支持显示所有工具（不再省略）
+- UI 文案本地化为中文
   `.trim(),
   downloads: {
     darwin: {
       // 实际下载地址需要在打包后更新
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.2.1/Code-Agent-0.2.1-arm64.dmg',
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.2.2/Code-Agent-0.2.2-arm64.dmg',
       size: 130 * 1024 * 1024, // 约 130MB
     },
     // win32 和 linux 暂未提供

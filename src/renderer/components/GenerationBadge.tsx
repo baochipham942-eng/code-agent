@@ -141,13 +141,13 @@ export const GenerationBadge: React.FC = () => {
 
   return (
     <div className="relative">
-      {/* Badge Button */}
+      {/* Badge Button - 格式: Gen X vX.0 */}
       <button
         onClick={() => setShowDropdown(!showDropdown)}
         className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors ${config.color}`}
       >
         {config.icon}
-        <span className="font-medium">{currentGeneration.name}</span>
+        <span className="font-medium">Gen {currentGeneration.id.replace('gen', '')}</span>
         <span className="text-xs opacity-70">{currentGeneration.version}</span>
         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
       </button>
@@ -162,15 +162,18 @@ export const GenerationBadge: React.FC = () => {
           />
 
           {/* Menu */}
-          <div className="absolute top-full left-0 mt-2 w-[800px] bg-zinc-800 rounded-lg shadow-xl border border-zinc-700 z-20 overflow-hidden animate-fadeIn">
-            <div className="p-2 max-h-[420px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-600 scrollbar-track-transparent">
-              <div className="text-xs font-medium text-zinc-500 px-2 py-1.5 sticky top-0 bg-zinc-800 z-10">
-                Select Generation
-              </div>
+          <div className="absolute top-full left-0 mt-1 w-[800px] bg-zinc-800 rounded-lg shadow-xl border border-zinc-700 z-20 overflow-hidden animate-fadeIn">
+            {/* Header */}
+            <div className="px-3 py-2 border-b border-zinc-700 bg-zinc-800">
+              <span className="text-xs font-medium text-zinc-400">选择代际</span>
+            </div>
 
+            {/* Generation List */}
+            <div className="p-2 max-h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-600 scrollbar-track-transparent">
               {generations.map((gen) => {
                 const genConfig = generationConfigs[gen.id];
                 const isSelected = currentGeneration.id === gen.id;
+                const genNumber = gen.id.replace('gen', '');
 
                 return (
                   <button
@@ -197,8 +200,9 @@ export const GenerationBadge: React.FC = () => {
                       <p className="text-xs text-zinc-400 mt-0.5">
                         {gen.description}
                       </p>
+                      {/* 工具标签 - 全部显示，自动换行 */}
                       <div className="flex flex-wrap gap-1 mt-2">
-                        {gen.tools.slice(0, 5).map((tool) => (
+                        {gen.tools.map((tool) => (
                           <span
                             key={tool}
                             className="text-xs px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500"
@@ -206,11 +210,6 @@ export const GenerationBadge: React.FC = () => {
                             {tool}
                           </span>
                         ))}
-                        {gen.tools.length > 5 && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500">
-                            +{gen.tools.length - 5} more
-                          </span>
-                        )}
                       </div>
                     </div>
                     {isSelected && (
@@ -224,7 +223,7 @@ export const GenerationBadge: React.FC = () => {
             {/* Footer with comparison hint */}
             <div className="px-4 py-2 bg-zinc-900/50 border-t border-zinc-700">
               <p className="text-xs text-zinc-500">
-                Switch generations to compare AI agent capabilities
+                切换代际以比较 AI Agent 能力演进
               </p>
             </div>
           </div>

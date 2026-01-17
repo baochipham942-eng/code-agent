@@ -21,21 +21,23 @@ interface ReleaseInfo {
 
 // 当前最新版本 - 每次发布新版本时更新这里
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.2.5',
-  publishedAt: '2026-01-17T09:50:00.000Z',
+  version: '0.2.6',
+  publishedAt: '2026-01-17T10:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.2.5
+## Code Agent v0.2.6
 
-### 修复
-- 修复下载更新功能（支持 GitHub Releases 重定向）
-- 添加 User-Agent 请求头
+### 新功能
+- 更新通知改为居中模态弹窗，更加醒目
+- 添加更新内容展示区域
 
 ### 改进
-- 添加详细下载日志便于调试
+- 移除"在浏览器中打开"按钮
+- 下载中禁止关闭弹窗
+- 优化按钮文案和布局
   `.trim(),
   downloads: {
     darwin: {
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.2.5/Code.Agent-0.2.5-arm64.dmg',
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.2.6/Code.Agent-0.2.6-arm64.dmg',
       size: 129500000,
     },
   },

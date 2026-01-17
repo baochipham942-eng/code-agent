@@ -659,12 +659,48 @@ const UpdateSettings: React.FC = () => {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [downloadProgress, setDownloadProgress] = useState<{
+    percent: number;
+    transferred: number;
+    total: number;
+    bytesPerSecond: number;
+  } | null>(null);
   const [downloadedPath, setDownloadedPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // 从 updateInfo 获取当前版本，如果没有则显示占位符
   const currentVersion = updateInfo?.currentVersion || '...';
+
+  // 监听下载进度事件
+  useEffect(() => {
+    const handleUpdateEvent = (event: { type: string; data?: any }) => {
+      console.log('[UpdateSettings] Received event:', event.type, event.data);
+
+      switch (event.type) {
+        case 'download_progress':
+          setDownloadProgress(event.data);
+          break;
+
+        case 'download_complete':
+          setDownloadedPath(event.data.filePath);
+          setIsDownloading(false);
+          setDownloadProgress(null);
+          break;
+
+        case 'download_error':
+          setError(event.data.error);
+          setIsDownloading(false);
+          setDownloadProgress(null);
+          break;
+      }
+    };
+
+    const unsubscribe = window.electronAPI?.on(IPC_CHANNELS.UPDATE_EVENT, handleUpdateEvent);
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
 
   const checkForUpdates = async () => {
     setIsChecking(true);
@@ -684,17 +720,16 @@ const UpdateSettings: React.FC = () => {
     if (!updateInfo?.downloadUrl) return;
 
     setIsDownloading(true);
-    setDownloadProgress(0);
+    setDownloadProgress({ percent: 0, transferred: 0, total: 0, bytesPerSecond: 0 });
     setError(null);
 
     try {
-      const filePath = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_DOWNLOAD, updateInfo.downloadUrl);
-      setDownloadedPath(filePath);
+      await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_DOWNLOAD, updateInfo.downloadUrl);
     } catch (err) {
       setError(t.update?.downloadError || '下载更新失败');
       console.error('Download failed:', err);
-    } finally {
       setIsDownloading(false);
+      setDownloadProgress(null);
     }
   };
 
@@ -707,19 +742,24 @@ const UpdateSettings: React.FC = () => {
     }
   };
 
-  const openDownloadUrl = async () => {
-    if (!updateInfo?.downloadUrl) return;
-    try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_OPEN_URL, updateInfo.downloadUrl);
-    } catch (err) {
-      console.error('Failed to open URL:', err);
-    }
-  };
-
   useEffect(() => {
     // Auto check on mount
     checkForUpdates();
   }, []);
+
+  // 格式化文件大小
+  const formatSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  // 格式化速度
+  const formatSpeed = (bytesPerSecond: number): string => {
+    if (bytesPerSecond < 1024) return `${bytesPerSecond.toFixed(0)} B/s`;
+    if (bytesPerSecond < 1024 * 1024) return `${(bytesPerSecond / 1024).toFixed(1)} KB/s`;
+    return `${(bytesPerSecond / (1024 * 1024)).toFixed(1)} MB/s`;
+  };
 
   return (
     <div className="space-y-6">
@@ -739,7 +779,7 @@ const UpdateSettings: React.FC = () => {
           </div>
           <button
             onClick={checkForUpdates}
-            disabled={isChecking}
+            disabled={isChecking || isDownloading}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
@@ -771,29 +811,45 @@ const UpdateSettings: React.FC = () => {
 
               {/* Download Actions */}
               {!downloadedPath ? (
-                <div className="flex gap-3">
+                <div className="space-y-3">
+                  {/* 下载按钮（带进度） */}
                   <button
                     onClick={downloadUpdate}
                     disabled={isDownloading}
-                    className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50"
+                    className="w-full relative overflow-hidden py-2.5 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:cursor-not-allowed"
                   >
-                    {isDownloading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        {t.update?.downloading || '下载中...'}
-                      </>
-                    ) : (
-                      <>
-                        <Download className="w-4 h-4" />
-                        {t.update?.download || '下载更新'}
-                      </>
+                    {/* 进度条背景 */}
+                    {isDownloading && downloadProgress && (
+                      <div
+                        className="absolute inset-0 bg-blue-400/30 transition-all duration-300"
+                        style={{ width: `${downloadProgress.percent}%` }}
+                      />
                     )}
-                  </button>
-                  <button
-                    onClick={openDownloadUrl}
-                    className="px-4 py-2.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-100 text-sm transition-colors"
-                  >
-                    {t.update?.openInBrowser || '浏览器打开'}
+                    {/* 按钮内容 */}
+                    <div className="relative flex items-center justify-center gap-2">
+                      {isDownloading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>
+                            {downloadProgress ? (
+                              `${downloadProgress.percent.toFixed(0)}% · ${formatSize(downloadProgress.transferred)} / ${formatSize(downloadProgress.total)}`
+                            ) : (
+                              t.update?.downloading || '下载中...'
+                            )}
+                          </span>
+                          {downloadProgress && downloadProgress.bytesPerSecond > 0 && (
+                            <span className="text-blue-200 text-xs">
+                              {formatSpeed(downloadProgress.bytesPerSecond)}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4" />
+                          {t.update?.download || '下载更新'}
+                        </>
+                      )}
+                    </div>
                   </button>
                 </div>
               ) : (

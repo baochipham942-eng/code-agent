@@ -8,16 +8,61 @@ import { ChevronDown, Zap, Layers, Brain, Sparkles, Database, Monitor, Users, Dn
 import type { Generation, GenerationId } from '@shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
 
-// Generation configurations with icons
-const generationConfigs: Record<string, { icon: React.ReactNode; color: string }> = {
-  gen1: { icon: <Zap className="w-3.5 h-3.5" />, color: 'text-green-400 bg-green-500/10' },
-  gen2: { icon: <Layers className="w-3.5 h-3.5" />, color: 'text-blue-400 bg-blue-500/10' },
-  gen3: { icon: <Brain className="w-3.5 h-3.5" />, color: 'text-purple-400 bg-purple-500/10' },
-  gen4: { icon: <Sparkles className="w-3.5 h-3.5" />, color: 'text-orange-400 bg-orange-500/10' },
-  gen5: { icon: <Database className="w-3.5 h-3.5" />, color: 'text-cyan-400 bg-cyan-500/10' },
-  gen6: { icon: <Monitor className="w-3.5 h-3.5" />, color: 'text-pink-400 bg-pink-500/10' },
-  gen7: { icon: <Users className="w-3.5 h-3.5" />, color: 'text-indigo-400 bg-indigo-500/10' },
-  gen8: { icon: <Dna className="w-3.5 h-3.5" />, color: 'text-rose-400 bg-rose-500/10' },
+// Generation configurations with icons and core tools (only new tools in each generation)
+const generationConfigs: Record<string, {
+  icon: React.ReactNode;
+  color: string;
+  coreTools: string[];  // Only new tools introduced in this generation
+  theme: string;        // Theme/focus of this generation
+}> = {
+  gen1: {
+    icon: <Zap className="w-3.5 h-3.5" />,
+    color: 'text-green-400 bg-green-500/10',
+    coreTools: ['bash', 'read_file', 'write_file', 'edit_file'],
+    theme: '基础文件操作',
+  },
+  gen2: {
+    icon: <Layers className="w-3.5 h-3.5" />,
+    color: 'text-blue-400 bg-blue-500/10',
+    coreTools: ['glob', 'grep', 'list_directory'],
+    theme: '搜索与导航',
+  },
+  gen3: {
+    icon: <Brain className="w-3.5 h-3.5" />,
+    color: 'text-purple-400 bg-purple-500/10',
+    coreTools: ['task', 'todo_write', 'ask_user_question'],
+    theme: '子代理与规划',
+  },
+  gen4: {
+    icon: <Sparkles className="w-3.5 h-3.5" />,
+    color: 'text-orange-400 bg-orange-500/10',
+    coreTools: ['skill', 'web_fetch'],
+    theme: '技能系统与网络',
+  },
+  gen5: {
+    icon: <Database className="w-3.5 h-3.5" />,
+    color: 'text-cyan-400 bg-cyan-500/10',
+    coreTools: ['memory_store', 'memory_search', 'code_index'],
+    theme: 'RAG 与长期记忆',
+  },
+  gen6: {
+    icon: <Monitor className="w-3.5 h-3.5" />,
+    color: 'text-pink-400 bg-pink-500/10',
+    coreTools: ['screenshot', 'computer_use', 'browser_navigate', 'browser_action'],
+    theme: 'Computer Use',
+  },
+  gen7: {
+    icon: <Users className="w-3.5 h-3.5" />,
+    color: 'text-indigo-400 bg-indigo-500/10',
+    coreTools: ['spawn_agent', 'agent_message', 'workflow_orchestrate'],
+    theme: '多代理协同',
+  },
+  gen8: {
+    icon: <Dna className="w-3.5 h-3.5" />,
+    color: 'text-rose-400 bg-rose-500/10',
+    coreTools: ['strategy_optimize', 'tool_create', 'self_evaluate', 'learn_pattern'],
+    theme: '自我进化',
+  },
 };
 
 // Default generations (will be loaded from main process)
@@ -162,7 +207,7 @@ export const GenerationBadge: React.FC = () => {
           />
 
           {/* Menu */}
-          <div className="absolute top-full left-0 mt-1 w-[800px] bg-zinc-800 rounded-lg shadow-xl border border-zinc-700 z-20 overflow-hidden animate-fadeIn">
+          <div className="absolute top-full left-0 mt-1 w-[520px] bg-zinc-800 rounded-lg shadow-xl border border-zinc-700 z-20 overflow-hidden animate-fadeIn">
             {/* Header */}
             <div className="px-3 py-2 border-b border-zinc-700 bg-zinc-800">
               <span className="text-xs font-medium text-zinc-400">选择代际</span>
@@ -173,7 +218,7 @@ export const GenerationBadge: React.FC = () => {
               {generations.map((gen) => {
                 const genConfig = generationConfigs[gen.id];
                 const isSelected = currentGeneration.id === gen.id;
-                const genNumber = gen.id.replace('gen', '');
+                const genNumber = parseInt(gen.id.replace('gen', ''));
 
                 return (
                   <button
@@ -196,21 +241,30 @@ export const GenerationBadge: React.FC = () => {
                         <span className="text-xs text-zinc-500">
                           {gen.version}
                         </span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${genConfig.color}`}>
+                          {genConfig.theme}
+                        </span>
+                        <span className="text-xs text-zinc-500">
+                          共 {gen.tools.length} 工具
+                        </span>
                       </div>
-                      <p className="text-xs text-zinc-400 mt-0.5">
-                        {gen.description}
-                      </p>
-                      {/* 工具标签 - 全部显示，自动换行 */}
+                      {/* 只展示本代核心新增工具 */}
                       <div className="flex flex-wrap gap-1 mt-2">
-                        {gen.tools.map((tool) => (
+                        {genConfig.coreTools.map((tool) => (
                           <span
                             key={tool}
-                            className="text-xs px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-500"
+                            className={`text-xs px-1.5 py-0.5 rounded ${genConfig.color}`}
                           >
                             {tool}
                           </span>
                         ))}
                       </div>
+                      {/* 继承的工具数量提示 */}
+                      {genNumber > 1 && (
+                        <p className="text-xs text-zinc-600 mt-1.5">
+                          继承 Gen 1-{genNumber - 1} 的 {gen.tools.length - genConfig.coreTools.length} 个工具
+                        </p>
+                      )}
                     </div>
                     {isSelected && (
                       <div className="w-2 h-2 rounded-full bg-blue-500 mt-2" />

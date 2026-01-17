@@ -9,6 +9,7 @@ import { useAgent } from '../hooks/useAgent';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { TodoPanel } from './TodoPanel';
+import { PreviewPanel } from './PreviewPanel';
 import {
   Bot,
   Code2,
@@ -21,7 +22,7 @@ import {
 } from 'lucide-react';
 
 export const ChatView: React.FC = () => {
-  const { currentGeneration } = useAppStore();
+  const { currentGeneration, showPreviewPanel } = useAppStore();
   const { todos } = useSessionStore();
   const { messages, isProcessing, sendMessage } = useAgent();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -70,8 +71,11 @@ export const ChatView: React.FC = () => {
         <ChatInput onSend={handleSendMessage} disabled={isProcessing} />
       </div>
 
-      {/* Todo Panel (Gen 3+) */}
-      {showTodoPanel && <TodoPanel />}
+      {/* Todo Panel (Gen 3+) - hide when preview panel is open */}
+      {showTodoPanel && !showPreviewPanel && <TodoPanel />}
+
+      {/* HTML Preview Panel */}
+      {showPreviewPanel && <PreviewPanel />}
     </div>
   );
 };

@@ -248,4 +248,10 @@ export async function initializeSessionStore(): Promise<void> {
     // 没有会话，创建一个新的
     await store.createSession('New Chat');
   }
+
+  // 监听会话更新事件（如标题更新）
+  window.electronAPI?.on(IPC_CHANNELS.SESSION_UPDATED, (event) => {
+    const { sessionId, updates } = event;
+    useSessionStore.getState().updateSessionTitle(sessionId, updates.title || '');
+  });
 }

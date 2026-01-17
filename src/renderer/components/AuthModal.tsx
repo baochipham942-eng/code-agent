@@ -4,16 +4,14 @@
 
 import React, { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
-import { X, Mail, Github, Key, Loader2, UserPlus, LogIn } from 'lucide-react';
+import { X, Loader2, UserPlus, LogIn } from 'lucide-react';
 
-type AuthMode = 'signin' | 'signup' | 'token';
+type AuthMode = 'signin' | 'signup';
 
 export const AuthModal: React.FC = () => {
   const {
     signInWithEmail,
     signUpWithEmail,
-    signInWithOAuth,
-    signInWithToken,
     isLoading,
     error,
     showAuthModal,
@@ -24,7 +22,6 @@ export const AuthModal: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [inviteCode, setInviteCode] = useState('');
-  const [quickToken, setQuickToken] = useState('');
 
   if (!showAuthModal) return null;
 
@@ -48,20 +45,6 @@ export const AuthModal: React.FC = () => {
     }
   };
 
-  const handleTokenSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const success = await signInWithToken(quickToken);
-    if (success) {
-      setQuickToken('');
-      onClose();
-    }
-  };
-
-  const handleOAuth = async (provider: 'github' | 'google') => {
-    await signInWithOAuth(provider);
-    // OAuth opens external browser, modal will close via auth event
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
@@ -75,9 +58,7 @@ export const AuthModal: React.FC = () => {
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold text-zinc-100">
-            {mode === 'signin' && '登录'}
-            {mode === 'signup' && '注册'}
-            {mode === 'token' && '快捷登录'}
+            {mode === 'signin' ? '登录' : '注册'}
           </h2>
           <button
             onClick={onClose}
@@ -118,130 +99,68 @@ export const AuthModal: React.FC = () => {
             <UserPlus className="w-4 h-4 inline mr-1" />
             注册
           </button>
-          <button
-            onClick={() => setMode('token')}
-            className={`flex-1 pb-2 text-sm transition-colors ${
-              mode === 'token'
-                ? 'text-blue-400 border-b-2 border-blue-400'
-                : 'text-zinc-400 hover:text-zinc-300'
-            }`}
-          >
-            <Key className="w-4 h-4 inline mr-1" />
-            Token
-          </button>
         </div>
 
-        {mode === 'token' ? (
-          // Quick token login
-          <form onSubmit={handleTokenSubmit} className="space-y-4">
+        {/* Email/Password form */}
+        <form onSubmit={handleEmailSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm text-zinc-400 mb-1">邮箱</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="your@email.com"
+              className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-zinc-400 mb-1">密码</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="至少6位"
+              className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
+              required
+              minLength={6}
+            />
+          </div>
+
+          {mode === 'signup' && (
             <div>
               <label className="block text-sm text-zinc-400 mb-1">
-                快捷登录 Token
+                邀请码 <span className="text-red-400">*</span>
               </label>
               <input
                 type="text"
-                value={quickToken}
-                onChange={(e) => setQuickToken(e.target.value)}
-                placeholder="粘贴您的快捷登录 Token"
-                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={isLoading || !quickToken}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white font-medium flex items-center justify-center gap-2 transition-colors"
-            >
-              {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                '登录'
-              )}
-            </button>
-          </form>
-        ) : (
-          // Email/Password form
-          <form onSubmit={handleEmailSubmit} className="space-y-4">
-            <div>
-              <label className="block text-sm text-zinc-400 mb-1">邮箱</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                placeholder="输入邀请码"
                 className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
                 required
               />
+              <p className="mt-1 text-xs text-zinc-500">
+                需要邀请码才能注册，请联系管理员获取
+              </p>
             </div>
-            <div>
-              <label className="block text-sm text-zinc-400 mb-1">密码</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="至少6位"
-                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
-                required
-                minLength={6}
-              />
-            </div>
+          )}
 
-            {mode === 'signup' && (
-              <div>
-                <label className="block text-sm text-zinc-400 mb-1">
-                  邀请码 <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={inviteCode}
-                  onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                  placeholder="输入邀请码"
-                  className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500"
-                  required
-                />
-                <p className="mt-1 text-xs text-zinc-500">
-                  需要邀请码才能注册，请联系管理员获取
-                </p>
-              </div>
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white font-medium flex items-center justify-center gap-2 transition-colors"
+          >
+            {isLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : mode === 'signin' ? (
+              '登录'
+            ) : (
+              '注册'
             )}
+          </button>
+        </form>
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white font-medium flex items-center justify-center gap-2 transition-colors"
-            >
-              {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : mode === 'signin' ? (
-                '登录'
-              ) : (
-                '注册'
-              )}
-            </button>
-          </form>
-        )}
-
-        {/* OAuth divider */}
-        {mode !== 'token' && (
-          <>
-            <div className="flex items-center my-6">
-              <div className="flex-1 border-t border-zinc-800" />
-              <span className="px-3 text-xs text-zinc-500">或</span>
-              <div className="flex-1 border-t border-zinc-800" />
-            </div>
-
-            {/* OAuth buttons */}
-            <div className="space-y-3">
-              <button
-                onClick={() => handleOAuth('github')}
-                disabled={isLoading}
-                className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 rounded-lg text-zinc-100 flex items-center justify-center gap-2 transition-colors"
-              >
-                <Github className="w-4 h-4" />
-                使用 GitHub 登录
-              </button>
-            </div>
-          </>
-        )}
       </div>
     </div>
   );

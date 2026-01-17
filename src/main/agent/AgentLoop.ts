@@ -16,6 +16,7 @@ import type { ToolExecutor } from '../tools/ToolExecutor';
 import { ModelRouter } from '../model/ModelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/MemoryService';
+import { logCollector } from '../mcp/LogCollector.js';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -78,7 +79,12 @@ export class AgentLoop {
   // --------------------------------------------------------------------------
 
   async run(userMessage: string): Promise<void> {
-    console.log('[AgentLoop] run() called with message:', userMessage.substring(0, 100));
+    console.log('[AgentLoop] ========== run() START ==========');
+    console.log('[AgentLoop] Message:', userMessage.substring(0, 100));
+
+    // Log to centralized collector
+    logCollector.agent('INFO', `Agent run started: "${userMessage.substring(0, 80)}..."`);
+    logCollector.agent('DEBUG', `Generation: ${this.generation.id}, Model: ${this.modelConfig.provider}`);
 
     // Session Start Hook
     if (this.enableHooks && this.planningService) {
@@ -89,7 +95,7 @@ export class AgentLoop {
 
     while (!this.isCancelled && iterations < this.maxIterations) {
       iterations++;
-      console.log(`[AgentLoop] Iteration ${iterations}...`);
+      console.log(`[AgentLoop] >>>>>> Iteration ${iterations} START <<<<<<`);
 
       // 1. Call model
       console.log('[AgentLoop] Calling inference...');
@@ -137,6 +143,13 @@ export class AgentLoop {
 
       // 3. Handle tool calls
       if (response.type === 'tool_use' && response.toolCalls) {
+        console.log(`[AgentLoop] Tool calls received: ${response.toolCalls.length} calls`);
+        response.toolCalls.forEach((tc, i) => {
+          console.log(`[AgentLoop]   Tool ${i + 1}: ${tc.name}, args keys: ${Object.keys(tc.arguments || {}).join(', ')}`);
+          // Log tool calls to centralized collector
+          logCollector.tool('INFO', `Tool call: ${tc.name}`, { toolId: tc.id, args: tc.arguments });
+        });
+
         // Create assistant message with tool calls
         const assistantMessage: Message = {
           id: this.generateId(),
@@ -148,10 +161,26 @@ export class AgentLoop {
         this.messages.push(assistantMessage);
 
         // Send the message event to frontend so it can display tool calls
+        console.log('[AgentLoop] Emitting message event for tool calls');
         this.onEvent({ type: 'message', data: assistantMessage });
 
         // Execute tools (with hooks)
+        console.log('[AgentLoop] Starting executeToolsWithHooks...');
         const toolResults = await this.executeToolsWithHooks(response.toolCalls);
+        console.log(`[AgentLoop] executeToolsWithHooks completed, ${toolResults.length} results`);
+        toolResults.forEach((r, i) => {
+          console.log(`[AgentLoop]   Result ${i + 1}: success=${r.success}, error=${r.error || 'none'}`);
+          // Log tool results to centralized collector
+          if (r.success) {
+            logCollector.tool('INFO', `Tool result: success`, {
+              toolCallId: r.toolCallId,
+              outputLength: r.output?.length || 0,
+              duration: r.duration,
+            });
+          } else {
+            logCollector.tool('ERROR', `Tool result: failed - ${r.error}`, { toolCallId: r.toolCallId });
+          }
+        });
 
         // Create tool result message
         const toolMessage: Message = {
@@ -164,6 +193,7 @@ export class AgentLoop {
         this.messages.push(toolMessage);
 
         // Continue loop
+        console.log(`[AgentLoop] >>>>>> Iteration ${iterations} END (continuing) <<<<<<`);
         continue;
       }
 
@@ -172,6 +202,8 @@ export class AgentLoop {
     }
 
     if (iterations >= this.maxIterations) {
+      console.log('[AgentLoop] Max iterations reached!');
+      logCollector.agent('WARN', `Max iterations reached (${this.maxIterations})`);
       this.onEvent({
         type: 'error',
         data: { message: 'Max iterations reached' },
@@ -179,6 +211,8 @@ export class AgentLoop {
     }
 
     // Signal completion to frontend
+    console.log('[AgentLoop] ========== run() END, emitting agent_complete ==========');
+    logCollector.agent('INFO', `Agent run completed, ${iterations} iterations`);
     this.onEvent({ type: 'agent_complete', data: null });
   }
 
@@ -222,9 +256,13 @@ export class AgentLoop {
     console.log(`[AgentLoop] executeToolsWithHooks called with ${toolCalls.length} tool calls`);
     const results: ToolResult[] = [];
 
-    for (const toolCall of toolCalls) {
-      console.log(`[AgentLoop] Processing tool call: ${toolCall.name}, id: ${toolCall.id}`);
-      if (this.isCancelled) break;
+    for (let i = 0; i < toolCalls.length; i++) {
+      const toolCall = toolCalls[i];
+      console.log(`[AgentLoop] [${i + 1}/${toolCalls.length}] Processing tool: ${toolCall.name}, id: ${toolCall.id}`);
+      if (this.isCancelled) {
+        console.log('[AgentLoop] Cancelled, breaking out of tool execution loop');
+        break;
+      }
 
       // Pre-Tool Hook
       if (this.enableHooks && this.planningService) {
@@ -243,12 +281,14 @@ export class AgentLoop {
       }
 
       // Emit tool call start event
+      console.log(`[AgentLoop] Emitting tool_call_start for ${toolCall.name}`);
       this.onEvent({ type: 'tool_call_start', data: toolCall });
 
       const startTime = Date.now();
 
       try {
         // Execute tool
+        console.log(`[AgentLoop] Calling toolExecutor.execute for ${toolCall.name}...`);
         const result = await this.toolExecutor.execute(
           toolCall.name,
           toolCall.arguments,
@@ -258,6 +298,7 @@ export class AgentLoop {
             modelConfig: this.modelConfig, // Pass model config for subagent execution
           }
         );
+        console.log(`[AgentLoop] toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);
 
         const toolResult: ToolResult = {
           toolCallId: toolCall.id,
@@ -268,6 +309,7 @@ export class AgentLoop {
         };
 
         results.push(toolResult);
+        console.log(`[AgentLoop] Tool ${toolCall.name} completed in ${toolResult.duration}ms`);
 
         // Post-Tool Hook
         if (this.enableHooks && this.planningService) {
@@ -287,8 +329,10 @@ export class AgentLoop {
         }
 
         // Emit tool call end event
+        console.log(`[AgentLoop] Emitting tool_call_end for ${toolCall.name} (success)`);
         this.onEvent({ type: 'tool_call_end', data: toolResult });
       } catch (error) {
+        console.error(`[AgentLoop] Tool ${toolCall.name} threw exception:`, error);
         const toolResult: ToolResult = {
           toolCallId: toolCall.id,
           success: false,
@@ -297,6 +341,7 @@ export class AgentLoop {
         };
 
         results.push(toolResult);
+        console.log(`[AgentLoop] Tool ${toolCall.name} failed with error: ${toolResult.error}`);
 
         // Error Hook
         if (this.enableHooks && this.planningService) {
@@ -315,10 +360,12 @@ export class AgentLoop {
           }
         }
 
+        console.log(`[AgentLoop] Emitting tool_call_end for ${toolCall.name} (error)`);
         this.onEvent({ type: 'tool_call_end', data: toolResult });
       }
     }
 
+    console.log(`[AgentLoop] executeToolsWithHooks finished, returning ${results.length} results`);
     return results;
   }
 

@@ -55,7 +55,9 @@ export class AgentOrchestrator {
     this.generationManager = config.generationManager;
     this.configService = config.configService;
     this.onEvent = config.onEvent;
+    // Default to current working directory
     this.workingDirectory = process.cwd();
+    console.log('[AgentOrchestrator] Initial working directory:', this.workingDirectory);
     this.planningService = config.planningService;
 
     // Initialize tool registry and executor
@@ -85,7 +87,7 @@ export class AgentOrchestrator {
     };
 
     this.messages.push(userMessage);
-    this.onEvent({ type: 'message', data: userMessage });
+    // Note: Don't emit user message event - frontend already added it
 
     // 持久化保存用户消息
     try {
@@ -110,11 +112,13 @@ export class AgentOrchestrator {
 
     try {
       // Run agent loop
-      console.log('[AgentOrchestrator] Starting agent loop...');
+      console.log('[AgentOrchestrator] ========== Starting agent loop ==========');
       await this.agentLoop.run(content);
-      console.log('[AgentOrchestrator] Agent loop completed');
+      console.log('[AgentOrchestrator] ========== Agent loop completed normally ==========');
     } catch (error) {
-      console.error('[AgentOrchestrator] Agent loop error:', error);
+      console.error('[AgentOrchestrator] ========== Agent loop EXCEPTION ==========');
+      console.error('[AgentOrchestrator] Error:', error);
+      console.error('[AgentOrchestrator] Stack:', error instanceof Error ? error.stack : 'no stack');
       this.onEvent({
         type: 'error',
         data: {
@@ -122,6 +126,7 @@ export class AgentOrchestrator {
         },
       });
     } finally {
+      console.log('[AgentOrchestrator] ========== Finally block, agentLoop = null ==========');
       this.agentLoop = null;
     }
   }

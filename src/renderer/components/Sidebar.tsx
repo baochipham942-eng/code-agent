@@ -5,6 +5,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useSessionStore, initializeSessionStore } from '../stores/sessionStore';
 import { useAppStore } from '../stores/appStore';
+import { useAuthStore } from '../stores/authStore';
 import {
   MessageSquare,
   Plus,
@@ -13,8 +14,14 @@ import {
   Search,
   Calendar,
   Clock,
-  Sparkles
+  Sparkles,
+  User,
+  LogIn,
+  Cloud,
+  CloudOff,
+  Settings,
 } from 'lucide-react';
+import { UserMenu } from './UserMenu';
 
 // 会话分组类型
 type SessionGroup = 'today' | 'yesterday' | 'week' | 'month' | 'older';
@@ -55,7 +62,7 @@ const GroupIcon: React.FC<{ group: SessionGroup }> = ({ group }) => {
 };
 
 export const Sidebar: React.FC = () => {
-  const { sidebarCollapsed, clearChat } = useAppStore();
+  const { sidebarCollapsed, clearChat, setShowSettings } = useAppStore();
   const {
     sessions,
     currentSessionId,
@@ -64,6 +71,7 @@ export const Sidebar: React.FC = () => {
     switchSession,
     deleteSession,
   } = useSessionStore();
+  const { isAuthenticated, user, syncStatus, setShowAuthModal } = useAuthStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
@@ -235,11 +243,62 @@ export const Sidebar: React.FC = () => {
         )}
       </div>
 
-      {/* Footer */}
+      {/* User Section */}
       <div className="p-3 border-t border-zinc-800/50">
-        <div className="flex items-center justify-center gap-2 text-xs text-zinc-500">
-          <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-          <span>Code Agent v0.1.0</span>
+        {isAuthenticated && user ? (
+          <div className="space-y-2">
+            {/* User Menu */}
+            <UserMenu />
+
+            {/* Sync Status */}
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-zinc-500">云同步</span>
+              <span className={`flex items-center gap-1 ${
+                syncStatus.isEnabled ? 'text-green-400' : 'text-zinc-500'
+              }`}>
+                {syncStatus.isEnabled ? (
+                  <>
+                    <Cloud className="w-3 h-3" />
+                    {syncStatus.isSyncing ? '同步中...' : '已开启'}
+                  </>
+                ) : (
+                  <>
+                    <CloudOff className="w-3 h-3" />
+                    已关闭
+                  </>
+                )}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {/* Login Button */}
+            <button
+              onClick={() => setShowAuthModal(true)}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors"
+            >
+              <LogIn className="w-4 h-4" />
+              <span className="text-sm">登录 / 注册</span>
+            </button>
+            <p className="text-xs text-zinc-500 text-center">
+              登录后可云端同步会话记录
+            </p>
+          </div>
+        )}
+
+        {/* Settings & Version */}
+        <div className="mt-3 pt-3 border-t border-zinc-800/50 flex items-center justify-between">
+          <button
+            onClick={() => setShowSettings(true)}
+            className="text-zinc-500 hover:text-zinc-300 transition-colors"
+            title="设置"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+          <div className="flex items-center gap-2 text-xs text-zinc-600">
+            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+            <span>Code Agent v0.1.0</span>
+          </div>
         </div>
       </div>
     </div>

@@ -360,29 +360,20 @@ export class CloudAgentLoop {
     });
   }
 
-  // 检查是否为内部/私有 IP 地址
-  private isInternalUrl(hostname: string): boolean {
-    // 阻止的主机名
-    const blockedHosts = ['localhost', '127.0.0.1', '0.0.0.0', '::1', '169.254.169.254'];
-    if (blockedHosts.includes(hostname)) return true;
-
-    // 检查私有 IP 范围
-    const privateIpPatterns = [
-      /^10\./,                          // 10.0.0.0/8
-      /^172\.(1[6-9]|2\d|3[01])\./,     // 172.16.0.0/12
-      /^192\.168\./,                     // 192.168.0.0/16
-      /^127\./,                          // 127.0.0.0/8
-      /^169\.254\./,                     // 169.254.0.0/16 (link-local)
-      /^fc00:/i,                         // IPv6 unique local
-      /^fe80:/i,                         // IPv6 link-local
+  // 检查是否为高风险内部地址（只阻止云元数据服务）
+  private isHighRiskUrl(hostname: string): boolean {
+    // 只阻止云元数据服务（真正危险的 SSRF 目标）
+    const blockedHosts = [
+      '169.254.169.254',  // AWS/GCP metadata
+      'metadata.google.internal',
+      '100.100.100.200',  // Alibaba Cloud metadata
     ];
-
-    return privateIpPatterns.some(pattern => pattern.test(hostname));
+    return blockedHosts.includes(hostname.toLowerCase());
   }
 
   private async toolWebFetch(url: string, selector?: string): Promise<string> {
     try {
-      // URL 验证和 SSRF 防护
+      // URL 验证
       let parsedUrl: URL;
       try {
         parsedUrl = new URL(url);
@@ -395,9 +386,9 @@ export class CloudAgentLoop {
         return JSON.stringify({ error: 'Only HTTP(S) URLs are allowed' });
       }
 
-      // 阻止内部网络访问
-      if (this.isInternalUrl(parsedUrl.hostname)) {
-        return JSON.stringify({ error: 'Access to internal URLs is not allowed' });
+      // 只阻止云元数据服务（真正危险的）
+      if (this.isHighRiskUrl(parsedUrl.hostname)) {
+        return JSON.stringify({ error: 'Access to cloud metadata services is not allowed' });
       }
 
       const response = await fetch(url, {

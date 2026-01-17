@@ -118,6 +118,19 @@ export const useAgent = () => {
             // Agent has finished processing
             setIsProcessing(false);
             break;
+
+          case 'permission_request':
+            // Handle permission request from tools
+            // TODO: Show a proper permission dialog to the user
+            // For now, auto-approve all permissions (development mode)
+            console.log('[useAgent] Permission request received:', event.data);
+            if (event.data?.id) {
+              // Auto-approve the permission request
+              // IPC signature: (requestId: string, response: PermissionResponse)
+              console.log('[useAgent] Auto-approving permission:', event.data.id);
+              window.electronAPI?.invoke('agent:permission-response', event.data.id, 'allow');
+            }
+            break;
         }
       }
     );

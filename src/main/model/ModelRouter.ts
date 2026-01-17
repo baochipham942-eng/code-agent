@@ -35,6 +35,8 @@ async function electronFetch(url: string, options: {
       timeout: 300000,
       httpsAgent,
       validateStatus: () => true, // Don't throw on non-2xx status
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
     });
 
     return {
@@ -525,13 +527,15 @@ export class ModelRouter {
   ): Promise<ModelResponse> {
     const baseUrl = config.baseUrl || 'https://api.deepseek.com/v1';
 
-    // Convert tools to OpenAI format
+    // Convert tools to OpenAI format with strict schema
     const openaiTools = tools.map((tool) => ({
       type: 'function' as const,
       function: {
         name: tool.name,
         description: tool.description,
-        parameters: tool.inputSchema,
+        parameters: this.normalizeJsonSchema(tool.inputSchema),
+        // Enable strict mode for better JSON compliance
+        strict: true,
       },
     }));
 
@@ -557,6 +561,9 @@ export class ModelRouter {
         },
         timeout: 300000,
         httpsAgent,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        responseType: 'json',
       });
 
       console.log('[ModelRouter] DeepSeek raw response:', JSON.stringify(response.data, null, 2).substring(0, 2000));
@@ -567,6 +574,43 @@ export class ModelRouter {
       }
       throw new Error(`DeepSeek request failed: ${error.message}`);
     }
+  }
+
+  /**
+   * Normalize JSON Schema for better model compliance
+   * - Adds additionalProperties: false to objects
+   * - Ensures required fields are properly defined
+   * - Recursively processes nested objects and arrays
+   */
+  private normalizeJsonSchema(schema: any): any {
+    if (!schema || typeof schema !== 'object') {
+      return schema;
+    }
+
+    const normalized: any = { ...schema };
+
+    // For object types, add additionalProperties: false if not set
+    if (schema.type === 'object') {
+      if (normalized.additionalProperties === undefined) {
+        normalized.additionalProperties = false;
+      }
+
+      // Recursively normalize properties
+      if (normalized.properties) {
+        const normalizedProps: any = {};
+        for (const [key, value] of Object.entries(normalized.properties)) {
+          normalizedProps[key] = this.normalizeJsonSchema(value);
+        }
+        normalized.properties = normalizedProps;
+      }
+    }
+
+    // For array types, normalize items
+    if (schema.type === 'array' && normalized.items) {
+      normalized.items = this.normalizeJsonSchema(normalized.items);
+    }
+
+    return normalized;
   }
 
   private async callClaude(
@@ -875,13 +919,38 @@ export class ModelRouter {
 
     // Check for standard tool calls format
     if (message.tool_calls && message.tool_calls.length > 0) {
-      const toolCalls: ToolCall[] = message.tool_calls.map((tc: any) => ({
-        id: tc.id,
-        name: tc.function.name,
-        arguments: JSON.parse(tc.function.arguments || '{}'),
-      }));
+      const toolCalls: ToolCall[] = [];
 
-      return { type: 'tool_use', toolCalls };
+      for (const tc of message.tool_calls) {
+        try {
+          const args = this.safeParseJson(tc.function.arguments || '{}', tc.function.name);
+          toolCalls.push({
+            id: tc.id,
+            name: tc.function.name,
+            arguments: args,
+          });
+        } catch (parseError: any) {
+          console.error(`[ModelRouter] Failed to parse tool call arguments for ${tc.function.name}:`, parseError.message);
+          // Try to repair common JSON issues
+          const repairedArgs = this.repairJson(tc.function.arguments || '{}');
+          if (repairedArgs) {
+            toolCalls.push({
+              id: tc.id,
+              name: tc.function.name,
+              arguments: repairedArgs,
+            });
+          } else {
+            // Log and skip this tool call, return as text instead
+            console.error('[ModelRouter] Could not repair JSON, raw arguments:', tc.function.arguments?.substring(0, 500));
+            const content = message.content || `Tool call failed: ${tc.function.name} - Invalid JSON arguments`;
+            return { type: 'text', content };
+          }
+        }
+      }
+
+      if (toolCalls.length > 0) {
+        return { type: 'tool_use', toolCalls };
+      }
     }
 
     const content = message.content || '';
@@ -911,7 +980,7 @@ export class ModelRouter {
 
       const argsStr = content.slice(argsStart, argsEnd);
       try {
-        const args = JSON.parse(argsStr);
+        const args = this.safeParseJson(argsStr, toolName);
         console.log('[ModelRouter] Parsed text-based tool call:', toolName);
         return {
           type: 'tool_use',
@@ -929,6 +998,108 @@ export class ModelRouter {
 
     // Text response
     return { type: 'text', content };
+  }
+
+  /**
+   * Safely parse JSON with better error messages
+   */
+  private safeParseJson(jsonStr: string, context: string): any {
+    try {
+      return JSON.parse(jsonStr);
+    } catch (error: any) {
+      // Provide more context in error message
+      const position = error.message.match(/position (\d+)/)?.[1];
+      const preview = position
+        ? `...${jsonStr.substring(Math.max(0, parseInt(position) - 20), parseInt(position) + 20)}...`
+        : jsonStr.substring(0, 100);
+      throw new Error(`JSON parse error in ${context}: ${error.message}. Near: ${preview}`);
+    }
+  }
+
+  /**
+   * Attempt to repair common JSON issues
+   */
+  private repairJson(jsonStr: string): any | null {
+    try {
+      // Try direct parse first
+      return JSON.parse(jsonStr);
+    } catch {
+      // Try common repairs
+      let repaired = jsonStr;
+
+      // 1. Fix truncated strings - find last complete object/array
+      const lastBrace = repaired.lastIndexOf('}');
+      const lastBracket = repaired.lastIndexOf(']');
+
+      if (lastBrace === -1 && lastBracket === -1) {
+        return null;
+      }
+
+      // Count braces to check if balanced
+      let braceCount = 0;
+      let bracketCount = 0;
+      let inString = false;
+      let escapeNext = false;
+
+      for (let i = 0; i < repaired.length; i++) {
+        const char = repaired[i];
+
+        if (escapeNext) {
+          escapeNext = false;
+          continue;
+        }
+
+        if (char === '\\') {
+          escapeNext = true;
+          continue;
+        }
+
+        if (char === '"') {
+          inString = !inString;
+          continue;
+        }
+
+        if (!inString) {
+          if (char === '{') braceCount++;
+          else if (char === '}') braceCount--;
+          else if (char === '[') bracketCount++;
+          else if (char === ']') bracketCount--;
+        }
+      }
+
+      // Try to close unclosed structures
+      if (inString) {
+        repaired += '"';
+      }
+
+      while (bracketCount > 0) {
+        repaired += ']';
+        bracketCount--;
+      }
+
+      while (braceCount > 0) {
+        repaired += '}';
+        braceCount--;
+      }
+
+      try {
+        const result = JSON.parse(repaired);
+        console.log('[ModelRouter] Successfully repaired JSON');
+        return result;
+      } catch {
+        // 2. Try to extract just the first complete object
+        try {
+          const match = jsonStr.match(/^\s*\{[\s\S]*?\}(?=\s*$|\s*,|\s*\])/);
+          if (match) {
+            return JSON.parse(match[0]);
+          }
+        } catch {
+          // Ignore
+        }
+
+        return null;
+      }
+    }
   }
 
   private parseClaudeResponse(data: any): ModelResponse {

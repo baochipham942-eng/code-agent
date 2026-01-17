@@ -12,7 +12,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
     "@neondatabase/serverless": "^0.10.0",
-    "jose": "^5.9.0"
+    "jose": "^5.9.0",
+    "playwright-core": "^1.40.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

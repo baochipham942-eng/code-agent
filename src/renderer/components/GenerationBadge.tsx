@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
-import { ChevronDown, Zap, Layers, Brain, Sparkles, Database } from 'lucide-react';
+import { ChevronDown, Zap, Layers, Brain, Sparkles, Database, Monitor, Users, Dna } from 'lucide-react';
 import type { Generation, GenerationId } from '@shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
 
@@ -15,6 +15,9 @@ const generationConfigs: Record<string, { icon: React.ReactNode; color: string }
   gen3: { icon: <Brain className="w-3.5 h-3.5" />, color: 'text-purple-400 bg-purple-500/10' },
   gen4: { icon: <Sparkles className="w-3.5 h-3.5" />, color: 'text-orange-400 bg-orange-500/10' },
   gen5: { icon: <Database className="w-3.5 h-3.5" />, color: 'text-cyan-400 bg-cyan-500/10' },
+  gen6: { icon: <Monitor className="w-3.5 h-3.5" />, color: 'text-pink-400 bg-pink-500/10' },
+  gen7: { icon: <Users className="w-3.5 h-3.5" />, color: 'text-indigo-400 bg-indigo-500/10' },
+  gen8: { icon: <Dna className="w-3.5 h-3.5" />, color: 'text-rose-400 bg-rose-500/10' },
 };
 
 // Default generations (will be loaded from main process)
@@ -63,6 +66,33 @@ const defaultGenerations: Generation[] = [
     tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory', 'task', 'todo_write', 'ask_user_question', 'skill', 'web_fetch', 'memory_store', 'memory_search', 'code_index'],
     systemPrompt: '',
     promptMetadata: { lineCount: 0, toolCount: 17, ruleCount: 0 },
+  },
+  {
+    id: 'gen6',
+    name: 'Generation 6',
+    version: 'v4.0',
+    description: '+ screenshot, computer_use, browser_action (Computer Use)',
+    tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory', 'task', 'todo_write', 'ask_user_question', 'skill', 'web_fetch', 'memory_store', 'memory_search', 'code_index', 'screenshot', 'computer_use', 'browser_navigate', 'browser_action'],
+    systemPrompt: '',
+    promptMetadata: { lineCount: 0, toolCount: 21, ruleCount: 0 },
+  },
+  {
+    id: 'gen7',
+    name: 'Generation 7',
+    version: 'v5.0',
+    description: '+ spawn_agent, agent_message, workflow_orchestrate (Multi-Agent)',
+    tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory', 'task', 'todo_write', 'ask_user_question', 'skill', 'web_fetch', 'memory_store', 'memory_search', 'code_index', 'screenshot', 'computer_use', 'browser_navigate', 'browser_action', 'spawn_agent', 'agent_message', 'workflow_orchestrate'],
+    systemPrompt: '',
+    promptMetadata: { lineCount: 0, toolCount: 24, ruleCount: 0 },
+  },
+  {
+    id: 'gen8',
+    name: 'Generation 8',
+    version: 'v6.0',
+    description: '+ strategy_optimize, tool_create, self_evaluate, learn_pattern (Self-Evolution)',
+    tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory', 'task', 'todo_write', 'ask_user_question', 'skill', 'web_fetch', 'memory_store', 'memory_search', 'code_index', 'screenshot', 'computer_use', 'browser_navigate', 'browser_action', 'spawn_agent', 'agent_message', 'workflow_orchestrate', 'strategy_optimize', 'tool_create', 'self_evaluate', 'learn_pattern'],
+    systemPrompt: '',
+    promptMetadata: { lineCount: 0, toolCount: 28, ruleCount: 0 },
   },
 ];
 

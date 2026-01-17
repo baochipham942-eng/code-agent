@@ -8,12 +8,12 @@
   "license": "MIT",
   "scripts": {
     "dev": "concurrently -k \"npm run dev:main\" \"npm run dev:renderer\" \"npm run dev:electron\"",
-    "dev:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --outfile=dist/main/index.cjs --sourcemap --watch",
+    "dev:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:playwright --external:playwright-core --outfile=dist/main/index.cjs --sourcemap --watch",
     "dev:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/preload/index.cjs --sourcemap",
     "dev:renderer": "vite",
     "dev:electron": "sleep 3 && electron .",
     "build": "npm run build:main && npm run build:preload && npm run build:renderer",
-    "build:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --outfile=dist/main/index.cjs --minify",
+    "build:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:playwright --external:playwright-core --outfile=dist/main/index.cjs --minify",
     "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/preload/index.cjs --minify",
     "build:renderer": "vite build",
     "start": "npm run build:main && npm run build:preload && electron .",
@@ -22,7 +22,9 @@
     "dist:mac": "electron-builder --mac",
     "dist:mac:signed": "CSC_LINK=$CSC_LINK CSC_KEY_PASSWORD=$CSC_KEY_PASSWORD electron-builder --mac",
     "lint": "eslint src --ext .ts,.tsx",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:mcp-server": "esbuild src/main/mcp/mcp-server-entry.ts --bundle --platform=node --format=esm --external:@modelcontextprotocol/sdk --outfile=dist/mcp-server.js",
+    "mcp-server": "node dist/mcp-server.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
@@ -40,6 +42,7 @@
     "marked": "^15.0.0",
     "node-fetch": "^3.3.2",
     "openai": "^4.70.0",
+    "playwright": "^1.57.0",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
@@ -82,6 +85,12 @@
       "dist/**/*",
       "node_modules/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".env",
+        "to": ".env"
+      }
     ],
     "mac": {
       "category": "public.app-category.developer-tools",

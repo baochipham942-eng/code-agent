@@ -118,6 +118,7 @@ export const IPC_CHANNELS = {
   SESSION_GET_MESSAGES: 'session:get-messages',
   SESSION_EXPORT: 'session:export',
   SESSION_IMPORT: 'session:import',
+  SESSION_UPDATED: 'session:updated',
 
   // Memory channels
   MEMORY_GET_CONTEXT: 'memory:get-context',
@@ -310,12 +311,18 @@ export interface AuthEvent {
   user?: AuthUser;
 }
 
+export interface SessionUpdatedEvent {
+  sessionId: string;
+  updates: Partial<Session>;
+}
+
 export interface IpcEventHandlers {
   [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEvent) => void;
   [IPC_CHANNELS.PLANNING_EVENT]: (event: PlanningEvent) => void;
   [IPC_CHANNELS.USER_QUESTION_ASK]: (request: UserQuestionRequest) => void;
   [IPC_CHANNELS.AUTH_EVENT]: (event: AuthEvent) => void;
   [IPC_CHANNELS.SYNC_EVENT]: (status: SyncStatus) => void;
+  [IPC_CHANNELS.SESSION_UPDATED]: (event: SessionUpdatedEvent) => void;
 }
 
 // ----------------------------------------------------------------------------

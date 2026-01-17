@@ -47,6 +47,10 @@ interface AppState {
   errors: ErrorRecord[];
   showPlanningPanel: boolean;
 
+  // HTML Preview State
+  previewFilePath: string | null;
+  showPreviewPanel: boolean;
+
   // Model Config
   modelConfig: ModelConfig;
 
@@ -66,6 +70,10 @@ interface AppState {
   setFindings: (findings: Finding[]) => void;
   setErrors: (errors: ErrorRecord[]) => void;
   setShowPlanningPanel: (show: boolean) => void;
+  setPreviewFilePath: (path: string | null) => void;
+  setShowPreviewPanel: (show: boolean) => void;
+  openPreview: (filePath: string) => void;
+  closePreview: () => void;
   setModelConfig: (config: ModelConfig) => void;
   clearChat: () => void;
   setCurrentSessionId: (id: string | null) => void;
@@ -122,6 +130,10 @@ export const useAppStore = create<AppState>((set) => ({
   errors: [],
   showPlanningPanel: false,
 
+  // Initial HTML Preview State
+  previewFilePath: null,
+  showPreviewPanel: false,
+
   // Initial Model Config
   modelConfig: defaultModelConfig,
 
@@ -157,6 +169,11 @@ export const useAppStore = create<AppState>((set) => ({
   setErrors: (errors) => set({ errors }),
 
   setShowPlanningPanel: (show) => set({ showPlanningPanel: show }),
+
+  setPreviewFilePath: (path) => set({ previewFilePath: path }),
+  setShowPreviewPanel: (show) => set({ showPreviewPanel: show }),
+  openPreview: (filePath) => set({ previewFilePath: filePath, showPreviewPanel: true }),
+  closePreview: () => set({ previewFilePath: null, showPreviewPanel: false }),
 
   setModelConfig: (config) => set({ modelConfig: config }),
 

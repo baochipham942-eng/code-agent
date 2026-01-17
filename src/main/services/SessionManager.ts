@@ -2,8 +2,10 @@
 // Session Manager - 会话管理和恢复（中期记忆）
 // ============================================================================
 
+import { BrowserWindow } from 'electron';
 import { getDatabase, type StoredSession } from './DatabaseService';
 import { getToolCache } from './ToolCache';
+import { IPC_CHANNELS } from '../../shared/ipc';
 import type {
   Session,
   Message,
@@ -135,8 +137,21 @@ export class SessionManager {
       Object.assign(cached, updates, { updatedAt: Date.now() });
     }
 
+    // 通知前端
+    this.notifySessionUpdated(sessionId, updates);
+
     // 记录审计日志
     db.logAuditEvent('session_updated', { sessionId, updates }, sessionId);
+  }
+
+  /**
+   * 通知前端会话已更新
+   */
+  private notifySessionUpdated(sessionId: string, updates: Partial<Session>): void {
+    const windows = BrowserWindow.getAllWindows();
+    for (const win of windows) {
+      win.webContents.send(IPC_CHANNELS.SESSION_UPDATED, { sessionId, updates });
+    }
   }
 
   /**
@@ -306,10 +321,17 @@ export class SessionManager {
     if (!session) return;
 
     // 只在标题是默认标题时更新
-    if (session.title.startsWith('Session ') && session.messageCount <= 1) {
-      // 从第一条消息提取标题（取前 50 个字符）
-      let title = firstMessage.trim().slice(0, 50);
-      if (firstMessage.length > 50) {
+    const isDefaultTitle =
+      session.title === 'New Chat' ||
+      session.title.startsWith('Session ') ||
+      session.title === '新对话';
+
+    if (isDefaultTitle && session.messageCount <= 1) {
+      // 从第一条消息提取标题
+      // 去掉换行符，取第一行
+      const firstLine = firstMessage.trim().split('\n')[0];
+      let title = firstLine.slice(0, 50);
+      if (firstLine.length > 50) {
         title += '...';
       }
 

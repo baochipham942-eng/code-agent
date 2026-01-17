@@ -9,9 +9,44 @@ import type { AppSettings, GenerationId, ModelProvider } from '../../shared/type
 import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 
-// Load .env file from project root
-const result = dotenv.config();
-console.log('[ConfigService] dotenv.config() result:', result.error ? `Error: ${result.error.message}` : 'OK');
+// Load .env file from project root or app resources
+import { app as electronApp } from 'electron';
+
+function loadEnvFile(): void {
+  // Try multiple paths for .env file
+  const appPath = electronApp?.getAppPath?.() || '';
+  const userDataPath = electronApp?.getPath?.('userData') || '';
+
+  // For packaged app, Resources folder is at appPath/../
+  const resourcesPath = appPath ? path.join(appPath, '..') : '';
+
+  const possiblePaths = [
+    path.join(process.cwd(), '.env'),                              // Development: project root
+    path.join(__dirname, '../../..', '.env'),                       // Development: relative to dist
+    path.join(resourcesPath, '.env'),                               // Production: Resources folder
+    path.join(userDataPath, '.env'),                                // Production: user data folder
+    path.join(appPath, '.env'),                                     // Production: app.asar
+    path.join(appPath, '..', '.env'),                               // Production: parent of app.asar
+  ].filter(p => p && p.length > 0);
+
+  console.log('[ConfigService] Trying .env paths:');
+  for (const envPath of possiblePaths) {
+    console.log('[ConfigService]   -', envPath);
+    try {
+      const result = dotenv.config({ path: envPath });
+      if (!result.error) {
+        console.log('[ConfigService] ✓ Loaded .env from:', envPath);
+        return;
+      }
+    } catch (e) {
+      // Continue to next path
+    }
+  }
+  console.log('[ConfigService] ✗ No .env file found, using environment variables only');
+}
+
+loadEnvFile();
+console.log('[ConfigService] SUPABASE_URL from env:', process.env.SUPABASE_URL ? 'SET' : 'NOT SET');
 console.log('[ConfigService] DEEPSEEK_API_KEY from env:', process.env.DEEPSEEK_API_KEY ? `${process.env.DEEPSEEK_API_KEY.substring(0, 10)}...` : 'NOT SET');
 
 // Default settings

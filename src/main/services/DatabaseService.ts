@@ -227,6 +227,38 @@ export class DatabaseService {
     );
   }
 
+  /**
+   * Create a session with a specific ID (for sync from cloud)
+   */
+  createSessionWithId(
+    id: string,
+    data: {
+      title: string;
+      generationId: GenerationId;
+      modelConfig: { provider: ModelProvider; model: string };
+      workingDirectory?: string;
+    }
+  ): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const now = Date.now();
+    const stmt = this.db.prepare(`
+      INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      id,
+      data.title,
+      data.generationId,
+      data.modelConfig.provider,
+      data.modelConfig.model,
+      data.workingDirectory || null,
+      now,
+      now
+    );
+  }
+
   getSession(sessionId: string): StoredSession | null {
     if (!this.db) throw new Error('Database not initialized');
 

@@ -7,6 +7,7 @@ import { useAppStore, type DisclosureLevel } from '../stores/appStore';
 import { useI18n, type Language } from '../hooks/useI18n';
 import { X, Key, Cpu, Palette, Info, Layers, Eye, EyeOff, Sparkles, Zap, Globe } from 'lucide-react';
 import type { ModelProvider } from '@shared/types';
+import { IPC_CHANNELS } from '@shared/ipc';
 
 type SettingsTab = 'model' | 'disclosure' | 'appearance' | 'language' | 'about';
 
@@ -87,6 +88,36 @@ const ModelSettings: React.FC<{
   onChange: (config: any) => void;
 }> = ({ config, onChange }) => {
   const { t } = useI18n();
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+
+  // Save config to backend
+  const handleSave = async () => {
+    setIsSaving(true);
+    setSaveStatus('idle');
+    try {
+      await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
+        models: {
+          defaultProvider: config.provider,
+          providers: {
+            [config.provider]: {
+              apiKey: config.apiKey,
+              model: config.model,
+              enabled: true,
+            },
+          },
+        },
+      });
+      console.log('[ModelSettings] Config saved:', config.provider);
+      setSaveStatus('success');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch (error) {
+      console.error('[ModelSettings] Failed to save config:', error);
+      setSaveStatus('error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const providers: { id: ModelProvider; name: string; description: string }[] = [
     { id: 'deepseek', name: t.model.providers.deepseek.name, description: t.model.providers.deepseek.description },
@@ -128,7 +159,7 @@ const ModelSettings: React.FC<{
           <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
           <input
             type="password"
-            value={config.apiKey}
+            value={config.apiKey || ''}
             onChange={(e) => onChange({ ...config, apiKey: e.target.value })}
             placeholder={t.model.apiKeyPlaceholder}
             className="w-full pl-10 pr-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-600"
@@ -190,6 +221,23 @@ const ModelSettings: React.FC<{
           <span>{t.model.temperaturePrecise}</span>
           <span>{t.model.temperatureCreative}</span>
         </div>
+      </div>
+
+      {/* Save Button */}
+      <div className="pt-4 border-t border-zinc-800">
+        <button
+          onClick={handleSave}
+          disabled={isSaving}
+          className={`w-full py-2.5 px-4 rounded-lg font-medium transition-colors ${
+            saveStatus === 'success'
+              ? 'bg-green-600 text-white'
+              : saveStatus === 'error'
+              ? 'bg-red-600 text-white'
+              : 'bg-blue-600 hover:bg-blue-500 text-white'
+          } disabled:opacity-50 disabled:cursor-not-allowed`}
+        >
+          {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : t.common.save || 'Save'}
+        </button>
       </div>
     </div>
   );
@@ -346,7 +394,6 @@ const AppearanceSettings: React.FC = () => {
 // Language Settings Tab - 语言设置
 const LanguageSettings: React.FC = () => {
   const { t, language, setLanguage, availableLanguages } = useI18n();
-  const { IPC_CHANNELS } = require('@shared/ipc');
 
   const handleLanguageChange = async (lang: Language) => {
     setLanguage(lang);

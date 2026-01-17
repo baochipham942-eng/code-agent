@@ -6,7 +6,7 @@
 // Generation Types
 // ----------------------------------------------------------------------------
 
-export type GenerationId = 'gen1' | 'gen2' | 'gen3' | 'gen4' | 'gen5';
+export type GenerationId = 'gen1' | 'gen2' | 'gen3' | 'gen4' | 'gen5' | 'gen6' | 'gen7' | 'gen8';
 
 export interface Generation {
   id: GenerationId;
@@ -192,6 +192,7 @@ export interface JSONSchema {
   properties?: Record<string, JSONSchemaProperty>;
   required?: string[];
   items?: JSONSchemaProperty;
+  additionalProperties?: boolean;
 }
 
 export interface JSONSchemaProperty {
@@ -202,6 +203,7 @@ export interface JSONSchemaProperty {
   items?: JSONSchemaProperty;
   properties?: Record<string, JSONSchemaProperty>;
   required?: string[];
+  additionalProperties?: boolean;
 }
 
 export interface ToolContext {

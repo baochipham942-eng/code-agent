@@ -18,9 +18,12 @@ import {
   Globe,
   Zap,
   Sparkles,
-  AlertCircle
+  AlertCircle,
+  Play,
+  ExternalLink
 } from 'lucide-react';
 import type { Message, ToolCall, ToolResult } from '@shared/types';
+import { useAppStore } from '../stores/appStore';
 
 interface MessageBubbleProps {
   message: Message;
@@ -243,6 +246,7 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
   total
 }) => {
   const [expanded, setExpanded] = useState(false);
+  const openPreview = useAppStore((state) => state.openPreview);
 
   // Get status from result
   const getStatus = (): 'success' | 'error' | 'pending' => {
@@ -276,7 +280,25 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
     }
   };
 
+  // Check if this is an HTML file creation
+  const getHtmlFilePath = (): string | null => {
+    if (toolCall.name === 'write_file' && toolCall.result?.success) {
+      const filePath = toolCall.arguments?.file_path as string;
+      if (filePath && filePath.endsWith('.html')) {
+        return filePath;
+      }
+      // Also check result output for the path
+      const output = toolCall.result?.output as string;
+      if (output && output.includes('.html')) {
+        const match = output.match(/Created file: (.+\.html)/);
+        if (match) return match[1];
+      }
+    }
+    return null;
+  };
+
   const config = statusConfig[status];
+  const htmlFilePath = getHtmlFilePath();
 
   return (
     <div
@@ -315,6 +337,21 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
             </span>
           )}
         </div>
+
+        {/* Preview button for HTML files */}
+        {htmlFilePath && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              openPreview(htmlFilePath);
+            }}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 text-xs transition-colors border border-blue-500/30"
+            title="在右侧预览"
+          >
+            <Play className="w-3 h-3" />
+            预览
+          </button>
+        )}
 
         {/* Status badge */}
         <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text} ${config.border} border`}>
@@ -355,6 +392,29 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
                     ? toolCall.result.output
                     : JSON.stringify(toolCall.result.output, null, 2)}
               </pre>
+            </div>
+          )}
+
+          {/* Open in browser button for HTML files */}
+          {htmlFilePath && (
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={() => openPreview(htmlFilePath)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 text-xs transition-colors"
+              >
+                <Play className="w-3.5 h-3.5" />
+                在右侧预览
+              </button>
+              <button
+                onClick={() => {
+                  // Open in system default browser
+                  window.electronAPI?.invoke('workspace:read-file', htmlFilePath);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-700 text-zinc-300 hover:bg-zinc-600 text-xs transition-colors"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                在浏览器打开
+              </button>
             </div>
           )}
         </div>

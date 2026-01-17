@@ -41,11 +41,11 @@ function getSessionGroup(timestamp: number): SessionGroup {
 
 // 分组标签
 const groupLabels: Record<SessionGroup, string> = {
-  today: 'Today',
-  yesterday: 'Yesterday',
-  week: 'This Week',
-  month: 'This Month',
-  older: 'Older',
+  today: '今天',
+  yesterday: '昨天',
+  week: '本周',
+  month: '本月',
+  older: '更早',
 };
 
 // 分组图标
@@ -104,7 +104,7 @@ export const Sidebar: React.FC = () => {
   }, [sessions, searchQuery]);
 
   const handleNewChat = async () => {
-    await createSession('New Chat');
+    await createSession('新对话');
     clearChat();
   };
 
@@ -140,7 +140,7 @@ export const Sidebar: React.FC = () => {
           ) : (
             <Plus className="w-4 h-4" />
           )}
-          <span>New Chat</span>
+          <span>新对话</span>
         </button>
       </div>
 
@@ -153,7 +153,7 @@ export const Sidebar: React.FC = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search chats..."
+              placeholder="搜索对话..."
               className="w-full pl-9 pr-3 py-2 text-sm bg-zinc-800/50 border border-zinc-700/50 rounded-lg text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/20 transition-all"
             />
           </div>
@@ -165,20 +165,20 @@ export const Sidebar: React.FC = () => {
         {isLoading && sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
-            <span className="text-xs text-zinc-500">Loading chats...</span>
+            <span className="text-xs text-zinc-500">加载中...</span>
           </div>
         ) : !hasAnySessions ? (
           <div className="flex flex-col items-center justify-center py-12 text-center px-4">
             <div className="w-12 h-12 rounded-2xl bg-zinc-800/50 flex items-center justify-center mb-3">
               <MessageSquare className="w-6 h-6 text-zinc-500" />
             </div>
-            <p className="text-sm text-zinc-400 mb-1">No chats yet</p>
-            <p className="text-xs text-zinc-500">Start a new conversation</p>
+            <p className="text-sm text-zinc-400 mb-1">暂无对话</p>
+            <p className="text-xs text-zinc-500">开始新的对话</p>
           </div>
         ) : !hasFilteredSessions ? (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <Search className="w-8 h-8 text-zinc-600 mb-2" />
-            <p className="text-sm text-zinc-400">No matching chats</p>
+            <p className="text-sm text-zinc-400">没有匹配的对话</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -221,7 +221,7 @@ export const Sidebar: React.FC = () => {
                           <span className="text-sm truncate block font-medium">{session.title}</span>
                           {session.messageCount > 0 && (
                             <span className="text-xs text-zinc-500">
-                              {session.messageCount} message{session.messageCount > 1 ? 's' : ''}
+                              {session.messageCount} 条消息
                             </span>
                           )}
                         </div>

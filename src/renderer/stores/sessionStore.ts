@@ -246,7 +246,7 @@ export async function initializeSessionStore(): Promise<void> {
     await store.switchSession(sessions[0].id);
   } else {
     // 没有会话，创建一个新的
-    await store.createSession('New Chat');
+    await store.createSession('新对话');
   }
 
   // 监听会话更新事件（如标题更新）

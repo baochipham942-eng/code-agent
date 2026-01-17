@@ -97,42 +97,42 @@ const ThinkingIndicator: React.FC = () => {
           <span className="w-2 h-2 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '150ms' }} />
           <span className="w-2 h-2 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '300ms' }} />
         </div>
-        <span className="text-sm text-zinc-400">Thinking...</span>
+        <span className="text-sm text-zinc-400">思考中...</span>
       </div>
     </div>
   );
 };
 
-// Suggestion card data
+// 建议卡片数据
 const suggestions = [
   {
     icon: Code2,
-    text: 'Create a React component',
-    description: 'Build UI components',
+    text: '创建 React 组件',
+    description: '构建 UI 组件',
     color: 'from-blue-500/20 to-cyan-500/20',
     borderColor: 'border-blue-500/20',
     iconColor: 'text-blue-400',
   },
   {
     icon: Bug,
-    text: 'Fix a bug in my code',
-    description: 'Debug and resolve issues',
+    text: '修复代码 Bug',
+    description: '调试并解决问题',
     color: 'from-red-500/20 to-orange-500/20',
     borderColor: 'border-red-500/20',
     iconColor: 'text-red-400',
   },
   {
     icon: FileQuestion,
-    text: 'Explain this function',
-    description: 'Understand code logic',
+    text: '解释这段代码',
+    description: '理解代码逻辑',
     color: 'from-purple-500/20 to-pink-500/20',
     borderColor: 'border-purple-500/20',
     iconColor: 'text-purple-400',
   },
   {
     icon: TestTube2,
-    text: 'Write unit tests',
-    description: 'Ensure code quality',
+    text: '编写单元测试',
+    description: '保障代码质量',
     color: 'from-emerald-500/20 to-teal-500/20',
     borderColor: 'border-emerald-500/20',
     iconColor: 'text-emerald-400',
@@ -175,8 +175,8 @@ const EmptyState: React.FC<{ generation: string; onSend: (message: string) => vo
 
       {/* Subtitle */}
       <p className="text-zinc-400 max-w-md mb-10 leading-relaxed animate-fade-in" style={{ animationDelay: '200ms' }}>
-        Your AI-powered coding companion. I can help you write, debug, explain, and test code.
-        Start with a suggestion below or type your own request.
+        你的 AI 编程助手。我可以帮你编写、调试、解释和测试代码。
+        从下方建议开始，或输入你自己的问题。
       </p>
 
       {/* Suggestion Cards */}
@@ -194,7 +194,7 @@ const EmptyState: React.FC<{ generation: string; onSend: (message: string) => vo
       {/* Footer hint */}
       <div className="flex items-center gap-2 mt-10 text-xs text-zinc-600 animate-fade-in" style={{ animationDelay: '600ms' }}>
         <Zap className="w-3.5 h-3.5 text-primary-500/50" />
-        <span>Quick tip: Press <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono text-2xs">/</kbd> to access commands</span>
+        <span>小提示：按 <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono text-2xs">/</kbd> 可访问命令</span>
       </div>
     </div>
   );

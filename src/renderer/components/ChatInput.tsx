@@ -60,6 +60,12 @@ const STYLE_EXTENSIONS: Record<string, string> = {
 // 最大文件大小 (10MB)
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
+// 文件夹遍历时忽略的目录
+const IGNORED_DIRS = ['node_modules', '.git', '.svn', '.hg', '__pycache__', '.DS_Store', 'dist', 'build', '.next', '.cache'];
+
+// 文件夹最大文件数限制
+const MAX_FOLDER_FILES = 50;
+
 /**
  * 根据文件信息判断类别
  */
@@ -109,6 +115,92 @@ function getFileCategory(file: File): { category: AttachmentCategory; language?:
 
   // 8. 其他
   return { category: 'other' };
+}
+
+/**
+ * 判断文件是否应该被处理（根据扩展名）
+ */
+function shouldProcessFile(fileName: string): boolean {
+  const ext = '.' + fileName.split('.').pop()?.toLowerCase();
+  // 支持的文件类型
+  return (
+    CODE_EXTENSIONS[ext] !== undefined ||
+    STYLE_EXTENSIONS[ext] !== undefined ||
+    DATA_EXTENSIONS.includes(ext) ||
+    TEXT_EXTENSIONS.includes(ext) ||
+    ext === '.pdf' ||
+    ext === '.html' || ext === '.htm' ||
+    ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.gif' || ext === '.webp'
+  );
+}
+
+/**
+ * 递归读取 FileSystemDirectoryEntry 中的所有文件
+ */
+async function readDirectoryEntry(
+  dirEntry: FileSystemDirectoryEntry,
+  basePath: string = ''
+): Promise<File[]> {
+  const files: File[] = [];
+  const dirReader = dirEntry.createReader();
+
+  // 递归读取目录条目
+  const readEntries = (): Promise<FileSystemEntry[]> => {
+    return new Promise((resolve, reject) => {
+      dirReader.readEntries(resolve, reject);
+    });
+  };
+
+  // 将 FileSystemFileEntry 转换为 File
+  const getFile = (fileEntry: FileSystemFileEntry): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      fileEntry.file(resolve, reject);
+    });
+  };
+
+  try {
+    let entries: FileSystemEntry[] = [];
+    // readEntries 可能需要多次调用才能获取所有条目
+    let batch: FileSystemEntry[];
+    do {
+      batch = await readEntries();
+      entries = entries.concat(batch);
+    } while (batch.length > 0);
+
+    for (const entry of entries) {
+      const fullPath = basePath ? `${basePath}/${entry.name}` : entry.name;
+
+      if (entry.isFile) {
+        const fileEntry = entry as FileSystemFileEntry;
+        // 只处理支持的文件类型
+        if (shouldProcessFile(entry.name)) {
+          try {
+            const file = await getFile(fileEntry);
+            // 使用 Object.defineProperty 附加相对路径信息
+            Object.defineProperty(file, 'relativePath', {
+              value: fullPath,
+              writable: false,
+            });
+            files.push(file);
+          } catch (err) {
+            console.warn(`无法读取文件 ${fullPath}:`, err);
+          }
+        }
+      } else if (entry.isDirectory) {
+        // 跳过忽略的目录
+        if (IGNORED_DIRS.includes(entry.name)) {
+          continue;
+        }
+        const subDirEntry = entry as FileSystemDirectoryEntry;
+        const subFiles = await readDirectoryEntry(subDirEntry, fullPath);
+        files.push(...subFiles);
+      }
+    }
+  } catch (err) {
+    console.error('读取目录失败:', err);
+  }
+
+  return files;
 }
 
 /**
@@ -217,6 +309,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
     const { category, language } = getFileCategory(file);
     const id = `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
+    // 获取相对路径（文件夹拖拽时设置）或使用文件名
+    const relativePath = (file as File & { relativePath?: string }).relativePath;
+    const displayName = relativePath || file.name;
+
     // 不支持的类型：办公文档暂时跳过
     if (category === 'document') {
       console.warn(`Office documents (.docx, .xlsx) are not yet supported. Please convert to PDF first.`);
@@ -233,7 +329,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
             id,
             type: 'image',
             category: 'image',
-            name: file.name,
+            name: displayName,
             size: file.size,
             mimeType: file.type,
             data,
@@ -252,7 +348,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
         id,
         type: 'file',
         category: 'pdf',
-        name: file.name,
+        name: displayName,
         size: file.size,
         mimeType: 'application/pdf',
         data: text,
@@ -269,7 +365,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
           id,
           type: 'file',
           category,
-          name: file.name,
+          name: displayName,
           size: file.size,
           mimeType: file.type || 'text/plain',
           data,
@@ -299,10 +395,46 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
     e.stopPropagation();
     setIsDragOver(false);
 
-    const files = Array.from(e.dataTransfer.files);
-    const newAttachments: MessageAttachment[] = [];
+    const items = e.dataTransfer.items;
+    const allFiles: File[] = [];
 
-    for (const file of files) {
+    // 使用 webkitGetAsEntry 来支持文件夹
+    if (items) {
+      const entries: FileSystemEntry[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const entry = items[i].webkitGetAsEntry?.();
+        if (entry) {
+          entries.push(entry);
+        }
+      }
+
+      // 处理每个条目（文件或文件夹）
+      for (const entry of entries) {
+        if (entry.isFile) {
+          const fileEntry = entry as FileSystemFileEntry;
+          const file = await new Promise<File>((resolve, reject) => {
+            fileEntry.file(resolve, reject);
+          });
+          allFiles.push(file);
+        } else if (entry.isDirectory) {
+          const dirEntry = entry as FileSystemDirectoryEntry;
+          const dirFiles = await readDirectoryEntry(dirEntry, entry.name);
+          allFiles.push(...dirFiles);
+        }
+      }
+    } else {
+      // 回退到普通文件处理
+      allFiles.push(...Array.from(e.dataTransfer.files));
+    }
+
+    // 限制文件数量
+    const filesToProcess = allFiles.slice(0, MAX_FOLDER_FILES);
+    if (allFiles.length > MAX_FOLDER_FILES) {
+      console.warn(`文件夹包含 ${allFiles.length} 个文件，只处理前 ${MAX_FOLDER_FILES} 个`);
+    }
+
+    const newAttachments: MessageAttachment[] = [];
+    for (const file of filesToProcess) {
       const attachment = await processFile(file);
       if (attachment) {
         newAttachments.push(attachment);
@@ -310,7 +442,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
     }
 
     if (newAttachments.length > 0) {
-      setAttachments((prev) => [...prev, ...newAttachments].slice(0, 5)); // 最多 5 个附件
+      // 文件夹可能包含很多文件，放宽限制到 50 个
+      setAttachments((prev) => [...prev, ...newAttachments].slice(0, MAX_FOLDER_FILES));
     }
   }, [processFile]);
 
@@ -409,7 +542,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
           <div className="absolute inset-0 flex items-center justify-center bg-surface-950/90 backdrop-blur-sm z-10 rounded-xl border-2 border-dashed border-primary-500">
             <div className="flex flex-col items-center gap-2 text-primary-400">
               <Image className="w-8 h-8" />
-              <span className="text-sm">拖放图片或文件到这里</span>
+              <span className="text-sm">拖放文件或文件夹到这里</span>
+              <span className="text-xs text-zinc-500">支持代码、文档、图片等多种格式</span>
             </div>
           </div>
         )}

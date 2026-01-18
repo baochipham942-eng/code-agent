@@ -8,7 +8,29 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
 
 export const editFileTool: Tool = {
   name: 'edit_file',
-  description: 'Make precise edits to a file by replacing specific text',
+  description: `Perform exact string replacements in files.
+
+CRITICAL: You MUST read the file with read_file before editing.
+This tool will fail if you attempt an edit without reading the file first.
+
+Usage:
+- old_string: The exact text to replace (must be UNIQUE in the file unless using replace_all)
+- new_string: The replacement text (must be different from old_string)
+- replace_all: Set to true to replace all occurrences of old_string
+
+When editing text from read_file output:
+- Preserve the EXACT indentation (tabs/spaces) as shown in the file content
+- The line number prefix from read_file is NOT part of the file content
+- Match whitespace exactly - trailing spaces and newlines matter
+
+Common errors and solutions:
+- "text not found": Your old_string doesn't match exactly - check whitespace and indentation
+- "multiple occurrences": Provide more surrounding context to make old_string unique, or use replace_all: true
+
+Best practices:
+- Include 2-3 lines of surrounding context in old_string for uniqueness
+- Use replace_all for renaming variables/functions across the file
+- For large changes, make multiple smaller edits instead of one huge replacement`,
   generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',

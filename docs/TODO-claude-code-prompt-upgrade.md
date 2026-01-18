@@ -46,50 +46,26 @@ src/main/tools/gen3/
 
 ---
 
-## 待完成 ❌
+## 已完成 ✅ (第二批)
 
-### 1. 工具描述增强 (P1)
+### 1. 工具描述增强 (P1) - 2025-01-18
 
-**目标：** 参考 Claude Code v2.0 的工具描述格式，增强现有工具的 description
+**完成内容：** 参考 Claude Code v2.0 的工具描述格式，增强了 6 个核心工具的 description
 
-**需要更新的文件：**
+**已更新的文件：**
 
-- [ ] `src/main/tools/gen1/bash.ts`
-- [ ] `src/main/tools/gen1/readFile.ts`
-- [ ] `src/main/tools/gen1/writeFile.ts`
-- [ ] `src/main/tools/gen1/editFile.ts`
-- [ ] `src/main/tools/gen2/glob.ts`
-- [ ] `src/main/tools/gen2/grep.ts`
-
-**增强内容：**
-- 使用场景说明
-- 参数详细描述
-- 禁止事项清单
-- 示例用法
-
-**参考格式（bash 工具示例）：**
-
-```typescript
-description: `Execute shell commands in a persistent shell session.
-
-IMPORTANT: Use for terminal operations (git, npm, docker) only.
-DO NOT use for file operations - use specialized tools instead:
-- File search: Use glob (NOT find or ls)
-- Content search: Use grep (NOT grep or rg)
-- Read files: Use read_file (NOT cat/head/tail)
-- Edit files: Use edit_file (NOT sed/awk)
-
-Usage notes:
-- Always quote paths with spaces: cd "/path/with spaces"
-- Use absolute paths, avoid cd when possible
-- Chain dependent commands with &&
-- Independent commands can be called in parallel
-`
-```
+- [x] `src/main/tools/gen1/bash.ts` - 添加了工具使用优先级、Git 安全规则
+- [x] `src/main/tools/gen1/readFile.ts` - 添加了使用说明、最佳实践
+- [x] `src/main/tools/gen1/writeFile.ts` - 添加了覆盖警告、大文件策略、代码完整性检测说明
+- [x] `src/main/tools/gen1/editFile.ts` - 添加了必须先读取的提醒、常见错误解决方案
+- [x] `src/main/tools/gen2/glob.ts` - 添加了常见模式示例、使用场景对比
+- [x] `src/main/tools/gen2/grep.ts` - 添加了正则表达式示例、输出格式说明
 
 ---
 
-### 2. 完整模块化重构 (P2)
+## 待完成 ❌
+
+### 1. 完整模块化重构 (P2)
 
 **目标：** 将 GenerationManager.ts (1140+ 行) 拆分为模块化结构
 
@@ -137,7 +113,7 @@ src/main/generation/
 
 ---
 
-### 3. 注入防护 (P3 - 可选)
+### 2. 注入防护 (P3 - 可选)
 
 **目标：** 借鉴 Claude Code v2.0 的 prompt injection 防护规则
 
@@ -147,7 +123,7 @@ src/main/generation/
 
 ---
 
-### 4. 文档与测试 (P3)
+### 3. 文档与测试 (P3)
 
 - [ ] 更新 `docs/architecture/agent-core.md` - 添加 Plan Mode 说明
 - [ ] 添加 Plan Mode 工具的单元测试

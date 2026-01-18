@@ -8,7 +8,22 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
 
 export const readFileTool: Tool = {
   name: 'read_file',
-  description: 'Read the contents of a file from the filesystem',
+  description: `Read the contents of a file from the local filesystem.
+
+Usage:
+- The file_path must be an absolute path, not a relative path
+- By default, reads up to 2000 lines starting from line 1
+- Use offset and limit for large files (e.g., offset: 100, limit: 50 reads lines 100-149)
+- Lines longer than 2000 characters will be truncated
+- Results are returned with line numbers (1-indexed) for easy reference
+
+Best practices:
+- ALWAYS read a file before editing it with edit_file
+- If a file is too large, use offset/limit to read specific sections
+- For searching within files, prefer grep tool over read_file
+- Multiple files can be read in parallel with separate tool calls
+
+Returns: File content with line numbers in format "  lineNum\\tcontent"`,
   generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'read',

@@ -10,7 +10,28 @@ const execAsync = promisify(exec);
 
 export const bashTool: Tool = {
   name: 'bash',
-  description: 'Execute a shell command in the terminal',
+  description: `Execute shell commands in a persistent shell session with optional timeout.
+
+IMPORTANT: Use for terminal operations (git, npm, docker, etc.) ONLY.
+DO NOT use for file operations - use specialized tools instead:
+- File search: Use glob (NOT find or ls)
+- Content search: Use grep (NOT grep or rg)
+- Read files: Use read_file (NOT cat/head/tail)
+- Edit files: Use edit_file (NOT sed/awk)
+- Write files: Use write_file (NOT echo/cat with heredoc)
+
+Usage notes:
+- Always quote file paths with spaces: cd "/path/with spaces"
+- Use absolute paths, avoid cd when possible
+- Chain dependent commands with && (e.g., git add . && git commit -m "msg")
+- Independent commands can be called in parallel in separate tool calls
+- Output is truncated at 30000 characters
+- Default timeout is 120 seconds (can be overridden)
+
+Git best practices:
+- NEVER use --force push unless explicitly requested
+- NEVER skip hooks (--no-verify) unless explicitly requested
+- Always check git status before committing`,
   generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',

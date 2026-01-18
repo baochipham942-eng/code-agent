@@ -11,7 +11,35 @@ const execAsync = promisify(exec);
 
 export const grepTool: Tool = {
   name: 'grep',
-  description: 'Search for patterns in file contents',
+  description: `Search for patterns in file contents using regex.
+
+Built on ripgrep (with grep fallback) for fast content search.
+
+Usage:
+- pattern: Regex pattern to search for (e.g., "function\\s+\\w+", "TODO:")
+- path: File or directory to search in (default: working directory)
+- include: Glob pattern to filter files (e.g., "*.ts", "*.{js,jsx}")
+- case_insensitive: Set to true for case-insensitive search
+
+Output format:
+- Returns file:line_number:matching_line
+- Results limited to 200 matches
+- Each line truncated at 500 characters
+
+Auto-ignored directories:
+- node_modules, .git, dist, build
+
+Common patterns:
+- "function\\s+handleClick" - Find function definitions
+- "import.*from\\s+['\"]react['\"]" - Find React imports
+- "TODO|FIXME|HACK" - Find code comments
+- "class\\s+\\w+\\s+extends" - Find class definitions
+
+Best practices:
+- Use this tool instead of bash grep or rg commands
+- For finding file paths (not content), use glob instead
+- Escape special regex characters: . * + ? [ ] ( ) { } | \\ ^ $
+- Multiple searches can be run in parallel with separate tool calls`,
   generations: ['gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',

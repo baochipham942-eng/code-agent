@@ -141,7 +141,27 @@ function checkCodeCompleteness(content: string, filePath: string): CompletenessC
 
 export const writeFileTool: Tool = {
   name: 'write_file',
-  description: 'Create a new file or overwrite an existing file',
+  description: `Create a new file or completely overwrite an existing file.
+
+IMPORTANT: This tool will OVERWRITE the entire file content.
+- If you need to make small changes to an existing file, use edit_file instead
+- ALWAYS prefer editing existing files over creating new ones
+- If overwriting an existing file, you MUST read it first with read_file
+
+Usage:
+- file_path must be an absolute path (not relative)
+- Creates parent directories automatically if they don't exist
+- Cannot write files outside the working directory (security restriction)
+
+For large files (300+ lines):
+- Consider using multi-step generation: create skeleton first, then use edit_file to add content
+- This prevents output truncation issues
+
+Code completeness detection:
+- The tool automatically checks for truncated code (unclosed brackets, incomplete statements)
+- If truncation is detected, a warning will be returned
+
+NEVER create documentation files (*.md, README) unless explicitly requested.`,
   generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',

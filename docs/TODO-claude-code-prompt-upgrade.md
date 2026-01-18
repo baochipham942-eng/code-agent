@@ -2,7 +2,7 @@
 
 > 基于 `/Users/linchen/.claude/plans/graceful-toasting-eich.md` 规划文件
 >
-> 上次更新：2025-01-18
+> 上次更新：2026-01-18
 
 ---
 
@@ -63,19 +63,17 @@ src/main/tools/gen3/
 
 ---
 
-## 待完成 ❌
+## 已完成 ✅ (第三批 - 模块化重构)
 
-### 1. 完整模块化重构 (P2)
+### 1. 完整模块化重构 (P2) - 2026-01-18
 
-**目标：** 将 GenerationManager.ts (1140+ 行) 拆分为模块化结构
+**完成内容：** 将 GenerationManager.ts (1240 行) 拆分为模块化结构
 
-**当前状态：** 只创建了 `prompts/rules/` 目录
-
-**目标结构：**
+**最终结构：**
 
 ```
 src/main/generation/
-├── GenerationManager.ts          # 精简为 ~150 行
+├── GenerationManager.ts          # 精简为 ~100 行（原 1240 行）
 ├── metadata.ts                   # GENERATION_DEFINITIONS
 ├── prompts/
 │   ├── base/
@@ -88,32 +86,43 @@ src/main/generation/
 │   │   ├── gen7.ts              # Gen7 基础提示词
 │   │   ├── gen8.ts              # Gen8 基础提示词
 │   │   └── index.ts             # 导出所有基础提示词
-│   ├── rules/                   # ✅ 已完成
-│   │   ├── outputFormat.ts      # 需新建：从 GenerationManager 提取
-│   │   ├── htmlGeneration.ts    # 需新建：从 GenerationManager 提取
-│   │   └── ...                  # 已有 6 个新规则
-│   └── builder.ts               # 提示词组装器
+│   ├── rules/
+│   │   ├── professionalObjectivity.ts  # 专业客观性
+│   │   ├── gitSafety.ts                # Git 安全协议
+│   │   ├── parallelTools.ts            # 并行工具调用
+│   │   ├── codeReference.ts            # 代码引用格式
+│   │   ├── planMode.ts                 # Plan Mode 指导
+│   │   ├── outputFormat.ts             # 输出格式规范
+│   │   ├── htmlGeneration.ts           # HTML 生成规则
+│   │   └── index.ts                    # 导出所有规则
+│   └── builder.ts                      # 提示词组装器
 ```
 
-**待创建文件清单：**
+**创建的文件清单：**
 
-- [ ] `src/main/generation/metadata.ts`
-- [ ] `src/main/generation/prompts/base/gen1.ts`
-- [ ] `src/main/generation/prompts/base/gen2.ts`
-- [ ] `src/main/generation/prompts/base/gen3.ts`
-- [ ] `src/main/generation/prompts/base/gen4.ts`
-- [ ] `src/main/generation/prompts/base/gen5.ts`
-- [ ] `src/main/generation/prompts/base/gen6.ts`
-- [ ] `src/main/generation/prompts/base/gen7.ts`
-- [ ] `src/main/generation/prompts/base/gen8.ts`
-- [ ] `src/main/generation/prompts/base/index.ts`
-- [ ] `src/main/generation/prompts/rules/outputFormat.ts`
-- [ ] `src/main/generation/prompts/rules/htmlGeneration.ts`
-- [ ] `src/main/generation/prompts/builder.ts`
+- [x] `src/main/generation/metadata.ts`
+- [x] `src/main/generation/prompts/base/gen1.ts`
+- [x] `src/main/generation/prompts/base/gen2.ts`
+- [x] `src/main/generation/prompts/base/gen3.ts`
+- [x] `src/main/generation/prompts/base/gen4.ts`
+- [x] `src/main/generation/prompts/base/gen5.ts`
+- [x] `src/main/generation/prompts/base/gen6.ts`
+- [x] `src/main/generation/prompts/base/gen7.ts`
+- [x] `src/main/generation/prompts/base/gen8.ts`
+- [x] `src/main/generation/prompts/base/index.ts`
+- [x] `src/main/generation/prompts/rules/outputFormat.ts`
+- [x] `src/main/generation/prompts/rules/htmlGeneration.ts`
+- [x] `src/main/generation/prompts/builder.ts`
+
+**验证通过：**
+- [x] `npm run typecheck` 通过
+- [x] `npm run build` 通过
 
 ---
 
-### 2. 注入防护 (P3 - 可选)
+## 待完成 ❌
+
+### 1. 注入防护 (P3 - 可选)
 
 **目标：** 借鉴 Claude Code v2.0 的 prompt injection 防护规则
 
@@ -123,7 +132,7 @@ src/main/generation/
 
 ---
 
-### 3. 文档与测试 (P3)
+### 2. 文档与测试 (P3)
 
 - [ ] 更新 `docs/architecture/agent-core.md` - 添加 Plan Mode 说明
 - [ ] 添加 Plan Mode 工具的单元测试

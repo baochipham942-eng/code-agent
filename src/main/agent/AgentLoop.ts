@@ -878,6 +878,7 @@ export class AgentLoop {
 
   /**
    * 将附件转换为多模态消息内容
+   * 按文件类别精细化处理，生成对模型最友好的格式
    */
   private buildMultimodalContent(text: string, attachments: MessageAttachment[]): MessageContent[] {
     const contents: MessageContent[] = [];
@@ -887,38 +888,100 @@ export class AgentLoop {
       contents.push({ type: 'text', text });
     }
 
-    // 处理每个附件
+    // 按类别处理每个附件
     for (const attachment of attachments) {
-      if (attachment.type === 'image' && attachment.data) {
-        // 图片附件：转换为 base64 图片内容
-        // attachment.data 格式可能是 "data:image/png;base64,xxx" 或纯 base64
-        let base64Data = attachment.data;
-        let mediaType = attachment.mimeType;
+      if (!attachment.data) continue;
 
-        if (attachment.data.startsWith('data:')) {
-          // 解析 data URL
-          const match = attachment.data.match(/^data:([^;]+);base64,(.+)$/);
-          if (match) {
-            mediaType = match[1];
-            base64Data = match[2];
+      const category = attachment.category || (attachment.type === 'image' ? 'image' : 'other');
+
+      switch (category) {
+        case 'image': {
+          // 图片：转换为 base64 图片内容块
+          let base64Data = attachment.data;
+          let mediaType = attachment.mimeType;
+
+          if (attachment.data.startsWith('data:')) {
+            const match = attachment.data.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              mediaType = match[1];
+              base64Data = match[2];
+            }
           }
+
+          contents.push({
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: mediaType,
+              data: base64Data,
+            },
+          });
+          break;
         }
 
-        contents.push({
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: mediaType,
-            data: base64Data,
-          },
-        });
-      } else if (attachment.type === 'file' && attachment.data) {
-        // 文件附件（PDF 文本、代码文件等）：作为文本内容
-        const fileContent = attachment.mimeType === 'application/pdf'
-          ? `[PDF 文件: ${attachment.name}]\n\n${attachment.data}`
-          : `[文件: ${attachment.name}]\n\`\`\`\n${attachment.data}\n\`\`\``;
+        case 'pdf': {
+          // PDF：文档结构化文本
+          const pageInfo = attachment.pageCount ? ` (${attachment.pageCount} 页)` : '';
+          contents.push({
+            type: 'text',
+            text: `📄 **PDF 文档: ${attachment.name}**${pageInfo}\n\n${attachment.data}`,
+          });
+          break;
+        }
 
-        contents.push({ type: 'text', text: fileContent });
+        case 'code': {
+          // 代码文件：带语法高亮提示
+          const lang = attachment.language || 'plaintext';
+          contents.push({
+            type: 'text',
+            text: `📝 **代码文件: ${attachment.name}** (${lang})\n\`\`\`${lang}\n${attachment.data}\n\`\`\``,
+          });
+          break;
+        }
+
+        case 'data': {
+          // 数据文件：JSON/CSV/XML 等
+          const lang = attachment.language || 'json';
+          contents.push({
+            type: 'text',
+            text: `📊 **数据文件: ${attachment.name}**\n\`\`\`${lang}\n${attachment.data}\n\`\`\``,
+          });
+          break;
+        }
+
+        case 'html': {
+          // HTML 文件
+          contents.push({
+            type: 'text',
+            text: `🌐 **HTML 文件: ${attachment.name}**\n\`\`\`html\n${attachment.data}\n\`\`\``,
+          });
+          break;
+        }
+
+        case 'text': {
+          // 纯文本/Markdown
+          const isMarkdown = attachment.language === 'markdown';
+          if (isMarkdown) {
+            contents.push({
+              type: 'text',
+              text: `📝 **Markdown 文件: ${attachment.name}**\n\n${attachment.data}`,
+            });
+          } else {
+            contents.push({
+              type: 'text',
+              text: `📄 **文本文件: ${attachment.name}**\n\n${attachment.data}`,
+            });
+          }
+          break;
+        }
+
+        default: {
+          // 其他文件类型
+          contents.push({
+            type: 'text',
+            text: `📎 **文件: ${attachment.name}**\n\`\`\`\n${attachment.data}\n\`\`\``,
+          });
+        }
       }
     }
 

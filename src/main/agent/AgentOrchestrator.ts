@@ -22,6 +22,9 @@ import type { ConfigService } from '../services/ConfigService';
 import { getSessionManager } from '../services/SessionManager';
 import type { PlanningService } from '../planning';
 import { generateMessageId, generatePermissionRequestId } from '../../shared/utils/id';
+import { app } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -57,8 +60,9 @@ export class AgentOrchestrator {
     this.generationManager = config.generationManager;
     this.configService = config.configService;
     this.onEvent = config.onEvent;
-    // Default to current working directory
-    this.workingDirectory = process.cwd();
+
+    // 设置默认工作目录为 app/work 文件夹
+    this.workingDirectory = this.initializeWorkDirectory();
     console.log('[AgentOrchestrator] Initial working directory:', this.workingDirectory);
     this.planningService = config.planningService;
 
@@ -69,6 +73,30 @@ export class AgentOrchestrator {
       requestPermission: this.requestPermission.bind(this),
       workingDirectory: this.workingDirectory,
     });
+  }
+
+  /**
+   * 初始化工作目录
+   * 默认使用 app 数据目录下的 work 文件夹，确保有写入权限
+   */
+  private initializeWorkDirectory(): string {
+    try {
+      // 使用 Electron 的 userData 目录（有写入权限）
+      const userDataPath = app.getPath('userData');
+      const workDir = path.join(userDataPath, 'work');
+
+      // 确保目录存在
+      if (!fs.existsSync(workDir)) {
+        fs.mkdirSync(workDir, { recursive: true });
+        console.log('[AgentOrchestrator] Created work directory:', workDir);
+      }
+
+      return workDir;
+    } catch (error) {
+      // 如果获取 app 路径失败（如在测试环境），回退到当前目录
+      console.warn('[AgentOrchestrator] Failed to get userData path, falling back to cwd:', error);
+      return process.cwd();
+    }
   }
 
   // --------------------------------------------------------------------------

@@ -16,3 +16,7 @@ export { HTML_GENERATION_RULES } from './htmlGeneration';
 
 // MCP 智能路由规则
 export { GITHUB_ROUTING_RULES } from './githubRouting';
+
+// 错误处理和代码片段规则
+export { ERROR_HANDLING_RULES } from './errorHandling';
+export { CODE_SNIPPET_RULES } from './codeSnippet';

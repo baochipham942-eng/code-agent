@@ -148,19 +148,35 @@ export interface GUIAgentConfig {
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 
+// 附件文件类别（用于精细化处理）
+export type AttachmentCategory =
+  | 'image'      // 图片：PNG, JPEG, GIF, WebP
+  | 'pdf'        // PDF 文档
+  | 'code'       // 代码文件：JS, TS, Python, etc.
+  | 'text'       // 纯文本：TXT, MD
+  | 'data'       // 数据文件：JSON, CSV, XML
+  | 'document'   // 办公文档：DOCX, XLSX (需转换)
+  | 'html'       // 网页：HTML
+  | 'other';     // 其他
+
 // 附件类型
 export interface MessageAttachment {
   id: string;
   type: 'image' | 'file';
+  category: AttachmentCategory;  // 细粒度分类
   name: string;
   size: number;
   mimeType: string;
-  // 图片: base64 数据 URL 或本地文件路径
-  // 文件: 本地文件路径
+  // 图片: base64 数据 URL
+  // 文件: 提取的文本内容
   data?: string;
   path?: string;
   // 图片预览 (缩略图)
   thumbnail?: string;
+  // PDF 特有：页数
+  pageCount?: number;
+  // 代码特有：语言
+  language?: string;
 }
 
 export interface Message {

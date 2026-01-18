@@ -3,9 +3,9 @@
 // ============================================================================
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Paperclip, Loader2, Sparkles, CornerDownLeft, X, Image, FileText } from 'lucide-react';
+import { Send, Paperclip, Loader2, Sparkles, CornerDownLeft, X, Image, FileText, Code, Database, Globe, File } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
-import type { MessageAttachment } from '../../shared/types';
+import type { MessageAttachment, AttachmentCategory } from '../../shared/types';
 
 // 配置 PDF.js worker - 使用 CDN 避免打包问题
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
@@ -15,26 +15,106 @@ interface ChatInputProps {
   disabled?: boolean;
 }
 
-// 支持的图片类型
-const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
-// 支持的文件类型
-const FILE_TYPES = [
-  'text/plain',
-  'text/markdown',
-  'application/json',
-  'text/javascript',
-  'text/typescript',
-  'text/css',
-  'text/html',
-  'application/pdf',
-];
+// ============================================================================
+// 文件类型配置 - 按类别精细化分类
+// ============================================================================
+
+// 图片类型
+const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+
+// 代码文件扩展名 → 语言映射
+const CODE_EXTENSIONS: Record<string, string> = {
+  '.ts': 'typescript', '.tsx': 'typescript',
+  '.js': 'javascript', '.jsx': 'javascript',
+  '.py': 'python',
+  '.rb': 'ruby',
+  '.go': 'go',
+  '.rs': 'rust',
+  '.java': 'java',
+  '.c': 'c', '.h': 'c',
+  '.cpp': 'cpp', '.hpp': 'cpp', '.cc': 'cpp',
+  '.cs': 'csharp',
+  '.swift': 'swift',
+  '.kt': 'kotlin',
+  '.scala': 'scala',
+  '.php': 'php',
+  '.sh': 'bash', '.bash': 'bash', '.zsh': 'bash',
+  '.sql': 'sql',
+  '.r': 'r',
+  '.lua': 'lua',
+  '.vim': 'vim',
+  '.el': 'elisp',
+};
+
+// 数据文件
+const DATA_EXTENSIONS = ['.json', '.csv', '.xml', '.yaml', '.yml', '.toml'];
+
+// 文本文件
+const TEXT_EXTENSIONS = ['.txt', '.md', '.markdown', '.rst', '.log'];
+
+// 样式文件（归类为代码）
+const STYLE_EXTENSIONS: Record<string, string> = {
+  '.css': 'css', '.scss': 'scss', '.sass': 'sass', '.less': 'less',
+};
+
 // 最大文件大小 (10MB)
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 /**
+ * 根据文件信息判断类别
+ */
+function getFileCategory(file: File): { category: AttachmentCategory; language?: string } {
+  const mimeType = file.type.toLowerCase();
+  const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+
+  // 1. 图片
+  if (IMAGE_MIMES.includes(mimeType) || mimeType.startsWith('image/')) {
+    return { category: 'image' };
+  }
+
+  // 2. PDF
+  if (mimeType === 'application/pdf' || ext === '.pdf') {
+    return { category: 'pdf' };
+  }
+
+  // 3. HTML
+  if (mimeType === 'text/html' || ext === '.html' || ext === '.htm') {
+    return { category: 'html', language: 'html' };
+  }
+
+  // 4. 代码文件
+  if (CODE_EXTENSIONS[ext]) {
+    return { category: 'code', language: CODE_EXTENSIONS[ext] };
+  }
+  if (STYLE_EXTENSIONS[ext]) {
+    return { category: 'code', language: STYLE_EXTENSIONS[ext] };
+  }
+
+  // 5. 数据文件
+  if (DATA_EXTENSIONS.includes(ext) || mimeType === 'application/json') {
+    const lang = ext === '.json' ? 'json' : ext === '.xml' ? 'xml' : ext.slice(1);
+    return { category: 'data', language: lang };
+  }
+
+  // 6. 纯文本
+  if (TEXT_EXTENSIONS.includes(ext) || mimeType === 'text/plain' || mimeType === 'text/markdown') {
+    return { category: 'text', language: ext === '.md' || ext === '.markdown' ? 'markdown' : undefined };
+  }
+
+  // 7. 办公文档
+  if (ext === '.docx' || ext === '.xlsx' || ext === '.pptx' ||
+      mimeType.includes('officedocument') || mimeType.includes('msword')) {
+    return { category: 'document' };
+  }
+
+  // 8. 其他
+  return { category: 'other' };
+}
+
+/**
  * 从 PDF 文件中提取文本内容
  */
-async function extractPdfText(file: File): Promise<string> {
+async function extractPdfText(file: File): Promise<{ text: string; pageCount: number }> {
   try {
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -52,15 +132,45 @@ async function extractPdfText(file: File): Promise<string> {
     }
 
     if (textParts.length === 0) {
-      return '[PDF 文件无法提取文本内容，可能是扫描件或图片 PDF]';
+      return {
+        text: '[PDF 文件无法提取文本内容，可能是扫描件或图片 PDF]',
+        pageCount: pdf.numPages,
+      };
     }
 
-    return textParts.join('\n\n');
+    return {
+      text: textParts.join('\n\n'),
+      pageCount: pdf.numPages,
+    };
   } catch (error) {
     console.error('PDF 文本提取失败:', error);
-    return `[PDF 解析失败: ${error instanceof Error ? error.message : '未知错误'}]`;
+    return {
+      text: `[PDF 解析失败: ${error instanceof Error ? error.message : '未知错误'}]`,
+      pageCount: 0,
+    };
   }
 }
+
+/**
+ * 根据附件类别返回对应图标
+ */
+const AttachmentIcon: React.FC<{ category: AttachmentCategory }> = ({ category }) => {
+  const iconClass = "w-5 h-5";
+  switch (category) {
+    case 'pdf':
+      return <FileText className={`${iconClass} text-red-400`} />;
+    case 'code':
+      return <Code className={`${iconClass} text-blue-400`} />;
+    case 'data':
+      return <Database className={`${iconClass} text-amber-400`} />;
+    case 'html':
+      return <Globe className={`${iconClass} text-orange-400`} />;
+    case 'text':
+      return <FileText className={`${iconClass} text-zinc-400`} />;
+    default:
+      return <File className={`${iconClass} text-zinc-500`} />;
+  }
+};
 
 export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
   const [value, setValue] = useState('');
@@ -104,19 +214,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
       return null;
     }
 
-    const isImage = IMAGE_TYPES.includes(file.type);
-    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-    const isAllowedFile = FILE_TYPES.includes(file.type) || file.name.match(/\.(ts|tsx|js|jsx|py|rb|go|rs|java|c|cpp|h|hpp|md|txt|json|yaml|yml|toml|xml|html|css|scss|sass|less)$/i);
+    const { category, language } = getFileCategory(file);
+    const id = `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-    if (!isImage && !isPdf && !isAllowedFile) {
-      console.warn(`File type ${file.type} is not supported`);
+    // 不支持的类型：办公文档暂时跳过
+    if (category === 'document') {
+      console.warn(`Office documents (.docx, .xlsx) are not yet supported. Please convert to PDF first.`);
       return null;
     }
 
-    const id = `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    if (isImage) {
-      // 读取图片为 base64
+    // 图片类型：读取为 base64
+    if (category === 'image') {
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -124,6 +232,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
           resolve({
             id,
             type: 'image',
+            category: 'image',
             name: file.name,
             size: file.size,
             mimeType: file.type,
@@ -134,36 +243,42 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
         reader.onerror = () => resolve(null);
         reader.readAsDataURL(file);
       });
-    } else if (isPdf) {
-      // PDF 文件 - 提取文本内容
-      const pdfText = await extractPdfText(file);
+    }
+
+    // PDF 类型：提取文本
+    if (category === 'pdf') {
+      const { text, pageCount } = await extractPdfText(file);
       return {
         id,
         type: 'file',
+        category: 'pdf',
         name: file.name,
         size: file.size,
         mimeType: 'application/pdf',
-        data: `[PDF 文件: ${file.name}]\n\n${pdfText}`,
+        data: text,
+        pageCount,
       };
-    } else {
-      // 其他文本文件 - 读取内容
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const data = e.target?.result as string;
-          resolve({
-            id,
-            type: 'file',
-            name: file.name,
-            size: file.size,
-            mimeType: file.type || 'text/plain',
-            data,
-          });
-        };
-        reader.onerror = () => resolve(null);
-        reader.readAsText(file);
-      });
     }
+
+    // 代码、数据、文本、HTML、其他：读取文本内容
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const data = e.target?.result as string;
+        resolve({
+          id,
+          type: 'file',
+          category,
+          name: file.name,
+          size: file.size,
+          mimeType: file.type || 'text/plain',
+          data,
+          language,
+        });
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsText(file);
+    });
   }, []);
 
   // 处理拖放
@@ -249,7 +364,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
                 key={att.id}
                 className="relative group flex items-center gap-2 px-3 py-2 bg-zinc-800/60 rounded-lg border border-zinc-700/50"
               >
-                {att.type === 'image' ? (
+                {att.category === 'image' ? (
                   <>
                     <img
                       src={att.thumbnail}
@@ -263,10 +378,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
                   </>
                 ) : (
                   <>
-                    <FileText className="w-5 h-5 text-zinc-400" />
+                    <AttachmentIcon category={att.category} />
                     <div className="flex flex-col">
                       <span className="text-xs text-zinc-300 truncate max-w-[120px]">{att.name}</span>
-                      <span className="text-2xs text-zinc-500">{(att.size / 1024).toFixed(1)} KB</span>
+                      <span className="text-2xs text-zinc-500">
+                        {att.category === 'pdf' && att.pageCount
+                          ? `${att.pageCount} 页`
+                          : att.language
+                            ? att.language
+                            : (att.size / 1024).toFixed(1) + ' KB'
+                        }
+                      </span>
                     </div>
                   </>
                 )}
@@ -304,7 +426,21 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
             ref={fileInputRef}
             type="file"
             multiple
-            accept={[...IMAGE_TYPES, ...FILE_TYPES, '.ts', '.tsx', '.js', '.jsx', '.py', '.md', '.txt', '.json'].join(',')}
+            accept={[
+              // 图片
+              ...IMAGE_MIMES,
+              // 代码文件
+              ...Object.keys(CODE_EXTENSIONS),
+              ...Object.keys(STYLE_EXTENSIONS),
+              // 数据文件
+              ...DATA_EXTENSIONS,
+              // 文本文件
+              ...TEXT_EXTENSIONS,
+              // PDF
+              '.pdf', 'application/pdf',
+              // HTML
+              '.html', '.htm',
+            ].join(',')}
             onChange={handleFileChange}
             className="hidden"
           />

@@ -25,8 +25,10 @@ import {
   Image as ImageIcon,
   File,
   FileImage,
+  Database,
+  FileCode,
 } from 'lucide-react';
-import type { Message, ToolCall, ToolResult, MessageAttachment } from '@shared/types';
+import type { Message, ToolCall, ToolResult, MessageAttachment, AttachmentCategory } from '@shared/types';
 import { useAppStore } from '../stores/appStore';
 import { summarizeToolCall, getToolIcon as getToolIconEmoji, getToolStatusText, getToolStatusClass } from '../utils/toolSummary';
 import { DiffView, DiffPreview } from './DiffView';
@@ -512,49 +514,80 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// 根据附件类别获取图标和颜色
+function getAttachmentIconConfig(category: AttachmentCategory | undefined): { icon: React.ReactNode; color: string; label: string } {
+  const iconClass = "w-5 h-5 shrink-0";
+  switch (category) {
+    case 'pdf':
+      return { icon: <FileText className={iconClass} />, color: 'text-red-400', label: 'PDF' };
+    case 'code':
+      return { icon: <FileCode className={iconClass} />, color: 'text-blue-400', label: '代码' };
+    case 'data':
+      return { icon: <Database className={iconClass} />, color: 'text-amber-400', label: '数据' };
+    case 'html':
+      return { icon: <Globe className={iconClass} />, color: 'text-orange-400', label: 'HTML' };
+    case 'text':
+      return { icon: <FileText className={iconClass} />, color: 'text-zinc-400', label: '文本' };
+    default:
+      return { icon: <File className={iconClass} />, color: 'text-zinc-500', label: '文件' };
+  }
+}
+
 // Attachment display component
 const AttachmentDisplay: React.FC<{ attachments: MessageAttachment[] }> = ({ attachments }) => {
   const [expandedImage, setExpandedImage] = useState<string | null>(null);
 
   return (
     <div className="mb-2 flex flex-wrap gap-2 justify-end">
-      {attachments.map((attachment) => (
-        <div key={attachment.id}>
-          {attachment.type === 'image' ? (
-            // 图片附件
-            <div
-              className="relative group cursor-pointer"
-              onClick={() => setExpandedImage(attachment.thumbnail || attachment.data || null)}
-            >
-              <img
-                src={attachment.thumbnail || attachment.data}
-                alt={attachment.name}
-                className="max-w-[200px] max-h-[150px] rounded-xl border border-zinc-700/50 shadow-lg object-cover hover:border-primary-500/50 transition-colors"
-              />
-              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
-                <ImageIcon className="w-6 h-6 text-white" />
-              </div>
-            </div>
-          ) : (
-            // 文件附件（PDF、代码等）
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-800/60 border border-zinc-700/50 max-w-[250px]">
-              {attachment.mimeType === 'application/pdf' ? (
-                <FileText className="w-5 h-5 text-red-400 shrink-0" />
-              ) : (
-                <File className="w-5 h-5 text-zinc-400 shrink-0" />
-              )}
-              <div className="min-w-0 flex-1">
-                <div className="text-sm text-zinc-200 truncate" title={attachment.name}>
-                  {attachment.name}
-                </div>
-                <div className="text-xs text-zinc-500">
-                  {formatFileSize(attachment.size)}
+      {attachments.map((attachment) => {
+        const category = attachment.category || (attachment.type === 'image' ? 'image' : 'other');
+
+        return (
+          <div key={attachment.id}>
+            {category === 'image' ? (
+              // 图片附件
+              <div
+                className="relative group cursor-pointer"
+                onClick={() => setExpandedImage(attachment.thumbnail || attachment.data || null)}
+              >
+                <img
+                  src={attachment.thumbnail || attachment.data}
+                  alt={attachment.name}
+                  className="max-w-[200px] max-h-[150px] rounded-xl border border-zinc-700/50 shadow-lg object-cover hover:border-primary-500/50 transition-colors"
+                />
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
+                  <ImageIcon className="w-6 h-6 text-white" />
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-      ))}
+            ) : (
+              // 文件附件（按类别显示不同样式）
+              (() => {
+                const { icon, color, label } = getAttachmentIconConfig(category);
+                return (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-800/60 border border-zinc-700/50 max-w-[250px]">
+                    <span className={color}>{icon}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm text-zinc-200 truncate" title={attachment.name}>
+                        {attachment.name}
+                      </div>
+                      <div className="text-xs text-zinc-500 flex items-center gap-1">
+                        <span className={`${color} text-2xs`}>{label}</span>
+                        <span>·</span>
+                        {category === 'pdf' && attachment.pageCount
+                          ? <span>{attachment.pageCount} 页</span>
+                          : attachment.language
+                            ? <span>{attachment.language}</span>
+                            : <span>{formatFileSize(attachment.size)}</span>
+                        }
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()
+            )}
+          </div>
+        );
+      })}
 
       {/* 图片放大弹窗 */}
       {expandedImage && (

@@ -22,6 +22,7 @@ import {
   Sparkles,
   ListTodo,
   HelpCircle,
+  X,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
@@ -303,14 +304,24 @@ export const ObservabilityPanel: React.FC = () => {
     return null;
   }
 
+  const { setShowPlanningPanel } = useAppStore();
+
   return (
     <div className="w-80 flex flex-col border-l border-zinc-800 bg-zinc-900/50">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-zinc-800">
-        <h3 className="text-sm font-medium text-zinc-200">执行追踪</h3>
-        <p className="text-xs text-zinc-500 mt-0.5">
-          Gen{currentGenNumber} · {availableCategories.length} 个观测维度
-        </p>
+      <div className="px-4 py-3 border-b border-zinc-800 flex items-start justify-between">
+        <div>
+          <h3 className="text-sm font-medium text-zinc-200">执行追踪</h3>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            Gen{currentGenNumber} · {availableCategories.length} 个观测维度
+          </p>
+        </div>
+        <button
+          onClick={() => setShowPlanningPanel(false)}
+          className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 rounded transition-colors"
+        >
+          <X className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Accordion Categories */}

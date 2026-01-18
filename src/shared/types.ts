@@ -351,6 +351,7 @@ export interface AppSettings {
     fontSize: number;
     showToolCalls: boolean;
     language: 'zh' | 'en';
+    disclosureLevel?: 'simple' | 'standard' | 'advanced' | 'expert';
   };
   // 云端 Agent 配置
   cloud: {

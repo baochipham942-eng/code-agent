@@ -17,8 +17,9 @@ import { UserQuestionModal } from './components/UserQuestionModal';
 import { AuthModal } from './components/AuthModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
 import { PermissionModal } from './components/PermissionModal';
+import { CloudTaskPanel } from './components/CloudTaskPanel';
 import { useDisclosure } from './hooks/useDisclosure';
-import { Activity, Brain } from 'lucide-react';
+import { Activity, Brain, Cloud } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 
@@ -37,6 +38,7 @@ export const App: React.FC = () => {
 
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
   const [showMemoryPanel, setShowMemoryPanel] = useState(false);
+  const [showCloudTaskPanel, setShowCloudTaskPanel] = useState(false);
 
   // 强制更新状态
   const [forceUpdateInfo, setForceUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -205,6 +207,26 @@ export const App: React.FC = () => {
     );
   };
 
+  // Cloud task panel toggle button (Advanced mode)
+  const CloudTaskToggle: React.FC = () => {
+    if (!isAdvanced) return null;
+
+    return (
+      <button
+        onClick={() => setShowCloudTaskPanel(!showCloudTaskPanel)}
+        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
+          showCloudTaskPanel
+            ? 'bg-sky-500/20 text-sky-300'
+            : 'text-zinc-500 hover:bg-zinc-800'
+        }`}
+        title="云端任务"
+      >
+        <Cloud className="w-3.5 h-3.5" />
+        <span>云端任务</span>
+      </button>
+    );
+  };
+
   return (
     <div className="h-screen flex flex-col bg-zinc-900 text-zinc-100">
       {/* Title Bar for macOS */}
@@ -225,6 +247,7 @@ export const App: React.FC = () => {
             <div className="flex items-center gap-2">
               {isObservabilityAvailable && <ObservabilityToggle />}
               {isMemoryAvailable && <MemoryToggle />}
+              <CloudTaskToggle />
             </div>
           </div>
 
@@ -237,6 +260,9 @@ export const App: React.FC = () => {
 
         {/* Memory Panel (Gen 5 only) */}
         {showMemoryPanel && isMemoryAvailable && <MemoryPanel isVisible={true} />}
+
+        {/* Cloud Task Panel (Advanced mode) */}
+        {showCloudTaskPanel && <CloudTaskPanel onClose={() => setShowCloudTaskPanel(false)} />}
 
         {/* Workspace Panel (Standard+ disclosure) */}
         {showWorkspace && isStandard && <WorkspacePanel />}

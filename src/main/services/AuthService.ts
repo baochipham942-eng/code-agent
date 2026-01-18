@@ -52,8 +52,22 @@ class AuthService {
 
   async initialize(): Promise<void> {
     console.log('[AuthService] initialize() called');
-    if (this.initialized || !isSupabaseInitialized()) {
-      console.log('[AuthService] Already initialized or Supabase not ready');
+    if (this.initialized) {
+      console.log('[AuthService] Already initialized');
+      return;
+    }
+
+    // 1. 先从本地缓存读取用户信息，立即展示（无网络延迟）
+    const cachedUser = this.loadCachedUser();
+    if (cachedUser) {
+      console.log('[AuthService] Loaded cached user:', cachedUser.email);
+      this.currentUser = cachedUser;
+      this.notifyAuthChange(cachedUser);
+    }
+
+    if (!isSupabaseInitialized()) {
+      console.log('[AuthService] Supabase not ready, using cached user only');
+      this.initialized = true;
       return;
     }
 
@@ -67,43 +81,97 @@ class AuthService {
       if (session?.user) {
         console.log('[AuthService] Fetching user profile in callback...');
         this.currentUser = await this.fetchUserProfile(session.user);
+        this.cacheUser(this.currentUser); // 缓存用户信息
         console.log('[AuthService] Profile fetched in callback');
         this.notifyAuthChange(this.currentUser);
       } else {
         this.currentUser = null;
+        this.clearCachedUser();
         this.notifyAuthChange(null);
       }
     });
     console.log('[AuthService] Auth state change listener registered');
 
-    // Check for existing session with timeout
-    // This prevents hanging if Supabase is unreachable
-    console.log('[AuthService] Getting existing session...');
+    // 2. 后台验证 session 有效性（不阻塞 UI）
+    console.log('[AuthService] Validating session in background...');
+    this.validateSessionInBackground();
+
+    this.initialized = true;
+    console.log('[AuthService] Initialization complete');
+  }
+
+  /**
+   * 后台验证 session，不阻塞启动
+   */
+  private async validateSessionInBackground(): Promise<void> {
     try {
+      const supabase = getSupabase();
       const sessionPromise = supabase.auth.getSession();
       const timeoutPromise = new Promise<null>((_, reject) => {
         setTimeout(() => reject(new Error('Session fetch timeout')), 5000);
       });
 
-      const result = await Promise.race([sessionPromise, timeoutPromise]) as any;
+      const result = (await Promise.race([sessionPromise, timeoutPromise])) as any;
       const session = result?.data?.session;
-      console.log('[AuthService] Got session:', session ? 'exists' : 'none');
+      console.log('[AuthService] Background validation result:', session ? 'valid' : 'invalid');
 
       if (session?.user) {
-        console.log('[AuthService] Fetching user profile...');
-        this.currentUser = await this.fetchUserProfile(session.user);
-        console.log('[AuthService] Profile fetched');
-        // Notify listeners about restored session
-        this.notifyAuthChange(this.currentUser);
+        // Session 有效，更新用户信息
+        const freshUser = await this.fetchUserProfile(session.user);
+        this.currentUser = freshUser;
+        this.cacheUser(freshUser);
+        this.notifyAuthChange(freshUser);
+      } else if (this.currentUser) {
+        // Session 无效但有缓存用户，清除
+        console.log('[AuthService] Session invalid, clearing cached user');
+        this.currentUser = null;
+        this.clearCachedUser();
+        this.notifyAuthChange(null);
       }
     } catch (error) {
-      console.warn('[AuthService] Failed to restore session (will continue without auth):', error);
-      // Don't block startup, user can manually sign in later
-      this.currentUser = null;
+      console.warn('[AuthService] Background session validation failed:', error);
+      // 网络错误时保持缓存用户，不清除
     }
+  }
 
-    this.initialized = true;
-    console.log('[AuthService] Initialization complete');
+  /**
+   * 缓存用户信息到本地存储
+   */
+  private cacheUser(user: AuthUser): void {
+    try {
+      const storage = getSecureStorage();
+      storage.set('auth.user', JSON.stringify(user));
+    } catch (e) {
+      console.error('[AuthService] Failed to cache user:', e);
+    }
+  }
+
+  /**
+   * 从本地存储读取缓存的用户信息
+   */
+  private loadCachedUser(): AuthUser | null {
+    try {
+      const storage = getSecureStorage();
+      const userJson = storage.get('auth.user');
+      if (userJson) {
+        return JSON.parse(userJson);
+      }
+    } catch (e) {
+      console.error('[AuthService] Failed to load cached user:', e);
+    }
+    return null;
+  }
+
+  /**
+   * 清除缓存的用户信息
+   */
+  private clearCachedUser(): void {
+    try {
+      const storage = getSecureStorage();
+      storage.delete('auth.user');
+    } catch (e) {
+      console.error('[AuthService] Failed to clear cached user:', e);
+    }
   }
 
   async getStatus(): Promise<AuthStatus> {
@@ -131,6 +199,7 @@ class AuthService {
 
     if (data.user) {
       this.currentUser = await this.fetchUserProfile(data.user);
+      this.cacheUser(this.currentUser); // 缓存用户信息
       return { success: true, user: this.currentUser };
     }
 
@@ -201,6 +270,7 @@ class AuthService {
       } as any);
 
       this.currentUser = await this.fetchUserProfile(data.user);
+      this.cacheUser(this.currentUser); // 缓存用户信息
       return { success: true, user: this.currentUser };
     }
 
@@ -261,6 +331,7 @@ class AuthService {
       }
 
       this.currentUser = await this.fetchUserProfile(data.user);
+      this.cacheUser(this.currentUser); // 缓存用户信息
       return { success: true, user: this.currentUser };
     }
 

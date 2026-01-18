@@ -323,6 +323,53 @@ export class DatabaseService {
     stmt.run(sessionId);
   }
 
+  /**
+   * 清空所有本地会话缓存 (用于清空缓存操作)
+   * 会话数据可从云端重新拉取
+   */
+  clearAllSessions(): number {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare('DELETE FROM sessions');
+    const result = stmt.run();
+    return result.changes;
+  }
+
+  /**
+   * 清空所有本地消息缓存 (用于清空缓存操作)
+   * 消息数据可从云端重新拉取
+   */
+  clearAllMessages(): number {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare('DELETE FROM messages');
+    const result = stmt.run();
+    return result.changes;
+  }
+
+  /**
+   * 检查会话是否有本地缓存的消息
+   */
+  hasMessages(sessionId: string): boolean {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM messages WHERE session_id = ?');
+    const row = stmt.get(sessionId) as any;
+    return (row?.count || 0) > 0;
+  }
+
+  /**
+   * 获取本地会话和消息统计
+   */
+  getLocalCacheStats(): { sessionCount: number; messageCount: number } {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const sessionCount = (this.db.prepare('SELECT COUNT(*) as c FROM sessions').get() as any).c;
+    const messageCount = (this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as any).c;
+
+    return { sessionCount, messageCount };
+  }
+
   private rowToSession(row: any): StoredSession {
     return {
       id: row.id,
@@ -540,6 +587,29 @@ export class DatabaseService {
 
     const result = stmt.run(Date.now());
     return result.changes;
+  }
+
+  /**
+   * 清除所有工具执行缓存 (Level 1 缓存)
+   * 用于用户手动清空缓存操作
+   */
+  clearToolCache(): number {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare('DELETE FROM tool_executions');
+    const result = stmt.run();
+    return result.changes;
+  }
+
+  /**
+   * 获取工具缓存条目数
+   */
+  getToolCacheCount(): number {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM tool_executions');
+    const row = stmt.get() as any;
+    return row?.count || 0;
   }
 
   // --------------------------------------------------------------------------

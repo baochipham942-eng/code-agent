@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import { getSupabaseService } from '../services/SupabaseService';
+import { getSupabase, isSupabaseInitialized } from '../services/SupabaseService';
 import { encryptForCloud, decryptFromCloud, KeyManager } from '../utils/crypto';
 import { getTaskRouter } from './TaskRouter';
 import type {
@@ -58,7 +58,7 @@ export class CloudTaskService extends EventEmitter {
    * 创建新任务
    */
   async createTask(request: CreateCloudTaskRequest): Promise<CloudTask> {
-    const supabase = getSupabaseService();
+    const supabase = getSupabase();
     const router = getTaskRouter();
 
     // 路由决策
@@ -108,7 +108,7 @@ export class CloudTaskService extends EventEmitter {
     // 如果是云端任务，同步到 Supabase
     if (location === 'cloud' || location === 'hybrid') {
       try {
-        const client = supabase.getClient();
+        const client = supabase;
         if (client) {
           const { data: user } = await client.auth.getUser();
 
@@ -167,8 +167,8 @@ export class CloudTaskService extends EventEmitter {
     if (local) return local;
 
     // 从云端获取
-    const supabase = getSupabaseService();
-    const client = supabase.getClient();
+    const supabase = getSupabase();
+    const client = supabase;
     if (!client) return null;
 
     try {
@@ -193,8 +193,8 @@ export class CloudTaskService extends EventEmitter {
    * 查询任务列表
    */
   async listTasks(filter: CloudTaskFilter = {}): Promise<CloudTask[]> {
-    const supabase = getSupabaseService();
-    const client = supabase.getClient();
+    const supabase = getSupabase();
+    const client = supabase;
 
     // 如果没有云端连接，返回本地任务
     if (!client) {
@@ -312,8 +312,8 @@ export class CloudTaskService extends EventEmitter {
 
     // 同步到云端
     if (task.location === 'cloud' || task.location === 'hybrid') {
-      const supabase = getSupabaseService();
-      const client = supabase.getClient();
+      const supabase = getSupabase();
+      const client = supabase;
 
       if (client) {
         try {
@@ -386,8 +386,8 @@ export class CloudTaskService extends EventEmitter {
     this.localTasks.delete(taskId);
     this.stopProgressPolling(taskId);
 
-    const supabase = getSupabaseService();
-    const client = supabase.getClient();
+    const supabase = getSupabase();
+    const client = supabase;
 
     if (client) {
       try {
@@ -428,8 +428,8 @@ export class CloudTaskService extends EventEmitter {
 
     // 如果是云端任务，调用 enqueue 函数
     if (task.location === 'cloud' || task.location === 'hybrid') {
-      const supabase = getSupabaseService();
-      const client = supabase.getClient();
+      const supabase = getSupabase();
+      const client = supabase;
 
       if (client) {
         try {
@@ -474,6 +474,25 @@ export class CloudTaskService extends EventEmitter {
     const task = await this.getTask(taskId);
     if (!task || task.status !== 'paused') return false;
 
+    return this.startTask(taskId);
+  }
+
+  /**
+   * 重试失败的任务
+   */
+  async retryTask(taskId: string): Promise<boolean> {
+    const task = await this.getTask(taskId);
+    if (!task || task.status !== 'failed') return false;
+
+    // 重置任务状态
+    await this.updateTask(taskId, {
+      status: 'pending',
+      progress: 0,
+      error: undefined,
+      currentStep: undefined,
+    });
+
+    // 重新开始任务
     return this.startTask(taskId);
   }
 
@@ -528,8 +547,8 @@ export class CloudTaskService extends EventEmitter {
    * 从云端获取最新进度
    */
   private async fetchTaskProgress(taskId: string): Promise<CloudTask | null> {
-    const supabase = getSupabaseService();
-    const client = supabase.getClient();
+    const supabase = getSupabase();
+    const client = supabase;
     if (!client) return null;
 
     try {
@@ -666,6 +685,87 @@ export class CloudTaskService extends EventEmitter {
   }
 
   /**
+   * 获取同步状态
+   */
+  getSyncState(): import('../../shared/types/cloud').TaskSyncState {
+    const tasks = Array.from(this.localTasks.values());
+    const pendingTasks = tasks.filter((t) => ['pending', 'queued'].includes(t.status));
+    const failedTasks = tasks.filter((t) => t.status === 'failed');
+
+    return {
+      lastSyncAt: new Date().toISOString(),
+      pendingUploads: pendingTasks.length,
+      pendingDownloads: 0,
+      syncErrors: failedTasks.map((t) => ({
+        taskId: t.id,
+        error: t.error || 'Unknown error',
+        timestamp: t.updatedAt,
+      })),
+    };
+  }
+
+  /**
+   * 获取执行统计
+   */
+  async getStats(): Promise<import('../../shared/types/cloud').CloudExecutionStats | null> {
+    const tasks = Array.from(this.localTasks.values());
+    const completed = tasks.filter((t) => t.status === 'completed');
+    const failed = tasks.filter((t) => t.status === 'failed');
+
+    // 按类型分组统计
+    const byType: import('../../shared/types/cloud').CloudExecutionStats['byType'] = {
+      researcher: { total: 0, completed: 0, failed: 0, avgDuration: 0 },
+      analyzer: { total: 0, completed: 0, failed: 0, avgDuration: 0 },
+      writer: { total: 0, completed: 0, failed: 0, avgDuration: 0 },
+      reviewer: { total: 0, completed: 0, failed: 0, avgDuration: 0 },
+      planner: { total: 0, completed: 0, failed: 0, avgDuration: 0 },
+    };
+
+    // 按位置分组统计
+    const byLocation: import('../../shared/types/cloud').CloudExecutionStats['byLocation'] = {
+      local: { total: 0, completed: 0, failed: 0 },
+      cloud: { total: 0, completed: 0, failed: 0 },
+      hybrid: { total: 0, completed: 0, failed: 0 },
+    };
+
+    for (const task of tasks) {
+      // 按类型
+      if (byType[task.type]) {
+        byType[task.type].total++;
+        if (task.status === 'completed') byType[task.type].completed++;
+        if (task.status === 'failed') byType[task.type].failed++;
+      }
+
+      // 按位置
+      if (byLocation[task.location]) {
+        byLocation[task.location].total++;
+        if (task.status === 'completed') byLocation[task.location].completed++;
+        if (task.status === 'failed') byLocation[task.location].failed++;
+      }
+    }
+
+    // 计算平均时长
+    let totalDuration = 0;
+    let durationCount = 0;
+    for (const task of completed) {
+      if (task.startedAt && task.completedAt) {
+        const duration = new Date(task.completedAt).getTime() - new Date(task.startedAt).getTime();
+        totalDuration += duration;
+        durationCount++;
+      }
+    }
+
+    return {
+      totalTasks: tasks.length,
+      completedTasks: completed.length,
+      failedTasks: failed.length,
+      averageDuration: durationCount > 0 ? totalDuration / durationCount : 0,
+      byType,
+      byLocation,
+    };
+  }
+
+  /**
    * 清理资源
    */
   dispose(): void {
@@ -682,6 +782,10 @@ export class CloudTaskService extends EventEmitter {
 // ============================================================================
 
 let serviceInstance: CloudTaskService | null = null;
+
+export function isCloudTaskServiceInitialized(): boolean {
+  return serviceInstance !== null;
+}
 
 export function getCloudTaskService(): CloudTaskService {
   if (!serviceInstance) {

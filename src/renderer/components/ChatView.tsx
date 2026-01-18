@@ -6,6 +6,7 @@ import React, { useRef, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useAgent } from '../hooks/useAgent';
+import { useRequireAuth } from '../hooks/useRequireAuth';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { TodoPanel } from './TodoPanel';
@@ -25,6 +26,7 @@ export const ChatView: React.FC = () => {
   const { currentGeneration, showPreviewPanel } = useAppStore();
   const { todos } = useSessionStore();
   const { messages, isProcessing, sendMessage } = useAgent();
+  const { requireAuthAsync } = useRequireAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom
@@ -32,8 +34,11 @@ export const ChatView: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // 发送消息需要登录
   const handleSendMessage = async (content: string) => {
-    await sendMessage(content);
+    await requireAuthAsync(async () => {
+      await sendMessage(content);
+    });
   };
 
   // Show Gen 3+ todo panel if there are todos

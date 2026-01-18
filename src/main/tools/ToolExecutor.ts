@@ -10,6 +10,7 @@ import type {
   ToolExecutionResult,
   PermissionRequestData,
 } from './ToolRegistry';
+import { getToolCache } from '../services/ToolCache';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -97,11 +98,35 @@ export class ToolExecutor {
       }
     }
 
+    // Get tool cache
+    const toolCache = getToolCache();
+
+    // Check cache for cacheable tools
+    if (toolCache.isCacheable(toolName)) {
+      const cached = toolCache.get(toolName, params);
+      if (cached) {
+        console.log(`[ToolExecutor] Cache HIT for ${toolName}`);
+        return {
+          success: true,
+          result: cached,
+          fromCache: true,
+        };
+      }
+      console.log(`[ToolExecutor] Cache MISS for ${toolName}`);
+    }
+
     try {
       // Execute the tool
       console.log(`[ToolExecutor] Calling tool.execute for ${toolName}`);
       const result = await tool.execute(params, context);
       console.log(`[ToolExecutor] Tool ${toolName} result:`, result.success ? 'success' : result.error);
+
+      // Cache successful results for cacheable tools
+      if (result.success && toolCache.isCacheable(toolName) && result.result !== undefined) {
+        toolCache.set(toolName, params, result.result);
+        console.log(`[ToolExecutor] Cached result for ${toolName}`);
+      }
+
       return result;
     } catch (error) {
       console.error(`[ToolExecutor] Tool ${toolName} threw error:`, error);

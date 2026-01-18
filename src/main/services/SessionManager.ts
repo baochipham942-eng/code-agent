@@ -1,10 +1,13 @@
 // ============================================================================
 // Session Manager - 会话管理和恢复（中期记忆）
+// 支持云端优先的渐进加载策略
 // ============================================================================
 
 import { BrowserWindow } from 'electron';
 import { getDatabase, type StoredSession } from './DatabaseService';
 import { getToolCache } from './ToolCache';
+import { getAuthService } from './AuthService';
+import { getSupabase, isSupabaseInitialized } from './SupabaseService';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type {
   Session,
@@ -76,6 +79,7 @@ export class SessionManager {
 
   /**
    * 获取会话（带消息）
+   * 策略：如果本地没有消息，从云端按需拉取
    */
   async getSession(sessionId: string): Promise<SessionWithMessages | null> {
     // 检查缓存
@@ -87,7 +91,21 @@ export class SessionManager {
     const storedSession = db.getSession(sessionId);
     if (!storedSession) return null;
 
-    const messages = db.getMessages(sessionId);
+    // 检查本地是否有消息缓存
+    let messages = db.getMessages(sessionId);
+
+    // 如果本地没有消息，尝试从云端拉取
+    if (messages.length === 0) {
+      const cloudMessages = await this.pullMessagesFromCloud(sessionId);
+      if (cloudMessages.length > 0) {
+        // 缓存到本地
+        for (const msg of cloudMessages) {
+          db.addMessage(sessionId, msg);
+        }
+        messages = cloudMessages;
+      }
+    }
+
     const todos = db.getTodos(sessionId);
 
     const sessionWithMessages: SessionWithMessages = {
@@ -103,7 +121,46 @@ export class SessionManager {
   }
 
   /**
+   * 从云端拉取会话消息
+   */
+  private async pullMessagesFromCloud(sessionId: string): Promise<Message[]> {
+    const authService = getAuthService();
+    const user = authService.getCurrentUser();
+    if (!user || !isSupabaseInitialized()) return [];
+
+    try {
+      const supabase = getSupabase();
+      const { data: cloudMessages, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('timestamp', { ascending: true });
+
+      if (error) {
+        console.error('[SessionManager] Pull messages error:', error);
+        return [];
+      }
+
+      if (!cloudMessages || cloudMessages.length === 0) return [];
+
+      // 转换为本地格式
+      return cloudMessages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp,
+        toolCalls: m.tool_calls ? JSON.parse(m.tool_calls) : undefined,
+        toolResults: m.tool_results ? JSON.parse(m.tool_results) : undefined,
+      }));
+    } catch (err) {
+      console.error('[SessionManager] pullMessagesFromCloud error:', err);
+      return [];
+    }
+  }
+
+  /**
    * 列出所有会话
+   * 策略：先返回本地缓存，后台同步云端列表
    */
   async listSessions(options: SessionListOptions = {}): Promise<StoredSession[]> {
     const db = getDatabase();
@@ -121,7 +178,83 @@ export class SessionManager {
       );
     }
 
+    // 后台同步云端会话列表（不阻塞返回）
+    this.syncSessionListFromCloud().catch((err) => {
+      console.error('[SessionManager] Failed to sync session list from cloud:', err);
+    });
+
     return sessions;
+  }
+
+  /**
+   * 从云端同步会话列表（仅元数据）
+   */
+  private async syncSessionListFromCloud(): Promise<void> {
+    const authService = getAuthService();
+    const user = authService.getCurrentUser();
+    if (!user || !isSupabaseInitialized()) return;
+
+    try {
+      const supabase = getSupabase();
+      const { data: cloudSessions, error } = await supabase
+        .from('sessions')
+        .select('id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false })
+        .limit(100);
+
+      if (error) {
+        console.error('[SessionManager] Cloud session list error:', error);
+        return;
+      }
+
+      if (!cloudSessions || cloudSessions.length === 0) return;
+
+      const db = getDatabase();
+
+      // 更新本地缓存（只更新元数据，不拉取消息）
+      for (const cloudSession of cloudSessions) {
+        const localSession = db.getSession(cloudSession.id);
+
+        if (!localSession) {
+          // 本地不存在，创建会话元数据（消息稍后按需拉取）
+          db.createSessionWithId(cloudSession.id, {
+            title: cloudSession.title,
+            generationId: cloudSession.generation_id,
+            modelConfig: {
+              provider: cloudSession.model_provider,
+              model: cloudSession.model_name,
+            },
+            workingDirectory: cloudSession.working_directory,
+          });
+        } else if (cloudSession.updated_at > localSession.updatedAt) {
+          // 云端更新，更新本地元数据
+          db.updateSession(cloudSession.id, {
+            title: cloudSession.title,
+            generationId: cloudSession.generation_id,
+            modelConfig: {
+              provider: cloudSession.model_provider,
+              model: cloudSession.model_name,
+            },
+          });
+        }
+      }
+
+      // 通知前端刷新会话列表
+      this.notifySessionListUpdated();
+    } catch (err) {
+      console.error('[SessionManager] syncSessionListFromCloud error:', err);
+    }
+  }
+
+  /**
+   * 通知前端会话列表已更新
+   */
+  private notifySessionListUpdated(): void {
+    const windows = BrowserWindow.getAllWindows();
+    for (const win of windows) {
+      win.webContents.send(IPC_CHANNELS.SESSION_LIST_UPDATED);
+    }
   }
 
   /**

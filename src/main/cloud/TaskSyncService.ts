@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import { getSupabaseService } from '../services/SupabaseService';
+import { getSupabase, isSupabaseInitialized } from '../services/SupabaseService';
 import { getCloudTaskService, CloudTaskService } from './CloudTaskService';
 import type {
   CloudTask,
@@ -217,8 +217,8 @@ export class TaskSyncService extends EventEmitter {
 
     for (const pending of batch) {
       try {
-        const supabase = getSupabaseService();
-        const client = supabase.getClient();
+        const supabase = getSupabase();
+        const client = supabase;
 
         if (!client) {
           pending.attempts++;
@@ -293,8 +293,8 @@ export class TaskSyncService extends EventEmitter {
     let success = 0;
 
     try {
-      const supabase = getSupabaseService();
-      const client = supabase.getClient();
+      const supabase = getSupabase();
+      const client = supabase;
 
       if (!client) {
         return { success: 0, errors: [{ taskId: '', error: 'No Supabase connection' }] };
@@ -384,8 +384,8 @@ export class TaskSyncService extends EventEmitter {
    * 设置实时订阅
    */
   private async setupRealtimeSubscription(): Promise<void> {
-    const supabase = getSupabaseService();
-    const client = supabase.getClient();
+    const supabase = getSupabase();
+    const client = supabase;
 
     if (!client) return;
 
@@ -465,8 +465,8 @@ export class TaskSyncService extends EventEmitter {
    */
   private async teardownRealtimeSubscription(): Promise<void> {
     if (this.realtimeSubscription) {
-      const supabase = getSupabaseService();
-      const client = supabase.getClient();
+      const supabase = getSupabase();
+      const client = supabase;
       if (client) {
         await client.removeChannel(this.realtimeSubscription as ReturnType<typeof client.channel>);
       }

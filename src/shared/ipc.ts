@@ -30,6 +30,15 @@ import type {
   DownloadProgress,
 } from './types';
 
+import type {
+  CloudTask,
+  CreateCloudTaskRequest,
+  CloudTaskFilter,
+  TaskProgressEvent,
+  TaskSyncState,
+  CloudExecutionStats,
+} from './types/cloud';
+
 // ----------------------------------------------------------------------------
 // Additional Types for IPC
 // ----------------------------------------------------------------------------
@@ -137,6 +146,7 @@ export const IPC_CHANNELS = {
   SESSION_EXPORT: 'session:export',
   SESSION_IMPORT: 'session:import',
   SESSION_UPDATED: 'session:updated',
+  SESSION_LIST_UPDATED: 'session:list-updated',
 
   // Memory channels
   MEMORY_GET_CONTEXT: 'memory:get-context',
@@ -226,6 +236,24 @@ export const IPC_CHANNELS = {
   // Persistent settings (stored in secure storage, not affected by data clear)
   PERSISTENT_GET_DEV_MODE: 'persistent:get-dev-mode',
   PERSISTENT_SET_DEV_MODE: 'persistent:set-dev-mode',
+
+  // Cloud task channels
+  CLOUD_TASK_CREATE: 'cloud:task:create',
+  CLOUD_TASK_UPDATE: 'cloud:task:update',
+  CLOUD_TASK_CANCEL: 'cloud:task:cancel',
+  CLOUD_TASK_GET: 'cloud:task:get',
+  CLOUD_TASK_LIST: 'cloud:task:list',
+  CLOUD_TASK_DELETE: 'cloud:task:delete',
+  CLOUD_TASK_START: 'cloud:task:start',
+  CLOUD_TASK_PAUSE: 'cloud:task:pause',
+  CLOUD_TASK_RESUME: 'cloud:task:resume',
+  CLOUD_TASK_RETRY: 'cloud:task:retry',
+  CLOUD_TASK_SYNC: 'cloud:task:sync',
+  CLOUD_TASK_SYNC_STATE: 'cloud:task:syncState',
+  CLOUD_TASK_PROGRESS: 'cloud:task:progress',
+  CLOUD_TASK_COMPLETED: 'cloud:task:completed',
+  CLOUD_TASK_FAILED: 'cloud:task:failed',
+  CLOUD_TASK_STATS: 'cloud:task:stats',
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -360,6 +388,21 @@ export interface IpcInvokeHandlers {
   // Persistent settings (survive data clear)
   [IPC_CHANNELS.PERSISTENT_GET_DEV_MODE]: () => Promise<boolean>;
   [IPC_CHANNELS.PERSISTENT_SET_DEV_MODE]: (enabled: boolean) => Promise<void>;
+
+  // Cloud task
+  [IPC_CHANNELS.CLOUD_TASK_CREATE]: (request: CreateCloudTaskRequest) => Promise<CloudTask>;
+  [IPC_CHANNELS.CLOUD_TASK_UPDATE]: (taskId: string, updates: Partial<CloudTask>) => Promise<CloudTask | null>;
+  [IPC_CHANNELS.CLOUD_TASK_CANCEL]: (taskId: string) => Promise<boolean>;
+  [IPC_CHANNELS.CLOUD_TASK_GET]: (taskId: string) => Promise<CloudTask | null>;
+  [IPC_CHANNELS.CLOUD_TASK_LIST]: (filter?: CloudTaskFilter) => Promise<CloudTask[]>;
+  [IPC_CHANNELS.CLOUD_TASK_DELETE]: (taskId: string) => Promise<boolean>;
+  [IPC_CHANNELS.CLOUD_TASK_START]: (taskId: string) => Promise<boolean>;
+  [IPC_CHANNELS.CLOUD_TASK_PAUSE]: (taskId: string) => Promise<boolean>;
+  [IPC_CHANNELS.CLOUD_TASK_RESUME]: (taskId: string) => Promise<boolean>;
+  [IPC_CHANNELS.CLOUD_TASK_RETRY]: (taskId: string) => Promise<boolean>;
+  [IPC_CHANNELS.CLOUD_TASK_SYNC]: () => Promise<void>;
+  [IPC_CHANNELS.CLOUD_TASK_SYNC_STATE]: () => Promise<TaskSyncState>;
+  [IPC_CHANNELS.CLOUD_TASK_STATS]: () => Promise<CloudExecutionStats>;
 }
 
 // ----------------------------------------------------------------------------
@@ -399,7 +442,11 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.AUTH_EVENT]: (event: AuthEvent) => void;
   [IPC_CHANNELS.SYNC_EVENT]: (status: SyncStatus) => void;
   [IPC_CHANNELS.SESSION_UPDATED]: (event: SessionUpdatedEvent) => void;
+  [IPC_CHANNELS.SESSION_LIST_UPDATED]: () => void;
   [IPC_CHANNELS.UPDATE_EVENT]: (event: UpdateEvent) => void;
+  [IPC_CHANNELS.CLOUD_TASK_PROGRESS]: (event: TaskProgressEvent) => void;
+  [IPC_CHANNELS.CLOUD_TASK_COMPLETED]: (task: CloudTask) => void;
+  [IPC_CHANNELS.CLOUD_TASK_FAILED]: (task: CloudTask) => void;
 }
 
 // ----------------------------------------------------------------------------

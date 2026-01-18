@@ -99,6 +99,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     fontSize: 14,
     showToolCalls: true,
     language: 'zh',
+    disclosureLevel: 'standard',
   },
   // 云端 Agent 配置
   cloud: {
@@ -171,6 +172,14 @@ export class ConfigService {
         // Restore devModeAutoApprove
         if (typeof keychainSettings.devModeAutoApprove === 'boolean') {
           this.settings.permissions.devModeAutoApprove = keychainSettings.devModeAutoApprove;
+        }
+
+        // Restore disclosureLevel
+        if (keychainSettings.disclosureLevel && typeof keychainSettings.disclosureLevel === 'string') {
+          const validLevels = ['simple', 'standard', 'advanced', 'expert'];
+          if (validLevels.includes(keychainSettings.disclosureLevel)) {
+            this.settings.ui.disclosureLevel = keychainSettings.disclosureLevel as 'simple' | 'standard' | 'advanced' | 'expert';
+          }
         }
 
         // Restore maxTokens
@@ -314,6 +323,7 @@ export class ConfigService {
         generation: this.settings.generation.default,
         modelProvider: this.settings.models.default,
         language: this.settings.ui.language,
+        disclosureLevel: this.settings.ui.disclosureLevel,
         devModeAutoApprove: this.settings.permissions.devModeAutoApprove,
       };
 

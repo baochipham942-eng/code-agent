@@ -19,7 +19,15 @@ import { initUpdateService, getUpdateService, isUpdateServiceInitialized } from 
 import { initLangfuse, getLangfuseService } from './services/LangfuseService';
 import { IPC_CHANNELS } from '../shared/ipc';
 import type { GenerationId, PermissionResponse, PlanningState, AuthUser, UpdateInfo } from '../shared/types';
+import type {
+  CloudTask,
+  CreateCloudTaskRequest,
+  CloudTaskFilter,
+  TaskSyncState,
+  CloudExecutionStats,
+} from '../shared/types/cloud';
 import { createPlanningService, type PlanningService } from './planning';
+import { CloudTaskService, getCloudTaskService, initCloudTaskService, isCloudTaskServiceInitialized } from './cloud/CloudTaskService';
 
 // ----------------------------------------------------------------------------
 // Global State
@@ -1217,6 +1225,12 @@ function setupIpcHandlers(): void {
     const dbStats = db.getStats();
     const cacheStats = cache.getStats();
 
+    // 获取数据库工具缓存条目数
+    const dbCacheCount = db.getToolCacheCount();
+
+    // 获取本地会话和消息缓存统计
+    const localCacheStats = db.getLocalCacheStats();
+
     // 获取数据库文件大小
     const userDataPath = app.getPath('userData');
     const dbPath = path.join(userDataPath, 'code-agent.db');
@@ -1231,51 +1245,41 @@ function setupIpcHandlers(): void {
     return {
       ...dbStats,
       databaseSize,
-      cacheEntries: cacheStats.totalEntries,
+      // 可清空的缓存条目数 = 内存缓存 + 工具执行缓存 + 会话缓存 + 消息缓存
+      cacheEntries: cacheStats.totalEntries + dbCacheCount + localCacheStats.sessionCount + localCacheStats.messageCount,
     };
   });
 
   ipcMain.handle(IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE, async () => {
     const { getToolCache } = await import('./services/ToolCache');
     const { getDatabase } = await import('./services/DatabaseService');
-    const { getSecureStorage } = await import('./services/SecureStorage');
-    const { getSupabase, isSupabaseInitialized } = await import('./services/SupabaseService');
-    const { getAuthService } = await import('./services/AuthService');
+    const { getSessionManager } = await import('./services/SessionManager');
 
     const cache = getToolCache();
     const db = getDatabase();
-    const storage = getSecureStorage();
+    const sessionManager = getSessionManager();
 
-    // 清理内存缓存
+    // Level 0: 清理内存缓存
     const cacheStats = cache.getStats();
     const clearedMemory = cacheStats.totalEntries;
     cache.clear();
 
-    // 清理数据库中过期的工具执行缓存
-    const clearedDb = db.cleanExpiredCache();
+    // 清理 SessionManager 内存缓存
+    sessionManager.clearCache();
 
-    // 清除认证状态 (从 Keychain 和 electron-store)
-    await storage.clearSessionFromKeychain();
-    storage.clearAuthData();
+    // Level 1: 清理数据库中所有工具执行缓存
+    const clearedToolCache = db.clearToolCache();
 
-    // 调用 Supabase 登出
-    if (isSupabaseInitialized()) {
-      try {
-        const supabase = getSupabase();
-        await supabase.auth.signOut();
-      } catch (e) {
-        console.error('Failed to sign out from Supabase:', e);
-      }
-    }
+    // Level 1: 清理本地会话和消息缓存（可从云端重新拉取）
+    const clearedMessages = db.clearAllMessages();
+    const clearedSessions = db.clearAllSessions();
 
-    // 清除 AuthService 状态
-    const authService = getAuthService();
-    authService.clearCurrentUser();
+    const totalCleared = clearedMemory + clearedToolCache + clearedMessages + clearedSessions;
+    console.log(`[DataClear] Cleared: memory=${clearedMemory}, toolCache=${clearedToolCache}, messages=${clearedMessages}, sessions=${clearedSessions}`);
 
-    // 通知前端登出
-    mainWindow?.webContents.send(IPC_CHANNELS.AUTH_EVENT, { type: 'signed_out' });
-
-    return clearedMemory + clearedDb;
+    // 注意：不清除认证状态，保留登录
+    // 会话和消息可从云端重新拉取
+    return totalCleared;
   });
 
   // Persistent settings (stored in secure storage, survive data clear)
@@ -1302,6 +1306,91 @@ function setupIpcHandlers(): void {
         },
       });
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // Cloud Task Handlers
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_CREATE, async (_, request: CreateCloudTaskRequest): Promise<CloudTask | null> => {
+    if (!isCloudTaskServiceInitialized()) {
+      console.warn('[IPC] Cloud task service not initialized');
+      return null;
+    }
+    const cloudTaskService = getCloudTaskService();
+    return cloudTaskService.createTask(request);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_GET, async (_, taskId: string): Promise<CloudTask | null> => {
+    if (!isCloudTaskServiceInitialized()) {
+      return null;
+    }
+    const cloudTaskService = getCloudTaskService();
+    return cloudTaskService.getTask(taskId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_LIST, async (_, filter?: CloudTaskFilter): Promise<CloudTask[]> => {
+    if (!isCloudTaskServiceInitialized()) {
+      return [];
+    }
+    const cloudTaskService = getCloudTaskService();
+    return cloudTaskService.listTasks(filter);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_START, async (_, taskId: string): Promise<boolean> => {
+    if (!isCloudTaskServiceInitialized()) {
+      return false;
+    }
+    const cloudTaskService = getCloudTaskService();
+    return cloudTaskService.startTask(taskId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_PAUSE, async (_, taskId: string): Promise<boolean> => {
+    if (!isCloudTaskServiceInitialized()) {
+      return false;
+    }
+    const cloudTaskService = getCloudTaskService();
+    return cloudTaskService.pauseTask(taskId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_CANCEL, async (_, taskId: string): Promise<boolean> => {
+    if (!isCloudTaskServiceInitialized()) {
+      return false;
+    }
+    const cloudTaskService = getCloudTaskService();
+    return cloudTaskService.cancelTask(taskId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_RETRY, async (_, taskId: string): Promise<boolean> => {
+    if (!isCloudTaskServiceInitialized()) {
+      return false;
+    }
+    const cloudTaskService = getCloudTaskService();
+    return cloudTaskService.retryTask(taskId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_DELETE, async (_, taskId: string): Promise<boolean> => {
+    if (!isCloudTaskServiceInitialized()) {
+      return false;
+    }
+    const cloudTaskService = getCloudTaskService();
+    return cloudTaskService.deleteTask(taskId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_SYNC_STATE, async (): Promise<TaskSyncState | null> => {
+    if (!isCloudTaskServiceInitialized()) {
+      return null;
+    }
+    const cloudTaskService = getCloudTaskService();
+    return cloudTaskService.getSyncState();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_STATS, async (): Promise<CloudExecutionStats | null> => {
+    if (!isCloudTaskServiceInitialized()) {
+      return null;
+    }
+    const cloudTaskService = getCloudTaskService();
+    return cloudTaskService.getStats();
   });
 }
 

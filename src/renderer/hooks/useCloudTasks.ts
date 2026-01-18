@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { IPC_CHANNELS } from '@shared/ipc';
 import type {
   CloudTask,
   CreateCloudTaskRequest,
@@ -46,29 +47,6 @@ interface UseCloudTasksReturn {
 }
 
 // ============================================================================
-// IPC 通道（与主进程通信）
-// ============================================================================
-
-const CloudTaskChannels = {
-  CREATE_TASK: 'cloud:task:create',
-  UPDATE_TASK: 'cloud:task:update',
-  CANCEL_TASK: 'cloud:task:cancel',
-  GET_TASK: 'cloud:task:get',
-  LIST_TASKS: 'cloud:task:list',
-  DELETE_TASK: 'cloud:task:delete',
-  START_TASK: 'cloud:task:start',
-  PAUSE_TASK: 'cloud:task:pause',
-  RESUME_TASK: 'cloud:task:resume',
-  RETRY_TASK: 'cloud:task:retry',
-  SYNC_TASKS: 'cloud:task:sync',
-  GET_SYNC_STATE: 'cloud:task:syncState',
-  TASK_PROGRESS: 'cloud:task:progress',
-  TASK_COMPLETED: 'cloud:task:completed',
-  TASK_FAILED: 'cloud:task:failed',
-  GET_STATS: 'cloud:task:stats',
-} as const;
-
-// ============================================================================
 // Hook 实现
 // ============================================================================
 
@@ -88,23 +66,8 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
   const [filter, setFilter] = useState<CloudTaskFilter>(initialFilter);
 
   // Refs
-  const refreshTimerRef = useRef<NodeJS.Timer | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMountedRef = useRef(true);
-
-  // --------------------------------------------------------------------------
-  // IPC 调用辅助函数
-  // --------------------------------------------------------------------------
-
-  const invoke = useCallback(async <T>(channel: string, ...args: unknown[]): Promise<T> => {
-    // @ts-ignore - window.electronAPI 由 preload 注入
-    if (typeof window !== 'undefined' && window.electronAPI?.invoke) {
-      return window.electronAPI.invoke(channel, ...args);
-    }
-
-    // 模拟模式（用于开发/测试）
-    console.warn(`[useCloudTasks] IPC not available, channel: ${channel}`);
-    throw new Error('IPC not available');
-  }, []);
 
   // --------------------------------------------------------------------------
   // 数据加载
@@ -117,15 +80,15 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
       setIsLoading(true);
       setError(null);
 
-      const result = await invoke<CloudTask[]>(CloudTaskChannels.LIST_TASKS, filter);
-
-      if (isMountedRef.current) {
-        setTasks(result || []);
+      if (window.electronAPI?.invoke) {
+        const result = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_LIST, filter);
+        if (isMountedRef.current) {
+          setTasks(result || []);
+        }
       }
     } catch (err) {
       if (isMountedRef.current) {
         setError(err instanceof Error ? err.message : 'Failed to load tasks');
-        // 使用模拟数据
         setTasks([]);
       }
     } finally {
@@ -133,29 +96,33 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
         setIsLoading(false);
       }
     }
-  }, [filter, invoke]);
+  }, [filter]);
 
   const loadSyncState = useCallback(async () => {
     try {
-      const result = await invoke<TaskSyncState>(CloudTaskChannels.GET_SYNC_STATE);
-      if (isMountedRef.current) {
-        setSyncState(result);
+      if (window.electronAPI?.invoke) {
+        const result = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_SYNC_STATE);
+        if (isMountedRef.current) {
+          setSyncState(result);
+        }
       }
     } catch {
       // 忽略同步状态错误
     }
-  }, [invoke]);
+  }, []);
 
   const loadStats = useCallback(async () => {
     try {
-      const result = await invoke<CloudExecutionStats>(CloudTaskChannels.GET_STATS);
-      if (isMountedRef.current) {
-        setStats(result);
+      if (window.electronAPI?.invoke) {
+        const result = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_STATS);
+        if (isMountedRef.current) {
+          setStats(result);
+        }
       }
     } catch {
       // 忽略统计错误
     }
-  }, [invoke]);
+  }, []);
 
   // --------------------------------------------------------------------------
   // 任务操作
@@ -164,101 +131,117 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
   const createTask = useCallback(async (request: CreateCloudTaskRequest): Promise<CloudTask | null> => {
     try {
       setError(null);
-      const task = await invoke<CloudTask>(CloudTaskChannels.CREATE_TASK, request);
-
-      if (task) {
-        setTasks((prev) => [task, ...prev]);
-        return task;
+      if (window.electronAPI?.invoke) {
+        const task = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_CREATE, request);
+        if (task) {
+          setTasks((prev) => [task, ...prev]);
+          return task;
+        }
       }
       return null;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create task');
       return null;
     }
-  }, [invoke]);
+  }, []);
 
   const startTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
-      const success = await invoke<boolean>(CloudTaskChannels.START_TASK, taskId);
-      if (success) {
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === taskId ? { ...t, status: 'queued' as CloudTaskStatus } : t
-          )
-        );
+      if (window.electronAPI?.invoke) {
+        const success = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_START, taskId);
+        if (success) {
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === taskId ? { ...t, status: 'queued' as CloudTaskStatus } : t
+            )
+          );
+        }
+        return success;
       }
-      return success;
+      return false;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start task');
       return false;
     }
-  }, [invoke]);
+  }, []);
 
   const pauseTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
-      const success = await invoke<boolean>(CloudTaskChannels.PAUSE_TASK, taskId);
-      if (success) {
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === taskId ? { ...t, status: 'paused' as CloudTaskStatus } : t
-          )
-        );
+      if (window.electronAPI?.invoke) {
+        const success = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_PAUSE, taskId);
+        if (success) {
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === taskId ? { ...t, status: 'paused' as CloudTaskStatus } : t
+            )
+          );
+        }
+        return success;
       }
-      return success;
+      return false;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to pause task');
       return false;
     }
-  }, [invoke]);
+  }, []);
 
   const cancelTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
-      const success = await invoke<boolean>(CloudTaskChannels.CANCEL_TASK, taskId);
-      if (success) {
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === taskId ? { ...t, status: 'cancelled' as CloudTaskStatus } : t
-          )
-        );
+      if (window.electronAPI?.invoke) {
+        const success = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_CANCEL, taskId);
+        if (success) {
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === taskId ? { ...t, status: 'cancelled' as CloudTaskStatus } : t
+            )
+          );
+        }
+        return success;
       }
-      return success;
+      return false;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to cancel task');
       return false;
     }
-  }, [invoke]);
+  }, []);
 
   const retryTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
-      const success = await invoke<boolean>(CloudTaskChannels.RETRY_TASK, taskId);
-      if (success) {
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === taskId
-              ? { ...t, status: 'pending' as CloudTaskStatus, progress: 0, error: undefined }
-              : t
-          )
-        );
+      if (window.electronAPI?.invoke) {
+        const success = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_RETRY, taskId);
+        if (success) {
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === taskId
+                ? { ...t, status: 'pending' as CloudTaskStatus, progress: 0, error: undefined }
+                : t
+            )
+          );
+        }
+        return success;
       }
-      return success;
+      return false;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to retry task');
       return false;
     }
-  }, [invoke]);
+  }, []);
 
   const deleteTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
-      const success = await invoke<boolean>(CloudTaskChannels.DELETE_TASK, taskId);
-      if (success) {
-        setTasks((prev) => prev.filter((t) => t.id !== taskId));
+      if (window.electronAPI?.invoke) {
+        const success = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_DELETE, taskId);
+        if (success) {
+          setTasks((prev) => prev.filter((t) => t.id !== taskId));
+        }
+        return success;
       }
-      return success;
+      return false;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete task');
       return false;
     }
-  }, [invoke]);
+  }, []);
 
   const refresh = useCallback(async () => {
     await Promise.all([loadTasks(), loadSyncState(), loadStats()]);
@@ -269,11 +252,10 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
   // --------------------------------------------------------------------------
 
   useEffect(() => {
-    // @ts-ignore
-    if (typeof window !== 'undefined' && window.electronAPI?.on) {
+    if (window.electronAPI?.on) {
       // 监听任务进度更新
       const unsubProgress = window.electronAPI.on(
-        CloudTaskChannels.TASK_PROGRESS,
+        IPC_CHANNELS.CLOUD_TASK_PROGRESS,
         (event: TaskProgressEvent) => {
           setTasks((prev) =>
             prev.map((t) =>
@@ -292,7 +274,7 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
 
       // 监听任务完成
       const unsubCompleted = window.electronAPI.on(
-        CloudTaskChannels.TASK_COMPLETED,
+        IPC_CHANNELS.CLOUD_TASK_COMPLETED,
         (task: CloudTask) => {
           setTasks((prev) =>
             prev.map((t) => (t.id === task.id ? task : t))
@@ -302,7 +284,7 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
 
       // 监听任务失败
       const unsubFailed = window.electronAPI.on(
-        CloudTaskChannels.TASK_FAILED,
+        IPC_CHANNELS.CLOUD_TASK_FAILED,
         (task: CloudTask) => {
           setTasks((prev) =>
             prev.map((t) => (t.id === task.id ? task : t))
@@ -398,12 +380,8 @@ export function useCloudTask(taskId: string | null) {
     const loadTask = async () => {
       setIsLoading(true);
       try {
-        // @ts-ignore
         if (window.electronAPI?.invoke) {
-          const result = await window.electronAPI.invoke(
-            CloudTaskChannels.GET_TASK,
-            taskId
-          );
+          const result = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_GET, taskId);
           setTask(result);
         }
       } catch (err) {
@@ -429,9 +407,8 @@ export function useCloudTaskStats() {
   useEffect(() => {
     const loadStats = async () => {
       try {
-        // @ts-ignore
         if (window.electronAPI?.invoke) {
-          const result = await window.electronAPI.invoke(CloudTaskChannels.GET_STATS);
+          const result = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_STATS);
           setStats(result);
         }
       } catch {

@@ -1,276 +1,113 @@
 # Code Agent
 
-AI 编程助手桌面应用，用于学习和研究 AI Agent 能力演进。
-
-## 项目简介
-
-这是一个基于 Electron + React 的桌面应用，通过复刻 Claude Code 的 4 个架构代际来观察和学习 AI Agent 能力的演进过程。
+AI 编程助手桌面应用，复刻 Claude Code 的 8 个架构代际来研究 AI Agent 能力演进。
 
 ## 技术栈
 
-- **框架**: Electron 33 + React 18
-- **语言**: TypeScript 5.6
+- **框架**: Electron 33 + React 18 + TypeScript
 - **构建**: esbuild (main/preload) + Vite (renderer)
-- **样式**: Tailwind CSS 3.4
-- **状态管理**: Zustand 5
-- **AI 模型**: DeepSeek API (主要)，支持 OpenAI/Claude 切换
-- **后端服务**: Supabase (认证 + 数据库 + 向量存储)
-- **向量数据库**: pgvector (语义搜索和长期记忆)
+- **样式**: Tailwind CSS
+- **状态**: Zustand
+- **AI**: DeepSeek API（主）, OpenAI/Claude（备）
+- **后端**: Supabase + pgvector
 
 ## 目录结构
 
 ```
 src/
-├── main/                  # Electron 主进程
-│   ├── index.ts          # 入口，窗口创建
-│   ├── agent/            # Agent 核心
-│   │   ├── AgentOrchestrator.ts  # 编排器
-│   │   └── AgentLoop.ts          # 事件循环
-│   ├── generation/       # 代际管理
-│   │   └── GenerationManager.ts
-│   ├── model/            # 模型路由
-│   │   └── ModelRouter.ts
-│   ├── tools/            # 工具实现
-│   │   ├── gen1/         # bash, read_file, write_file, edit_file
-│   │   ├── gen2/         # glob, grep, list_directory
-│   │   ├── gen3/         # task, todo_write, ask_user_question
-│   │   └── gen4/         # skill, web_fetch
-│   ├── services/         # 核心服务
-│   │   ├── SupabaseService.ts    # Supabase 客户端
-│   │   ├── AuthService.ts        # 认证服务
-│   │   ├── SyncService.ts        # 云端同步引擎
-│   │   ├── SecureStorage.ts      # 安全存储
-│   │   └── DatabaseService.ts    # 本地 SQLite
-│   └── memory/           # 记忆系统
-│       ├── MemoryService.ts      # 统一记忆管理
-│       ├── EmbeddingService.ts   # 向量嵌入服务
-│       └── VectorStore.ts        # 向量存储
-├── preload/              # 预加载脚本
-├── renderer/             # React 前端
-│   ├── components/       # UI 组件
-│   ├── hooks/            # 自定义 hooks
-│   └── stores/           # Zustand 状态
-└── shared/               # 共享类型和 IPC 定义
+├── main/                 # Electron 主进程
+│   ├── agent/           # AgentOrchestrator, AgentLoop
+│   ├── generation/      # GenerationManager
+│   ├── tools/           # gen1-gen4 工具实现
+│   ├── services/        # Auth, Sync, Database
+│   └── memory/          # 向量存储和记忆系统
+├── preload/             # 预加载脚本
+├── renderer/            # React 前端
+│   ├── components/      # UI 组件
+│   ├── stores/          # Zustand 状态
+│   └── hooks/           # 自定义 hooks
+└── shared/              # 类型定义和 IPC
 ```
-
-## 8 代工具演进
-
-| 代际 | 版本 | 工具集 | 核心能力 |
-|------|------|--------|----------|
-| Gen 1 | v1.0 | bash, read_file, write_file, edit_file | 基础文件操作 |
-| Gen 2 | v2.0 | + glob, grep, list_directory | 搜索和导航 |
-| Gen 3 | v3.0 | + task, todo_write, ask_user_question | 子代理和规划 |
-| Gen 4 | v4.0 | + skill, web_fetch | 技能系统和网络 |
-| Gen 5 | v5.0 | + memory_store, memory_search, code_index | RAG 和长期记忆 |
-| Gen 6 | v6.0 | + screenshot, computer_use, browser_action | Computer Use |
-| Gen 7 | v7.0 | + spawn_agent, agent_message, workflow_orchestrate | 多代理协同 |
-| Gen 8 | v8.0 | + strategy_optimize, tool_create, self_evaluate | 自我进化 |
-
-## 版本号规范
-
-项目采用语义化版本号 (Semantic Versioning)：**MAJOR.MINOR.PATCH**
-
-| 位置 | 含义 | 范围 | 示例 |
-|------|------|------|------|
-| **MAJOR** (第1位) | 大架构升级、不兼容改动 | 0-99 | 1.x.x → 2.0.0 |
-| **MINOR** (第2位) | 新功能、向后兼容的改进 | 0-99 | 1.0.x → 1.1.0 |
-| **PATCH** (第3位) | Bug 修复、小改动 | 0-99 | 1.0.0 → 1.0.1 |
-
-### 版本号规则
-
-1. **PATCH 递增**：修复 bug、优化性能、改进文档
-2. **MINOR 递增**：添加新功能、改进 UI/UX（PATCH 归零）
-3. **MAJOR 递增**：架构重构、API 不兼容改动（MINOR 和 PATCH 归零）
-
-### 代际版本号
-
-代际版本号（v1.0 - v8.0）表示 AI Agent 能力代际，与应用版本号独立：
-- **代际版本**: 表示 Agent 工具集和能力等级（Gen1=v1.0, Gen8=v8.0）
-- **应用版本**: 表示软件发布版本（如 0.2.0, 1.0.0）
 
 ## 常用命令
 
 ```bash
-# 开发模式
-npm run dev
-
-# 构建
-npm run build
-
-# 启动（构建后）
-npm run start
-
-# 打包 macOS 应用
-npm run dist:mac
-
-# 类型检查
-npm run typecheck
+npm run dev          # 开发模式
+npm run build        # 构建
+npm run dist:mac     # 打包 macOS
+npm run typecheck    # 类型检查
 ```
 
-## 环境变量
+## 8 代工具演进
 
-项目使用 `.env` 文件配置 API：
-- `DEEPSEEK_API_KEY` - DeepSeek API 密钥
-- `DEEPSEEK_API_URL` - DeepSeek API 地址
-- `SUPABASE_URL` - Supabase 项目 URL
-- `SUPABASE_ANON_KEY` - Supabase 匿名密钥
+| 代际 | 工具集 |
+|------|--------|
+| Gen1 | bash, read_file, write_file, edit_file |
+| Gen2 | + glob, grep, list_directory |
+| Gen3 | + task, todo_write, ask_user_question |
+| Gen4 | + skill, web_fetch |
+| Gen5 | + memory_store, memory_search, code_index |
+| Gen6 | + screenshot, computer_use, browser_action |
+| Gen7 | + spawn_agent, agent_message, workflow_orchestrate |
+| Gen8 | + strategy_optimize, tool_create, self_evaluate |
 
-## 开发要点
+## 版本号规范
 
-1. **IPC 通信**: 主进程和渲染进程通过 `src/shared/ipc.ts` 定义的类型安全通道通信
-2. **Agent 循环**: `AgentLoop.ts` 实现核心推理循环：用户输入 → 模型推理 → [工具调用]* → 响应
-3. **代际切换**: 通过 `GenerationManager` 切换不同代际，动态加载对应的工具集和 system prompt
-4. **工具权限**: `ToolExecutor` 控制危险操作的权限检查
+- **PATCH**: Bug 修复、小改动 (0.3.0 → 0.3.1)
+- **MINOR**: 新功能 (0.3.1 → 0.4.0)
+- **MAJOR**: 架构重构 (0.4.0 → 1.0.0)
 
-## 账户体系与云端同步
-
-### 认证方式
-- **邮箱/密码登录**: 标准认证流程
-- **GitHub OAuth**: 第三方登录
-- **快捷 Token**: 跨设备快速登录
-
-### 同步架构
-- **离线优先**: 本地 SQLite 存储，联网时同步
-- **增量同步**: 基于 `updated_at` 游标的增量更新
-- **冲突解决**: Last-Write-Wins 策略
-
-### 云端数据表
-| 表名 | 用途 |
-|------|------|
-| `profiles` | 用户资料 |
-| `devices` | 设备管理 |
-| `sessions` | 会话记录 |
-| `messages` | 对话消息 |
-| `user_preferences` | 用户偏好 |
-| `project_knowledge` | 项目知识 |
-| `todos` | 待办事项 |
-| `vector_documents` | 向量文档 (pgvector) |
-| `invite_codes` | 邀请码 |
-
-### 向量数据库
-- **扩展**: pgvector (Supabase 原生支持)
-- **维度**: 1024 (DeepSeek)，支持 384/1536
-- **索引**: HNSW (cosine 距离)
-- **用途**: 语义搜索、长期记忆、RAG 上下文
-
-### 相关文件
-- `supabase/migrations/` - 数据库迁移脚本
-- `src/main/services/AuthService.ts` - 认证逻辑
-- `src/main/services/SyncService.ts` - 同步引擎
-- `src/renderer/stores/authStore.ts` - 前端认证状态
-- `src/renderer/components/AuthModal.tsx` - 登录界面
-
-## UI/UX 设计系统
-
-### Terminal Noir 设计语言
-
-项目采用 "Terminal Noir" 设计风格 —— 融合赛博朋克霓虹感与专业终端美学的深色主题。
-
-#### 配色方案
-
-| 层级 | 颜色 | 用途 |
-|------|------|------|
-| `void` | #08080a | 最深背景 |
-| `deep` | #0c0c10 | 深层背景 |
-| `surface` | #121218 | 主表面 |
-| `elevated` | #1a1a22 | 提升表面 |
-| `primary` | #6366f1 | 主色调 (靛蓝) |
-| `accent-cyan` | #22d3ee | 强调色 (青色) |
-| `accent-emerald` | #10b981 | 成功状态 |
-| `accent-rose` | #f43f5e | 错误状态 |
-
-#### 核心组件
-
-| 组件 | 文件 | 特性 |
-|------|------|------|
-| **Sidebar** | `Sidebar.tsx` | 会话分组、搜索过滤、时间标签 |
-| **ChatView** | `ChatView.tsx` | 渐变背景、卡片式建议、打字指示器 |
-| **ChatInput** | `ChatInput.tsx` | 焦点光效、快捷键提示、发送动画 |
-| **MessageBubble** | `MessageBubble.tsx` | 代码块高亮、工具调用折叠、状态徽章 |
-
-#### 动画系统
-
-- `fade-in-up` - 淡入上滑 (消息出现)
-- `glow-pulse` - 光晕脉冲 (焦点状态)
-- `scale-in` - 缩放进入 (卡片、按钮)
-- `typing-dot` - 打字点动画 (AI 思考中)
-
-#### 样式文件
-
-- `src/renderer/styles/global.css` - CSS 变量和全局样式
-- `tailwind.config.js` - Tailwind 扩展配置
-
-## 相关文档
-
-- [产品需求文档](docs/PRD.md)
-- [架构设计文档](docs/ARCHITECTURE.md)
+代际版本 (v1.0-v8.0) 表示 Agent 能力等级，与应用版本独立。
 
 ---
 
-## 🚨 错题本：常见错误与教训
+## 部署配置
 
-### 1. Vercel 部署配置（重要！）
+### Vercel
 
-**🚨 关键信息**：
-- **Vercel 项目名**: `code-agent`
-- **部署域名**: `https://code-agent-beta.vercel.app`
-- **Root Directory**: `cloud-agent`（不是 cloud-api！）
-- **部署方式**: GitHub 自动部署（push 到 main 后自动触发）
+| 配置项 | 值 |
+|--------|-----|
+| 项目名 | `code-agent` |
+| 域名 | `https://code-agent-beta.vercel.app` |
+| Root Directory | `cloud-agent`（不是 cloud-api）|
 
-**项目中有两个 API 目录（历史遗留）**：
-| 目录 | 用途 | Vercel 部署 |
-|------|------|-------------|
-| `cloud-agent/` | ✅ **正在使用** - 被 Vercel 部署 | ✅ |
-| `cloud-api/` | ❌ **已废弃** - 不要修改 | ❌ |
-
-**真实案例**：
-- 2026-01-18：多次修改 `cloud-api/api/update.ts` 并 push，但 API 一直返回旧版本号。排查发现 Vercel 实际部署的是 `cloud-agent/` 目录。
-
-**正确流程**：
 ```bash
-# 1. 修改 cloud-agent/api/update.ts 中的版本号（不是 cloud-api！）
-# 2. 提交并 push
-git add -A && git commit -m "chore: 更新版本到 x.x.x" && git push
-
-# 3. 等待 Vercel 自动部署（通常 30 秒内）
-# 4. 验证部署结果
+# 验证部署
 curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 ```
 
-### 2. 版本发布完整流程
+### API 目录
 
-**🚨 重要规则：每次更新客户端代码都必须递增版本号！**
+| 目录 | 状态 |
+|------|------|
+| `cloud-agent/` | ✅ 正在使用 |
+| `cloud-api/` | ❌ 已废弃，不要修改 |
 
-每次发布新版本时，需要同步更新：
+---
 
-```bash
-# 1. 更新 package.json 版本号（必须！）
-# 2. 更新 cloud-agent/api/update.ts 云端版本信息（注意是 cloud-agent，不是 cloud-api）
-# 3. 提交并 push
-git add -A && git commit -m "chore: bump version to x.x.x" && git push
+## 错题本
 
-# 4. 等待 Vercel 自动部署
-# 5. 验证 API
-curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
+### Vercel 部署目录混淆
+**问题**: 修改 `cloud-api/` 但 Vercel 部署的是 `cloud-agent/`
+**正确做法**: 只修改 `cloud-agent/api/update.ts`
 
-# 6. 构建和打包
-npm run build && npm run dist:mac
+### 打包位置错误
+**问题**: 在 worktree 中执行 `npm run dist:mac`，产物在 worktree 的 `release/` 下
+**正确做法**: 切换到主仓库后再打包
+
+### 版本号遗漏
+**问题**: 修改代码后直接打包，忘记更新版本号
+**正确做法**: 每次修改客户端代码必须递增 package.json 版本号
+
+### 发布清单
+
 ```
-
-### 3. 版本号递增规则
-
-**每次修改客户端代码（src/renderer、src/main、src/preload）后打包前必须递增版本号：**
-
-- **UI 改动、功能调整** → PATCH +1 (如 0.3.0 → 0.3.1)
-- **新功能添加** → MINOR +1，PATCH 归零 (如 0.3.1 → 0.4.0)
-- **架构重构** → MAJOR +1，MINOR 和 PATCH 归零 (如 0.4.0 → 1.0.0)
-
-**打包前检查清单**：
-- [ ] 代码改动已完成并测试
-- [ ] **package.json 版本号已递增** ← 必须！
-- [ ] **cloud-agent/api/update.ts 已更新**（不是 cloud-api！）
-- [ ] 代码已 commit 并 push
-- [ ] 当前目录是主仓库（不是 worktree）
-- [ ] API 验证通过：`curl -s "https://code-agent-beta.vercel.app/api/update?action=health"`
-- [ ] npm run build 已执行
-- [ ] npm run dist:mac 已执行
+□ 代码改动已测试
+□ package.json 版本号已递增
+□ cloud-agent/api/update.ts 已更新
+□ 已 commit 并 push
+□ 当前目录是主仓库
+□ API 验证通过
+□ npm run build
+□ npm run dist:mac
+```

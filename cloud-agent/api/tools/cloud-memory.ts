@@ -233,8 +233,8 @@ async function handleSearch(req: VercelRequest, res: VercelResponse) {
           createdAt: memory.createdAt,
         };
       })
-      .filter((item) => item.similarity >= threshold)
-      .sort((a, b) => b.similarity - a.similarity)
+      .filter((item: { similarity: number }) => item.similarity >= threshold)
+      .sort((a: { similarity: number }, b: { similarity: number }) => b.similarity - a.similarity)
       .slice(0, limit);
 
     return res.status(200).json({

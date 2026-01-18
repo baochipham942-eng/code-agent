@@ -82,7 +82,7 @@ export async function getOrCreateUser(
   const existing = await sql`
     SELECT * FROM code_agent.users
     WHERE provider = ${provider} AND provider_id = ${providerId}
-  `;
+  ` as unknown as User[];
 
   if (existing.length > 0) {
     // 更新最后登录时间
@@ -91,7 +91,7 @@ export async function getOrCreateUser(
       SET last_login_at = NOW(), name = COALESCE(${name}, name), avatar_url = COALESCE(${avatarUrl}, avatar_url)
       WHERE id = ${existing[0].id}
     `;
-    return existing[0] as User;
+    return existing[0];
   }
 
   // 创建新用户，根据邮箱判断是否为管理员
@@ -101,9 +101,9 @@ export async function getOrCreateUser(
     INSERT INTO code_agent.users (email, name, avatar_url, provider, provider_id, role, last_login_at)
     VALUES (${email}, ${name}, ${avatarUrl}, ${provider}, ${providerId}, ${role}, NOW())
     RETURNING *
-  `;
+  ` as unknown as User[];
 
-  return result[0] as User;
+  return result[0];
 }
 
 // 通过 ID 获取用户
@@ -112,7 +112,7 @@ export async function getUserById(userId: string): Promise<User | null> {
 
   const result = await sql`
     SELECT * FROM code_agent.users WHERE id = ${userId}
-  `;
+  ` as unknown as User[];
 
-  return result.length > 0 ? (result[0] as User) : null;
+  return result.length > 0 ? result[0] : null;
 }

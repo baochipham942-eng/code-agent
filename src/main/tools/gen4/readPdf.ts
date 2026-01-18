@@ -4,13 +4,21 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import * as pdfjsLib from 'pdfjs-dist';
 import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
 import { getConfigService } from '../../services/ConfigService';
 
-// 设置 pdfjs worker
-// @ts-ignore - pdfjs-dist 类型定义不完整
-pdfjsLib.GlobalWorkerOptions.workerSrc = false;
+// pdfjs-dist 延迟加载，避免在模块加载时触发 DOMMatrix 错误
+let pdfjsLib: typeof import('pdfjs-dist') | null = null;
+
+async function getPdfjs() {
+  if (!pdfjsLib) {
+    // 使用 legacy 版本，兼容 Node.js 环境（无 DOM 依赖）
+    pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    // @ts-ignore - 禁用 worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+  }
+  return pdfjsLib;
+}
 
 // 最小有效文本阈值（字符数），低于此值认为是扫描版 PDF
 const SCANNED_PDF_THRESHOLD = 100;
@@ -26,8 +34,9 @@ interface PdfExtractionResult {
  * 使用 pdfjs-dist 提取 PDF 文本
  */
 async function extractTextFromPdf(filePath: string): Promise<PdfExtractionResult> {
+  const pdfjs = await getPdfjs();
   const data = await fs.readFile(filePath);
-  const pdf = await pdfjsLib.getDocument({ data }).promise;
+  const pdf = await pdfjs.getDocument({ data }).promise;
 
   let fullText = '';
   const pageCount = pdf.numPages;

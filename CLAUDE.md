@@ -205,6 +205,24 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 **问题**: 多个功能并行开发后合并，积累了大量类型错误（接口不一致、命名冲突）
 **正确做法**: 每个功能点完成后立即 `npm run typecheck`，不要等到最后一起修
 
+### 客户端打开失败（白屏/无响应）
+**问题**: 打包后应用启动白屏或无响应，通常是主进程初始化阻塞
+**排查方法**:
+1. 终端运行 `/Applications/Code\ Agent.app/Contents/MacOS/Code\ Agent` 查看日志
+2. 检查 `initializeServices()` 中是否有阻塞操作
+**常见原因**:
+- MCP 服务器连接超时（远程服务不可达）
+- 数据库初始化失败
+- 环境变量缺失导致服务初始化卡住
+
+### 启动慢（窗口延迟出现）
+**问题**: `npm run dev` 或打包应用启动后，窗口要等很久才出现
+**原因**: `initializeServices()` 中的 await 阻塞了窗口创建
+**正确做法**:
+- 非关键服务（MCP、LogBridge、Auth）使用 `.then()/.catch()` 异步初始化
+- 只有数据库、配置等核心服务才需要 await
+- 示例：`initMCPClient().then(...).catch(...)` 而非 `await initMCPClient()`
+
 ### 发布清单
 
 ```

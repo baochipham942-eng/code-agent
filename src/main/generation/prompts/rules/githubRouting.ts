@@ -6,63 +6,65 @@ export const GITHUB_ROUTING_RULES = `## GitHub 项目智能路由 (MCP + Web Sea
 
 当用户询问关于 GitHub 项目的问题时，使用以下智能路由策略：
 
-### 识别 GitHub 项目请求
+### 重要：先确认仓库名称
 
-检测以下模式：
-- 明确的 GitHub URL: \`github.com/owner/repo\`
-- 仓库引用: "langchain 项目", "react 源码", "某某 repo"
-- 开源项目询问: "解读 xxx", "分析 xxx 架构", "xxx 是怎么实现的"
+**用户可能只提供项目名称（如 "open deepresearch"），你需要先确认完整的 owner/repo 格式。**
 
-### 路由策略
+#### 步骤 1: 如果用户没有提供完整的 owner/repo 格式
+1. 先用 \`web_search\` 搜索 "项目名 github" 确认正确的仓库名
+2. 从搜索结果中提取 \`owner/repo\` 格式（如 \`langchain-ai/open_deep_research\`）
+3. 再用 MCP DeepWiki 查询
 
-#### 1. GitHub 公开项目 → 优先使用 DeepWiki (MCP)
-
+示例：
 \`\`\`
-用户: "帮我解读 langchain 项目"
-执行: mcp(server="deepwiki", tool="read_wiki_structure", arguments={repo: "langchain-ai/langchain"})
+用户: "解读 open deepresearch"
+步骤1: web_search("open deep research github repository") → 发现是 langchain-ai/open_deep_research
+步骤2: mcp(server="deepwiki", tool="ask_question", arguments={repoName: "langchain-ai/open_deep_research", question: "..."})
 \`\`\`
 
-DeepWiki 优势:
-- 专门为 GitHub 项目文档优化
-- 提供结构化的项目解读
-- 包含代码示例和架构说明
-- 免费且快速
+#### 步骤 2: 如果 DeepWiki 返回 "Repository not found"
+这意味着仓库名不正确或仓库未被索引。处理方式：
+1. 用 \`web_search\` 确认正确的仓库名
+2. 用正确的仓库名重试 MCP
+3. 如果仍然失败，告知用户可以访问 https://deepwiki.com/owner/repo 触发索引
+4. 同时用 \`web_fetch\` 抓取 GitHub README 作为备选
 
-#### 2. DeepWiki 信息不足 → 补充 Web 搜索
+### DeepWiki MCP 参数格式
 
-如果 DeepWiki 返回的信息不够详细或用户需要更多上下文：
-- 使用 web_search 搜索相关博客、教程、讨论
-- 结合两个来源给出综合回答
+**重要**: DeepWiki 的参数名是 \`repoName\`（不是 \`repo\`），格式必须是 \`owner/repo\`
 
-#### 3. 非 GitHub 项目 / 一般问题 → 使用 Web 搜索
-
-对于非特定 GitHub 项目的问题，直接使用 web_search。
-
-### MCP 工具使用示例
-
+正确示例：
 \`\`\`
-# 获取项目结构
-mcp(server="deepwiki", tool="read_wiki_structure", arguments={"repo": "vercel/next.js"})
-
-# 获取特定内容
-mcp(server="deepwiki", tool="read_wiki_contents", arguments={"repo": "vercel/next.js", "path": "routing"})
-
-# 询问项目问题
-mcp(server="deepwiki", tool="ask_question", arguments={"repo": "vercel/next.js", "question": "How does server components work?"})
+mcp(server="deepwiki", tool="read_wiki_structure", arguments={"repoName": "langchain-ai/open_deep_research"})
+mcp(server="deepwiki", tool="ask_question", arguments={"repoName": "vercel/next.js", "question": "项目架构是什么？"})
 \`\`\`
+
+错误示例：
+\`\`\`
+❌ arguments={"repo": "langchain/open_deep_research"}  // 参数名错误
+❌ arguments={"repoName": "open_deep_research"}  // 缺少 owner
+❌ arguments={"repoName": "open-deepresearch/deepresearch"}  // owner/repo 都猜错了
+\`\`\`
+
+### DeepWiki 工具说明
+
+| 工具 | 用途 | 参数 |
+|------|------|------|
+| read_wiki_structure | 获取项目文档结构/目录 | repoName |
+| read_wiki_contents | 读取特定文档内容 | repoName |
+| ask_question | 询问项目相关问题 | repoName, question |
+
+### 最佳实践流程
+
+1. **模糊项目名** → 先 web_search 确认 owner/repo
+2. **有明确 owner/repo** → 直接用 DeepWiki
+3. **DeepWiki 失败** → 回退到 web_fetch GitHub README + web_search
+4. **综合分析** → DeepWiki + web_search 博客/教程
 
 ### 用户覆盖
 
-如果用户明确指定使用哪种方式，遵循用户指示：
-- "用搜索引擎查一下 xxx" → 只用 web_search
-- "用 DeepWiki 看看 xxx" → 只用 MCP DeepWiki
-- "全面分析 xxx" → 同时使用两者并综合
-
-### 可用的 MCP 服务器
-
-| 服务器 | 用途 | 工具 |
-|--------|------|------|
-| deepwiki | GitHub 项目文档 | read_wiki_structure, read_wiki_contents, ask_question |
-
-使用 \`mcp_list_tools\` 可查看所有可用的 MCP 工具。
+如果用户明确指定方式：
+- "用搜索引擎查一下" → 只用 web_search
+- "用 DeepWiki 分析" → 只用 MCP（但仍需先确认仓库名）
+- "全面分析" → 并行使用 DeepWiki + web_search
 `;

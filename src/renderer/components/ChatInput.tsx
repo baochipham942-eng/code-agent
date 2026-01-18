@@ -90,7 +90,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Submit on Enter (without Shift)
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // 重要: 检查 isComposing 避免中文输入法选词时误触发
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSubmit();
     }
@@ -292,7 +293,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
         )}
 
         <div
-          className={`relative flex items-end bg-zinc-800/60 rounded-2xl border transition-all duration-300 ${
+          className={`relative flex items-center bg-zinc-800/60 rounded-2xl border transition-all duration-300 ${
             isFocused
               ? 'border-primary-500/40 shadow-lg shadow-primary-500/5 ring-1 ring-primary-500/20'
               : 'border-zinc-700/50 hover:border-zinc-600/50'
@@ -308,11 +309,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
             className="hidden"
           />
 
-          {/* Attachment button - aligned to bottom */}
+          {/* Attachment button */}
           <button
             type="button"
             onClick={handleAttachClick}
-            className="flex-shrink-0 p-2.5 ml-2 mb-2 rounded-xl hover:bg-zinc-700/50 text-zinc-500 hover:text-zinc-300 transition-all duration-200 self-end"
+            className="flex-shrink-0 p-2.5 ml-2 rounded-xl hover:bg-zinc-700/50 text-zinc-500 hover:text-zinc-300 transition-all duration-200"
             title="添加图片或文件"
           >
             <Paperclip className="w-5 h-5" />
@@ -329,14 +330,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
             placeholder={attachments.length > 0 ? "添加描述..." : "问我任何关于代码的问题..."}
             disabled={disabled}
             rows={1}
-            className="flex-1 min-w-0 bg-transparent py-3.5 px-2 text-sm text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none disabled:opacity-50 max-h-[200px] leading-relaxed"
+            className="flex-1 min-w-0 bg-transparent py-3 px-2 text-sm text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none disabled:opacity-50 max-h-[200px] leading-relaxed"
           />
 
-          {/* Send button - aligned to bottom */}
+          {/* Send button */}
           <button
             type="submit"
             disabled={disabled || !hasContent}
-            className={`flex-shrink-0 p-2.5 mr-2 mb-2 rounded-xl text-white transition-all duration-300 self-end ${
+            className={`flex-shrink-0 p-2.5 mr-2 rounded-xl text-white transition-all duration-300 ${
               hasContent && !disabled
                 ? 'bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30 scale-100 hover:scale-105'
                 : 'bg-zinc-700/50 cursor-not-allowed scale-95 opacity-60'

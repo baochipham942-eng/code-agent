@@ -151,181 +151,185 @@ async function initializeServices(): Promise<void> {
   });
   console.log('Memory service initialized');
 
-  // Initialize MCP client (always - includes default servers like DeepWiki)
+  // Initialize MCP client ASYNC (non-blocking)
+  // Remote MCP servers like DeepWiki can be slow, don't block app startup
   const mcpConfigs: MCPServerConfig[] = settings.mcp?.servers || [];
-  console.log(`[MCP] Initializing with ${mcpConfigs.length} custom server(s)...`);
-  try {
-    await initMCPClient(mcpConfigs);
-    const mcpClient = getMCPClient();
-    const status = mcpClient.getStatus();
-    console.log(`[MCP] Connected: ${status.connectedServers.join(', ') || 'none'}`);
-    console.log(`[MCP] Available: ${status.toolCount} tools, ${status.resourceCount} resources`);
-  } catch (error) {
-    console.error('[MCP] Failed to initialize:', error);
-  }
-
-  // Start Log Bridge HTTP server for MCP server access
-  try {
-    await logBridge.start();
-    console.log('Log Bridge started on port', logBridge.getPort());
-
-    // Register command handler for remote execution
-    logBridge.setCommandHandler(async (command, params) => {
-      console.log(`[LogBridge] Executing command: ${command}`, params);
-
-      // Import browser service dynamically to avoid circular dependencies
-      const { browserService } = await import('./services/BrowserService.js');
-
-      switch (command) {
-        case 'browser_action': {
-          // Execute browser action
-          const action = params.action as string;
-          if (!action) {
-            return { success: false, error: 'Missing action parameter' };
-          }
-
-          try {
-            // Map common actions to browser service methods
-            switch (action) {
-              case 'launch':
-                await browserService.launch();
-                return { success: true, output: 'Browser launched' };
-
-              case 'close':
-                await browserService.close();
-                return { success: true, output: 'Browser closed' };
-
-              case 'new_tab':
-                const tabId = await browserService.newTab(params.url as string);
-                return { success: true, output: `New tab created: ${tabId}` };
-
-              case 'navigate':
-                await browserService.navigate(params.url as string, params.tabId as string);
-                return { success: true, output: `Navigated to ${params.url}` };
-
-              case 'screenshot':
-                const result = await browserService.screenshot({
-                  fullPage: params.fullPage as boolean,
-                  tabId: params.tabId as string,
-                });
-                return {
-                  success: result.success,
-                  output: result.path ? `Screenshot saved: ${result.path}` : undefined,
-                  error: result.error,
-                };
-
-              case 'get_content':
-                const content = await browserService.getPageContent(params.tabId as string);
-                return {
-                  success: true,
-                  output: `URL: ${content.url}\nTitle: ${content.title}\n\n${content.text.substring(0, 2000)}...`,
-                };
-
-              case 'click':
-                await browserService.click(params.selector as string, params.tabId as string);
-                return { success: true, output: `Clicked: ${params.selector}` };
-
-              case 'type':
-                await browserService.type(
-                  params.selector as string,
-                  params.text as string,
-                  params.tabId as string
-                );
-                return { success: true, output: `Typed into: ${params.selector}` };
-
-              case 'get_logs':
-                const logs = browserService.logger.getLogsAsString(params.count as number || 20);
-                return { success: true, output: logs };
-
-              case 'press_key':
-                await browserService.pressKey(params.key as string, params.tabId as string);
-                return { success: true, output: `Pressed key: ${params.key}` };
-
-              case 'scroll':
-                await browserService.scroll(
-                  params.direction as 'up' | 'down',
-                  params.amount as number,
-                  params.tabId as string
-                );
-                return { success: true, output: `Scrolled ${params.direction}` };
-
-              default:
-                return { success: false, error: `Unknown browser action: ${action}` };
-            }
-          } catch (error) {
-            return {
-              success: false,
-              error: error instanceof Error ? error.message : String(error),
-            };
-          }
-        }
-
-        case 'run_test': {
-          // Run a predefined test script
-          const testName = params.name as string;
-          if (!testName) {
-            return { success: false, error: 'Missing test name' };
-          }
-
-          try {
-            // Execute test based on name
-            switch (testName) {
-              case 'self_test': {
-                // Test the Code Agent client itself
-                await browserService.launch();
-                const tabId = await browserService.newTab('http://localhost:5173');
-                await browserService.waitForTimeout(2000);
-                const content = await browserService.getPageContent(tabId);
-                const screenshot = await browserService.screenshot({ tabId });
-
-                return {
-                  success: true,
-                  output: `Self-test completed:\n- URL: ${content.url}\n- Title: ${content.title}\n- Screenshot: ${screenshot.path}\n\nPage content preview:\n${content.text.substring(0, 500)}...`,
-                };
-              }
-
-              case 'generation_selector': {
-                // Test the generation selector
-                await browserService.launch();
-                const tabId = await browserService.newTab('http://localhost:5173');
-                await browserService.waitForTimeout(2000);
-
-                // Find and click the generation badge
-                const elements = await browserService.findElements('[class*="rounded-full"]', tabId);
-                if (elements.length > 0) {
-                  // Click the first rounded element (likely the generation badge)
-                  await browserService.click('[class*="rounded-full"]', tabId);
-                  await browserService.waitForTimeout(500);
-                }
-
-                const screenshot = await browserService.screenshot({ tabId });
-                return {
-                  success: true,
-                  output: `Generation selector test completed.\nScreenshot: ${screenshot.path}`,
-                };
-              }
-
-              default:
-                return { success: false, error: `Unknown test: ${testName}` };
-            }
-          } catch (error) {
-            return {
-              success: false,
-              error: error instanceof Error ? error.message : String(error),
-            };
-          }
-        }
-
-        case 'ping':
-          return { success: true, output: 'pong' };
-
-        default:
-          return { success: false, error: `Unknown command: ${command}` };
-      }
+  console.log(`[MCP] Initializing ${mcpConfigs.length} custom server(s) in background...`);
+  initMCPClient(mcpConfigs)
+    .then(() => {
+      const mcpClient = getMCPClient();
+      const status = mcpClient.getStatus();
+      console.log(`[MCP] Connected: ${status.connectedServers.join(', ') || 'none'}`);
+      console.log(`[MCP] Available: ${status.toolCount} tools, ${status.resourceCount} resources`);
+    })
+    .catch((error) => {
+      console.error('[MCP] Failed to initialize (non-blocking):', error);
     });
-  } catch (error) {
-    console.error('Failed to start Log Bridge:', error);
-  }
+
+  // Start Log Bridge HTTP server ASYNC (non-blocking)
+  // Register command handler first (sync), then start server (async)
+  logBridge.setCommandHandler(async (command, params) => {
+    console.log(`[LogBridge] Executing command: ${command}`, params);
+
+    // Import browser service dynamically to avoid circular dependencies
+    const { browserService } = await import('./services/BrowserService.js');
+
+    switch (command) {
+      case 'browser_action': {
+        // Execute browser action
+        const action = params.action as string;
+        if (!action) {
+          return { success: false, error: 'Missing action parameter' };
+        }
+
+        try {
+          // Map common actions to browser service methods
+          switch (action) {
+            case 'launch':
+              await browserService.launch();
+              return { success: true, output: 'Browser launched' };
+
+            case 'close':
+              await browserService.close();
+              return { success: true, output: 'Browser closed' };
+
+            case 'new_tab':
+              const tabId = await browserService.newTab(params.url as string);
+              return { success: true, output: `New tab created: ${tabId}` };
+
+            case 'navigate':
+              await browserService.navigate(params.url as string, params.tabId as string);
+              return { success: true, output: `Navigated to ${params.url}` };
+
+            case 'screenshot':
+              const result = await browserService.screenshot({
+                fullPage: params.fullPage as boolean,
+                tabId: params.tabId as string,
+              });
+              return {
+                success: result.success,
+                output: result.path ? `Screenshot saved: ${result.path}` : undefined,
+                error: result.error,
+              };
+
+            case 'get_content':
+              const content = await browserService.getPageContent(params.tabId as string);
+              return {
+                success: true,
+                output: `URL: ${content.url}\nTitle: ${content.title}\n\n${content.text.substring(0, 2000)}...`,
+              };
+
+            case 'click':
+              await browserService.click(params.selector as string, params.tabId as string);
+              return { success: true, output: `Clicked: ${params.selector}` };
+
+            case 'type':
+              await browserService.type(
+                params.selector as string,
+                params.text as string,
+                params.tabId as string
+              );
+              return { success: true, output: `Typed into: ${params.selector}` };
+
+            case 'get_logs':
+              const logs = browserService.logger.getLogsAsString(params.count as number || 20);
+              return { success: true, output: logs };
+
+            case 'press_key':
+              await browserService.pressKey(params.key as string, params.tabId as string);
+              return { success: true, output: `Pressed key: ${params.key}` };
+
+            case 'scroll':
+              await browserService.scroll(
+                params.direction as 'up' | 'down',
+                params.amount as number,
+                params.tabId as string
+              );
+              return { success: true, output: `Scrolled ${params.direction}` };
+
+            default:
+              return { success: false, error: `Unknown browser action: ${action}` };
+          }
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }
+
+      case 'run_test': {
+        // Run a predefined test script
+        const testName = params.name as string;
+        if (!testName) {
+          return { success: false, error: 'Missing test name' };
+        }
+
+        try {
+          // Execute test based on name
+          switch (testName) {
+            case 'self_test': {
+              // Test the Code Agent client itself
+              await browserService.launch();
+              const tabId = await browserService.newTab('http://localhost:5173');
+              await browserService.waitForTimeout(2000);
+              const content = await browserService.getPageContent(tabId);
+              const screenshot = await browserService.screenshot({ tabId });
+
+              return {
+                success: true,
+                output: `Self-test completed:\n- URL: ${content.url}\n- Title: ${content.title}\n- Screenshot: ${screenshot.path}\n\nPage content preview:\n${content.text.substring(0, 500)}...`,
+              };
+            }
+
+            case 'generation_selector': {
+              // Test the generation selector
+              await browserService.launch();
+              const tabId = await browserService.newTab('http://localhost:5173');
+              await browserService.waitForTimeout(2000);
+
+              // Find and click the generation badge
+              const elements = await browserService.findElements('[class*="rounded-full"]', tabId);
+              if (elements.length > 0) {
+                // Click the first rounded element (likely the generation badge)
+                await browserService.click('[class*="rounded-full"]', tabId);
+                await browserService.waitForTimeout(500);
+              }
+
+              const screenshot = await browserService.screenshot({ tabId });
+              return {
+                success: true,
+                output: `Generation selector test completed.\nScreenshot: ${screenshot.path}`,
+              };
+            }
+
+            default:
+              return { success: false, error: `Unknown test: ${testName}` };
+          }
+        } catch (error) {
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }
+
+      case 'ping':
+        return { success: true, output: 'pong' };
+
+      default:
+        return { success: false, error: `Unknown command: ${command}` };
+    }
+  });
+
+  // Start Log Bridge server in background
+  logBridge.start()
+    .then(() => {
+      console.log('[LogBridge] Started on port', logBridge.getPort());
+    })
+    .catch((error) => {
+      console.error('[LogBridge] Failed to start (non-blocking):', error);
+    });
 
   // Initialize Supabase (if configured)
   // NOTE: Auth initialization is NON-BLOCKING to prevent startup issues
@@ -637,11 +641,14 @@ function setupIpcHandlers(): void {
   // Agent Handlers
   // -------------------------------------------------------------------------
 
-  ipcMain.handle(IPC_CHANNELS.AGENT_SEND_MESSAGE, async (_, content: string) => {
-    console.log('[IPC] AGENT_SEND_MESSAGE received:', content.substring(0, 50));
+  ipcMain.handle(IPC_CHANNELS.AGENT_SEND_MESSAGE, async (_, payload: string | { content: string; attachments?: unknown[] }) => {
+    // 支持两种格式：纯字符串或包含附件的对象
+    const content = typeof payload === 'string' ? payload : payload.content;
+    const attachments = typeof payload === 'object' ? payload.attachments : undefined;
+    console.log('[IPC] AGENT_SEND_MESSAGE received:', content.substring(0, 50), 'attachments:', attachments?.length || 0);
     if (!agentOrchestrator) throw new Error('Agent not initialized');
     try {
-      await agentOrchestrator.sendMessage(content);
+      await agentOrchestrator.sendMessage(content, attachments);
       console.log('[IPC] AGENT_SEND_MESSAGE completed');
     } catch (error) {
       console.error('[IPC] AGENT_SEND_MESSAGE error:', error);

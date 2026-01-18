@@ -6,6 +6,7 @@ import type {
   AgentConfig,
   AgentEvent,
   Message,
+  MessageAttachment,
   ToolCall,
   ToolResult,
   PermissionRequest,
@@ -74,7 +75,7 @@ export class AgentOrchestrator {
   // Public Methods
   // --------------------------------------------------------------------------
 
-  async sendMessage(content: string): Promise<void> {
+  async sendMessage(content: string, attachments?: unknown[]): Promise<void> {
     const generation = this.generationManager.getCurrentGeneration();
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
@@ -85,6 +86,7 @@ export class AgentOrchestrator {
       role: 'user',
       content,
       timestamp: Date.now(),
+      attachments: attachments as MessageAttachment[] | undefined,
     };
 
     this.messages.push(userMessage);

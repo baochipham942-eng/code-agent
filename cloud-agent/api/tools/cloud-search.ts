@@ -93,79 +93,45 @@ async function searchWithPerplexity(
 }
 
 /**
- * DuckDuckGo 搜索 - 通过阿里云函数计算代理
- * 如果没有配置代理，则直接请求（可能会被屏蔽）
+ * Brave Search API (免费版每月 2000 次)
  */
-async function searchDuckDuckGo(
+async function searchBrave(
   query: string,
+  apiKey: string,
   maxResults: number = 10
 ): Promise<SearchResult[]> {
-  const proxyUrl = process.env.DUCKDUCKGO_PROXY_URL;
+  const params = new URLSearchParams({
+    q: query,
+    count: String(Math.min(maxResults, 20)),
+  });
 
-  // 优先使用阿里云代理
-  if (proxyUrl) {
-    const response = await fetch(proxyUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, maxResults }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`DuckDuckGo proxy failed: ${response.status}`);
-    }
-
-    const data = await response.json() as { success: boolean; results?: SearchResult[]; error?: string };
-    if (!data.success) {
-      throw new Error(data.error || 'Proxy search failed');
-    }
-
-    return data.results || [];
-  }
-
-  // 直接请求（可能被 Vercel IP 屏蔽）
-  const params = new URLSearchParams({ q: query, kl: '' });
-  const url = `https://html.duckduckgo.com/html/?${params.toString()}`;
-
-  const response = await fetch(url, {
+  const response = await fetch(`https://api.search.brave.com/res/v1/web/search?${params}`, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      Accept: 'text/html',
+      'Accept': 'application/json',
+      'X-Subscription-Token': apiKey,
     },
   });
 
   if (!response.ok) {
-    throw new Error(`DuckDuckGo search failed: ${response.status}`);
+    throw new Error(`Brave Search failed: ${response.status}`);
   }
 
-  const html = await response.text();
-  const results: SearchResult[] = [];
+  const data = await response.json() as {
+    web?: {
+      results?: Array<{
+        title: string;
+        url: string;
+        description?: string;
+      }>;
+    };
+  };
 
-  const resultPattern = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/gi;
-  let match;
-  while ((match = resultPattern.exec(html)) !== null && results.length < maxResults) {
-    let matchedUrl = match[1];
-    const title = match[2].trim();
-
-    if (matchedUrl.startsWith('//duckduckgo.com/l/?uddg=')) {
-      try {
-        const uddg = new URL('https:' + matchedUrl).searchParams.get('uddg');
-        if (uddg) matchedUrl = decodeURIComponent(uddg);
-      } catch {
-        continue;
-      }
-    }
-
-    if (title && matchedUrl && !matchedUrl.includes('duckduckgo.com')) {
-      results.push({
-        title,
-        url: matchedUrl,
-        snippet: '',
-        source: new URL(matchedUrl).hostname,
-      });
-    }
-  }
-
-  return results;
+  return (data.web?.results || []).slice(0, maxResults).map(r => ({
+    title: r.title,
+    url: r.url,
+    snippet: r.description || '',
+    source: new URL(r.url).hostname,
+  }));
 }
 
 async function handleSearch(req: VercelRequest, res: VercelResponse) {
@@ -188,10 +154,10 @@ async function handleSearch(req: VercelRequest, res: VercelResponse) {
     if (keyResult) {
       perplexityKey = keyResult.key;
     }
-  } else {
-    // 未登录用户，不提供系统 Key（除非是公开 API）
-    // 可以考虑提供有限的免费额度
   }
+
+  // Brave Search API Key (免费版作为备用)
+  const braveApiKey = process.env.BRAVE_SEARCH_API_KEY;
 
   try {
     let responseData: {
@@ -199,12 +165,12 @@ async function handleSearch(req: VercelRequest, res: VercelResponse) {
       query: string;
       results: SearchResult[];
       answer?: string;
-      source: 'perplexity' | 'duckduckgo';
+      source: 'perplexity' | 'brave';
       duration: number;
     };
 
     if (perplexityKey) {
-      // 使用 Perplexity API
+      // 使用 Perplexity API（已登录用户）
       const { results, answer } = await searchWithPerplexity(query, perplexityKey, focus, maxResults);
       responseData = {
         success: true,
@@ -214,36 +180,42 @@ async function handleSearch(req: VercelRequest, res: VercelResponse) {
         source: 'perplexity',
         duration: Date.now() - startTime,
       };
-    } else {
-      // 回退到 DuckDuckGo
-      const results = await searchDuckDuckGo(query, maxResults);
+    } else if (braveApiKey) {
+      // 使用 Brave Search（免费备用）
+      const results = await searchBrave(query, braveApiKey, maxResults);
       responseData = {
         success: true,
         query,
         results,
-        source: 'duckduckgo',
+        source: 'brave',
         duration: Date.now() - startTime,
       };
+    } else {
+      return res.status(503).json({
+        success: false,
+        error: 'No search API available. Please login or configure API keys.',
+        duration: Date.now() - startTime,
+      });
     }
 
     return res.status(200).json(responseData);
   } catch (error: unknown) {
     const err = error as Error;
 
-    // 如果 Perplexity 失败，尝试回退到 DuckDuckGo
-    if (perplexityKey) {
+    // 如果 Perplexity 失败，尝试回退到 Brave
+    if (perplexityKey && braveApiKey) {
       try {
-        const results = await searchDuckDuckGo(query, maxResults);
+        const results = await searchBrave(query, braveApiKey, maxResults);
         return res.status(200).json({
           success: true,
           query,
           results,
-          source: 'duckduckgo',
+          source: 'brave',
           fallback: true,
           originalError: err.message,
           duration: Date.now() - startTime,
         });
-      } catch (fallbackError) {
+      } catch {
         // 两者都失败
       }
     }

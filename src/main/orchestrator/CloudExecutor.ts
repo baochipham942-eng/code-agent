@@ -42,6 +42,7 @@ const DEFAULT_CONFIG: CloudExecutorConfig = {
 export class CloudExecutor extends EventEmitter {
   private config: CloudExecutorConfig;
   private runningTasks: Map<string, CloudTask> = new Map();
+  private cancelledTasks: Set<string> = new Set();
   private authToken?: string;
 
   constructor(config: Partial<CloudExecutorConfig> = {}) {
@@ -342,8 +343,44 @@ export class CloudExecutor extends EventEmitter {
    * 取消任务
    */
   async cancel(requestId: string): Promise<boolean> {
-    // TODO: 实现云端任务取消
-    return this.runningTasks.delete(requestId);
+    const task = this.runningTasks.get(requestId);
+    if (!task) {
+      return false;
+    }
+
+    this.cancelledTasks.add(requestId);
+
+    // 尝试通知云端取消任务
+    try {
+      await fetch(`${this.config.apiEndpoint}/api/agent`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}),
+        },
+        body: JSON.stringify({ taskId: task.id }),
+      });
+    } catch (error) {
+      console.warn('[CloudExecutor] 云端取消请求失败:', error);
+    }
+
+    this.runningTasks.delete(requestId);
+    this.emit('cancelled', { requestId, taskId: task.id });
+    return true;
+  }
+
+  /**
+   * 检查任务是否已取消
+   */
+  isCancelled(requestId: string): boolean {
+    return this.cancelledTasks.has(requestId);
+  }
+
+  /**
+   * 清理取消状态
+   */
+  private cleanupCancelled(requestId: string): void {
+    this.cancelledTasks.delete(requestId);
   }
 
   /**

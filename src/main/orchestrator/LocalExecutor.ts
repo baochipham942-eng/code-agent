@@ -37,6 +37,7 @@ const DEFAULT_CONFIG: LocalExecutorConfig = {
 export class LocalExecutor extends EventEmitter {
   private config: LocalExecutorConfig;
   private runningTasks: Set<string> = new Set();
+  private cancelledTasks: Set<string> = new Set();
   private modelConfig?: ModelConfig;
 
   constructor(config: Partial<LocalExecutorConfig> = {}) {
@@ -123,6 +124,7 @@ export class LocalExecutor extends EventEmitter {
       };
     } finally {
       this.runningTasks.delete(requestId);
+      this.cleanupCancelled(requestId);
     }
   }
 
@@ -222,8 +224,26 @@ export class LocalExecutor extends EventEmitter {
    * 取消任务
    */
   cancel(requestId: string): boolean {
-    // TODO: 实现取消逻辑
-    return this.runningTasks.delete(requestId);
+    if (this.runningTasks.has(requestId)) {
+      this.cancelledTasks.add(requestId);
+      this.emit('cancelled', { requestId });
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * 检查任务是否已取消
+   */
+  isCancelled(requestId: string): boolean {
+    return this.cancelledTasks.has(requestId);
+  }
+
+  /**
+   * 清理取消状态
+   */
+  private cleanupCancelled(requestId: string): void {
+    this.cancelledTasks.delete(requestId);
   }
 
   private sleep(ms: number): Promise<void> {

@@ -201,17 +201,20 @@ export class AgentExecutor extends EventEmitter {
 
       // 处理响应
       if (response.type === 'text') {
-        output += response.content;
-        messages.push({ role: 'assistant', content: response.content });
+        const content = response.content || '';
+        output += content;
+        messages.push({ role: 'assistant', content });
 
         // 通知输出
-        context.onOutput?.(response.content);
+        if (content) {
+          context.onOutput?.(content);
+        }
 
         // 检查是否完成
-        if (this.isTaskComplete(response.content)) {
+        if (this.isTaskComplete(content)) {
           break;
         }
-      } else if (response.type === 'tool_call') {
+      } else if (response.type === 'tool_call' && response.toolCalls) {
         // 执行工具调用
         for (const toolCall of response.toolCalls) {
           // 检查是否是委派请求
@@ -231,7 +234,8 @@ export class AgentExecutor extends EventEmitter {
             const tool = tools.get(toolCall.name);
             if (tool) {
               try {
-                const result = await tool.execute(toolCall.input, context.toolContext);
+                const params = (toolCall.input || {}) as Record<string, unknown>;
+                const result = await tool.execute(params, context.toolContext);
                 toolsUsed.push(toolCall.name);
 
                 messages.push({
@@ -317,6 +321,9 @@ export class AgentExecutor extends EventEmitter {
     return {
       name: 'delegate_task',
       description: '将子任务委派给其他 Agent 执行',
+      generations: ['gen7', 'gen8'],
+      requiresPermission: false,
+      permissionLevel: 'read',
       inputSchema: {
         type: 'object',
         properties: {
@@ -339,9 +346,9 @@ export class AgentExecutor extends EventEmitter {
         },
         required: ['targetRole', 'task'],
       },
-      execute: async () => {
+      execute: async (): Promise<{ success: boolean; output?: string }> => {
         // 实际执行在 handleDelegation 中处理
-        return { delegated: true };
+        return { success: true, output: 'Delegation requested' };
       },
     };
   }
@@ -372,7 +379,7 @@ export class AgentExecutor extends EventEmitter {
     }));
 
     // 调用 API
-    const response = await fetch(modelConfig.apiEndpoint || 'https://api.anthropic.com/v1/messages', {
+    const response = await fetch(modelConfig.baseUrl || 'https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -380,7 +387,7 @@ export class AgentExecutor extends EventEmitter {
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: modelConfig.modelId || 'claude-sonnet-4-20250514',
+        model: modelConfig.model || 'claude-sonnet-4-20250514',
         max_tokens: 4096,
         temperature: temperature ?? 0.3,
         system: messages.find((m) => m.role === 'system')?.content,

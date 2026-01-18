@@ -227,7 +227,7 @@ export class CheckpointManager extends EventEmitter {
 
       // 如果内存中没有，从磁盘加载
       if (!checkpoint) {
-        checkpoint = await this.loadCheckpointFromDisk(taskId);
+        checkpoint = (await this.loadCheckpointFromDisk(taskId)) || undefined;
       }
 
       if (!checkpoint) {

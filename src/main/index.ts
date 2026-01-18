@@ -954,9 +954,59 @@ function setupIpcHandlers(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.SETTINGS_TEST_API_KEY,
-    async (_, provider: string, apiKey: string) => {
-      // TODO: Implement API key testing
-      return true;
+    async (_, provider: string, apiKey: string): Promise<{ success: boolean; error?: string }> => {
+      try {
+        const testEndpoints: Record<string, { url: string; headers: Record<string, string>; body: unknown }> = {
+          deepseek: {
+            url: 'https://api.deepseek.com/v1/models',
+            headers: { Authorization: `Bearer ${apiKey}` },
+            body: null,
+          },
+          openai: {
+            url: 'https://api.openai.com/v1/models',
+            headers: { Authorization: `Bearer ${apiKey}` },
+            body: null,
+          },
+          claude: {
+            url: 'https://api.anthropic.com/v1/messages',
+            headers: {
+              'x-api-key': apiKey,
+              'anthropic-version': '2023-06-01',
+              'content-type': 'application/json',
+            },
+            body: {
+              model: 'claude-3-haiku-20240307',
+              max_tokens: 1,
+              messages: [{ role: 'user', content: 'Hi' }],
+            },
+          },
+          groq: {
+            url: 'https://api.groq.com/openai/v1/models',
+            headers: { Authorization: `Bearer ${apiKey}` },
+            body: null,
+          },
+        };
+
+        const config = testEndpoints[provider];
+        if (!config) {
+          return { success: false, error: `不支持测试的 provider: ${provider}` };
+        }
+
+        const response = await fetch(config.url, {
+          method: config.body ? 'POST' : 'GET',
+          headers: config.headers,
+          body: config.body ? JSON.stringify(config.body) : undefined,
+        });
+
+        if (response.ok || response.status === 200) {
+          return { success: true };
+        }
+
+        const errorText = await response.text();
+        return { success: false, error: `API 错误 (${response.status}): ${errorText.substring(0, 200)}` };
+      } catch (error) {
+        return { success: false, error: `连接失败: ${error instanceof Error ? error.message : String(error)}` };
+      }
     }
   );
 

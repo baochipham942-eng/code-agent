@@ -115,9 +115,17 @@ export class DatabaseService {
         timestamp INTEGER NOT NULL,
         tool_calls TEXT,
         tool_results TEXT,
+        attachments TEXT,
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       )
     `);
+
+    // 迁移：为旧表添加 attachments 列（如果不存在）
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN attachments TEXT`);
+    } catch {
+      // 列已存在，忽略
+    }
 
     // Tool Executions 表 (用于缓存和审计)
     this.db.exec(`
@@ -394,9 +402,22 @@ export class DatabaseService {
     if (!this.db) throw new Error('Database not initialized');
 
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
+
+    // 保存附件元信息（不含 data 和 thumbnail，节省空间）
+    const attachmentsMeta = message.attachments?.map(a => ({
+      id: a.id,
+      type: a.type,
+      category: a.category,
+      name: a.name,
+      size: a.size,
+      mimeType: a.mimeType,
+      path: a.path,
+      pageCount: a.pageCount,
+      language: a.language,
+    }));
 
     stmt.run(
       message.id,
@@ -405,7 +426,8 @@ export class DatabaseService {
       message.content,
       message.timestamp,
       message.toolCalls ? JSON.stringify(message.toolCalls) : null,
-      message.toolResults ? JSON.stringify(message.toolResults) : null
+      message.toolResults ? JSON.stringify(message.toolResults) : null,
+      attachmentsMeta ? JSON.stringify(attachmentsMeta) : null
     );
 
     // 更新 session 的 updated_at
@@ -464,6 +486,7 @@ export class DatabaseService {
       timestamp: row.timestamp,
       toolCalls: row.tool_calls ? JSON.parse(row.tool_calls) : undefined,
       toolResults: row.tool_results ? JSON.parse(row.tool_results) : undefined,
+      attachments: row.attachments ? JSON.parse(row.attachments) : undefined,
     }));
   }
 

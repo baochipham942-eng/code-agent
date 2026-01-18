@@ -8,60 +8,51 @@ import { ChevronDown, Zap, Layers, Brain, Sparkles, Database, Monitor, Users, Dn
 import type { Generation, GenerationId } from '@shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
 
-// Generation configurations with icons and core tools (only new tools in each generation)
+// Generation configurations with icons and core capabilities
 const generationConfigs: Record<string, {
   icon: React.ReactNode;
   color: string;
-  coreTools: string[];  // Only new tools introduced in this generation
-  theme: string;        // Theme/focus of this generation
+  capabilities: string[];  // Core capabilities (not tool names)
 }> = {
   gen1: {
     icon: <Zap className="w-3.5 h-3.5" />,
     color: 'text-green-400 bg-green-500/10',
-    coreTools: ['bash', 'read_file', 'write_file', 'edit_file'],
-    theme: '基础文件操作',
+    capabilities: ['命令执行', '文件读写'],
   },
   gen2: {
     icon: <Layers className="w-3.5 h-3.5" />,
     color: 'text-blue-400 bg-blue-500/10',
-    coreTools: ['glob', 'grep', 'list_directory'],
-    theme: '搜索与导航',
+    capabilities: ['模式搜索', '目录导航'],
   },
   gen3: {
     icon: <Brain className="w-3.5 h-3.5" />,
     color: 'text-purple-400 bg-purple-500/10',
-    coreTools: ['task', 'todo_write', 'ask_user_question'],
-    theme: '子代理与规划',
+    capabilities: ['子代理', '任务规划', '用户交互'],
   },
   gen4: {
     icon: <Sparkles className="w-3.5 h-3.5" />,
     color: 'text-orange-400 bg-orange-500/10',
-    coreTools: ['skill', 'web_fetch', 'web_search', 'read_pdf', 'mcp'],
-    theme: '技能系统、网络与 MCP',
+    capabilities: ['Skill 技能', '联网', 'PDF', 'MCP'],
   },
   gen5: {
     icon: <Database className="w-3.5 h-3.5" />,
     color: 'text-cyan-400 bg-cyan-500/10',
-    coreTools: ['memory_store', 'memory_search', 'code_index'],
-    theme: 'RAG 与长期记忆',
+    capabilities: ['长期记忆', 'RAG 检索', '代码索引'],
   },
   gen6: {
     icon: <Monitor className="w-3.5 h-3.5" />,
     color: 'text-pink-400 bg-pink-500/10',
-    coreTools: ['screenshot', 'computer_use', 'browser_navigate', 'browser_action'],
-    theme: 'Computer Use',
+    capabilities: ['屏幕截图', '桌面操控', '浏览器自动化'],
   },
   gen7: {
     icon: <Users className="w-3.5 h-3.5" />,
     color: 'text-indigo-400 bg-indigo-500/10',
-    coreTools: ['spawn_agent', 'agent_message', 'workflow_orchestrate'],
-    theme: '多代理协同',
+    capabilities: ['代理派生', '消息传递', '工作流编排'],
   },
   gen8: {
     icon: <Dna className="w-3.5 h-3.5" />,
     color: 'text-rose-400 bg-rose-500/10',
-    coreTools: ['strategy_optimize', 'tool_create', 'self_evaluate', 'learn_pattern'],
-    theme: '自我进化',
+    capabilities: ['策略优化', '工具创建', '自我评估', '模式学习'],
   },
 };
 
@@ -224,7 +215,6 @@ export const GenerationBadge: React.FC = () => {
               {generations.map((gen) => {
                 const genConfig = generationConfigs[gen.id];
                 const isSelected = currentGeneration.id === gen.id;
-                const genNumber = parseInt(gen.id.replace('gen', ''));
 
                 return (
                   <button
@@ -251,23 +241,10 @@ export const GenerationBadge: React.FC = () => {
                           共 {gen.tools.length} 工具
                         </span>
                       </div>
-                      {/* 只展示本代核心新增工具 */}
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {genConfig.coreTools.map((tool) => (
-                          <span
-                            key={tool}
-                            className={`text-xs px-1.5 py-0.5 rounded ${genConfig.color}`}
-                          >
-                            {tool}
-                          </span>
-                        ))}
-                      </div>
-                      {/* 继承的工具数量提示 */}
-                      {genNumber > 1 && (
-                        <p className="text-xs text-zinc-600 mt-1.5">
-                          继承 Gen 1-{genNumber - 1} 的 {gen.tools.length - genConfig.coreTools.length} 个工具
-                        </p>
-                      )}
+                      {/* 核心能力 */}
+                      <p className="text-xs text-zinc-500 mt-1">
+                        {genConfig.capabilities.join(' · ')}
+                      </p>
                     </div>
                     {isSelected && (
                       <div className="w-2 h-2 rounded-full bg-blue-500 mt-2" />

@@ -27,27 +27,26 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.5.0',
-  publishedAt: '2026-01-18T16:00:00.000Z',
+  version: '0.7.10',
+  publishedAt: '2026-01-19T00:17:00.000Z',
   releaseNotes: `
-## Code Agent v0.5.0 ✨
+## Code Agent v0.7.10 🔧
 
-### 🏗️ 架构重构
-- **提示词模块化** - 将 GenerationManager 从 1240 行精简到 103 行
-- **代际提示词分离** - 8 个代际各自独立文件，便于维护
-- **规则系统优化** - 新增 outputFormat 和 htmlGeneration 规则模块
-- **提示词组装器** - 灵活组合不同规则到各代际
+### 🐛 Bug 修复
+- **附件路径修复** - AI 现在能正确获取拖拽文件的完整路径
+- **附件持久化** - 附件元信息保存到数据库，历史会话可展示附件记录
 
 ### 📦 包含历史更新
-- 云端任务系统和管理面板
-- 工具描述增强（借鉴 Claude Code v2.0）
-- Plan Mode 工具实现
+- 代际选择器工具列表显示修复
+- 图片模型路由优化
+- 文件夹拖拽上传支持
+- MCP 和 read_pdf 工具支持
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.5.0/Code.Agent-0.5.0-arm64.dmg',
-      size: 130000000,
+      url: 'https://github.com/anthropics/code-agent/releases/download/v0.7.10/Code.Agent-0.7.10-arm64.dmg',
+      size: 153000000,
     },
   },
 };

@@ -118,6 +118,7 @@ export class AgentOrchestrator {
     };
 
     this.messages.push(userMessage);
+    console.log('[AgentOrchestrator] User message added, hasAttachments:', !!userMessage.attachments?.length, 'count:', userMessage.attachments?.length || 0);
     // Note: Don't emit user message event - frontend already added it
 
     // 持久化保存用户消息

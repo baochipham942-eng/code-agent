@@ -313,6 +313,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
     const relativePath = (file as File & { relativePath?: string }).relativePath;
     const displayName = relativePath || file.name;
 
+    // Electron File 对象有 path 属性，保存完整路径供 AI 使用
+    const filePath = (file as File & { path?: string }).path;
+
     // 不支持的类型：办公文档暂时跳过
     if (category === 'document') {
       console.warn(`Office documents (.docx, .xlsx) are not yet supported. Please convert to PDF first.`);
@@ -334,6 +337,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
             mimeType: file.type,
             data,
             thumbnail: data,
+            path: filePath,
           });
         };
         reader.onerror = () => resolve(null);
@@ -353,6 +357,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
         mimeType: 'application/pdf',
         data: text,
         pageCount,
+        path: filePath,
       };
     }
 
@@ -370,6 +375,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
           mimeType: file.type || 'text/plain',
           data,
           language,
+          path: filePath,
         });
       };
       reader.onerror = () => resolve(null);

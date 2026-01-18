@@ -855,7 +855,9 @@ export class AgentLoop {
     });
 
     // Add conversation history
+    console.log('[AgentLoop] Building model messages, total messages:', this.messages.length);
     for (const message of this.messages) {
+      console.log(`[AgentLoop] Message role=${message.role}, hasAttachments=${!!message.attachments?.length}, attachmentCount=${message.attachments?.length || 0}`);
       if (message.role === 'tool') {
         // Convert tool results to user message format
         // Tool results are kept complete as they contain important execution context
@@ -936,9 +938,10 @@ export class AgentLoop {
         case 'pdf': {
           // PDF：文档结构化文本
           const pageInfo = attachment.pageCount ? ` (${attachment.pageCount} 页)` : '';
+          const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
           contents.push({
             type: 'text',
-            text: `📄 **PDF 文档: ${attachment.name}**${pageInfo}\n\n${attachment.data}`,
+            text: `📄 **PDF 文档: ${attachment.name}**${pageInfo}${pathInfo}\n\n${attachment.data}`,
           });
           break;
         }
@@ -946,9 +949,10 @@ export class AgentLoop {
         case 'code': {
           // 代码文件：带语法高亮提示
           const lang = attachment.language || 'plaintext';
+          const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
           contents.push({
             type: 'text',
-            text: `📝 **代码文件: ${attachment.name}** (${lang})\n\`\`\`${lang}\n${attachment.data}\n\`\`\``,
+            text: `📝 **代码文件: ${attachment.name}** (${lang})${pathInfo}\n\`\`\`${lang}\n${attachment.data}\n\`\`\``,
           });
           break;
         }
@@ -956,34 +960,37 @@ export class AgentLoop {
         case 'data': {
           // 数据文件：JSON/CSV/XML 等
           const lang = attachment.language || 'json';
+          const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
           contents.push({
             type: 'text',
-            text: `📊 **数据文件: ${attachment.name}**\n\`\`\`${lang}\n${attachment.data}\n\`\`\``,
+            text: `📊 **数据文件: ${attachment.name}**${pathInfo}\n\`\`\`${lang}\n${attachment.data}\n\`\`\``,
           });
           break;
         }
 
         case 'html': {
           // HTML 文件
+          const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
           contents.push({
             type: 'text',
-            text: `🌐 **HTML 文件: ${attachment.name}**\n\`\`\`html\n${attachment.data}\n\`\`\``,
+            text: `🌐 **HTML 文件: ${attachment.name}**${pathInfo}\n\`\`\`html\n${attachment.data}\n\`\`\``,
           });
           break;
         }
 
         case 'text': {
           // 纯文本/Markdown
+          const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
           const isMarkdown = attachment.language === 'markdown';
           if (isMarkdown) {
             contents.push({
               type: 'text',
-              text: `📝 **Markdown 文件: ${attachment.name}**\n\n${attachment.data}`,
+              text: `📝 **Markdown 文件: ${attachment.name}**${pathInfo}\n\n${attachment.data}`,
             });
           } else {
             contents.push({
               type: 'text',
-              text: `📄 **文本文件: ${attachment.name}**\n\n${attachment.data}`,
+              text: `📄 **文本文件: ${attachment.name}**${pathInfo}\n\n${attachment.data}`,
             });
           }
           break;
@@ -991,9 +998,10 @@ export class AgentLoop {
 
         default: {
           // 其他文件类型
+          const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
           contents.push({
             type: 'text',
-            text: `📎 **文件: ${attachment.name}**\n\`\`\`\n${attachment.data}\n\`\`\``,
+            text: `📎 **文件: ${attachment.name}**${pathInfo}\n\`\`\`\n${attachment.data}\n\`\`\``,
           });
         }
       }

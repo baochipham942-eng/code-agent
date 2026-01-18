@@ -642,10 +642,18 @@ function setupIpcHandlers(): void {
   // -------------------------------------------------------------------------
 
   ipcMain.handle(IPC_CHANNELS.AGENT_SEND_MESSAGE, async (_, payload: string | { content: string; attachments?: unknown[] }) => {
+    // 调试：打印原始 payload 类型
+    console.log('[IPC] AGENT_SEND_MESSAGE raw payload type:', typeof payload);
+    console.log('[IPC] AGENT_SEND_MESSAGE payload is null:', payload === null);
+    console.log('[IPC] AGENT_SEND_MESSAGE payload keys:', typeof payload === 'object' && payload !== null ? Object.keys(payload) : 'N/A');
+
     // 支持两种格式：纯字符串或包含附件的对象
     const content = typeof payload === 'string' ? payload : payload.content;
-    const attachments = typeof payload === 'object' ? payload.attachments : undefined;
-    console.log('[IPC] AGENT_SEND_MESSAGE received:', content.substring(0, 50), 'attachments:', attachments?.length || 0);
+    const attachments = typeof payload === 'object' && payload !== null ? payload.attachments : undefined;
+    console.log('[IPC] AGENT_SEND_MESSAGE parsed - content:', content?.substring(0, 50), 'attachments:', attachments?.length || 0);
+    if (attachments?.length) {
+      console.log('[IPC] Attachment details:', attachments.map((a: any) => ({ name: a.name, type: a.type, category: a.category, hasData: !!a.data, dataLength: a.data?.length })));
+    }
     if (!agentOrchestrator) throw new Error('Agent not initialized');
     try {
       await agentOrchestrator.sendMessage(content, attachments);

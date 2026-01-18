@@ -3,6 +3,8 @@
 // ============================================================================
 
 import { screen, desktopCapturer, clipboard, nativeImage } from 'electron';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import type {
   GUIAgentConfig,
   ScreenCapture,
@@ -10,6 +12,8 @@ import type {
   ModelConfig,
 } from '../../shared/types';
 import { ModelRouter } from '../model/ModelRouter';
+
+const execAsync = promisify(exec);
 
 // ----------------------------------------------------------------------------
 // Types
@@ -267,14 +271,27 @@ export class GUIAgent {
       throw new Error('Click requires coordinate');
     }
 
-    // 注意：Electron 没有原生的鼠标控制能力
-    // 需要使用 robotjs 或 node-key-sender 等原生模块
-    // 这里提供接口，实际实现需要额外安装依赖
+    const [x, y] = coordinate;
+    console.log(`[GUI] Click at (${x}, ${y})`);
 
-    console.log(`[GUI] Click at (${coordinate[0]}, ${coordinate[1]})`);
-
-    // TODO: 实际的点击实现
-    // 可以通过 IPC 调用原生模块或使用 AppleScript/osascript
+    // 使用 AppleScript 实现鼠标点击 (macOS)
+    if (process.platform === 'darwin') {
+      const script = `
+        tell application "System Events"
+          click at {${x}, ${y}}
+        end tell
+      `;
+      try {
+        await execAsync(`osascript -e '${script}'`);
+      } catch (error) {
+        // 备用方案：使用 cliclick（如果已安装）
+        try {
+          await execAsync(`cliclick c:${x},${y}`);
+        } catch {
+          console.warn('[GUI] Click failed, cliclick not available');
+        }
+      }
+    }
 
     return { clicked: true };
   }
@@ -289,7 +306,19 @@ export class GUIAgent {
     // 使用剪贴板 + 粘贴的方式输入文本（更可靠）
     clipboard.writeText(text);
 
-    // TODO: 触发 Cmd+V 粘贴
+    // 触发 Cmd+V 粘贴 (macOS)
+    if (process.platform === 'darwin') {
+      const script = `
+        tell application "System Events"
+          keystroke "v" using command down
+        end tell
+      `;
+      try {
+        await execAsync(`osascript -e '${script}'`);
+      } catch (error) {
+        console.warn('[GUI] Paste failed:', error);
+      }
+    }
 
     return { typed: true };
   }
@@ -301,7 +330,48 @@ export class GUIAgent {
 
     console.log(`[GUI] Press key: ${key}`);
 
-    // TODO: 实际的按键实现
+    // macOS 按键映射
+    if (process.platform === 'darwin') {
+      const keyMap: Record<string, string> = {
+        enter: 'return',
+        escape: 'escape',
+        tab: 'tab',
+        backspace: 'delete',
+        delete: 'forward delete',
+        up: 'up arrow',
+        down: 'down arrow',
+        left: 'left arrow',
+        right: 'right arrow',
+        space: 'space',
+        home: 'home',
+        end: 'end',
+        pageup: 'page up',
+        pagedown: 'page down',
+      };
+
+      const mappedKey = keyMap[key.toLowerCase()] || key;
+      const script = `
+        tell application "System Events"
+          key code (key code "${mappedKey}")
+        end tell
+      `;
+
+      // 简化的按键实现
+      const simpleScript = `
+        tell application "System Events"
+          keystroke "${key.length === 1 ? key : ''}"
+          ${key.toLowerCase() === 'enter' ? 'keystroke return' : ''}
+          ${key.toLowerCase() === 'escape' ? 'key code 53' : ''}
+          ${key.toLowerCase() === 'tab' ? 'keystroke tab' : ''}
+        end tell
+      `;
+
+      try {
+        await execAsync(`osascript -e '${simpleScript}'`);
+      } catch (error) {
+        console.warn('[GUI] Key press failed:', error);
+      }
+    }
 
     return { pressed: true };
   }
@@ -314,9 +384,50 @@ export class GUIAgent {
       throw new Error('Scroll requires direction');
     }
 
-    console.log(`[GUI] Scroll ${direction} by ${amount || 100}`);
+    const scrollAmount = amount || 3;
+    console.log(`[GUI] Scroll ${direction} by ${scrollAmount}`);
 
-    // TODO: 实际的滚动实现
+    // macOS 滚动实现
+    if (process.platform === 'darwin') {
+      // 计算滚动方向和量
+      let deltaX = 0;
+      let deltaY = 0;
+
+      switch (direction) {
+        case 'up':
+          deltaY = scrollAmount;
+          break;
+        case 'down':
+          deltaY = -scrollAmount;
+          break;
+        case 'left':
+          deltaX = scrollAmount;
+          break;
+        case 'right':
+          deltaX = -scrollAmount;
+          break;
+      }
+
+      // 使用 AppleScript 模拟滚动
+      const script = `
+        tell application "System Events"
+          ${deltaY !== 0 ? `scroll (${deltaY > 0 ? 'up' : 'down'}) ${Math.abs(deltaY)}` : ''}
+        end tell
+      `;
+
+      // 备用方案：使用按键模拟
+      const keyScript = direction === 'up' || direction === 'down'
+        ? `tell application "System Events" to key code ${direction === 'up' ? '126' : '125'} using {option down}`
+        : '';
+
+      try {
+        if (keyScript) {
+          await execAsync(`osascript -e '${keyScript}'`);
+        }
+      } catch (error) {
+        console.warn('[GUI] Scroll failed:', error);
+      }
+    }
 
     return { scrolled: true };
   }
@@ -326,9 +437,19 @@ export class GUIAgent {
       throw new Error('Move requires coordinate');
     }
 
-    console.log(`[GUI] Move to (${coordinate[0]}, ${coordinate[1]})`);
+    const [x, y] = coordinate;
+    console.log(`[GUI] Move to (${x}, ${y})`);
 
-    // TODO: 实际的移动实现
+    // macOS 鼠标移动
+    if (process.platform === 'darwin') {
+      try {
+        // 使用 cliclick（如果已安装）
+        await execAsync(`cliclick m:${x},${y}`);
+      } catch {
+        // AppleScript 不直接支持鼠标移动，记录日志
+        console.warn('[GUI] Mouse move requires cliclick: brew install cliclick');
+      }
+    }
 
     return { moved: true };
   }

@@ -85,12 +85,12 @@ npm run typecheck    # 类型检查
 | 配置项 | 值 |
 |--------|-----|
 | 项目名 | `code-agent` |
-| 域名 | `https://code-agent-beta.vercel.app` |
+| 域名 | `https://cloud-agent-three.vercel.app` |
 | Root Directory | `cloud-agent`（不是 cloud-api）|
 
 ```bash
 # 验证部署
-curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
+curl -s "https://cloud-agent-three.vercel.app/api/update?action=health"
 ```
 
 ### API 目录

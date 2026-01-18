@@ -146,19 +146,14 @@ async function handleSearch(req: VercelRequest, res: VercelResponse) {
 
   // Brave Search API Key (免费版作为备用)
   const braveApiKey = process.env.BRAVE_SEARCH_API_KEY;
-  console.log('[cloud-search] braveApiKey exists:', !!braveApiKey);
 
   // 尝试获取用户身份
   let perplexityKey: string | null = null;
 
   try {
     const authHeader = req.headers.authorization as string | undefined;
-    console.log('[cloud-search] authHeader exists:', !!authHeader);
-
     if (authHeader) {
       const authPayload = await authenticateRequest(authHeader);
-      console.log('[cloud-search] authPayload:', authPayload);
-
       if (authPayload) {
         // 已登录用户，根据权限获取 Key
         const keyResult = await getApiKey(authPayload.userId, 'perplexity');
@@ -167,12 +162,9 @@ async function handleSearch(req: VercelRequest, res: VercelResponse) {
         }
       }
     }
-  } catch (authError) {
+  } catch {
     // 认证失败，继续使用 Brave Search
-    console.log('[cloud-search] Auth failed:', (authError as Error).message);
   }
-
-  console.log('[cloud-search] perplexityKey exists:', !!perplexityKey, 'braveApiKey exists:', !!braveApiKey);
 
   try {
     let responseData: {

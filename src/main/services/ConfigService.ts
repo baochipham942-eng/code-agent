@@ -206,18 +206,34 @@ export class ConfigService {
   }
 
   async setApiKey(provider: ModelProvider, apiKey: string): Promise<void> {
+    // Store API key in secure storage (encrypted)
+    const storage = getSecureStorage();
+    storage.setApiKey(provider, apiKey);
+
+    // Update settings (without storing the key in plaintext)
     this.settings.models.providers[provider] = {
       ...this.settings.models.providers[provider],
-      apiKey,
       enabled: true,
+      // Don't store apiKey in config.json anymore
     };
     await this.save();
   }
 
   getApiKey(provider: ModelProvider): string | undefined {
-    // Priority: config.json > environment variable
+    // Priority: secure storage > environment variable
+    const storage = getSecureStorage();
+    const secureKey = storage.getApiKey(provider);
+    if (secureKey) return secureKey;
+
+    // Legacy: check config.json (for migration)
     const configKey = this.settings.models.providers[provider]?.apiKey;
-    if (configKey) return configKey;
+    if (configKey) {
+      // Migrate to secure storage
+      storage.setApiKey(provider, configKey);
+      // Remove from config (will be saved on next settings update)
+      delete this.settings.models.providers[provider]?.apiKey;
+      return configKey;
+    }
 
     // Fallback to environment variable
     const envKeyMap: Record<ModelProvider, string> = {
@@ -297,17 +313,29 @@ export class ConfigService {
     await this.save();
   }
 
+  // Remove sensitive data (API keys) before saving to disk
+  private sanitizeSettingsForSave(settings: AppSettings): AppSettings {
+    const sanitized = JSON.parse(JSON.stringify(settings)) as AppSettings;
+
+    // Remove API keys from provider configs (they're in SecureStorage now)
+    for (const provider of Object.keys(sanitized.models.providers)) {
+      const providerConfig = sanitized.models.providers[provider as ModelProvider];
+      if (providerConfig?.apiKey) {
+        delete providerConfig.apiKey;
+      }
+    }
+
+    return sanitized;
+  }
+
   private async save(): Promise<void> {
     try {
       // Create directory if needed
       const dir = path.dirname(this.configPath);
       await fs.mkdir(dir, { recursive: true });
 
-      // Save config (excluding sensitive data in plaintext)
-      const toSave = {
-        ...this.settings,
-        // TODO: Encrypt API keys before saving
-      };
+      // Save config (API keys are stored in SecureStorage, not here)
+      const toSave = this.sanitizeSettingsForSave(this.settings);
 
       await fs.writeFile(this.configPath, JSON.stringify(toSave, null, 2));
 

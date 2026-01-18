@@ -28,6 +28,15 @@ interface SecureStorageData {
   'auth.user'?: string;
   // Developer settings (persisted across data clears)
   'settings.devModeAutoApprove'?: string;
+  // API Keys (encrypted)
+  'apikey.deepseek'?: string;
+  'apikey.claude'?: string;
+  'apikey.openai'?: string;
+  'apikey.groq'?: string;
+  'apikey.zhipu'?: string;
+  'apikey.qwen'?: string;
+  'apikey.moonshot'?: string;
+  'apikey.perplexity'?: string;
 }
 
 // Generate a machine-specific encryption key
@@ -77,6 +86,44 @@ class SecureStorageService {
     this.store.delete('supabase.session');
     this.store.delete('auth.quick_token');
     this.store.delete('auth.user');
+  }
+
+  // ========== API Key Management (encrypted) ==========
+
+  // Set API key for a provider
+  setApiKey(provider: string, apiKey: string): void {
+    const key = `apikey.${provider}` as keyof SecureStorageData;
+    this.store.set(key, apiKey);
+  }
+
+  // Get API key for a provider
+  getApiKey(provider: string): string | undefined {
+    const key = `apikey.${provider}` as keyof SecureStorageData;
+    return this.store.get(key);
+  }
+
+  // Delete API key for a provider
+  deleteApiKey(provider: string): void {
+    const key = `apikey.${provider}` as keyof SecureStorageData;
+    this.store.delete(key);
+  }
+
+  // Check if API key exists for a provider
+  hasApiKey(provider: string): boolean {
+    const key = `apikey.${provider}` as keyof SecureStorageData;
+    return this.store.has(key);
+  }
+
+  // Get all stored API key providers
+  getStoredApiKeyProviders(): string[] {
+    const providers: string[] = [];
+    const allKeys = ['deepseek', 'claude', 'openai', 'groq', 'zhipu', 'qwen', 'moonshot', 'perplexity'];
+    for (const provider of allKeys) {
+      if (this.hasApiKey(provider)) {
+        providers.push(provider);
+      }
+    }
+    return providers;
   }
 
   // Get or generate device ID

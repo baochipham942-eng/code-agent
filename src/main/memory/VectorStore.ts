@@ -404,7 +404,7 @@ export class VectorStore {
 
       // Call Supabase RPC function
       const supabase = getSupabase();
-      const { data, error } = await supabase.rpc('match_vectors', {
+      const { data, error } = await (supabase.rpc as any)('match_vectors', {
         query_embedding: normalizedEmbedding,
         match_user_id: user.id,
         match_project_path: projectPath,

@@ -166,7 +166,10 @@ export class ConfigService {
 
         // Restore language
         if (keychainSettings.language && typeof keychainSettings.language === 'string') {
-          this.settings.ui.language = keychainSettings.language;
+          const validLanguages = ['zh', 'en'];
+          if (validLanguages.includes(keychainSettings.language)) {
+            this.settings.ui.language = keychainSettings.language as 'zh' | 'en';
+          }
         }
 
         // Restore devModeAutoApprove

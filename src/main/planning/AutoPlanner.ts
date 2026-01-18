@@ -17,12 +17,24 @@ import { getEvolutionPersistence } from '../services/EvolutionPersistence';
 // Types
 // ============================================================================
 
+// Template step only requires content
+interface TemplateStep {
+  content: string;
+}
+
+// Template phase has simplified structure
+interface TemplatePhase {
+  title: string;
+  steps: TemplateStep[];
+  notes?: string;
+}
+
 export interface PlanTemplate {
   id: string;
   name: string;
   description: string;
   complexity: TaskComplexity;
-  phases: Omit<TaskPhase, 'id' | 'status'>[];
+  phases: TemplatePhase[];
   tags: string[];
 }
 

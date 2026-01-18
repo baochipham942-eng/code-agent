@@ -85,6 +85,31 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 
 ---
 
+## 开发规范
+
+### 类型检查
+
+- **边开发边验证**：写完一个功能点后立即运行 `npm run typecheck`
+- **提交前必检**：commit 前 typecheck 必须通过
+- **允许临时 any**：原型阶段可用 `as any` 绕过，但必须标注 `// TODO: 修复类型`
+- **接口改动要追溯**：修改 interface/type 后，检查所有引用处是否需要同步更新
+
+### 常见类型错误模式
+
+| 错误模式 | 原因 | 预防 |
+|---------|------|------|
+| `isCloud` vs `fromCloud` | 不同文件命名不一致 | 改接口时全局搜索引用 |
+| Supabase 类型错误 | 缺少生成的类型定义 | 用 `as any` 临时绕过并标 TODO |
+| `unknown` 转 `ReactNode` | Record<string, unknown> 取值 | 显式类型断言 |
+
+### 验证节奏
+
+```
+写代码 → typecheck → 修复 → 功能测试 → commit
+```
+
+---
+
 ## 错题本
 
 ### Vercel 部署目录混淆
@@ -99,10 +124,15 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 **问题**: 修改代码后直接打包，忘记更新版本号
 **正确做法**: 每次修改客户端代码必须递增 package.json 版本号
 
+### 类型错误积累
+**问题**: 多个功能并行开发后合并，积累了大量类型错误（接口不一致、命名冲突）
+**正确做法**: 每个功能点完成后立即 `npm run typecheck`，不要等到最后一起修
+
 ### 发布清单
 
 ```
 □ 代码改动已测试
+□ npm run typecheck 通过
 □ package.json 版本号已递增
 □ cloud-agent/api/update.ts 已更新
 □ 已 commit 并 push

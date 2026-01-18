@@ -17,6 +17,7 @@ import type {
   TaskProgressEvent,
 } from '../../shared/types/cloud';
 import type { ModelConfig } from '../../shared/types';
+import type { Tool, ToolContext } from '../tools/ToolRegistry';
 
 // ============================================================================
 // 类型定义
@@ -81,7 +82,8 @@ export class HybridTaskCoordinator extends EventEmitter {
   private runningLocal: Set<string> = new Set();
   private runningCloud: Set<string> = new Set();
   private modelConfig?: ModelConfig;
-  private toolRegistry?: Map<string, unknown>;
+  private toolRegistry?: Map<string, Tool>;
+  private toolContext?: ToolContext;
 
   constructor(config: Partial<CoordinatorConfig> = {}) {
     super();
@@ -98,10 +100,12 @@ export class HybridTaskCoordinator extends EventEmitter {
    */
   initialize(context: {
     modelConfig: ModelConfig;
-    toolRegistry: Map<string, unknown>;
+    toolRegistry: Map<string, Tool>;
+    toolContext: ToolContext;
   }): void {
     this.modelConfig = context.modelConfig;
     this.toolRegistry = context.toolRegistry;
+    this.toolContext = context.toolContext;
   }
 
   // --------------------------------------------------------------------------
@@ -200,7 +204,7 @@ export class HybridTaskCoordinator extends EventEmitter {
         {
           modelConfig: this.modelConfig!,
           toolRegistry: this.toolRegistry!,
-          toolContext: {},
+          toolContext: this.toolContext!,
         }
       );
 

@@ -43,7 +43,7 @@ const DEFAULT_CONFIG: CloudTaskServiceConfig = {
 export class CloudTaskService extends EventEmitter {
   private config: CloudTaskServiceConfig;
   private localTasks: Map<string, CloudTask> = new Map();
-  private progressListeners: Map<string, NodeJS.Timer> = new Map();
+  private progressListeners: Map<string, ReturnType<typeof setInterval>> = new Map();
 
   constructor(config: Partial<CloudTaskServiceConfig> = {}) {
     super();
@@ -112,7 +112,7 @@ export class CloudTaskService extends EventEmitter {
         if (client) {
           const { data: user } = await client.auth.getUser();
 
-          const insertData: Record<string, unknown> = {
+          const insertData = {
             id: taskId,
             user_id: user.user?.id,
             session_id: request.sessionId,
@@ -126,13 +126,13 @@ export class CloudTaskService extends EventEmitter {
             location,
             max_iterations: request.maxIterations || 20,
             timeout_ms: request.timeout || this.config.defaultTimeout,
-            status: 'pending',
+            status: 'pending' as const,
             progress: 0,
             metadata: request.metadata || {},
           };
 
-          const { error } = await client
-            .from('cloud_tasks')
+          const { error } = await (client
+            .from('cloud_tasks') as any)
             .insert(insertData);
 
           if (error) {
@@ -341,8 +341,8 @@ export class CloudTaskService extends EventEmitter {
             updateData.started_at = now;
           }
 
-          const { error } = await client
-            .from('cloud_tasks')
+          const { error } = await (client
+            .from('cloud_tasks') as any)
             .update(updateData)
             .eq('id', taskId);
 
@@ -433,7 +433,7 @@ export class CloudTaskService extends EventEmitter {
 
       if (client) {
         try {
-          const { error } = await client.rpc('enqueue_cloud_task', {
+          const { error } = await (client as any).rpc('enqueue_cloud_task', {
             p_task_id: taskId,
           });
 
@@ -552,8 +552,8 @@ export class CloudTaskService extends EventEmitter {
     if (!client) return null;
 
     try {
-      const { data, error } = await client
-        .from('cloud_tasks')
+      const { data, error } = await (client
+        .from('cloud_tasks') as any)
         .select('status, progress, current_step, error, completed_at')
         .eq('id', taskId)
         .single();
@@ -562,11 +562,11 @@ export class CloudTaskService extends EventEmitter {
 
       const task = this.localTasks.get(taskId);
       if (task) {
-        task.status = data.status;
-        task.progress = data.progress;
-        task.currentStep = data.current_step;
-        task.error = data.error;
-        task.completedAt = data.completed_at;
+        task.status = (data as any).status;
+        task.progress = (data as any).progress;
+        task.currentStep = (data as any).current_step;
+        task.error = (data as any).error;
+        task.completedAt = (data as any).completed_at;
         this.localTasks.set(taskId, task);
       }
 

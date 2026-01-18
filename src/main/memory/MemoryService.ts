@@ -423,7 +423,7 @@ export class MemoryService {
       crossProject?: boolean;
       maxTokens?: number;
     } = {}
-  ): Promise<{ context: string; sources: Array<{ type: string; path?: string; isCloud: boolean }> }> {
+  ): Promise<{ context: string; sources: Array<{ type: string; path?: string; score: number; fromCloud: boolean }> }> {
     const {
       includeCode = true,
       includeConversations = true,
@@ -547,7 +547,7 @@ export class MemoryService {
     } = {}
   ): Promise<{
     prompt: string;
-    sources: Array<{ type: string; path?: string; isCloud: boolean }>;
+    sources: Array<{ type: string; path?: string; score: number; fromCloud: boolean }>;
   }> {
     const {
       includeCloud = this.config.enableCloudSearch,
@@ -556,7 +556,7 @@ export class MemoryService {
     } = options;
 
     let enhancedPrompt = basePrompt;
-    const allSources: Array<{ type: string; path?: string; isCloud: boolean }> = [];
+    const allSources: Array<{ type: string; path?: string; score: number; fromCloud: boolean }> = [];
 
     // 使用云端增强的 RAG 上下文
     const { context: ragContext, sources } = await this.getRAGContextAsync(userQuery, {
@@ -587,7 +587,7 @@ export class MemoryService {
     }
 
     // 添加云端来源归因（如果有）
-    const cloudSources = allSources.filter((s) => s.isCloud);
+    const cloudSources = allSources.filter((s) => s.fromCloud);
     if (cloudSources.length > 0) {
       const sourceStr = cloudSources
         .slice(0, 3)

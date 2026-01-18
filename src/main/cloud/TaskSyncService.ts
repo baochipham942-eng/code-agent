@@ -60,7 +60,7 @@ const DEFAULT_CONFIG: SyncConfig = {
 export class TaskSyncService extends EventEmitter {
   private config: SyncConfig;
   private cloudService: CloudTaskService;
-  private syncTimer: NodeJS.Timer | null = null;
+  private syncTimer: ReturnType<typeof setInterval> | null = null;
   private isSyncing = false;
   private pendingUploads: Map<string, PendingSync> = new Map();
   private pendingDownloads: Map<string, PendingSync> = new Map();
@@ -227,8 +227,8 @@ export class TaskSyncService extends EventEmitter {
         }
 
         const task = pending.data as CloudTask;
-        const { error } = await client
-          .from('cloud_tasks')
+        const { error } = await (client
+          .from('cloud_tasks') as any)
           .upsert({
             id: task.id,
             user_id: task.userId,
@@ -301,8 +301,8 @@ export class TaskSyncService extends EventEmitter {
       }
 
       // 获取自上次同步以来更新的任务
-      let query = client
-        .from('cloud_tasks')
+      let query = (client
+        .from('cloud_tasks') as any)
         .select('*')
         .order('updated_at', { ascending: false })
         .limit(this.config.batchSize);

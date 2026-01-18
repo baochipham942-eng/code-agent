@@ -130,8 +130,8 @@ export class SessionManager {
 
     try {
       const supabase = getSupabase();
-      const { data: cloudMessages, error } = await supabase
-        .from('messages')
+      const { data: cloudMessages, error } = await (supabase
+        .from('messages') as any)
         .select('*')
         .eq('session_id', sessionId)
         .order('timestamp', { ascending: true });
@@ -144,7 +144,7 @@ export class SessionManager {
       if (!cloudMessages || cloudMessages.length === 0) return [];
 
       // 转换为本地格式
-      return cloudMessages.map((m) => ({
+      return cloudMessages.map((m: any) => ({
         id: m.id,
         role: m.role,
         content: m.content,
@@ -196,8 +196,8 @@ export class SessionManager {
 
     try {
       const supabase = getSupabase();
-      const { data: cloudSessions, error } = await supabase
-        .from('sessions')
+      const { data: cloudSessions, error } = await (supabase
+        .from('sessions') as any)
         .select('id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at')
         .eq('user_id', user.id)
         .order('updated_at', { ascending: false })
@@ -213,7 +213,7 @@ export class SessionManager {
       const db = getDatabase();
 
       // 更新本地缓存（只更新元数据，不拉取消息）
-      for (const cloudSession of cloudSessions) {
+      for (const cloudSession of cloudSessions as any[]) {
         const localSession = db.getSession(cloudSession.id);
 
         if (!localSession) {

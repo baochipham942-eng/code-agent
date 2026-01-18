@@ -79,6 +79,8 @@ export interface ToolExecutionResult {
   success: boolean;
   output?: string;
   error?: string;
+  result?: unknown; // For caching purposes
+  fromCache?: boolean; // Indicates if result was from cache
 }
 
 // ----------------------------------------------------------------------------

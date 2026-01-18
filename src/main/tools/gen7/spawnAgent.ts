@@ -357,3 +357,71 @@ export function listSpawnedAgents(): SpawnedAgent[] {
 export function getAvailableRoles(): Record<string, AgentRole> {
   return { ...AGENT_ROLES };
 }
+
+// Execute multiple agents in parallel using the ParallelAgentCoordinator
+async function executeParallelAgents(
+  agents: Array<{ role: string; task: string; dependsOn?: string[] }>,
+  context: ToolContext
+): Promise<ToolExecutionResult> {
+  const coordinator = getParallelAgentCoordinator();
+
+  // Initialize coordinator with context
+  coordinator.initialize({
+    modelConfig: context.modelConfig as ModelConfig,
+    toolRegistry: new Map(
+      context.toolRegistry!.getAllTools().map((t) => [t.name, t])
+    ),
+    toolContext: context,
+  });
+
+  // Convert to AgentTask format
+  const tasks: AgentTask[] = agents.map((agent, index) => {
+    const agentRole = AGENT_ROLES[agent.role];
+    if (!agentRole) {
+      throw new Error(`Unknown agent role: ${agent.role}`);
+    }
+
+    return {
+      id: `agent_${agent.role}_${index}_${Date.now()}`,
+      role: agent.role,
+      task: agent.task,
+      systemPrompt: agentRole.systemPrompt,
+      tools: agentRole.tools,
+      maxIterations: 20,
+      dependsOn: agent.dependsOn,
+    };
+  });
+
+  try {
+    const result = await coordinator.executeParallel(tasks);
+
+    if (result.success) {
+      const summaries = result.results.map((r) =>
+        `[${r.role}] ${r.success ? 'Completed' : 'Failed'} in ${r.duration}ms\n${r.output || r.error || ''}`
+      ).join('\n\n---\n\n');
+
+      return {
+        success: true,
+        output: `Parallel execution completed:
+- Total duration: ${result.totalDuration}ms
+- Max parallelism: ${result.parallelism}
+- Tasks completed: ${result.results.length}
+- Errors: ${result.errors.length}
+
+Results:
+${summaries}`,
+      };
+    } else {
+      return {
+        success: false,
+        error: `Parallel execution failed with ${result.errors.length} errors: ${result.errors.map(e => e.error).join(', ')}`,
+        output: result.results.map(r => r.output).join('\n\n'),
+      };
+    }
+  } catch (error) {
+    return {
+      success: false,
+      error: `Parallel execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    };
+  }
+}

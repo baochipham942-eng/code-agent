@@ -301,11 +301,13 @@ export interface AgentState {
 
 export type AgentEvent =
   | { type: 'message'; data: Message }
-  | { type: 'tool_call_start'; data: ToolCall }
+  | { type: 'tool_call_start'; data: ToolCall & { _index?: number } }
   | { type: 'tool_call_end'; data: ToolResult }
   | { type: 'permission_request'; data: PermissionRequest }
   | { type: 'error'; data: { message: string; code?: string } }
-  | { type: 'stream_chunk'; data: { content: string } }
+  | { type: 'stream_chunk'; data: { content: string | undefined } }
+  | { type: 'stream_tool_call_start'; data: { index?: number; id?: string; name?: string } }
+  | { type: 'stream_tool_call_delta'; data: { index?: number; name?: string; argumentsDelta?: string } }
   | { type: 'todo_update'; data: TodoItem[] }
   | { type: 'notification'; data: { message: string } }
   | { type: 'agent_complete'; data: null };

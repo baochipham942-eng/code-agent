@@ -427,16 +427,16 @@ export const ObservabilityPanel: React.FC = () => {
                             {isEventExpanded && event.details && (
                               <div className="px-4 pb-3 pl-10 animate-fadeIn">
                                 {/* Arguments */}
-                                {event.details.arguments && (
+                                {event.details.arguments != null && (
                                   <div className="mb-2">
                                     <div className="text-xs text-zinc-500 mb-1">参数</div>
                                     <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded p-2 overflow-x-auto max-h-24">
-                                      {JSON.stringify(event.details.arguments, null, 2)}
+                                      {JSON.stringify(event.details.arguments as object, null, 2)}
                                     </pre>
                                   </div>
                                 )}
                                 {/* Result */}
-                                {event.details.result && (
+                                {event.details.result != null && (
                                   <div>
                                     <div className="text-xs text-zinc-500 mb-1">结果</div>
                                     <pre className={`text-xs rounded p-2 overflow-x-auto max-h-24 ${
@@ -446,7 +446,7 @@ export const ObservabilityPanel: React.FC = () => {
                                     }`}>
                                       {(event.details.result as any).error
                                         || (typeof (event.details.result as any).output === 'string'
-                                          ? (event.details.result as any).output.slice(0, 500)
+                                          ? String((event.details.result as any).output).slice(0, 500)
                                           : JSON.stringify((event.details.result as any).output, null, 2)?.slice(0, 500))}
                                     </pre>
                                   </div>

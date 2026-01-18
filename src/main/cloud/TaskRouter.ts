@@ -84,7 +84,7 @@ function analyzeTaskCharacteristics(
   const isLongRunning =
     /\b(comprehensive|thorough|detailed|extensive)\b/i.test(combinedText) ||
     /全面|详细|深入/i.test(combinedText) ||
-    (request.maxIterations && request.maxIterations > 20);
+    Boolean(request.maxIterations && request.maxIterations > 20);
 
   // 检测是否包含敏感数据
   const hasSensitiveData =
@@ -193,7 +193,7 @@ function makeRuleBasedDecision(
   }
 
   // 添加混合选项
-  if (recommendedLocation !== 'hybrid') {
+  if ((recommendedLocation as TaskExecutionLocation) !== 'hybrid') {
     alternatives.push({
       location: 'hybrid',
       reason: '可以拆分任务并行执行',

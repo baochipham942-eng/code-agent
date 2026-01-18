@@ -891,7 +891,7 @@ export class AgentLoop {
    */
   private async buildEnhancedSystemPromptAsync(basePrompt: string): Promise<{
     prompt: string;
-    cloudSources: Array<{ type: string; path?: string; isCloud: boolean }>;
+    cloudSources: Array<{ type: string; path?: string; score: number; fromCloud: boolean }>;
   }> {
     try {
       const memoryService = getMemoryService();

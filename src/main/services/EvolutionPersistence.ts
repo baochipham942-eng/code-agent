@@ -408,8 +408,8 @@ class EvolutionPersistenceService {
       const supabase = getSupabase();
 
       // Sync strategies
-      const { data: cloudStrategies, error: strategyError } = await supabase
-        .from('evolution_strategies')
+      const { data: cloudStrategies, error: strategyError } = await (supabase
+        .from('evolution_strategies') as any)
         .select('*')
         .eq('user_id', userId);
 
@@ -439,8 +439,8 @@ class EvolutionPersistenceService {
       }
 
       // Sync patterns
-      const { data: cloudPatterns, error: patternError } = await supabase
-        .from('evolution_patterns')
+      const { data: cloudPatterns, error: patternError } = await (supabase
+        .from('evolution_patterns') as any)
         .select('*')
         .eq('user_id', userId);
 
@@ -487,7 +487,7 @@ class EvolutionPersistenceService {
     try {
       const supabase = getSupabase();
 
-      await supabase.from('evolution_strategies').upsert({
+      await (supabase.from('evolution_strategies') as any).upsert({
         id: strategy.id,
         user_id: userId,
         name: strategy.name,
@@ -500,7 +500,7 @@ class EvolutionPersistenceService {
         project_path: strategy.projectPath,
         created_at: new Date(strategy.createdAt).toISOString(),
         updated_at: new Date(strategy.updatedAt).toISOString(),
-      } as any);
+      });
     } catch (error) {
       console.error('[EvolutionPersistence] Failed to sync strategy to cloud:', error);
     }
@@ -515,8 +515,8 @@ class EvolutionPersistenceService {
     try {
       const supabase = getSupabase();
 
-      await supabase
-        .from('evolution_strategies')
+      await (supabase
+        .from('evolution_strategies') as any)
         .delete()
         .eq('id', id)
         .eq('user_id', userId);
@@ -534,7 +534,7 @@ class EvolutionPersistenceService {
     try {
       const supabase = getSupabase();
 
-      await supabase.from('evolution_patterns').upsert({
+      await (supabase.from('evolution_patterns') as any).upsert({
         id: pattern.id,
         user_id: userId,
         name: pattern.name,
@@ -549,7 +549,7 @@ class EvolutionPersistenceService {
         project_path: pattern.projectPath,
         created_at: new Date(pattern.createdAt).toISOString(),
         updated_at: new Date(pattern.updatedAt).toISOString(),
-      } as any);
+      });
     } catch (error) {
       console.error('[EvolutionPersistence] Failed to sync pattern to cloud:', error);
     }
@@ -564,8 +564,8 @@ class EvolutionPersistenceService {
     try {
       const supabase = getSupabase();
 
-      await supabase
-        .from('evolution_patterns')
+      await (supabase
+        .from('evolution_patterns') as any)
         .delete()
         .eq('id', id)
         .eq('user_id', userId);

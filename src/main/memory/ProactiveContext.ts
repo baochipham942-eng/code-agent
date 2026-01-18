@@ -291,9 +291,9 @@ export class ProactiveContextService {
             const codeResults = memoryService.searchRelevantCode(entity.value, 3);
             for (const result of codeResults) {
               contextItems.push({
-                content: result.content,
+                content: result.document.content,
                 type: 'code',
-                source: result.path || entity.value,
+                source: result.document.metadata.filePath || entity.value,
                 relevance: result.score * entity.confidence,
                 isCloud: false,
                 entity: entity.value,
@@ -310,9 +310,9 @@ export class ProactiveContextService {
             );
             for (const result of defResults) {
               contextItems.push({
-                content: result.content,
+                content: result.document.content,
                 type: 'code',
-                source: result.path || 'codebase',
+                source: result.document.metadata.filePath || 'codebase',
                 relevance: result.score * entity.confidence,
                 isCloud: false,
                 entity: entity.value,
@@ -322,10 +322,10 @@ export class ProactiveContextService {
 
           case 'error':
             // Search for similar error patterns and solutions
-            const errorResults = memoryService.searchKnowledge(entity.value, 3);
+            const errorResults = memoryService.searchKnowledge(entity.value, undefined, 3);
             for (const result of errorResults) {
               contextItems.push({
-                content: result.content,
+                content: result.document.content,
                 type: 'knowledge',
                 source: 'error_history',
                 relevance: result.score * entity.confidence,
@@ -337,10 +337,10 @@ export class ProactiveContextService {
 
           case 'concept':
             // Search for concept-related knowledge
-            const knowledgeResults = memoryService.searchKnowledge(entity.value, 2);
+            const knowledgeResults = memoryService.searchKnowledge(entity.value, undefined, 2);
             for (const result of knowledgeResults) {
               contextItems.push({
-                content: result.content,
+                content: result.document.content,
                 type: 'knowledge',
                 source: 'project_knowledge',
                 relevance: result.score * entity.confidence,
@@ -355,11 +355,12 @@ export class ProactiveContextService {
             if (this.config.detectPatterns) {
               const patternResults = memoryService.searchKnowledge(
                 `pattern ${entity.value}`,
+                undefined,
                 2
               );
               for (const result of patternResults) {
                 contextItems.push({
-                  content: result.content,
+                  content: result.document.content,
                   type: 'pattern',
                   source: 'learned_patterns',
                   relevance: result.score * entity.confidence,
@@ -380,11 +381,11 @@ export class ProactiveContextService {
       const semanticResults = memoryService.searchRelevantCode(userMessage, 3);
       for (const result of semanticResults) {
         // Avoid duplicates
-        if (!contextItems.some(c => c.content === result.content)) {
+        if (!contextItems.some(c => c.content === result.document.content)) {
           contextItems.push({
-            content: result.content,
+            content: result.document.content,
             type: 'code',
-            source: result.path || 'semantic_search',
+            source: result.document.metadata.filePath || 'semantic_search',
             relevance: result.score * 0.8, // Slightly lower weight for general search
             isCloud: false,
           });
@@ -408,9 +409,9 @@ export class ProactiveContextService {
           if (!contextItems.some(c => c.content === result.content)) {
             contextItems.push({
               content: result.content,
-              type: result.metadata?.type === 'pattern' ? 'pattern' : 'knowledge',
-              source: `cloud:${result.metadata?.projectPath || 'global'}`,
-              relevance: result.score * 0.9,
+              type: result.source === 'pattern' ? 'pattern' : 'knowledge',
+              source: `cloud:${result.projectPath || 'global'}`,
+              relevance: result.similarity * 0.9,
               isCloud: true,
             });
           }

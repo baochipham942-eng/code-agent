@@ -461,7 +461,7 @@ async function initializeServices(): Promise<void> {
 
   // Initialize update service
   console.log('[Init] Initializing update service...');
-  const updateServerUrl = process.env.CLOUD_API_URL || settings.cloudApi?.url || 'https://cloud-api-henna.vercel.app';
+  const updateServerUrl = process.env.CLOUD_API_URL || settings.cloudApi?.url || 'https://code-agent-beta.vercel.app';
   initUpdateService({
     updateServerUrl,
     checkInterval: 60 * 60 * 1000, // Check every hour

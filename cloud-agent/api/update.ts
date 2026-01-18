@@ -1,19 +1,59 @@
 // ============================================================================
-// Update API - 统一更新接口
-// GET  /api/update?action=check             - 检查更新
-// GET  /api/update?action=latest&platform=  - 获取 latest.yml
-// POST /api/update?action=publish           - 发布新版本 (CI)
+// Code Agent Update API - 版本检查与更新下载服务
 // ============================================================================
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getDb, type Release } from '../lib/db.js';
-import { setCorsHeaders, handleOptions, applyRateLimit, handleError } from '../lib/middleware.js';
-import { RATE_LIMITS } from '../lib/rateLimit.js';
 
+// ----------------------------------------------------------------------------
+// 配置 - 最新版本信息
+// ----------------------------------------------------------------------------
+
+interface ReleaseInfo {
+  version: string;
+  publishedAt: string;
+  releaseNotes: string;
+  /** 是否强制更新 - 用户必须更新才能继续使用 */
+  forceUpdate: boolean;
+  /** 强制更新的最低版本 - 低于此版本的用户必须更新 */
+  minRequiredVersion?: string;
+  downloads: {
+    darwin: { url: string; size: number };
+    win32?: { url: string; size: number };
+    linux?: { url: string; size: number };
+  };
+}
+
+// 当前最新版本 - 每次发布新版本时更新这里
+// forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
+// forceUpdate: false - 可选更新，仅在设置中提示
+const LATEST_RELEASE: ReleaseInfo = {
+  version: '0.4.7',
+  publishedAt: '2026-01-18T00:00:00.000Z',
+  releaseNotes: `
+## Code Agent v0.4.7 ✨
+
+### 🐛 Bug 修复
+- **添加登录入口** - 退出登录后显示登录按钮，点击可重新登录
+- **简化用户菜单** - 登录后下拉菜单仅显示退出登录选项
+  `.trim(),
+  forceUpdate: false,
+  downloads: {
+    darwin: {
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.4.7/Code.Agent-0.4.7-arm64.dmg',
+      size: 130000000,
+    },
+  },
+};
+
+// ----------------------------------------------------------------------------
 // 版本比较
+// ----------------------------------------------------------------------------
+
 function compareVersions(v1: string, v2: string): number {
-  const parts1 = v1.replace(/^v/, '').split('.').map(Number);
-  const parts2 = v2.replace(/^v/, '').split('.').map(Number);
+  const normalize = (v: string) => v.replace(/^v/, '');
+  const parts1 = normalize(v1).split('.').map(Number);
+  const parts2 = normalize(v2).split('.').map(Number);
+
   for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
     const p1 = parts1[i] || 0;
     const p2 = parts2[i] || 0;
@@ -23,121 +63,79 @@ function compareVersions(v1: string, v2: string): number {
   return 0;
 }
 
-// 检查更新
-async function handleCheck(req: VercelRequest, res: VercelResponse) {
-  const version = (req.query.version || req.body?.currentVersion) as string;
-  const platform = (req.query.platform || req.body?.platform) as string;
+// ----------------------------------------------------------------------------
+// API Handler
+// ----------------------------------------------------------------------------
 
-  if (!version || !platform) {
-    return res.status(400).json({ error: 'Missing version or platform' });
+export default function handler(req: VercelRequest, res: VercelResponse) {
+  // 处理 CORS 预检请求
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
   }
 
-  const sql = getDb();
-  const releases = await sql`
-    SELECT * FROM code_agent.releases
-    WHERE platform = ${platform} AND is_latest = true LIMIT 1
-  `;
+  const { action, version, platform } = req.query;
 
-  if (releases.length === 0) {
-    return res.status(200).json({ hasUpdate: false });
+  // 获取最新版本信息
+  if (action === 'latest') {
+    return res.status(200).json({
+      success: true,
+      version: LATEST_RELEASE.version,
+      publishedAt: LATEST_RELEASE.publishedAt,
+      releaseNotes: LATEST_RELEASE.releaseNotes,
+      forceUpdate: LATEST_RELEASE.forceUpdate,
+      minRequiredVersion: LATEST_RELEASE.minRequiredVersion,
+      downloads: LATEST_RELEASE.downloads,
+    });
   }
 
-  const latest = releases[0] as Release;
-  const hasUpdate = compareVersions(latest.version, version) > 0;
+  // 检查更新
+  if (action === 'check') {
+    const currentVersion = (version as string) || '0.0.0';
+    const clientPlatform = (platform as string) || 'darwin';
 
-  return res.status(200).json({
-    hasUpdate,
-    ...(hasUpdate && {
-      latestVersion: latest.version,
-      downloadUrl: latest.download_url,
-      releaseNotes: latest.release_notes,
-      fileSize: latest.file_size,
-      publishedAt: latest.published_at,
-    }),
-  });
-}
+    const hasUpdate = compareVersions(LATEST_RELEASE.version, currentVersion) > 0;
+    const downloadInfo = LATEST_RELEASE.downloads[clientPlatform as keyof typeof LATEST_RELEASE.downloads];
 
-// 获取 latest.yml (electron-updater 格式)
-async function handleLatest(req: VercelRequest, res: VercelResponse) {
-  const platform = req.query.platform as string || 'darwin';
-  const sql = getDb();
-
-  const releases = await sql`
-    SELECT * FROM code_agent.releases
-    WHERE platform = ${platform} AND is_latest = true LIMIT 1
-  `;
-
-  if (releases.length === 0) {
-    return res.status(404).send('No release found');
-  }
-
-  const release = releases[0] as Release;
-  const yaml = `version: ${release.version}
-files:
-  - url: ${release.download_url}
-    size: ${release.file_size || 0}
-path: ${release.download_url.split('/').pop()}
-releaseDate: '${new Date(release.published_at).toISOString()}'
-`;
-
-  res.setHeader('Content-Type', 'text/yaml');
-  return res.status(200).send(yaml);
-}
-
-// 发布新版本 (CI 调用)
-async function handlePublish(req: VercelRequest, res: VercelResponse) {
-  // 验证 CI Token
-  const authHeader = req.headers.authorization;
-  const ciToken = process.env.CI_PUBLISH_TOKEN;
-
-  if (!ciToken || !authHeader?.startsWith('Bearer ') || authHeader.slice(7) !== ciToken) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const { version, platform, downloadUrl, releaseNotes, fileSize } = req.body;
-
-  if (!version || !platform || !downloadUrl) {
-    return res.status(400).json({ error: 'Missing required fields' });
-  }
-
-  const sql = getDb();
-
-  // 将该平台其他版本设为非最新
-  await sql`UPDATE code_agent.releases SET is_latest = false WHERE platform = ${platform}`;
-
-  // 插入新版本
-  const result = await sql`
-    INSERT INTO code_agent.releases (version, platform, download_url, release_notes, file_size, is_latest)
-    VALUES (${version}, ${platform}, ${downloadUrl}, ${releaseNotes || null}, ${fileSize || null}, true)
-    RETURNING *
-  `;
-
-  return res.status(200).json({ success: true, release: result[0] });
-}
-
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CORS - 限制允许的来源
-  setCorsHeaders(req, res);
-  if (handleOptions(req, res)) return;
-
-  // Rate limiting
-  if (applyRateLimit(req, res, undefined, RATE_LIMITS.update)) return;
-
-  const action = req.query.action as string;
-
-  try {
-    switch (action) {
-      case 'check':
-        return handleCheck(req, res);
-      case 'latest':
-        return handleLatest(req, res);
-      case 'publish':
-        if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-        return handlePublish(req, res);
-      default:
-        return res.status(400).json({ error: 'Invalid action. Use: check, latest, publish' });
+    // 判断是否需要强制更新
+    // 1. 如果 forceUpdate 为 true，且有新版本 -> 强制更新
+    // 2. 如果设置了 minRequiredVersion，且当前版本低于最低要求 -> 强制更新
+    let isForceUpdate = false;
+    if (hasUpdate) {
+      if (LATEST_RELEASE.forceUpdate) {
+        isForceUpdate = true;
+      } else if (LATEST_RELEASE.minRequiredVersion) {
+        isForceUpdate = compareVersions(LATEST_RELEASE.minRequiredVersion, currentVersion) > 0;
+      }
     }
-  } catch (err) {
-    handleError(res, err, 'Update operation failed');
+
+    return res.status(200).json({
+      success: true,
+      hasUpdate,
+      forceUpdate: isForceUpdate,
+      currentVersion,
+      latestVersion: LATEST_RELEASE.version,
+      publishedAt: LATEST_RELEASE.publishedAt,
+      releaseNotes: hasUpdate ? LATEST_RELEASE.releaseNotes : undefined,
+      downloadUrl: hasUpdate && downloadInfo ? downloadInfo.url : undefined,
+      fileSize: hasUpdate && downloadInfo ? downloadInfo.size : undefined,
+    });
   }
+
+  // 健康检查
+  if (action === 'health' || !action) {
+    return res.status(200).json({
+      success: true,
+      service: 'Code Agent Update API',
+      version: '1.0.0',
+      latestAppVersion: LATEST_RELEASE.version,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  // 未知操作
+  return res.status(400).json({
+    success: false,
+    error: 'Unknown action',
+    availableActions: ['check', 'latest', 'health'],
+  });
 }

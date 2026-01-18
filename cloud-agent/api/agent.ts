@@ -17,40 +17,42 @@ export const config = {
 
 /**
  * 获取 Agent 配置（根据用户权限和可用 Key）
- * 优先级：用户配置的 Key > 系统环境变量
- * 模型选择：DeepSeek（默认）> OpenAI > Anthropic
+ * 权限规则：
+ * - 管理员：使用系统 Key（环境变量）
+ * - 普通用户：只能使用自己在客户端配置的 Key
+ * - 未登录用户：无权访问
+ * 模型优先级：DeepSeek > OpenAI > Anthropic
  */
 async function getAgentConfig(userId?: string): Promise<CloudAgentConfig | null> {
+  // 未登录用户无法使用 Agent
+  if (!userId) {
+    return null;
+  }
+
   // 按优先级尝试获取 API Key
-  const providers: Array<{ type: ApiKeyType; provider: 'deepseek' | 'openai' | 'anthropic'; envKey: string }> = [
-    { type: 'deepseek', provider: 'deepseek', envKey: 'DEEPSEEK_API_KEY' },
-    { type: 'openai', provider: 'openai', envKey: 'OPENAI_API_KEY' },
-    { type: 'anthropic', provider: 'anthropic', envKey: 'ANTHROPIC_API_KEY' },
+  const providers: Array<{ type: ApiKeyType; provider: 'deepseek' | 'openai' | 'anthropic' }> = [
+    { type: 'deepseek', provider: 'deepseek' },
+    { type: 'openai', provider: 'openai' },
+    { type: 'anthropic', provider: 'anthropic' },
   ];
 
-  for (const { type, provider, envKey } of providers) {
-    // 先尝试环境变量
-    let apiKey = process.env[envKey];
-
-    // 如果有登录用户，尝试获取用户配置的 Key（优先级更高）
-    if (userId) {
-      try {
-        const keyResult = await getApiKey(userId, type);
-        if (keyResult) {
-          apiKey = keyResult.key;
-        }
-      } catch (err) {
-        console.error(`[Agent] Failed to get user ${type} API key:`, err);
+  for (const { type, provider } of providers) {
+    try {
+      // getApiKey 内部已实现权限逻辑：
+      // - 管理员：优先返回系统 Key
+      // - 普通用户：只返回自己配置的 Key
+      const keyResult = await getApiKey(userId, type);
+      if (keyResult) {
+        console.log(`[Agent] Using ${provider} key from ${keyResult.source} for user ${userId}`);
+        return {
+          provider,
+          apiKey: keyResult.key,
+          maxTokens: 4096,
+          temperature: 0.7,
+        };
       }
-    }
-
-    if (apiKey) {
-      return {
-        provider,
-        apiKey,
-        maxTokens: 4096,
-        temperature: 0.7,
-      };
+    } catch (err) {
+      console.error(`[Agent] Failed to get ${type} API key:`, err);
     }
   }
 
@@ -65,12 +67,19 @@ async function handleChat(req: VercelRequest, res: VercelResponse, userId?: stri
     return res.status(400).json({ error: 'Messages are required' });
   }
 
+  if (!userId) {
+    return res.status(401).json({
+      error: 'Authentication required',
+      message: '请先登录后再使用 Agent 功能',
+    });
+  }
+
   const agentConfig = await getAgentConfig(userId);
 
   if (!agentConfig) {
     return res.status(403).json({
       error: 'No API key available',
-      message: '请在设置中配置 API Key（支持 DeepSeek/OpenAI/Anthropic）',
+      message: '请在设置中配置你的 API Key（支持 DeepSeek/OpenAI/Anthropic）',
     });
   }
 
@@ -106,12 +115,19 @@ async function handlePlan(req: VercelRequest, res: VercelResponse, userId?: stri
     return res.status(400).json({ error: 'Task description is required' });
   }
 
+  if (!userId) {
+    return res.status(401).json({
+      error: 'Authentication required',
+      message: '请先登录后再使用 Plan 功能',
+    });
+  }
+
   const agentConfig = await getAgentConfig(userId);
 
   if (!agentConfig) {
     return res.status(403).json({
       error: 'No API key available',
-      message: '请在设置中配置 API Key（支持 DeepSeek/OpenAI/Anthropic）',
+      message: '请在设置中配置你的 API Key（支持 DeepSeek/OpenAI/Anthropic）',
     });
   }
 

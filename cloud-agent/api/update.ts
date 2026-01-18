@@ -27,19 +27,23 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.4.7',
-  publishedAt: '2026-01-18T00:00:00.000Z',
+  version: '0.4.10',
+  publishedAt: '2026-01-18T12:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.4.7 ✨
+## Code Agent v0.4.10 ✨
+
+### 🚀 新功能
+- **云端任务系统** - 支持创建、管理和追踪云端执行任务
+- **云端任务面板** - 新增任务管理 UI，显示任务状态和进度
 
 ### 🐛 Bug 修复
-- **添加登录入口** - 退出登录后显示登录按钮，点击可重新登录
-- **简化用户菜单** - 登录后下拉菜单仅显示退出登录选项
+- **执行追踪面板** - 添加关闭按钮，优化交互体验
+- **开发模式端口** - 启动前自动清理 5173 端口，避免冲突
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.4.7/Code.Agent-0.4.7-arm64.dmg',
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.4.10/Code.Agent-0.4.10-arm64.dmg',
       size: 130000000,
     },
   },

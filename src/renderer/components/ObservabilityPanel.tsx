@@ -192,13 +192,14 @@ function getToolIcon(name: string): React.ReactNode {
   return iconMap[name] || <Wrench className="w-3 h-3" />;
 }
 
-// 分类顺序
-const categoryOrder: EventCategory[] = ['bash', 'tools', 'plan', 'agent', 'memory'];
+// 分类顺序 - 按任务执行的常规流程
+// Plan(规划) → Bash(执行) → Agent(协作) → Tools(工具) → Memory(记忆)
+const categoryOrder: EventCategory[] = ['plan', 'bash', 'agent', 'tools', 'memory'];
 
 export const ObservabilityPanel: React.FC = () => {
   const { currentGeneration } = useAppStore();
   const { messages } = useSessionStore();
-  const [expandedCategories, setExpandedCategories] = useState<Set<EventCategory>>(new Set(['bash', 'tools']));
+  const [expandedCategories, setExpandedCategories] = useState<Set<EventCategory>>(new Set(['plan', 'bash']));
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
 
   // 获取当前代际数字

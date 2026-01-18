@@ -73,7 +73,7 @@ export const UserMenu: React.FC = () => {
       {/* User button */}
       <button
         onClick={() => setShowMenu(!showMenu)}
-        className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-zinc-800 transition-colors"
+        className="window-no-drag flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-zinc-800 transition-colors"
       >
         {user.avatarUrl ? (
           <img

@@ -27,24 +27,22 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.4.5',
+  version: '0.4.6',
   publishedAt: '2026-01-18T00:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.4.5 🔧
+## Code Agent v0.4.6 ✨
 
-### 🔧 架构优化
-- **认证初始化改为非阻塞** - 网络问题不再阻止窗口创建，用户可以正常使用应用
-- **增强登录状态恢复机制** - 添加 session 获取超时和 profile 获取超时，防止启动卡住
-- 认证失败时优雅降级，用户可稍后手动登录
+### ✨ 新功能
+- **Gen1-8 示例差异化** - 每个代际显示符合其能力的建议卡片
+- **执行追踪顺序优化** - 按 Plan → Bash → Agent → Tools → Memory 排列，符合任务执行流程
 
 ### 🐛 Bug 修复
-- 修复 Supabase 网络问题导致应用启动卡住的问题
-- 优化错误处理和日志记录
+- **修复用户菜单无法点击** - 添加 window-no-drag，下拉菜单现在可以正常显示
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.4.5/Code.Agent-0.4.5-arm64.dmg',
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.4.6/Code.Agent-0.4.6-arm64.dmg',
       size: 130000000,
     },
   },

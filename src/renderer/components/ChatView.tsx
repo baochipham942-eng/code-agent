@@ -46,7 +46,7 @@ export const ChatView: React.FC = () => {
         {/* Messages */}
         <div className="flex-1 overflow-y-auto scroll-smooth">
           {messages.length === 0 ? (
-            <EmptyState generation={currentGeneration.name} onSend={handleSendMessage} />
+            <EmptyState generation={currentGeneration.name} generationId={currentGeneration.id} onSend={handleSendMessage} />
           ) : (
             <div className="max-w-3xl mx-auto py-6 px-4 space-y-6">
               {messages
@@ -113,47 +113,321 @@ const ThinkingIndicator: React.FC = () => {
   );
 };
 
-// 建议卡片数据
-const suggestions = [
-  {
-    icon: Code2,
-    text: '创建 React 组件',
-    description: '构建 UI 组件',
-    color: 'from-blue-500/20 to-cyan-500/20',
-    borderColor: 'border-blue-500/20',
-    iconColor: 'text-blue-400',
-  },
-  {
-    icon: Bug,
-    text: '修复代码 Bug',
-    description: '调试并解决问题',
-    color: 'from-red-500/20 to-orange-500/20',
-    borderColor: 'border-red-500/20',
-    iconColor: 'text-red-400',
-  },
-  {
-    icon: FileQuestion,
-    text: '解释这段代码',
-    description: '理解代码逻辑',
-    color: 'from-purple-500/20 to-pink-500/20',
-    borderColor: 'border-purple-500/20',
-    iconColor: 'text-purple-400',
-  },
-  {
-    icon: TestTube2,
-    text: '编写单元测试',
-    description: '保障代码质量',
-    color: 'from-emerald-500/20 to-teal-500/20',
-    borderColor: 'border-emerald-500/20',
-    iconColor: 'text-emerald-400',
-  },
-];
+// 建议卡片类型
+interface SuggestionItem {
+  icon: React.ElementType;
+  text: string;
+  description: string;
+  color: string;
+  borderColor: string;
+  iconColor: string;
+}
+
+// 按代际分组的建议卡片
+// Gen1-2: 基础文件操作
+// Gen3-4: 规划和技能
+// Gen5-6: 记忆和自动化
+// Gen7-8: 多代理和自我进化
+const suggestionsByGeneration: Record<string, SuggestionItem[]> = {
+  // Gen1: 基础文件操作
+  gen1: [
+    {
+      icon: Terminal,
+      text: '列出当前目录文件',
+      description: '使用 bash 命令',
+      color: 'from-emerald-500/20 to-teal-500/20',
+      borderColor: 'border-emerald-500/20',
+      iconColor: 'text-emerald-400',
+    },
+    {
+      icon: FileQuestion,
+      text: '读取 package.json',
+      description: '查看项目配置',
+      color: 'from-blue-500/20 to-cyan-500/20',
+      borderColor: 'border-blue-500/20',
+      iconColor: 'text-blue-400',
+    },
+    {
+      icon: Code2,
+      text: '创建一个新文件',
+      description: '写入代码内容',
+      color: 'from-purple-500/20 to-pink-500/20',
+      borderColor: 'border-purple-500/20',
+      iconColor: 'text-purple-400',
+    },
+    {
+      icon: Bug,
+      text: '修复文件中的 Bug',
+      description: '编辑并修复代码',
+      color: 'from-red-500/20 to-orange-500/20',
+      borderColor: 'border-red-500/20',
+      iconColor: 'text-red-400',
+    },
+  ],
+  // Gen2: 搜索和导航
+  gen2: [
+    {
+      icon: Terminal,
+      text: '搜索所有 TypeScript 文件',
+      description: '使用 glob 模式',
+      color: 'from-emerald-500/20 to-teal-500/20',
+      borderColor: 'border-emerald-500/20',
+      iconColor: 'text-emerald-400',
+    },
+    {
+      icon: FileQuestion,
+      text: '查找 TODO 注释',
+      description: '使用 grep 搜索',
+      color: 'from-blue-500/20 to-cyan-500/20',
+      borderColor: 'border-blue-500/20',
+      iconColor: 'text-blue-400',
+    },
+    {
+      icon: Code2,
+      text: '分析项目结构',
+      description: '列出目录内容',
+      color: 'from-purple-500/20 to-pink-500/20',
+      borderColor: 'border-purple-500/20',
+      iconColor: 'text-purple-400',
+    },
+    {
+      icon: Bug,
+      text: '定位错误来源',
+      description: '搜索错误关键字',
+      color: 'from-red-500/20 to-orange-500/20',
+      borderColor: 'border-red-500/20',
+      iconColor: 'text-red-400',
+    },
+  ],
+  // Gen3: 子代理和规划
+  gen3: [
+    {
+      icon: Code2,
+      text: '规划一个新功能',
+      description: '创建实现计划',
+      color: 'from-blue-500/20 to-cyan-500/20',
+      borderColor: 'border-blue-500/20',
+      iconColor: 'text-blue-400',
+    },
+    {
+      icon: Bug,
+      text: '调试复杂问题',
+      description: '分步骤排查',
+      color: 'from-red-500/20 to-orange-500/20',
+      borderColor: 'border-red-500/20',
+      iconColor: 'text-red-400',
+    },
+    {
+      icon: FileQuestion,
+      text: '研究代码架构',
+      description: '启动子任务探索',
+      color: 'from-purple-500/20 to-pink-500/20',
+      borderColor: 'border-purple-500/20',
+      iconColor: 'text-purple-400',
+    },
+    {
+      icon: TestTube2,
+      text: '设计测试方案',
+      description: '规划测试用例',
+      color: 'from-emerald-500/20 to-teal-500/20',
+      borderColor: 'border-emerald-500/20',
+      iconColor: 'text-emerald-400',
+    },
+  ],
+  // Gen4: 技能和网络
+  gen4: [
+    {
+      icon: Sparkles,
+      text: '使用技能提交代码',
+      description: '/commit 快捷命令',
+      color: 'from-blue-500/20 to-cyan-500/20',
+      borderColor: 'border-blue-500/20',
+      iconColor: 'text-blue-400',
+    },
+    {
+      icon: Terminal,
+      text: '获取最新文档',
+      description: '从网络获取信息',
+      color: 'from-emerald-500/20 to-teal-500/20',
+      borderColor: 'border-emerald-500/20',
+      iconColor: 'text-emerald-400',
+    },
+    {
+      icon: Code2,
+      text: '创建并提交 PR',
+      description: '完整开发流程',
+      color: 'from-purple-500/20 to-pink-500/20',
+      borderColor: 'border-purple-500/20',
+      iconColor: 'text-purple-400',
+    },
+    {
+      icon: Bug,
+      text: '查询 API 文档',
+      description: '获取外部知识',
+      color: 'from-red-500/20 to-orange-500/20',
+      borderColor: 'border-red-500/20',
+      iconColor: 'text-red-400',
+    },
+  ],
+  // Gen5: 记忆和 RAG
+  gen5: [
+    {
+      icon: Code2,
+      text: '记住项目规范',
+      description: '存储长期记忆',
+      color: 'from-blue-500/20 to-cyan-500/20',
+      borderColor: 'border-blue-500/20',
+      iconColor: 'text-blue-400',
+    },
+    {
+      icon: FileQuestion,
+      text: '搜索历史对话',
+      description: '语义记忆检索',
+      color: 'from-purple-500/20 to-pink-500/20',
+      borderColor: 'border-purple-500/20',
+      iconColor: 'text-purple-400',
+    },
+    {
+      icon: Terminal,
+      text: '索引代码库',
+      description: '建立代码索引',
+      color: 'from-emerald-500/20 to-teal-500/20',
+      borderColor: 'border-emerald-500/20',
+      iconColor: 'text-emerald-400',
+    },
+    {
+      icon: Bug,
+      text: '回顾之前的修复',
+      description: '检索相似问题',
+      color: 'from-red-500/20 to-orange-500/20',
+      borderColor: 'border-red-500/20',
+      iconColor: 'text-red-400',
+    },
+  ],
+  // Gen6: Computer Use
+  gen6: [
+    {
+      icon: Code2,
+      text: '截图当前界面',
+      description: '视觉观察分析',
+      color: 'from-blue-500/20 to-cyan-500/20',
+      borderColor: 'border-blue-500/20',
+      iconColor: 'text-blue-400',
+    },
+    {
+      icon: Terminal,
+      text: '自动化浏览器操作',
+      description: 'Computer Use',
+      color: 'from-emerald-500/20 to-teal-500/20',
+      borderColor: 'border-emerald-500/20',
+      iconColor: 'text-emerald-400',
+    },
+    {
+      icon: FileQuestion,
+      text: '测试网页功能',
+      description: '模拟用户交互',
+      color: 'from-purple-500/20 to-pink-500/20',
+      borderColor: 'border-purple-500/20',
+      iconColor: 'text-purple-400',
+    },
+    {
+      icon: Bug,
+      text: '截图调试 UI',
+      description: '可视化问题定位',
+      color: 'from-red-500/20 to-orange-500/20',
+      borderColor: 'border-red-500/20',
+      iconColor: 'text-red-400',
+    },
+  ],
+  // Gen7: 多代理协同
+  gen7: [
+    {
+      icon: Code2,
+      text: '启动多代理开发',
+      description: '并行协作编码',
+      color: 'from-blue-500/20 to-cyan-500/20',
+      borderColor: 'border-blue-500/20',
+      iconColor: 'text-blue-400',
+    },
+    {
+      icon: Terminal,
+      text: '分配子任务',
+      description: '代理间协调',
+      color: 'from-emerald-500/20 to-teal-500/20',
+      borderColor: 'border-emerald-500/20',
+      iconColor: 'text-emerald-400',
+    },
+    {
+      icon: FileQuestion,
+      text: '编排工作流',
+      description: '复杂任务拆解',
+      color: 'from-purple-500/20 to-pink-500/20',
+      borderColor: 'border-purple-500/20',
+      iconColor: 'text-purple-400',
+    },
+    {
+      icon: Bug,
+      text: '协作修复 Bug',
+      description: '多代理联合调试',
+      color: 'from-red-500/20 to-orange-500/20',
+      borderColor: 'border-red-500/20',
+      iconColor: 'text-red-400',
+    },
+  ],
+  // Gen8: 自我进化
+  gen8: [
+    {
+      icon: Sparkles,
+      text: '优化执行策略',
+      description: '自我学习改进',
+      color: 'from-blue-500/20 to-cyan-500/20',
+      borderColor: 'border-blue-500/20',
+      iconColor: 'text-blue-400',
+    },
+    {
+      icon: Code2,
+      text: '创建新工具',
+      description: '动态扩展能力',
+      color: 'from-emerald-500/20 to-teal-500/20',
+      borderColor: 'border-emerald-500/20',
+      iconColor: 'text-emerald-400',
+    },
+    {
+      icon: FileQuestion,
+      text: '自我评估性能',
+      description: '反思与改进',
+      color: 'from-purple-500/20 to-pink-500/20',
+      borderColor: 'border-purple-500/20',
+      iconColor: 'text-purple-400',
+    },
+    {
+      icon: Bug,
+      text: '自动修复流程',
+      description: '闭环问题解决',
+      color: 'from-red-500/20 to-orange-500/20',
+      borderColor: 'border-red-500/20',
+      iconColor: 'text-red-400',
+    },
+  ],
+};
+
+// 获取当前代际的建议卡片
+function getSuggestionsForGeneration(genId: string): SuggestionItem[] {
+  return suggestionsByGeneration[genId] || suggestionsByGeneration.gen3;
+}
 
 // Empty state component with enhanced design
-const EmptyState: React.FC<{ generation: string; onSend: (message: string) => void }> = ({
+const EmptyState: React.FC<{
+  generation: string;
+  generationId: string;
+  onSend: (message: string) => void;
+}> = ({
   generation,
+  generationId,
   onSend,
 }) => {
+  // 获取当前代际对应的建议卡片
+  const suggestions = getSuggestionsForGeneration(generationId);
   return (
     <div className="h-full flex flex-col items-center justify-center text-center px-6 py-12">
       {/* Hero Section */}

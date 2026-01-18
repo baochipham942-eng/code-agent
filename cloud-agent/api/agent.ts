@@ -25,16 +25,21 @@ async function handleChat(req: VercelRequest, res: VercelResponse, userId?: stri
 
   // 获取用户的 API Key（优先用户配置，管理员可用系统 Key）
   let apiKey: string | undefined;
-  if (userId) {
-    const keyResult = await getApiKey(userId, 'anthropic');
-    if (keyResult) {
-      apiKey = keyResult.key;
-    }
-  }
 
-  // 如果没有用户 Key，检查系统环境变量
-  if (!apiKey) {
-    apiKey = process.env.ANTHROPIC_API_KEY;
+  // 首先尝试从环境变量获取系统 Key
+  apiKey = process.env.ANTHROPIC_API_KEY;
+
+  // 如果有登录用户，尝试获取用户配置的 Key（优先级更高）
+  if (userId) {
+    try {
+      const keyResult = await getApiKey(userId, 'anthropic');
+      if (keyResult) {
+        apiKey = keyResult.key;
+      }
+    } catch (err) {
+      // 数据库查询失败，使用系统 Key
+      console.error('[Agent] Failed to get user API key:', err);
+    }
   }
 
   if (!apiKey) {
@@ -73,15 +78,20 @@ async function handlePlan(req: VercelRequest, res: VercelResponse, userId?: stri
 
   // 获取用户的 API Key
   let apiKey: string | undefined;
-  if (userId) {
-    const keyResult = await getApiKey(userId, 'anthropic');
-    if (keyResult) {
-      apiKey = keyResult.key;
-    }
-  }
 
-  if (!apiKey) {
-    apiKey = process.env.ANTHROPIC_API_KEY;
+  // 首先尝试从环境变量获取系统 Key
+  apiKey = process.env.ANTHROPIC_API_KEY;
+
+  // 如果有登录用户，尝试获取用户配置的 Key
+  if (userId) {
+    try {
+      const keyResult = await getApiKey(userId, 'anthropic');
+      if (keyResult) {
+        apiKey = keyResult.key;
+      }
+    } catch (err) {
+      console.error('[Agent] Failed to get user API key:', err);
+    }
   }
 
   if (!apiKey) {

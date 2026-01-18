@@ -6,7 +6,6 @@ import React from 'react';
 import { useAppStore } from '../stores/appStore';
 import { Settings, FolderOpen, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { UserMenu } from './UserMenu';
-import { SyncStatusIndicator } from './SyncStatus';
 
 export const TitleBar: React.FC = () => {
   const {
@@ -45,9 +44,6 @@ export const TitleBar: React.FC = () => {
 
       {/* Right: Actions */}
       <div className="flex items-center gap-1">
-        {/* Sync Status */}
-        <SyncStatusIndicator />
-
         {/* Workspace Toggle */}
         <button
           onClick={() => setShowWorkspace(!showWorkspace)}

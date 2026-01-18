@@ -1306,3 +1306,182 @@ git revert <commit-hash>
 | Token 使用量 | 每次对话的平均 token 消耗 | 减少 30%+ |
 | Diff 渲染时间 | DiffView 组件渲染耗时 | < 100ms |
 | ID 碰撞率 | 发生 ID 重复的概率 | < 0.001% |
+
+---
+
+## 十一、云端与本地协同架构实现计划 (Gen 5-8 演进)
+
+> **新增于**: 2026-01-18
+> **优先级**: P1 - 核心能力演进
+> **详细设计**: 见 `docs/ARCHITECTURE.md` Section 11
+
+### 11.1 背景
+
+通过对比分析 Claude Code、Google Antigravity、Cursor、Kiro 等主流 AI 编程工具，识别出以下设计理念优势可以增强 Code Agent 的 Gen 5-8 能力：
+
+| 竞品 | 设计优势 | 对应代际 |
+|------|----------|----------|
+| Claude Code | MCP 协议扩展、Hooks 系统、CLAUDE.md | Gen 4, 8 |
+| Kiro | Spec-driven 开发、结构化任务模板 | Gen 5 |
+| Antigravity | 异步任务执行、多代理并行 | Gen 7 |
+| Cursor | 深度 IDE 集成、Diff 预览 | Gen 4 |
+
+**核心洞察**: 异步任务在云端和本地有不同的最优执行位置
+- **本地 (手)**: 文件操作、终端执行、Computer Use（需要本地权限）
+- **云端 (脑)**: 复杂推理、多代理调度、跨设备记忆（算力和协同）
+
+### 11.2 实现任务清单
+
+#### Phase 1: 数据库基础设施
+
+| 任务 | 文件 | 说明 |
+|------|------|------|
+| 创建数据库迁移 | `supabase/migrations/20260118_cloud_tasks.sql` | cloud_tasks, task_steps, task_logs 表 |
+
+参考: ARCHITECTURE.md Section 11.3.1
+
+#### Phase 2: 客户端服务层
+
+| 任务 | 文件 | 说明 |
+|------|------|------|
+| 任务路由器 | `src/main/cloud/TaskRouter.ts` | 决定任务执行位置 (local/cloud/hybrid) |
+| 云端任务服务 | `src/main/cloud/CloudTaskService.ts` | 提交任务、查询状态、订阅更新 |
+| 混合任务协调器 | `src/main/cloud/HybridTaskCoordinator.ts` | 云端规划 + 本地执行协调 |
+| 任务同步服务 | `src/main/cloud/TaskSyncService.ts` | 跨设备同步、通知 |
+| 加密工具 | `src/main/utils/crypto.ts` | AES-256 加解密用户 API Key |
+
+#### Phase 3: 云端 Edge Functions
+
+| 任务 | 文件 | 说明 |
+|------|------|------|
+| Agent 定义 | `supabase/functions/shared/agents.ts` | 5 种专业化 Agent 规格 |
+| Agent 调度器 | `supabase/functions/agent-scheduler/index.ts` | 多代理协同执行 |
+| 加密工具 (云端) | `supabase/functions/shared/crypto.ts` | 云端解密用户 API Key |
+
+#### Phase 4: 前端 UI 组件
+
+| 任务 | 文件 | 说明 |
+|------|------|------|
+| 云端任务列表 | `src/renderer/components/CloudTaskList.tsx` | 显示任务状态和进度 |
+| 任务进度显示 | `src/renderer/components/TaskProgress.tsx` | 实时进度条 |
+| 本地执行确认 | `src/renderer/components/LocalExecutionPrompt.tsx` | 用户确认本地操作 |
+| 云端任务 Hook | `src/renderer/hooks/useCloudTasks.ts` | 状态管理 |
+
+#### Phase 5: 类型定义
+
+| 任务 | 文件 | 说明 |
+|------|------|------|
+| 云端类型定义 | `src/shared/types/cloud.ts` | TaskTarget, TaskStatus, CloudTask 等 |
+
+### 11.3 关键设计原则
+
+#### 11.3.1 用户 API Key 处理流程
+
+```
+用户本地 SecureStorage 存储 API Key
+        ↓
+客户端读取并 AES-256 加密
+        ↓
+随任务发送到云端
+        ↓
+云端 Edge Function 解密（仅在内存中）
+        ↓
+调用用户配置的模型 API
+        ↓
+任务完成后销毁解密后的 Key（不持久化）
+```
+
+**设计优势**:
+- ✅ 用户完全控制密钥，平台不代管
+- ✅ 费用透明，用户直接向模型提供商付费
+- ✅ 安全传输，云端不持久化存储
+
+#### 11.3.2 支持的模型配置
+
+| 提供商 | 默认模型 | 用途 |
+|--------|----------|------|
+| **deepseek** (默认) | deepseek-chat, deepseek-coder, deepseek-reasoner | 主力模型 |
+| claude | claude-3-5-sonnet | 高级推理 |
+| openai | gpt-4o | 通用 |
+| groq | llama-3.1-70b | 快速推理 |
+| zhipu | glm-4 | 中文优化 |
+| qwen | qwen-max | 阿里通义 |
+| moonshot | moonshot-v1-128k | 长上下文 |
+
+#### 11.3.3 专业化 Agent 设计
+
+| Agent | System Prompt 角色 | 默认模型 | 工具集 |
+|-------|-------------------|----------|--------|
+| Planner | 任务规划专家 | deepseek-chat | analyze_codebase, estimate_complexity |
+| Coder | 代码实现专家 | deepseek-coder | (无，只生成代码) |
+| Reviewer | 代码审查专家 | deepseek-reasoner | analyze_code, check_security |
+| Researcher | 技术研究专家 | deepseek-chat | semantic_search, web_fetch |
+| Documenter | 文档编写专家 | deepseek-chat | (无) |
+
+**核心概念**: 专业化 Agent = 同一底层模型 + 不同 System Prompt + 不同工具集
+
+### 11.4 实现顺序建议
+
+```
+1. 类型定义 (src/shared/types/cloud.ts)
+   ↓
+2. 数据库迁移 (supabase/migrations/20260118_cloud_tasks.sql)
+   ↓
+3. 加密工具 (客户端 + 云端)
+   ↓
+4. Agent 定义 (supabase/functions/shared/agents.ts)
+   ↓
+5. 任务路由器 (src/main/cloud/TaskRouter.ts)
+   ↓
+6. 云端任务服务 (src/main/cloud/CloudTaskService.ts)
+   ↓
+7. Agent 调度器 (supabase/functions/agent-scheduler/index.ts)
+   ↓
+8. 混合任务协调器 (src/main/cloud/HybridTaskCoordinator.ts)
+   ↓
+9. 任务同步服务 (src/main/cloud/TaskSyncService.ts)
+   ↓
+10. 前端 UI 组件
+```
+
+### 11.5 环境变量配置
+
+#### 客户端 (.env)
+```env
+# 已有配置
+SUPABASE_URL=xxx
+SUPABASE_ANON_KEY=xxx
+DEEPSEEK_API_KEY=xxx  # 用户自己的 Key
+```
+
+#### 云端 (Supabase Edge Function)
+```env
+SUPABASE_URL=xxx
+SUPABASE_SERVICE_ROLE_KEY=xxx
+ENCRYPTION_KEY=xxx  # 用于加解密用户 API Key
+```
+
+### 11.6 测试要点
+
+1. **任务路由测试**: 验证不同任务类型正确路由到 local/cloud/hybrid
+2. **API Key 加密测试**: 验证加密传输和云端解密
+3. **多代理协同测试**: 验证 Planner→Coder→Reviewer 流程
+4. **本地执行测试**: 验证云端请求本地执行的流程
+5. **跨设备同步测试**: 验证任务在不同设备间的状态同步
+6. **实时更新测试**: 验证 Realtime 订阅正常工作
+
+### 11.7 代际能力增强映射
+
+| 代际 | 现有能力 | 云端增强 | 实现方式 |
+|------|----------|----------|----------|
+| **Gen 5** | memory_store, memory_search, code_index | 跨项目知识库、共享记忆 | pgvector 云端存储 + 语义检索 |
+| **Gen 6** | screenshot, computer_use | 远程设备控制 (未来) | WebRTC + 云端中继 |
+| **Gen 7** | spawn_agent, workflow_orchestrate | 多代理并行调度、专业化分工 | Edge Functions + Agent SDK |
+| **Gen 8** | tool_create, self_evaluate | 策略共享、工具市场 | 云端策略库 + 工具注册表 |
+
+### 11.8 参考文档
+
+- **完整架构设计**: `docs/ARCHITECTURE.md` Section 11
+- **项目模型配置**: `src/main/model/ModelRouter.ts`
+- **安全存储**: `src/main/services/SecureStorage.ts`
+- **Supabase Edge Functions**: https://supabase.com/docs/guides/functions

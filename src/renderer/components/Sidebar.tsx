@@ -5,7 +5,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useSessionStore, initializeSessionStore } from '../stores/sessionStore';
 import { useAppStore } from '../stores/appStore';
-import { useAuthStore } from '../stores/authStore';
 import {
   MessageSquare,
   Plus,
@@ -15,13 +14,7 @@ import {
   Calendar,
   Clock,
   Sparkles,
-  User,
-  LogIn,
-  Cloud,
-  CloudOff,
-  Settings,
 } from 'lucide-react';
-import { UserMenu } from './UserMenu';
 import { IPC_CHANNELS } from '@shared/ipc';
 
 // 会话分组类型
@@ -63,7 +56,7 @@ const GroupIcon: React.FC<{ group: SessionGroup }> = ({ group }) => {
 };
 
 export const Sidebar: React.FC = () => {
-  const { sidebarCollapsed, clearChat, setShowSettings } = useAppStore();
+  const { sidebarCollapsed, clearChat } = useAppStore();
   const {
     sessions,
     currentSessionId,
@@ -72,7 +65,6 @@ export const Sidebar: React.FC = () => {
     switchSession,
     deleteSession,
   } = useSessionStore();
-  const { isAuthenticated, user, syncStatus, setShowAuthModal } = useAuthStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
@@ -260,51 +252,9 @@ export const Sidebar: React.FC = () => {
         )}
       </div>
 
-      {/* User Section */}
+      {/* Version */}
       <div className="p-3 border-t border-zinc-800/50">
-        {isAuthenticated && user ? (
-          <div className="space-y-2">
-            {/* User Menu */}
-            <UserMenu />
-
-            {/* Sync Status */}
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-zinc-500">云同步</span>
-              <span className={`flex items-center gap-1 ${
-                syncStatus.isEnabled ? 'text-green-400' : 'text-zinc-500'
-              }`}>
-                {syncStatus.isEnabled ? (
-                  <>
-                    <Cloud className="w-3 h-3" />
-                    {syncStatus.isSyncing ? '同步中...' : '已开启'}
-                  </>
-                ) : (
-                  <>
-                    <CloudOff className="w-3 h-3" />
-                    已关闭
-                  </>
-                )}
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {/* Login Button */}
-            <button
-              onClick={() => setShowAuthModal(true)}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors"
-            >
-              <LogIn className="w-4 h-4" />
-              <span className="text-sm">登录 / 注册</span>
-            </button>
-            <p className="text-xs text-zinc-500 text-center">
-              登录后可云端同步会话记录
-            </p>
-          </div>
-        )}
-
-        {/* Version - 从 package.json 动态读取 */}
-        <div className="mt-3 pt-3 border-t border-zinc-800/50 flex items-center justify-center">
+        <div className="flex items-center justify-center">
           <div className="flex items-center gap-2 text-xs text-zinc-600">
             <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
             <span>Code Agent {appVersion ? `v${appVersion}` : ''}</span>

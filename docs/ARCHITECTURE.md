@@ -26,6 +26,8 @@
 | ADR | 标题 | 状态 |
 |-----|------|------|
 | [001](./decisions/001-turn-based-messaging.md) | Turn-Based 消息流架构 | accepted |
+| [002](./decisions/002-eight-generation-tool-evolution.md) | 8 代工具演进策略 | accepted |
+| [003](./decisions/003-cloud-local-hybrid-architecture.md) | 云端-本地混合执行架构 | accepted |
 
 ---
 

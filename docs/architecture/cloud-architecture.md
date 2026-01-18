@@ -43,6 +43,15 @@
 │   │  └─────────────────────────────────────────────────────────────────┘    │   │
 │   │                                                                          │   │
 │   │  ┌─────────────────────────────────────────────────────────────────┐    │   │
+│   │  │                     Data Layer                                   │    │   │
+│   │  │  ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐   │    │   │
+│   │  │  │   Task     │ │   Agent    │ │  Vector    │ │  Strategy  │   │    │   │
+│   │  │  │   Queue    │ │   State    │ │   Store    │ │   Cache    │   │    │   │
+│   │  │  │ (Postgres) │ │ (Postgres) │ │ (pgvector) │ │  (Redis)   │   │    │   │
+│   │  │  └────────────┘ └────────────┘ └────────────┘ └────────────┘   │    │   │
+│   │  └─────────────────────────────────────────────────────────────────┘    │   │
+│   │                                                                          │   │
+│   │  ┌─────────────────────────────────────────────────────────────────┐    │   │
 │   │  │                     AI Services Layer                            │    │   │
 │   │  │              Claude Agent SDK (Anthropic)                        │    │   │
 │   │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐               │    │   │
@@ -75,12 +84,19 @@
 | **多代理协同** | ☁️ 云端 | 云端调度多个 Agent 更高效 | multi_agent_task |
 | **大型重构执行** | 🔄 混合 | 云端规划 + 本地执行 | refactor_module |
 
-### 任务路由器
+### 任务路由器设计
 
 ```typescript
 // src/main/cloud/TaskRouter.ts
 
 export type TaskTarget = 'local' | 'cloud' | 'hybrid';
+
+export interface RoutingRule {
+  pattern: RegExp | string[];
+  target: TaskTarget;
+  priority: number;
+  condition?: (task: Task) => boolean;
+}
 
 export class TaskRouter {
   private rules: RoutingRule[] = [
@@ -90,23 +106,72 @@ export class TaskRouter {
       target: 'local',
       priority: 100,
     },
+    {
+      pattern: ['screenshot', 'computer_use', 'click', 'type', 'scroll'],
+      target: 'local',
+      priority: 100,
+    },
+    {
+      pattern: ['ask_user_question'],
+      target: 'local',
+      priority: 100,
+    },
+
     // 必须云端执行
     {
       pattern: ['cross_project_search', 'semantic_search'],
       target: 'cloud',
       priority: 90,
     },
-    // 混合模式
+    {
+      pattern: ['spawn_multi_agent', 'agent_orchestrate'],
+      target: 'cloud',
+      priority: 90,
+    },
+
+    // 混合模式：根据任务复杂度判断
     {
       pattern: ['refactor', 'implement_feature'],
       target: 'hybrid',
       priority: 80,
       condition: (task) => this.estimateComplexity(task) > 5,
     },
+
+    // 可云端加速的纯推理任务
+    {
+      pattern: ['code_review', 'generate_docs', 'explain_code'],
+      target: 'cloud',
+      priority: 70,
+      condition: (task) => this.isCloudAvailable(),
+    },
+
+    // 默认本地
+    {
+      pattern: /.*/,
+      target: 'local',
+      priority: 0,
+    },
   ];
 
   route(task: Task): TaskTarget {
-    // ... 路由逻辑
+    const sortedRules = [...this.rules].sort((a, b) => b.priority - a.priority);
+
+    for (const rule of sortedRules) {
+      if (this.matchRule(task, rule)) {
+        if (!rule.condition || rule.condition(task)) {
+          return rule.target;
+        }
+      }
+    }
+
+    return 'local';
+  }
+
+  private estimateComplexity(task: Task): number {
+    let score = 0;
+    if (task.metadata?.fileCount) score += task.metadata.fileCount;
+    if (task.metadata?.estimatedChanges) score += task.metadata.estimatedChanges / 100;
+    return score;
   }
 }
 ```
@@ -118,52 +183,322 @@ export class TaskRouter {
 ### 数据库设计
 
 ```sql
+-- 云端任务队列表
 CREATE TABLE cloud_tasks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   device_id UUID REFERENCES devices(id),
   session_id UUID REFERENCES sessions(id),
-  type VARCHAR(50) NOT NULL,
-  status VARCHAR(20) NOT NULL DEFAULT 'pending',
-  priority INTEGER DEFAULT 0,
-  input JSONB NOT NULL,
-  output JSONB,
-  error TEXT,
-  progress REAL DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
+
+  -- 任务定义
+  type TEXT NOT NULL,                    -- 'code_review', 'refactor_plan', 'multi_agent'
+  name TEXT NOT NULL,                    -- 人类可读的任务名称
+  description TEXT,                      -- 任务描述
+
+  -- 状态管理
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'queued', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+  priority INTEGER DEFAULT 5 CHECK (priority BETWEEN 1 AND 10),
+
+  -- 输入输出
+  input JSONB NOT NULL,                  -- 任务输入参数
+  result JSONB,                          -- 执行结果
+  error JSONB,                           -- 错误信息
+
+  -- 执行元数据
+  agent_type TEXT,                       -- 使用的 Agent 类型
+  agent_config JSONB,                    -- Agent 配置
+  tokens_used INTEGER DEFAULT 0,
+  estimated_tokens INTEGER,
+
+  -- 进度追踪
+  progress INTEGER DEFAULT 0 CHECK (progress BETWEEN 0 AND 100),
+  current_step TEXT,
+  total_steps INTEGER,
+  completed_steps INTEGER DEFAULT 0,
+
+  -- 时间戳
+  created_at TIMESTAMPTZ DEFAULT now(),
+  queued_at TIMESTAMPTZ,
   started_at TIMESTAMPTZ,
-  completed_at TIMESTAMPTZ
+  completed_at TIMESTAMPTZ,
+
+  -- 超时和重试
+  timeout_seconds INTEGER DEFAULT 3600,  -- 默认 1 小时超时
+  retry_count INTEGER DEFAULT 0,
+  max_retries INTEGER DEFAULT 3,
+
+  -- 依赖关系
+  parent_task_id UUID REFERENCES cloud_tasks(id),
+  depends_on UUID[] DEFAULT '{}'::UUID[],
+
+  -- 通知设置
+  notify_on_complete BOOLEAN DEFAULT true,
+  notify_channels TEXT[] DEFAULT '{}'::TEXT[]  -- 'push', 'email', 'webhook'
 );
 
-CREATE INDEX idx_cloud_tasks_pending
-  ON cloud_tasks (user_id, status, priority DESC, created_at)
-  WHERE status = 'pending';
+-- 任务日志表
+CREATE TABLE task_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id UUID NOT NULL REFERENCES cloud_tasks(id) ON DELETE CASCADE,
+  level TEXT NOT NULL CHECK (level IN ('debug', 'info', 'warn', 'error')),
+  message TEXT NOT NULL,
+  metadata JSONB,
+  agent_id TEXT,
+  step_index INTEGER,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 任务执行步骤表
+CREATE TABLE task_steps (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id UUID NOT NULL REFERENCES cloud_tasks(id) ON DELETE CASCADE,
+  step_index INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'running', 'completed', 'failed', 'skipped')),
+  input JSONB,
+  output JSONB,
+  error JSONB,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  duration_ms INTEGER,
+  -- 本地执行标记
+  requires_local_execution BOOLEAN DEFAULT false,
+  local_execution_request JSONB,
+  local_execution_result JSONB,
+  UNIQUE (task_id, step_index)
+);
+
+-- 索引优化
+CREATE INDEX idx_cloud_tasks_user_status ON cloud_tasks(user_id, status);
+CREATE INDEX idx_cloud_tasks_priority_status ON cloud_tasks(priority DESC, status)
+  WHERE status IN ('pending', 'queued');
+CREATE INDEX idx_task_logs_task_id ON task_logs(task_id, created_at DESC);
+
+-- 实时订阅支持
+ALTER PUBLICATION supabase_realtime ADD TABLE cloud_tasks;
+ALTER PUBLICATION supabase_realtime ADD TABLE task_steps;
 ```
 
 ### 任务状态流转
 
 ```
-pending → processing → completed
-              ↓
-           failed
-              ↓
-           retrying → processing
+pending → queued → running → completed
+                      ↓
+                   failed
+                      ↓
+                  retrying → running
+                      ↓
+                  cancelled
+```
+
+---
+
+## 混合执行模式 (Hybrid Mode)
+
+### 执行流程
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                     Hybrid Task Execution Flow                                   │
+│                     (云端规划 + 本地执行 + 云端审查)                              │
+└─────────────────────────────────────────────────────────────────────────────────┘
+
+用户请求: "重构 auth 模块，提取公共逻辑"
+                │
+                ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ Phase 1: 云端规划 (Cloud Planning)                                               │
+│                                                                                  │
+│   Planner Agent (Claude) 生成重构计划:                                           │
+│   ┌─────────────────────────────────────────────────────────────────────────┐   │
+│   │ Step 1: 创建 src/utils/authHelpers.ts [LOCAL: write_file]               │   │
+│   │ Step 2: 提取 validateToken 函数 [LOCAL: edit_file]                      │   │
+│   │ Step 3: 提取 refreshSession 函数 [LOCAL: edit_file]                     │   │
+│   │ Step 4: 更新 AuthService 导入 [LOCAL: edit_file]                        │   │
+│   │ Step 5: 运行测试验证 [LOCAL: bash npm test]                             │   │
+│   │ Step 6: 代码审查 [CLOUD: review]                                        │   │
+│   └─────────────────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────┬────────────────────────────────────────────┘
+                                     │ 计划下发
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ Phase 2: 本地执行 (Local Execution)                                              │
+│                                                                                  │
+│   Local Agent Loop:                                                              │
+│   FOR EACH step WHERE requires_local_execution:                                  │
+│     ├─ Step 1: write_file('src/utils/authHelpers.ts', content)                  │
+│     ├─ Step 2-4: edit_file 修改相关文件                                         │
+│     └─ Step 5: bash('npm test') → 上报结果到云端                                │
+│                                                                                  │
+└────────────────────────────────────┬────────────────────────────────────────────┘
+                                     │ 执行结果
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│ Phase 3: 云端审查 (Cloud Review)                                                 │
+│                                                                                  │
+│   Reviewer Agent 审查报告:                                                       │
+│   ┌─────────────────────────────────────────────────────────────────────────┐   │
+│   │ ✅ 代码结构改善                                                         │   │
+│   │ ✅ 函数职责单一                                                         │   │
+│   │ ⚠️ 建议: 添加 JSDoc 注释                                                │   │
+│   │ ✅ 所有测试通过                                                         │   │
+│   └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+└────────────────────────────────────┬────────────────────────────────────────────┘
+                                     │
+                                     ▼
+                              通知用户完成
 ```
 
 ---
 
 ## 多代理云端调度 (Gen 7)
 
-### 专业化 Agent 设计
+### 专业化 Agent 设计理念
 
-| Agent | 职责 | 工具权限 | 特点 |
-|-------|------|----------|------|
-| **PlannerAgent** | 任务分解、执行计划 | todo_write, task_split | 全局视野 |
-| **CoderAgent** | 代码实现 | edit_file, write_file | 代码专家 |
-| **ReviewerAgent** | 代码审查 | read_file, code_analysis | 质量把关 |
-| **ResearcherAgent** | 知识检索 | semantic_search, web_fetch | RAG 增强 |
+**核心概念**: 专业化 Agent 不是使用不同的模型，而是**同一个底层模型 + 不同的 System Prompt + 不同的工具集**，让模型扮演不同的专业角色。
 
-### 调度流程
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           专业化 Agent 架构                                       │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                  │
+│   底层模型 (用户配置: DeepSeek / Claude / OpenAI / Groq / 智谱 / 通义)           │
+│   ═══════════════════════════════════════════════════════════                   │
+│                           │                                                      │
+│           ┌───────────────┼───────────────┬───────────────┐                     │
+│           ▼               ▼               ▼               ▼                     │
+│   ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐              │
+│   │  Planner    │ │   Coder     │ │  Reviewer   │ │ Researcher  │              │
+│   │  Agent      │ │   Agent     │ │   Agent     │ │   Agent     │              │
+│   ├─────────────┤ ├─────────────┤ ├─────────────┤ ├─────────────┤              │
+│   │ System:     │ │ System:     │ │ System:     │ │ System:     │              │
+│   │ "你是任务   │ │ "你是代码   │ │ "你是代码   │ │ "你是技术   │              │
+│   │  规划专家"  │ │  实现专家"  │ │  审查专家"  │ │  研究专家"  │              │
+│   ├─────────────┤ ├─────────────┤ ├─────────────┤ ├─────────────┤              │
+│   │ Tools:      │ │ Tools:      │ │ Tools:      │ │ Tools:      │              │
+│   │ - analyze   │ │ (无工具,   │ │ - analyze   │ │ - search    │              │
+│   │ - estimate  │ │  只生成)   │ │ - check     │ │ - web_fetch │              │
+│   └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘              │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Agent 定义
+
+```typescript
+// supabase/functions/shared/agents.ts
+
+export interface AgentSpec {
+  id: string;
+  name: string;
+  role: string;
+  description: string;
+  capabilities: string[];
+  systemPrompt: string;
+  modelConfig: {
+    provider: ModelProvider;
+    model: string;
+    maxTokens: number;
+    temperature?: number;
+  };
+  tools: string[];
+}
+
+export const AGENT_SPECS: Record<string, AgentSpec> = {
+  planner: {
+    id: 'planner',
+    name: 'Planner Agent',
+    role: '任务规划与分解',
+    description: '分析复杂任务，生成可执行的步骤计划',
+    capabilities: ['task_decomposition', 'dependency_analysis', 'resource_estimation'],
+    systemPrompt: `你是一个专业的任务规划助手。你的职责是:
+1. 分析用户的复杂需求
+2. 将任务分解为原子化、可执行的步骤
+3. 识别步骤之间的依赖关系
+4. 标记每个步骤需要在本地还是云端执行
+5. 估算每个步骤的资源需求
+
+输出格式要求 JSON 结构化计划。`,
+    modelConfig: {
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      maxTokens: 8000,
+      temperature: 0.3,
+    },
+    tools: ['analyze_codebase', 'estimate_complexity'],
+  },
+
+  coder: {
+    id: 'coder',
+    name: 'Coder Agent',
+    role: '代码实现',
+    description: '根据计划生成高质量代码',
+    capabilities: ['code_generation', 'refactoring', 'bug_fixing'],
+    systemPrompt: `你是一个专业的编程助手。你的职责是:
+1. 根据规划步骤生成代码
+2. 遵循项目的代码风格和规范
+3. 编写清晰、可维护的代码
+4. 处理边界情况和错误
+
+你生成的代码将由本地执行器写入文件。`,
+    modelConfig: {
+      provider: 'deepseek',
+      model: 'deepseek-coder',
+      maxTokens: 16000,
+      temperature: 0.2,
+    },
+    tools: [],  // Coder 只生成代码，不执行工具
+  },
+
+  reviewer: {
+    id: 'reviewer',
+    name: 'Reviewer Agent',
+    role: '代码审查',
+    description: '审查代码质量、安全性和最佳实践',
+    capabilities: ['code_review', 'security_audit', 'performance_analysis'],
+    systemPrompt: `你是一个专业的代码审查助手。你的职责是:
+1. 检查代码质量和可读性
+2. 识别潜在的 bug 和安全漏洞
+3. 验证是否遵循最佳实践
+4. 提供改进建议`,
+    modelConfig: {
+      provider: 'deepseek',
+      model: 'deepseek-reasoner',
+      maxTokens: 8000,
+      temperature: 0.4,
+    },
+    tools: ['analyze_code', 'check_security'],
+  },
+
+  researcher: {
+    id: 'researcher',
+    name: 'Researcher Agent',
+    role: '技术研究',
+    description: '搜索文档、最佳实践和解决方案',
+    capabilities: ['documentation_search', 'best_practice_lookup', 'solution_research'],
+    systemPrompt: `你是一个专业的技术研究助手。你的职责是:
+1. 搜索相关技术文档和最佳实践
+2. 分析类似问题的解决方案
+3. 提供技术建议和参考
+4. 总结研究发现
+
+你可以访问向量数据库进行语义搜索。`,
+    modelConfig: {
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      maxTokens: 4000,
+      temperature: 0.5,
+    },
+    tools: ['semantic_search', 'web_fetch'],
+  },
+};
+```
+
+### 多代理调度流程
 
 ```
 用户请求 → Planner 分解任务
@@ -199,6 +534,16 @@ pending → processing → completed
 }
 ```
 
+### 续接流程
+
+```
+设备 A 创建任务 → 云端开始执行 → 设备 A 离线
+                                      ↓
+设备 B 上线 → 检测到可续接任务 → 接管本地执行步骤
+                                      ↓
+                               继续任务直到完成
+```
+
 ---
 
 ## 代际能力增强映射
@@ -214,10 +559,11 @@ pending → processing → completed
 
 ## 安全考虑
 
-1. **用户 API Key 隔离**: 每个用户使用自己的 API Key
+1. **用户 API Key 隔离**: 每个用户使用自己的 API Key，云端不存储
 2. **数据加密**: 敏感数据传输使用 TLS，存储使用 AES-256
 3. **访问控制**: RLS 策略确保用户只能访问自己的数据
 4. **审计日志**: 所有云端操作记录审计日志
+5. **超时保护**: 任务默认 1 小时超时，防止资源滥用
 
 ---
 
@@ -225,18 +571,22 @@ pending → processing → completed
 
 ```
 src/main/cloud/
-├── TaskRouter.ts        # 任务路由器
-├── CloudClient.ts       # 云端客户端
-├── TaskQueue.ts         # 任务队列
-└── SyncEngine.ts        # 同步引擎
+├── TaskRouter.ts           # 任务路由器
+├── CloudClient.ts          # 云端客户端
+├── CloudTaskService.ts     # 任务服务
+├── HybridTaskCoordinator.ts # 混合任务协调器
+└── SyncEngine.ts           # 同步引擎
 
 cloud-agent/api/
 ├── tasks/
-│   ├── create.ts        # 创建任务
-│   ├── status.ts        # 查询状态
-│   └── execute.ts       # 执行任务
-└── agents/
-    ├── planner.ts       # 规划 Agent
-    ├── coder.ts         # 编码 Agent
-    └── reviewer.ts      # 审查 Agent
+│   ├── create.ts           # 创建任务
+│   ├── status.ts           # 查询状态
+│   └── execute.ts          # 执行任务
+├── agents/
+│   ├── planner.ts          # 规划 Agent
+│   ├── coder.ts            # 编码 Agent
+│   ├── reviewer.ts         # 审查 Agent
+│   └── researcher.ts       # 研究 Agent
+└── scheduler/
+    └── index.ts            # 多代理调度器
 ```

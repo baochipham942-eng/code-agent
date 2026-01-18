@@ -172,6 +172,9 @@ export const IPC_CHANNELS = {
   WORKSPACE_READ_FILE: 'workspace:read-file',
   WORKSPACE_GET_CURRENT: 'workspace:get-current',
 
+  // Shell channels
+  SHELL_OPEN_PATH: 'shell:open-path',
+
   // Settings channels
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
@@ -311,6 +314,9 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.WORKSPACE_LIST_FILES]: (path: string) => Promise<FileInfo[]>;
   [IPC_CHANNELS.WORKSPACE_READ_FILE]: (path: string) => Promise<string>;
   [IPC_CHANNELS.WORKSPACE_GET_CURRENT]: () => Promise<string | null>;
+
+  // Shell
+  [IPC_CHANNELS.SHELL_OPEN_PATH]: (path: string) => Promise<string>;
 
   // Settings
   [IPC_CHANNELS.SETTINGS_GET]: () => Promise<AppSettings>;

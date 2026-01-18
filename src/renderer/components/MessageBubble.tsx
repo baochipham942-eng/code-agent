@@ -474,28 +474,6 @@ const ToolCallDisplay: React.FC<{ toolCall: ToolCall; index: number; total: numb
             </div>
           )}
 
-          {/* Open in browser button for HTML files */}
-          {htmlFilePath && (
-            <div className="mt-3 flex gap-2">
-              <button
-                onClick={() => openPreview(htmlFilePath)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 text-xs transition-colors"
-              >
-                <Play className="w-3.5 h-3.5" />
-                在右侧预览
-              </button>
-              <button
-                onClick={() => {
-                  // Open in system default browser
-                  window.electronAPI?.invoke('workspace:read-file', htmlFilePath);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-700 text-zinc-300 hover:bg-zinc-600 text-xs transition-colors"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                在浏览器打开
-              </button>
-            </div>
-          )}
         </div>
       )}
     </div>

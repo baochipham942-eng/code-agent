@@ -912,6 +912,15 @@ function setupIpcHandlers(): void {
   });
 
   // -------------------------------------------------------------------------
+  // Shell Handlers
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.SHELL_OPEN_PATH, async (_, filePath: string) => {
+    const { shell } = await import('electron');
+    return shell.openPath(filePath);
+  });
+
+  // -------------------------------------------------------------------------
   // Settings Handlers
   // -------------------------------------------------------------------------
 

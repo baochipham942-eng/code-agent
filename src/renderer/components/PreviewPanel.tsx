@@ -47,15 +47,10 @@ export const PreviewPanel: React.FC = () => {
 
   const handleOpenInBrowser = async () => {
     if (previewFilePath) {
-      // Use shell.openPath to open in default browser
       try {
-        const { shell } = window.require?.('electron') || {};
-        if (shell) {
-          await shell.openPath(previewFilePath);
-        }
+        await window.electronAPI?.invoke('shell:open-path', previewFilePath);
       } catch (err) {
-        // Fallback: just copy path
-        console.log('Opening file:', previewFilePath);
+        console.error('Failed to open in browser:', err);
       }
     }
   };

@@ -28,9 +28,27 @@ export interface User {
   avatar_url: string | null;
   provider: string;
   provider_id: string;
+  role: 'admin' | 'user';  // 管理员 or 普通用户
   created_at: Date;
   last_login_at: Date | null;
 }
+
+// 用户 API Key 配置
+export interface UserApiKeys {
+  id: string;
+  user_id: string;
+  // LLM API Keys (加密存储)
+  deepseek_api_key: string | null;
+  openai_api_key: string | null;
+  anthropic_api_key: string | null;
+  perplexity_api_key: string | null;
+  // 元数据
+  created_at: Date;
+  updated_at: Date;
+}
+
+// 管理员邮箱列表
+export const ADMIN_EMAILS = ['317054513@qq.com'];
 
 export interface Session {
   id: string;
@@ -79,9 +97,24 @@ export async function initializeSchema() {
       avatar_url TEXT,
       provider VARCHAR(50) NOT NULL,
       provider_id VARCHAR(255) NOT NULL,
+      role VARCHAR(20) DEFAULT 'user',
       created_at TIMESTAMP DEFAULT NOW(),
       last_login_at TIMESTAMP,
       UNIQUE(provider, provider_id)
+    );
+  `;
+
+  // 用户 API Key 配置表
+  await sql`
+    CREATE TABLE IF NOT EXISTS code_agent.user_api_keys (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID REFERENCES code_agent.users(id) ON DELETE CASCADE UNIQUE,
+      deepseek_api_key TEXT,
+      openai_api_key TEXT,
+      anthropic_api_key TEXT,
+      perplexity_api_key TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
     );
   `;
 

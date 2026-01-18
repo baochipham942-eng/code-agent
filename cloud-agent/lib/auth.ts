@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
-import { getDb, type User } from './db.js';
+import { getDb, ADMIN_EMAILS, type User } from './db.js';
 
 // JWT 密钥 - 必须在生产环境中设置
 const authSecret = process.env.AUTH_SECRET;
@@ -94,10 +94,12 @@ export async function getOrCreateUser(
     return existing[0] as User;
   }
 
-  // 创建新用户
+  // 创建新用户，根据邮箱判断是否为管理员
+  const role = ADMIN_EMAILS.includes(email) ? 'admin' : 'user';
+
   const result = await sql`
-    INSERT INTO code_agent.users (email, name, avatar_url, provider, provider_id, last_login_at)
-    VALUES (${email}, ${name}, ${avatarUrl}, ${provider}, ${providerId}, NOW())
+    INSERT INTO code_agent.users (email, name, avatar_url, provider, provider_id, role, last_login_at)
+    VALUES (${email}, ${name}, ${avatarUrl}, ${provider}, ${providerId}, ${role}, NOW())
     RETURNING *
   `;
 

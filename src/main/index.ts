@@ -28,6 +28,7 @@ import type {
 } from '../shared/types/cloud';
 import { createPlanningService, type PlanningService } from './planning';
 import { CloudTaskService, getCloudTaskService, initCloudTaskService, isCloudTaskServiceInitialized } from './cloud/CloudTaskService';
+import { initUnifiedOrchestrator, getUnifiedOrchestrator } from './orchestrator';
 
 // ----------------------------------------------------------------------------
 // Global State
@@ -520,6 +521,23 @@ async function initializeServices(): Promise<void> {
   }, 5000); // Check 5 seconds after startup
 
   console.log('Update service initialized, server:', updateServerUrl);
+
+  // Initialize Unified Orchestrator (LOCAL/CLOUD/HYBRID execution routing)
+  console.log('[Init] Initializing Unified Orchestrator...');
+  try {
+    initUnifiedOrchestrator({
+      cloudExecutor: {
+        maxConcurrent: 3,
+        defaultTimeout: 120000,
+        maxIterations: 20,
+        apiEndpoint: updateServerUrl,
+      },
+    });
+    console.log('[Init] Unified Orchestrator initialized');
+  } catch (error) {
+    console.warn('[Init] Failed to initialize Unified Orchestrator:', error);
+  }
+
   console.log('[Init] initializeServices completed');
 }
 

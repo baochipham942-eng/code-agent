@@ -3,6 +3,7 @@
 // ============================================================================
 
 import Anthropic from '@anthropic-ai/sdk';
+import { CLOUD_TOOL_SCHEMAS } from '../tools/CloudToolRegistry';
 
 export interface AgentMessage {
   role: 'user' | 'assistant' | 'system';
@@ -48,42 +49,33 @@ export interface AgentStreamEvent {
 
 // 云端可用的工具定义
 export const CLOUD_TOOLS: AgentTool[] = [
+  // 新的云端工具（使用独立 API 端点）
   {
-    name: 'web_search',
-    description: '搜索网络获取最新信息。适用于查找文档、教程、最佳实践等。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: '搜索查询词',
-        },
-        maxResults: {
-          type: 'number',
-          description: '返回结果数量，默认 5',
-        },
-      },
-      required: ['query'],
-    },
+    name: 'cloud_search',
+    description: CLOUD_TOOL_SCHEMAS.cloud_search.description,
+    input_schema: CLOUD_TOOL_SCHEMAS.cloud_search.inputSchema,
   },
   {
-    name: 'web_fetch',
-    description: '获取指定 URL 的网页内容。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        url: {
-          type: 'string',
-          description: '要获取的 URL',
-        },
-        selector: {
-          type: 'string',
-          description: '可选的 CSS 选择器，只提取特定内容',
-        },
-      },
-      required: ['url'],
-    },
+    name: 'cloud_scrape',
+    description: CLOUD_TOOL_SCHEMAS.cloud_scrape.description,
+    input_schema: CLOUD_TOOL_SCHEMAS.cloud_scrape.inputSchema,
   },
+  {
+    name: 'cloud_api',
+    description: CLOUD_TOOL_SCHEMAS.cloud_api.description,
+    input_schema: CLOUD_TOOL_SCHEMAS.cloud_api.inputSchema,
+  },
+  {
+    name: 'cloud_memory_store',
+    description: CLOUD_TOOL_SCHEMAS.cloud_memory_store.description,
+    input_schema: CLOUD_TOOL_SCHEMAS.cloud_memory_store.inputSchema,
+  },
+  {
+    name: 'cloud_memory_search',
+    description: CLOUD_TOOL_SCHEMAS.cloud_memory_search.description,
+    input_schema: CLOUD_TOOL_SCHEMAS.cloud_memory_search.inputSchema,
+  },
+  // 保留原有工具（LLM 驱动的）
   {
     name: 'generate_plan',
     description: '为复杂任务生成执行计划。返回客户端可执行的步骤列表。',
@@ -316,12 +308,30 @@ export class CloudAgentLoop {
     input: Record<string, unknown>
   ): Promise<string> {
     switch (name) {
+      // 新的云端工具 - 调用独立 API 端点
+      case 'cloud_search':
+        return this.callCloudToolApi('cloud-search', input);
+
+      case 'cloud_scrape':
+        return this.callCloudToolApi('cloud-scrape', input);
+
+      case 'cloud_api':
+        return this.callCloudToolApi('cloud-api', input);
+
+      case 'cloud_memory_store':
+        return this.callCloudToolApi('cloud-memory', { action: 'store', ...input });
+
+      case 'cloud_memory_search':
+        return this.callCloudToolApi('cloud-memory', { action: 'search', ...input });
+
+      // 保留的旧工具名（向后兼容）
       case 'web_search':
-        return this.toolWebSearch(input.query as string, input.maxResults as number);
+        return this.callCloudToolApi('cloud-search', { query: input.query, maxResults: input.maxResults });
 
       case 'web_fetch':
-        return this.toolWebFetch(input.url as string, input.selector as string);
+        return this.callCloudToolApi('cloud-scrape', { url: input.url, selector: input.selector });
 
+      // LLM 驱动的工具
       case 'generate_plan':
         return this.toolGeneratePlan(input.task as string, input.constraints as string[]);
 
@@ -344,78 +354,38 @@ export class CloudAgentLoop {
     }
   }
 
-  private async toolWebSearch(query: string, maxResults = 5): Promise<string> {
-    // TODO: 接入实际的搜索 API (如 Perplexity, SerpAPI, Bing)
-    // 目前返回模拟结果
-    return JSON.stringify({
-      query,
-      results: [
-        {
-          title: `Search results for: ${query}`,
-          url: 'https://example.com',
-          snippet: 'This is a placeholder. Integrate with a real search API.',
-        },
-      ],
-      note: 'Web search API not yet configured',
-    });
-  }
-
-  // 检查是否为高风险内部地址（只阻止云元数据服务）
-  private isHighRiskUrl(hostname: string): boolean {
-    // 只阻止云元数据服务（真正危险的 SSRF 目标）
-    const blockedHosts = [
-      '169.254.169.254',  // AWS/GCP metadata
-      'metadata.google.internal',
-      '100.100.100.200',  // Alibaba Cloud metadata
-    ];
-    return blockedHosts.includes(hostname.toLowerCase());
-  }
-
-  private async toolWebFetch(url: string, selector?: string): Promise<string> {
+  // 调用云端工具 API
+  private async callCloudToolApi(
+    endpoint: string,
+    input: Record<string, unknown>
+  ): Promise<string> {
     try {
-      // URL 验证
-      let parsedUrl: URL;
-      try {
-        parsedUrl = new URL(url);
-      } catch {
-        return JSON.stringify({ error: 'Invalid URL format' });
-      }
-
-      // 只允许 HTTP/HTTPS
-      if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-        return JSON.stringify({ error: 'Only HTTP(S) URLs are allowed' });
-      }
-
-      // 只阻止云元数据服务（真正危险的）
-      if (this.isHighRiskUrl(parsedUrl.hostname)) {
-        return JSON.stringify({ error: 'Access to cloud metadata services is not allowed' });
-      }
+      // 确定 API 基础 URL
+      const baseUrl = process.env.CLOUD_API_URL || 'https://code-agent-beta.vercel.app';
+      const url = `${baseUrl}/api/tools/${endpoint}`;
 
       const response = await fetch(url, {
+        method: 'POST',
         headers: {
-          'User-Agent': 'CodeAgent/1.0 (Cloud Agent)',
+          'Content-Type': 'application/json',
         },
-        redirect: 'follow',
+        body: JSON.stringify(input),
       });
 
-      const html = await response.text();
+      const result = await response.json();
 
-      // 简单提取文本内容（生产环境应使用 cheerio 或类似库）
-      const textContent = html
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 5000);
+      if (!response.ok) {
+        return JSON.stringify({
+          error: result.error || `API request failed with status ${response.status}`,
+        });
+      }
 
+      return JSON.stringify(result);
+    } catch (error) {
+      const err = error as Error;
       return JSON.stringify({
-        url,
-        content: textContent,
-        truncated: html.length > 5000,
+        error: err.message || 'Failed to call cloud tool API',
       });
-    } catch (error: any) {
-      return JSON.stringify({ error: 'Failed to fetch URL' });
     }
   }
 

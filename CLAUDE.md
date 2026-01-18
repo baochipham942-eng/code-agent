@@ -209,56 +209,52 @@ npm run typecheck
 
 ## 🚨 错题本：常见错误与教训
 
-### 1. Vercel 部署：GitHub 自动部署 vs CLI 部署
+### 1. Vercel 部署配置（重要！）
 
-**问题描述**：
-- `code-agent` 项目的 Vercel 是连接到 GitHub 仓库的，**自动从 git push 部署**
-- `cloud-api` 项目的 Vercel 是独立的，需要用 **`npx vercel --prod` 手动部署**
+**🚨 关键信息**：
+- **Vercel 项目名**: `code-agent`
+- **部署域名**: `https://code-agent-beta.vercel.app`
+- **Root Directory**: `cloud-agent`（不是 cloud-api！）
+- **部署方式**: GitHub 自动部署（push 到 main 后自动触发）
+
+**项目中有两个 API 目录（历史遗留）**：
+| 目录 | 用途 | Vercel 部署 |
+|------|------|-------------|
+| `cloud-agent/` | ✅ **正在使用** - 被 Vercel 部署 | ✅ |
+| `cloud-api/` | ❌ **已废弃** - 不要修改 | ❌ |
 
 **真实案例**：
-- 2026-01-17：更新 `cloud-api/api/update.ts` 版本到 0.3.0 后，用 `npx vercel --prod` 部署了，但忘记 **git push**，导致 GitHub 连接的 Vercel 项目没有更新。来回折腾了好几轮才发现问题。
+- 2026-01-18：多次修改 `cloud-api/api/update.ts` 并 push，但 API 一直返回旧版本号。排查发现 Vercel 实际部署的是 `cloud-agent/` 目录。
 
 **正确流程**：
-
 ```bash
-# 1. 修改 cloud-api/api/update.ts 中的版本号
-# 2. 提交代码
-git add cloud-api/api/update.ts
-git commit -m "chore: 更新云端版本信息到 x.x.x"
+# 1. 修改 cloud-agent/api/update.ts 中的版本号（不是 cloud-api！）
+# 2. 提交并 push
+git add -A && git commit -m "chore: 更新版本到 x.x.x" && git push
 
-# 3. 关键步骤：push 到 GitHub（Vercel 会自动部署）
-git push origin main
-
-# 4. 等待 Vercel 自动部署完成（通常 10-30 秒）
-# 5. 验证部署结果
-curl -s "https://cloud-api-henna.vercel.app/api/update?action=health"
+# 3. 等待 Vercel 自动部署（通常 30 秒内）
+# 4. 验证部署结果
+curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 ```
-
-**验证清单**：
-- [ ] 本地代码已修改 ✓
-- [ ] 代码已 commit ✓
-- [ ] **代码已 push 到 GitHub** ← 关键！很容易漏掉
-- [ ] Vercel 部署页面显示新的 commit ✓
-- [ ] API 返回正确的版本号 ✓
 
 ### 2. 版本发布完整流程
 
 **🚨 重要规则：每次更新客户端代码都必须递增版本号！**
 
-每次发布新版本时，需要同步更新多个位置：
+每次发布新版本时，需要同步更新：
 
 ```bash
 # 1. 更新 package.json 版本号（必须！）
-# 2. 更新 cloud-api/api/update.ts 云端版本信息
+# 2. 更新 cloud-agent/api/update.ts 云端版本信息（注意是 cloud-agent，不是 cloud-api）
 # 3. 提交并 push
 git add -A && git commit -m "chore: bump version to x.x.x" && git push
 
-# 4. 等待 Vercel 自动部署（检查 GitHub 连接的项目）
-# 5. 构建和打包
-npm run build && npm run dist:mac
+# 4. 等待 Vercel 自动部署
+# 5. 验证 API
+curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 
-# 6. 验证
-curl -s "https://cloud-api-henna.vercel.app/api/update?action=health"
+# 6. 构建和打包
+npm run build && npm run dist:mac
 ```
 
 ### 3. 版本号递增规则
@@ -269,14 +265,12 @@ curl -s "https://cloud-api-henna.vercel.app/api/update?action=health"
 - **新功能添加** → MINOR +1，PATCH 归零 (如 0.3.1 → 0.4.0)
 - **架构重构** → MAJOR +1，MINOR 和 PATCH 归零 (如 0.4.0 → 1.0.0)
 
-**真实案例**：
-- 2026-01-17：修改了观测面板为手风琴展示，但忘记递增版本号就打包，导致用户无法区分新旧版本。
-
 **打包前检查清单**：
 - [ ] 代码改动已完成并测试
 - [ ] **package.json 版本号已递增** ← 必须！
-- [ ] cloud-api/api/update.ts 已更新对应版本
+- [ ] **cloud-agent/api/update.ts 已更新**（不是 cloud-api！）
 - [ ] 代码已 commit 并 push
 - [ ] 当前目录是主仓库（不是 worktree）
+- [ ] API 验证通过：`curl -s "https://code-agent-beta.vercel.app/api/update?action=health"`
 - [ ] npm run build 已执行
 - [ ] npm run dist:mac 已执行

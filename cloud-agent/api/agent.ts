@@ -9,6 +9,7 @@ import { authenticateRequest } from '../lib/auth.js';
 import { CloudAgentLoop, type AgentRequest } from '../lib/agent/CloudAgentLoop.js';
 import { setCorsHeaders, handleOptions, applyRateLimit, handleError } from '../lib/middleware.js';
 import { RATE_LIMITS } from '../lib/rateLimit.js';
+import { getApiKey } from '../lib/apiKeys.js';
 
 export const config = {
   maxDuration: 60,
@@ -22,7 +23,28 @@ async function handleChat(req: VercelRequest, res: VercelResponse, userId?: stri
     return res.status(400).json({ error: 'Messages are required' });
   }
 
-  const agentLoop = new CloudAgentLoop();
+  // 获取用户的 API Key（优先用户配置，管理员可用系统 Key）
+  let apiKey: string | undefined;
+  if (userId) {
+    const keyResult = await getApiKey(userId, 'anthropic');
+    if (keyResult) {
+      apiKey = keyResult.key;
+    }
+  }
+
+  // 如果没有用户 Key，检查系统环境变量
+  if (!apiKey) {
+    apiKey = process.env.ANTHROPIC_API_KEY;
+  }
+
+  if (!apiKey) {
+    return res.status(403).json({
+      error: 'No API key available',
+      message: '请在设置中配置 Anthropic API Key，或联系管理员',
+    });
+  }
+
+  const agentLoop = new CloudAgentLoop(apiKey);
   const wantStream = req.headers.accept === 'text/event-stream' || body.stream;
 
   if (wantStream) {
@@ -49,7 +71,27 @@ async function handlePlan(req: VercelRequest, res: VercelResponse, userId?: stri
     return res.status(400).json({ error: 'Task description is required' });
   }
 
-  const agentLoop = new CloudAgentLoop();
+  // 获取用户的 API Key
+  let apiKey: string | undefined;
+  if (userId) {
+    const keyResult = await getApiKey(userId, 'anthropic');
+    if (keyResult) {
+      apiKey = keyResult.key;
+    }
+  }
+
+  if (!apiKey) {
+    apiKey = process.env.ANTHROPIC_API_KEY;
+  }
+
+  if (!apiKey) {
+    return res.status(403).json({
+      error: 'No API key available',
+      message: '请在设置中配置 Anthropic API Key，或联系管理员',
+    });
+  }
+
+  const agentLoop = new CloudAgentLoop(apiKey);
 
   const planPrompt = `你是一个任务规划专家。请为以下任务生成一个详细的执行计划。
 

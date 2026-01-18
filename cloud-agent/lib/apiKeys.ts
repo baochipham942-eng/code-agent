@@ -35,13 +35,13 @@ export async function getApiKey(
   // 获取用户信息
   const users = await sql`
     SELECT * FROM code_agent.users WHERE id = ${userId}
-  `;
+  ` as unknown as User[];
 
   if (users.length === 0) {
     return null;
   }
 
-  const user = users[0] as User;
+  const user = users[0];
   const userIsAdmin = isAdmin(user);
 
   // 管理员优先使用系统环境变量中的 Key
@@ -55,11 +55,11 @@ export async function getApiKey(
   // 查询用户自己配置的 Key
   const userKeys = await sql`
     SELECT * FROM code_agent.user_api_keys WHERE user_id = ${userId}
-  `;
+  ` as unknown as Record<string, string | null>[];
 
   if (userKeys.length > 0) {
     const keyColumn = `${keyType}_api_key`;
-    const userKey = userKeys[0][keyColumn] as string | null;
+    const userKey = userKeys[0][keyColumn];
     if (userKey) {
       return { key: userKey, source: 'user' };
     }
@@ -135,19 +135,19 @@ export async function getUserKeyStatus(userId: string): Promise<{
   // 获取用户信息
   const users = await sql`
     SELECT * FROM code_agent.users WHERE id = ${userId}
-  `;
+  ` as unknown as User[];
 
   if (users.length === 0) {
     throw new Error('User not found');
   }
 
-  const user = users[0] as User;
+  const user = users[0];
   const userIsAdmin = isAdmin(user);
 
   // 获取用户配置的 Key
   const userKeys = await sql`
     SELECT * FROM code_agent.user_api_keys WHERE user_id = ${userId}
-  `;
+  ` as unknown as Record<string, string | null>[];
 
   const keyTypes: ApiKeyType[] = ['deepseek', 'openai', 'anthropic', 'perplexity'];
   const result: Record<ApiKeyType, { configured: boolean; source: KeySource | null }> = {
@@ -170,7 +170,7 @@ export async function getUserKeyStatus(userId: string): Promise<{
     // 检查用户自己的 Key
     if (userKeys.length > 0) {
       const keyColumn = `${keyType}_api_key`;
-      const userKey = userKeys[0][keyColumn] as string | null;
+      const userKey = userKeys[0][keyColumn];
       if (userKey) {
         result[keyType] = { configured: true, source: 'user' };
       }
@@ -193,9 +193,9 @@ export async function setUserRole(
   // 验证操作者是否为管理员
   const admins = await sql`
     SELECT * FROM code_agent.users WHERE id = ${adminUserId}
-  `;
+  ` as unknown as User[];
 
-  if (admins.length === 0 || !isAdmin(admins[0] as User)) {
+  if (admins.length === 0 || !isAdmin(admins[0])) {
     throw new Error('Permission denied: only admins can change user roles');
   }
 

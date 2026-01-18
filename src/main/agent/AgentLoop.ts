@@ -7,6 +7,7 @@ import type {
   Generation,
   ModelConfig,
   Message,
+  MessageAttachment,
   ToolCall,
   ToolResult,
   AgentEvent,
@@ -49,6 +50,22 @@ interface ModelResponse {
   toolCalls?: ToolCall[];
   truncated?: boolean; // 标记输出是否因 max_tokens 限制被截断
   finishReason?: string; // 原始的 finish_reason
+}
+
+// 多模态消息内容类型（与 ModelRouter 保持一致）
+interface MessageContent {
+  type: 'text' | 'image';
+  text?: string;
+  source?: {
+    type: 'base64';
+    media_type: string;
+    data: string;
+  };
+}
+
+interface ModelMessage {
+  role: string;
+  content: string | MessageContent[];
 }
 
 // ----------------------------------------------------------------------------
@@ -804,8 +821,8 @@ export class AgentLoop {
     }
   }
 
-  private buildModelMessages(): Array<{ role: string; content: string }> {
-    const modelMessages: Array<{ role: string; content: string }> = [];
+  private buildModelMessages(): ModelMessage[] {
+    const modelMessages: ModelMessage[] = [];
 
     // Build enhanced system prompt for Gen3+
     // Gen3-4: 轻量级 RAG（仅项目知识）
@@ -841,6 +858,13 @@ export class AgentLoop {
           role: 'assistant',
           content: toolCallsStr || message.content,
         });
+      } else if (message.role === 'user' && message.attachments?.length) {
+        // 处理带附件的用户消息（多模态）
+        const multimodalContent = this.buildMultimodalContent(message.content, message.attachments);
+        modelMessages.push({
+          role: 'user',
+          content: multimodalContent,
+        });
       } else {
         modelMessages.push({
           role: message.role,
@@ -850,6 +874,60 @@ export class AgentLoop {
     }
 
     return modelMessages;
+  }
+
+  /**
+   * 将附件转换为多模态消息内容
+   */
+  private buildMultimodalContent(text: string, attachments: MessageAttachment[]): MessageContent[] {
+    const contents: MessageContent[] = [];
+
+    // 添加用户文本
+    if (text.trim()) {
+      contents.push({ type: 'text', text });
+    }
+
+    // 处理每个附件
+    for (const attachment of attachments) {
+      if (attachment.type === 'image' && attachment.data) {
+        // 图片附件：转换为 base64 图片内容
+        // attachment.data 格式可能是 "data:image/png;base64,xxx" 或纯 base64
+        let base64Data = attachment.data;
+        let mediaType = attachment.mimeType;
+
+        if (attachment.data.startsWith('data:')) {
+          // 解析 data URL
+          const match = attachment.data.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            mediaType = match[1];
+            base64Data = match[2];
+          }
+        }
+
+        contents.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: mediaType,
+            data: base64Data,
+          },
+        });
+      } else if (attachment.type === 'file' && attachment.data) {
+        // 文件附件（PDF 文本、代码文件等）：作为文本内容
+        const fileContent = attachment.mimeType === 'application/pdf'
+          ? `[PDF 文件: ${attachment.name}]\n\n${attachment.data}`
+          : `[文件: ${attachment.name}]\n\`\`\`\n${attachment.data}\n\`\`\``;
+
+        contents.push({ type: 'text', text: fileContent });
+      }
+    }
+
+    // 如果没有任何内容，返回空文本
+    if (contents.length === 0) {
+      contents.push({ type: 'text', text: text || '' });
+    }
+
+    return contents;
   }
 
   /**

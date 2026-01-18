@@ -21,9 +21,12 @@ import {
   AlertCircle,
   Play,
   ExternalLink,
-  Clock
+  Clock,
+  Image as ImageIcon,
+  File,
+  FileImage,
 } from 'lucide-react';
-import type { Message, ToolCall, ToolResult } from '@shared/types';
+import type { Message, ToolCall, ToolResult, MessageAttachment } from '@shared/types';
 import { useAppStore } from '../stores/appStore';
 import { summarizeToolCall, getToolIcon as getToolIconEmoji, getToolStatusText, getToolStatusClass } from '../utils/toolSummary';
 import { DiffView, DiffPreview } from './DiffView';
@@ -58,6 +61,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
 
       {/* Content */}
       <div className={`flex-1 min-w-0 ${isUser ? 'text-right' : ''}`}>
+        {/* Attachments for user messages */}
+        {isUser && message.attachments && message.attachments.length > 0 && (
+          <AttachmentDisplay attachments={message.attachments} />
+        )}
+
         {/* Text content */}
         {message.content && (
           <div
@@ -496,3 +504,71 @@ function formatTime(timestamp: number): string {
     hour12: true,
   }).format(new Date(timestamp));
 }
+
+// Format file size
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// Attachment display component
+const AttachmentDisplay: React.FC<{ attachments: MessageAttachment[] }> = ({ attachments }) => {
+  const [expandedImage, setExpandedImage] = useState<string | null>(null);
+
+  return (
+    <div className="mb-2 flex flex-wrap gap-2 justify-end">
+      {attachments.map((attachment) => (
+        <div key={attachment.id}>
+          {attachment.type === 'image' ? (
+            // 图片附件
+            <div
+              className="relative group cursor-pointer"
+              onClick={() => setExpandedImage(attachment.thumbnail || attachment.data || null)}
+            >
+              <img
+                src={attachment.thumbnail || attachment.data}
+                alt={attachment.name}
+                className="max-w-[200px] max-h-[150px] rounded-xl border border-zinc-700/50 shadow-lg object-cover hover:border-primary-500/50 transition-colors"
+              />
+              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center">
+                <ImageIcon className="w-6 h-6 text-white" />
+              </div>
+            </div>
+          ) : (
+            // 文件附件（PDF、代码等）
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-zinc-800/60 border border-zinc-700/50 max-w-[250px]">
+              {attachment.mimeType === 'application/pdf' ? (
+                <FileText className="w-5 h-5 text-red-400 shrink-0" />
+              ) : (
+                <File className="w-5 h-5 text-zinc-400 shrink-0" />
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-zinc-200 truncate" title={attachment.name}>
+                  {attachment.name}
+                </div>
+                <div className="text-xs text-zinc-500">
+                  {formatFileSize(attachment.size)}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
+
+      {/* 图片放大弹窗 */}
+      {expandedImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8"
+          onClick={() => setExpandedImage(null)}
+        >
+          <img
+            src={expandedImage}
+            alt="Expanded"
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+          />
+        </div>
+      )}
+    </div>
+  );
+};

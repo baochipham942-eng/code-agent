@@ -674,7 +674,7 @@ export class AgentLoop {
     console.log(`[AgentLoop] Tools for ${this.generation.id}:`, tools.map(t => t.name));
 
     // Build messages for model
-    const modelMessages = this.buildModelMessages();
+    let modelMessages = this.buildModelMessages();
     console.log('[AgentLoop] Model messages count:', modelMessages.length);
     console.log('[AgentLoop] Model config:', {
       provider: this.modelConfig.provider,
@@ -713,6 +713,8 @@ export class AgentLoop {
       // 检测任务是否需要特殊能力，如果主模型不支持则自动切换
       let effectiveConfig = this.modelConfig;
       const requiredCapabilities = this.modelRouter.detectRequiredCapabilities(modelMessages);
+      let needsVisionFallback = false;
+      let visionFallbackSucceeded = false;
 
       if (requiredCapabilities.length > 0) {
         const currentModelInfo = this.modelRouter.getModelInfo(
@@ -725,6 +727,9 @@ export class AgentLoop {
             (capability === 'vision' && currentModelInfo?.supportsVision);
 
           if (!hasCapability) {
+            if (capability === 'vision') {
+              needsVisionFallback = true;
+            }
             // 主模型缺少此能力，尝试获取备用模型
             const fallbackConfig = this.modelRouter.getFallbackConfig(capability, this.modelConfig);
             if (fallbackConfig) {
@@ -744,6 +749,9 @@ export class AgentLoop {
                   },
                 });
                 effectiveConfig = fallbackConfig;
+                if (capability === 'vision') {
+                  visionFallbackSucceeded = true;
+                }
                 break; // 使用第一个需要切换的能力
               } else {
                 console.warn(`[AgentLoop] 备用模型 ${fallbackConfig.provider} 未配置 API Key，无法切换`);
@@ -751,6 +759,12 @@ export class AgentLoop {
             }
           }
         }
+      }
+
+      // 如果需要视觉能力但无法切换到视觉模型，则移除图片内容避免 API 错误
+      if (needsVisionFallback && !visionFallbackSucceeded) {
+        console.warn('[AgentLoop] 无法使用视觉模型，将图片转换为文字描述');
+        modelMessages = this.stripImagesFromMessages(modelMessages);
       }
 
       // Call model through router
@@ -991,6 +1005,39 @@ export class AgentLoop {
     }
 
     return contents;
+  }
+
+  /**
+   * 从消息中移除图片内容，替换为文字描述
+   * 用于当视觉模型不可用时的降级处理
+   */
+  private stripImagesFromMessages(messages: ModelMessage[]): ModelMessage[] {
+    return messages.map((msg) => {
+      if (!Array.isArray(msg.content)) {
+        return msg;
+      }
+
+      const newContent: MessageContent[] = [];
+      let hasImage = false;
+
+      for (const part of msg.content) {
+        if (part.type === 'image') {
+          hasImage = true;
+          // 将图片替换为文字说明
+          newContent.push({
+            type: 'text',
+            text: '[图片内容: 当前模型不支持图片分析，请配置 OPENROUTER_API_KEY 以启用视觉模型]',
+          });
+        } else {
+          newContent.push(part);
+        }
+      }
+
+      if (hasImage) {
+        return { ...msg, content: newContent };
+      }
+      return msg;
+    });
   }
 
   /**

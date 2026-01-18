@@ -26,6 +26,7 @@ import { enterPlanModeTool } from './gen3/enterPlanMode';
 import { exitPlanModeTool } from './gen3/exitPlanMode';
 import { skillTool } from './gen4/skill';
 import { webFetchTool } from './gen4/webFetch';
+import { webSearchTool } from './gen4/webSearch';
 import { memoryStoreTool } from './gen5/memoryStore';
 import { memorySearchTool } from './gen5/memorySearch';
 import { codeIndexTool } from './gen5/codeIndex';
@@ -126,6 +127,7 @@ export class ToolRegistry {
     // Gen 4 tools
     this.register(skillTool);
     this.register(webFetchTool);
+    this.register(webSearchTool);
 
     // Gen 5 tools
     this.register(memoryStoreTool);

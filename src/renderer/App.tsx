@@ -63,7 +63,7 @@ export const App: React.FC = () => {
   }, []);
 
   // Load settings from backend on mount
-  const { setModelConfig } = useAppStore();
+  const { setModelConfig, setDisclosureLevel, setCurrentGeneration } = useAppStore();
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -74,6 +74,24 @@ export const App: React.FC = () => {
         if (settings?.ui?.language) {
           setLanguage(settings.ui.language);
           console.log('[App] Loaded language setting:', settings.ui.language);
+        }
+
+        // 加载界面设置（渐进披露级别）
+        if (settings?.ui?.disclosureLevel) {
+          setDisclosureLevel(settings.ui.disclosureLevel);
+          console.log('[App] Loaded disclosure level:', settings.ui.disclosureLevel);
+        }
+
+        // 加载代际选择
+        if (settings?.generation?.default) {
+          const generationId = settings.generation.default;
+          console.log('[App] Loading generation:', generationId);
+          // 从后端获取完整的 generation 对象
+          const generation = await window.electronAPI?.invoke('generation:switch', generationId);
+          if (generation) {
+            setCurrentGeneration(generation);
+            console.log('[App] Loaded generation:', generation.id);
+          }
         }
 
         // 加载模型配置
@@ -98,7 +116,7 @@ export const App: React.FC = () => {
       }
     };
     loadSettings();
-  }, [setLanguage, setModelConfig]);
+  }, [setLanguage, setModelConfig, setDisclosureLevel, setCurrentGeneration]);
 
   // 应用启动时检查更新（强制更新检查）
   useEffect(() => {

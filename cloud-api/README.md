@@ -1,8 +1,20 @@
-# Code Agent Cloud API
+# ⚠️ 已废弃 - 请勿修改此目录！
+
+> **警告**：此目录 (`cloud-api/`) 已废弃，不再被 Vercel 部署。
+>
+> **请使用 `cloud-agent/` 目录！**
+>
+> - 正确的 API 目录：`cloud-agent/`
+> - 正确的部署域名：`https://code-agent-beta.vercel.app`
+> - 修改此目录的文件不会有任何效果
+
+---
+
+# Code Agent Cloud API (已废弃)
 
 版本检查与更新服务 API。
 
-## 部署到 Vercel
+## ~~部署到 Vercel~~（已废弃）
 
 ### 方法 1: Vercel CLI
 

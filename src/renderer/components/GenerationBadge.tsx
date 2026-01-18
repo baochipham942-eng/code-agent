@@ -176,6 +176,12 @@ export const GenerationBadge: React.FC = () => {
       if (switched) {
         setCurrentGeneration(switched);
         console.log(`[GenerationBadge] Switched to ${switched.name}`);
+
+        // Save to backend settings for persistence
+        await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
+          generation: { default: gen.id },
+        } as any);
+        console.log(`[GenerationBadge] Saved generation preference: ${gen.id}`);
       }
     } catch (error) {
       console.error('Failed to switch generation:', error);

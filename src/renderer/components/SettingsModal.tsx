@@ -297,6 +297,19 @@ const DisclosureSettings: React.FC<{
   const { t } = useI18n();
   const [devModeAutoApprove, setDevModeAutoApprove] = useState(true);
 
+  // Handle disclosure level change and persist to backend
+  const handleLevelChange = async (newLevel: DisclosureLevel) => {
+    onChange(newLevel);
+    try {
+      await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
+        ui: { disclosureLevel: newLevel },
+      } as any);
+      console.log('[DisclosureSettings] Disclosure level saved:', newLevel);
+    } catch (error) {
+      console.error('[DisclosureSettings] Failed to save disclosure level:', error);
+    }
+  };
+
   // Load dev mode setting on mount (from persistent storage)
   useEffect(() => {
     const loadSettings = async () => {
@@ -387,7 +400,7 @@ const DisclosureSettings: React.FC<{
         {levels.map((item) => (
           <button
             key={item.id}
-            onClick={() => onChange(item.id)}
+            onClick={() => handleLevelChange(item.id)}
             className={`w-full p-4 rounded-lg border text-left transition-all ${
               level === item.id
                 ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/50'
@@ -664,7 +677,11 @@ const CacheSettings: React.FC = () => {
     setMessage(null);
     try {
       const cleared = await window.electronAPI?.invoke(IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE);
-      setMessage({ type: 'success', text: `已清理 ${cleared} 条工具调用缓存` });
+      if (cleared === 0) {
+        setMessage({ type: 'success', text: '缓存已经是空的' });
+      } else {
+        setMessage({ type: 'success', text: `已清理 ${cleared} 条工具调用缓存` });
+      }
       await loadStats();
     } catch (error) {
       setMessage({ type: 'error', text: '清理失败' });
@@ -740,11 +757,11 @@ const CacheSettings: React.FC = () => {
         </p>
         <button
           onClick={handleClearToolCache}
-          disabled={isClearing || (stats?.cacheEntries || 0) === 0}
+          disabled={isClearing}
           className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RefreshCw className={`w-4 h-4 ${isClearing ? 'animate-spin' : ''}`} />
-          清理工具缓存
+          清空缓存 {(stats?.cacheEntries || 0) > 0 && `(${stats?.cacheEntries} 条)`}
         </button>
       </div>
 

@@ -149,15 +149,11 @@ export const AuthModal: React.FC = () => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white font-medium flex items-center justify-center gap-2 transition-colors"
+            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg text-white font-medium flex items-center justify-center gap-2 transition-colors min-h-[42px]"
           >
-            {isLoading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : mode === 'signin' ? (
-              '登录'
-            ) : (
-              '注册'
-            )}
+            {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+            {mode === 'signin' ? '登录' : '注册'}
+            {isLoading && '中...'}
           </button>
         </form>
 

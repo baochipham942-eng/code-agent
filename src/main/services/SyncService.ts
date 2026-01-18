@@ -424,7 +424,7 @@ class SyncService {
     const db = getDatabase();
     let count = 0;
 
-    // Get local sessions modified after sync cursor
+    // Get all local sessions (not just modified ones)
     const sessions = db.listSessions(1000, 0);
     const pendingSessions = sessions.filter((s) => s.updatedAt > this.syncCursor);
 
@@ -452,8 +452,9 @@ class SyncService {
       }
     }
 
-    // Push messages for each session
-    for (const session of pendingSessions) {
+    // Push messages from ALL sessions (not just pending ones)
+    // This ensures messages added after session was synced are still pushed
+    for (const session of sessions) {
       const messages = db.getMessages(session.id);
       const pendingMessages = messages.filter((m) => m.timestamp > this.syncCursor);
 

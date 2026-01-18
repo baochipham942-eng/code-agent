@@ -8,6 +8,7 @@ import type {
   GenerationId,
   GenerationDiff,
   Message,
+  MessageAttachment,
   PermissionRequest,
   PermissionResponse,
   Session,
@@ -29,6 +30,12 @@ import type {
   UpdateInfo,
   DownloadProgress,
 } from './types';
+
+// 带附件的消息请求
+export interface AgentMessageRequest {
+  content: string;
+  attachments?: MessageAttachment[];
+}
 
 import type {
   CloudTask,
@@ -261,8 +268,8 @@ export const IPC_CHANNELS = {
 // ----------------------------------------------------------------------------
 
 export interface IpcInvokeHandlers {
-  // Agent
-  [IPC_CHANNELS.AGENT_SEND_MESSAGE]: (content: string) => Promise<void>;
+  // Agent - 支持纯文本或带附件的消息
+  [IPC_CHANNELS.AGENT_SEND_MESSAGE]: (message: string | AgentMessageRequest) => Promise<void>;
   [IPC_CHANNELS.AGENT_CANCEL]: () => Promise<void>;
   [IPC_CHANNELS.AGENT_PERMISSION_RESPONSE]: (
     requestId: string,

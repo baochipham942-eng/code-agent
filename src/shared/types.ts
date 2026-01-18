@@ -147,6 +147,21 @@ export interface GUIAgentConfig {
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 
+// 附件类型
+export interface MessageAttachment {
+  id: string;
+  type: 'image' | 'file';
+  name: string;
+  size: number;
+  mimeType: string;
+  // 图片: base64 数据 URL 或本地文件路径
+  // 文件: 本地文件路径
+  data?: string;
+  path?: string;
+  // 图片预览 (缩略图)
+  thumbnail?: string;
+}
+
 export interface Message {
   id: string;
   role: MessageRole;
@@ -154,6 +169,8 @@ export interface Message {
   timestamp: number;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
+  // 多模态支持
+  attachments?: MessageAttachment[];
 }
 
 export interface ToolCall {

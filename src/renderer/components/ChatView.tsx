@@ -11,6 +11,7 @@ import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { TodoPanel } from './TodoPanel';
 import { PreviewPanel } from './PreviewPanel';
+import type { MessageAttachment } from '../../shared/types';
 import {
   Bot,
   Code2,
@@ -35,9 +36,9 @@ export const ChatView: React.FC = () => {
   }, [messages]);
 
   // 发送消息需要登录
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, attachments?: MessageAttachment[]) => {
     await requireAuthAsync(async () => {
-      await sendMessage(content);
+      await sendMessage(content, attachments);
     });
   };
 
@@ -204,211 +205,211 @@ const suggestionsByGeneration: Record<string, SuggestionItem[]> = {
       iconColor: 'text-red-400',
     },
   ],
-  // Gen3: 子代理和规划
+  // Gen3: 实用小应用
   gen3: [
     {
       icon: Code2,
-      text: '规划一个新功能',
-      description: '创建实现计划',
-      color: 'from-blue-500/20 to-cyan-500/20',
-      borderColor: 'border-blue-500/20',
-      iconColor: 'text-blue-400',
-    },
-    {
-      icon: Bug,
-      text: '调试复杂问题',
-      description: '分步骤排查',
-      color: 'from-red-500/20 to-orange-500/20',
-      borderColor: 'border-red-500/20',
-      iconColor: 'text-red-400',
-    },
-    {
-      icon: FileQuestion,
-      text: '研究代码架构',
-      description: '启动子任务探索',
-      color: 'from-purple-500/20 to-pink-500/20',
-      borderColor: 'border-purple-500/20',
-      iconColor: 'text-purple-400',
-    },
-    {
-      icon: TestTube2,
-      text: '设计测试方案',
-      description: '规划测试用例',
+      text: '做一个贪吃蛇游戏',
+      description: '经典像素风格',
       color: 'from-emerald-500/20 to-teal-500/20',
       borderColor: 'border-emerald-500/20',
       iconColor: 'text-emerald-400',
     },
-  ],
-  // Gen4: 技能和网络
-  gen4: [
     {
       icon: Sparkles,
-      text: '使用技能提交代码',
-      description: '/commit 快捷命令',
-      color: 'from-blue-500/20 to-cyan-500/20',
-      borderColor: 'border-blue-500/20',
-      iconColor: 'text-blue-400',
+      text: '做一个番茄钟计时器',
+      description: '专注工作 25 分钟',
+      color: 'from-red-500/20 to-orange-500/20',
+      borderColor: 'border-red-500/20',
+      iconColor: 'text-red-400',
     },
     {
       icon: Terminal,
-      text: '获取最新文档',
-      description: '从网络获取信息',
-      color: 'from-emerald-500/20 to-teal-500/20',
-      borderColor: 'border-emerald-500/20',
-      iconColor: 'text-emerald-400',
-    },
-    {
-      icon: Code2,
-      text: '创建并提交 PR',
-      description: '完整开发流程',
+      text: '做一个密码生成器',
+      description: '随机安全密码',
       color: 'from-purple-500/20 to-pink-500/20',
       borderColor: 'border-purple-500/20',
       iconColor: 'text-purple-400',
     },
     {
+      icon: FileQuestion,
+      text: '做一个记账本',
+      description: '收支统计图表',
+      color: 'from-blue-500/20 to-cyan-500/20',
+      borderColor: 'border-blue-500/20',
+      iconColor: 'text-blue-400',
+    },
+  ],
+  // Gen4: 更多实用工具
+  gen4: [
+    {
+      icon: Code2,
+      text: '做一个打字练习器',
+      description: '测试打字速度',
+      color: 'from-emerald-500/20 to-teal-500/20',
+      borderColor: 'border-emerald-500/20',
+      iconColor: 'text-emerald-400',
+    },
+    {
+      icon: Sparkles,
+      text: '做一个抽奖转盘',
+      description: '自定义奖品选项',
+      color: 'from-purple-500/20 to-pink-500/20',
+      borderColor: 'border-purple-500/20',
+      iconColor: 'text-purple-400',
+    },
+    {
+      icon: Terminal,
+      text: '做一个 Markdown 编辑器',
+      description: '实时预览效果',
+      color: 'from-blue-500/20 to-cyan-500/20',
+      borderColor: 'border-blue-500/20',
+      iconColor: 'text-blue-400',
+    },
+    {
       icon: Bug,
-      text: '查询 API 文档',
-      description: '获取外部知识',
+      text: '做一个颜色选择器',
+      description: 'RGB/HEX 转换',
       color: 'from-red-500/20 to-orange-500/20',
       borderColor: 'border-red-500/20',
       iconColor: 'text-red-400',
     },
   ],
-  // Gen5: 记忆和 RAG
+  // Gen5: 进阶应用
   gen5: [
     {
       icon: Code2,
-      text: '记住项目规范',
-      description: '存储长期记忆',
+      text: '做一个俄罗斯方块',
+      description: '经典休闲游戏',
       color: 'from-blue-500/20 to-cyan-500/20',
       borderColor: 'border-blue-500/20',
       iconColor: 'text-blue-400',
     },
     {
-      icon: FileQuestion,
-      text: '搜索历史对话',
-      description: '语义记忆检索',
+      icon: Sparkles,
+      text: '做一个白噪音播放器',
+      description: '雨声/咖啡厅/火焰',
       color: 'from-purple-500/20 to-pink-500/20',
       borderColor: 'border-purple-500/20',
       iconColor: 'text-purple-400',
     },
     {
       icon: Terminal,
-      text: '索引代码库',
-      description: '建立代码索引',
+      text: '做一个二维码生成器',
+      description: '文字转二维码',
       color: 'from-emerald-500/20 to-teal-500/20',
       borderColor: 'border-emerald-500/20',
       iconColor: 'text-emerald-400',
     },
     {
-      icon: Bug,
-      text: '回顾之前的修复',
-      description: '检索相似问题',
+      icon: FileQuestion,
+      text: '做一个习惯打卡',
+      description: '每日任务追踪',
       color: 'from-red-500/20 to-orange-500/20',
       borderColor: 'border-red-500/20',
       iconColor: 'text-red-400',
     },
   ],
-  // Gen6: Computer Use
+  // Gen6: 视觉交互
   gen6: [
     {
       icon: Code2,
-      text: '截图当前界面',
-      description: '视觉观察分析',
+      text: '做一个画板工具',
+      description: '自由绘图涂鸦',
       color: 'from-blue-500/20 to-cyan-500/20',
       borderColor: 'border-blue-500/20',
       iconColor: 'text-blue-400',
     },
     {
+      icon: Sparkles,
+      text: '做一个图片滤镜',
+      description: '黑白/复古/模糊',
+      color: 'from-purple-500/20 to-pink-500/20',
+      borderColor: 'border-purple-500/20',
+      iconColor: 'text-purple-400',
+    },
+    {
       icon: Terminal,
-      text: '自动化浏览器操作',
-      description: 'Computer Use',
+      text: '做一个截图标注工具',
+      description: '添加箭头和文字',
       color: 'from-emerald-500/20 to-teal-500/20',
       borderColor: 'border-emerald-500/20',
       iconColor: 'text-emerald-400',
     },
     {
       icon: FileQuestion,
-      text: '测试网页功能',
-      description: '模拟用户交互',
-      color: 'from-purple-500/20 to-pink-500/20',
-      borderColor: 'border-purple-500/20',
-      iconColor: 'text-purple-400',
-    },
-    {
-      icon: Bug,
-      text: '截图调试 UI',
-      description: '可视化问题定位',
+      text: '做一个拼图游戏',
+      description: '上传图片拼图',
       color: 'from-red-500/20 to-orange-500/20',
       borderColor: 'border-red-500/20',
       iconColor: 'text-red-400',
     },
   ],
-  // Gen7: 多代理协同
+  // Gen7: 复杂应用
   gen7: [
     {
       icon: Code2,
-      text: '启动多代理开发',
-      description: '并行协作编码',
+      text: '做一个看板任务管理',
+      description: '拖拽卡片排序',
       color: 'from-blue-500/20 to-cyan-500/20',
       borderColor: 'border-blue-500/20',
       iconColor: 'text-blue-400',
     },
     {
+      icon: Sparkles,
+      text: '做一个音乐可视化',
+      description: '频谱动画效果',
+      color: 'from-purple-500/20 to-pink-500/20',
+      borderColor: 'border-purple-500/20',
+      iconColor: 'text-purple-400',
+    },
+    {
       icon: Terminal,
-      text: '分配子任务',
-      description: '代理间协调',
+      text: '做一个聊天界面',
+      description: '仿微信/Slack',
       color: 'from-emerald-500/20 to-teal-500/20',
       borderColor: 'border-emerald-500/20',
       iconColor: 'text-emerald-400',
     },
     {
       icon: FileQuestion,
-      text: '编排工作流',
-      description: '复杂任务拆解',
-      color: 'from-purple-500/20 to-pink-500/20',
-      borderColor: 'border-purple-500/20',
-      iconColor: 'text-purple-400',
-    },
-    {
-      icon: Bug,
-      text: '协作修复 Bug',
-      description: '多代理联合调试',
+      text: '做一个数据仪表盘',
+      description: '图表统计展示',
       color: 'from-red-500/20 to-orange-500/20',
       borderColor: 'border-red-500/20',
       iconColor: 'text-red-400',
     },
   ],
-  // Gen8: 自我进化
+  // Gen8: 高级应用
   gen8: [
     {
       icon: Sparkles,
-      text: '优化执行策略',
-      description: '自我学习改进',
+      text: '做一个 3D 旋转相册',
+      description: 'CSS 3D 效果',
       color: 'from-blue-500/20 to-cyan-500/20',
       borderColor: 'border-blue-500/20',
       iconColor: 'text-blue-400',
     },
     {
       icon: Code2,
-      text: '创建新工具',
-      description: '动态扩展能力',
+      text: '做一个代码编辑器',
+      description: '语法高亮/行号',
       color: 'from-emerald-500/20 to-teal-500/20',
       borderColor: 'border-emerald-500/20',
       iconColor: 'text-emerald-400',
     },
     {
-      icon: FileQuestion,
-      text: '自我评估性能',
-      description: '反思与改进',
+      icon: Terminal,
+      text: '做一个流程图编辑器',
+      description: '拖拽连线节点',
       color: 'from-purple-500/20 to-pink-500/20',
       borderColor: 'border-purple-500/20',
       iconColor: 'text-purple-400',
     },
     {
-      icon: Bug,
-      text: '自动修复流程',
-      description: '闭环问题解决',
+      icon: FileQuestion,
+      text: '做一个粒子动画',
+      description: 'Canvas 特效',
       color: 'from-red-500/20 to-orange-500/20',
       borderColor: 'border-red-500/20',
       iconColor: 'text-red-400',

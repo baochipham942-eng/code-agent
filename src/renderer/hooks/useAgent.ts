@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { generateMessageId } from '@shared/utils/id';
-import type { Message, ToolCall, ToolResult, PermissionRequest } from '@shared/types';
+import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest } from '@shared/types';
 
 export const useAgent = () => {
   const {
@@ -264,9 +264,9 @@ export const useAgent = () => {
 
   // Send a message to the agent
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, attachments?: MessageAttachment[]) => {
       console.log('[useAgent] sendMessage called with:', content.substring(0, 50));
-      if (!content.trim() || isProcessing) {
+      if ((!content.trim() && !attachments?.length) || isProcessing) {
         console.log('[useAgent] sendMessage blocked - empty or processing');
         return;
       }
@@ -277,8 +277,9 @@ export const useAgent = () => {
         role: 'user',
         content,
         timestamp: Date.now(),
+        attachments,
       };
-      console.log('[useAgent] Adding user message with id:', userMessage.id);
+      console.log('[useAgent] Adding user message with id:', userMessage.id, 'attachments:', attachments?.length || 0);
       addMessage(userMessage);
 
       // Add placeholder assistant message for streaming with UUID
@@ -297,7 +298,11 @@ export const useAgent = () => {
         // Send to main process
         // Note: Don't set isProcessing to false here, it will be set by agent_complete event
         console.log('[useAgent] Calling invoke agent:send-message');
-        await window.electronAPI?.invoke('agent:send-message', content);
+        // 如果有附件，构建包含附件信息的消息
+        const messagePayload = attachments?.length
+          ? { content, attachments }
+          : content;
+        await window.electronAPI?.invoke('agent:send-message', messagePayload);
         console.log('[useAgent] invoke returned');
       } catch (error) {
         console.error('[useAgent] Agent error:', error);

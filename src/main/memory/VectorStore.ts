@@ -7,6 +7,12 @@ import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
 import { getEmbeddingService, type EmbeddingService } from './EmbeddingService';
+import {
+  getSupabase,
+  isSupabaseInitialized,
+  type VectorMatchResult,
+} from '../services/SupabaseService';
+import { getAuthService } from '../services/AuthService';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -39,6 +45,27 @@ export interface SearchResultExport {
   content: string;
   score: number;
   metadata: VectorDocumentMetadata & { createdAt: number };
+}
+
+// Cloud search result type
+export interface CloudSearchResult {
+  id: string;
+  content: string;
+  source: string;
+  projectPath: string | null;
+  filePath: string | null;
+  sessionId: string | null;
+  similarity: number;
+}
+
+// Hybrid search options (local + cloud)
+export interface HybridSearchOptions {
+  topK?: number;
+  threshold?: number;
+  filter?: Partial<VectorDocument['metadata']>;
+  includeCloud?: boolean;      // Whether to search cloud (default: true if authenticated)
+  projectPath?: string;        // Filter by project path
+  crossProject?: boolean;      // Search across all projects (cloud only)
 }
 
 export interface VectorStoreConfig {
@@ -329,6 +356,220 @@ export class VectorStore {
     return results.slice(0, topK);
   }
 
+  // --------------------------------------------------------------------------
+  // Cloud Search (Supabase pgvector)
+  // --------------------------------------------------------------------------
+
+  /**
+   * 检查云端搜索是否可用
+   */
+  isCloudAvailable(): boolean {
+    if (!isSupabaseInitialized()) return false;
+    const user = getAuthService().getCurrentUser();
+    return user !== null;
+  }
+
+  /**
+   * 云端向量搜索 (使用 Supabase match_vectors RPC)
+   *
+   * @param query - 搜索查询文本
+   * @param options - 搜索选项
+   * @returns 云端搜索结果数组
+   */
+  async searchCloud(
+    query: string,
+    options: {
+      topK?: number;
+      threshold?: number;
+      projectPath?: string | null;
+    } = {}
+  ): Promise<CloudSearchResult[]> {
+    const { topK = 10, threshold = 0.7, projectPath = null } = options;
+
+    // Check if cloud is available
+    if (!this.isCloudAvailable()) {
+      console.log('[VectorStore] Cloud search not available (not authenticated)');
+      return [];
+    }
+
+    try {
+      const user = getAuthService().getCurrentUser();
+      if (!user) return [];
+
+      // Generate embedding for query
+      const queryEmbedding = await this.getEmbedding().embed(query);
+
+      // Ensure embedding dimension matches Supabase (1024 for DeepSeek)
+      const normalizedEmbedding = this.normalizeEmbeddingDimension(queryEmbedding, 1024);
+
+      // Call Supabase RPC function
+      const supabase = getSupabase();
+      const { data, error } = await supabase.rpc('match_vectors', {
+        query_embedding: normalizedEmbedding,
+        match_user_id: user.id,
+        match_project_path: projectPath,
+        match_threshold: threshold,
+        match_count: topK,
+      });
+
+      if (error) {
+        console.error('[VectorStore] Cloud search error:', error);
+        return [];
+      }
+
+      // Map results
+      return (data || []).map((item: VectorMatchResult) => ({
+        id: item.id,
+        content: item.content,
+        source: item.source,
+        projectPath: item.project_path,
+        filePath: item.file_path,
+        sessionId: item.session_id,
+        similarity: item.similarity,
+      }));
+    } catch (error) {
+      console.error('[VectorStore] Cloud search failed:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 混合搜索：本地优先 + 云端补充
+   *
+   * 策略：
+   * 1. 先快速搜索本地向量库
+   * 2. 如果本地结果不足或分数较低，补充云端搜索
+   * 3. 合并去重，按相似度排序
+   *
+   * @param query - 搜索查询
+   * @param options - 混合搜索选项
+   * @returns 合并后的搜索结果
+   */
+  async searchHybridAsync(
+    query: string,
+    options: HybridSearchOptions = {}
+  ): Promise<SearchResult[]> {
+    const {
+      topK = 5,
+      threshold = 0.5,
+      filter,
+      includeCloud = true,
+      projectPath,
+      crossProject = false,
+    } = options;
+
+    // 1. 先搜索本地
+    const localFilter = projectPath ? { ...filter, projectPath } : filter;
+    const localResults = await this.searchAsync(query, {
+      topK: topK * 2, // 多取一些用于合并
+      threshold,
+      filter: localFilter,
+    });
+
+    // 2. 如果不需要云端搜索，直接返回本地结果
+    if (!includeCloud || !this.isCloudAvailable()) {
+      return localResults.slice(0, topK);
+    }
+
+    // 3. 判断是否需要云端搜索
+    const needCloud =
+      localResults.length < topK ||
+      (localResults.length > 0 && localResults[0].score < 0.8);
+
+    if (!needCloud) {
+      return localResults.slice(0, topK);
+    }
+
+    // 4. 云端搜索
+    const cloudProjectPath = crossProject ? null : projectPath;
+    const cloudResults = await this.searchCloud(query, {
+      topK: topK * 2,
+      threshold,
+      projectPath: cloudProjectPath,
+    });
+
+    // 5. 合并结果
+    const mergedResults = this.mergeSearchResults(localResults, cloudResults, topK);
+
+    return mergedResults;
+  }
+
+  /**
+   * 合并本地和云端搜索结果
+   */
+  private mergeSearchResults(
+    localResults: SearchResult[],
+    cloudResults: CloudSearchResult[],
+    topK: number
+  ): SearchResult[] {
+    // 将云端结果转换为统一格式
+    const convertedCloud: SearchResult[] = cloudResults.map((cr) => ({
+      document: {
+        id: cr.id,
+        content: cr.content,
+        embedding: [], // 云端结果不包含 embedding
+        metadata: {
+          source: cr.source,
+          projectPath: cr.projectPath || undefined,
+          filePath: cr.filePath || undefined,
+          sessionId: cr.sessionId || undefined,
+          createdAt: Date.now(),
+          fromCloud: true, // 标记为云端来源
+        },
+      },
+      score: cr.similarity,
+      distance: 1 - cr.similarity,
+    }));
+
+    // 合并并去重（按 content 去重）
+    const seenContent = new Set<string>();
+    const merged: SearchResult[] = [];
+
+    // 先加本地结果
+    for (const result of localResults) {
+      const key = result.document.content.slice(0, 200);
+      if (!seenContent.has(key)) {
+        seenContent.add(key);
+        merged.push(result);
+      }
+    }
+
+    // 再加云端结果
+    for (const result of convertedCloud) {
+      const key = result.document.content.slice(0, 200);
+      if (!seenContent.has(key)) {
+        seenContent.add(key);
+        merged.push(result);
+      }
+    }
+
+    // 按分数排序并取 topK
+    merged.sort((a, b) => b.score - a.score);
+    return merged.slice(0, topK);
+  }
+
+  /**
+   * 标准化 embedding 维度
+   * 如果维度不匹配，进行截断或填充
+   */
+  private normalizeEmbeddingDimension(embedding: number[], targetDim: number): number[] {
+    if (embedding.length === targetDim) {
+      return embedding;
+    }
+
+    if (embedding.length > targetDim) {
+      // 截断
+      return embedding.slice(0, targetDim);
+    }
+
+    // 填充 (用 0 填充)
+    const padded = [...embedding];
+    while (padded.length < targetDim) {
+      padded.push(0);
+    }
+    return padded;
+  }
+
   /**
    * 简单的本地嵌入 (用于同步搜索)
    * 使用 TF-IDF 风格的哈希
@@ -474,7 +715,7 @@ export class VectorStore {
   // --------------------------------------------------------------------------
 
   /**
-   * 获取 RAG 上下文
+   * 获取 RAG 上下文 (同步版本，仅本地)
    */
   getRAGContext(
     query: string,
@@ -519,6 +760,132 @@ export class VectorStore {
     }
 
     return context.trim();
+  }
+
+  /**
+   * 获取增强 RAG 上下文 (异步版本，支持云端搜索)
+   *
+   * 这是主要的 RAG 方法，支持：
+   * - 本地向量搜索
+   * - 云端 pgvector 搜索
+   * - 跨项目知识检索
+   */
+  async getEnhancedRAGContext(
+    query: string,
+    options: {
+      maxTokens?: number;
+      sources?: ('file' | 'conversation' | 'knowledge')[];
+      projectPath?: string;
+      includeCloud?: boolean;
+      crossProject?: boolean;
+    } = {}
+  ): Promise<{
+    context: string;
+    sources: Array<{
+      type: string;
+      path?: string;
+      score: number;
+      fromCloud: boolean;
+    }>;
+  }> {
+    const {
+      maxTokens = 2000,
+      sources = ['file', 'knowledge'],
+      projectPath,
+      includeCloud = true,
+      crossProject = false,
+    } = options;
+
+    const allResults: SearchResult[] = [];
+    const sourceAttribution: Array<{
+      type: string;
+      path?: string;
+      score: number;
+      fromCloud: boolean;
+    }> = [];
+
+    // 1. 本地搜索各来源
+    for (const source of sources) {
+      const filter: Partial<VectorDocument['metadata']> = { source };
+      if (projectPath) {
+        filter.projectPath = projectPath;
+      }
+
+      const results = await this.searchAsync(query, { topK: 3, filter });
+      allResults.push(...results);
+    }
+
+    // 2. 云端搜索（如果启用）
+    if (includeCloud && this.isCloudAvailable()) {
+      const cloudProjectPath = crossProject ? null : projectPath;
+      const cloudResults = await this.searchCloud(query, {
+        topK: 5,
+        threshold: 0.6,
+        projectPath: cloudProjectPath,
+      });
+
+      // 转换并添加云端结果
+      for (const cr of cloudResults) {
+        // 避免与本地结果重复
+        const isDuplicate = allResults.some(
+          (r) => r.document.content.slice(0, 200) === cr.content.slice(0, 200)
+        );
+
+        if (!isDuplicate) {
+          allResults.push({
+            document: {
+              id: cr.id,
+              content: cr.content,
+              embedding: [],
+              metadata: {
+                source: cr.source,
+                projectPath: cr.projectPath || undefined,
+                filePath: cr.filePath || undefined,
+                sessionId: cr.sessionId || undefined,
+                createdAt: Date.now(),
+                fromCloud: true,
+              },
+            },
+            score: cr.similarity,
+            distance: 1 - cr.similarity,
+          });
+        }
+      }
+    }
+
+    // 3. 按分数排序
+    allResults.sort((a, b) => b.score - a.score);
+
+    // 4. 构建上下文
+    let context = '';
+    let tokenCount = 0;
+    const estimateTokens = (text: string) => Math.ceil(text.length / 4);
+
+    for (const result of allResults) {
+      const docTokens = estimateTokens(result.document.content);
+      if (tokenCount + docTokens > maxTokens) break;
+
+      const fromCloud = result.document.metadata.fromCloud === true;
+      const sourceInfo = result.document.metadata.filePath
+        ? `[${result.document.metadata.filePath}${fromCloud ? ' (cloud)' : ''}]`
+        : `[${result.document.metadata.source}${fromCloud ? ' (cloud)' : ''}]`;
+
+      context += `${sourceInfo}\n${result.document.content}\n\n`;
+      tokenCount += docTokens;
+
+      // 记录来源归因
+      sourceAttribution.push({
+        type: result.document.metadata.source,
+        path: result.document.metadata.filePath || result.document.metadata.projectPath,
+        score: result.score,
+        fromCloud,
+      });
+    }
+
+    return {
+      context: context.trim(),
+      sources: sourceAttribution,
+    };
   }
 
   // --------------------------------------------------------------------------

@@ -1,28 +1,16 @@
 // ============================================================================
 // Learn Pattern Tool - Learn and apply patterns from experience
 // Gen 8: Self-Evolution capability
+// Now with persistent storage via EvolutionPersistence service
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
 import { getMemoryService } from '../../memory/MemoryService';
 import { getVectorStore } from '../../memory/VectorStore';
-
-interface LearnedPattern {
-  id: string;
-  name: string;
-  type: 'success' | 'failure' | 'optimization' | 'anti_pattern';
-  context: string;
-  pattern: string;
-  solution?: string;
-  confidence: number;
-  occurrences: number;
-  lastSeen: number;
-  createdAt: number;
-  tags: string[];
-}
-
-// Pattern storage
-const patterns: Map<string, LearnedPattern> = new Map();
+import {
+  getEvolutionPersistence,
+  type LearnedPattern,
+} from '../../services/EvolutionPersistence';
 
 export const learnPatternTool: Tool = {
   name: 'learn_pattern',
@@ -140,35 +128,32 @@ async function learnNewPattern(
   const name = params.name as string;
   const type = params.type as LearnedPattern['type'];
   const patternContext = params.context as string;
-  const pattern = params.pattern as string;
+  const patternContent = params.pattern as string;
   const solution = params.solution as string | undefined;
   const tags = (params.tags as string[]) || [];
   const confidence = (params.confidence as number) || 0.7;
 
-  if (!name || !type || !patternContext || !pattern) {
+  if (!name || !type || !patternContext || !patternContent) {
     return {
       success: false,
       error: 'name, type, context, and pattern are required for learn action',
     };
   }
 
-  const id = `pattern_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-
-  const learnedPattern: LearnedPattern = {
-    id,
+  // Use EvolutionPersistence for persistent storage
+  const persistence = getEvolutionPersistence();
+  const learnedPattern = await persistence.createPattern({
     name,
     type,
     context: patternContext,
-    pattern,
+    pattern: patternContent,
     solution,
     confidence: Math.max(0, Math.min(1, confidence)),
     occurrences: 1,
     lastSeen: Date.now(),
-    createdAt: Date.now(),
     tags,
-  };
-
-  patterns.set(id, learnedPattern);
+    projectPath: context.workingDirectory,
+  });
 
   // Store in vector store for semantic search
   try {
@@ -176,7 +161,7 @@ async function learnNewPattern(
     const content = `Pattern: ${name}
 Type: ${type}
 Context: ${patternContext}
-Pattern: ${pattern}
+Pattern: ${patternContent}
 ${solution ? `Solution: ${solution}` : ''}
 Tags: ${tags.join(', ')}`;
 
@@ -189,7 +174,7 @@ Tags: ${tags.join(', ')}`;
   try {
     const memoryService = getMemoryService();
     memoryService.saveProjectKnowledge(
-      `pattern_${id}`,
+      `pattern_${learnedPattern.id}`,
       learnedPattern,
       type === 'success' || type === 'optimization' ? 'explicit' : 'learned',
       confidence
@@ -209,16 +194,17 @@ Tags: ${tags.join(', ')}`;
     success: true,
     output: `${typeIcon} Pattern learned: "${name}"
 
-- ID: ${id}
+- ID: ${learnedPattern.id}
 - Type: ${type}
 - Confidence: ${(confidence * 100).toFixed(0)}%
 - Tags: ${tags.join(', ') || 'none'}
+- Persistence: ✅ Saved locally and will sync to cloud
 
 Context:
 ${patternContext}
 
 Pattern:
-${pattern}
+${patternContent}
 
 ${solution ? `Solution:\n${solution}` : ''}
 
@@ -228,7 +214,7 @@ Use action='apply' with relevant query to find this pattern later.`,
 
 async function applyPatterns(
   params: Record<string, unknown>,
-  context: ToolContext
+  _context: ToolContext
 ): Promise<ToolExecutionResult> {
   const query = params.query as string;
 
@@ -239,8 +225,9 @@ async function applyPatterns(
     };
   }
 
-  // Search for relevant patterns
-  const allPatterns = Array.from(patterns.values());
+  // Get patterns from persistence
+  const persistence = getEvolutionPersistence();
+  const allPatterns = persistence.getAllPatterns();
 
   if (allPatterns.length === 0) {
     return {
@@ -310,8 +297,10 @@ Try different keywords or learn new patterns with action='learn'.`,
 
   // Update occurrence counts for matched patterns
   for (const { pattern } of relevant) {
-    pattern.occurrences++;
-    pattern.lastSeen = Date.now();
+    await persistence.updatePattern(pattern.id, {
+      occurrences: pattern.occurrences + 1,
+      lastSeen: Date.now(),
+    });
   }
 
   const output = relevant.map(({ pattern: p, score }) => {
@@ -348,12 +337,10 @@ function searchPatterns(params: Record<string, unknown>): ToolExecutionResult {
   const query = params.query as string;
   const type = params.type as LearnedPattern['type'] | undefined;
 
-  let allPatterns = Array.from(patterns.values());
-
-  // Filter by type if specified
-  if (type) {
-    allPatterns = allPatterns.filter((p) => p.type === type);
-  }
+  const persistence = getEvolutionPersistence();
+  let allPatterns = type
+    ? persistence.getPatternsByType(type)
+    : persistence.getAllPatterns();
 
   if (allPatterns.length === 0) {
     return {
@@ -383,13 +370,13 @@ function searchPatterns(params: Record<string, unknown>): ToolExecutionResult {
   }
 
   // Sort by confidence and recency
-  allPatterns.sort((a, b) => {
+  const sorted = [...allPatterns].sort((a, b) => {
     const scoreA = a.confidence * 50 + (a.lastSeen > Date.now() - 86400000 ? 20 : 0);
     const scoreB = b.confidence * 50 + (b.lastSeen > Date.now() - 86400000 ? 20 : 0);
     return scoreB - scoreA;
   });
 
-  const output = allPatterns.slice(0, 10).map((p) => {
+  const output = sorted.slice(0, 10).map((p) => {
     const typeIcon = {
       success: '✅',
       failure: '❌',
@@ -416,16 +403,15 @@ Showing ${Math.min(allPatterns.length, 10)} of ${allPatterns.length} patterns.`,
 function listPatterns(params: Record<string, unknown>): ToolExecutionResult {
   const type = params.type as LearnedPattern['type'] | undefined;
 
-  let allPatterns = Array.from(patterns.values());
-
-  if (type) {
-    allPatterns = allPatterns.filter((p) => p.type === type);
-  }
+  const persistence = getEvolutionPersistence();
+  const allPatterns = type
+    ? persistence.getPatternsByType(type)
+    : persistence.getAllPatterns();
 
   if (allPatterns.length === 0) {
     return {
       success: true,
-      output: 'No patterns learned yet.\n\nUse action=\'learn\' to add patterns from your experience.',
+      output: 'No patterns learned yet.\n\nUse action=\'learn\' to add patterns from your experience.\n\nNote: Patterns are now persisted and will survive app restarts!',
     };
   }
 
@@ -461,11 +447,12 @@ ${patternList}`;
 ${sections}
 
 ---
+✅ All patterns are persisted and will sync to cloud when connected.
 Use action='apply' with a query to find relevant patterns for your task.`,
   };
 }
 
-function forgetPattern(params: Record<string, unknown>): ToolExecutionResult {
+async function forgetPattern(params: Record<string, unknown>): Promise<ToolExecutionResult> {
   const patternId = params.patternId as string;
 
   if (!patternId) {
@@ -475,7 +462,9 @@ function forgetPattern(params: Record<string, unknown>): ToolExecutionResult {
     };
   }
 
-  const pattern = patterns.get(patternId);
+  const persistence = getEvolutionPersistence();
+  const pattern = persistence.getPattern(patternId);
+
   if (!pattern) {
     return {
       success: false,
@@ -483,7 +472,7 @@ function forgetPattern(params: Record<string, unknown>): ToolExecutionResult {
     };
   }
 
-  patterns.delete(patternId);
+  await persistence.deletePattern(patternId);
 
   return {
     success: true,
@@ -493,7 +482,7 @@ Note: This pattern may still exist in long-term memory and could be rediscovered
   };
 }
 
-function reinforcePattern(params: Record<string, unknown>): ToolExecutionResult {
+async function reinforcePattern(params: Record<string, unknown>): Promise<ToolExecutionResult> {
   const patternId = params.patternId as string;
   const success = params.success as boolean;
 
@@ -504,7 +493,9 @@ function reinforcePattern(params: Record<string, unknown>): ToolExecutionResult 
     };
   }
 
-  const pattern = patterns.get(patternId);
+  const persistence = getEvolutionPersistence();
+  const pattern = persistence.getPattern(patternId);
+
   if (!pattern) {
     return {
       success: false,
@@ -514,9 +505,13 @@ function reinforcePattern(params: Record<string, unknown>): ToolExecutionResult 
 
   // Update confidence based on feedback
   const adjustment = success ? 0.05 : -0.1;
-  pattern.confidence = Math.max(0.1, Math.min(1, pattern.confidence + adjustment));
-  pattern.occurrences++;
-  pattern.lastSeen = Date.now();
+  const newConfidence = Math.max(0.1, Math.min(1, pattern.confidence + adjustment));
+
+  await persistence.updatePattern(patternId, {
+    confidence: newConfidence,
+    occurrences: pattern.occurrences + 1,
+    lastSeen: Date.now(),
+  });
 
   const emoji = success ? '📈' : '📉';
 
@@ -524,24 +519,25 @@ function reinforcePattern(params: Record<string, unknown>): ToolExecutionResult 
     success: true,
     output: `${emoji} Pattern reinforced: "${pattern.name}"
 
-- New Confidence: ${(pattern.confidence * 100).toFixed(0)}%
-- Total Occurrences: ${pattern.occurrences}
+- New Confidence: ${(newConfidence * 100).toFixed(0)}%
+- Total Occurrences: ${pattern.occurrences + 1}
 - Feedback: ${success ? 'Positive (pattern worked)' : 'Negative (pattern failed)'}
+- Persistence: ✅ Changes saved
 
-${pattern.confidence < 0.3
+${newConfidence < 0.3
     ? '⚠️ Low confidence - consider reviewing or forgetting this pattern.'
-    : pattern.confidence > 0.9
+    : newConfidence > 0.9
     ? '🌟 High confidence - this is a reliable pattern!'
     : ''}`,
   };
 }
 
-// Export patterns for other tools
+// Export patterns for other tools (now uses persistence)
 export function getLearnedPatterns(): LearnedPattern[] {
-  return Array.from(patterns.values());
+  return getEvolutionPersistence().getAllPatterns();
 }
 
-// Export high-confidence patterns
+// Export high-confidence patterns (now uses persistence)
 export function getReliablePatterns(minConfidence = 0.7): LearnedPattern[] {
-  return Array.from(patterns.values()).filter((p) => p.confidence >= minConfidence);
+  return getEvolutionPersistence().getReliablePatterns(minConfidence);
 }

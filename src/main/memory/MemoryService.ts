@@ -6,7 +6,12 @@ import { getDatabase, type ProjectKnowledge } from '../services/DatabaseService'
 import { getToolCache } from '../services/ToolCache';
 import { getSessionManager } from '../services/SessionManager';
 import { getTokenManager } from '../services/TokenManager';
-import { getVectorStore, type SearchResult } from './VectorStore';
+import {
+  getVectorStore,
+  type SearchResult,
+  type HybridSearchOptions,
+  type CloudSearchResult,
+} from './VectorStore';
 import type { Message, TodoItem, ToolResult } from '../../shared/types';
 
 // ----------------------------------------------------------------------------
@@ -40,6 +45,25 @@ export interface MemoryConfig {
   // 长期记忆配置
   maxRAGResults: number;
   ragTokenLimit: number;
+
+  // 云端搜索配置
+  enableCloudSearch: boolean;
+  crossProjectSearch: boolean;
+  cloudSearchTimeout: number;
+}
+
+// 搜索选项
+export interface SearchOptions {
+  topK?: number;
+  includeCloud?: boolean;
+  crossProject?: boolean;
+  threshold?: number;
+}
+
+// 增强的搜索结果（包含来源信息）
+export interface EnhancedSearchResult extends SearchResult {
+  isFromCloud?: boolean;
+  projectPath?: string | null;
 }
 
 // ----------------------------------------------------------------------------
@@ -58,6 +82,9 @@ export class MemoryService {
       maxSessionMessages: 100,
       maxRAGResults: 5,
       ragTokenLimit: 2000,
+      enableCloudSearch: true,
+      crossProjectSearch: false,
+      cloudSearchTimeout: 3000,
       ...config,
     };
   }
@@ -203,7 +230,7 @@ export class MemoryService {
   }
 
   /**
-   * 搜索相关代码
+   * 搜索相关代码（同步版本，仅本地）
    */
   searchRelevantCode(query: string, topK?: number): SearchResult[] {
     if (!this.projectPath) return [];
@@ -217,7 +244,40 @@ export class MemoryService {
   }
 
   /**
-   * 搜索相关对话
+   * 搜索相关代码（异步版本，支持云端混合搜索）
+   */
+  async searchRelevantCodeAsync(
+    query: string,
+    options?: SearchOptions
+  ): Promise<EnhancedSearchResult[]> {
+    const {
+      topK = this.config.maxRAGResults,
+      includeCloud = this.config.enableCloudSearch,
+      crossProject = this.config.crossProjectSearch,
+      threshold = 0.6,
+    } = options || {};
+
+    const vectorStore = getVectorStore();
+
+    // 使用混合搜索
+    const results = await vectorStore.searchHybridAsync(query, {
+      topK,
+      threshold,
+      includeCloud,
+      projectPath: this.projectPath || undefined,
+      crossProject,
+      filter: { source: 'file' },
+    });
+
+    // 标记结果来源
+    return results.map((r) => ({
+      ...r,
+      isFromCloud: false, // 混合搜索内部已处理
+    }));
+  }
+
+  /**
+   * 搜索相关对话（同步版本，仅本地）
    */
   searchRelevantConversations(query: string, topK?: number): SearchResult[] {
     const vectorStore = getVectorStore();
@@ -229,6 +289,38 @@ export class MemoryService {
   }
 
   /**
+   * 搜索相关对话（异步版本，支持云端混合搜索）
+   */
+  async searchRelevantConversationsAsync(
+    query: string,
+    options?: SearchOptions
+  ): Promise<EnhancedSearchResult[]> {
+    const {
+      topK = this.config.maxRAGResults,
+      includeCloud = this.config.enableCloudSearch,
+      crossProject = this.config.crossProjectSearch,
+      threshold = 0.6,
+    } = options || {};
+
+    const vectorStore = getVectorStore();
+
+    // 使用混合搜索
+    const results = await vectorStore.searchHybridAsync(query, {
+      topK,
+      threshold,
+      includeCloud,
+      projectPath: this.projectPath || undefined,
+      crossProject,
+      filter: { source: 'conversation' },
+    });
+
+    return results.map((r) => ({
+      ...r,
+      isFromCloud: false,
+    }));
+  }
+
+  /**
    * 添加知识条目
    */
   async addKnowledge(content: string, category: string): Promise<void> {
@@ -237,11 +329,49 @@ export class MemoryService {
   }
 
   /**
-   * 搜索知识库
+   * 搜索知识库（同步版本，仅本地）
    */
   searchKnowledge(query: string, category?: string, topK?: number): SearchResult[] {
     const vectorStore = getVectorStore();
     return vectorStore.searchKnowledge(query, category, topK || this.config.maxRAGResults);
+  }
+
+  /**
+   * 搜索知识库（异步版本，支持云端混合搜索）
+   */
+  async searchKnowledgeAsync(
+    query: string,
+    options?: SearchOptions & { category?: string }
+  ): Promise<EnhancedSearchResult[]> {
+    const {
+      topK = this.config.maxRAGResults,
+      includeCloud = this.config.enableCloudSearch,
+      crossProject = this.config.crossProjectSearch,
+      threshold = 0.6,
+      category,
+    } = options || {};
+
+    const vectorStore = getVectorStore();
+
+    // 使用混合搜索
+    const filter: Partial<{ source: string; category: string }> = { source: 'knowledge' };
+    if (category) {
+      filter.category = category;
+    }
+
+    const results = await vectorStore.searchHybridAsync(query, {
+      topK,
+      threshold,
+      includeCloud,
+      projectPath: this.projectPath || undefined,
+      crossProject,
+      filter,
+    });
+
+    return results.map((r) => ({
+      ...r,
+      isFromCloud: false,
+    }));
   }
 
   // --------------------------------------------------------------------------
@@ -277,6 +407,45 @@ export class MemoryService {
       maxTokens,
       sources,
       projectPath: this.projectPath || undefined,
+    });
+  }
+
+  /**
+   * 获取 RAG 增强的上下文（异步版本，支持云端搜索）
+   */
+  async getRAGContextAsync(
+    query: string,
+    options: {
+      includeCode?: boolean;
+      includeConversations?: boolean;
+      includeKnowledge?: boolean;
+      includeCloud?: boolean;
+      crossProject?: boolean;
+      maxTokens?: number;
+    } = {}
+  ): Promise<{ context: string; sources: Array<{ type: string; path?: string; isCloud: boolean }> }> {
+    const {
+      includeCode = true,
+      includeConversations = true,
+      includeKnowledge = true,
+      includeCloud = this.config.enableCloudSearch,
+      crossProject = this.config.crossProjectSearch,
+      maxTokens = this.config.ragTokenLimit,
+    } = options;
+
+    const vectorStore = getVectorStore();
+
+    // 使用增强的 RAG 上下文获取方法
+    return vectorStore.getEnhancedRAGContext(query, {
+      maxTokens,
+      sources: [
+        ...(includeCode ? ['file' as const] : []),
+        ...(includeConversations ? ['conversation' as const] : []),
+        ...(includeKnowledge ? ['knowledge' as const] : []),
+      ],
+      projectPath: this.projectPath || undefined,
+      includeCloud,
+      crossProject,
     });
   }
 
@@ -331,7 +500,7 @@ export class MemoryService {
   }
 
   /**
-   * 构建增强的 system prompt
+   * 构建增强的 system prompt（同步版本，仅本地）
    */
   async buildEnhancedSystemPrompt(
     basePrompt: string,
@@ -362,6 +531,75 @@ export class MemoryService {
     }
 
     return enhancedPrompt;
+  }
+
+  /**
+   * 构建增强的 system prompt（云端增强版本）
+   * 支持云端搜索和跨项目知识检索
+   */
+  async buildEnhancedSystemPromptWithCloud(
+    basePrompt: string,
+    userQuery: string,
+    options: {
+      includeCloud?: boolean;
+      crossProject?: boolean;
+      maxTokens?: number;
+    } = {}
+  ): Promise<{
+    prompt: string;
+    sources: Array<{ type: string; path?: string; isCloud: boolean }>;
+  }> {
+    const {
+      includeCloud = this.config.enableCloudSearch,
+      crossProject = this.config.crossProjectSearch,
+      maxTokens = this.config.ragTokenLimit,
+    } = options;
+
+    let enhancedPrompt = basePrompt;
+    const allSources: Array<{ type: string; path?: string; isCloud: boolean }> = [];
+
+    // 使用云端增强的 RAG 上下文
+    const { context: ragContext, sources } = await this.getRAGContextAsync(userQuery, {
+      includeCloud,
+      crossProject,
+      maxTokens,
+    });
+
+    if (ragContext) {
+      enhancedPrompt += `\n\n## Relevant Context\n${ragContext}`;
+      allSources.push(...sources);
+    }
+
+    // 添加项目知识
+    const knowledge = this.getProjectKnowledge();
+    if (knowledge.length > 0) {
+      const knowledgeStr = knowledge
+        .slice(0, 5)
+        .map((k) => `- ${k.key}: ${JSON.stringify(k.value)}`)
+        .join('\n');
+      enhancedPrompt += `\n\n## Project Knowledge\n${knowledgeStr}`;
+    }
+
+    // 添加用户偏好
+    const prefs = this.getUserPreference<Record<string, unknown>>('coding_style');
+    if (prefs) {
+      enhancedPrompt += `\n\n## User Preferences\n${JSON.stringify(prefs, null, 2)}`;
+    }
+
+    // 添加云端来源归因（如果有）
+    const cloudSources = allSources.filter((s) => s.isCloud);
+    if (cloudSources.length > 0) {
+      const sourceStr = cloudSources
+        .slice(0, 3)
+        .map((s) => `- [${s.type}] ${s.path || 'unknown'}`)
+        .join('\n');
+      enhancedPrompt += `\n\n## Context Sources (from cloud)\n${sourceStr}`;
+    }
+
+    return {
+      prompt: enhancedPrompt,
+      sources: allSources,
+    };
   }
 
   // --------------------------------------------------------------------------

@@ -37,6 +37,11 @@ let planningService: PlanningService | null = null;
 // ----------------------------------------------------------------------------
 
 async function createWindow(): Promise<void> {
+  console.log('[Main] Creating window...');
+  console.log('[Main] __dirname:', __dirname);
+  console.log('[Main] preload path:', path.join(__dirname, '../preload/index.cjs'));
+  console.log('[Main] renderer path:', path.join(__dirname, '../renderer/index.html'));
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -45,6 +50,7 @@ async function createWindow(): Promise<void> {
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 15, y: 15 },
     backgroundColor: '#18181b',
+    show: false, // Don't show until ready
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -53,13 +59,34 @@ async function createWindow(): Promise<void> {
     },
   });
 
+  // Show window when ready to prevent flicker
+  mainWindow.once('ready-to-show', () => {
+    console.log('[Main] Window ready to show');
+    mainWindow?.show();
+  });
+
+  // Log web contents events
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('[Main] Failed to load:', errorCode, errorDescription);
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    console.log('[Main] Page finished loading');
+  });
+
   // Load the app
   if (process.env.NODE_ENV === 'development') {
+    console.log('[Main] Loading development URL...');
     await mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
-    await mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+    console.log('[Main] Loading production file...');
+    const htmlPath = path.join(__dirname, '../renderer/index.html');
+    console.log('[Main] HTML path:', htmlPath);
+    await mainWindow.loadFile(htmlPath);
   }
+
+  console.log('[Main] Window created successfully');
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -413,14 +440,20 @@ async function initializeServices(): Promise<void> {
   // Set default generation
   const defaultGenId = settings.generation.default || 'gen3';
   generationManager.switchGeneration(defaultGenId);
+  console.log('[Init] Generation set to:', defaultGenId);
 
   // Auto-restore or create session
+  console.log('[Init] Initializing session...');
   await initializeSession(settings);
+  console.log('[Init] Session initialized');
 
   // Initialize planning service for Gen 3+
+  console.log('[Init] Initializing planning service...');
   await initializePlanningService();
+  console.log('[Init] Planning service initialized');
 
   // Initialize update service
+  console.log('[Init] Initializing update service...');
   const updateServerUrl = process.env.CLOUD_API_URL || settings.cloudApi?.url || 'https://cloud-api-henna.vercel.app';
   initUpdateService({
     updateServerUrl,
@@ -472,6 +505,7 @@ async function initializeServices(): Promise<void> {
   }, 5000); // Check 5 seconds after startup
 
   console.log('Update service initialized, server:', updateServerUrl);
+  console.log('[Init] initializeServices completed');
 }
 
 async function initializePlanningService(): Promise<void> {
@@ -1269,9 +1303,19 @@ function setupIpcHandlers(): void {
 // ----------------------------------------------------------------------------
 
 app.whenReady().then(async () => {
-  await initializeServices();
-  setupIpcHandlers();
-  await createWindow();
+  try {
+    console.log('[App] Starting initialization...');
+    await initializeServices();
+    console.log('[App] Services initialized, setting up IPC...');
+    setupIpcHandlers();
+    console.log('[App] IPC handlers set up, creating window...');
+    await createWindow();
+    console.log('[App] Window created successfully');
+  } catch (error) {
+    console.error('[App] FATAL ERROR during startup:', error);
+    app.quit();
+    return;
+  }
 
   app.on('activate', async () => {
     if (BrowserWindow.getAllWindows().length === 0) {

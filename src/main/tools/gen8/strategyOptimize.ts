@@ -1,34 +1,16 @@
 // ============================================================================
 // Strategy Optimize Tool - Optimize work strategies based on experience
 // Gen 8: Self-Evolution capability
+// Now with persistent storage via EvolutionPersistence service
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
 import { getMemoryService } from '../../memory/MemoryService';
 import { getVectorStore } from '../../memory/VectorStore';
-
-interface Strategy {
-  id: string;
-  name: string;
-  description: string;
-  steps: string[];
-  successRate: number;
-  usageCount: number;
-  lastUsed: number;
-  tags: string[];
-  createdAt: number;
-}
-
-interface StrategyFeedback {
-  strategyId: string;
-  success: boolean;
-  duration: number;
-  notes?: string;
-}
-
-// In-memory strategy store (would be persisted in production)
-const strategies: Map<string, Strategy> = new Map();
-const feedbackHistory: StrategyFeedback[] = [];
+import {
+  getEvolutionPersistence,
+  type Strategy,
+} from '../../services/EvolutionPersistence';
 
 export const strategyOptimizeTool: Tool = {
   name: 'strategy_optimize',
@@ -133,7 +115,7 @@ Parameters:
   },
 };
 
-function createStrategy(params: Record<string, unknown>, context: ToolContext): ToolExecutionResult {
+async function createStrategy(params: Record<string, unknown>, context: ToolContext): Promise<ToolExecutionResult> {
   const name = params.name as string;
   const description = params.description as string;
   const steps = params.steps as string[];
@@ -146,10 +128,9 @@ function createStrategy(params: Record<string, unknown>, context: ToolContext): 
     };
   }
 
-  const id = `strategy_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-
-  const strategy: Strategy = {
-    id,
+  // Use EvolutionPersistence for persistent storage
+  const persistence = getEvolutionPersistence();
+  const strategy = await persistence.createStrategy({
     name,
     description,
     steps,
@@ -157,10 +138,8 @@ function createStrategy(params: Record<string, unknown>, context: ToolContext): 
     usageCount: 0,
     lastUsed: 0,
     tags,
-    createdAt: Date.now(),
-  };
-
-  strategies.set(id, strategy);
+    projectPath: context.workingDirectory,
+  });
 
   // Also store in vector store for semantic search
   try {
@@ -174,16 +153,17 @@ function createStrategy(params: Record<string, unknown>, context: ToolContext): 
   return {
     success: true,
     output: `Strategy created successfully:
-- ID: ${id}
+- ID: ${strategy.id}
 - Name: ${name}
 - Steps: ${steps.length}
 - Tags: ${tags.join(', ') || 'none'}
+- Persistence: ✅ Saved locally and will sync to cloud
 
 Use this strategy ID with 'feedback' action to improve it over time.`,
   };
 }
 
-function recordFeedback(params: Record<string, unknown>): ToolExecutionResult {
+async function recordFeedback(params: Record<string, unknown>): Promise<ToolExecutionResult> {
   const strategyId = params.strategyId as string;
   const success = params.success as boolean;
   const duration = (params.duration as number) || 0;
@@ -196,7 +176,9 @@ function recordFeedback(params: Record<string, unknown>): ToolExecutionResult {
     };
   }
 
-  const strategy = strategies.get(strategyId);
+  const persistence = getEvolutionPersistence();
+  const strategy = persistence.getStrategy(strategyId);
+
   if (!strategy) {
     return {
       success: false,
@@ -204,22 +186,16 @@ function recordFeedback(params: Record<string, unknown>): ToolExecutionResult {
     };
   }
 
-  // Record feedback
-  feedbackHistory.push({
+  // Record feedback using persistence service
+  await persistence.recordFeedback({
     strategyId,
     success,
     duration,
     notes,
   });
 
-  // Update strategy metrics
-  strategy.usageCount++;
-  strategy.lastUsed = Date.now();
-
-  // Recalculate success rate
-  const strategyFeedback = feedbackHistory.filter((f) => f.strategyId === strategyId);
-  const successCount = strategyFeedback.filter((f) => f.success).length;
-  strategy.successRate = (successCount / strategyFeedback.length) * 100;
+  // Get updated strategy
+  const updatedStrategy = persistence.getStrategy(strategyId)!;
 
   // Store feedback in memory for learning
   try {
@@ -243,15 +219,16 @@ function recordFeedback(params: Record<string, unknown>): ToolExecutionResult {
     success: true,
     output: `Feedback recorded for "${strategy.name}":
 - Outcome: ${success ? '✅ Success' : '❌ Failed'}
-- Updated success rate: ${strategy.successRate.toFixed(1)}%
-- Total uses: ${strategy.usageCount}
+- Updated success rate: ${updatedStrategy.successRate.toFixed(1)}%
+- Total uses: ${updatedStrategy.usageCount}
+- Persistence: ✅ Feedback saved
 ${notes ? `- Notes: ${notes}` : ''}`,
   };
 }
 
 function recommendStrategies(
   params: Record<string, unknown>,
-  context: ToolContext
+  _context: ToolContext
 ): ToolExecutionResult {
   const task = params.task as string;
 
@@ -262,8 +239,9 @@ function recommendStrategies(
     };
   }
 
-  // Get all strategies
-  const allStrategies = Array.from(strategies.values());
+  // Get all strategies from persistence
+  const persistence = getEvolutionPersistence();
+  const allStrategies = persistence.getAllStrategies();
 
   if (allStrategies.length === 0) {
     return {
@@ -355,7 +333,9 @@ function analyzeStrategy(params: Record<string, unknown>): ToolExecutionResult {
     };
   }
 
-  const strategy = strategies.get(strategyId);
+  const persistence = getEvolutionPersistence();
+  const strategy = persistence.getStrategy(strategyId);
+
   if (!strategy) {
     return {
       success: false,
@@ -363,8 +343,8 @@ function analyzeStrategy(params: Record<string, unknown>): ToolExecutionResult {
     };
   }
 
-  // Get all feedback for this strategy
-  const feedback = feedbackHistory.filter((f) => f.strategyId === strategyId);
+  // Get all feedback for this strategy from persistence
+  const feedback = persistence.getFeedbackForStrategy(strategyId);
 
   if (feedback.length === 0) {
     return {
@@ -421,24 +401,25 @@ ${feedback.slice(-5).map((f) => `- ${f.success ? '✅' : '❌'} ${f.notes || 'No
 }
 
 function listStrategies(): ToolExecutionResult {
-  const allStrategies = Array.from(strategies.values());
+  const persistence = getEvolutionPersistence();
+  const allStrategies = persistence.getAllStrategies();
 
   if (allStrategies.length === 0) {
     return {
       success: true,
-      output: 'No strategies created yet. Use action="create" to add a strategy.',
+      output: 'No strategies created yet. Use action="create" to add a strategy.\n\nNote: Strategies are now persisted and will survive app restarts!',
     };
   }
 
   // Sort by success rate and usage
-  allStrategies.sort((a, b) => {
+  const sorted = [...allStrategies].sort((a, b) => {
     if (a.usageCount === 0 && b.usageCount === 0) return 0;
     if (a.usageCount === 0) return 1;
     if (b.usageCount === 0) return -1;
     return b.successRate - a.successRate;
   });
 
-  const output = allStrategies.map((s) => {
+  const output = sorted.map((s) => {
     const rateStr = s.usageCount > 0 ? `${s.successRate.toFixed(0)}%` : 'N/A';
     return `- **${s.name}** [${s.id}]
   Rate: ${rateStr} | Uses: ${s.usageCount} | Tags: ${s.tags.join(', ') || 'none'}`;
@@ -448,11 +429,14 @@ function listStrategies(): ToolExecutionResult {
     success: true,
     output: `## All Strategies (${allStrategies.length})
 
-${output}`,
+${output}
+
+---
+✅ All strategies are persisted and will sync to cloud when connected.`,
   };
 }
 
-function deleteStrategy(params: Record<string, unknown>): ToolExecutionResult {
+async function deleteStrategy(params: Record<string, unknown>): Promise<ToolExecutionResult> {
   const strategyId = params.strategyId as string;
 
   if (!strategyId) {
@@ -462,7 +446,9 @@ function deleteStrategy(params: Record<string, unknown>): ToolExecutionResult {
     };
   }
 
-  const strategy = strategies.get(strategyId);
+  const persistence = getEvolutionPersistence();
+  const strategy = persistence.getStrategy(strategyId);
+
   if (!strategy) {
     return {
       success: false,
@@ -470,7 +456,7 @@ function deleteStrategy(params: Record<string, unknown>): ToolExecutionResult {
     };
   }
 
-  strategies.delete(strategyId);
+  await persistence.deleteStrategy(strategyId);
 
   return {
     success: true,

@@ -51,34 +51,46 @@ class AuthService {
   }
 
   async initialize(): Promise<void> {
+    console.log('[AuthService] initialize() called');
     if (this.initialized || !isSupabaseInitialized()) {
+      console.log('[AuthService] Already initialized or Supabase not ready');
       return;
     }
 
     const supabase = getSupabase();
+    console.log('[AuthService] Got Supabase client');
 
     // Listen for auth state changes
     supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state changed:', event);
 
       if (session?.user) {
+        console.log('[AuthService] Fetching user profile in callback...');
         this.currentUser = await this.fetchUserProfile(session.user);
+        console.log('[AuthService] Profile fetched in callback');
         this.notifyAuthChange(this.currentUser);
       } else {
         this.currentUser = null;
         this.notifyAuthChange(null);
       }
     });
+    console.log('[AuthService] Auth state change listener registered');
 
     // Check for existing session
+    console.log('[AuthService] Getting existing session...');
     const {
       data: { session },
     } = await supabase.auth.getSession();
+    console.log('[AuthService] Got session:', session ? 'exists' : 'none');
+
     if (session?.user) {
+      console.log('[AuthService] Fetching user profile...');
       this.currentUser = await this.fetchUserProfile(session.user);
+      console.log('[AuthService] Profile fetched');
     }
 
     this.initialized = true;
+    console.log('[AuthService] Initialization complete');
   }
 
   async getStatus(): Promise<AuthStatus> {
@@ -349,7 +361,9 @@ class AuthService {
   }
 
   private async fetchUserProfile(user: SupabaseUser): Promise<AuthUser> {
+    console.log('[AuthService] fetchUserProfile started for:', user.id);
     if (!isSupabaseInitialized()) {
+      console.log('[AuthService] Supabase not initialized, returning basic user');
       return {
         id: user.id,
         email: user.email || '',
@@ -357,21 +371,39 @@ class AuthService {
     }
 
     const supabase = getSupabase();
-    const { data: profileRaw } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single();
 
-    const profile = profileRaw as ProfileRow | null;
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise<null>((_, reject) => {
+      setTimeout(() => reject(new Error('Profile fetch timeout')), 5000);
+    });
 
-    return {
-      id: user.id,
-      email: user.email || '',
-      username: profile?.username || undefined,
-      nickname: profile?.nickname || undefined,
-      avatarUrl: profile?.avatar_url || undefined,
-    };
+    try {
+      console.log('[AuthService] Fetching profile from database...');
+      const profilePromise = supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      const { data: profileRaw } = await Promise.race([profilePromise, timeoutPromise]) as any;
+      console.log('[AuthService] Profile fetched:', profileRaw ? 'found' : 'not found');
+
+      const profile = profileRaw as ProfileRow | null;
+
+      return {
+        id: user.id,
+        email: user.email || '',
+        username: profile?.username || undefined,
+        nickname: profile?.nickname || undefined,
+        avatarUrl: profile?.avatar_url || undefined,
+      };
+    } catch (error) {
+      console.warn('[AuthService] Failed to fetch profile, using basic user:', error);
+      return {
+        id: user.id,
+        email: user.email || '',
+      };
+    }
   }
 }
 

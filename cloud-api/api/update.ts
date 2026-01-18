@@ -27,20 +27,23 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.4.3',
+  version: '0.4.4',
   publishedAt: '2026-01-18T00:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.4.3 🎨
+## Code Agent v0.4.4 🐛
+
+### 🐛 Bug 修复
+- **修复应用启动后无法显示窗口的问题** - 添加 Supabase profile fetch 超时机制，防止网络问题导致启动卡住
+- 优化 CSP 策略，支持更多资源加载场景
 
 ### 🎨 UI 优化
-- **简化侧边栏布局** - 移除左下角用户信息和云同步状态显示
-- **优化标题栏** - 移除同步状态指示器，保持界面简洁
-- 右上角用户菜单保留完整功能（云同步设置、退出登录等）
+- 简化侧边栏布局，移除左下角用户信息和云同步状态
+- 优化标题栏，移除同步状态指示器
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.4.3/Code.Agent-0.4.3-arm64.dmg',
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.4.4/Code.Agent-0.4.4-arm64.dmg',
       size: 130000000,
     },
   },

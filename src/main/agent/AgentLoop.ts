@@ -16,6 +16,7 @@ import type { ToolExecutor } from '../tools/ToolExecutor';
 import { ModelRouter } from '../model/ModelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/MemoryService';
+import { getProactiveContextService } from '../memory/ProactiveContext';
 import { logCollector } from '../mcp/LogCollector.js';
 import { generateMessageId, generateToolCallId } from '../../shared/utils/id';
 import { taskComplexityAnalyzer } from '../planning/TaskComplexityAnalyzer';
@@ -702,10 +703,13 @@ export class AgentLoop {
   private buildModelMessages(): Array<{ role: string; content: string }> {
     const modelMessages: Array<{ role: string; content: string }> = [];
 
-    // Build enhanced system prompt for Gen5
+    // Build enhanced system prompt for Gen3+
+    // Gen3-4: 轻量级 RAG（仅项目知识）
+    // Gen5+: 完整 RAG（包含云端搜索）
     let systemPrompt = this.generation.systemPrompt;
 
-    if (this.generation.id === 'gen5') {
+    const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+    if (genNum >= 3) {
       systemPrompt = this.buildEnhancedSystemPrompt(systemPrompt);
     }
 
@@ -745,8 +749,9 @@ export class AgentLoop {
   }
 
   /**
-   * Build enhanced system prompt with RAG context for Gen5
-   * Retrieves relevant knowledge, code patterns, and user preferences
+   * Build enhanced system prompt with RAG context
+   * Gen3-4: 轻量级 RAG（仅项目知识和用户偏好）
+   * Gen5+: 完整 RAG（包含代码、知识库，支持云端搜索 + 主动上下文）
    */
   private buildEnhancedSystemPrompt(basePrompt: string): string {
     try {
@@ -763,19 +768,32 @@ export class AgentLoop {
         return basePrompt;
       }
 
-      // Add RAG context
-      const ragContext = memoryService.getRAGContext(userQuery, {
-        includeCode: true,
-        includeKnowledge: true,
-        includeConversations: false, // Avoid duplication with message history
-        maxTokens: 1500,
-      });
+      // Determine RAG level based on generation
+      const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+      const isFullRAG = genNum >= 5;
+      const isLightRAG = genNum >= 3 && genNum < 5;
 
-      if (ragContext && ragContext.trim().length > 0) {
-        enhancedPrompt += `\n\n## Relevant Context from Memory\n\nThe following context was retrieved from your knowledge base and may be helpful:\n\n${ragContext}`;
+      if (isFullRAG) {
+        // Gen5+: Full RAG with code, knowledge, and cloud search
+        const ragContext = memoryService.getRAGContext(userQuery, {
+          includeCode: true,
+          includeKnowledge: true,
+          includeConversations: false, // Avoid duplication with message history
+          maxTokens: 1500,
+        });
+
+        if (ragContext && ragContext.trim().length > 0) {
+          enhancedPrompt += `\n\n## Relevant Context from Memory\n\nThe following context was retrieved from your knowledge base and may be helpful:\n\n${ragContext}`;
+        }
+
+        // Note: Cloud search is triggered asynchronously in buildEnhancedSystemPromptAsync
+        // This sync version uses local search only for backward compatibility
+      } else if (isLightRAG) {
+        // Gen3-4: Lightweight RAG - only project knowledge, no code/conversation search
+        // This prevents overwhelming the context for simpler tasks
       }
 
-      // Add project knowledge
+      // Add project knowledge (all Gen3+)
       const projectKnowledge = memoryService.getProjectKnowledge();
       if (projectKnowledge.length > 0) {
         const knowledgeStr = projectKnowledge
@@ -785,7 +803,7 @@ export class AgentLoop {
         enhancedPrompt += `\n\n## Project Knowledge\n\n${knowledgeStr}`;
       }
 
-      // Add user coding preferences
+      // Add user coding preferences (all Gen3+)
       const codingStyle = memoryService.getUserPreference<Record<string, unknown>>('coding_style');
       if (codingStyle && Object.keys(codingStyle).length > 0) {
         const styleStr = Object.entries(codingStyle)
@@ -794,11 +812,128 @@ export class AgentLoop {
         enhancedPrompt += `\n\n## User Coding Preferences\n\n${styleStr}`;
       }
 
-      console.log(`[AgentLoop] Enhanced system prompt with RAG context (${ragContext?.length || 0} chars)`);
+      const ragType = isFullRAG ? 'full' : isLightRAG ? 'light' : 'none';
+      console.log(`[AgentLoop] Enhanced system prompt with ${ragType} RAG for ${this.generation.id}`);
       return enhancedPrompt;
     } catch (error) {
       console.error('[AgentLoop] Failed to build enhanced system prompt:', error);
       return basePrompt;
+    }
+  }
+
+  /**
+   * Build enhanced system prompt with proactive context (async version)
+   * Detects entities in user message and auto-fetches relevant context
+   * Used for Gen5+ to provide intelligent context injection
+   */
+  private async buildEnhancedSystemPromptWithProactiveContext(
+    basePrompt: string,
+    workingDirectory?: string
+  ): Promise<{ prompt: string; proactiveSummary: string }> {
+    try {
+      // First build the standard enhanced prompt
+      let enhancedPrompt = this.buildEnhancedSystemPrompt(basePrompt);
+
+      // Get user query from the last user message
+      const lastUserMessage = [...this.messages]
+        .reverse()
+        .find((m) => m.role === 'user');
+      const userQuery = lastUserMessage?.content || '';
+
+      if (!userQuery) {
+        return { prompt: enhancedPrompt, proactiveSummary: '' };
+      }
+
+      // Determine if we should use proactive context
+      const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+      if (genNum < 5) {
+        // Proactive context is only for Gen5+
+        return { prompt: enhancedPrompt, proactiveSummary: '' };
+      }
+
+      // Use ProactiveContextService to detect entities and fetch context
+      const proactiveService = getProactiveContextService();
+      const proactiveResult = await proactiveService.analyzeAndFetchContext(
+        userQuery,
+        workingDirectory
+      );
+
+      // If we found relevant context, format and add it
+      if (proactiveResult.context.length > 0) {
+        const formattedContext = proactiveService.formatContextForPrompt(proactiveResult);
+        enhancedPrompt += `\n\n${formattedContext}`;
+
+        console.log(
+          `[AgentLoop] Proactive context injected: ${proactiveResult.totalItems} items ` +
+          `(${proactiveResult.cloudItems} from cloud), entities: ${proactiveResult.entities.map(e => e.type).join(', ')}`
+        );
+
+        logCollector.agent('INFO', 'Proactive context injected', {
+          totalItems: proactiveResult.totalItems,
+          cloudItems: proactiveResult.cloudItems,
+          entities: proactiveResult.entities.map(e => ({ type: e.type, value: e.value })),
+        });
+      }
+
+      return {
+        prompt: enhancedPrompt,
+        proactiveSummary: proactiveResult.summary,
+      };
+    } catch (error) {
+      console.error('[AgentLoop] Failed to build proactive context:', error);
+      return { prompt: this.buildEnhancedSystemPrompt(basePrompt), proactiveSummary: '' };
+    }
+  }
+
+  /**
+   * Build enhanced system prompt with cloud RAG context (async version)
+   * Used when cloud search is enabled for Gen5+
+   */
+  private async buildEnhancedSystemPromptAsync(basePrompt: string): Promise<{
+    prompt: string;
+    cloudSources: Array<{ type: string; path?: string; isCloud: boolean }>;
+  }> {
+    try {
+      const memoryService = getMemoryService();
+
+      // Get user query from the last user message
+      const lastUserMessage = [...this.messages]
+        .reverse()
+        .find((m) => m.role === 'user');
+      const userQuery = lastUserMessage?.content || '';
+
+      if (!userQuery) {
+        return { prompt: basePrompt, cloudSources: [] };
+      }
+
+      // Determine if we should use cloud search
+      const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+      const shouldUseCloud = genNum >= 5;
+
+      if (!shouldUseCloud) {
+        // Fall back to sync version for Gen3-4
+        return { prompt: this.buildEnhancedSystemPrompt(basePrompt), cloudSources: [] };
+      }
+
+      // Gen5+: Use cloud-enhanced system prompt builder
+      const result = await memoryService.buildEnhancedSystemPromptWithCloud(
+        basePrompt,
+        userQuery,
+        {
+          includeCloud: true,
+          crossProject: false, // Default to current project only
+          maxTokens: 2000,
+        }
+      );
+
+      console.log(`[AgentLoop] Cloud-enhanced system prompt, ${result.sources.length} sources`);
+      return {
+        prompt: result.prompt,
+        cloudSources: result.sources,
+      };
+    } catch (error) {
+      console.error('[AgentLoop] Failed to build cloud-enhanced system prompt:', error);
+      return { prompt: this.buildEnhancedSystemPrompt(basePrompt), cloudSources: [] };
     }
   }
 

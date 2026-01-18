@@ -1,11 +1,16 @@
 // ============================================================================
 // Spawn Agent Tool - Create specialized sub-agents
 // Gen 7: Multi-Agent capability
+// Enhanced with parallel execution support (Enhancement 3)
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
 import type { ModelConfig } from '../../../shared/types';
 import { getSubagentExecutor } from '../../agent/SubagentExecutor';
+import {
+  getParallelAgentCoordinator,
+  type AgentTask,
+} from '../../agent/ParallelAgentCoordinator';
 
 // Predefined agent roles with specialized prompts
 const AGENT_ROLES: Record<string, AgentRole> = {
@@ -121,14 +126,17 @@ Available agent roles:
 
 Use this tool to:
 - Delegate tasks to specialized agents
-- Run multiple agents in parallel
+- Run multiple agents in TRUE parallel (using parallel=true with agents array)
 - Create custom agents for specific needs
 
 Parameters:
-- role: Agent role (coder, reviewer, tester, architect, debugger, documenter)
-- task: Description of what the agent should do
+- role: Agent role (required for single agent)
+- task: Description of what the agent should do (required for single agent)
 - customPrompt: (optional) Custom system prompt override
-- waitForCompletion: (optional) Whether to wait for agent to complete (default: true)`,
+- waitForCompletion: (optional) Whether to wait for agent to complete (default: true)
+- parallel: (optional) Set to true to enable parallel execution mode
+- agents: (optional) Array of {role, task, dependsOn?} for parallel execution
+- dependsOn: (optional) Array of agent IDs this agent depends on (for ordered parallel)`,
   generations: ['gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
@@ -156,19 +164,65 @@ Parameters:
         type: 'number',
         description: 'Maximum iterations for the agent (default: 20)',
       },
+      parallel: {
+        type: 'boolean',
+        description: 'Enable parallel execution mode',
+      },
+      agents: {
+        type: 'array',
+        description: 'Array of agents for parallel execution',
+        items: {
+          type: 'object',
+          properties: {
+            role: { type: 'string' },
+            task: { type: 'string' },
+            dependsOn: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'IDs of agents this one depends on',
+            },
+          },
+          required: ['role', 'task'],
+        },
+      },
     },
-    required: ['role', 'task'],
+    required: [],
   },
 
   async execute(
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolExecutionResult> {
+    const parallel = params.parallel as boolean | undefined;
+    const agents = params.agents as Array<{ role: string; task: string; dependsOn?: string[] }> | undefined;
+
+    // Check for required context
+    if (!context.toolRegistry || !context.modelConfig) {
+      return {
+        success: false,
+        error: 'spawn_agent requires toolRegistry and modelConfig in context',
+      };
+    }
+
+    // Handle parallel execution mode
+    if (parallel && agents && agents.length > 0) {
+      return executeParallelAgents(agents, context);
+    }
+
+    // Single agent mode
     const role = params.role as string;
     const task = params.task as string;
     const customPrompt = params.customPrompt as string | undefined;
     const waitForCompletion = params.waitForCompletion !== false;
     const maxIterations = (params.maxIterations as number) || 20;
+
+    // Validate required params for single agent
+    if (!role || !task) {
+      return {
+        success: false,
+        error: 'Either provide role+task for single agent, or parallel+agents for parallel execution',
+      };
+    }
 
     // Validate role
     const agentRole = AGENT_ROLES[role];
@@ -176,14 +230,6 @@ Parameters:
       return {
         success: false,
         error: `Unknown agent role: ${role}. Available: ${Object.keys(AGENT_ROLES).join(', ')}`,
-      };
-    }
-
-    // Check for required context
-    if (!context.toolRegistry || !context.modelConfig) {
-      return {
-        success: false,
-        error: 'spawn_agent requires toolRegistry and modelConfig in context',
       };
     }
 

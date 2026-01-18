@@ -76,6 +76,9 @@ export class AgentLoop {
   private maxConsecutiveReadsBeforeWarning: number = 5;
   private hasWrittenFile: boolean = false;
 
+  // Plan Mode support (borrowed from Claude Code v2.0)
+  private planModeActive: boolean = false;
+
   // Langfuse tracing
   private sessionId: string;
   private userId?: string;
@@ -101,6 +104,30 @@ export class AgentLoop {
     // Tracing metadata
     this.sessionId = config.sessionId || `session-${Date.now()}`;
     this.userId = config.userId;
+  }
+
+  // --------------------------------------------------------------------------
+  // Plan Mode Methods (borrowed from Claude Code v2.0)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Set the plan mode state
+   */
+  setPlanMode(active: boolean): void {
+    this.planModeActive = active;
+    console.log(`[AgentLoop] Plan mode ${active ? 'activated' : 'deactivated'}`);
+    // Emit event to notify frontend
+    this.onEvent({
+      type: 'planModeChanged' as any,
+      data: { active },
+    } as any);
+  }
+
+  /**
+   * Check if plan mode is active
+   */
+  isPlanMode(): boolean {
+    return this.planModeActive;
   }
 
   // --------------------------------------------------------------------------
@@ -463,6 +490,10 @@ export class AgentLoop {
             generation: this.generation,
             planningService: this.planningService, // Pass planning service to tools
             modelConfig: this.modelConfig, // Pass model config for subagent execution
+            // Plan Mode support (borrowed from Claude Code v2.0)
+            setPlanMode: this.setPlanMode.bind(this),
+            isPlanMode: this.isPlanMode.bind(this),
+            emitEvent: (event: string, data: unknown) => this.onEvent({ type: event as any, data } as any),
           }
         );
         console.log(`[AgentLoop] toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);

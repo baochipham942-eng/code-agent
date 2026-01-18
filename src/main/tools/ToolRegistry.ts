@@ -22,6 +22,8 @@ import { askUserQuestionTool } from './gen3/askUserQuestion';
 import { planReadTool } from './gen3/planRead';
 import { planUpdateTool } from './gen3/planUpdate';
 import { findingsWriteTool } from './gen3/findingsWrite';
+import { enterPlanModeTool } from './gen3/enterPlanMode';
+import { exitPlanModeTool } from './gen3/exitPlanMode';
 import { skillTool } from './gen4/skill';
 import { webFetchTool } from './gen4/webFetch';
 import { memoryStoreTool } from './gen5/memoryStore';
@@ -62,10 +64,14 @@ export interface ToolContext {
   generation: { id: GenerationId };
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   emit?: (event: string, data: unknown) => void;
+  emitEvent?: (event: string, data: unknown) => void; // Alias for emit
   planningService?: unknown; // PlanningService instance for persistent planning
   // For subagent execution
   toolRegistry?: ToolRegistry;
   modelConfig?: unknown;
+  // Plan Mode support (borrowed from Claude Code v2.0)
+  setPlanMode?: (active: boolean) => void;
+  isPlanMode?: () => boolean;
 }
 
 export interface PermissionRequestData {
@@ -81,6 +87,7 @@ export interface ToolExecutionResult {
   error?: string;
   result?: unknown; // For caching purposes
   fromCache?: boolean; // Indicates if result was from cache
+  metadata?: Record<string, unknown>; // Additional metadata for UI/workflow
 }
 
 // ----------------------------------------------------------------------------
@@ -113,6 +120,8 @@ export class ToolRegistry {
     this.register(planReadTool);
     this.register(planUpdateTool);
     this.register(findingsWriteTool);
+    this.register(enterPlanModeTool);
+    this.register(exitPlanModeTool);
 
     // Gen 4 tools
     this.register(skillTool);

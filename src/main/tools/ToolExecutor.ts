@@ -26,6 +26,10 @@ interface ExecuteOptions {
   generation: Generation;
   planningService?: unknown; // PlanningService instance for persistent planning
   modelConfig?: unknown; // ModelConfig for subagent execution
+  // Plan Mode support (borrowed from Claude Code v2.0)
+  setPlanMode?: (active: boolean) => void;
+  isPlanMode?: () => boolean;
+  emitEvent?: (event: string, data: unknown) => void;
 }
 
 // ----------------------------------------------------------------------------
@@ -83,6 +87,10 @@ export class ToolExecutor {
       // For subagent execution (task, skill tools)
       toolRegistry: this.toolRegistry,
       modelConfig: options.modelConfig,
+      // Plan Mode support (borrowed from Claude Code v2.0)
+      setPlanMode: options.setPlanMode,
+      isPlanMode: options.isPlanMode,
+      emitEvent: options.emitEvent,
     };
 
     // Check permission if required

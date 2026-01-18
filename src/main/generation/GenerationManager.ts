@@ -5,6 +5,13 @@
 import type { Generation, GenerationId, GenerationDiff } from '../../shared/types';
 import * as diff from 'diff';
 
+// Import new rules (borrowed from Claude Code v2.0)
+import { PROFESSIONAL_OBJECTIVITY_RULES } from './prompts/rules/professionalObjectivity';
+import { GIT_SAFETY_RULES } from './prompts/rules/gitSafety';
+import { PARALLEL_TOOLS_RULES } from './prompts/rules/parallelTools';
+import { CODE_REFERENCE_RULES } from './prompts/rules/codeReference';
+import { PLAN_MODE_RULES } from './prompts/rules/planMode';
+
 // ----------------------------------------------------------------------------
 // Generation Definitions
 // ----------------------------------------------------------------------------
@@ -443,6 +450,10 @@ For modification tasks:
 
 ${OUTPUT_FORMAT_RULES}
 
+${PROFESSIONAL_OBJECTIVITY_RULES}
+
+${CODE_REFERENCE_RULES}
+
 ## Safety Rules
 
 - NEVER execute destructive commands without confirmation
@@ -504,6 +515,12 @@ For modification tasks:
 **NEVER leave the user without a text response after tool operations!**
 
 ${OUTPUT_FORMAT_RULES}
+
+${PROFESSIONAL_OBJECTIVITY_RULES}
+
+${CODE_REFERENCE_RULES}
+
+${PARALLEL_TOOLS_RULES}
 
 ## Safety Rules
 
@@ -610,6 +627,16 @@ Skip clarification when user intent is CLEAR:
 
 ${OUTPUT_FORMAT_RULES}
 
+${PROFESSIONAL_OBJECTIVITY_RULES}
+
+${CODE_REFERENCE_RULES}
+
+${PARALLEL_TOOLS_RULES}
+
+${PLAN_MODE_RULES}
+
+${GIT_SAFETY_RULES}
+
 ## Safety Rules
 
 - NEVER execute destructive commands without confirmation
@@ -697,12 +724,15 @@ ${HTML_GENERATION_RULES}
 
 ${OUTPUT_FORMAT_RULES}
 
-## Safety Rules
+${PROFESSIONAL_OBJECTIVITY_RULES}
 
-- NEVER execute destructive commands without confirmation
-- NEVER modify files outside the working directory
-- Git: Never force push, never skip hooks, never amend pushed commits
-- Only commit when explicitly asked
+${CODE_REFERENCE_RULES}
+
+${PARALLEL_TOOLS_RULES}
+
+${PLAN_MODE_RULES}
+
+${GIT_SAFETY_RULES}
 `,
 
   gen5: `# Code Agent - Generation 5 (Cognitive Enhancement Era)
@@ -805,13 +835,21 @@ You have access to a three-tier memory system:
 
 ${OUTPUT_FORMAT_RULES}
 
+${PROFESSIONAL_OBJECTIVITY_RULES}
+
+${CODE_REFERENCE_RULES}
+
+${PARALLEL_TOOLS_RULES}
+
+${PLAN_MODE_RULES}
+
+${GIT_SAFETY_RULES}
+
 ## Safety Rules
 
 - NEVER store sensitive information (passwords, API keys, personal data)
 - NEVER execute destructive commands without confirmation
 - NEVER modify files outside the working directory
-- Git: Never force push, never skip hooks, never amend pushed commits
-- Only commit when explicitly asked
 - Respect user privacy in stored memories
 
 ${HTML_GENERATION_RULES}
@@ -876,6 +914,16 @@ For GUI tasks: Screenshot → Act → Verify (don't over-verify).
 **NEVER leave the user without a text response after tool operations!**
 
 ${OUTPUT_FORMAT_RULES}
+
+${PROFESSIONAL_OBJECTIVITY_RULES}
+
+${CODE_REFERENCE_RULES}
+
+${PARALLEL_TOOLS_RULES}
+
+${PLAN_MODE_RULES}
+
+${GIT_SAFETY_RULES}
 
 ## Safety Rules
 
@@ -959,6 +1007,16 @@ For complex tasks: Use agents, but don't over-coordinate.
 **NEVER leave the user without a text response after tool operations!**
 
 ${OUTPUT_FORMAT_RULES}
+
+${PROFESSIONAL_OBJECTIVITY_RULES}
+
+${CODE_REFERENCE_RULES}
+
+${PARALLEL_TOOLS_RULES}
+
+${PLAN_MODE_RULES}
+
+${GIT_SAFETY_RULES}
 
 ## Safety Rules
 
@@ -1060,6 +1118,16 @@ For complex tasks: Apply strategies, but don't over-optimize.
 **NEVER leave the user without a text response after tool operations!**
 
 ${OUTPUT_FORMAT_RULES}
+
+${PROFESSIONAL_OBJECTIVITY_RULES}
+
+${CODE_REFERENCE_RULES}
+
+${PARALLEL_TOOLS_RULES}
+
+${PLAN_MODE_RULES}
+
+${GIT_SAFETY_RULES}
 
 ## Safety Rules
 

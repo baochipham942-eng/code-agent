@@ -93,12 +93,36 @@ async function searchWithPerplexity(
 }
 
 /**
- * DuckDuckGo HTML 搜索 (备用方案，不需要 API Key)
+ * DuckDuckGo 搜索 - 通过阿里云函数计算代理
+ * 如果没有配置代理，则直接请求（可能会被屏蔽）
  */
 async function searchDuckDuckGo(
   query: string,
   maxResults: number = 10
 ): Promise<SearchResult[]> {
+  const proxyUrl = process.env.DUCKDUCKGO_PROXY_URL;
+
+  // 优先使用阿里云代理
+  if (proxyUrl) {
+    const response = await fetch(proxyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, maxResults }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`DuckDuckGo proxy failed: ${response.status}`);
+    }
+
+    const data = await response.json() as { success: boolean; results?: SearchResult[]; error?: string };
+    if (!data.success) {
+      throw new Error(data.error || 'Proxy search failed');
+    }
+
+    return data.results || [];
+  }
+
+  // 直接请求（可能被 Vercel IP 屏蔽）
   const params = new URLSearchParams({ q: query, kl: '' });
   const url = `https://html.duckduckgo.com/html/?${params.toString()}`;
 
@@ -116,7 +140,6 @@ async function searchDuckDuckGo(
   const html = await response.text();
   const results: SearchResult[] = [];
 
-  // 简单解析
   const resultPattern = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/gi;
   let match;
   while ((match = resultPattern.exec(html)) !== null && results.length < maxResults) {

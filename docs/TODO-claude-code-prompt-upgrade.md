@@ -120,23 +120,39 @@ src/main/generation/
 
 ---
 
-## 待完成 ❌
+## 已完成 ✅ (第四批 - 最终完善)
 
-### 1. 注入防护 (P3 - 可选)
+### 1. 注入防护 (P3) - 2026-01-18
 
-**目标：** 借鉴 Claude Code v2.0 的 prompt injection 防护规则
+**完成内容：** 实施 Claude Code v2.0 风格的注入防护规则
 
-**状态：** 计划中标记为"桌面应用风险低"，可根据需要决定是否实施
+**创建的文件：**
+- [x] `src/main/generation/prompts/rules/injectionDefense.ts`
 
-**参考：** `docs/prompts/claude-code-v2.0-full.txt` 中的 injection defense 部分
+**功能：**
+- 指令来源验证
+- 可疑内容识别（权限声明、行为修改、隐藏指令、情感操纵）
+- 敏感操作保护
+- 数据安全规则
+
+### 2. 文档与测试 (P3) - 2026-01-18
+
+**完成内容：**
+
+- [x] 更新 `docs/architecture/agent-core.md` - 添加 Plan Mode 说明
+- [x] 添加 Plan Mode 工具单元测试 (`tests/tools/planMode.test.ts`)
+- [x] 创建覆盖率分析脚本 (`scripts/prompt-coverage-analysis.ts`)
+- [x] 生成覆盖率报告 (`docs/prompt-coverage-report.md`)
+
+**测试覆盖：**
+- 18 个测试用例全部通过
+- 覆盖 enter_plan_mode 和 exit_plan_mode 的所有场景
 
 ---
 
-### 2. 文档与测试 (P3)
+## 待完成 ❌
 
-- [ ] 更新 `docs/architecture/agent-core.md` - 添加 Plan Mode 说明
-- [ ] 添加 Plan Mode 工具的单元测试
-- [ ] 导出升级后的提示词，与 Claude Code v2.0 对比覆盖率
+*所有计划任务已完成*
 
 ---
 

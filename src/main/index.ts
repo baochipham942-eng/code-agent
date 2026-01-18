@@ -317,6 +317,7 @@ async function initializeServices(): Promise<void> {
   }
 
   // Initialize Supabase (if configured)
+  // NOTE: Auth initialization is NON-BLOCKING to prevent startup issues
   const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url;
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey;
 
@@ -325,12 +326,8 @@ async function initializeServices(): Promise<void> {
       initSupabase(supabaseUrl, supabaseAnonKey);
       console.log('Supabase initialized');
 
-      // Initialize auth service
+      // Set up auth change callback BEFORE initialization
       const authService = getAuthService();
-      await authService.initialize();
-      console.log('Auth service initialized');
-
-      // Set up auth change callback
       authService.addAuthChangeCallback((user) => {
         if (mainWindow) {
           mainWindow.webContents.send(IPC_CHANNELS.AUTH_EVENT, {
@@ -349,6 +346,16 @@ async function initializeServices(): Promise<void> {
           syncService.stopAutoSync();
         }
       });
+
+      // Initialize auth service ASYNC (non-blocking)
+      // This prevents network issues from blocking window creation
+      authService.initialize()
+        .then(() => {
+          console.log('Auth service initialized (async)');
+        })
+        .catch((error) => {
+          console.error('Auth service initialization failed (non-blocking):', error);
+        });
     } catch (error) {
       console.error('Failed to initialize Supabase:', error);
     }

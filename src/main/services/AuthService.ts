@@ -62,7 +62,7 @@ class AuthService {
 
     // Listen for auth state changes
     supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event);
+      console.log('[AuthService] Auth state changed:', event);
 
       if (session?.user) {
         console.log('[AuthService] Fetching user profile in callback...');
@@ -76,17 +76,30 @@ class AuthService {
     });
     console.log('[AuthService] Auth state change listener registered');
 
-    // Check for existing session
+    // Check for existing session with timeout
+    // This prevents hanging if Supabase is unreachable
     console.log('[AuthService] Getting existing session...');
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    console.log('[AuthService] Got session:', session ? 'exists' : 'none');
+    try {
+      const sessionPromise = supabase.auth.getSession();
+      const timeoutPromise = new Promise<null>((_, reject) => {
+        setTimeout(() => reject(new Error('Session fetch timeout')), 5000);
+      });
 
-    if (session?.user) {
-      console.log('[AuthService] Fetching user profile...');
-      this.currentUser = await this.fetchUserProfile(session.user);
-      console.log('[AuthService] Profile fetched');
+      const result = await Promise.race([sessionPromise, timeoutPromise]) as any;
+      const session = result?.data?.session;
+      console.log('[AuthService] Got session:', session ? 'exists' : 'none');
+
+      if (session?.user) {
+        console.log('[AuthService] Fetching user profile...');
+        this.currentUser = await this.fetchUserProfile(session.user);
+        console.log('[AuthService] Profile fetched');
+        // Notify listeners about restored session
+        this.notifyAuthChange(this.currentUser);
+      }
+    } catch (error) {
+      console.warn('[AuthService] Failed to restore session (will continue without auth):', error);
+      // Don't block startup, user can manually sign in later
+      this.currentUser = null;
     }
 
     this.initialized = true;

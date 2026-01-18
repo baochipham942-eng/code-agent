@@ -1,8 +1,17 @@
 // ============================================================================
 // Cloud Agent Loop - 云端 Agent 循环
+// 支持多模型（DeepSeek 为主，可配置 OpenAI/Anthropic）
 // ============================================================================
 
-import Anthropic from '@anthropic-ai/sdk';
+import {
+  ModelClient,
+  createModelClient,
+  type ModelProvider,
+  type ChatMessage,
+  type ToolDefinition,
+  type ToolCall,
+  type StreamEvent,
+} from './ModelClient.js';
 import { CLOUD_TOOL_SCHEMAS } from '../tools/CloudToolRegistry.js';
 
 export interface AgentMessage {
@@ -29,12 +38,6 @@ export interface AgentRequest {
   };
 }
 
-export interface ToolCall {
-  id: string;
-  name: string;
-  input: Record<string, unknown>;
-}
-
 export interface AgentStreamEvent {
   type: 'text' | 'tool_use' | 'tool_result' | 'done' | 'error';
   content?: string;
@@ -49,7 +52,7 @@ export interface AgentStreamEvent {
 
 // 云端可用的工具定义
 export const CLOUD_TOOLS: AgentTool[] = [
-  // 新的云端工具（使用独立 API 端点）
+  // 云端工具（使用独立 API 端点）
   {
     name: 'cloud_search',
     description: CLOUD_TOOL_SCHEMAS.cloud_search.description,
@@ -75,17 +78,14 @@ export const CLOUD_TOOLS: AgentTool[] = [
     description: CLOUD_TOOL_SCHEMAS.cloud_memory_search.description,
     input_schema: CLOUD_TOOL_SCHEMAS.cloud_memory_search.inputSchema,
   },
-  // 保留原有工具（LLM 驱动的）
+  // LLM 驱动的工具
   {
     name: 'generate_plan',
     description: '为复杂任务生成执行计划。返回客户端可执行的步骤列表。',
     input_schema: {
       type: 'object',
       properties: {
-        task: {
-          type: 'string',
-          description: '任务描述',
-        },
+        task: { type: 'string', description: '任务描述' },
         constraints: {
           type: 'array',
           items: { type: 'string' },
@@ -101,14 +101,8 @@ export const CLOUD_TOOLS: AgentTool[] = [
     input_schema: {
       type: 'object',
       properties: {
-        code: {
-          type: 'string',
-          description: '要审查的代码',
-        },
-        language: {
-          type: 'string',
-          description: '编程语言',
-        },
+        code: { type: 'string', description: '要审查的代码' },
+        language: { type: 'string', description: '编程语言' },
         focus: {
           type: 'array',
           items: { type: 'string' },
@@ -124,14 +118,8 @@ export const CLOUD_TOOLS: AgentTool[] = [
     input_schema: {
       type: 'object',
       properties: {
-        code: {
-          type: 'string',
-          description: '要解释的代码',
-        },
-        language: {
-          type: 'string',
-          description: '编程语言',
-        },
+        code: { type: 'string', description: '要解释的代码' },
+        language: { type: 'string', description: '编程语言' },
         level: {
           type: 'string',
           enum: ['beginner', 'intermediate', 'advanced'],
@@ -143,131 +131,109 @@ export const CLOUD_TOOLS: AgentTool[] = [
   },
 ];
 
+export interface CloudAgentConfig {
+  provider: ModelProvider;
+  apiKey: string;
+  model?: string;
+  maxTokens?: number;
+  temperature?: number;
+}
+
 export class CloudAgentLoop {
-  private client: Anthropic;
-  private model: string;
+  private client: ModelClient;
+  private config: CloudAgentConfig;
 
-  constructor(apiKey?: string, model?: string) {
-    const key = apiKey || process.env.ANTHROPIC_API_KEY;
-    if (!key) {
-      throw new Error('ANTHROPIC_API_KEY is required. Set it in environment variables or pass it to the constructor.');
-    }
-    this.client = new Anthropic({ apiKey: key });
-    this.model = model || 'claude-sonnet-4-20250514';
+  constructor(config: CloudAgentConfig) {
+    this.config = config;
+    this.client = createModelClient(config.provider, config.apiKey, config.model);
   }
 
-  // 非流式执行（简单场景）
+  /**
+   * 非流式执行
+   */
   async run(request: AgentRequest): Promise<string> {
-    const messages = this.buildMessages(request);
-    const tools = request.tools || CLOUD_TOOLS;
+    const messages: ChatMessage[] = request.messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
 
-    let response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: request.maxTokens || 4096,
-      system: this.buildSystemPrompt(request),
-      messages,
-      tools: tools as Anthropic.Tool[],
-    });
+    const tools = (request.tools || CLOUD_TOOLS) as ToolDefinition[];
+    const systemPrompt = this.buildSystemPrompt(request);
+    const maxIterations = 10;
+    let iteration = 0;
 
-    // Agent Loop: 持续处理工具调用
-    while (response.stop_reason === 'tool_use') {
-      const toolUseBlocks = response.content.filter(
-        (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
-      );
+    while (iteration < maxIterations) {
+      iteration++;
 
-      const toolResults = await Promise.all(
-        toolUseBlocks.map(async (toolUse) => ({
-          type: 'tool_result' as const,
-          tool_use_id: toolUse.id,
-          content: await this.executeCloudTool(toolUse.name, toolUse.input as Record<string, unknown>),
-        }))
-      );
-
-      messages.push({ role: 'assistant', content: response.content });
-      messages.push({ role: 'user', content: toolResults });
-
-      response = await this.client.messages.create({
-        model: this.model,
-        max_tokens: request.maxTokens || 4096,
-        system: this.buildSystemPrompt(request),
-        messages,
-        tools: tools as Anthropic.Tool[],
-      });
-    }
-
-    // 提取最终文本响应
-    const textBlocks = response.content.filter(
-      (block): block is Anthropic.TextBlock => block.type === 'text'
-    );
-
-    return textBlocks.map((b) => b.text).join('\n');
-  }
-
-  // 流式执行（实时响应）
-  async *stream(request: AgentRequest): AsyncGenerator<AgentStreamEvent> {
-    const messages = this.buildMessages(request);
-    const tools = request.tools || CLOUD_TOOLS;
-
-    try {
-      const stream = this.client.messages.stream({
-        model: this.model,
-        max_tokens: request.maxTokens || 4096,
-        system: this.buildSystemPrompt(request),
-        messages,
-        tools: tools as Anthropic.Tool[],
+      const response = await this.client.chat(messages, {
+        systemPrompt,
+        tools,
+        maxTokens: request.maxTokens || this.config.maxTokens,
+        temperature: this.config.temperature,
       });
 
-      let currentToolCall: Partial<ToolCall> | null = null;
-
-      for await (const event of stream) {
-        if (event.type === 'content_block_start') {
-          if (event.content_block.type === 'tool_use') {
-            currentToolCall = {
-              id: event.content_block.id,
-              name: event.content_block.name,
-              input: {},
-            };
-          }
-        } else if (event.type === 'content_block_delta') {
-          if (event.delta.type === 'text_delta') {
-            yield { type: 'text', content: event.delta.text };
-          } else if (event.delta.type === 'input_json_delta' && currentToolCall) {
-            // 累积工具输入 JSON
-          }
-        } else if (event.type === 'content_block_stop') {
-          if (currentToolCall?.id && currentToolCall?.name) {
-            yield { type: 'tool_use', toolCall: currentToolCall as ToolCall };
-
-            // 执行工具并返回结果
-            const result = await this.executeCloudTool(
-              currentToolCall.name,
-              currentToolCall.input || {}
-            );
-
-            yield {
-              type: 'tool_result',
-              toolResult: {
-                toolUseId: currentToolCall.id,
-                content: result,
-              },
-            };
-
-            currentToolCall = null;
-          }
-        }
+      // 如果没有工具调用，返回内容
+      if (response.stopReason !== 'tool_use' || !response.toolCalls?.length) {
+        return response.content;
       }
 
-      yield { type: 'done' };
-    } catch (error: any) {
-      yield { type: 'error', error: error.message };
+      // 处理工具调用
+      messages.push({ role: 'assistant', content: response.content });
+
+      for (const toolCall of response.toolCalls) {
+        const result = await this.executeCloudTool(toolCall.name, toolCall.input);
+        messages.push({
+          role: 'user',
+          content: `Tool result for ${toolCall.name} (id: ${toolCall.id}):\n${result}`,
+        });
+      }
     }
+
+    return '达到最大迭代次数，任务未完成。';
   }
 
-  private buildMessages(request: AgentRequest): Anthropic.MessageParam[] {
-    return request.messages.map((msg) => ({
-      role: msg.role === 'system' ? 'user' : msg.role,
-      content: msg.content,
+  /**
+   * 流式执行
+   */
+  async *stream(request: AgentRequest): AsyncGenerator<AgentStreamEvent> {
+    const messages: ChatMessage[] = request.messages.map((m) => ({
+      role: m.role,
+      content: m.content,
     }));
+
+    const tools = (request.tools || CLOUD_TOOLS) as ToolDefinition[];
+    const systemPrompt = this.buildSystemPrompt(request);
+
+    try {
+      for await (const event of this.client.stream(messages, {
+        systemPrompt,
+        tools,
+        maxTokens: request.maxTokens || this.config.maxTokens,
+        temperature: this.config.temperature,
+      })) {
+        if (event.type === 'text') {
+          yield { type: 'text', content: event.content };
+        } else if (event.type === 'tool_use' && event.toolCall) {
+          yield { type: 'tool_use', toolCall: event.toolCall };
+
+          // 执行工具并返回结果
+          const result = await this.executeCloudTool(event.toolCall.name, event.toolCall.input);
+          yield {
+            type: 'tool_result',
+            toolResult: {
+              toolUseId: event.toolCall.id,
+              content: result,
+            },
+          };
+        } else if (event.type === 'done') {
+          yield { type: 'done' };
+        } else if (event.type === 'error') {
+          yield { type: 'error', error: event.error };
+        }
+      }
+    } catch (error: unknown) {
+      yield { type: 'error', error: error instanceof Error ? error.message : 'Unknown error' };
+    }
   }
 
   private buildSystemPrompt(request: AgentRequest): string {
@@ -302,13 +268,15 @@ export class CloudAgentLoop {
     return prompt;
   }
 
-  // 执行云端工具
+  /**
+   * 执行云端工具
+   */
   private async executeCloudTool(
     name: string,
     input: Record<string, unknown>
   ): Promise<string> {
     switch (name) {
-      // 新的云端工具 - 调用独立 API 端点
+      // 云端工具 - 调用独立 API 端点
       case 'cloud_search':
         return this.callCloudToolApi('cloud-search', input);
 
@@ -324,12 +292,18 @@ export class CloudAgentLoop {
       case 'cloud_memory_search':
         return this.callCloudToolApi('cloud-memory', { action: 'search', ...input });
 
-      // 保留的旧工具名（向后兼容）
+      // 兼容旧工具名
       case 'web_search':
-        return this.callCloudToolApi('cloud-search', { query: input.query, maxResults: input.maxResults });
+        return this.callCloudToolApi('cloud-search', {
+          query: input.query,
+          maxResults: input.maxResults,
+        });
 
       case 'web_fetch':
-        return this.callCloudToolApi('cloud-scrape', { url: input.url, selector: input.selector });
+        return this.callCloudToolApi('cloud-scrape', {
+          url: input.url,
+          selector: input.selector,
+        });
 
       // LLM 驱动的工具
       case 'generate_plan':
@@ -354,21 +328,20 @@ export class CloudAgentLoop {
     }
   }
 
-  // 调用云端工具 API
+  /**
+   * 调用云端工具 API
+   */
   private async callCloudToolApi(
     endpoint: string,
     input: Record<string, unknown>
   ): Promise<string> {
     try {
-      // 确定 API 基础 URL
       const baseUrl = process.env.CLOUD_API_URL || 'https://code-agent-beta.vercel.app';
       const url = `${baseUrl}/api/tools/${endpoint}`;
 
       const response = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
       });
 
@@ -382,15 +355,13 @@ export class CloudAgentLoop {
 
       return JSON.stringify(result);
     } catch (error) {
-      const err = error as Error;
       return JSON.stringify({
-        error: err.message || 'Failed to call cloud tool API',
+        error: error instanceof Error ? error.message : 'Failed to call cloud tool API',
       });
     }
   }
 
   private async toolGeneratePlan(task: string, constraints?: string[]): Promise<string> {
-    // 使用 LLM 生成计划
     const planPrompt = `为以下任务生成一个详细的执行计划，每个步骤应该是客户端可以执行的操作。
 
 任务：${task}
@@ -398,18 +369,12 @@ ${constraints?.length ? `约束：\n${constraints.map((c) => `- ${c}`).join('\n'
 
 以 JSON 格式返回计划，包含 steps 数组，每个 step 有 action, tool, params, description 字段。`;
 
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: 2048,
-      messages: [{ role: 'user', content: planPrompt }],
-    });
+    const response = await this.client.chat(
+      [{ role: 'user', content: planPrompt }],
+      { maxTokens: 2048 }
+    );
 
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('');
-
-    return text;
+    return response.content;
   }
 
   private async toolCodeReview(
@@ -431,19 +396,19 @@ ${focus?.length ? `重点关注：${focus.join(', ')}` : ''}
 3. 性能优化建议
 4. 代码风格改进`;
 
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: 2048,
-      messages: [{ role: 'user', content: reviewPrompt }],
-    });
+    const response = await this.client.chat(
+      [{ role: 'user', content: reviewPrompt }],
+      { maxTokens: 2048 }
+    );
 
-    return response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('');
+    return response.content;
   }
 
-  private async toolExplainCode(code: string, language?: string, level = 'intermediate'): Promise<string> {
+  private async toolExplainCode(
+    code: string,
+    language?: string,
+    level = 'intermediate'
+  ): Promise<string> {
     const levelDescriptions = {
       beginner: '用简单的语言解释，假设读者刚学编程',
       intermediate: '用专业但清晰的语言解释',
@@ -458,15 +423,14 @@ ${code}
 
 ${levelDescriptions[level as keyof typeof levelDescriptions] || levelDescriptions.intermediate}`;
 
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: 2048,
-      messages: [{ role: 'user', content: explainPrompt }],
-    });
+    const response = await this.client.chat(
+      [{ role: 'user', content: explainPrompt }],
+      { maxTokens: 2048 }
+    );
 
-    return response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('');
+    return response.content;
   }
 }
+
+// 导出类型
+export { ToolCall };

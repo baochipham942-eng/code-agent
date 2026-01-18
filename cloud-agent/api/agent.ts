@@ -6,14 +6,56 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { authenticateRequest } from '../lib/auth.js';
-import { CloudAgentLoop, type AgentRequest } from '../lib/agent/CloudAgentLoop.js';
+import { CloudAgentLoop, type AgentRequest, type CloudAgentConfig } from '../lib/agent/CloudAgentLoop.js';
 import { setCorsHeaders, handleOptions, applyRateLimit, handleError } from '../lib/middleware.js';
 import { RATE_LIMITS } from '../lib/rateLimit.js';
-import { getApiKey } from '../lib/apiKeys.js';
+import { getApiKey, type ApiKeyType } from '../lib/apiKeys.js';
 
 export const config = {
   maxDuration: 60,
 };
+
+/**
+ * 获取 Agent 配置（根据用户权限和可用 Key）
+ * 优先级：用户配置的 Key > 系统环境变量
+ * 模型选择：DeepSeek（默认）> OpenAI > Anthropic
+ */
+async function getAgentConfig(userId?: string): Promise<CloudAgentConfig | null> {
+  // 按优先级尝试获取 API Key
+  const providers: Array<{ type: ApiKeyType; provider: 'deepseek' | 'openai' | 'anthropic'; envKey: string }> = [
+    { type: 'deepseek', provider: 'deepseek', envKey: 'DEEPSEEK_API_KEY' },
+    { type: 'openai', provider: 'openai', envKey: 'OPENAI_API_KEY' },
+    { type: 'anthropic', provider: 'anthropic', envKey: 'ANTHROPIC_API_KEY' },
+  ];
+
+  for (const { type, provider, envKey } of providers) {
+    // 先尝试环境变量
+    let apiKey = process.env[envKey];
+
+    // 如果有登录用户，尝试获取用户配置的 Key（优先级更高）
+    if (userId) {
+      try {
+        const keyResult = await getApiKey(userId, type);
+        if (keyResult) {
+          apiKey = keyResult.key;
+        }
+      } catch (err) {
+        console.error(`[Agent] Failed to get user ${type} API key:`, err);
+      }
+    }
+
+    if (apiKey) {
+      return {
+        provider,
+        apiKey,
+        maxTokens: 4096,
+        temperature: 0.7,
+      };
+    }
+  }
+
+  return null;
+}
 
 // Chat 处理
 async function handleChat(req: VercelRequest, res: VercelResponse, userId?: string) {
@@ -23,33 +65,16 @@ async function handleChat(req: VercelRequest, res: VercelResponse, userId?: stri
     return res.status(400).json({ error: 'Messages are required' });
   }
 
-  // 获取用户的 API Key（优先用户配置，管理员可用系统 Key）
-  let apiKey: string | undefined;
+  const agentConfig = await getAgentConfig(userId);
 
-  // 首先尝试从环境变量获取系统 Key
-  apiKey = process.env.ANTHROPIC_API_KEY;
-
-  // 如果有登录用户，尝试获取用户配置的 Key（优先级更高）
-  if (userId) {
-    try {
-      const keyResult = await getApiKey(userId, 'anthropic');
-      if (keyResult) {
-        apiKey = keyResult.key;
-      }
-    } catch (err) {
-      // 数据库查询失败，使用系统 Key
-      console.error('[Agent] Failed to get user API key:', err);
-    }
-  }
-
-  if (!apiKey) {
+  if (!agentConfig) {
     return res.status(403).json({
       error: 'No API key available',
-      message: '请在设置中配置 Anthropic API Key，或联系管理员',
+      message: '请在设置中配置 API Key（支持 DeepSeek/OpenAI/Anthropic）',
     });
   }
 
-  const agentLoop = new CloudAgentLoop(apiKey);
+  const agentLoop = new CloudAgentLoop(agentConfig);
   const wantStream = req.headers.accept === 'text/event-stream' || body.stream;
 
   if (wantStream) {
@@ -64,7 +89,12 @@ async function handleChat(req: VercelRequest, res: VercelResponse, userId?: stri
     res.end();
   } else {
     const result = await agentLoop.run(body);
-    return res.status(200).json({ success: true, content: result, userId });
+    return res.status(200).json({
+      success: true,
+      content: result,
+      provider: agentConfig.provider,
+      userId,
+    });
   }
 }
 
@@ -76,32 +106,16 @@ async function handlePlan(req: VercelRequest, res: VercelResponse, userId?: stri
     return res.status(400).json({ error: 'Task description is required' });
   }
 
-  // 获取用户的 API Key
-  let apiKey: string | undefined;
+  const agentConfig = await getAgentConfig(userId);
 
-  // 首先尝试从环境变量获取系统 Key
-  apiKey = process.env.ANTHROPIC_API_KEY;
-
-  // 如果有登录用户，尝试获取用户配置的 Key
-  if (userId) {
-    try {
-      const keyResult = await getApiKey(userId, 'anthropic');
-      if (keyResult) {
-        apiKey = keyResult.key;
-      }
-    } catch (err) {
-      console.error('[Agent] Failed to get user API key:', err);
-    }
-  }
-
-  if (!apiKey) {
+  if (!agentConfig) {
     return res.status(403).json({
       error: 'No API key available',
-      message: '请在设置中配置 Anthropic API Key，或联系管理员',
+      message: '请在设置中配置 API Key（支持 DeepSeek/OpenAI/Anthropic）',
     });
   }
 
-  const agentLoop = new CloudAgentLoop(apiKey);
+  const agentLoop = new CloudAgentLoop(agentConfig);
 
   const planPrompt = `你是一个任务规划专家。请为以下任务生成一个详细的执行计划。
 
@@ -135,7 +149,12 @@ ${constraints?.length ? `## 约束条件\n${constraints.map((c: string) => `- ${
   try {
     const jsonMatch = result.match(/```json\n?([\s\S]*?)\n?```/) || [null, result];
     const plan = JSON.parse(jsonMatch[1] || result);
-    return res.status(200).json({ success: true, plan, userId });
+    return res.status(200).json({
+      success: true,
+      plan,
+      provider: agentConfig.provider,
+      userId,
+    });
   } catch {
     return res.status(500).json({ error: 'Failed to parse plan', raw: result });
   }

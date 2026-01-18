@@ -214,6 +214,98 @@ planning/
 
 ---
 
+## Plan Mode (规划模式)
+
+> 借鉴自 Claude Code v2.0
+
+**目的**: 为复杂实现任务提供结构化的规划流程，让 AI 先探索、设计，再由用户审批后执行。
+
+### 工作流程
+
+```
+用户请求复杂任务
+      │
+      ▼
+┌─────────────────┐
+│ enter_plan_mode │ ← AI 主动调用（Gen3+）
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────────────────────────┐
+│          规划阶段                    │
+│  • 使用 read_file, glob, grep 探索  │
+│  • 理解现有架构和模式               │
+│  • 设计实现方案                     │
+└────────┬────────────────────────────┘
+         │
+         ▼
+┌─────────────────┐
+│ exit_plan_mode  │ ← 提交计划供审批
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────────────────────────┐
+│          用户审批                    │
+│  • 确认执行 → 开始实现              │
+│  • 修改计划 → 返回规划阶段          │
+│  • 取消 → 结束                      │
+└─────────────────────────────────────┘
+```
+
+### 触发条件
+
+| 条件 | 推荐动作 |
+|------|----------|
+| 新功能实现 | 进入 Plan Mode |
+| 多文件修改 (>3 个) | 进入 Plan Mode |
+| 架构决策 | 进入 Plan Mode |
+| 需求不明确 | 进入 Plan Mode |
+| 单行修复 | 直接执行 |
+| 明确具体指令 | 直接执行 |
+
+### 工具定义
+
+**enter_plan_mode** (`src/main/tools/gen3/enterPlanMode.ts`)
+- 输入: `reason` (可选) - 进入规划的原因
+- 输出: 规划阶段指导
+- 副作用: 设置 `planModeActive = true`
+
+**exit_plan_mode** (`src/main/tools/gen3/exitPlanMode.ts`)
+- 输入: `plan` (必填) - Markdown 格式的实现计划
+- 输出: 计划展示 + 确认提示
+- 副作用: 设置 `planModeActive = false`
+- 元数据: `requiresUserConfirmation: true`
+
+### 状态管理
+
+**AgentLoop** 维护 `planModeActive` 状态：
+
+```typescript
+class AgentLoop {
+  private planModeActive = false;
+
+  setPlanMode(active: boolean) {
+    this.planModeActive = active;
+  }
+}
+```
+
+状态通过 `ToolContext` 传递给工具：
+
+```typescript
+interface ToolContext {
+  setPlanMode?: (active: boolean) => void;
+  emitEvent?: (type: string, data: unknown) => void;
+  // ...
+}
+```
+
+### 可用代际
+
+Plan Mode 从 **Gen3** 开始可用，覆盖 Gen3-Gen8。
+
+---
+
 ## ModelRouter
 
 **位置**: `src/main/model/ModelRouter.ts`

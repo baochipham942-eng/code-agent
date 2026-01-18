@@ -12,6 +12,7 @@ import {
   PARALLEL_TOOLS_RULES,
   PLAN_MODE_RULES,
   GIT_SAFETY_RULES,
+  INJECTION_DEFENSE_RULES,
 } from './rules';
 
 // ----------------------------------------------------------------------------
@@ -43,6 +44,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     PARALLEL_TOOLS_RULES,
     PLAN_MODE_RULES,
     GIT_SAFETY_RULES,
+    INJECTION_DEFENSE_RULES,
     HTML_GENERATION_RULES,
   ],
   gen4: [
@@ -52,6 +54,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     PARALLEL_TOOLS_RULES,
     PLAN_MODE_RULES,
     GIT_SAFETY_RULES,
+    INJECTION_DEFENSE_RULES,
     HTML_GENERATION_RULES,
   ],
   gen5: [
@@ -61,6 +64,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     PARALLEL_TOOLS_RULES,
     PLAN_MODE_RULES,
     GIT_SAFETY_RULES,
+    INJECTION_DEFENSE_RULES,
     HTML_GENERATION_RULES,
   ],
   gen6: [
@@ -70,6 +74,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     PARALLEL_TOOLS_RULES,
     PLAN_MODE_RULES,
     GIT_SAFETY_RULES,
+    INJECTION_DEFENSE_RULES,
     HTML_GENERATION_RULES,
   ],
   gen7: [
@@ -79,6 +84,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     PARALLEL_TOOLS_RULES,
     PLAN_MODE_RULES,
     GIT_SAFETY_RULES,
+    INJECTION_DEFENSE_RULES,
     HTML_GENERATION_RULES,
   ],
   gen8: [
@@ -88,6 +94,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     PARALLEL_TOOLS_RULES,
     PLAN_MODE_RULES,
     GIT_SAFETY_RULES,
+    INJECTION_DEFENSE_RULES,
     HTML_GENERATION_RULES,
   ],
 };

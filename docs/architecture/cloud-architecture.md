@@ -361,13 +361,27 @@ pending → queued → running → completed
 
 **核心概念**: 专业化 Agent 不是使用不同的模型，而是**同一个底层模型 + 不同的 System Prompt + 不同的工具集**，让模型扮演不同的专业角色。
 
+### 多模型支持（v0.6.0 实现）
+
+云端 Agent 通过 `ModelClient` 统一抽象层支持多个模型提供商：
+
+| Provider | 模型 | 特点 |
+|----------|------|------|
+| DeepSeek | deepseek-chat | 默认首选，性价比高 |
+| OpenAI | gpt-4o | 综合能力强 |
+| Anthropic | claude-sonnet-4 | 推理能力强 |
+
+**模型选择优先级**: DeepSeek > OpenAI > Anthropic（按可用性自动回退）
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                           专业化 Agent 架构                                       │
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                  │
-│   底层模型 (用户配置: DeepSeek / Claude / OpenAI / Groq / 智谱 / 通义)           │
-│   ═══════════════════════════════════════════════════════════                   │
+│   ModelClient 统一抽象层                                                          │
+│   ┌─────────────────────────────────────────────────────────────────────────┐   │
+│   │  DeepSeek API  │  OpenAI API  │  Anthropic API                         │   │
+│   └─────────────────────────────────────────────────────────────────────────┘   │
 │                           │                                                      │
 │           ┌───────────────┼───────────────┬───────────────┐                     │
 │           ▼               ▼               ▼               ▼                     │
@@ -559,7 +573,51 @@ export const AGENT_SPECS: Record<string, AgentSpec> = {
 
 ## 安全考虑
 
-1. **用户 API Key 隔离**: 每个用户使用自己的 API Key，云端不存储
+### API Key 权限系统
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    API Key 权限模型                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   管理员用户                     普通用户                        │
+│   ──────────                     ────────                        │
+│   ┌─────────────┐               ┌─────────────┐                 │
+│   │ 系统 Key    │ ← 优先       │ 用户 Key    │ ← 唯一来源      │
+│   │ (环境变量)  │               │ (数据库)    │                 │
+│   ├─────────────┤               └─────────────┘                 │
+│   │ 用户 Key    │ ← 回退                                        │
+│   │ (数据库)    │                                               │
+│   └─────────────┘                                               │
+│                                                                  │
+│   未登录用户 → 401 拒绝访问                                      │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**实现位置**: `cloud-agent/lib/apiKeys.ts`
+
+```typescript
+// 管理员判断
+function isAdmin(user: User): boolean {
+  return user.role === 'admin' || ADMIN_EMAILS.includes(user.email);
+}
+
+// Key 获取逻辑
+async function getApiKey(userId: string, keyType: ApiKeyType) {
+  if (isAdmin(user)) {
+    // 管理员：优先系统 Key
+    const systemKey = process.env[`${keyType.toUpperCase()}_API_KEY`];
+    if (systemKey) return { key: systemKey, source: 'system' };
+  }
+  // 所有用户：查询自己配置的 Key
+  return getUserConfiguredKey(userId, keyType);
+}
+```
+
+### 其他安全措施
+
+1. **用户 API Key 隔离**: 每个用户使用自己的 API Key，云端不存储明文
 2. **数据加密**: 敏感数据传输使用 TLS，存储使用 AES-256
 3. **访问控制**: RLS 策略确保用户只能访问自己的数据
 4. **审计日志**: 所有云端操作记录审计日志
@@ -569,24 +627,61 @@ export const AGENT_SPECS: Record<string, AgentSpec> = {
 
 ## 文件结构
 
+### 客户端 Orchestrator（v0.6.0 实现）
+
 ```
+src/main/orchestrator/
+├── types.ts                # 类型定义
+├── TaskAnalyzer.ts         # 任务特征分析
+├── ExecutionRouter.ts      # 执行模式路由决策
+├── LocalExecutor.ts        # 本地执行器封装
+├── CloudExecutor.ts        # 云端执行器
+└── UnifiedOrchestrator.ts  # 统一入口
+
 src/main/cloud/
 ├── TaskRouter.ts           # 任务路由器
 ├── CloudClient.ts          # 云端客户端
 ├── CloudTaskService.ts     # 任务服务
 ├── HybridTaskCoordinator.ts # 混合任务协调器
 └── SyncEngine.ts           # 同步引擎
+```
 
+### 云端 API（v0.6.0 实现）
+
+```
+cloud-agent/
+├── api/
+│   ├── agent.ts            # Agent API (chat/plan)
+│   ├── health.ts           # 健康检查
+│   ├── update.ts           # 版本更新
+│   └── tools/
+│       ├── cloud-search.ts # DuckDuckGo 搜索
+│       ├── cloud-scrape.ts # 网页抓取
+│       ├── cloud-api.ts    # 通用 API 调用
+│       └── cloud-memory.ts # 向量存储
+├── lib/
+│   ├── agent/
+│   │   ├── CloudAgentLoop.ts  # 云端 Agent 循环
+│   │   └── ModelClient.ts     # 多模型客户端抽象
+│   ├── tools/
+│   │   └── CloudToolRegistry.ts # 工具注册表
+│   ├── apiKeys.ts          # API Key 权限管理
+│   ├── auth.ts             # 认证
+│   ├── db.ts               # 数据库连接
+│   ├── middleware.ts       # 中间件
+│   └── rateLimit.ts        # 速率限制
+└── vercel.json             # Vercel 配置
+```
+
+### 待实现
+
+```
 cloud-agent/api/
-├── tasks/
-│   ├── create.ts           # 创建任务
-│   ├── status.ts           # 查询状态
-│   └── execute.ts          # 执行任务
 ├── agents/
-│   ├── planner.ts          # 规划 Agent
-│   ├── coder.ts            # 编码 Agent
-│   ├── reviewer.ts         # 审查 Agent
-│   └── researcher.ts       # 研究 Agent
+│   ├── planner.ts          # 规划 Agent（Phase 4）
+│   ├── coder.ts            # 编码 Agent（Phase 4）
+│   ├── reviewer.ts         # 审查 Agent（Phase 4）
+│   └── researcher.ts       # 研究 Agent（Phase 4）
 └── scheduler/
-    └── index.ts            # 多代理调度器
+    └── index.ts            # 多代理调度器（Phase 4）
 ```

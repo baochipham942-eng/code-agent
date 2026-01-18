@@ -32,7 +32,7 @@ const DEFAULT_CONFIG: CloudExecutorConfig = {
   maxConcurrent: 5,
   defaultTimeout: 180000,
   maxIterations: 50,
-  apiEndpoint: process.env.CLOUD_API_ENDPOINT || 'https://cloud-agent-three.vercel.app',
+  apiEndpoint: process.env.CLOUD_API_ENDPOINT || 'https://code-agent-beta.vercel.app',
 };
 
 // ============================================================================

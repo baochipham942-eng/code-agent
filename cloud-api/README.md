@@ -5,7 +5,7 @@
 > **请使用 `cloud-agent/` 目录！**
 >
 > - 正确的 API 目录：`cloud-agent/`
-> - 正确的部署域名：`https://cloud-agent-three.vercel.app`
+> - 正确的部署域名：`https://code-agent-beta.vercel.app`
 > - 修改此目录的文件不会有任何效果
 
 ---

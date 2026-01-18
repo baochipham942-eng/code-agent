@@ -3,7 +3,7 @@
 // ============================================================================
 
 import Anthropic from '@anthropic-ai/sdk';
-import { CLOUD_TOOL_SCHEMAS } from '../tools/CloudToolRegistry';
+import { CLOUD_TOOL_SCHEMAS } from '../tools/CloudToolRegistry.js';
 
 export interface AgentMessage {
   role: 'user' | 'assistant' | 'system';

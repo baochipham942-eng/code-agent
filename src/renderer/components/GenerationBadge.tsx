@@ -27,12 +27,12 @@ const generationConfigs: Record<string, {
   gen3: {
     icon: <Brain className="w-3.5 h-3.5" />,
     color: 'text-purple-400 bg-purple-500/10',
-    capabilities: ['子代理', '任务规划', '用户交互'],
+    capabilities: ['任务规划', '用户交互', '子代理'],
   },
   gen4: {
     icon: <Sparkles className="w-3.5 h-3.5" />,
     color: 'text-orange-400 bg-orange-500/10',
-    capabilities: ['Skill 技能', '联网', 'PDF', 'MCP'],
+    capabilities: ['联网', 'MCP 生态', 'Skill 技能'],
   },
   gen5: {
     icon: <Database className="w-3.5 h-3.5" />,
@@ -47,12 +47,12 @@ const generationConfigs: Record<string, {
   gen7: {
     icon: <Users className="w-3.5 h-3.5" />,
     color: 'text-indigo-400 bg-indigo-500/10',
-    capabilities: ['代理派生', '消息传递', '工作流编排'],
+    capabilities: ['工作流编排', '代理派生', '消息传递'],
   },
   gen8: {
     icon: <Dna className="w-3.5 h-3.5" />,
     color: 'text-rose-400 bg-rose-500/10',
-    capabilities: ['策略优化', '工具创建', '自我评估', '模式学习'],
+    capabilities: ['自我评估', '模式学习', '策略优化', '工具创建'],
   },
 };
 

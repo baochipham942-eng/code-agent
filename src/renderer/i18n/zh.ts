@@ -154,6 +154,23 @@ export const zh = {
     technologies: '技术栈',
     madeWith: '由 AI 辅助制作',
   },
+
+  // Generation Badge
+  generation: {
+    selectTitle: '选择代际',
+    toolCount: '共 {count} 工具',
+    footer: '切换代际以比较 AI Agent 能力演进',
+    capabilities: {
+      gen1: ['命令执行', '文件读写'],
+      gen2: ['模式搜索', '目录导航'],
+      gen3: ['任务规划', '用户交互', '子代理'],
+      gen4: ['联网', 'MCP 生态', 'Skill 技能'],
+      gen5: ['长期记忆', 'RAG 检索', '代码索引'],
+      gen6: ['屏幕截图', '桌面操控', '浏览器自动化'],
+      gen7: ['工作流编排', '代理派生', '消息传递'],
+      gen8: ['自我评估', '模式学习', '策略优化', '工具创建'],
+    },
+  },
 };
 
 export type Translations = typeof zh;

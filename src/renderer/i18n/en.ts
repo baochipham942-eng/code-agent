@@ -172,4 +172,21 @@ export const en: Translations = {
     technologies: 'Technologies',
     madeWith: 'Made with AI assistance',
   },
+
+  // Generation Badge
+  generation: {
+    selectTitle: 'Select Generation',
+    toolCount: '{count} tools',
+    footer: 'Switch generations to compare AI Agent capability evolution',
+    capabilities: {
+      gen1: ['Command Exec', 'File I/O'],
+      gen2: ['Pattern Search', 'Directory Nav'],
+      gen3: ['Task Planning', 'User Interaction', 'Sub-agents'],
+      gen4: ['Web Access', 'MCP Ecosystem', 'Skills'],
+      gen5: ['Long-term Memory', 'RAG Retrieval', 'Code Index'],
+      gen6: ['Screenshot', 'Desktop Control', 'Browser Automation'],
+      gen7: ['Workflow Orchestration', 'Agent Spawning', 'Messaging'],
+      gen8: ['Self-evaluation', 'Pattern Learning', 'Strategy Optimization', 'Tool Creation'],
+    },
+  },
 };

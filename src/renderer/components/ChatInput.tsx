@@ -404,6 +404,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
     const items = e.dataTransfer.items;
     const allFiles: File[] = [];
 
+    // Electron 的 dataTransfer.files 包含 path 属性，优先使用
+    const electronFiles = Array.from(e.dataTransfer.files) as (File & { path?: string })[];
+    const filePathMap = new Map<string, string>();
+    for (const file of electronFiles) {
+      if (file.path) {
+        filePathMap.set(file.name, file.path);
+      }
+    }
+
     // 使用 webkitGetAsEntry 来支持文件夹
     if (items) {
       const entries: FileSystemEntry[] = [];
@@ -421,6 +430,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
           const file = await new Promise<File>((resolve, reject) => {
             fileEntry.file(resolve, reject);
           });
+          // 从 electronFiles 中恢复 path 属性
+          const filePath = filePathMap.get(file.name);
+          if (filePath) {
+            (file as File & { path?: string }).path = filePath;
+          }
           allFiles.push(file);
         } else if (entry.isDirectory) {
           const dirEntry = entry as FileSystemDirectoryEntry;
@@ -429,8 +443,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
         }
       }
     } else {
-      // 回退到普通文件处理
-      allFiles.push(...Array.from(e.dataTransfer.files));
+      // 回退到普通文件处理（保留 Electron path）
+      allFiles.push(...electronFiles);
     }
 
     // 限制文件数量

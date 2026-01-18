@@ -2,7 +2,7 @@
 // Preload Script - Bridge between main and renderer processes
 // ============================================================================
 
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { ElectronAPI, IPC_CHANNELS } from '../shared/ipc';
 
 // Type-safe IPC wrapper
@@ -26,6 +26,11 @@ const electronAPI: ElectronAPI = {
 
   off: (channel, callback) => {
     ipcRenderer.removeListener(channel, callback as any);
+  },
+
+  // Electron 33+ 获取文件路径的方法
+  getPathForFile: (file: File) => {
+    return webUtils.getPathForFile(file);
   },
 };
 

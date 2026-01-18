@@ -484,6 +484,9 @@ export interface ElectronAPI {
     channel: K,
     callback: IpcEventHandlers[K]
   ) => void;
+
+  // Electron 33+ 获取文件的本地路径
+  getPathForFile: (file: File) => string;
 }
 
 // Note: Window.electronAPI is declared in src/renderer/types/electron.d.ts

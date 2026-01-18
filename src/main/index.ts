@@ -652,7 +652,15 @@ function setupIpcHandlers(): void {
     const attachments = typeof payload === 'object' && payload !== null ? payload.attachments : undefined;
     console.log('[IPC] AGENT_SEND_MESSAGE parsed - content:', content?.substring(0, 50), 'attachments:', attachments?.length || 0);
     if (attachments?.length) {
-      console.log('[IPC] Attachment details:', attachments.map((a: any) => ({ name: a.name, type: a.type, category: a.category, hasData: !!a.data, dataLength: a.data?.length })));
+      console.log('[IPC] Attachment details:', attachments.map((a: any) => ({
+        name: a.name,
+        type: a.type,
+        category: a.category,
+        hasData: !!a.data,
+        dataLength: a.data?.length,
+        path: a.path,  // 关键：检查 path 是否存在
+        hasPath: !!a.path,
+      })));
     }
     if (!agentOrchestrator) throw new Error('Agent not initialized');
     try {

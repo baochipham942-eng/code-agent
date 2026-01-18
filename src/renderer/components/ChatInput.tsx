@@ -313,8 +313,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
     const relativePath = (file as File & { relativePath?: string }).relativePath;
     const displayName = relativePath || file.name;
 
-    // Electron File 对象有 path 属性，保存完整路径供 AI 使用
-    const filePath = (file as File & { path?: string }).path;
+    // Electron 33+ 使用 webUtils.getPathForFile 获取文件路径
+    let filePath: string | undefined;
+    try {
+      filePath = window.electronAPI?.getPathForFile(file);
+      console.log('[ChatInput] processFile - got path:', filePath);
+    } catch (e) {
+      console.warn('[ChatInput] processFile - failed to get path:', e);
+    }
 
     // 不支持的类型：办公文档暂时跳过
     if (category === 'document') {
@@ -404,15 +410,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
     const items = e.dataTransfer.items;
     const allFiles: File[] = [];
 
-    // Electron 的 dataTransfer.files 包含 path 属性，优先使用
-    const electronFiles = Array.from(e.dataTransfer.files) as (File & { path?: string })[];
-    const filePathMap = new Map<string, string>();
-    for (const file of electronFiles) {
-      if (file.path) {
-        filePathMap.set(file.name, file.path);
-      }
-    }
-
     // 使用 webkitGetAsEntry 来支持文件夹
     if (items) {
       const entries: FileSystemEntry[] = [];
@@ -430,11 +427,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
           const file = await new Promise<File>((resolve, reject) => {
             fileEntry.file(resolve, reject);
           });
-          // 从 electronFiles 中恢复 path 属性
-          const filePath = filePathMap.get(file.name);
-          if (filePath) {
-            (file as File & { path?: string }).path = filePath;
-          }
           allFiles.push(file);
         } else if (entry.isDirectory) {
           const dirEntry = entry as FileSystemDirectoryEntry;
@@ -443,8 +435,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
         }
       }
     } else {
-      // 回退到普通文件处理（保留 Electron path）
-      allFiles.push(...electronFiles);
+      // 回退到普通文件处理
+      allFiles.push(...Array.from(e.dataTransfer.files));
     }
 
     // 限制文件数量

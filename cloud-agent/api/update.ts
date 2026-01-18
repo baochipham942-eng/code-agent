@@ -27,13 +27,13 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.7.11',
-  publishedAt: '2026-01-19T00:30:00.000Z',
+  version: '0.7.12',
+  publishedAt: '2026-01-19T00:45:00.000Z',
   releaseNotes: `
-## Code Agent v0.7.11 🔧
+## Code Agent v0.7.12 🔧
 
 ### 🐛 Bug 修复
-- **附件路径修复** - 修复拖拽文件时 path 属性丢失的问题
+- **附件路径修复** - 使用 Electron 33 的 webUtils.getPathForFile API 正确获取文件路径
 - **附件持久化** - 附件元信息保存到数据库，历史会话可展示附件记录
 
 ### 📦 包含历史更新
@@ -45,7 +45,7 @@ const LATEST_RELEASE: ReleaseInfo = {
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.7.11/Code.Agent-0.7.11-arm64.dmg',
+      url: 'https://github.com/anthropics/code-agent/releases/download/v0.7.12/Code.Agent-0.7.12-arm64.dmg',
       size: 153000000,
     },
   },

@@ -4,55 +4,47 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
+import { useI18n } from '../hooks/useI18n';
 import { ChevronDown, Zap, Layers, Brain, Sparkles, Database, Monitor, Users, Dna } from 'lucide-react';
 import type { Generation, GenerationId } from '@shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
 
-// Generation configurations with icons and core capabilities
+// Generation visual configurations (capabilities from i18n)
 const generationConfigs: Record<string, {
   icon: React.ReactNode;
   color: string;
-  capabilities: string[];  // Core capabilities (not tool names)
 }> = {
   gen1: {
     icon: <Zap className="w-3.5 h-3.5" />,
     color: 'text-green-400 bg-green-500/10',
-    capabilities: ['命令执行', '文件读写'],
   },
   gen2: {
     icon: <Layers className="w-3.5 h-3.5" />,
     color: 'text-blue-400 bg-blue-500/10',
-    capabilities: ['模式搜索', '目录导航'],
   },
   gen3: {
     icon: <Brain className="w-3.5 h-3.5" />,
     color: 'text-purple-400 bg-purple-500/10',
-    capabilities: ['任务规划', '用户交互', '子代理'],
   },
   gen4: {
     icon: <Sparkles className="w-3.5 h-3.5" />,
     color: 'text-orange-400 bg-orange-500/10',
-    capabilities: ['联网', 'MCP 生态', 'Skill 技能'],
   },
   gen5: {
     icon: <Database className="w-3.5 h-3.5" />,
     color: 'text-cyan-400 bg-cyan-500/10',
-    capabilities: ['长期记忆', 'RAG 检索', '代码索引'],
   },
   gen6: {
     icon: <Monitor className="w-3.5 h-3.5" />,
     color: 'text-pink-400 bg-pink-500/10',
-    capabilities: ['屏幕截图', '桌面操控', '浏览器自动化'],
   },
   gen7: {
     icon: <Users className="w-3.5 h-3.5" />,
     color: 'text-indigo-400 bg-indigo-500/10',
-    capabilities: ['工作流编排', '代理派生', '消息传递'],
   },
   gen8: {
     icon: <Dna className="w-3.5 h-3.5" />,
     color: 'text-rose-400 bg-rose-500/10',
-    capabilities: ['自我评估', '模式学习', '策略优化', '工具创建'],
   },
 };
 
@@ -135,6 +127,7 @@ const defaultGenerations: Generation[] = [
 
 export const GenerationBadge: React.FC = () => {
   const { currentGeneration, setCurrentGeneration } = useAppStore();
+  const { t } = useI18n();
   const [showDropdown, setShowDropdown] = useState(false);
   const [generations, setGenerations] = useState<Generation[]>(defaultGenerations);
 
@@ -207,7 +200,7 @@ export const GenerationBadge: React.FC = () => {
           <div className="absolute top-full left-0 mt-1 w-[520px] bg-zinc-800 rounded-lg shadow-xl border border-zinc-700 z-20 overflow-hidden animate-fadeIn">
             {/* Header */}
             <div className="px-3 py-2 border-b border-zinc-700 bg-zinc-800">
-              <span className="text-xs font-medium text-zinc-400">选择代际</span>
+              <span className="text-xs font-medium text-zinc-400">{t.generation.selectTitle}</span>
             </div>
 
             {/* Generation List */}
@@ -238,12 +231,12 @@ export const GenerationBadge: React.FC = () => {
                           {gen.version}
                         </span>
                         <span className="text-xs text-zinc-500">
-                          共 {gen.tools.length} 工具
+                          {t.generation.toolCount.replace('{count}', String(gen.tools.length))}
                         </span>
                       </div>
                       {/* 核心能力 */}
                       <p className="text-xs text-zinc-500 mt-1">
-                        {genConfig.capabilities.join(' · ')}
+                        {(t.generation.capabilities[gen.id as keyof typeof t.generation.capabilities] || []).join(' · ')}
                       </p>
                     </div>
                     {isSelected && (
@@ -257,7 +250,7 @@ export const GenerationBadge: React.FC = () => {
             {/* Footer with comparison hint */}
             <div className="px-4 py-2 bg-zinc-900/50 border-t border-zinc-700">
               <p className="text-xs text-zinc-500">
-                切换代际以比较 AI Agent 能力演进
+                {t.generation.footer}
               </p>
             </div>
           </div>

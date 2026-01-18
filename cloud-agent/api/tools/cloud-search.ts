@@ -145,15 +145,22 @@ async function handleSearch(req: VercelRequest, res: VercelResponse) {
   const startTime = Date.now();
 
   // 尝试获取用户身份
-  const authPayload = await authenticateRequest(req.headers.authorization);
   let perplexityKey: string | null = null;
 
-  if (authPayload) {
-    // 已登录用户，根据权限获取 Key
-    const keyResult = await getApiKey(authPayload.userId, 'perplexity');
-    if (keyResult) {
-      perplexityKey = keyResult.key;
+  try {
+    const authHeader = req.headers.authorization as string | undefined;
+    const authPayload = await authenticateRequest(authHeader);
+
+    if (authPayload) {
+      // 已登录用户，根据权限获取 Key
+      const keyResult = await getApiKey(authPayload.userId, 'perplexity');
+      if (keyResult) {
+        perplexityKey = keyResult.key;
+      }
     }
+  } catch (authError) {
+    // 认证失败，继续使用 Brave Search
+    console.log('Auth failed, using Brave Search:', (authError as Error).message);
   }
 
   // Brave Search API Key (免费版作为备用)

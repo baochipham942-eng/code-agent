@@ -11,6 +11,23 @@ AI 编程助手桌面应用，复刻 Claude Code 的 8 个架构代际来研究 
 - **AI**: DeepSeek API（主）, OpenAI/Claude（备）
 - **后端**: Supabase + pgvector
 
+## 文档结构
+
+```
+docs/
+├── ARCHITECTURE.md       # 架构索引（入口）
+├── PRD.md               # 产品需求文档
+├── architecture/        # 详细架构文档
+│   ├── overview.md      # 系统概览
+│   ├── agent-core.md    # Agent 核心
+│   ├── tool-system.md   # 工具系统
+│   ├── frontend.md      # 前端架构
+│   ├── data-storage.md  # 数据存储
+│   └── cloud-architecture.md # 云端架构
+└── decisions/           # 架构决策记录 (ADR)
+    └── 001-turn-based-messaging.md
+```
+
 ## 目录结构
 
 ```

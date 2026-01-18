@@ -27,22 +27,19 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.4.6',
+  version: '0.4.7',
   publishedAt: '2026-01-18T00:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.4.6 ✨
-
-### ✨ 新功能
-- **Gen1-8 示例差异化** - 每个代际显示符合其能力的建议卡片
-- **执行追踪顺序优化** - 按 Plan → Bash → Agent → Tools → Memory 排列，符合任务执行流程
+## Code Agent v0.4.7 ✨
 
 ### 🐛 Bug 修复
-- **修复用户菜单无法点击** - 添加 window-no-drag，下拉菜单现在可以正常显示
+- **添加登录入口** - 退出登录后显示登录按钮，点击可重新登录
+- **简化用户菜单** - 登录后下拉菜单仅显示退出登录选项
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.4.6/Code.Agent-0.4.6-arm64.dmg',
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.4.7/Code.Agent-0.4.7-arm64.dmg',
       size: 130000000,
     },
   },

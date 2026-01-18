@@ -13,6 +13,7 @@ import {
   PLAN_MODE_RULES,
   GIT_SAFETY_RULES,
   INJECTION_DEFENSE_RULES,
+  GITHUB_ROUTING_RULES,
 } from './rules';
 
 // ----------------------------------------------------------------------------
@@ -55,6 +56,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     PLAN_MODE_RULES,
     GIT_SAFETY_RULES,
     INJECTION_DEFENSE_RULES,
+    GITHUB_ROUTING_RULES,
     HTML_GENERATION_RULES,
   ],
   gen5: [
@@ -65,6 +67,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     PLAN_MODE_RULES,
     GIT_SAFETY_RULES,
     INJECTION_DEFENSE_RULES,
+    GITHUB_ROUTING_RULES,
     HTML_GENERATION_RULES,
   ],
   gen6: [
@@ -75,6 +78,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     PLAN_MODE_RULES,
     GIT_SAFETY_RULES,
     INJECTION_DEFENSE_RULES,
+    GITHUB_ROUTING_RULES,
     HTML_GENERATION_RULES,
   ],
   gen7: [
@@ -85,6 +89,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     PLAN_MODE_RULES,
     GIT_SAFETY_RULES,
     INJECTION_DEFENSE_RULES,
+    GITHUB_ROUTING_RULES,
     HTML_GENERATION_RULES,
   ],
   gen8: [
@@ -95,6 +100,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     PLAN_MODE_RULES,
     GIT_SAFETY_RULES,
     INJECTION_DEFENSE_RULES,
+    GITHUB_ROUTING_RULES,
     HTML_GENERATION_RULES,
   ],
 };

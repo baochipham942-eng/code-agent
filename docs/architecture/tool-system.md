@@ -71,7 +71,7 @@ FOR EACH toolCall:
 | **Gen1** | 基础文件操作 | bash, read_file, write_file, edit_file |
 | **Gen2** | 代码搜索 | glob, grep, list_directory, mcp |
 | **Gen3** | 任务规划 | task, todo_write, ask_user_question, plan_mode |
-| **Gen4** | 网络能力 | skill, web_fetch, web_search, hooks |
+| **Gen4** | 网络能力 | skill, web_fetch, web_search, read_pdf, hooks |
 | **Gen5** | 记忆系统 | memory_store, memory_search, code_index |
 | **Gen6** | 视觉交互 | screenshot, computer_use, browser_action |
 | **Gen7** | 多代理 | spawn_agent, agent_message, workflow_orchestrate |
@@ -112,8 +112,54 @@ FOR EACH toolCall:
 |------|------|------|
 | `skill` | 技能调用 | varies |
 | `web_fetch` | 网页抓取 | network |
-| `web_search` | 网络搜索 | network |
+| `web_search` | 网络搜索（Brave Search API） | network |
+| `read_pdf` | 智能 PDF 处理 | read |
 | `hooks` | 生命周期钩子 | - |
+
+### read_pdf 详解（v0.6.5）
+
+**功能**: 智能 PDF 读取，自动选择最佳处理方式
+
+**处理策略**:
+1. **文本提取优先**: 使用 pdfjs-dist 提取文本（快速、免费）
+2. **视觉模型回退**: 当文本提取量低于阈值（扫描版 PDF），自动调用 OpenRouter Gemini 2.0
+
+**输入参数**:
+```typescript
+{
+  file_path: string;     // PDF 文件绝对路径（必需）
+  prompt?: string;       // 视觉模型处理时的提示词
+  force_vision?: boolean; // 强制使用视觉模型
+}
+```
+
+**配置**: 处理扫描版 PDF 需要配置 OpenRouter API Key
+
+### web_search 详解（v0.6.1）
+
+**功能**: 使用 Brave Search API 搜索网络信息
+
+**输入参数**:
+```typescript
+{
+  query: string;     // 搜索查询（必需）
+  count?: number;    // 结果数量（默认 5，最大 20）
+}
+```
+
+**输出格式**:
+```
+Search results for: "query"
+
+1. Title (age)
+   URL
+   Description
+
+2. Title (age)
+   ...
+```
+
+**配置**: 需要设置 `BRAVE_API_KEY` 环境变量
 
 ---
 
@@ -121,12 +167,12 @@ FOR EACH toolCall:
 
 ```
 src/main/tools/
-├── ToolRegistry.ts    # 工具注册表 (172 行)
-├── ToolExecutor.ts    # 工具执行器 (200 行)
+├── ToolRegistry.ts    # 工具注册表
+├── ToolExecutor.ts    # 工具执行器
 ├── gen1/              # bash, readFile, writeFile, editFile
 ├── gen2/              # glob, grep, listDirectory
 ├── gen3/              # task, todoWrite, askUserQuestion
-└── gen4/              # skill, webFetch
+└── gen4/              # skill, webFetch, webSearch
 ```
 
 ## 权限级别

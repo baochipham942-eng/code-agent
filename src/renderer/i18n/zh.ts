@@ -70,6 +70,10 @@ export const zh = {
         name: 'OpenAI',
         description: 'OpenAI GPT API',
       },
+      openrouter: {
+        name: 'OpenRouter',
+        description: '中转服务 (Gemini/Claude/GPT)',
+      },
     },
   },
 

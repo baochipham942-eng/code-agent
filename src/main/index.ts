@@ -151,15 +151,17 @@ async function initializeServices(): Promise<void> {
   });
   console.log('Memory service initialized');
 
-  // Initialize MCP client (if configured)
+  // Initialize MCP client (always - includes default servers like DeepWiki)
   const mcpConfigs: MCPServerConfig[] = settings.mcp?.servers || [];
-  if (mcpConfigs.length > 0) {
-    try {
-      await initMCPClient(mcpConfigs);
-      console.log('MCP client initialized with', mcpConfigs.length, 'server(s)');
-    } catch (error) {
-      console.error('Failed to initialize MCP client:', error);
-    }
+  console.log(`[MCP] Initializing with ${mcpConfigs.length} custom server(s)...`);
+  try {
+    await initMCPClient(mcpConfigs);
+    const mcpClient = getMCPClient();
+    const status = mcpClient.getStatus();
+    console.log(`[MCP] Connected: ${status.connectedServers.join(', ') || 'none'}`);
+    console.log(`[MCP] Available: ${status.toolCount} tools, ${status.resourceCount} resources`);
+  } catch (error) {
+    console.error('[MCP] Failed to initialize:', error);
   }
 
   // Start Log Bridge HTTP server for MCP server access
@@ -1477,7 +1479,8 @@ function setupIpcHandlers(): void {
 
 app.whenReady().then(async () => {
   try {
-    console.log('[App] Starting initialization...');
+    const appVersion = app.getVersion();
+    console.log(`[App] Code Agent v${appVersion} starting...`);
     await initializeServices();
     console.log('[App] Services initialized, setting up IPC...');
     setupIpcHandlers();

@@ -23,13 +23,16 @@ import {
   ListTodo,
   HelpCircle,
   X,
+  Plug,
+  Server,
+  Database,
 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import type { ToolCall } from '@shared/types';
 
-// 事件类型 - 5个核心分类
-type EventCategory = 'plan' | 'bash' | 'tools' | 'memory' | 'agent';
+// 事件类型 - 6个核心分类（Gen4 新增 MCP）
+type EventCategory = 'plan' | 'bash' | 'tools' | 'memory' | 'agent' | 'mcp';
 
 // 可观测事件
 interface ObservableEvent {
@@ -43,7 +46,7 @@ interface ObservableEvent {
   details?: Record<string, unknown>;
 }
 
-// 分类配置 - 5个分类
+// 分类配置 - 6个分类
 const categoryConfig: Record<EventCategory, {
   label: string;
   icon: React.ReactNode;
@@ -91,6 +94,15 @@ const categoryConfig: Record<EventCategory, {
     tools: ['task', 'ask_user_question', 'skill'],
     minGeneration: 3,
   },
+  mcp: {
+    label: 'MCP',
+    icon: <Plug className="w-4 h-4" />,
+    color: 'text-pink-400',
+    bgColor: 'bg-pink-500/10',
+    borderColor: 'border-pink-500/30',
+    tools: ['mcp', 'mcp_list_tools', 'mcp_list_resources', 'mcp_read_resource', 'mcp_get_status'],
+    minGeneration: 4,
+  },
   memory: {
     label: 'Memory',
     icon: <Brain className="w-4 h-4" />,
@@ -125,6 +137,13 @@ const toolCategoryMap: Record<string, EventCategory> = {
 
   // Web
   web_fetch: 'tools',
+
+  // MCP Tools (Gen 4+)
+  mcp: 'mcp',
+  mcp_list_tools: 'mcp',
+  mcp_list_resources: 'mcp',
+  mcp_read_resource: 'mcp',
+  mcp_get_status: 'mcp',
 
   // Memory Tools
   memory_store: 'memory',
@@ -167,6 +186,17 @@ function getToolSummary(toolCall: ToolCall): string {
       return '存储记忆';
     case 'memory_search':
       return `搜索记忆: ${args.query || ''}`;
+    // MCP Tools
+    case 'mcp':
+      return `MCP: ${args.server || '?'}/${args.tool || '?'}`;
+    case 'mcp_list_tools':
+      return args.server ? `列出 ${args.server} 工具` : '列出 MCP 工具';
+    case 'mcp_list_resources':
+      return args.server ? `列出 ${args.server} 资源` : '列出 MCP 资源';
+    case 'mcp_read_resource':
+      return `读取资源: ${(args.uri as string)?.split('/').pop() || '?'}`;
+    case 'mcp_get_status':
+      return '获取 MCP 状态';
     default:
       return toolCall.name;
   }
@@ -189,13 +219,19 @@ function getToolIcon(name: string): React.ReactNode {
     web_fetch: <Globe className="w-3 h-3" />,
     memory_store: <Brain className="w-3 h-3" />,
     memory_search: <Brain className="w-3 h-3" />,
+    // MCP Tools
+    mcp: <Plug className="w-3 h-3" />,
+    mcp_list_tools: <Server className="w-3 h-3" />,
+    mcp_list_resources: <Database className="w-3 h-3" />,
+    mcp_read_resource: <Database className="w-3 h-3" />,
+    mcp_get_status: <Server className="w-3 h-3" />,
   };
   return iconMap[name] || <Wrench className="w-3 h-3" />;
 }
 
 // 分类顺序 - 按任务执行的常规流程
-// Plan(规划) → Bash(执行) → Agent(协作) → Tools(工具) → Memory(记忆)
-const categoryOrder: EventCategory[] = ['plan', 'bash', 'agent', 'tools', 'memory'];
+// Plan(规划) → Bash(执行) → Agent(协作) → Tools(工具) → MCP(外部服务) → Memory(记忆)
+const categoryOrder: EventCategory[] = ['plan', 'bash', 'agent', 'tools', 'mcp', 'memory'];
 
 export const ObservabilityPanel: React.FC = () => {
   const { currentGeneration } = useAppStore();
@@ -253,6 +289,7 @@ export const ObservabilityPanel: React.FC = () => {
       tools: [],
       plan: [],
       agent: [],
+      mcp: [],
       memory: [],
     };
 

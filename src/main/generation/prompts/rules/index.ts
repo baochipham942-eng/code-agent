@@ -13,3 +13,6 @@ export { INJECTION_DEFENSE_RULES } from './injectionDefense';
 // 原有规则（从 GenerationManager 提取）
 export { OUTPUT_FORMAT_RULES } from './outputFormat';
 export { HTML_GENERATION_RULES } from './htmlGeneration';
+
+// MCP 智能路由规则
+export { GITHUB_ROUTING_RULES } from './githubRouting';

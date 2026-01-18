@@ -64,6 +64,7 @@ const DEFAULT_SETTINGS: AppSettings = {
       qwen: { enabled: false },
       moonshot: { enabled: false },
       perplexity: { enabled: false },
+      openrouter: { enabled: false },
     },
     // 按用途路由模型
     routing: {
@@ -246,6 +247,7 @@ export class ConfigService {
       qwen: 'QWEN_API_KEY',
       moonshot: 'MOONSHOT_API_KEY',
       perplexity: 'PERPLEXITY_API_KEY',
+      openrouter: 'OPENROUTER_API_KEY',
     };
 
     const envKey = envKeyMap[provider];
@@ -392,4 +394,21 @@ export class ConfigService {
 
     return result;
   }
+}
+
+// Singleton accessor
+let configServiceInstance: ConfigService | null = null;
+
+export function initConfigService(): ConfigService {
+  if (!configServiceInstance) {
+    configServiceInstance = new ConfigService();
+  }
+  return configServiceInstance;
+}
+
+export function getConfigService(): ConfigService {
+  if (!configServiceInstance) {
+    configServiceInstance = new ConfigService();
+  }
+  return configServiceInstance;
 }

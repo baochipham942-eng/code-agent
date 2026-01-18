@@ -153,3 +153,65 @@ CREATE TABLE messages (
 | 清空缓存 | L0 + L1 | L2/L3/L4 | 自动从云端拉取 |
 | 退出登录 | L3 token | L0/L1/L2/L4 | 重新登录 |
 | 重装应用 | L0 + L1 | L2(Keychain) + L3/L4 | 登录后自动恢复 |
+
+---
+
+## SecureStorage 安全存储（v0.6.4）
+
+**位置**: `src/main/services/SecureStorage.ts`
+
+### 设计原则
+
+1. **敏感数据加密存储** - 使用 electron-store 的加密功能
+2. **机器绑定密钥** - 加密密钥基于机器特征生成，不可迁移
+3. **分层存储策略** - 普通配置 vs Keychain（跨重装保持）
+
+### 加密机制
+
+```typescript
+// 机器特征生成加密密钥
+const machineId = `${os.hostname()}-${os.userInfo().username}-${app.getPath('userData')}`;
+const encryptionKey = crypto.createHash('sha256').update(machineId).digest('hex').slice(0, 32);
+```
+
+### 存储内容
+
+| 类别 | 数据项 | 存储位置 |
+|------|--------|----------|
+| **认证** | access_token, refresh_token, session | 加密存储 |
+| **设备** | device_id, device_name | 加密存储 |
+| **API Key** | deepseek, claude, openai, groq 等 | 加密存储 |
+| **设置** | devModeAutoApprove | Keychain（跨重装） |
+| **会话** | supabase session | Keychain（跨重装） |
+
+### API Key 管理
+
+```typescript
+// 设置 API Key
+secureStorage.setApiKey('deepseek', 'sk-xxx');
+
+// 获取 API Key
+const key = secureStorage.getApiKey('deepseek');
+
+// 删除 API Key
+secureStorage.deleteApiKey('deepseek');
+
+// 列出已配置的 Provider
+const providers = secureStorage.getStoredApiKeyProviders();
+// → ['deepseek', 'openai']
+```
+
+### Keychain 集成
+
+使用 `keytar` 库访问系统 Keychain，数据可在应用重装后恢复：
+
+| 方法 | 用途 |
+|------|------|
+| `saveSessionToKeychain()` | 保存登录会话 |
+| `getSessionFromKeychain()` | 恢复登录状态 |
+| `saveSettingsToKeychain()` | 保存用户设置 |
+| `getSettingsFromKeychain()` | 恢复用户设置 |
+
+**Keychain 标识**:
+- Service: `code-agent`
+- Account: `supabase-session` / `user-settings`

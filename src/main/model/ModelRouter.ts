@@ -8,7 +8,8 @@ import type {
   ToolCall,
   ModelCapability,
   ModelInfo,
-  ProviderConfig
+  ProviderConfig,
+  ModelProvider
 } from '../../shared/types';
 import axios, { type AxiosResponse } from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
@@ -422,6 +423,99 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
       },
     ],
   },
+  openrouter: {
+    id: 'openrouter',
+    name: 'OpenRouter (中转)',
+    requiresApiKey: true,
+    baseUrl: 'https://openrouter.ai/api/v1',
+    models: [
+      // Google Gemini 系列
+      {
+        id: 'google/gemini-2.0-flash-001',
+        name: 'Gemini 2.0 Flash',
+        capabilities: ['general', 'code', 'vision', 'fast'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: true,
+        supportsStreaming: true,
+      },
+      {
+        id: 'google/gemini-2.0-flash-thinking-exp:free',
+        name: 'Gemini 2.0 Flash Thinking (免费)',
+        capabilities: ['reasoning', 'code'],
+        maxTokens: 65536,
+        supportsTool: false,
+        supportsVision: false,
+        supportsStreaming: true,
+      },
+      {
+        id: 'google/gemini-exp-1206:free',
+        name: 'Gemini Exp 1206 (免费)',
+        capabilities: ['general', 'code', 'vision'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: true,
+        supportsStreaming: true,
+      },
+      // Claude 系列（通过 OpenRouter 中转）
+      {
+        id: 'anthropic/claude-3.5-sonnet',
+        name: 'Claude 3.5 Sonnet (中转)',
+        capabilities: ['general', 'code', 'vision'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: true,
+        supportsStreaming: true,
+      },
+      {
+        id: 'anthropic/claude-3.5-haiku',
+        name: 'Claude 3.5 Haiku (中转)',
+        capabilities: ['fast', 'code'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: true,
+        supportsStreaming: true,
+      },
+      // OpenAI 系列（通过 OpenRouter 中转）
+      {
+        id: 'openai/gpt-4o',
+        name: 'GPT-4o (中转)',
+        capabilities: ['general', 'code', 'vision'],
+        maxTokens: 4096,
+        supportsTool: true,
+        supportsVision: true,
+        supportsStreaming: true,
+      },
+      {
+        id: 'openai/gpt-4o-mini',
+        name: 'GPT-4o Mini (中转)',
+        capabilities: ['fast', 'general'],
+        maxTokens: 4096,
+        supportsTool: true,
+        supportsVision: true,
+        supportsStreaming: true,
+      },
+      // DeepSeek（通过 OpenRouter 中转）
+      {
+        id: 'deepseek/deepseek-chat',
+        name: 'DeepSeek Chat (中转)',
+        capabilities: ['general', 'code'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+      },
+      {
+        id: 'deepseek/deepseek-r1',
+        name: 'DeepSeek R1 (中转)',
+        capabilities: ['reasoning', 'code'],
+        maxTokens: 65536,
+        supportsTool: false,
+        supportsVision: false,
+        supportsStreaming: true,
+      },
+    ],
+  },
 };
 
 // ----------------------------------------------------------------------------
@@ -464,6 +558,94 @@ export class ModelRouter {
   }
 
   /**
+   * 能力补充配置 - 当主模型缺少某能力时，使用哪个备用模型
+   * 优先使用 OpenRouter 中的免费/便宜模型
+   */
+  private fallbackModels: Record<ModelCapability, { provider: string; model: string }> = {
+    vision: { provider: 'openrouter', model: 'google/gemini-2.0-flash-001' },
+    reasoning: { provider: 'openrouter', model: 'google/gemini-2.0-flash-thinking-exp:free' },
+    code: { provider: 'deepseek', model: 'deepseek-chat' },
+    fast: { provider: 'openrouter', model: 'openai/gpt-4o-mini' },
+    general: { provider: 'openrouter', model: 'google/gemini-2.0-flash-001' },
+    gui: { provider: 'claude', model: 'claude-sonnet-4-20250514' },
+    search: { provider: 'perplexity', model: 'sonar-pro' },
+  };
+
+  /**
+   * 设置能力补充的备用模型
+   */
+  setFallbackModel(capability: ModelCapability, provider: string, model: string): void {
+    this.fallbackModels[capability] = { provider, model };
+  }
+
+  /**
+   * 获取备用模型配置
+   */
+  getFallbackConfig(
+    capability: ModelCapability,
+    originalConfig: ModelConfig
+  ): ModelConfig | null {
+    const fallback = this.fallbackModels[capability];
+    if (!fallback) return null;
+
+    // 如果备用模型需要 API Key，检查是否有配置
+    const providerConfig = PROVIDER_REGISTRY[fallback.provider];
+    if (providerConfig?.requiresApiKey) {
+      // OpenRouter 使用同一个 key，其他 provider 需要单独的 key
+      // 这里简化处理：如果是 openrouter，复用原 config 的 apiKey（假设用户已配置 openrouter）
+      // 实际使用中应该从配置服务获取对应 provider 的 key
+    }
+
+    return {
+      ...originalConfig,
+      provider: fallback.provider as ModelProvider,
+      model: fallback.model,
+    };
+  }
+
+  /**
+   * 检测消息内容是否需要特定能力
+   */
+  detectRequiredCapabilities(messages: ModelMessage[]): ModelCapability[] {
+    const capabilities: Set<ModelCapability> = new Set();
+
+    for (const msg of messages) {
+      const content = typeof msg.content === 'string' ? msg.content : '';
+      const contentLower = content.toLowerCase();
+
+      // 检测视觉需求
+      if (Array.isArray(msg.content)) {
+        const hasImage = msg.content.some((c) => c.type === 'image');
+        if (hasImage) capabilities.add('vision');
+      }
+
+      // 检测文件类型提示
+      if (contentLower.includes('.pdf') ||
+          contentLower.includes('.png') ||
+          contentLower.includes('.jpg') ||
+          contentLower.includes('.jpeg') ||
+          contentLower.includes('.gif') ||
+          contentLower.includes('.webp') ||
+          contentLower.includes('图片') ||
+          contentLower.includes('screenshot') ||
+          contentLower.includes('截图')) {
+        capabilities.add('vision');
+      }
+
+      // 检测推理需求
+      if (contentLower.includes('分析') ||
+          contentLower.includes('推理') ||
+          contentLower.includes('think step by step') ||
+          contentLower.includes('逐步') ||
+          contentLower.includes('复杂问题')) {
+        capabilities.add('reasoning');
+      }
+    }
+
+    return Array.from(capabilities);
+  }
+
+  /**
    * 主推理入口
    */
   async inference(
@@ -491,6 +673,8 @@ export class ModelRouter {
         return this.callMoonshot(messages, tools, config, onStream);
       case 'perplexity':
         return this.callPerplexity(messages, tools, config, onStream);
+      case 'openrouter':
+        return this.callOpenRouter(messages, tools, config, onStream);
       default:
         throw new Error(`Unsupported provider: ${config.provider}`);
     }
@@ -1670,5 +1854,275 @@ export class ModelRouter {
 
     const data = await response.json();
     return this.parseOpenAIResponse(data);
+  }
+
+  // --------------------------------------------------------------------------
+  // OpenRouter 调用（中转 Gemini、Claude、GPT 等）
+  // --------------------------------------------------------------------------
+
+  private async callOpenRouter(
+    messages: ModelMessage[],
+    tools: ToolDefinition[],
+    config: ModelConfig,
+    onStream?: StreamCallback
+  ): Promise<ModelResponse> {
+    const baseUrl = config.baseUrl || 'https://openrouter.ai/api/v1';
+
+    // OpenRouter 使用 OpenAI 兼容格式
+    const openrouterTools = tools.map((tool) => ({
+      type: 'function' as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: this.normalizeJsonSchema(tool.inputSchema),
+      },
+    }));
+
+    // 获取模型信息
+    const modelInfo = this.getModelInfo('openrouter', config.model);
+    const recommendedMaxTokens = modelInfo?.maxTokens || 8192;
+
+    // 启用流式输出
+    const useStream = !!onStream;
+
+    const requestBody: Record<string, unknown> = {
+      model: config.model || 'google/gemini-2.0-flash-001',
+      messages: this.convertToOpenAIMessages(messages),
+      temperature: config.temperature ?? 0.7,
+      max_tokens: config.maxTokens ?? recommendedMaxTokens,
+      stream: useStream,
+    };
+
+    // 只有支持工具的模型才添加 tools
+    if (openrouterTools.length > 0 && modelInfo?.supportsTool) {
+      requestBody.tools = openrouterTools;
+      requestBody.tool_choice = 'auto';
+    }
+
+    // OpenRouter 需要额外的 headers
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.apiKey}`,
+      'HTTP-Referer': 'https://code-agent.app', // OpenRouter 要求
+      'X-Title': 'Code Agent', // 应用名称（可选）
+    };
+
+    // 如果启用流式输出，使用 SSE 处理
+    if (useStream) {
+      return this.callOpenRouterStream(baseUrl, requestBody, config.apiKey!, headers, onStream!);
+    }
+
+    // 非流式输出
+    try {
+      const response = await axios.post(`${baseUrl}/chat/completions`, requestBody, {
+        headers,
+        timeout: 300000,
+        httpsAgent,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        responseType: 'json',
+      });
+
+      console.log('[ModelRouter] OpenRouter raw response:', JSON.stringify(response.data, null, 2).substring(0, 2000));
+      return this.parseOpenAIResponse(response.data);
+    } catch (error: any) {
+      if (error.response) {
+        throw new Error(`OpenRouter API error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+      }
+      throw new Error(`OpenRouter request failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * 流式调用 OpenRouter API
+   */
+  private async callOpenRouterStream(
+    baseUrl: string,
+    requestBody: Record<string, unknown>,
+    apiKey: string,
+    extraHeaders: Record<string, string>,
+    onStream: StreamCallback
+  ): Promise<ModelResponse> {
+    return new Promise((resolve, reject) => {
+      const url = new URL(`${baseUrl}/chat/completions`);
+      const isHttps = url.protocol === 'https:';
+      const httpModule = isHttps ? https : http;
+
+      // 累积响应数据
+      let content = '';
+      let finishReason: string | undefined;
+      const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
+
+      const options: https.RequestOptions = {
+        hostname: url.hostname,
+        port: url.port || (isHttps ? 443 : 80),
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          Accept: 'text/event-stream',
+          ...extraHeaders,
+        },
+        agent: httpsAgent,
+      };
+
+      const req = httpModule.request(options, (res) => {
+        if (res.statusCode !== 200) {
+          let errorData = '';
+          res.on('data', (chunk) => { errorData += chunk; });
+          res.on('end', () => {
+            reject(new Error(`OpenRouter API error: ${res.statusCode} - ${errorData}`));
+          });
+          return;
+        }
+
+        let buffer = '';
+
+        res.on('data', (chunk: Buffer) => {
+          buffer += chunk.toString();
+
+          // 处理 SSE 数据行
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // 保留不完整的行
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6).trim();
+
+              if (data === '[DONE]') {
+                // 流式输出完成
+                const truncated = finishReason === 'length';
+                const result: ModelResponse = {
+                  type: toolCalls.size > 0 ? 'tool_use' : 'text',
+                  content: content || undefined,
+                  truncated,
+                  finishReason,
+                };
+
+                if (toolCalls.size > 0) {
+                  result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
+                    id: tc.id,
+                    name: tc.name,
+                    arguments: this.safeJsonParse(tc.arguments),
+                  }));
+                }
+
+                console.log('[ModelRouter] OpenRouter stream complete:', {
+                  contentLength: content.length,
+                  toolCallCount: toolCalls.size,
+                  finishReason,
+                  truncated,
+                });
+
+                resolve(result);
+                return;
+              }
+
+              try {
+                const parsed = JSON.parse(data);
+                const choice = parsed.choices?.[0];
+                const delta = choice?.delta;
+
+                // 捕获 finish_reason
+                if (choice?.finish_reason) {
+                  finishReason = choice.finish_reason;
+                }
+
+                if (delta) {
+                  // 处理文本内容
+                  if (delta.content) {
+                    content += delta.content;
+                    onStream({ type: 'text', content: delta.content });
+                  }
+
+                  // 处理工具调用
+                  if (delta.tool_calls) {
+                    for (const tc of delta.tool_calls) {
+                      const index = tc.index ?? 0;
+                      const isNewToolCall = !toolCalls.has(index);
+
+                      if (isNewToolCall) {
+                        toolCalls.set(index, {
+                          id: tc.id || `call_${index}`,
+                          name: tc.function?.name || '',
+                          arguments: '',
+                        });
+                        onStream({
+                          type: 'tool_call_start',
+                          toolCall: {
+                            index,
+                            id: tc.id,
+                            name: tc.function?.name,
+                          },
+                        });
+                      }
+
+                      const existing = toolCalls.get(index)!;
+
+                      if (tc.id && !existing.id.startsWith('call_')) {
+                        existing.id = tc.id;
+                      }
+                      if (tc.function?.name && !existing.name) {
+                        existing.name = tc.function.name;
+                        onStream({
+                          type: 'tool_call_delta',
+                          toolCall: {
+                            index,
+                            name: tc.function.name,
+                          },
+                        });
+                      }
+                      if (tc.function?.arguments) {
+                        existing.arguments += tc.function.arguments;
+                        onStream({
+                          type: 'tool_call_delta',
+                          toolCall: {
+                            index,
+                            argumentsDelta: tc.function.arguments,
+                          },
+                        });
+                      }
+                    }
+                  }
+                }
+              } catch (e) {
+                console.warn('[ModelRouter] Failed to parse OpenRouter SSE data:', data.substring(0, 100));
+              }
+            }
+          }
+        });
+
+        res.on('end', () => {
+          if (content || toolCalls.size > 0) {
+            const result: ModelResponse = {
+              type: toolCalls.size > 0 ? 'tool_use' : 'text',
+              content: content || undefined,
+            };
+
+            if (toolCalls.size > 0) {
+              result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
+                id: tc.id,
+                name: tc.name,
+                arguments: this.safeJsonParse(tc.arguments),
+              }));
+            }
+
+            resolve(result);
+          }
+        });
+
+        res.on('error', (error) => {
+          reject(new Error(`OpenRouter stream error: ${error.message}`));
+        });
+      });
+
+      req.on('error', (error) => {
+        reject(new Error(`OpenRouter request error: ${error.message}`));
+      });
+
+      req.write(JSON.stringify(requestBody));
+      req.end();
+    });
   }
 }

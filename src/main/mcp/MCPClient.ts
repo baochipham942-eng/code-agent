@@ -1,22 +1,38 @@
 // ============================================================================
 // MCP Client - Model Context Protocol 客户端实现
+// 支持 stdio (本地) 和 SSE/HTTP (远程) 两种传输协议
 // ============================================================================
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import type { ToolDefinition, ToolResult } from '../../shared/types';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 
 // ----------------------------------------------------------------------------
 // Types
 // ----------------------------------------------------------------------------
 
-export interface MCPServerConfig {
+// Stdio 服务器配置 (本地命令行)
+export interface MCPStdioServerConfig {
   name: string;
+  type?: 'stdio';
   command: string;
   args?: string[];
   env?: Record<string, string>;
   enabled: boolean;
 }
+
+// SSE 服务器配置 (远程 HTTP)
+export interface MCPSSEServerConfig {
+  name: string;
+  type: 'sse';
+  serverUrl: string;
+  enabled: boolean;
+}
+
+// 统一的服务器配置类型
+export type MCPServerConfig = MCPStdioServerConfig | MCPSSEServerConfig;
 
 export interface MCPTool {
   name: string;
@@ -50,7 +66,7 @@ export interface MCPPrompt {
 
 export class MCPClient {
   private clients: Map<string, Client> = new Map();
-  private transports: Map<string, StdioClientTransport> = new Map();
+  private transports: Map<string, Transport> = new Map();
   private serverConfigs: MCPServerConfig[] = [];
   private tools: MCPTool[] = [];
   private resources: MCPResource[] = [];
@@ -95,14 +111,25 @@ export class MCPClient {
 
     console.log(`Connecting to MCP server: ${config.name}`);
 
-    const transport = new StdioClientTransport({
-      command: config.command,
-      args: config.args || [],
-      env: {
-        ...process.env,
-        ...config.env,
-      } as Record<string, string>,
-    });
+    let transport: Transport;
+
+    // 根据配置类型创建不同的传输
+    if (config.type === 'sse') {
+      // SSE 远程服务器
+      console.log(`Using SSE transport for ${config.name}: ${config.serverUrl}`);
+      transport = new SSEClientTransport(new URL(config.serverUrl));
+    } else {
+      // Stdio 本地服务器 (默认)
+      const stdioConfig = config as MCPStdioServerConfig;
+      transport = new StdioClientTransport({
+        command: stdioConfig.command,
+        args: stdioConfig.args || [],
+        env: {
+          ...process.env,
+          ...stdioConfig.env,
+        } as Record<string, string>,
+      });
+    }
 
     const client = new Client(
       {
@@ -432,19 +459,32 @@ export class MCPClient {
 // ----------------------------------------------------------------------------
 
 export const DEFAULT_MCP_SERVERS: MCPServerConfig[] = [
+  // ========== SSE 远程服务器 ==========
+
+  // DeepWiki - 解读 GitHub 项目文档 (官方免费服务)
+  // 工具: read_wiki_structure, read_wiki_contents, ask_question
+  {
+    name: 'deepwiki',
+    type: 'sse',
+    serverUrl: 'https://mcp.deepwiki.com/sse',
+    enabled: true,
+  },
+
+  // ========== Stdio 本地服务器 ==========
+
   // 文件系统服务器 - 核心能力
   {
     name: 'filesystem',
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-filesystem', process.env.HOME || '/'],
-    enabled: true,
+    enabled: false, // 默认禁用，避免与内置工具冲突
   },
   // Git 服务器 - 版本控制
   {
     name: 'git',
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-git'],
-    enabled: true,
+    enabled: false, // 默认禁用，可在设置中启用
   },
   // GitHub 服务器
   {
@@ -478,7 +518,7 @@ export const DEFAULT_MCP_SERVERS: MCPServerConfig[] = [
     name: 'memory',
     command: 'npx',
     args: ['-y', '@modelcontextprotocol/server-memory'],
-    enabled: true,
+    enabled: false, // 默认禁用，可在设置中启用
   },
 ];
 

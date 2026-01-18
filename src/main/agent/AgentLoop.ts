@@ -16,6 +16,7 @@ import type { ToolExecutor } from '../tools/ToolExecutor';
 import { ModelRouter } from '../model/ModelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/MemoryService';
+import { getConfigService } from '../services/ConfigService';
 import { getProactiveContextService } from '../memory/ProactiveContext';
 import { logCollector } from '../mcp/LogCollector.js';
 import { generateMessageId, generateToolCallId } from '../../shared/utils/id';
@@ -692,12 +693,56 @@ export class AgentLoop {
     });
 
     try {
+      // 检测任务是否需要特殊能力，如果主模型不支持则自动切换
+      let effectiveConfig = this.modelConfig;
+      const requiredCapabilities = this.modelRouter.detectRequiredCapabilities(modelMessages);
+
+      if (requiredCapabilities.length > 0) {
+        const currentModelInfo = this.modelRouter.getModelInfo(
+          this.modelConfig.provider,
+          this.modelConfig.model
+        );
+
+        for (const capability of requiredCapabilities) {
+          const hasCapability = currentModelInfo?.capabilities?.includes(capability) ||
+            (capability === 'vision' && currentModelInfo?.supportsVision);
+
+          if (!hasCapability) {
+            // 主模型缺少此能力，尝试获取备用模型
+            const fallbackConfig = this.modelRouter.getFallbackConfig(capability, this.modelConfig);
+            if (fallbackConfig) {
+              // 获取备用模型的 API Key
+              const configService = getConfigService();
+              const fallbackApiKey = configService.getApiKey(fallbackConfig.provider);
+
+              if (fallbackApiKey) {
+                fallbackConfig.apiKey = fallbackApiKey;
+                console.log(`[AgentLoop] 主模型 ${this.modelConfig.model} 不支持 ${capability}，切换到备用模型 ${fallbackConfig.model}`);
+                this.onEvent({
+                  type: 'model_fallback',
+                  data: {
+                    reason: capability,
+                    from: this.modelConfig.model,
+                    to: fallbackConfig.model,
+                  },
+                });
+                effectiveConfig = fallbackConfig;
+                break; // 使用第一个需要切换的能力
+              } else {
+                console.warn(`[AgentLoop] 备用模型 ${fallbackConfig.provider} 未配置 API Key，无法切换`);
+              }
+            }
+          }
+        }
+      }
+
       // Call model through router
       console.log('[AgentLoop] Calling modelRouter.inference()...');
+      console.log('[AgentLoop] Effective model:', effectiveConfig.model);
       const response = await this.modelRouter.inference(
         modelMessages,
         tools,
-        this.modelConfig,
+        effectiveConfig,
         (chunk) => {
           // Handle streaming chunks - 支持新的结构化流式事件
           // 所有事件都携带 turnId 以支持精确的消息定位

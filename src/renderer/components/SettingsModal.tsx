@@ -169,6 +169,7 @@ const ModelSettings: React.FC<{
     { id: 'deepseek', name: t.model.providers.deepseek.name, description: t.model.providers.deepseek.description },
     { id: 'claude', name: t.model.providers.anthropic.name, description: t.model.providers.anthropic.description },
     { id: 'openai', name: t.model.providers.openai.name, description: t.model.providers.openai.description },
+    { id: 'openrouter', name: t.model.providers.openrouter?.name || 'OpenRouter', description: t.model.providers.openrouter?.description || '中转服务 (Gemini/Claude/GPT)' },
   ];
 
   return (
@@ -243,6 +244,27 @@ const ModelSettings: React.FC<{
               <option value="gpt-4o">GPT-4o</option>
               <option value="gpt-4-turbo">GPT-4 Turbo</option>
               <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+            </>
+          )}
+          {config.provider === 'openrouter' && (
+            <>
+              <optgroup label="Google Gemini">
+                <option value="google/gemini-2.0-flash-001">Gemini 2.0 Flash</option>
+                <option value="google/gemini-2.0-flash-thinking-exp:free">Gemini 2.0 Flash Thinking (免费)</option>
+                <option value="google/gemini-exp-1206:free">Gemini Exp 1206 (免费)</option>
+              </optgroup>
+              <optgroup label="Anthropic Claude">
+                <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                <option value="anthropic/claude-3.5-haiku">Claude 3.5 Haiku</option>
+              </optgroup>
+              <optgroup label="OpenAI">
+                <option value="openai/gpt-4o">GPT-4o</option>
+                <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
+              </optgroup>
+              <optgroup label="DeepSeek">
+                <option value="deepseek/deepseek-chat">DeepSeek Chat</option>
+                <option value="deepseek/deepseek-r1">DeepSeek R1</option>
+              </optgroup>
             </>
           )}
         </select>

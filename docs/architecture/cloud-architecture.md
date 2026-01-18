@@ -627,16 +627,30 @@ async function getApiKey(userId: string, keyType: ApiKeyType) {
 
 ## 文件结构
 
-### 客户端 Orchestrator（v0.6.0 实现）
+### 客户端 Orchestrator（v0.6.4 实现）
 
 ```
 src/main/orchestrator/
-├── types.ts                # 类型定义
-├── TaskAnalyzer.ts         # 任务特征分析
-├── ExecutionRouter.ts      # 执行模式路由决策
-├── LocalExecutor.ts        # 本地执行器封装
-├── CloudExecutor.ts        # 云端执行器
-└── UnifiedOrchestrator.ts  # 统一入口
+├── types.ts                    # 核心类型定义
+├── index.ts                    # 模块导出入口
+├── UnifiedOrchestrator.ts      # 统一指挥家（核心协调）
+├── ExecutionRouter.ts          # 执行路由器（4 层优先级决策）
+├── TaskAnalyzer.ts             # 任务分析器（5 维度特征提取）
+├── LocalExecutor.ts            # 本地执行器
+├── CloudExecutor.ts            # 云端执行器
+├── CheckpointManager.ts        # 断点续传管理（v0.6.1）
+├── RealtimeChannel.ts          # WebSocket 实时通信（v0.6.1）
+├── agents/                     # 多 Agent 调度系统（v0.6.2）
+│   ├── index.ts
+│   ├── types.ts               # Agent 角色和能力定义
+│   ├── AgentRegistry.ts       # Agent 注册表
+│   ├── AgentExecutor.ts       # Agent 执行器
+│   └── AgentScheduler.ts      # 调度器（4 种调度策略）
+└── strategy/                   # 策略演进系统（v0.6.2）
+    ├── index.ts
+    ├── types.ts               # 策略类型定义
+    ├── StrategyManager.ts     # 策略管理（支持用户反馈学习）
+    └── StrategySyncer.ts      # 云端同步（冲突检测）
 
 src/main/cloud/
 ├── TaskRouter.ts           # 任务路由器
@@ -685,3 +699,110 @@ cloud-agent/api/
 └── scheduler/
     └── index.ts            # 多代理调度器（Phase 4）
 ```
+
+---
+
+## Orchestrator 核心模块详解
+
+> v0.6.1 - v0.6.4 新增
+
+### UnifiedOrchestrator（统一指挥家）
+
+系统的核心协调中心，负责：
+- 接收用户请求（`execute()` / `executeStream()`）
+- 协调任务分析、路由、执行三个阶段
+- 选择执行位置（本地/云端/混合）
+- 管理执行历史和状态监控
+- 发送事件流（analysis:start/complete, routing:start/complete, execution:*）
+
+```typescript
+// 执行流程
+用户请求 → TaskAnalyzer → ExecutionRouter → LocalExecutor/CloudExecutor
+              ↓                  ↓                    ↓
+          任务特征分析      路由决策（4层）        执行并返回结果
+```
+
+### TaskAnalyzer（任务分析器）
+
+深度分析用户请求，提取 5 个维度的特征：
+
+| 维度 | 可选值 | 说明 |
+|------|--------|------|
+| 任务类型 | research, coding, automation, data, general | 基于关键词匹配 |
+| 所需能力 | file_access, shell, network, browser, memory, code_analysis, planning | 决定执行位置 |
+| 敏感度 | sensitive > internal > public | 敏感数据强制本地 |
+| 复杂度 | simple < moderate < complex | 基于词数和步骤数 |
+| 实时性 | realtime > async > batch | 影响执行策略 |
+
+### ExecutionRouter（执行路由器）
+
+4 层优先级决策：
+
+| 优先级 | 规则类型 | 示例 |
+|--------|----------|------|
+| P1 | 安全规则 | 敏感数据 → 强制本地 |
+| P2 | 能力约束 | file_access/shell → local_only |
+| P3 | 效率优化 | 复杂任务 → hybrid，长任务 → cloud |
+| P4 | 用户偏好 | 省电模式 → 优先云端 |
+
+### CheckpointManager（断点续传）
+
+支持任务中断后恢复：
+
+```typescript
+// 核心功能
+- createCheckpoint()      // 创建检查点
+- updateProgress()        // 更新进度（自动保存，10秒周期）
+- resumeCheckpoint()      // 恢复执行
+- getResumableCheckpoints() // 获取可恢复任务列表
+```
+
+**存储位置**: `app.getPath('userData')/checkpoints/`
+
+### RealtimeChannel（实时通信）
+
+WebSocket 双向通信：
+
+| 特性 | 说明 |
+|------|------|
+| 消息确认 | 带超时的 ACK 机制 |
+| 心跳保活 | 30 秒周期 |
+| 自动重连 | 指数退避，最多 5 次 |
+| 消息缓冲 | 断线期间缓存消息 |
+
+**消息类型**: task:start, task:progress, task:chunk, task:complete, task:error, task:cancel, sync:request, sync:response
+
+### AgentScheduler（多 Agent 调度）
+
+7 种 Agent 角色：
+
+| 角色 | 职责 |
+|------|------|
+| planner | 任务分解和规划 |
+| researcher | 信息检索和研究 |
+| coder | 代码生成 |
+| reviewer | 代码审查 |
+| writer | 文档编写 |
+| tester | 测试执行 |
+| coordinator | 任务协调 |
+
+4 种调度策略：
+- `round_robin`: 轮询分配
+- `least_busy`: 最空闲优先
+- `skill_match`: 技能匹配
+- `priority_first`: 优先级优先
+
+### StrategyManager（策略演进）
+
+支持 5 种策略类型：
+- routing: 路由策略
+- execution: 执行策略
+- tool_selection: 工具选择
+- agent_selection: Agent 选择
+- error_handling: 错误处理
+
+**学习机制**：
+1. 收集用户反馈（positive/negative/neutral）
+2. 自动调整规则权重和优先级
+3. 生成新规则
+4. 跨用户聚合学习（可配置隐私等级）

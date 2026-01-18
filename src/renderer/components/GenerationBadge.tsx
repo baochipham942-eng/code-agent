@@ -199,7 +199,7 @@ export const GenerationBadge: React.FC = () => {
       >
         {config.icon}
         <span className="font-medium">Gen{currentGeneration.id.replace('gen', '')}</span>
-        <span className="text-xs opacity-70">{generationConfigs[currentGeneration.id]?.theme || currentGeneration.name}</span>
+        <span className="text-xs opacity-70">{currentGeneration.name}</span>
         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
       </button>
 
@@ -246,9 +246,6 @@ export const GenerationBadge: React.FC = () => {
                         </span>
                         <span className="text-xs text-zinc-500">
                           {gen.version}
-                        </span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${genConfig.color}`}>
-                          {genConfig.theme}
                         </span>
                         <span className="text-xs text-zinc-500">
                           共 {gen.tools.length} 工具

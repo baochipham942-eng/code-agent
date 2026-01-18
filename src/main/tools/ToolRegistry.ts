@@ -27,6 +27,14 @@ import { exitPlanModeTool } from './gen3/exitPlanMode';
 import { skillTool } from './gen4/skill';
 import { webFetchTool } from './gen4/webFetch';
 import { webSearchTool } from './gen4/webSearch';
+import { readPdfTool } from './gen4/readPdf';
+import {
+  mcpTool,
+  mcpListToolsTool,
+  mcpListResourcesTool,
+  mcpReadResourceTool,
+  mcpGetStatusTool,
+} from './gen4/mcpTool';
 import { memoryStoreTool } from './gen5/memoryStore';
 import { memorySearchTool } from './gen5/memorySearch';
 import { codeIndexTool } from './gen5/codeIndex';
@@ -128,6 +136,13 @@ export class ToolRegistry {
     this.register(skillTool);
     this.register(webFetchTool);
     this.register(webSearchTool);
+    this.register(readPdfTool);
+    // MCP tools (Gen 4+)
+    this.register(mcpTool);
+    this.register(mcpListToolsTool);
+    this.register(mcpListResourcesTool);
+    this.register(mcpReadResourceTool);
+    this.register(mcpGetStatusTool);
 
     // Gen 5 tools
     this.register(memoryStoreTool);

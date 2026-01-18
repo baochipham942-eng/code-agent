@@ -4,7 +4,11 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Paperclip, Loader2, Sparkles, CornerDownLeft, X, Image, FileText } from 'lucide-react';
+import * as pdfjsLib from 'pdfjs-dist';
 import type { MessageAttachment } from '../../shared/types';
+
+// 配置 PDF.js worker - 使用 CDN 避免打包问题
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: MessageAttachment[]) => void;
@@ -26,6 +30,37 @@ const FILE_TYPES = [
 ];
 // 最大文件大小 (10MB)
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+/**
+ * 从 PDF 文件中提取文本内容
+ */
+async function extractPdfText(file: File): Promise<string> {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const textParts: string[] = [];
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .map((item: any) => item.str)
+        .join(' ');
+      if (pageText.trim()) {
+        textParts.push(`--- 第 ${i} 页 ---\n${pageText}`);
+      }
+    }
+
+    if (textParts.length === 0) {
+      return '[PDF 文件无法提取文本内容，可能是扫描件或图片 PDF]';
+    }
+
+    return textParts.join('\n\n');
+  } catch (error) {
+    console.error('PDF 文本提取失败:', error);
+    return `[PDF 解析失败: ${error instanceof Error ? error.message : '未知错误'}]`;
+  }
+}
 
 export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
   const [value, setValue] = useState('');
@@ -69,9 +104,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
     }
 
     const isImage = IMAGE_TYPES.includes(file.type);
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
     const isAllowedFile = FILE_TYPES.includes(file.type) || file.name.match(/\.(ts|tsx|js|jsx|py|rb|go|rs|java|c|cpp|h|hpp|md|txt|json|yaml|yml|toml|xml|html|css|scss|sass|less)$/i);
 
-    if (!isImage && !isAllowedFile) {
+    if (!isImage && !isPdf && !isAllowedFile) {
       console.warn(`File type ${file.type} is not supported`);
       return null;
     }
@@ -91,14 +127,25 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
             size: file.size,
             mimeType: file.type,
             data,
-            thumbnail: data, // 使用原图作为缩略图（可后续优化为压缩版）
+            thumbnail: data,
           });
         };
         reader.onerror = () => resolve(null);
         reader.readAsDataURL(file);
       });
+    } else if (isPdf) {
+      // PDF 文件 - 提取文本内容
+      const pdfText = await extractPdfText(file);
+      return {
+        id,
+        type: 'file',
+        name: file.name,
+        size: file.size,
+        mimeType: 'application/pdf',
+        data: `[PDF 文件: ${file.name}]\n\n${pdfText}`,
+      };
     } else {
-      // 文件类型 - 读取内容
+      // 其他文本文件 - 读取内容
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => {

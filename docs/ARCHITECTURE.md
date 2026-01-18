@@ -1,6 +1,6 @@
 # Code Agent - 架构设计文档
 
-> 版本: 3.0
+> 版本: 3.1 (对应 v0.6.4)
 > 日期: 2026-01-18
 > 作者: Lin Chen
 
@@ -18,8 +18,8 @@
 | [Agent 核心](./architecture/agent-core.md) | AgentLoop、消息流、规划系统、Anti-pattern Detection |
 | [工具系统](./architecture/tool-system.md) | ToolRegistry、ToolExecutor、8 代工具演进 |
 | [前端架构](./architecture/frontend.md) | React 组件、Zustand 状态、useAgent Hook |
-| [数据存储](./architecture/data-storage.md) | SQLite、Supabase、pgvector、5 级数据分层 |
-| [云端架构](./architecture/cloud-architecture.md) | 云端任务、多代理调度、跨设备同步 |
+| [数据存储](./architecture/data-storage.md) | SQLite、Supabase、pgvector、SecureStorage |
+| [云端架构](./architecture/cloud-architecture.md) | Orchestrator、云端任务、多代理调度、断点续传 |
 
 ### 架构决策记录 (ADR)
 
@@ -52,7 +52,7 @@
 | Gen1 | 基础文件操作 | bash, read_file, write_file, edit_file |
 | Gen2 | 代码搜索 | + glob, grep, list_directory, mcp |
 | Gen3 | 任务规划 | + task, todo_write, ask_user_question |
-| Gen4 | 网络能力 | + skill, web_fetch, web_search |
+| Gen4 | 网络能力 | + skill, web_fetch, **web_search** |
 | Gen5 | 记忆系统 | + memory_store, memory_search |
 | Gen6 | 视觉交互 | + screenshot, computer_use |
 | Gen7 | 多代理 | + spawn_agent, agent_message |
@@ -82,9 +82,10 @@ code-agent/
 │   │   ├── generation/         # GenerationManager
 │   │   ├── model/              # ModelRouter
 │   │   ├── tools/              # gen1-gen4 工具实现
-│   │   ├── services/           # Auth, Sync, Database
+│   │   ├── services/           # Auth, Sync, Database, SecureStorage
 │   │   ├── memory/             # 向量存储和记忆系统
-│   │   └── planning/           # 规划系统
+│   │   ├── planning/           # 规划系统
+│   │   └── orchestrator/       # 统一调度器 (v0.6.1+)
 │   │
 │   ├── renderer/               # React 前端
 │   │   ├── components/         # UI 组件

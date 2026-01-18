@@ -45,7 +45,8 @@ export type ModelProvider =
   | 'zhipu'      // 智谱 GLM
   | 'qwen'       // 通义千问
   | 'moonshot'   // Kimi
-  | 'perplexity'; // 联网搜索
+  | 'perplexity' // 联网搜索
+  | 'openrouter'; // OpenRouter 中转（Gemini、Claude、GPT 等）
 
 // 模型能力标签
 export type ModelCapability = 'code' | 'vision' | 'fast' | 'reasoning' | 'gui' | 'general' | 'search';
@@ -330,7 +331,9 @@ export type AgentEvent =
   | { type: 'agent_complete'; data: null }
   // Turn-based message events (行业最佳实践: Vercel AI SDK / LangGraph 模式)
   | { type: 'turn_start'; data: { turnId: string; iteration?: number } }
-  | { type: 'turn_end'; data: { turnId: string } };
+  | { type: 'turn_end'; data: { turnId: string } }
+  // Model capability fallback event (能力补充)
+  | { type: 'model_fallback'; data: { reason: string; from: string; to: string } };
 
 // ----------------------------------------------------------------------------
 // Settings Types

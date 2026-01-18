@@ -62,11 +62,71 @@ npm run typecheck    # 类型检查
 | Gen1 | bash, read_file, write_file, edit_file |
 | Gen2 | + glob, grep, list_directory |
 | Gen3 | + task, todo_write, ask_user_question |
-| Gen4 | + skill, web_fetch |
+| Gen4 | + skill, web_fetch, read_pdf, mcp, mcp_list_tools, mcp_list_resources, mcp_read_resource, mcp_get_status |
 | Gen5 | + memory_store, memory_search, code_index |
 | Gen6 | + screenshot, computer_use, browser_action |
 | Gen7 | + spawn_agent, agent_message, workflow_orchestrate |
 | Gen8 | + strategy_optimize, tool_create, self_evaluate |
+
+### Gen4 PDF 智能处理
+
+`read_pdf` 工具采用两阶段处理策略：
+
+1. **文本提取优先**：使用 pdfjs-dist 快速提取文本（免费、快速）
+2. **视觉模型回退**：如果文本提取量低于阈值（扫描版 PDF），自动调用 OpenRouter Gemini 2.0 视觉模型
+
+```bash
+# 普通文本 PDF - 使用文本提取
+read_pdf { "file_path": "/path/to/doc.pdf" }
+
+# 扫描版或图表 PDF - 自动回退到视觉模型
+read_pdf { "file_path": "/path/to/scanned.pdf" }
+
+# 强制使用视觉模型（含图表分析）
+read_pdf { "file_path": "/path/to/diagram.pdf", "force_vision": true, "prompt": "分析图表数据" }
+```
+
+**要求**：处理扫描版 PDF 需要配置 OpenRouter API Key。
+
+### Gen4 MCP 工具说明
+
+MCP (Model Context Protocol) 允许 Agent 调用外部服务提供的工具：
+
+| 工具 | 描述 |
+|------|------|
+| `mcp` | 调用 MCP 服务器工具（如 deepwiki, github 等）|
+| `mcp_list_tools` | 列出已连接服务器的可用工具 |
+| `mcp_list_resources` | 列出可用资源 |
+| `mcp_read_resource` | 读取资源内容 |
+| `mcp_get_status` | 获取 MCP 连接状态 |
+
+**DeepWiki 使用示例：**
+
+DeepWiki 是默认启用的远程 MCP 服务器，提供 GitHub 项目文档解读能力：
+
+```bash
+# 1. 先查看可用工具
+mcp_list_tools { "server": "deepwiki" }
+
+# 2. 获取项目文档结构
+mcp { "server": "deepwiki", "tool": "read_wiki_structure", "arguments": { "repoName": "anthropics/claude-code" } }
+
+# 3. 读取具体文档内容
+mcp { "server": "deepwiki", "tool": "read_wiki_contents", "arguments": { "repoName": "anthropics/claude-code", "topic": "Architecture" } }
+
+# 4. 询问项目问题
+mcp { "server": "deepwiki", "tool": "ask_question", "arguments": { "repoName": "facebook/react", "question": "React 18 的并发特性是如何实现的？" } }
+```
+
+**已配置的 MCP 服务器：**
+
+| 服务器 | 类型 | 默认启用 | 说明 |
+|--------|------|----------|------|
+| `deepwiki` | SSE | ✅ | 解读 GitHub 项目文档 |
+| `github` | Stdio | 需 GITHUB_TOKEN | GitHub API |
+| `filesystem` | Stdio | ❌ | 文件系统访问 |
+| `git` | Stdio | ❌ | Git 版本控制 |
+| `brave-search` | Stdio | 需 BRAVE_API_KEY | 网络搜索 |
 
 ## 版本号规范
 
@@ -157,4 +217,56 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 □ API 验证通过
 □ npm run build
 □ npm run dist:mac
+```
+
+---
+
+## 调试与日志查询
+
+### 本地数据库位置
+
+```
+~/Library/Application Support/code-agent/code-agent.db
+```
+
+### 查询用户请求和 AI 回复
+
+```bash
+# 查看最近 10 条消息（含时间戳）
+sqlite3 "~/Library/Application Support/code-agent/code-agent.db" \
+  "SELECT role, substr(content, 1, 200), datetime(timestamp/1000, 'unixepoch', 'localtime') \
+   FROM messages ORDER BY timestamp DESC LIMIT 10;"
+
+# 查看最新一条完整的 AI 回复
+sqlite3 "~/Library/Application Support/code-agent/code-agent.db" \
+  "SELECT content FROM messages WHERE role='assistant' \
+   AND timestamp = (SELECT MAX(timestamp) FROM messages WHERE role='assistant');"
+
+# 查看特定会话的消息
+sqlite3 "~/Library/Application Support/code-agent/code-agent.db" \
+  "SELECT role, content FROM messages WHERE session_id='<SESSION_ID>' ORDER BY timestamp;"
+```
+
+### 数据库表结构
+
+| 表名 | 用途 |
+|------|------|
+| `sessions` | 会话记录 |
+| `messages` | 消息历史（用户请求 + AI 回复）|
+| `tool_executions` | 工具执行记录 |
+| `todos` | 任务清单 |
+| `project_knowledge` | 项目知识库 |
+| `user_preferences` | 用户设置 |
+| `audit_log` | 审计日志 |
+
+### .env 文件位置
+
+| 场景 | 路径 |
+|------|------|
+| 开发模式 | `/Users/linchen/Downloads/ai/code-agent/.env` |
+| 打包应用 | `/Applications/Code Agent.app/Contents/Resources/.env` |
+
+**注意**：修改 `.env` 后，打包应用需要手动同步：
+```bash
+cp /Users/linchen/Downloads/ai/code-agent/.env "/Applications/Code Agent.app/Contents/Resources/.env"
 ```

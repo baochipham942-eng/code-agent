@@ -198,6 +198,19 @@ export class ToolExecutor {
           details: { url: params.url, query: params.query },
         };
 
+      case 'mcp':
+      case 'mcp_read_resource':
+        return {
+          type: 'network',
+          tool: tool.name,
+          details: {
+            server: params.server,
+            tool: params.tool,
+            uri: params.uri,
+          },
+          reason: `调用 MCP 服务器 ${params.server}`,
+        };
+
       default:
         // Map permission level to permission request type
         const typeMap: Record<string, PermissionRequestData['type']> = {

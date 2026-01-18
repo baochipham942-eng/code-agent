@@ -72,6 +72,10 @@ export const en: Translations = {
         name: 'OpenAI',
         description: 'OpenAI GPT API',
       },
+      openrouter: {
+        name: 'OpenRouter',
+        description: 'Proxy (Gemini/Claude/GPT)',
+      },
     },
   },
 

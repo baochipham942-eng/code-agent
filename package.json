@@ -1,6 +1,6 @@
 {
   "name": "code-agent",
-  "version": "0.4.11",
+  "version": "0.4.12",
   "description": "AI Coding Assistant with Generation Comparison",
   "type": "module",
   "main": "dist/main/index.cjs",

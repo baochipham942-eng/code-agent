@@ -82,6 +82,9 @@ export class AgentLoop {
   private traceId: string = '';
   private currentIterationSpanId: string = '';
 
+  // Turn-based message tracking
+  private currentTurnId: string = '';
+
   constructor(config: AgentLoopConfig) {
     this.generation = config.generation;
     this.modelConfig = config.modelConfig;
@@ -147,11 +150,21 @@ export class AgentLoop {
       iterations++;
       console.log(`[AgentLoop] >>>>>> Iteration ${iterations} START <<<<<<`);
 
+      // Generate turn ID for this iteration
+      // Turn-based message model: 每轮迭代对应一条前端消息
+      this.currentTurnId = generateMessageId();
+
       // Langfuse: Start iteration span
       this.currentIterationSpanId = `iteration-${this.traceId}-${iterations}`;
       langfuse.startSpan(this.traceId, this.currentIterationSpanId, {
         name: `Iteration ${iterations}`,
-        metadata: { iteration: iterations },
+        metadata: { iteration: iterations, turnId: this.currentTurnId },
+      });
+
+      // Emit turn_start event - 前端据此创建新的 assistant 消息
+      this.onEvent({
+        type: 'turn_start',
+        data: { turnId: this.currentTurnId, iteration: iterations },
       });
 
       // 1. Call model
@@ -222,6 +235,12 @@ export class AgentLoop {
 
         // Langfuse: End iteration span and break
         langfuse.endSpan(this.currentIterationSpanId, { type: 'text_response' });
+
+        // Emit turn_end event - 本轮 Agent Loop 结束
+        this.onEvent({
+          type: 'turn_end',
+          data: { turnId: this.currentTurnId },
+        });
         break;
       }
 
@@ -314,6 +333,12 @@ export class AgentLoop {
           type: 'tool_calls',
           toolCount: response.toolCalls.length,
           successCount: toolResults.filter(r => r.success).length,
+        });
+
+        // Emit turn_end event - 本轮 Agent Loop 结束（工具调用完成）
+        this.onEvent({
+          type: 'turn_end',
+          data: { turnId: this.currentTurnId },
         });
 
         // Continue loop
@@ -413,9 +438,9 @@ export class AgentLoop {
         }
       }
 
-      // Emit tool call start event with index for frontend matching
-      console.log(`[AgentLoop] Emitting tool_call_start for ${toolCall.name} (index: ${i})`);
-      this.onEvent({ type: 'tool_call_start', data: { ...toolCall, _index: i } });
+      // Emit tool call start event with index and turnId for frontend matching
+      console.log(`[AgentLoop] Emitting tool_call_start for ${toolCall.name} (index: ${i}, turnId: ${this.currentTurnId})`);
+      this.onEvent({ type: 'tool_call_start', data: { ...toolCall, _index: i, turnId: this.currentTurnId } });
 
       // Langfuse: Start tool span
       const langfuse = getLangfuseService();
@@ -644,12 +669,13 @@ export class AgentLoop {
         this.modelConfig,
         (chunk) => {
           // Handle streaming chunks - 支持新的结构化流式事件
+          // 所有事件都携带 turnId 以支持精确的消息定位
           if (typeof chunk === 'string') {
             // 兼容旧的字符串格式
-            this.onEvent({ type: 'stream_chunk', data: { content: chunk } });
+            this.onEvent({ type: 'stream_chunk', data: { content: chunk, turnId: this.currentTurnId } });
           } else if (chunk.type === 'text') {
             // 文本流式更新
-            this.onEvent({ type: 'stream_chunk', data: { content: chunk.content } });
+            this.onEvent({ type: 'stream_chunk', data: { content: chunk.content, turnId: this.currentTurnId } });
           } else if (chunk.type === 'tool_call_start') {
             // 工具调用开始 - 流式通知前端
             this.onEvent({
@@ -658,6 +684,7 @@ export class AgentLoop {
                 index: chunk.toolCall?.index,
                 id: chunk.toolCall?.id,
                 name: chunk.toolCall?.name,
+                turnId: this.currentTurnId,
               },
             });
           } else if (chunk.type === 'tool_call_delta') {
@@ -668,6 +695,7 @@ export class AgentLoop {
                 index: chunk.toolCall?.index,
                 name: chunk.toolCall?.name,
                 argumentsDelta: chunk.toolCall?.argumentsDelta,
+                turnId: this.currentTurnId,
               },
             });
           }

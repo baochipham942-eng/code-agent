@@ -318,16 +318,19 @@ export interface AgentState {
 
 export type AgentEvent =
   | { type: 'message'; data: Message }
-  | { type: 'tool_call_start'; data: ToolCall & { _index?: number } }
+  | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string } }
   | { type: 'tool_call_end'; data: ToolResult }
   | { type: 'permission_request'; data: PermissionRequest }
   | { type: 'error'; data: { message: string; code?: string } }
-  | { type: 'stream_chunk'; data: { content: string | undefined } }
-  | { type: 'stream_tool_call_start'; data: { index?: number; id?: string; name?: string } }
-  | { type: 'stream_tool_call_delta'; data: { index?: number; name?: string; argumentsDelta?: string } }
+  | { type: 'stream_chunk'; data: { content: string | undefined; turnId?: string } }
+  | { type: 'stream_tool_call_start'; data: { index?: number; id?: string; name?: string; turnId?: string } }
+  | { type: 'stream_tool_call_delta'; data: { index?: number; name?: string; argumentsDelta?: string; turnId?: string } }
   | { type: 'todo_update'; data: TodoItem[] }
   | { type: 'notification'; data: { message: string } }
-  | { type: 'agent_complete'; data: null };
+  | { type: 'agent_complete'; data: null }
+  // Turn-based message events (行业最佳实践: Vercel AI SDK / LangGraph 模式)
+  | { type: 'turn_start'; data: { turnId: string; iteration?: number } }
+  | { type: 'turn_end'; data: { turnId: string } };
 
 // ----------------------------------------------------------------------------
 // Settings Types

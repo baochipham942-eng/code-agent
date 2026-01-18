@@ -420,6 +420,51 @@ while (!isCancelled && iterations < 50) {
 1. **任务复杂度分析** - 在 `run()` 开始时自动检测任务类型
 2. **Anti-pattern Detection** - 检测连续读操作，防止无限循环
 3. **Planning Hooks** - 集成规划系统的生命周期钩子
+4. **Turn-Based Message Model** - 基于行业最佳实践的消息流架构
+
+### 4.2.1 Turn-Based 消息流架构
+
+**设计来源**: 借鉴 Vercel AI SDK 和 LangGraph 的最佳实践
+
+**核心原则**:
+- 每轮 Agent Loop 迭代对应一条前端 assistant 消息
+- 后端驱动消息创建（通过 `turn_start` 事件）
+- 使用 `turnId` 关联同一轮的所有事件
+
+**事件流程**:
+
+```
+turn_start → stream_chunk* → stream_tool_call_start? → stream_tool_call_delta* → tool_call_start → tool_call_end → turn_end
+    |                                                                                                                    |
+    v                                                                                                                    v
+创建新 assistant 消息                                                                                         标记本轮完成
+```
+
+**事件类型说明**:
+
+| 事件 | 触发时机 | 携带数据 | 前端处理 |
+|------|----------|----------|----------|
+| `turn_start` | 迭代开始 | `{ turnId, iteration }` | 创建新 assistant 消息 |
+| `stream_chunk` | 文本流式输出 | `{ content, turnId }` | 追加到目标消息 |
+| `stream_tool_call_start` | 工具调用流式开始 | `{ index, id, name, turnId }` | 添加工具调用卡片 |
+| `stream_tool_call_delta` | 工具参数增量 | `{ index, argumentsDelta, turnId }` | 更新参数显示 |
+| `tool_call_start` | 工具执行开始 | `{ id, name, arguments, _index, turnId }` | 更新真实 ID |
+| `tool_call_end` | 工具执行完成 | `{ toolCallId, success, output }` | 显示执行结果 |
+| `turn_end` | 迭代结束 | `{ turnId }` | 可选的 UI 更新 |
+
+**解决的问题**:
+
+1. **消息顺序混乱** - 工具调用后的文本响应不再追加到旧消息，而是创建新消息
+2. **事件路由错误** - 使用 turnId 精确定位目标消息，避免跨轮次事件混淆
+3. **前端预创建问题** - 前端不再预创建 placeholder，由后端驱动消息生命周期
+
+**实现位置**:
+
+| 文件 | 职责 |
+|------|------|
+| `AgentLoop.ts` | 生成 turnId，发送 turn_start/turn_end 事件 |
+| `useAgent.ts` | 处理事件，使用 turnId 定位和更新消息 |
+| `types.ts` | 定义 AgentEvent 类型（含 turnId） |
 
 ### 4.3 任务复杂度分析系统
 

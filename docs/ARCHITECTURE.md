@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 3.1 (对应 v0.6.4)
-> 日期: 2026-01-18
+> 版本: 3.2 (对应 v0.7.22)
+> 日期: 2025-01-19
 > 作者: Lin Chen
 
 本文档已拆分为模块化的架构文档，便于维护和查阅。
@@ -95,7 +95,7 @@ code-agent/
 │   ├── shared/                 # 类型定义和 IPC
 │   └── preload/                # Preload 脚本
 │
-├── cloud-agent/                # 云端 API (Vercel)
+├── vercel-api/                 # 云端 API (Vercel)
 └── supabase/                   # 数据库迁移
 ```
 

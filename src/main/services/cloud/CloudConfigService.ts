@@ -181,16 +181,21 @@ class CloudConfigService {
    */
   getInfo(): {
     version: string;
-    isCloud: boolean;
-    cacheExpiry: number;
+    lastFetch: number;
+    isStale: boolean;
+    fromCloud: boolean;
     lastError: string | null;
   } {
     const config = this.getConfig();
     const builtinVersion = getBuiltinConfig().version;
+    const isStale = Date.now() > this.cacheExpiry;
+    const fromCloud = config.version !== builtinVersion || this.etag !== null;
+
     return {
       version: config.version,
-      isCloud: config.version !== builtinVersion || this.etag !== null,
-      cacheExpiry: this.cacheExpiry,
+      lastFetch: this.cacheExpiry > 0 ? this.cacheExpiry - CACHE_TTL : 0,
+      isStale,
+      fromCloud,
       lastError: this.lastError,
     };
   }

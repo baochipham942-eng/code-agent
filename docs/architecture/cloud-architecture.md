@@ -660,10 +660,46 @@ src/main/cloud/
 └── SyncEngine.ts           # 同步引擎
 ```
 
+### 云端配置服务（v0.7.22 实现）
+
+```
+src/main/services/cloud/
+├── CloudConfigService.ts     # 云端配置拉取与缓存
+├── FeatureFlagService.ts     # Feature Flags 便捷函数
+└── builtinConfig.ts          # 内置离线配置
+
+vercel-api/api/v1/
+└── config.ts                 # 云端配置 API
+```
+
+**CloudConfigService 功能**：
+- 启动时异步拉取配置（不阻塞窗口创建）
+- 1 小时缓存 + ETag 支持（304 Not Modified）
+- 拉取失败静默降级到内置配置
+- IPC 接口：`CLOUD_CONFIG_REFRESH`、`CLOUD_CONFIG_GET_INFO`
+
+**云端配置内容**：
+| 字段 | 说明 |
+|------|------|
+| prompts | 各代际 System Prompt |
+| skills | Skill 定义 |
+| toolMeta | 工具描述和参数 |
+| featureFlags | 功能开关 |
+| uiStrings | UI 文案（中/英） |
+| rules | Agent 规则 |
+
+**Feature Flags**：
+| Flag | 说明 |
+|------|------|
+| enableGen8 | 是否启用 Gen8 |
+| enableComputerUse | 是否启用 Computer Use |
+| enableCloudAgent | 是否启用云端 Agent |
+| maxIterations | Agent 最大迭代次数 |
+
 ### 云端 API（v0.6.0 实现）
 
 ```
-cloud-agent/
+vercel-api/
 ├── api/
 │   ├── agent.ts            # Agent API (chat/plan)
 │   ├── health.ts           # 健康检查

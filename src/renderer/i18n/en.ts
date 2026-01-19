@@ -31,8 +31,13 @@ export const en: Translations = {
       appearance: 'Appearance',
       language: 'Language',
       data: 'Data',
+      cloud: 'Cloud',
       update: 'Update',
       about: 'About',
+    },
+    cloud: {
+      title: 'Cloud Config',
+      description: 'System Prompt, Skills and other configurations are fetched from cloud in real-time.',
     },
   },
 

@@ -6,6 +6,7 @@ import type { Generation, GenerationId, GenerationDiff } from '../../shared/type
 import * as diff from 'diff';
 import { GENERATION_DEFINITIONS } from './metadata';
 import { getSystemPrompt } from '../services/PromptService';
+import { isGen8Enabled } from '../services/cloud/FeatureFlagService';
 
 // ----------------------------------------------------------------------------
 // Generation Manager Class
@@ -38,7 +39,14 @@ export class GenerationManager {
   // --------------------------------------------------------------------------
 
   getAllGenerations(): Generation[] {
-    return Array.from(this.generations.values());
+    const all = Array.from(this.generations.values());
+
+    // Feature Flag: Gen8 需要启用才能使用
+    if (!isGen8Enabled()) {
+      return all.filter((g) => g.id !== 'gen8');
+    }
+
+    return all;
   }
 
   getGeneration(id: GenerationId): Generation | undefined {
@@ -50,6 +58,11 @@ export class GenerationManager {
   }
 
   switchGeneration(id: GenerationId): Generation {
+    // Feature Flag: 检查 Gen8 是否启用
+    if (id === 'gen8' && !isGen8Enabled()) {
+      throw new Error('Gen8 is not enabled. Contact admin to enable this feature.');
+    }
+
     const generation = this.generations.get(id);
     if (!generation) {
       throw new Error(`Unknown generation: ${id}`);

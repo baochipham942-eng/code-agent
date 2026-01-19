@@ -25,6 +25,7 @@ import { logCollector } from '../mcp/LogCollector.js';
 import { generateMessageId, generateToolCallId } from '../../shared/utils/id';
 import { taskComplexityAnalyzer } from '../planning/TaskComplexityAnalyzer';
 import { getLangfuseService } from '../services/LangfuseService';
+import { getMaxIterations } from '../services/cloud/FeatureFlagService';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -83,7 +84,7 @@ export class AgentLoop {
   private onEvent: (event: AgentEvent) => void;
   private modelRouter: ModelRouter;
   private isCancelled: boolean = false;
-  private maxIterations: number = 50;
+  private maxIterations: number;
 
   // Planning integration
   private planningService?: PlanningService;
@@ -120,6 +121,9 @@ export class AgentLoop {
     this.messages = config.messages;
     this.onEvent = config.onEvent;
     this.modelRouter = new ModelRouter();
+
+    // Max iterations from Feature Flag (云端热更新)
+    this.maxIterations = getMaxIterations();
 
     // Planning service integration
     this.planningService = config.planningService;

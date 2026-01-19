@@ -4,7 +4,7 @@
 > 优先级: P0
 > 预估时间: 2 周
 > 依赖: 无
-> 状态: 待执行
+> 状态: 已完成
 
 ---
 
@@ -226,18 +226,91 @@ return <button>{t('common.save')}</button>;
 
 ## 验收标准
 
-- [ ] 修改云端 Skill 定义后，客户端重启自动生效
-- [ ] Feature Flag 关闭 `enableGen8` 后，Gen8 工具不可用
-- [ ] 网络断开时，使用本地缓存配置，不报错
-- [ ] 设置页面有「刷新配置」按钮
+- [x] 修改云端 Skill 定义后，客户端重启自动生效
+- [x] Feature Flag 关闭 `enableGen8` 后，Gen8 工具不可用
+- [x] 网络断开时，使用本地缓存配置，不报错
+- [x] 设置页面有「刷新配置」按钮
 
 ---
 
 ## 交接备注
 
-_（任务完成后填写）_
+- **完成时间**: 2025-01-19
+- **云端 API 版本**: v1.0.0
+- **云端 API 端点**: `https://code-agent-beta.vercel.app/api/v1/config`
 
-- 完成时间:
-- 云端 API 版本:
-- CloudConfigService API 文档:
-- 下游 Agent 注意事项:
+### 已实现功能
+
+1. **云端配置中心** (vercel-api/api/v1/config.ts)
+   - 统一配置接口，返回 prompts、skills、toolMeta、featureFlags、uiStrings、rules
+   - 支持 ETag 缓存控制（304 Not Modified）
+   - 支持 `?version=true` 只返回版本号
+
+2. **CloudConfigService** (src/main/services/cloud/CloudConfigService.ts)
+   - 单例模式，启动时异步初始化
+   - 1 小时缓存 + 过期自动刷新
+   - 拉取失败静默降级到内置配置
+   - IPC 接口：`CLOUD_CONFIG_REFRESH`、`CLOUD_CONFIG_GET_INFO`
+
+3. **FeatureFlagService** (src/main/services/cloud/FeatureFlagService.ts)
+   - 便捷函数：`isGen8Enabled()`、`isComputerUseEnabled()`、`getMaxIterations()`
+   - 已在以下位置添加检查：
+     - `GenerationManager.ts` - Gen8 启用检查
+     - `AgentLoop.ts` - maxIterations 从 Feature Flag 读取
+     - `computerUse.ts` - Computer Use 启用检查
+
+4. **Skills 动态化** (src/main/tools/gen4/skill.ts)
+   - Skills 定义已迁移到云端
+   - 本地通过 `CloudConfigService.getSkills()` 读取
+
+5. **设置页面云端配置 Tab** (src/renderer/components/SettingsModal.tsx)
+   - 独立的「云端」Tab 显示配置状态
+   - 显示配置版本、来源、缓存状态
+   - 支持手动刷新配置
+
+6. **i18n 支持** (src/renderer/i18n/、src/renderer/hooks/useI18n.ts)
+   - 内置中英文翻译
+   - 支持云端 uiStrings 覆盖
+
+### CloudConfigService API
+
+```typescript
+// 获取实例
+const service = getCloudConfigService();
+
+// 初始化（应用启动时调用）
+await initCloudConfigService();
+
+// 获取配置
+service.getPrompt(genId: GenerationId): string
+service.getSkills(): SkillDefinition[]
+service.getSkill(name: string): SkillDefinition | undefined
+service.getToolMeta(name: string): ToolMetadata | undefined
+service.getAllToolMeta(): Record<string, ToolMetadata>
+service.getFeatureFlags(): FeatureFlags
+service.getFeatureFlag(key: keyof FeatureFlags): any
+service.getUIString(key: string, lang: 'zh' | 'en'): string
+service.getUIStrings(lang: 'zh' | 'en'): Record<string, string>
+service.getRule(name: string): string
+service.getInfo(): { version, lastFetch, isStale, fromCloud, lastError }
+
+// 刷新
+await service.refresh(): Promise<{ success, version, error? }>
+```
+
+### 下游 Agent 注意事项
+
+1. **添加新 Feature Flag**:
+   - 在 `builtinConfig.ts` 的 `featureFlags` 添加默认值
+   - 在 `FeatureFlagService.ts` 添加便捷函数
+   - 同步更新云端 `vercel-api/api/v1/config.ts`
+
+2. **添加新 Skill**:
+   - 在云端 `config.ts` 的 `skills` 数组添加
+   - 或在 `builtinConfig.ts` 添加（离线可用）
+
+3. **修改工具描述**:
+   - 修改云端 `config.ts` 的 `toolMeta` 对象
+
+4. **测试离线模式**:
+   - 断网后应用应使用内置配置正常工作

@@ -29,8 +29,13 @@ export const zh = {
       appearance: '外观',
       language: '语言',
       data: '数据',
+      cloud: '云端',
       update: '更新',
       about: '关于',
+    },
+    cloud: {
+      title: '云端配置',
+      description: 'System Prompt、Skills 等配置从云端实时获取，支持热更新。',
     },
   },
 

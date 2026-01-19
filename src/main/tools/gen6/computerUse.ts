@@ -6,6 +6,7 @@
 import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { isComputerUseEnabled } from '../../services/cloud/FeatureFlagService';
 
 const execAsync = promisify(exec);
 
@@ -102,6 +103,14 @@ IMPORTANT: Use screenshot tool first to understand current screen state.`,
     params: Record<string, unknown>,
     _context: ToolContext
   ): Promise<ToolExecutionResult> {
+    // Feature Flag: 检查 Computer Use 是否启用
+    if (!isComputerUseEnabled()) {
+      return {
+        success: false,
+        error: 'Computer Use is disabled. This feature is controlled by cloud configuration.',
+      };
+    }
+
     const action = params as unknown as ComputerAction;
 
     try {

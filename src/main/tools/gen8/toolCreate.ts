@@ -63,7 +63,7 @@ async function requestUserConfirmation(
 ): Promise<boolean> {
   // Check if devModeAutoApprove is enabled
   try {
-    const { getConfigService } = await import('../../services/ConfigService');
+    const { getConfigService } = await import('../../services');
     const configService = getConfigService();
     if (configService.isDevModeAutoApproveEnabled()) {
       console.log('[toolCreate] devModeAutoApprove enabled, auto-approving tool creation');

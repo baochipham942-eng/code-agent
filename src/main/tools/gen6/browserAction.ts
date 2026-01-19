@@ -5,7 +5,7 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry.js';
-import { browserService } from '../../services/BrowserService.js';
+import { browserService } from '../../services/infra/BrowserService.js';
 
 type BrowserActionType =
   | 'launch'

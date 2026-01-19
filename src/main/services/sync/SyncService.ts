@@ -6,17 +6,17 @@
 import {
   getSupabase,
   isSupabaseInitialized,
-  DeviceRow,
-  SessionRow,
-  MessageRow,
-  UserPreferenceRow,
-  VectorDocumentRow,
-} from './SupabaseService';
-import { getDatabase } from './DatabaseService';
-import { getAuthService } from './AuthService';
-import { getSecureStorage } from './SecureStorage';
-import { getVectorStore, type VectorDocument } from '../memory/VectorStore';
-import type { SyncStatus, SyncConflict, DeviceInfo } from '../../shared/types';
+  type DeviceRow,
+  type SessionRow,
+  type MessageRow,
+  type UserPreferenceRow,
+  type VectorDocumentRow,
+} from '../infra';
+import { getDatabase } from '../core';
+import { getAuthService } from '../auth';
+import { getSecureStorage } from '../core';
+import { getVectorStore, type VectorDocument } from '../../memory/VectorStore';
+import type { SyncStatus, SyncConflict, DeviceInfo } from '../../../shared/types';
 
 export interface SyncResult {
   success: boolean;

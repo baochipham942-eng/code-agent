@@ -4,18 +4,18 @@
 // ============================================================================
 
 import { BrowserWindow } from 'electron';
-import { getDatabase, type StoredSession } from './DatabaseService';
+import { getDatabase, type StoredSession } from '../core';
 import { getToolCache } from './ToolCache';
-import { getAuthService } from './AuthService';
+import { getAuthService } from '../auth';
 import { getSupabase, isSupabaseInitialized } from './SupabaseService';
-import { IPC_CHANNELS } from '../../shared/ipc';
+import { IPC_CHANNELS } from '../../../shared/ipc';
 import type {
   Session,
   Message,
   GenerationId,
   ModelConfig,
   TodoItem,
-} from '../../shared/types';
+} from '../../../shared/types';
 
 // ----------------------------------------------------------------------------
 // Types

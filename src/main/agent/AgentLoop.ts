@@ -18,13 +18,11 @@ import type { ToolExecutor } from '../tools/ToolExecutor';
 import { ModelRouter } from '../model/ModelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/MemoryService';
-import { getConfigService } from '../services/ConfigService';
-import { getAuthService } from '../services/AuthService';
+import { getConfigService, getAuthService, getLangfuseService } from '../services';
 import { getProactiveContextService } from '../memory/ProactiveContext';
 import { logCollector } from '../mcp/LogCollector.js';
 import { generateMessageId, generateToolCallId } from '../../shared/utils/id';
 import { taskComplexityAnalyzer } from '../planning/TaskComplexityAnalyzer';
-import { getLangfuseService } from '../services/LangfuseService';
 import { getMaxIterations } from '../services/cloud/FeatureFlagService';
 
 // ----------------------------------------------------------------------------

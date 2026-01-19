@@ -3,12 +3,12 @@
 // Persists Gen8 self-evolution data (strategies, patterns) to local and cloud
 // ============================================================================
 
-import { getDatabase } from './DatabaseService';
+import { getDatabase } from '../core';
 import {
   getSupabase,
   isSupabaseInitialized,
 } from './SupabaseService';
-import { getAuthService } from './AuthService';
+import { getAuthService } from '../auth';
 
 // ----------------------------------------------------------------------------
 // Types

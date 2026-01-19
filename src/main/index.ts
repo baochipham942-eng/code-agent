@@ -6,18 +6,24 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import { AgentOrchestrator } from './agent/AgentOrchestrator';
 import { GenerationManager } from './generation/GenerationManager';
-import { ConfigService } from './services/ConfigService';
-import { initDatabase, getDatabase } from './services/DatabaseService';
-import { getSessionManager, type SessionCreateOptions } from './services/SessionManager';
+import {
+  ConfigService,
+  initDatabase,
+  getDatabase,
+  getSessionManager,
+  type SessionCreateOptions,
+  initSupabase,
+  isSupabaseInitialized,
+  getAuthService,
+  getSyncService,
+  initLangfuse,
+  getLangfuseService,
+  notificationService,
+} from './services';
+import { initUpdateService, getUpdateService, isUpdateServiceInitialized } from './services/cloud/UpdateService';
 import { initMemoryService, getMemoryService } from './memory/MemoryService';
 import { initMCPClient, getMCPClient, type MCPServerConfig } from './mcp/MCPClient';
 import { logBridge } from './mcp/LogBridge.js';
-import { initSupabase, isSupabaseInitialized } from './services/SupabaseService';
-import { getAuthService } from './services/AuthService';
-import { getSyncService } from './services/SyncService';
-import { initUpdateService, getUpdateService, isUpdateServiceInitialized } from './services/UpdateService';
-import { initLangfuse, getLangfuseService } from './services/LangfuseService';
-import { notificationService } from './services/NotificationService';
 import { IPC_CHANNELS } from '../shared/ipc';
 import type { GenerationId, PermissionResponse, PlanningState, AuthUser, UpdateInfo } from '../shared/types';
 import type {
@@ -30,7 +36,7 @@ import type {
 import { createPlanningService, type PlanningService } from './planning';
 import { CloudTaskService, getCloudTaskService, initCloudTaskService, isCloudTaskServiceInitialized } from './cloud/CloudTaskService';
 import { initUnifiedOrchestrator, getUnifiedOrchestrator } from './orchestrator';
-import { initPromptService, getPromptsInfo } from './services/PromptService';
+import { initPromptService, getPromptsInfo } from './services/cloud/PromptService';
 import { initCloudConfigService, getCloudConfigService } from './services/cloud';
 
 // ----------------------------------------------------------------------------
@@ -147,7 +153,7 @@ async function initializeBackgroundServices(): Promise<void> {
 
   // Restore devModeAutoApprove from persistent storage
   try {
-    const { getSecureStorage } = await import('./services/SecureStorage');
+    const { getSecureStorage } = await import('./services/core/SecureStorage');
     const storage = getSecureStorage();
     const persistedValue = storage.get('settings.devModeAutoApprove');
     if (persistedValue !== undefined) {
@@ -221,7 +227,7 @@ async function initializeServices(): Promise<void> {
     console.log(`[LogBridge] Executing command: ${command}`, params);
 
     // Import browser service dynamically to avoid circular dependencies
-    const { browserService } = await import('./services/BrowserService.js');
+    const { browserService } = await import('./services/infra/BrowserService.js');
 
     switch (command) {
       case 'browser_action': {
@@ -1375,19 +1381,19 @@ function setupIpcHandlers(): void {
   // -------------------------------------------------------------------------
 
   ipcMain.handle(IPC_CHANNELS.CACHE_GET_STATS, async () => {
-    const { getToolCache } = await import('./services/ToolCache');
+    const { getToolCache } = await import('./services/infra/ToolCache');
     const cache = getToolCache();
     return cache.getStats();
   });
 
   ipcMain.handle(IPC_CHANNELS.CACHE_CLEAR, async () => {
-    const { getToolCache } = await import('./services/ToolCache');
+    const { getToolCache } = await import('./services/infra/ToolCache');
     const cache = getToolCache();
     cache.clear();
   });
 
   ipcMain.handle(IPC_CHANNELS.CACHE_CLEAN_EXPIRED, async () => {
-    const { getToolCache } = await import('./services/ToolCache');
+    const { getToolCache } = await import('./services/infra/ToolCache');
     const cache = getToolCache();
     return cache.cleanExpired();
   });
@@ -1397,8 +1403,8 @@ function setupIpcHandlers(): void {
   // -------------------------------------------------------------------------
 
   ipcMain.handle(IPC_CHANNELS.DATA_GET_STATS, async () => {
-    const { getDatabase } = await import('./services/DatabaseService');
-    const { getToolCache } = await import('./services/ToolCache');
+    const { getDatabase } = await import('./services/core/DatabaseService');
+    const { getToolCache } = await import('./services/infra/ToolCache');
     const fs = await import('fs');
     const path = await import('path');
 
@@ -1433,9 +1439,9 @@ function setupIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE, async () => {
-    const { getToolCache } = await import('./services/ToolCache');
-    const { getDatabase } = await import('./services/DatabaseService');
-    const { getSessionManager } = await import('./services/SessionManager');
+    const { getToolCache } = await import('./services/infra/ToolCache');
+    const { getDatabase } = await import('./services/core/DatabaseService');
+    const { getSessionManager } = await import('./services/infra/SessionManager');
 
     const cache = getToolCache();
     const db = getDatabase();
@@ -1466,7 +1472,7 @@ function setupIpcHandlers(): void {
 
   // Persistent settings (stored in secure storage, survive data clear)
   ipcMain.handle(IPC_CHANNELS.PERSISTENT_GET_DEV_MODE, async () => {
-    const { getSecureStorage } = await import('./services/SecureStorage');
+    const { getSecureStorage } = await import('./services/core/SecureStorage');
     const storage = getSecureStorage();
     const value = storage.get('settings.devModeAutoApprove');
     // Default to true if not set
@@ -1474,7 +1480,7 @@ function setupIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.PERSISTENT_SET_DEV_MODE, async (_, enabled: boolean) => {
-    const { getSecureStorage } = await import('./services/SecureStorage');
+    const { getSecureStorage } = await import('./services/core/SecureStorage');
     const storage = getSecureStorage();
     storage.set('settings.devModeAutoApprove', enabled ? 'true' : 'false');
 
@@ -1496,7 +1502,7 @@ function setupIpcHandlers(): void {
 
   // Check if any API key is configured
   ipcMain.handle(IPC_CHANNELS.SECURITY_CHECK_API_KEY_CONFIGURED, async (): Promise<boolean> => {
-    const { getSecureStorage } = await import('./services/SecureStorage');
+    const { getSecureStorage } = await import('./services/core/SecureStorage');
     const storage = getSecureStorage();
     const providers = storage.getStoredApiKeyProviders();
     return providers.length > 0;

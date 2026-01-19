@@ -10,7 +10,7 @@ import type {
   ToolExecutionResult,
   PermissionRequestData,
 } from './ToolRegistry';
-import { getToolCache } from '../services/ToolCache';
+import { getToolCache } from '../services';
 
 // ----------------------------------------------------------------------------
 // Types

@@ -13,7 +13,7 @@ import type {
   GenerationId,
   ModelProvider,
   TodoItem,
-} from '../../shared/types';
+} from '../../../shared/types';
 
 // ----------------------------------------------------------------------------
 // Types

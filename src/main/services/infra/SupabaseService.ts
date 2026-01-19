@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { createClient, SupabaseClient, User, Session } from '@supabase/supabase-js';
-import { getSecureStorage } from './SecureStorage';
+import { getSecureStorage } from '../core';
 
 // Database types for type-safe queries
 export interface Database {

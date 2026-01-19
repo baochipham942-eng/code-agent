@@ -10,7 +10,7 @@ import { getVectorStore } from '../../memory/VectorStore';
 import {
   getEvolutionPersistence,
   type LearnedPattern,
-} from '../../services/EvolutionPersistence';
+} from '../../services';
 
 export const learnPatternTool: Tool = {
   name: 'learn_pattern',

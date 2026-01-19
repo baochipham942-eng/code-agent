@@ -10,7 +10,7 @@ import { getVectorStore } from '../../memory/VectorStore';
 import {
   getEvolutionPersistence,
   type Strategy,
-} from '../../services/EvolutionPersistence';
+} from '../../services';
 
 export const strategyOptimizeTool: Tool = {
   name: 'strategy_optimize',

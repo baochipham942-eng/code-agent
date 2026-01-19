@@ -11,7 +11,7 @@ import type {
 } from './types';
 import type { TaskComplexity, ComplexityAnalysis } from './TaskComplexityAnalyzer';
 import { taskComplexityAnalyzer } from './TaskComplexityAnalyzer';
-import { getEvolutionPersistence } from '../services/EvolutionPersistence';
+import { getEvolutionPersistence } from '../services';
 
 // ============================================================================
 // Types

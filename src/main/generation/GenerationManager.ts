@@ -5,7 +5,7 @@
 import type { Generation, GenerationId, GenerationDiff } from '../../shared/types';
 import * as diff from 'diff';
 import { GENERATION_DEFINITIONS } from './metadata';
-import { getSystemPrompt } from '../services/PromptService';
+import { getSystemPrompt } from '../services/cloud/PromptService';
 import { isGen8Enabled } from '../services/cloud/FeatureFlagService';
 
 // ----------------------------------------------------------------------------

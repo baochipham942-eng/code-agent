@@ -2,10 +2,13 @@
 // Memory Service - 统一记忆管理服务
 // ============================================================================
 
-import { getDatabase, type ProjectKnowledge } from '../services/DatabaseService';
-import { getToolCache } from '../services/ToolCache';
-import { getSessionManager } from '../services/SessionManager';
-import { getTokenManager } from '../services/TokenManager';
+import {
+  getDatabase,
+  type ProjectKnowledge,
+  getToolCache,
+  getSessionManager,
+  getTokenManager,
+} from '../services';
 import {
   getVectorStore,
   type SearchResult,

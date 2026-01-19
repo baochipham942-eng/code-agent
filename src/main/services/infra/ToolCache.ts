@@ -2,8 +2,8 @@
 // Tool Cache - 工具结果缓存（短期记忆）
 // ============================================================================
 
-import { getDatabase } from './DatabaseService';
-import type { ToolResult } from '../../shared/types';
+import { getDatabase } from '../core';
+import type { ToolResult } from '../../../shared/types';
 
 // ----------------------------------------------------------------------------
 // Types

@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import { getSupabase, isSupabaseInitialized } from '../services/SupabaseService';
+import { getSupabase, isSupabaseInitialized } from '../services';
 import { encryptForCloud, decryptFromCloud, KeyManager } from '../utils/crypto';
 import { getTaskRouter } from './TaskRouter';
 import type {

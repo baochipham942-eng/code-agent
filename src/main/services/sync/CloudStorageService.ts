@@ -2,8 +2,7 @@
 // Cloud Storage Service - 云端存储能力
 // ============================================================================
 
-import { getDatabase } from './DatabaseService';
-import type { StoredSession } from './DatabaseService';
+import { getDatabase, type StoredSession } from '../core';
 
 // ----------------------------------------------------------------------------
 // Types

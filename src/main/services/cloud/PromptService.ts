@@ -3,8 +3,8 @@
 // ============================================================================
 // 优先从云端拉取 prompts，本地缓存 + 降级到内置 prompts
 
-import type { GenerationId } from '../../shared/types';
-import { SYSTEM_PROMPTS } from '../generation/prompts/builder';
+import type { GenerationId } from '../../../shared/types';
+import { SYSTEM_PROMPTS } from '../../generation/prompts/builder';
 
 // ----------------------------------------------------------------------------
 // Types

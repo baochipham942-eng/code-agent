@@ -6,7 +6,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
-import { getConfigService } from '../../services/ConfigService';
+import { getConfigService } from '../../services';
 
 /**
  * 获取云端 API URL

@@ -8,12 +8,12 @@ import crypto from 'crypto';
 import {
   getSupabase,
   isSupabaseInitialized,
-  SupabaseUser,
-  ProfileRow,
-  InviteCodeRow,
-} from './SupabaseService';
-import { getSecureStorage } from './SecureStorage';
-import type { AuthUser, AuthStatus } from '../../shared/types';
+  type ProfileRow,
+  type InviteCodeRow,
+} from '../infra';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
+import { getSecureStorage } from '../core';
+import type { AuthUser, AuthStatus } from '../../../shared/types';
 
 export interface AuthResult {
   success: boolean;

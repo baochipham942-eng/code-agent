@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { Notification, BrowserWindow, app } from 'electron';
-import { IPC_CHANNELS } from '../../shared/ipc';
+import { IPC_CHANNELS } from '../../../shared/ipc';
 
 export interface TaskNotificationData {
   sessionId: string;

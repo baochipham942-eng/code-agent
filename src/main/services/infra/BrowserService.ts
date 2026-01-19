@@ -8,7 +8,7 @@ import { chromium, Browser, Page, BrowserContext } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
-import { logCollector } from '../mcp/LogCollector.js';
+import { logCollector } from '../../mcp/LogCollector.js';
 
 // Log collector for transparent operation logging
 export class BrowserLogger {

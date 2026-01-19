@@ -5,7 +5,7 @@
 import path from 'path';
 import fs from 'fs/promises';
 import { app } from 'electron';
-import type { AppSettings, GenerationId, ModelProvider } from '../../shared/types';
+import type { AppSettings, GenerationId, ModelProvider } from '../../../shared/types';
 import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { getSecureStorage } from './SecureStorage';

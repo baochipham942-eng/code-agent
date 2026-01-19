@@ -11,8 +11,8 @@ import {
   getSupabase,
   isSupabaseInitialized,
   type VectorMatchResult,
-} from '../services/SupabaseService';
-import { getAuthService } from '../services/AuthService';
+  getAuthService,
+} from '../services';
 
 // ----------------------------------------------------------------------------
 // Types

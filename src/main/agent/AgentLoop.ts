@@ -529,8 +529,8 @@ export class AgentLoop {
       // 记录使用的工具
       this.toolsUsedInTurn.push(toolCall.name);
 
-      // 发送工具执行进度
-      const progress = Math.round(((i + 0.5) / toolCalls.length) * 100);
+      // 发送工具执行进度（显示当前是第几个，从 0 开始计数）
+      const progress = Math.round((i / toolCalls.length) * 100);
       this.emitTaskProgress('tool_running', `执行 ${toolCall.name}`, {
         tool: toolCall.name,
         toolIndex: i,

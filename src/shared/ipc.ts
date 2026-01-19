@@ -247,6 +247,9 @@ export const IPC_CHANNELS = {
   PERSISTENT_GET_DEV_MODE: 'persistent:get-dev-mode',
   PERSISTENT_SET_DEV_MODE: 'persistent:set-dev-mode',
 
+  // Notification channels
+  NOTIFICATION_CLICKED: 'notification:clicked',
+
   // Cloud task channels
   CLOUD_TASK_CREATE: 'cloud:task:create',
   CLOUD_TASK_UPDATE: 'cloud:task:update',
@@ -448,6 +451,10 @@ export interface UpdateEvent {
   data?: UpdateInfo | DownloadProgress | { filePath: string } | { error: string };
 }
 
+export interface NotificationClickedEvent {
+  sessionId: string;
+}
+
 export interface IpcEventHandlers {
   [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEvent) => void;
   [IPC_CHANNELS.PLANNING_EVENT]: (event: PlanningEvent) => void;
@@ -457,6 +464,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.SESSION_UPDATED]: (event: SessionUpdatedEvent) => void;
   [IPC_CHANNELS.SESSION_LIST_UPDATED]: () => void;
   [IPC_CHANNELS.UPDATE_EVENT]: (event: UpdateEvent) => void;
+  [IPC_CHANNELS.NOTIFICATION_CLICKED]: (event: NotificationClickedEvent) => void;
   [IPC_CHANNELS.CLOUD_TASK_PROGRESS]: (event: TaskProgressEvent) => void;
   [IPC_CHANNELS.CLOUD_TASK_COMPLETED]: (task: CloudTask) => void;
   [IPC_CHANNELS.CLOUD_TASK_FAILED]: (task: CloudTask) => void;

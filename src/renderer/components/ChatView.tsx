@@ -189,7 +189,7 @@ const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ p
             </div>
             <span className="text-xs text-zinc-500">
               {progress.toolIndex !== undefined && progress.toolTotal
-                ? `${progress.toolIndex + 1}/${progress.toolTotal}`
+                ? `${progress.toolIndex}/${progress.toolTotal}`
                 : `${Math.round(progress.progress || 0)}%`}
             </span>
           </div>

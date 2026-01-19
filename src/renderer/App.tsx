@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from './stores/appStore';
 import { useAuthStore, initializeAuthStore } from './stores/authStore';
+import { useSessionStore } from './stores/sessionStore';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { WorkspacePanel } from './components/WorkspacePanel';
@@ -20,7 +21,7 @@ import { PermissionModal } from './components/PermissionModal';
 import { CloudTaskPanel } from './components/CloudTaskPanel';
 import { useDisclosure } from './hooks/useDisclosure';
 import { Activity, Brain, Cloud } from 'lucide-react';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, type NotificationClickedEvent } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 
 export const App: React.FC = () => {
@@ -159,6 +160,21 @@ export const App: React.FC = () => {
       (request: UserQuestionRequest) => {
         console.log('[App] Received user question:', request.id);
         setUserQuestion(request);
+      }
+    );
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
+  // Listen for notification click events (切换到对应会话)
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.on(
+      IPC_CHANNELS.NOTIFICATION_CLICKED,
+      (event: NotificationClickedEvent) => {
+        console.log('[App] Notification clicked, switching to session:', event.sessionId);
+        useSessionStore.getState().switchSession(event.sessionId);
       }
     );
 

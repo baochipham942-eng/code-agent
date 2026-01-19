@@ -17,6 +17,7 @@ import { getAuthService } from './services/AuthService';
 import { getSyncService } from './services/SyncService';
 import { initUpdateService, getUpdateService, isUpdateServiceInitialized } from './services/UpdateService';
 import { initLangfuse, getLangfuseService } from './services/LangfuseService';
+import { notificationService } from './services/NotificationService';
 import { IPC_CHANNELS } from '../shared/ipc';
 import type { GenerationId, PermissionResponse, PlanningState, AuthUser, UpdateInfo } from '../shared/types';
 import type {
@@ -490,6 +491,25 @@ async function initializeServices(): Promise<void> {
       // 清理当前消息引用
       if (event.type === 'agent_complete') {
         currentAssistantMessageId = null;
+      }
+
+      // 任务完成时发送桌面通知
+      if (event.type === 'task_complete' && event.data) {
+        try {
+          const sessionManager = getSessionManager();
+          const session = await sessionManager.getCurrentSession();
+          if (session) {
+            notificationService.notifyTaskComplete({
+              sessionId: session.id,
+              sessionTitle: session.title,
+              summary: event.data.summary,
+              duration: event.data.duration,
+              toolsUsed: event.data.toolsUsed || [],
+            });
+          }
+        } catch (error) {
+          console.error('[Main] Failed to send task complete notification:', error);
+        }
       }
     },
   });

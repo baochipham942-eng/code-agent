@@ -27,6 +27,7 @@ import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { generateMessageId } from '@shared/utils/id';
 import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData } from '@shared/types';
+import { IPC_CHANNELS } from '@shared/ipc';
 
 export const useAgent = () => {
   const {
@@ -41,6 +42,8 @@ export const useAgent = () => {
     addMessage,
     updateMessage,
     setTodos,
+    currentSessionId,
+    markSessionUnread,
   } = useSessionStore();
 
   // Use refs to avoid stale closure issues
@@ -49,6 +52,9 @@ export const useAgent = () => {
 
   // Track current turn's message ID for proper event routing
   const currentTurnMessageIdRef = useRef<string | null>(null);
+
+  // 追踪任务开始时的会话 ID（用于跨会话未读通知）
+  const taskSessionIdRef = useRef<string | null>(null);
 
   // 任务进度状态（长时任务反馈）
   const [taskProgress, setTaskProgress] = useState<TaskProgressData | null>(null);
@@ -84,7 +90,9 @@ export const useAgent = () => {
               };
               addMessage(newMessage);
               currentTurnMessageIdRef.current = turnId;
-              console.log('[useAgent] turn_start - created message:', turnId);
+              // 记录任务开始时的会话 ID
+              taskSessionIdRef.current = useSessionStore.getState().currentSessionId;
+              console.log('[useAgent] turn_start - created message:', turnId, 'sessionId:', taskSessionIdRef.current);
             }
             break;
 
@@ -373,6 +381,15 @@ export const useAgent = () => {
               setLastTaskComplete(event.data as TaskCompleteData);
               // 清除进度状态
               setTaskProgress(null);
+
+              // 跨会话未读通知：如果任务完成时用户已切换到其他会话，标记原会话为未读
+              const taskSessionId = taskSessionIdRef.current;
+              const currentSession = useSessionStore.getState().currentSessionId;
+              if (taskSessionId && taskSessionId !== currentSession) {
+                console.log('[useAgent] Task completed in different session, marking as unread:', taskSessionId);
+                useSessionStore.getState().markSessionUnread(taskSessionId);
+              }
+              taskSessionIdRef.current = null;
             }
             break;
         }

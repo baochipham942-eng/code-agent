@@ -1,0 +1,155 @@
+// ============================================================================
+// useFileUpload - 文件上传处理 Hook
+// ============================================================================
+
+import { useCallback } from 'react';
+import type { MessageAttachment } from '../../../../../shared/types';
+import {
+  MAX_FILE_SIZE,
+  MAX_FOLDER_FILES,
+  getFileCategory,
+  readDirectoryEntry,
+  extractPdfText,
+  generateAttachmentId,
+} from './utils';
+
+/**
+ * 文件上传处理 Hook
+ * 处理单个文件和文件夹的上传逻辑
+ */
+export function useFileUpload() {
+  // 处理单个文件
+  const processFile = useCallback(async (file: File): Promise<MessageAttachment | null> => {
+    if (file.size > MAX_FILE_SIZE) {
+      console.warn(`File ${file.name} is too large (max 10MB)`);
+      return null;
+    }
+
+    const { category, language } = getFileCategory(file);
+    const id = generateAttachmentId();
+    const relativePath = (file as File & { relativePath?: string }).relativePath;
+    const displayName = relativePath || file.name;
+
+    let filePath: string | undefined;
+    try {
+      filePath = window.electronAPI?.getPathForFile(file);
+    } catch (e) {
+      console.warn('[useFileUpload] processFile - failed to get path:', e);
+    }
+
+    if (category === 'document') {
+      console.warn('Office documents (.docx, .xlsx) are not yet supported.');
+      return null;
+    }
+
+    if (category === 'image') {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const data = e.target?.result as string;
+          resolve({
+            id, type: 'image', category: 'image', name: displayName, size: file.size,
+            mimeType: file.type, data, thumbnail: data, path: filePath,
+          });
+        };
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    if (category === 'pdf' && filePath) {
+      const { text, pageCount } = await extractPdfText(filePath);
+      return {
+        id, type: 'file', category: 'pdf', name: displayName, size: file.size,
+        mimeType: 'application/pdf', data: text, pageCount, path: filePath,
+      };
+    }
+
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const data = e.target?.result as string;
+        resolve({
+          id, type: 'file', category, name: displayName, size: file.size,
+          mimeType: file.type || 'text/plain', data, language, path: filePath,
+        });
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsText(file);
+    });
+  }, []);
+
+  // 处理文件夹
+  const processFolderEntry = useCallback(async (
+    dirEntry: FileSystemDirectoryEntry,
+    folderName: string
+  ): Promise<MessageAttachment | null> => {
+    const files = await readDirectoryEntry(dirEntry, folderName);
+    if (files.length === 0) {
+      console.warn(`文件夹 ${folderName} 中没有可处理的文件`);
+      return null;
+    }
+
+    let folderPath: string | undefined;
+    try {
+      const firstFile = files[0];
+      const firstFilePath = window.electronAPI?.getPathForFile(firstFile);
+      if (firstFilePath) {
+        const relativePath = (firstFile as File & { relativePath?: string }).relativePath;
+        if (relativePath) {
+          const relativeDir = relativePath.split('/').slice(0, 1).join('/');
+          const idx = firstFilePath.lastIndexOf('/' + relativeDir + '/');
+          if (idx !== -1) {
+            folderPath = firstFilePath.substring(0, idx + 1 + relativeDir.length);
+          }
+        } else {
+          folderPath = firstFilePath.substring(0, firstFilePath.lastIndexOf('/'));
+        }
+      }
+    } catch (e) {
+      console.warn('[useFileUpload] processFolderEntry - failed to get folder path:', e);
+    }
+
+    const filesToProcess = files.slice(0, MAX_FOLDER_FILES);
+    const fileContents: Array<{ path: string; content: string; size: number }> = [];
+    const byType: Record<string, number> = {};
+    let totalSize = 0;
+
+    for (const file of filesToProcess) {
+      const relativePath = (file as File & { relativePath?: string }).relativePath || file.name;
+      const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+      byType[ext] = (byType[ext] || 0) + 1;
+      totalSize += file.size;
+
+      try {
+        const content = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = () => reject(new Error('读取失败'));
+          reader.readAsText(file);
+        });
+        fileContents.push({ path: relativePath, content, size: file.size });
+      } catch {
+        console.warn(`无法读取文件: ${relativePath}`);
+      }
+    }
+
+    const id = generateAttachmentId();
+    const typeStats = Object.entries(byType)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([ext, count]) => `${ext}(${count})`)
+      .join(', ');
+    const summary = `${files.length} 个文件${files.length > MAX_FOLDER_FILES ? ` (仅处理前 ${MAX_FOLDER_FILES} 个)` : ''}: ${typeStats}`;
+
+    return {
+      id, type: 'file', category: 'folder', name: folderName, size: totalSize,
+      mimeType: 'inode/directory', data: summary, files: fileContents, path: folderPath,
+      folderStats: { totalFiles: files.length, totalSize, byType },
+    };
+  }, []);
+
+  return { processFile, processFolderEntry };
+}
+
+export default useFileUpload;

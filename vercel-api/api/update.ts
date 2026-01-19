@@ -27,29 +27,25 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.8.0',
-  publishedAt: '2025-01-19T18:00:00.000Z',
+  version: '0.8.2',
+  publishedAt: '2026-01-19T22:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.8.0 🔐☁️
+## Code Agent v0.8.2
 
-### 🔐 安全加固 (TASK-01)
-- SecureStorage 使用 Electron safeStorage 加密
-- 开发模式自动授权需要二次确认
-- Gen8 tool_create 沙箱隔离执行
+### MCP 连接稳定性
+- MCP 工具调用添加 60 秒超时机制
+- 超时后自动重连并重试
+- 防止 SSE 连接静默断开导致 Agent 卡住
 
-### ☁️ 热更新系统 (TASK-02)
-- 云端配置中心：System Prompt、Skills、Feature Flags 热更新
-- 设置页面新增「云端」Tab，支持手动刷新配置
-- Feature Flags 控制 Gen8、Computer Use 等功能开关
-
-### 🌐 i18n 国际化
-- 内置中英文翻译
-- 支持云端 UI 文案覆盖
+### UI/UX 改进
+- 工具调用摘要更友好（如"阅读 xxx 文档"替代 JSON）
+- 统一使用 Lucide 图标风格
+- 减少控制台日志噪音
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.8.0/Code.Agent-0.8.0-arm64.dmg',
+      url: 'https://github.com/anthropics/code-agent/releases/download/v0.8.2/Code.Agent-0.8.2-arm64.dmg',
       size: 155000000,
     },
   },

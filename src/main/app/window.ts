@@ -27,8 +27,14 @@ export function setMainWindow(window: BrowserWindow | null): void {
 export async function createWindow(): Promise<void> {
   console.log('[Main] Creating window...');
   console.log('[Main] __dirname:', __dirname);
-  console.log('[Main] preload path:', path.join(__dirname, '../../preload/index.cjs'));
-  console.log('[Main] renderer path:', path.join(__dirname, '../../renderer/index.html'));
+  // 路径说明：
+  // - __dirname 在打包后是 app.asar/dist/main
+  // - preload 在 app.asar/dist/preload/index.cjs (相对路径: ../preload/index.cjs)
+  // - renderer 在 app.asar/dist/renderer/index.html (相对路径: ../renderer/index.html)
+  const preloadPath = path.join(__dirname, '../preload/index.cjs');
+  const rendererPath = path.join(__dirname, '../renderer/index.html');
+  console.log('[Main] preload path:', preloadPath);
+  console.log('[Main] renderer path:', rendererPath);
 
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -40,7 +46,7 @@ export async function createWindow(): Promise<void> {
     backgroundColor: '#18181b',
     show: false, // Don't show until ready
     webPreferences: {
-      preload: path.join(__dirname, '../../preload/index.cjs'),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -74,9 +80,8 @@ export async function createWindow(): Promise<void> {
     mainWindow.webContents.openDevTools();
   } else {
     console.log('[Main] Loading production file...');
-    const htmlPath = path.join(__dirname, '../../renderer/index.html');
-    console.log('[Main] HTML path:', htmlPath);
-    await mainWindow.loadFile(htmlPath);
+    console.log('[Main] HTML path:', rendererPath);
+    await mainWindow.loadFile(rendererPath);
   }
 
   console.log('[Main] Window created successfully');

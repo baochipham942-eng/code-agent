@@ -5,6 +5,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { resolvePath } from './pathUtils';
 
 export const listDirectoryTool: Tool = {
   name: 'list_directory',
@@ -35,14 +36,12 @@ export const listDirectoryTool: Tool = {
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolExecutionResult> {
-    let dirPath = (params.path as string) || context.workingDirectory;
+    const inputPath = (params.path as string) || context.workingDirectory;
     const recursive = (params.recursive as boolean) || false;
     const maxDepth = (params.max_depth as number) || 3;
 
-    // Resolve relative paths
-    if (!path.isAbsolute(dirPath)) {
-      dirPath = path.join(context.workingDirectory, dirPath);
-    }
+    // Resolve path (handles ~, relative paths)
+    const dirPath = resolvePath(inputPath, context.workingDirectory);
 
     try {
       const entries = await listDir(dirPath, recursive, maxDepth, 0);

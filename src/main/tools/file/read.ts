@@ -5,6 +5,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { resolvePath } from './pathUtils';
 
 export const readFileTool: Tool = {
   name: 'read_file',
@@ -50,14 +51,12 @@ Returns: File content with line numbers in format "  lineNum\\tcontent"`,
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolExecutionResult> {
-    let filePath = params.file_path as string;
+    const inputPath = params.file_path as string;
     const offset = (params.offset as number) || 1;
     const limit = (params.limit as number) || 2000;
 
-    // Resolve relative paths
-    if (!path.isAbsolute(filePath)) {
-      filePath = path.join(context.workingDirectory, filePath);
-    }
+    // Resolve path (handles ~, relative paths)
+    const filePath = resolvePath(inputPath, context.workingDirectory);
 
     try {
       // Check if file exists

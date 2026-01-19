@@ -63,7 +63,12 @@ export async function createWindow(): Promise<void> {
   });
 
   // Load the app
-  if (process.env.NODE_ENV === 'development') {
+  // Check for development mode: NODE_ENV or ELECTRON_IS_DEV or running from source
+  const isDev = process.env.NODE_ENV === 'development' ||
+    process.env.ELECTRON_IS_DEV === '1' ||
+    !require('electron').app.isPackaged;
+
+  if (isDev) {
     console.log('[Main] Loading development URL...');
     await mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();

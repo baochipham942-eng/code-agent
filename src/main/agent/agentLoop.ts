@@ -93,6 +93,10 @@ export class AgentLoop {
   private stopHookRetryCount: number = 0;
   private maxStopHookRetries: number = 3;
 
+  // Tool call format retry (when model describes tool call as text instead of using tool_use)
+  private toolCallRetryCount: number = 0;
+  private maxToolCallRetries: number = 2;
+
   // Anti-pattern detection: track consecutive read-only operations
   private consecutiveReadOps: number = 0;
   private maxConsecutiveReadsBeforeWarning: number = 5;
@@ -246,6 +250,28 @@ export class AgentLoop {
 
       // 2. Handle text response
       if (response.type === 'text' && response.content) {
+        // 检测模型是否错误地用文本描述工具调用而非实际调用
+        const failedToolCallMatch = this.detectFailedToolCallPattern(response.content);
+        if (failedToolCallMatch && this.toolCallRetryCount < this.maxToolCallRetries) {
+          this.toolCallRetryCount++;
+          logger.warn(`[AgentLoop] Detected text description of tool call instead of actual tool_use: "${failedToolCallMatch.toolName}"`);
+          logCollector.agent('WARN', `Model described tool call as text instead of using tool_use: ${failedToolCallMatch.toolName}`);
+
+          // 注入系统消息提醒模型正确使用工具
+          this.injectSystemMessage(
+            `<tool-call-format-error>\n` +
+            `⚠️ ERROR: You just described a tool call as text instead of actually calling the tool.\n` +
+            `You wrote: "${response.content.slice(0, 200)}..."\n\n` +
+            `This is WRONG. You must use the actual tool calling mechanism, not describe it in text.\n` +
+            `Please call the "${failedToolCallMatch.toolName}" tool properly using the tool_use format.\n` +
+            `</tool-call-format-error>`
+          );
+
+          // 继续循环，让模型重新调用
+          logger.debug(`[AgentLoop] Tool call retry ${this.toolCallRetryCount}/${this.maxToolCallRetries}`);
+          continue;
+        }
+
         // 发送生成中进度
         this.emitTaskProgress('generating', '生成回复中...');
         // Stop Hook - verify completion before stopping
@@ -1521,5 +1547,47 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
         return `Called ${name}(${shortArgs})`;
       }
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // Tool Call Format Detection
+  // --------------------------------------------------------------------------
+
+  /**
+   * 检测模型是否错误地用文本描述工具调用而非实际使用 tool_use
+   * 这是一种常见的模型行为问题，特别是在长上下文或复杂任务中
+   *
+   * 匹配模式：
+   * - "Called mcp({...})"
+   * - "Called read_file({...})"
+   * - "I'll call the mcp tool..."
+   * - "Let me use the mcp tool..."
+   */
+  private detectFailedToolCallPattern(content: string): { toolName: string; args?: string } | null {
+    // 模式1: "Called toolname({...})" - 最常见的错误模式
+    const calledPattern = /Called\s+(\w+)\s*\(\s*(\{[\s\S]*?\})\s*\)/i;
+    const calledMatch = content.match(calledPattern);
+    if (calledMatch) {
+      return { toolName: calledMatch[1], args: calledMatch[2] };
+    }
+
+    // 模式2: "I'll/Let me call/use the toolname tool" - 描述意图但未执行
+    const intentPattern = /(?:I'll|Let me|I will|I'm going to)\s+(?:call|use|invoke|execute)\s+(?:the\s+)?(\w+)\s+tool/i;
+    const intentMatch = content.match(intentPattern);
+    if (intentMatch) {
+      // 只有当内容较短（可能是纯意图描述）且包含工具参数描述时才触发
+      if (content.length < 500 && /\{[\s\S]*?\}/.test(content)) {
+        return { toolName: intentMatch[1] };
+      }
+    }
+
+    // 模式3: JSON 格式的工具调用描述（有时模型会输出 JSON 而非使用 tool_use）
+    const jsonToolPattern = /\{\s*"(?:name|tool)"\s*:\s*"(\w+)"\s*,\s*"(?:arguments|params|input)"\s*:/i;
+    const jsonMatch = content.match(jsonToolPattern);
+    if (jsonMatch && content.trim().startsWith('{')) {
+      return { toolName: jsonMatch[1] };
+    }
+
+    return null;
   }
 }

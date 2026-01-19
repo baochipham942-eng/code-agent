@@ -66,7 +66,11 @@ export const useAgent = () => {
     const unsubscribe = window.electronAPI?.on(
       'agent:event',
       (event: { type: string; data: any }) => {
-        logger.debug('Received event', { type: event.type, data: event.data });
+        // 只对非流式事件打印日志，避免控制台刷屏
+        const silentEvents = ['stream_chunk', 'stream_tool_call_delta'];
+        if (!silentEvents.includes(event.type)) {
+          logger.debug('Received event', { type: event.type });
+        }
 
         // Always get the latest messages from ref
         const currentMessages = messagesRef.current;

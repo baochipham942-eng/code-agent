@@ -5,67 +5,99 @@
 import type { ToolCall } from '@shared/types';
 
 /**
- * 工具图标映射
+ * 工具图标名称映射（使用 Lucide 图标名称）
+ * 实际渲染在 ToolCallDisplay.tsx 中完成
  */
-const TOOL_ICONS: Record<string, string> = {
+const TOOL_ICON_NAMES: Record<string, string> = {
   // Gen 1 - 基础文件操作
-  bash: '💻',
-  read_file: '📖',
-  write_file: '✍️',
-  edit_file: '✏️',
+  bash: 'terminal',
+  read_file: 'file-text',
+  write_file: 'file-plus',
+  edit_file: 'file-edit',
 
   // Gen 2 - 搜索和导航
-  glob: '🔍',
-  grep: '🔎',
-  list_directory: '📁',
+  glob: 'search',
+  grep: 'search-code',
+  list_directory: 'folder-open',
+  web_search: 'globe',
 
   // Gen 3 - 子代理和规划
-  task: '🤖',
-  todo_write: '📝',
-  ask_user_question: '❓',
+  task: 'bot',
+  todo_write: 'list-todo',
+  ask_user_question: 'message-circle-question',
 
   // Gen 4 - 技能系统和网络
-  skill: '⚡',
-  web_fetch: '🌐',
+  skill: 'sparkles',
+  web_fetch: 'globe',
+  mcp: 'plug',
 
   // Gen 5 - RAG 和长期记忆
-  memory_store: '💾',
-  memory_search: '🧠',
-  code_index: '📚',
+  memory_store: 'database',
+  memory_search: 'search',
+  code_index: 'file-code',
 
   // Gen 6 - Computer Use
-  screenshot: '📸',
-  computer_use: '🖥️',
-  browser_action: '🌍',
+  screenshot: 'camera',
+  computer_use: 'monitor',
+  browser_action: 'chrome',
 
   // Gen 7 - 多代理协同
-  spawn_agent: '👥',
-  agent_message: '💬',
-  workflow_orchestrate: '🎭',
+  spawn_agent: 'users',
+  agent_message: 'message-square',
+  workflow_orchestrate: 'git-branch',
 
   // Gen 8 - 自我进化
-  strategy_optimize: '🎯',
-  tool_create: '🔧',
-  self_evaluate: '🪞',
+  strategy_optimize: 'target',
+  tool_create: 'wrench',
+  self_evaluate: 'scan-eye',
 
   // Gen 3 - Planning 工具
-  plan_update: '📋',
-  plan_read: '📖',
-  findings_write: '📝',
-
-  // MCP 工具
-  mcp: '🔌',
+  plan_update: 'clipboard-list',
+  plan_read: 'clipboard',
+  findings_write: 'file-text',
 };
 
 /**
- * 获取工具图标
+ * 获取工具图标名称（返回 Lucide 图标名称）
+ */
+export function getToolIconName(toolName: string): string {
+  // 检查是否为 MCP 工具
+  if (toolName.startsWith('mcp_') || toolName === 'mcp') {
+    return 'plug';
+  }
+  return TOOL_ICON_NAMES[toolName] || 'wrench';
+}
+
+/**
+ * 获取工具图标（保留兼容性，返回 emoji）
+ * @deprecated 请使用 getToolIconName 配合 Lucide 图标
  */
 export function getToolIcon(toolName: string): string {
-  // 检查是否为 MCP 工具
-  if (toolName.startsWith('mcp_')) {
-    return TOOL_ICONS.mcp;
+  // 保留 emoji 映射用于兼容
+  const emojiMap: Record<string, string> = {
+    bash: '💻',
+    read_file: '📖',
+    write_file: '✍️',
+    edit_file: '✏️',
+    glob: '🔍',
+    grep: '🔎',
+    list_directory: '📁',
+    task: '🤖',
+    todo_write: '📝',
+    ask_user_question: '❓',
+    skill: '⚡',
+    web_fetch: '🌐',
+    web_search: '🔍',
+    mcp: '🔌',
+    memory_store: '💾',
+    memory_search: '🧠',
+    code_index: '📚',
+  };
+
+  if (toolName.startsWith('mcp_') || toolName === 'mcp') {
+    return '🔌';
   }
-  return TOOL_ICONS[toolName] || '🔧';
+  return emojiMap[toolName] || '🔧';
 }
 
 /**
@@ -257,20 +289,45 @@ export function summarizeToolCall(toolCall: ToolCall): string {
       return `记录发现: ${title}`;
     }
 
-    // MCP 工具
+    // MCP 工具（通过 mcp 工具调用）
+    case 'mcp': {
+      const server = (args?.server as string) || '';
+      const tool = (args?.tool as string) || '';
+      const mcpArgs = args?.arguments as Record<string, unknown> | undefined;
+
+      // 根据服务器和工具生成友好摘要
+      if (server === 'deepwiki') {
+        const repoName = (mcpArgs?.repoName as string) || '';
+        if (tool === 'read_wiki_structure') {
+          return `查看 ${repoName} 项目结构`;
+        } else if (tool === 'read_wiki_contents') {
+          const topic = (mcpArgs?.topic as string) || '';
+          return topic ? `阅读 ${repoName} - ${topic}` : `阅读 ${repoName} 文档`;
+        } else if (tool === 'ask_question') {
+          return `询问 ${repoName} 相关问题`;
+        }
+        return `DeepWiki: ${tool}`;
+      }
+
+      // 其他 MCP 服务器
+      if (tool) {
+        return `${server}: ${tool}`;
+      }
+      return `连接 ${server} 服务`;
+    }
+
+    // MCP 工具（旧格式，mcp_ 前缀）
     default: {
       if (name.startsWith('mcp_')) {
         // 解析 MCP 工具名: mcp_<serverName>_<toolName>
         const parts = name.match(/^mcp_([^_]+)_(.+)$/);
         if (parts) {
           const [, serverName, toolName] = parts;
-          return `[${serverName}] ${toolName}`;
+          return `${serverName}: ${toolName}`;
         }
       }
-      // 通用格式
-      const argsStr = JSON.stringify(args || {});
-      const shortArgs = argsStr.length > 40 ? argsStr.slice(0, 37) + '...' : argsStr;
-      return `${name}: ${shortArgs}`;
+      // 通用格式 - 简化显示
+      return name;
     }
   }
 }

@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React from 'react';
-import { Loader2, Brain, Wrench, PenLine, CheckCircle2 } from 'lucide-react';
+import { Loader2, Sparkles, Wrench, PenLine, CheckCircle2 } from 'lucide-react';
 import type { AgentTaskPhase, TaskProgressData } from '@shared/types';
 
 // ============================================================================
@@ -27,7 +27,7 @@ const phaseConfig: Record<AgentTaskPhase, {
   bgColor: string;
 }> = {
   thinking: {
-    icon: <Brain className="w-3.5 h-3.5" />,
+    icon: <Sparkles className="w-3.5 h-3.5" />,
     label: '思考中',
     color: 'text-blue-400',
     bgColor: 'bg-blue-500/20',

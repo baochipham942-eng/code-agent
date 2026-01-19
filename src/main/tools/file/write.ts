@@ -6,6 +6,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { createLogger } from '../../services/infra/logger';
+import { resolvePath } from './pathUtils';
 
 const logger = createLogger('WriteFile');
 
@@ -187,13 +188,11 @@ NEVER create documentation files (*.md, README) unless explicitly requested.`,
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolExecutionResult> {
-    let filePath = params.file_path as string;
+    const inputPath = params.file_path as string;
     const content = params.content as string;
 
-    // Resolve relative paths
-    if (!path.isAbsolute(filePath)) {
-      filePath = path.join(context.workingDirectory, filePath);
-    }
+    // Resolve path (handles ~, relative paths)
+    const filePath = resolvePath(inputPath, context.workingDirectory);
 
     // Security check: ensure file is within working directory
     const resolvedPath = path.resolve(filePath);

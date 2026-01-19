@@ -5,6 +5,7 @@
 import { glob as globLib } from 'glob';
 import path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { resolvePath } from './pathUtils';
 
 export const globTool: Tool = {
   name: 'glob',
@@ -56,12 +57,10 @@ When NOT to use:
     context: ToolContext
   ): Promise<ToolExecutionResult> {
     const pattern = params.pattern as string;
-    let searchPath = (params.path as string) || context.workingDirectory;
+    const inputPath = (params.path as string) || context.workingDirectory;
 
-    // Resolve relative paths
-    if (!path.isAbsolute(searchPath)) {
-      searchPath = path.join(context.workingDirectory, searchPath);
-    }
+    // Resolve path (handles ~, relative paths)
+    const searchPath = resolvePath(inputPath, context.workingDirectory);
 
     try {
       const matches = await globLib(pattern, {

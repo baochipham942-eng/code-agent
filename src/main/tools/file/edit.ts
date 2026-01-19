@@ -5,6 +5,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { resolvePath } from './pathUtils';
 
 export const editFileTool: Tool = {
   name: 'edit_file',
@@ -61,15 +62,13 @@ Best practices:
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolExecutionResult> {
-    let filePath = params.file_path as string;
+    const inputPath = params.file_path as string;
     const oldString = params.old_string as string;
     const newString = params.new_string as string;
     const replaceAll = (params.replace_all as boolean) || false;
 
-    // Resolve relative paths
-    if (!path.isAbsolute(filePath)) {
-      filePath = path.join(context.workingDirectory, filePath);
-    }
+    // Resolve path (handles ~, relative paths)
+    const filePath = resolvePath(inputPath, context.workingDirectory);
 
     // Security check: ensure file is within working directory
     const resolvedPath = path.resolve(filePath);

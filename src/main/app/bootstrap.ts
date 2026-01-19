@@ -107,16 +107,16 @@ export async function initializeCoreServices(): Promise<ConfigService> {
   logger.info('Memory service initialized');
 
   // Initialize Supabase (MUST be in core services for auth IPC handlers)
-  const settings = configService.getSettings();
-  const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey;
+  // Default Supabase config (public anon key, safe to hardcode)
+  const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
+  const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcGJ1bmFoemJtZXhzbW1pcXlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODkyMTcsImV4cCI6MjA4NDA2NTIxN30.8swN1QdRX5vIjNyCLNhQTPAx-k2qxeS8EN4Ot2idY7w';
 
-  if (supabaseUrl && supabaseAnonKey) {
-    initSupabase(supabaseUrl, supabaseAnonKey);
-    logger.info('Supabase initialized (core)');
-  } else {
-    logger.warn('Supabase not configured - auth features disabled');
-  }
+  const settings = configService.getSettings();
+  const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url || DEFAULT_SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey || DEFAULT_SUPABASE_ANON_KEY;
+
+  initSupabase(supabaseUrl, supabaseAnonKey);
+  logger.info('Supabase initialized (core)');
 
   logger.info('Core services initialized');
   return configService;

@@ -272,8 +272,9 @@ async function initializeServices(): Promise<void> {
   }
 
   // Initialize Langfuse (analytics, if configured)
-  const langfusePublicKey = process.env.LANGFUSE_PUBLIC_KEY || settings.langfuse?.publicKey;
-  const langfuseSecretKey = process.env.LANGFUSE_SECRET_KEY || settings.langfuse?.secretKey;
+  // Priority: configService > env > settings
+  const langfusePublicKey = configService.getServiceApiKey('langfuse_public') || settings.langfuse?.publicKey;
+  const langfuseSecretKey = configService.getServiceApiKey('langfuse_secret') || settings.langfuse?.secretKey;
   if (langfusePublicKey && langfuseSecretKey) {
     initLangfuse({
       publicKey: langfusePublicKey,

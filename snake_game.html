@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>贪吃蛇游戏</title>
+    <style>
+        /* 所有 CSS 样式将在下一步添加 */
+    </style>
+</head>
+<body>
+    <!-- 游戏容器 -->
+    <div id="game-container">
+        <!-- 游戏标题和分数 -->
+        <div id="game-header">
+            <h1>🐍 贪吃蛇游戏</h1>
+            <div id="score-board">
+                <div class="score-item">
+                    <span class="score-label">分数:</span>
+                    <span id="score">0</span>
+                </div>
+                <div class="score-item">
+                    <span class="score-label">最高分:</span>
+                    <span id="high-score">0</span>
+                </div>
+                <div class="score-item">
+                    <span class="score-label">长度:</span>
+                    <span id="length">3</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 游戏控制面板 -->
+        <div id="control-panel">
+            <div id="difficulty-selector">
+                <span class="control-label">难度:</span>
+                <button class="difficulty-btn active" data-level="easy">简单</button>
+                <button class="difficulty-btn" data-level="medium">中等</button>
+                <button class="difficulty-btn" data-level="hard">困难</button>
+            </div>
+            <div id="game-controls">
+                <button id="start-btn">开始游戏</button>
+                <button id="pause-btn" disabled>暂停</button>
+                <button id="reset-btn">重置</button>
+            </div>
+        </div>
+
+        <!-- 游戏画布 -->
+        <div id="game-area">
+            <canvas id="game-canvas" width="600" height="400"></canvas>
+            <div id="game-overlay">
+                <div id="start-screen">
+                    <h2>贪吃蛇游戏</h2>
+                    <p>使用方向键或 WASD 控制蛇的移动</p>
+                    <p>吃到食物可以增加长度和分数</p>
+                    <p>撞到墙壁或自己的身体会结束游戏</p>
+                    <button id="start-game-btn">开始游戏</button>
+                </div>
+                <div id="game-over-screen" style="display: none;">
+                    <h2>游戏结束!</h2>
+                    <p>最终分数: <span id="final-score">0</span></p>
+                    <p>蛇的长度: <span id="final-length">3</span></p>
+                    <button id="restart-btn">重新开始</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 操作说明 -->
+        <div id="instructions">
+            <h3>🎮 操作说明</h3>
+            <div class="instruction-grid">
+                <div class="instruction-item">
+                    <span class="key">↑ / W</span>
+                    <span class="desc">向上移动</span>
+                </div>
+                <div class="instruction-item">
+                    <span class="key">↓ / S</span>
+                    <span class="desc">向下移动</span>
+                </div>
+                <div class="instruction-item">
+                    <span class="key">← / A</span>
+                    <span class="desc">向左移动</span>
+                </div>
+                <div class="instruction-item">
+                    <span class="key">→ / D</span>
+                    <span class="desc">向右移动</span>
+                </div>
+                <div class="instruction-item">
+                    <span class="key">空格</span>
+                    <span class="desc">暂停/继续</span>
+                </div>
+                <div class="instruction-item">
+                    <span class="key">R</span>
+                    <span class="desc">重置游戏</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 所有 JavaScript 代码将在后续步骤添加
+    </script>
+</body>
+</html>

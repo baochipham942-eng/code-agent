@@ -358,6 +358,37 @@ export class ConfigService {
     return envKey ? process.env[envKey] : undefined;
   }
 
+  /**
+   * Get API key for non-model services (Brave, Langfuse, etc.)
+   * Priority: secure storage > environment variable
+   */
+  getServiceApiKey(service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github'): string | undefined {
+    const storage = getSecureStorage();
+
+    // Check secure storage first
+    const secureKey = storage.getApiKey(service);
+    if (secureKey) return secureKey;
+
+    // Fallback to environment variable
+    const envKeyMap: Record<string, string> = {
+      brave: 'BRAVE_API_KEY',
+      langfuse_public: 'LANGFUSE_PUBLIC_KEY',
+      langfuse_secret: 'LANGFUSE_SECRET_KEY',
+      github: 'GITHUB_TOKEN',
+    };
+
+    const envKey = envKeyMap[service];
+    return envKey ? process.env[envKey] : undefined;
+  }
+
+  /**
+   * Set API key for non-model services
+   */
+  async setServiceApiKey(service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github', apiKey: string): Promise<void> {
+    const storage = getSecureStorage();
+    storage.setApiKey(service, apiKey);
+  }
+
   async addRecentDirectory(dir: string): Promise<void> {
     const recent = this.settings.workspace.recentDirectories;
     const index = recent.indexOf(dir);

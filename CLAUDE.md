@@ -88,6 +88,28 @@ read_pdf { "file_path": "/path/to/diagram.pdf", "force_vision": true, "prompt": 
 
 **要求**：处理扫描版 PDF 需要配置 OpenRouter API Key。
 
+### Gen4 Skill 内置技能
+
+`skill` 工具提供预定义的工作流：
+
+| 技能 | 描述 |
+|------|------|
+| `file-organizer` | 整理目录文件：分析、分类、检测重复、清理 |
+| `commit` | Git 提交助手，遵循 conventional commit 规范 |
+| `code-review` | 代码审查，检查 bug、安全问题、最佳实践 |
+
+**file-organizer 使用示例：**
+
+```bash
+# 整理下载目录
+skill { "name": "file-organizer", "input": "整理我的下载文件夹" }
+
+# 整理指定目录
+skill { "name": "file-organizer", "input": "整理 ~/Desktop 目录，清理重复文件" }
+```
+
+**安全机制**：删除操作必须通过 `ask_user_question` 获得用户确认，支持移动到废纸篓或永久删除。
+
 ### Gen4 MCP 工具说明
 
 MCP (Model Context Protocol) 允许 Agent 调用外部服务提供的工具：
@@ -127,6 +149,31 @@ mcp { "server": "deepwiki", "tool": "ask_question", "arguments": { "repoName": "
 | `filesystem` | Stdio | ❌ | 文件系统访问 |
 | `git` | Stdio | ❌ | Git 版本控制 |
 | `brave-search` | Stdio | 需 BRAVE_API_KEY | 网络搜索 |
+
+## 云端 Prompt 管理
+
+System Prompt 采用前后端分离架构，支持热更新：
+
+**架构**：
+- 云端 `/api/prompts` 端点提供各代际的 system prompt
+- 客户端 `PromptService` 启动时异步拉取，1 小时缓存
+- 拉取失败自动降级到内置 prompts
+
+**优势**：
+- 修改 prompt 只需部署云端，无需重新打包客户端
+- 离线也能正常工作（使用内置版本）
+
+**API 端点**：
+```bash
+# 获取所有代际 prompts
+curl "https://code-agent-beta.vercel.app/api/prompts?gen=all"
+
+# 获取特定代际
+curl "https://code-agent-beta.vercel.app/api/prompts?gen=gen4"
+
+# 只获取版本号
+curl "https://code-agent-beta.vercel.app/api/prompts?version=true"
+```
 
 ## 版本号规范
 

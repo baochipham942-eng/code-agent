@@ -31,8 +31,8 @@ import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import type { ToolCall } from '@shared/types';
 
-// 事件类型 - 6个核心分类（Gen4 新增 MCP）
-type EventCategory = 'plan' | 'bash' | 'tools' | 'memory' | 'agent' | 'mcp';
+// 事件类型 - 7个核心分类（Gen4 新增 MCP 和 Skill）
+type EventCategory = 'plan' | 'bash' | 'tools' | 'memory' | 'agent' | 'mcp' | 'skill';
 
 // 可观测事件
 interface ObservableEvent {
@@ -91,7 +91,7 @@ const categoryConfig: Record<EventCategory, {
     color: 'text-orange-400',
     bgColor: 'bg-orange-500/10',
     borderColor: 'border-orange-500/30',
-    tools: ['task', 'ask_user_question', 'skill'],
+    tools: ['task', 'ask_user_question'],
     minGeneration: 3,
   },
   mcp: {
@@ -101,6 +101,15 @@ const categoryConfig: Record<EventCategory, {
     bgColor: 'bg-pink-500/10',
     borderColor: 'border-pink-500/30',
     tools: ['mcp', 'mcp_list_tools', 'mcp_list_resources', 'mcp_read_resource', 'mcp_get_status'],
+    minGeneration: 4,
+  },
+  skill: {
+    label: 'Skill',
+    icon: <Sparkles className="w-4 h-4" />,
+    color: 'text-amber-400',
+    bgColor: 'bg-amber-500/10',
+    borderColor: 'border-amber-500/30',
+    tools: ['skill'],
     minGeneration: 4,
   },
   memory: {
@@ -133,7 +142,9 @@ const toolCategoryMap: Record<string, EventCategory> = {
   // Agent Tools
   task: 'agent',
   ask_user_question: 'agent',
-  skill: 'agent',
+
+  // Skill
+  skill: 'skill',
 
   // Web
   web_fetch: 'tools',
@@ -230,8 +241,8 @@ function getToolIcon(name: string): React.ReactNode {
 }
 
 // 分类顺序 - 按任务执行的常规流程
-// Plan(规划) → Bash(执行) → Agent(协作) → Tools(工具) → MCP(外部服务) → Memory(记忆)
-const categoryOrder: EventCategory[] = ['plan', 'bash', 'agent', 'tools', 'mcp', 'memory'];
+// Plan(规划) → Bash(执行) → Agent(协作) → Tools(工具) → Skill(技能) → MCP(外部服务) → Memory(记忆)
+const categoryOrder: EventCategory[] = ['plan', 'bash', 'agent', 'tools', 'skill', 'mcp', 'memory'];
 
 export const ObservabilityPanel: React.FC = () => {
   const { currentGeneration } = useAppStore();
@@ -289,6 +300,7 @@ export const ObservabilityPanel: React.FC = () => {
       tools: [],
       plan: [],
       agent: [],
+      skill: [],
       mcp: [],
       memory: [],
     };

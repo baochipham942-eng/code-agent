@@ -5,8 +5,8 @@
 export { TitleBar } from './TitleBar';
 export { Sidebar } from './Sidebar';
 export { ChatView } from './ChatView';
-export { ChatInput } from './ChatInput';
-export { MessageBubble } from './MessageBubble';
+export { ChatInput } from './features/chat/ChatInput';
+export { MessageBubble } from './features/chat/MessageBubble';
 export { GenerationBadge } from './GenerationBadge';
 export { TodoPanel } from './TodoPanel';
 export { WorkspacePanel } from './WorkspacePanel';

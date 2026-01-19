@@ -408,7 +408,7 @@ class AuthService {
     const supabase = getSupabase();
     const { error } = await supabase
       .from('profiles')
-      // @ts-ignore Supabase types issue
+      // @ts-expect-error Supabase types issue
       .update({
         nickname: updates.nickname,
         avatar_url: updates.avatarUrl,
@@ -439,7 +439,7 @@ class AuthService {
 
     const { error } = await supabase
       .from('profiles')
-      // @ts-ignore Supabase types issue
+      // @ts-expect-error Supabase types issue
       .update({ quick_login_token: token })
       .eq('id', this.currentUser.id);
 

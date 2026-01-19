@@ -4,9 +4,8 @@
 
 import type { IpcMain } from 'electron';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import { getDatabase, getSessionManager } from '../services';
+import { getSessionManager } from '../services';
 import { getMemoryService } from '../memory/memoryService';
-import { getMCPClient } from '../mcp/mcpClient';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers

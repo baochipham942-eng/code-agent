@@ -59,7 +59,7 @@ export const DataSettings: React.FC = () => {
         setMessage({ type: 'success', text: `已清理 ${cleared} 条工具调用缓存` });
       }
       await loadStats();
-    } catch (error) {
+    } catch {
       setMessage({ type: 'error', text: '清理失败' });
     } finally {
       setIsClearing(false);

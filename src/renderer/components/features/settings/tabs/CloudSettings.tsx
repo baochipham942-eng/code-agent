@@ -57,7 +57,7 @@ export const CloudSettings: React.FC = () => {
       } else {
         setMessage({ type: 'error', text: result?.error || '刷新失败' });
       }
-    } catch (error) {
+    } catch {
       setMessage({ type: 'error', text: '刷新失败' });
     } finally {
       setIsRefreshingConfig(false);

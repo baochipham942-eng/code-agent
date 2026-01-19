@@ -2,7 +2,7 @@
 // Subagent Executor - Executes subtasks with limited tool access
 // ============================================================================
 
-import type { ModelConfig, ToolDefinition, ToolCall } from '../../shared/types';
+import type { ModelConfig } from '../../shared/types';
 import type { Tool, ToolContext, ToolExecutionResult } from '../tools/toolRegistry';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';

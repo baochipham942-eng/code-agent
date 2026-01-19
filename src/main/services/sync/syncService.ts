@@ -633,7 +633,7 @@ class SyncService {
 
     await supabase
       .from('devices')
-      // @ts-ignore Supabase types issue
+      // @ts-expect-error Supabase types issue
       .update({
         sync_cursor: newCursor,
         last_active_at: new Date().toISOString(),

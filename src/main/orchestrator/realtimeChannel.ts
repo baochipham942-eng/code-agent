@@ -177,7 +177,7 @@ export class RealtimeChannel extends EventEmitter {
 
     try {
       await this.connect();
-    } catch (error) {
+    } catch {
       // 连接失败，继续重试
       this.reconnect();
     }

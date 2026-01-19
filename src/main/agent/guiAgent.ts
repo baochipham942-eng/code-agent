@@ -2,7 +2,7 @@
 // GUI Agent - 基于 Claude Computer Use 的屏幕控制能力
 // ============================================================================
 
-import { screen, desktopCapturer, clipboard, nativeImage } from 'electron';
+import { screen, desktopCapturer, clipboard } from 'electron';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import type {

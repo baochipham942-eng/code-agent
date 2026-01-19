@@ -21,7 +21,7 @@ import { getMemoryService } from '../memory/memoryService';
 import { getConfigService, getAuthService, getLangfuseService } from '../services';
 import { getProactiveContextService } from '../memory/proactiveContext';
 import { logCollector } from '../mcp/logCollector.js';
-import { generateMessageId, generateToolCallId } from '../../shared/utils/id';
+import { generateMessageId } from '../../shared/utils/id';
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
 import { getMaxIterations } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';

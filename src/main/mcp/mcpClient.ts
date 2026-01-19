@@ -211,7 +211,7 @@ export class MCPClient {
           });
         }
       }
-    } catch (error) {
+    } catch {
       logger.debug(`Server ${serverName} does not support tools`);
     }
 
@@ -229,7 +229,7 @@ export class MCPClient {
           });
         }
       }
-    } catch (error) {
+    } catch {
       logger.debug(`Server ${serverName} does not support resources`);
     }
 
@@ -246,7 +246,7 @@ export class MCPClient {
           });
         }
       }
-    } catch (error) {
+    } catch {
       logger.debug(`Server ${serverName} does not support prompts`);
     }
   }

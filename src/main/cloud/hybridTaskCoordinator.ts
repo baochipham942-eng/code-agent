@@ -426,8 +426,8 @@ export class HybridTaskCoordinator extends EventEmitter {
 
     // 检查是否包含步骤标记
     const stepPatterns = [
-      /(?:^|\n)(?:第?\s*[1-9一二三四五六七八九十]+[\.、:：\s])/gi,
-      /(?:^|\n)(?:step\s*\d+[\.:\s])/gi,
+      /(?:^|\n)(?:第?\s*[1-9一二三四五六七八九十]+[.、:：\s])/gi,
+      /(?:^|\n)(?:step\s*\d+[.:\s])/gi,
       /(?:^|\n)(?:首先|然后|接着|最后|finally|first|then|next|lastly)/gi,
     ];
 
@@ -435,7 +435,7 @@ export class HybridTaskCoordinator extends EventEmitter {
 
     if (hasSteps) {
       // 按步骤拆分
-      const segments = prompt.split(/(?=(?:第?\s*[1-9一二三四五六七八九十]+[\.、:：\s])|(?:step\s*\d+[\.:\s])|(?:首先|然后|接着|最后))/gi);
+      const segments = prompt.split(/(?=(?:第?\s*[1-9一二三四五六七八九十]+[.、:：\s])|(?:step\s*\d+[.:\s])|(?:首先|然后|接着|最后))/gi);
 
       for (let i = 0; i < segments.length; i++) {
         const segment = segments[i].trim();

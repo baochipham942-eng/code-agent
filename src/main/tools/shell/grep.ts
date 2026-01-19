@@ -32,7 +32,7 @@ Auto-ignored directories:
 
 Common patterns:
 - "function\\s+handleClick" - Find function definitions
-- "import.*from\\s+['\"]react['\"]" - Find React imports
+- "import.*from\\s+['"]react['"]" - Find React imports
 - "TODO|FIXME|HACK" - Find code comments
 - "class\\s+\\w+\\s+extends" - Find class definitions
 

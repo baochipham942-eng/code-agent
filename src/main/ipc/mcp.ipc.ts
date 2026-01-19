@@ -4,7 +4,7 @@
 
 import type { IpcMain } from 'electron';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import { getMCPClient } from '../mcp/mcpClient';
+import { getMCPClient, refreshMCPServersFromCloud } from '../mcp/mcpClient';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -20,6 +20,22 @@ async function handleListTools(): Promise<unknown> {
 
 async function handleListResources(): Promise<unknown> {
   return getMCPClient().getResources();
+}
+
+async function handleGetServerStates(): Promise<unknown> {
+  return getMCPClient().getServerStates();
+}
+
+async function handleSetServerEnabled(serverName: string, enabled: boolean): Promise<void> {
+  await getMCPClient().setServerEnabled(serverName, enabled);
+}
+
+async function handleReconnectServer(serverName: string): Promise<boolean> {
+  return getMCPClient().reconnect(serverName);
+}
+
+async function handleRefreshFromCloud(): Promise<void> {
+  await refreshMCPServersFromCloud();
 }
 
 // ----------------------------------------------------------------------------
@@ -46,6 +62,24 @@ export function registerMcpHandlers(ipcMain: IpcMain): void {
           break;
         case 'listResources':
           data = await handleListResources();
+          break;
+        case 'getServerStates':
+          data = await handleGetServerStates();
+          break;
+        case 'setServerEnabled': {
+          const payload = request.payload as { serverName: string; enabled: boolean };
+          await handleSetServerEnabled(payload.serverName, payload.enabled);
+          data = { success: true };
+          break;
+        }
+        case 'reconnectServer': {
+          const payload = request.payload as { serverName: string };
+          data = await handleReconnectServer(payload.serverName);
+          break;
+        }
+        case 'refreshFromCloud':
+          await handleRefreshFromCloud();
+          data = { success: true };
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

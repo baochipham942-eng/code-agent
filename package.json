@@ -51,6 +51,7 @@
     "node-fetch": "^3.3.2",
     "openai": "^4.70.0",
     "playwright": "^1.57.0",
+    "reflect-metadata": "^0.2.2",
     "uuid": "^13.0.0",
     "zustand": "^5.0.0"
   },

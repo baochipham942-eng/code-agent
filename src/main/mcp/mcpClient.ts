@@ -9,6 +9,7 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import type { ToolDefinition, ToolResult } from '../../shared/types';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { createLogger } from '../services/infra/logger';
+import { getCloudConfigService, type MCPServerCloudConfig } from '../services/cloud/cloudConfigService';
 
 const logger = createLogger('MCPClient');
 
@@ -67,10 +68,22 @@ export interface MCPPrompt {
 // MCP Client
 // ----------------------------------------------------------------------------
 
+// 服务器连接状态
+export type MCPServerStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+export interface MCPServerState {
+  config: MCPServerConfig;
+  status: MCPServerStatus;
+  error?: string;
+  toolCount: number;
+  resourceCount: number;
+}
+
 export class MCPClient {
   private clients: Map<string, Client> = new Map();
   private transports: Map<string, Transport> = new Map();
-  private serverConfigs: MCPServerConfig[] = [];
+  private serverConfigs: Map<string, MCPServerConfig> = new Map();
+  private serverStates: Map<string, MCPServerState> = new Map();
   private tools: MCPTool[] = [];
   private resources: MCPResource[] = [];
   private prompts: MCPPrompt[] = [];
@@ -85,19 +98,113 @@ export class MCPClient {
    * 添加 MCP 服务器配置
    */
   addServer(config: MCPServerConfig): void {
-    this.serverConfigs.push(config);
+    const name = config.name;
+    this.serverConfigs.set(name, config);
+    this.serverStates.set(name, {
+      config,
+      status: 'disconnected',
+      toolCount: 0,
+      resourceCount: 0,
+    });
+  }
+
+  /**
+   * 移除 MCP 服务器
+   */
+  async removeServer(serverName: string): Promise<void> {
+    // 先断开连接
+    if (this.clients.has(serverName)) {
+      await this.disconnect(serverName);
+    }
+    // 移除配置和状态
+    this.serverConfigs.delete(serverName);
+    this.serverStates.delete(serverName);
+    logger.info(`Removed MCP server: ${serverName}`);
+  }
+
+  /**
+   * 获取所有服务器状态
+   */
+  getServerStates(): MCPServerState[] {
+    return Array.from(this.serverStates.values());
+  }
+
+  /**
+   * 获取单个服务器状态
+   */
+  getServerState(serverName: string): MCPServerState | undefined {
+    return this.serverStates.get(serverName);
+  }
+
+  /**
+   * 更新服务器配置（用于热更新）
+   * 注意：此方法会完全替换配置，而非部分更新
+   */
+  async updateServerConfig(serverName: string, newConfig: MCPServerConfig): Promise<void> {
+    const existing = this.serverConfigs.get(serverName);
+    if (!existing) {
+      throw new Error(`Server ${serverName} not found`);
+    }
+
+    this.serverConfigs.set(serverName, newConfig);
+
+    // 如果连接状态变化，处理重连
+    const wasEnabled = existing.enabled;
+    const nowEnabled = newConfig.enabled;
+
+    if (wasEnabled && !nowEnabled) {
+      // 禁用服务器
+      await this.disconnect(serverName);
+    } else if (!wasEnabled && nowEnabled) {
+      // 启用服务器
+      await this.connect(newConfig);
+    } else if (wasEnabled && nowEnabled) {
+      // 配置变更，重连
+      await this.reconnect(serverName);
+    }
+
+    // 更新状态
+    const state = this.serverStates.get(serverName);
+    if (state) {
+      state.config = newConfig;
+    }
+  }
+
+  /**
+   * 启用/禁用服务器
+   */
+  async setServerEnabled(serverName: string, enabled: boolean): Promise<void> {
+    const config = this.serverConfigs.get(serverName);
+    if (!config) {
+      throw new Error(`Server ${serverName} not found`);
+    }
+
+    const wasEnabled = config.enabled;
+    config.enabled = enabled;
+
+    if (wasEnabled && !enabled) {
+      await this.disconnect(serverName);
+    } else if (!wasEnabled && enabled) {
+      await this.connect(config);
+    }
   }
 
   /**
    * 连接到所有启用的服务器
    */
   async connectAll(): Promise<void> {
-    for (const config of this.serverConfigs) {
+    for (const config of this.serverConfigs.values()) {
       if (config.enabled) {
         try {
           await this.connect(config);
         } catch (error) {
           logger.error(`Failed to connect to MCP server ${config.name}:`, error);
+          // 更新状态为错误
+          const state = this.serverStates.get(config.name);
+          if (state) {
+            state.status = 'error';
+            state.error = error instanceof Error ? error.message : 'Unknown error';
+          }
         }
       }
     }
@@ -112,47 +219,70 @@ export class MCPClient {
       return;
     }
 
+    // 更新状态为连接中
+    const state = this.serverStates.get(config.name);
+    if (state) {
+      state.status = 'connecting';
+      state.error = undefined;
+    }
+
     logger.info(`Connecting to MCP server: ${config.name}`);
 
     let transport: Transport;
 
-    // 根据配置类型创建不同的传输
-    if (config.type === 'sse') {
-      // SSE 远程服务器
-      logger.info(`Using SSE transport for ${config.name}: ${config.serverUrl}`);
-      transport = new SSEClientTransport(new URL(config.serverUrl));
-    } else {
-      // Stdio 本地服务器 (默认)
-      const stdioConfig = config as MCPStdioServerConfig;
-      transport = new StdioClientTransport({
-        command: stdioConfig.command,
-        args: stdioConfig.args || [],
-        env: {
-          ...process.env,
-          ...stdioConfig.env,
-        } as Record<string, string>,
-      });
-    }
-
-    const client = new Client(
-      {
-        name: 'code-agent',
-        version: '0.1.0',
-      },
-      {
-        capabilities: {},
+    try {
+      // 根据配置类型创建不同的传输
+      if (config.type === 'sse') {
+        // SSE 远程服务器
+        logger.info(`Using SSE transport for ${config.name}: ${config.serverUrl}`);
+        transport = new SSEClientTransport(new URL(config.serverUrl));
+      } else {
+        // Stdio 本地服务器 (默认)
+        const stdioConfig = config as MCPStdioServerConfig;
+        transport = new StdioClientTransport({
+          command: stdioConfig.command,
+          args: stdioConfig.args || [],
+          env: {
+            ...process.env,
+            ...stdioConfig.env,
+          } as Record<string, string>,
+        });
       }
-    );
 
-    await client.connect(transport);
+      const client = new Client(
+        {
+          name: 'code-agent',
+          version: '0.1.0',
+        },
+        {
+          capabilities: {},
+        }
+      );
 
-    this.clients.set(config.name, client);
-    this.transports.set(config.name, transport);
+      await client.connect(transport);
 
-    // 获取服务器能力
-    await this.discoverCapabilities(config.name);
+      this.clients.set(config.name, client);
+      this.transports.set(config.name, transport);
 
-    logger.info(`Connected to MCP server: ${config.name}`);
+      // 获取服务器能力
+      await this.discoverCapabilities(config.name);
+
+      // 更新状态为已连接
+      if (state) {
+        state.status = 'connected';
+        state.toolCount = this.tools.filter(t => t.serverName === config.name).length;
+        state.resourceCount = this.resources.filter(r => r.serverName === config.name).length;
+      }
+
+      logger.info(`Connected to MCP server: ${config.name}`);
+    } catch (error) {
+      // 更新状态为错误
+      if (state) {
+        state.status = 'error';
+        state.error = error instanceof Error ? error.message : 'Unknown error';
+      }
+      throw error;
+    }
   }
 
   /**
@@ -176,6 +306,14 @@ export class MCPClient {
     this.tools = this.tools.filter((t) => t.serverName !== serverName);
     this.resources = this.resources.filter((r) => r.serverName !== serverName);
     this.prompts = this.prompts.filter((p) => p.serverName !== serverName);
+
+    // 更新状态
+    const state = this.serverStates.get(serverName);
+    if (state) {
+      state.status = 'disconnected';
+      state.toolCount = 0;
+      state.resourceCount = 0;
+    }
   }
 
   /**
@@ -407,7 +545,7 @@ export class MCPClient {
    * 重连指定服务器（用于超时后恢复）
    */
   async reconnect(serverName: string): Promise<boolean> {
-    const config = this.serverConfigs.find(c => c.name === serverName);
+    const config = this.serverConfigs.get(serverName);
     if (!config) {
       logger.error(`Cannot reconnect: server config not found for ${serverName}`);
       return false;
@@ -546,72 +684,56 @@ export class MCPClient {
 }
 
 // ----------------------------------------------------------------------------
-// Default MCP Server Configurations
+// Cloud Config to Internal Config Conversion
 // ----------------------------------------------------------------------------
 
-export const DEFAULT_MCP_SERVERS: MCPServerConfig[] = [
-  // ========== SSE 远程服务器 ==========
+/**
+ * 将云端 MCP 配置转换为内部配置格式
+ * 支持环境变量替换（如 ${GITHUB_TOKEN}）
+ */
+function convertCloudConfigToInternal(cloudConfig: MCPServerCloudConfig): MCPServerConfig {
+  const { id, name, type, enabled, config, requiredEnvVars } = cloudConfig;
 
-  // DeepWiki - 解读 GitHub 项目文档 (官方免费服务)
-  // 工具: read_wiki_structure, read_wiki_contents, ask_question
-  {
-    name: 'deepwiki',
-    type: 'sse',
-    serverUrl: 'https://mcp.deepwiki.com/sse',
-    enabled: true,
-  },
+  // 检查必需的环境变量
+  let shouldEnable = enabled;
+  if (requiredEnvVars && requiredEnvVars.length > 0) {
+    const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+    if (missingVars.length > 0) {
+      logger.debug(`MCP server ${name} disabled: missing env vars: ${missingVars.join(', ')}`);
+      shouldEnable = false;
+    }
+  }
 
-  // ========== Stdio 本地服务器 ==========
+  // 替换环境变量占位符
+  const resolveEnvVars = (obj: Record<string, string> | undefined): Record<string, string> | undefined => {
+    if (!obj) return undefined;
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      // 替换 ${VAR_NAME} 格式
+      result[key] = value.replace(/\$\{(\w+)\}/g, (_, varName) => process.env[varName] || '');
+    }
+    return result;
+  };
 
-  // 文件系统服务器 - 核心能力
-  {
-    name: 'filesystem',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-filesystem', process.env.HOME || '/'],
-    enabled: false, // 默认禁用，避免与内置工具冲突
-  },
-  // Git 服务器 - 版本控制
-  {
-    name: 'git',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-git'],
-    enabled: false, // 默认禁用，可在设置中启用
-  },
-  // GitHub 服务器
-  {
-    name: 'github',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-github'],
-    env: {
-      GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_TOKEN || '',
-    },
-    enabled: !!process.env.GITHUB_TOKEN,
-  },
-  // SQLite 服务器
-  {
-    name: 'sqlite',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-sqlite'],
-    enabled: false,
-  },
-  // Brave Search 服务器
-  {
-    name: 'brave-search',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-brave-search'],
-    env: {
-      BRAVE_API_KEY: process.env.BRAVE_API_KEY || '',
-    },
-    enabled: !!process.env.BRAVE_API_KEY,
-  },
-  // Memory 服务器 - 知识图谱记忆
-  {
-    name: 'memory',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-memory'],
-    enabled: false, // 默认禁用，可在设置中启用
-  },
-];
+  if (type === 'sse') {
+    return {
+      name: id,
+      type: 'sse',
+      serverUrl: config.url!,
+      enabled: shouldEnable,
+    } as MCPSSEServerConfig;
+  } else {
+    return {
+      name: id,
+      command: config.command!,
+      args: config.args?.map(arg =>
+        arg === '~' ? (process.env.HOME || '/') : arg
+      ),
+      env: resolveEnvVars(config.env),
+      enabled: shouldEnable,
+    } as MCPStdioServerConfig;
+  }
+}
 
 // ----------------------------------------------------------------------------
 // Singleton Instance
@@ -626,17 +748,30 @@ export function getMCPClient(): MCPClient {
   return mcpClientInstance;
 }
 
-export async function initMCPClient(configs?: MCPServerConfig[]): Promise<MCPClient> {
+/**
+ * 初始化 MCP 客户端
+ * 优先使用云端配置，失败时使用内置配置
+ */
+export async function initMCPClient(customConfigs?: MCPServerConfig[]): Promise<MCPClient> {
   const client = getMCPClient();
 
-  // 添加默认服务器配置
-  for (const config of DEFAULT_MCP_SERVERS) {
-    client.addServer(config);
+  // 从云端配置服务获取 MCP 配置
+  const cloudConfigService = getCloudConfigService();
+  const cloudMCPServers = cloudConfigService.getMCPServers();
+
+  if (cloudMCPServers.length > 0) {
+    logger.info(`Loading ${cloudMCPServers.length} MCP servers from cloud config`);
+    for (const cloudConfig of cloudMCPServers) {
+      const internalConfig = convertCloudConfigToInternal(cloudConfig);
+      client.addServer(internalConfig);
+    }
+  } else {
+    logger.warn('No MCP servers in cloud config, using fallback');
   }
 
-  // 添加自定义配置
-  if (configs) {
-    for (const config of configs) {
+  // 添加自定义配置（优先级最高）
+  if (customConfigs) {
+    for (const config of customConfigs) {
       client.addServer(config);
     }
   }
@@ -645,4 +780,49 @@ export async function initMCPClient(configs?: MCPServerConfig[]): Promise<MCPCli
   await client.connectAll();
 
   return client;
+}
+
+/**
+ * 从云端配置刷新 MCP 服务器
+ * 用于热更新场景
+ */
+export async function refreshMCPServersFromCloud(): Promise<void> {
+  const client = getMCPClient();
+  const cloudConfigService = getCloudConfigService();
+
+  // 刷新云端配置
+  await cloudConfigService.refresh();
+  const cloudMCPServers = cloudConfigService.getMCPServers();
+
+  logger.info(`Refreshing MCP servers from cloud config: ${cloudMCPServers.length} servers`);
+
+  // 获取当前配置的服务器名称
+  const currentServerNames = new Set(client.getServerStates().map(s => s.config.name));
+  const newServerNames = new Set(cloudMCPServers.map(s => s.id));
+
+  // 移除云端已删除的服务器
+  for (const name of currentServerNames) {
+    if (!newServerNames.has(name)) {
+      await client.removeServer(name);
+    }
+  }
+
+  // 添加或更新服务器
+  for (const cloudConfig of cloudMCPServers) {
+    const internalConfig = convertCloudConfigToInternal(cloudConfig);
+    if (currentServerNames.has(cloudConfig.id)) {
+      // 更新现有配置
+      await client.updateServerConfig(cloudConfig.id, internalConfig);
+    } else {
+      // 添加新服务器
+      client.addServer(internalConfig);
+      if (internalConfig.enabled) {
+        try {
+          await client.connect(internalConfig);
+        } catch (error) {
+          logger.error(`Failed to connect to new MCP server ${cloudConfig.id}:`, error);
+        }
+      }
+    }
+  }
 }

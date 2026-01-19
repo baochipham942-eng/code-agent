@@ -8,6 +8,96 @@ import { getSubagentExecutor } from '../../agent/SubagentExecutor';
 
 // Built-in skills
 const BUILT_IN_SKILLS: Record<string, SkillDefinition> = {
+  'file-organizer': {
+    name: 'file-organizer',
+    description: '整理目录中的文件：按类型分类、检测重复、排序文件',
+    prompt: `你是一个文件整理助手。帮助用户整理指定目录中的文件。
+
+## 工作流程
+
+### 1. 确认目标目录
+- 如果用户指定了目录，使用该目录
+- 如果没有指定，使用 ask_user_question 询问用户要整理哪个目录
+- 常见选择：桌面 (~/Desktop)、下载 (~/Downloads)、文档 (~/Documents)
+
+### 2. 分析目录内容
+- 使用 bash 执行 \`ls -la\` 查看目录内容
+- 使用 bash 执行 \`find\` 命令递归列出所有文件
+- 统计文件类型分布（按扩展名）
+
+### 3. 文件分类建议
+根据文件类型提出分类建议：
+- 📄 文档: .pdf, .doc, .docx, .txt, .md, .rtf
+- 🖼️ 图片: .jpg, .jpeg, .png, .gif, .svg, .webp, .heic
+- 🎬 视频: .mp4, .mov, .avi, .mkv, .webm
+- 🎵 音频: .mp3, .wav, .aac, .flac, .m4a
+- 📦 压缩包: .zip, .rar, .7z, .tar, .gz
+- 💻 代码: .js, .ts, .py, .java, .go, .rs, .cpp, .h
+- 📊 数据: .json, .csv, .xml, .xlsx, .sql
+- ⚙️ 配置: .env, .yml, .yaml, .toml, .ini, .conf
+- 📁 其他: 无法归类的文件
+
+### 4. 检测重复文件
+- 使用 bash 执行 md5 校验来检测重复文件：
+  \`find <目录> -type f -exec md5 {} \\; | sort | uniq -d -w 32\`
+- 列出所有重复文件及其位置
+- 计算可释放的空间大小
+
+### 5. 生成整理报告
+输出格式：
+\`\`\`
+## 📊 目录分析报告
+
+### 文件统计
+- 总文件数: X
+- 总大小: X MB
+- 文件类型分布:
+  - 图片: X 个 (X MB)
+  - 文档: X 个 (X MB)
+  ...
+
+### 🔄 重复文件
+[列出重复文件组，每组显示文件名、大小、位置]
+
+### 📁 建议的文件夹结构
+- Documents/
+- Images/
+- Videos/
+...
+
+### ⚠️ 建议操作
+[列出具体的移动/删除建议]
+\`\`\`
+
+### 6. 执行整理操作（需要用户确认）
+
+**⚠️ 重要安全规则：**
+- 移动文件前，先使用 ask_user_question 询问用户确认
+- 删除文件前，**必须**使用 ask_user_question 获得用户明确同意
+- 永远不要直接删除文件，必须先展示将要删除的文件列表
+
+**删除确认流程：**
+1. 列出建议删除的文件（如重复文件、临时文件）
+2. 使用 ask_user_question 工具询问：
+   - question: "确认删除以下文件？[文件列表]"
+   - options:
+     - { label: "确认删除", description: "永久删除这些文件，无法恢复" }
+     - { label: "移动到废纸篓", description: "移动到废纸篓，可以恢复" }
+     - { label: "取消", description: "不删除任何文件" }
+3. 只有用户选择确认后才执行删除
+
+**创建文件夹和移动文件：**
+- 使用 \`mkdir -p\` 创建分类文件夹
+- 使用 \`mv\` 移动文件到对应文件夹
+- 移动后报告操作结果
+
+## 注意事项
+- 不要整理系统文件夹（如 /System, /Library）
+- 不要整理隐藏文件（以.开头的文件），除非用户明确要求
+- 优先使用"移动到废纸篓"而非直接删除
+- macOS 废纸篓命令: \`mv <file> ~/.Trash/\``,
+    tools: ['bash', 'read_file', 'list_directory', 'glob', 'ask_user_question'],
+  },
   commit: {
     name: 'commit',
     description: 'Create a git commit following best practices',
@@ -131,7 +221,7 @@ Always follow the project's existing patterns and conventions.`,
 
 export const skillTool: Tool = {
   name: 'skill',
-  description: 'Execute a predefined skill or workflow. Available skills: commit, code-review, test, feature-dev',
+  description: 'Execute a predefined skill or workflow. Available skills: file-organizer, commit, code-review, test, feature-dev',
   generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
@@ -140,7 +230,7 @@ export const skillTool: Tool = {
     properties: {
       skill: {
         type: 'string',
-        description: 'The skill name to execute: commit, code-review, test, feature-dev',
+        description: 'The skill name to execute: file-organizer, commit, code-review, test, feature-dev',
         enum: Object.keys(BUILT_IN_SKILLS),
       },
       args: {

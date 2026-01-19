@@ -3,9 +3,41 @@
 // ============================================================================
 
 import type { IpcMain } from 'electron';
-import { IPC_CHANNELS } from '../../shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { PermissionResponse } from '../../shared/types';
 import type { AgentOrchestrator } from '../agent/AgentOrchestrator';
+
+// ----------------------------------------------------------------------------
+// Internal Handlers
+// ----------------------------------------------------------------------------
+
+async function handleSendMessage(
+  getOrchestrator: () => AgentOrchestrator | null,
+  payload: { content: string; attachments?: unknown[] }
+): Promise<void> {
+  const orchestrator = getOrchestrator();
+  if (!orchestrator) throw new Error('Agent not initialized');
+  await orchestrator.sendMessage(payload.content, payload.attachments);
+}
+
+async function handleCancel(getOrchestrator: () => AgentOrchestrator | null): Promise<void> {
+  const orchestrator = getOrchestrator();
+  if (!orchestrator) throw new Error('Agent not initialized');
+  await orchestrator.cancel();
+}
+
+async function handlePermissionResponse(
+  getOrchestrator: () => AgentOrchestrator | null,
+  payload: { requestId: string; response: PermissionResponse }
+): Promise<void> {
+  const orchestrator = getOrchestrator();
+  if (!orchestrator) throw new Error('Agent not initialized');
+  orchestrator.handlePermissionResponse(payload.requestId, payload.response);
+}
+
+// ----------------------------------------------------------------------------
+// Public Registration
+// ----------------------------------------------------------------------------
 
 /**
  * 注册 Agent 相关 IPC handlers
@@ -14,65 +46,57 @@ export function registerAgentHandlers(
   ipcMain: IpcMain,
   getOrchestrator: () => AgentOrchestrator | null
 ): void {
+  // ========== New Domain Handler (TASK-04) ==========
+  ipcMain.handle(IPC_DOMAINS.AGENT, async (_, request: IPCRequest): Promise<IPCResponse> => {
+    const { action, payload } = request;
+
+    try {
+      switch (action) {
+        case 'send':
+          await handleSendMessage(getOrchestrator, payload as { content: string; attachments?: unknown[] });
+          return { success: true, data: null };
+        case 'cancel':
+          await handleCancel(getOrchestrator);
+          return { success: true, data: null };
+        case 'permissionResponse':
+          await handlePermissionResponse(getOrchestrator, payload as { requestId: string; response: PermissionResponse });
+          return { success: true, data: null };
+        default:
+          return {
+            success: false,
+            error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` },
+          };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) },
+      };
+    }
+  });
+
+  // ========== Legacy Handlers (Deprecated) ==========
+
+  /** @deprecated Use IPC_DOMAINS.AGENT with action: 'send' */
   ipcMain.handle(
     IPC_CHANNELS.AGENT_SEND_MESSAGE,
     async (_, payload: string | { content: string; attachments?: unknown[] }) => {
-      console.log('[IPC] AGENT_SEND_MESSAGE raw payload type:', typeof payload);
-      console.log('[IPC] AGENT_SEND_MESSAGE payload is null:', payload === null);
-      console.log(
-        '[IPC] AGENT_SEND_MESSAGE payload keys:',
-        typeof payload === 'object' && payload !== null ? Object.keys(payload) : 'N/A'
-      );
-
       const content = typeof payload === 'string' ? payload : payload.content;
-      const attachments =
-        typeof payload === 'object' && payload !== null ? payload.attachments : undefined;
-      console.log(
-        '[IPC] AGENT_SEND_MESSAGE parsed - content:',
-        content?.substring(0, 50),
-        'attachments:',
-        attachments?.length || 0
-      );
-      if (attachments?.length) {
-        console.log(
-          '[IPC] Attachment details:',
-          attachments.map((a: any) => ({
-            name: a.name,
-            type: a.type,
-            category: a.category,
-            hasData: !!a.data,
-            dataLength: a.data?.length,
-            path: a.path,
-            hasPath: !!a.path,
-          }))
-        );
-      }
-
-      const orchestrator = getOrchestrator();
-      if (!orchestrator) throw new Error('Agent not initialized');
-
-      try {
-        await orchestrator.sendMessage(content, attachments);
-        console.log('[IPC] AGENT_SEND_MESSAGE completed');
-      } catch (error) {
-        console.error('[IPC] AGENT_SEND_MESSAGE error:', error);
-        throw error;
-      }
+      const attachments = typeof payload === 'object' && payload !== null ? payload.attachments : undefined;
+      return handleSendMessage(getOrchestrator, { content, attachments });
     }
   );
 
+  /** @deprecated Use IPC_DOMAINS.AGENT with action: 'cancel' */
   ipcMain.handle(IPC_CHANNELS.AGENT_CANCEL, async () => {
-    const orchestrator = getOrchestrator();
-    if (!orchestrator) throw new Error('Agent not initialized');
-    await orchestrator.cancel();
+    return handleCancel(getOrchestrator);
   });
 
+  /** @deprecated Use IPC_DOMAINS.AGENT with action: 'permissionResponse' */
   ipcMain.handle(
     IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
     async (_, requestId: string, response: PermissionResponse) => {
-      const orchestrator = getOrchestrator();
-      if (!orchestrator) throw new Error('Agent not initialized');
-      orchestrator.handlePermissionResponse(requestId, response);
+      return handlePermissionResponse(getOrchestrator, { requestId, response });
     }
   );
 }

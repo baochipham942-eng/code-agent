@@ -4,7 +4,7 @@
 > 优先级: P1
 > 预估时间: 1 周
 > 依赖: TASK-03 完成
-> 状态: 待执行
+> 状态: ✅ 已完成
 
 ---
 
@@ -257,10 +257,53 @@ src/shared/types/
 
 ## 交接备注
 
-_（任务完成后填写）_
+- **完成时间**: 2025-01-19
 
-- 完成时间:
-- 新 IPC 协议文档:
-- 新 API 端点列表:
-- 类型文件对照表:
-- 下游 Agent 注意事项:
+### 新 IPC 协议
+- 协议定义: `src/shared/ipc/protocol.ts`
+- 15 个领域通道: agent, session, generation, auth, sync, device, cloud, workspace, settings, update, mcp, memory, planning, window, data
+- 请求格式: `IPCRequest<T>` (action + payload + requestId)
+- 响应格式: `IPCResponse<T>` (success + data + error)
+- Preload 新增 `domainAPI.invoke(domain, action, payload)` 方法
+
+### 新 API 端点列表
+| 旧端点 | 新端点 | 说明 |
+|--------|--------|------|
+| /api/prompts | /api/v1/config | 合并为配置中心 |
+| /api/agent | /api/v1/agent | 云端 Agent |
+| /api/sync | /api/v1/sync | 数据同步 |
+| /api/auth | /api/v1/auth | 认证 |
+| /api/update | /api/v1/update | 版本更新 |
+| /api/tools | /api/v1/tools | 云端工具 |
+
+旧端点保留并返回 301 重定向。
+
+### 类型文件对照表
+| 原位置 | 新位置 |
+|--------|--------|
+| types.ts (全部) | types/generation.ts |
+| | types/model.ts |
+| | types/message.ts |
+| | types/tool.ts |
+| | types/permission.ts |
+| | types/session.ts |
+| | types/workspace.ts |
+| | types/planning.ts |
+| | types/question.ts |
+| | types/agent.ts |
+| | types/skill.ts |
+| | types/auth.ts |
+| | types/sync.ts |
+| | types/device.ts |
+| | types/settings.ts |
+| | types/update.ts |
+| | types/cloud.ts |
+| | types/gui.ts |
+
+原 `types.ts` 改为重导出，保持向后兼容。
+
+### 下游 Agent 注意事项
+1. 渲染进程可使用新 `domainAPI.invoke()` 方法调用 IPC
+2. 旧 `electronAPI.invoke()` 仍然可用（已标记 @deprecated）
+3. 云端 API 调用建议更新到 `/api/v1/` 端点
+4. 类型导入无需改动（`import { X } from '../../shared/types'` 仍然有效）

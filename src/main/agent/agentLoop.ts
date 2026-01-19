@@ -106,6 +106,10 @@ export interface AgentLoopConfig {
   // Session metadata for tracing
   sessionId?: string;
   userId?: string;
+  // Working directory for file operations
+  workingDirectory: string;
+  // Whether the working directory is the default sandbox (not user-specified)
+  isDefaultWorkingDirectory?: boolean;
 }
 
 interface ModelResponse {
@@ -244,6 +248,10 @@ export class AgentLoop {
   // PERFORMANCE OPTIMIZATION: Track if current task is simple to skip expensive operations
   private isSimpleTaskMode: boolean = false;
 
+  // Working directory context
+  private workingDirectory: string;
+  private isDefaultWorkingDirectory: boolean;
+
   constructor(config: AgentLoopConfig) {
     this.generation = config.generation;
     this.modelConfig = config.modelConfig;
@@ -265,6 +273,10 @@ export class AgentLoop {
     // User-configurable hooks (from .claude/settings.json)
     // Can be provided externally or created on demand
     this.hookManager = config.hookManager;
+
+    // Working directory
+    this.workingDirectory = config.workingDirectory;
+    this.isDefaultWorkingDirectory = config.isDefaultWorkingDirectory ?? true;
 
     // Tracing metadata
     this.sessionId = config.sessionId || `session-${Date.now()}`;
@@ -1766,6 +1778,9 @@ export class AgentLoop {
       systemPrompt = this.buildEnhancedSystemPrompt(systemPrompt);
     }
 
+    // Inject working directory context
+    systemPrompt = this.injectWorkingDirectoryContext(systemPrompt);
+
     // Add system prompt
     modelMessages.push({
       role: 'system',
@@ -2279,6 +2294,43 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
       logger.error('[AgentLoop] Failed to build cloud-enhanced system prompt:', error);
       return { prompt: this.buildEnhancedSystemPrompt(basePrompt), cloudSources: [] };
     }
+  }
+
+  /**
+   * Inject working directory context into system prompt
+   * This helps the model understand where it can operate and what to do when uncertain
+   */
+  private injectWorkingDirectoryContext(basePrompt: string): string {
+    const workingDirInfo = this.isDefaultWorkingDirectory
+      ? `## Working Directory
+
+**Default working directory**: \`${this.workingDirectory}\`
+
+**File Path Rules**:
+- **Relative paths** (e.g., \`game/index.html\`) → resolved against working directory
+- **Absolute paths** (e.g., \`/Users/xxx/project/file.txt\`) → used directly
+- **Home paths** (e.g., \`~/Desktop/file.txt\`) → expanded to user's home directory
+
+**When user intent is UNCLEAR about location**, use \`ask_user_question\`:
+\`\`\`json
+{
+  "question": "你想把文件保存在哪里？",
+  "options": [
+    { "label": "桌面", "description": "~/Desktop" },
+    { "label": "下载文件夹", "description": "~/Downloads" },
+    { "label": "默认工作区", "description": "${this.workingDirectory}" }
+  ]
+}
+\`\`\`
+
+**When user intent is CLEAR**, just use the appropriate path directly.`
+      : `## Working Directory
+
+**Current working directory**: \`${this.workingDirectory}\`
+
+Use relative paths (resolved against this directory) or absolute paths.`;
+
+    return `${basePrompt}\n\n${workingDirInfo}`;
   }
 
   /**

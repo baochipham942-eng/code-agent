@@ -1030,6 +1030,32 @@ export class AgentLoop {
           break;
         }
 
+        case 'folder': {
+          // 文件夹：展示绝对路径和文件列表
+          const pathInfo = attachment.path ? `\n📍 绝对路径: ${attachment.path}` : '';
+          const stats = attachment.folderStats;
+          const statsInfo = stats
+            ? `\n📊 统计: ${stats.totalFiles} 个文件, ${(stats.totalSize / 1024).toFixed(1)} KB`
+            : '';
+
+          // 构建文件列表内容
+          let filesContent = '';
+          if (attachment.files && attachment.files.length > 0) {
+            filesContent = '\n\n**文件内容：**\n';
+            for (const file of attachment.files) {
+              const ext = file.path.split('.').pop()?.toLowerCase() || '';
+              const lang = ext || 'plaintext';
+              filesContent += `\n--- ${file.path} ---\n\`\`\`${lang}\n${file.content}\n\`\`\`\n`;
+            }
+          }
+
+          contents.push({
+            type: 'text',
+            text: `📁 **文件夹: ${attachment.name}**${pathInfo}${statsInfo}\n\n${attachment.data}${filesContent}`,
+          });
+          break;
+        }
+
         default: {
           // 其他文件类型
           const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';

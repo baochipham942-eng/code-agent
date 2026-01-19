@@ -398,7 +398,7 @@ export const useAgent = () => {
           : content;
         console.log('[useAgent] messagePayload type:', typeof messagePayload, 'isObject:', typeof messagePayload === 'object');
         if (typeof messagePayload === 'object') {
-          console.log('[useAgent] Attachments being sent:', attachments?.map(a => ({ name: a.name, category: a.category, hasData: !!a.data, dataLen: a.data?.length })));
+          console.log('[useAgent] Attachments being sent:', attachments?.map(a => ({ name: a.name, category: a.category, hasData: !!a.data, dataLen: a.data?.length, path: a.path, hasPath: !!a.path })));
         }
         await window.electronAPI?.invoke('agent:send-message', messagePayload);
         console.log('[useAgent] invoke returned');

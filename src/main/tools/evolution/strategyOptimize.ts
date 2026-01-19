@@ -7,10 +7,7 @@
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { getMemoryService } from '../../memory/memoryService';
 import { getVectorStore } from '../../memory/vectorStore';
-import {
-  getEvolutionPersistence,
-  type Strategy,
-} from '../../services';
+import { getEvolutionPersistence } from '../../services';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('StrategyOptimize');

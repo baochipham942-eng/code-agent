@@ -11,14 +11,12 @@ import { MessageBubble } from './features/chat/MessageBubble';
 import { ChatInput } from './features/chat/ChatInput';
 import { TodoPanel } from './TodoPanel';
 import { PreviewPanel } from './PreviewPanel';
-import { AgentTaskProgress } from './AgentTaskProgress';
 import type { MessageAttachment, TaskProgressData } from '../../shared/types';
 import {
   Bot,
   Code2,
   Bug,
   FileQuestion,
-  TestTube2,
   Sparkles,
   Terminal,
   Zap,

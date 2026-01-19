@@ -19,9 +19,8 @@ import {
   Clock,
 } from 'lucide-react';
 import type { ToolCallDisplayProps, ToolStatus, ToolStatusConfig } from './types';
-import type { ToolCall } from '@shared/types';
 import { useAppStore } from '../../../../stores/appStore';
-import { summarizeToolCall, getToolIcon as getToolIconEmoji, getToolStatusText, getToolStatusClass } from '../../../../utils/toolSummary';
+import { summarizeToolCall, getToolIcon as getToolIconEmoji, getToolStatusText } from '../../../../utils/toolSummary';
 import { DiffView, DiffPreview } from '../../../DiffView';
 
 // Tool icon mapping

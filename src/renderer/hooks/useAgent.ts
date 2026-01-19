@@ -27,7 +27,6 @@ import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { generateMessageId } from '@shared/utils/id';
 import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData } from '@shared/types';
-import { IPC_CHANNELS } from '@shared/ipc';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('useAgent');
@@ -45,8 +44,6 @@ export const useAgent = () => {
     addMessage,
     updateMessage,
     setTodos,
-    currentSessionId,
-    markSessionUnread,
   } = useSessionStore();
 
   // Use refs to avoid stale closure issues

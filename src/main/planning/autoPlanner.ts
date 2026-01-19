@@ -6,7 +6,6 @@
 import type {
   TaskPlan,
   TaskPhase,
-  TaskStep,
   PlanningConfig,
 } from './types';
 import type { TaskComplexity, ComplexityAnalysis } from './taskComplexityAnalyzer';

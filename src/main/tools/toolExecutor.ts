@@ -214,7 +214,7 @@ export class ToolExecutor {
           reason: `调用 MCP 服务器 ${params.server}`,
         };
 
-      default:
+      default: {
         // Map permission level to permission request type
         const typeMap: Record<string, PermissionRequestData['type']> = {
           read: 'file_read',
@@ -227,6 +227,7 @@ export class ToolExecutor {
           tool: tool.name,
           details: params,
         };
+      }
     }
   }
 

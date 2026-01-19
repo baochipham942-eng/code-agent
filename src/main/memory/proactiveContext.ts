@@ -289,7 +289,7 @@ export class ProactiveContextService {
     for (const entity of entities.slice(0, 5)) { // Limit to top 5 entities
       try {
         switch (entity.type) {
-          case 'file':
+          case 'file': {
             // Search for file-related code
             const codeResults = memoryService.searchRelevantCode(entity.value, 3);
             for (const result of codeResults) {
@@ -303,9 +303,10 @@ export class ProactiveContextService {
               });
             }
             break;
+          }
 
           case 'function':
-          case 'class':
+          case 'class': {
             // Search for function/class definitions
             const defResults = memoryService.searchRelevantCode(
               `${entity.type} ${entity.value}`,
@@ -322,8 +323,9 @@ export class ProactiveContextService {
               });
             }
             break;
+          }
 
-          case 'error':
+          case 'error': {
             // Search for similar error patterns and solutions
             const errorResults = memoryService.searchKnowledge(entity.value, undefined, 3);
             for (const result of errorResults) {
@@ -337,8 +339,9 @@ export class ProactiveContextService {
               });
             }
             break;
+          }
 
-          case 'concept':
+          case 'concept': {
             // Search for concept-related knowledge
             const knowledgeResults = memoryService.searchKnowledge(entity.value, undefined, 2);
             for (const result of knowledgeResults) {
@@ -352,6 +355,7 @@ export class ProactiveContextService {
               });
             }
             break;
+          }
 
           case 'pattern':
             // Search for patterns

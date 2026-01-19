@@ -168,9 +168,10 @@ function getToolSummary(toolCall: ToolCall): string {
   const args = toolCall.arguments || {};
 
   switch (toolCall.name) {
-    case 'bash':
+    case 'bash': {
       const cmd = (args.command as string) || '';
       return cmd.length > 50 ? cmd.slice(0, 50) + '...' : cmd;
+    }
     case 'read_file':
       return `读取 ${(args.file_path as string)?.split('/').pop() || '文件'}`;
     case 'write_file':
@@ -183,9 +184,10 @@ function getToolSummary(toolCall: ToolCall): string {
       return `搜索 "${args.pattern || '内容'}"`;
     case 'list_directory':
       return `列出 ${(args.path as string)?.split('/').pop() || '目录'}`;
-    case 'todo_write':
+    case 'todo_write': {
       const todos = args.todos as Array<{ content: string }> | undefined;
       return todos ? `更新 ${todos.length} 个待办` : '更新待办事项';
+    }
     case 'task':
       return (args.description as string) || '执行子任务';
     case 'ask_user_question':

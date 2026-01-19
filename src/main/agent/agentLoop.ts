@@ -1514,11 +1514,12 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
       case 'web_fetch':
         return `Fetched: ${args.url}`;
 
-      default:
+      default: {
         // 对于其他工具，只显示名称和简短参数
         const argsStr = JSON.stringify(args);
         const shortArgs = argsStr.length > 80 ? argsStr.slice(0, 77) + '...' : argsStr;
         return `Called ${name}(${shortArgs})`;
+      }
     }
   }
 }

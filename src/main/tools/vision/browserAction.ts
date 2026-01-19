@@ -195,7 +195,7 @@ Examples:
           return { success: true, output: `Switched to tab: ${tabId}` };
 
         // Navigation
-        case 'navigate':
+        case 'navigate': {
           if (!url) {
             return { success: false, error: 'url required for navigate' };
           }
@@ -205,6 +205,7 @@ Examples:
             success: true,
             output: `Navigated to: ${content.url}\nTitle: ${content.title}`,
           };
+        }
 
         case 'back':
           await browserService.goBack(tabId);
@@ -226,7 +227,7 @@ Examples:
           await browserService.click(selector, tabId);
           return { success: true, output: `Clicked element: ${selector}` };
 
-        case 'click_text':
+        case 'click_text': {
           if (!text) {
             return { success: false, error: 'text required for click_text' };
           }
@@ -240,6 +241,7 @@ Examples:
             await tab.page.click(`text=${text}`);
           }
           return { success: true, output: `Clicked element with text: "${text}"` };
+        }
 
         case 'type':
           if (!selector) {
@@ -317,13 +319,14 @@ Examples:
           }
 
         // Form
-        case 'fill_form':
+        case 'fill_form': {
           if (!formData) {
             return { success: false, error: 'formData required for fill_form' };
           }
           await browserService.fillForm(formData, tabId);
           const fields = Object.keys(formData).join(', ');
           return { success: true, output: `Filled form fields: ${fields}` };
+        }
 
         // Logs - for debugging and transparency
         case 'get_logs': {

@@ -338,7 +338,7 @@ export const useAgent = () => {
             }
             break;
 
-          case 'error':
+          case 'error': {
             // Handle error - display it in the chat
             logger.error('Agent error', { message: event.data?.message });
             const lastMessage = currentMessages[currentMessages.length - 1];
@@ -349,6 +349,7 @@ export const useAgent = () => {
             }
             setIsProcessing(false);
             break;
+          }
 
           case 'agent_complete':
             // Agent has finished processing

@@ -171,7 +171,7 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
       command = `cliclick m:${action.x},${action.y} 2>/dev/null || echo "Mouse moved to ${action.x},${action.y}"`;
       break;
 
-    case 'type':
+    case 'type': {
       if (!action.text) {
         return { success: false, error: 'text required for type action' };
       }
@@ -179,8 +179,9 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
       const escapedText = action.text.replace(/"/g, '\\"').replace(/\\/g, '\\\\');
       command = `osascript -e 'tell application "System Events" to keystroke "${escapedText}"'`;
       break;
+    }
 
-    case 'key':
+    case 'key': {
       if (!action.key) {
         return { success: false, error: 'key required for key action' };
       }
@@ -195,8 +196,9 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
         command = `osascript -e 'tell application "System Events" to keystroke "${keyCode.value}" ${modifierStr}'`;
       }
       break;
+    }
 
-    case 'scroll':
+    case 'scroll': {
       const scrollAmount = action.amount || 100;
       const scrollDir = action.direction || 'down';
       const deltaY = scrollDir === 'up' ? -scrollAmount : (scrollDir === 'down' ? scrollAmount : 0);
@@ -204,6 +206,7 @@ async function executeMacOSAction(action: ComputerAction): Promise<ToolExecution
 
       command = `osascript -e 'tell application "System Events" to scroll {${deltaX}, ${deltaY}}'`;
       break;
+    }
 
     case 'drag':
       if (action.x === undefined || action.y === undefined ||
@@ -269,7 +272,7 @@ async function executeLinuxAction(action: ComputerAction): Promise<ToolExecution
       command = `xdotool type "${action.text.replace(/"/g, '\\"')}"`;
       break;
 
-    case 'key':
+    case 'key': {
       if (!action.key) {
         return { success: false, error: 'key required for key action' };
       }
@@ -285,13 +288,15 @@ async function executeLinuxAction(action: ComputerAction): Promise<ToolExecution
       const keyStr = modifiers ? `${modifiers}+${action.key}` : action.key;
       command = `xdotool key ${keyStr}`;
       break;
+    }
 
-    case 'scroll':
+    case 'scroll': {
       const amount = Math.ceil((action.amount || 100) / 10);
       const button = action.direction === 'up' ? 4 : (action.direction === 'down' ? 5 :
                      action.direction === 'left' ? 6 : 7);
       command = `xdotool click --repeat ${amount} ${button}`;
       break;
+    }
 
     case 'drag':
       if (action.x === undefined || action.y === undefined ||

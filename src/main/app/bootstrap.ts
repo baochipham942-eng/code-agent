@@ -552,15 +552,16 @@ async function setupLogBridge(): Promise<void> {
               await browserService.close();
               return { success: true, output: 'Browser closed' };
 
-            case 'new_tab':
+            case 'new_tab': {
               const tabId = await browserService.newTab(params.url as string);
               return { success: true, output: `New tab created: ${tabId}` };
+            }
 
             case 'navigate':
               await browserService.navigate(params.url as string, params.tabId as string);
               return { success: true, output: `Navigated to ${params.url}` };
 
-            case 'screenshot':
+            case 'screenshot': {
               const result = await browserService.screenshot({
                 fullPage: params.fullPage as boolean,
                 tabId: params.tabId as string,
@@ -570,13 +571,15 @@ async function setupLogBridge(): Promise<void> {
                 output: result.path ? `Screenshot saved: ${result.path}` : undefined,
                 error: result.error,
               };
+            }
 
-            case 'get_content':
+            case 'get_content': {
               const content = await browserService.getPageContent(params.tabId as string);
               return {
                 success: true,
                 output: `URL: ${content.url}\nTitle: ${content.title}\n\n${content.text.substring(0, 2000)}...`,
               };
+            }
 
             case 'click':
               await browserService.click(params.selector as string, params.tabId as string);
@@ -590,9 +593,10 @@ async function setupLogBridge(): Promise<void> {
               );
               return { success: true, output: `Typed into: ${params.selector}` };
 
-            case 'get_logs':
+            case 'get_logs': {
               const logs = browserService.logger.getLogsAsString(params.count as number || 20);
               return { success: true, output: logs };
+            }
 
             case 'press_key':
               await browserService.pressKey(params.key as string, params.tabId as string);

@@ -221,13 +221,14 @@ export class StrategySyncer extends EventEmitter {
           // 保留本地版本，不做处理
           break;
 
-        case 'remote':
+        case 'remote': {
           // 使用远程版本
           const remoteStrategy = remoteStrategies.find((s) => s.id === conflict.strategyId);
           if (remoteStrategy) {
             await this.manager.updateStrategy(conflict.strategyId, remoteStrategy);
           }
           break;
+        }
 
         case 'manual':
           // 添加到待处理冲突

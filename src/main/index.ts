@@ -182,7 +182,7 @@ async function initializeServices(): Promise<void> {
   initCloudConfigService()
     .then(() => {
       const info = getCloudConfigService().getInfo();
-      console.log(`[CloudConfig] Source: ${info.isCloud ? 'cloud' : 'builtin'}, version: ${info.version}`);
+      console.log(`[CloudConfig] Source: ${info.fromCloud ? 'cloud' : 'builtin'}, version: ${info.version}`);
     })
     .catch((error) => {
       console.warn('[CloudConfig] Init failed (using builtin):', error);
@@ -1488,6 +1488,25 @@ function setupIpcHandlers(): void {
         },
       });
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // Security Handlers
+  // -------------------------------------------------------------------------
+
+  // Check if any API key is configured
+  ipcMain.handle(IPC_CHANNELS.SECURITY_CHECK_API_KEY_CONFIGURED, async (): Promise<boolean> => {
+    const { getSecureStorage } = await import('./services/SecureStorage');
+    const storage = getSecureStorage();
+    const providers = storage.getStoredApiKeyProviders();
+    return providers.length > 0;
+  });
+
+  // Tool create response handler - managed by toolCreate.ts
+  ipcMain.handle(IPC_CHANNELS.SECURITY_TOOL_CREATE_RESPONSE, async (_, requestId: string, allowed: boolean) => {
+    // This will be handled by the pending request callback in toolCreate.ts
+    const { handleToolCreateResponse } = await import('./tools/gen8/toolCreate');
+    handleToolCreateResponse(requestId, allowed);
   });
 
   // -------------------------------------------------------------------------

@@ -28,6 +28,87 @@ interface DynamicTool {
 // Registry of dynamically created tools
 const dynamicTools: Map<string, DynamicTool> = new Map();
 
+// Pending tool create requests waiting for user confirmation
+interface PendingRequest {
+  resolve: (allowed: boolean) => void;
+  timeout: NodeJS.Timeout;
+}
+const pendingRequests: Map<string, PendingRequest> = new Map();
+
+/**
+ * Request user confirmation for tool creation
+ * Called from UI via IPC
+ */
+export function handleToolCreateResponse(requestId: string, allowed: boolean): void {
+  const pending = pendingRequests.get(requestId);
+  if (pending) {
+    clearTimeout(pending.timeout);
+    pending.resolve(allowed);
+    pendingRequests.delete(requestId);
+    console.log(`[toolCreate] User ${allowed ? 'allowed' : 'denied'} tool creation: ${requestId}`);
+  }
+}
+
+/**
+ * Send tool create request to renderer and wait for user response
+ */
+async function requestUserConfirmation(
+  tool: {
+    name: string;
+    description: string;
+    type: string;
+    code?: string;
+    script?: string;
+  }
+): Promise<boolean> {
+  // Check if devModeAutoApprove is enabled
+  try {
+    const { getConfigService } = await import('../../services/ConfigService');
+    const configService = getConfigService();
+    if (configService.isDevModeAutoApproveEnabled()) {
+      console.log('[toolCreate] devModeAutoApprove enabled, auto-approving tool creation');
+      return true;
+    }
+  } catch (e) {
+    // Continue with user confirmation if config service unavailable
+  }
+
+  // Generate unique request ID
+  const requestId = `tool_create_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  return new Promise<boolean>((resolve) => {
+    // Set timeout (30 seconds to respond)
+    const timeout = setTimeout(() => {
+      pendingRequests.delete(requestId);
+      console.log(`[toolCreate] Request timed out: ${requestId}`);
+      resolve(false); // Default to deny on timeout
+    }, 30000);
+
+    // Store pending request
+    pendingRequests.set(requestId, { resolve, timeout });
+
+    // Send request to renderer
+    const { BrowserWindow } = require('electron');
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (mainWindow) {
+      mainWindow.webContents.send('security:tool-create-request', {
+        id: requestId,
+        name: tool.name,
+        description: tool.description,
+        type: tool.type,
+        code: tool.code,
+        script: tool.script,
+      });
+      console.log(`[toolCreate] Sent confirmation request to UI: ${requestId}`);
+    } else {
+      // No window available, deny
+      clearTimeout(timeout);
+      pendingRequests.delete(requestId);
+      resolve(false);
+    }
+  });
+}
+
 export const toolCreateTool: Tool = {
   name: 'tool_create',
   description: `Dynamically create new tools at runtime.
@@ -131,10 +212,10 @@ For bash_script (DANGEROUS - requires approval):
   },
 };
 
-function createTool(
+async function createTool(
   params: Record<string, unknown>,
   context: ToolContext
-): ToolExecutionResult {
+): Promise<ToolExecutionResult> {
   const name = params.name as string;
   const description = params.description as string;
   const type = params.type as DynamicTool['type'];
@@ -169,6 +250,23 @@ function createTool(
     return {
       success: false,
       error: validationResult.error!,
+    };
+  }
+
+  // Request user confirmation before creating the tool
+  const toolInfo = {
+    name,
+    description,
+    type,
+    code: config.code as string | undefined,
+    script: config.script as string | undefined,
+  };
+
+  const allowed = await requestUserConfirmation(toolInfo);
+  if (!allowed) {
+    return {
+      success: false,
+      error: '⚠️ 工具创建已被用户拒绝',
     };
   }
 

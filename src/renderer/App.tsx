@@ -19,9 +19,10 @@ import { AuthModal } from './components/AuthModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
 import { PermissionModal } from './components/PermissionModal';
 import { CloudTaskPanel } from './components/CloudTaskPanel';
+import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { useDisclosure } from './hooks/useDisclosure';
 import { Activity, Brain, Cloud } from 'lucide-react';
-import { IPC_CHANNELS, type NotificationClickedEvent } from '@shared/ipc';
+import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 
 export const App: React.FC = () => {
@@ -43,6 +44,12 @@ export const App: React.FC = () => {
 
   // 强制更新状态
   const [forceUpdateInfo, setForceUpdateInfo] = useState<UpdateInfo | null>(null);
+
+  // API Key 配置引导弹窗
+  const [showApiKeySetup, setShowApiKeySetup] = useState(false);
+
+  // 工具创建确认弹窗
+  const [toolCreateRequest, setToolCreateRequest] = useState<ToolCreateRequest | null>(null);
 
   // Auth store
   const { showAuthModal } = useAuthStore();
@@ -145,6 +152,40 @@ export const App: React.FC = () => {
     // 延迟检查，等待应用完全加载
     const timer = setTimeout(checkForUpdates, 2000);
     return () => clearTimeout(timer);
+  }, []);
+
+  // 首次启动检测 API Key 是否配置
+  useEffect(() => {
+    const checkApiKeyConfigured = async () => {
+      try {
+        const configured = await window.electronAPI?.invoke(IPC_CHANNELS.SECURITY_CHECK_API_KEY_CONFIGURED);
+        if (!configured) {
+          console.log('[App] No API Key configured, showing setup modal');
+          setShowApiKeySetup(true);
+        }
+      } catch (error) {
+        console.error('[App] Failed to check API Key configuration:', error);
+      }
+    };
+
+    // 延迟检查，等待应用完全加载
+    const timer = setTimeout(checkApiKeyConfigured, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // 监听工具创建确认请求
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.on(
+      IPC_CHANNELS.SECURITY_TOOL_CREATE_REQUEST,
+      (request: ToolCreateRequestEvent) => {
+        console.log('[App] Received tool create request:', request.name);
+        setToolCreateRequest(request);
+      }
+    );
+
+    return () => {
+      unsubscribe?.();
+    };
   }, []);
 
   // Check if observability panel is available (Advanced+ disclosure level)
@@ -323,6 +364,40 @@ export const App: React.FC = () => {
 
       {/* Force Update Modal - 强制更新，不可关闭 */}
       {forceUpdateInfo && <ForceUpdateModal updateInfo={forceUpdateInfo} />}
+
+      {/* API Key Setup Modal - 首次启动引导 */}
+      {showApiKeySetup && (
+        <ApiKeySetupModal
+          onSetup={() => {
+            setShowApiKeySetup(false);
+            setShowSettings(true);
+          }}
+          onSkip={() => setShowApiKeySetup(false)}
+        />
+      )}
+
+      {/* Tool Create Confirm Modal - 动态工具创建确认 */}
+      {toolCreateRequest && (
+        <ToolCreateConfirmModal
+          request={toolCreateRequest}
+          onAllow={() => {
+            window.electronAPI?.invoke(
+              IPC_CHANNELS.SECURITY_TOOL_CREATE_RESPONSE,
+              toolCreateRequest.id,
+              true
+            );
+            setToolCreateRequest(null);
+          }}
+          onDeny={() => {
+            window.electronAPI?.invoke(
+              IPC_CHANNELS.SECURITY_TOOL_CREATE_RESPONSE,
+              toolCreateRequest.id,
+              false
+            );
+            setToolCreateRequest(null);
+          }}
+        />
+      )}
     </div>
   );
 };

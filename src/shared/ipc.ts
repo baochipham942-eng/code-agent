@@ -250,6 +250,11 @@ export const IPC_CHANNELS = {
   // Notification channels
   NOTIFICATION_CLICKED: 'notification:clicked',
 
+  // Security channels (API Key setup, tool create confirm)
+  SECURITY_CHECK_API_KEY_CONFIGURED: 'security:check-api-key-configured',
+  SECURITY_TOOL_CREATE_REQUEST: 'security:tool-create-request',
+  SECURITY_TOOL_CREATE_RESPONSE: 'security:tool-create-response',
+
   // Cloud config channels
   CLOUD_CONFIG_REFRESH: 'cloud:config:refresh',
   CLOUD_CONFIG_GET_INFO: 'cloud:config:get-info',
@@ -409,9 +414,13 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.PERSISTENT_GET_DEV_MODE]: () => Promise<boolean>;
   [IPC_CHANNELS.PERSISTENT_SET_DEV_MODE]: (enabled: boolean) => Promise<void>;
 
+  // Security
+  [IPC_CHANNELS.SECURITY_CHECK_API_KEY_CONFIGURED]: () => Promise<boolean>;
+  [IPC_CHANNELS.SECURITY_TOOL_CREATE_RESPONSE]: (requestId: string, allowed: boolean) => Promise<void>;
+
   // Cloud config
   [IPC_CHANNELS.CLOUD_CONFIG_REFRESH]: () => Promise<{ success: boolean; version: string; error?: string }>;
-  [IPC_CHANNELS.CLOUD_CONFIG_GET_INFO]: () => Promise<{ version: string; isCloud: boolean; lastError: string | null }>;
+  [IPC_CHANNELS.CLOUD_CONFIG_GET_INFO]: () => Promise<{ version: string; lastFetch: number; isStale: boolean; fromCloud: boolean; lastError: string | null }>;
 
   // Cloud task
   [IPC_CHANNELS.CLOUD_TASK_CREATE]: (request: CreateCloudTaskRequest) => Promise<CloudTask>;
@@ -463,9 +472,19 @@ export interface NotificationClickedEvent {
   sessionId: string;
 }
 
+export interface ToolCreateRequestEvent {
+  id: string;
+  name: string;
+  description: string;
+  type: string;
+  code?: string;
+  script?: string;
+}
+
 export interface IpcEventHandlers {
   [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEvent) => void;
   [IPC_CHANNELS.PLANNING_EVENT]: (event: PlanningEvent) => void;
+  [IPC_CHANNELS.SECURITY_TOOL_CREATE_REQUEST]: (request: ToolCreateRequestEvent) => void;
   [IPC_CHANNELS.USER_QUESTION_ASK]: (request: UserQuestionRequest) => void;
   [IPC_CHANNELS.AUTH_EVENT]: (event: AuthEvent) => void;
   [IPC_CHANNELS.SYNC_EVENT]: (status: SyncStatus) => void;

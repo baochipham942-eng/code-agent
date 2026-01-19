@@ -5,12 +5,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore, type DisclosureLevel } from '../stores/appStore';
 import { useI18n, type Language } from '../hooks/useI18n';
-import { X, Key, Cpu, Palette, Info, Layers, Eye, EyeOff, Sparkles, Zap, Globe, Database, Download, RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { X, Key, Cpu, Palette, Info, Layers, Eye, EyeOff, Sparkles, Zap, Globe, Database, Download, RefreshCw, CheckCircle, AlertCircle, Loader2, Cloud } from 'lucide-react';
 import type { ModelProvider, UpdateInfo } from '@shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { UpdateNotification } from './UpdateNotification';
+import { DevModeConfirmModal } from './ConfirmModal';
 
-type SettingsTab = 'model' | 'disclosure' | 'appearance' | 'language' | 'cache' | 'update' | 'about';
+type SettingsTab = 'model' | 'disclosure' | 'appearance' | 'language' | 'cache' | 'cloud' | 'update' | 'about';
 
 export const SettingsModal: React.FC = () => {
   const { setShowSettings, modelConfig, setModelConfig, disclosureLevel, setDisclosureLevel } = useAppStore();
@@ -43,6 +44,7 @@ export const SettingsModal: React.FC = () => {
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'language', label: t.settings.tabs.language, icon: <Globe className="w-4 h-4" /> },
     { id: 'cache', label: t.settings.tabs.data || '数据', icon: <Database className="w-4 h-4" /> },
+    { id: 'cloud', label: t.settings.tabs.cloud || '云端', icon: <Cloud className="w-4 h-4" /> },
     { id: 'update', label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: optionalUpdateInfo?.hasUpdate },
     { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
   ];
@@ -102,6 +104,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'appearance' && <AppearanceSettings />}
             {activeTab === 'language' && <LanguageSettings />}
             {activeTab === 'cache' && <CacheSettings />}
+            {activeTab === 'cloud' && <CloudConfigSettings />}
             {activeTab === 'update' && (
               <UpdateSettings
                 updateInfo={optionalUpdateInfo}
@@ -318,6 +321,7 @@ const DisclosureSettings: React.FC<{
 }> = ({ level, onChange }) => {
   const { t } = useI18n();
   const [devModeAutoApprove, setDevModeAutoApprove] = useState(true);
+  const [showDevModeConfirm, setShowDevModeConfirm] = useState(false);
 
   // Handle disclosure level change and persist to backend
   const handleLevelChange = async (newLevel: DisclosureLevel) => {
@@ -359,7 +363,18 @@ const DisclosureSettings: React.FC<{
 
   // Toggle dev mode auto-approve (save to persistent storage)
   const handleDevModeToggle = async () => {
-    const newValue = !devModeAutoApprove;
+    // If turning ON, show confirmation first
+    if (!devModeAutoApprove) {
+      setShowDevModeConfirm(true);
+      return;
+    }
+
+    // Turning OFF - no confirmation needed
+    await saveDevModeSetting(false);
+  };
+
+  // Actually save the dev mode setting
+  const saveDevModeSetting = async (newValue: boolean) => {
     setDevModeAutoApprove(newValue);
     try {
       // Save to persistent storage (survives data clear)
@@ -370,6 +385,16 @@ const DisclosureSettings: React.FC<{
       // Revert on error
       setDevModeAutoApprove(!newValue);
     }
+  };
+
+  // Handle dev mode confirmation
+  const handleDevModeConfirm = async () => {
+    setShowDevModeConfirm(false);
+    await saveDevModeSetting(true);
+  };
+
+  const handleDevModeCancel = () => {
+    setShowDevModeConfirm(false);
   };
 
   const levels: {
@@ -498,6 +523,14 @@ const DisclosureSettings: React.FC<{
           </button>
         </div>
       </div>
+
+      {/* Dev Mode Confirmation Modal */}
+      {showDevModeConfirm && (
+        <DevModeConfirmModal
+          onConfirm={handleDevModeConfirm}
+          onCancel={handleDevModeCancel}
+        />
+      )}
     </div>
   );
 };
@@ -673,7 +706,6 @@ interface DataStats {
 }
 
 const CacheSettings: React.FC = () => {
-  const { t } = useI18n();
   const [stats, setStats] = useState<DataStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
@@ -796,6 +828,149 @@ const CacheSettings: React.FC = () => {
           <span className="text-sm">{message.text}</span>
         </div>
       )}
+    </div>
+  );
+};
+
+// Cloud Config Settings Tab - 云端配置管理
+interface CloudConfigInfo {
+  version: string;
+  lastFetch: number;
+  isStale: boolean;
+  fromCloud: boolean;
+  lastError: string | null;
+}
+
+const CloudConfigSettings: React.FC = () => {
+  const { t } = useI18n();
+  const [cloudConfigInfo, setCloudConfigInfo] = useState<CloudConfigInfo | null>(null);
+  const [isRefreshingConfig, setIsRefreshingConfig] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const loadCloudConfigInfo = async () => {
+    try {
+      const info = await window.electronAPI?.invoke(IPC_CHANNELS.CLOUD_CONFIG_GET_INFO);
+      if (info) setCloudConfigInfo(info);
+    } catch (error) {
+      console.error('Failed to load cloud config info:', error);
+    }
+  };
+
+  useEffect(() => {
+    loadCloudConfigInfo();
+  }, []);
+
+  const handleRefreshCloudConfig = async () => {
+    setIsRefreshingConfig(true);
+    setMessage(null);
+    try {
+      const result = await window.electronAPI?.invoke(IPC_CHANNELS.CLOUD_CONFIG_REFRESH);
+      if (result?.success) {
+        setMessage({ type: 'success', text: `配置已更新到 v${result.version}` });
+        await loadCloudConfigInfo();
+      } else {
+        setMessage({ type: 'error', text: result?.error || '刷新失败' });
+      }
+    } catch (error) {
+      setMessage({ type: 'error', text: '刷新失败' });
+    } finally {
+      setIsRefreshingConfig(false);
+    }
+  };
+
+  // 格式化时间
+  const formatTime = (timestamp: number): string => {
+    if (!timestamp) return '从未';
+    const date = new Date(timestamp);
+    return date.toLocaleString('zh-CN', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-sm font-medium text-zinc-100 mb-2">
+          {t.settings.cloud?.title || '云端配置'}
+        </h3>
+        <p className="text-xs text-zinc-400 mb-4">
+          {t.settings.cloud?.description || 'System Prompt、Skills 等配置从云端实时获取，支持热更新。'}
+        </p>
+      </div>
+
+      {/* Config Info */}
+      <div className="bg-zinc-800/50 rounded-lg p-4">
+        <h4 className="text-sm font-medium text-zinc-100 mb-3">配置状态</h4>
+        {cloudConfigInfo ? (
+          <div className="space-y-2 text-xs">
+            <div className="flex justify-between text-zinc-400">
+              <span>配置版本</span>
+              <span className="text-zinc-300 font-mono">{cloudConfigInfo.version}</span>
+            </div>
+            <div className="flex justify-between text-zinc-400">
+              <span>配置来源</span>
+              <span className={cloudConfigInfo.fromCloud ? 'text-green-400' : 'text-yellow-400'}>
+                {cloudConfigInfo.fromCloud ? '云端' : '内置'}
+              </span>
+            </div>
+            <div className="flex justify-between text-zinc-400">
+              <span>上次获取</span>
+              <span className="text-zinc-300">{formatTime(cloudConfigInfo.lastFetch)}</span>
+            </div>
+            <div className="flex justify-between text-zinc-400">
+              <span>缓存状态</span>
+              <span className={cloudConfigInfo.isStale ? 'text-yellow-400' : 'text-green-400'}>
+                {cloudConfigInfo.isStale ? '已过期' : '有效'}
+              </span>
+            </div>
+            {cloudConfigInfo.lastError && (
+              <div className="flex justify-between text-zinc-400">
+                <span>最近错误</span>
+                <span className="text-red-400 truncate max-w-[200px]" title={cloudConfigInfo.lastError}>
+                  {cloudConfigInfo.lastError}
+                </span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
+          </div>
+        )}
+      </div>
+
+      {/* Refresh Button */}
+      <button
+        onClick={handleRefreshCloudConfig}
+        disabled={isRefreshingConfig}
+        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <RefreshCw className={`w-4 h-4 ${isRefreshingConfig ? 'animate-spin' : ''}`} />
+        {isRefreshingConfig ? '刷新中...' : '刷新云端配置'}
+      </button>
+
+      {/* Message */}
+      {message && (
+        <div className={`flex items-center gap-2 p-3 rounded-lg ${
+          message.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+        }`}>
+          {message.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+          <span className="text-sm">{message.text}</span>
+        </div>
+      )}
+
+      {/* Info Box */}
+      <div className="bg-zinc-800/50 rounded-lg p-4">
+        <h4 className="text-sm font-medium text-zinc-100 mb-2">关于云端配置</h4>
+        <p className="text-xs text-zinc-400 leading-relaxed">
+          云端配置包含 System Prompt、Skills 定义、Feature Flags 等内容。
+          配置会在应用启动时自动获取，并缓存 1 小时。如果云端不可用，
+          将自动降级使用内置配置。
+        </p>
+      </div>
     </div>
   );
 };

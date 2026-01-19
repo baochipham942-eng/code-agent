@@ -1511,7 +1511,7 @@ function setupIpcHandlers(): void {
   // Tool create response handler - managed by toolCreate.ts
   ipcMain.handle(IPC_CHANNELS.SECURITY_TOOL_CREATE_RESPONSE, async (_, requestId: string, allowed: boolean) => {
     // This will be handled by the pending request callback in toolCreate.ts
-    const { handleToolCreateResponse } = await import('./tools/gen8/toolCreate');
+    const { handleToolCreateResponse } = await import('./tools/evolution/toolCreate');
     handleToolCreateResponse(requestId, allowed);
   });
 

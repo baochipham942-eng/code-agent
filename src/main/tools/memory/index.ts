@@ -1,8 +1,8 @@
 // ============================================================================
-// Gen5 Tools - Cognitive Enhancement Era
+// Memory Tools - 记忆工具
 // ============================================================================
 
-export { memoryStoreTool } from './memoryStore';
-export { memorySearchTool } from './memorySearch';
+export { memoryStoreTool } from './store';
+export { memorySearchTool } from './search';
 export { codeIndexTool } from './codeIndex';
 export { autoLearnTool } from './autoLearn';

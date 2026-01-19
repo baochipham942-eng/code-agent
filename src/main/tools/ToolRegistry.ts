@@ -9,54 +9,31 @@ import type {
 } from '../../shared/types';
 import { getCloudConfigService } from '../services/cloud';
 
-// Import tool definitions
-import { bashTool } from './gen1/bash';
-import { readFileTool } from './gen1/readFile';
-import { writeFileTool } from './gen1/writeFile';
-import { editFileTool } from './gen1/editFile';
-import { globTool } from './gen2/glob';
-import { grepTool } from './gen2/grep';
-import { listDirectoryTool } from './gen2/listDirectory';
-import { taskTool } from './gen3/task';
-import { todoWriteTool } from './gen3/todoWrite';
-import { askUserQuestionTool } from './gen3/askUserQuestion';
-import { planReadTool } from './gen3/planRead';
-import { planUpdateTool } from './gen3/planUpdate';
-import { findingsWriteTool } from './gen3/findingsWrite';
-import { enterPlanModeTool } from './gen3/enterPlanMode';
-import { exitPlanModeTool } from './gen3/exitPlanMode';
-import { skillTool } from './gen4/skill';
-import { webFetchTool } from './gen4/webFetch';
-import { webSearchTool } from './gen4/webSearch';
-import { readPdfTool } from './gen4/readPdf';
+// Import tool definitions - organized by function
+import { bashTool, grepTool } from './shell';
+import { readFileTool, writeFileTool, editFileTool, globTool, listDirectoryTool } from './file';
+import {
+  taskTool,
+  todoWriteTool,
+  askUserQuestionTool,
+  planReadTool,
+  planUpdateTool,
+  findingsWriteTool,
+  enterPlanModeTool,
+  exitPlanModeTool,
+} from './planning';
+import { skillTool, webFetchTool, webSearchTool, readPdfTool } from './network';
 import {
   mcpTool,
   mcpListToolsTool,
   mcpListResourcesTool,
   mcpReadResourceTool,
   mcpGetStatusTool,
-} from './gen4/mcpTool';
-import { memoryStoreTool } from './gen5/memoryStore';
-import { memorySearchTool } from './gen5/memorySearch';
-import { codeIndexTool } from './gen5/codeIndex';
-import { autoLearnTool } from './gen5/autoLearn';
-
-// Gen 6 tools - Computer Use
-import { screenshotTool } from './gen6/screenshot.js';
-import { computerUseTool } from './gen6/computerUse.js';
-import { browserNavigateTool } from './gen6/browserNavigate.js';
-import { browserActionTool } from './gen6/browserAction.js';
-
-// Gen 7 tools - Multi-Agent
-import { spawnAgentTool } from './gen7/spawnAgent';
-import { agentMessageTool } from './gen7/agentMessage';
-import { workflowOrchestrateTool } from './gen7/workflowOrchestrate';
-
-// Gen 8 tools - Self-Evolution
-import { strategyOptimizeTool } from './gen8/strategyOptimize';
-import { toolCreateTool } from './gen8/toolCreate';
-import { selfEvaluateTool } from './gen8/selfEvaluate';
-import { learnPatternTool } from './gen8/learnPattern';
+} from './mcp';
+import { memoryStoreTool, memorySearchTool, codeIndexTool, autoLearnTool } from './memory';
+import { screenshotTool, computerUseTool, browserNavigateTool, browserActionTool } from './vision';
+import { spawnAgentTool, agentMessageTool, workflowOrchestrateTool } from './multiagent';
+import { strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternTool } from './evolution';
 
 // ----------------------------------------------------------------------------
 // Tool Interface

@@ -29,48 +29,48 @@
 └─────────────┴─────────────┴─────────────┴─────────────────────────┘
 ```
 
-#### Agent A：Button 组件提取
-- [ ] 创建 `src/renderer/components/primitives/Button.tsx`
-- [ ] 实现 variant: primary | secondary | ghost | danger
-- [ ] 实现 size: sm | md | lg
-- [ ] 实现 loading 状态
-- [ ] 实现 icon 支持
-- [ ] 创建 `src/renderer/components/primitives/IconButton.tsx`
-- [ ] 替换以下文件中的按钮代码：
+#### Agent A：Button 组件提取 (已完成)
+- [x] 创建 `src/renderer/components/primitives/Button.tsx`
+- [x] 实现 variant: primary | secondary | ghost | danger
+- [x] 实现 size: sm | md | lg
+- [x] 实现 loading 状态
+- [x] 实现 icon 支持
+- [x] 创建 `src/renderer/components/primitives/IconButton.tsx`
+- [x] 替换以下文件中的按钮代码：
   - ChatInput.tsx (5 处)
   - SettingsModal.tsx (8 处)
   - Sidebar.tsx (3 处)
   - TitleBar.tsx (2 处)
   - ConfirmModal.tsx (2 处)
 
-#### Agent B：Modal 组件提取
-- [ ] 创建 `src/renderer/components/primitives/Modal.tsx`
-- [ ] 实现 size: sm | md | lg | xl | full
-- [ ] 实现 header/footer 插槽
-- [ ] 实现 ESC 关闭、点击遮罩关闭
-- [ ] 创建 `src/renderer/components/composites/ConfirmDialog.tsx`
-- [ ] 重构以下 Modal 组件：
-  - ConfirmModal.tsx → 使用 Modal + ConfirmDialog
-  - AuthModal.tsx → 使用 Modal
-  - PermissionModal.tsx → 使用 Modal
-  - UserQuestionModal.tsx → 使用 Modal
-  - ForceUpdateModal.tsx → 使用 Modal
+#### Agent B：Modal 组件提取 (已完成)
+- [x] 创建 `src/renderer/components/primitives/Modal.tsx`
+- [x] 实现 size: sm | md | lg | xl | full
+- [x] 实现 header/footer 插槽
+- [x] 实现 ESC 关闭、点击遮罩关闭
+- [x] 创建 `src/renderer/components/composites/ConfirmDialog.tsx`
+- [x] 重构以下 Modal 组件：
+  - ConfirmModal.tsx -> 使用 Modal + ConfirmDialog
+  - AuthModal.tsx -> 使用 Modal
+  - PermissionModal.tsx -> 使用 Modal
+  - UserQuestionModal.tsx -> 使用 Modal
+  - ForceUpdateModal.tsx -> 使用 Modal
 
-#### Agent C：Input/Form 组件提取
-- [ ] 创建 `src/renderer/components/primitives/Input.tsx`
-- [ ] 创建 `src/renderer/components/primitives/Textarea.tsx`
-- [ ] 创建 `src/renderer/components/primitives/Select.tsx`
-- [ ] 创建 `src/renderer/components/composites/FormField.tsx` (Label + Input + Error)
-- [ ] 替换 SettingsModal 中的表单元素
-- [ ] 替换 AuthModal 中的表单元素
+#### Agent C：Input/Form 组件提取 (已完成)
+- [x] 创建 `src/renderer/components/primitives/Input.tsx`
+- [x] 创建 `src/renderer/components/primitives/Textarea.tsx`
+- [x] 创建 `src/renderer/components/primitives/Select.tsx`
+- [x] 创建 `src/renderer/components/composites/FormField.tsx` (Label + Input + Error)
+- [x] 替换 SettingsModal 中的表单元素
+- [x] 替换 AuthModal 中的表单元素
 
-#### Agent D：Tailwind 组件类提取
-- [ ] 在 `src/renderer/styles/tailwind.css` 添加 @layer components
-- [ ] 提取 .btn .btn-primary .btn-secondary .btn-ghost .btn-danger
-- [ ] 提取 .input .input-error
-- [ ] 提取 .panel .panel-header .panel-body
-- [ ] 提取 .badge .badge-success .badge-warning .badge-error
-- [ ] 提取 .card .card-hover
+#### Agent D：Tailwind 组件类提取 (已完成)
+- [x] 在 `src/renderer/styles/tailwind.css` 添加 @layer components
+- [x] 提取 .btn .btn-primary .btn-secondary .btn-ghost .btn-danger
+- [x] 提取 .input .input-error
+- [x] 提取 .panel .panel-header .panel-body
+- [x] 提取 .badge .badge-success .badge-warning .badge-error
+- [x] 提取 .card .card-hover
 
 ---
 
@@ -88,52 +88,55 @@
 └───────────────────┴───────────────────┴─────────────────────────┘
 ```
 
-#### Agent E：SettingsModal 拆分
-- [ ] 创建 `src/renderer/components/features/settings/` 目录
-- [ ] 拆分 SettingsModal.tsx (1113行) 为：
+#### Agent E：SettingsModal 拆分 (已完成)
+- [x] 创建 `src/renderer/components/features/settings/` 目录
+- [x] 拆分 SettingsModal.tsx (1113行) 为：
   ```
   settings/
   ├── SettingsModal.tsx      # 布局 + Tab 切换 (~100行)
   ├── tabs/
   │   ├── ModelSettings.tsx      # 模型配置
   │   ├── AppearanceSettings.tsx # 外观设置
-  │   ├── McpSettings.tsx        # MCP 服务器
-  │   ├── KeyBindingSettings.tsx # 快捷键
+  │   ├── LanguageSettings.tsx   # 语言设置
+  │   ├── CloudSettings.tsx      # 云端设置
   │   ├── DisclosureSettings.tsx # 披露设置
-  │   ├── SecuritySettings.tsx   # 安全设置
+  │   ├── UpdateSettings.tsx     # 更新设置
   │   ├── DataSettings.tsx       # 数据管理
   │   └── AboutSettings.tsx      # 关于
   └── index.ts
   ```
-- [ ] 使用阶段一的 Modal、Button、Input 组件
-- [ ] 确保类型定义完整
+- [x] 使用阶段一的 Modal、Button、Input 组件
+- [x] 确保类型定义完整
 
-#### Agent F：MessageBubble 拆分
-- [ ] 创建 `src/renderer/components/features/chat/MessageBubble/` 目录
-- [ ] 拆分 MessageBubble.tsx (975行) 为：
+#### Agent F：MessageBubble 拆分 (已完成)
+- [x] 创建 `src/renderer/components/features/chat/MessageBubble/` 目录
+- [x] 拆分 MessageBubble.tsx (975行) 为：
   ```
   MessageBubble/
   ├── index.tsx              # 主入口 (~150行)
   ├── UserMessage.tsx        # 用户消息
   ├── AssistantMessage.tsx   # AI 消息
+  ├── MessageContent.tsx     # 消息内容渲染
   ├── ToolCallDisplay.tsx    # 工具调用显示
   ├── AttachmentPreview.tsx  # 附件预览
-  └── MessageActions.tsx     # 消息操作（复制、重试等）
+  ├── types.ts               # 类型定义
+  └── utils.ts               # 工具函数
   ```
-- [ ] 提取 ToolCall 相关类型到 shared/types
+- [x] 提取 ToolCall 相关类型到 types.ts
 
-#### Agent G：ChatInput 拆分
-- [ ] 创建 `src/renderer/components/features/chat/ChatInput/` 目录
-- [ ] 拆分 ChatInput.tsx (740行) 为：
+#### Agent G：ChatInput 拆分 (已完成)
+- [x] 创建 `src/renderer/components/features/chat/ChatInput/` 目录
+- [x] 拆分 ChatInput.tsx (740行) 为：
   ```
   ChatInput/
   ├── index.tsx              # 主入口 (~100行)
   ├── InputArea.tsx          # 输入区域
   ├── AttachmentBar.tsx      # 附件栏
-  ├── SuggestionList.tsx     # 命令建议
-  └── SendButton.tsx         # 发送按钮（含状态）
+  ├── SendButton.tsx         # 发送按钮（含状态）
+  ├── useFileUpload.ts       # 文件上传 hook
+  └── utils.ts               # 工具函数
   ```
-- [ ] 使用阶段一的 Button、IconButton 组件
+- [x] 使用阶段一的 Button、IconButton 组件
 
 ---
 
@@ -153,15 +156,15 @@
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-#### Agent H：整合与验证
-- [ ] 创建 `src/renderer/components/primitives/index.ts` 统一导出
-- [ ] 创建 `src/renderer/components/composites/index.ts`
-- [ ] 创建 `src/renderer/components/features/index.ts`
-- [ ] 创建 `src/renderer/components/index.ts` 总入口
-- [ ] 创建 `src/renderer/stores/uiStore.ts`
-- [ ] 运行 `npm run typecheck` 修复所有类型错误
-- [ ] 运行 `npm run build` 确保构建通过
-- [ ] 更新 CLAUDE.md 中的目录结构说明
+#### Agent H：整合与验证 (已完成)
+- [x] 创建 `src/renderer/components/primitives/index.ts` 统一导出
+- [x] 创建 `src/renderer/components/composites/index.ts`
+- [x] 创建 `src/renderer/components/features/index.ts`
+- [x] 创建 `src/renderer/components/index.ts` 总入口
+- [x] 创建 `src/renderer/stores/uiStore.ts`
+- [x] 运行 `npm run typecheck` 修复所有类型错误
+- [x] 运行 `npm run build` 确保构建通过
+- [x] 更新 CLAUDE.md 中的目录结构说明
 
 ---
 
@@ -232,20 +235,20 @@ graph TD
 
 ## 五、验收标准
 
-### 阶段一验收
-- [ ] `npm run typecheck` 通过
-- [ ] Button/Modal/Input 组件可独立使用
-- [ ] Tailwind 组件类在 IDE 中有自动补全
+### 阶段一验收 (已完成)
+- [x] `npm run typecheck` 通过
+- [x] Button/Modal/Input 组件可独立使用
+- [x] Tailwind 组件类在 IDE 中有自动补全
 
-### 阶段二验收
-- [ ] 所有拆分后的文件 < 300 行
-- [ ] 原功能无回归（手动测试）
-- [ ] `npm run build` 通过
+### 阶段二验收 (已完成)
+- [x] 所有拆分后的文件 < 300 行
+- [x] 原功能无回归（手动测试）
+- [x] `npm run build` 通过
 
-### 最终验收
-- [ ] 组件库导出结构清晰
-- [ ] 代码重复率 < 5%
-- [ ] 文档已更新
+### 最终验收 (已完成)
+- [x] 组件库导出结构清晰
+- [x] 代码重复率 < 5%
+- [x] 文档已更新
 
 ---
 

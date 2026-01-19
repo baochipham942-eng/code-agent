@@ -41,7 +41,17 @@ src/
 ├── preload/             # 预加载脚本
 ├── renderer/            # React 前端
 │   ├── components/      # UI 组件
+│   │   ├── primitives/  # 基础组件 (Button, Modal, Input, Textarea, Select)
+│   │   ├── composites/  # 组合组件 (ConfirmDialog, FormField)
+│   │   ├── features/    # 业务组件
+│   │   │   ├── chat/    # 聊天组件 (ChatInput, MessageBubble)
+│   │   │   └── settings/# 设置组件 (SettingsModal, 各 Tab)
+│   │   └── index.ts     # 统一导出入口
 │   ├── stores/          # Zustand 状态
+│   │   ├── appStore.ts  # 应用全局状态
+│   │   ├── uiStore.ts   # UI 状态 (modal, toast)
+│   │   ├── authStore.ts # 认证状态
+│   │   └── sessionStore.ts # 会话状态
 │   └── hooks/           # 自定义 hooks
 └── shared/              # 类型定义和 IPC
 ```

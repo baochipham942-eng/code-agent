@@ -27,26 +27,30 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.7.21',
-  publishedAt: '2026-01-19T10:45:00.000Z',
+  version: '0.8.0',
+  publishedAt: '2025-01-19T18:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.7.21 ⚡
+## Code Agent v0.8.0 🔐☁️
 
-### 📈 输出 Token 上限提升
-- **DeepSeek Chat** - 8K → 16K (+100%)
-- **DeepSeek Coder** - 16K → 32K (+100%)
-- **GPT-4o / GPT-4o Mini** - 4K → 16K (+300%)
+### 🔐 安全加固 (TASK-01)
+- SecureStorage 使用 Electron safeStorage 加密
+- 开发模式自动授权需要二次确认
+- Gen8 tool_create 沙箱隔离执行
 
-支持生成更长的代码文件和详细的分析报告。
+### ☁️ 热更新系统 (TASK-02)
+- 云端配置中心：System Prompt、Skills、Feature Flags 热更新
+- 设置页面新增「云端」Tab，支持手动刷新配置
+- Feature Flags 控制 Gen8、Computer Use 等功能开关
 
-### 🎨 Markdown 渲染增强 (v0.7.20)
-- 表格、标题、列表、加粗、斜体、引用块渲染
+### 🌐 i18n 国际化
+- 内置中英文翻译
+- 支持云端 UI 文案覆盖
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.7.21/Code.Agent-0.7.21-arm64.dmg',
-      size: 153000000,
+      url: 'https://github.com/anthropics/code-agent/releases/download/v0.8.0/Code.Agent-0.8.0-arm64.dmg',
+      size: 155000000,
     },
   },
 };

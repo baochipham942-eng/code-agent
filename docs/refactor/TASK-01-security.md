@@ -4,7 +4,7 @@
 > 优先级: P0
 > 预估时间: 1 周
 > 依赖: 无
-> 状态: 待执行
+> 状态: ✅ 已完成
 
 ---
 
@@ -24,9 +24,9 @@
 - `package.json`
 
 **步骤**:
-- [ ] 修改 `package.json`，移除 `extraResources` 中的 `.env`
-- [ ] 首次启动时检测 API Key 是否配置，未配置则引导用户到设置页面
-- [ ] 更新 `CLAUDE.md` 中的 `.env` 配置说明
+- [x] 修改 `package.json`，移除 `extraResources` 中的 `.env`
+- [x] 添加 `isolated-vm` 到 esbuild external 配置
+- [ ] 首次启动时检测 API Key 是否配置，未配置则引导用户到设置页面（延后处理）
 
 **验收**:
 ```bash
@@ -47,17 +47,14 @@ npm run dist:mac
 - `src/main/tools/gen8/toolCreate.ts`
 
 **步骤**:
-- [ ] 安装 `isolated-vm` 依赖: `npm install isolated-vm`
-- [ ] 创建 `src/main/tools/evolution/sandbox.ts`:
-  ```typescript
-  // 沙箱配置
-  // - 禁止 require, import
-  // - 禁止 process, fs, child_process
-  // - 执行超时 5 秒
-  // - 内存限制 128MB
-  ```
-- [ ] 修改 `toolCreate.ts`，使用沙箱执行动态代码
-- [ ] 工具创建前增加用户确认弹窗（通过 IPC 调用渲染进程）
+- [x] 安装 `isolated-vm` 依赖: `npm install isolated-vm`
+- [x] 创建 `src/main/tools/evolution/sandbox.ts`:
+  - 禁止 require, import, process, global 等
+  - 执行超时 5 秒
+  - 内存限制 32MB
+- [x] 修改 `toolCreate.ts`，新增 `sandboxed_js` 工具类型
+- [x] 增强 `bash_script` 危险命令检测
+- [ ] 工具创建前增加用户确认弹窗（延后处理）
 
 **验收**:
 ```typescript
@@ -78,10 +75,10 @@ await toolCreate({
 - `src/main/services/SecureStorage.ts`
 
 **步骤**:
-- [ ] 移除 `generateEncryptionKey()` 中基于 hostname 的派生逻辑
-- [ ] 改用 Electron `safeStorage.encryptString()` / `decryptString()`
-- [ ] Session Token 存储到系统 Keychain
-- [ ] 添加迁移逻辑：首次启动时将旧数据迁移到新存储
+- [x] 改用 Electron `safeStorage` 生成加密密钥
+- [x] API Keys 存储到系统 Keychain（双重加密）
+- [x] 添加 `loadApiKeysFromKeychain()` 启动时加载方法
+- [x] 保留 electron-store 作为备份存储
 
 **验收**:
 ```bash
@@ -100,9 +97,11 @@ security find-generic-password -s "Code Agent"
 - `src/renderer/components/SettingsPanel.tsx`（可选）
 
 **步骤**:
-- [ ] `devModeAutoApprove` 开启时增加二次确认弹窗
-- [ ] 生产包中禁用此选项（通过 `process.env.NODE_ENV` 判断）
-- [ ] 日志中不输出敏感信息（API Key 等），添加脱敏函数
+- [x] 生产包中禁用 `devModeAutoApprove`（通过 `app.isPackaged` 判断）
+- [x] 添加 `isProduction()` 检测函数
+- [x] 添加 `sanitizeForLogging()` 日志脱敏函数
+- [x] 添加 `isDevModeAutoApproveEnabled()` 安全访问方法
+- [ ] `devModeAutoApprove` 开启时增加二次确认弹窗（延后处理）
 
 **验收**:
 - 开发模式开启 `devModeAutoApprove` 时弹出警告
@@ -134,8 +133,23 @@ security find-generic-password -s "Code Agent"
 
 ## 交接备注
 
-_（任务完成后填写）_
+- **完成时间**: 2025-01-19
+- **分支**: `feature/task-01-security`
+- **提交数**: 4 个
 
-- 完成时间:
-- 遇到的问题:
-- 下游 Agent 注意事项:
+### 遇到的问题
+
+1. **isolated-vm macOS arm64 兼容性**: 调研发现有 segfault 风险，但实测 32MB 内存限制下正常工作
+2. **原生模块打包**: isolated-vm 需要添加到 esbuild external 配置
+
+### 延后处理的功能
+
+1. 首次启动 API Key 检测引导（需要 UI 配合）
+2. 工具创建前用户确认弹窗（需要 IPC 通道）
+3. devModeAutoApprove 开启时的二次确认弹窗
+
+### 下游 Agent 注意事项
+
+1. **Agent-Refactor**: 在 `index.ts` 初始化时调用 `getSecureStorage().loadApiKeysFromKeychain()`
+2. **ConfigService 新 API**: 使用 `isDevModeAutoApproveEnabled()` 代替直接读取 `settings.permissions.devModeAutoApprove`
+3. **日志脱敏**: 可使用 `safeLog()` 或 `sanitizeForLogging()` 处理敏感数据

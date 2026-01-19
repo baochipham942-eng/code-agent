@@ -933,6 +933,33 @@ export class AgentLoop {
   private buildMultimodalContent(text: string, attachments: MessageAttachment[]): MessageContent[] {
     const contents: MessageContent[] = [];
 
+    // 附件大小阈值：超过此值的文件只发送摘要，让 Agent 用 read_file 按需读取
+    const LARGE_FILE_THRESHOLD = 8000; // 约 2000 tokens
+    const MAX_PREVIEW_LINES = 30; // 大文件预览行数
+    const MAX_TOTAL_ATTACHMENT_CHARS = 50000; // 所有附件总字符数
+    let totalAttachmentChars = 0;
+
+    /**
+     * 判断是否为大文件，需要延迟加载
+     */
+    const isLargeFile = (content: string): boolean => content.length > LARGE_FILE_THRESHOLD;
+
+    /**
+     * 生成大文件的摘要（只包含前 N 行预览）
+     */
+    const generateFilePreview = (content: string, filePath: string, lang: string): string => {
+      const lines = content.split('\n');
+      const totalLines = lines.length;
+      const previewLines = lines.slice(0, MAX_PREVIEW_LINES).join('\n');
+      const sizeKB = (content.length / 1024).toFixed(1);
+
+      return `**预览 (前 ${Math.min(MAX_PREVIEW_LINES, totalLines)} 行 / 共 ${totalLines} 行, ${sizeKB} KB):**
+\`\`\`${lang}
+${previewLines}
+\`\`\`
+${totalLines > MAX_PREVIEW_LINES ? `\n... 还有 ${totalLines - MAX_PREVIEW_LINES} 行未显示\n\n💡 **提示**: 使用 \`read_file\` 工具读取完整内容: \`${filePath}\`` : ''}`;
+    };
+
     // 添加用户文本
     if (text.trim()) {
       contents.push({ type: 'text', text });
@@ -941,6 +968,15 @@ export class AgentLoop {
     // 按类别处理每个附件
     for (const attachment of attachments) {
       if (!attachment.data) continue;
+
+      // 检查总大小是否超限
+      if (totalAttachmentChars >= MAX_TOTAL_ATTACHMENT_CHARS) {
+        contents.push({
+          type: 'text',
+          text: `⚠️ 附件内容已达上限，跳过: ${attachment.name}`,
+        });
+        continue;
+      }
 
       const category = attachment.category || (attachment.type === 'image' ? 'image' : 'other');
 
@@ -973,10 +1009,16 @@ export class AgentLoop {
           // PDF：文档结构化文本
           const pageInfo = attachment.pageCount ? ` (${attachment.pageCount} 页)` : '';
           const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
-          contents.push({
-            type: 'text',
-            text: `📄 **PDF 文档: ${attachment.name}**${pageInfo}${pathInfo}\n\n${attachment.data}`,
-          });
+          const filePath = attachment.path || attachment.name;
+
+          let contentText: string;
+          if (isLargeFile(attachment.data)) {
+            contentText = `📄 **PDF 文档: ${attachment.name}**${pageInfo}${pathInfo}\n\n${generateFilePreview(attachment.data, filePath, 'text')}`;
+          } else {
+            contentText = `📄 **PDF 文档: ${attachment.name}**${pageInfo}${pathInfo}\n\n${attachment.data}`;
+          }
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
           break;
         }
 
@@ -984,10 +1026,16 @@ export class AgentLoop {
           // 代码文件：带语法高亮提示
           const lang = attachment.language || 'plaintext';
           const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
-          contents.push({
-            type: 'text',
-            text: `📝 **代码文件: ${attachment.name}** (${lang})${pathInfo}\n\`\`\`${lang}\n${attachment.data}\n\`\`\``,
-          });
+          const filePath = attachment.path || attachment.name;
+
+          let contentText: string;
+          if (isLargeFile(attachment.data)) {
+            contentText = `📝 **代码文件: ${attachment.name}** (${lang})${pathInfo}\n\n${generateFilePreview(attachment.data, filePath, lang)}`;
+          } else {
+            contentText = `📝 **代码文件: ${attachment.name}** (${lang})${pathInfo}\n\`\`\`${lang}\n${attachment.data}\n\`\`\``;
+          }
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
           break;
         }
 
@@ -995,20 +1043,32 @@ export class AgentLoop {
           // 数据文件：JSON/CSV/XML 等
           const lang = attachment.language || 'json';
           const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
-          contents.push({
-            type: 'text',
-            text: `📊 **数据文件: ${attachment.name}**${pathInfo}\n\`\`\`${lang}\n${attachment.data}\n\`\`\``,
-          });
+          const filePath = attachment.path || attachment.name;
+
+          let contentText: string;
+          if (isLargeFile(attachment.data)) {
+            contentText = `📊 **数据文件: ${attachment.name}**${pathInfo}\n\n${generateFilePreview(attachment.data, filePath, lang)}`;
+          } else {
+            contentText = `📊 **数据文件: ${attachment.name}**${pathInfo}\n\`\`\`${lang}\n${attachment.data}\n\`\`\``;
+          }
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
           break;
         }
 
         case 'html': {
           // HTML 文件
           const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
-          contents.push({
-            type: 'text',
-            text: `🌐 **HTML 文件: ${attachment.name}**${pathInfo}\n\`\`\`html\n${attachment.data}\n\`\`\``,
-          });
+          const filePath = attachment.path || attachment.name;
+
+          let contentText: string;
+          if (isLargeFile(attachment.data)) {
+            contentText = `🌐 **HTML 文件: ${attachment.name}**${pathInfo}\n\n${generateFilePreview(attachment.data, filePath, 'html')}`;
+          } else {
+            contentText = `🌐 **HTML 文件: ${attachment.name}**${pathInfo}\n\`\`\`html\n${attachment.data}\n\`\`\``;
+          }
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
           break;
         }
 
@@ -1016,42 +1076,48 @@ export class AgentLoop {
           // 纯文本/Markdown
           const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
           const isMarkdown = attachment.language === 'markdown';
-          if (isMarkdown) {
-            contents.push({
-              type: 'text',
-              text: `📝 **Markdown 文件: ${attachment.name}**${pathInfo}\n\n${attachment.data}`,
-            });
+          const filePath = attachment.path || attachment.name;
+          const icon = isMarkdown ? '📝' : '📄';
+          const fileType = isMarkdown ? 'Markdown 文件' : '文本文件';
+          const lang = isMarkdown ? 'markdown' : 'text';
+
+          let contentText: string;
+          if (isLargeFile(attachment.data)) {
+            contentText = `${icon} **${fileType}: ${attachment.name}**${pathInfo}\n\n${generateFilePreview(attachment.data, filePath, lang)}`;
           } else {
-            contents.push({
-              type: 'text',
-              text: `📄 **文本文件: ${attachment.name}**${pathInfo}\n\n${attachment.data}`,
-            });
+            contentText = `${icon} **${fileType}: ${attachment.name}**${pathInfo}\n\n${attachment.data}`;
           }
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
           break;
         }
 
         case 'folder': {
-          // 文件夹：展示绝对路径和文件列表
+          // 文件夹：只展示目录结构，不发送文件内容
+          // Agent 可以用 read_file 工具按需读取具体文件
           const pathInfo = attachment.path ? `\n📍 绝对路径: ${attachment.path}` : '';
           const stats = attachment.folderStats;
           const statsInfo = stats
             ? `\n📊 统计: ${stats.totalFiles} 个文件, ${(stats.totalSize / 1024).toFixed(1)} KB`
             : '';
 
-          // 构建文件列表内容
-          let filesContent = '';
+          // 构建文件列表（只显示路径和大小，不包含内容）
+          let fileList = '';
           if (attachment.files && attachment.files.length > 0) {
-            filesContent = '\n\n**文件内容：**\n';
+            fileList = '\n\n**文件列表：**\n';
             for (const file of attachment.files) {
-              const ext = file.path.split('.').pop()?.toLowerCase() || '';
-              const lang = ext || 'plaintext';
-              filesContent += `\n--- ${file.path} ---\n\`\`\`${lang}\n${file.content}\n\`\`\`\n`;
+              const sizeKB = file.content ? (file.content.length / 1024).toFixed(1) : '?';
+              const fullPath = attachment.path ? `${attachment.path}/${file.path}` : file.path;
+              fileList += `- ${file.path} (${sizeKB} KB) → \`${fullPath}\`\n`;
             }
+            fileList += '\n💡 **提示**: 使用 `read_file` 工具读取具体文件内容进行分析';
           }
 
+          const folderContent = `📁 **文件夹: ${attachment.name}**${pathInfo}${statsInfo}\n\n${attachment.data || ''}${fileList}`;
+          totalAttachmentChars += folderContent.length;
           contents.push({
             type: 'text',
-            text: `📁 **文件夹: ${attachment.name}**${pathInfo}${statsInfo}\n\n${attachment.data}${filesContent}`,
+            text: folderContent,
           });
           break;
         }
@@ -1059,10 +1125,16 @@ export class AgentLoop {
         default: {
           // 其他文件类型
           const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
-          contents.push({
-            type: 'text',
-            text: `📎 **文件: ${attachment.name}**${pathInfo}\n\`\`\`\n${attachment.data}\n\`\`\``,
-          });
+          const filePath = attachment.path || attachment.name;
+
+          let contentText: string;
+          if (isLargeFile(attachment.data)) {
+            contentText = `📎 **文件: ${attachment.name}**${pathInfo}\n\n${generateFilePreview(attachment.data, filePath, 'text')}`;
+          } else {
+            contentText = `📎 **文件: ${attachment.name}**${pathInfo}\n\`\`\`\n${attachment.data}\n\`\`\``;
+          }
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
         }
       }
     }

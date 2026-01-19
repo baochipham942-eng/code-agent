@@ -3,8 +3,9 @@
 // ============================================================================
 
 import React from 'react';
-import { X, Shield, FileEdit, FolderOpen, Terminal, Globe, AlertTriangle } from 'lucide-react';
+import { Shield, FileEdit, FolderOpen, Terminal, Globe, AlertTriangle } from 'lucide-react';
 import type { PermissionRequest } from '@shared/types';
+import { Modal, ModalHeader, ModalFooter } from './primitives/Modal';
 
 interface Props {
   request: PermissionRequest;
@@ -124,52 +125,23 @@ export const PermissionModal: React.FC<Props> = ({ request, onAllow, onDeny }) =
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onDeny} />
-
-      {/* Modal */}
-      <div className="relative w-full max-w-md bg-zinc-900 rounded-xl border border-zinc-800 shadow-2xl overflow-hidden animate-fadeIn">
-        {/* Header */}
-        <div className={`flex items-center gap-3 px-6 py-4 border-b border-zinc-800 ${config.bgColor}`}>
-          <div className={config.color}>{config.icon}</div>
-          <div className="flex-1">
-            <h2 className="text-lg font-semibold text-zinc-100">{config.title}</h2>
-            <p className="text-xs text-zinc-400">
-              工具: <span className="font-mono">{request.tool}</span>
-            </p>
-          </div>
-          <button
-            onClick={onDeny}
-            className="p-1 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-6 space-y-4">
-          {/* Warning for dangerous commands */}
-          {isDangerous && (
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
-              <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-              <div className="text-sm text-red-300">
-                此命令可能对系统造成不可逆的影响，请仔细确认后再执行。
-              </div>
-            </div>
-          )}
-
-          {/* Reason */}
-          {request.reason && (
-            <p className="text-sm text-zinc-300">{request.reason}</p>
-          )}
-
-          {/* Details */}
-          {renderDetails()}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-zinc-800 flex justify-end gap-3">
+    <Modal
+      isOpen={true}
+      onClose={onDeny}
+      size="md"
+      headerBgClass={config.bgColor}
+      header={
+        <ModalHeader
+          icon={config.icon}
+          iconColorClass={config.color}
+          iconBgClass="bg-transparent"
+          title={config.title}
+          subtitle={`工具: ${request.tool}`}
+          onClose={onDeny}
+        />
+      }
+      footer={
+        <ModalFooter>
           <button
             onClick={onDeny}
             className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
@@ -187,9 +159,29 @@ export const PermissionModal: React.FC<Props> = ({ request, onAllow, onDeny }) =
             <Shield className="w-4 h-4" />
             允许
           </button>
-        </div>
+        </ModalFooter>
+      }
+    >
+      <div className="space-y-4">
+        {/* Warning for dangerous commands */}
+        {isDangerous && (
+          <div className="flex items-start gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+            <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            <div className="text-sm text-red-300">
+              此命令可能对系统造成不可逆的影响，请仔细确认后再执行。
+            </div>
+          </div>
+        )}
+
+        {/* Reason */}
+        {request.reason && (
+          <p className="text-sm text-zinc-300">{request.reason}</p>
+        )}
+
+        {/* Details */}
+        {renderDetails()}
       </div>
-    </div>
+    </Modal>
   );
 };
 

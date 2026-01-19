@@ -8,14 +8,18 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
+import { executeSandboxed } from '../evolution/sandbox';
 
 const execAsync = promisify(exec);
+
+// Tool types - sandboxed_js is the new secure type
+type DynamicToolType = 'bash_script' | 'http_api' | 'file_processor' | 'composite' | 'sandboxed_js';
 
 interface DynamicTool {
   id: string;
   name: string;
   description: string;
-  type: 'bash_script' | 'http_api' | 'file_processor' | 'composite';
+  type: DynamicToolType;
   config: Record<string, unknown>;
   createdAt: number;
   usageCount: number;
@@ -29,20 +33,24 @@ export const toolCreateTool: Tool = {
   description: `Dynamically create new tools at runtime.
 
 Use this tool to:
-- Create bash script wrappers as tools
+- Create sandboxed JavaScript tools (RECOMMENDED - most secure)
 - Create HTTP API caller tools
 - Create file processor tools
 - Create composite tools combining existing tools
+- Create bash script wrappers (requires explicit approval)
 
 Parameters:
 - action: create, execute, list, delete
 - name: Tool name (for create)
 - description: Tool description (for create)
-- type: Tool type (bash_script, http_api, file_processor, composite)
+- type: Tool type (sandboxed_js, http_api, file_processor, composite, bash_script)
 - config: Tool-specific configuration
 
-For bash_script:
-  config: { script: "bash commands", args: ["arg1", "arg2"] }
+For sandboxed_js (RECOMMENDED):
+  config: { code: "// Pure JS code, no require/import/process" }
+  - Runs in isolated V8 sandbox
+  - 32MB memory limit, 5s timeout
+  - No access to Node.js APIs
 
 For http_api:
   config: { url: "https://...", method: "GET|POST", headers: {}, bodyTemplate: {} }
@@ -51,7 +59,10 @@ For file_processor:
   config: { pattern: "*.md", operation: "read|transform|aggregate" }
 
 For composite:
-  config: { tools: ["tool1", "tool2"], sequence: true|false }`,
+  config: { tools: ["tool1", "tool2"], sequence: true|false }
+
+For bash_script (DANGEROUS - requires approval):
+  config: { script: "bash commands", args: ["arg1", "arg2"] }`,
   generations: ['gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
@@ -73,8 +84,8 @@ For composite:
       },
       type: {
         type: 'string',
-        enum: ['bash_script', 'http_api', 'file_processor', 'composite'],
-        description: 'Type of tool to create',
+        enum: ['sandboxed_js', 'http_api', 'file_processor', 'composite', 'bash_script'],
+        description: 'Type of tool to create (sandboxed_js recommended)',
       },
       config: {
         type: 'object',
@@ -213,6 +224,9 @@ async function executeTool(
 
   try {
     switch (tool.type) {
+      case 'sandboxed_js':
+        return await executeSandboxedJs(tool, args);
+
       case 'bash_script':
         return await executeBashScript(tool, args, context);
 
@@ -236,6 +250,56 @@ async function executeTool(
   }
 }
 
+/**
+ * Execute sandboxed JavaScript code in isolated-vm
+ * This is the most secure execution method
+ */
+async function executeSandboxedJs(
+  tool: DynamicTool,
+  args: Record<string, unknown>
+): Promise<ToolExecutionResult> {
+  const config = tool.config as { code: string };
+
+  if (!config.code) {
+    return {
+      success: false,
+      error: 'sandboxed_js requires config.code',
+    };
+  }
+
+  // Inject args into the code as a constant
+  const argsJson = JSON.stringify(args);
+  const wrappedCode = `
+    const args = ${argsJson};
+    ${config.code}
+  `;
+
+  const result = await executeSandboxed(wrappedCode, {
+    memoryLimit: 32,
+    timeout: 5000,
+  });
+
+  if (result.success) {
+    return {
+      success: true,
+      output: `Sandboxed JS executed successfully (${result.executionTime}ms):\n\n${
+        typeof result.output === 'object'
+          ? JSON.stringify(result.output, null, 2)
+          : String(result.output ?? 'undefined')
+      }`,
+    };
+  } else {
+    return {
+      success: false,
+      error: `Sandboxed execution failed: ${result.error}`,
+    };
+  }
+}
+
+/**
+ * Execute bash script - DANGEROUS, requires explicit user approval
+ * Enhanced security checks
+ */
 async function executeBashScript(
   tool: DynamicTool,
   args: Record<string, unknown>,
@@ -249,19 +313,31 @@ async function executeBashScript(
     script = script.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), String(value));
   }
 
-  // Security: Don't allow certain dangerous patterns
+  // Enhanced security: Comprehensive dangerous pattern detection
   const dangerousPatterns = [
-    /rm\s+-rf\s+[\/~]/,
-    />\s*\/dev\/sd/,
-    /mkfs\./,
-    /dd\s+if=/,
+    { pattern: /rm\s+-rf\s+[\/~]/, message: 'Dangerous rm -rf command' },
+    { pattern: />\s*\/dev\/sd/, message: 'Writing to disk device' },
+    { pattern: /mkfs\./, message: 'Filesystem creation command' },
+    { pattern: /dd\s+if=/, message: 'Dangerous dd command' },
+    { pattern: /curl.*\|\s*(ba)?sh/, message: 'Piping curl to shell' },
+    { pattern: /wget.*\|\s*(ba)?sh/, message: 'Piping wget to shell' },
+    { pattern: /chmod\s+777/, message: 'Setting insecure permissions' },
+    { pattern: /sudo\s+/, message: 'Sudo command not allowed' },
+    { pattern: />\s*\/etc\//, message: 'Writing to /etc/' },
+    { pattern: />\s*\/usr\//, message: 'Writing to /usr/' },
+    { pattern: />\s*\/var\//, message: 'Writing to /var/' },
+    { pattern: />\s*\/bin\//, message: 'Writing to /bin/' },
+    { pattern: />\s*\/sbin\//, message: 'Writing to /sbin/' },
+    { pattern: /:\(\)\{.*\}/, message: 'Fork bomb detected' },
+    { pattern: /\$\(.*rm\s/, message: 'Command substitution with rm' },
+    { pattern: /`.*rm\s/, message: 'Backtick substitution with rm' },
   ];
 
-  for (const pattern of dangerousPatterns) {
+  for (const { pattern, message } of dangerousPatterns) {
     if (pattern.test(script)) {
       return {
         success: false,
-        error: 'Script contains potentially dangerous commands',
+        error: `⚠️ 安全警告: ${message}\n脚本已被阻止执行`,
       };
     }
   }
@@ -522,10 +598,16 @@ You can now import this tool into the ToolRegistry for permanent use.`,
 }
 
 function validateConfig(
-  type: DynamicTool['type'],
+  type: DynamicToolType,
   config: Record<string, unknown>
 ): { valid: boolean; error?: string } {
   switch (type) {
+    case 'sandboxed_js':
+      if (!config.code || typeof config.code !== 'string') {
+        return { valid: false, error: 'sandboxed_js requires config.code (string)' };
+      }
+      break;
+
     case 'bash_script':
       if (!config.script || typeof config.script !== 'string') {
         return { valid: false, error: 'bash_script requires config.script (string)' };

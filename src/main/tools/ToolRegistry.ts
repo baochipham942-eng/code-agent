@@ -7,6 +7,7 @@ import type {
   GenerationId,
   JSONSchema,
 } from '../../shared/types';
+import { getCloudConfigService } from '../services/cloud';
 
 // Import tool definitions
 import { bashTool } from './gen1/bash';
@@ -183,17 +184,43 @@ export class ToolRegistry {
   }
 
   getToolDefinitions(generationId: GenerationId): ToolDefinition[] {
-    return this.getForGeneration(generationId).map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-      generations: tool.generations,
-      requiresPermission: tool.requiresPermission,
-      permissionLevel: tool.permissionLevel,
-    }));
+    const cloudToolMeta = getCloudConfigService().getAllToolMeta();
+
+    return this.getForGeneration(generationId).map((tool) => {
+      // 合并云端元数据（云端优先）
+      const cloudMeta = cloudToolMeta[tool.name];
+      const description = cloudMeta?.description || tool.description;
+
+      return {
+        name: tool.name,
+        description,
+        inputSchema: tool.inputSchema,
+        generations: tool.generations,
+        requiresPermission: tool.requiresPermission,
+        permissionLevel: tool.permissionLevel,
+      };
+    });
   }
 
   getAllTools(): Tool[] {
     return Array.from(this.tools.values());
+  }
+
+  /**
+   * 获取工具定义（带云端元数据）
+   */
+  getToolDefinitionWithCloudMeta(name: string): ToolDefinition | undefined {
+    const tool = this.get(name);
+    if (!tool) return undefined;
+
+    const cloudMeta = getCloudConfigService().getToolMeta(name);
+    return {
+      name: tool.name,
+      description: cloudMeta?.description || tool.description,
+      inputSchema: tool.inputSchema,
+      generations: tool.generations,
+      requiresPermission: tool.requiresPermission,
+      permissionLevel: tool.permissionLevel,
+    };
   }
 }

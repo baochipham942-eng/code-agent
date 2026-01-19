@@ -253,6 +253,239 @@ pre, code {
   pointer-events: none;
 }
 
+/* ============================================================================
+   Tailwind Component Classes
+   Extracted from common UI patterns across the codebase
+   ============================================================================ */
+
+@layer components {
+  /* ========================================
+     Button Components
+     ======================================== */
+
+  /* Base button - shared styles for all buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2
+           px-4 py-2 rounded-lg text-sm font-medium
+           transition-colors duration-200
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Primary button - main action */
+  .btn-primary {
+    @apply btn bg-primary-600 hover:bg-primary-500 text-white
+           shadow-sm hover:shadow-md;
+  }
+
+  /* Secondary button - less prominent action */
+  .btn-secondary {
+    @apply btn bg-zinc-700 hover:bg-zinc-600 text-zinc-100;
+  }
+
+  /* Ghost button - subtle, text-only style */
+  .btn-ghost {
+    @apply btn text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800;
+  }
+
+  /* Danger button - destructive actions */
+  .btn-danger {
+    @apply btn bg-red-600 hover:bg-red-500 text-white;
+  }
+
+  /* Warning button - caution actions */
+  .btn-warning {
+    @apply btn bg-amber-600 hover:bg-amber-500 text-white;
+  }
+
+  /* Small button variant */
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  /* Large button variant */
+  .btn-lg {
+    @apply px-6 py-3 text-base;
+  }
+
+  /* Icon-only button */
+  .btn-icon {
+    @apply p-2 rounded-lg text-zinc-400 hover:text-zinc-100
+           hover:bg-zinc-800 transition-colors;
+  }
+
+  /* ========================================
+     Input Components
+     ======================================== */
+
+  /* Base input */
+  .input {
+    @apply w-full px-4 py-2
+           bg-zinc-800 border border-zinc-700 rounded-lg
+           text-sm text-zinc-100 placeholder-zinc-500
+           focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-primary-500/30
+           disabled:opacity-50 disabled:cursor-not-allowed
+           transition-colors duration-200;
+  }
+
+  /* Input with error state */
+  .input-error {
+    @apply input border-red-500/50 focus:border-red-500 focus:ring-red-500/30;
+  }
+
+  /* Input with success state */
+  .input-success {
+    @apply input border-green-500/50 focus:border-green-500 focus:ring-green-500/30;
+  }
+
+  /* Textarea variant */
+  .textarea {
+    @apply input resize-none min-h-[100px];
+  }
+
+  /* Select dropdown */
+  .select {
+    @apply input appearance-none cursor-pointer
+           bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2371717a%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')]
+           bg-no-repeat bg-[right_0.75rem_center] pr-10;
+  }
+
+  /* ========================================
+     Panel Components
+     ======================================== */
+
+  /* Panel container - for sidebars, modals */
+  .panel {
+    @apply bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl overflow-hidden;
+  }
+
+  /* Panel header */
+  .panel-header {
+    @apply flex items-center justify-between px-6 py-4 border-b border-zinc-800;
+  }
+
+  /* Panel body/content */
+  .panel-body {
+    @apply p-6;
+  }
+
+  /* Panel footer */
+  .panel-footer {
+    @apply px-6 py-4 border-t border-zinc-800 flex items-center justify-end gap-3;
+  }
+
+  /* ========================================
+     Badge Components
+     ======================================== */
+
+  /* Base badge */
+  .badge {
+    @apply inline-flex items-center gap-1.5
+           px-2.5 py-0.5 rounded-full
+           text-xs font-medium;
+  }
+
+  /* Status badges */
+  .badge-success {
+    @apply badge bg-green-500/10 text-green-400;
+  }
+
+  .badge-warning {
+    @apply badge bg-amber-500/10 text-amber-400;
+  }
+
+  .badge-error {
+    @apply badge bg-red-500/10 text-red-400;
+  }
+
+  .badge-info {
+    @apply badge bg-blue-500/10 text-blue-400;
+  }
+
+  .badge-primary {
+    @apply badge bg-primary-500/10 text-primary-400;
+  }
+
+  .badge-neutral {
+    @apply badge bg-zinc-800 text-zinc-400;
+  }
+
+  /* ========================================
+     Card Components
+     ======================================== */
+
+  /* Base card */
+  .card {
+    @apply bg-zinc-800/50 rounded-lg p-4 border border-zinc-700/50;
+  }
+
+  /* Card with hover effect */
+  .card-hover {
+    @apply card hover:bg-zinc-800/70 hover:border-zinc-600/50
+           transition-colors duration-200 cursor-pointer;
+  }
+
+  /* Card with selected/active state */
+  .card-selected {
+    @apply card border-primary-500 bg-primary-500/10 ring-1 ring-primary-500/50;
+  }
+
+  /* Elevated card - more prominent */
+  .card-elevated {
+    @apply bg-zinc-800 rounded-xl p-4 border border-zinc-700
+           shadow-elevated;
+  }
+
+  /* ========================================
+     Modal/Dialog Components
+     ======================================== */
+
+  /* Modal backdrop */
+  .modal-backdrop {
+    @apply fixed inset-0 bg-black/60 backdrop-blur-sm z-50;
+  }
+
+  /* Modal container */
+  .modal {
+    @apply fixed inset-0 z-50 flex items-center justify-center;
+  }
+
+  /* Modal content */
+  .modal-content {
+    @apply relative w-full max-w-md bg-zinc-900 rounded-xl
+           border border-zinc-800 shadow-2xl overflow-hidden
+           animate-fadeIn;
+  }
+
+  /* ========================================
+     List Components
+     ======================================== */
+
+  /* List item - interactive */
+  .list-item {
+    @apply flex items-center gap-3 px-3 py-2 rounded-lg
+           text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50
+           transition-colors duration-200 cursor-pointer;
+  }
+
+  /* List item - active state */
+  .list-item-active {
+    @apply list-item bg-zinc-800 text-zinc-100;
+  }
+
+  /* ========================================
+     Divider
+     ======================================== */
+
+  .divider {
+    @apply border-t border-zinc-800;
+  }
+
+  .divider-subtle {
+    @apply border-t border-zinc-800/50;
+  }
+}
+
 /* Custom utility classes */
 @layer utilities {
   .text-balance {

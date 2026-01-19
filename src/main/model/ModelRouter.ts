@@ -654,6 +654,11 @@ export class ModelRouter {
     config: ModelConfig,
     onStream?: StreamCallback
   ): Promise<ModelResponse> {
+    // 如果启用云端代理，走云端 model-proxy
+    if (config.useCloudProxy) {
+      return this.callViaCloudProxy(messages, tools, config, onStream);
+    }
+
     switch (config.provider) {
       case 'deepseek':
         return this.callDeepSeek(messages, tools, config, onStream);
@@ -1854,6 +1859,84 @@ export class ModelRouter {
 
     const data = await response.json();
     return this.parseOpenAIResponse(data);
+  }
+
+  // --------------------------------------------------------------------------
+  // 云端代理调用（管理员专用，服务端注入 API Key）
+  // --------------------------------------------------------------------------
+
+  private getCloudApiUrl(): string {
+    return process.env.CLOUD_API_URL || 'https://code-agent-beta.vercel.app';
+  }
+
+  private async callViaCloudProxy(
+    messages: ModelMessage[],
+    tools: ToolDefinition[],
+    config: ModelConfig,
+    onStream?: StreamCallback
+  ): Promise<ModelResponse> {
+    const cloudUrl = this.getCloudApiUrl();
+    const providerName = config.provider; // 例如 'openrouter'
+
+    // 获取模型信息
+    const modelInfo = this.getModelInfo(config.provider, config.model);
+    const recommendedMaxTokens = modelInfo?.maxTokens || 8192;
+
+    // 构建工具定义（OpenAI 兼容格式）
+    const openaiTools = tools.map((tool) => ({
+      type: 'function' as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: this.normalizeJsonSchema(tool.inputSchema),
+      },
+    }));
+
+    // 构建请求体
+    const requestBody: Record<string, unknown> = {
+      model: config.model || 'google/gemini-2.0-flash-001',
+      messages: this.convertToOpenAIMessages(messages),
+      temperature: config.temperature ?? 0.7,
+      max_tokens: config.maxTokens ?? recommendedMaxTokens,
+      stream: false, // 云端代理暂不支持流式
+    };
+
+    // 只有支持工具的模型才添加 tools
+    if (openaiTools.length > 0 && modelInfo?.supportsTool) {
+      requestBody.tools = openaiTools;
+      requestBody.tool_choice = 'auto';
+    }
+
+    console.log(`[ModelRouter] 通过云端代理调用 ${providerName}/${config.model}...`);
+
+    try {
+      const response = await axios.post(`${cloudUrl}/api/model-proxy`, {
+        provider: providerName,
+        endpoint: '/chat/completions',
+        body: requestBody,
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: 300000,
+        httpsAgent,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+      });
+
+      console.log('[ModelRouter] 云端代理响应状态:', response.status);
+
+      if (response.status >= 200 && response.status < 300) {
+        return this.parseOpenAIResponse(response.data);
+      } else {
+        throw new Error(`云端代理错误: ${response.status} - ${JSON.stringify(response.data)}`);
+      }
+    } catch (error: any) {
+      if (error.response) {
+        throw new Error(`云端代理 API 错误: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+      }
+      throw new Error(`云端代理请求失败: ${error.message}`);
+    }
   }
 
   // --------------------------------------------------------------------------

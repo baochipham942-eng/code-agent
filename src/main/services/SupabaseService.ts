@@ -18,6 +18,7 @@ export interface Database {
           avatar_url: string | null;
           quick_login_token: string | null;
           last_sync_at: string | null;
+          is_admin: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -27,6 +28,7 @@ export interface Database {
           nickname?: string | null;
           avatar_url?: string | null;
           quick_login_token?: string | null;
+          is_admin?: boolean;
         };
         Update: {
           username?: string | null;
@@ -34,6 +36,7 @@ export interface Database {
           avatar_url?: string | null;
           quick_login_token?: string | null;
           last_sync_at?: string | null;
+          is_admin?: boolean;
         };
       };
       devices: {

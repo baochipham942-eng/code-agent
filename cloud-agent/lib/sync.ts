@@ -140,7 +140,7 @@ export async function syncMessages(
         WHERE id = ${message.sessionId} AND user_id = ${userId}
       `;
 
-      if (sessionCheck.length === 0) {
+      if ((sessionCheck as any[]).length === 0) {
         errors.push(`Message ${message.id}: Session not found or not owned by user`);
         continue;
       }
@@ -237,7 +237,7 @@ export async function deleteSession(
     RETURNING id
   `;
 
-  return result.length > 0;
+  return (result as any[]).length > 0;
 }
 
 // 获取用户统计信息
@@ -250,20 +250,20 @@ export async function getUserStats(userId: string): Promise<{
 
   const sessionCount = await sql`
     SELECT COUNT(*) as count FROM code_agent.sessions WHERE user_id = ${userId}
-  `;
+  ` as any[];
 
   const messageCount = await sql`
     SELECT COUNT(*) as count FROM code_agent.messages m
     JOIN code_agent.sessions s ON m.session_id = s.id
     WHERE s.user_id = ${userId}
-  `;
+  ` as any[];
 
   const lastSession = await sql`
     SELECT updated_at FROM code_agent.sessions
     WHERE user_id = ${userId}
     ORDER BY updated_at DESC
     LIMIT 1
-  `;
+  ` as any[];
 
   return {
     sessionCount: parseInt(sessionCount[0]?.count || '0', 10),

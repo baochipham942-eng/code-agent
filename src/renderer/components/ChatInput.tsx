@@ -397,6 +397,34 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
       return null;
     }
 
+    // 尝试获取文件夹的绝对路径（通过第一个文件推断）
+    let folderPath: string | undefined;
+    try {
+      const firstFile = files[0];
+      const firstFilePath = window.electronAPI?.getPathForFile(firstFile);
+      if (firstFilePath) {
+        // 从文件路径中提取文件夹路径
+        // 例如：/Users/xxx/project/src/file.ts -> /Users/xxx/project
+        const relativePath = (firstFile as File & { relativePath?: string }).relativePath;
+        if (relativePath) {
+          // relativePath 格式：folderName/subdir/file.ts
+          // firstFilePath 格式：/abs/path/folderName/subdir/file.ts
+          // 需要截取到 folderName 这一级
+          const relativeDir = relativePath.split('/').slice(0, 1).join('/'); // folderName
+          const idx = firstFilePath.lastIndexOf('/' + relativeDir + '/');
+          if (idx !== -1) {
+            folderPath = firstFilePath.substring(0, idx + 1 + relativeDir.length);
+          }
+        } else {
+          // 没有 relativePath，直接取文件的父目录
+          folderPath = firstFilePath.substring(0, firstFilePath.lastIndexOf('/'));
+        }
+        console.log('[ChatInput] processFolderEntry - folder path:', folderPath);
+      }
+    } catch (e) {
+      console.warn('[ChatInput] processFolderEntry - failed to get folder path:', e);
+    }
+
     // 限制文件数量
     const filesToProcess = files.slice(0, MAX_FOLDER_FILES);
     const fileContents: Array<{ path: string; content: string; size: number }> = [];
@@ -442,6 +470,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
       mimeType: 'inode/directory',
       data: summary,
       files: fileContents,
+      path: folderPath,  // 添加文件夹绝对路径
       folderStats: {
         totalFiles: files.length,
         totalSize,

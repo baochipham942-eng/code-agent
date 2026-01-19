@@ -66,7 +66,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           WHERE email = ${email}
           RETURNING id, email
         `;
-        if (updated.length > 0) {
+        if ((updated as any[]).length > 0) {
           results.push(`Set ${email} as admin`);
         }
       } catch (e) {

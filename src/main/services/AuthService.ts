@@ -480,6 +480,7 @@ class AuthService {
         username: profile?.username || undefined,
         nickname: profile?.nickname || undefined,
         avatarUrl: profile?.avatar_url || undefined,
+        isAdmin: profile?.is_admin || false,
       };
     } catch (error) {
       console.warn('[AuthService] Failed to fetch profile, using basic user:', error);

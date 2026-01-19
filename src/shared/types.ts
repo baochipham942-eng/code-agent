@@ -61,6 +61,7 @@ export interface ModelConfig {
   // 扩展配置
   capabilities?: ModelCapability[];
   computerUse?: boolean; // Claude Computer Use 支持
+  useCloudProxy?: boolean; // 使用云端代理（管理员专用）
 }
 
 export interface ProviderConfig {
@@ -353,7 +354,9 @@ export type AgentEvent =
   | { type: 'turn_start'; data: { turnId: string; iteration?: number } }
   | { type: 'turn_end'; data: { turnId: string } }
   // Model capability fallback event (能力补充)
-  | { type: 'model_fallback'; data: { reason: string; from: string; to: string } };
+  | { type: 'model_fallback'; data: { reason: string; from: string; to: string } }
+  // API Key 缺失提示
+  | { type: 'api_key_required'; data: { provider: string; capability: string; message: string } };
 
 // ----------------------------------------------------------------------------
 // Settings Types
@@ -579,6 +582,7 @@ export interface AuthUser {
   username?: string;
   nickname?: string;
   avatarUrl?: string;
+  isAdmin?: boolean;
 }
 
 export interface AuthStatus {

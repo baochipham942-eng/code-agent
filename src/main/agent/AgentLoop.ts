@@ -18,6 +18,7 @@ import { ModelRouter } from '../model/ModelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/MemoryService';
 import { getConfigService } from '../services/ConfigService';
+import { getAuthService } from '../services/AuthService';
 import { getProactiveContextService } from '../memory/ProactiveContext';
 import { logCollector } from '../mcp/LogCollector.js';
 import { generateMessageId, generateToolCallId } from '../../shared/utils/id';
@@ -733,28 +734,61 @@ export class AgentLoop {
             // 主模型缺少此能力，尝试获取备用模型
             const fallbackConfig = this.modelRouter.getFallbackConfig(capability, this.modelConfig);
             if (fallbackConfig) {
-              // 获取备用模型的 API Key
               const configService = getConfigService();
-              const fallbackApiKey = configService.getApiKey(fallbackConfig.provider);
+              const authService = getAuthService();
+              const currentUser = authService.getCurrentUser();
+              const isAdmin = currentUser?.isAdmin === true;
 
-              if (fallbackApiKey) {
-                fallbackConfig.apiKey = fallbackApiKey;
-                console.log(`[AgentLoop] 主模型 ${this.modelConfig.model} 不支持 ${capability}，切换到备用模型 ${fallbackConfig.model}`);
+              // 管理员走云端代理，非管理员走本地 API Key
+              if (isAdmin) {
+                // 管理员：使用云端代理（标记为使用云端 Key）
+                fallbackConfig.useCloudProxy = true;
+                console.log(`[AgentLoop] 管理员账号，主模型 ${this.modelConfig.model} 不支持 ${capability}，切换到云端代理 ${fallbackConfig.model}`);
                 this.onEvent({
                   type: 'model_fallback',
                   data: {
                     reason: capability,
                     from: this.modelConfig.model,
-                    to: fallbackConfig.model,
+                    to: `${fallbackConfig.model} (云端)`,
                   },
                 });
                 effectiveConfig = fallbackConfig;
                 if (capability === 'vision') {
                   visionFallbackSucceeded = true;
                 }
-                break; // 使用第一个需要切换的能力
+                break;
               } else {
-                console.warn(`[AgentLoop] 备用模型 ${fallbackConfig.provider} 未配置 API Key，无法切换`);
+                // 非管理员：使用本地 API Key
+                const fallbackApiKey = configService.getApiKey(fallbackConfig.provider);
+
+                if (fallbackApiKey) {
+                  fallbackConfig.apiKey = fallbackApiKey;
+                  console.log(`[AgentLoop] 主模型 ${this.modelConfig.model} 不支持 ${capability}，切换到备用模型 ${fallbackConfig.model}`);
+                  this.onEvent({
+                    type: 'model_fallback',
+                    data: {
+                      reason: capability,
+                      from: this.modelConfig.model,
+                      to: fallbackConfig.model,
+                    },
+                  });
+                  effectiveConfig = fallbackConfig;
+                  if (capability === 'vision') {
+                    visionFallbackSucceeded = true;
+                  }
+                  break;
+                } else {
+                  // 非管理员且未配置本地 Key，发送提示事件
+                  console.warn(`[AgentLoop] 备用模型 ${fallbackConfig.provider} 未配置 API Key，无法切换`);
+                  this.onEvent({
+                    type: 'api_key_required',
+                    data: {
+                      provider: fallbackConfig.provider,
+                      capability: capability,
+                      message: `需要 ${capability} 能力，但 ${fallbackConfig.provider} API Key 未配置。请在设置中配置 ${fallbackConfig.provider.toUpperCase()}_API_KEY。`,
+                    },
+                  });
+                }
               }
             }
           }

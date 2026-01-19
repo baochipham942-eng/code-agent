@@ -223,6 +223,22 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 - 只有数据库、配置等核心服务才需要 await
 - 示例：`initMCPClient().then(...).catch(...)` 而非 `await initMCPClient()`
 
+### Vercel 部署到错误项目
+**问题**: 在 `cloud-agent/` 目录执行 `vercel --prod`，Vercel CLI 自动创建了新项目 `cloud-agent`，而不是部署到现有的 `code-agent` 项目
+**原因**: Vercel CLI 会在当前目录创建 `.vercel/` 配置，如果没有配置则创建新项目
+**正确做法**:
+1. 永远不要在 `cloud-agent/` 目录执行 Vercel 命令
+2. 通过 git push 触发自动部署（Vercel 已配置 Root Directory 为 `cloud-agent`）
+3. 如果 `cloud-agent/.vercel/` 存在，立即删除
+
+### Vercel Hobby 计划 12 函数限制
+**问题**: 部署失败，错误 "No more than 12 Serverless Functions"
+**原因**: Hobby 计划最多支持 12 个 API 函数，`cloud-agent/api/` 下文件超过限制
+**正确做法**:
+1. 将相关功能合并到一个文件，通过 `?action=xxx` 参数区分
+2. 当前已合并：`tools.ts` 包含 api/scrape/search 三个功能
+3. 当前 API 数量：10 个（预留 2 个空间）
+
 ### 发布清单
 
 ```

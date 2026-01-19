@@ -76,6 +76,15 @@ export default tseslint.config(
           format: ['camelCase', 'snake_case', 'UPPER_CASE', 'PascalCase'],
           leadingUnderscore: 'allow',
         },
+        // 允许对象字面量中的 HTTP headers 和特殊键名（如 Content-Type, x-api-key）
+        {
+          selector: 'objectLiteralProperty',
+          format: null,
+          filter: {
+            regex: '^(Content-Type|Authorization|x-|X-).*|.*-.*$',
+            match: true,
+          },
+        },
         // 导入可以是任意格式
         {
           selector: 'import',

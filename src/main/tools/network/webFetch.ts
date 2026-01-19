@@ -27,7 +27,7 @@ export const webFetchTool: Tool = {
 
   async execute(
     params: Record<string, unknown>,
-    context: ToolContext
+    _context: ToolContext
   ): Promise<ToolExecutionResult> {
     const url = params.url as string;
     const prompt = params.prompt as string;

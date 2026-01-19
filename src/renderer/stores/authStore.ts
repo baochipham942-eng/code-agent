@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { create } from 'zustand';
-import type { AuthUser, AuthStatus, SyncStatus } from '../../shared/types';
+import type { AuthUser, SyncStatus } from '../../shared/types';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { createLogger } from '../utils/logger';
 

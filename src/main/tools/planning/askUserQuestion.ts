@@ -108,7 +108,7 @@ Example of good technical question:
 
   async execute(
     params: Record<string, unknown>,
-    context: ToolContext
+    _context: ToolContext
   ): Promise<ToolExecutionResult> {
     const questions = params.questions as UserQuestion[];
 

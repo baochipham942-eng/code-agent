@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
-import type { Generation, GenerationId } from '@shared/types';
+import type { GenerationId } from '@shared/types';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('useGeneration');
@@ -14,7 +14,7 @@ export const useGeneration = () => {
     currentGeneration,
     setCurrentGeneration,
     availableGenerations,
-    clearChat,
+    // clearChat, // Uncomment if needed when switching generations
   } = useAppStore();
 
   // Load available generations on mount

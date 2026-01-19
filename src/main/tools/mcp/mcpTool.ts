@@ -56,7 +56,7 @@ export const mcpTool: Tool = {
 
   async execute(
     params: Record<string, unknown>,
-    context: ToolContext
+    _context: ToolContext
   ): Promise<ToolExecutionResult> {
     const { server, tool, arguments: toolArgs } = params as {
       server: string;

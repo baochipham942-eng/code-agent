@@ -51,7 +51,7 @@ Parameters:
 
   async execute(
     params: Record<string, unknown>,
-    context: ToolContext
+    _context: ToolContext
   ): Promise<ToolExecutionResult> {
     const type = params.type as string;
     const content = params.content as string;

@@ -13,7 +13,6 @@ import type {
   TaskExecutionLocation,
   TaskExecutionResult,
   CloudAgentType,
-  HybridTaskConfig,
   TaskProgressEvent,
 } from '../../shared/types/cloud';
 import type { ModelConfig } from '../../shared/types';

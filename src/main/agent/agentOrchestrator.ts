@@ -3,15 +3,11 @@
 // ============================================================================
 
 import type {
-  AgentConfig,
   AgentEvent,
   Message,
   MessageAttachment,
-  ToolCall,
-  ToolResult,
   PermissionRequest,
   PermissionResponse,
-  Generation,
   ModelConfig,
 } from '../../shared/types';
 import { AgentLoop } from './agentLoop';

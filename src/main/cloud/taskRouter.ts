@@ -5,7 +5,6 @@
 
 import type {
   CloudTask,
-  CloudAgentType,
   TaskExecutionLocation,
   TaskRoutingDecision,
   CreateCloudTaskRequest,

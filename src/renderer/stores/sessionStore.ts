@@ -75,6 +75,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     todos: [],
     isLoading: false,
     error: null,
+    unreadSessionIds: new Set<string>(),
 
     // 加载会话列表
     loadSessions: async () => {
@@ -128,18 +129,23 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
     // 切换会话
     switchSession: async (sessionId: string) => {
-      const { currentSessionId } = get();
+      const { currentSessionId, unreadSessionIds } = get();
       if (currentSessionId === sessionId) return;
 
       set({ isLoading: true, error: null });
       try {
         const session = await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_LOAD, sessionId) as any;
         if (session) {
+          // 切换时自动标记为已读
+          const newUnreadIds = new Set(unreadSessionIds);
+          newUnreadIds.delete(sessionId);
+
           set({
             currentSessionId: sessionId,
             messages: session.messages || [],
             todos: session.todos || [],
             isLoading: false,
+            unreadSessionIds: newUnreadIds,
           });
         }
       } catch (error) {
@@ -234,6 +240,30 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           s.id === sessionId ? { ...s, title, updatedAt: Date.now() } : s
         ),
       }));
+    },
+
+    // 标记会话为未读
+    markSessionUnread: (sessionId: string) => {
+      const { currentSessionId, unreadSessionIds } = get();
+      // 不标记当前会话为未读
+      if (currentSessionId === sessionId) return;
+
+      const newUnreadIds = new Set(unreadSessionIds);
+      newUnreadIds.add(sessionId);
+      set({ unreadSessionIds: newUnreadIds });
+    },
+
+    // 标记会话为已读
+    markSessionRead: (sessionId: string) => {
+      const { unreadSessionIds } = get();
+      const newUnreadIds = new Set(unreadSessionIds);
+      newUnreadIds.delete(sessionId);
+      set({ unreadSessionIds: newUnreadIds });
+    },
+
+    // 检查会话是否未读
+    isSessionUnread: (sessionId: string) => {
+      return get().unreadSessionIds.has(sessionId);
     },
   }));
 

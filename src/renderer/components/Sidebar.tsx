@@ -64,6 +64,7 @@ export const Sidebar: React.FC = () => {
     createSession,
     switchSession,
     deleteSession,
+    unreadSessionIds,
   } = useSessionStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -206,44 +207,57 @@ export const Sidebar: React.FC = () => {
 
                   {/* Group Sessions */}
                   <div className="space-y-0.5">
-                    {groupSessions.map((session, index) => (
-                      <div
-                        key={session.id}
-                        onClick={() => handleSelectSession(session.id)}
-                        onMouseEnter={() => setHoveredSession(session.id)}
-                        onMouseLeave={() => setHoveredSession(null)}
-                        style={{ animationDelay: `${index * 30}ms` }}
-                        className={`group flex items-center gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200 animate-slideUp ${
-                          currentSessionId === session.id
-                            ? 'bg-primary-500/10 text-zinc-100 border border-primary-500/20'
-                            : 'hover:bg-zinc-800/50 text-zinc-400 hover:text-zinc-200 border border-transparent'
-                        }`}
-                      >
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
-                          currentSessionId === session.id
-                            ? 'bg-primary-500/20 text-primary-400'
-                            : 'bg-zinc-800/50 text-zinc-500 group-hover:text-zinc-400'
-                        }`}>
-                          <MessageSquare className="w-4 h-4" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm truncate block font-medium">{session.title}</span>
-                          {session.messageCount > 0 && (
-                            <span className="text-xs text-zinc-500">
-                              {session.messageCount} 条消息
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          onClick={(e) => handleDeleteSession(session.id, e)}
-                          className={`p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200 ${
-                            hoveredSession === session.id ? 'opacity-100' : 'opacity-0'
+                    {groupSessions.map((session, index) => {
+                      const isUnread = unreadSessionIds.has(session.id);
+                      return (
+                        <div
+                          key={session.id}
+                          onClick={() => handleSelectSession(session.id)}
+                          onMouseEnter={() => setHoveredSession(session.id)}
+                          onMouseLeave={() => setHoveredSession(null)}
+                          style={{ animationDelay: `${index * 30}ms` }}
+                          className={`group flex items-center gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200 animate-slideUp ${
+                            currentSessionId === session.id
+                              ? 'bg-primary-500/10 text-zinc-100 border border-primary-500/20'
+                              : isUnread
+                                ? 'bg-purple-500/10 text-zinc-100 border border-purple-500/20'
+                                : 'hover:bg-zinc-800/50 text-zinc-400 hover:text-zinc-200 border border-transparent'
                           }`}
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
+                          <div className={`relative w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                            currentSessionId === session.id
+                              ? 'bg-primary-500/20 text-primary-400'
+                              : isUnread
+                                ? 'bg-purple-500/20 text-purple-400'
+                                : 'bg-zinc-800/50 text-zinc-500 group-hover:text-zinc-400'
+                          }`}>
+                            <MessageSquare className="w-4 h-4" />
+                            {/* 未读指示器 */}
+                            {isUnread && (
+                              <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-purple-500 rounded-full border-2 border-surface-950 animate-pulse" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className={`text-sm truncate block font-medium ${isUnread ? 'text-zinc-100' : ''}`}>
+                              {session.title}
+                            </span>
+                            {session.messageCount > 0 && (
+                              <span className={`text-xs ${isUnread ? 'text-purple-400' : 'text-zinc-500'}`}>
+                                {isUnread ? '有新消息' : `${session.messageCount} 条消息`}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={(e) => handleDeleteSession(session.id, e)}
+                            className={`p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200 ${
+                              hoveredSession === session.id ? 'opacity-100' : 'opacity-0'
+                            }`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );

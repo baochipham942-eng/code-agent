@@ -1,32 +1,100 @@
 // ============================================================================
-// IPC Module - IPC 处理器统一导出
+// IPC Module - 统一注册所有 IPC handlers
 // ============================================================================
-//
-// 目录结构规划（后续拆分用）:
-// - agent.ipc.ts      # agent:* 通道
-// - session.ipc.ts    # session:* 通道
-// - generation.ipc.ts # generation:* 通道
-// - auth.ipc.ts       # auth:* 通道
-// - sync.ipc.ts       # sync:* 通道
-// - cloud.ipc.ts      # cloud:* 通道
-// - workspace.ipc.ts  # workspace:* 通道
-// - settings.ipc.ts   # settings:* 通道
-// - update.ipc.ts     # update:* 通道
-// - mcp.ipc.ts        # mcp:* 通道
-//
-// 当前阶段: IPC handlers 仍在 main/index.ts 中
-// 后续可逐步迁移到各领域文件
+
+import type { IpcMain, BrowserWindow } from 'electron';
+import type { AgentOrchestrator } from '../agent/AgentOrchestrator';
+import type { GenerationManager } from '../generation/GenerationManager';
+import type { ConfigService } from '../services';
+import type { PlanningService } from '../planning';
+
+import { registerAgentHandlers } from './agent.ipc';
+import { registerGenerationHandlers } from './generation.ipc';
+import { registerSessionHandlers } from './session.ipc';
+import { registerAuthHandlers } from './auth.ipc';
+import { registerSyncHandlers } from './sync.ipc';
+import { registerCloudHandlers } from './cloud.ipc';
+import { registerWorkspaceHandlers } from './workspace.ipc';
+import { registerSettingsHandlers } from './settings.ipc';
+import { registerUpdateHandlers } from './update.ipc';
+import { registerMcpHandlers } from './mcp.ipc';
+import { registerMemoryHandlers } from './memory.ipc';
+import { registerPlanningHandlers } from './planning.ipc';
+import { registerDataHandlers } from './data.ipc';
 
 export * from './types';
 
-// TODO: 后续拆分时导出各领域模块
-// export { registerAgentHandlers } from './agent.ipc';
-// export { registerSessionHandlers } from './session.ipc';
-// export { registerGenerationHandlers } from './generation.ipc';
-// export { registerAuthHandlers } from './auth.ipc';
-// export { registerSyncHandlers } from './sync.ipc';
-// export { registerCloudHandlers } from './cloud.ipc';
-// export { registerWorkspaceHandlers } from './workspace.ipc';
-// export { registerSettingsHandlers } from './settings.ipc';
-// export { registerUpdateHandlers } from './update.ipc';
-// export { registerMcpHandlers } from './mcp.ipc';
+/**
+ * IPC handler 注册所需的依赖
+ */
+export interface IpcDependencies {
+  getMainWindow: () => BrowserWindow | null;
+  getOrchestrator: () => AgentOrchestrator | null;
+  getGenerationManager: () => GenerationManager | null;
+  getConfigService: () => ConfigService | null;
+  getPlanningService: () => PlanningService | null;
+  getCurrentSessionId: () => string | null;
+  setCurrentSessionId: (id: string) => void;
+}
+
+/**
+ * 注册所有 IPC handlers
+ */
+export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): void {
+  const {
+    getMainWindow,
+    getOrchestrator,
+    getGenerationManager,
+    getConfigService,
+    getPlanningService,
+    getCurrentSessionId,
+    setCurrentSessionId,
+  } = deps;
+
+  // Agent handlers
+  registerAgentHandlers(ipcMain, getOrchestrator);
+
+  // Generation handlers
+  registerGenerationHandlers(ipcMain, getGenerationManager);
+
+  // Session handlers
+  registerSessionHandlers(ipcMain, {
+    getConfigService,
+    getGenerationManager,
+    getOrchestrator,
+    getCurrentSessionId,
+    setCurrentSessionId,
+  });
+
+  // Auth handlers
+  registerAuthHandlers(ipcMain);
+
+  // Sync handlers
+  registerSyncHandlers(ipcMain);
+
+  // Cloud handlers
+  registerCloudHandlers(ipcMain);
+
+  // Workspace handlers
+  registerWorkspaceHandlers(ipcMain, getMainWindow, getOrchestrator);
+
+  // Settings handlers
+  registerSettingsHandlers(ipcMain, getConfigService);
+
+  // Update handlers
+  registerUpdateHandlers(ipcMain);
+
+  // MCP handlers
+  registerMcpHandlers(ipcMain);
+
+  // Memory handlers
+  registerMemoryHandlers(ipcMain);
+
+  // Planning handlers
+  registerPlanningHandlers(ipcMain, getPlanningService);
+
+  // Data/Cache handlers
+  registerDataHandlers(ipcMain);
+
+  console.log('[IPC] All handlers registered');
+}

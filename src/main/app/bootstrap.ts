@@ -13,8 +13,8 @@ import {
   getSyncService,
   initLangfuse,
 } from '../services';
-import { initUpdateService } from '../services/cloud/UpdateService';
-import { initMemoryService } from '../memory/MemoryService';
+import { initUpdateService, getUpdateService } from '../services/cloud/UpdateService';
+import { initMemoryService, getMemoryService } from '../memory/MemoryService';
 import { initMCPClient, getMCPClient, type MCPServerConfig } from '../mcp/MCPClient';
 import { initPromptService, getPromptsInfo } from '../services/cloud/PromptService';
 import { initCloudConfigService, getCloudConfigService } from '../services/cloud';
@@ -23,15 +23,59 @@ import { initUnifiedOrchestrator } from '../orchestrator';
 import { logBridge } from '../mcp/LogBridge.js';
 import { getMainWindow } from './window';
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { AgentOrchestrator } from '../agent/AgentOrchestrator';
+import { GenerationManager } from '../generation/GenerationManager';
+import { createPlanningService, type PlanningService } from '../planning';
+import { getSessionManager, notificationService } from '../services';
+import type { PlanningState } from '../../shared/types';
 
 // Global state
 let configService: ConfigService | null = null;
+let agentOrchestrator: AgentOrchestrator | null = null;
+let generationManager: GenerationManager | null = null;
+let currentSessionId: string | null = null;
+let planningService: PlanningService | null = null;
 
 /**
  * 获取配置服务实例
  */
 export function getConfigServiceInstance(): ConfigService | null {
   return configService;
+}
+
+/**
+ * 获取 Agent Orchestrator 实例
+ */
+export function getAgentOrchestrator(): AgentOrchestrator | null {
+  return agentOrchestrator;
+}
+
+/**
+ * 获取 Generation Manager 实例
+ */
+export function getGenerationManagerInstance(): GenerationManager | null {
+  return generationManager;
+}
+
+/**
+ * 获取当前会话 ID
+ */
+export function getCurrentSessionId(): string | null {
+  return currentSessionId;
+}
+
+/**
+ * 设置当前会话 ID
+ */
+export function setCurrentSessionId(id: string): void {
+  currentSessionId = id;
+}
+
+/**
+ * 获取 Planning Service 实例
+ */
+export function getPlanningServiceInstance(): PlanningService | null {
+  return planningService;
 }
 
 /**
@@ -240,12 +284,243 @@ async function initializeServices(): Promise<void> {
       checkInterval: 60 * 60 * 1000, // Check every hour
       autoDownload: false,
     });
+
+    // Set up update event callbacks
+    const updateService = getUpdateService();
+    updateService.setProgressCallback((progress) => {
+      if (mainWindow) {
+        mainWindow.webContents.send(IPC_CHANNELS.UPDATE_EVENT, {
+          type: 'download_progress',
+          data: progress,
+        });
+      }
+    });
+
+    updateService.setCompleteCallback((filePath) => {
+      if (mainWindow) {
+        mainWindow.webContents.send(IPC_CHANNELS.UPDATE_EVENT, {
+          type: 'download_complete',
+          data: { filePath },
+        });
+      }
+    });
+
+    updateService.setErrorCallback((error) => {
+      if (mainWindow) {
+        mainWindow.webContents.send(IPC_CHANNELS.UPDATE_EVENT, {
+          type: 'download_error',
+          data: { error: error.message },
+        });
+      }
+    });
+
+    // Start auto-check for updates (after a delay to not block startup)
+    setTimeout(() => {
+      updateService.checkForUpdates().then((info) => {
+        if (info.hasUpdate && mainWindow) {
+          mainWindow.webContents.send(IPC_CHANNELS.UPDATE_EVENT, {
+            type: 'update_available',
+            data: info,
+          });
+        }
+      }).catch((err) => {
+        console.error('[Main] Update check failed:', err);
+      });
+    }, 5000);
+
     console.log('Update service initialized, server:', updateServerUrl);
   } catch (error: unknown) {
     console.error('Failed to initialize update service:', error);
   }
 
+  // Initialize generation manager
+  generationManager = new GenerationManager();
+
+  // Track current assistant message for updating tool results
+  let currentAssistantMessageId: string | null = null;
+
+  // Initialize agent orchestrator
+  agentOrchestrator = new AgentOrchestrator({
+    generationManager,
+    configService: configService!,
+    onEvent: async (event) => {
+      console.log('[Main] onEvent called:', event.type);
+      if (mainWindow) {
+        console.log('[Main] Sending event to renderer:', event.type);
+        mainWindow.webContents.send(IPC_CHANNELS.AGENT_EVENT, event);
+      } else {
+        console.log('[Main] WARNING: mainWindow is null, cannot send event');
+      }
+
+      // Persist assistant messages
+      if (event.type === 'message' && event.data?.role === 'assistant') {
+        currentAssistantMessageId = event.data.id;
+        try {
+          const sessionManager = getSessionManager();
+          await sessionManager.addMessage(event.data);
+        } catch (error) {
+          console.error('Failed to save assistant message:', error);
+        }
+      }
+
+      // Update tool call results
+      if (event.type === 'tool_call_end' && currentAssistantMessageId && event.data) {
+        try {
+          const sessionManager = getSessionManager();
+          const session = await sessionManager.getCurrentSession();
+          if (session) {
+            const currentMessage = session.messages.find((m) => m.id === currentAssistantMessageId);
+            if (currentMessage && currentMessage.toolCalls) {
+              const updatedToolCalls = currentMessage.toolCalls.map((tc) =>
+                tc.id === event.data.toolCallId
+                  ? { ...tc, result: event.data }
+                  : tc
+              );
+              await sessionManager.updateMessage(currentAssistantMessageId, { toolCalls: updatedToolCalls });
+            }
+          }
+        } catch (error) {
+          console.error('Failed to update tool call result:', error);
+        }
+      }
+
+      // Clear current message reference
+      if (event.type === 'agent_complete') {
+        currentAssistantMessageId = null;
+      }
+
+      // Send desktop notification on task complete
+      if (event.type === 'task_complete' && event.data) {
+        try {
+          const sessionManager = getSessionManager();
+          const session = await sessionManager.getCurrentSession();
+          if (session) {
+            notificationService.notifyTaskComplete({
+              sessionId: session.id,
+              sessionTitle: session.title,
+              summary: event.data.summary,
+              duration: event.data.duration,
+              toolsUsed: event.data.toolsUsed || [],
+            });
+          }
+        } catch (error) {
+          console.error('[Main] Failed to send task complete notification:', error);
+        }
+      }
+    },
+  });
+
+  // Set default generation
+  const defaultGenId = settings.generation.default || 'gen3';
+  generationManager.switchGeneration(defaultGenId);
+  console.log('[Init] Generation set to:', defaultGenId);
+
+  // Auto-restore or create session
+  console.log('[Init] Initializing session...');
+  await initializeSession(settings);
+  console.log('[Init] Session initialized');
+
+  // Initialize planning service for Gen 3+
+  console.log('[Init] Initializing planning service...');
+  await initializePlanningService();
+  console.log('[Init] Planning service initialized');
+
   console.log('[Init] Background services initialization complete');
+}
+
+/**
+ * 初始化会话
+ */
+async function initializeSession(settings: any): Promise<void> {
+  const sessionManager = getSessionManager();
+  const memoryService = getMemoryService();
+
+  // Try to restore most recent session or create new one
+  const recentSession = await sessionManager.getMostRecentSession();
+
+  if (recentSession && settings.session?.autoRestore !== false) {
+    await sessionManager.restoreSession(recentSession.id);
+    currentSessionId = recentSession.id;
+    console.log('Restored session:', recentSession.id);
+  } else {
+    const session = await sessionManager.createSession({
+      title: 'New Session',
+      generationId: settings.generation.default || 'gen3',
+      modelConfig: {
+        provider: settings.model?.provider || 'deepseek',
+        model: settings.model?.model || 'deepseek-chat',
+        temperature: settings.model?.temperature || 0.7,
+        maxTokens: settings.model?.maxTokens || 4096,
+      },
+      workingDirectory: agentOrchestrator?.getWorkingDirectory(),
+    });
+    sessionManager.setCurrentSession(session.id);
+    currentSessionId = session.id;
+    console.log('Created new session:', session.id);
+  }
+
+  // Set memory service context
+  memoryService.setContext(
+    currentSessionId!,
+    agentOrchestrator?.getWorkingDirectory() || undefined
+  );
+}
+
+/**
+ * 初始化规划服务
+ */
+async function initializePlanningService(): Promise<void> {
+  if (!agentOrchestrator || !currentSessionId) return;
+
+  const workingDir = agentOrchestrator.getWorkingDirectory();
+  console.log('[Main] initializePlanningService - workingDir:', workingDir);
+
+  // Fallback to app userData if workingDir is '/' (packaged Electron app issue)
+  const effectiveWorkingDir = workingDir && workingDir !== '/'
+    ? workingDir
+    : app.getPath('userData');
+
+  console.log('[Main] initializePlanningService - effectiveWorkingDir:', effectiveWorkingDir);
+
+  if (!effectiveWorkingDir) return;
+
+  planningService = createPlanningService(effectiveWorkingDir, currentSessionId);
+  console.log('Planning service initialized at:', effectiveWorkingDir);
+
+  // Pass planning service to agent orchestrator
+  agentOrchestrator.setPlanningService(planningService);
+
+  // Send initial planning state to renderer
+  await sendPlanningStateToRenderer();
+}
+
+/**
+ * 发送规划状态到渲染进程
+ */
+async function sendPlanningStateToRenderer(): Promise<void> {
+  if (!planningService) return;
+
+  const mainWindow = getMainWindow();
+  if (!mainWindow) return;
+
+  try {
+    const plan = await planningService.plan.read();
+    const findings = await planningService.findings.getAll();
+    const errors = await planningService.errors.getAll();
+
+    const state: PlanningState = {
+      plan,
+      findings,
+      errors,
+    };
+
+    mainWindow.webContents.send(IPC_CHANNELS.PLANNING_EVENT, {
+      type: 'plan_updated',
+      data: state,
+    });
+  } catch (error) {
+    console.error('Failed to send planning state:', error);
+  }
 }
 
 /**

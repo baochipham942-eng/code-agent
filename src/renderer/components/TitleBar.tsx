@@ -6,6 +6,7 @@ import React from 'react';
 import { useAppStore } from '../stores/appStore';
 import { Settings, FolderOpen, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { UserMenu } from './UserMenu';
+import { IconButton } from './primitives';
 
 export const TitleBar: React.FC = () => {
   const {
@@ -24,17 +25,14 @@ export const TitleBar: React.FC = () => {
         <div className="w-16" />
 
         {/* Sidebar Toggle */}
-        <button
+        <IconButton
+          icon={sidebarCollapsed ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          className="window-no-drag p-1.5 rounded-md hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100 transition-colors"
-          title={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
-        >
-          {sidebarCollapsed ? (
-            <PanelLeft className="w-4 h-4" />
-          ) : (
-            <PanelLeftClose className="w-4 h-4" />
-          )}
-        </button>
+          variant="default"
+          size="md"
+          windowNoDrag
+        />
       </div>
 
       {/* Center: Title */}
@@ -45,26 +43,24 @@ export const TitleBar: React.FC = () => {
       {/* Right: Actions */}
       <div className="flex items-center gap-1">
         {/* Workspace Toggle */}
-        <button
+        <IconButton
+          icon={<FolderOpen className="w-4 h-4" />}
+          aria-label={showWorkspace ? 'Hide workspace' : 'Show workspace'}
           onClick={() => setShowWorkspace(!showWorkspace)}
-          className={`window-no-drag p-1.5 rounded-md transition-colors ${
-            showWorkspace
-              ? 'bg-blue-500/20 text-blue-400'
-              : 'hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100'
-          }`}
-          title={showWorkspace ? 'Hide workspace' : 'Show workspace'}
-        >
-          <FolderOpen className="w-4 h-4" />
-        </button>
+          variant={showWorkspace ? 'active' : 'default'}
+          size="md"
+          windowNoDrag
+        />
 
         {/* Settings */}
-        <button
+        <IconButton
+          icon={<Settings className="w-4 h-4" />}
+          aria-label="Settings"
           onClick={() => setShowSettings(true)}
-          className="window-no-drag p-1.5 rounded-md hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100 transition-colors"
-          title="Settings"
-        >
-          <Settings className="w-4 h-4" />
-        </button>
+          variant="default"
+          size="md"
+          windowNoDrag
+        />
 
         {/* User Menu */}
         <UserMenu />

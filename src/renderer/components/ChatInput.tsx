@@ -5,6 +5,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Paperclip, Loader2, Sparkles, CornerDownLeft, X, Image, FileText, Code, Database, Globe, File, Folder } from 'lucide-react';
 import type { MessageAttachment, AttachmentCategory } from '../../shared/types';
+import { IconButton } from './primitives';
 
 // PDF 解析在主进程通过 IPC 处理，避免渲染进程 CSP 问题
 
@@ -613,13 +614,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
                     </div>
                   </>
                 )}
-                <button
-                  type="button"
+                <IconButton
+                  icon={<X className="w-3 h-3" />}
+                  aria-label="Remove attachment"
                   onClick={() => removeAttachment(att.id)}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-700 hover:bg-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <X className="w-3 h-3 text-white" />
-                </button>
+                  variant="danger"
+                  size="sm"
+                  className="absolute -top-1.5 -right-1.5 !p-0.5 !w-5 !h-5 bg-zinc-700 hover:!bg-red-500 !rounded-full !text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                />
               </div>
             ))}
           </div>
@@ -668,14 +670,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
           />
 
           {/* Attachment button */}
-          <button
-            type="button"
+          <IconButton
+            icon={<Paperclip className="w-5 h-5" />}
+            aria-label="添加图片或文件"
             onClick={handleAttachClick}
-            className="flex-shrink-0 p-2.5 ml-2 rounded-xl hover:bg-zinc-700/50 text-zinc-500 hover:text-zinc-300 transition-all duration-200"
-            title="添加图片或文件"
-          >
-            <Paperclip className="w-5 h-5" />
-          </button>
+            variant="ghost"
+            size="lg"
+            className="flex-shrink-0 ml-2 !rounded-xl"
+          />
 
           {/* Textarea */}
           <textarea
@@ -692,21 +694,25 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
           />
 
           {/* Send button */}
-          <button
+          <IconButton
+            icon={
+              disabled ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Send className={`w-5 h-5 transition-transform duration-200 ${hasContent ? '-rotate-45' : ''}`} />
+              )
+            }
+            aria-label="Send message"
             type="submit"
             disabled={disabled || !hasContent}
-            className={`flex-shrink-0 p-2.5 mr-2 rounded-xl text-white transition-all duration-300 ${
+            variant={hasContent && !disabled ? 'default' : 'ghost'}
+            size="lg"
+            className={`flex-shrink-0 mr-2 !rounded-xl !text-white transition-all duration-300 ${
               hasContent && !disabled
                 ? 'bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30 scale-100 hover:scale-105'
                 : 'bg-zinc-700/50 cursor-not-allowed scale-95 opacity-60'
             }`}
-          >
-            {disabled ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Send className={`w-5 h-5 transition-transform duration-200 ${hasContent ? '-rotate-45' : ''}`} />
-            )}
-          </button>
+          />
         </div>
 
         {/* Hints */}

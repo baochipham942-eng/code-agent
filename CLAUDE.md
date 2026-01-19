@@ -206,6 +206,22 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 |------|------|
 | `vercel-api/` | Vercel Serverless Functions（版本检查、设置同步等）|
 
+### API 端点列表
+
+> 注意：由于 Vercel Hobby 计划 12 函数限制，v1 版本化方案已放弃
+
+| 端点 | 说明 |
+|------|------|
+| /api/agent | 云端 Agent |
+| /api/auth | GitHub OAuth 认证 |
+| /api/health | 健康检查 |
+| /api/prompts | System Prompt |
+| /api/sync | 数据同步 |
+| /api/tools | 云端工具（api/scrape/search）|
+| /api/update | 版本更新检查 |
+| /api/user-keys | 用户 API Key 管理 |
+| /api/v1/config | 云端配置中心（新）|
+
 ---
 
 ## 开发规范

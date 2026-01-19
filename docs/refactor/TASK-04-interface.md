@@ -11,7 +11,7 @@
 ## 目标
 
 1. IPC 通道从 70+ 个聚合为 ~15 个领域通道
-2. 云端 API 添加版本号 `/api/v1/`
+2. ~~云端 API 添加版本号 `/api/v1/`~~ (已放弃，见决策记录)
 3. 类型定义从单文件拆分为按领域组织
 
 ---
@@ -266,17 +266,36 @@ src/shared/types/
 - 响应格式: `IPCResponse<T>` (success + data + error)
 - Preload 新增 `domainAPI.invoke(domain, action, payload)` 方法
 
-### 新 API 端点列表
-| 旧端点 | 新端点 | 说明 |
-|--------|--------|------|
-| /api/prompts | /api/v1/config | 合并为配置中心 |
-| /api/agent | /api/v1/agent | 云端 Agent |
-| /api/sync | /api/v1/sync | 数据同步 |
-| /api/auth | /api/v1/auth | 认证 |
-| /api/update | /api/v1/update | 版本更新 |
-| /api/tools | /api/v1/tools | 云端工具 |
+### 云端 API 版本化决策
 
-旧端点保留并返回 301 重定向。
+**状态**: ❌ 已放弃
+
+**原因**: Vercel Hobby 计划限制最多 12 个 Serverless Functions。当前 API 文件数量正好 12 个，无法同时维护原始端点和 v1 版本化端点。
+
+**尝试过的方案**:
+1. 创建 `/api/v1/` 目录并复制 API 文件 → 超出 12 函数限制
+2. 使用 vercel.json redirects 配置 → 重定向目标不存在
+
+**当前状态**:
+- 所有 API 保持在 `/api/` 路径下
+- 仅 `/api/v1/config` 作为新的配置中心端点存在
+- 未来升级 Vercel Pro 后可重新实现完整版本化
+
+**API 端点列表（当前）**:
+| 端点 | 说明 |
+|------|------|
+| /api/agent | 云端 Agent |
+| /api/auth | 认证 |
+| /api/health | 健康检查 |
+| /api/init-db | 数据库初始化 |
+| /api/migrate | 数据库迁移 |
+| /api/model-proxy | 模型代理 |
+| /api/prompts | System Prompt |
+| /api/sync | 数据同步 |
+| /api/tools | 云端工具 |
+| /api/update | 版本更新 |
+| /api/user-keys | 用户 API Key |
+| /api/v1/config | 配置中心（新）|
 
 ### 类型文件对照表
 | 原位置 | 新位置 |
@@ -305,5 +324,5 @@ src/shared/types/
 ### 下游 Agent 注意事项
 1. 渲染进程可使用新 `domainAPI.invoke()` 方法调用 IPC
 2. 旧 `electronAPI.invoke()` 仍然可用（已标记 @deprecated）
-3. 云端 API 调用建议更新到 `/api/v1/` 端点
+3. 云端 API 继续使用 `/api/` 端点（v1 版本化已放弃）
 4. 类型导入无需改动（`import { X } from '../../shared/types'` 仍然有效）

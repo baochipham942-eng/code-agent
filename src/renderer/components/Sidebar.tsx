@@ -16,6 +16,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { Button, IconButton } from './primitives';
 
 // 会话分组类型
 type SessionGroup = 'today' | 'yesterday' | 'week' | 'month' | 'older';
@@ -140,18 +141,16 @@ export const Sidebar: React.FC = () => {
     <div className="w-64 border-r border-zinc-800/50 flex flex-col bg-surface-950/80 backdrop-blur-sm">
       {/* New Chat Button */}
       <div className="p-3">
-        <button
+        <Button
           onClick={handleNewChat}
-          disabled={isLoading}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium text-sm transition-all duration-200 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30 active:scale-[0.98]"
+          loading={isLoading}
+          variant="primary"
+          fullWidth
+          leftIcon={!isLoading ? <Plus className="w-4 h-4" /> : undefined}
+          className="!rounded-xl"
         >
-          {isLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Plus className="w-4 h-4" />
-          )}
-          <span>新对话</span>
-        </button>
+          新对话
+        </Button>
       </div>
 
       {/* Search Bar */}
@@ -247,14 +246,16 @@ export const Sidebar: React.FC = () => {
                               </span>
                             )}
                           </div>
-                          <button
-                            onClick={(e) => handleDeleteSession(session.id, e)}
-                            className={`p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200 ${
+                          <IconButton
+                            icon={<Trash2 className="w-3.5 h-3.5" />}
+                            aria-label="Delete session"
+                            onClick={(e) => handleDeleteSession(session.id, e as unknown as React.MouseEvent)}
+                            variant="danger"
+                            size="sm"
+                            className={`transition-all duration-200 ${
                               hoveredSession === session.id ? 'opacity-100' : 'opacity-0'
                             }`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          />
                         </div>
                       );
                     })}

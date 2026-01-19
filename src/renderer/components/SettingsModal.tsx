@@ -10,6 +10,7 @@ import type { ModelProvider, UpdateInfo } from '@shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { UpdateNotification } from './UpdateNotification';
 import { DevModeConfirmModal } from './ConfirmModal';
+import { Button, IconButton, Input, Select } from './primitives';
 
 type SettingsTab = 'model' | 'disclosure' | 'appearance' | 'language' | 'cache' | 'cloud' | 'update' | 'about';
 
@@ -62,12 +63,13 @@ export const SettingsModal: React.FC = () => {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
           <h2 className="text-lg font-semibold text-zinc-100">{t.settings.title}</h2>
-          <button
+          <IconButton
+            icon={<X className="w-5 h-5" />}
+            aria-label="Close settings"
             onClick={() => setShowSettings(false)}
-            className="p-1 rounded-lg hover:bg-zinc-800 text-zinc-400 hover:text-zinc-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+            variant="default"
+            size="md"
+          />
         </div>
 
         <div className="flex h-[500px]">
@@ -205,16 +207,13 @@ const ModelSettings: React.FC<{
         <label className="block text-sm font-medium text-zinc-100 mb-2">
           {t.model.apiKey}
         </label>
-        <div className="relative">
-          <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-          <input
-            type="password"
-            value={config.apiKey || ''}
-            onChange={(e) => onChange({ ...config, apiKey: e.target.value })}
-            placeholder={t.model.apiKeyPlaceholder}
-            className="w-full pl-10 pr-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-zinc-600"
-          />
-        </div>
+        <Input
+          type="password"
+          value={config.apiKey || ''}
+          onChange={(e) => onChange({ ...config, apiKey: e.target.value })}
+          placeholder={t.model.apiKeyPlaceholder}
+          leftIcon={<Key className="w-4 h-4" />}
+        />
         <p className="text-xs text-zinc-500 mt-2">
           {t.model.apiKeyHint}
         </p>
@@ -224,10 +223,9 @@ const ModelSettings: React.FC<{
         <label className="block text-sm font-medium text-zinc-100 mb-2">
           {t.model.modelSelect}
         </label>
-        <select
+        <Select
           value={config.model}
           onChange={(e) => onChange({ ...config, model: e.target.value })}
-          className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 focus:outline-none focus:border-zinc-600"
         >
           {config.provider === 'deepseek' && (
             <>
@@ -270,7 +268,7 @@ const ModelSettings: React.FC<{
               </optgroup>
             </>
           )}
-        </select>
+        </Select>
       </div>
 
       <div>
@@ -296,19 +294,15 @@ const ModelSettings: React.FC<{
 
       {/* Save Button */}
       <div className="pt-4 border-t border-zinc-800">
-        <button
+        <Button
           onClick={handleSave}
-          disabled={isSaving}
-          className={`w-full py-2.5 px-4 rounded-lg font-medium transition-colors ${
-            saveStatus === 'success'
-              ? 'bg-green-600 text-white'
-              : saveStatus === 'error'
-              ? 'bg-red-600 text-white'
-              : 'bg-blue-600 hover:bg-blue-500 text-white'
-          } disabled:opacity-50 disabled:cursor-not-allowed`}
+          loading={isSaving}
+          fullWidth
+          variant={saveStatus === 'error' ? 'danger' : 'primary'}
+          className={saveStatus === 'success' ? '!bg-green-600 hover:!bg-green-500' : ''}
         >
           {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : t.common.save || 'Save'}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -561,11 +555,11 @@ const AppearanceSettings: React.FC = () => {
 
       <div>
         <h3 className="text-sm font-medium text-zinc-100 mb-4">{t.appearance.fontSize}</h3>
-        <select className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 focus:outline-none focus:border-zinc-600">
+        <Select>
           <option value="small">{t.appearance.fontSizes.small}</option>
           <option value="medium">{t.appearance.fontSizes.medium}</option>
           <option value="large">{t.appearance.fontSizes.large}</option>
-        </select>
+        </Select>
       </div>
     </div>
   );
@@ -809,14 +803,15 @@ const CacheSettings: React.FC = () => {
         <p className="text-xs text-zinc-400 mb-3">
           工具调用的临时缓存（如文件读取、搜索结果）可以安全清理，不会影响您的会话和数据。
         </p>
-        <button
+        <Button
           onClick={handleClearToolCache}
-          disabled={isClearing}
-          className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          loading={isClearing}
+          variant="secondary"
+          fullWidth
+          leftIcon={!isClearing ? <RefreshCw className="w-4 h-4" /> : undefined}
         >
-          <RefreshCw className={`w-4 h-4 ${isClearing ? 'animate-spin' : ''}`} />
           清空缓存 {(stats?.cacheEntries || 0) > 0 && `(${stats?.cacheEntries} 条)`}
-        </button>
+        </Button>
       </div>
 
       {/* Message */}
@@ -943,14 +938,16 @@ const CloudConfigSettings: React.FC = () => {
       </div>
 
       {/* Refresh Button */}
-      <button
+      <Button
         onClick={handleRefreshCloudConfig}
-        disabled={isRefreshingConfig}
-        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        loading={isRefreshingConfig}
+        variant="primary"
+        fullWidth
+        leftIcon={!isRefreshingConfig ? <RefreshCw className="w-4 h-4" /> : undefined}
+        className="!bg-indigo-600 hover:!bg-indigo-500"
       >
-        <RefreshCw className={`w-4 h-4 ${isRefreshingConfig ? 'animate-spin' : ''}`} />
         {isRefreshingConfig ? '刷新中...' : '刷新云端配置'}
-      </button>
+      </Button>
 
       {/* Message */}
       {message && (
@@ -1043,14 +1040,15 @@ const UpdateSettings: React.FC<UpdateSettingsProps> = ({
             <div className="text-sm text-zinc-400">{t.update?.currentVersion || '当前版本'}</div>
             <div className="text-lg font-semibold text-zinc-100">v{currentVersion}</div>
           </div>
-          <button
+          <Button
             onClick={checkForUpdates}
-            disabled={isChecking}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white text-sm transition-colors disabled:opacity-50"
+            loading={isChecking}
+            variant="secondary"
+            size="sm"
+            leftIcon={!isChecking ? <RefreshCw className="w-4 h-4" /> : undefined}
           >
-            <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
             {isChecking ? (t.update?.checking || '检查中...') : (t.update?.checkNow || '检查更新')}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -1081,15 +1079,15 @@ const UpdateSettings: React.FC<UpdateSettingsProps> = ({
               </div>
 
               {/* 立即更新按钮 */}
-              <button
+              <Button
                 onClick={onShowUpdateModal}
-                className="w-full py-2.5 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors font-medium"
+                variant="primary"
+                fullWidth
+                leftIcon={<Download className="w-4 h-4" />}
+                className="!bg-indigo-600 hover:!bg-indigo-500"
               >
-                <div className="flex items-center justify-center gap-2">
-                  <Download className="w-4 h-4" />
-                  {t.update?.download || '立即更新'}
-                </div>
-              </button>
+                {t.update?.download || '立即更新'}
+              </Button>
             </div>
           ) : (
             <div className="flex items-center gap-3">

@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { AlertTriangle, Info, Shield, Key } from 'lucide-react';
-import { Modal, ModalHeader, ModalFooter } from './primitives/Modal';
+import { Modal, ModalHeader, ModalFooter, Button } from './primitives';
 
 export type ConfirmModalType = 'warning' | 'danger' | 'info' | 'security';
 
@@ -200,30 +200,21 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
         />
       }
       footer={
-        <ModalFooter
-          cancelText="拒绝"
-          confirmText="允许创建"
-          onCancel={onDeny}
-          onConfirm={onAllow}
-          confirmColorClass={isDangerous ? 'bg-red-600 hover:bg-red-500' : 'bg-indigo-600 hover:bg-indigo-500'}
-        >
-          <button
+        <ModalFooter>
+          <Button
             onClick={onDeny}
-            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+            variant="ghost"
           >
             拒绝
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={onAllow}
-            className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors flex items-center gap-2 ${
-              isDangerous
-                ? 'bg-red-600 hover:bg-red-500'
-                : 'bg-indigo-600 hover:bg-indigo-500'
-            }`}
+            variant={isDangerous ? 'danger' : 'primary'}
+            leftIcon={<Shield className="w-4 h-4" />}
+            className={isDangerous ? '' : '!bg-indigo-600 hover:!bg-indigo-500'}
           >
-            <Shield className="w-4 h-4" />
             允许创建
-          </button>
+          </Button>
         </ModalFooter>
       }
     >

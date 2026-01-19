@@ -22,6 +22,7 @@ import { initCloudConfigService, getCloudConfigService } from '../services/cloud
 import { initCloudTaskService } from '../cloud/cloudTaskService';
 import { initUnifiedOrchestrator } from '../orchestrator';
 import { logBridge } from '../mcp/logBridge.js';
+import { initPluginSystem, shutdownPluginSystem } from '../plugins';
 import { getMainWindow } from './window';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { SYNC, UPDATE, CLOUD, TOOL_CACHE } from '../../shared/constants';
@@ -203,6 +204,15 @@ async function initializeServices(): Promise<void> {
     })
     .catch((error) => {
       logger.error('MCP failed to initialize (non-blocking)', error);
+    });
+
+  // Initialize Plugin System ASYNC (non-blocking)
+  initPluginSystem()
+    .then(() => {
+      logger.info('Plugin system initialized');
+    })
+    .catch((error) => {
+      logger.error('Plugin system failed to initialize (non-blocking)', error);
     });
 
   // Setup LogBridge command handler

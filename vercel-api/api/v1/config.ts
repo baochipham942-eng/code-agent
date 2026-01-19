@@ -38,6 +38,22 @@ interface FeatureFlags {
   enableExperimentalTools: boolean;
 }
 
+// MCP Server 配置
+interface MCPServerConfig {
+  id: string;
+  name: string;
+  type: 'stdio' | 'sse';
+  enabled: boolean;
+  config: {
+    command?: string;
+    args?: string[];
+    url?: string;
+    env?: Record<string, string>;
+  };
+  requiredEnvVars?: string[];  // 需要的环境变量（客户端检查）
+  description?: string;
+}
+
 interface CloudConfig {
   version: string;
   prompts: Record<GenerationId, string>;
@@ -49,6 +65,7 @@ interface CloudConfig {
     en: Record<string, string>;
   };
   rules: Record<string, string>;
+  mcpServers: MCPServerConfig[];
 }
 
 // ----------------------------------------------------------------------------
@@ -613,6 +630,89 @@ const RULES: Record<string, string> = {
 };
 
 // ----------------------------------------------------------------------------
+// MCP Servers
+// ----------------------------------------------------------------------------
+
+const MCP_SERVERS: MCPServerConfig[] = [
+  // SSE 远程服务器
+  {
+    id: 'deepwiki',
+    name: 'DeepWiki',
+    type: 'sse',
+    enabled: true,
+    config: {
+      url: 'https://mcp.deepwiki.com/sse',
+    },
+    description: '解读 GitHub 项目文档，提供项目架构和代码理解',
+  },
+
+  // Stdio 本地服务器
+  {
+    id: 'filesystem',
+    name: 'Filesystem',
+    type: 'stdio',
+    enabled: false,
+    config: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-filesystem', '~'],
+    },
+    description: '文件系统访问（默认禁用，避免与内置工具冲突）',
+  },
+  {
+    id: 'git',
+    name: 'Git',
+    type: 'stdio',
+    enabled: false,
+    config: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-git'],
+    },
+    description: 'Git 版本控制操作',
+  },
+  {
+    id: 'github',
+    name: 'GitHub',
+    type: 'stdio',
+    enabled: false,
+    config: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-github'],
+      env: {
+        GITHUB_PERSONAL_ACCESS_TOKEN: '${GITHUB_TOKEN}',
+      },
+    },
+    requiredEnvVars: ['GITHUB_TOKEN'],
+    description: 'GitHub API 访问（需要 GITHUB_TOKEN）',
+  },
+  {
+    id: 'brave-search',
+    name: 'Brave Search',
+    type: 'stdio',
+    enabled: false,
+    config: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-brave-search'],
+      env: {
+        BRAVE_API_KEY: '${BRAVE_API_KEY}',
+      },
+    },
+    requiredEnvVars: ['BRAVE_API_KEY'],
+    description: '网络搜索（需要 BRAVE_API_KEY）',
+  },
+  {
+    id: 'memory',
+    name: 'Memory',
+    type: 'stdio',
+    enabled: false,
+    config: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-memory'],
+    },
+    description: '知识图谱记忆服务',
+  },
+];
+
+// ----------------------------------------------------------------------------
 // Build Config
 // ----------------------------------------------------------------------------
 
@@ -635,6 +735,7 @@ function buildCloudConfig(): CloudConfig {
     featureFlags: FEATURE_FLAGS,
     uiStrings: UI_STRINGS,
     rules: RULES,
+    mcpServers: MCP_SERVERS,
   };
 }
 
@@ -696,10 +797,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ version: CONFIG_VERSION, rules: config.rules });
       case 'toolMeta':
         return res.status(200).json({ version: CONFIG_VERSION, toolMeta: config.toolMeta });
+      case 'mcpServers':
+        return res.status(200).json({ version: CONFIG_VERSION, mcpServers: config.mcpServers });
       default:
         return res.status(400).json({
           error: `Unknown section: ${section}`,
-          validSections: ['prompts', 'skills', 'flags', 'ui', 'rules', 'toolMeta'],
+          validSections: ['prompts', 'skills', 'flags', 'ui', 'rules', 'toolMeta', 'mcpServers'],
         });
     }
   }

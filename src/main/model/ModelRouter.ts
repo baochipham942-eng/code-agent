@@ -562,11 +562,11 @@ export class ModelRouter {
    * 优先使用 OpenRouter 中的免费/便宜模型
    */
   private fallbackModels: Record<ModelCapability, { provider: string; model: string }> = {
-    vision: { provider: 'openrouter', model: 'google/gemini-2.0-flash-001' },
+    vision: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' }, // 免费视觉模型
     reasoning: { provider: 'openrouter', model: 'google/gemini-2.0-flash-thinking-exp:free' },
     code: { provider: 'deepseek', model: 'deepseek-chat' },
-    fast: { provider: 'openrouter', model: 'openai/gpt-4o-mini' },
-    general: { provider: 'openrouter', model: 'google/gemini-2.0-flash-001' },
+    fast: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' },
+    general: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' },
     gui: { provider: 'claude', model: 'claude-sonnet-4-20250514' },
     search: { provider: 'perplexity', model: 'sonar-pro' },
   };

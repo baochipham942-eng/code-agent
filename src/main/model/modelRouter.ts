@@ -947,7 +947,7 @@ export class ModelRouter {
                     }
                   }
                 }
-              } catch (e) {
+              } catch {
                 // 忽略解析错误（可能是不完整的 JSON）
                 logger.warn(' Failed to parse SSE data:', data.substring(0, 100));
               }
@@ -1042,7 +1042,7 @@ export class ModelRouter {
     messages: ModelMessage[],
     tools: ToolDefinition[],
     config: ModelConfig,
-    onStream?: StreamCallback
+    _onStream?: StreamCallback
   ): Promise<ModelResponse> {
     const baseUrl = 'https://api.anthropic.com/v1';
 
@@ -1134,7 +1134,7 @@ export class ModelRouter {
     messages: ModelMessage[],
     tools: ToolDefinition[],
     config: ModelConfig,
-    onStream?: StreamCallback
+    _onStream?: StreamCallback
   ): Promise<ModelResponse> {
     const baseUrl = config.baseUrl || 'https://api.openai.com/v1';
 
@@ -1868,7 +1868,7 @@ export class ModelRouter {
     messages: ModelMessage[],
     tools: ToolDefinition[],
     config: ModelConfig,
-    onStream?: StreamCallback
+    _onStream?: StreamCallback
   ): Promise<ModelResponse> {
     const cloudUrl = this.getCloudApiUrl();
     const providerName = config.provider; // 例如 'openrouter'
@@ -2164,7 +2164,7 @@ export class ModelRouter {
                     }
                   }
                 }
-              } catch (e) {
+              } catch {
                 logger.warn(' Failed to parse OpenRouter SSE data:', data.substring(0, 100));
               }
             }

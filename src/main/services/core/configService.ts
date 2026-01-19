@@ -100,7 +100,7 @@ function loadEnvFile(): void {
         logger.info('Loaded .env from:', envPath);
         return;
       }
-    } catch (e) {
+    } catch {
       // Continue to next path
     }
   }

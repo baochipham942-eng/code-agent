@@ -72,7 +72,7 @@ async function requestUserConfirmation(
       logger.info('devModeAutoApprove enabled, auto-approving tool creation');
       return true;
     }
-  } catch (e) {
+  } catch {
     // Continue with user confirmation if config service unavailable
   }
 

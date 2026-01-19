@@ -5,7 +5,7 @@
 import type { Generation, GenerationId, GenerationDiff } from '../../shared/types';
 import * as diff from 'diff';
 import { GENERATION_DEFINITIONS } from './metadata';
-import { SYSTEM_PROMPTS } from './prompts/builder';
+import { getSystemPrompt } from '../services/PromptService';
 
 // ----------------------------------------------------------------------------
 // Generation Manager Class
@@ -27,7 +27,7 @@ export class GenerationManager {
       const genId = id as GenerationId;
       this.generations.set(genId, {
         ...definition,
-        systemPrompt: SYSTEM_PROMPTS[genId],
+        systemPrompt: getSystemPrompt(genId), // 使用 PromptService（云端优先 + 本地降级）
       });
     }
     console.log('[GenerationManager] Loaded generations:', Array.from(this.generations.keys()));

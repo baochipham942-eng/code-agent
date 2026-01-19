@@ -29,6 +29,7 @@ import type {
 import { createPlanningService, type PlanningService } from './planning';
 import { CloudTaskService, getCloudTaskService, initCloudTaskService, isCloudTaskServiceInitialized } from './cloud/CloudTaskService';
 import { initUnifiedOrchestrator, getUnifiedOrchestrator } from './orchestrator';
+import { initPromptService, getPromptsInfo } from './services/PromptService';
 
 // ----------------------------------------------------------------------------
 // Global State
@@ -173,6 +174,17 @@ async function initializeBackgroundServices(): Promise<void> {
  */
 async function initializeServices(): Promise<void> {
   const settings = configService!.getSettings();
+
+  // Initialize PromptService ASYNC (non-blocking)
+  // 后台拉取云端 prompts，不阻塞启动
+  initPromptService()
+    .then(() => {
+      const info = getPromptsInfo();
+      console.log(`[PromptService] Source: ${info.source}, version: ${info.version || 'builtin'}`);
+    })
+    .catch((error) => {
+      console.warn('[PromptService] Init failed (using builtin):', error);
+    });
 
   // Initialize MCP client ASYNC (non-blocking)
   // Remote MCP servers like DeepWiki can be slow, don't block app startup

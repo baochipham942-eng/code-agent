@@ -119,9 +119,9 @@ const MessageContent: React.FC<{ content: string; isUser?: boolean }> = ({ conte
         if (part.startsWith('```')) {
           return <CodeBlock key={index} content={part} />;
         }
-        // Render inline code for non-user messages
+        // Render inline code and tables for non-user messages
         if (!isUser) {
-          return <InlineTextWithCode key={index} text={part} />;
+          return <RichTextContent key={index} text={part} />;
         }
         return <span key={index}>{part}</span>;
       })}
@@ -129,13 +129,277 @@ const MessageContent: React.FC<{ content: string; isUser?: boolean }> = ({ conte
   );
 };
 
-// Handle inline code within text
+// Parse and render markdown tables
+const MarkdownTable: React.FC<{ tableText: string }> = ({ tableText }) => {
+  const lines = tableText.trim().split('\n').filter(line => line.trim());
+  if (lines.length < 2) return <span>{tableText}</span>;
+
+  // Parse header
+  const headerLine = lines[0];
+  const headers = headerLine.split('|').map(h => h.trim()).filter(Boolean);
+
+  // Check for separator line (---|---|---)
+  const separatorLine = lines[1];
+  if (!separatorLine.match(/^[\s|:-]+$/)) {
+    return <span>{tableText}</span>;
+  }
+
+  // Parse alignment from separator
+  const alignments = separatorLine.split('|').map(s => s.trim()).filter(Boolean).map(sep => {
+    if (sep.startsWith(':') && sep.endsWith(':')) return 'center';
+    if (sep.endsWith(':')) return 'right';
+    return 'left';
+  });
+
+  // Parse data rows
+  const dataRows = lines.slice(2).map(line =>
+    line.split('|').map(cell => cell.trim()).filter((_, i, arr) => i > 0 || arr[0] !== '')
+  );
+
+  return (
+    <div className="my-3 overflow-x-auto">
+      <table className="min-w-full text-xs border-collapse">
+        <thead>
+          <tr className="bg-zinc-800/50">
+            {headers.map((header, i) => (
+              <th
+                key={i}
+                className="px-3 py-2 text-left font-semibold text-zinc-200 border border-zinc-700/50"
+                style={{ textAlign: alignments[i] || 'left' }}
+              >
+                <InlineTextWithCode text={header} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {dataRows.map((row, rowIndex) => (
+            <tr
+              key={rowIndex}
+              className={rowIndex % 2 === 0 ? 'bg-zinc-900/30' : 'bg-zinc-800/20'}
+            >
+              {headers.map((_, cellIndex) => (
+                <td
+                  key={cellIndex}
+                  className="px-3 py-2 text-zinc-300 border border-zinc-700/50"
+                  style={{ textAlign: alignments[cellIndex] || 'left' }}
+                >
+                  <InlineTextWithCode text={row[cellIndex] || ''} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+// Rich text content with tables, headers, lists and inline formatting
+const RichTextContent: React.FC<{ text: string }> = ({ text }) => {
+  // Parse text into block-level elements
+  const blocks = parseMarkdownBlocks(text);
+
+  return (
+    <>
+      {blocks.map((block, index) => (
+        <MarkdownBlock key={index} block={block} />
+      ))}
+    </>
+  );
+};
+
+// Block types
+type BlockType = 'paragraph' | 'heading' | 'table' | 'list' | 'blockquote' | 'hr';
+interface MarkdownBlockData {
+  type: BlockType;
+  content: string;
+  level?: number; // for headings (1-6) and lists
+  items?: string[]; // for lists
+  ordered?: boolean; // for lists
+}
+
+// Parse markdown into blocks
+function parseMarkdownBlocks(text: string): MarkdownBlockData[] {
+  const blocks: MarkdownBlockData[] = [];
+  const lines = text.split('\n');
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Horizontal rule
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(line.trim())) {
+      blocks.push({ type: 'hr', content: '' });
+      i++;
+      continue;
+    }
+
+    // Heading (# to ######)
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      blocks.push({
+        type: 'heading',
+        level: headingMatch[1].length,
+        content: headingMatch[2],
+      });
+      i++;
+      continue;
+    }
+
+    // Blockquote
+    if (line.startsWith('>')) {
+      const quoteLines: string[] = [];
+      while (i < lines.length && lines[i].startsWith('>')) {
+        quoteLines.push(lines[i].replace(/^>\s?/, ''));
+        i++;
+      }
+      blocks.push({ type: 'blockquote', content: quoteLines.join('\n') });
+      continue;
+    }
+
+    // Table detection
+    if (line.includes('|') && i + 1 < lines.length && lines[i + 1].match(/^[\s|:-]+$/)) {
+      const tableLines: string[] = [line];
+      i++;
+      while (i < lines.length && lines[i].includes('|')) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      blocks.push({ type: 'table', content: tableLines.join('\n') });
+      continue;
+    }
+
+    // Unordered list (-, *, +)
+    const ulMatch = line.match(/^(\s*)([-*+])\s+(.*)$/);
+    if (ulMatch) {
+      const items: string[] = [];
+      while (i < lines.length) {
+        const itemMatch = lines[i].match(/^(\s*)([-*+])\s+(.*)$/);
+        if (itemMatch) {
+          items.push(itemMatch[3]);
+          i++;
+        } else if (lines[i].trim() === '') {
+          i++;
+          break;
+        } else {
+          break;
+        }
+      }
+      blocks.push({ type: 'list', content: '', items, ordered: false });
+      continue;
+    }
+
+    // Ordered list (1. 2. etc)
+    const olMatch = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
+    if (olMatch) {
+      const items: string[] = [];
+      while (i < lines.length) {
+        const itemMatch = lines[i].match(/^(\s*)(\d+)\.\s+(.*)$/);
+        if (itemMatch) {
+          items.push(itemMatch[3]);
+          i++;
+        } else if (lines[i].trim() === '') {
+          i++;
+          break;
+        } else {
+          break;
+        }
+      }
+      blocks.push({ type: 'list', content: '', items, ordered: true });
+      continue;
+    }
+
+    // Regular paragraph - collect consecutive non-special lines
+    const paragraphLines: string[] = [];
+    while (i < lines.length) {
+      const currentLine = lines[i];
+      // Stop at special lines
+      if (
+        currentLine.match(/^#{1,6}\s/) ||
+        currentLine.startsWith('>') ||
+        currentLine.match(/^(\s*)([-*+]|\d+\.)\s/) ||
+        (currentLine.includes('|') && i + 1 < lines.length && lines[i + 1]?.match(/^[\s|:-]+$/)) ||
+        currentLine.match(/^(-{3,}|\*{3,}|_{3,})$/)
+      ) {
+        break;
+      }
+      paragraphLines.push(currentLine);
+      i++;
+    }
+    if (paragraphLines.length > 0) {
+      blocks.push({ type: 'paragraph', content: paragraphLines.join('\n') });
+    }
+  }
+
+  return blocks;
+}
+
+// Render a single markdown block
+const MarkdownBlock: React.FC<{ block: MarkdownBlockData }> = ({ block }) => {
+  switch (block.type) {
+    case 'hr':
+      return <hr className="my-4 border-zinc-700/50" />;
+
+    case 'heading': {
+      const HeadingTag = `h${block.level}` as keyof JSX.IntrinsicElements;
+      const sizeClasses: Record<number, string> = {
+        1: 'text-xl font-bold text-zinc-100 mt-4 mb-2',
+        2: 'text-lg font-bold text-zinc-100 mt-3 mb-2',
+        3: 'text-base font-semibold text-zinc-200 mt-3 mb-1',
+        4: 'text-sm font-semibold text-zinc-200 mt-2 mb-1',
+        5: 'text-sm font-medium text-zinc-300 mt-2 mb-1',
+        6: 'text-xs font-medium text-zinc-400 mt-2 mb-1',
+      };
+      return (
+        <HeadingTag className={sizeClasses[block.level || 1]}>
+          <InlineTextWithCode text={block.content} />
+        </HeadingTag>
+      );
+    }
+
+    case 'blockquote':
+      return (
+        <blockquote className="my-2 pl-4 border-l-2 border-primary-500/50 text-zinc-400 italic">
+          <InlineTextWithCode text={block.content} />
+        </blockquote>
+      );
+
+    case 'table':
+      return <MarkdownTable tableText={block.content} />;
+
+    case 'list': {
+      const ListTag = block.ordered ? 'ol' : 'ul';
+      return (
+        <ListTag className={`my-2 pl-5 space-y-1 ${block.ordered ? 'list-decimal' : 'list-disc'}`}>
+          {block.items?.map((item, i) => (
+            <li key={i} className="text-zinc-300">
+              <InlineTextWithCode text={item} />
+            </li>
+          ))}
+        </ListTag>
+      );
+    }
+
+    case 'paragraph':
+    default:
+      return <InlineTextWithCode text={block.content} />;
+  }
+};
+
+// Handle inline formatting: code, bold, italic, strikethrough
 const InlineTextWithCode: React.FC<{ text: string }> = ({ text }) => {
-  const parts = text.split(/(`[^`]+`)/g);
+  // Combined regex for inline formatting
+  // Order matters: code first, then bold, then italic, then strikethrough
+  const inlineRegex = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|~~[^~]+~~)/g;
+  const parts = text.split(inlineRegex);
 
   return (
     <>
       {parts.map((part, index) => {
+        if (!part) return null;
+
+        // Inline code
         if (part.startsWith('`') && part.endsWith('`')) {
           const code = part.slice(1, -1);
           return (
@@ -147,6 +411,25 @@ const InlineTextWithCode: React.FC<{ text: string }> = ({ text }) => {
             </code>
           );
         }
+
+        // Bold **text**
+        if (part.startsWith('**') && part.endsWith('**')) {
+          const content = part.slice(2, -2);
+          return <strong key={index} className="font-semibold text-zinc-100">{content}</strong>;
+        }
+
+        // Italic *text*
+        if (part.startsWith('*') && part.endsWith('*')) {
+          const content = part.slice(1, -1);
+          return <em key={index} className="italic text-zinc-200">{content}</em>;
+        }
+
+        // Strikethrough ~~text~~
+        if (part.startsWith('~~') && part.endsWith('~~')) {
+          const content = part.slice(2, -2);
+          return <del key={index} className="line-through text-zinc-500">{content}</del>;
+        }
+
         return <span key={index}>{part}</span>;
       })}
     </>

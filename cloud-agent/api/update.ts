@@ -27,25 +27,23 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.7.12',
-  publishedAt: '2026-01-19T00:45:00.000Z',
+  version: '0.7.20',
+  publishedAt: '2026-01-19T10:35:00.000Z',
   releaseNotes: `
-## Code Agent v0.7.12 🔧
+## Code Agent v0.7.20 ✨
 
-### 🐛 Bug 修复
-- **附件路径修复** - 使用 Electron 33 的 webUtils.getPathForFile API 正确获取文件路径
-- **附件持久化** - 附件元信息保存到数据库，历史会话可展示附件记录
-
-### 📦 包含历史更新
-- 代际选择器工具列表显示修复
-- 图片模型路由优化
-- 文件夹拖拽上传支持
-- MCP 和 read_pdf 工具支持
+### 🎨 Markdown 渲染增强
+- **表格渲染** - Markdown 表格以真正的表格形式展示，支持对齐和斑马纹
+- **标题支持** - 支持 h1-h6 六级标题
+- **列表渲染** - 有序列表和无序列表正确显示
+- **文本格式** - 支持 **加粗**、*斜体*、~~删除线~~
+- **引用块** - 支持 > 引用样式
+- **分隔线** - 支持 --- 水平分隔线
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.7.12/Code.Agent-0.7.12-arm64.dmg',
+      url: 'https://github.com/anthropics/code-agent/releases/download/v0.7.20/Code.Agent-0.7.20-arm64.dmg',
       size: 153000000,
     },
   },

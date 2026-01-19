@@ -18,6 +18,12 @@ import { defaultLanguage, type Language } from '../i18n';
 // 渐进披露级别
 export type DisclosureLevel = 'simple' | 'standard' | 'advanced' | 'expert';
 
+// 云端 UI 字符串类型
+type CloudUIStrings = {
+  zh: Record<string, string>;
+  en: Record<string, string>;
+};
+
 interface AppState {
   // UI State
   showSettings: boolean;
@@ -26,6 +32,9 @@ interface AppState {
 
   // 语言设置 - Language
   language: Language;
+
+  // 云端 UI 字符串（热更新）
+  cloudUIStrings: CloudUIStrings | null;
 
   // 渐进披露 - Progressive Disclosure
   disclosureLevel: DisclosureLevel;
@@ -63,6 +72,7 @@ interface AppState {
   setShowWorkspace: (show: boolean) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setLanguage: (language: Language) => void;
+  setCloudUIStrings: (strings: CloudUIStrings | null) => void;
   setDisclosureLevel: (level: DisclosureLevel) => void;
   setCurrentGeneration: (gen: Generation) => void;
   setMessages: (messages: Message[]) => void;
@@ -116,6 +126,9 @@ export const useAppStore = create<AppState>((set) => ({
   // 语言默认为中文
   language: defaultLanguage,
 
+  // 云端 UI 字符串（初始为 null，由主进程推送）
+  cloudUIStrings: null,
+
   // 渐进披露默认级别
   disclosureLevel: 'standard',
 
@@ -152,6 +165,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowWorkspace: (show) => set({ showWorkspace: show }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setLanguage: (language) => set({ language }),
+  setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),
   setDisclosureLevel: (level) => set({ disclosureLevel: level }),
 
   setCurrentGeneration: (gen) => set({ currentGeneration: gen }),

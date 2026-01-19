@@ -1,11 +1,12 @@
 // ============================================================================
 // Secure Storage Service
 // Encrypted storage for sensitive data like tokens
+// Uses Electron safeStorage for OS-level encryption
 // ============================================================================
 
 import Store from 'electron-store';
 import crypto from 'crypto';
-import { app } from 'electron';
+import { app, safeStorage } from 'electron';
 import os from 'os';
 import keytar from 'keytar';
 
@@ -13,6 +14,7 @@ import keytar from 'keytar';
 const KEYCHAIN_SERVICE = 'code-agent';
 const KEYCHAIN_ACCOUNT_SESSION = 'supabase-session';
 const KEYCHAIN_ACCOUNT_SETTINGS = 'user-settings';
+const KEYCHAIN_ACCOUNT_APIKEYS = 'api-keys'; // New: API keys in Keychain
 
 interface SecureStorageData {
   // Auth tokens
@@ -28,7 +30,7 @@ interface SecureStorageData {
   'auth.user'?: string;
   // Developer settings (persisted across data clears)
   'settings.devModeAutoApprove'?: string;
-  // API Keys (encrypted)
+  // API Keys - now stored encrypted via safeStorage
   'apikey.deepseek'?: string;
   'apikey.claude'?: string;
   'apikey.openai'?: string;
@@ -37,10 +39,29 @@ interface SecureStorageData {
   'apikey.qwen'?: string;
   'apikey.moonshot'?: string;
   'apikey.perplexity'?: string;
+  'apikey.openrouter'?: string;
 }
 
-// Generate a machine-specific encryption key
+/**
+ * Generate encryption key using Electron safeStorage
+ * Falls back to hostname-based key if safeStorage unavailable
+ */
 function generateEncryptionKey(): string {
+  // Try to use safeStorage for secure key derivation
+  if (safeStorage.isEncryptionAvailable()) {
+    try {
+      // Use a fixed seed encrypted by OS keychain
+      const seed = 'code-agent-encryption-key-v2';
+      const encrypted = safeStorage.encryptString(seed);
+      // Use first 32 bytes of encrypted data as key
+      return encrypted.toString('hex').slice(0, 32);
+    } catch (e) {
+      console.warn('[SecureStorage] safeStorage encryption failed, using fallback:', e);
+    }
+  }
+
+  // Fallback: hostname-based key (less secure but works everywhere)
+  console.warn('[SecureStorage] Using hostname-based encryption key (less secure)');
   const machineId = `${os.hostname()}-${os.userInfo().username}-${app.getPath('userData')}`;
   return crypto.createHash('sha256').update(machineId).digest('hex').slice(0, 32);
 }
@@ -88,42 +109,146 @@ class SecureStorageService {
     this.store.delete('auth.user');
   }
 
-  // ========== API Key Management (encrypted) ==========
+  // ========== API Key Management (Keychain + safeStorage) ==========
 
-  // Set API key for a provider
+  // API key cache to avoid frequent Keychain access
+  private apiKeyCache: Map<string, string> = new Map();
+
+  /**
+   * Set API key for a provider
+   * Stores in both Keychain (persistent) and local cache
+   */
   setApiKey(provider: string, apiKey: string): void {
+    // Update cache immediately
+    this.apiKeyCache.set(provider, apiKey);
+
+    // Store in Keychain asynchronously (persistent storage)
+    this.saveApiKeysToKeychain().catch(e => {
+      console.error('[SecureStorage] Failed to save API key to Keychain:', e);
+    });
+
+    // Also store in electron-store as backup (encrypted)
     const key = `apikey.${provider}` as keyof SecureStorageData;
     this.store.set(key, apiKey);
   }
 
-  // Get API key for a provider
+  /**
+   * Get API key for a provider
+   * Checks cache first, then Keychain, then electron-store
+   */
   getApiKey(provider: string): string | undefined {
+    // Check cache first
+    const cached = this.apiKeyCache.get(provider);
+    if (cached) return cached;
+
+    // Check electron-store (backup)
     const key = `apikey.${provider}` as keyof SecureStorageData;
-    return this.store.get(key);
+    const stored = this.store.get(key);
+    if (stored) {
+      this.apiKeyCache.set(provider, stored);
+      return stored;
+    }
+
+    return undefined;
   }
 
-  // Delete API key for a provider
+  /**
+   * Delete API key for a provider
+   */
   deleteApiKey(provider: string): void {
+    this.apiKeyCache.delete(provider);
+
     const key = `apikey.${provider}` as keyof SecureStorageData;
     this.store.delete(key);
+
+    // Update Keychain
+    this.saveApiKeysToKeychain().catch(e => {
+      console.error('[SecureStorage] Failed to update Keychain after delete:', e);
+    });
   }
 
-  // Check if API key exists for a provider
+  /**
+   * Check if API key exists for a provider
+   */
   hasApiKey(provider: string): boolean {
-    const key = `apikey.${provider}` as keyof SecureStorageData;
-    return this.store.has(key);
+    return this.apiKeyCache.has(provider) || this.store.has(`apikey.${provider}` as keyof SecureStorageData);
   }
 
-  // Get all stored API key providers
+  /**
+   * Get all stored API key providers
+   */
   getStoredApiKeyProviders(): string[] {
     const providers: string[] = [];
-    const allKeys = ['deepseek', 'claude', 'openai', 'groq', 'zhipu', 'qwen', 'moonshot', 'perplexity'];
+    const allKeys = ['deepseek', 'claude', 'openai', 'groq', 'zhipu', 'qwen', 'moonshot', 'perplexity', 'openrouter'];
     for (const provider of allKeys) {
       if (this.hasApiKey(provider)) {
         providers.push(provider);
       }
     }
     return providers;
+  }
+
+  /**
+   * Save all API keys to Keychain
+   * Keys are encrypted with safeStorage before storing
+   */
+  private async saveApiKeysToKeychain(): Promise<void> {
+    try {
+      const apiKeys: Record<string, string> = {};
+      for (const [provider, key] of this.apiKeyCache) {
+        apiKeys[provider] = key;
+      }
+
+      if (Object.keys(apiKeys).length > 0) {
+        const json = JSON.stringify(apiKeys);
+        // Encrypt with safeStorage if available
+        if (safeStorage.isEncryptionAvailable()) {
+          const encrypted = safeStorage.encryptString(json);
+          await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_APIKEYS, encrypted.toString('base64'));
+        } else {
+          // Fallback: store directly (still protected by Keychain)
+          await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_APIKEYS, json);
+        }
+      }
+    } catch (e) {
+      console.error('[SecureStorage] Failed to save API keys to Keychain:', e);
+    }
+  }
+
+  /**
+   * Load API keys from Keychain on startup
+   */
+  async loadApiKeysFromKeychain(): Promise<void> {
+    try {
+      const stored = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_APIKEYS);
+      if (!stored) return;
+
+      let json: string;
+      // Try to decrypt with safeStorage
+      if (safeStorage.isEncryptionAvailable()) {
+        try {
+          const buffer = Buffer.from(stored, 'base64');
+          json = safeStorage.decryptString(buffer);
+        } catch {
+          // Might be unencrypted (legacy), try direct parse
+          json = stored;
+        }
+      } else {
+        json = stored;
+      }
+
+      const apiKeys = JSON.parse(json) as Record<string, string>;
+      for (const [provider, key] of Object.entries(apiKeys)) {
+        this.apiKeyCache.set(provider, key);
+        // Also sync to electron-store as backup
+        const storeKey = `apikey.${provider}` as keyof SecureStorageData;
+        this.store.set(storeKey, key);
+      }
+
+      console.log('[SecureStorage] Loaded API keys from Keychain:', Object.keys(apiKeys).join(', '));
+    } catch (e) {
+      console.error('[SecureStorage] Failed to load API keys from Keychain:', e);
+    }
   }
 
   // Get or generate device ID

@@ -1,6 +1,9 @@
 // ============================================================================
 // Prompts API - 云端 System Prompt 管理
 // ============================================================================
+// 注意：此 API 已迁移到 /api/v1/config
+// 保留此文件用于向后兼容，新功能请使用 /api/v1/config
+//
 // GET /api/prompts?gen=gen4        获取指定代际的 system prompt
 // GET /api/prompts?gen=all         获取所有代际的 prompts
 // GET /api/prompts?action=version  获取 prompts 版本号

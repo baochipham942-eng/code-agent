@@ -7,12 +7,28 @@ import {
   ChevronRight,
   Terminal,
   FileText,
+  FilePlus,
   FileEdit,
-  FolderSearch,
+  FolderOpen,
+  Search,
   Globe,
-  Zap,
+  Bot,
+  ListTodo,
+  MessageCircleQuestion,
   Sparkles,
-  Code2,
+  Plug,
+  Database,
+  FileCode,
+  Camera,
+  Monitor,
+  Users,
+  MessageSquare,
+  GitBranch,
+  Target,
+  Wrench,
+  ScanEye,
+  ClipboardList,
+  Clipboard,
   Check,
   AlertCircle,
   Play,
@@ -20,24 +36,66 @@ import {
 } from 'lucide-react';
 import type { ToolCallDisplayProps, ToolStatus, ToolStatusConfig } from './types';
 import { useAppStore } from '../../../../stores/appStore';
-import { summarizeToolCall, getToolIcon as getToolIconEmoji, getToolStatusText } from '../../../../utils/toolSummary';
+import { summarizeToolCall, getToolStatusText } from '../../../../utils/toolSummary';
 import { DiffView, DiffPreview } from '../../../DiffView';
 
-// Tool icon mapping
+// Tool icon mapping - 统一使用 Lucide 图标
 const getToolIcon = (name: string): React.ReactNode => {
   const iconMap: Record<string, React.ReactNode> = {
+    // Gen 1 - 基础文件操作
     bash: <Terminal className="w-3.5 h-3.5" />,
     read_file: <FileText className="w-3.5 h-3.5" />,
-    write_file: <FileEdit className="w-3.5 h-3.5" />,
+    write_file: <FilePlus className="w-3.5 h-3.5" />,
     edit_file: <FileEdit className="w-3.5 h-3.5" />,
-    glob: <FolderSearch className="w-3.5 h-3.5" />,
-    grep: <FolderSearch className="w-3.5 h-3.5" />,
-    list_directory: <FolderSearch className="w-3.5 h-3.5" />,
-    web_fetch: <Globe className="w-3.5 h-3.5" />,
-    task: <Zap className="w-3.5 h-3.5" />,
+
+    // Gen 2 - 搜索和导航
+    glob: <Search className="w-3.5 h-3.5" />,
+    grep: <Search className="w-3.5 h-3.5" />,
+    list_directory: <FolderOpen className="w-3.5 h-3.5" />,
+    web_search: <Globe className="w-3.5 h-3.5" />,
+
+    // Gen 3 - 子代理和规划
+    task: <Bot className="w-3.5 h-3.5" />,
+    todo_write: <ListTodo className="w-3.5 h-3.5" />,
+    ask_user_question: <MessageCircleQuestion className="w-3.5 h-3.5" />,
+
+    // Gen 4 - 技能系统和网络
     skill: <Sparkles className="w-3.5 h-3.5" />,
+    web_fetch: <Globe className="w-3.5 h-3.5" />,
+    mcp: <Plug className="w-3.5 h-3.5" />,
+
+    // Gen 5 - RAG 和长期记忆
+    memory_store: <Database className="w-3.5 h-3.5" />,
+    memory_search: <Search className="w-3.5 h-3.5" />,
+    code_index: <FileCode className="w-3.5 h-3.5" />,
+
+    // Gen 6 - Computer Use
+    screenshot: <Camera className="w-3.5 h-3.5" />,
+    computer_use: <Monitor className="w-3.5 h-3.5" />,
+    browser_action: <Globe className="w-3.5 h-3.5" />,
+
+    // Gen 7 - 多代理协同
+    spawn_agent: <Users className="w-3.5 h-3.5" />,
+    agent_message: <MessageSquare className="w-3.5 h-3.5" />,
+    workflow_orchestrate: <GitBranch className="w-3.5 h-3.5" />,
+
+    // Gen 8 - 自我进化
+    strategy_optimize: <Target className="w-3.5 h-3.5" />,
+    tool_create: <Wrench className="w-3.5 h-3.5" />,
+    self_evaluate: <ScanEye className="w-3.5 h-3.5" />,
+
+    // Planning 工具
+    plan_update: <ClipboardList className="w-3.5 h-3.5" />,
+    plan_read: <Clipboard className="w-3.5 h-3.5" />,
+    findings_write: <FileText className="w-3.5 h-3.5" />,
   };
-  return iconMap[name] || <Code2 className="w-3.5 h-3.5" />;
+
+  // MCP 工具使用 Plug 图标
+  if (name.startsWith('mcp_') || name === 'mcp') {
+    return <Plug className="w-3.5 h-3.5" />;
+  }
+
+  return iconMap[name] || <Wrench className="w-3.5 h-3.5" />;
 };
 
 // Loader component for pending state
@@ -94,7 +152,6 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
 
   // Generate tool summary
   const summary = useMemo(() => summarizeToolCall(toolCall), [toolCall]);
-  const toolIcon = useMemo(() => getToolIconEmoji(toolCall.name), [toolCall.name]);
   const statusText = useMemo(() => getToolStatusText(toolCall), [toolCall]);
 
   // Check if this is edit_file tool call
@@ -143,9 +200,9 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
           <ChevronRight className="w-4 h-4 text-zinc-500" />
         </div>
 
-        {/* Tool icon with emoji */}
-        <div className={`p-2 rounded-lg ${config.bg} text-lg`}>
-          <span>{toolIcon}</span>
+        {/* Tool icon - Lucide icons */}
+        <div className={`p-2 rounded-lg ${config.bg} ${config.text}`}>
+          {getToolIcon(toolCall.name)}
         </div>
 
         {/* Tool summary */}

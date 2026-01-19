@@ -287,7 +287,8 @@ export class MCPClient {
     toolCallId: string,
     serverName: string,
     toolName: string,
-    args: Record<string, unknown>
+    args: Record<string, unknown>,
+    timeoutMs: number = 60000 // 默认 60 秒超时
   ): Promise<ToolResult> {
     const client = this.clients.get(serverName);
     if (!client) {
@@ -299,12 +300,25 @@ export class MCPClient {
     }
 
     const startTime = Date.now();
+    logger.info(`Calling MCP tool: ${serverName}/${toolName}`, { args, timeoutMs });
 
     try {
-      const result = await client.callTool({
-        name: toolName,
-        arguments: args,
+      // 使用 Promise.race 实现超时机制
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`MCP tool call timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
       });
+
+      const result = await Promise.race([
+        client.callTool({
+          name: toolName,
+          arguments: args,
+        }),
+        timeoutPromise,
+      ]);
+
+      logger.info(`MCP tool completed: ${serverName}/${toolName}`, { duration: Date.now() - startTime });
 
       // 转换结果
       let output = '';
@@ -328,12 +342,86 @@ export class MCPClient {
       };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'MCP tool call failed';
+      logger.error(`MCP tool failed: ${serverName}/${toolName}`, { error: errorMessage, duration: Date.now() - startTime });
+
+      // 如果是超时或连接错误，尝试自动重连后重试一次
+      const isConnectionError = errorMessage.includes('timed out') ||
+        errorMessage.includes('Connection closed') ||
+        errorMessage.includes('not connected');
+
+      if (isConnectionError) {
+        logger.warn(`MCP server ${serverName} connection issue, attempting reconnect and retry...`);
+
+        const reconnected = await this.reconnect(serverName);
+        if (reconnected) {
+          // 重连成功，重试一次工具调用（使用较短超时）
+          logger.info(`Reconnected to ${serverName}, retrying tool call...`);
+          const retryClient = this.clients.get(serverName);
+          if (retryClient) {
+            try {
+              const retryTimeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => {
+                  reject(new Error(`MCP tool call retry timed out after 30000ms`));
+                }, 30000); // 重试用 30 秒超时
+              });
+
+              const retryResult = await Promise.race([
+                retryClient.callTool({ name: toolName, arguments: args }),
+                retryTimeoutPromise,
+              ]);
+
+              logger.info(`MCP tool retry succeeded: ${serverName}/${toolName}`);
+
+              let output = '';
+              if (retryResult.content && Array.isArray(retryResult.content)) {
+                for (const content of retryResult.content) {
+                  if ('text' in content && typeof content.text === 'string') {
+                    output += content.text;
+                  }
+                }
+              }
+
+              return {
+                toolCallId,
+                success: !retryResult.isError,
+                output,
+                duration: Date.now() - startTime,
+              };
+            } catch (retryError) {
+              logger.error(`MCP tool retry also failed: ${serverName}/${toolName}`, retryError);
+            }
+          }
+        }
+      }
+
       return {
         toolCallId,
         success: false,
         error: errorMessage,
         duration: Date.now() - startTime,
       };
+    }
+  }
+
+  /**
+   * 重连指定服务器（用于超时后恢复）
+   */
+  async reconnect(serverName: string): Promise<boolean> {
+    const config = this.serverConfigs.find(c => c.name === serverName);
+    if (!config) {
+      logger.error(`Cannot reconnect: server config not found for ${serverName}`);
+      return false;
+    }
+
+    logger.info(`Attempting to reconnect to MCP server: ${serverName}`);
+    try {
+      await this.disconnect(serverName);
+      await this.connect(config);
+      logger.info(`Successfully reconnected to MCP server: ${serverName}`);
+      return true;
+    } catch (error) {
+      logger.error(`Failed to reconnect to MCP server ${serverName}:`, error);
+      return false;
     }
   }
 

@@ -1,4 +1,40 @@
 // ============================================================================
+// Cloud Types - 云端任务执行系统类型定义
+// ============================================================================
+
+// Legacy Cloud Agent Types (for backward compatibility)
+export type CloudAgentStatus = 'idle' | 'warming_up' | 'ready' | 'executing' | 'error';
+
+export interface CloudTaskRequest {
+  id: string;
+  type: 'browser' | 'compute' | 'skill';
+  payload: {
+    action?: string;
+    url?: string;
+    script?: string;
+    skillName?: string;
+    params?: Record<string, unknown>;
+  };
+  timeout?: number;
+}
+
+export interface CloudTaskResponse {
+  id: string;
+  status: 'success' | 'error' | 'timeout';
+  result?: unknown;
+  error?: string;
+  duration?: number;
+  screenshots?: string[]; // base64 encoded
+}
+
+export interface CloudAgentConfig {
+  endpoint: string;
+  apiKey?: string;
+  timeout?: number;
+  warmupOnInit?: boolean;
+}
+
+// ============================================================================
 // Cloud Task Types - 云端任务执行系统类型定义
 // ============================================================================
 
@@ -199,9 +235,9 @@ export interface TaskRoutingDecision {
 }
 
 /**
- * 云端 Agent 配置
+ * 云端 Agent 定义（用于任务系统）
  */
-export interface CloudAgentConfig {
+export interface CloudAgentDefinition {
   type: CloudAgentType;
   name: string;
   description: string;

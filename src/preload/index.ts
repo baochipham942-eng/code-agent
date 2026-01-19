@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { ElectronAPI, IPC_CHANNELS } from '../shared/ipc';
+import type { ElectronAPI, IPCRequest, IPCResponse, IPCDomain } from '../shared/ipc';
 
 // Type-safe IPC wrapper
 const electronAPI: ElectronAPI = {
@@ -39,5 +39,36 @@ const electronAPI: ElectronAPI = {
   },
 };
 
+// ============================================================================
+// New Domain-based API (TASK-04)
+// ============================================================================
+
+/**
+ * 新版 Domain API - 统一的请求/响应格式
+ * 使用方式: domainAPI.invoke('session', 'list') 或 domainAPI.invoke('session', 'create', { title: 'xxx' })
+ */
+const domainAPI = {
+  /**
+   * 调用领域通道
+   * @param domain 领域名称 (session, generation, auth, etc.)
+   * @param action 操作名称 (list, create, delete, etc.)
+   * @param payload 可选的请求参数
+   * @returns IPCResponse
+   */
+  invoke: async <T = unknown>(
+    domain: IPCDomain,
+    action: string,
+    payload?: unknown
+  ): Promise<IPCResponse<T>> => {
+    const request: IPCRequest = {
+      action,
+      payload,
+      requestId: `req_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+    };
+    return ipcRenderer.invoke(domain, request) as Promise<IPCResponse<T>>;
+  },
+};
+
 // Expose to renderer
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+contextBridge.exposeInMainWorld('domainAPI', domainAPI);

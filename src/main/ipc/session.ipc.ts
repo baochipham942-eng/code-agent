@@ -3,12 +3,13 @@
 // ============================================================================
 
 import type { IpcMain } from 'electron';
-import { IPC_CHANNELS } from '../../shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getSessionManager } from '../services';
 import { getMemoryService } from '../memory/MemoryService';
 import type { ConfigService } from '../services';
 import type { GenerationManager } from '../generation/GenerationManager';
 import type { AgentOrchestrator } from '../agent/AgentOrchestrator';
+import type { Session, Message } from '../../shared/types';
 
 interface SessionHandlerDeps {
   getConfigService: () => ConfigService | null;
@@ -17,6 +18,133 @@ interface SessionHandlerDeps {
   getCurrentSessionId: () => string | null;
   setCurrentSessionId: (id: string) => void;
 }
+
+// ----------------------------------------------------------------------------
+// Internal Handlers
+// ----------------------------------------------------------------------------
+
+async function handleList(): Promise<Session[]> {
+  const sessionManager = getSessionManager();
+  return sessionManager.listSessions();
+}
+
+async function handleCreate(
+  deps: SessionHandlerDeps,
+  payload?: { title?: string }
+): Promise<Session> {
+  const { getConfigService, getGenerationManager, getOrchestrator, setCurrentSessionId } = deps;
+  const configService = getConfigService();
+  const generationManager = getGenerationManager();
+  const orchestrator = getOrchestrator();
+
+  if (!configService || !generationManager) {
+    throw new Error('Services not initialized');
+  }
+
+  const sessionManager = getSessionManager();
+  const memoryService = getMemoryService();
+  const settings = configService.getSettings();
+  const currentGen = generationManager.getCurrentGeneration();
+
+  const session = await sessionManager.createSession({
+    title: payload?.title || 'New Session',
+    generationId: currentGen.id,
+    modelConfig: {
+      provider: settings.model?.provider || 'deepseek',
+      model: settings.model?.model || 'deepseek-chat',
+      temperature: settings.model?.temperature || 0.7,
+      maxTokens: settings.model?.maxTokens || 4096,
+    },
+    workingDirectory: orchestrator?.getWorkingDirectory(),
+  });
+
+  sessionManager.setCurrentSession(session.id);
+  setCurrentSessionId(session.id);
+
+  memoryService.setContext(session.id, orchestrator?.getWorkingDirectory() || undefined);
+
+  return session;
+}
+
+async function handleLoad(
+  deps: SessionHandlerDeps,
+  payload: { sessionId: string }
+): Promise<Session> {
+  const { getOrchestrator, setCurrentSessionId } = deps;
+  const sessionManager = getSessionManager();
+  const memoryService = getMemoryService();
+  const orchestrator = getOrchestrator();
+
+  const session = await sessionManager.restoreSession(payload.sessionId);
+  if (!session) {
+    throw new Error(`Session ${payload.sessionId} not found`);
+  }
+
+  setCurrentSessionId(payload.sessionId);
+
+  memoryService.setContext(payload.sessionId, session.workingDirectory || undefined);
+
+  if (session.workingDirectory && orchestrator) {
+    orchestrator.setWorkingDirectory(session.workingDirectory);
+  }
+
+  return session;
+}
+
+async function handleDelete(
+  deps: SessionHandlerDeps,
+  payload: { sessionId: string }
+): Promise<void> {
+  const { getConfigService, getGenerationManager, getCurrentSessionId, setCurrentSessionId } = deps;
+  const sessionManager = getSessionManager();
+  const configService = getConfigService();
+  const generationManager = getGenerationManager();
+  const currentSessionId = getCurrentSessionId();
+
+  await sessionManager.deleteSession(payload.sessionId);
+
+  if (payload.sessionId === currentSessionId) {
+    const settings = configService!.getSettings();
+    const currentGen = generationManager!.getCurrentGeneration();
+
+    const newSession = await sessionManager.createSession({
+      title: 'New Session',
+      generationId: currentGen.id,
+      modelConfig: {
+        provider: settings.model?.provider || 'deepseek',
+        model: settings.model?.model || 'deepseek-chat',
+        temperature: settings.model?.temperature || 0.7,
+        maxTokens: settings.model?.maxTokens || 4096,
+      },
+    });
+
+    sessionManager.setCurrentSession(newSession.id);
+    setCurrentSessionId(newSession.id);
+
+    const memoryService = getMemoryService();
+    memoryService.setContext(newSession.id);
+  }
+}
+
+async function handleGetMessages(payload: { sessionId: string }): Promise<Message[]> {
+  const sessionManager = getSessionManager();
+  return sessionManager.getMessages(payload.sessionId);
+}
+
+async function handleExport(payload: { sessionId: string }): Promise<unknown> {
+  const sessionManager = getSessionManager();
+  return sessionManager.exportSession(payload.sessionId);
+}
+
+async function handleImport(payload: { data: unknown }): Promise<string> {
+  const sessionManager = getSessionManager();
+  // SessionManager expects SessionWithMessages type
+  return sessionManager.importSession(payload.data as any);
+}
+
+// ----------------------------------------------------------------------------
+// Public Registration
+// ----------------------------------------------------------------------------
 
 /**
  * 注册 Session 相关 IPC handlers
@@ -30,109 +158,92 @@ export function registerSessionHandlers(ipcMain: IpcMain, deps: SessionHandlerDe
     setCurrentSessionId,
   } = deps;
 
-  ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async () => {
-    const sessionManager = getSessionManager();
-    return sessionManager.listSessions();
-  });
+  // ========== New Domain Handler (TASK-04) ==========
+  ipcMain.handle(IPC_DOMAINS.SESSION, async (_, request: IPCRequest): Promise<IPCResponse> => {
+    const { action, payload } = request;
 
-  ipcMain.handle(IPC_CHANNELS.SESSION_CREATE, async (_, title?: string) => {
-    const configService = getConfigService();
-    const generationManager = getGenerationManager();
-    const orchestrator = getOrchestrator();
+    try {
+      let data: unknown;
 
-    if (!configService || !generationManager) {
-      throw new Error('Services not initialized');
-    }
+      switch (action) {
+        case 'list':
+          data = await handleList();
+          break;
+        case 'create':
+          data = await handleCreate(deps, payload as { title?: string });
+          break;
+        case 'load':
+          data = await handleLoad(deps, payload as { sessionId: string });
+          break;
+        case 'delete':
+          await handleDelete(deps, payload as { sessionId: string });
+          data = null;
+          break;
+        case 'getMessages':
+          data = await handleGetMessages(payload as { sessionId: string });
+          break;
+        case 'export':
+          data = await handleExport(payload as { sessionId: string });
+          break;
+        case 'import':
+          data = await handleImport(payload as { data: unknown });
+          break;
+        default:
+          return {
+            success: false,
+            error: {
+              code: 'INVALID_ACTION',
+              message: `Unknown action: ${action}`,
+            },
+          };
+      }
 
-    const sessionManager = getSessionManager();
-    const memoryService = getMemoryService();
-    const settings = configService.getSettings();
-    const currentGen = generationManager.getCurrentGeneration();
-
-    const session = await sessionManager.createSession({
-      title: title || 'New Session',
-      generationId: currentGen.id,
-      modelConfig: {
-        provider: settings.model?.provider || 'deepseek',
-        model: settings.model?.model || 'deepseek-chat',
-        temperature: settings.model?.temperature || 0.7,
-        maxTokens: settings.model?.maxTokens || 4096,
-      },
-      workingDirectory: orchestrator?.getWorkingDirectory(),
-    });
-
-    sessionManager.setCurrentSession(session.id);
-    setCurrentSessionId(session.id);
-
-    memoryService.setContext(session.id, orchestrator?.getWorkingDirectory() || undefined);
-
-    return session;
-  });
-
-  ipcMain.handle(IPC_CHANNELS.SESSION_LOAD, async (_, sessionId: string) => {
-    const sessionManager = getSessionManager();
-    const memoryService = getMemoryService();
-    const orchestrator = getOrchestrator();
-
-    const session = await sessionManager.restoreSession(sessionId);
-    if (!session) {
-      throw new Error(`Session ${sessionId} not found`);
-    }
-
-    setCurrentSessionId(sessionId);
-
-    memoryService.setContext(sessionId, session.workingDirectory || undefined);
-
-    if (session.workingDirectory && orchestrator) {
-      orchestrator.setWorkingDirectory(session.workingDirectory);
-    }
-
-    return session;
-  });
-
-  ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, async (_, sessionId: string) => {
-    const sessionManager = getSessionManager();
-    const configService = getConfigService();
-    const generationManager = getGenerationManager();
-    const currentSessionId = getCurrentSessionId();
-
-    await sessionManager.deleteSession(sessionId);
-
-    if (sessionId === currentSessionId) {
-      const settings = configService!.getSettings();
-      const currentGen = generationManager!.getCurrentGeneration();
-
-      const newSession = await sessionManager.createSession({
-        title: 'New Session',
-        generationId: currentGen.id,
-        modelConfig: {
-          provider: settings.model?.provider || 'deepseek',
-          model: settings.model?.model || 'deepseek-chat',
-          temperature: settings.model?.temperature || 0.7,
-          maxTokens: settings.model?.maxTokens || 4096,
+      return { success: true, data };
+    } catch (error) {
+      return {
+        success: false,
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: error instanceof Error ? error.message : String(error),
         },
-      });
-
-      sessionManager.setCurrentSession(newSession.id);
-      setCurrentSessionId(newSession.id);
-
-      const memoryService = getMemoryService();
-      memoryService.setContext(newSession.id);
+      };
     }
   });
 
+  // ========== Legacy Handlers (Deprecated) ==========
+
+  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'list' */
+  ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async () => {
+    return handleList();
+  });
+
+  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'create' */
+  ipcMain.handle(IPC_CHANNELS.SESSION_CREATE, async (_, title?: string) => {
+    return handleCreate(deps, { title });
+  });
+
+  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'load' */
+  ipcMain.handle(IPC_CHANNELS.SESSION_LOAD, async (_, sessionId: string) => {
+    return handleLoad(deps, { sessionId });
+  });
+
+  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'delete' */
+  ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, async (_, sessionId: string) => {
+    return handleDelete(deps, { sessionId });
+  });
+
+  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'getMessages' */
   ipcMain.handle(IPC_CHANNELS.SESSION_GET_MESSAGES, async (_, sessionId: string) => {
-    const sessionManager = getSessionManager();
-    return sessionManager.getMessages(sessionId);
+    return handleGetMessages({ sessionId });
   });
 
+  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'export' */
   ipcMain.handle(IPC_CHANNELS.SESSION_EXPORT, async (_, sessionId: string) => {
-    const sessionManager = getSessionManager();
-    return sessionManager.exportSession(sessionId);
+    return handleExport({ sessionId });
   });
 
+  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'import' */
   ipcMain.handle(IPC_CHANNELS.SESSION_IMPORT, async (_, data: any) => {
-    const sessionManager = getSessionManager();
-    return sessionManager.importSession(data);
+    return handleImport({ data });
   });
 }

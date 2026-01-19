@@ -127,9 +127,60 @@ export interface DataStats {
 }
 
 // ----------------------------------------------------------------------------
-// IPC Channel Names
+// New Domain-based IPC Channels (TASK-04)
 // ----------------------------------------------------------------------------
 
+/**
+ * 新版领域通道 - 每个领域一个通道，通过 action 参数分发
+ * 旧版通道保留用于向后兼容
+ */
+export const IPC_DOMAINS = {
+  AGENT: 'domain:agent',
+  SESSION: 'domain:session',
+  GENERATION: 'domain:generation',
+  AUTH: 'domain:auth',
+  SYNC: 'domain:sync',
+  CLOUD: 'domain:cloud',
+  WORKSPACE: 'domain:workspace',
+  SETTINGS: 'domain:settings',
+  UPDATE: 'domain:update',
+  MCP: 'domain:mcp',
+  MEMORY: 'domain:memory',
+  PLANNING: 'domain:planning',
+  WINDOW: 'domain:window',
+  DATA: 'domain:data',
+  DEVICE: 'domain:device',
+} as const;
+
+export type IPCDomain = typeof IPC_DOMAINS[keyof typeof IPC_DOMAINS];
+
+/**
+ * 统一的 IPC 请求格式
+ */
+export interface IPCRequest<T = unknown> {
+  action: string;
+  payload?: T;
+  requestId?: string;
+}
+
+/**
+ * 统一的 IPC 响应格式
+ */
+export interface IPCResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+}
+
+// ----------------------------------------------------------------------------
+// Legacy IPC Channel Names (Deprecated - use IPC_DOMAINS instead)
+// ----------------------------------------------------------------------------
+
+/** @deprecated Use IPC_DOMAINS instead */
 export const IPC_CHANNELS = {
   // Agent channels
   AGENT_SEND_MESSAGE: 'agent:send-message',

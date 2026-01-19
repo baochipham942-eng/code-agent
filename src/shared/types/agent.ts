@@ -1,0 +1,84 @@
+// ============================================================================
+// Agent Types
+// ============================================================================
+
+import type { Generation } from './generation';
+import type { ModelConfig } from './model';
+import type { Message } from './message';
+import type { ToolCall, ToolResult } from './tool';
+import type { PermissionRequest } from './permission';
+import type { TodoItem } from './planning';
+
+export interface AgentConfig {
+  generation: Generation;
+  model: ModelConfig;
+  workingDirectory: string;
+}
+
+export interface AgentState {
+  isRunning: boolean;
+  currentToolCalls: ToolCall[];
+  pendingPermissions: PermissionRequest[];
+  todos: TodoItem[];
+}
+
+// Agent 任务阶段（用于长时任务进度追踪）
+export type AgentTaskPhase =
+  | 'thinking'      // 模型思考中
+  | 'tool_pending'  // 等待工具执行
+  | 'tool_running'  // 工具执行中
+  | 'generating'    // 生成回复中
+  | 'completed';    // 完成
+
+// 任务进度事件数据
+export interface TaskProgressData {
+  turnId: string;
+  phase: AgentTaskPhase;
+  step?: string;           // "解析 PDF 内容"
+  progress?: number;       // 0-100（可选，工具执行进度）
+  tool?: string;           // 当前工具名
+  toolIndex?: number;      // 当前工具索引
+  toolTotal?: number;      // 工具总数
+}
+
+// 任务完成事件数据
+export interface TaskCompleteData {
+  turnId: string;
+  summary?: string;        // "已完成 PDF 分析"
+  duration: number;        // 总耗时 ms
+  toolsUsed: string[];     // 使用的工具列表
+}
+
+export type AgentEvent =
+  | { type: 'message'; data: Message }
+  | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string } }
+  | { type: 'tool_call_end'; data: ToolResult }
+  | { type: 'permission_request'; data: PermissionRequest }
+  | { type: 'error'; data: { message: string; code?: string } }
+  | { type: 'stream_chunk'; data: { content: string | undefined; turnId?: string } }
+  | { type: 'stream_tool_call_start'; data: { index?: number; id?: string; name?: string; turnId?: string } }
+  | { type: 'stream_tool_call_delta'; data: { index?: number; name?: string; argumentsDelta?: string; turnId?: string } }
+  | { type: 'todo_update'; data: TodoItem[] }
+  | { type: 'notification'; data: { message: string } }
+  | { type: 'agent_complete'; data: null }
+  // Turn-based message events (行业最佳实践: Vercel AI SDK / LangGraph 模式)
+  | { type: 'turn_start'; data: { turnId: string; iteration?: number } }
+  | { type: 'turn_end'; data: { turnId: string } }
+  // Model capability fallback event (能力补充)
+  | { type: 'model_fallback'; data: { reason: string; from: string; to: string } }
+  // API Key 缺失提示
+  | { type: 'api_key_required'; data: { provider: string; capability: string; message: string } }
+  // 长时任务进度追踪（P0 新增）
+  | { type: 'task_progress'; data: TaskProgressData }
+  | { type: 'task_complete'; data: TaskCompleteData };
+
+// Subagent Types (for Gen 3+)
+export type SubagentType = 'explore' | 'bash' | 'plan' | 'code-review';
+
+export interface SubagentConfig {
+  id: SubagentType;
+  name: string;
+  description: string;
+  availableTools: string[];
+  systemPromptOverride?: string;
+}

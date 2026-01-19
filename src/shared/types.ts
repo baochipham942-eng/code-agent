@@ -157,6 +157,7 @@ export type AttachmentCategory =
   | 'data'       // 数据文件：JSON, CSV, XML
   | 'document'   // 办公文档：DOCX, XLSX (需转换)
   | 'html'       // 网页：HTML
+  | 'folder'     // 文件夹
   | 'other';     // 其他
 
 // 附件类型
@@ -177,6 +178,9 @@ export interface MessageAttachment {
   pageCount?: number;
   // 代码特有：语言
   language?: string;
+  // 文件夹特有：文件列表和统计
+  files?: Array<{ path: string; content: string; size: number }>;
+  folderStats?: { totalFiles: number; totalSize: number; byType: Record<string, number> };
 }
 
 export interface Message {

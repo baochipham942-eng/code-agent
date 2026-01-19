@@ -32,6 +32,11 @@ const electronAPI: ElectronAPI = {
   getPathForFile: (file: File) => {
     return webUtils.getPathForFile(file);
   },
+
+  // PDF 文本提取 - 在主进程处理避免 CSP 问题
+  extractPdfText: (filePath: string) => {
+    return ipcRenderer.invoke('extract-pdf-text', filePath);
+  },
 };
 
 // Expose to renderer

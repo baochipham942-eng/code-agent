@@ -3,12 +3,10 @@
 // ============================================================================
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Paperclip, Loader2, Sparkles, CornerDownLeft, X, Image, FileText, Code, Database, Globe, File } from 'lucide-react';
-import * as pdfjsLib from 'pdfjs-dist';
+import { Send, Paperclip, Loader2, Sparkles, CornerDownLeft, X, Image, FileText, Code, Database, Globe, File, Folder } from 'lucide-react';
 import type { MessageAttachment, AttachmentCategory } from '../../shared/types';
 
-// 配置 PDF.js worker - 使用 CDN 避免打包问题
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// PDF 解析在主进程通过 IPC 处理，避免渲染进程 CSP 问题
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: MessageAttachment[]) => void;
@@ -204,35 +202,17 @@ async function readDirectoryEntry(
 }
 
 /**
- * 从 PDF 文件中提取文本内容
+ * 从 PDF 文件中提取文本内容 - 通过主进程 IPC 处理
  */
-async function extractPdfText(file: File): Promise<{ text: string; pageCount: number }> {
+async function extractPdfText(filePath: string): Promise<{ text: string; pageCount: number }> {
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    const textParts: string[] = [];
-
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item: any) => item.str)
-        .join(' ');
-      if (pageText.trim()) {
-        textParts.push(`--- 第 ${i} 页 ---\n${pageText}`);
-      }
+    const result = await window.electronAPI?.extractPdfText(filePath);
+    if (result) {
+      return result;
     }
-
-    if (textParts.length === 0) {
-      return {
-        text: '[PDF 文件无法提取文本内容，可能是扫描件或图片 PDF]',
-        pageCount: pdf.numPages,
-      };
-    }
-
     return {
-      text: textParts.join('\n\n'),
-      pageCount: pdf.numPages,
+      text: '[PDF 解析失败: IPC 调用失败]',
+      pageCount: 0,
     };
   } catch (error) {
     console.error('PDF 文本提取失败:', error);
@@ -259,6 +239,8 @@ const AttachmentIcon: React.FC<{ category: AttachmentCategory }> = ({ category }
       return <Globe className={`${iconClass} text-orange-400`} />;
     case 'text':
       return <FileText className={`${iconClass} text-zinc-400`} />;
+    case 'folder':
+      return <Folder className={`${iconClass} text-yellow-400`} />;
     default:
       return <File className={`${iconClass} text-zinc-500`} />;
   }
@@ -351,9 +333,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
       });
     }
 
-    // PDF 类型：提取文本
-    if (category === 'pdf') {
-      const { text, pageCount } = await extractPdfText(file);
+    // PDF 类型：通过主进程 IPC 提取文本
+    if (category === 'pdf' && filePath) {
+      const { text, pageCount } = await extractPdfText(filePath);
       return {
         id,
         type: 'file',
@@ -402,13 +384,79 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
     setIsDragOver(false);
   }, []);
 
+  /**
+   * 处理文件夹：创建单个文件夹附件，包含所有文件内容
+   */
+  const processFolderEntry = useCallback(async (
+    dirEntry: FileSystemDirectoryEntry,
+    folderName: string
+  ): Promise<MessageAttachment | null> => {
+    const files = await readDirectoryEntry(dirEntry, folderName);
+    if (files.length === 0) {
+      console.warn(`文件夹 ${folderName} 中没有可处理的文件`);
+      return null;
+    }
+
+    // 限制文件数量
+    const filesToProcess = files.slice(0, MAX_FOLDER_FILES);
+    const fileContents: Array<{ path: string; content: string; size: number }> = [];
+    const byType: Record<string, number> = {};
+    let totalSize = 0;
+
+    for (const file of filesToProcess) {
+      const relativePath = (file as File & { relativePath?: string }).relativePath || file.name;
+      const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+      byType[ext] = (byType[ext] || 0) + 1;
+      totalSize += file.size;
+
+      // 读取文件内容
+      try {
+        const content = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = () => reject(new Error('读取失败'));
+          reader.readAsText(file);
+        });
+        fileContents.push({ path: relativePath, content, size: file.size });
+      } catch {
+        console.warn(`无法读取文件: ${relativePath}`);
+      }
+    }
+
+    const id = `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // 生成文件夹摘要
+    const typeStats = Object.entries(byType)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([ext, count]) => `${ext}(${count})`)
+      .join(', ');
+    const summary = `${files.length} 个文件${files.length > MAX_FOLDER_FILES ? ` (仅处理前 ${MAX_FOLDER_FILES} 个)` : ''}: ${typeStats}`;
+
+    return {
+      id,
+      type: 'file',
+      category: 'folder',
+      name: folderName,
+      size: totalSize,
+      mimeType: 'inode/directory',
+      data: summary,
+      files: fileContents,
+      folderStats: {
+        totalFiles: files.length,
+        totalSize,
+        byType,
+      },
+    };
+  }, []);
+
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
 
     const items = e.dataTransfer.items;
-    const allFiles: File[] = [];
+    const newAttachments: MessageAttachment[] = [];
 
     // 使用 webkitGetAsEntry 来支持文件夹
     if (items) {
@@ -427,37 +475,34 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
           const file = await new Promise<File>((resolve, reject) => {
             fileEntry.file(resolve, reject);
           });
-          allFiles.push(file);
+          const attachment = await processFile(file);
+          if (attachment) {
+            newAttachments.push(attachment);
+          }
         } else if (entry.isDirectory) {
+          // 文件夹作为单个附件处理
           const dirEntry = entry as FileSystemDirectoryEntry;
-          const dirFiles = await readDirectoryEntry(dirEntry, entry.name);
-          allFiles.push(...dirFiles);
+          const folderAttachment = await processFolderEntry(dirEntry, entry.name);
+          if (folderAttachment) {
+            newAttachments.push(folderAttachment);
+          }
         }
       }
     } else {
       // 回退到普通文件处理
-      allFiles.push(...Array.from(e.dataTransfer.files));
-    }
-
-    // 限制文件数量
-    const filesToProcess = allFiles.slice(0, MAX_FOLDER_FILES);
-    if (allFiles.length > MAX_FOLDER_FILES) {
-      console.warn(`文件夹包含 ${allFiles.length} 个文件，只处理前 ${MAX_FOLDER_FILES} 个`);
-    }
-
-    const newAttachments: MessageAttachment[] = [];
-    for (const file of filesToProcess) {
-      const attachment = await processFile(file);
-      if (attachment) {
-        newAttachments.push(attachment);
+      const files = Array.from(e.dataTransfer.files);
+      for (const file of files) {
+        const attachment = await processFile(file);
+        if (attachment) {
+          newAttachments.push(attachment);
+        }
       }
     }
 
     if (newAttachments.length > 0) {
-      // 文件夹可能包含很多文件，放宽限制到 50 个
-      setAttachments((prev) => [...prev, ...newAttachments].slice(0, MAX_FOLDER_FILES));
+      setAttachments((prev) => [...prev, ...newAttachments].slice(0, 10));
     }
-  }, [processFile]);
+  }, [processFile, processFolderEntry]);
 
   // 点击附件按钮
   const handleAttachClick = () => {
@@ -527,11 +572,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
                     <div className="flex flex-col">
                       <span className="text-xs text-zinc-300 truncate max-w-[120px]">{att.name}</span>
                       <span className="text-2xs text-zinc-500">
-                        {att.category === 'pdf' && att.pageCount
-                          ? `${att.pageCount} 页`
-                          : att.language
-                            ? att.language
-                            : (att.size / 1024).toFixed(1) + ' KB'
+                        {att.category === 'folder' && att.folderStats
+                          ? `${att.folderStats.totalFiles} 个文件`
+                          : att.category === 'pdf' && att.pageCount
+                            ? `${att.pageCount} 页`
+                            : att.language
+                              ? att.language
+                              : (att.size / 1024).toFixed(1) + ' KB'
                         }
                       </span>
                     </div>

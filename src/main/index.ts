@@ -106,22 +106,52 @@ async function createWindow(): Promise<void> {
 // Initialize Services
 // ----------------------------------------------------------------------------
 
-async function initializeServices(): Promise<void> {
+/**
+ * 核心服务初始化 - 必须在窗口创建前完成
+ * 只包含 IPC handlers 依赖的最小服务集
+ */
+async function initializeCoreServices(): Promise<void> {
   // Initialize config service
   configService = new ConfigService();
   await configService.initialize();
 
-  // Restore devModeAutoApprove from persistent storage (SecureStorage)
-  // This ensures the setting survives data clear operations
+  // Initialize database (SQLite persistence)
+  await initDatabase();
+  const userDataPath = app.getPath('userData');
+  console.log('Database initialized at:', path.join(userDataPath, 'code-agent.db'));
+
+  // Initialize memory service (needed for session management)
+  initMemoryService({
+    maxRecentMessages: 10,
+    toolCacheTTL: 5 * 60 * 1000,
+    maxSessionMessages: 100,
+    maxRAGResults: 5,
+    ragTokenLimit: 2000,
+  });
+  console.log('Memory service initialized');
+
+  console.log('[Init] Core services initialized');
+}
+
+/**
+ * 后台服务初始化 - 窗口创建后异步执行
+ * 不阻塞用户交互
+ */
+async function initializeBackgroundServices(): Promise<void> {
+  console.log('[Init] Starting background services...');
+
+  const settings = configService!.getSettings();
+
+  // Restore devModeAutoApprove from persistent storage
   try {
     const { getSecureStorage } = await import('./services/SecureStorage');
     const storage = getSecureStorage();
     const persistedValue = storage.get('settings.devModeAutoApprove');
     if (persistedValue !== undefined) {
       const enabled = persistedValue === 'true';
-      const currentSettings = configService.getSettings();
+      const currentSettings = configService!.getSettings();
       if (currentSettings.permissions.devModeAutoApprove !== enabled) {
-        await configService.updateSettings({
+        await configService!.updateSettings({
           permissions: {
             ...currentSettings.permissions,
             devModeAutoApprove: enabled,
@@ -134,22 +164,15 @@ async function initializeServices(): Promise<void> {
     console.warn('[Init] Failed to restore devModeAutoApprove from persistent storage:', error);
   }
 
-  const settings = configService.getSettings();
+  // Initialize the rest of services (from original initializeServices)
+  await initializeServices();
+}
 
-  // Initialize database (SQLite persistence)
-  await initDatabase();
-  const userDataPath = app.getPath('userData');
-  console.log('Database initialized at:', path.join(userDataPath, 'code-agent.db'));
-
-  // Initialize memory service
-  initMemoryService({
-    maxRecentMessages: 10,
-    toolCacheTTL: 5 * 60 * 1000, // 5 minutes
-    maxSessionMessages: 100,
-    maxRAGResults: 5,
-    ragTokenLimit: 2000,
-  });
-  console.log('Memory service initialized');
+/**
+ * @deprecated 使用 initializeCoreServices + initializeBackgroundServices 替代
+ */
+async function initializeServices(): Promise<void> {
+  const settings = configService!.getSettings();
 
   // Initialize MCP client ASYNC (non-blocking)
   // Remote MCP servers like DeepWiki can be slow, don't block app startup
@@ -408,7 +431,7 @@ async function initializeServices(): Promise<void> {
   // Initialize agent orchestrator
   agentOrchestrator = new AgentOrchestrator({
     generationManager,
-    configService,
+    configService: configService!,
     onEvent: async (event) => {
       // 转发事件到渲染进程
       console.log('[Main] onEvent called:', event.type);
@@ -964,6 +987,18 @@ function setupIpcHandlers(): void {
   });
 
   // -------------------------------------------------------------------------
+  // PDF Text Extraction Handler (已弃用 - PDF 解析改用 Agent 的 read_pdf 工具)
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle('extract-pdf-text', async (_, filePath: string) => {
+    // 返回占位信息，实际解析由 Agent 的 read_pdf 工具完成
+    return {
+      text: `[PDF 文件将由 AI 模型解析: ${filePath}]`,
+      pageCount: 0,
+    };
+  });
+
+  // -------------------------------------------------------------------------
   // Settings Handlers
   // -------------------------------------------------------------------------
 
@@ -1504,12 +1539,23 @@ app.whenReady().then(async () => {
   try {
     const appVersion = app.getVersion();
     console.log(`[App] Code Agent v${appVersion} starting...`);
-    await initializeServices();
-    console.log('[App] Services initialized, setting up IPC...');
+
+    // 1. 最小化初始化 - 只初始化 IPC 依赖的核心服务
+    await initializeCoreServices();
+    console.log('[App] Core services initialized, setting up IPC...');
+
+    // 2. 设置 IPC handlers
     setupIpcHandlers();
     console.log('[App] IPC handlers set up, creating window...');
+
+    // 3. 立即创建窗口（用户可以看到界面）
     await createWindow();
     console.log('[App] Window created successfully');
+
+    // 4. 后台初始化非关键服务（不阻塞用户交互）
+    initializeBackgroundServices().catch((error) => {
+      console.error('[App] Background services initialization failed:', error);
+    });
   } catch (error) {
     console.error('[App] FATAL ERROR during startup:', error);
     app.quit();

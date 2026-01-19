@@ -1,6 +1,6 @@
 {
   "name": "code-agent",
-  "version": "0.7.12",
+  "version": "0.7.13",
   "description": "AI Coding Assistant with Generation Comparison",
   "type": "module",
   "main": "dist/main/index.cjs",
@@ -49,7 +49,6 @@
     "marked": "^15.0.0",
     "node-fetch": "^3.3.2",
     "openai": "^4.70.0",
-    "pdfjs-dist": "^5.4.530",
     "playwright": "^1.57.0",
     "uuid": "^13.0.0",
     "zustand": "^5.0.0"

@@ -158,7 +158,6 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 | 目录 | 说明 |
 |------|------|
 | `vercel-api/` | Vercel Serverless Functions（版本检查、设置同步等）|
-| `cloud-agent/` | 已重命名为 vercel-api |
 
 ---
 
@@ -190,8 +189,8 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 ## 错题本
 
 ### Vercel 部署目录混淆
-**问题**: 修改 `cloud-api/` 但 Vercel 部署的是 `cloud-agent/`
-**正确做法**: 只修改 `cloud-agent/api/update.ts`
+**问题**: 修改了错误的 API 目录
+**正确做法**: 只修改 `vercel-api/api/update.ts`
 
 ### 打包位置错误
 **问题**: 在 worktree 中执行 `npm run dist:mac`，产物在 worktree 的 `release/` 下
@@ -224,16 +223,16 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 - 示例：`initMCPClient().then(...).catch(...)` 而非 `await initMCPClient()`
 
 ### Vercel 部署到错误项目
-**问题**: 在 `cloud-agent/` 目录执行 `vercel --prod`，Vercel CLI 自动创建了新项目 `cloud-agent`，而不是部署到现有的 `code-agent` 项目
+**问题**: 在 `vercel-api/` 目录执行 `vercel --prod`，Vercel CLI 自动创建了新项目
 **原因**: Vercel CLI 会在当前目录创建 `.vercel/` 配置，如果没有配置则创建新项目
 **正确做法**:
-1. 永远不要在 `cloud-agent/` 目录执行 Vercel 命令
-2. 通过 git push 触发自动部署（Vercel 已配置 Root Directory 为 `cloud-agent`）
-3. 如果 `cloud-agent/.vercel/` 存在，立即删除
+1. 永远不要在 `vercel-api/` 目录执行 Vercel 命令
+2. 通过 git push 触发自动部署（Vercel 已配置 Root Directory 为 `vercel-api`）
+3. 如果 `vercel-api/.vercel/` 存在，立即删除
 
 ### Vercel Hobby 计划 12 函数限制
 **问题**: 部署失败，错误 "No more than 12 Serverless Functions"
-**原因**: Hobby 计划最多支持 12 个 API 函数，`cloud-agent/api/` 下文件超过限制
+**原因**: Hobby 计划最多支持 12 个 API 函数，`vercel-api/api/` 下文件超过限制
 **正确做法**:
 1. 将相关功能合并到一个文件，通过 `?action=xxx` 参数区分
 2. 当前已合并：`tools.ts` 包含 api/scrape/search 三个功能
@@ -245,7 +244,7 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 □ 代码改动已测试
 □ npm run typecheck 通过
 □ package.json 版本号已递增
-□ cloud-agent/api/update.ts 已更新
+□ vercel-api/api/update.ts 已更新
 □ 已 commit 并 push
 □ 当前目录是主仓库
 □ API 验证通过

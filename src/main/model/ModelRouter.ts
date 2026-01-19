@@ -563,7 +563,7 @@ export class ModelRouter {
    */
   private fallbackModels: Record<ModelCapability, { provider: string; model: string }> = {
     vision: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' }, // 免费视觉模型
-    reasoning: { provider: 'openrouter', model: 'google/gemini-2.0-flash-thinking-exp:free' },
+    reasoning: { provider: 'openrouter', model: 'deepseek/deepseek-r1-0528:free' }, // 免费推理模型
     code: { provider: 'deepseek', model: 'deepseek-chat' },
     fast: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' },
     general: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' },
@@ -613,23 +613,11 @@ export class ModelRouter {
       const content = typeof msg.content === 'string' ? msg.content : '';
       const contentLower = content.toLowerCase();
 
-      // 检测视觉需求
+      // 检测视觉需求：只有消息内容中真正包含图片数据时才需要视觉能力
+      // 不再基于文件扩展名猜测，避免误判（如 HTML 文件名包含 .png 字样）
       if (Array.isArray(msg.content)) {
         const hasImage = msg.content.some((c) => c.type === 'image');
         if (hasImage) capabilities.add('vision');
-      }
-
-      // 检测文件类型提示
-      if (contentLower.includes('.pdf') ||
-          contentLower.includes('.png') ||
-          contentLower.includes('.jpg') ||
-          contentLower.includes('.jpeg') ||
-          contentLower.includes('.gif') ||
-          contentLower.includes('.webp') ||
-          contentLower.includes('图片') ||
-          contentLower.includes('screenshot') ||
-          contentLower.includes('截图')) {
-        capabilities.add('vision');
       }
 
       // 检测推理需求

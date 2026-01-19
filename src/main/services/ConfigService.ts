@@ -10,6 +10,64 @@ import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { getSecureStorage } from './SecureStorage';
 
+// ============================================================================
+// Security Utilities
+// ============================================================================
+
+/**
+ * Check if running in production (packaged app)
+ */
+export function isProduction(): boolean {
+  return app?.isPackaged ?? process.env.NODE_ENV === 'production';
+}
+
+/**
+ * Sanitize sensitive data for logging
+ * Masks API keys, tokens, and other sensitive strings
+ */
+export function sanitizeForLogging(value: unknown): unknown {
+  if (typeof value === 'string') {
+    // Mask API keys (sk-xxx, key-xxx, etc.)
+    if (/^(sk-|key-|pk-|api-)/i.test(value)) {
+      return value.slice(0, 7) + '***' + value.slice(-4);
+    }
+    // Mask JWTs
+    if (value.includes('.') && value.split('.').length === 3 && value.length > 50) {
+      return value.slice(0, 10) + '...[JWT]...' + value.slice(-10);
+    }
+    // Mask long hex strings (potential keys/tokens)
+    if (/^[a-f0-9]{32,}$/i.test(value)) {
+      return value.slice(0, 8) + '***' + value.slice(-4);
+    }
+    return value;
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    if (Array.isArray(value)) {
+      return value.map(sanitizeForLogging);
+    }
+    const sanitized: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      // Always mask keys with sensitive names
+      if (/key|token|secret|password|credential|auth/i.test(k)) {
+        sanitized[k] = typeof v === 'string' ? sanitizeForLogging(v) : '[REDACTED]';
+      } else {
+        sanitized[k] = sanitizeForLogging(v);
+      }
+    }
+    return sanitized;
+  }
+
+  return value;
+}
+
+/**
+ * Safe console.log that automatically sanitizes sensitive data
+ */
+export function safeLog(message: string, ...args: unknown[]): void {
+  console.log(message, ...args.map(sanitizeForLogging));
+}
+
 // Load .env file from project root or app resources
 import { app as electronApp } from 'electron';
 
@@ -93,7 +151,9 @@ const DEFAULT_SETTINGS: AppSettings = {
       'sudo rm',
       ':(){:|:&};:',
     ],
-    devModeAutoApprove: true, // Default to true for development convenience
+    // SECURITY: devModeAutoApprove only enabled in development
+    // In production (packaged app), this is always false
+    devModeAutoApprove: false,
   },
   ui: {
     theme: 'system',
@@ -201,7 +261,46 @@ export class ConfigService {
     return { ...this.settings };
   }
 
+  /**
+   * Check if devModeAutoApprove is enabled
+   * SECURITY: Always returns false in production (packaged app)
+   */
+  isDevModeAutoApproveEnabled(): boolean {
+    // In production, devModeAutoApprove is ALWAYS disabled
+    if (isProduction()) {
+      return false;
+    }
+    return this.settings.permissions.devModeAutoApprove;
+  }
+
+  /**
+   * Set devModeAutoApprove setting
+   * SECURITY: Logs a warning when enabled, ignored in production
+   */
+  async setDevModeAutoApprove(enabled: boolean): Promise<void> {
+    if (isProduction()) {
+      console.warn('[ConfigService] ⚠️ devModeAutoApprove cannot be enabled in production builds');
+      return;
+    }
+
+    if (enabled) {
+      console.warn('[ConfigService] ⚠️ devModeAutoApprove enabled - all tool executions will be auto-approved!');
+      console.warn('[ConfigService] ⚠️ This should only be used for development and testing.');
+    }
+
+    this.settings.permissions.devModeAutoApprove = enabled;
+    await this.save();
+  }
+
   async updateSettings(updates: Partial<AppSettings>): Promise<void> {
+    // SECURITY: Prevent enabling devModeAutoApprove in production
+    if (updates.permissions?.devModeAutoApprove !== undefined) {
+      if (isProduction() && updates.permissions.devModeAutoApprove) {
+        console.warn('[ConfigService] ⚠️ Ignoring devModeAutoApprove=true in production');
+        updates.permissions.devModeAutoApprove = false;
+      }
+    }
+
     this.settings = this.mergeSettings(this.settings, updates);
     await this.save();
   }

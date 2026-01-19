@@ -250,6 +250,10 @@ export const IPC_CHANNELS = {
   // Notification channels
   NOTIFICATION_CLICKED: 'notification:clicked',
 
+  // Cloud config channels
+  CLOUD_CONFIG_REFRESH: 'cloud:config:refresh',
+  CLOUD_CONFIG_GET_INFO: 'cloud:config:get-info',
+
   // Cloud task channels
   CLOUD_TASK_CREATE: 'cloud:task:create',
   CLOUD_TASK_UPDATE: 'cloud:task:update',
@@ -404,6 +408,10 @@ export interface IpcInvokeHandlers {
   // Persistent settings (survive data clear)
   [IPC_CHANNELS.PERSISTENT_GET_DEV_MODE]: () => Promise<boolean>;
   [IPC_CHANNELS.PERSISTENT_SET_DEV_MODE]: (enabled: boolean) => Promise<void>;
+
+  // Cloud config
+  [IPC_CHANNELS.CLOUD_CONFIG_REFRESH]: () => Promise<{ success: boolean; version: string; error?: string }>;
+  [IPC_CHANNELS.CLOUD_CONFIG_GET_INFO]: () => Promise<{ version: string; isCloud: boolean; lastError: string | null }>;
 
   // Cloud task
   [IPC_CHANNELS.CLOUD_TASK_CREATE]: (request: CreateCloudTaskRequest) => Promise<CloudTask>;

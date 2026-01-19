@@ -31,6 +31,7 @@ import { createPlanningService, type PlanningService } from './planning';
 import { CloudTaskService, getCloudTaskService, initCloudTaskService, isCloudTaskServiceInitialized } from './cloud/CloudTaskService';
 import { initUnifiedOrchestrator, getUnifiedOrchestrator } from './orchestrator';
 import { initPromptService, getPromptsInfo } from './services/PromptService';
+import { initCloudConfigService, getCloudConfigService } from './services/cloud';
 
 // ----------------------------------------------------------------------------
 // Global State
@@ -176,8 +177,20 @@ async function initializeBackgroundServices(): Promise<void> {
 async function initializeServices(): Promise<void> {
   const settings = configService!.getSettings();
 
+  // Initialize CloudConfigService ASYNC (non-blocking)
+  // 后台拉取云端配置（包含 prompts, skills, flags 等），不阻塞启动
+  initCloudConfigService()
+    .then(() => {
+      const info = getCloudConfigService().getInfo();
+      console.log(`[CloudConfig] Source: ${info.isCloud ? 'cloud' : 'builtin'}, version: ${info.version}`);
+    })
+    .catch((error) => {
+      console.warn('[CloudConfig] Init failed (using builtin):', error);
+    });
+
   // Initialize PromptService ASYNC (non-blocking)
   // 后台拉取云端 prompts，不阻塞启动
+  // 注意：新版本使用 CloudConfigService，PromptService 保留用于向后兼容
   initPromptService()
     .then(() => {
       const info = getPromptsInfo();
@@ -1475,6 +1488,20 @@ function setupIpcHandlers(): void {
         },
       });
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // Cloud Config Handlers
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle(IPC_CHANNELS.CLOUD_CONFIG_REFRESH, async () => {
+    const { refreshCloudConfig } = await import('./services/cloud');
+    return refreshCloudConfig();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.CLOUD_CONFIG_GET_INFO, async () => {
+    const { getCloudConfigService } = await import('./services/cloud');
+    return getCloudConfigService().getInfo();
   });
 
   // -------------------------------------------------------------------------

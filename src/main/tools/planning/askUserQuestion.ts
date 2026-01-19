@@ -2,10 +2,13 @@
 // Ask User Question Tool - Interactive questions via IPC
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import type { UserQuestionRequest, UserQuestionResponse, UserQuestion } from '../../../shared/types';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { BrowserWindow, ipcMain } from 'electron';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('AskUserQuestion');
 
 // Store pending question requests
 const pendingQuestions = new Map<string, {
@@ -170,7 +173,7 @@ Example of good technical question:
     }
 
     // Send question to renderer
-    console.log(`[ask_user_question] Sending questions to UI: ${request.id}`);
+    logger.info('Sending questions to UI', { requestId: request.id });
     mainWindow.webContents.send(IPC_CHANNELS.USER_QUESTION_ASK, request);
 
     // Wait for response with timeout

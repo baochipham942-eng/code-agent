@@ -2,9 +2,9 @@
 // memory_store Tool - Store information in long-term memory
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
-import { getMemoryService } from '../../memory/MemoryService';
-import { getVectorStore } from '../../memory/VectorStore';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { getMemoryService } from '../../memory/memoryService';
+import { getVectorStore } from '../../memory/vectorStore';
 
 export const memoryStoreTool: Tool = {
   name: 'memory_store',

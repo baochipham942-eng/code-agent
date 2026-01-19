@@ -3,6 +3,9 @@
 // ============================================================================
 
 import Anthropic from '@anthropic-ai/sdk';
+import { createLogger } from './logger.js';
+
+const logger = createLogger('Skills');
 
 interface CloudTaskRequest {
   id: string;
@@ -246,7 +249,7 @@ export async function executeSkillTask(
       result,
     };
   } catch (error: any) {
-    console.error(`Skill ${skillName} error:`, error);
+    logger.error(`Skill ${skillName} execution failed`, error);
     return {
       id,
       status: 'error',

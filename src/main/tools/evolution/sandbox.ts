@@ -4,6 +4,9 @@
 // ============================================================================
 
 import ivm from 'isolated-vm';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('Sandbox');
 
 export interface SandboxOptions {
   /** Memory limit in MB (default: 32) */
@@ -63,9 +66,9 @@ export class CodeSandbox {
 
     // Expose safe console methods
     await jail.set('console', new ivm.ExternalCopy({
-      log: (...args: unknown[]) => console.log('[sandbox]', ...args),
-      warn: (...args: unknown[]) => console.warn('[sandbox]', ...args),
-      error: (...args: unknown[]) => console.error('[sandbox]', ...args),
+      log: (...args: unknown[]) => logger.info('sandbox output', { args }),
+      warn: (...args: unknown[]) => logger.warn('sandbox warning', { args }),
+      error: (...args: unknown[]) => logger.error('sandbox error', new Error(String(args[0])), { args: args.slice(1) }),
     }).copyInto());
 
     // Expose JSON (safe)

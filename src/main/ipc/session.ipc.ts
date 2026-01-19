@@ -5,10 +5,10 @@
 import type { IpcMain } from 'electron';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getSessionManager } from '../services';
-import { getMemoryService } from '../memory/MemoryService';
+import { getMemoryService } from '../memory/memoryService';
 import type { ConfigService } from '../services';
-import type { GenerationManager } from '../generation/GenerationManager';
-import type { AgentOrchestrator } from '../agent/AgentOrchestrator';
+import type { GenerationManager } from '../generation/generationManager';
+import type { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { Session, Message } from '../../shared/types';
 
 interface SessionHandlerDeps {
@@ -139,7 +139,8 @@ async function handleExport(payload: { sessionId: string }): Promise<unknown> {
 async function handleImport(payload: { data: unknown }): Promise<string> {
   const sessionManager = getSessionManager();
   // SessionManager expects SessionWithMessages type
-  return sessionManager.importSession(payload.data as any);
+  // Input is validated by SessionManager.importSession
+  return sessionManager.importSession(payload.data as import('../services').SessionWithMessages);
 }
 
 // ----------------------------------------------------------------------------
@@ -243,7 +244,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, deps: SessionHandlerDe
   });
 
   /** @deprecated Use IPC_DOMAINS.SESSION with action: 'import' */
-  ipcMain.handle(IPC_CHANNELS.SESSION_IMPORT, async (_, data: any) => {
+  ipcMain.handle(IPC_CHANNELS.SESSION_IMPORT, async (_, data: unknown) => {
     return handleImport({ data });
   });
 }

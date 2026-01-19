@@ -2,7 +2,7 @@
 // Web Search Tool - Search the web using Brave Search API
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 
 const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
 

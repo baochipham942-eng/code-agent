@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import { Code2, Copy, Check } from 'lucide-react';
 import type { MessageContentProps, CodeBlockProps, MarkdownBlockData } from './types';
 import { parseMarkdownBlocks, languageConfig } from './utils';
+import { UI } from '@shared/constants';
 
 // Main message content component
 export const MessageContent: React.FC<MessageContentProps> = ({ content, isUser }) => {
@@ -41,7 +42,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ content }) => {
   const handleCopy = async () => {
     await navigator.clipboard.writeText(code);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), UI.COPY_FEEDBACK_DURATION);
   };
 
   // Count lines for line numbers

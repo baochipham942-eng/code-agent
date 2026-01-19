@@ -4,6 +4,9 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { initializeSchema } from '../lib/db.js';
+import { createLogger } from '../lib/logger.js';
+
+const logger = createLogger('InitDB');
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 只允许 POST 请求
@@ -35,7 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       result,
     });
   } catch (error: any) {
-    console.error('Database initialization error:', error);
+    logger.error('Database initialization failed', error);
     return res.status(500).json({
       error: 'Database initialization failed',
       message: error.message,

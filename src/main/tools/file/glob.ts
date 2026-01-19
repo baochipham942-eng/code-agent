@@ -4,7 +4,7 @@
 
 import { glob as globLib } from 'glob';
 import path from 'path';
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 
 export const globTool: Tool = {
   name: 'glob',

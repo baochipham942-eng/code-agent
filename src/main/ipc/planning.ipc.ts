@@ -6,6 +6,9 @@ import type { IpcMain } from 'electron';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { PlanningState } from '../../shared/types';
 import type { PlanningService } from '../planning';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('PlanningIPC');
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -24,7 +27,7 @@ async function handleGetState(getPlanningService: () => PlanningService | null):
 
     return { plan, findings, errors };
   } catch (error) {
-    console.error('Failed to get planning state:', error);
+    logger.error('Failed to get planning state', error);
     return { plan: null, findings: [], errors: [] };
   }
 }
@@ -35,7 +38,7 @@ async function handleGetPlan(getPlanningService: () => PlanningService | null): 
   try {
     return await planningService.plan.read();
   } catch (error) {
-    console.error('Failed to get plan:', error);
+    logger.error('Failed to get plan', error);
     return null;
   }
 }
@@ -46,7 +49,7 @@ async function handleGetFindings(getPlanningService: () => PlanningService | nul
   try {
     return await planningService.findings.getAll();
   } catch (error) {
-    console.error('Failed to get findings:', error);
+    logger.error('Failed to get findings', error);
     return [];
   }
 }

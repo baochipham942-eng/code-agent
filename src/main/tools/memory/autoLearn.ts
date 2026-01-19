@@ -2,8 +2,8 @@
 // auto_learn Tool - Automatically learn from user interactions
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
-import { getMemoryService } from '../../memory/MemoryService';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { getMemoryService } from '../../memory/memoryService';
 
 export const autoLearnTool: Tool = {
   name: 'auto_learn',

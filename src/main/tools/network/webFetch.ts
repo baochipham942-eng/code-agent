@@ -2,7 +2,7 @@
 // Web Fetch Tool - Fetch content from URLs
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 
 export const webFetchTool: Tool = {
   name: 'web_fetch',

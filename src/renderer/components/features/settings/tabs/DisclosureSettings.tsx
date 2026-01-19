@@ -8,6 +8,9 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { DevModeConfirmModal } from '../../../ConfirmModal';
 import type { DisclosureLevel } from '../../../../stores/appStore';
+import { createLogger } from '../../../../utils/logger';
+
+const logger = createLogger('DisclosureSettings');
 
 // ============================================================================
 // Types
@@ -33,10 +36,10 @@ export const DisclosureSettings: React.FC<DisclosureSettingsProps> = ({ level, o
     try {
       await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
         ui: { disclosureLevel: newLevel },
-      } as any);
-      console.log('[DisclosureSettings] Disclosure level saved:', newLevel);
+      } as Partial<import('@shared/types').AppSettings>);
+      logger.info('Disclosure level saved', { level: newLevel });
     } catch (error) {
-      console.error('[DisclosureSettings] Failed to save disclosure level:', error);
+      logger.error('Failed to save disclosure level', error);
     }
   };
 
@@ -50,7 +53,7 @@ export const DisclosureSettings: React.FC<DisclosureSettingsProps> = ({ level, o
           setDevModeAutoApprove(enabled);
         }
       } catch (error) {
-        console.error('Failed to load dev mode setting:', error);
+        logger.error('Failed to load dev mode setting', error);
         // Fallback to config service
         try {
           const settings = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET);
@@ -58,7 +61,7 @@ export const DisclosureSettings: React.FC<DisclosureSettingsProps> = ({ level, o
             setDevModeAutoApprove(settings.permissions.devModeAutoApprove);
           }
         } catch (e) {
-          console.error('Fallback also failed:', e);
+          logger.error('Fallback also failed', e);
         }
       }
     };
@@ -83,9 +86,9 @@ export const DisclosureSettings: React.FC<DisclosureSettingsProps> = ({ level, o
     try {
       // Save to persistent storage (survives data clear)
       await window.electronAPI?.invoke(IPC_CHANNELS.PERSISTENT_SET_DEV_MODE, newValue);
-      console.log('[DisclosureSettings] Dev mode auto-approve saved to persistent storage:', newValue);
+      logger.info('Dev mode auto-approve saved to persistent storage', { value: newValue });
     } catch (error) {
-      console.error('Failed to save dev mode setting:', error);
+      logger.error('Failed to save dev mode setting', error);
       // Revert on error
       setDevModeAutoApprove(!newValue);
     }

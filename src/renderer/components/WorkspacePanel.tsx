@@ -16,6 +16,9 @@ import {
 } from 'lucide-react';
 
 import type { FileInfo } from '@shared/types';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('WorkspacePanel');
 
 interface FileTreeItem {
   name: string;
@@ -53,7 +56,7 @@ export const WorkspacePanel: React.FC = () => {
         setFileTree(files ? convertToFileTree(files as FileInfo[]) : []);
       }
     } catch (error) {
-      console.error('Failed to load workspace:', error);
+      logger.error('Failed to load workspace', error);
     } finally {
       setLoading(false);
     }
@@ -68,7 +71,7 @@ export const WorkspacePanel: React.FC = () => {
         setFileTree(files ? convertToFileTree(files as FileInfo[]) : []);
       }
     } catch (error) {
-      console.error('Failed to select workspace:', error);
+      logger.error('Failed to select workspace', error);
     }
   };
 
@@ -171,7 +174,7 @@ const FileTreeNode: React.FC<{ item: FileTreeItem; level: number }> = ({
       setExpanded(!expanded);
     } else {
       // Open file in editor (future feature)
-      console.log('Open file:', item.path);
+      logger.debug('Open file', { path: item.path });
     }
   };
 

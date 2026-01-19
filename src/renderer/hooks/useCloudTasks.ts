@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { UI } from '@shared/constants';
 import type {
   CloudTask,
   CreateCloudTaskRequest,
@@ -53,7 +54,7 @@ interface UseCloudTasksReturn {
 export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasksReturn {
   const {
     autoRefresh = true,
-    refreshInterval = 5000,
+    refreshInterval = UI.CLOUD_TASK_REFRESH_INTERVAL,
     filter: initialFilter = {},
   } = options;
 
@@ -419,7 +420,7 @@ export function useCloudTaskStats() {
     };
 
     loadStats();
-    const timer = setInterval(loadStats, 30000); // 30 秒刷新一次
+    const timer = setInterval(loadStats, UI.PANEL_REFRESH_INTERVAL);
 
     return () => clearInterval(timer);
   }, []);

@@ -14,7 +14,10 @@ import type {
 import {
   getCloudTaskService,
   isCloudTaskServiceInitialized,
-} from '../cloud/CloudTaskService';
+} from '../cloud/cloudTaskService';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('CloudIPC');
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -32,7 +35,7 @@ async function handleConfigGetInfo(): Promise<unknown> {
 
 async function handleTaskCreate(payload: { request: CreateCloudTaskRequest }): Promise<CloudTask | null> {
   if (!isCloudTaskServiceInitialized()) {
-    console.warn('[IPC] Cloud task service not initialized');
+    logger.warn('Cloud task service not initialized');
     return null;
   }
   return getCloudTaskService().createTask(payload.request);

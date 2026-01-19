@@ -6,7 +6,7 @@ export {
   getAuthService,
   type AuthService,
   type AuthResult,
-} from './AuthService';
+} from './authService';
 
 export {
   TokenManager,
@@ -14,4 +14,4 @@ export {
   type TokenCount,
   type ContextWindow,
   type PruneResult,
-} from './TokenManager';
+} from './tokenManager';

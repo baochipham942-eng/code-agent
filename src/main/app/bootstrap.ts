@@ -4,6 +4,7 @@
 
 import { app } from 'electron';
 import path from 'path';
+import { createLogger } from '../services/infra/logger';
 import {
   ConfigService,
   initDatabase,
@@ -13,21 +14,24 @@ import {
   getSyncService,
   initLangfuse,
 } from '../services';
-import { initUpdateService, getUpdateService } from '../services/cloud/UpdateService';
-import { initMemoryService, getMemoryService } from '../memory/MemoryService';
-import { initMCPClient, getMCPClient, type MCPServerConfig } from '../mcp/MCPClient';
-import { initPromptService, getPromptsInfo } from '../services/cloud/PromptService';
+import { initUpdateService, getUpdateService } from '../services/cloud/updateService';
+import { initMemoryService, getMemoryService } from '../memory/memoryService';
+import { initMCPClient, getMCPClient, type MCPServerConfig } from '../mcp/mcpClient';
+import { initPromptService, getPromptsInfo } from '../services/cloud/promptService';
 import { initCloudConfigService, getCloudConfigService } from '../services/cloud';
-import { initCloudTaskService } from '../cloud/CloudTaskService';
+import { initCloudTaskService } from '../cloud/cloudTaskService';
 import { initUnifiedOrchestrator } from '../orchestrator';
-import { logBridge } from '../mcp/LogBridge.js';
+import { logBridge } from '../mcp/logBridge.js';
 import { getMainWindow } from './window';
 import { IPC_CHANNELS } from '../../shared/ipc';
-import { AgentOrchestrator } from '../agent/AgentOrchestrator';
-import { GenerationManager } from '../generation/GenerationManager';
+import { SYNC, UPDATE, CLOUD, TOOL_CACHE } from '../../shared/constants';
+import { AgentOrchestrator } from '../agent/agentOrchestrator';
+import { GenerationManager } from '../generation/generationManager';
 import { createPlanningService, type PlanningService } from '../planning';
 import { getSessionManager, notificationService } from '../services';
 import type { PlanningState } from '../../shared/types';
+
+const logger = createLogger('Bootstrap');
 
 // Global state
 let configService: ConfigService | null = null;
@@ -90,19 +94,19 @@ export async function initializeCoreServices(): Promise<ConfigService> {
   // Initialize database (SQLite persistence)
   await initDatabase();
   const userDataPath = app.getPath('userData');
-  console.log('Database initialized at:', path.join(userDataPath, 'code-agent.db'));
+  logger.info('Database initialized', { path: path.join(userDataPath, 'code-agent.db') });
 
   // Initialize memory service (needed for session management)
   initMemoryService({
     maxRecentMessages: 10,
-    toolCacheTTL: 5 * 60 * 1000,
+    toolCacheTTL: TOOL_CACHE.DEFAULT_TTL,
     maxSessionMessages: 100,
     maxRAGResults: 5,
     ragTokenLimit: 2000,
   });
-  console.log('Memory service initialized');
+  logger.info('Memory service initialized');
 
-  console.log('[Init] Core services initialized');
+  logger.info('Core services initialized');
   return configService;
 }
 
@@ -115,13 +119,13 @@ export async function initializeBackgroundServices(): Promise<void> {
     throw new Error('Core services not initialized');
   }
 
-  console.log('[Init] Starting background services...');
+  logger.info('Starting background services...');
 
   const settings = configService.getSettings();
 
   // Restore devModeAutoApprove from persistent storage
   try {
-    const { getSecureStorage } = await import('../services/core/SecureStorage');
+    const { getSecureStorage } = await import('../services/core/secureStorage');
     const storage = getSecureStorage();
     const persistedValue = storage.get('settings.devModeAutoApprove');
     if (persistedValue !== undefined) {
@@ -134,11 +138,11 @@ export async function initializeBackgroundServices(): Promise<void> {
             devModeAutoApprove: enabled,
           },
         });
-        console.log('[Init] Restored devModeAutoApprove from persistent storage:', enabled);
+        logger.info('Restored devModeAutoApprove from persistent storage', { enabled });
       }
     }
   } catch (error) {
-    console.warn('[Init] Failed to restore devModeAutoApprove from persistent storage:', error);
+    logger.warn('Failed to restore devModeAutoApprove from persistent storage', { error: String(error) });
   }
 
   // Initialize the rest of services
@@ -160,34 +164,33 @@ async function initializeServices(): Promise<void> {
   initCloudConfigService()
     .then(() => {
       const info = getCloudConfigService().getInfo();
-      console.log(`[CloudConfig] Source: ${info.fromCloud ? 'cloud' : 'builtin'}, version: ${info.version}`);
+      logger.info('CloudConfig initialized', { source: info.fromCloud ? 'cloud' : 'builtin', version: info.version });
     })
     .catch((error) => {
-      console.warn('[CloudConfig] Init failed (using builtin):', error);
+      logger.warn('CloudConfig init failed (using builtin)', { error: String(error) });
     });
 
   // Initialize PromptService ASYNC (non-blocking)
   initPromptService()
     .then(() => {
       const info = getPromptsInfo();
-      console.log(`[PromptService] Source: ${info.source}, version: ${info.version || 'builtin'}`);
+      logger.info('PromptService initialized', { source: info.source, version: info.version || 'builtin' });
     })
     .catch((error) => {
-      console.warn('[PromptService] Init failed (using builtin):', error);
+      logger.warn('PromptService init failed (using builtin)', { error: String(error) });
     });
 
   // Initialize MCP client ASYNC (non-blocking)
   const mcpConfigs: MCPServerConfig[] = settings.mcp?.servers || [];
-  console.log(`[MCP] Initializing ${mcpConfigs.length} custom server(s) in background...`);
+  logger.info('Initializing MCP servers in background...', { count: mcpConfigs.length });
   initMCPClient(mcpConfigs)
     .then(() => {
       const mcpClient = getMCPClient();
       const status = mcpClient.getStatus();
-      console.log(`[MCP] Connected: ${status.connectedServers.join(', ') || 'none'}`);
-      console.log(`[MCP] Available: ${status.toolCount} tools, ${status.resourceCount} resources`);
+      logger.info('MCP connected', { servers: status.connectedServers.join(', ') || 'none', toolCount: status.toolCount, resourceCount: status.resourceCount });
     })
     .catch((error) => {
-      console.error('[MCP] Failed to initialize (non-blocking):', error);
+      logger.error('MCP failed to initialize (non-blocking)', error);
     });
 
   // Setup LogBridge command handler
@@ -200,7 +203,7 @@ async function initializeServices(): Promise<void> {
   if (supabaseUrl && supabaseAnonKey) {
     try {
       initSupabase(supabaseUrl, supabaseAnonKey);
-      console.log('Supabase initialized');
+      logger.info('Supabase initialized');
 
       // Set up auth change callback
       const authService = getAuthService();
@@ -216,22 +219,22 @@ async function initializeServices(): Promise<void> {
         const syncService = getSyncService();
         if (user) {
           syncService.initialize().then(() => {
-            syncService.startAutoSync(5 * 60 * 1000); // 5 minutes
-            console.log('Auto-sync started');
+            syncService.startAutoSync(SYNC.SYNC_INTERVAL);
+            logger.info('Auto-sync started');
           });
         } else {
           syncService.stopAutoSync();
-          console.log('Auto-sync stopped');
+          logger.info('Auto-sync stopped');
         }
       });
 
       // Initialize auth (restore session) - NON-BLOCKING
       authService.initialize()
         .then(() => {
-          console.log('Auth service initialized');
+          logger.info('Auth service initialized');
         })
         .catch((error) => {
-          console.error('Failed to initialize auth (non-blocking):', error);
+          logger.error('Failed to initialize auth (non-blocking)', error);
         });
 
       // Initialize unified orchestrator (cloud task execution)
@@ -240,28 +243,28 @@ async function initializeServices(): Promise<void> {
         initUnifiedOrchestrator({
           cloudExecutor: {
             maxConcurrent: 3,
-            defaultTimeout: 120000,
+            defaultTimeout: CLOUD.CLOUD_EXECUTION_TIMEOUT,
             maxIterations: 20,
             apiEndpoint: updateServerUrl,
           },
         });
-        console.log('Unified orchestrator initialized');
+        logger.info('Unified orchestrator initialized');
       } catch (error: unknown) {
-        console.error('Failed to initialize unified orchestrator:', error);
+        logger.error('Failed to initialize unified orchestrator', error);
       }
 
       // Initialize cloud task service
       try {
         initCloudTaskService({});
-        console.log('CloudTaskService initialized');
+        logger.info('CloudTaskService initialized');
       } catch (error: unknown) {
-        console.error('Failed to initialize CloudTaskService:', error);
+        logger.error('Failed to initialize CloudTaskService', error);
       }
     } catch (error) {
-      console.error('Failed to initialize Supabase:', error);
+      logger.error('Failed to initialize Supabase', error);
     }
   } else {
-    console.log('Supabase not configured (offline mode)');
+    logger.info('Supabase not configured (offline mode)');
   }
 
   // Initialize Langfuse (analytics, if configured)
@@ -273,7 +276,7 @@ async function initializeServices(): Promise<void> {
       secretKey: langfuseSecretKey,
       baseUrl: process.env.LANGFUSE_BASE_URL || settings.langfuse?.baseUrl || 'https://cloud.langfuse.com',
     });
-    console.log('Langfuse initialized');
+    logger.info('Langfuse initialized');
   }
 
   // Initialize update service
@@ -281,7 +284,7 @@ async function initializeServices(): Promise<void> {
     const updateServerUrl = process.env.CLOUD_API_URL || settings.cloudApi?.url || 'https://code-agent-beta.vercel.app';
     initUpdateService({
       updateServerUrl,
-      checkInterval: 60 * 60 * 1000, // Check every hour
+      checkInterval: UPDATE.CLOUD_CHECK_INTERVAL,
       autoDownload: false,
     });
 
@@ -324,13 +327,13 @@ async function initializeServices(): Promise<void> {
           });
         }
       }).catch((err) => {
-        console.error('[Main] Update check failed:', err);
+        logger.error('Update check failed', err);
       });
-    }, 5000);
+    }, UPDATE.INITIAL_CHECK_DELAY);
 
-    console.log('Update service initialized, server:', updateServerUrl);
+    logger.info('Update service initialized', { server: updateServerUrl });
   } catch (error: unknown) {
-    console.error('Failed to initialize update service:', error);
+    logger.error('Failed to initialize update service', error);
   }
 
   // Initialize generation manager
@@ -344,12 +347,12 @@ async function initializeServices(): Promise<void> {
     generationManager,
     configService: configService!,
     onEvent: async (event) => {
-      console.log('[Main] onEvent called:', event.type);
+      logger.debug('onEvent called', { eventType: event.type });
       if (mainWindow) {
-        console.log('[Main] Sending event to renderer:', event.type);
+        logger.debug('Sending event to renderer', { eventType: event.type });
         mainWindow.webContents.send(IPC_CHANNELS.AGENT_EVENT, event);
       } else {
-        console.log('[Main] WARNING: mainWindow is null, cannot send event');
+        logger.warn('mainWindow is null, cannot send event');
       }
 
       // Persist assistant messages
@@ -359,7 +362,7 @@ async function initializeServices(): Promise<void> {
           const sessionManager = getSessionManager();
           await sessionManager.addMessage(event.data);
         } catch (error) {
-          console.error('Failed to save assistant message:', error);
+          logger.error('Failed to save assistant message', error);
         }
       }
 
@@ -370,7 +373,7 @@ async function initializeServices(): Promise<void> {
           const session = await sessionManager.getCurrentSession();
           if (session) {
             const currentMessage = session.messages.find((m) => m.id === currentAssistantMessageId);
-            if (currentMessage && currentMessage.toolCalls) {
+            if (currentMessage?.toolCalls) {
               const updatedToolCalls = currentMessage.toolCalls.map((tc) =>
                 tc.id === event.data.toolCallId
                   ? { ...tc, result: event.data }
@@ -380,7 +383,7 @@ async function initializeServices(): Promise<void> {
             }
           }
         } catch (error) {
-          console.error('Failed to update tool call result:', error);
+          logger.error('Failed to update tool call result', error);
         }
       }
 
@@ -404,7 +407,7 @@ async function initializeServices(): Promise<void> {
             });
           }
         } catch (error) {
-          console.error('[Main] Failed to send task complete notification:', error);
+          logger.error('Failed to send task complete notification', error);
         }
       }
     },
@@ -413,19 +416,19 @@ async function initializeServices(): Promise<void> {
   // Set default generation
   const defaultGenId = settings.generation.default || 'gen3';
   generationManager.switchGeneration(defaultGenId);
-  console.log('[Init] Generation set to:', defaultGenId);
+  logger.info('Generation set to', { genId: defaultGenId });
 
   // Auto-restore or create session
-  console.log('[Init] Initializing session...');
+  logger.info('Initializing session...');
   await initializeSession(settings);
-  console.log('[Init] Session initialized');
+  logger.info('Session initialized');
 
   // Initialize planning service for Gen 3+
-  console.log('[Init] Initializing planning service...');
+  logger.info('Initializing planning service...');
   await initializePlanningService();
-  console.log('[Init] Planning service initialized');
+  logger.info('Planning service initialized');
 
-  console.log('[Init] Background services initialization complete');
+  logger.info('Background services initialization complete');
 }
 
 /**
@@ -441,7 +444,7 @@ async function initializeSession(settings: any): Promise<void> {
   if (recentSession && settings.session?.autoRestore !== false) {
     await sessionManager.restoreSession(recentSession.id);
     currentSessionId = recentSession.id;
-    console.log('Restored session:', recentSession.id);
+    logger.info('Restored session', { sessionId: recentSession.id });
   } else {
     const session = await sessionManager.createSession({
       title: 'New Session',
@@ -456,7 +459,7 @@ async function initializeSession(settings: any): Promise<void> {
     });
     sessionManager.setCurrentSession(session.id);
     currentSessionId = session.id;
-    console.log('Created new session:', session.id);
+    logger.info('Created new session', { sessionId: session.id });
   }
 
   // Set memory service context
@@ -473,19 +476,19 @@ async function initializePlanningService(): Promise<void> {
   if (!agentOrchestrator || !currentSessionId) return;
 
   const workingDir = agentOrchestrator.getWorkingDirectory();
-  console.log('[Main] initializePlanningService - workingDir:', workingDir);
+  logger.debug('initializePlanningService', { workingDir });
 
   // Fallback to app userData if workingDir is '/' (packaged Electron app issue)
   const effectiveWorkingDir = workingDir && workingDir !== '/'
     ? workingDir
     : app.getPath('userData');
 
-  console.log('[Main] initializePlanningService - effectiveWorkingDir:', effectiveWorkingDir);
+  logger.debug('initializePlanningService', { effectiveWorkingDir });
 
   if (!effectiveWorkingDir) return;
 
   planningService = createPlanningService(effectiveWorkingDir, currentSessionId);
-  console.log('Planning service initialized at:', effectiveWorkingDir);
+  logger.info('Planning service initialized', { path: effectiveWorkingDir });
 
   // Pass planning service to agent orchestrator
   agentOrchestrator.setPlanningService(planningService);
@@ -519,7 +522,7 @@ async function sendPlanningStateToRenderer(): Promise<void> {
       data: state,
     });
   } catch (error) {
-    console.error('Failed to send planning state:', error);
+    logger.error('Failed to send planning state', error);
   }
 }
 
@@ -528,10 +531,10 @@ async function sendPlanningStateToRenderer(): Promise<void> {
  */
 async function setupLogBridge(): Promise<void> {
   logBridge.setCommandHandler(async (command, params) => {
-    console.log(`[LogBridge] Executing command: ${command}`, params);
+    logger.debug('LogBridge executing command', { command, params });
 
     // Import browser service dynamically to avoid circular dependencies
-    const { browserService } = await import('../services/infra/BrowserService.js');
+    const { browserService } = await import('../services/infra/browserService.js');
 
     switch (command) {
       case 'browser_action': {
@@ -626,9 +629,9 @@ async function setupLogBridge(): Promise<void> {
   // Start Log Bridge server in background
   logBridge.start()
     .then(() => {
-      console.log('[LogBridge] Started on port', logBridge.getPort());
+      logger.info('LogBridge started', { port: logBridge.getPort() });
     })
     .catch((error) => {
-      console.error('[LogBridge] Failed to start (non-blocking):', error);
+      logger.error('LogBridge failed to start (non-blocking)', error);
     });
 }

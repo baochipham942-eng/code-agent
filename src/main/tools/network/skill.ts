@@ -2,10 +2,13 @@
 // Skill Tool - Execute predefined skills/workflows
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import type { SkillDefinition, ModelConfig } from '../../../shared/types';
-import { getSubagentExecutor } from '../../agent/SubagentExecutor';
+import { getSubagentExecutor } from '../../agent/subagentExecutor';
 import { getCloudConfigService } from '../../services/cloud';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('SkillTool');
 
 // ----------------------------------------------------------------------------
 // Skill Management - 从云端配置服务获取
@@ -88,7 +91,7 @@ export const skillTool: Tool = {
       fullPrompt += `\n\n---\nUser request: ${args}`;
     }
 
-    console.log(`[Skill:${skillName}] Starting execution...`);
+    logger.info('Starting skill execution', { skillName });
 
     try {
       const executor = getSubagentExecutor();

@@ -1,0 +1,513 @@
+// ============================================================================
+// Auth Service
+// Handles user authentication with Supabase
+// ============================================================================
+
+import { shell } from 'electron';
+import crypto from 'crypto';
+import {
+  getSupabase,
+  isSupabaseInitialized,
+  type ProfileRow,
+  type InviteCodeRow,
+} from '../infra';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
+import { getSecureStorage } from '../core';
+import type { AuthUser, AuthStatus } from '../../../shared/types';
+import { createLogger } from '../infra/logger';
+
+const logger = createLogger('AuthService');
+
+export interface AuthResult {
+  success: boolean;
+  user?: AuthUser;
+  error?: string;
+}
+
+type AuthChangeCallback = (user: AuthUser | null) => void;
+
+class AuthService {
+  private currentUser: AuthUser | null = null;
+  private onAuthChangeCallbacks: AuthChangeCallback[] = [];
+  private initialized: boolean = false;
+
+  constructor() {}
+
+  addAuthChangeCallback(callback: AuthChangeCallback): () => void {
+    this.onAuthChangeCallbacks.push(callback);
+    return () => {
+      const index = this.onAuthChangeCallbacks.indexOf(callback);
+      if (index > -1) {
+        this.onAuthChangeCallbacks.splice(index, 1);
+      }
+    };
+  }
+
+  private notifyAuthChange(user: AuthUser | null): void {
+    this.onAuthChangeCallbacks.forEach((callback) => {
+      try {
+        callback(user);
+      } catch (err) {
+        logger.error('Auth change callback error:', err);
+      }
+    });
+  }
+
+  async initialize(): Promise<void> {
+    logger.info(' initialize() called');
+    if (this.initialized) {
+      logger.info(' Already initialized');
+      return;
+    }
+
+    // 1. 先从本地缓存读取用户信息，立即展示（无网络延迟）
+    const cachedUser = this.loadCachedUser();
+    if (cachedUser) {
+      logger.info(' Loaded cached user:', cachedUser.email);
+      this.currentUser = cachedUser;
+      this.notifyAuthChange(cachedUser);
+    }
+
+    if (!isSupabaseInitialized()) {
+      logger.info(' Supabase not ready, using cached user only');
+      this.initialized = true;
+      return;
+    }
+
+    const supabase = getSupabase();
+    logger.info(' Got Supabase client');
+
+    // Listen for auth state changes
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      logger.info(' Auth state changed:', event);
+
+      if (session?.user) {
+        logger.info(' Fetching user profile in callback...');
+        this.currentUser = await this.fetchUserProfile(session.user);
+        this.cacheUser(this.currentUser); // 缓存用户信息
+        logger.info(' Profile fetched in callback');
+        this.notifyAuthChange(this.currentUser);
+      } else {
+        this.currentUser = null;
+        this.clearCachedUser();
+        this.notifyAuthChange(null);
+      }
+    });
+    logger.info(' Auth state change listener registered');
+
+    // 2. 后台验证 session 有效性（不阻塞 UI）
+    logger.info(' Validating session in background...');
+    this.validateSessionInBackground();
+
+    this.initialized = true;
+    logger.info(' Initialization complete');
+  }
+
+  /**
+   * 后台验证 session，不阻塞启动
+   */
+  private async validateSessionInBackground(): Promise<void> {
+    try {
+      const supabase = getSupabase();
+      const sessionPromise = supabase.auth.getSession();
+      const timeoutPromise = new Promise<null>((_, reject) => {
+        setTimeout(() => reject(new Error('Session fetch timeout')), 5000);
+      });
+
+      // Promise.race 返回类型需要类型断言
+      const result = (await Promise.race([sessionPromise, timeoutPromise])) as { data: { session: { user?: SupabaseUser } | null } } | null;
+      const session = result?.data?.session;
+      logger.info(' Background validation result:', session ? 'valid' : 'invalid');
+
+      if (session?.user) {
+        // Session 有效，更新用户信息
+        const freshUser = await this.fetchUserProfile(session.user);
+        this.currentUser = freshUser;
+        this.cacheUser(freshUser);
+        this.notifyAuthChange(freshUser);
+      } else if (this.currentUser) {
+        // Session 无效但有缓存用户，清除
+        logger.info(' Session invalid, clearing cached user');
+        this.currentUser = null;
+        this.clearCachedUser();
+        this.notifyAuthChange(null);
+      }
+    } catch (error) {
+      logger.warn(' Background session validation failed:', error);
+      // 网络错误时保持缓存用户，不清除
+    }
+  }
+
+  /**
+   * 缓存用户信息到本地存储
+   */
+  private cacheUser(user: AuthUser): void {
+    try {
+      const storage = getSecureStorage();
+      storage.set('auth.user', JSON.stringify(user));
+    } catch (e) {
+      logger.error(' Failed to cache user:', e);
+    }
+  }
+
+  /**
+   * 从本地存储读取缓存的用户信息
+   */
+  private loadCachedUser(): AuthUser | null {
+    try {
+      const storage = getSecureStorage();
+      const userJson = storage.get('auth.user');
+      if (userJson) {
+        return JSON.parse(userJson);
+      }
+    } catch (e) {
+      logger.error(' Failed to load cached user:', e);
+    }
+    return null;
+  }
+
+  /**
+   * 清除缓存的用户信息
+   */
+  private clearCachedUser(): void {
+    try {
+      const storage = getSecureStorage();
+      storage.delete('auth.user');
+    } catch (e) {
+      logger.error(' Failed to clear cached user:', e);
+    }
+  }
+
+  async getStatus(): Promise<AuthStatus> {
+    return {
+      isAuthenticated: this.currentUser !== null,
+      user: this.currentUser,
+      isLoading: false,
+    };
+  }
+
+  async signInWithEmail(email: string, password: string): Promise<AuthResult> {
+    if (!isSupabaseInitialized()) {
+      return { success: false, error: 'Supabase not initialized' };
+    }
+
+    const supabase = getSupabase();
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    if (data.user) {
+      this.currentUser = await this.fetchUserProfile(data.user);
+      this.cacheUser(this.currentUser); // 缓存用户信息
+      return { success: true, user: this.currentUser };
+    }
+
+    return { success: false, error: 'Unknown error' };
+  }
+
+  async signUpWithEmail(
+    email: string,
+    password: string,
+    inviteCode?: string
+  ): Promise<AuthResult> {
+    if (!isSupabaseInitialized()) {
+      return { success: false, error: 'Supabase not initialized' };
+    }
+
+    const supabase = getSupabase();
+
+    // Validate invite code if provided
+    if (inviteCode) {
+      const { data: codeDataRaw, error: codeError } = await supabase
+        .from('invite_codes')
+        .select('*')
+        .eq('code', inviteCode.toUpperCase())
+        .eq('is_active', true)
+        .single();
+
+      const codeData = codeDataRaw as InviteCodeRow | null;
+
+      if (codeError || !codeData) {
+        return { success: false, error: '无效的邀请码' };
+      }
+
+      if (codeData.use_count >= codeData.max_uses) {
+        return { success: false, error: '邀请码已用完' };
+      }
+
+      if (codeData.expires_at && new Date(codeData.expires_at) < new Date()) {
+        return { success: false, error: '邀请码已过期' };
+      }
+    } else {
+      // Invite code required
+      return { success: false, error: '需要邀请码才能注册' };
+    }
+
+    // Sign up
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    if (data.user) {
+      // Update invite code usage
+      if (inviteCode) {
+        // TODO: Supabase RPC types need explicit parameter definition - as any required
+        await (supabase.rpc as any)('increment_invite_code_usage', {
+          code_value: inviteCode.toUpperCase(),
+        });
+      }
+
+      // Create profile
+      // TODO: Supabase 类型系统限制，insert 需要 as any 绕过
+      await (supabase.from('profiles') as any).insert({
+        id: data.user.id,
+        username: email.split('@')[0],
+        quick_login_token: crypto.randomBytes(32).toString('hex'),
+      });
+
+      this.currentUser = await this.fetchUserProfile(data.user);
+      this.cacheUser(this.currentUser); // 缓存用户信息
+      return { success: true, user: this.currentUser };
+    }
+
+    return { success: false, error: 'Unknown error' };
+  }
+
+  async signInWithOAuth(provider: 'github' | 'google'): Promise<void> {
+    if (!isSupabaseInitialized()) {
+      throw new Error('Supabase not initialized');
+    }
+
+    const supabase = getSupabase();
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: 'code-agent://auth/callback',
+        skipBrowserRedirect: true,
+      },
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    if (data.url) {
+      await shell.openExternal(data.url);
+    }
+  }
+
+  async handleOAuthCallback(code: string): Promise<AuthResult> {
+    if (!isSupabaseInitialized()) {
+      return { success: false, error: 'Supabase not initialized' };
+    }
+
+    const supabase = getSupabase();
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    if (data.user) {
+      // Ensure profile exists
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', data.user.id)
+        .single();
+
+      if (!profile) {
+        // TODO: Supabase 类型系统限制，insert 需要 as any 绕过
+        await (supabase.from('profiles') as any).insert({
+          id: data.user.id,
+          username: data.user.email?.split('@')[0] || data.user.id,
+          nickname: data.user.user_metadata?.full_name,
+          avatar_url: data.user.user_metadata?.avatar_url,
+          quick_login_token: crypto.randomBytes(32).toString('hex'),
+        });
+      }
+
+      this.currentUser = await this.fetchUserProfile(data.user);
+      this.cacheUser(this.currentUser); // 缓存用户信息
+      return { success: true, user: this.currentUser };
+    }
+
+    return { success: false, error: 'Unknown error' };
+  }
+
+  async signInWithQuickToken(token: string): Promise<AuthResult> {
+    if (!isSupabaseInitialized()) {
+      return { success: false, error: 'Supabase not initialized' };
+    }
+
+    const supabase = getSupabase();
+
+    // Find user by quick login token
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('quick_login_token', token)
+      .single();
+
+    if (profileError || !profile) {
+      return { success: false, error: '无效的快捷登录 Token' };
+    }
+
+    // Get user email from auth.users (via admin API or stored in profile)
+    // Note: This requires storing email in profiles or using admin API
+    // For now, we'll return an error indicating this feature needs server-side support
+    return {
+      success: false,
+      error: '快捷登录需要服务端支持，请使用邮箱密码登录',
+    };
+  }
+
+  async signOut(): Promise<void> {
+    if (!isSupabaseInitialized()) {
+      return;
+    }
+
+    const supabase = getSupabase();
+    await supabase.auth.signOut();
+    const storage = getSecureStorage();
+    await storage.clearSessionFromKeychain(); // Also clear from Keychain
+    storage.clearAuthData();
+    this.currentUser = null;
+    this.notifyAuthChange(null);
+  }
+
+  getCurrentUser(): AuthUser | null {
+    return this.currentUser;
+  }
+
+  // Clear current user without calling Supabase signOut (used when clearing cache)
+  clearCurrentUser(): void {
+    this.currentUser = null;
+    this.notifyAuthChange(null);
+  }
+
+  async updateProfile(updates: Partial<AuthUser>): Promise<AuthResult> {
+    if (!this.currentUser) {
+      return { success: false, error: '未登录' };
+    }
+
+    if (!isSupabaseInitialized()) {
+      return { success: false, error: 'Supabase not initialized' };
+    }
+
+    const supabase = getSupabase();
+    const { error } = await supabase
+      .from('profiles')
+      // @ts-ignore Supabase types issue
+      .update({
+        nickname: updates.nickname,
+        avatar_url: updates.avatarUrl,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', this.currentUser.id);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    this.currentUser = { ...this.currentUser, ...updates };
+    this.notifyAuthChange(this.currentUser);
+    return { success: true, user: this.currentUser };
+  }
+
+  async generateQuickLoginToken(): Promise<string | null> {
+    if (!this.currentUser) {
+      return null;
+    }
+
+    if (!isSupabaseInitialized()) {
+      return null;
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const supabase = getSupabase();
+
+    const { error } = await supabase
+      .from('profiles')
+      // @ts-ignore Supabase types issue
+      .update({ quick_login_token: token })
+      .eq('id', this.currentUser.id);
+
+    if (error) {
+      logger.error('Failed to generate quick login token:', error);
+      return null;
+    }
+
+    return token;
+  }
+
+  private async fetchUserProfile(user: SupabaseUser): Promise<AuthUser> {
+    logger.info(' fetchUserProfile started for:', user.id);
+    if (!isSupabaseInitialized()) {
+      logger.info(' Supabase not initialized, returning basic user');
+      return {
+        id: user.id,
+        email: user.email || '',
+      };
+    }
+
+    const supabase = getSupabase();
+
+    // Add timeout to prevent hanging
+    const timeoutPromise = new Promise<null>((_, reject) => {
+      setTimeout(() => reject(new Error('Profile fetch timeout')), 5000);
+    });
+
+    try {
+      logger.info(' Fetching profile from database...');
+      const profilePromise = supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      // Promise.race 返回类型需要类型断言
+      const { data: profileRaw } = await Promise.race([profilePromise, timeoutPromise]) as { data: unknown };
+      logger.info(' Profile fetched:', profileRaw ? 'found' : 'not found');
+
+      const profile = profileRaw as ProfileRow | null;
+
+      return {
+        id: user.id,
+        email: user.email || '',
+        username: profile?.username || undefined,
+        nickname: profile?.nickname || undefined,
+        avatarUrl: profile?.avatar_url || undefined,
+        isAdmin: profile?.is_admin || false,
+      };
+    } catch (error) {
+      logger.warn(' Failed to fetch profile, using basic user:', error);
+      return {
+        id: user.id,
+        email: user.email || '',
+      };
+    }
+  }
+}
+
+// Singleton
+let authServiceInstance: AuthService | null = null;
+
+export function getAuthService(): AuthService {
+  if (!authServiceInstance) {
+    authServiceInstance = new AuthService();
+  }
+  return authServiceInstance;
+}
+
+export type { AuthService };

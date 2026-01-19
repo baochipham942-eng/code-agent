@@ -4,13 +4,16 @@
 // Now with persistent storage via EvolutionPersistence service
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
-import { getMemoryService } from '../../memory/MemoryService';
-import { getVectorStore } from '../../memory/VectorStore';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { getMemoryService } from '../../memory/memoryService';
+import { getVectorStore } from '../../memory/vectorStore';
 import {
   getEvolutionPersistence,
   type LearnedPattern,
 } from '../../services';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('LearnPattern');
 
 export const learnPatternTool: Tool = {
   name: 'learn_pattern',
@@ -167,7 +170,7 @@ Tags: ${tags.join(', ')}`;
 
     await vectorStore.addKnowledge(content, 'pattern', context.workingDirectory);
   } catch (error) {
-    console.error('Failed to store pattern in vector store:', error);
+    logger.error('Failed to store pattern in vector store', error);
   }
 
   // Also store in memory service
@@ -180,7 +183,7 @@ Tags: ${tags.join(', ')}`;
       confidence
     );
   } catch (error) {
-    console.error('Failed to store pattern in memory:', error);
+    logger.error('Failed to store pattern in memory', error);
   }
 
   const typeIcon = {

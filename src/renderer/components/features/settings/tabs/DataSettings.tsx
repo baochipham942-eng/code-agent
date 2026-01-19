@@ -6,6 +6,9 @@ import React, { useState, useEffect } from 'react';
 import { RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { createLogger } from '../../../../utils/logger';
+
+const logger = createLogger('DataSettings');
 
 // ============================================================================
 // Types
@@ -35,7 +38,7 @@ export const DataSettings: React.FC = () => {
       const dataStats = await window.electronAPI?.invoke(IPC_CHANNELS.DATA_GET_STATS);
       if (dataStats) setStats(dataStats);
     } catch (error) {
-      console.error('Failed to load data stats:', error);
+      logger.error('Failed to load data stats', error);
     } finally {
       setIsLoading(false);
     }

@@ -10,6 +10,10 @@
 //
 // ============================================================================
 
+import { createLogger } from './logger.js';
+
+const logger = createLogger('Compute');
+
 interface CloudTaskRequest {
   id: string;
   type: string;
@@ -108,11 +112,11 @@ function createSandbox(): Record<string, unknown> {
     Set: Set,
     Promise: Promise,
 
-    // 安全的控制台
+    // 安全的控制台（沙箱内部日志）
     console: Object.freeze({
-      log: (...args: unknown[]) => console.log('[Sandbox]', ...args),
-      error: (...args: unknown[]) => console.error('[Sandbox]', ...args),
-      warn: (...args: unknown[]) => console.warn('[Sandbox]', ...args),
+      log: (...args: unknown[]) => logger.debug('Sandbox log', { args }),
+      error: (...args: unknown[]) => logger.error('Sandbox error', undefined, { args }),
+      warn: (...args: unknown[]) => logger.warn('Sandbox warn', { args }),
     }),
 
     // 受限的 fetch
@@ -263,7 +267,7 @@ export async function executeComputeTask(
       result,
     };
   } catch (error: unknown) {
-    console.error('Compute task error:', error);
+    logger.error('Compute task failed', error);
     const errorMessage = error instanceof Error ? error.message : 'Script execution failed';
     return {
       id,

@@ -3,9 +3,9 @@
 // ============================================================================
 
 // Tool infrastructure
-export { ToolRegistry } from './ToolRegistry';
-export type { Tool, ToolContext, ToolExecutionResult, PermissionRequestData } from './ToolRegistry';
-export { ToolExecutor } from './ToolExecutor';
+export { ToolRegistry } from './toolRegistry';
+export type { Tool, ToolContext, ToolExecutionResult, PermissionRequestData } from './toolRegistry';
+export { ToolExecutor } from './toolExecutor';
 
 // Generation mapping
 export {

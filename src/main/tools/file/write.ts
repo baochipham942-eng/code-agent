@@ -4,7 +4,10 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('WriteFile');
 
 // ----------------------------------------------------------------------------
 // Code Completeness Detection
@@ -231,8 +234,7 @@ NEVER create documentation files (*.md, README) unless explicitly requested.`,
 
         if (!completenessCheck.isComplete) {
           // 文件可能被截断，返回警告
-          console.warn(`[write_file] ⚠️ 代码完整性检查失败: ${filePath}`);
-          console.warn(`[write_file] 问题: ${completenessCheck.issues.join('; ')}`);
+          logger.warn('Code completeness check failed', { filePath, issues: completenessCheck.issues });
 
           return {
             success: true,

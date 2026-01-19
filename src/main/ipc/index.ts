@@ -3,10 +3,13 @@
 // ============================================================================
 
 import type { IpcMain, BrowserWindow } from 'electron';
-import type { AgentOrchestrator } from '../agent/AgentOrchestrator';
-import type { GenerationManager } from '../generation/GenerationManager';
+import type { AgentOrchestrator } from '../agent/agentOrchestrator';
+import type { GenerationManager } from '../generation/generationManager';
 import type { ConfigService } from '../services';
 import type { PlanningService } from '../planning';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('IPC');
 
 import { registerAgentHandlers } from './agent.ipc';
 import { registerGenerationHandlers } from './generation.ipc';
@@ -96,5 +99,5 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   // Data/Cache handlers
   registerDataHandlers(ipcMain);
 
-  console.log('[IPC] All handlers registered');
+  logger.info('All handlers registered');
 }

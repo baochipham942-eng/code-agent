@@ -5,6 +5,7 @@
 import React, { useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { Paperclip } from 'lucide-react';
 import { IconButton } from '../../../primitives';
+import { UI } from '@shared/constants';
 
 // 图片 MIME 类型
 const IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
@@ -42,6 +43,8 @@ export interface InputAreaProps {
   isFocused: boolean;
   /** 焦点状态变化回调 */
   onFocusChange: (focused: boolean) => void;
+  /** 发送按钮插槽（放在输入框内部右侧） */
+  sendButton?: React.ReactNode;
 }
 
 export interface InputAreaRef {
@@ -65,6 +68,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       hasAttachments = false,
       isFocused,
       onFocusChange,
+      sendButton,
     },
     ref
   ) => {
@@ -82,7 +86,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       const textarea = textareaRef.current;
       if (textarea) {
         textarea.style.height = 'auto';
-        textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+        textarea.style.height = `${Math.min(textarea.scrollHeight, UI.TEXTAREA_MAX_HEIGHT)}px`;
       }
     }, [value]);
 
@@ -164,6 +168,9 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           rows={1}
           className="flex-1 min-w-0 bg-transparent py-3 px-2 text-sm text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none disabled:opacity-50 max-h-[200px] leading-relaxed"
         />
+
+        {/* 发送按钮插槽 */}
+        {sendButton}
       </div>
     );
   }

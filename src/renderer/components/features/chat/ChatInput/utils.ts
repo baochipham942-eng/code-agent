@@ -3,6 +3,9 @@
 // ============================================================================
 
 import type { AttachmentCategory } from '../../../../../shared/types';
+import { createLogger } from '../../../../utils/logger';
+
+const logger = createLogger('ChatInputUtils');
 
 // ============================================================================
 // 文件类型配置
@@ -126,7 +129,7 @@ export async function readDirectoryEntry(
             Object.defineProperty(file, 'relativePath', { value: fullPath, writable: false });
             files.push(file);
           } catch (err) {
-            console.warn(`无法读取文件 ${fullPath}:`, err);
+            logger.warn('无法读取文件', { path: fullPath, error: err });
           }
         }
       } else if (entry.isDirectory) {
@@ -137,7 +140,7 @@ export async function readDirectoryEntry(
       }
     }
   } catch (err) {
-    console.error('读取目录失败:', err);
+    logger.error('读取目录失败', err);
   }
   return files;
 }
@@ -151,7 +154,7 @@ export async function extractPdfText(filePath: string): Promise<{ text: string; 
     if (result) return result;
     return { text: '[PDF 解析失败: IPC 调用失败]', pageCount: 0 };
   } catch (error) {
-    console.error('PDF 文本提取失败:', error);
+    logger.error('PDF 文本提取失败', error);
     return { text: `[PDF 解析失败: ${error instanceof Error ? error.message : '未知错误'}]`, pageCount: 0 };
   }
 }

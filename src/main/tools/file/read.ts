@@ -4,7 +4,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 
 export const readFileTool: Tool = {
   name: 'read_file',

@@ -9,7 +9,7 @@ export {
   ConfigService,
   initConfigService,
   getConfigService,
-} from './ConfigService';
+} from './configService';
 
 export {
   DatabaseService,
@@ -20,9 +20,9 @@ export {
   type ToolExecution,
   type UserPreference,
   type ProjectKnowledge,
-} from './DatabaseService';
+} from './databaseService';
 
 export {
   getSecureStorage,
   type SecureStorageService,
-} from './SecureStorage';
+} from './secureStorage';

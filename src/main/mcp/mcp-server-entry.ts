@@ -5,7 +5,7 @@
 // Or after build: node dist/main/mcp/mcp-server-entry.js
 // ============================================================================
 
-import { CodeAgentMCPServer } from './MCPServer.js';
+import { CodeAgentMCPServer } from './mcpServer.js';
 
 async function main() {
   console.error('[MCP Server Entry] Starting Code Agent MCP Server...');

@@ -9,10 +9,10 @@ export {
   type CloudStorageConfig,
   type SyncStatus,
   type ExportData,
-} from './CloudStorageService';
+} from './cloudStorageService';
 
 export {
   getSyncService,
   type SyncService,
   type SyncResult,
-} from './SyncService';
+} from './syncService';

@@ -3,8 +3,8 @@
 // Gen4: 外部服务集成能力
 // ============================================================================
 
-import type { ToolContext, ToolExecutionResult, Tool } from '../ToolRegistry';
-import { getMCPClient } from '../../mcp/MCPClient';
+import type { ToolContext, ToolExecutionResult, Tool } from '../toolRegistry';
+import { getMCPClient } from '../../mcp/mcpClient';
 import { v4 as uuidv4 } from 'uuid';
 
 // ----------------------------------------------------------------------------

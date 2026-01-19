@@ -4,7 +4,8 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { BASH } from '../../../shared/constants';
 
 const execAsync = promisify(exec);
 
@@ -59,7 +60,7 @@ Git best practices:
     context: ToolContext
   ): Promise<ToolExecutionResult> {
     const command = params.command as string;
-    const timeout = (params.timeout as number) || 120000;
+    const timeout = (params.timeout as number) || BASH.DEFAULT_TIMEOUT;
     const workingDirectory =
       (params.working_directory as string) || context.workingDirectory;
 
@@ -67,7 +68,7 @@ Git best practices:
       const { stdout, stderr } = await execAsync(command, {
         timeout,
         cwd: workingDirectory,
-        maxBuffer: 10 * 1024 * 1024, // 10MB
+        maxBuffer: BASH.MAX_BUFFER,
         env: {
           ...process.env,
           // Ensure we have a proper PATH
@@ -81,8 +82,8 @@ Git best practices:
       }
 
       // Truncate if too long
-      if (output.length > 30000) {
-        output = output.substring(0, 30000) + '\n... (output truncated)';
+      if (output.length > BASH.MAX_OUTPUT_LENGTH) {
+        output = output.substring(0, BASH.MAX_OUTPUT_LENGTH) + '\n... (output truncated)';
       }
 
       return {

@@ -5,7 +5,7 @@
 import type { IpcMain } from 'electron';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { PermissionResponse } from '../../shared/types';
-import type { AgentOrchestrator } from '../agent/AgentOrchestrator';
+import type { AgentOrchestrator } from '../agent/agentOrchestrator';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers

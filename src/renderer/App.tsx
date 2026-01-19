@@ -24,6 +24,10 @@ import { useDisclosure } from './hooks/useDisclosure';
 import { Activity, Brain, Cloud } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
+import { UI } from '@shared/constants';
+import { createLogger } from './utils/logger';
+
+const logger = createLogger('App');
 
 export const App: React.FC = () => {
   const {
@@ -59,16 +63,16 @@ export const App: React.FC = () => {
 
   // Debug: Check if electronAPI is available on mount
   useEffect(() => {
-    console.log('[App] Mount - electronAPI available:', !!window.electronAPI);
+    logger.debug('Mount - electronAPI available', { available: !!window.electronAPI });
     if (window.electronAPI) {
-      console.log('[App] electronAPI methods:', Object.keys(window.electronAPI));
+      logger.debug('electronAPI methods', { methods: Object.keys(window.electronAPI) });
     }
   }, []);
 
   // Initialize auth store on mount
   useEffect(() => {
     initializeAuthStore().catch((error) => {
-      console.error('[App] Failed to initialize auth store:', error);
+      logger.error('Failed to initialize auth store', error);
     });
   }, []);
 
@@ -83,24 +87,24 @@ export const App: React.FC = () => {
         // 加载语言设置
         if (settings?.ui?.language) {
           setLanguage(settings.ui.language);
-          console.log('[App] Loaded language setting:', settings.ui.language);
+          logger.info('Loaded language setting', { language: settings.ui.language });
         }
 
         // 加载界面设置（渐进披露级别）
         if (settings?.ui?.disclosureLevel) {
           setDisclosureLevel(settings.ui.disclosureLevel);
-          console.log('[App] Loaded disclosure level:', settings.ui.disclosureLevel);
+          logger.info('Loaded disclosure level', { level: settings.ui.disclosureLevel });
         }
 
         // 加载代际选择
         if (settings?.generation?.default) {
           const generationId = settings.generation.default;
-          console.log('[App] Loading generation:', generationId);
+          logger.info('Loading generation', { generationId });
           // 从后端获取完整的 generation 对象
           const generation = await window.electronAPI?.invoke('generation:switch', generationId);
           if (generation) {
             setCurrentGeneration(generation);
-            console.log('[App] Loaded generation:', generation.id);
+            logger.info('Loaded generation', { generationId: generation.id });
           }
         }
 
@@ -118,11 +122,11 @@ export const App: React.FC = () => {
               temperature: providerConfig.temperature ?? 0.7,
               maxTokens: providerConfig.maxTokens ?? 4096,
             });
-            console.log('[App] Loaded model config for provider:', defaultProvider);
+            logger.info('Loaded model config for provider', { provider: defaultProvider });
           }
         }
       } catch (error) {
-        console.error('[App] Failed to load settings:', error);
+        logger.error('Failed to load settings', error);
       }
     };
     loadSettings();
@@ -132,25 +136,25 @@ export const App: React.FC = () => {
   useEffect(() => {
     const checkForUpdates = async () => {
       try {
-        console.log('[App] Checking for updates on startup...');
+        logger.info('Checking for updates on startup');
         const updateInfo = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_CHECK);
 
         if (updateInfo?.hasUpdate && updateInfo?.forceUpdate) {
-          console.log('[App] Force update required:', updateInfo.latestVersion);
+          logger.info('Force update required', { latestVersion: updateInfo.latestVersion });
           setForceUpdateInfo(updateInfo);
         } else if (updateInfo?.hasUpdate) {
-          console.log('[App] Optional update available:', updateInfo.latestVersion);
+          logger.info('Optional update available', { latestVersion: updateInfo.latestVersion });
           // 可选更新不弹窗，用户可以在设置中查看
         } else {
-          console.log('[App] App is up to date');
+          logger.info('App is up to date');
         }
       } catch (error) {
-        console.error('[App] Failed to check for updates:', error);
+        logger.error('Failed to check for updates', error);
       }
     };
 
     // 延迟检查，等待应用完全加载
-    const timer = setTimeout(checkForUpdates, 2000);
+    const timer = setTimeout(checkForUpdates, UI.STARTUP_UPDATE_CHECK_DELAY);
     return () => clearTimeout(timer);
   }, []);
 
@@ -160,16 +164,16 @@ export const App: React.FC = () => {
       try {
         const configured = await window.electronAPI?.invoke(IPC_CHANNELS.SECURITY_CHECK_API_KEY_CONFIGURED);
         if (!configured) {
-          console.log('[App] No API Key configured, showing setup modal');
+          logger.info('No API Key configured, showing setup modal');
           setShowApiKeySetup(true);
         }
       } catch (error) {
-        console.error('[App] Failed to check API Key configuration:', error);
+        logger.error('Failed to check API Key configuration', error);
       }
     };
 
     // 延迟检查，等待应用完全加载
-    const timer = setTimeout(checkApiKeyConfigured, 1500);
+    const timer = setTimeout(checkApiKeyConfigured, UI.STARTUP_API_KEY_CHECK_DELAY);
     return () => clearTimeout(timer);
   }, []);
 
@@ -178,7 +182,7 @@ export const App: React.FC = () => {
     const unsubscribe = window.electronAPI?.on(
       IPC_CHANNELS.SECURITY_TOOL_CREATE_REQUEST,
       (request: ToolCreateRequestEvent) => {
-        console.log('[App] Received tool create request:', request.name);
+        logger.info('Received tool create request', { name: request.name });
         setToolCreateRequest(request);
       }
     );
@@ -199,7 +203,7 @@ export const App: React.FC = () => {
     const unsubscribe = window.electronAPI?.on(
       IPC_CHANNELS.USER_QUESTION_ASK,
       (request: UserQuestionRequest) => {
-        console.log('[App] Received user question:', request.id);
+        logger.info('Received user question', { id: request.id });
         setUserQuestion(request);
       }
     );
@@ -214,7 +218,7 @@ export const App: React.FC = () => {
     const unsubscribe = window.electronAPI?.on(
       IPC_CHANNELS.NOTIFICATION_CLICKED,
       (event: NotificationClickedEvent) => {
-        console.log('[App] Notification clicked, switching to session:', event.sessionId);
+        logger.info('Notification clicked, switching to session', { sessionId: event.sessionId });
         useSessionStore.getState().switchSession(event.sessionId);
       }
     );

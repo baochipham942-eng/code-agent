@@ -4,6 +4,7 @@
 // ============================================================================
 
 import React, { useState, useMemo } from 'react';
+import { UI } from '@shared/constants';
 import {
   Target,
   Terminal,
@@ -493,10 +494,14 @@ export const ObservabilityPanel: React.FC = () => {
                                         ? 'text-red-300 bg-red-500/10'
                                         : 'text-zinc-400 bg-zinc-900/50'
                                     }`}>
-                                      {(event.details.result as any).error
-                                        || (typeof (event.details.result as any).output === 'string'
-                                          ? String((event.details.result as any).output).slice(0, 500)
-                                          : JSON.stringify((event.details.result as any).output, null, 2)?.slice(0, 500))}
+                                      {(() => {
+                                        const result = event.details.result as { error?: string; output?: unknown } | undefined;
+                                        if (result?.error) return result.error;
+                                        if (typeof result?.output === 'string') {
+                                          return result.output.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH);
+                                        }
+                                        return JSON.stringify(result?.output, null, 2)?.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH);
+                                      })()}
                                     </pre>
                                   </div>
                                 )}

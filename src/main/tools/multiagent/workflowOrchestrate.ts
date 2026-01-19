@@ -3,10 +3,13 @@
 // Gen 7: Multi-Agent capability
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import type { ModelConfig } from '../../../shared/types';
-import { getSubagentExecutor } from '../../agent/SubagentExecutor';
+import { getSubagentExecutor } from '../../agent/subagentExecutor';
 import { getAvailableRoles } from './spawnAgent';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('WorkflowOrchestrate');
 
 // Predefined workflow templates
 const WORKFLOW_TEMPLATES: Record<string, WorkflowTemplate> = {
@@ -214,14 +217,14 @@ Parameters:
     const results: StageResult[] = [];
     const stageOutputs: Map<string, string> = new Map();
 
-    console.log(`[Workflow] Starting "${workflow.name}" with ${workflow.stages.length} stages`);
+    logger.info('Starting workflow', { name: workflow.name, stageCount: workflow.stages.length });
 
     try {
       // Build execution groups (stages with same dependencies can run in parallel)
       const executionGroups = buildExecutionGroups(workflow.stages);
 
       for (const group of executionGroups) {
-        console.log(`[Workflow] Executing group: ${group.map(s => s.name).join(', ')}`);
+        logger.debug('Executing group', { stages: group.map(s => s.name).join(', ') });
 
         if (parallel && group.length > 1) {
           // Execute stages in parallel

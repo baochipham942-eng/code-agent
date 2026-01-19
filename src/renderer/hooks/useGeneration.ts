@@ -5,6 +5,9 @@
 import { useCallback, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
 import type { Generation, GenerationId } from '@shared/types';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('useGeneration');
 
 export const useGeneration = () => {
   const {
@@ -23,7 +26,7 @@ export const useGeneration = () => {
           // Store generations (handled by main process)
         }
       } catch (error) {
-        console.error('Failed to load generations:', error);
+        logger.error('Failed to load generations', error);
       }
     };
 
@@ -45,7 +48,7 @@ export const useGeneration = () => {
           // clearChat();
         }
       } catch (error) {
-        console.error('Failed to switch generation:', error);
+        logger.error('Failed to switch generation', error);
       }
     },
     [setCurrentGeneration]
@@ -57,7 +60,7 @@ export const useGeneration = () => {
       const info = await window.electronAPI?.invoke('generation:get-prompt', generationId);
       return info;
     } catch (error) {
-      console.error('Failed to get generation info:', error);
+      logger.error('Failed to get generation info', error);
       return null;
     }
   }, []);
@@ -73,7 +76,7 @@ export const useGeneration = () => {
         );
         return comparison;
       } catch (error) {
-        console.error('Failed to compare generations:', error);
+        logger.error('Failed to compare generations', error);
         return null;
       }
     },

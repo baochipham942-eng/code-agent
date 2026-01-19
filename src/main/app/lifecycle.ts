@@ -4,40 +4,43 @@
 
 import { app, BrowserWindow } from 'electron';
 import { getDatabase, getLangfuseService } from '../services';
-import { getMemoryService } from '../memory/MemoryService';
-import { getMCPClient } from '../mcp/MCPClient';
+import { getMemoryService } from '../memory/memoryService';
+import { getMCPClient } from '../mcp/mcpClient';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('Lifecycle');
 
 /**
  * 清理资源，在退出前调用
  */
 export async function cleanup(): Promise<void> {
-  console.log('Cleaning up before quit...');
+  logger.info('Cleaning up before quit...');
 
   // Cleanup memory service (saves vector store, clears caches)
   try {
     const memoryService = getMemoryService();
     await memoryService.cleanup();
-    console.log('Memory service cleaned up');
+    logger.info('Memory service cleaned up');
   } catch (error) {
-    console.error('Error cleaning up memory service:', error);
+    logger.error('Error cleaning up memory service', error);
   }
 
   // Disconnect MCP clients
   try {
     const mcpClient = getMCPClient();
     await mcpClient.disconnectAll();
-    console.log('MCP clients disconnected');
+    logger.info('MCP clients disconnected');
   } catch (error) {
-    console.error('Error disconnecting MCP clients:', error);
+    logger.error('Error disconnecting MCP clients', error);
   }
 
   // Close database
   try {
     const db = getDatabase();
     db.close();
-    console.log('Database closed');
+    logger.info('Database closed');
   } catch (error) {
-    console.error('Error closing database:', error);
+    logger.error('Error closing database', error);
   }
 
   // Cleanup Langfuse (flush remaining events)
@@ -45,9 +48,9 @@ export async function cleanup(): Promise<void> {
     const langfuseService = getLangfuseService();
     await langfuseService.cleanupAll();
     await langfuseService.shutdown();
-    console.log('Langfuse cleaned up');
+    logger.info('Langfuse cleaned up');
   } catch (error) {
-    console.error('Error cleaning up Langfuse:', error);
+    logger.error('Error cleaning up Langfuse', error);
   }
 }
 
@@ -78,10 +81,10 @@ export function setupLifecycleHandlers(
 
   // Handle uncaught errors
   process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
+    logger.error('Uncaught Exception', error);
   });
 
   process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    logger.error('Unhandled Rejection', reason instanceof Error ? reason : new Error(String(reason)), { promise: String(promise) });
   });
 }

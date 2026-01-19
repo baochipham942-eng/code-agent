@@ -4,6 +4,7 @@
 // ============================================================================
 
 import React, { useState } from 'react';
+import { UI } from '@shared/constants';
 import {
   Monitor,
   Cloud,
@@ -277,8 +278,8 @@ export const LocalExecutionPrompt: React.FC<LocalExecutionPromptProps> = ({
               查看任务内容
             </summary>
             <pre className="mt-2 text-xs text-zinc-400 whitespace-pre-wrap max-h-32 overflow-y-auto">
-              {prompt.slice(0, 500)}
-              {prompt.length > 500 && '...'}
+              {prompt.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH)}
+              {prompt.length > UI.PREVIEW_TEXT_MAX_LENGTH && '...'}
             </pre>
           </details>
         )}

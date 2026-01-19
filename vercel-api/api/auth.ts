@@ -9,6 +9,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { randomBytes, createHash } from 'crypto';
 import { getOrCreateUser, generateToken, authenticateRequest, getUserById } from '../lib/auth.js';
+import { createLogger } from '../lib/logger.js';
+
+const logger = createLogger('Auth');
 
 // GitHub OAuth 配置
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
@@ -143,7 +146,7 @@ async function handleGitHubCallback(req: VercelRequest, res: VercelResponse) {
       id: user.id, email: user.email, name: user.name, avatarUrl: user.avatar_url,
     }))}`);
   } catch (err: any) {
-    console.error('OAuth callback error:', err);
+    logger.error('OAuth callback failed', err);
     res.redirect('codeagent://auth/error?message=Authentication failed');
   }
 }

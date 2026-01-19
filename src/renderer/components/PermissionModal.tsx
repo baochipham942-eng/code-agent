@@ -6,6 +6,7 @@ import React from 'react';
 import { Shield, FileEdit, FolderOpen, Terminal, Globe, AlertTriangle } from 'lucide-react';
 import type { PermissionRequest } from '@shared/types';
 import { Modal, ModalHeader, ModalFooter } from './primitives/Modal';
+import { UI } from '@shared/constants';
 
 interface Props {
   request: PermissionRequest;
@@ -81,8 +82,8 @@ export const PermissionModal: React.FC<Props> = ({ request, onAllow, onDeny }) =
               <div className="space-y-1">
                 <span className="text-xs text-zinc-500">变更内容:</span>
                 <pre className="text-xs text-amber-300 bg-amber-500/10 p-2 rounded border border-amber-500/20 overflow-x-auto max-h-32">
-                  {details.changes.slice(0, 500)}
-                  {details.changes.length > 500 && '...'}
+                  {details.changes.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH)}
+                  {details.changes.length > UI.PREVIEW_TEXT_MAX_LENGTH && '...'}
                 </pre>
               </div>
             )}

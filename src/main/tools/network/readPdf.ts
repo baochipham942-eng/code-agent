@@ -5,8 +5,11 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { getConfigService } from '../../services';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('ReadPdf');
 
 /**
  * 获取云端 API URL
@@ -98,25 +101,25 @@ async function processWithVisionModel(
 
   // 1. 优先尝试云端代理
   try {
-    console.log('[read_pdf] Trying cloud proxy...');
+    logger.info('Trying cloud proxy...');
     const cloudResponse = await callViaCloudProxy('openrouter', '/chat/completions', requestBody);
 
     if (cloudResponse.ok) {
       const result = await cloudResponse.json();
-      console.log('[read_pdf] Cloud proxy success');
+      logger.info('Cloud proxy success');
       return {
         content: result.choices?.[0]?.message?.content || '无法解析 PDF 内容',
       };
     }
 
     const errorText = await cloudResponse.text();
-    console.warn('[read_pdf] Cloud proxy failed:', cloudResponse.status, errorText);
+    logger.warn('Cloud proxy failed', { status: cloudResponse.status, error: errorText });
   } catch (error: any) {
-    console.warn('[read_pdf] Cloud proxy error:', error.message);
+    logger.warn('Cloud proxy error', { error: error.message });
   }
 
   // 2. 回退到本地 API Key
-  console.log('[read_pdf] Falling back to local API key...');
+  logger.info('Falling back to local API key...');
   const configService = getConfigService();
   const apiKey = configService.getApiKey('openrouter');
 

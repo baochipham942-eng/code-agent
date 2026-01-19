@@ -3,12 +3,15 @@
 // Gen 8: Self-Evolution capability
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import { executeSandboxed } from '../evolution/sandbox';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('ToolCreate');
 
 const execAsync = promisify(exec);
 
@@ -45,7 +48,7 @@ export function handleToolCreateResponse(requestId: string, allowed: boolean): v
     clearTimeout(pending.timeout);
     pending.resolve(allowed);
     pendingRequests.delete(requestId);
-    console.log(`[toolCreate] User ${allowed ? 'allowed' : 'denied'} tool creation: ${requestId}`);
+    logger.info('Tool creation response', { requestId, allowed: allowed ? 'allowed' : 'denied' });
   }
 }
 
@@ -66,7 +69,7 @@ async function requestUserConfirmation(
     const { getConfigService } = await import('../../services');
     const configService = getConfigService();
     if (configService.isDevModeAutoApproveEnabled()) {
-      console.log('[toolCreate] devModeAutoApprove enabled, auto-approving tool creation');
+      logger.info('devModeAutoApprove enabled, auto-approving tool creation');
       return true;
     }
   } catch (e) {
@@ -80,7 +83,7 @@ async function requestUserConfirmation(
     // Set timeout (30 seconds to respond)
     const timeout = setTimeout(() => {
       pendingRequests.delete(requestId);
-      console.log(`[toolCreate] Request timed out: ${requestId}`);
+      logger.info('Request timed out', { requestId });
       resolve(false); // Default to deny on timeout
     }, 30000);
 
@@ -99,7 +102,7 @@ async function requestUserConfirmation(
         code: tool.code,
         script: tool.script,
       });
-      console.log(`[toolCreate] Sent confirmation request to UI: ${requestId}`);
+      logger.info('Sent confirmation request to UI', { requestId });
     } else {
       // No window available, deny
       clearTimeout(timeout);
@@ -741,7 +744,7 @@ function generateToolCode(tool: DynamicTool): string {
   return `// Auto-generated tool: ${tool.name}
 // Generated at: ${new Date().toISOString()}
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 
 export const ${tool.name}Tool: Tool = {
   name: '${tool.name}',

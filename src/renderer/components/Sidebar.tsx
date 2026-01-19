@@ -17,6 +17,9 @@ import {
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Button, IconButton } from './primitives';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('Sidebar');
 
 // 会话分组类型
 type SessionGroup = 'today' | 'yesterday' | 'week' | 'month' | 'older';
@@ -86,7 +89,7 @@ export const Sidebar: React.FC = () => {
           setAppVersion(version);
         }
       } catch (error) {
-        console.error('[Sidebar] Failed to get app version:', error);
+        logger.error('Failed to get app version', error);
       }
     };
     loadVersion();

@@ -3,10 +3,10 @@
 // Gen 6: Computer Use capability
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { isComputerUseEnabled } from '../../services/cloud/FeatureFlagService';
+import { isComputerUseEnabled } from '../../services/cloud/featureFlagService';
 
 const execAsync = promisify(exec);
 

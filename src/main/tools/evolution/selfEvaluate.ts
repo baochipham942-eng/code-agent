@@ -3,8 +3,11 @@
 // Gen 8: Self-Evolution capability
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
-import { getMemoryService } from '../../memory/MemoryService';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { getMemoryService } from '../../memory/memoryService';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('SelfEvaluate');
 
 interface PerformanceMetric {
   timestamp: number;
@@ -154,7 +157,7 @@ function recordMetric(params: Record<string, unknown>): ToolExecutionResult {
       success ? 0.9 : 0.5
     );
   } catch (error) {
-    console.error('Failed to store metric in memory:', error);
+    logger.error('Failed to store metric in memory', error);
   }
 
   return {

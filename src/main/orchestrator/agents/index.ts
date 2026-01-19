@@ -6,6 +6,6 @@
 export * from './types';
 
 // 模块导出
-export { AgentRegistry, getAgentRegistry } from './AgentRegistry';
-export { AgentExecutor, getAgentExecutor } from './AgentExecutor';
-export { AgentScheduler, getAgentScheduler, initAgentScheduler } from './AgentScheduler';
+export { AgentRegistry, getAgentRegistry } from './agentRegistry';
+export { AgentExecutor, getAgentExecutor } from './agentExecutor';
+export { AgentScheduler, getAgentScheduler, initAgentScheduler } from './agentScheduler';

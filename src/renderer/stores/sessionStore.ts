@@ -6,6 +6,9 @@
 import { create } from 'zustand';
 import type { Session, Message, TodoItem } from '@shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('SessionStore');
 
 // ----------------------------------------------------------------------------
 // Types
@@ -83,13 +86,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       try {
         const sessions = await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_LIST);
         // 转换为 SessionWithMeta 格式
-        const sessionsWithMeta: SessionWithMeta[] = (sessions || []).map((s: any) => ({
+        const sessionsWithMeta: SessionWithMeta[] = (sessions || []).map((s: Session & { messageCount?: number }) => ({
           ...s,
           messageCount: s.messageCount || 0,
         }));
         set({ sessions: sessionsWithMeta, isLoading: false });
       } catch (error) {
-        console.error('Failed to load sessions:', error);
+        logger.error('Failed to load sessions', error);
         set({
           error: error instanceof Error ? error.message : 'Failed to load sessions',
           isLoading: false
@@ -118,7 +121,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         }
         return null;
       } catch (error) {
-        console.error('Failed to create session:', error);
+        logger.error('Failed to create session', error);
         set({
           error: error instanceof Error ? error.message : 'Failed to create session',
           isLoading: false
@@ -134,7 +137,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
       set({ isLoading: true, error: null });
       try {
-        const session = await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_LOAD, sessionId) as any;
+        const session = await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_LOAD, sessionId) as Session & { messages?: Message[]; todos?: TodoItem[] };
         if (session) {
           // 切换时自动标记为已读
           const newUnreadIds = new Set(unreadSessionIds);
@@ -149,7 +152,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           });
         }
       } catch (error) {
-        console.error('Failed to switch session:', error);
+        logger.error('Failed to switch session', error);
         set({
           error: error instanceof Error ? error.message : 'Failed to switch session',
           isLoading: false
@@ -180,7 +183,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           set({ sessions: newSessions });
         }
       } catch (error) {
-        console.error('Failed to delete session:', error);
+        logger.error('Failed to delete session', error);
         set({
           error: error instanceof Error ? error.message : 'Failed to delete session',
         });

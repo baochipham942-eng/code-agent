@@ -5,6 +5,7 @@
 import React from 'react';
 import { AlertTriangle, Info, Shield, Key } from 'lucide-react';
 import { Modal, ModalHeader, ModalFooter, Button } from './primitives';
+import { UI } from '@shared/constants';
 
 export type ConfirmModalType = 'warning' | 'danger' | 'info' | 'security';
 
@@ -258,8 +259,8 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
                 ? 'bg-red-500/10 border-red-500/20 text-red-300'
                 : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-300'
             }`}>
-              {(request.code || request.script || '').slice(0, 500)}
-              {(request.code || request.script || '').length > 500 && '...'}
+              {(request.code || request.script || '').slice(0, UI.PREVIEW_TEXT_MAX_LENGTH)}
+              {(request.code || request.script || '').length > UI.PREVIEW_TEXT_MAX_LENGTH && '...'}
             </pre>
           </div>
         )}

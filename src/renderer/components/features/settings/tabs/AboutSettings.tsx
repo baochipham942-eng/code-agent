@@ -6,6 +6,9 @@ import React, { useState, useEffect } from 'react';
 import { Cpu } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { createLogger } from '../../../../utils/logger';
+
+const logger = createLogger('AboutSettings');
 
 // ============================================================================
 // Component
@@ -21,7 +24,7 @@ export const AboutSettings: React.FC = () => {
         const v = await window.electronAPI?.invoke(IPC_CHANNELS.APP_GET_VERSION);
         if (v) setVersion(v);
       } catch (error) {
-        console.error('Failed to load version:', error);
+        logger.error('Failed to load version', error);
       }
     };
     loadVersion();

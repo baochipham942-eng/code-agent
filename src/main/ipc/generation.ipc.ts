@@ -5,7 +5,7 @@
 import type { IpcMain } from 'electron';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { Generation, GenerationId, GenerationDiff } from '../../shared/types';
-import type { GenerationManager } from '../generation/GenerationManager';
+import type { GenerationManager } from '../generation/generationManager';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers

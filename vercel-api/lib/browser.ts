@@ -11,6 +11,9 @@
 // ============================================================================
 
 import { chromium, type Browser, type Page } from 'playwright-core';
+import { createLogger } from './logger.js';
+
+const logger = createLogger('Browser');
 
 interface CloudTaskRequest {
   id: string;
@@ -384,7 +387,7 @@ export async function executeBrowserTask(
       screenshots: screenshots.length > 0 ? screenshots : undefined,
     };
   } catch (error: unknown) {
-    console.error('Browser task error:', error);
+    logger.error('Browser task failed', error);
     const errorMessage = error instanceof Error ? error.message : 'Browser task failed';
     return {
       id,

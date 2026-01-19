@@ -2,7 +2,7 @@
 // Plan Read Tool - Read current task plan from task_plan.md
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import type { PlanningService } from '../../planning';
 
 // Status icons

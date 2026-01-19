@@ -7,6 +7,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { X, Download, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type { UpdateInfo, DownloadProgress } from '../../shared/types';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('UpdateNotification');
 
 interface UpdateNotificationProps {
   /** 更新信息 */
@@ -29,7 +32,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
   // Listen for update events from main process
   useEffect(() => {
     const handleUpdateEvent = (event: { type: string; data?: any }) => {
-      console.log('[UpdateNotification] Received event:', event.type, event.data);
+      logger.debug('Received event', { type: event.type, data: event.data });
 
       switch (event.type) {
         case 'download_progress':

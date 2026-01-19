@@ -8,6 +8,10 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { ModelProvider } from '@shared/types';
+import { UI } from '@shared/constants';
+import { createLogger } from '../../../../utils/logger';
+
+const logger = createLogger('ModelSettings');
 
 // ============================================================================
 // Types
@@ -49,12 +53,12 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
             },
           },
         },
-      } as any);
-      console.log('[ModelSettings] Config saved:', config.provider);
+      } as Partial<import('@shared/types').AppSettings>);
+      logger.info('Config saved', { provider: config.provider });
       setSaveStatus('success');
-      setTimeout(() => setSaveStatus('idle'), 2000);
+      setTimeout(() => setSaveStatus('idle'), UI.COPY_FEEDBACK_DURATION);
     } catch (error) {
-      console.error('[ModelSettings] Failed to save config:', error);
+      logger.error('Failed to save config', error);
       setSaveStatus('error');
     } finally {
       setIsSaving(false);

@@ -9,7 +9,7 @@ export {
   type CloudConfig,
   type ToolMetadata,
   type FeatureFlags,
-} from './CloudConfigService';
+} from './cloudConfigService';
 
 export {
   getFeatureFlagService,
@@ -20,7 +20,7 @@ export {
   getMaxIterations,
   getMaxMessageLength,
   isExperimentalToolsEnabled,
-} from './FeatureFlagService';
+} from './featureFlagService';
 
 export {
   getBuiltinConfig,

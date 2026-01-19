@@ -7,13 +7,19 @@ import type { ElectronAPI, IPCRequest, IPCResponse, IPCDomain } from '../shared/
 
 // Type-safe IPC wrapper
 const electronAPI: ElectronAPI = {
-  invoke: (channel, ...args) => {
-    return ipcRenderer.invoke(channel, ...args) as any;
+  invoke: <K extends keyof import('../shared/ipc').IpcInvokeHandlers>(
+    channel: K,
+    ...args: Parameters<import('../shared/ipc').IpcInvokeHandlers[K]>
+  ) => {
+    return ipcRenderer.invoke(channel, ...args) as ReturnType<import('../shared/ipc').IpcInvokeHandlers[K]>;
   },
 
-  on: (channel, callback) => {
-    const subscription = (_event: Electron.IpcRendererEvent, ...args: any[]) => {
-      (callback as (...args: any[]) => void)(...args);
+  on: <K extends keyof import('../shared/ipc').IpcEventHandlers>(
+    channel: K,
+    callback: import('../shared/ipc').IpcEventHandlers[K]
+  ) => {
+    const subscription = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => {
+      (callback as (...cbArgs: unknown[]) => void)(...args);
     };
 
     ipcRenderer.on(channel, subscription);
@@ -24,8 +30,11 @@ const electronAPI: ElectronAPI = {
     };
   },
 
-  off: (channel, callback) => {
-    ipcRenderer.removeListener(channel, callback as any);
+  off: <K extends keyof import('../shared/ipc').IpcEventHandlers>(
+    channel: K,
+    callback: import('../shared/ipc').IpcEventHandlers[K]
+  ) => {
+    ipcRenderer.removeListener(channel, callback as (...args: unknown[]) => void);
   },
 
   // Electron 33+ 获取文件路径的方法

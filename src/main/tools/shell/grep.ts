@@ -5,7 +5,8 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { GREP, BASH } from '../../../shared/constants';
 
 const execAsync = promisify(exec);
 
@@ -92,8 +93,8 @@ Best practices:
         const flags = [
           '-n', // Line numbers
           '--color=never',
-          '-M', '500', // Max line length
-          '--max-count', '100', // Max matches per file
+          '-M', String(GREP.MAX_LINE_LENGTH), // Max line length
+          '--max-count', String(GREP.MAX_MATCHES_PER_FILE), // Max matches per file
         ];
 
         if (caseInsensitive) {
@@ -141,16 +142,16 @@ Best practices:
       }
 
       const { stdout } = await execAsync(command, {
-        maxBuffer: 10 * 1024 * 1024,
-        timeout: 30000,
+        maxBuffer: BASH.MAX_BUFFER,
+        timeout: GREP.DEFAULT_TIMEOUT,
       });
 
       // Limit output
       const lines = stdout.split('\n').filter(Boolean);
-      let output = lines.slice(0, 200).join('\n');
+      let output = lines.slice(0, GREP.MAX_TOTAL_MATCHES).join('\n');
 
-      if (lines.length > 200) {
-        output += `\n\n... (${lines.length - 200} more matches)`;
+      if (lines.length > GREP.MAX_TOTAL_MATCHES) {
+        output += `\n\n... (${lines.length - GREP.MAX_TOTAL_MATCHES} more matches)`;
       }
 
       return {

@@ -10,6 +10,9 @@ import { CloudAgentLoop, type AgentRequest, type CloudAgentConfig } from '../lib
 import { setCorsHeaders, handleOptions, applyRateLimit, handleError } from '../lib/middleware.js';
 import { RATE_LIMITS } from '../lib/rateLimit.js';
 import { getApiKey, type ApiKeyType } from '../lib/apiKeys.js';
+import { createLogger } from '../lib/logger.js';
+
+const logger = createLogger('Agent');
 
 export const config = {
   maxDuration: 60,
@@ -43,7 +46,7 @@ async function getAgentConfig(userId?: string): Promise<CloudAgentConfig | null>
       // - 普通用户：只返回自己配置的 Key
       const keyResult = await getApiKey(userId, type);
       if (keyResult) {
-        console.log(`[Agent] Using ${provider} key from ${keyResult.source} for user ${userId}`);
+        logger.info('Using API key', { provider, source: keyResult.source, userId });
         return {
           provider,
           apiKey: keyResult.key,
@@ -52,7 +55,7 @@ async function getAgentConfig(userId?: string): Promise<CloudAgentConfig | null>
         };
       }
     } catch (err) {
-      console.error(`[Agent] Failed to get ${type} API key:`, err);
+      logger.error(`Failed to get ${type} API key`, err);
     }
   }
 

@@ -4,6 +4,9 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { checkRateLimit, getClientIdentifier, type RateLimitConfig, RATE_LIMITS } from './rateLimit.js';
+import { createLogger } from './logger.js';
+
+const logger = createLogger('Middleware');
 
 // 允许的 CORS 来源
 const ALLOWED_ORIGINS = [
@@ -80,7 +83,7 @@ export function handleError(
   error: unknown,
   publicMessage = 'Internal server error'
 ): void {
-  console.error('API Error:', error);
+  logger.error('API Error', error);
   res.status(500).json({ error: publicMessage });
 }
 

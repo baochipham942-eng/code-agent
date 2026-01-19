@@ -4,6 +4,9 @@
 
 import { BrowserWindow } from 'electron';
 import path from 'path';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('Window');
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -25,16 +28,15 @@ export function setMainWindow(window: BrowserWindow | null): void {
  * 创建主窗口
  */
 export async function createWindow(): Promise<void> {
-  console.log('[Main] Creating window...');
-  console.log('[Main] __dirname:', __dirname);
+  logger.info('Creating window...');
+  logger.debug('__dirname', { __dirname });
   // 路径说明：
   // - __dirname 在打包后是 app.asar/dist/main
   // - preload 在 app.asar/dist/preload/index.cjs (相对路径: ../preload/index.cjs)
   // - renderer 在 app.asar/dist/renderer/index.html (相对路径: ../renderer/index.html)
   const preloadPath = path.join(__dirname, '../preload/index.cjs');
   const rendererPath = path.join(__dirname, '../renderer/index.html');
-  console.log('[Main] preload path:', preloadPath);
-  console.log('[Main] renderer path:', rendererPath);
+  logger.debug('Paths', { preloadPath, rendererPath });
 
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -55,17 +57,17 @@ export async function createWindow(): Promise<void> {
 
   // Show window when ready to prevent flicker
   mainWindow.once('ready-to-show', () => {
-    console.log('[Main] Window ready to show');
+    logger.info('Window ready to show');
     mainWindow?.show();
   });
 
   // Log web contents events
   mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('[Main] Failed to load:', errorCode, errorDescription);
+    logger.error('Failed to load', new Error(errorDescription), { errorCode });
   });
 
   mainWindow.webContents.on('did-finish-load', () => {
-    console.log('[Main] Page finished loading');
+    logger.info('Page finished loading');
   });
 
   // Load the app
@@ -75,16 +77,15 @@ export async function createWindow(): Promise<void> {
     !require('electron').app.isPackaged;
 
   if (isDev) {
-    console.log('[Main] Loading development URL...');
+    logger.info('Loading development URL...');
     await mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
-    console.log('[Main] Loading production file...');
-    console.log('[Main] HTML path:', rendererPath);
+    logger.info('Loading production file...', { rendererPath });
     await mainWindow.loadFile(rendererPath);
   }
 
-  console.log('[Main] Window created successfully');
+  logger.info('Window created successfully');
 
   mainWindow.on('closed', () => {
     mainWindow = null;

@@ -9,7 +9,7 @@ export {
   type ScreenshotResult,
   type PageContent,
   type ElementInfo,
-} from './BrowserService';
+} from './browserService';
 
 export {
   getEvolutionPersistence,
@@ -17,7 +17,7 @@ export {
   type Strategy,
   type StrategyFeedback,
   type LearnedPattern,
-} from './EvolutionPersistence';
+} from './evolutionPersistence';
 
 export {
   getLangfuseService,
@@ -26,12 +26,12 @@ export {
   type TraceMetadata,
   type GenerationInput,
   type SpanInput,
-} from './LangfuseService';
+} from './langfuseService';
 
 export {
   notificationService,
   type TaskNotificationData,
-} from './NotificationService';
+} from './notificationService';
 
 export {
   SessionManager,
@@ -39,7 +39,7 @@ export {
   type SessionWithMessages,
   type SessionCreateOptions,
   type SessionListOptions,
-} from './SessionManager';
+} from './sessionManager';
 
 export {
   initSupabase,
@@ -55,13 +55,13 @@ export {
   type InviteCodeRow,
   type VectorDocumentRow,
   type VectorMatchResult,
-} from './SupabaseService';
+} from './supabaseService';
 
 export {
   type CacheEntry,
   type CacheStats,
-} from './ToolCache';
+} from './toolCache';
 
 // Re-export ToolCache function
-import { getToolCache as _getToolCache } from './ToolCache';
+import { getToolCache as _getToolCache } from './toolCache';
 export const getToolCache = _getToolCache;

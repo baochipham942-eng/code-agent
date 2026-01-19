@@ -5,6 +5,9 @@
 import React from 'react';
 import { useI18n, type Language } from '../../../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { createLogger } from '../../../../utils/logger';
+
+const logger = createLogger('LanguageSettings');
 
 // ============================================================================
 // Component
@@ -19,10 +22,10 @@ export const LanguageSettings: React.FC = () => {
     try {
       await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
         ui: { language: lang },
-      } as any);
-      console.log('[LanguageSettings] Language saved:', lang);
+      } as Partial<import('@shared/types').AppSettings>);
+      logger.info('Language saved', { lang });
     } catch (error) {
-      console.error('[LanguageSettings] Failed to save language:', error);
+      logger.error('Failed to save language', error);
     }
   };
 

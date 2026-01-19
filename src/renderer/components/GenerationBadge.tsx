@@ -8,6 +8,9 @@ import { useI18n } from '../hooks/useI18n';
 import { ChevronDown, Zap, Layers, Brain, Sparkles, Database, Monitor, Users, Dna } from 'lucide-react';
 import type { Generation, GenerationId } from '@shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('GenerationBadge');
 
 // Generation visual configurations (capabilities from i18n)
 const generationConfigs: Record<string, {
@@ -137,16 +140,16 @@ export const GenerationBadge: React.FC = () => {
   useEffect(() => {
     const loadGenerations = async () => {
       try {
-        console.log('[GenerationBadge] Loading generations from IPC...');
+        logger.debug('Loading generations from IPC');
         const gens = await window.electronAPI?.invoke(IPC_CHANNELS.GENERATION_LIST);
-        console.log('[GenerationBadge] Received generations:', gens?.length, gens?.map((g: Generation) => g.id));
+        logger.debug('Received generations', { count: gens?.length, ids: gens?.map((g: Generation) => g.id) });
         if (gens && gens.length > 0) {
           setGenerations(gens);
         } else {
-          console.log('[GenerationBadge] Using default generations:', defaultGenerations.length);
+          logger.debug('Using default generations', { count: defaultGenerations.length });
         }
       } catch (error) {
-        console.error('[GenerationBadge] Failed to load generations:', error);
+        logger.error('Failed to load generations', error);
       }
     };
     loadGenerations();
@@ -159,16 +162,16 @@ export const GenerationBadge: React.FC = () => {
       const switched = await window.electronAPI?.invoke(IPC_CHANNELS.GENERATION_SWITCH, gen.id as GenerationId);
       if (switched) {
         setCurrentGeneration(switched);
-        console.log(`[GenerationBadge] Switched to ${switched.name}`);
+        logger.info('Switched generation', { name: switched.name });
 
         // Save to backend settings for persistence
         await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
           generation: { default: gen.id },
-        } as any);
-        console.log(`[GenerationBadge] Saved generation preference: ${gen.id}`);
+        } as Partial<import('@shared/types').AppSettings>);
+        logger.info('Saved generation preference', { id: gen.id });
       }
     } catch (error) {
-      console.error('Failed to switch generation:', error);
+      logger.error('Failed to switch generation', error);
       // Fallback to local state update
       setCurrentGeneration(gen);
     }

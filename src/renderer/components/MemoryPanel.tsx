@@ -6,6 +6,10 @@ import React, { useState, useEffect } from 'react';
 import { Brain, Database, FileCode, MessageSquare, RefreshCw, Search, ChevronDown, ChevronUp } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { MemoryStats, SearchResult } from '@shared/ipc';
+import { UI } from '@shared/constants';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('MemoryPanel');
 
 interface MemoryPanelProps {
   isVisible?: boolean;
@@ -26,7 +30,7 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = ({ isVisible = true }) =>
   useEffect(() => {
     if (isVisible) {
       loadStats();
-      const interval = setInterval(loadStats, 30000); // Refresh every 30s
+      const interval = setInterval(loadStats, UI.PANEL_REFRESH_INTERVAL);
       return () => clearInterval(interval);
     }
   }, [isVisible]);
@@ -39,7 +43,7 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = ({ isVisible = true }) =>
         setStats(result);
       }
     } catch (error) {
-      console.error('Failed to load memory stats:', error);
+      logger.error('Failed to load memory stats', error);
     } finally {
       setIsLoading(false);
     }
@@ -62,7 +66,7 @@ export const MemoryPanel: React.FC<MemoryPanelProps> = ({ isVisible = true }) =>
 
       setSearchResults(combined);
     } catch (error) {
-      console.error('Search failed:', error);
+      logger.error('Search failed', error);
     } finally {
       setIsSearching(false);
     }

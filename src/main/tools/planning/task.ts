@@ -2,9 +2,12 @@
 // Task Tool - Delegate tasks to specialized subagents
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import type { ModelConfig } from '../../../shared/types';
-import { getSubagentExecutor } from '../../agent/SubagentExecutor';
+import { getSubagentExecutor } from '../../agent/subagentExecutor';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('TaskTool');
 
 // Subagent configurations
 const SUBAGENT_TYPES = {
@@ -145,7 +148,7 @@ export const taskTool: Tool = {
       };
     }
 
-    console.log(`[Task:${subagentType}] Starting subagent execution...`);
+    logger.info('Starting subagent execution', { subagentType });
 
     try {
       const executor = getSubagentExecutor();

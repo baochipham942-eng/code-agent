@@ -7,6 +7,9 @@ import { Check, HelpCircle } from 'lucide-react';
 import type { UserQuestionRequest, UserQuestionResponse } from '@shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Modal, ModalFooter } from './primitives/Modal';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('UserQuestionModal');
 
 interface Props {
   request: UserQuestionRequest;
@@ -71,7 +74,7 @@ export const UserQuestionModal: React.FC<Props> = ({ request, onClose }) => {
       await window.electronAPI?.invoke(IPC_CHANNELS.USER_QUESTION_RESPONSE, response);
       onClose();
     } catch (error) {
-      console.error('Failed to submit response:', error);
+      logger.error('Failed to submit response', error);
     }
   };
 

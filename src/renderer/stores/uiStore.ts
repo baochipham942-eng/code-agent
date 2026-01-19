@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { create } from 'zustand';
+import { UI } from '@shared/constants';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -128,7 +129,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   },
 
   // Toast Actions
-  showToast: (type, message, duration = 5000) => {
+  showToast: (type, message, duration = UI.TOAST_DURATION) => {
     const id = generateId();
     const toast: Toast = { id, type, message, duration };
 

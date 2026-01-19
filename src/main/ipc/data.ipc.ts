@@ -5,29 +5,32 @@
 import type { IpcMain } from 'electron';
 import { app } from 'electron';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('DataIPC');
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
 // ----------------------------------------------------------------------------
 
 async function handleCacheGetStats(): Promise<unknown> {
-  const { getToolCache } = await import('../services/infra/ToolCache');
+  const { getToolCache } = await import('../services/infra/toolCache');
   return getToolCache().getStats();
 }
 
 async function handleCacheClear(): Promise<void> {
-  const { getToolCache } = await import('../services/infra/ToolCache');
+  const { getToolCache } = await import('../services/infra/toolCache');
   getToolCache().clear();
 }
 
 async function handleCacheCleanExpired(): Promise<number> {
-  const { getToolCache } = await import('../services/infra/ToolCache');
+  const { getToolCache } = await import('../services/infra/toolCache');
   return getToolCache().cleanExpired();
 }
 
 async function handleDataGetStats(): Promise<unknown> {
-  const { getDatabase } = await import('../services/core/DatabaseService');
-  const { getToolCache } = await import('../services/infra/ToolCache');
+  const { getDatabase } = await import('../services/core/databaseService');
+  const { getToolCache } = await import('../services/infra/toolCache');
   const fs = await import('fs');
   const path = await import('path');
 
@@ -61,9 +64,9 @@ async function handleDataGetStats(): Promise<unknown> {
 }
 
 async function handleDataClearToolCache(): Promise<number> {
-  const { getToolCache } = await import('../services/infra/ToolCache');
-  const { getDatabase } = await import('../services/core/DatabaseService');
-  const { getSessionManager } = await import('../services/infra/SessionManager');
+  const { getToolCache } = await import('../services/infra/toolCache');
+  const { getDatabase } = await import('../services/core/databaseService');
+  const { getSessionManager } = await import('../services/infra/sessionManager');
 
   const cache = getToolCache();
   const db = getDatabase();
@@ -86,9 +89,7 @@ async function handleDataClearToolCache(): Promise<number> {
 
   const totalCleared =
     clearedMemory + clearedToolCache + clearedMessages + clearedSessions;
-  console.log(
-    `[DataClear] Cleared: memory=${clearedMemory}, toolCache=${clearedToolCache}, messages=${clearedMessages}, sessions=${clearedSessions}`
-  );
+  logger.info('Data cleared', { memory: clearedMemory, toolCache: clearedToolCache, messages: clearedMessages, sessions: clearedSessions });
 
   return totalCleared;
 }

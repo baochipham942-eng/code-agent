@@ -4,8 +4,8 @@
 // Playwright-based browser control for testing and automation
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry.js';
-import { browserService } from '../../services/infra/BrowserService.js';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { browserService } from '../../services/infra/browserService.js';
 
 type BrowserActionType =
   | 'launch'

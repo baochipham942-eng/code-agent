@@ -57,7 +57,7 @@ async function handleTestApiKey(payload: { provider: string; apiKey: string }): 
 }
 
 async function handleGetDevMode(): Promise<boolean> {
-  const { getSecureStorage } = await import('../services/core/SecureStorage');
+  const { getSecureStorage } = await import('../services/core/secureStorage');
   const value = getSecureStorage().get('settings.devModeAutoApprove');
   return value === undefined ? true : value === 'true';
 }
@@ -66,7 +66,7 @@ async function handleSetDevMode(
   getConfigService: () => ConfigService | null,
   payload: { enabled: boolean }
 ): Promise<void> {
-  const { getSecureStorage } = await import('../services/core/SecureStorage');
+  const { getSecureStorage } = await import('../services/core/secureStorage');
   getSecureStorage().set('settings.devModeAutoApprove', payload.enabled ? 'true' : 'false');
 
   const configService = getConfigService();
@@ -79,7 +79,7 @@ async function handleSetDevMode(
 }
 
 async function handleCheckApiKeyConfigured(): Promise<boolean> {
-  const { getSecureStorage } = await import('../services/core/SecureStorage');
+  const { getSecureStorage } = await import('../services/core/secureStorage');
   return getSecureStorage().getStoredApiKeyProviders().length > 0;
 }
 

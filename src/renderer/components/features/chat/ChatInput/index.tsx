@@ -6,6 +6,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { Image, Sparkles, CornerDownLeft } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/types';
+import { UI } from '@shared/constants';
 
 import { InputArea, InputAreaRef } from './InputArea';
 import { AttachmentBar } from './AttachmentBar';
@@ -51,7 +52,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
       if (attachment) newAttachments.push(attachment);
     }
     if (newAttachments.length > 0) {
-      setAttachments((prev) => [...prev, ...newAttachments].slice(0, 5));
+      setAttachments((prev) => [...prev, ...newAttachments].slice(0, UI.MAX_ATTACHMENTS_FILE_SELECT));
     }
   };
 
@@ -106,7 +107,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
     }
 
     if (newAttachments.length > 0) {
-      setAttachments((prev) => [...prev, ...newAttachments].slice(0, 10));
+      setAttachments((prev) => [...prev, ...newAttachments].slice(0, UI.MAX_ATTACHMENTS_DROP));
     }
   }, [processFile, processFolderEntry]);
 
@@ -142,7 +143,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
         )}
 
         {/* 输入区域 */}
-        <div className="relative flex items-center">
+        <div className="relative">
           <InputArea
             ref={inputAreaRef}
             value={value}
@@ -153,12 +154,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
             hasAttachments={attachments.length > 0}
             isFocused={isFocused}
             onFocusChange={setIsFocused}
-          />
-          <SendButton
-            disabled={disabled}
-            loading={disabled}
-            hasContent={hasContent}
-            type="submit"
+            sendButton={
+              <SendButton
+                disabled={disabled}
+                loading={disabled}
+                hasContent={hasContent}
+                type="submit"
+              />
+            }
           />
         </div>
 

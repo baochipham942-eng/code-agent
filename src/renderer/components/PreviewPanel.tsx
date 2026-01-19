@@ -5,6 +5,9 @@
 import React, { useEffect, useState } from 'react';
 import { X, RefreshCw, ExternalLink, Maximize2, Minimize2 } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('PreviewPanel');
 
 export const PreviewPanel: React.FC = () => {
   const { previewFilePath, showPreviewPanel, closePreview } = useAppStore();
@@ -34,7 +37,7 @@ export const PreviewPanel: React.FC = () => {
         setError('无法读取文件内容');
       }
     } catch (err) {
-      console.error('Failed to load HTML:', err);
+      logger.error('Failed to load HTML', err);
       setError(err instanceof Error ? err.message : '加载文件失败');
     } finally {
       setIsLoading(false);
@@ -50,7 +53,7 @@ export const PreviewPanel: React.FC = () => {
       try {
         await window.electronAPI?.invoke('shell:open-path', previewFilePath);
       } catch (err) {
-        console.error('Failed to open in browser:', err);
+        logger.error('Failed to open in browser', err);
       }
     }
   };

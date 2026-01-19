@@ -7,6 +7,9 @@ import { Download, CheckCircle, AlertCircle, Loader2, ShieldAlert } from 'lucide
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type { UpdateInfo, DownloadProgress } from '../../shared/types';
 import { Modal, ModalHeader } from './primitives/Modal';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('ForceUpdateModal');
 
 interface ForceUpdateModalProps {
   updateInfo: UpdateInfo;
@@ -23,7 +26,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
   // Listen for download events from main process
   useEffect(() => {
     const handleUpdateEvent = (event: { type: string; data?: any }) => {
-      console.log('[ForceUpdateModal] Received event:', event.type, event.data);
+      logger.debug('Received event', { type: event.type, data: event.data });
 
       switch (event.type) {
         case 'download_progress':

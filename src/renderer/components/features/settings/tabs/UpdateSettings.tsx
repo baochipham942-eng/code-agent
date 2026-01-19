@@ -8,6 +8,9 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/types';
+import { createLogger } from '../../../../utils/logger';
+
+const logger = createLogger('UpdateSettings');
 
 // ============================================================================
 // Types
@@ -48,7 +51,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       }
     } catch (err) {
       setError(t.update?.checkError || '检查更新失败，请稍后重试');
-      console.error('Update check failed:', err);
+      logger.error('Update check failed', err);
     } finally {
       setIsChecking(false);
     }

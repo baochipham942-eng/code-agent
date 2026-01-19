@@ -4,6 +4,7 @@
 // ============================================================================
 
 import React, { useState } from 'react';
+import { UI } from '@shared/constants';
 import {
   Cloud,
   Monitor,
@@ -266,9 +267,9 @@ const TaskCard: React.FC<{
           {/* 结果预览 */}
           {task.result && (
             <div className="mb-3 p-2 bg-zinc-800 rounded text-xs text-zinc-300 max-h-32 overflow-y-auto">
-              <pre className="whitespace-pre-wrap">{task.result.slice(0, 500)}</pre>
-              {task.result.length > 500 && (
-                <span className="text-zinc-500">... ({task.result.length - 500} more chars)</span>
+              <pre className="whitespace-pre-wrap">{task.result.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH)}</pre>
+              {task.result.length > UI.PREVIEW_TEXT_MAX_LENGTH && (
+                <span className="text-zinc-500">... ({task.result.length - UI.PREVIEW_TEXT_MAX_LENGTH} more chars)</span>
               )}
             </div>
           )}

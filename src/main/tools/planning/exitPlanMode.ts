@@ -3,7 +3,7 @@
 // Borrowed from Claude Code v2.0
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 
 export const exitPlanModeTool: Tool = {
   name: 'exit_plan_mode',

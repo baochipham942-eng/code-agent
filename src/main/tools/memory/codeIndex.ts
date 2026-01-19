@@ -2,8 +2,8 @@
 // code_index Tool - Index and search code patterns across the codebase
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
-import { getMemoryService } from '../../memory/MemoryService';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { getMemoryService } from '../../memory/memoryService';
 import * as fs from 'fs';
 import * as path from 'path';
 import { glob } from 'glob';

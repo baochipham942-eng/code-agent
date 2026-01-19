@@ -6,19 +6,19 @@
 export * from './types';
 
 // 核心组件
-export { TaskAnalyzer, getTaskAnalyzer } from './TaskAnalyzer';
-export { ExecutionRouter, getExecutionRouter } from './ExecutionRouter';
-export { LocalExecutor, getLocalExecutor, initLocalExecutor } from './LocalExecutor';
-export { CloudExecutor, getCloudExecutor, initCloudExecutor } from './CloudExecutor';
+export { TaskAnalyzer, getTaskAnalyzer } from './taskAnalyzer';
+export { ExecutionRouter, getExecutionRouter } from './executionRouter';
+export { LocalExecutor, getLocalExecutor, initLocalExecutor } from './localExecutor';
+export { CloudExecutor, getCloudExecutor, initCloudExecutor } from './cloudExecutor';
 export {
   UnifiedOrchestrator,
   getUnifiedOrchestrator,
   initUnifiedOrchestrator,
-} from './UnifiedOrchestrator';
+} from './unifiedOrchestrator';
 
 // Phase 3: 实时通信和断点续传
-export { RealtimeChannel, getRealtimeChannel, initRealtimeChannel } from './RealtimeChannel';
-export { CheckpointManager, getCheckpointManager, initCheckpointManager } from './CheckpointManager';
+export { RealtimeChannel, getRealtimeChannel, initRealtimeChannel } from './realtimeChannel';
+export { CheckpointManager, getCheckpointManager, initCheckpointManager } from './checkpointManager';
 
 // Phase 4: 多 Agent 调度系统
 export * from './agents';

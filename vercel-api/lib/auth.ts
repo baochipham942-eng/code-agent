@@ -4,6 +4,9 @@
 
 import { SignJWT, jwtVerify, type JWTPayload } from 'jose';
 import { getDb, ADMIN_EMAILS, type User } from './db.js';
+import { createLogger } from './logger.js';
+
+const logger = createLogger('AuthLib');
 
 // JWT 密钥 - 必须在生产环境中设置
 const authSecret = process.env.AUTH_SECRET;
@@ -51,7 +54,7 @@ export async function verifyToken(token: string): Promise<TokenPayload | null> {
 
     return payload as TokenPayload;
   } catch (error) {
-    console.error('Token verification failed:', error);
+    logger.error('Token verification failed', error);
     return null;
   }
 }

@@ -6,7 +6,7 @@ import type { IpcMain } from 'electron';
 import { app } from 'electron';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { UpdateInfo } from '../../shared/types';
-import { getUpdateService, isUpdateServiceInitialized } from '../services/cloud/UpdateService';
+import { getUpdateService, isUpdateServiceInitialized } from '../services/cloud/updateService';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers

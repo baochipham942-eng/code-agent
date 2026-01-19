@@ -4,13 +4,13 @@
 // Enhanced with parallel execution support (Enhancement 3)
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import type { ModelConfig } from '../../../shared/types';
-import { getSubagentExecutor } from '../../agent/SubagentExecutor';
+import { getSubagentExecutor } from '../../agent/subagentExecutor';
 import {
   getParallelAgentCoordinator,
   type AgentTask,
-} from '../../agent/ParallelAgentCoordinator';
+} from '../../agent/parallelAgentCoordinator';
 
 // Predefined agent roles with specialized prompts
 const AGENT_ROLES: Record<string, AgentRole> = {

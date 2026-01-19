@@ -5,6 +5,9 @@
 import { create } from 'zustand';
 import type { AuthUser, AuthStatus, SyncStatus } from '../../shared/types';
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('AuthStore');
 
 interface AuthState {
   // Auth state
@@ -166,7 +169,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         syncStatus: { ...get().syncStatus, isEnabled: false },
       });
     } catch (error) {
-      console.error('Sign out failed:', error);
+      logger.error('Sign out failed', error);
     }
   },
 
@@ -182,7 +185,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       }
       return false;
     } catch (error) {
-      console.error('Update profile failed:', error);
+      logger.error('Update profile failed', error);
       return false;
     }
   },
@@ -194,7 +197,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       );
       return token ?? null;
     } catch (error) {
-      console.error('Generate quick token failed:', error);
+      logger.error('Generate quick token failed', error);
       return null;
     }
   },
@@ -207,7 +210,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         syncStatus: { ...state.syncStatus, isEnabled: true },
       }));
     } catch (error) {
-      console.error('Start sync failed:', error);
+      logger.error('Start sync failed', error);
     }
   },
 
@@ -218,7 +221,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
         syncStatus: { ...state.syncStatus, isEnabled: false },
       }));
     } catch (error) {
-      console.error('Stop sync failed:', error);
+      logger.error('Stop sync failed', error);
     }
   },
 
@@ -227,7 +230,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
       const result = await window.electronAPI?.invoke(IPC_CHANNELS.SYNC_FORCE_FULL);
       return result?.success ?? false;
     } catch (error) {
-      console.error('Force full sync failed:', error);
+      logger.error('Force full sync failed', error);
       return false;
     }
   },
@@ -244,7 +247,7 @@ export async function initializeAuthStore(): Promise<void> {
       store.setUser(status.user);
     }
   } catch (error) {
-    console.error('Failed to load auth status:', error);
+    logger.error('Failed to load auth status', error);
   } finally {
     store.setLoading(false);
   }
@@ -256,7 +259,7 @@ export async function initializeAuthStore(): Promise<void> {
       store.setSyncStatus(syncStatus);
     }
   } catch (error) {
-    console.error('Failed to load sync status:', error);
+    logger.error('Failed to load sync status', error);
   }
 
   // Listen for auth events

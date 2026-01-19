@@ -5,6 +5,9 @@
 // ============================================================================
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { createLogger } from '../lib/logger.js';
+
+const logger = createLogger('ModelProxy');
 
 export const config = {
   maxDuration: 60, // 模型请求可能较慢
@@ -67,7 +70,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 从环境变量获取 API Key
   const apiKey = process.env[providerConfig.envKey];
   if (!apiKey) {
-    console.error(`[model-proxy] Missing API key for provider: ${provider}`);
+    logger.error('Missing API key for provider', undefined, { provider });
     return res.status(500).json({
       error: `API key not configured for provider: ${provider}`,
     });
@@ -99,7 +102,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       headers['anthropic-version'] = '2023-06-01';
     }
 
-    console.log(`[model-proxy] Proxying to ${provider}: ${endpoint}`);
+    logger.info('Proxying request', { provider, endpoint });
 
     const response = await fetch(url, {
       method: 'POST',
@@ -121,7 +124,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(response.status).json(data);
   } catch (error: unknown) {
     const err = error as Error;
-    console.error(`[model-proxy] Error:`, err.message);
+    logger.error('Proxy request failed', err);
     return res.status(500).json({
       error: err.message || 'Proxy request failed',
     });

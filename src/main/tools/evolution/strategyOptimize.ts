@@ -4,13 +4,16 @@
 // Now with persistent storage via EvolutionPersistence service
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
-import { getMemoryService } from '../../memory/MemoryService';
-import { getVectorStore } from '../../memory/VectorStore';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { getMemoryService } from '../../memory/memoryService';
+import { getVectorStore } from '../../memory/vectorStore';
 import {
   getEvolutionPersistence,
   type Strategy,
 } from '../../services';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('StrategyOptimize');
 
 export const strategyOptimizeTool: Tool = {
   name: 'strategy_optimize',
@@ -147,7 +150,7 @@ async function createStrategy(params: Record<string, unknown>, context: ToolCont
     const content = `Strategy: ${name}\nDescription: ${description}\nSteps:\n${steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
     vectorStore.addKnowledge(content, 'strategy', context.workingDirectory);
   } catch (error) {
-    console.error('Failed to store strategy in vector store:', error);
+    logger.error('Failed to store strategy in vector store', error);
   }
 
   return {
@@ -212,7 +215,7 @@ async function recordFeedback(params: Record<string, unknown>): Promise<ToolExec
       success ? 0.8 : 0.6
     );
   } catch (error) {
-    console.error('Failed to store feedback in memory:', error);
+    logger.error('Failed to store feedback in memory', error);
   }
 
   return {

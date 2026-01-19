@@ -2,9 +2,12 @@
 // Todo Write Tool - Track task progress with optional persistence
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../ToolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import type { TodoItem, TodoStatus } from '../../../shared/types';
 import type { PlanningService } from '../../planning';
+import { createLogger } from '../../services/infra/logger';
+
+const logger = createLogger('TodoWrite');
 
 // Global todo state (in-memory, for backward compatibility)
 let currentTodos: TodoItem[] = [];
@@ -132,7 +135,7 @@ export const todoWriteTool: Tool = {
 
       if (!planningService) {
         // Gracefully fall back to non-persistent mode
-        console.log('[todo_write] Planning service not available, using in-memory mode');
+        logger.info('Planning service not available, using in-memory mode');
         const formatted = formatTodoOutput(currentTodos);
         const completed = currentTodos.filter((t) => t.status === 'completed').length;
         const total = currentTodos.length;

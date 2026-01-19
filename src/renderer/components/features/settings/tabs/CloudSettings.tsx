@@ -7,6 +7,9 @@ import { RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { createLogger } from '../../../../utils/logger';
+
+const logger = createLogger('CloudSettings');
 
 // ============================================================================
 // Types
@@ -35,7 +38,7 @@ export const CloudSettings: React.FC = () => {
       const info = await window.electronAPI?.invoke(IPC_CHANNELS.CLOUD_CONFIG_GET_INFO);
       if (info) setCloudConfigInfo(info);
     } catch (error) {
-      console.error('Failed to load cloud config info:', error);
+      logger.error('Failed to load cloud config info', error);
     }
   };
 

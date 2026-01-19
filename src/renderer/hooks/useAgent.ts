@@ -28,6 +28,9 @@ import { useSessionStore } from '../stores/sessionStore';
 import { generateMessageId } from '@shared/utils/id';
 import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData } from '@shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('useAgent');
 
 export const useAgent = () => {
   const {
@@ -66,7 +69,7 @@ export const useAgent = () => {
     const unsubscribe = window.electronAPI?.on(
       'agent:event',
       (event: { type: string; data: any }) => {
-        console.log('[useAgent] Received event:', event.type, event.data);
+        logger.debug('Received event', { type: event.type, data: event.data });
 
         // Always get the latest messages from ref
         const currentMessages = messagesRef.current;
@@ -92,7 +95,7 @@ export const useAgent = () => {
               currentTurnMessageIdRef.current = turnId;
               // 记录任务开始时的会话 ID
               taskSessionIdRef.current = useSessionStore.getState().currentSessionId;
-              console.log('[useAgent] turn_start - created message:', turnId, 'sessionId:', taskSessionIdRef.current);
+              logger.debug('turn_start - created message', { turnId, sessionId: taskSessionIdRef.current });
             }
             break;
 
@@ -166,7 +169,7 @@ export const useAgent = () => {
           case 'turn_end':
             // 本轮 Agent Loop 结束
             // 可用于清理状态或触发 UI 更新
-            console.log('[useAgent] turn_end:', event.data?.turnId);
+            logger.debug('turn_end', { turnId: event.data?.turnId });
             break;
 
           case 'stream_tool_call_start':
@@ -178,7 +181,7 @@ export const useAgent = () => {
                 ? currentMessages.find(m => m.id === targetMessageId)
                 : currentMessages[currentMessages.length - 1];
 
-              console.log('[useAgent] stream_tool_call_start:', event.data, 'targetMessageId:', targetMessageId);
+              logger.debug('stream_tool_call_start', { data: event.data, targetMessageId });
               if (targetMessage?.role === 'assistant') {
                 const newToolCall: ToolCall = {
                   id: event.data.id || `pending_${event.data.index}`,
@@ -242,7 +245,7 @@ export const useAgent = () => {
                 : currentMessages[currentMessages.length - 1];
 
               const toolIndex = event.data._index;
-              console.log('[useAgent] tool_call_start - index:', toolIndex, 'id:', event.data.id, 'name:', event.data.name, 'targetMessageId:', targetMessageId);
+              logger.debug('tool_call_start', { index: toolIndex, id: event.data.id, name: event.data.name, targetMessageId });
 
               if (targetMessage?.role === 'assistant' && targetMessage.toolCalls) {
                 // 策略：优先用索引匹配，因为同一消息可能有多个同名工具调用
@@ -250,7 +253,7 @@ export const useAgent = () => {
                   const updatedToolCalls = targetMessage.toolCalls.map((tc: ToolCall, idx: number) => {
                     if (idx === toolIndex) {
                       // 用后端的真实数据更新，保留前端已有的 arguments（流式解析的）
-                      console.log('[useAgent] Updating tool call at index', idx, ':', tc.id, '->', event.data.id);
+                      logger.debug('Updating tool call at index', { idx, oldId: tc.id, newId: event.data.id });
                       return {
                         ...tc,
                         id: event.data.id, // 关键：更新为后端的真实 ID
@@ -292,7 +295,7 @@ export const useAgent = () => {
               const toolResult = event.data as ToolResult;
 
               if (import.meta.env.DEV) {
-                console.log('[useAgent] tool_call_end received:', {
+                logger.debug('tool_call_end received', {
                   toolCallId: toolResult.toolCallId,
                   success: toolResult.success,
                   duration: toolResult.duration,
@@ -318,12 +321,12 @@ export const useAgent = () => {
               }
 
               if (import.meta.env.DEV && !matched) {
-                console.warn('[useAgent] No matching toolCall found for:', toolResult.toolCallId);
-                console.log('[useAgent] Available toolCalls:',
-                  currentMessages
+                logger.warn('No matching toolCall found', { toolCallId: toolResult.toolCallId });
+                logger.debug('Available toolCalls', {
+                  ids: currentMessages
                     .filter(m => m.toolCalls)
                     .flatMap(m => m.toolCalls!.map(tc => tc.id))
-                );
+                });
               }
             }
             break;
@@ -337,7 +340,7 @@ export const useAgent = () => {
 
           case 'error':
             // Handle error - display it in the chat
-            console.error('Agent error:', event.data?.message);
+            logger.error('Agent error', { message: event.data?.message });
             const lastMessage = currentMessages[currentMessages.length - 1];
             if (lastMessage?.role === 'assistant') {
               updateMessage(lastMessage.id, {
@@ -355,7 +358,7 @@ export const useAgent = () => {
           case 'permission_request':
             // Handle permission request from tools
             // Show permission dialog to user for approval
-            console.log('[useAgent] Permission request received:', event.data);
+            logger.debug('Permission request received', { data: event.data });
             if (event.data?.id) {
               // Set the pending permission request to show the modal
               setPendingPermissionRequest(event.data as PermissionRequest);
@@ -369,7 +372,7 @@ export const useAgent = () => {
           case 'task_progress':
             // 更新任务进度状态
             if (event.data) {
-              console.log('[useAgent] task_progress:', event.data);
+              logger.debug('task_progress', { data: event.data });
               setTaskProgress(event.data as TaskProgressData);
             }
             break;
@@ -377,7 +380,7 @@ export const useAgent = () => {
           case 'task_complete':
             // 任务完成
             if (event.data) {
-              console.log('[useAgent] task_complete:', event.data);
+              logger.debug('task_complete', { data: event.data });
               setLastTaskComplete(event.data as TaskCompleteData);
               // 清除进度状态
               setTaskProgress(null);
@@ -386,7 +389,7 @@ export const useAgent = () => {
               const taskSessionId = taskSessionIdRef.current;
               const currentSession = useSessionStore.getState().currentSessionId;
               if (taskSessionId && taskSessionId !== currentSession) {
-                console.log('[useAgent] Task completed in different session, marking as unread:', taskSessionId);
+                logger.debug('Task completed in different session, marking as unread', { taskSessionId });
                 useSessionStore.getState().markSessionUnread(taskSessionId);
               }
               taskSessionIdRef.current = null;
@@ -405,9 +408,9 @@ export const useAgent = () => {
   // Turn-based model: 不再预创建 placeholder，等待后端 turn_start 事件
   const sendMessage = useCallback(
     async (content: string, attachments?: MessageAttachment[]) => {
-      console.log('[useAgent] sendMessage called with:', content.substring(0, 50));
+      logger.debug('sendMessage called', { contentPreview: content.substring(0, 50) });
       if ((!content.trim() && !attachments?.length) || isProcessing) {
-        console.log('[useAgent] sendMessage blocked - empty or processing');
+        logger.debug('sendMessage blocked - empty or processing');
         return;
       }
 
@@ -419,7 +422,7 @@ export const useAgent = () => {
         timestamp: Date.now(),
         attachments,
       };
-      console.log('[useAgent] Adding user message with id:', userMessage.id, 'attachments:', attachments?.length || 0);
+      logger.debug('Adding user message', { id: userMessage.id, attachmentsCount: attachments?.length || 0 });
       addMessage(userMessage);
 
       // 不再预创建 assistant placeholder
@@ -434,19 +437,19 @@ export const useAgent = () => {
       try {
         // Send to main process
         // Note: Don't set isProcessing to false here, it will be set by agent_complete event
-        console.log('[useAgent] Calling invoke agent:send-message');
+        logger.debug('Calling invoke agent:send-message');
         // 如果有附件，构建包含附件信息的消息
         const messagePayload = attachments?.length
           ? { content, attachments }
           : content;
-        console.log('[useAgent] messagePayload type:', typeof messagePayload, 'isObject:', typeof messagePayload === 'object');
+        logger.debug('messagePayload', { type: typeof messagePayload, isObject: typeof messagePayload === 'object' });
         if (typeof messagePayload === 'object') {
-          console.log('[useAgent] Attachments being sent:', attachments?.map(a => ({ name: a.name, category: a.category, hasData: !!a.data, dataLen: a.data?.length, path: a.path, hasPath: !!a.path })));
+          logger.debug('Attachments being sent', { attachments: attachments?.map(a => ({ name: a.name, category: a.category, hasData: !!a.data, dataLen: a.data?.length, path: a.path, hasPath: !!a.path })) });
         }
         await window.electronAPI?.invoke('agent:send-message', messagePayload);
-        console.log('[useAgent] invoke returned');
+        logger.debug('invoke returned');
       } catch (error) {
-        console.error('[useAgent] Agent error:', error);
+        logger.error('Agent error', error);
         // 错误时创建一条错误消息
         const errorMessage: Message = {
           id: generateMessageId(),
@@ -467,7 +470,7 @@ export const useAgent = () => {
       await window.electronAPI?.invoke('agent:cancel');
       setIsProcessing(false);
     } catch (error) {
-      console.error('Cancel error:', error);
+      logger.error('Cancel error', error);
     }
   }, [setIsProcessing]);
 

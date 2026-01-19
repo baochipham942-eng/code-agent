@@ -12,6 +12,9 @@ import {
   extractPdfText,
   generateAttachmentId,
 } from './utils';
+import { createLogger } from '../../../../utils/logger';
+
+const logger = createLogger('useFileUpload');
 
 /**
  * 文件上传处理 Hook
@@ -21,7 +24,7 @@ export function useFileUpload() {
   // 处理单个文件
   const processFile = useCallback(async (file: File): Promise<MessageAttachment | null> => {
     if (file.size > MAX_FILE_SIZE) {
-      console.warn(`File ${file.name} is too large (max 10MB)`);
+      logger.warn('File is too large (max 10MB)', { fileName: file.name, size: file.size });
       return null;
     }
 
@@ -34,11 +37,11 @@ export function useFileUpload() {
     try {
       filePath = window.electronAPI?.getPathForFile(file);
     } catch (e) {
-      console.warn('[useFileUpload] processFile - failed to get path:', e);
+      logger.warn('processFile - failed to get path', { error: e });
     }
 
     if (category === 'document') {
-      console.warn('Office documents (.docx, .xlsx) are not yet supported.');
+      logger.warn('Office documents (.docx, .xlsx) are not yet supported');
       return null;
     }
 
@@ -86,7 +89,7 @@ export function useFileUpload() {
   ): Promise<MessageAttachment | null> => {
     const files = await readDirectoryEntry(dirEntry, folderName);
     if (files.length === 0) {
-      console.warn(`文件夹 ${folderName} 中没有可处理的文件`);
+      logger.warn('文件夹中没有可处理的文件', { folderName });
       return null;
     }
 
@@ -107,7 +110,7 @@ export function useFileUpload() {
         }
       }
     } catch (e) {
-      console.warn('[useFileUpload] processFolderEntry - failed to get folder path:', e);
+      logger.warn('processFolderEntry - failed to get folder path', { error: e });
     }
 
     const filesToProcess = files.slice(0, MAX_FOLDER_FILES);
@@ -130,7 +133,7 @@ export function useFileUpload() {
         });
         fileContents.push({ path: relativePath, content, size: file.size });
       } catch {
-        console.warn(`无法读取文件: ${relativePath}`);
+        logger.warn('无法读取文件', { path: relativePath });
       }
     }
 

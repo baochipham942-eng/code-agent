@@ -11,6 +11,9 @@ import { IconButton } from '../../primitives';
 import { UpdateNotification } from '../../UpdateNotification';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/types';
+import { createLogger } from '../../../utils/logger';
+
+const logger = createLogger('SettingsModal');
 
 // Tab Components
 import { ModelSettings } from './tabs/ModelSettings';
@@ -51,7 +54,7 @@ export const SettingsModal: React.FC = () => {
           setOptionalUpdateInfo(info);
         }
       } catch (error) {
-        console.error('[SettingsModal] Failed to check update:', error);
+        logger.error('Failed to check update', error);
       }
     };
     checkUpdate();

@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import { getSupabase, isSupabaseInitialized } from '../services';
+import { getSupabase } from '../services';
 import { getCloudTaskService, CloudTaskService } from './cloudTaskService';
 import type {
   CloudTask,

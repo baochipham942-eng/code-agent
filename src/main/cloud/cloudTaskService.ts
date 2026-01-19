@@ -4,12 +4,11 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import { getSupabase, isSupabaseInitialized } from '../services';
-import { encryptForCloud, decryptFromCloud, KeyManager } from '../utils/crypto';
+import { getSupabase } from '../services';
+import { encryptForCloud, decryptFromCloud } from '../utils/crypto';
 import { getTaskRouter } from './taskRouter';
 import type {
   CloudTask,
-  EncryptedCloudTask,
   CreateCloudTaskRequest,
   UpdateCloudTaskRequest,
   CloudTaskFilter,
@@ -18,7 +17,7 @@ import type {
   EncryptedPayload,
 } from '../../shared/types/cloud';
 import { createLogger } from '../services/infra/logger';
-import { CLOUD, TASK_SYNC, AGENT } from '../../shared/constants';
+import { CLOUD, TASK_SYNC } from '../../shared/constants';
 
 const logger = createLogger('CloudTaskService');
 

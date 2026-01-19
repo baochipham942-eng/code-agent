@@ -9,7 +9,6 @@ import {
   ConfigService,
   initDatabase,
   initSupabase,
-  isSupabaseInitialized,
   getAuthService,
   getSyncService,
   initLangfuse,

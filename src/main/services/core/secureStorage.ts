@@ -19,6 +19,8 @@ const KEYCHAIN_ACCOUNT_SESSION = 'supabase-session';
 const KEYCHAIN_ACCOUNT_SETTINGS = 'user-settings';
 const KEYCHAIN_ACCOUNT_APIKEYS = 'api-keys'; // New: API keys in Keychain
 
+// Storage keys use dot notation by design (e.g., 'supabase.session')
+// eslint-disable-next-line @typescript-eslint/naming-convention
 interface SecureStorageData {
   // Auth tokens
   'supabase.access_token'?: string;

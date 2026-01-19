@@ -97,14 +97,14 @@ const defaultGeneration: Generation = {
 };
 
 // Default model config (DeepSeek)
-// maxTokens 增加到 8192 以支持生成完整的代码文件（如 HTML 游戏）
+// maxTokens 增加到 16384 以支持生成完整的代码文件和长篇回复
 const defaultModelConfig: ModelConfig = {
   provider: 'deepseek',
   model: 'deepseek-chat',
   apiKey: '',
   baseUrl: 'https://api.deepseek.com',
   temperature: 0.7,
-  maxTokens: 8192,
+  maxTokens: 16384,
 };
 
 export const useAppStore = create<AppState>((set) => ({

@@ -27,23 +27,25 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.7.20',
-  publishedAt: '2026-01-19T10:35:00.000Z',
+  version: '0.7.21',
+  publishedAt: '2026-01-19T10:45:00.000Z',
   releaseNotes: `
-## Code Agent v0.7.20 ✨
+## Code Agent v0.7.21 ⚡
 
-### 🎨 Markdown 渲染增强
-- **表格渲染** - Markdown 表格以真正的表格形式展示，支持对齐和斑马纹
-- **标题支持** - 支持 h1-h6 六级标题
-- **列表渲染** - 有序列表和无序列表正确显示
-- **文本格式** - 支持 **加粗**、*斜体*、~~删除线~~
-- **引用块** - 支持 > 引用样式
-- **分隔线** - 支持 --- 水平分隔线
+### 📈 输出 Token 上限提升
+- **DeepSeek Chat** - 8K → 16K (+100%)
+- **DeepSeek Coder** - 16K → 32K (+100%)
+- **GPT-4o / GPT-4o Mini** - 4K → 16K (+300%)
+
+支持生成更长的代码文件和详细的分析报告。
+
+### 🎨 Markdown 渲染增强 (v0.7.20)
+- 表格、标题、列表、加粗、斜体、引用块渲染
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.7.20/Code.Agent-0.7.20-arm64.dmg',
+      url: 'https://github.com/anthropics/code-agent/releases/download/v0.7.21/Code.Agent-0.7.21-arm64.dmg',
       size: 153000000,
     },
   },

@@ -15,7 +15,6 @@ import type {
   RuleCondition,
   RuleAction,
   StrategyConfig,
-  StrategyPerformance,
   LearningFeedback,
   LearningResult,
   StrategyUpdate,

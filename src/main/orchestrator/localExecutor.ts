@@ -4,13 +4,12 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import type { Message, ModelConfig, ToolCall, ToolResult } from '../../shared/types';
+import type { ModelConfig } from '../../shared/types';
 import type { TaskExecutionLocation } from '../../shared/types/cloud';
 import type {
   ExecutorRequest,
   ExecutorResult,
   ExecutionProgressEvent,
-  ExecutionContext,
 } from './types';
 import { getSubagentExecutor } from '../agent/subagentExecutor';
 

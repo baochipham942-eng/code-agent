@@ -4,7 +4,6 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import type { ModelConfig } from '../../shared/types';
 import type {
   CloudTask,
   TaskExecutionLocation,

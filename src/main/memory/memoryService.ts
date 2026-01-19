@@ -12,8 +12,6 @@ import {
 import {
   getVectorStore,
   type SearchResult,
-  type HybridSearchOptions,
-  type CloudSearchResult,
 } from './vectorStore';
 import type { Message, TodoItem, ToolResult } from '../../shared/types';
 

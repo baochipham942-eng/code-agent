@@ -318,7 +318,6 @@ export class AgentLoop {
         logger.debug(` Tool calls received: ${response.toolCalls.length} calls`);
 
         // 发送工具等待状态
-        const toolNames = response.toolCalls.map(tc => tc.name).join(', ');
         this.emitTaskProgress('tool_pending', `准备执行 ${response.toolCalls.length} 个工具`, {
           toolTotal: response.toolCalls.length,
         });

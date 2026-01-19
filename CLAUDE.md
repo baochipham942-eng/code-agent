@@ -146,7 +146,7 @@ mcp { "server": "deepwiki", "tool": "ask_question", "arguments": { "repoName": "
 |--------|-----|
 | 项目名 | `code-agent` |
 | 域名 | `https://code-agent-beta.vercel.app` |
-| Root Directory | `cloud-agent`（不是 cloud-api）|
+| Root Directory | `vercel-api` |
 
 ```bash
 # 验证部署
@@ -155,10 +155,10 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 
 ### API 目录
 
-| 目录 | 状态 |
+| 目录 | 说明 |
 |------|------|
-| `cloud-agent/` | ✅ 正在使用 |
-| `cloud-api/` | ❌ 已废弃，不要修改 |
+| `vercel-api/` | Vercel Serverless Functions（版本检查、设置同步等）|
+| `cloud-agent/` | 已重命名为 vercel-api |
 
 ---
 

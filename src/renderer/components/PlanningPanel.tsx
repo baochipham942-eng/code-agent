@@ -161,7 +161,7 @@ const EmptyState: React.FC = () => (
 );
 
 // Main component
-export const PlanningPanel: React.FC<PlanningPanelProps> = ({ plan, onRefresh }) => {
+export const PlanningPanel: React.FC<PlanningPanelProps> = ({ plan, onRefresh: _onRefresh }) => {
   if (!plan) {
     return (
       <div className="w-80 border-l border-zinc-800 bg-zinc-900/50 flex flex-col">

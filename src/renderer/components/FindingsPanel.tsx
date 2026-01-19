@@ -188,7 +188,7 @@ const EmptyState: React.FC = () => (
 // Main component
 export const FindingsPanel: React.FC<FindingsPanelProps> = ({
   findings,
-  onRefresh,
+  onRefresh: _onRefresh,
 }) => {
   const [activeCategory, setActiveCategory] = useState<FindingCategory | 'all'>(
     'all'

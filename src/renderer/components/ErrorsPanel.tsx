@@ -227,7 +227,7 @@ const EmptyState: React.FC = () => (
 export const ErrorsPanel: React.FC<ErrorsPanelProps> = ({
   errors,
   strikeLimit = 3,
-  onRefresh,
+  onRefresh: _onRefresh,
 }) => {
   // Sort by count (highest first), then by timestamp
   const sortedErrors = [...errors].sort((a, b) => {

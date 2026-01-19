@@ -20,3 +20,6 @@ export { GITHUB_ROUTING_RULES } from './githubRouting';
 // 错误处理和代码片段规则
 export { ERROR_HANDLING_RULES } from './errorHandling';
 export { CODE_SNIPPET_RULES } from './codeSnippet';
+
+// 附件处理规则
+export { ATTACHMENT_HANDLING_RULES } from './attachmentHandling';

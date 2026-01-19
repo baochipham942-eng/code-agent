@@ -16,6 +16,7 @@ import {
   GITHUB_ROUTING_RULES,
   ERROR_HANDLING_RULES,
   CODE_SNIPPET_RULES,
+  ATTACHMENT_HANDLING_RULES,
 } from './rules';
 
 // ----------------------------------------------------------------------------
@@ -34,6 +35,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     ERROR_HANDLING_RULES,
     CODE_SNIPPET_RULES,
     HTML_GENERATION_RULES,
+    ATTACHMENT_HANDLING_RULES,
   ],
   gen2: [
     OUTPUT_FORMAT_RULES,
@@ -43,6 +45,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     ERROR_HANDLING_RULES,
     CODE_SNIPPET_RULES,
     HTML_GENERATION_RULES,
+    ATTACHMENT_HANDLING_RULES,
   ],
   gen3: [
     OUTPUT_FORMAT_RULES,
@@ -55,6 +58,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     ERROR_HANDLING_RULES,
     CODE_SNIPPET_RULES,
     HTML_GENERATION_RULES,
+    ATTACHMENT_HANDLING_RULES,
   ],
   gen4: [
     OUTPUT_FORMAT_RULES,
@@ -68,6 +72,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     ERROR_HANDLING_RULES,
     CODE_SNIPPET_RULES,
     HTML_GENERATION_RULES,
+    ATTACHMENT_HANDLING_RULES,
   ],
   gen5: [
     OUTPUT_FORMAT_RULES,
@@ -81,6 +86,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     ERROR_HANDLING_RULES,
     CODE_SNIPPET_RULES,
     HTML_GENERATION_RULES,
+    ATTACHMENT_HANDLING_RULES,
   ],
   gen6: [
     OUTPUT_FORMAT_RULES,
@@ -94,6 +100,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     ERROR_HANDLING_RULES,
     CODE_SNIPPET_RULES,
     HTML_GENERATION_RULES,
+    ATTACHMENT_HANDLING_RULES,
   ],
   gen7: [
     OUTPUT_FORMAT_RULES,
@@ -107,6 +114,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     ERROR_HANDLING_RULES,
     CODE_SNIPPET_RULES,
     HTML_GENERATION_RULES,
+    ATTACHMENT_HANDLING_RULES,
   ],
   gen8: [
     OUTPUT_FORMAT_RULES,
@@ -120,6 +128,7 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
     ERROR_HANDLING_RULES,
     CODE_SNIPPET_RULES,
     HTML_GENERATION_RULES,
+    ATTACHMENT_HANDLING_RULES,
   ],
 };
 

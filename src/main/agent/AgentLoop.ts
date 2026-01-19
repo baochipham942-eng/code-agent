@@ -957,7 +957,7 @@ export class AgentLoop {
 \`\`\`${lang}
 ${previewLines}
 \`\`\`
-${totalLines > MAX_PREVIEW_LINES ? `\n... 还有 ${totalLines - MAX_PREVIEW_LINES} 行未显示\n\n💡 **提示**: 使用 \`read_file\` 工具读取完整内容: \`${filePath}\`` : ''}`;
+${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_LINES} 行未显示。这只是预览，要分析完整代码必须用 \`read_file\` 读取: \`${filePath}\`` : ''}`;
     };
 
     // 添加用户文本
@@ -1110,7 +1110,7 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n... 还有 ${totalLines - MAX_PREVIEW_LINE
               const fullPath = attachment.path ? `${attachment.path}/${file.path}` : file.path;
               fileList += `- ${file.path} (${sizeKB} KB) → \`${fullPath}\`\n`;
             }
-            fileList += '\n💡 **提示**: 使用 `read_file` 工具读取具体文件内容进行分析';
+            fileList += '\n⚠️ **注意**: 以上只是文件列表，不包含文件内容。要分析代码，必须先用 `read_file` 工具读取文件。';
           }
 
           const folderContent = `📁 **文件夹: ${attachment.name}**${pathInfo}${statsInfo}\n\n${attachment.data || ''}${fileList}`;

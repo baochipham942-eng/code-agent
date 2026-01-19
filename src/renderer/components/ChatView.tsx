@@ -11,7 +11,8 @@ import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { TodoPanel } from './TodoPanel';
 import { PreviewPanel } from './PreviewPanel';
-import type { MessageAttachment } from '../../shared/types';
+import { AgentTaskProgress } from './AgentTaskProgress';
+import type { MessageAttachment, TaskProgressData } from '../../shared/types';
 import {
   Bot,
   Code2,
@@ -20,13 +21,17 @@ import {
   TestTube2,
   Sparkles,
   Terminal,
-  Zap
+  Zap,
+  Brain,
+  Loader2,
+  Wrench,
+  PenLine
 } from 'lucide-react';
 
 export const ChatView: React.FC = () => {
   const { currentGeneration, showPreviewPanel } = useAppStore();
   const { todos } = useSessionStore();
-  const { messages, isProcessing, sendMessage } = useAgent();
+  const { messages, isProcessing, sendMessage, taskProgress } = useAgent();
   const { requireAuthAsync } = useRequireAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -75,8 +80,12 @@ export const ChatView: React.FC = () => {
                 </div>
               ))}
 
-              {/* Processing indicator - Typing animation */}
-              {isProcessing && <ThinkingIndicator />}
+              {/* Processing indicator - Task Progress or Typing animation */}
+              {isProcessing && (
+                taskProgress && taskProgress.phase !== 'completed'
+                  ? <EnhancedThinkingIndicator progress={taskProgress} />
+                  : <ThinkingIndicator />
+              )}
 
               <div ref={messagesEndRef} />
             </div>
@@ -114,6 +123,77 @@ const ThinkingIndicator: React.FC = () => {
           <span className="w-2 h-2 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '300ms' }} />
         </div>
         <span className="text-sm text-zinc-400">思考中...</span>
+      </div>
+    </div>
+  );
+};
+
+// Enhanced thinking indicator with task progress
+const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ progress }) => {
+  // 阶段配置
+  const phaseConfig: Record<string, { icon: React.ReactNode; label: string; color: string; bgColor: string }> = {
+    thinking: {
+      icon: <Brain className="w-4 h-4" />,
+      label: '思考中',
+      color: 'text-blue-400',
+      bgColor: 'from-blue-500/20 to-cyan-500/20',
+    },
+    tool_pending: {
+      icon: <Wrench className="w-4 h-4" />,
+      label: '准备执行',
+      color: 'text-yellow-400',
+      bgColor: 'from-yellow-500/20 to-orange-500/20',
+    },
+    tool_running: {
+      icon: <Loader2 className="w-4 h-4 animate-spin" />,
+      label: '执行中',
+      color: 'text-purple-400',
+      bgColor: 'from-purple-500/20 to-pink-500/20',
+    },
+    generating: {
+      icon: <PenLine className="w-4 h-4" />,
+      label: '生成中',
+      color: 'text-green-400',
+      bgColor: 'from-green-500/20 to-emerald-500/20',
+    },
+  };
+
+  const config = phaseConfig[progress.phase] || phaseConfig.thinking;
+  const hasToolProgress = progress.phase === 'tool_running' && progress.toolTotal;
+
+  return (
+    <div className="flex items-start gap-3 animate-fade-in">
+      {/* AI Avatar */}
+      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-accent-purple to-accent-pink flex items-center justify-center shrink-0 shadow-lg shadow-purple-500/20">
+        <Bot className="w-4 h-4 text-white" />
+      </div>
+
+      {/* Progress bubble */}
+      <div className={`flex flex-col gap-2 px-5 py-3.5 rounded-2xl bg-gradient-to-br ${config.bgColor} border border-zinc-700/50`}>
+        {/* Status line */}
+        <div className="flex items-center gap-2">
+          <span className={`${config.color}`}>{config.icon}</span>
+          <span className={`text-sm font-medium ${config.color}`}>
+            {progress.step || config.label}
+          </span>
+        </div>
+
+        {/* Tool progress bar */}
+        {hasToolProgress && (
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-1.5 bg-zinc-700/50 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-purple-500 rounded-full transition-all duration-300"
+                style={{ width: `${progress.progress || 0}%` }}
+              />
+            </div>
+            <span className="text-xs text-zinc-500">
+              {progress.toolIndex !== undefined && progress.toolTotal
+                ? `${progress.toolIndex + 1}/${progress.toolTotal}`
+                : `${Math.round(progress.progress || 0)}%`}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

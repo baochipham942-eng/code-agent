@@ -22,11 +22,11 @@
 //
 // ============================================================================
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { generateMessageId } from '@shared/utils/id';
-import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest } from '@shared/types';
+import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData } from '@shared/types';
 
 export const useAgent = () => {
   const {
@@ -49,6 +49,10 @@ export const useAgent = () => {
 
   // Track current turn's message ID for proper event routing
   const currentTurnMessageIdRef = useRef<string | null>(null);
+
+  // 任务进度状态（长时任务反馈）
+  const [taskProgress, setTaskProgress] = useState<TaskProgressData | null>(null);
+  const [lastTaskComplete, setLastTaskComplete] = useState<TaskCompleteData | null>(null);
 
   // Listen for agent events from the main process
   // Only register once, use refs to access latest state
@@ -349,6 +353,28 @@ export const useAgent = () => {
               setPendingPermissionRequest(event.data as PermissionRequest);
             }
             break;
+
+          // ================================================================
+          // 长时任务进度追踪
+          // ================================================================
+
+          case 'task_progress':
+            // 更新任务进度状态
+            if (event.data) {
+              console.log('[useAgent] task_progress:', event.data);
+              setTaskProgress(event.data as TaskProgressData);
+            }
+            break;
+
+          case 'task_complete':
+            // 任务完成
+            if (event.data) {
+              console.log('[useAgent] task_complete:', event.data);
+              setLastTaskComplete(event.data as TaskCompleteData);
+              // 清除进度状态
+              setTaskProgress(null);
+            }
+            break;
         }
       }
     );
@@ -434,5 +460,8 @@ export const useAgent = () => {
     sendMessage,
     cancel,
     currentGeneration,
+    // 长时任务进度追踪
+    taskProgress,
+    lastTaskComplete,
   };
 };

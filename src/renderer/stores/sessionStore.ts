@@ -28,6 +28,8 @@ interface SessionState {
   isLoading: boolean;
   // 错误信息
   error: string | null;
+  // 未读会话集合（用于跨会话通知）
+  unreadSessionIds: Set<string>;
 }
 
 interface SessionActions {
@@ -51,6 +53,12 @@ interface SessionActions {
   clearCurrentSession: () => void;
   // 更新会话标题
   updateSessionTitle: (sessionId: string, title: string) => void;
+  // 标记会话为未读
+  markSessionUnread: (sessionId: string) => void;
+  // 标记会话为已读（切换到该会话时自动调用）
+  markSessionRead: (sessionId: string) => void;
+  // 检查会话是否未读
+  isSessionUnread: (sessionId: string) => boolean;
 }
 
 type SessionStore = SessionState & SessionActions;

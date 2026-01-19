@@ -620,12 +620,14 @@ export class ModelRouter {
         if (hasImage) capabilities.add('vision');
       }
 
-      // 检测推理需求
-      if (contentLower.includes('分析') ||
-          contentLower.includes('推理') ||
+      // 检测推理需求（只在明确需要深度推理时触发，避免误判）
+      // 注意："分析"太常见，会导致简单的代码分析任务也切换到 reasoning 模型
+      // 而 reasoning 模型通常不支持工具调用，会导致 Agent 无法执行任务
+      if (contentLower.includes('深度推理') ||
           contentLower.includes('think step by step') ||
-          contentLower.includes('逐步') ||
-          contentLower.includes('复杂问题')) {
+          contentLower.includes('逐步推导') ||
+          contentLower.includes('数学证明') ||
+          contentLower.includes('逻辑推理')) {
         capabilities.add('reasoning');
       }
     }

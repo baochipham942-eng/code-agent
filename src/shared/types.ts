@@ -338,6 +338,33 @@ export interface AgentState {
   todos: TodoItem[];
 }
 
+// Agent 任务阶段（用于长时任务进度追踪）
+export type AgentTaskPhase =
+  | 'thinking'      // 模型思考中
+  | 'tool_pending'  // 等待工具执行
+  | 'tool_running'  // 工具执行中
+  | 'generating'    // 生成回复中
+  | 'completed';    // 完成
+
+// 任务进度事件数据
+export interface TaskProgressData {
+  turnId: string;
+  phase: AgentTaskPhase;
+  step?: string;           // "解析 PDF 内容"
+  progress?: number;       // 0-100（可选，工具执行进度）
+  tool?: string;           // 当前工具名
+  toolIndex?: number;      // 当前工具索引
+  toolTotal?: number;      // 工具总数
+}
+
+// 任务完成事件数据
+export interface TaskCompleteData {
+  turnId: string;
+  summary?: string;        // "已完成 PDF 分析"
+  duration: number;        // 总耗时 ms
+  toolsUsed: string[];     // 使用的工具列表
+}
+
 export type AgentEvent =
   | { type: 'message'; data: Message }
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string } }
@@ -356,7 +383,10 @@ export type AgentEvent =
   // Model capability fallback event (能力补充)
   | { type: 'model_fallback'; data: { reason: string; from: string; to: string } }
   // API Key 缺失提示
-  | { type: 'api_key_required'; data: { provider: string; capability: string; message: string } };
+  | { type: 'api_key_required'; data: { provider: string; capability: string; message: string } }
+  // 长时任务进度追踪（P0 新增）
+  | { type: 'task_progress'; data: TaskProgressData }
+  | { type: 'task_complete'; data: TaskCompleteData };
 
 // ----------------------------------------------------------------------------
 // Settings Types

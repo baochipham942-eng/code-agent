@@ -11,6 +11,7 @@ import type {
   ToolCall,
   ToolResult,
   AgentEvent,
+  AgentTaskPhase,
 } from '../../shared/types';
 import type { ToolRegistry } from '../tools/ToolRegistry';
 import type { ToolExecutor } from '../tools/ToolExecutor';
@@ -106,6 +107,10 @@ export class AgentLoop {
 
   // Turn-based message tracking
   private currentTurnId: string = '';
+
+  // Task progress tracking (长时任务进度追踪)
+  private turnStartTime: number = 0;
+  private toolsUsedInTurn: string[] = [];
 
   constructor(config: AgentLoopConfig) {
     this.generation = config.generation;
@@ -213,6 +218,13 @@ export class AgentLoop {
         data: { turnId: this.currentTurnId, iteration: iterations },
       });
 
+      // 记录本轮开始时间，重置工具使用记录
+      this.turnStartTime = Date.now();
+      this.toolsUsedInTurn = [];
+
+      // 发送 thinking 进度状态
+      this.emitTaskProgress('thinking', '分析请求中...');
+
       // 1. Call model
       console.log('[AgentLoop] Calling inference...');
       const inferenceStartTime = Date.now();
@@ -229,6 +241,8 @@ export class AgentLoop {
 
       // 2. Handle text response
       if (response.type === 'text' && response.content) {
+        // 发送生成中进度
+        this.emitTaskProgress('generating', '生成回复中...');
         // Stop Hook - verify completion before stopping
         if (this.enableHooks && this.planningService) {
           const stopResult = await this.planningService.hooks.onStop();
@@ -282,6 +296,10 @@ export class AgentLoop {
         // Langfuse: End iteration span and break
         langfuse.endSpan(this.currentIterationSpanId, { type: 'text_response' });
 
+        // 发送任务完成进度
+        this.emitTaskProgress('completed', '回复完成');
+        this.emitTaskComplete();
+
         // Emit turn_end event - 本轮 Agent Loop 结束
         this.onEvent({
           type: 'turn_end',
@@ -293,6 +311,12 @@ export class AgentLoop {
       // 3. Handle tool calls
       if (response.type === 'tool_use' && response.toolCalls) {
         console.log(`[AgentLoop] Tool calls received: ${response.toolCalls.length} calls`);
+
+        // 发送工具等待状态
+        const toolNames = response.toolCalls.map(tc => tc.name).join(', ');
+        this.emitTaskProgress('tool_pending', `准备执行 ${response.toolCalls.length} 个工具`, {
+          toolTotal: response.toolCalls.length,
+        });
 
         // 检测工具调用是否因为 max_tokens 被截断
         if (response.truncated) {
@@ -430,6 +454,44 @@ export class AgentLoop {
   }
 
   // --------------------------------------------------------------------------
+  // Task Progress Methods (长时任务进度追踪)
+  // --------------------------------------------------------------------------
+
+  /**
+   * 发送任务进度事件
+   */
+  private emitTaskProgress(
+    phase: AgentTaskPhase,
+    step?: string,
+    extra?: { progress?: number; tool?: string; toolIndex?: number; toolTotal?: number }
+  ): void {
+    this.onEvent({
+      type: 'task_progress',
+      data: {
+        turnId: this.currentTurnId,
+        phase,
+        step,
+        ...extra,
+      },
+    });
+  }
+
+  /**
+   * 发送任务完成事件
+   */
+  private emitTaskComplete(): void {
+    const duration = Date.now() - this.turnStartTime;
+    this.onEvent({
+      type: 'task_complete',
+      data: {
+        turnId: this.currentTurnId,
+        duration,
+        toolsUsed: [...new Set(this.toolsUsedInTurn)], // 去重
+      },
+    });
+  }
+
+  // --------------------------------------------------------------------------
   // Hook Methods
   // --------------------------------------------------------------------------
 
@@ -463,6 +525,19 @@ export class AgentLoop {
     for (let i = 0; i < toolCalls.length; i++) {
       const toolCall = toolCalls[i];
       console.log(`[AgentLoop] [${i + 1}/${toolCalls.length}] Processing tool: ${toolCall.name}, id: ${toolCall.id}`);
+
+      // 记录使用的工具
+      this.toolsUsedInTurn.push(toolCall.name);
+
+      // 发送工具执行进度
+      const progress = Math.round(((i + 0.5) / toolCalls.length) * 100);
+      this.emitTaskProgress('tool_running', `执行 ${toolCall.name}`, {
+        tool: toolCall.name,
+        toolIndex: i,
+        toolTotal: toolCalls.length,
+        progress,
+      });
+
       if (this.isCancelled) {
         console.log('[AgentLoop] Cancelled, breaking out of tool execution loop');
         break;

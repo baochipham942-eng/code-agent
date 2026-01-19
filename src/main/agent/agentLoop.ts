@@ -1576,34 +1576,99 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
    * 检测模型是否错误地用文本描述工具调用而非实际使用 tool_use
    * 这是一种常见的模型行为问题，特别是在长上下文或复杂任务中
    *
-   * 匹配模式：
-   * - "Called mcp({...})"
-   * - "Called read_file({...})"
-   * - "I'll call the mcp tool..."
-   * - "Let me use the mcp tool..."
+   * 检测策略：
+   * 1. 历史格式模式 - 基于 formatToolCallForHistory 的逆向解析
+   * 2. 通用调用模式 - "Called toolname({...})"
+   * 3. 意图描述模式 - "I'll call the toolname tool..."
+   * 4. JSON 格式模式 - {"name": "toolname", "arguments": ...}
    */
   private detectFailedToolCallPattern(content: string): { toolName: string; args?: string } | null {
-    // 模式1: "Called toolname({...})" - 最常见的错误模式
+    const trimmed = content.trim();
+
+    // ========== 历史格式模式（逆向解析 formatToolCallForHistory）==========
+    // 这些是我们写入历史的格式，模型可能会"模仿"输出
+
+    // bash: "Ran: <command>"
+    const ranMatch = trimmed.match(/^Ran:\s*(.+)$/is);
+    if (ranMatch) {
+      return { toolName: 'bash', args: JSON.stringify({ command: ranMatch[1].trim() }) };
+    }
+
+    // edit_file: "Edited <path>"
+    const editedMatch = trimmed.match(/^Edited\s+(.+)$/i);
+    if (editedMatch) {
+      return { toolName: 'edit_file', args: JSON.stringify({ file_path: editedMatch[1].trim() }) };
+    }
+
+    // read_file: "Read <path>"
+    const readMatch = trimmed.match(/^Read\s+(.+)$/i);
+    if (readMatch) {
+      return { toolName: 'read_file', args: JSON.stringify({ file_path: readMatch[1].trim() }) };
+    }
+
+    // write_file: "Created <path>"
+    const createdMatch = trimmed.match(/^Created\s+(.+)$/i);
+    if (createdMatch) {
+      return { toolName: 'write_file', args: JSON.stringify({ file_path: createdMatch[1].trim() }) };
+    }
+
+    // glob: "Found files matching: <pattern>"
+    const globMatch = trimmed.match(/^Found files matching:\s*(.+)$/i);
+    if (globMatch) {
+      return { toolName: 'glob', args: JSON.stringify({ pattern: globMatch[1].trim() }) };
+    }
+
+    // grep: "Searched for: <pattern>"
+    const grepMatch = trimmed.match(/^Searched for:\s*(.+)$/i);
+    if (grepMatch) {
+      return { toolName: 'grep', args: JSON.stringify({ pattern: grepMatch[1].trim() }) };
+    }
+
+    // list_directory: "Listed: <path>"
+    const listedMatch = trimmed.match(/^Listed:\s*(.+)$/i);
+    if (listedMatch) {
+      return { toolName: 'list_directory', args: JSON.stringify({ path: listedMatch[1].trim() }) };
+    }
+
+    // web_fetch: "Fetched: <url>"
+    const fetchedMatch = trimmed.match(/^Fetched:\s*(.+)$/i);
+    if (fetchedMatch) {
+      return { toolName: 'web_fetch', args: JSON.stringify({ url: fetchedMatch[1].trim() }) };
+    }
+
+    // skill: "Invoked skill: <name>"
+    const skillMatch = trimmed.match(/^Invoked skill:\s*(.+)$/i);
+    if (skillMatch) {
+      return { toolName: 'skill', args: JSON.stringify({ name: skillMatch[1].trim() }) };
+    }
+
+    // ========== 通用调用模式 ==========
+
+    // "Called toolname({...})" - 最常见的错误模式
     const calledPattern = /Called\s+(\w+)\s*\(\s*(\{[\s\S]*?\})\s*\)/i;
-    const calledMatch = content.match(calledPattern);
+    const calledMatch = trimmed.match(calledPattern);
     if (calledMatch) {
       return { toolName: calledMatch[1], args: calledMatch[2] };
     }
 
-    // 模式2: "I'll/Let me call/use the toolname tool" - 描述意图但未执行
+    // ========== 意图描述模式 ==========
+
+    // "I'll/Let me call/use the toolname tool" - 描述意图但未执行
     const intentPattern = /(?:I'll|Let me|I will|I'm going to)\s+(?:call|use|invoke|execute)\s+(?:the\s+)?(\w+)\s+tool/i;
-    const intentMatch = content.match(intentPattern);
+    const intentMatch = trimmed.match(intentPattern);
     if (intentMatch) {
       // 只有当内容较短（可能是纯意图描述）且包含工具参数描述时才触发
-      if (content.length < 500 && /\{[\s\S]*?\}/.test(content)) {
+      if (trimmed.length < 500 && /\{[\s\S]*?\}/.test(trimmed)) {
         return { toolName: intentMatch[1] };
       }
     }
 
-    // 模式3: JSON 格式的工具调用描述（有时模型会输出 JSON 而非使用 tool_use）
+    // ========== JSON 格式模式 ==========
+
+    // {"name": "toolname", "arguments": ...} 或 {"tool": "toolname", ...}
     const jsonToolPattern = /\{\s*"(?:name|tool)"\s*:\s*"(\w+)"\s*,\s*"(?:arguments|params|input)"\s*:/i;
-    const jsonMatch = content.match(jsonToolPattern);
-    if (jsonMatch && content.trim().startsWith('{')) {
+    const jsonMatch = trimmed.match(jsonToolPattern);
+    if (jsonMatch && trimmed.startsWith('{')) {
       return { toolName: jsonMatch[1] };
     }
 

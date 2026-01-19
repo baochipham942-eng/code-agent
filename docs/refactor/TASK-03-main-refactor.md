@@ -263,7 +263,7 @@ src/main/services/
 - [x] 所有服务按领域目录组织
 - [x] `npm run typecheck` 通过
 - [x] `npm run build` 成功
-- [ ] `npm run dev` 启动正常 (待手动验证)
+- [x] `npm run dev` 启动正常
 - [ ] 所有 35 个工具可正常调用 (待手动验证)
 
 ---
@@ -271,17 +271,63 @@ src/main/services/
 ## 交接备注
 
 - **完成时间**: 2025-01-19
+- **实际完成情况**:
+  - index.ts: 1741 行 → 120 行 (精简 93%)
+  - IPC handlers: 拆分为 13 个独立文件
+  - 工具目录: gen1-gen8 → 9 个功能目录
+  - 服务目录: 平铺结构 → 5 个领域子目录
+
 - **目录结构变更清单**:
-  - `src/main/app/`: bootstrap.ts (服务初始化), window.ts, lifecycle.ts
-  - `src/main/ipc/`: 13 个 IPC handler 文件按领域拆分
-  - `src/main/services/`: 5 个子目录 (core, auth, sync, cloud, infra)
-  - `src/main/tools/`: 9 个功能目录 (file, shell, planning, network, mcp, memory, vision, multiagent, evolution)
+  ```
+  src/main/
+  ├── index.ts              # 120 行，仅包含 app 生命周期
+  ├── app/
+  │   ├── bootstrap.ts      # 服务初始化、全局状态管理
+  │   ├── window.ts         # 窗口创建（修复了开发模式检测）
+  │   └── lifecycle.ts      # app 事件处理
+  ├── ipc/
+  │   ├── index.ts          # setupAllIpcHandlers()
+  │   ├── agent.ipc.ts      # agent:* 通道
+  │   ├── session.ipc.ts    # session:* 通道
+  │   ├── generation.ipc.ts # generation:* 通道
+  │   ├── auth.ipc.ts       # auth:* 通道
+  │   ├── sync.ipc.ts       # sync:* + device:* 通道
+  │   ├── cloud.ipc.ts      # cloud:* 通道
+  │   ├── workspace.ipc.ts  # workspace:* + shell:* 通道
+  │   ├── settings.ipc.ts   # settings:* + window:* + security:* 通道
+  │   ├── update.ipc.ts     # update:* 通道
+  │   ├── mcp.ipc.ts        # mcp:* 通道
+  │   ├── memory.ipc.ts     # memory:* 通道
+  │   ├── planning.ipc.ts   # planning:* 通道
+  │   └── data.ipc.ts       # cache:* + data:* 通道
+  ├── services/
+  │   ├── core/             # ConfigService, DatabaseService, SecureStorage
+  │   ├── auth/             # AuthService, TokenManager
+  │   ├── sync/             # SyncService, CloudStorageService
+  │   ├── cloud/            # CloudConfigService, UpdateService, PromptService
+  │   └── infra/            # LangfuseService, NotificationService, etc.
+  └── tools/
+      ├── file/             # read, write, edit, glob, listDirectory
+      ├── shell/            # bash, grep
+      ├── planning/         # task, todoWrite, askUserQuestion, etc.
+      ├── network/          # webFetch, webSearch, readPdf, skill
+      ├── mcp/              # mcpTool (合并了所有 MCP 相关)
+      ├── memory/           # store, search, codeIndex, autoLearn
+      ├── vision/           # screenshot, computerUse, browserNavigate, browserAction
+      ├── multiagent/       # spawnAgent, agentMessage, workflowOrchestrate
+      └── evolution/        # strategyOptimize, toolCreate, selfEvaluate, etc.
+  ```
 
 - **导入路径变更说明**:
   - 服务: `'../services/ConfigService'` → `'../services/core/ConfigService'`
   - 工具: `'../tools/gen1/bash'` → `'../tools/shell/bash'`
+  - IPC: 从 index.ts 内联 → `'../ipc'` 模块
+
+- **关键修复**:
+  - `window.ts`: 使用 `app.isPackaged` 替代 `NODE_ENV` 判断开发模式
 
 - **下游 Agent 注意事项**:
-  - IPC handlers 已完全迁移到 `src/main/ipc/` 目录
-  - AgentOrchestrator、GenerationManager 等全局状态现在由 bootstrap.ts 管理
-  - 新增 IPC handler 请创建对应的 `xxx.ipc.ts` 文件并在 `ipc/index.ts` 中注册
+  1. IPC handlers 已完全迁移到 `src/main/ipc/` 目录
+  2. AgentOrchestrator、GenerationManager 等全局状态由 `bootstrap.ts` 管理
+  3. 新增 IPC handler 请创建 `xxx.ipc.ts` 并在 `ipc/index.ts` 注册
+  4. 全局状态获取使用 `getAgentOrchestrator()` 等函数，从 bootstrap.ts 导出

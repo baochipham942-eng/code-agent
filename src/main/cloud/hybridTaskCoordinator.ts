@@ -409,7 +409,7 @@ export class HybridTaskCoordinator extends EventEmitter {
    */
   private analyzeAndSplitPrompt(
     prompt: string,
-    type: CloudAgentType
+    _type: CloudAgentType
   ): Array<{
     prompt: string;
     type?: CloudAgentType;
@@ -480,7 +480,7 @@ export class HybridTaskCoordinator extends EventEmitter {
    */
   private decideSubtaskLocation(
     part: { prompt: string },
-    parentType: CloudAgentType
+    _parentType: CloudAgentType
   ): TaskExecutionLocation {
     const prompt = part.prompt.toLowerCase();
 

@@ -260,7 +260,7 @@ export class AgentOrchestrator {
     }
   }
 
-  private getModelConfig(settings: ReturnType<ConfigService['getSettings']>): ModelConfig {
+  private getModelConfig(_settings: ReturnType<ConfigService['getSettings']>): ModelConfig {
     const defaultProvider = 'deepseek';
     const apiKey = this.configService.getApiKey(defaultProvider);
 

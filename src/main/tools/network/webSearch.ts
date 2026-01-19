@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import { getConfigService } from '../../services/core/configService';
 
 const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
 
@@ -50,11 +51,12 @@ export const webSearchTool: Tool = {
     const query = params.query as string;
     const count = Math.min(Math.max((params.count as number) || 5, 1), 20);
 
-    const apiKey = process.env.BRAVE_API_KEY;
+    const configService = getConfigService();
+    const apiKey = configService?.getServiceApiKey('brave') || process.env.BRAVE_API_KEY;
     if (!apiKey) {
       return {
         success: false,
-        error: 'BRAVE_API_KEY environment variable not set. Please set it in your environment or .env file.',
+        error: 'Brave API Key not configured. Please set it in Settings > API Keys or in your .env file.',
       };
     }
 

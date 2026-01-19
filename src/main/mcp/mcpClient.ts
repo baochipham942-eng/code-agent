@@ -549,69 +549,84 @@ export class MCPClient {
 // Default MCP Server Configurations
 // ----------------------------------------------------------------------------
 
-export const DEFAULT_MCP_SERVERS: MCPServerConfig[] = [
-  // ========== SSE 远程服务器 ==========
+import { getConfigService } from '../services/core/configService';
 
-  // DeepWiki - 解读 GitHub 项目文档 (官方免费服务)
-  // 工具: read_wiki_structure, read_wiki_contents, ask_question
-  {
-    name: 'deepwiki',
-    type: 'sse',
-    serverUrl: 'https://mcp.deepwiki.com/sse',
-    enabled: true,
-  },
+/**
+ * Get default MCP server configurations
+ * Uses configService for API keys (secure storage > env variable)
+ */
+export function getDefaultMCPServers(): MCPServerConfig[] {
+  const configService = getConfigService();
+  const braveApiKey = configService?.getServiceApiKey('brave') || process.env.BRAVE_API_KEY || '';
+  const githubToken = configService?.getServiceApiKey('github') || process.env.GITHUB_TOKEN || '';
 
-  // ========== Stdio 本地服务器 ==========
+  return [
+    // ========== SSE 远程服务器 ==========
 
-  // 文件系统服务器 - 核心能力
-  {
-    name: 'filesystem',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-filesystem', process.env.HOME || '/'],
-    enabled: false, // 默认禁用，避免与内置工具冲突
-  },
-  // Git 服务器 - 版本控制
-  {
-    name: 'git',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-git'],
-    enabled: false, // 默认禁用，可在设置中启用
-  },
-  // GitHub 服务器
-  {
-    name: 'github',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-github'],
-    env: {
-      GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_TOKEN || '',
+    // DeepWiki - 解读 GitHub 项目文档 (官方免费服务)
+    // 工具: read_wiki_structure, read_wiki_contents, ask_question
+    {
+      name: 'deepwiki',
+      type: 'sse',
+      serverUrl: 'https://mcp.deepwiki.com/sse',
+      enabled: true,
     },
-    enabled: !!process.env.GITHUB_TOKEN,
-  },
-  // SQLite 服务器
-  {
-    name: 'sqlite',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-sqlite'],
-    enabled: false,
-  },
-  // Brave Search 服务器
-  {
-    name: 'brave-search',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-brave-search'],
-    env: {
-      BRAVE_API_KEY: process.env.BRAVE_API_KEY || '',
+
+    // ========== Stdio 本地服务器 ==========
+
+    // 文件系统服务器 - 核心能力
+    {
+      name: 'filesystem',
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-filesystem', process.env.HOME || '/'],
+      enabled: false, // 默认禁用，避免与内置工具冲突
     },
-    enabled: !!process.env.BRAVE_API_KEY,
-  },
-  // Memory 服务器 - 知识图谱记忆
-  {
-    name: 'memory',
-    command: 'npx',
-    args: ['-y', '@modelcontextprotocol/server-memory'],
-    enabled: false, // 默认禁用，可在设置中启用
-  },
-];
+    // Git 服务器 - 版本控制
+    {
+      name: 'git',
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-git'],
+      enabled: false, // 默认禁用，可在设置中启用
+    },
+    // GitHub 服务器
+    {
+      name: 'github',
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-github'],
+      env: {
+        GITHUB_PERSONAL_ACCESS_TOKEN: githubToken,
+      },
+      enabled: !!githubToken,
+    },
+    // SQLite 服务器
+    {
+      name: 'sqlite',
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-sqlite'],
+      enabled: false,
+    },
+    // Brave Search 服务器
+    {
+      name: 'brave-search',
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-brave-search'],
+      env: {
+        BRAVE_API_KEY: braveApiKey,
+      },
+      enabled: !!braveApiKey,
+    },
+    // Memory 服务器 - 知识图谱记忆
+    {
+      name: 'memory',
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-memory'],
+      enabled: false, // 默认禁用，可在设置中启用
+    },
+  ];
+}
+
+// Legacy export for backward compatibility
+export const DEFAULT_MCP_SERVERS: MCPServerConfig[] = [];
 
 // ----------------------------------------------------------------------------
 // Singleton Instance
@@ -629,8 +644,9 @@ export function getMCPClient(): MCPClient {
 export async function initMCPClient(configs?: MCPServerConfig[]): Promise<MCPClient> {
   const client = getMCPClient();
 
-  // 添加默认服务器配置
-  for (const config of DEFAULT_MCP_SERVERS) {
+  // 添加默认服务器配置 (动态获取 API Keys)
+  const defaultServers = getDefaultMCPServers();
+  for (const config of defaultServers) {
     client.addServer(config);
   }
 

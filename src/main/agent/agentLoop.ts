@@ -237,7 +237,7 @@ export class AgentLoop {
       // 1. Call model
       logger.debug('[AgentLoop] Calling inference...');
       const inferenceStartTime = Date.now();
-      const response = await this.inference();
+      let response = await this.inference();
       const inferenceDuration = Date.now() - inferenceStartTime;
       logger.debug('[AgentLoop] Inference response type:', response.type);
 
@@ -248,29 +248,48 @@ export class AgentLoop {
         duration: inferenceDuration,
       });
 
-      // 2. Handle text response
+      // 2. Handle text response - check for text-described tool calls first
       if (response.type === 'text' && response.content) {
         // 检测模型是否错误地用文本描述工具调用而非实际调用
         const failedToolCallMatch = this.detectFailedToolCallPattern(response.content);
-        if (failedToolCallMatch && this.toolCallRetryCount < this.maxToolCallRetries) {
-          this.toolCallRetryCount++;
-          logger.warn(`[AgentLoop] Detected text description of tool call instead of actual tool_use: "${failedToolCallMatch.toolName}"`);
-          logCollector.agent('WARN', `Model described tool call as text instead of using tool_use: ${failedToolCallMatch.toolName}`);
+        if (failedToolCallMatch) {
+          // 尝试解析参数并强制执行
+          const forceExecuteResult = this.tryForceExecuteTextToolCall(failedToolCallMatch, response.content);
+          if (forceExecuteResult) {
+            logger.info(`[AgentLoop] Force executing text-described tool call: ${failedToolCallMatch.toolName}`);
+            logCollector.agent('INFO', `Force executing text tool call: ${failedToolCallMatch.toolName}`);
 
-          // 注入系统消息提醒模型正确使用工具
-          this.injectSystemMessage(
-            `<tool-call-format-error>\n` +
-            `⚠️ ERROR: You just described a tool call as text instead of actually calling the tool.\n` +
-            `You wrote: "${response.content.slice(0, 200)}..."\n\n` +
-            `This is WRONG. You must use the actual tool calling mechanism, not describe it in text.\n` +
-            `Please call the "${failedToolCallMatch.toolName}" tool properly using the tool_use format.\n` +
-            `</tool-call-format-error>`
-          );
+            // 转换为 tool_use 响应，跳过后续 text 处理
+            response = {
+              type: 'tool_use',
+              toolCalls: [forceExecuteResult],
+            };
+            // 注意：这里不 continue，下面的 if 块检查会失败，自动进入 tool_use 处理
+          } else if (this.toolCallRetryCount < this.maxToolCallRetries) {
+            // 无法解析参数，使用原有重试逻辑
+            this.toolCallRetryCount++;
+            logger.warn(`[AgentLoop] Detected text description of tool call instead of actual tool_use: "${failedToolCallMatch.toolName}"`);
+            logCollector.agent('WARN', `Model described tool call as text instead of using tool_use: ${failedToolCallMatch.toolName}`);
 
-          // 继续循环，让模型重新调用
-          logger.debug(`[AgentLoop] Tool call retry ${this.toolCallRetryCount}/${this.maxToolCallRetries}`);
-          continue;
+            // 注入系统消息提醒模型正确使用工具
+            this.injectSystemMessage(
+              `<tool-call-format-error>\n` +
+              `⚠️ ERROR: You just described a tool call as text instead of actually calling the tool.\n` +
+              `You wrote: "${response.content.slice(0, 200)}..."\n\n` +
+              `This is WRONG. You must use the actual tool calling mechanism, not describe it in text.\n` +
+              `Please call the "${failedToolCallMatch.toolName}" tool properly using the tool_use format.\n` +
+              `</tool-call-format-error>`
+            );
+
+            // 继续循环，让模型重新调用
+            logger.debug(`[AgentLoop] Tool call retry ${this.toolCallRetryCount}/${this.maxToolCallRetries}`);
+            continue;
+          }
         }
+      }
+
+      // 2b. Handle actual text response (not converted to tool_use)
+      if (response.type === 'text' && response.content) {
 
         // 发送生成中进度
         this.emitTaskProgress('generating', '生成回复中...');
@@ -1586,6 +1605,84 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
     const jsonMatch = content.match(jsonToolPattern);
     if (jsonMatch && content.trim().startsWith('{')) {
       return { toolName: jsonMatch[1] };
+    }
+
+    return null;
+  }
+
+  /**
+   * 尝试从文本描述中解析工具参数并构造 ToolCall
+   * 用于强制执行模型用文本描述的工具调用
+   */
+  private tryForceExecuteTextToolCall(
+    match: { toolName: string; args?: string },
+    content: string
+  ): ToolCall | null {
+    const { toolName, args: matchedArgs } = match;
+
+    // 优先使用正则匹配到的参数
+    if (matchedArgs) {
+      try {
+        const parsedArgs = JSON.parse(matchedArgs);
+        logger.debug(`[AgentLoop] Parsed tool args from regex match: ${JSON.stringify(parsedArgs)}`);
+        return {
+          id: `force_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name: toolName,
+          arguments: parsedArgs,
+        };
+      } catch (e) {
+        logger.debug(`[AgentLoop] Failed to parse matched args: ${matchedArgs}`);
+      }
+    }
+
+    // 尝试从内容中提取完整的 JSON 参数
+    // 模式: mcp({...}) 或 tool_name({...})
+    const jsonExtractPattern = new RegExp(
+      `${toolName}\\s*\\(\\s*(\\{[\\s\\S]*\\})\\s*\\)`,
+      'i'
+    );
+    const jsonMatch = content.match(jsonExtractPattern);
+    if (jsonMatch) {
+      try {
+        // 尝试修复常见的 JSON 问题
+        let jsonStr = jsonMatch[1];
+        // 修复单引号
+        jsonStr = jsonStr.replace(/'/g, '"');
+        // 修复没有引号的 key
+        jsonStr = jsonStr.replace(/(\w+)(?=\s*:)/g, '"$1"');
+        // 修复重复引号
+        jsonStr = jsonStr.replace(/""(\w+)""/g, '"$1"');
+
+        const parsedArgs = JSON.parse(jsonStr);
+        logger.debug(`[AgentLoop] Parsed tool args from content: ${JSON.stringify(parsedArgs)}`);
+        return {
+          id: `force_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name: toolName,
+          arguments: parsedArgs,
+        };
+      } catch (e) {
+        logger.debug(`[AgentLoop] Failed to parse JSON from content: ${jsonMatch[1]?.slice(0, 200)}`);
+      }
+    }
+
+    // 尝试提取 JSON 块（可能在代码块中）
+    const codeBlockPattern = /```(?:json)?\s*(\{[\s\S]*?\})\s*```/;
+    const codeBlockMatch = content.match(codeBlockPattern);
+    if (codeBlockMatch) {
+      try {
+        const parsedArgs = JSON.parse(codeBlockMatch[1]);
+        // 检查是否包含工具调用相关字段
+        if (parsedArgs.server || parsedArgs.tool || parsedArgs.arguments || parsedArgs.file_path || parsedArgs.command) {
+          logger.debug(`[AgentLoop] Parsed tool args from code block: ${JSON.stringify(parsedArgs)}`);
+          return {
+            id: `force_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            name: toolName,
+            arguments: parsedArgs,
+          };
+        }
+      } catch (e) {
+        logger.debug(`[AgentLoop] Failed to parse JSON from code block`);
+      }
     }
 
     return null;

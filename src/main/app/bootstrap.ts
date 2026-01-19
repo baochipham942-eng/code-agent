@@ -9,6 +9,7 @@ import {
   ConfigService,
   initDatabase,
   initSupabase,
+  isSupabaseInitialized,
   getAuthService,
   getSyncService,
   initLangfuse,
@@ -105,6 +106,18 @@ export async function initializeCoreServices(): Promise<ConfigService> {
   });
   logger.info('Memory service initialized');
 
+  // Initialize Supabase (MUST be in core services for auth IPC handlers)
+  const settings = configService.getSettings();
+  const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey;
+
+  if (supabaseUrl && supabaseAnonKey) {
+    initSupabase(supabaseUrl, supabaseAnonKey);
+    logger.info('Supabase initialized (core)');
+  } else {
+    logger.warn('Supabase not configured - auth features disabled');
+  }
+
   logger.info('Core services initialized');
   return configService;
 }
@@ -195,72 +208,64 @@ async function initializeServices(): Promise<void> {
   // Setup LogBridge command handler
   await setupLogBridge();
 
-  // Initialize Supabase (if configured)
-  const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey;
+  // Initialize Supabase-dependent services (Supabase already initialized in core services)
+  if (isSupabaseInitialized()) {
+    logger.info('Supabase initialized');
 
-  if (supabaseUrl && supabaseAnonKey) {
-    try {
-      initSupabase(supabaseUrl, supabaseAnonKey);
-      logger.info('Supabase initialized');
+    // Set up auth change callback
+    const authService = getAuthService();
+    authService.addAuthChangeCallback((user) => {
+      if (mainWindow) {
+        mainWindow.webContents.send(IPC_CHANNELS.AUTH_EVENT, {
+          type: user ? 'signed_in' : 'signed_out',
+          user,
+        });
+      }
 
-      // Set up auth change callback
-      const authService = getAuthService();
-      authService.addAuthChangeCallback((user) => {
-        if (mainWindow) {
-          mainWindow.webContents.send(IPC_CHANNELS.AUTH_EVENT, {
-            type: user ? 'signed_in' : 'signed_out',
-            user,
-          });
-        }
+      // Start/stop sync based on auth state
+      const syncService = getSyncService();
+      if (user) {
+        syncService.initialize().then(() => {
+          syncService.startAutoSync(SYNC.SYNC_INTERVAL);
+          logger.info('Auto-sync started');
+        });
+      } else {
+        syncService.stopAutoSync();
+        logger.info('Auto-sync stopped');
+      }
+    });
 
-        // Start/stop sync based on auth state
-        const syncService = getSyncService();
-        if (user) {
-          syncService.initialize().then(() => {
-            syncService.startAutoSync(SYNC.SYNC_INTERVAL);
-            logger.info('Auto-sync started');
-          });
-        } else {
-          syncService.stopAutoSync();
-          logger.info('Auto-sync stopped');
-        }
+    // Initialize auth (restore session) - NON-BLOCKING
+    authService.initialize()
+      .then(() => {
+        logger.info('Auth service initialized');
+      })
+      .catch((error) => {
+        logger.error('Failed to initialize auth (non-blocking)', error);
       });
 
-      // Initialize auth (restore session) - NON-BLOCKING
-      authService.initialize()
-        .then(() => {
-          logger.info('Auth service initialized');
-        })
-        .catch((error) => {
-          logger.error('Failed to initialize auth (non-blocking)', error);
-        });
+    // Initialize unified orchestrator (cloud task execution)
+    try {
+      const updateServerUrl = process.env.CLOUD_API_URL || settings.cloudApi?.url || 'https://code-agent-beta.vercel.app';
+      initUnifiedOrchestrator({
+        cloudExecutor: {
+          maxConcurrent: 3,
+          defaultTimeout: CLOUD.CLOUD_EXECUTION_TIMEOUT,
+          maxIterations: 20,
+          apiEndpoint: updateServerUrl,
+        },
+      });
+      logger.info('Unified orchestrator initialized');
+    } catch (error: unknown) {
+      logger.error('Failed to initialize unified orchestrator', error);
+    }
 
-      // Initialize unified orchestrator (cloud task execution)
-      try {
-        const updateServerUrl = process.env.CLOUD_API_URL || settings.cloudApi?.url || 'https://code-agent-beta.vercel.app';
-        initUnifiedOrchestrator({
-          cloudExecutor: {
-            maxConcurrent: 3,
-            defaultTimeout: CLOUD.CLOUD_EXECUTION_TIMEOUT,
-            maxIterations: 20,
-            apiEndpoint: updateServerUrl,
-          },
-        });
-        logger.info('Unified orchestrator initialized');
-      } catch (error: unknown) {
-        logger.error('Failed to initialize unified orchestrator', error);
-      }
-
-      // Initialize cloud task service
-      try {
-        initCloudTaskService({});
-        logger.info('CloudTaskService initialized');
-      } catch (error: unknown) {
-        logger.error('Failed to initialize CloudTaskService', error);
-      }
-    } catch (error) {
-      logger.error('Failed to initialize Supabase', error);
+    // Initialize cloud task service
+    try {
+      initCloudTaskService({});
+      logger.info('CloudTaskService initialized');
+    } catch (error: unknown) {
+      logger.error('Failed to initialize CloudTaskService', error);
     }
   } else {
     logger.info('Supabase not configured (offline mode)');

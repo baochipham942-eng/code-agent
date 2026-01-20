@@ -214,6 +214,7 @@ export const IPC_CHANNELS = {
   MCP_GET_STATUS: 'mcp:get-status',
   MCP_LIST_TOOLS: 'mcp:list-tools',
   MCP_LIST_RESOURCES: 'mcp:list-resources',
+  MCP_EVENT: 'mcp:event',
 
   // Workspace channels
   WORKSPACE_SELECT_DIRECTORY: 'workspace:select-directory',
@@ -521,6 +522,13 @@ export interface NotificationClickedEvent {
   sessionId: string;
 }
 
+export type MCPEventType = 'connection_errors' | 'server_connected' | 'server_disconnected';
+
+export interface MCPEvent {
+  type: MCPEventType;
+  data?: { server: string; error?: string }[];
+}
+
 export interface ToolCreateRequestEvent {
   id: string;
   name: string;
@@ -541,6 +549,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.SESSION_LIST_UPDATED]: () => void;
   [IPC_CHANNELS.UPDATE_EVENT]: (event: UpdateEvent) => void;
   [IPC_CHANNELS.NOTIFICATION_CLICKED]: (event: NotificationClickedEvent) => void;
+  [IPC_CHANNELS.MCP_EVENT]: (event: MCPEvent) => void;
   [IPC_CHANNELS.CLOUD_TASK_PROGRESS]: (event: TaskProgressEvent) => void;
   [IPC_CHANNELS.CLOUD_TASK_COMPLETED]: (task: CloudTask) => void;
   [IPC_CHANNELS.CLOUD_TASK_FAILED]: (task: CloudTask) => void;

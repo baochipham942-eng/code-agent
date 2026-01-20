@@ -45,6 +45,11 @@ interface SecureStorageData {
   'apikey.moonshot'?: string;
   'apikey.perplexity'?: string;
   'apikey.openrouter'?: string;
+  // Service API Keys (non-model)
+  'apikey.brave'?: string;
+  'apikey.github'?: string;
+  'apikey.langfuse_public'?: string;
+  'apikey.langfuse_secret'?: string;
 }
 
 /**
@@ -184,7 +189,13 @@ class SecureStorageService {
    */
   getStoredApiKeyProviders(): string[] {
     const providers: string[] = [];
-    const allKeys = ['deepseek', 'claude', 'openai', 'groq', 'zhipu', 'qwen', 'moonshot', 'perplexity', 'openrouter'];
+    // Model providers + service API keys
+    const allKeys = [
+      // Model providers
+      'deepseek', 'claude', 'openai', 'groq', 'zhipu', 'qwen', 'moonshot', 'perplexity', 'openrouter',
+      // Service API keys
+      'brave', 'github', 'langfuse_public', 'langfuse_secret',
+    ];
     for (const provider of allKeys) {
       if (this.hasApiKey(provider)) {
         providers.push(provider);

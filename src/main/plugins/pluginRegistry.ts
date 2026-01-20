@@ -16,6 +16,32 @@ import { discoverPlugins, loadPlugin, watchPluginsDir } from './pluginLoader';
 // Plugin Registry Class
 // ----------------------------------------------------------------------------
 
+/**
+ * Plugin Registry - 插件注册表
+ *
+ * 管理插件的完整生命周期：
+ * - 发现：扫描插件目录
+ * - 加载：解析 manifest 和入口文件
+ * - 激活：调用 activate(api)
+ * - 停用：调用 deactivate()
+ *
+ * 插件能力：
+ * - 注册自定义工具（Tool）
+ * - 访问本地存储
+ * - 订阅事件
+ *
+ * @example
+ * ```typescript
+ * const registry = getPluginRegistry();
+ * await registry.initialize();
+ *
+ * const plugins = registry.getPlugins();
+ * await registry.enablePlugin('my-plugin');
+ * ```
+ *
+ * @see PluginLoader - 插件加载器
+ * @see PluginAPI - 插件 API 接口
+ */
 class PluginRegistry {
   private plugins: Map<string, LoadedPlugin> = new Map();
   private stopWatcher: (() => void) | null = null;

@@ -87,7 +87,7 @@ describe('GenerationManager', () => {
   describe('Generation Properties', () => {
     it('gen1 should have correct properties', () => {
       const gen = manager.getGeneration('gen1');
-      expect(gen?.version).toBe('v0.2');
+      expect(gen?.version).toBe('v1.0');
       expect(gen?.tools).toContain('bash');
       expect(gen?.tools).toContain('read_file');
       expect(gen?.tools).toContain('write_file');

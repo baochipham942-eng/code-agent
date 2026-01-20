@@ -81,6 +81,35 @@ export interface ToolExecutionResult {
 // Tool Registry
 // ----------------------------------------------------------------------------
 
+/**
+ * Tool Registry - 工具注册表
+ *
+ * 管理所有可用工具的注册、查询和代际过滤。
+ * 支持 8 代工具的渐进式注册。
+ *
+ * 核心功能：
+ * - 工具注册和注销
+ * - 按代际过滤工具
+ * - 云端工具元数据合并
+ * - 工具定义导出（供模型调用）
+ *
+ * @example
+ * ```typescript
+ * const registry = new ToolRegistry();
+ *
+ * // 获取 Gen4 可用的所有工具
+ * const tools = registry.getForGeneration('gen4');
+ *
+ * // 获取特定工具
+ * const bash = registry.get('bash');
+ *
+ * // 注册自定义工具
+ * registry.register(myCustomTool);
+ * ```
+ *
+ * @see ToolExecutor - 工具执行器
+ * @see Tool - 工具接口定义
+ */
 export class ToolRegistry {
   private tools: Map<string, Tool> = new Map();
 
@@ -146,24 +175,55 @@ export class ToolRegistry {
     this.register(learnPatternTool);
   }
 
+  /**
+   * 注册一个工具
+   *
+   * @param tool - 要注册的工具实例
+   */
   register(tool: Tool): void {
     this.tools.set(tool.name, tool);
   }
 
+  /**
+   * 注销一个工具
+   *
+   * @param name - 工具名称
+   * @returns true 表示成功注销，false 表示工具不存在
+   */
   unregister(name: string): boolean {
     return this.tools.delete(name);
   }
 
+  /**
+   * 获取指定名称的工具
+   *
+   * @param name - 工具名称
+   * @returns Tool 实例，如果不存在则返回 undefined
+   */
   get(name: string): Tool | undefined {
     return this.tools.get(name);
   }
 
+  /**
+   * 获取指定代际可用的所有工具
+   *
+   * @param generationId - 代际 ID（如 'gen1', 'gen4'）
+   * @returns 该代际可用的工具数组
+   */
   getForGeneration(generationId: GenerationId): Tool[] {
     return Array.from(this.tools.values()).filter((tool) =>
       tool.generations.includes(generationId)
     );
   }
 
+  /**
+   * 获取指定代际的工具定义（供模型调用）
+   *
+   * 会自动合并云端工具元数据（如描述）
+   *
+   * @param generationId - 代际 ID
+   * @returns 工具定义数组
+   */
   getToolDefinitions(generationId: GenerationId): ToolDefinition[] {
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
@@ -183,6 +243,11 @@ export class ToolRegistry {
     });
   }
 
+  /**
+   * 获取所有已注册的工具
+   *
+   * @returns 所有工具的数组
+   */
   getAllTools(): Tool[] {
     return Array.from(this.tools.values());
   }

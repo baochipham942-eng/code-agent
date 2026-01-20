@@ -1,0 +1,628 @@
+openapi: 3.0.3
+info:
+  title: Code Agent Cloud API
+  version: 1.0.0
+  description: |
+    Code Agent 云端 API，提供配置管理、版本更新、身份认证等服务。
+
+    ## 基础 URL
+    - 生产环境: https://code-agent-beta.vercel.app
+
+    ## 认证
+    部分 API 需要 Bearer Token 认证（通过 GitHub OAuth 获取）。
+  contact:
+    name: Code Agent Support
+
+servers:
+  - url: https://code-agent-beta.vercel.app
+    description: 生产环境
+
+paths:
+  /api/health:
+    get:
+      summary: 健康检查
+      description: 用于 warmup 和服务状态检查
+      operationId: healthCheck
+      tags:
+        - 系统
+      responses:
+        '200':
+          description: 服务正常
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+                  version:
+                    type: string
+                    example: "0.1.0"
+                  uptime:
+                    type: integer
+                    description: 服务运行时间（毫秒）
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api/update:
+    get:
+      summary: 版本更新检查
+      description: 检查客户端是否需要更新
+      operationId: checkUpdate
+      tags:
+        - 更新
+      parameters:
+        - name: action
+          in: query
+          description: |
+            操作类型:
+            - `check`: 检查是否有更新
+            - `latest`: 获取最新版本信息
+            - `health`: 健康检查
+          schema:
+            type: string
+            enum: [check, latest, health]
+        - name: version
+          in: query
+          description: 当前客户端版本号
+          schema:
+            type: string
+            example: "0.8.0"
+        - name: platform
+          in: query
+          description: 客户端平台
+          schema:
+            type: string
+            enum: [darwin, win32, linux]
+            default: darwin
+      responses:
+        '200':
+          description: 更新检查结果
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/UpdateCheckResponse'
+                  - $ref: '#/components/schemas/LatestReleaseResponse'
+                  - $ref: '#/components/schemas/UpdateHealthResponse'
+
+  /api/v1/config:
+    get:
+      summary: 获取云端配置
+      description: |
+        获取云端配置，支持：
+        - 完整配置
+        - 仅版本号（用于检查更新）
+        - 特定部分（prompts, skills, flags, ui, rules）
+      operationId: getCloudConfig
+      tags:
+        - 配置
+      parameters:
+        - name: version
+          in: query
+          description: 设为 true 只返回版本号
+          schema:
+            type: boolean
+        - name: section
+          in: query
+          description: 获取特定部分
+          schema:
+            type: string
+            enum: [prompts, skills, flags, ui, rules, mcp]
+        - name: If-None-Match
+          in: header
+          description: ETag 用于缓存控制
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 配置数据
+          headers:
+            ETag:
+              description: 配置版本哈希
+              schema:
+                type: string
+            Cache-Control:
+              description: 缓存控制
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloudConfig'
+        '304':
+          description: 配置未变更（ETag 匹配）
+
+  /api/prompts:
+    get:
+      summary: 获取 System Prompts
+      description: 获取各代际的 System Prompt
+      operationId: getPrompts
+      tags:
+        - 配置
+      parameters:
+        - name: gen
+          in: query
+          description: 代际 ID，使用 "all" 获取全部
+          schema:
+            type: string
+            example: "gen4"
+        - name: version
+          in: query
+          description: 设为 true 只返回版本号
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Prompt 内容
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version:
+                    type: string
+                  prompts:
+                    type: object
+                    additionalProperties:
+                      type: string
+
+  /api/auth:
+    get:
+      summary: GitHub OAuth 回调
+      description: 处理 GitHub OAuth 认证回调
+      operationId: authCallback
+      tags:
+        - 认证
+      parameters:
+        - name: code
+          in: query
+          description: GitHub 授权码
+          required: true
+          schema:
+            type: string
+      responses:
+        '302':
+          description: 重定向到客户端
+
+  /api/sync:
+    get:
+      summary: 获取同步数据
+      description: 获取用户的云端同步数据
+      operationId: getSyncData
+      tags:
+        - 同步
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 同步数据
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+    post:
+      summary: 上传同步数据
+      description: 上传用户数据到云端
+      operationId: uploadSyncData
+      tags:
+        - 同步
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                settings:
+                  type: object
+                sessions:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: 上传成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+  /api/tools:
+    get:
+      summary: 云端工具
+      description: |
+        提供云端工具服务，通过 action 参数选择：
+        - `api`: 调用外部 API
+        - `scrape`: 网页抓取
+        - `search`: 网络搜索
+      operationId: cloudTools
+      tags:
+        - 工具
+      parameters:
+        - name: action
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [api, scrape, search]
+        - name: url
+          in: query
+          description: 目标 URL（api/scrape 使用）
+          schema:
+            type: string
+        - name: query
+          in: query
+          description: 搜索关键词（search 使用）
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 工具执行结果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+
+  /api/agent:
+    post:
+      summary: 云端 Agent
+      description: 提交任务到云端 Agent 执行
+      operationId: runCloudAgent
+      tags:
+        - Agent
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentRequest'
+      responses:
+        '200':
+          description: 任务执行结果
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentResponse'
+
+  /api/user-keys:
+    get:
+      summary: 获取用户 API Keys
+      description: 获取用户保存的 API Keys
+      operationId: getUserKeys
+      tags:
+        - 用户
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: API Keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  keys:
+                    type: object
+    post:
+      summary: 保存用户 API Keys
+      description: 保存用户的 API Keys 到云端
+      operationId: saveUserKeys
+      tags:
+        - 用户
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
+      responses:
+        '200':
+          description: 保存成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: GitHub OAuth 获取的 access token
+
+  schemas:
+    CloudConfig:
+      type: object
+      properties:
+        version:
+          type: string
+          description: 配置版本号
+          example: "1.0.0"
+        prompts:
+          type: object
+          description: 各代际的 System Prompt
+          additionalProperties:
+            type: string
+        skills:
+          type: array
+          description: 技能定义
+          items:
+            $ref: '#/components/schemas/SkillDefinition'
+        toolMeta:
+          type: object
+          description: 工具元数据
+          additionalProperties:
+            $ref: '#/components/schemas/ToolMetadata'
+        featureFlags:
+          $ref: '#/components/schemas/FeatureFlags'
+        uiStrings:
+          type: object
+          description: UI 文本（多语言）
+          properties:
+            zh:
+              type: object
+              additionalProperties:
+                type: string
+            en:
+              type: object
+              additionalProperties:
+                type: string
+        rules:
+          type: object
+          description: 行为规则
+          additionalProperties:
+            type: string
+        mcpServers:
+          type: array
+          description: MCP 服务器配置
+          items:
+            $ref: '#/components/schemas/MCPServerConfig'
+
+    SkillDefinition:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "commit"
+        description:
+          type: string
+        prompt:
+          type: string
+        tools:
+          type: array
+          items:
+            type: string
+        version:
+          type: string
+
+    ToolMetadata:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        version:
+          type: string
+
+    FeatureFlags:
+      type: object
+      properties:
+        enableGen8:
+          type: boolean
+          description: 启用 Gen8 自我进化工具
+        enableCloudAgent:
+          type: boolean
+          description: 启用云端 Agent
+        enableMemory:
+          type: boolean
+          description: 启用记忆系统
+        enableComputerUse:
+          type: boolean
+          description: 启用计算机控制
+        maxIterations:
+          type: integer
+          description: 最大迭代次数
+          example: 50
+        maxMessageLength:
+          type: integer
+          description: 最大消息长度
+        enableExperimentalTools:
+          type: boolean
+          description: 启用实验性工具
+
+    MCPServerConfig:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "github"
+        name:
+          type: string
+          example: "GitHub MCP"
+        type:
+          type: string
+          enum: [stdio, sse]
+        enabled:
+          type: boolean
+        config:
+          type: object
+          properties:
+            command:
+              type: string
+            args:
+              type: array
+              items:
+                type: string
+            url:
+              type: string
+            env:
+              type: object
+              additionalProperties:
+                type: string
+        requiredEnvVars:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+
+    UpdateCheckResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        hasUpdate:
+          type: boolean
+        forceUpdate:
+          type: boolean
+          description: 是否强制更新
+        currentVersion:
+          type: string
+        latestVersion:
+          type: string
+        publishedAt:
+          type: string
+          format: date-time
+        releaseNotes:
+          type: string
+        downloadUrl:
+          type: string
+        fileSize:
+          type: integer
+
+    LatestReleaseResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        version:
+          type: string
+        publishedAt:
+          type: string
+          format: date-time
+        releaseNotes:
+          type: string
+        forceUpdate:
+          type: boolean
+        downloads:
+          type: object
+          properties:
+            darwin:
+              type: object
+              properties:
+                url:
+                  type: string
+                size:
+                  type: integer
+            win32:
+              type: object
+              properties:
+                url:
+                  type: string
+                size:
+                  type: integer
+            linux:
+              type: object
+              properties:
+                url:
+                  type: string
+                size:
+                  type: integer
+
+    UpdateHealthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        service:
+          type: string
+        version:
+          type: string
+        latestAppVersion:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    AgentRequest:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: 用户消息
+        sessionId:
+          type: string
+          description: 会话 ID
+        generation:
+          type: string
+          description: 使用的代际
+          enum: [gen1, gen2, gen3, gen4, gen5, gen6, gen7, gen8]
+          default: gen4
+
+    AgentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        response:
+          type: string
+          description: Agent 回复
+        toolCalls:
+          type: array
+          description: 工具调用记录
+          items:
+            type: object
+            properties:
+              tool:
+                type: string
+              input:
+                type: object
+              output:
+                type: object
+
+tags:
+  - name: 系统
+    description: 系统状态和健康检查
+  - name: 配置
+    description: 云端配置管理
+  - name: 更新
+    description: 客户端版本更新
+  - name: 认证
+    description: 用户认证
+  - name: 同步
+    description: 数据同步
+  - name: 工具
+    description: 云端工具服务
+  - name: Agent
+    description: 云端 Agent
+  - name: 用户
+    description: 用户数据管理

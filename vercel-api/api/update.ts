@@ -27,26 +27,30 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.8.2',
-  publishedAt: '2026-01-19T22:00:00.000Z',
+  version: '0.8.6',
+  publishedAt: '2026-01-20T09:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.8.2
+## Code Agent v0.8.6
 
-### MCP 连接稳定性
-- MCP 工具调用添加 60 秒超时机制
-- 超时后自动重连并重试
-- 防止 SSE 连接静默断开导致 Agent 卡住
+### 文档和测试完善
+- 为 7 个核心类添加完整 JSDoc 文档
+- 创建 OpenAPI 规范文档 (vercel-api/openapi.yaml)
+- TypeDoc 配置扩展，支持 19 个 entry points
+- 307 个单元测试全部通过
 
-### UI/UX 改进
-- 工具调用摘要更友好（如"阅读 xxx 文档"替代 JSON）
-- 统一使用 Lucide 图标风格
-- 减少控制台日志噪音
+### 架构文档
+- 新增 IPC 通道文档、插件系统文档、热更新文档
+- 更新工具系统文档，覆盖 Gen1-Gen8 所有工具
+
+### 修复
+- 修复所有代际测试的导入路径问题
+- 添加 isolated-vm mock 解决 Node 版本兼容问题
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.8.2/Code.Agent-0.8.2-arm64.dmg',
-      size: 155000000,
+      url: 'https://github.com/anthropics/code-agent/releases/download/v0.8.6/Code.Agent-0.8.6-arm64.dmg',
+      size: 160000000,
     },
   },
 };

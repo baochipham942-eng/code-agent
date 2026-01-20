@@ -40,6 +40,32 @@ interface AgentOrchestratorConfig {
 // Agent Orchestrator
 // ----------------------------------------------------------------------------
 
+/**
+ * Agent Orchestrator - AI Agent 的主控制器
+ *
+ * 负责管理 Agent 的完整生命周期，包括：
+ * - 对话消息历史管理
+ * - 权限请求和响应处理
+ * - 模型配置获取
+ * - AgentLoop 创建和启动
+ * - 工作目录管理
+ *
+ * @example
+ * ```typescript
+ * const orchestrator = new AgentOrchestrator({
+ *   generationManager,
+ *   configService,
+ *   onEvent: (event) => console.log(event),
+ * });
+ *
+ * await orchestrator.sendMessage('帮我写一个贪吃蛇游戏');
+ * orchestrator.cancel(); // 取消执行
+ * ```
+ *
+ * @see AgentLoop - 核心执行循环
+ * @see ToolRegistry - 工具注册表
+ * @see ToolExecutor - 工具执行器
+ */
 export class AgentOrchestrator {
   private generationManager: GenerationManager;
   private configService: ConfigService;
@@ -102,6 +128,20 @@ export class AgentOrchestrator {
   // Public Methods
   // --------------------------------------------------------------------------
 
+  /**
+   * 发送用户消息并启动 Agent 执行循环
+   *
+   * @param content - 用户消息内容
+   * @param attachments - 可选的附件列表（图片、文件等）
+   * @returns Promise 在 Agent 执行完成后 resolve
+   * @throws 执行过程中的错误会通过 onEvent 发送 error 事件
+   *
+   * @example
+   * ```typescript
+   * await orchestrator.sendMessage('请帮我创建一个 React 组件');
+   * await orchestrator.sendMessage('分析这张图片', [{ type: 'image', data: base64 }]);
+   * ```
+   */
   async sendMessage(content: string, attachments?: unknown[]): Promise<void> {
     const generation = this.generationManager.getCurrentGeneration();
     const settings = this.configService.getSettings();
@@ -162,6 +202,11 @@ export class AgentOrchestrator {
     }
   }
 
+  /**
+   * 取消当前正在执行的 Agent 任务
+   *
+   * @returns Promise 在取消操作完成后 resolve
+   */
   async cancel(): Promise<void> {
     if (this.agentLoop) {
       this.agentLoop.cancel();
@@ -169,6 +214,12 @@ export class AgentOrchestrator {
     }
   }
 
+  /**
+   * 处理用户对权限请求的响应
+   *
+   * @param requestId - 权限请求的唯一标识符
+   * @param response - 用户的响应（'allow' | 'allow_session' | 'deny'）
+   */
   handlePermissionResponse(requestId: string, response: PermissionResponse): void {
     const pending = this.pendingPermissions.get(requestId);
     if (pending) {
@@ -177,15 +228,30 @@ export class AgentOrchestrator {
     }
   }
 
+  /**
+   * 设置 Agent 的工作目录
+   *
+   * @param path - 新的工作目录路径
+   */
   setWorkingDirectory(path: string): void {
     this.workingDirectory = path;
     this.toolExecutor.setWorkingDirectory(path);
   }
 
+  /**
+   * 获取当前工作目录
+   *
+   * @returns 当前工作目录的绝对路径
+   */
   getWorkingDirectory(): string {
     return this.workingDirectory;
   }
 
+  /**
+   * 设置规划服务实例
+   *
+   * @param service - PlanningService 实例
+   */
   setPlanningService(service: PlanningService): void {
     this.planningService = service;
   }

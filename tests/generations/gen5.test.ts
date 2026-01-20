@@ -8,11 +8,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// Mock isolated-vm (causes Node version issues in tests)
+vi.mock('isolated-vm', () => ({}));
+
 // Import tools
-import { memoryStoreTool } from '../../src/main/tools/gen5/memoryStore';
-import { memorySearchTool } from '../../src/main/tools/gen5/memorySearch';
-import { codeIndexTool } from '../../src/main/tools/gen5/codeIndex';
-import { autoLearnTool } from '../../src/main/tools/gen5/autoLearn';
+import { memoryStoreTool } from '../../src/main/tools/memory/store';
+import { memorySearchTool } from '../../src/main/tools/memory/search';
+import { codeIndexTool } from '../../src/main/tools/memory/codeIndex';
+import { autoLearnTool } from '../../src/main/tools/memory/autoLearn';
 
 // Mock the memory service
 vi.mock('../../src/main/memory/MemoryService', () => ({

@@ -8,11 +8,49 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// Mock isolated-vm (causes Node version issues in tests)
+vi.mock('isolated-vm', () => ({}));
+
+// Mock electron for tool_create tests
+vi.mock('electron', () => ({
+  BrowserWindow: {
+    getAllWindows: vi.fn(() => [{
+      webContents: {
+        send: vi.fn(),
+      },
+    }]),
+  },
+  app: {
+    getPath: vi.fn(() => '/tmp/code-agent-test'),
+  },
+}));
+
+// Mock services to enable devModeAutoApprove (skip UI confirmation)
+vi.mock('../../src/main/services', async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>;
+  return {
+    ...actual,
+    getConfigService: vi.fn(() => ({
+      isDevModeAutoApproveEnabled: vi.fn().mockReturnValue(true),
+    })),
+  };
+});
+
+// Mock logger
+vi.mock('../../src/main/services/infra/logger', () => ({
+  createLogger: vi.fn(() => ({
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  })),
+}));
+
 // Import tools
-import { strategyOptimizeTool } from '../../src/main/tools/gen8/strategyOptimize';
-import { toolCreateTool, getDynamicTools } from '../../src/main/tools/gen8/toolCreate';
-import { selfEvaluateTool, getPerformanceHistory } from '../../src/main/tools/gen8/selfEvaluate';
-import { learnPatternTool, getLearnedPatterns, getReliablePatterns } from '../../src/main/tools/gen8/learnPattern';
+import { strategyOptimizeTool } from '../../src/main/tools/evolution/strategyOptimize';
+import { toolCreateTool, getDynamicTools } from '../../src/main/tools/evolution/toolCreate';
+import { selfEvaluateTool, getPerformanceHistory } from '../../src/main/tools/evolution/selfEvaluate';
+import { learnPatternTool, getLearnedPatterns, getReliablePatterns } from '../../src/main/tools/evolution/learnPattern';
 
 // Mock memory services
 vi.mock('../../src/main/memory/MemoryService', () => ({

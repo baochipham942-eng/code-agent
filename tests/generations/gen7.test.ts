@@ -8,18 +8,21 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// Mock isolated-vm (causes Node version issues in tests)
+vi.mock('isolated-vm', () => ({}));
+
 // Import tools
 import {
   spawnAgentTool,
   getSpawnedAgent,
   listSpawnedAgents,
   getAvailableRoles,
-} from '../../src/main/tools/gen7/spawnAgent';
-import { agentMessageTool } from '../../src/main/tools/gen7/agentMessage';
+} from '../../src/main/tools/multiagent/spawnAgent';
+import { agentMessageTool } from '../../src/main/tools/multiagent/agentMessage';
 import {
   workflowOrchestrateTool,
   getAvailableWorkflows,
-} from '../../src/main/tools/gen7/workflowOrchestrate';
+} from '../../src/main/tools/multiagent/workflowOrchestrate';
 
 // Mock SubagentExecutor
 vi.mock('../../src/main/agent/SubagentExecutor', () => ({
@@ -385,9 +388,14 @@ describe('Gen7 - Multi-Agent Era', () => {
       }
     });
 
-    it('spawn_agent should have required input schema', () => {
-      expect(spawnAgentTool.inputSchema.required).toContain('role');
-      expect(spawnAgentTool.inputSchema.required).toContain('task');
+    it('spawn_agent should have role and task in input schema properties', () => {
+      // Note: required array is empty because spawn_agent supports two modes:
+      // 1. Single agent: role+task required (validated in execute)
+      // 2. Parallel mode: parallel+agents array (validated in execute)
+      expect(spawnAgentTool.inputSchema.properties).toHaveProperty('role');
+      expect(spawnAgentTool.inputSchema.properties).toHaveProperty('task');
+      expect(spawnAgentTool.inputSchema.properties).toHaveProperty('parallel');
+      expect(spawnAgentTool.inputSchema.properties).toHaveProperty('agents');
     });
   });
 });

@@ -3,15 +3,18 @@
 // Tests: glob, grep, list_directory
 // ============================================================================
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// Mock isolated-vm (causes Node version issues in tests)
+vi.mock('isolated-vm', () => ({}));
+
 // Import tools
-import { globTool } from '../../src/main/tools/gen2/glob';
-import { grepTool } from '../../src/main/tools/gen2/grep';
-import { listDirectoryTool } from '../../src/main/tools/gen2/listDirectory';
+import { globTool } from '../../src/main/tools/file/glob';
+import { grepTool } from '../../src/main/tools/shell/grep';
+import { listDirectoryTool } from '../../src/main/tools/file/listDirectory';
 
 // Mock context
 const createMockContext = (workingDirectory: string) => ({

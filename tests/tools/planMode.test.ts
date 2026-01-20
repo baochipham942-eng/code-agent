@@ -3,9 +3,9 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { enterPlanModeTool } from '../../src/main/tools/gen3/enterPlanMode';
-import { exitPlanModeTool } from '../../src/main/tools/gen3/exitPlanMode';
-import type { ToolContext } from '../../src/main/tools/ToolRegistry';
+import { enterPlanModeTool } from '../../src/main/tools/planning/enterPlanMode';
+import { exitPlanModeTool } from '../../src/main/tools/planning/exitPlanMode';
+import type { ToolContext } from '../../src/main/tools/toolRegistry';
 
 describe('Plan Mode Tools', () => {
   let mockContext: ToolContext;

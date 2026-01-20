@@ -80,7 +80,16 @@ export type UpdateAction = 'check' | 'getInfo' | 'openUrl' | 'startAutoCheck' | 
 /**
  * MCP 通道 actions
  */
-export type McpAction = 'call' | 'listTools' | 'listResources' | 'readResource' | 'getStatus';
+export type McpAction =
+  | 'call'
+  | 'listTools'
+  | 'listResources'
+  | 'readResource'
+  | 'getStatus'
+  | 'getServerStates'
+  | 'setServerEnabled'
+  | 'reconnectServer'
+  | 'refreshFromCloud';
 
 /**
  * Memory 通道 actions

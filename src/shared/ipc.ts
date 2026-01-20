@@ -576,4 +576,15 @@ export interface ElectronAPI {
   extractPdfText: (filePath: string) => Promise<{ text: string; pageCount: number }>;
 }
 
-// Note: Window.electronAPI is declared in src/renderer/types/electron.d.ts
+/**
+ * Domain API exposed to renderer (new unified API)
+ */
+export interface DomainAPI {
+  invoke: <T = unknown>(
+    domain: string,
+    action: string,
+    payload?: unknown
+  ) => Promise<IPCResponse<T>>;
+}
+
+// Note: Window.electronAPI and Window.domainAPI are declared in src/renderer/types/electron.d.ts

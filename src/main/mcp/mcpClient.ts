@@ -1,6 +1,9 @@
 // ============================================================================
 // MCP Client - Model Context Protocol 客户端实现
-// 支持 stdio (本地) 和 SSE/HTTP (远程) 两种传输协议
+// 支持三种传输协议：
+// - stdio (本地命令行)
+// - SSE/HTTP (远程)
+// - in-process (进程内，无需 IPC)
 // ============================================================================
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -12,79 +15,45 @@ import { createLogger } from '../services/infra/logger';
 import { getCloudConfigService, type MCPServerCloudConfig } from '../services/cloud/cloudConfigService';
 import { getConfigService } from '../services/core/configService';
 
+// Import types from the new types module
+import type {
+  MCPServerConfig,
+  MCPStdioServerConfig,
+  MCPSSEServerConfig,
+  MCPInProcessServerConfig,
+  MCPTool,
+  MCPResource,
+  MCPPrompt,
+  MCPServerStatus,
+  MCPServerState,
+  InProcessMCPServerInterface,
+} from './types';
+import { isStdioConfig, isSSEConfig, isInProcessConfig } from './types';
+
+// Re-export types for backward compatibility
+export type {
+  MCPServerConfig,
+  MCPStdioServerConfig,
+  MCPSSEServerConfig,
+  MCPInProcessServerConfig,
+  MCPTool,
+  MCPResource,
+  MCPPrompt,
+  MCPServerStatus,
+  MCPServerState,
+  InProcessMCPServerInterface,
+};
+export { isStdioConfig, isSSEConfig, isInProcessConfig };
+
 const logger = createLogger('MCPClient');
-
-// ----------------------------------------------------------------------------
-// Types
-// ----------------------------------------------------------------------------
-
-// Stdio 服务器配置 (本地命令行)
-export interface MCPStdioServerConfig {
-  name: string;
-  type?: 'stdio';
-  command: string;
-  args?: string[];
-  env?: Record<string, string>;
-  enabled: boolean;
-}
-
-// SSE 服务器配置 (远程 HTTP)
-export interface MCPSSEServerConfig {
-  name: string;
-  type: 'sse';
-  serverUrl: string;
-  enabled: boolean;
-}
-
-// 统一的服务器配置类型
-export type MCPServerConfig = MCPStdioServerConfig | MCPSSEServerConfig;
-
-export interface MCPTool {
-  name: string;
-  description: string;
-  inputSchema: unknown;
-  serverName: string;
-}
-
-export interface MCPResource {
-  uri: string;
-  name: string;
-  description?: string;
-  mimeType?: string;
-  serverName: string;
-}
-
-export interface MCPPrompt {
-  name: string;
-  description?: string;
-  arguments?: Array<{
-    name: string;
-    description?: string;
-    required?: boolean;
-  }>;
-  serverName: string;
-}
-
-// ----------------------------------------------------------------------------
-// MCP Client
-// ----------------------------------------------------------------------------
-
-// 服务器连接状态
-export type MCPServerStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
-
-export interface MCPServerState {
-  config: MCPServerConfig;
-  status: MCPServerStatus;
-  error?: string;
-  toolCount: number;
-  resourceCount: number;
-}
 
 export class MCPClient {
   private clients: Map<string, Client> = new Map();
   private transports: Map<string, Transport> = new Map();
   private serverConfigs: Map<string, MCPServerConfig> = new Map();
   private serverStates: Map<string, MCPServerState> = new Map();
+  // 进程内服务器实例存储
+  private inProcessServers: Map<string, InProcessMCPServerInterface> = new Map();
   private tools: MCPTool[] = [];
   private resources: MCPResource[] = [];
   private prompts: MCPPrompt[] = [];
@@ -217,11 +186,20 @@ export class MCPClient {
 
   /**
    * 连接到单个服务器
+   * 支持 Stdio、SSE 和进程内三种类型
    */
   async connect(config: MCPServerConfig): Promise<void> {
-    if (this.clients.has(config.name)) {
-      logger.info(`MCP server ${config.name} already connected`);
-      return;
+    // 检查是否已连接（进程内服务器使用单独的 Map）
+    if (isInProcessConfig(config)) {
+      if (this.inProcessServers.has(config.name)) {
+        logger.info(`In-process MCP server ${config.name} already connected`);
+        return;
+      }
+    } else {
+      if (this.clients.has(config.name)) {
+        logger.info(`MCP server ${config.name} already connected`);
+        return;
+      }
     }
 
     // 更新状态为连接中
@@ -231,14 +209,21 @@ export class MCPClient {
       state.error = undefined;
     }
 
-    logger.info(`Connecting to MCP server: ${config.name}`);
-
-    let transport: Transport;
-    let connectTimeout: number;
+    logger.info(`Connecting to MCP server: ${config.name} (type: ${config.type || 'stdio'})`);
 
     try {
+      // 处理进程内服务器
+      if (isInProcessConfig(config)) {
+        await this.connectInProcess(config);
+        return;
+      }
+
+      // 处理外部服务器（Stdio/SSE）
+      let transport: Transport;
+      let connectTimeout: number;
+
       // 根据配置类型创建不同的传输
-      if (config.type === 'sse') {
+      if (isSSEConfig(config)) {
         // SSE 远程服务器
         logger.info(`Using SSE transport for ${config.name}: ${config.serverUrl}`);
         transport = new SSEClientTransport(new URL(config.serverUrl));
@@ -336,9 +321,93 @@ export class MCPClient {
   }
 
   /**
+   * 连接进程内服务器
+   */
+  private async connectInProcess(config: MCPInProcessServerConfig): Promise<void> {
+    const state = this.serverStates.get(config.name);
+
+    try {
+      // 创建或获取服务器实例
+      let server: InProcessMCPServerInterface;
+      if (config.serverFactory) {
+        server = config.serverFactory();
+      } else {
+        throw new Error(`In-process server ${config.name} has no serverFactory`);
+      }
+
+      // 启动服务器
+      if (server.start) {
+        await server.start();
+      }
+
+      // 存储服务器实例
+      this.inProcessServers.set(config.name, server);
+
+      // 发现进程内服务器的能力
+      await this.discoverInProcessCapabilities(config.name, server);
+
+      // 更新状态为已连接
+      if (state) {
+        state.status = 'connected';
+        state.toolCount = this.tools.filter(t => t.serverName === config.name).length;
+        state.resourceCount = this.resources.filter(r => r.serverName === config.name).length;
+      }
+
+      logger.info(`Connected to in-process MCP server: ${config.name}`);
+    } catch (error) {
+      // 更新状态为错误
+      if (state) {
+        state.status = 'error';
+        state.error = error instanceof Error ? error.message : 'Unknown error';
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * 发现进程内服务器的能力
+   */
+  private async discoverInProcessCapabilities(
+    serverName: string,
+    server: InProcessMCPServerInterface
+  ): Promise<void> {
+    // 获取工具列表
+    try {
+      const tools = await server.listTools();
+      for (const tool of tools) {
+        this.tools.push(tool);
+      }
+    } catch {
+      logger.debug(`In-process server ${serverName} does not support tools`);
+    }
+
+    // 获取资源列表
+    try {
+      const resources = await server.listResources();
+      for (const resource of resources) {
+        this.resources.push(resource);
+      }
+    } catch {
+      logger.debug(`In-process server ${serverName} does not support resources`);
+    }
+
+    // 获取提示列表
+    try {
+      const prompts = await server.listPrompts();
+      for (const prompt of prompts) {
+        this.prompts.push(prompt);
+      }
+    } catch {
+      logger.debug(`In-process server ${serverName} does not support prompts`);
+    }
+  }
+
+  /**
    * 断开服务器连接
+   * 支持外部服务器和进程内服务器
    */
   async disconnect(serverName: string): Promise<void> {
+    // 断开外部服务器
     const client = this.clients.get(serverName);
     const transport = this.transports.get(serverName);
 
@@ -350,6 +419,15 @@ export class MCPClient {
     if (transport) {
       await transport.close();
       this.transports.delete(serverName);
+    }
+
+    // 断开进程内服务器
+    const inProcessServer = this.inProcessServers.get(serverName);
+    if (inProcessServer) {
+      if (inProcessServer.stop) {
+        await inProcessServer.stop();
+      }
+      this.inProcessServers.delete(serverName);
     }
 
     // 移除该服务器的工具、资源、提示
@@ -370,7 +448,12 @@ export class MCPClient {
    * 断开所有连接
    */
   async disconnectAll(): Promise<void> {
+    // 断开外部服务器
     for (const serverName of this.clients.keys()) {
+      await this.disconnect(serverName);
+    }
+    // 断开进程内服务器
+    for (const serverName of this.inProcessServers.keys()) {
       await this.disconnect(serverName);
     }
   }
@@ -466,6 +549,7 @@ export class MCPClient {
 
   /**
    * 调用 MCP 工具
+   * 支持外部服务器和进程内服务器
    * @param toolCallId - 工具调用 ID（用于前端匹配）
    * @param serverName - MCP 服务器名称
    * @param toolName - 工具名称
@@ -478,6 +562,13 @@ export class MCPClient {
     args: Record<string, unknown>,
     timeoutMs: number = 60000 // 默认 60 秒超时
   ): Promise<ToolResult> {
+    // 优先检查进程内服务器（无需 IPC，更快）
+    const inProcessServer = this.inProcessServers.get(serverName);
+    if (inProcessServer) {
+      return this.callInProcessTool(toolCallId, serverName, toolName, args, inProcessServer);
+    }
+
+    // 检查外部服务器
     const client = this.clients.get(serverName);
     if (!client) {
       return {
@@ -592,6 +683,34 @@ export class MCPClient {
   }
 
   /**
+   * 调用进程内服务器工具
+   * 无需 IPC 通信，直接调用
+   */
+  private async callInProcessTool(
+    toolCallId: string,
+    serverName: string,
+    toolName: string,
+    args: Record<string, unknown>,
+    server: InProcessMCPServerInterface
+  ): Promise<ToolResult> {
+    logger.info(`Calling in-process MCP tool: ${serverName}/${toolName}`, { args });
+
+    try {
+      const result = await server.callTool(toolName, args, toolCallId);
+      logger.info(`In-process MCP tool completed: ${serverName}/${toolName}`, { duration: result.duration });
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'In-process tool call failed';
+      logger.error(`In-process MCP tool failed: ${serverName}/${toolName}`, { error: errorMessage });
+      return {
+        toolCallId,
+        success: false,
+        error: errorMessage,
+      };
+    }
+  }
+
+  /**
    * 重连指定服务器（用于超时后恢复）
    */
   async reconnect(serverName: string): Promise<boolean> {
@@ -639,8 +758,16 @@ export class MCPClient {
 
   /**
    * 读取资源
+   * 支持外部服务器和进程内服务器
    */
   async readResource(serverName: string, uri: string): Promise<string> {
+    // 优先检查进程内服务器
+    const inProcessServer = this.inProcessServers.get(serverName);
+    if (inProcessServer) {
+      return inProcessServer.readResource(uri);
+    }
+
+    // 检查外部服务器
     const client = this.clients.get(serverName);
     if (!client) {
       throw new Error(`MCP server ${serverName} not connected`);
@@ -675,12 +802,20 @@ export class MCPClient {
 
   /**
    * 获取提示内容
+   * 支持外部服务器和进程内服务器
    */
   async getPrompt(
     serverName: string,
     promptName: string,
     args?: Record<string, string>
   ): Promise<string> {
+    // 优先检查进程内服务器
+    const inProcessServer = this.inProcessServers.get(serverName);
+    if (inProcessServer) {
+      return inProcessServer.getPrompt(promptName, args);
+    }
+
+    // 检查外部服务器
     const client = this.clients.get(serverName);
     if (!client) {
       throw new Error(`MCP server ${serverName} not connected`);
@@ -710,15 +845,18 @@ export class MCPClient {
 
   /**
    * 获取连接状态
+   * 包含外部服务器和进程内服务器
    */
   getStatus(): {
     connectedServers: string[];
+    inProcessServers: string[];
     toolCount: number;
     resourceCount: number;
     promptCount: number;
   } {
     return {
       connectedServers: Array.from(this.clients.keys()),
+      inProcessServers: Array.from(this.inProcessServers.keys()),
       toolCount: this.tools.length,
       resourceCount: this.resources.length,
       promptCount: this.prompts.length,
@@ -727,9 +865,62 @@ export class MCPClient {
 
   /**
    * 检查服务器是否连接
+   * 包含外部服务器和进程内服务器
    */
   isConnected(serverName: string): boolean {
-    return this.clients.has(serverName);
+    return this.clients.has(serverName) || this.inProcessServers.has(serverName);
+  }
+
+  /**
+   * 获取进程内服务器实例
+   */
+  getInProcessServer(serverName: string): InProcessMCPServerInterface | undefined {
+    return this.inProcessServers.get(serverName);
+  }
+
+  /**
+   * 注册进程内服务器实例（直接注册，不通过配置）
+   * 用于动态注册服务器实例
+   */
+  async registerInProcessServer(server: InProcessMCPServerInterface): Promise<void> {
+    if (this.inProcessServers.has(server.name)) {
+      logger.warn(`In-process server ${server.name} already registered, skipping`);
+      return;
+    }
+
+    // 启动服务器
+    if (server.start) {
+      await server.start();
+    }
+
+    // 存储服务器实例
+    this.inProcessServers.set(server.name, server);
+
+    // 创建对应的配置和状态
+    const config: MCPInProcessServerConfig = {
+      name: server.name,
+      type: 'in-process',
+      enabled: true,
+    };
+    this.serverConfigs.set(server.name, config);
+    this.serverStates.set(server.name, {
+      config,
+      status: 'connected',
+      toolCount: 0,
+      resourceCount: 0,
+    });
+
+    // 发现能力
+    await this.discoverInProcessCapabilities(server.name, server);
+
+    // 更新状态
+    const state = this.serverStates.get(server.name);
+    if (state) {
+      state.toolCount = this.tools.filter(t => t.serverName === server.name).length;
+      state.resourceCount = this.resources.filter(r => r.serverName === server.name).length;
+    }
+
+    logger.info(`Registered in-process MCP server: ${server.name}`);
   }
 }
 

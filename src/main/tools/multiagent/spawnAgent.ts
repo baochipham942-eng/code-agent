@@ -2,6 +2,7 @@
 // Spawn Agent Tool - Create specialized sub-agents
 // Gen 7: Multi-Agent capability
 // Enhanced with parallel execution support (Enhancement 3)
+// T4: Dual mode support (declarative + dynamic)
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
@@ -11,8 +12,14 @@ import {
   getParallelAgentCoordinator,
   type AgentTask,
 } from '../../agent/parallelAgentCoordinator';
+import {
+  getPredefinedAgent,
+  listPredefinedAgents,
+  type AgentDefinition,
+} from '../../agent/agentDefinition';
 
-// Predefined agent roles with specialized prompts
+// Legacy agent roles (kept for backward compatibility)
+// New code should use PREDEFINED_AGENTS from agentDefinition.ts
 const AGENT_ROLES: Record<string, AgentRole> = {
   coder: {
     name: 'Coder',
@@ -100,6 +107,20 @@ interface AgentRole {
   tools: string[];
 }
 
+/**
+ * Get agent configuration from either predefined agents or legacy roles
+ */
+function resolveAgentConfig(roleOrId: string): AgentRole | AgentDefinition | undefined {
+  // First, check predefined agents (new system)
+  const predefined = getPredefinedAgent(roleOrId);
+  if (predefined) {
+    return predefined;
+  }
+
+  // Fall back to legacy roles
+  return AGENT_ROLES[roleOrId];
+}
+
 interface SpawnedAgent {
   id: string;
   role: string;
@@ -116,27 +137,31 @@ export const spawnAgentTool: Tool = {
   name: 'spawn_agent',
   description: `Create a specialized sub-agent to handle a specific task.
 
-Available agent roles:
-- coder: Writes clean, efficient code
-- reviewer: Reviews code for bugs and issues
-- tester: Writes and runs tests
-- architect: Designs system architecture
-- debugger: Investigates and fixes bugs
-- documenter: Writes documentation
+DUAL MODE SUPPORT:
+1. Declarative Mode - Use predefined agent IDs (recommended):
+   ${listPredefinedAgents().map(a => `   - ${a.id}: ${a.description}`).join('\n')}
+
+2. Dynamic Mode - Create custom agents at runtime with customPrompt and tools
+
+Legacy roles (backward compatible):
+- coder, reviewer, tester, architect, debugger, documenter
 
 Use this tool to:
 - Delegate tasks to specialized agents
 - Run multiple agents in TRUE parallel (using parallel=true with agents array)
 - Create custom agents for specific needs
 
+All subagents go through unified permission/budget/audit pipeline.
+
 Parameters:
-- role: Agent role (required for single agent)
-- task: Description of what the agent should do (required for single agent)
+- role: Agent role/ID (from predefined agents or legacy roles)
+- task: Description of what the agent should do
 - customPrompt: (optional) Custom system prompt override
+- customTools: (optional) Custom tool list for dynamic agents
+- maxBudget: (optional) Maximum budget in USD for this agent
 - waitForCompletion: (optional) Whether to wait for agent to complete (default: true)
 - parallel: (optional) Set to true to enable parallel execution mode
-- agents: (optional) Array of {role, task, dependsOn?} for parallel execution
-- dependsOn: (optional) Array of agent IDs this agent depends on (for ordered parallel)`,
+- agents: (optional) Array of {role, task, dependsOn?} for parallel execution`,
   generations: ['gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
@@ -145,8 +170,7 @@ Parameters:
     properties: {
       role: {
         type: 'string',
-        enum: Object.keys(AGENT_ROLES),
-        description: 'The role of the agent to spawn',
+        description: 'The role/ID of the agent (predefined or legacy)',
       },
       task: {
         type: 'string',
@@ -154,7 +178,16 @@ Parameters:
       },
       customPrompt: {
         type: 'string',
-        description: 'Custom system prompt (overrides role default)',
+        description: 'Custom system prompt (overrides role default, enables dynamic mode)',
+      },
+      customTools: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Custom tool list for dynamic agents',
+      },
+      maxBudget: {
+        type: 'number',
+        description: 'Maximum budget in USD for this agent',
       },
       waitForCompletion: {
         type: 'boolean',
@@ -176,6 +209,7 @@ Parameters:
           properties: {
             role: { type: 'string' },
             task: { type: 'string' },
+            maxBudget: { type: 'number' },
             dependsOn: {
               type: 'array',
               items: { type: 'string' },
@@ -194,7 +228,7 @@ Parameters:
     context: ToolContext
   ): Promise<ToolExecutionResult> {
     const parallel = params.parallel as boolean | undefined;
-    const agents = params.agents as Array<{ role: string; task: string; dependsOn?: string[] }> | undefined;
+    const agents = params.agents as Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }> | undefined;
 
     // Check for required context
     if (!context.toolRegistry || !context.modelConfig) {
@@ -213,52 +247,91 @@ Parameters:
     const role = params.role as string;
     const task = params.task as string;
     const customPrompt = params.customPrompt as string | undefined;
+    const customTools = params.customTools as string[] | undefined;
+    const maxBudget = params.maxBudget as number | undefined;
     const waitForCompletion = params.waitForCompletion !== false;
     const maxIterations = (params.maxIterations as number) || 20;
 
     // Validate required params for single agent
-    if (!role || !task) {
+    if (!task) {
       return {
         success: false,
-        error: 'Either provide role+task for single agent, or parallel+agents for parallel execution',
+        error: 'Task is required. Provide role+task for predefined agent or customPrompt+task for dynamic agent.',
       };
     }
 
-    // Validate role
-    const agentRole = AGENT_ROLES[role];
-    if (!agentRole) {
-      return {
-        success: false,
-        error: `Unknown agent role: ${role}. Available: ${Object.keys(AGENT_ROLES).join(', ')}`,
-      };
+    // Determine agent mode: declarative (predefined) or dynamic
+    const isDynamicMode = customPrompt && !role;
+    let agentConfig: AgentRole | AgentDefinition | undefined;
+    let agentName: string;
+    let systemPrompt: string;
+    let tools: string[];
+
+    if (isDynamicMode) {
+      // Dynamic mode: use customPrompt and customTools
+      agentName = 'Dynamic Agent';
+      systemPrompt = customPrompt!;
+      tools = customTools || ['read_file', 'glob', 'grep']; // Default read-only tools for safety
+    } else {
+      // Declarative mode: resolve from predefined or legacy
+      if (!role) {
+        return {
+          success: false,
+          error: 'Either provide role (for predefined agent) or customPrompt (for dynamic agent)',
+        };
+      }
+
+      agentConfig = resolveAgentConfig(role);
+      if (!agentConfig) {
+        const predefinedIds = listPredefinedAgents().map(a => a.id);
+        const legacyRoles = Object.keys(AGENT_ROLES);
+        return {
+          success: false,
+          error: `Unknown agent: ${role}. Available predefined: ${predefinedIds.join(', ')}. Legacy roles: ${legacyRoles.join(', ')}`,
+        };
+      }
+
+      agentName = agentConfig.name;
+      systemPrompt = customPrompt || agentConfig.systemPrompt;
+      tools = customTools || agentConfig.tools;
     }
 
     // Generate agent ID
-    const agentId = `agent_${role}_${Date.now()}`;
+    const agentId = `agent_${role || 'dynamic'}_${Date.now()}`;
 
     // Create agent record
     const agent: SpawnedAgent = {
       id: agentId,
-      role,
+      role: role || 'dynamic',
       status: 'running',
       task,
     };
     spawnedAgents.set(agentId, agent);
 
-    const systemPrompt = customPrompt || agentRole.systemPrompt;
-
     try {
       const executor = getSubagentExecutor();
+      // Pipeline is integrated in executor, we just use it for configuration
+
+      // Determine permission preset based on agent config
+      const permissionPreset = agentConfig && 'permissionPreset' in agentConfig
+        ? (agentConfig as AgentDefinition).permissionPreset
+        : 'development';
+
+      // Determine max budget (use agent-specific or inherited)
+      const effectiveMaxBudget = maxBudget
+        || (agentConfig && 'maxBudget' in agentConfig ? (agentConfig as AgentDefinition).maxBudget : undefined);
 
       if (waitForCompletion) {
         // Execute and wait for result
         const result = await executor.execute(
           task,
           {
-            name: `${agentRole.name}`,
+            name: agentName,
             systemPrompt,
-            availableTools: agentRole.tools,
+            availableTools: tools,
             maxIterations,
+            permissionPreset,
+            maxBudget: effectiveMaxBudget,
           },
           {
             modelConfig: context.modelConfig as ModelConfig,
@@ -276,7 +349,7 @@ Parameters:
         if (result.success) {
           return {
             success: true,
-            output: `Agent [${agentRole.name}] completed task:
+            output: `Agent [${agentName}] completed task:
 
 Task: ${task}
 
@@ -286,12 +359,13 @@ ${result.output}
 Stats:
 - Iterations: ${result.iterations}
 - Tools used: ${result.toolsUsed.join(', ') || 'none'}
-- Agent ID: ${agentId}`,
+- Agent ID: ${agentId}
+- Pipeline ID: ${result.agentId || 'N/A'}${result.cost !== undefined ? `\n- Cost: $${result.cost.toFixed(4)}` : ''}`,
           };
         } else {
           return {
             success: false,
-            error: `Agent [${agentRole.name}] failed: ${result.error}`,
+            error: `Agent [${agentName}] failed: ${result.error}`,
             output: result.output,
           };
         }
@@ -300,10 +374,12 @@ Stats:
         executor.execute(
           task,
           {
-            name: `${agentRole.name}`,
+            name: agentName,
             systemPrompt,
-            availableTools: agentRole.tools,
+            availableTools: tools,
             maxIterations,
+            permissionPreset,
+            maxBudget: effectiveMaxBudget,
           },
           {
             modelConfig: context.modelConfig as ModelConfig,
@@ -323,10 +399,11 @@ Stats:
 
         return {
           success: true,
-          output: `Agent [${agentRole.name}] spawned in background:
+          output: `Agent [${agentName}] spawned in background:
 - Agent ID: ${agentId}
 - Task: ${task}
 - Status: running
+- Mode: ${isDynamicMode ? 'dynamic' : 'declarative'}
 
 Use agent_message tool with agentId to check status or get results.`,
         };
@@ -360,7 +437,7 @@ export function getAvailableRoles(): Record<string, AgentRole> {
 
 // Execute multiple agents in parallel using the ParallelAgentCoordinator
 async function executeParallelAgents(
-  agents: Array<{ role: string; task: string; dependsOn?: string[] }>,
+  agents: Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }>,
   context: ToolContext
 ): Promise<ToolExecutionResult> {
   const coordinator = getParallelAgentCoordinator();
@@ -374,20 +451,21 @@ async function executeParallelAgents(
     toolContext: context,
   });
 
-  // Convert to AgentTask format
+  // Convert to AgentTask format (supports both predefined and legacy roles)
   const tasks: AgentTask[] = agents.map((agent, index) => {
-    const agentRole = AGENT_ROLES[agent.role];
-    if (!agentRole) {
-      throw new Error(`Unknown agent role: ${agent.role}`);
+    // Try predefined agent first, then legacy
+    const agentConfig = resolveAgentConfig(agent.role);
+    if (!agentConfig) {
+      throw new Error(`Unknown agent: ${agent.role}. Use predefined agents or legacy roles.`);
     }
 
     return {
       id: `agent_${agent.role}_${index}_${Date.now()}`,
       role: agent.role,
       task: agent.task,
-      systemPrompt: agentRole.systemPrompt,
-      tools: agentRole.tools,
-      maxIterations: 20,
+      systemPrompt: agentConfig.systemPrompt,
+      tools: agentConfig.tools,
+      maxIterations: 'maxIterations' in agentConfig ? agentConfig.maxIterations || 20 : 20,
       dependsOn: agent.dependsOn,
     };
   });

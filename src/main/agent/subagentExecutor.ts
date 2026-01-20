@@ -1,11 +1,19 @@
 // ============================================================================
 // Subagent Executor - Executes subtasks with limited tool access
+// Enhanced with unified pipeline (T4)
 // ============================================================================
 
 import type { ModelConfig } from '../../shared/types';
 import type { Tool, ToolContext } from '../tools/toolRegistry';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
+import {
+  getSubagentPipeline,
+  type SubagentExecutionContext,
+  type ToolExecutionRequest,
+} from './subagentPipeline';
+import type { AgentDefinition, DynamicAgentConfig } from './agentDefinition';
+import type { PermissionPreset } from '../services/core/permissionPresets';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -18,6 +26,10 @@ export interface SubagentConfig {
   systemPrompt: string;
   availableTools: string[];
   maxIterations?: number;
+  /** Permission preset for pipeline integration */
+  permissionPreset?: PermissionPreset;
+  /** Maximum budget for this subagent */
+  maxBudget?: number;
 }
 
 export interface SubagentResult {
@@ -26,6 +38,10 @@ export interface SubagentResult {
   error?: string;
   toolsUsed: string[];
   iterations: number;
+  /** Cost incurred by this subagent */
+  cost?: number;
+  /** Agent ID from pipeline */
+  agentId?: string;
 }
 
 interface SubagentContext {
@@ -47,6 +63,7 @@ export class SubagentExecutor {
 
   /**
    * Execute a subagent with a specific prompt and limited tools
+   * Now integrates with SubagentPipeline for permission/budget/audit
    */
   async execute(
     prompt: string,
@@ -57,6 +74,21 @@ export class SubagentExecutor {
     const toolsUsed: string[] = [];
     let iterations = 0;
     let finalOutput = '';
+
+    // Create pipeline context
+    const pipeline = getSubagentPipeline();
+    const dynamicConfig: DynamicAgentConfig = {
+      name: config.name,
+      systemPrompt: config.systemPrompt,
+      tools: config.availableTools,
+      maxIterations: config.maxIterations,
+      permissionPreset: config.permissionPreset || 'development',
+      maxBudget: config.maxBudget,
+    };
+    const pipelineContext = pipeline.createContext(
+      dynamicConfig,
+      context.toolContext.workingDirectory
+    );
 
     // Filter tools to only those allowed for this subagent
     const allowedTools = this.filterTools(config.availableTools, context.toolRegistry);
@@ -75,12 +107,33 @@ export class SubagentExecutor {
       { role: 'user', content: prompt },
     ];
 
-    logger.info(`[${config.name}] Starting with ${allowedTools.length} tools`);
+    logger.info(`[${config.name}] Starting with ${allowedTools.length} tools (agentId: ${pipelineContext.agentId})`);
 
     try {
+      // Initial budget check
+      const budgetCheck = pipeline.checkBudget(pipelineContext);
+      if (!budgetCheck.allowed) {
+        pipeline.completeContext(pipelineContext.agentId, false, budgetCheck.reason);
+        return {
+          success: false,
+          output: '',
+          error: budgetCheck.reason,
+          toolsUsed: [],
+          iterations: 0,
+          agentId: pipelineContext.agentId,
+        };
+      }
+
       while (iterations < maxIterations) {
         iterations++;
         logger.info(`[${config.name}] Iteration ${iterations}`);
+
+        // Check budget before each iteration
+        const iterBudgetCheck = pipeline.checkBudget(pipelineContext);
+        if (!iterBudgetCheck.allowed) {
+          logger.warn(`[${config.name}] Budget exceeded at iteration ${iterations}`);
+          break;
+        }
 
         // Call model
         const response = await this.modelRouter.inference(
@@ -89,6 +142,10 @@ export class SubagentExecutor {
           context.modelConfig,
           () => {} // No streaming for subagents
         );
+
+        // Note: Token usage tracking would require ModelResponse to include usage data
+        // For now, we skip token usage recording as the ModelRouter doesn't expose it
+        // TODO: Enhance ModelRouter to return token usage for budget tracking
 
         // Handle text response - subagent is done
         if (response.type === 'text' && response.content) {
@@ -107,7 +164,31 @@ export class SubagentExecutor {
               continue;
             }
 
+            // Build tool execution request for pipeline
+            const toolRequest: ToolExecutionRequest = {
+              toolName: toolCall.name,
+              permissionLevel: tool.permissionLevel,
+              path: toolCall.arguments.path as string | undefined
+                || toolCall.arguments.file_path as string | undefined,
+              command: toolCall.arguments.command as string | undefined,
+              url: toolCall.arguments.url as string | undefined,
+            };
+
+            // Check permission via pipeline
+            const permCheck = pipeline.preExecutionCheck(pipelineContext, toolRequest);
+            if (!permCheck.allowed) {
+              toolResults.push(`Error: Permission denied for ${toolCall.name}: ${permCheck.reason}`);
+              logger.warn(`[${config.name}] Tool ${toolCall.name} denied: ${permCheck.reason}`);
+              continue;
+            }
+
+            // Log warnings
+            for (const warning of permCheck.warnings) {
+              logger.warn(`[${config.name}] Tool warning: ${warning}`);
+            }
+
             toolsUsed.push(toolCall.name);
+            pipeline.recordToolUsage(pipelineContext, toolCall.name);
             logger.info(`[${config.name}] Executing tool: ${toolCall.name}`);
 
             try {
@@ -141,21 +222,55 @@ export class SubagentExecutor {
         break;
       }
 
+      // Get final cost
+      const budgetStatus = pipeline.getBudgetStatus(pipelineContext);
+      pipeline.completeContext(pipelineContext.agentId, true);
+
       return {
         success: true,
         output: finalOutput || 'Subagent completed without output',
         toolsUsed: [...new Set(toolsUsed)],
         iterations,
+        cost: budgetStatus.subagentCost,
+        agentId: pipelineContext.agentId,
       };
     } catch (error) {
+      pipeline.completeContext(
+        pipelineContext.agentId,
+        false,
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+
       return {
         success: false,
         output: '',
         error: error instanceof Error ? error.message : 'Unknown error',
         toolsUsed: [...new Set(toolsUsed)],
         iterations,
+        agentId: pipelineContext.agentId,
       };
     }
+  }
+
+  /**
+   * Execute from an AgentDefinition (declarative mode)
+   */
+  async executeFromDefinition(
+    prompt: string,
+    agentDef: AgentDefinition,
+    context: SubagentContext
+  ): Promise<SubagentResult> {
+    // Convert AgentDefinition to SubagentConfig
+    const config: SubagentConfig = {
+      name: agentDef.name,
+      systemPrompt: agentDef.systemPrompt,
+      availableTools: agentDef.tools,
+      maxIterations: agentDef.maxIterations || 20,
+      permissionPreset: agentDef.permissionPreset,
+      maxBudget: agentDef.maxBudget,
+    };
+
+    return this.execute(prompt, config, context);
   }
 
   private filterTools(

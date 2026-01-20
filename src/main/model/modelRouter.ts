@@ -851,6 +851,12 @@ export class ModelRouter {
       stream: useStream,
     };
 
+    // T6: Add response_format for structured output
+    if (config.responseFormat) {
+      requestBody.response_format = config.responseFormat;
+      logger.debug(' DeepSeek: Using response_format:', config.responseFormat.type);
+    }
+
     // Only add tools if we have any
     if (openaiTools.length > 0) {
       requestBody.tools = openaiTools;
@@ -1448,6 +1454,12 @@ export class ModelRouter {
       temperature: config.temperature ?? 0.7,
       max_tokens: config.maxTokens ?? 8192,
     };
+
+    // T6: Add response_format for structured output
+    if (config.responseFormat) {
+      requestBody.response_format = config.responseFormat;
+      logger.debug(' OpenAI: Using response_format:', config.responseFormat.type);
+    }
 
     if (openaiTools.length > 0) {
       requestBody.tools = openaiTools;
@@ -2189,6 +2201,12 @@ export class ModelRouter {
       stream: false, // 云端代理暂不支持流式
     };
 
+    // T6: Add response_format for structured output
+    if (config.responseFormat) {
+      requestBody.response_format = config.responseFormat;
+      logger.debug(' Cloud Proxy: Using response_format:', config.responseFormat.type);
+    }
+
     // 只有支持工具的模型才添加 tools
     if (openaiTools.length > 0 && modelInfo?.supportsTool) {
       requestBody.tools = openaiTools;
@@ -2280,6 +2298,12 @@ export class ModelRouter {
       max_tokens: config.maxTokens ?? recommendedMaxTokens,
       stream: useStream,
     };
+
+    // T6: Add response_format for structured output
+    if (config.responseFormat) {
+      requestBody.response_format = config.responseFormat;
+      logger.debug(' OpenRouter: Using response_format:', config.responseFormat.type);
+    }
 
     // 只有支持工具的模型才添加 tools
     if (openrouterTools.length > 0 && modelInfo?.supportsTool) {

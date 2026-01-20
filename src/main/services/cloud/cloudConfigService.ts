@@ -4,7 +4,7 @@
 // 负责从云端拉取配置、缓存管理、离线降级
 
 import type { GenerationId, SkillDefinition } from '../../../shared/types';
-import { getBuiltinConfig, type CloudConfig, type ToolMetadata, type FeatureFlags } from './builtinConfig';
+import { getBuiltinConfig, type CloudConfig, type ToolMetadata, type FeatureFlags, type MCPServerCloudConfig } from './builtinConfig';
 import { createLogger } from '../infra/logger';
 import { CACHE, CLOUD } from '../../../shared/constants';
 
@@ -179,6 +179,22 @@ class CloudConfigService {
   }
 
   /**
+   * 获取 MCP Servers 配置
+   */
+  getMCPServers(): MCPServerCloudConfig[] {
+    const config = this.getConfig();
+    return config.mcpServers || [];
+  }
+
+  /**
+   * 获取指定 MCP Server 配置
+   */
+  getMCPServer(id: string): MCPServerCloudConfig | undefined {
+    const servers = this.getMCPServers();
+    return servers.find(s => s.id === id);
+  }
+
+  /**
    * 获取配置信息
    */
   getInfo(): {
@@ -286,4 +302,4 @@ export async function refreshCloudConfig(): Promise<{ success: boolean; version:
 }
 
 // 导出类型
-export type { CloudConfig, ToolMetadata, FeatureFlags };
+export type { CloudConfig, ToolMetadata, FeatureFlags, MCPServerCloudConfig };

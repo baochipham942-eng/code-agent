@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { X, Cpu, Palette, Info, Layers, Globe, Database, Download, Cloud } from 'lucide-react';
+import { X, Cpu, Palette, Info, Layers, Globe, Database, Download, Cloud, Plug } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
@@ -23,13 +23,14 @@ import { LanguageSettings } from './tabs/LanguageSettings';
 import { DataSettings } from './tabs/DataSettings';
 import { CloudSettings } from './tabs/CloudSettings';
 import { UpdateSettings } from './tabs/UpdateSettings';
+import { MCPSettings } from './tabs/MCPSettings';
 import { AboutSettings } from './tabs/AboutSettings';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type SettingsTab = 'model' | 'disclosure' | 'appearance' | 'language' | 'cache' | 'cloud' | 'update' | 'about';
+type SettingsTab = 'model' | 'disclosure' | 'appearance' | 'language' | 'cache' | 'cloud' | 'mcp' | 'update' | 'about';
 
 // ============================================================================
 // Component
@@ -67,6 +68,7 @@ export const SettingsModal: React.FC = () => {
     { id: 'language', label: t.settings.tabs.language, icon: <Globe className="w-4 h-4" /> },
     { id: 'cache', label: t.settings.tabs.data || '数据', icon: <Database className="w-4 h-4" /> },
     { id: 'cloud', label: t.settings.tabs.cloud || '云端', icon: <Cloud className="w-4 h-4" /> },
+    { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
     { id: 'update', label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: optionalUpdateInfo?.hasUpdate },
     { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
   ];
@@ -128,6 +130,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'language' && <LanguageSettings />}
             {activeTab === 'cache' && <DataSettings />}
             {activeTab === 'cloud' && <CloudSettings />}
+            {activeTab === 'mcp' && <MCPSettings />}
             {activeTab === 'update' && (
               <UpdateSettings
                 updateInfo={optionalUpdateInfo}

@@ -211,6 +211,10 @@ export class MCPClient {
     }
   }
 
+  // Connection timeout in milliseconds (30 seconds for SSE, 60 for stdio)
+  private static readonly SSE_CONNECT_TIMEOUT = 30000;
+  private static readonly STDIO_CONNECT_TIMEOUT = 60000;
+
   /**
    * 连接到单个服务器
    */
@@ -230,6 +234,7 @@ export class MCPClient {
     logger.info(`Connecting to MCP server: ${config.name}`);
 
     let transport: Transport;
+    let connectTimeout: number;
 
     try {
       // 根据配置类型创建不同的传输
@@ -237,6 +242,7 @@ export class MCPClient {
         // SSE 远程服务器
         logger.info(`Using SSE transport for ${config.name}: ${config.serverUrl}`);
         transport = new SSEClientTransport(new URL(config.serverUrl));
+        connectTimeout = MCPClient.SSE_CONNECT_TIMEOUT;
       } else {
         // Stdio 本地服务器 (默认)
         const stdioConfig = config as MCPStdioServerConfig;
@@ -248,6 +254,7 @@ export class MCPClient {
             ...stdioConfig.env,
           } as Record<string, string>,
         });
+        connectTimeout = MCPClient.STDIO_CONNECT_TIMEOUT;
       }
 
       const client = new Client(
@@ -260,7 +267,26 @@ export class MCPClient {
         }
       );
 
-      await client.connect(transport);
+      // 使用超时机制包装连接
+      const connectWithTimeout = async (): Promise<void> => {
+        return new Promise<void>((resolve, reject) => {
+          const timeoutId = setTimeout(() => {
+            reject(new Error(`Connection to ${config.name} timed out after ${connectTimeout}ms`));
+          }, connectTimeout);
+
+          client.connect(transport)
+            .then(() => {
+              clearTimeout(timeoutId);
+              resolve();
+            })
+            .catch((err) => {
+              clearTimeout(timeoutId);
+              reject(err);
+            });
+        });
+      };
+
+      await connectWithTimeout();
 
       this.clients.set(config.name, client);
       this.transports.set(config.name, transport);

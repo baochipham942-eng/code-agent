@@ -12,7 +12,6 @@ import { WorkspacePanel } from './components/WorkspacePanel';
 import { TitleBar } from './components/TitleBar';
 import { SettingsModal } from './components/SettingsModal';
 import { GenerationBadge } from './components/GenerationBadge';
-import { MemoryPanel } from './components/MemoryPanel';
 import { ObservabilityPanel } from './components/ObservabilityPanel';
 import { UserQuestionModal } from './components/UserQuestionModal';
 import { AuthModal } from './components/AuthModal';
@@ -21,7 +20,7 @@ import { PermissionModal } from './components/PermissionModal';
 import { CloudTaskPanel } from './components/CloudTaskPanel';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { useDisclosure } from './hooks/useDisclosure';
-import { Activity, Brain, Cloud } from 'lucide-react';
+import { Activity, Cloud } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 import { UI } from '@shared/constants';
@@ -43,7 +42,6 @@ export const App: React.FC = () => {
   } = useAppStore();
 
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
-  const [showMemoryPanel, setShowMemoryPanel] = useState(false);
   const [showCloudTaskPanel, setShowCloudTaskPanel] = useState(false);
 
   // 强制更新状态
@@ -195,9 +193,6 @@ export const App: React.FC = () => {
   // Check if observability panel is available (Advanced+ disclosure level)
   const isObservabilityAvailable = isAdvanced;
 
-  // Check if Gen 5 (memory features available)
-  const isMemoryAvailable = currentGeneration.id === 'gen5';
-
   // Listen for user question events (Gen 3+)
   useEffect(() => {
     const unsubscribe = window.electronAPI?.on(
@@ -248,25 +243,6 @@ export const App: React.FC = () => {
     );
   };
 
-  // Memory panel toggle button (Gen 5 only)
-  const MemoryToggle: React.FC = () => {
-    if (!isMemoryAvailable) return null;
-
-    return (
-      <button
-        onClick={() => setShowMemoryPanel(!showMemoryPanel)}
-        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
-          showMemoryPanel
-            ? 'bg-cyan-500/20 text-cyan-300'
-            : 'text-zinc-500 hover:bg-zinc-800'
-        }`}
-        title="Toggle Memory Panel"
-      >
-        <Brain className="w-3.5 h-3.5" />
-        <span>Memory</span>
-      </button>
-    );
-  };
 
   // Cloud task panel toggle button (Advanced mode)
   const CloudTaskToggle: React.FC = () => {
@@ -307,7 +283,6 @@ export const App: React.FC = () => {
             </div>
             <div className="flex items-center gap-2">
               {isObservabilityAvailable && <ObservabilityToggle />}
-              {isMemoryAvailable && <MemoryToggle />}
               <CloudTaskToggle />
             </div>
           </div>
@@ -318,9 +293,6 @@ export const App: React.FC = () => {
 
         {/* Observability Panel (Advanced+ disclosure) */}
         {showPlanningPanel && isObservabilityAvailable && <ObservabilityPanel />}
-
-        {/* Memory Panel (Gen 5 only) */}
-        {showMemoryPanel && isMemoryAvailable && <MemoryPanel isVisible={true} />}
 
         {/* Cloud Task Panel (Advanced mode) */}
         {showCloudTaskPanel && <CloudTaskPanel onClose={() => setShowCloudTaskPanel(false)} />}

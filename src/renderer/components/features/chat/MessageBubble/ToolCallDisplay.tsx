@@ -106,6 +106,59 @@ const Loader: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+// 格式化工具参数为用户友好的显示
+const formatToolArgs = (toolName: string, args: Record<string, unknown> | undefined): string => {
+  if (!args) return '无参数';
+
+  switch (toolName) {
+    case 'read_file': {
+      let filePath = (args.file_path as string) || '';
+      // 清理混入的参数
+      if (filePath.includes(' offset=') || filePath.includes(' limit=')) {
+        filePath = filePath.split(' ')[0];
+      }
+      const offset = args.offset as number;
+      const limit = args.limit as number;
+      let result = `文件: ${filePath}`;
+      if (offset && offset > 1) result += `\n起始行: ${offset}`;
+      if (limit && limit !== 2000) result += `\n读取行数: ${limit}`;
+      return result;
+    }
+
+    case 'write_file': {
+      const filePath = (args.file_path as string) || '';
+      const content = (args.content as string) || '';
+      return `文件: ${filePath}\n内容长度: ${content.length} 字符`;
+    }
+
+    case 'bash': {
+      const command = (args.command as string) || '';
+      return `命令:\n${command}`;
+    }
+
+    case 'glob': {
+      const pattern = (args.pattern as string) || '';
+      const path = (args.path as string) || '.';
+      return `模式: ${pattern}\n目录: ${path}`;
+    }
+
+    case 'grep': {
+      const pattern = (args.pattern as string) || '';
+      const path = (args.path as string) || '.';
+      return `搜索: ${pattern}\n目录: ${path}`;
+    }
+
+    case 'list_directory': {
+      const path = (args.path as string) || '.';
+      return `目录: ${path}`;
+    }
+
+    default:
+      // 其他工具显示简化的 JSON
+      return JSON.stringify(args, null, 2);
+  }
+};
+
 // Status config
 const statusConfig: Record<ToolStatus, ToolStatusConfig> = {
   success: {
@@ -208,10 +261,13 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
         {/* Tool summary */}
         <div className="flex-1 text-left min-w-0">
           <div className="text-sm font-medium text-zinc-200 truncate">{summary}</div>
-          <div className="flex items-center gap-2 text-xs text-zinc-500">
-            <span className="font-mono">{toolCall.name}</span>
-            {total > 1 && <span className="text-zinc-600">#{index + 1}</span>}
-          </div>
+          {/* 只在展开时显示工具名和序号 */}
+          {expanded && (
+            <div className="flex items-center gap-2 text-xs text-zinc-500">
+              <span className="font-mono">{toolCall.name}</span>
+              {total > 1 && <span className="text-zinc-600">#{index + 1}</span>}
+            </div>
+          )}
         </div>
 
         {/* Diff preview for edit_file */}
@@ -256,13 +312,13 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
           {isEditFile && editFileArgs && showDiff && (
             <div className="mb-3">
               <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 mb-2">
-                <span>Changes</span>
+                <span>变更对比</span>
                 <div className="flex-1 h-px bg-zinc-700/50" />
                 <button
                   onClick={() => setShowDiff(false)}
                   className="text-zinc-500 hover:text-zinc-300 px-2"
                 >
-                  隐藏
+                  收起
                 </button>
               </div>
               <DiffView
@@ -274,10 +330,10 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
             </div>
           )}
 
-          {/* Arguments - simplified for edit_file */}
+          {/* Arguments - 用户友好显示 */}
           <div className="mb-3">
             <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 mb-2">
-              <span>Arguments</span>
+              <span>参数</span>
               <div className="flex-1 h-px bg-zinc-700/50" />
               {isEditFile && !showDiff && (
                 <button
@@ -288,20 +344,11 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
                 </button>
               )}
             </div>
-            <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded-lg p-3 overflow-x-auto border border-zinc-800/50">
+            <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded-lg p-3 overflow-x-auto border border-zinc-800/50 whitespace-pre-wrap">
               {isEditFile && editFileArgs ? (
-                // Simplified display for edit_file arguments
-                JSON.stringify({
-                  file_path: editFileArgs.filePath,
-                  old_string: editFileArgs.oldString.length > 100
-                    ? `${editFileArgs.oldString.slice(0, 100)}... (${editFileArgs.oldString.length} chars)`
-                    : editFileArgs.oldString,
-                  new_string: editFileArgs.newString.length > 100
-                    ? `${editFileArgs.newString.slice(0, 100)}... (${editFileArgs.newString.length} chars)`
-                    : editFileArgs.newString,
-                }, null, 2)
+                `文件: ${editFileArgs.filePath}\n修改: ${editFileArgs.oldString.length} → ${editFileArgs.newString.length} 字符`
               ) : (
-                JSON.stringify(toolCall.arguments, null, 2)
+                formatToolArgs(toolCall.name, toolCall.arguments)
               )}
             </pre>
           </div>
@@ -310,7 +357,7 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
           {toolCall.result && (
             <div>
               <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 mb-2">
-                <span>Result</span>
+                <span>结果</span>
                 <div className="flex-1 h-px bg-zinc-700/50" />
                 {toolCall.result.duration && (
                   <span className="flex items-center gap-1 text-zinc-600">

@@ -116,8 +116,17 @@ export function summarizeToolCall(toolCall: ToolCall): string {
     }
 
     case 'read_file': {
-      const filePath = (args?.file_path as string) || '';
+      let filePath = (args?.file_path as string) || '';
+      // 清理可能混入的参数（AI 可能把 offset/limit 写到 file_path 里）
+      if (filePath.includes(' offset=') || filePath.includes(' limit=')) {
+        filePath = filePath.split(' ')[0];
+      }
       const fileName = filePath.split('/').pop() || filePath;
+      const offset = args?.offset as number;
+      const limit = args?.limit as number;
+      if (offset && offset > 1) {
+        return `读取文件: ${fileName} (从第 ${offset} 行)`;
+      }
       return `读取文件: ${fileName}`;
     }
 

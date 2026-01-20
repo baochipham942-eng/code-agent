@@ -4,7 +4,7 @@
 > 优先级: P2
 > 预估时间: 2 周
 > 依赖: TASK-05 完成
-> 状态: 待执行
+> 状态: ✅ 已完成
 
 ---
 
@@ -443,10 +443,90 @@ interface MCPServerConfig {
 
 ## 交接备注
 
-_（任务完成后填写）_
+- **完成时间**: 2026-01-20
+- **状态**: ✅ 已完成
 
-- 完成时间:
-- 装饰器 API 文档:
-- 插件开发指南:
-- MCP 配置格式说明:
-- 下游 Agent 注意事项:
+### 6.1 工具装饰器 API
+
+**位置**: `src/main/tools/decorators/`
+
+**使用示例**:
+```typescript
+import { Tool, Param, Description, ITool, buildToolFromClass } from '../decorators';
+
+@Description('Read file contents from filesystem')
+@Tool('read_file', { generations: 'gen1+', permission: 'read' })
+@Param('file_path', { type: 'string', required: true, description: 'Path to file' })
+@Param('offset', { type: 'number', required: false })
+class ReadFileTool implements ITool {
+  async execute(params, context) { /* ... */ }
+}
+
+export const readFileTool = buildToolFromClass(ReadFileTool);
+```
+
+**已迁移工具**: `readDecorated.ts`, `globDecorated.ts`, `bashDecorated.ts`
+
+### 6.2 插件系统
+
+**位置**: `src/main/plugins/`
+
+**插件目录**: `~/Library/Application Support/code-agent/plugins/`
+
+**插件结构**:
+```
+my-plugin/
+├── plugin.json (或 package.json)
+└── index.js
+```
+
+**manifest 格式**:
+```json
+{
+  "id": "my-plugin",
+  "name": "My Plugin",
+  "version": "1.0.0",
+  "main": "index.js"
+}
+```
+
+**Plugin API**:
+- `api.registerTool(tool)` - 注册工具 (自动添加 `pluginId:` 前缀)
+- `api.unregisterTool(name)` - 注销工具
+- `api.log(level, message)` - 日志
+- `api.getStorage()` - 获取持久存储
+
+### 6.3 MCP 配置热更新
+
+**云端 API**: `/api/v1/config?section=mcpServers`
+
+**配置格式**:
+```typescript
+interface MCPServerConfig {
+  id: string;
+  name: string;
+  type: 'stdio' | 'sse';
+  enabled: boolean;
+  config: { command?, args?, url?, env? };
+  requiredEnvVars?: string[];
+  description?: string;
+}
+```
+
+**热更新函数**: `refreshMCPServersFromCloud()`
+
+**IPC Actions** (domain: `domain:mcp`):
+- `getServerStates` - 获取所有服务器状态
+- `setServerEnabled` - 启用/禁用服务器
+- `reconnectServer` - 重连服务器
+- `refreshFromCloud` - 从云端刷新配置
+
+**设置页面**: 新增 MCP Tab，显示服务器状态和管理功能
+
+### 下游 Agent 注意事项
+
+1. **新增依赖**: `reflect-metadata` 已添加到 package.json
+2. **tsconfig 改动**: 启用了 `experimentalDecorators` 和 `emitDecoratorMetadata`
+3. **ToolRegistry 新增方法**: `unregister(name)`, `getToolRegistry()`, `registerTool()`, `unregisterTool()`
+4. **插件系统**: 启动时异步初始化，不阻塞主流程
+5. **MCP IPC_DOMAINS.MCP**: 使用 `domain:mcp` 通道，新增 4 个 actions

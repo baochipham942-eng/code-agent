@@ -11,6 +11,7 @@ import type {
   PluginState,
 } from './types';
 import { discoverPlugins, loadPlugin, watchPluginsDir } from './pluginLoader';
+import { createPluginStorage, initPluginStorageTable } from './pluginStorage';
 
 // ----------------------------------------------------------------------------
 // Plugin Registry Class
@@ -42,7 +43,7 @@ import { discoverPlugins, loadPlugin, watchPluginsDir } from './pluginLoader';
  * @see PluginLoader - 插件加载器
  * @see PluginAPI - 插件 API 接口
  */
-class PluginRegistry {
+export class PluginRegistry {
   private plugins: Map<string, LoadedPlugin> = new Map();
   private stopWatcher: (() => void) | null = null;
 
@@ -65,6 +66,9 @@ class PluginRegistry {
    */
   async initialize(): Promise<void> {
     console.log('Initializing plugin system...');
+
+    // Initialize storage table
+    initPluginStorageTable();
 
     // Discover and load plugins
     const plugins = await discoverPlugins();
@@ -148,7 +152,7 @@ class PluginRegistry {
         }
       },
 
-      getStorage: () => this.createPluginStorage(plugin.manifest.id),
+      getStorage: () => this.createPersistentStorage(plugin.manifest.id),
 
       showNotification: (title, body) => {
         // TODO: Implement notifications
@@ -159,35 +163,10 @@ class PluginRegistry {
 
   /**
    * Create storage interface for a plugin
+   * Uses SQLite for persistent storage
    */
-  private createPluginStorage(pluginId: string): PluginStorage {
-    const storageKey = `plugin:${pluginId}:`;
-
-    // Simple in-memory storage for now
-    // TODO: Implement persistent storage with sqlite
-    const storage = new Map<string, unknown>();
-
-    return {
-      async get<T>(key: string): Promise<T | undefined> {
-        return storage.get(storageKey + key) as T | undefined;
-      },
-
-      async set<T>(key: string, value: T): Promise<void> {
-        storage.set(storageKey + key, value);
-      },
-
-      async delete(key: string): Promise<void> {
-        storage.delete(storageKey + key);
-      },
-
-      async clear(): Promise<void> {
-        for (const key of storage.keys()) {
-          if (key.startsWith(storageKey)) {
-            storage.delete(key);
-          }
-        }
-      },
-    };
+  private createPersistentStorage(pluginId: string): PluginStorage {
+    return createPluginStorage(pluginId);
   }
 
   /**

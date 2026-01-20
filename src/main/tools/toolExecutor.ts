@@ -19,13 +19,21 @@ const logger = createLogger('ToolExecutor');
 // Types
 // ----------------------------------------------------------------------------
 
-interface ToolExecutorConfig {
+/**
+ * Tool Executor 配置
+ * @internal
+ */
+export interface ToolExecutorConfig {
   toolRegistry: ToolRegistry;
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   workingDirectory: string;
 }
 
-interface ExecuteOptions {
+/**
+ * 工具执行选项
+ * @internal
+ */
+export interface ExecuteOptions {
   generation: Generation;
   planningService?: unknown; // PlanningService instance for persistent planning
   modelConfig?: unknown; // ModelConfig for subagent execution

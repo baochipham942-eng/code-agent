@@ -29,7 +29,11 @@ const logger = createLogger('AgentOrchestrator');
 // Types
 // ----------------------------------------------------------------------------
 
-interface AgentOrchestratorConfig {
+/**
+ * Agent Orchestrator 配置
+ * @internal
+ */
+export interface AgentOrchestratorConfig {
   generationManager: GenerationManager;
   configService: ConfigService;
   onEvent: (event: AgentEvent) => void;

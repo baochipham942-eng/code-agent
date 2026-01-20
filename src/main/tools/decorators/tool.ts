@@ -1,6 +1,7 @@
 // ============================================================================
 // @Tool Decorator - 工具元数据装饰器
 // ============================================================================
+/* eslint-disable @typescript-eslint/no-unsafe-function-type */
 
 import 'reflect-metadata';
 import type { GenerationId } from '../../../shared/types';

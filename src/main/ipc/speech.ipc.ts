@@ -6,6 +6,7 @@
 import { ipcMain, IpcMain } from 'electron';
 import Groq from 'groq-sdk';
 import { createLogger } from '../services/infra/logger';
+import { getConfigService } from '../services/core/configService';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -17,10 +18,11 @@ export const SPEECH_CHANNELS = {
   TRANSCRIBE: 'speech:transcribe',
 } as const;
 
-// Groq API Key (从环境变量获取)
-// 与 AI 心理项目复用同一个 Key
+// Groq API Key (通过 ConfigService 获取)
+// 优先级：secure storage > config.json > 环境变量
 function getGroqApiKey(): string | undefined {
-  return process.env.GROQ_API_KEY;
+  const configService = getConfigService();
+  return configService.getApiKey('groq');
 }
 
 // Whisper 幻觉过滤列表

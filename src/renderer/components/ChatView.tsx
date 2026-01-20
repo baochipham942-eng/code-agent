@@ -92,7 +92,12 @@ export const ChatView: React.FC = () => {
         </div>
 
         {/* Input */}
-        <ChatInput onSend={handleSendMessage} disabled={isProcessing} />
+        <ChatInput
+          onSend={handleSendMessage}
+          disabled={isProcessing}
+          isProcessing={isProcessing}
+          onStop={cancel}
+        />
       </div>
 
       {/* Todo Panel (Gen 3+) - hide when preview panel is open */}

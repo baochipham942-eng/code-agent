@@ -19,9 +19,10 @@ import { ForceUpdateModal } from './components/ForceUpdateModal';
 import { PermissionModal } from './components/PermissionModal';
 import { CloudTaskPanel } from './components/CloudTaskPanel';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
+import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
 import { Activity, Cloud } from 'lucide-react';
-import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent } from '@shared/ipc';
+import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 import { UI } from '@shared/constants';
 import { createLogger } from './utils/logger';
@@ -52,6 +53,9 @@ export const App: React.FC = () => {
 
   // 工具创建确认弹窗
   const [toolCreateRequest, setToolCreateRequest] = useState<ToolCreateRequest | null>(null);
+
+  // confirm_action 弹窗确认
+  const [confirmActionRequest, setConfirmActionRequest] = useState<ConfirmActionRequest | null>(null);
 
   // Auth store
   const { showAuthModal } = useAuthStore();
@@ -223,6 +227,21 @@ export const App: React.FC = () => {
     };
   }, []);
 
+  // Listen for confirm_action events (Gen 3+)
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.on(
+      IPC_CHANNELS.CONFIRM_ACTION_ASK,
+      (request: ConfirmActionRequest) => {
+        logger.info('Received confirm action request', { id: request.id, title: request.title });
+        setConfirmActionRequest(request);
+      }
+    );
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, []);
+
   // Observability panel toggle button (Advanced+ mode)
   const ObservabilityToggle: React.FC = () => {
     if (!isObservabilityAvailable) return null;
@@ -372,6 +391,14 @@ export const App: React.FC = () => {
             );
             setToolCreateRequest(null);
           }}
+        />
+      )}
+
+      {/* Confirm Action Modal - confirm_action 工具弹窗 */}
+      {confirmActionRequest && (
+        <ConfirmActionModal
+          request={confirmActionRequest}
+          onClose={() => setConfirmActionRequest(null)}
         />
       )}
     </div>

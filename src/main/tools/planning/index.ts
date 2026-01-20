@@ -5,6 +5,7 @@
 export { taskTool } from './task';
 export { todoWriteTool } from './todoWrite';
 export { askUserQuestionTool } from './askUserQuestion';
+export { confirmActionTool } from './confirmAction';
 export { planReadTool } from './planRead';
 export { planUpdateTool } from './planUpdate';
 export { enterPlanModeTool } from './enterPlanMode';

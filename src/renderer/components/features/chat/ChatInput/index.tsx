@@ -21,13 +21,17 @@ import { useFileUpload } from './useFileUpload';
 export interface ChatInputProps {
   onSend: (message: string, attachments?: MessageAttachment[]) => void;
   disabled?: boolean;
+  /** 是否正在处理（用于显示停止按钮） */
+  isProcessing?: boolean;
+  /** 停止处理回调 */
+  onStop?: () => void;
 }
 
 // ============================================================================
 // 主组件
 // ============================================================================
 
-export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
+export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled, isProcessing, onStop }) => {
   const [value, setValue] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -173,12 +177,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
                     disabled={disabled}
                   />
                 )}
-                {/* 发送按钮 */}
+                {/* 发送/停止按钮 */}
                 <SendButton
                   disabled={disabled}
-                  loading={disabled}
+                  isProcessing={isProcessing}
                   hasContent={hasContent}
                   type="submit"
+                  onStop={onStop}
                 />
               </>
             }

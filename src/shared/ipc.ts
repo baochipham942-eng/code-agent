@@ -249,6 +249,10 @@ export const IPC_CHANNELS = {
   USER_QUESTION_ASK: 'user-question:ask',
   USER_QUESTION_RESPONSE: 'user-question:response',
 
+  // Confirm action channels (Gen 3+ confirm_action)
+  CONFIRM_ACTION_ASK: 'confirm-action:ask',
+  CONFIRM_ACTION_RESPONSE: 'confirm-action:response',
+
   // Auth channels
   AUTH_GET_STATUS: 'auth:get-status',
   AUTH_SIGN_IN_EMAIL: 'auth:sign-in-email',
@@ -405,6 +409,9 @@ export interface IpcInvokeHandlers {
   // User question (Gen 3+ ask_user_question)
   [IPC_CHANNELS.USER_QUESTION_RESPONSE]: (response: UserQuestionResponse) => Promise<void>;
 
+  // Confirm action (Gen 3+ confirm_action)
+  [IPC_CHANNELS.CONFIRM_ACTION_RESPONSE]: (response: { requestId: string; confirmed: boolean }) => Promise<void>;
+
   // Auth
   [IPC_CHANNELS.AUTH_GET_STATUS]: () => Promise<AuthStatus>;
   [IPC_CHANNELS.AUTH_SIGN_IN_EMAIL]: (
@@ -538,11 +545,22 @@ export interface ToolCreateRequestEvent {
   script?: string;
 }
 
+export interface ConfirmActionRequest {
+  id: string;
+  title: string;
+  message: string;
+  type: 'danger' | 'warning' | 'info';
+  confirmText: string;
+  cancelText: string;
+  timestamp: number;
+}
+
 export interface IpcEventHandlers {
   [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEvent) => void;
   [IPC_CHANNELS.PLANNING_EVENT]: (event: PlanningEvent) => void;
   [IPC_CHANNELS.SECURITY_TOOL_CREATE_REQUEST]: (request: ToolCreateRequestEvent) => void;
   [IPC_CHANNELS.USER_QUESTION_ASK]: (request: UserQuestionRequest) => void;
+  [IPC_CHANNELS.CONFIRM_ACTION_ASK]: (request: ConfirmActionRequest) => void;
   [IPC_CHANNELS.AUTH_EVENT]: (event: AuthEvent) => void;
   [IPC_CHANNELS.SYNC_EVENT]: (status: SyncStatus) => void;
   [IPC_CHANNELS.SESSION_UPDATED]: (event: SessionUpdatedEvent) => void;

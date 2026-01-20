@@ -76,6 +76,43 @@ interface ModelMessage {
 // Agent Loop
 // ----------------------------------------------------------------------------
 
+/**
+ * Agent Loop - AI Agent 的核心执行循环
+ *
+ * 实现 ReAct 模式的推理-行动循环：
+ * 1. 调用模型进行推理（inference）
+ * 2. 解析响应（文本或工具调用）
+ * 3. 执行工具（带权限检查）
+ * 4. 将结果反馈给模型
+ * 5. 重复直到完成或达到最大迭代次数
+ *
+ * 增强功能：
+ * - Turn-Based 消息模型（每轮迭代 = 一条前端消息）
+ * - 任务复杂度自动分析
+ * - Anti-pattern 检测（防止无限读取循环）
+ * - Planning Hooks 集成
+ * - Plan Mode 支持（Claude Code v2.0 风格）
+ * - Langfuse 追踪集成
+ *
+ * @example
+ * ```typescript
+ * const loop = new AgentLoop({
+ *   generation,
+ *   modelConfig,
+ *   toolRegistry,
+ *   toolExecutor,
+ *   messages: [],
+ *   onEvent: (event) => console.log(event),
+ * });
+ *
+ * await loop.run('帮我创建一个 React 组件');
+ * loop.cancel(); // 取消执行
+ * ```
+ *
+ * @see AgentOrchestrator - 上层控制器
+ * @see PlanningService - 规划服务
+ * @see ToolExecutor - 工具执行器
+ */
 export class AgentLoop {
   private generation: Generation;
   private modelConfig: ModelConfig;
@@ -144,7 +181,13 @@ export class AgentLoop {
   // --------------------------------------------------------------------------
 
   /**
-   * Set the plan mode state
+   * 设置 Plan Mode 状态
+   *
+   * Plan Mode 是 Claude Code v2.0 引入的规划模式：
+   * - 激活时：Agent 进入只读模式，专注于分析和规划
+   * - 停用时：Agent 恢复正常执行，可以进行写操作
+   *
+   * @param active - true 激活 Plan Mode，false 停用
    */
   setPlanMode(active: boolean): void {
     this.planModeActive = active;
@@ -157,7 +200,9 @@ export class AgentLoop {
   }
 
   /**
-   * Check if plan mode is active
+   * 检查 Plan Mode 是否处于激活状态
+   *
+   * @returns true 表示 Plan Mode 激活，false 表示正常模式
    */
   isPlanMode(): boolean {
     return this.planModeActive;
@@ -167,6 +212,19 @@ export class AgentLoop {
   // Public Methods
   // --------------------------------------------------------------------------
 
+  /**
+   * 启动 Agent 执行循环
+   *
+   * 核心执行流程：
+   * 1. 分析任务复杂度并注入提示
+   * 2. 运行 Session Start Hook（如果启用）
+   * 3. 进入主循环：推理 → 执行工具 → 反馈
+   * 4. 运行 Session End Hook（如果启用）
+   *
+   * @param userMessage - 用户输入的消息内容
+   * @returns Promise 在循环完成后 resolve
+   * @throws 可能抛出模型调用或工具执行相关的错误
+   */
   async run(userMessage: string): Promise<void> {
     logger.debug('[AgentLoop] ========== run() START ==========');
     logger.debug('[AgentLoop] Message:', userMessage.substring(0, 100));
@@ -493,11 +551,22 @@ export class AgentLoop {
     langfuse.flush().catch((err) => logger.error('[Langfuse] Flush error:', err));
   }
 
+  /**
+   * 取消当前执行循环
+   *
+   * 设置取消标志，循环将在当前迭代完成后退出
+   */
   cancel(): void {
     this.isCancelled = true;
   }
 
-  // Getter for planning service (for tools that need it)
+  /**
+   * 获取规划服务实例
+   *
+   * 供工具（如 plan_mode）获取规划服务以进行状态管理
+   *
+   * @returns PlanningService 实例，如果未配置则返回 undefined
+   */
   getPlanningService(): PlanningService | undefined {
     return this.planningService;
   }

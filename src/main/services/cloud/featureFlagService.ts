@@ -9,6 +9,31 @@ import { getCloudConfigService, type FeatureFlags } from './cloudConfigService';
 // FeatureFlagService
 // ----------------------------------------------------------------------------
 
+/**
+ * Feature Flag Service - 功能开关管理服务
+ *
+ * 提供便捷的 Feature Flag 检查接口，底层数据来自 CloudConfigService。
+ *
+ * 支持的 Flags：
+ * - enableGen8：是否启用 Gen8 自我进化工具
+ * - enableCloudAgent：是否启用云端 Agent
+ * - maxIterations：Agent 最大迭代次数
+ * - enableMemory：是否启用记忆系统
+ * - enableVision：是否启用视觉工具
+ *
+ * @example
+ * ```typescript
+ * const flags = getFeatureFlagService();
+ *
+ * if (flags.isGen8Enabled()) {
+ *   // 启用 Gen8 工具
+ * }
+ *
+ * const maxIter = getMaxIterations();
+ * ```
+ *
+ * @see CloudConfigService - 配置数据源
+ */
 class FeatureFlagService {
   /**
    * 获取所有 Feature Flags

@@ -8,13 +8,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// Mock isolated-vm (causes Node version issues in tests)
+vi.mock('isolated-vm', () => ({}));
+
 // Import tools
-import { taskTool } from '../../src/main/tools/gen3/task';
-import { todoWriteTool } from '../../src/main/tools/gen3/todoWrite';
-import { askUserQuestionTool } from '../../src/main/tools/gen3/askUserQuestion';
-import { planReadTool } from '../../src/main/tools/gen3/planRead';
-import { planUpdateTool } from '../../src/main/tools/gen3/planUpdate';
-import { findingsWriteTool } from '../../src/main/tools/gen3/findingsWrite';
+import { taskTool } from '../../src/main/tools/planning/task';
+import { todoWriteTool } from '../../src/main/tools/planning/todoWrite';
+import { askUserQuestionTool } from '../../src/main/tools/planning/askUserQuestion';
+import { planReadTool } from '../../src/main/tools/planning/planRead';
+import { planUpdateTool } from '../../src/main/tools/planning/planUpdate';
+import { findingsWriteTool } from '../../src/main/tools/planning/findingsWrite';
 
 // Mock electron
 vi.mock('electron', () => ({

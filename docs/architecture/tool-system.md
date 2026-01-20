@@ -161,18 +161,89 @@ Search results for: "query"
 
 **配置**: 需要设置 `BRAVE_API_KEY` 环境变量
 
+## Gen5 工具集 - 记忆系统
+
+| 工具 | 功能 | 权限 |
+|------|------|------|
+| `memory_store` | 存储知识到向量数据库 | - |
+| `memory_search` | 搜索相关记忆 | - |
+| `code_index` | 索引代码库 | read |
+| `auto_learn` | 自动学习模式 | - |
+
+**记忆系统架构**:
+- 向量数据库：pgvector（Supabase）
+- 嵌入模型：OpenAI text-embedding-ada-002
+- 存储类型：代码片段、对话历史、项目知识
+
+## Gen6 工具集 - 视觉交互
+
+| 工具 | 功能 | 权限 |
+|------|------|------|
+| `screenshot` | 屏幕截图 | execute |
+| `computer_use` | 电脑控制（鼠标、键盘）| execute |
+| `browser_navigate` | 浏览器导航 | network |
+| `browser_action` | 浏览器操作（点击、输入）| network |
+
+**依赖**: Playwright（用于浏览器自动化）
+
+## Gen7 工具集 - 多代理
+
+| 工具 | 功能 | 权限 |
+|------|------|------|
+| `spawn_agent` | 创建子代理 | - |
+| `agent_message` | 代理间通信 | - |
+| `workflow_orchestrate` | 工作流编排 | - |
+
+**多代理模式**:
+- 主代理（Orchestrator）协调子代理
+- 子代理专注特定任务（代码审查、测试、文档）
+- 异步通信，支持并行执行
+
+## Gen8 工具集 - 自我进化
+
+| 工具 | 功能 | 权限 |
+|------|------|------|
+| `strategy_optimize` | 策略优化 | - |
+| `tool_create` | 动态创建工具 | execute |
+| `self_evaluate` | 自我评估 | - |
+| `learn_pattern` | 学习模式 | - |
+
+**Feature Flag 控制**: Gen8 工具默认禁用，需要通过 `enableGen8` Feature Flag 启用。
+
 ---
 
 ## 文件结构
 
 ```
 src/main/tools/
-├── ToolRegistry.ts    # 工具注册表
-├── ToolExecutor.ts    # 工具执行器
-├── gen1/              # bash, readFile, writeFile, editFile
-├── gen2/              # glob, grep, listDirectory
-├── gen3/              # task, todoWrite, askUserQuestion
-└── gen4/              # skill, webFetch, webSearch
+├── toolRegistry.ts    # 工具注册表
+├── toolExecutor.ts    # 工具执行器
+├── index.ts           # 统一导出
+├── file/              # 文件操作工具
+│   ├── readFile.ts
+│   ├── writeFile.ts
+│   ├── editFile.ts
+│   ├── glob.ts
+│   └── listDirectory.ts
+├── shell/             # Shell 工具
+│   ├── bash.ts
+│   └── grep.ts
+├── planning/          # 规划工具
+│   ├── task.ts
+│   ├── todoWrite.ts
+│   ├── askUserQuestion.ts
+│   ├── planMode.ts
+│   └── findings.ts
+├── network/           # 网络工具
+│   ├── skill.ts
+│   ├── webFetch.ts
+│   ├── webSearch.ts
+│   └── readPdf.ts
+├── mcp/               # MCP 协议工具
+├── memory/            # 记忆系统工具
+├── vision/            # 视觉交互工具
+├── multiagent/        # 多代理工具
+└── evolution/         # 自我进化工具
 ```
 
 ## 权限级别

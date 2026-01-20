@@ -8,11 +8,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// Mock isolated-vm (causes Node version issues in tests)
+vi.mock('isolated-vm', () => ({}));
+
 // Import tools
-import { screenshotTool } from '../../src/main/tools/gen6/screenshot';
-import { computerUseTool } from '../../src/main/tools/gen6/computerUse';
-import { browserNavigateTool } from '../../src/main/tools/gen6/browserNavigate';
-import { browserActionTool } from '../../src/main/tools/gen6/browserAction';
+import { screenshotTool } from '../../src/main/tools/vision/screenshot';
+import { computerUseTool } from '../../src/main/tools/vision/computerUse';
+import { browserNavigateTool } from '../../src/main/tools/vision/browserNavigate';
+import { browserActionTool } from '../../src/main/tools/vision/browserAction';
 
 // Mock child_process for screenshot tests
 vi.mock('child_process', async () => {

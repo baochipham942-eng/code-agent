@@ -1,0 +1,43 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "src/main/index.ts",
+    "src/main/agent/agentOrchestrator.ts",
+    "src/main/agent/agentLoop.ts",
+    "src/main/tools/toolRegistry.ts",
+    "src/main/tools/toolExecutor.ts",
+    "src/main/services/cloud/cloudConfigService.ts",
+    "src/main/services/cloud/featureFlagService.ts",
+    "src/main/plugins/pluginRegistry.ts",
+    "src/main/planning/planningService.ts",
+    "src/main/planning/types.ts",
+    "src/main/planning/planManager.ts",
+    "src/main/planning/hooksEngine.ts",
+    "src/main/planning/errorTracker.ts",
+    "src/main/planning/findingsManager.ts",
+    "src/shared/types/generation.ts",
+    "src/shared/types/skill.ts",
+    "src/shared/types/tool.ts",
+    "src/shared/types/permission.ts",
+    "src/shared/types/model.ts"
+  ],
+  "out": "docs/api",
+  "exclude": [
+    "**/node_modules/**",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ],
+  "excludePrivate": true,
+  "excludeProtected": false,
+  "excludeInternal": true,
+  "name": "Code Agent API",
+  "readme": "none",
+  "includeVersion": true,
+  "categorizeByGroup": true,
+  "sort": ["source-order"],
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "notDocumented": false
+  }
+}

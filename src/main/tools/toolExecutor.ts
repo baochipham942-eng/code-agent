@@ -39,6 +39,31 @@ interface ExecuteOptions {
 // Tool Executor
 // ----------------------------------------------------------------------------
 
+/**
+ * Tool Executor - 工具执行器
+ *
+ * 负责工具的实际执行，包括：
+ * - 权限检查（根据 requiresPermission 和 permissionLevel）
+ * - 危险命令检测（rm -rf、git push --force 等）
+ * - 结果缓存（通过 ToolCache）
+ * - 执行上下文构建
+ *
+ * @example
+ * ```typescript
+ * const executor = new ToolExecutor({
+ *   toolRegistry,
+ *   requestPermission: async (req) => confirm(req.reason),
+ *   workingDirectory: '/path/to/project',
+ * });
+ *
+ * const result = await executor.execute('bash', { command: 'ls' }, {
+ *   generation: { id: 'gen4', name: 'Gen 4' },
+ * });
+ * ```
+ *
+ * @see ToolRegistry - 工具注册表
+ * @see ToolCache - 工具结果缓存
+ */
 export class ToolExecutor {
   private toolRegistry: ToolRegistry;
   private requestPermission: (request: PermissionRequestData) => Promise<boolean>;
@@ -50,10 +75,30 @@ export class ToolExecutor {
     this.workingDirectory = config.workingDirectory;
   }
 
+  /**
+   * 设置工作目录
+   *
+   * @param path - 新的工作目录路径
+   */
   setWorkingDirectory(path: string): void {
     this.workingDirectory = path;
   }
 
+  /**
+   * 执行指定工具
+   *
+   * 执行流程：
+   * 1. 查找工具并验证代际可用性
+   * 2. 构建执行上下文
+   * 3. 检查权限（如需要）
+   * 4. 检查缓存（如适用）
+   * 5. 执行工具并返回结果
+   *
+   * @param toolName - 工具名称
+   * @param params - 工具参数
+   * @param options - 执行选项（代际、规划服务等）
+   * @returns 工具执行结果
+   */
   async execute(
     toolName: string,
     params: Record<string, unknown>,

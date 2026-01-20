@@ -20,6 +20,32 @@ const CLOUD_CONFIG_URL = 'https://code-agent-beta.vercel.app/api/v1/config';
 // CloudConfigService
 // ----------------------------------------------------------------------------
 
+/**
+ * Cloud Config Service - 云端配置管理服务
+ *
+ * 负责从云端拉取和管理配置，支持：
+ * - System Prompt 热更新
+ * - Skill 定义热更新
+ * - Tool 元数据热更新
+ * - Feature Flags 管理
+ * - MCP Server 配置
+ *
+ * 缓存策略：
+ * - 默认 TTL：1 小时
+ * - 支持 ETag（304 Not Modified）
+ * - 离线时降级到内置配置
+ *
+ * @example
+ * ```typescript
+ * const service = getCloudConfigService();
+ * await service.initialize();
+ *
+ * const prompt = service.getPrompt('gen4');
+ * const skills = service.getSkills();
+ * ```
+ *
+ * @see FeatureFlagService - Feature Flag 便捷接口
+ */
 class CloudConfigService {
   private cache: CloudConfig | null = null;
   private cacheExpiry: number = 0;

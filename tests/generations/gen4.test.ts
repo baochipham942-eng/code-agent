@@ -3,14 +3,17 @@
 // Tests: skill, web_fetch
 // ============================================================================
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// Mock isolated-vm (causes Node version issues in tests)
+vi.mock('isolated-vm', () => ({}));
+
 // Import tools
-import { skillTool } from '../../src/main/tools/gen4/skill';
-import { webFetchTool } from '../../src/main/tools/gen4/webFetch';
+import { skillTool } from '../../src/main/tools/network/skill';
+import { webFetchTool } from '../../src/main/tools/network/webFetch';
 
 // Mock context
 const createMockContext = (workingDirectory: string) => ({

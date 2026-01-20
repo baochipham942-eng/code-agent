@@ -3,8 +3,12 @@
 // Tests the tool registry functionality
 // ============================================================================
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { ToolRegistry } from '../../src/main/tools/ToolRegistry';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+// Mock isolated-vm (causes Node version issues in tests)
+vi.mock('isolated-vm', () => ({}));
+
+import { ToolRegistry } from '../../src/main/tools/toolRegistry';
 
 describe('ToolRegistry', () => {
   let registry: ToolRegistry;

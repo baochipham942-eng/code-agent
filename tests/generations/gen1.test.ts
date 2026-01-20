@@ -3,16 +3,19 @@
 // Tests: bash, read_file, write_file, edit_file
 // ============================================================================
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 
+// Mock isolated-vm (causes Node version issues in tests)
+vi.mock('isolated-vm', () => ({}));
+
 // Import tools
-import { bashTool } from '../../src/main/tools/gen1/bash';
-import { readFileTool } from '../../src/main/tools/gen1/readFile';
-import { writeFileTool } from '../../src/main/tools/gen1/writeFile';
-import { editFileTool } from '../../src/main/tools/gen1/editFile';
+import { bashTool } from '../../src/main/tools/shell/bash';
+import { readFileTool } from '../../src/main/tools/file/read';
+import { writeFileTool } from '../../src/main/tools/file/write';
+import { editFileTool } from '../../src/main/tools/file/edit';
 
 // Mock context
 const createMockContext = (workingDirectory: string) => ({

@@ -583,6 +583,14 @@ export interface ElectronAPI {
 
   // PDF 文本提取（在主进程处理）
   extractPdfText: (filePath: string) => Promise<{ text: string; pageCount: number }>;
+
+  // 语音转写（使用 Groq Whisper API）
+  transcribeSpeech: (audioData: string, mimeType: string) => Promise<{
+    success: boolean;
+    text?: string;
+    error?: string;
+    hallucination?: boolean;
+  }>;
 }
 
 /**

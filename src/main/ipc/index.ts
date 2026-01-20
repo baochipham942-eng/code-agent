@@ -24,6 +24,7 @@ import { registerMcpHandlers } from './mcp.ipc';
 import { registerMemoryHandlers } from './memory.ipc';
 import { registerPlanningHandlers } from './planning.ipc';
 import { registerDataHandlers } from './data.ipc';
+import { registerSpeechHandlers } from './speech.ipc';
 
 export * from './types';
 
@@ -98,6 +99,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Data/Cache handlers
   registerDataHandlers(ipcMain);
+
+  // Speech handlers
+  registerSpeechHandlers(ipcMain);
 
   logger.info('All handlers registered');
 }

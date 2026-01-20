@@ -46,6 +46,11 @@ const electronAPI: ElectronAPI = {
   extractPdfText: (filePath: string) => {
     return ipcRenderer.invoke('extract-pdf-text', filePath);
   },
+
+  // 语音转写 - 使用 Groq Whisper API
+  transcribeSpeech: (audioData: string, mimeType: string) => {
+    return ipcRenderer.invoke('speech:transcribe', { audioData, mimeType });
+  },
 };
 
 // ============================================================================

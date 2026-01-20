@@ -23,13 +23,14 @@ import {
   Brain,
   Loader2,
   Wrench,
-  PenLine
+  PenLine,
+  StopCircle,
 } from 'lucide-react';
 
 export const ChatView: React.FC = () => {
   const { currentGeneration, showPreviewPanel } = useAppStore();
   const { todos } = useSessionStore();
-  const { messages, isProcessing, sendMessage, taskProgress } = useAgent();
+  const { messages, isProcessing, sendMessage, cancel, taskProgress } = useAgent();
   const { requireAuthAsync } = useRequireAuth();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -81,8 +82,8 @@ export const ChatView: React.FC = () => {
               {/* Processing indicator - Task Progress or Typing animation */}
               {isProcessing && (
                 taskProgress && taskProgress.phase !== 'completed'
-                  ? <EnhancedThinkingIndicator progress={taskProgress} />
-                  : <ThinkingIndicator />
+                  ? <EnhancedThinkingIndicator progress={taskProgress} onStop={cancel} />
+                  : <ThinkingIndicator onStop={cancel} />
               )}
 
               <div ref={messagesEndRef} />
@@ -103,8 +104,8 @@ export const ChatView: React.FC = () => {
   );
 };
 
-// Thinking indicator with typing dots
-const ThinkingIndicator: React.FC = () => {
+// Thinking indicator with typing dots and stop button
+const ThinkingIndicator: React.FC<{ onStop?: () => void }> = ({ onStop }) => {
   return (
     <div className="flex items-start gap-3 animate-fade-in">
       {/* AI Avatar */}
@@ -121,13 +122,24 @@ const ThinkingIndicator: React.FC = () => {
           <span className="w-2 h-2 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '300ms' }} />
         </div>
         <span className="text-sm text-zinc-400">思考中...</span>
+
+        {/* Stop button */}
+        {onStop && (
+          <button
+            onClick={onStop}
+            className="ml-2 p-1.5 rounded-lg hover:bg-red-500/20 text-zinc-500 hover:text-red-400 transition-colors"
+            title="停止"
+          >
+            <StopCircle className="w-4 h-4" />
+          </button>
+        )}
       </div>
     </div>
   );
 };
 
-// Enhanced thinking indicator with task progress
-const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ progress }) => {
+// Enhanced thinking indicator with task progress and stop button
+const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData; onStop?: () => void }> = ({ progress, onStop }) => {
   // 阶段配置
   const phaseConfig: Record<string, { icon: React.ReactNode; label: string; color: string; bgColor: string }> = {
     thinking: {
@@ -171,9 +183,20 @@ const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ p
         {/* Status line */}
         <div className="flex items-center gap-2">
           <span className={`${config.color}`}>{config.icon}</span>
-          <span className={`text-sm font-medium ${config.color}`}>
+          <span className={`text-sm font-medium ${config.color} flex-1`}>
             {progress.step || config.label}
           </span>
+
+          {/* Stop button */}
+          {onStop && (
+            <button
+              onClick={onStop}
+              className="p-1.5 rounded-lg hover:bg-red-500/20 text-zinc-500 hover:text-red-400 transition-colors"
+              title="停止"
+            >
+              <StopCircle className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Tool progress bar */}

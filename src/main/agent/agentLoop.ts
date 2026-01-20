@@ -139,6 +139,10 @@ export class AgentLoop {
   private maxConsecutiveReadsBeforeWarning: number = 5;
   private hasWrittenFile: boolean = false;
 
+  // Anti-pattern detection: track repeated tool failures with same error
+  private toolFailureTracker: Map<string, { count: number; lastError: string }> = new Map();
+  private maxSameToolFailures: number = 3;
+
   // Plan Mode support (borrowed from Claude Code v2.0)
   private planModeActive: boolean = false;
 
@@ -721,6 +725,38 @@ export class AgentLoop {
 
         results.push(toolResult);
         logger.debug(` Tool ${toolCall.name} completed in ${toolResult.duration}ms`);
+
+        // Anti-pattern detection: track repeated tool failures
+        if (!result.success && result.error) {
+          const toolKey = `${toolCall.name}:${JSON.stringify(toolCall.arguments)}`;
+          const tracker = this.toolFailureTracker.get(toolKey);
+
+          if (tracker && tracker.lastError === result.error) {
+            tracker.count++;
+            if (tracker.count >= this.maxSameToolFailures) {
+              logger.warn(`[AgentLoop] Tool ${toolCall.name} failed ${tracker.count} times with same error`);
+              this.injectSystemMessage(
+                `<repeated-failure-warning>\n` +
+                `CRITICAL: The tool "${toolCall.name}" has failed ${tracker.count} times with the SAME error:\n` +
+                `Error: ${result.error}\n\n` +
+                `You MUST:\n` +
+                `1. STOP retrying this exact operation - it will NOT work\n` +
+                `2. Analyze WHY it's failing (network issue? invalid parameters? missing config?)\n` +
+                `3. Either try a DIFFERENT approach or inform the user that you cannot complete this task\n` +
+                `4. If this is a network error, tell the user to check their network connection\n` +
+                `</repeated-failure-warning>`
+              );
+              // Clear tracker to avoid spamming
+              this.toolFailureTracker.delete(toolKey);
+            }
+          } else {
+            this.toolFailureTracker.set(toolKey, { count: 1, lastError: result.error });
+          }
+        } else if (result.success) {
+          // Clear failure tracker on success
+          const toolKey = `${toolCall.name}:${JSON.stringify(toolCall.arguments)}`;
+          this.toolFailureTracker.delete(toolKey);
+        }
 
         // Auto-continuation detection for truncated files
         if (toolCall.name === 'write_file' && result.success && result.output) {

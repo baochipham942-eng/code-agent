@@ -24,6 +24,22 @@ export interface FeatureFlags {
   enableExperimentalTools: boolean;
 }
 
+// MCP Server 配置
+export interface MCPServerCloudConfig {
+  id: string;
+  name: string;
+  type: 'stdio' | 'sse';
+  enabled: boolean;
+  config: {
+    command?: string;
+    args?: string[];
+    url?: string;
+    env?: Record<string, string>;
+  };
+  requiredEnvVars?: string[];
+  description?: string;
+}
+
 export interface CloudConfig {
   version: string;
   prompts: Record<GenerationId, string>;
@@ -35,6 +51,7 @@ export interface CloudConfig {
     en: Record<string, string>;
   };
   rules: Record<string, string>;
+  mcpServers: MCPServerCloudConfig[];
 }
 
 // ----------------------------------------------------------------------------
@@ -407,6 +424,86 @@ const BUILTIN_RULES: Record<string, string> = {
 };
 
 // ----------------------------------------------------------------------------
+// MCP Servers
+// ----------------------------------------------------------------------------
+
+const BUILTIN_MCP_SERVERS: MCPServerCloudConfig[] = [
+  {
+    id: 'deepwiki',
+    name: 'DeepWiki',
+    type: 'sse',
+    enabled: true,
+    config: {
+      url: 'https://mcp.deepwiki.com/sse',
+    },
+    description: '解读 GitHub 项目文档，提供项目架构和代码理解',
+  },
+  {
+    id: 'filesystem',
+    name: 'Filesystem',
+    type: 'stdio',
+    enabled: false,
+    config: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-filesystem', '~'],
+    },
+    description: '文件系统访问（默认禁用，避免与内置工具冲突）',
+  },
+  {
+    id: 'git',
+    name: 'Git',
+    type: 'stdio',
+    enabled: false,
+    config: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-git'],
+    },
+    description: 'Git 版本控制操作',
+  },
+  {
+    id: 'github',
+    name: 'GitHub',
+    type: 'stdio',
+    enabled: false,
+    config: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-github'],
+      env: {
+        GITHUB_PERSONAL_ACCESS_TOKEN: '${GITHUB_TOKEN}',
+      },
+    },
+    requiredEnvVars: ['GITHUB_TOKEN'],
+    description: 'GitHub API 访问（需要 GITHUB_TOKEN）',
+  },
+  {
+    id: 'brave-search',
+    name: 'Brave Search',
+    type: 'stdio',
+    enabled: false,
+    config: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-brave-search'],
+      env: {
+        BRAVE_API_KEY: '${BRAVE_API_KEY}',
+      },
+    },
+    requiredEnvVars: ['BRAVE_API_KEY'],
+    description: '网络搜索（需要 BRAVE_API_KEY）',
+  },
+  {
+    id: 'memory',
+    name: 'Memory',
+    type: 'stdio',
+    enabled: false,
+    config: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-memory'],
+    },
+    description: '知识图谱记忆服务',
+  },
+];
+
+// ----------------------------------------------------------------------------
 // Export Builtin Config
 // ----------------------------------------------------------------------------
 
@@ -429,6 +526,7 @@ export function getBuiltinConfig(): CloudConfig {
     featureFlags: BUILTIN_FEATURE_FLAGS,
     uiStrings: BUILTIN_UI_STRINGS,
     rules: BUILTIN_RULES,
+    mcpServers: BUILTIN_MCP_SERVERS,
   };
 }
 

@@ -150,6 +150,10 @@ export class ToolRegistry {
     this.tools.set(tool.name, tool);
   }
 
+  unregister(name: string): boolean {
+    return this.tools.delete(name);
+  }
+
   get(name: string): Tool | undefined {
     return this.tools.get(name);
   }
@@ -200,4 +204,36 @@ export class ToolRegistry {
       permissionLevel: tool.permissionLevel,
     };
   }
+}
+
+// ----------------------------------------------------------------------------
+// Global Singleton & Helper Functions
+// ----------------------------------------------------------------------------
+
+let globalRegistry: ToolRegistry | null = null;
+
+/**
+ * Get the global tool registry instance
+ */
+export function getToolRegistry(): ToolRegistry {
+  if (!globalRegistry) {
+    globalRegistry = new ToolRegistry();
+  }
+  return globalRegistry;
+}
+
+/**
+ * Register a tool globally
+ * Used by plugins to register their tools
+ */
+export function registerTool(tool: Tool): void {
+  getToolRegistry().register(tool);
+}
+
+/**
+ * Unregister a tool globally
+ * Used by plugins to unregister their tools
+ */
+export function unregisterTool(name: string): boolean {
+  return getToolRegistry().unregister(name);
 }

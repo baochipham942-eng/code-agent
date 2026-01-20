@@ -11,11 +11,12 @@ import { getCloudConfigService } from '../services/cloud';
 
 // Import tool definitions - organized by function
 import { bashTool, grepTool } from './shell';
-import { readFileTool, writeFileTool, editFileTool, globTool, listDirectoryTool } from './file';
+import { readFileTool, writeFileTool, editFileTool, globTool, listDirectoryTool, readClipboardTool } from './file';
 import {
   taskTool,
   todoWriteTool,
   askUserQuestionTool,
+  confirmActionTool,
   planReadTool,
   planUpdateTool,
   findingsWriteTool,
@@ -133,6 +134,8 @@ export class ToolRegistry {
     this.register(taskTool);
     this.register(todoWriteTool);
     this.register(askUserQuestionTool);
+    this.register(confirmActionTool);
+    this.register(readClipboardTool);
     this.register(planReadTool);
     this.register(planUpdateTool);
     this.register(findingsWriteTool);

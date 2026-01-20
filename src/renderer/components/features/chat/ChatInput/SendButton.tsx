@@ -1,49 +1,63 @@
 // ============================================================================
-// SendButton - 发送按钮组件（含加载状态）
+// SendButton - 发送按钮组件（含加载状态和停止功能）
 // ============================================================================
 
 import React from 'react';
-import { Send, Loader2 } from 'lucide-react';
+import { Send, Loader2, Square } from 'lucide-react';
 import { IconButton } from '../../../primitives';
 
 export interface SendButtonProps {
   /** 是否禁用 */
   disabled?: boolean;
-  /** 是否正在加载 */
-  loading?: boolean;
+  /** 是否正在处理（显示停止按钮） */
+  isProcessing?: boolean;
   /** 是否有内容可发送 */
   hasContent?: boolean;
   /** 表单提交类型 */
   type?: 'submit' | 'button';
-  /** 点击回调 */
+  /** 点击回调（发送或停止） */
   onClick?: () => void;
+  /** 停止回调 */
+  onStop?: () => void;
 }
 
 /**
- * 发送按钮 - 支持加载状态和内容状态的视觉反馈
+ * 发送按钮 - 处理中变为停止按钮
  */
 export const SendButton: React.FC<SendButtonProps> = ({
   disabled = false,
-  loading = false,
+  isProcessing = false,
   hasContent = false,
   type = 'submit',
   onClick,
+  onStop,
 }) => {
-  const isDisabled = disabled || loading || !hasContent;
-  const showActiveState = hasContent && !loading && !disabled;
+  // 处理中时显示停止按钮
+  if (isProcessing) {
+    return (
+      <IconButton
+        icon={<Square className="w-4 h-4 fill-current" />}
+        aria-label="停止"
+        type="button"
+        variant="default"
+        size="lg"
+        onClick={onStop}
+        className="flex-shrink-0 mr-2 !rounded-xl !text-white transition-all duration-300 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 shadow-lg shadow-red-500/20 hover:shadow-red-500/30 scale-100 hover:scale-105"
+      />
+    );
+  }
+
+  const isDisabled = disabled || !hasContent;
+  const showActiveState = hasContent && !disabled;
 
   return (
     <IconButton
       icon={
-        loading ? (
-          <Loader2 className="w-5 h-5 animate-spin" />
-        ) : (
-          <Send
-            className={`w-5 h-5 transition-transform duration-200 ${
-              hasContent ? '-rotate-45' : ''
-            }`}
-          />
-        )
+        <Send
+          className={`w-5 h-5 transition-transform duration-200 ${
+            hasContent ? '-rotate-45' : ''
+          }`}
+        />
       }
       aria-label="发送消息"
       type={type}

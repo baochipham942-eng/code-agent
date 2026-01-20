@@ -90,16 +90,6 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
         } ${(disabled || isTranscribing) ? 'opacity-50 cursor-not-allowed' : ''}`}
       />
 
-      {/* 录音脉动动画 */}
-      {isRecording && (
-        <>
-          <span className="absolute inset-0 rounded-xl bg-red-400 animate-ping opacity-20 pointer-events-none" />
-          <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5 pointer-events-none">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 animate-ping" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
-          </span>
-        </>
-      )}
 
       {/* 录音时长显示 */}
       {isRecording && duration > 0 && (

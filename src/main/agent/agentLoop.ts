@@ -32,7 +32,11 @@ const logger = createLogger('AgentLoop');
 // Types
 // ----------------------------------------------------------------------------
 
-interface AgentLoopConfig {
+/**
+ * Agent Loop 配置
+ * @internal
+ */
+export interface AgentLoopConfig {
   generation: Generation;
   modelConfig: ModelConfig;
   toolRegistry: ToolRegistry;

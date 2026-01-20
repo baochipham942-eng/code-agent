@@ -46,7 +46,7 @@ const CLOUD_CONFIG_URL = 'https://code-agent-beta.vercel.app/api/v1/config';
  *
  * @see FeatureFlagService - Feature Flag 便捷接口
  */
-class CloudConfigService {
+export class CloudConfigService {
   private cache: CloudConfig | null = null;
   private cacheExpiry: number = 0;
   private etag: string | null = null;

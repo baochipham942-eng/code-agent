@@ -34,7 +34,7 @@ import { getCloudConfigService, type FeatureFlags } from './cloudConfigService';
  *
  * @see CloudConfigService - 配置数据源
  */
-class FeatureFlagService {
+export class FeatureFlagService {
   /**
    * 获取所有 Feature Flags
    */

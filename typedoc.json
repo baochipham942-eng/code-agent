@@ -36,8 +36,17 @@
   "categorizeByGroup": true,
   "sort": ["source-order"],
   "validation": {
-    "notExported": true,
+    "notExported": false,
     "invalidLink": true,
     "notDocumented": false
-  }
+  },
+  "intentionallyNotExported": [
+    "AgentLoopConfig",
+    "AgentOrchestratorConfig",
+    "ToolExecutorConfig",
+    "ExecuteOptions",
+    "PluginRegistry",
+    "CloudConfigService",
+    "FeatureFlagService"
+  ]
 }

@@ -10,7 +10,12 @@ export {
   discoverPlugins,
 } from './pluginLoader';
 export {
+  PluginRegistry,
   getPluginRegistry,
   initPluginSystem,
   shutdownPluginSystem,
 } from './pluginRegistry';
+export {
+  createPluginStorage,
+  initPluginStorageTable,
+} from './pluginStorage';

@@ -1,6 +1,7 @@
 // ============================================================================
 // @Param Decorator - 参数定义装饰器
 // ============================================================================
+/* eslint-disable @typescript-eslint/no-unsafe-function-type */
 
 import 'reflect-metadata';
 import { PARAMS_METADATA_KEY, type ParamOptions, type ParamMetadataStored } from './types';

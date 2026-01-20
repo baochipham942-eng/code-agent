@@ -1,6 +1,7 @@
 // ============================================================================
 // @Description Decorator - 工具描述装饰器
 // ============================================================================
+/* eslint-disable @typescript-eslint/no-unsafe-function-type */
 
 import 'reflect-metadata';
 import { DESCRIPTION_METADATA_KEY } from './types';

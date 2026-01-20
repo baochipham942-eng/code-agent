@@ -253,7 +253,35 @@ src/main/plugins/
 ├── index.ts           # 导出入口
 ├── types.ts           # 类型定义
 ├── pluginRegistry.ts  # 插件注册表
-└── pluginLoader.ts    # 插件加载器
+├── pluginLoader.ts    # 插件加载器
+└── pluginStorage.ts   # 持久化存储（SQLite）
+```
+
+---
+
+## 持久化存储
+
+插件存储使用 SQLite 实现持久化：
+
+```typescript
+// 获取存储接口
+const storage = api.getStorage();
+
+// 存储会持久化到 SQLite 数据库
+await storage.set('user_config', { theme: 'dark', language: 'zh' });
+
+// 应用重启后数据仍然存在
+const config = await storage.get('user_config');
+```
+
+存储表结构：
+
+```sql
+CREATE TABLE plugin_storage (
+  key TEXT PRIMARY KEY,      -- 格式: plugin:{pluginId}:{key}
+  value TEXT NOT NULL,       -- JSON 序列化的值
+  updated_at INTEGER NOT NULL
+);
 ```
 
 ---

@@ -173,17 +173,43 @@ async function initializeServices(): Promise<void> {
   const settings = configService.getSettings();
   const mainWindow = getMainWindow();
 
-  // Initialize CloudConfigService ASYNC (non-blocking)
+  // Initialize CloudConfigService FIRST, then MCP (MCP depends on CloudConfig)
+  // This is a chained initialization to avoid race conditions
   initCloudConfigService()
     .then(() => {
       const info = getCloudConfigService().getInfo();
       logger.info('CloudConfig initialized', { source: info.fromCloud ? 'cloud' : 'builtin', version: info.version });
+
+      // Now initialize MCP client AFTER CloudConfig is ready
+      const mcpConfigs: MCPServerConfig[] = settings.mcp?.servers || [];
+      logger.info('Initializing MCP servers...', { customCount: mcpConfigs.length });
+      return initMCPClient(mcpConfigs);
+    })
+    .then(() => {
+      const mcpClient = getMCPClient();
+      const status = mcpClient.getStatus();
+      const serverStates = mcpClient.getServerStates();
+      const errorServers = serverStates.filter(s => s.status === 'error');
+
+      logger.info('MCP initialized', {
+        connected: status.connectedServers.join(', ') || 'none',
+        toolCount: status.toolCount,
+        errors: errorServers.map(s => `${s.config.name}: ${s.error}`).join('; ') || 'none',
+      });
+
+      // Notify renderer about MCP status (for UI display)
+      if (mainWindow && errorServers.length > 0) {
+        mainWindow.webContents.send(IPC_CHANNELS.MCP_EVENT, {
+          type: 'connection_errors',
+          data: errorServers.map(s => ({ server: s.config.name, error: s.error })),
+        });
+      }
     })
     .catch((error) => {
-      logger.warn('CloudConfig init failed (using builtin)', { error: String(error) });
+      logger.error('CloudConfig/MCP initialization failed', { error: String(error) });
     });
 
-  // Initialize PromptService ASYNC (non-blocking)
+  // Initialize PromptService ASYNC (non-blocking, independent)
   initPromptService()
     .then(() => {
       const info = getPromptsInfo();
@@ -191,19 +217,6 @@ async function initializeServices(): Promise<void> {
     })
     .catch((error) => {
       logger.warn('PromptService init failed (using builtin)', { error: String(error) });
-    });
-
-  // Initialize MCP client ASYNC (non-blocking)
-  const mcpConfigs: MCPServerConfig[] = settings.mcp?.servers || [];
-  logger.info('Initializing MCP servers in background...', { count: mcpConfigs.length });
-  initMCPClient(mcpConfigs)
-    .then(() => {
-      const mcpClient = getMCPClient();
-      const status = mcpClient.getStatus();
-      logger.info('MCP connected', { servers: status.connectedServers.join(', ') || 'none', toolCount: status.toolCount, resourceCount: status.resourceCount });
-    })
-    .catch((error) => {
-      logger.error('MCP failed to initialize (non-blocking)', error);
     });
 
   // Initialize Plugin System ASYNC (non-blocking)

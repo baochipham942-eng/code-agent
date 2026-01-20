@@ -11,6 +11,7 @@ import { UI } from '@shared/constants';
 import { InputArea, InputAreaRef } from './InputArea';
 import { AttachmentBar } from './AttachmentBar';
 import { SendButton } from './SendButton';
+import { VoiceInputButton } from './VoiceInputButton';
 import { useFileUpload } from './useFileUpload';
 
 // ============================================================================
@@ -116,6 +117,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   };
 
+  // 语音输入回调 - 追加到现有文本
+  const handleVoiceTranscript = useCallback((text: string) => {
+    if (text.trim()) {
+      setValue(prev => prev.trim() ? `${prev} ${text}` : text);
+      // 聚焦输入框
+      inputAreaRef.current?.focus();
+    }
+  }, []);
+
   const hasContent = value.trim().length > 0 || attachments.length > 0;
 
   return (
@@ -154,13 +164,23 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSend, disabled }) => {
             hasAttachments={attachments.length > 0}
             isFocused={isFocused}
             onFocusChange={setIsFocused}
-            sendButton={
-              <SendButton
-                disabled={disabled}
-                loading={disabled}
-                hasContent={hasContent}
-                type="submit"
-              />
+            actionButtons={
+              <>
+                {/* 语音输入按钮 */}
+                {!disabled && (
+                  <VoiceInputButton
+                    onTranscript={handleVoiceTranscript}
+                    disabled={disabled}
+                  />
+                )}
+                {/* 发送按钮 */}
+                <SendButton
+                  disabled={disabled}
+                  loading={disabled}
+                  hasContent={hasContent}
+                  type="submit"
+                />
+              </>
             }
           />
         </div>

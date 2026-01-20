@@ -43,7 +43,9 @@ export interface InputAreaProps {
   isFocused: boolean;
   /** 焦点状态变化回调 */
   onFocusChange: (focused: boolean) => void;
-  /** 发送按钮插槽（放在输入框内部右侧） */
+  /** 操作按钮插槽（放在输入框内部右侧，包含语音输入和发送按钮） */
+  actionButtons?: React.ReactNode;
+  /** @deprecated 使用 actionButtons 代替 */
   sendButton?: React.ReactNode;
 }
 
@@ -68,6 +70,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       hasAttachments = false,
       isFocused,
       onFocusChange,
+      actionButtons,
       sendButton,
     },
     ref
@@ -169,8 +172,10 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           className="flex-1 min-w-0 bg-transparent py-3 px-2 text-sm text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none disabled:opacity-50 max-h-[200px] leading-relaxed"
         />
 
-        {/* 发送按钮插槽 */}
-        {sendButton}
+        {/* 操作按钮区（语音输入 + 发送） */}
+        <div className="flex items-center gap-1 mr-1">
+          {actionButtons || sendButton}
+        </div>
       </div>
     );
   }

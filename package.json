@@ -1,6 +1,6 @@
 {
   "name": "code-agent",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "description": "AI Coding Assistant with Generation Comparison",
   "type": "module",
   "main": "dist/main/index.cjs",
@@ -109,12 +109,14 @@
         "dmg",
         "zip"
       ],
+      "icon": "resources/icon.icns",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "extendInfo": {
         "NSScreenCaptureUsageDescription": "Code Agent 需要屏幕录制权限来实现 GUI Agent 功能",
         "NSAppleEventsUsageDescription": "Code Agent 需要自动化权限来控制其他应用程序",
-        "NSCameraUsageDescription": "Code Agent 需要相机权限用于屏幕截图功能"
+        "NSCameraUsageDescription": "Code Agent 需要相机权限用于屏幕截图功能",
+        "NSMicrophoneUsageDescription": "Code Agent 需要麦克风权限来实现语音输入功能"
       }
     },
     "win": {

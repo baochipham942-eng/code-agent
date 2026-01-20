@@ -51,9 +51,24 @@ Returns: File content with line numbers in format "  lineNum\\tcontent"`,
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolExecutionResult> {
-    const inputPath = params.file_path as string;
-    const offset = (params.offset as number) || 1;
-    const limit = (params.limit as number) || 2000;
+    let inputPath = params.file_path as string;
+    let offset = (params.offset as number) || 1;
+    let limit = (params.limit as number) || 2000;
+
+    // 兼容处理：AI 可能把参数写到 file_path 里（如 "file.txt offset=10 limit=20"）
+    if (inputPath.includes(' offset=') || inputPath.includes(' limit=')) {
+      const parts = inputPath.split(' ');
+      inputPath = parts[0]; // 第一部分是实际路径
+
+      for (const part of parts.slice(1)) {
+        const [key, value] = part.split('=');
+        if (key === 'offset' && value && !isNaN(Number(value))) {
+          offset = Number(value);
+        } else if (key === 'limit' && value && !isNaN(Number(value))) {
+          limit = Number(value);
+        }
+      }
+    }
 
     // Resolve path (handles ~, relative paths)
     const filePath = resolvePath(inputPath, context.workingDirectory);

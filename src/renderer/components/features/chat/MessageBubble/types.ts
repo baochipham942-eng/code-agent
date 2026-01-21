@@ -26,6 +26,8 @@ export interface ToolCallDisplayProps {
   toolCall: ToolCall;
   index: number;
   total: number;
+  /** Compact mode for Cowork display - simplified view */
+  compact?: boolean;
 }
 
 export interface AttachmentDisplayProps {

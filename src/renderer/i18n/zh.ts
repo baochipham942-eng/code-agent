@@ -24,6 +24,7 @@ export const zh = {
   settings: {
     title: '设置',
     tabs: {
+      general: '通用',
       model: '模型',
       disclosure: '界面',
       appearance: '外观',
@@ -32,6 +33,14 @@ export const zh = {
       cloud: '云端',
       update: '更新',
       about: '关于',
+    },
+    general: {
+      modeTitle: '应用模式',
+      modeDescription: '选择适合你工作方式的模式',
+      developerMode: '开发者模式',
+      developerModeDesc: '显示完整的工具调用详情和参数',
+      coworkMode: 'Cowork 模式',
+      coworkModeDesc: '简化展示，适合与其他 AI 协作',
     },
     cloud: {
       title: '云端配置',

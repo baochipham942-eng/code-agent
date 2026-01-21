@@ -26,6 +26,7 @@ export const en: Translations = {
   settings: {
     title: 'Settings',
     tabs: {
+      general: 'General',
       model: 'Model',
       disclosure: 'Disclosure',
       appearance: 'Appearance',
@@ -34,6 +35,14 @@ export const en: Translations = {
       cloud: 'Cloud',
       update: 'Update',
       about: 'About',
+    },
+    general: {
+      modeTitle: 'Application Mode',
+      modeDescription: 'Choose the mode that fits your workflow',
+      developerMode: 'Developer Mode',
+      developerModeDesc: 'Show full tool call details and parameters',
+      coworkMode: 'Cowork Mode',
+      coworkModeDesc: 'Simplified display for AI collaboration',
     },
     cloud: {
       title: 'Cloud Config',

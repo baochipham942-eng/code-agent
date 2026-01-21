@@ -3,12 +3,53 @@
 // ============================================================================
 
 import type { IpcMain } from 'electron';
-import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import {
+  IPC_CHANNELS,
+  IPC_DOMAINS,
+  type IPCRequest,
+  type IPCResponse,
+  type MemoryRecord,
+  type MemoryListFilter,
+  type MemorySearchOptions,
+} from '../../shared/ipc';
 import { getSessionManager } from '../services';
 import { getMemoryService } from '../memory/memoryService';
 
 // ----------------------------------------------------------------------------
-// Internal Handlers
+// Types for Memory CRUD Payloads
+// ----------------------------------------------------------------------------
+
+interface CreateMemoryPayload {
+  type: MemoryRecord['type'];
+  category: string;
+  content: string;
+  summary: string;
+  source?: MemoryRecord['source'];
+  confidence?: number;
+  metadata?: Record<string, unknown>;
+}
+
+interface UpdateMemoryPayload {
+  id: string;
+  updates: {
+    category?: string;
+    content?: string;
+    summary?: string;
+    confidence?: number;
+    metadata?: Record<string, unknown>;
+  };
+}
+
+interface DeleteMemoriesPayload {
+  type?: MemoryRecord['type'];
+  category?: string;
+  source?: MemoryRecord['source'];
+  currentProjectOnly?: boolean;
+  currentSessionOnly?: boolean;
+}
+
+// ----------------------------------------------------------------------------
+// Internal Handlers - Legacy (RAG Context)
 // ----------------------------------------------------------------------------
 
 async function handleGetContext(payload: { query: string }): Promise<unknown> {
@@ -50,6 +91,60 @@ async function handleGetStats(): Promise<unknown> {
 }
 
 // ----------------------------------------------------------------------------
+// Internal Handlers - Memory CRUD (Gen5 记忆可视化)
+// ----------------------------------------------------------------------------
+
+async function handleCreateMemory(payload: CreateMemoryPayload): Promise<MemoryRecord> {
+  const memoryService = getMemoryService();
+  return memoryService.createMemory(payload) as MemoryRecord;
+}
+
+async function handleGetMemory(payload: { id: string }): Promise<MemoryRecord | null> {
+  const memoryService = getMemoryService();
+  return memoryService.getMemoryById(payload.id) as MemoryRecord | null;
+}
+
+async function handleListMemories(payload: MemoryListFilter): Promise<MemoryRecord[]> {
+  const memoryService = getMemoryService();
+  return memoryService.listMemories(payload) as MemoryRecord[];
+}
+
+async function handleUpdateMemory(payload: UpdateMemoryPayload): Promise<MemoryRecord | null> {
+  const memoryService = getMemoryService();
+  return memoryService.updateMemory(payload.id, payload.updates) as MemoryRecord | null;
+}
+
+async function handleDeleteMemory(payload: { id: string }): Promise<boolean> {
+  const memoryService = getMemoryService();
+  return memoryService.deleteMemory(payload.id);
+}
+
+async function handleDeleteMemories(payload: DeleteMemoriesPayload): Promise<number> {
+  const memoryService = getMemoryService();
+  return memoryService.deleteMemories(payload);
+}
+
+async function handleSearchMemories(payload: { query: string; options?: MemorySearchOptions }): Promise<MemoryRecord[]> {
+  const memoryService = getMemoryService();
+  return memoryService.searchMemories(payload.query, payload.options) as MemoryRecord[];
+}
+
+async function handleGetMemoryStats(): Promise<{
+  total: number;
+  byType: Record<string, number>;
+  bySource: Record<string, number>;
+  byCategory: Record<string, number>;
+}> {
+  const memoryService = getMemoryService();
+  return memoryService.getMemoryStats();
+}
+
+async function handleRecordMemoryAccess(payload: { id: string }): Promise<void> {
+  const memoryService = getMemoryService();
+  memoryService.recordMemoryAccess(payload.id);
+}
+
+// ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
 
@@ -65,6 +160,7 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
       let data: unknown;
 
       switch (action) {
+        // Legacy RAG Context actions
         case 'getContext':
           data = await handleGetContext(payload as { query: string });
           break;
@@ -77,6 +173,37 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
         case 'getStats':
           data = await handleGetStats();
           break;
+
+        // Memory CRUD actions (Gen5 记忆可视化)
+        case 'createMemory':
+          data = await handleCreateMemory(payload as CreateMemoryPayload);
+          break;
+        case 'getMemory':
+          data = await handleGetMemory(payload as { id: string });
+          break;
+        case 'listMemories':
+          data = await handleListMemories((payload || {}) as MemoryListFilter);
+          break;
+        case 'updateMemory':
+          data = await handleUpdateMemory(payload as UpdateMemoryPayload);
+          break;
+        case 'deleteMemory':
+          data = await handleDeleteMemory(payload as { id: string });
+          break;
+        case 'deleteMemories':
+          data = await handleDeleteMemories((payload || {}) as DeleteMemoriesPayload);
+          break;
+        case 'searchMemories':
+          data = await handleSearchMemories(payload as { query: string; options?: MemorySearchOptions });
+          break;
+        case 'getMemoryStats':
+          data = await handleGetMemoryStats();
+          break;
+        case 'recordAccess':
+          await handleRecordMemoryAccess(payload as { id: string });
+          data = { success: true };
+          break;
+
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
       }

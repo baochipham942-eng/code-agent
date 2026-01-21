@@ -6,6 +6,7 @@ import React, { useMemo, useCallback, useRef } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
+import { useTaskStore } from '../stores/taskStore';
 import { useAgent } from '../hooks/useAgent';
 import { useRequireAuth } from '../hooks/useRequireAuth';
 import { MessageBubble } from './features/chat/MessageBubble';
@@ -25,13 +26,19 @@ import {
   Loader2,
   Wrench,
   PenLine,
-  StopCircle,
 } from 'lucide-react';
 
 export const ChatView: React.FC = () => {
   const { currentGeneration, showPreviewPanel } = useAppStore();
-  const { todos } = useSessionStore();
+  const { todos, currentSessionId } = useSessionStore();
   const { messages, isProcessing, sendMessage, cancel, taskProgress } = useAgent();
+
+  // Wave 5: 使用 taskStore 判断当前会话是否在处理中（支持多任务并行）
+  const { sessionStates } = useTaskStore();
+  const currentSessionState = currentSessionId ? sessionStates[currentSessionId] : null;
+  const isCurrentSessionProcessing = currentSessionState?.status === 'running' || currentSessionState?.status === 'queued';
+  // 如果 taskStore 有状态，使用会话级别状态；否则回退到全局状态
+  const effectiveIsProcessing = currentSessionState ? isCurrentSessionProcessing : isProcessing;
   const { requireAuthAsync } = useRequireAuth();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
 
@@ -66,17 +73,17 @@ export const ChatView: React.FC = () => {
 
   // Footer component for processing indicator
   const Footer = useCallback(() => {
-    if (!isProcessing) return null;
+    if (!effectiveIsProcessing) return null;
 
     return (
       <div className="px-4 py-3 max-w-3xl mx-auto w-full">
         {taskProgress && taskProgress.phase !== 'completed'
-          ? <EnhancedThinkingIndicator progress={taskProgress} onStop={cancel} />
-          : <ThinkingIndicator onStop={cancel} />
+          ? <EnhancedThinkingIndicator progress={taskProgress} />
+          : <ThinkingIndicator />
         }
       </div>
     );
-  }, [isProcessing, taskProgress, cancel]);
+  }, [effectiveIsProcessing, taskProgress, cancel]);
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -106,8 +113,8 @@ export const ChatView: React.FC = () => {
         {/* Input */}
         <ChatInput
           onSend={handleSendMessage}
-          disabled={isProcessing}
-          isProcessing={isProcessing}
+          disabled={effectiveIsProcessing}
+          isProcessing={effectiveIsProcessing}
           onStop={cancel}
         />
       </div>
@@ -121,8 +128,8 @@ export const ChatView: React.FC = () => {
   );
 };
 
-// Thinking indicator with typing dots and stop button
-const ThinkingIndicator: React.FC<{ onStop?: () => void }> = ({ onStop }) => {
+// Thinking indicator with typing dots
+const ThinkingIndicator: React.FC = () => {
   return (
     <div className="flex items-start gap-3 animate-fade-in">
       {/* AI Avatar */}
@@ -139,24 +146,13 @@ const ThinkingIndicator: React.FC<{ onStop?: () => void }> = ({ onStop }) => {
           <span className="w-2 h-2 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '300ms' }} />
         </div>
         <span className="text-sm text-zinc-400">思考中...</span>
-
-        {/* Stop button */}
-        {onStop && (
-          <button
-            onClick={onStop}
-            className="ml-2 p-1.5 rounded-lg hover:bg-red-500/20 text-zinc-500 hover:text-red-400 transition-colors"
-            title="停止"
-          >
-            <StopCircle className="w-4 h-4" />
-          </button>
-        )}
       </div>
     </div>
   );
 };
 
-// Enhanced thinking indicator with task progress and stop button
-const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData; onStop?: () => void }> = ({ progress, onStop }) => {
+// Enhanced thinking indicator with task progress
+const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ progress }) => {
   // 阶段配置
   const phaseConfig: Record<string, { icon: React.ReactNode; label: string; color: string; bgColor: string }> = {
     thinking: {
@@ -203,17 +199,6 @@ const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData; onStop?:
           <span className={`text-sm font-medium ${config.color} flex-1`}>
             {progress.step || config.label}
           </span>
-
-          {/* Stop button */}
-          {onStop && (
-            <button
-              onClick={onStop}
-              className="p-1.5 rounded-lg hover:bg-red-500/20 text-zinc-500 hover:text-red-400 transition-colors"
-              title="停止"
-            >
-              <StopCircle className="w-4 h-4" />
-            </button>
-          )}
         </div>
 
         {/* Tool progress bar */}

@@ -130,12 +130,12 @@ import { Virtuoso } from 'react-virtuoso';
 
 | 优先级 | 任务 | 文件 | 状态 |
 |--------|------|------|------|
-| **P1** | Session 类型扩展 | `types/session.ts` | 待开始 |
-| **P1** | 数据库迁移脚本 | `databaseService.ts` | 待开始 |
-| **P1** | ConversationTabs 组件 | 新建 | 待开始 |
-| **P1** | Tab 状态 Context | 新建 | 待开始 |
-| **P2** | Tab localStorage 持久化 | 新建 | 待开始 |
-| **P2** | Tab 右键菜单 | 新建 | 待开始 |
+| **P1** | Session 类型扩展 | `types/session.ts` | ✅ 完成 |
+| **P1** | 数据库迁移脚本 | `databaseService.ts` | ✅ 完成 |
+| **P1** | ConversationTabs 组件 | `ConversationTabs.tsx` | ✅ 完成 |
+| **P1** | Tab 状态 Context | `ConversationTabsContext.tsx` | ✅ 完成 |
+| **P2** | Tab localStorage 持久化 | 集成在 Context 中 | ✅ 完成 |
+| **P2** | Tab 右键菜单 | 集成在组件中 | ✅ 完成 |
 
 ### Session 类型扩展
 

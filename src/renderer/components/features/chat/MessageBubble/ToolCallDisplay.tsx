@@ -2,9 +2,9 @@
 // ToolCallDisplay - Display tool call execution and results
 // ============================================================================
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
-  ChevronRight,
+  ChevronDown,
   Terminal,
   FileText,
   FilePlus,
@@ -190,10 +190,8 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
   index,
   total
 }) => {
-  // Default collapsed, only expand when running or error
-  const [expanded, setExpanded] = useState(false);
-  const [showDiff, setShowDiff] = useState(false);
   const openPreview = useAppStore((state) => state.openPreview);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Get status from result
   const getStatus = (): ToolStatus => {
@@ -202,6 +200,37 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
   };
 
   const status = getStatus();
+
+  // Default: expand only when pending (running) or error
+  const [expanded, setExpanded] = useState(status === 'pending' || status === 'error');
+  const [showDiff, setShowDiff] = useState(false);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [contentHeight, setContentHeight] = useState<number | null>(null);
+
+  // Update expanded state when status changes (auto-collapse on success)
+  useEffect(() => {
+    if (status === 'success' && expanded) {
+      // Auto-collapse on success after a short delay
+      const timer = setTimeout(() => {
+        setExpanded(false);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [status]);
+
+  // Measure content height for smooth animation
+  useEffect(() => {
+    if (contentRef.current) {
+      setContentHeight(contentRef.current.scrollHeight);
+    }
+  }, [expanded, showDiff, toolCall.result]);
+
+  // Handle expand/collapse with animation
+  const toggleExpanded = () => {
+    setIsAnimating(true);
+    setExpanded(!expanded);
+    setTimeout(() => setIsAnimating(false), 250);
+  };
 
   // Generate tool summary
   const summary = useMemo(() => summarizeToolCall(toolCall), [toolCall]);
@@ -238,40 +267,46 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
 
   return (
     <div
-      className={`rounded-xl bg-zinc-800/40 border border-zinc-700/50 overflow-hidden transition-all duration-200 ${
-        expanded ? 'shadow-lg' : ''
-      }`}
+      className={`rounded-xl bg-zinc-800/40 border overflow-hidden transition-all duration-300 ${
+        expanded ? 'shadow-lg border-zinc-600/60' : 'border-zinc-700/50'
+      } ${status === 'pending' ? 'ring-1 ring-amber-500/30' : ''}`}
       style={{ animationDelay: `${index * 50}ms` }}
     >
-      {/* Header - show summary instead of tool name */}
+      {/* Header - Collapsible trigger */}
       <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-700/20 transition-all duration-200"
+        onClick={toggleExpanded}
+        className={`w-full flex items-center gap-3 px-4 py-3 transition-all duration-200 ${
+          expanded ? 'bg-zinc-700/30' : 'hover:bg-zinc-700/20'
+        }`}
       >
-        {/* Expand indicator */}
-        <div className={`transition-transform duration-200 ${expanded ? 'rotate-90' : ''}`}>
-          <ChevronRight className="w-4 h-4 text-zinc-500" />
+        {/* Expand/Collapse indicator with smooth rotation */}
+        <div
+          className={`flex-shrink-0 transition-transform duration-300 ease-out ${
+            expanded ? 'rotate-0' : '-rotate-90'
+          }`}
+        >
+          <ChevronDown className="w-4 h-4 text-zinc-500" />
         </div>
 
         {/* Tool icon - Lucide icons */}
-        <div className={`p-2 rounded-lg ${config.bg} ${config.text}`}>
+        <div className={`flex-shrink-0 p-2 rounded-lg transition-colors duration-200 ${config.bg} ${config.text}`}>
           {getToolIcon(toolCall.name)}
         </div>
 
-        {/* Tool summary */}
+        {/* Tool summary - always visible */}
         <div className="flex-1 text-left min-w-0">
           <div className="text-sm font-medium text-zinc-200 truncate">{summary}</div>
-          {/* 只在展开时显示工具名和序号 */}
-          {expanded && (
-            <div className="flex items-center gap-2 text-xs text-zinc-500">
-              <span className="font-mono">{toolCall.name}</span>
-              {total > 1 && <span className="text-zinc-600">#{index + 1}</span>}
-            </div>
-          )}
+          {/* Tool name and index - show inline when collapsed, below when expanded */}
+          <div className={`flex items-center gap-2 text-xs text-zinc-500 transition-opacity duration-200 ${
+            expanded ? 'opacity-100' : 'opacity-70'
+          }`}>
+            <span className="font-mono">{toolCall.name}</span>
+            {total > 1 && <span className="text-zinc-600">#{index + 1}</span>}
+          </div>
         </div>
 
-        {/* Diff preview for edit_file */}
-        {isEditFile && editFileArgs && (
+        {/* Diff preview for edit_file - only when collapsed */}
+        {!expanded && isEditFile && editFileArgs && (
           <DiffPreview
             oldText={editFileArgs.oldString}
             newText={editFileArgs.newString}
@@ -290,35 +325,44 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
               e.stopPropagation();
               openPreview(htmlFilePath);
             }}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 text-xs transition-colors border border-blue-500/30"
-            title="在右侧预览"
+            className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 text-xs transition-colors border border-blue-500/30"
+            title="Preview in sidebar"
           >
             <Play className="w-3 h-3" />
-            预览
+            Preview
           </button>
         )}
 
         {/* Status badge with duration */}
-        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text} ${config.border} border`}>
+        <div className={`flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors duration-200 ${config.bg} ${config.text} ${config.border} border`}>
           {config.icon}
           <span>{statusText}</span>
         </div>
       </button>
 
-      {/* Expanded content */}
-      {expanded && (
-        <div className="px-4 pb-4 pt-2 border-t border-zinc-700/30 animate-fadeIn">
+      {/* Expandable content with smooth height animation */}
+      <div
+        ref={contentRef}
+        className={`overflow-hidden transition-all duration-300 ease-out ${
+          isAnimating ? 'transition-none' : ''
+        }`}
+        style={{
+          maxHeight: expanded ? (contentHeight ? `${contentHeight}px` : '1000px') : '0px',
+          opacity: expanded ? 1 : 0,
+        }}
+      >
+        <div className="px-4 pb-4 pt-2 border-t border-zinc-700/30">
           {/* Diff view for edit_file */}
           {isEditFile && editFileArgs && showDiff && (
-            <div className="mb-3">
+            <div className="mb-3 animate-fadeIn">
               <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 mb-2">
-                <span>变更对比</span>
+                <span>Diff View</span>
                 <div className="flex-1 h-px bg-zinc-700/50" />
                 <button
                   onClick={() => setShowDiff(false)}
-                  className="text-zinc-500 hover:text-zinc-300 px-2"
+                  className="text-zinc-500 hover:text-zinc-300 px-2 transition-colors"
                 >
-                  收起
+                  Collapse
                 </button>
               </div>
               <DiffView
@@ -330,34 +374,34 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
             </div>
           )}
 
-          {/* Arguments - 用户友好显示 */}
+          {/* Arguments section */}
           <div className="mb-3">
             <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 mb-2">
-              <span>参数</span>
+              <span>Arguments</span>
               <div className="flex-1 h-px bg-zinc-700/50" />
               {isEditFile && !showDiff && (
                 <button
                   onClick={() => setShowDiff(true)}
-                  className="text-primary-400 hover:text-primary-300 px-2"
+                  className="text-primary-400 hover:text-primary-300 px-2 transition-colors"
                 >
-                  查看差异
+                  View Diff
                 </button>
               )}
             </div>
             <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded-lg p-3 overflow-x-auto border border-zinc-800/50 whitespace-pre-wrap">
               {isEditFile && editFileArgs ? (
-                `文件: ${editFileArgs.filePath}\n修改: ${editFileArgs.oldString.length} → ${editFileArgs.newString.length} 字符`
+                `File: ${editFileArgs.filePath}\nChanges: ${editFileArgs.oldString.length} -> ${editFileArgs.newString.length} chars`
               ) : (
                 formatToolArgs(toolCall.name, toolCall.arguments)
               )}
             </pre>
           </div>
 
-          {/* Result */}
+          {/* Result section */}
           {toolCall.result && (
-            <div>
+            <div className="animate-fadeIn">
               <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 mb-2">
-                <span>结果</span>
+                <span>Result</span>
                 <div className="flex-1 h-px bg-zinc-700/50" />
                 {toolCall.result.duration && (
                   <span className="flex items-center gap-1 text-zinc-600">
@@ -369,7 +413,7 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
                   </span>
                 )}
               </div>
-              <pre className={`text-xs bg-zinc-900/50 rounded-lg p-3 overflow-x-auto max-h-48 border ${
+              <pre className={`text-xs bg-zinc-900/50 rounded-lg p-3 overflow-x-auto max-h-48 border transition-colors duration-200 ${
                 status === 'error'
                   ? 'text-red-300 border-red-500/20'
                   : 'text-zinc-400 border-zinc-800/50'
@@ -382,8 +426,20 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
               </pre>
             </div>
           )}
+
+          {/* Pending indicator */}
+          {status === 'pending' && (
+            <div className="flex items-center gap-2 text-xs text-amber-400/80 mt-2">
+              <div className="flex gap-1">
+                <span className="typing-dot w-1.5 h-1.5 bg-amber-400 rounded-full" />
+                <span className="typing-dot w-1.5 h-1.5 bg-amber-400 rounded-full" />
+                <span className="typing-dot w-1.5 h-1.5 bg-amber-400 rounded-full" />
+              </div>
+              <span>Executing...</span>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 };

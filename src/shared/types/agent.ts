@@ -62,7 +62,7 @@ export type AgentEvent =
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string } }
   | { type: 'tool_call_end'; data: ToolResult }
   | { type: 'permission_request'; data: PermissionRequest }
-  | { type: 'error'; data: { message: string; code?: string } }
+  | { type: 'error'; data: { message: string; code?: string; details?: { path?: string; command?: string; url?: string; changes?: string } | string } }
   | { type: 'stream_chunk'; data: { content: string | undefined; turnId?: string } }
   | { type: 'stream_tool_call_start'; data: { index?: number; id?: string; name?: string; turnId?: string } }
   | { type: 'stream_tool_call_delta'; data: { index?: number; name?: string; argumentsDelta?: string; turnId?: string } }

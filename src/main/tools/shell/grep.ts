@@ -49,19 +49,32 @@ Best practices:
     properties: {
       pattern: {
         type: 'string',
-        description: 'The regex pattern to search for',
+        description:
+          'Regex pattern to search for. MUST be a string. ' +
+          'Examples: "function\\\\s+handleClick" (function definitions), ' +
+          '"import.*from" (import statements), "TODO|FIXME" (comments). ' +
+          'Escape special regex chars: . * + ? [ ] ( ) { } | \\\\ ^ $',
       },
       path: {
         type: 'string',
-        description: 'File or directory to search in',
+        description:
+          'File or directory to search in. MUST be a string. ' +
+          'Default: current working directory. ' +
+          'Examples: "/Users/name/project/src", "./src/components", "~/project". ' +
+          'Can be a specific file: "/path/to/file.ts".',
       },
       include: {
         type: 'string',
-        description: 'Glob pattern to filter files (e.g., "*.ts")',
+        description:
+          'Glob pattern to filter which files to search. MUST be a string. ' +
+          'Examples: "*.ts" (TypeScript only), "*.{js,jsx}" (JS and JSX), ' +
+          '"*.test.ts" (test files only). Without this, searches all text files.',
       },
       case_insensitive: {
         type: 'boolean',
-        description: 'Case-insensitive search (default: false)',
+        description:
+          'If true, performs case-insensitive matching. Default: false. ' +
+          'Example: with case_insensitive=true, "error" matches "Error", "ERROR", "error".',
       },
     },
     required: ['pattern'],

@@ -40,19 +40,35 @@ Best practices:
     properties: {
       file_path: {
         type: 'string',
-        description: 'The absolute path to the file to edit',
+        description:
+          'Absolute path to the file to edit. MUST be a string. ' +
+          'Examples: "/Users/name/project/src/index.ts", "/home/user/config.json". ' +
+          'Supports ~ for home directory. File must already exist. ' +
+          'IMPORTANT: You must read this file with read_file before editing.',
       },
       old_string: {
         type: 'string',
-        description: 'The exact text to replace',
+        description:
+          'The exact text to find and replace. MUST be a string. ' +
+          'Must match EXACTLY including whitespace, indentation, and newlines. ' +
+          'Copy directly from read_file output (excluding line number prefix). ' +
+          'Include 2-3 surrounding lines for uniqueness if the text appears multiple times. ' +
+          'Example: "function hello() {\\n  console.log(\\"hi\\");\\n}"',
       },
       new_string: {
         type: 'string',
-        description: 'The text to replace it with',
+        description:
+          'The replacement text. MUST be a string and MUST be different from old_string. ' +
+          'Preserve original indentation style (spaces vs tabs). ' +
+          'To delete text, use empty string "". ' +
+          'Example: "function hello() {\\n  console.log(\\"hello world\\");\\n}"',
       },
       replace_all: {
         type: 'boolean',
-        description: 'Replace all occurrences (default: false)',
+        description:
+          'If true, replaces ALL occurrences of old_string. Default: false. ' +
+          'Use for renaming variables/functions across the file. ' +
+          'When false, edit fails if old_string appears more than once (provide more context).',
       },
     },
     required: ['file_path', 'old_string', 'new_string'],

@@ -10,3 +10,5 @@ export { useVoiceInput } from './useVoiceInput';
 export type { VoiceInputStatus } from './useVoiceInput';
 export { useMultiAgentDetection, useInstalledAgents, useIsAgentInstalled } from './useMultiAgentDetection';
 export type { AgentInfo } from './useMultiAgentDetection';
+export { useMemoryEvents } from './useMemoryEvents';
+export type { MemoryEventCallbacks } from './useMemoryEvents';

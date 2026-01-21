@@ -550,6 +550,15 @@ export class AgentLoop {
       langfuse.endTrace(this.traceId, `Completed in ${iterations} iterations`);
     }
 
+    // Session End Learning (Gen5+ Memory System)
+    // 会话结束时自动提取知识，异步执行不阻塞主流程
+    const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+    if (genNum >= 5 && this.messages.length > 0) {
+      this.runSessionEndLearning().catch((err) => {
+        logger.error('[AgentLoop] Session end learning error:', err);
+      });
+    }
+
     // Signal completion to frontend
     logger.debug('[AgentLoop] ========== run() END, emitting agent_complete ==========');
     logCollector.agent('INFO', `Agent run completed, ${iterations} iterations`);
@@ -557,6 +566,46 @@ export class AgentLoop {
 
     // Langfuse: Flush to ensure data is sent
     langfuse.flush().catch((err) => logger.error('[Langfuse] Flush error:', err));
+  }
+
+  /**
+   * 会话结束自动学习
+   * 从本次对话中提取知识并存储到 Memory 系统
+   * 仅 Gen5+ 启用
+   */
+  private async runSessionEndLearning(): Promise<void> {
+    try {
+      const memoryService = getMemoryService();
+      const result = await memoryService.learnFromSession(this.messages);
+
+      logger.info(
+        `[AgentLoop] Session learning completed: ` +
+        `${result.knowledgeExtracted} knowledge, ` +
+        `${result.codeStylesLearned} code styles, ` +
+        `${result.toolPreferencesUpdated} tool preferences`
+      );
+
+      logCollector.agent('INFO', 'Session learning completed', {
+        knowledgeExtracted: result.knowledgeExtracted,
+        codeStylesLearned: result.codeStylesLearned,
+        toolPreferencesUpdated: result.toolPreferencesUpdated,
+      });
+
+      // 发送学习完成事件到前端
+      if (result.knowledgeExtracted > 0 || result.codeStylesLearned > 0) {
+        this.onEvent({
+          type: 'memory_learned',
+          data: {
+            sessionId: this.sessionId,
+            knowledgeExtracted: result.knowledgeExtracted,
+            codeStylesLearned: result.codeStylesLearned,
+            toolPreferencesUpdated: result.toolPreferencesUpdated,
+          },
+        } as AgentEvent);
+      }
+    } catch (error) {
+      logger.error('[AgentLoop] Session end learning failed:', error);
+    }
   }
 
   /**

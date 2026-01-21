@@ -30,3 +30,6 @@ export * from './types/update';
 // Cloud & GUI types
 export * from './types/cloud';
 export * from './types/gui';
+
+// Memory types
+export * from './types/memory';

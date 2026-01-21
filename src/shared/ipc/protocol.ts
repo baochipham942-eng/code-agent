@@ -94,7 +94,7 @@ export type McpAction =
 /**
  * Memory 通道 actions
  */
-export type MemoryAction = 'store' | 'search' | 'getContext' | 'getStats';
+export type MemoryAction = 'store' | 'search' | 'getContext' | 'getStats' | 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import';
 
 /**
  * Planning 通道 actions

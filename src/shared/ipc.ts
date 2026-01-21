@@ -206,6 +206,7 @@ export const IPC_CHANNELS = {
   SESSION_LIST_UPDATED: 'session:list-updated',
 
   // Memory channels
+  MEMORY: 'memory:manage',
   MEMORY_GET_CONTEXT: 'memory:get-context',
   MEMORY_SEARCH_CODE: 'memory:search-code',
   MEMORY_SEARCH_CONVERSATIONS: 'memory:search-conversations',
@@ -366,6 +367,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SESSION_IMPORT]: (data: SessionExport) => Promise<string>;
 
   // Memory
+  [IPC_CHANNELS.MEMORY]: (request: { action: string; [key: string]: unknown }) => Promise<{ success: boolean; data?: unknown; error?: string }>;
   [IPC_CHANNELS.MEMORY_GET_CONTEXT]: (query: string) => Promise<MemoryContextResult>;
   [IPC_CHANNELS.MEMORY_SEARCH_CODE]: (query: string, topK?: number) => Promise<SearchResult[]>;
   [IPC_CHANNELS.MEMORY_SEARCH_CONVERSATIONS]: (query: string, topK?: number) => Promise<SearchResult[]>;

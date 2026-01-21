@@ -32,7 +32,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
   onClick,
   onStop,
 }) => {
-  // 处理中时显示停止按钮
+  // 处理中时显示停止按钮（柔和样式，白色图标 + 浅灰背景）
   if (isProcessing) {
     return (
       <IconButton
@@ -42,7 +42,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
         variant="default"
         size="lg"
         onClick={onStop}
-        className="flex-shrink-0 mr-2 !rounded-xl !text-white transition-all duration-300 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 shadow-lg shadow-red-500/20 hover:shadow-red-500/30 scale-100 hover:scale-105"
+        className="flex-shrink-0 mr-2 !rounded-xl !text-zinc-300 transition-all duration-200 bg-zinc-700 hover:bg-zinc-600 hover:!text-white"
       />
     );
   }

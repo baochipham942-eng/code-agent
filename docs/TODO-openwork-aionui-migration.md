@@ -41,11 +41,11 @@
 
 | 优先级 | 任务 | 文件 | 状态 |
 |--------|------|------|------|
-| **P0** | Markdown 渲染升级 | `MessageContent.tsx` | 待开始 |
+| **P0** | Markdown 渲染升级 | `MessageContent.tsx` | ✅ 完成 |
 | **P1** | 工具调用展示优化（折叠/展开） | `ToolCallDisplay.tsx` | 待开始 |
 | **P1** | ThoughtDisplay 组件 | 新建 | 待开始 |
 | **P1** | ContextUsageIndicator 组件 | 新建 | 待开始 |
-| **P1** | 虚拟列表集成 | `ChatView.tsx` | 待开始 |
+| **P1** | 虚拟列表集成 | `ChatView.tsx` | ✅ 完成 |
 | **P1** | MessageBatcher 消息批处理 | 新建 | 待开始 |
 
 ### Markdown 渲染升级指南

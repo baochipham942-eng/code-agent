@@ -306,6 +306,11 @@ export const IPC_CHANNELS = {
   // Notification channels
   NOTIFICATION_CLICKED: 'notification:clicked',
 
+  // Memory learning notification channels (Phase 3)
+  MEMORY_LEARNED: 'memory:learned',
+  MEMORY_CONFIRM_REQUEST: 'memory:confirm-request',
+  MEMORY_CONFIRM_RESPONSE: 'memory:confirm-response',
+
   // Security channels (API Key setup, tool create confirm)
   SECURITY_CHECK_API_KEY_CONFIGURED: 'security:check-api-key-configured',
   SECURITY_TOOL_CREATE_REQUEST: 'security:tool-create-request',
@@ -478,6 +483,9 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SECURITY_CHECK_API_KEY_CONFIGURED]: () => Promise<boolean>;
   [IPC_CHANNELS.SECURITY_TOOL_CREATE_RESPONSE]: (requestId: string, allowed: boolean) => Promise<void>;
 
+  // Memory learning confirm response (Phase 3)
+  [IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE]: (response: { id: string; confirmed: boolean }) => Promise<void>;
+
   // Cloud config
   [IPC_CHANNELS.CLOUD_CONFIG_REFRESH]: () => Promise<{ success: boolean; version: string; error?: string }>;
   [IPC_CHANNELS.CLOUD_CONFIG_GET_INFO]: () => Promise<{ version: string; lastFetch: number; isStale: boolean; fromCloud: boolean; lastError: string | null }>;
@@ -558,6 +566,26 @@ export interface ConfirmActionRequest {
   timestamp: number;
 }
 
+// Memory learning event (Phase 3)
+export interface MemoryLearnedEvent {
+  id: string;
+  content: string;
+  category: string;
+  type: string;
+  confidence: number;
+  needsConfirmation: boolean;
+  timestamp: number;
+}
+
+export interface MemoryConfirmRequest {
+  id: string;
+  content: string;
+  category: string;
+  type: string;
+  confidence: number;
+  timestamp: number;
+}
+
 export interface IpcEventHandlers {
   [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEvent) => void;
   [IPC_CHANNELS.PLANNING_EVENT]: (event: PlanningEvent) => void;
@@ -574,6 +602,9 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.CLOUD_TASK_PROGRESS]: (event: TaskProgressEvent) => void;
   [IPC_CHANNELS.CLOUD_TASK_COMPLETED]: (task: CloudTask) => void;
   [IPC_CHANNELS.CLOUD_TASK_FAILED]: (task: CloudTask) => void;
+  // Memory learning events (Phase 3)
+  [IPC_CHANNELS.MEMORY_LEARNED]: (event: MemoryLearnedEvent) => void;
+  [IPC_CHANNELS.MEMORY_CONFIRM_REQUEST]: (request: MemoryConfirmRequest) => void;
 }
 
 // ----------------------------------------------------------------------------

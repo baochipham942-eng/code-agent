@@ -4,6 +4,11 @@
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { getMemoryService } from '../../memory/memoryService';
+import {
+  notifyMemoryLearned,
+  requestMemoryConfirmation,
+  needsUserConfirmation,
+} from '../../memory/memoryNotification';
 
 export const autoLearnTool: Tool = {
   name: 'auto_learn',
@@ -68,6 +73,23 @@ Parameters:
     try {
       const memoryService = getMemoryService();
 
+      // Phase 3: 低置信度记忆需要用户确认
+      if (needsUserConfirmation(confidence)) {
+        const confirmed = await requestMemoryConfirmation(
+          content,
+          mapTypeToCategory(type),
+          type,
+          confidence
+        );
+
+        if (!confirmed) {
+          return {
+            success: true,
+            output: `Learning skipped: User declined to save this insight.\n- Type: ${type}\n- Content: ${content.slice(0, 100)}...`,
+          };
+        }
+      }
+
       switch (type) {
         case 'code_style':
           await learnCodeStyle(memoryService, content);
@@ -96,6 +118,9 @@ Parameters:
           };
       }
 
+      // Phase 3: 发送学习通知到前端
+      notifyMemoryLearned(content, mapTypeToCategory(type), type, confidence);
+
       const output = `Learned successfully:
 - Type: ${type}
 - Content: ${content.slice(0, 100)}${content.length > 100 ? '...' : ''}
@@ -116,6 +141,27 @@ This insight will be used to improve future assistance.`;
     }
   },
 };
+
+// ----------------------------------------------------------------------------
+// Helper Functions
+// ----------------------------------------------------------------------------
+
+/**
+ * 映射学习类型到记忆分类
+ */
+function mapTypeToCategory(type: string): string {
+  switch (type) {
+    case 'code_style':
+    case 'preference':
+      return 'preference';
+    case 'pattern':
+    case 'error_solution':
+    case 'project_rule':
+      return 'learned';
+    default:
+      return 'learned';
+  }
+}
 
 // ----------------------------------------------------------------------------
 // Learning Functions

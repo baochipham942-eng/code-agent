@@ -184,17 +184,24 @@ CREATE INDEX idx_memories_project ON memories(project_path);
 - [ ] 在 `SettingsModal.tsx` 添加 Memory 标签页
 - [ ] 添加 i18n 翻译
 
-### Phase 3: 学习通知（1 天）
+### Phase 3: 学习通知（1 天） ✅ 已完成
 
 #### 任务 3.1: 学习事件通知
 
-- [ ] AI 学到新记忆时，通过 toast 通知用户
-- [ ] 格式: "我记住了: [内容摘要]" + [查看] 按钮
+- [x] AI 学到新记忆时，通过 toast 通知用户
+- [x] 格式: "我记住了: [内容摘要]"
 
-#### 任务 3.2: 学习确认（可选）
+#### 任务 3.2: 学习确认
 
-- [ ] 低置信度记忆（<0.8）询问用户确认
-- [ ] 格式: "我注意到你喜欢 X，要我记住吗？" [是] [否]
+- [x] 低置信度记忆（<0.8）弹窗询问用户确认
+- [x] 用户可选择"确认保存"或"跳过"
+
+**实现文件:**
+- `src/main/memory/memoryNotification.ts` - 记忆通知服务
+- `src/renderer/hooks/useMemoryLearning.ts` - 学习事件监听 Hook
+- `src/renderer/components/features/memory/MemoryConfirmModal.tsx` - 确认弹窗
+- `src/renderer/components/features/memory/MemoryLearningProvider.tsx` - Provider 组件
+- `src/shared/ipc.ts` - 新增 MEMORY_LEARNED, MEMORY_CONFIRM_REQUEST, MEMORY_CONFIRM_RESPONSE 通道
 
 ### Phase 4: 增强功能（可选，后续迭代）
 

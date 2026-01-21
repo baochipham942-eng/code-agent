@@ -5,6 +5,7 @@
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { getMemoryService } from '../../memory/memoryService';
 import { getVectorStore } from '../../memory/vectorStore';
+import { notifyMemoryLearned } from '../../memory/memoryNotification';
 
 export const memoryStoreTool: Tool = {
   name: 'memory_store',
@@ -95,6 +96,10 @@ Parameters:
         memoryService.saveProjectKnowledge(key, content, 'explicit', confidence);
       }
 
+      // Phase 3: 发送学习通知到前端
+      // memory_store 通常是显式存储，使用高置信度
+      notifyMemoryLearned(content, mapCategoryToNew(category), 'memory_store', confidence);
+
       const output = `Memory stored successfully:
 - Category: ${category}
 - Key: ${key || '(auto-generated)'}
@@ -113,3 +118,26 @@ Parameters:
     }
   },
 };
+
+// ----------------------------------------------------------------------------
+// Helper Functions
+// ----------------------------------------------------------------------------
+
+/**
+ * 映射旧分类到新分类（Phase 2 定义的用户友好分类）
+ */
+function mapCategoryToNew(category: string): string {
+  switch (category) {
+    case 'preference':
+      return 'preference';
+    case 'pattern':
+    case 'decision':
+    case 'insight':
+    case 'error_solution':
+      return 'learned';
+    case 'context':
+      return 'frequent_info';
+    default:
+      return 'learned';
+  }
+}

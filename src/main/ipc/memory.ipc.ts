@@ -9,6 +9,7 @@ import { getMemoryService } from '../memory/memoryService';
 import { getVectorStore } from '../memory/vectorStore';
 import type { MemoryItem, MemoryCategory, MemoryExport, MemoryStats } from '../../shared/types';
 import { createLogger } from '../services/infra/logger';
+import { handleMemoryConfirmResponse } from '../memory/memoryNotification';
 
 const logger = createLogger('MemoryIPC');
 
@@ -403,6 +404,14 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
+
+  // ========== Phase 3: Memory Confirm Response ==========
+  ipcMain.handle(
+    IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE,
+    async (_, response: { id: string; confirmed: boolean }) => {
+      handleMemoryConfirmResponse(response.id, response.confirmed);
+    }
+  );
 
   // ========== Legacy Handlers (Deprecated) ==========
 

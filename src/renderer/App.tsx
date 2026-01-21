@@ -21,6 +21,7 @@ import { CloudTaskPanel } from './components/CloudTaskPanel';
 import { TaskListPanel } from './components/TaskListPanel';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
+import { MemoryLearningProvider } from './components/features/memory';
 import { useDisclosure } from './hooks/useDisclosure';
 import { useMemoryEvents } from './hooks/useMemoryEvents';
 import { Activity, Cloud, Zap } from 'lucide-react';
@@ -319,6 +320,7 @@ export const App: React.FC = () => {
   };
 
   return (
+    <MemoryLearningProvider>
       <div className="h-screen flex flex-col bg-zinc-900 text-zinc-100">
         {/* Title Bar for macOS */}
         <TitleBar />
@@ -359,88 +361,89 @@ export const App: React.FC = () => {
           {showWorkspace && isStandard && <WorkspacePanel />}
         </div>
 
-      {/* Settings Modal */}
-      {showSettings && <SettingsModal />}
+        {/* Settings Modal */}
+        {showSettings && <SettingsModal />}
 
-      {/* User Question Modal (Gen 3+) */}
-      {userQuestion && (
-        <UserQuestionModal
-          request={userQuestion}
-          onClose={() => setUserQuestion(null)}
-        />
-      )}
+        {/* User Question Modal (Gen 3+) */}
+        {userQuestion && (
+          <UserQuestionModal
+            request={userQuestion}
+            onClose={() => setUserQuestion(null)}
+          />
+        )}
 
-      {/* Permission Modal */}
-      {pendingPermissionRequest && (
-        <PermissionModal
-          request={pendingPermissionRequest}
-          onAllow={() => {
-            window.electronAPI?.invoke(
-              IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
-              pendingPermissionRequest.id,
-              'allow'
-            );
-            setPendingPermissionRequest(null);
-          }}
-          onDeny={() => {
-            window.electronAPI?.invoke(
-              IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
-              pendingPermissionRequest.id,
-              'deny'
-            );
-            setPendingPermissionRequest(null);
-          }}
-        />
-      )}
+        {/* Permission Modal */}
+        {pendingPermissionRequest && (
+          <PermissionModal
+            request={pendingPermissionRequest}
+            onAllow={() => {
+              window.electronAPI?.invoke(
+                IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
+                pendingPermissionRequest.id,
+                'allow'
+              );
+              setPendingPermissionRequest(null);
+            }}
+            onDeny={() => {
+              window.electronAPI?.invoke(
+                IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
+                pendingPermissionRequest.id,
+                'deny'
+              );
+              setPendingPermissionRequest(null);
+            }}
+          />
+        )}
 
-      {/* Auth Modal */}
-      {showAuthModal && <AuthModal />}
+        {/* Auth Modal */}
+        {showAuthModal && <AuthModal />}
 
-      {/* Force Update Modal - 强制更新，不可关闭 */}
-      {forceUpdateInfo && <ForceUpdateModal updateInfo={forceUpdateInfo} />}
+        {/* Force Update Modal - 强制更新，不可关闭 */}
+        {forceUpdateInfo && <ForceUpdateModal updateInfo={forceUpdateInfo} />}
 
-      {/* API Key Setup Modal - 首次启动引导 */}
-      {showApiKeySetup && (
-        <ApiKeySetupModal
-          onSetup={() => {
-            setShowApiKeySetup(false);
-            setShowSettings(true);
-          }}
-          onSkip={() => setShowApiKeySetup(false)}
-        />
-      )}
+        {/* API Key Setup Modal - 首次启动引导 */}
+        {showApiKeySetup && (
+          <ApiKeySetupModal
+            onSetup={() => {
+              setShowApiKeySetup(false);
+              setShowSettings(true);
+            }}
+            onSkip={() => setShowApiKeySetup(false)}
+          />
+        )}
 
-      {/* Tool Create Confirm Modal - 动态工具创建确认 */}
-      {toolCreateRequest && (
-        <ToolCreateConfirmModal
-          request={toolCreateRequest}
-          onAllow={() => {
-            window.electronAPI?.invoke(
-              IPC_CHANNELS.SECURITY_TOOL_CREATE_RESPONSE,
-              toolCreateRequest.id,
-              true
-            );
-            setToolCreateRequest(null);
-          }}
-          onDeny={() => {
-            window.electronAPI?.invoke(
-              IPC_CHANNELS.SECURITY_TOOL_CREATE_RESPONSE,
-              toolCreateRequest.id,
-              false
-            );
-            setToolCreateRequest(null);
-          }}
-        />
-      )}
+        {/* Tool Create Confirm Modal - 动态工具创建确认 */}
+        {toolCreateRequest && (
+          <ToolCreateConfirmModal
+            request={toolCreateRequest}
+            onAllow={() => {
+              window.electronAPI?.invoke(
+                IPC_CHANNELS.SECURITY_TOOL_CREATE_RESPONSE,
+                toolCreateRequest.id,
+                true
+              );
+              setToolCreateRequest(null);
+            }}
+            onDeny={() => {
+              window.electronAPI?.invoke(
+                IPC_CHANNELS.SECURITY_TOOL_CREATE_RESPONSE,
+                toolCreateRequest.id,
+                false
+              );
+              setToolCreateRequest(null);
+            }}
+          />
+        )}
 
-      {/* Confirm Action Modal - confirm_action 工具弹窗 */}
-      {confirmActionRequest && (
-        <ConfirmActionModal
-          request={confirmActionRequest}
-          onClose={() => setConfirmActionRequest(null)}
-        />
-      )}
+        {/* Confirm Action Modal - confirm_action 工具弹窗 */}
+        {confirmActionRequest && (
+          <ConfirmActionModal
+            request={confirmActionRequest}
+            onClose={() => setConfirmActionRequest(null)}
+          />
+        )}
       </div>
+    </MemoryLearningProvider>
   );
 };
 

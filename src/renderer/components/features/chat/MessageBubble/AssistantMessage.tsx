@@ -34,15 +34,15 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
   return (
     <div className="flex gap-3 animate-slideUp">
       {/* Avatar */}
-      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-lg bg-gradient-to-br from-accent-purple to-accent-pink shadow-purple-500/20">
-        <Bot className="w-4 h-4 text-white" />
+      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-gradient-to-br from-accent-purple to-accent-pink">
+        <Bot className="w-3.5 h-3.5 text-white" />
       </div>
 
       {/* Content */}
       <div className="flex-1 min-w-0">
         {/* Text content */}
         {message.content && (
-          <div className="inline-block rounded-2xl px-4 py-3 max-w-full shadow-lg bg-zinc-800/80 text-zinc-100 border border-zinc-700/50 shadow-black/20">
+          <div className="inline-block rounded-2xl rounded-tl-md px-4 py-2.5 max-w-[85%] bg-zinc-800/70 text-zinc-100 border border-zinc-700/40">
             <MessageContent content={message.content} isUser={false} />
           </div>
         )}
@@ -116,7 +116,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
         )}
 
         {/* Timestamp */}
-        <div className="text-xs text-zinc-500 mt-1.5">
+        <div className="text-2xs text-zinc-600 mt-1 ml-1">
           {formatTime(message.timestamp)}
         </div>
       </div>

@@ -6,6 +6,7 @@ import type { IpcMain } from 'electron';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getSessionManager } from '../services';
 import { getMemoryService } from '../memory/memoryService';
+import { getMemoryTriggerService, type SessionMemoryContext } from '../memory/memoryTriggerService';
 import type { ConfigService } from '../services';
 import type { GenerationManager } from '../generation/generationManager';
 import type { AgentOrchestrator } from '../agent/agentOrchestrator';
@@ -43,8 +44,10 @@ async function handleCreate(
 
   const sessionManager = getSessionManager();
   const memoryService = getMemoryService();
+  const memoryTrigger = getMemoryTriggerService();
   const settings = configService.getSettings();
   const currentGen = generationManager.getCurrentGeneration();
+  const workingDirectory = orchestrator?.getWorkingDirectory();
 
   const session = await sessionManager.createSession({
     title: payload?.title || 'New Session',
@@ -55,13 +58,19 @@ async function handleCreate(
       temperature: settings.model?.temperature || 0.7,
       maxTokens: settings.model?.maxTokens || 4096,
     },
-    workingDirectory: orchestrator?.getWorkingDirectory(),
+    workingDirectory,
   });
 
   sessionManager.setCurrentSession(session.id);
   setCurrentSessionId(session.id);
 
-  memoryService.setContext(session.id, orchestrator?.getWorkingDirectory() || undefined);
+  memoryService.setContext(session.id, workingDirectory || undefined);
+
+  // Gen5: Trigger memory retrieval on session start (async, non-blocking)
+  memoryTrigger.onSessionStart(session.id, workingDirectory).catch((err) => {
+    // Log but don't fail session creation
+    console.warn('Memory trigger failed:', err);
+  });
 
   return session;
 }
@@ -73,6 +82,7 @@ async function handleLoad(
   const { getOrchestrator, setCurrentSessionId } = deps;
   const sessionManager = getSessionManager();
   const memoryService = getMemoryService();
+  const memoryTrigger = getMemoryTriggerService();
   const orchestrator = getOrchestrator();
 
   const session = await sessionManager.restoreSession(payload.sessionId);
@@ -87,6 +97,12 @@ async function handleLoad(
   if (session.workingDirectory && orchestrator) {
     orchestrator.setWorkingDirectory(session.workingDirectory);
   }
+
+  // Gen5: Trigger memory retrieval on session load (async, non-blocking)
+  memoryTrigger.onSessionStart(payload.sessionId, session.workingDirectory).catch((err) => {
+    // Log but don't fail session load
+    console.warn('Memory trigger failed:', err);
+  });
 
   return session;
 }
@@ -143,6 +159,17 @@ async function handleImport(payload: { data: unknown }): Promise<string> {
   return sessionManager.importSession(payload.data as import('../services').SessionWithMessages);
 }
 
+async function handleGetMemoryContext(
+  payload: { sessionId: string; workingDirectory?: string; query?: string }
+): Promise<SessionMemoryContext> {
+  const memoryTrigger = getMemoryTriggerService();
+  return memoryTrigger.onSessionStart(
+    payload.sessionId,
+    payload.workingDirectory,
+    payload.query
+  );
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -188,6 +215,11 @@ export function registerSessionHandlers(ipcMain: IpcMain, deps: SessionHandlerDe
           break;
         case 'import':
           data = await handleImport(payload as { data: unknown });
+          break;
+        case 'getMemoryContext':
+          data = await handleGetMemoryContext(
+            payload as { sessionId: string; workingDirectory?: string; query?: string }
+          );
           break;
         default:
           return {

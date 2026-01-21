@@ -7,6 +7,7 @@ import type { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { GenerationManager } from '../generation/generationManager';
 import type { ConfigService } from '../services';
 import type { PlanningService } from '../planning';
+import type { TaskManager } from '../task';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('IPC');
@@ -25,6 +26,7 @@ import { registerMemoryHandlers } from './memory.ipc';
 import { registerPlanningHandlers } from './planning.ipc';
 import { registerDataHandlers } from './data.ipc';
 import { registerSpeechHandlers } from './speech.ipc';
+import { registerTaskHandlers } from './task.ipc';
 
 export * from './types';
 
@@ -37,6 +39,7 @@ export interface IpcDependencies {
   getGenerationManager: () => GenerationManager | null;
   getConfigService: () => ConfigService | null;
   getPlanningService: () => PlanningService | null;
+  getTaskManager: () => TaskManager | null;
   getCurrentSessionId: () => string | null;
   setCurrentSessionId: (id: string) => void;
 }
@@ -51,6 +54,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
     getGenerationManager,
     getConfigService,
     getPlanningService,
+    getTaskManager,
     getCurrentSessionId,
     setCurrentSessionId,
   } = deps;
@@ -102,6 +106,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Speech handlers
   registerSpeechHandlers(ipcMain);
+
+  // Task handlers (Wave 5: 多任务并行)
+  registerTaskHandlers(ipcMain, getTaskManager);
 
   logger.info('All handlers registered');
 }

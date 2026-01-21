@@ -30,6 +30,7 @@ import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import { GenerationManager } from '../generation/generationManager';
 import { createPlanningService, type PlanningService } from '../planning';
 import { getSessionManager, notificationService } from '../services';
+import { getTaskManager, type TaskManager } from '../task';
 import type { PlanningState } from '../../shared/types';
 
 const logger = createLogger('Bootstrap');
@@ -81,6 +82,13 @@ export function setCurrentSessionId(id: string): void {
  */
 export function getPlanningServiceInstance(): PlanningService | null {
   return planningService;
+}
+
+/**
+ * 获取 TaskManager 实例
+ */
+export function getTaskManagerInstance(): TaskManager | null {
+  return getTaskManager();
 }
 
 /**
@@ -445,6 +453,21 @@ async function initializeServices(): Promise<void> {
   const defaultGenId = settings.generation.default || 'gen3';
   generationManager.switchGeneration(defaultGenId);
   logger.info('Generation set to', { genId: defaultGenId });
+
+  // Initialize TaskManager (Wave 5: 多任务并行)
+  const taskManager = getTaskManager();
+  taskManager.initialize({
+    generationManager,
+    configService: configService!,
+    planningService: undefined, // Will be set after planningService is initialized
+    onAgentEvent: (sessionId, event) => {
+      if (mainWindow) {
+        // Send event with sessionId prefix for multi-session support
+        mainWindow.webContents.send(IPC_CHANNELS.AGENT_EVENT, { ...event, sessionId });
+      }
+    },
+  });
+  logger.info('TaskManager initialized');
 
   // Auto-restore or create session
   logger.info('Initializing session...');

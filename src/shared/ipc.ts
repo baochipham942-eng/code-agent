@@ -148,6 +148,7 @@ export const IPC_DOMAINS = {
   WINDOW: 'domain:window',
   DATA: 'domain:data',
   DEVICE: 'domain:device',
+  TASK: 'domain:task', // Wave 5: 多任务并行
 } as const;
 
 export type IPCDomain = typeof IPC_DOMAINS[keyof typeof IPC_DOMAINS];

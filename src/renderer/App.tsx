@@ -13,7 +13,6 @@ import { TitleBar } from './components/TitleBar';
 import { SettingsModal } from './components/SettingsModal';
 import { GenerationBadge } from './components/GenerationBadge';
 import { ObservabilityPanel } from './components/ObservabilityPanel';
-import { MemoryPanel } from './components/MemoryPanel';
 import { UserQuestionModal } from './components/UserQuestionModal';
 import { AuthModal } from './components/AuthModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
@@ -24,7 +23,7 @@ import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
 import { useMemoryEvents } from './hooks/useMemoryEvents';
-import { Activity, Cloud, Zap, Brain } from 'lucide-react';
+import { Activity, Cloud, Zap } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 import { UI } from '@shared/constants';
@@ -48,7 +47,6 @@ export const App: React.FC = () => {
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
   const [showCloudTaskPanel, setShowCloudTaskPanel] = useState(false);
   const [showTaskListPanel, setShowTaskListPanel] = useState(false);
-  const [showMemoryPanel, setShowMemoryPanel] = useState(false);
 
   // 强制更新状态
   const [forceUpdateInfo, setForceUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -320,30 +318,6 @@ export const App: React.FC = () => {
     );
   };
 
-  // Check if Memory panel is available (Gen5+ and Advanced+ disclosure)
-  const currentGenNumber = parseInt(currentGeneration.id.replace('gen', ''));
-  const isMemoryAvailable = isAdvanced && currentGenNumber >= 5;
-
-  // Memory panel toggle button (Gen5+ and Advanced+ mode)
-  const MemoryToggle: React.FC = () => {
-    if (!isMemoryAvailable) return null;
-
-    return (
-      <button
-        onClick={() => setShowMemoryPanel(!showMemoryPanel)}
-        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
-          showMemoryPanel
-            ? 'bg-cyan-500/20 text-cyan-300'
-            : 'text-zinc-500 hover:bg-zinc-800'
-        }`}
-        title="记忆面板"
-      >
-        <Brain className="w-3.5 h-3.5" />
-        <span>记忆</span>
-      </button>
-    );
-  };
-
   return (
       <div className="h-screen flex flex-col bg-zinc-900 text-zinc-100">
         {/* Title Bar for macOS */}
@@ -363,7 +337,6 @@ export const App: React.FC = () => {
               </div>
               <div className="flex items-center gap-2">
                 {isObservabilityAvailable && <ObservabilityToggle />}
-                <MemoryToggle />
                 <TaskListToggle />
                 <CloudTaskToggle />
               </div>
@@ -381,11 +354,6 @@ export const App: React.FC = () => {
 
           {/* Local Task List Panel (Standard+ mode) */}
           {showTaskListPanel && <TaskListPanel onClose={() => setShowTaskListPanel(false)} />}
-
-          {/* Memory Panel (Gen5+ and Advanced+ disclosure) */}
-          {showMemoryPanel && isMemoryAvailable && (
-            <MemoryPanel isVisible={true} onClose={() => setShowMemoryPanel(false)} />
-          )}
 
           {/* Workspace Panel (Standard+ disclosure) */}
           {showWorkspace && isStandard && <WorkspacePanel />}

@@ -42,11 +42,20 @@ When NOT to use:
     properties: {
       pattern: {
         type: 'string',
-        description: 'The glob pattern to match (e.g., "**/*.ts")',
+        description:
+          'Glob pattern to match files. MUST be a string. ' +
+          'Common patterns: "**/*.ts" (all .ts files recursively), ' +
+          '"src/**/*.tsx" (TSX files in src), "*.json" (JSON in current dir), ' +
+          '"**/*test*.ts" (all test files). ' +
+          'Use ** for recursive matching, * for single-level wildcard.',
       },
       path: {
         type: 'string',
-        description: 'Directory to search in (default: working directory)',
+        description:
+          'Directory to search in. MUST be a string. ' +
+          'Default: current working directory. ' +
+          'Examples: "/Users/name/project", "~/Documents", "./src". ' +
+          'Supports absolute paths, ~ for home, and relative paths.',
       },
     },
     required: ['pattern'],

@@ -174,11 +174,21 @@ NEVER create documentation files (*.md, README) unless explicitly requested.`,
     properties: {
       file_path: {
         type: 'string',
-        description: 'The absolute path to the file to write',
+        description:
+          'Absolute path where the file will be created or overwritten. MUST be a string. ' +
+          'Examples: "/Users/name/project/src/new-file.ts", "/home/user/config.json". ' +
+          'Supports ~ for home directory: "~/Documents/file.txt". ' +
+          'Parent directories will be created automatically if they do not exist. ' +
+          'SECURITY: Path must be within the working directory.',
       },
       content: {
         type: 'string',
-        description: 'The content to write to the file',
+        description:
+          'The complete file content to write. MUST be a string (not an object or array). ' +
+          'This will REPLACE the entire file content, not append. ' +
+          'For JSON files, use JSON.stringify() format. ' +
+          'For code files, include proper indentation and newlines. ' +
+          'WARNING: For files >300 lines, consider creating a skeleton first, then using edit_file.',
       },
     },
     required: ['file_path', 'content'],

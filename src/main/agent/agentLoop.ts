@@ -147,6 +147,10 @@ export class AgentLoop {
   private toolFailureTracker: Map<string, { count: number; lastError: string }> = new Map();
   private maxSameToolFailures: number = 3;
 
+  // Circuit breaker: consecutive tool call failures
+  private consecutiveToolFailures: number = 0;
+  private readonly MAX_CONSECUTIVE_FAILURES: number = 5;
+
   // Plan Mode support (borrowed from Claude Code v2.0)
   private planModeActive: boolean = false;
 
@@ -749,6 +753,44 @@ export class AgentLoop {
 
       const startTime = Date.now();
 
+      // 检测工具参数是否解析失败
+      const args = toolCall.arguments as Record<string, unknown>;
+      if (args && args.__parseError === true) {
+        const errorMessage = args.__errorMessage as string || 'Unknown JSON parse error';
+        const rawArgs = args.__rawArguments as string || '';
+
+        logger.error(`[AgentLoop] Tool ${toolCall.name} arguments failed to parse: ${errorMessage}`);
+        logger.error(`[AgentLoop] Raw arguments: ${rawArgs.substring(0, 200)}`);
+        logCollector.tool('ERROR', `Tool ${toolCall.name} arguments parse error: ${errorMessage}`, {
+          toolCallId: toolCall.id,
+          rawArguments: rawArgs.substring(0, 500),
+        });
+
+        // 返回解析错误作为工具执行失败
+        const toolResult: ToolResult = {
+          toolCallId: toolCall.id,
+          success: false,
+          error: `Tool arguments JSON parse error: ${errorMessage}. Raw: ${rawArgs.substring(0, 200)}...`,
+          duration: Date.now() - startTime,
+        };
+
+        results.push(toolResult);
+
+        // 注入系统消息提醒模型
+        this.injectSystemMessage(
+          `<tool-arguments-parse-error>\n` +
+          `⚠️ ERROR: Failed to parse JSON arguments for tool "${toolCall.name}".\n` +
+          `Parse error: ${errorMessage}\n` +
+          `Raw arguments (truncated): ${rawArgs.substring(0, 300)}\n\n` +
+          `Please ensure your tool call arguments are valid JSON.\n` +
+          `</tool-arguments-parse-error>`
+        );
+
+        // 发送工具调用结束事件
+        this.onEvent({ type: 'tool_call_end', data: toolResult });
+        continue;
+      }
+
       try {
         // Execute tool
         logger.debug(` Calling toolExecutor.execute for ${toolCall.name}...`);
@@ -779,7 +821,51 @@ export class AgentLoop {
         results.push(toolResult);
         logger.debug(` Tool ${toolCall.name} completed in ${toolResult.duration}ms`);
 
-        // Anti-pattern detection: track repeated tool failures
+        // Circuit breaker: track consecutive tool failures
+        if (!result.success) {
+          this.consecutiveToolFailures++;
+          logger.debug(`[AgentLoop] Consecutive tool failures: ${this.consecutiveToolFailures}/${this.MAX_CONSECUTIVE_FAILURES}`);
+
+          // Check if circuit breaker should trip
+          if (this.consecutiveToolFailures >= this.MAX_CONSECUTIVE_FAILURES) {
+            logger.error(`[AgentLoop] Circuit breaker tripped! ${this.consecutiveToolFailures} consecutive failures`);
+            logCollector.agent('ERROR', `Circuit breaker tripped after ${this.consecutiveToolFailures} consecutive tool failures`);
+
+            // Inject a strong warning to the model
+            this.injectSystemMessage(
+              `<circuit-breaker-tripped>\n` +
+              `🛑 CRITICAL ERROR: ${this.consecutiveToolFailures} consecutive tool calls have FAILED.\n\n` +
+              `The last error was: ${result.error}\n\n` +
+              `You MUST:\n` +
+              `1. STOP calling tools immediately\n` +
+              `2. Report this error to the user clearly\n` +
+              `3. Explain what you were trying to do and why it failed\n` +
+              `4. Ask the user for guidance on how to proceed\n\n` +
+              `DO NOT continue attempting tool calls until the user responds.\n` +
+              `</circuit-breaker-tripped>`
+            );
+
+            // Emit error event to frontend
+            this.onEvent({
+              type: 'error',
+              data: {
+                message: `连续 ${this.consecutiveToolFailures} 次工具调用失败，已触发熔断机制。最后错误: ${result.error || 'Unknown error'}`,
+                code: 'CIRCUIT_BREAKER_TRIPPED',
+              },
+            });
+
+            // Reset counter to allow future attempts after user intervention
+            this.consecutiveToolFailures = 0;
+          }
+        } else {
+          // Reset consecutive failure counter on success
+          if (this.consecutiveToolFailures > 0) {
+            logger.debug(`[AgentLoop] Tool succeeded, resetting consecutive failure counter (was ${this.consecutiveToolFailures})`);
+          }
+          this.consecutiveToolFailures = 0;
+        }
+
+        // Anti-pattern detection: track repeated tool failures with same error
         if (!result.success && result.error) {
           const toolKey = `${toolCall.name}:${JSON.stringify(toolCall.arguments)}`;
           const tracker = this.toolFailureTracker.get(toolKey);
@@ -914,6 +1000,38 @@ export class AgentLoop {
 
         results.push(toolResult);
         logger.debug(` Tool ${toolCall.name} failed with error: ${toolResult.error}`);
+
+        // Circuit breaker: count exception as failure
+        this.consecutiveToolFailures++;
+        logger.debug(`[AgentLoop] Consecutive tool failures (exception): ${this.consecutiveToolFailures}/${this.MAX_CONSECUTIVE_FAILURES}`);
+
+        if (this.consecutiveToolFailures >= this.MAX_CONSECUTIVE_FAILURES) {
+          logger.error(`[AgentLoop] Circuit breaker tripped! ${this.consecutiveToolFailures} consecutive failures`);
+          logCollector.agent('ERROR', `Circuit breaker tripped after ${this.consecutiveToolFailures} consecutive tool failures (exception)`);
+
+          this.injectSystemMessage(
+            `<circuit-breaker-tripped>\n` +
+            `🛑 CRITICAL ERROR: ${this.consecutiveToolFailures} consecutive tool calls have FAILED.\n\n` +
+            `The last error was: ${toolResult.error}\n\n` +
+            `You MUST:\n` +
+            `1. STOP calling tools immediately\n` +
+            `2. Report this error to the user clearly\n` +
+            `3. Explain what you were trying to do and why it failed\n` +
+            `4. Ask the user for guidance on how to proceed\n\n` +
+            `DO NOT continue attempting tool calls until the user responds.\n` +
+            `</circuit-breaker-tripped>`
+          );
+
+          this.onEvent({
+            type: 'error',
+            data: {
+              message: `连续 ${this.consecutiveToolFailures} 次工具调用失败，已触发熔断机制。最后错误: ${toolResult.error || 'Unknown error'}`,
+              code: 'CIRCUIT_BREAKER_TRIPPED',
+            },
+          });
+
+          this.consecutiveToolFailures = 0;
+        }
 
         // Error Hook
         if (this.enableHooks && this.planningService) {

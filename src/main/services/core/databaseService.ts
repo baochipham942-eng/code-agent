@@ -728,6 +728,14 @@ export class DatabaseService {
     return result;
   }
 
+  deletePreference(key: string): boolean {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare('DELETE FROM user_preferences WHERE key = ?');
+    const result = stmt.run(key);
+    return result.changes > 0;
+  }
+
   // --------------------------------------------------------------------------
   // Project Knowledge
   // --------------------------------------------------------------------------
@@ -783,6 +791,55 @@ export class DatabaseService {
       createdAt: row.created_at as number,
       updatedAt: row.updated_at as number,
     }));
+  }
+
+  getAllProjectKnowledge(): ProjectKnowledge[] {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare(
+      'SELECT * FROM project_knowledge ORDER BY updated_at DESC'
+    );
+    const rows = stmt.all() as SQLiteRow[];
+
+    return rows.map((row): ProjectKnowledge => ({
+      id: row.id as string,
+      projectPath: row.project_path as string,
+      key: row.key as string,
+      value: JSON.parse(row.value as string),
+      source: row.source as ProjectKnowledge['source'],
+      confidence: row.confidence as number,
+      createdAt: row.created_at as number,
+      updatedAt: row.updated_at as number,
+    }));
+  }
+
+  updateProjectKnowledge(id: string, content: string): boolean {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare(`
+      UPDATE project_knowledge
+      SET value = ?, updated_at = ?
+      WHERE id = ?
+    `);
+
+    const result = stmt.run(JSON.stringify(content), Date.now(), id);
+    return result.changes > 0;
+  }
+
+  deleteProjectKnowledge(id: string): boolean {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare('DELETE FROM project_knowledge WHERE id = ?');
+    const result = stmt.run(id);
+    return result.changes > 0;
+  }
+
+  deleteProjectKnowledgeBySource(source: string): number {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare('DELETE FROM project_knowledge WHERE source = ?');
+    const result = stmt.run(source);
+    return result.changes;
   }
 
   // --------------------------------------------------------------------------

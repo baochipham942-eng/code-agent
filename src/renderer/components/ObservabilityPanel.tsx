@@ -17,6 +17,7 @@ import {
   XCircle,
   Loader2,
   FileText,
+  FileCode,
   Search,
   Edit3,
   Globe,
@@ -200,10 +201,33 @@ function getToolSummary(toolCall: ToolCall): string {
       return `技能: ${args.skill || '未知'}`;
     case 'web_fetch':
       return `获取 ${args.url || '网页'}`;
-    case 'memory_store':
-      return '存储记忆';
-    case 'memory_search':
-      return `搜索记忆: ${args.query || ''}`;
+    case 'memory_store': {
+      const category = args.category as string;
+      const content = args.content as string;
+      const preview = content ? (content.length > 30 ? content.slice(0, 30) + '...' : content) : '';
+      return `存储 [${category || '记忆'}] ${preview}`;
+    }
+    case 'memory_search': {
+      const query = args.query as string;
+      const source = args.source as string;
+      const sourceLabel = source && source !== 'all' ? ` (${source})` : '';
+      return `搜索${sourceLabel}: ${query || ''}`;
+    }
+    case 'code_index': {
+      const action = args.action as string;
+      if (action === 'index') {
+        const pattern = args.pattern as string;
+        return `索引代码: ${pattern || '**/*.{ts,tsx,...}'}`;
+      }
+      if (action === 'search') {
+        const query = args.query as string;
+        return `搜索代码: ${query || ''}`;
+      }
+      if (action === 'status') {
+        return '查询索引状态';
+      }
+      return `code_index: ${action}`;
+    }
     // MCP Tools
     case 'mcp':
       return `MCP: ${args.server || '?'}/${args.tool || '?'}`;
@@ -260,6 +284,7 @@ function getToolIcon(name: string): React.ReactNode {
     web_fetch: <Globe className="w-3 h-3" />,
     memory_store: <Brain className="w-3 h-3" />,
     memory_search: <Brain className="w-3 h-3" />,
+    code_index: <FileCode className="w-3 h-3" />,
     // MCP Tools
     mcp: <Plug className="w-3 h-3" />,
     mcp_list_tools: <Server className="w-3 h-3" />,
@@ -272,6 +297,189 @@ function getToolIcon(name: string): React.ReactNode {
     workflow_orchestrate: <Users className="w-3 h-3" />,
   };
   return iconMap[name] || <Wrench className="w-3 h-3" />;
+}
+
+// 格式化 Memory 工具详情
+function formatMemoryDetails(event: ObservableEvent): {
+  showCustom: boolean;
+  customContent?: React.ReactNode;
+} {
+  if (event.category !== 'memory') {
+    return { showCustom: false };
+  }
+
+  const args = event.details?.arguments as Record<string, unknown> | undefined;
+  const result = event.details?.result as { output?: string; error?: string } | undefined;
+
+  // memory_store: 显示存储的内容和分类
+  if (event.name === 'memory_store' && args) {
+    const category = args.category as string;
+    const content = args.content as string;
+    const key = args.key as string;
+    const confidence = args.confidence as number;
+
+    return {
+      showCustom: true,
+      customContent: (
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <span className="px-2 py-0.5 text-xs rounded bg-cyan-500/20 text-cyan-300">
+              {category}
+            </span>
+            {key && (
+              <span className="px-2 py-0.5 text-xs rounded bg-zinc-700 text-zinc-300">
+                key: {key}
+              </span>
+            )}
+            {confidence !== undefined && confidence < 1 && (
+              <span className="px-2 py-0.5 text-xs rounded bg-amber-500/20 text-amber-300">
+                {Math.round(confidence * 100)}% 置信
+              </span>
+            )}
+          </div>
+          <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded p-2 overflow-x-auto max-h-20 whitespace-pre-wrap">
+            {content}
+          </pre>
+          {event.status === 'success' && (
+            <div className="text-xs text-emerald-400 flex items-center gap-1">
+              <CheckCircle className="w-3 h-3" />
+              已存储到记忆库
+            </div>
+          )}
+        </div>
+      ),
+    };
+  }
+
+  // memory_search: 显示搜索结果摘要
+  if (event.name === 'memory_search' && result?.output) {
+    const output = result.output;
+    // 解析搜索结果数量
+    const countMatch = output.match(/Found (\d+) relevant/);
+    const resultCount = countMatch ? parseInt(countMatch[1]) : 0;
+
+    return {
+      showCustom: true,
+      customContent: (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 text-xs rounded bg-cyan-500/20 text-cyan-300">
+              {resultCount} 条结果
+            </span>
+            {args?.category ? (
+              <span className="px-2 py-0.5 text-xs rounded bg-zinc-700 text-zinc-300">
+                {String(args.category)}
+              </span>
+            ) : null}
+            {args?.source && args.source !== 'all' ? (
+              <span className="px-2 py-0.5 text-xs rounded bg-purple-500/20 text-purple-300">
+                {String(args.source)}
+              </span>
+            ) : null}
+          </div>
+          <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded p-2 overflow-x-auto max-h-32 whitespace-pre-wrap">
+            {output.slice(0, 500)}{output.length > 500 ? '...' : ''}
+          </pre>
+        </div>
+      ),
+    };
+  }
+
+  // code_index: 显示索引/搜索状态
+  if (event.name === 'code_index' && args) {
+    const action = args.action as string;
+
+    if (action === 'index') {
+      const pattern = args.pattern as string;
+      // 解析索引数量
+      const indexMatch = result?.output?.match(/Indexed (\d+) of (\d+)/);
+      const indexed = indexMatch ? parseInt(indexMatch[1]) : 0;
+      const total = indexMatch ? parseInt(indexMatch[2]) : 0;
+
+      return {
+        showCustom: true,
+        customContent: (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 text-xs rounded bg-blue-500/20 text-blue-300">
+                索引
+              </span>
+              <span className="text-xs text-zinc-400">
+                {pattern || '**/*.{ts,tsx,...}'}
+              </span>
+            </div>
+            {event.status === 'success' && indexMatch && (
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-emerald-500 transition-all"
+                    style={{ width: `${total > 0 ? (indexed / total) * 100 : 0}%` }}
+                  />
+                </div>
+                <span className="text-xs text-zinc-400">
+                  {indexed}/{total}
+                </span>
+              </div>
+            )}
+          </div>
+        ),
+      };
+    }
+
+    if (action === 'search') {
+      const query = args.query as string;
+      const countMatch = result?.output?.match(/Found (\d+) code matches/);
+      const resultCount = countMatch ? parseInt(countMatch[1]) : 0;
+
+      return {
+        showCustom: true,
+        customContent: (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 text-xs rounded bg-purple-500/20 text-purple-300">
+                代码搜索
+              </span>
+              <span className="text-xs text-zinc-400">
+                "{query}"
+              </span>
+              {event.status === 'success' && (
+                <span className="px-2 py-0.5 text-xs rounded bg-cyan-500/20 text-cyan-300">
+                  {resultCount} 条
+                </span>
+              )}
+            </div>
+            {result?.output && (
+              <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded p-2 overflow-x-auto max-h-32 whitespace-pre-wrap">
+                {result.output.slice(0, 500)}{result.output.length > 500 ? '...' : ''}
+              </pre>
+            )}
+          </div>
+        ),
+      };
+    }
+
+    if (action === 'status') {
+      return {
+        showCustom: true,
+        customContent: (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 text-xs rounded bg-zinc-700 text-zinc-300">
+                索引状态
+              </span>
+            </div>
+            {result?.output && (
+              <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded p-2 overflow-x-auto max-h-24 whitespace-pre-wrap">
+                {result.output}
+              </pre>
+            )}
+          </div>
+        ),
+      };
+    }
+  }
+
+  return { showCustom: false };
 }
 
 // 分类顺序 - 按任务执行的常规流程
@@ -509,35 +717,47 @@ export const ObservabilityPanel: React.FC = () => {
                             {/* Event Details */}
                             {isEventExpanded && event.details && (
                               <div className="px-4 pb-3 pl-10 animate-fadeIn">
-                                {/* Arguments */}
-                                {event.details.arguments != null && (
-                                  <div className="mb-2">
-                                    <div className="text-xs text-zinc-500 mb-1">参数</div>
-                                    <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded p-2 overflow-x-auto max-h-24">
-                                      {JSON.stringify(event.details.arguments as object, null, 2)}
-                                    </pre>
-                                  </div>
-                                )}
-                                {/* Result */}
-                                {event.details.result != null && (
-                                  <div>
-                                    <div className="text-xs text-zinc-500 mb-1">结果</div>
-                                    <pre className={`text-xs rounded p-2 overflow-x-auto max-h-24 ${
-                                      event.status === 'error'
-                                        ? 'text-red-300 bg-red-500/10'
-                                        : 'text-zinc-400 bg-zinc-900/50'
-                                    }`}>
-                                      {(() => {
-                                        const result = event.details.result as { error?: string; output?: unknown } | undefined;
-                                        if (result?.error) return result.error;
-                                        if (typeof result?.output === 'string') {
-                                          return result.output.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH);
-                                        }
-                                        return JSON.stringify(result?.output, null, 2)?.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH);
-                                      })()}
-                                    </pre>
-                                  </div>
-                                )}
+                                {/* Memory 工具使用自定义展示 */}
+                                {(() => {
+                                  const memoryFormat = formatMemoryDetails(event);
+                                  if (memoryFormat.showCustom) {
+                                    return memoryFormat.customContent;
+                                  }
+                                  // 默认展示
+                                  return (
+                                    <>
+                                      {/* Arguments */}
+                                      {event.details.arguments != null && (
+                                        <div className="mb-2">
+                                          <div className="text-xs text-zinc-500 mb-1">参数</div>
+                                          <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded p-2 overflow-x-auto max-h-24">
+                                            {JSON.stringify(event.details.arguments as object, null, 2)}
+                                          </pre>
+                                        </div>
+                                      )}
+                                      {/* Result */}
+                                      {event.details.result != null && (
+                                        <div>
+                                          <div className="text-xs text-zinc-500 mb-1">结果</div>
+                                          <pre className={`text-xs rounded p-2 overflow-x-auto max-h-24 ${
+                                            event.status === 'error'
+                                              ? 'text-red-300 bg-red-500/10'
+                                              : 'text-zinc-400 bg-zinc-900/50'
+                                          }`}>
+                                            {(() => {
+                                              const result = event.details.result as { error?: string; output?: unknown } | undefined;
+                                              if (result?.error) return result.error;
+                                              if (typeof result?.output === 'string') {
+                                                return result.output.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH);
+                                              }
+                                              return JSON.stringify(result?.output, null, 2)?.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH);
+                                            })()}
+                                          </pre>
+                                        </div>
+                                      )}
+                                    </>
+                                  );
+                                })()}
                               </div>
                             )}
                           </div>

@@ -159,6 +159,7 @@ export function parseMarkdownBlocks(text: string): MarkdownBlockData[] {
 export const categoryLabels: Record<string, string> = {
   image: '图片',
   pdf: 'PDF',
+  excel: '表格',
   code: '代码',
   data: '数据',
   text: '文本',

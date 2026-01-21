@@ -128,24 +128,30 @@ export const ChatView: React.FC = () => {
   );
 };
 
-// Thinking indicator - lightweight status bar style
+// Thinking indicator - Claude/ChatGPT style, left-aligned with avatar
 const ThinkingIndicator: React.FC = () => {
   return (
-    <div className="flex items-center justify-center animate-fade-in">
-      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-zinc-800/40 border border-zinc-700/30">
+    <div className="flex gap-3 animate-slideUp">
+      {/* Avatar - same as AssistantMessage */}
+      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-gradient-to-br from-accent-purple to-accent-pink">
+        <Bot className="w-3.5 h-3.5 text-white" />
+      </div>
+
+      {/* Thinking bubble */}
+      <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl rounded-tl-md bg-zinc-800/70 border border-zinc-700/40">
         {/* Typing dots */}
         <div className="flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '0ms' }} />
           <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '150ms' }} />
           <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '300ms' }} />
         </div>
-        <span className="text-xs text-zinc-500">思考中</span>
+        <span className="text-sm text-zinc-400">思考中</span>
       </div>
     </div>
   );
 };
 
-// Enhanced thinking indicator with task progress - lightweight status bar style
+// Enhanced thinking indicator with task progress - Claude/ChatGPT style
 const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ progress }) => {
   // 阶段配置
   const phaseConfig: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
@@ -157,7 +163,7 @@ const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ p
     tool_pending: {
       icon: <Wrench className="w-3.5 h-3.5" />,
       label: '准备执行',
-      color: 'text-yellow-400',
+      color: 'text-amber-400',
     },
     tool_running: {
       icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
@@ -167,7 +173,7 @@ const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ p
     generating: {
       icon: <PenLine className="w-3.5 h-3.5" />,
       label: '生成中',
-      color: 'text-green-400',
+      color: 'text-emerald-400',
     },
   };
 
@@ -175,12 +181,18 @@ const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ p
   const hasToolProgress = progress.phase === 'tool_running' && progress.toolTotal;
 
   return (
-    <div className="flex items-center justify-center animate-fade-in">
-      <div className="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-zinc-800/40 border border-zinc-700/30">
+    <div className="flex gap-3 animate-slideUp">
+      {/* Avatar - same as AssistantMessage */}
+      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-gradient-to-br from-accent-purple to-accent-pink">
+        <Bot className="w-3.5 h-3.5 text-white" />
+      </div>
+
+      {/* Progress bubble */}
+      <div className="inline-flex items-center gap-3 px-4 py-2.5 rounded-2xl rounded-tl-md bg-zinc-800/70 border border-zinc-700/40">
         {/* Status icon and text */}
         <div className="flex items-center gap-2">
           <span className={config.color}>{config.icon}</span>
-          <span className={`text-xs ${config.color}`}>
+          <span className={`text-sm ${config.color}`}>
             {progress.step || config.label}
           </span>
         </div>
@@ -188,13 +200,13 @@ const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ p
         {/* Tool progress bar */}
         {hasToolProgress && (
           <div className="flex items-center gap-2">
-            <div className="w-16 h-1 bg-zinc-700/50 rounded-full overflow-hidden">
+            <div className="w-20 h-1.5 bg-zinc-700/50 rounded-full overflow-hidden">
               <div
                 className="h-full bg-purple-500 rounded-full transition-all duration-300"
                 style={{ width: `${progress.progress || 0}%` }}
               />
             </div>
-            <span className="text-xs text-zinc-600">
+            <span className="text-xs text-zinc-500">
               {progress.toolIndex !== undefined && progress.toolTotal
                 ? `${progress.toolIndex}/${progress.toolTotal}`
                 : `${Math.round(progress.progress || 0)}%`}

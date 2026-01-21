@@ -13,6 +13,7 @@ import {
   FileCode,
   Database,
   Globe,
+  Sheet,
 } from 'lucide-react';
 import type { AttachmentDisplayProps, AttachmentIconConfig } from './types';
 import type { AttachmentCategory, MessageAttachment } from '@shared/types';
@@ -24,6 +25,8 @@ function getAttachmentIconConfig(category: AttachmentCategory | undefined): Atta
   switch (category) {
     case 'pdf':
       return { icon: <FileText className={iconClass} />, color: 'text-red-400', label: 'PDF' };
+    case 'excel':
+      return { icon: <Sheet className={iconClass} />, color: 'text-emerald-400', label: 'Excel' };
     case 'code':
       return { icon: <FileCode className={iconClass} />, color: 'text-blue-400', label: '代码' };
     case 'data':
@@ -80,9 +83,11 @@ const AttachmentItem: React.FC<{
           <span>·</span>
           {category === 'pdf' && attachment.pageCount
             ? <span>{attachment.pageCount} 页</span>
-            : attachment.language
-              ? <span>{attachment.language}</span>
-              : <span>{formatFileSize(attachment.size)}</span>
+            : category === 'excel' && attachment.sheetCount
+              ? <span>{attachment.sheetCount} 表 · {attachment.rowCount} 行</span>
+              : attachment.language
+                ? <span>{attachment.language}</span>
+                : <span>{formatFileSize(attachment.size)}</span>
           }
         </div>
       </div>

@@ -10,10 +10,11 @@ export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
 export type AttachmentCategory =
   | 'image'      // 图片：PNG, JPEG, GIF, WebP
   | 'pdf'        // PDF 文档
+  | 'excel'      // Excel 表格：XLSX, XLS（支持解析）
   | 'code'       // 代码文件：JS, TS, Python, etc.
   | 'text'       // 纯文本：TXT, MD
   | 'data'       // 数据文件：JSON, CSV, XML
-  | 'document'   // 办公文档：DOCX, XLSX (需转换)
+  | 'document'   // 办公文档：DOCX, PPTX (暂不支持)
   | 'html'       // 网页：HTML
   | 'folder'     // 文件夹
   | 'other';     // 其他
@@ -34,6 +35,9 @@ export interface MessageAttachment {
   thumbnail?: string;
   // PDF 特有：页数
   pageCount?: number;
+  // Excel 特有：sheet 数和行数
+  sheetCount?: number;
+  rowCount?: number;
   // 代码特有：语言
   language?: string;
   // 文件夹特有：文件列表和统计

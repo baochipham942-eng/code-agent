@@ -10,12 +10,13 @@ import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Code2, Copy, Check } from 'lucide-react';
+import { Code2, Copy, Check, ExternalLink, Play } from 'lucide-react';
 import type { MessageContentProps } from './types';
 import { UI } from '@shared/constants';
 import 'katex/dist/katex.min.css';
 import type { Components } from 'react-markdown';
 import type { Element } from 'hast';
+import { useAppStore } from '../../../../stores/appStore';
 
 // Language display names and colors
 const languageConfig: Record<string, { color: string; name: string }> = {
@@ -143,21 +144,110 @@ const CodeBlock = memo(function CodeBlock({
   );
 });
 
-// Inline code component
+// File extension patterns that can be opened
+const OPENABLE_FILE_EXTENSIONS = [
+  '.html', '.htm', '.pdf', '.txt', '.md',
+  '.json', '.xml', '.csv',
+  '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg',
+  '.mp3', '.mp4', '.wav', '.webm',
+];
+
+// Check if text looks like a file path
+const isFilePath = (text: string): boolean => {
+  const trimmed = text.trim();
+  // Check common file patterns
+  if (trimmed.startsWith('/') || trimmed.startsWith('./') || trimmed.startsWith('~/')) {
+    return true;
+  }
+  // Check if it has a file extension
+  const hasExtension = OPENABLE_FILE_EXTENSIONS.some(ext =>
+    trimmed.toLowerCase().endsWith(ext)
+  );
+  // Must have extension and look like a filename (no spaces or special chars that aren't path-related)
+  return hasExtension && /^[\w\-./~]+$/.test(trimmed);
+};
+
+// Check if file is HTML (can be previewed in-app)
+const isHtmlFile = (text: string): boolean => {
+  const trimmed = text.trim().toLowerCase();
+  return trimmed.endsWith('.html') || trimmed.endsWith('.htm');
+};
+
+// Inline code component with file click support
 const InlineCode = memo(function InlineCode({
   children,
+  onOpenFile,
+  onPreviewHtml,
 }: {
   children: React.ReactNode;
+  onOpenFile?: (filePath: string) => void;
+  onPreviewHtml?: (filePath: string) => void;
 }) {
+  const text = String(children);
+  const isFile = isFilePath(text);
+  const isHtml = isHtmlFile(text);
+
+  // Regular inline code (not a file)
+  if (!isFile) {
+    return (
+      <code className="px-1.5 py-0.5 mx-0.5 rounded-md bg-zinc-900/80 text-primary-300 text-xs font-mono border border-zinc-700/50">
+        {children}
+      </code>
+    );
+  }
+
+  // File path - make it clickable
   return (
-    <code className="px-1.5 py-0.5 mx-0.5 rounded-md bg-zinc-900/80 text-primary-300 text-xs font-mono border border-zinc-700/50">
+    <code
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-zinc-900/80 text-primary-300 text-xs font-mono border border-zinc-700/50 cursor-pointer hover:bg-zinc-800/80 hover:border-primary-500/50 hover:text-primary-200 transition-colors group"
+      onClick={() => {
+        if (isHtml && onPreviewHtml) {
+          onPreviewHtml(text);
+        } else if (onOpenFile) {
+          onOpenFile(text);
+        }
+      }}
+      title={isHtml ? '点击预览' : '点击打开文件'}
+    >
       {children}
+      {isHtml ? (
+        <Play className="w-3 h-3 opacity-50 group-hover:opacity-100 text-blue-400" />
+      ) : (
+        <ExternalLink className="w-3 h-3 opacity-50 group-hover:opacity-100" />
+      )}
     </code>
   );
 });
 
 // Main message content component
 export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser }) {
+  const openPreview = useAppStore((state) => state.openPreview);
+  const workingDirectory = useAppStore((state) => state.workingDirectory);
+
+  // Handle opening a file externally
+  const handleOpenFile = useCallback(async (filePath: string) => {
+    try {
+      // Resolve relative paths
+      let fullPath = filePath;
+      if (!filePath.startsWith('/') && !filePath.startsWith('~')) {
+        fullPath = workingDirectory ? `${workingDirectory}/${filePath}` : filePath;
+      }
+      await window.domainAPI?.invoke('workspace', 'openPath', { filePath: fullPath });
+    } catch (error) {
+      console.error('Failed to open file:', error);
+    }
+  }, [workingDirectory]);
+
+  // Handle previewing HTML in-app
+  const handlePreviewHtml = useCallback((filePath: string) => {
+    // Resolve relative paths
+    let fullPath = filePath;
+    if (!filePath.startsWith('/') && !filePath.startsWith('~')) {
+      fullPath = workingDirectory ? `${workingDirectory}/${filePath}` : filePath;
+    }
+    openPreview(fullPath);
+  }, [openPreview, workingDirectory]);
+
   // For user messages, render as plain text (no markdown processing)
   if (isUser) {
     return (
@@ -190,7 +280,11 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           return <CodeBlock language="" code={codeContent} />;
         }
 
-        return <InlineCode>{children}</InlineCode>;
+        return (
+          <InlineCode onOpenFile={handleOpenFile} onPreviewHtml={handlePreviewHtml}>
+            {children}
+          </InlineCode>
+        );
       },
 
       // Override pre to just render children (CodeBlock handles the wrapper)
@@ -325,7 +419,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
     }),
-    []
+    [handleOpenFile, handlePreviewHtml]
   );
 
   return (

@@ -47,6 +47,11 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke('extract-pdf-text', filePath);
   },
 
+  // Excel 文本提取 - 使用 xlsx 库
+  extractExcelText: (filePath: string): Promise<{ text: string; sheetCount: number; rowCount: number }> => {
+    return ipcRenderer.invoke('extract-excel-text', filePath);
+  },
+
   // 语音转写 - 使用 Groq Whisper API
   transcribeSpeech: (audioData: string, mimeType: string) => {
     return ipcRenderer.invoke('speech:transcribe', { audioData, mimeType });

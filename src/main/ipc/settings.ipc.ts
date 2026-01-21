@@ -199,6 +199,43 @@ export function registerSettingsHandlers(
     pageCount: 0,
   }));
 
+  // Excel 文件解析
+  ipcMain.handle('extract-excel-text', async (_, filePath: string): Promise<{ text: string; sheetCount: number; rowCount: number }> => {
+    try {
+      const fs = await import('fs');
+      const XLSX = await import('xlsx');
+
+      const buffer = fs.readFileSync(filePath);
+      const workbook = XLSX.read(buffer, { type: 'buffer' });
+
+      const sheets: string[] = [];
+      let totalRows = 0;
+
+      for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        // 转换为 CSV 格式（AI 更容易理解）
+        const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+        const rows = csv.split('\n').filter((r: string) => r.trim()).length;
+        totalRows += rows;
+
+        // 添加 sheet 标题
+        sheets.push(`=== Sheet: ${sheetName} (${rows} 行) ===\n${csv}`);
+      }
+
+      return {
+        text: sheets.join('\n\n'),
+        sheetCount: workbook.SheetNames.length,
+        rowCount: totalRows,
+      };
+    } catch (error) {
+      return {
+        text: `[Excel 解析失败: ${error instanceof Error ? error.message : String(error)}]`,
+        sheetCount: 0,
+        rowCount: 0,
+      };
+    }
+  });
+
   /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'checkApiKeyConfigured' */
   ipcMain.handle(IPC_CHANNELS.SECURITY_CHECK_API_KEY_CONFIGURED, async () => handleCheckApiKeyConfigured());
 

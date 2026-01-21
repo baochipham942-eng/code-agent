@@ -2,7 +2,8 @@
 // ChatView - Main Chat Interface (Enhanced UI/UX - Terminal Noir)
 // ============================================================================
 
-import React, { useRef, useEffect } from 'react';
+import React, { useMemo, useCallback, useRef } from 'react';
+import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useAgent } from '../hooks/useAgent';
@@ -11,7 +12,7 @@ import { MessageBubble } from './features/chat/MessageBubble';
 import { ChatInput } from './features/chat/ChatInput';
 import { TodoPanel } from './TodoPanel';
 import { PreviewPanel } from './PreviewPanel';
-import type { MessageAttachment, TaskProgressData } from '../../shared/types';
+import type { Message, MessageAttachment, TaskProgressData } from '../../shared/types';
 import {
   Bot,
   Code2,
@@ -32,62 +33,73 @@ export const ChatView: React.FC = () => {
   const { todos } = useSessionStore();
   const { messages, isProcessing, sendMessage, cancel, taskProgress } = useAgent();
   const { requireAuthAsync } = useRequireAuth();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
 
-  // Auto-scroll to bottom
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  // Filter empty assistant placeholder messages
+  const filteredMessages = useMemo(() => {
+    return messages.filter((message) => {
+      if (message.role === 'assistant') {
+        const hasContent = message.content && message.content.trim().length > 0;
+        const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
+        return hasContent || hasToolCalls;
+      }
+      return true;
+    });
   }, [messages]);
 
   // 发送消息需要登录
-  const handleSendMessage = async (content: string, attachments?: MessageAttachment[]) => {
+  const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
     await requireAuthAsync(async () => {
       await sendMessage(content, attachments);
     });
-  };
+  }, [requireAuthAsync, sendMessage]);
 
   // Show Gen 3+ todo panel if there are todos
   const showTodoPanel = currentGeneration.tools.includes('todo_write') && todos.length > 0;
+
+  // Render individual message item
+  const renderMessageItem = useCallback((_index: number, message: Message) => (
+    <div className="px-4 py-3 max-w-3xl mx-auto w-full">
+      <MessageBubble message={message} />
+    </div>
+  ), []);
+
+  // Footer component for processing indicator
+  const Footer = useCallback(() => {
+    if (!isProcessing) return null;
+
+    return (
+      <div className="px-4 py-3 max-w-3xl mx-auto w-full">
+        {taskProgress && taskProgress.phase !== 'completed'
+          ? <EnhancedThinkingIndicator progress={taskProgress} onStop={cancel} />
+          : <ThinkingIndicator onStop={cancel} />
+        }
+      </div>
+    );
+  }, [isProcessing, taskProgress, cancel]);
 
   return (
     <div className="flex-1 flex overflow-hidden">
       {/* Main Chat */}
       <div className="flex-1 flex flex-col min-w-0 bg-gradient-to-b from-surface-950 to-void">
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto scroll-smooth">
-          {messages.length === 0 ? (
+        <div className="flex-1 overflow-hidden">
+          {filteredMessages.length === 0 ? (
             <EmptyState generation={currentGeneration.name} generationId={currentGeneration.id} onSend={handleSendMessage} />
           ) : (
-            <div className="max-w-3xl mx-auto py-6 px-4 space-y-6">
-              {messages
-                // 过滤空的 assistant 占位消息（没有内容也没有工具调用）
-                .filter((message) => {
-                  if (message.role === 'assistant') {
-                    const hasContent = message.content && message.content.trim().length > 0;
-                    const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
-                    return hasContent || hasToolCalls;
-                  }
-                  return true;
-                })
-                .map((message, index) => (
-                <div
-                  key={message.id}
-                  className="animate-fade-in-up"
-                  style={{ animationDelay: `${Math.min(index * 50, 200)}ms` }}
-                >
-                  <MessageBubble message={message} />
-                </div>
-              ))}
-
-              {/* Processing indicator - Task Progress or Typing animation */}
-              {isProcessing && (
-                taskProgress && taskProgress.phase !== 'completed'
-                  ? <EnhancedThinkingIndicator progress={taskProgress} onStop={cancel} />
-                  : <ThinkingIndicator onStop={cancel} />
-              )}
-
-              <div ref={messagesEndRef} />
-            </div>
+            <Virtuoso
+              ref={virtuosoRef}
+              data={filteredMessages}
+              itemContent={renderMessageItem}
+              followOutput="smooth"
+              defaultItemHeight={100}
+              overscan={400}
+              className="h-full"
+              components={{
+                Footer,
+              }}
+              increaseViewportBy={{ top: 200, bottom: 200 }}
+            />
           )}
         </div>
 

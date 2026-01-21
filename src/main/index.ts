@@ -15,6 +15,7 @@ import {
   getCurrentSessionId,
   setCurrentSessionId,
   getPlanningServiceInstance,
+  getTaskManagerInstance,
 } from './app/bootstrap';
 import { createWindow, getMainWindow } from './app/window';
 import { setupAllIpcHandlers } from './ipc';
@@ -39,6 +40,7 @@ app.whenReady().then(async () => {
       getGenerationManager: getGenerationManagerInstance,
       getConfigService: getConfigServiceInstance,
       getPlanningService: getPlanningServiceInstance,
+      getTaskManager: getTaskManagerInstance,
       getCurrentSessionId,
       setCurrentSessionId,
     });
@@ -74,6 +76,16 @@ app.on('window-all-closed', () => {
 // Cleanup before quitting
 app.on('before-quit', async () => {
   logger.info('Cleaning up before quit...');
+
+  // Shutdown TaskManager first (cancel all running tasks)
+  try {
+    const { getTaskManager } = await import('./task');
+    const taskManager = getTaskManager();
+    await taskManager.shutdown();
+    logger.info('TaskManager shut down');
+  } catch (error) {
+    logger.error('Error shutting down TaskManager', error);
+  }
 
   try {
     const { getMemoryService } = await import('./memory/memoryService');

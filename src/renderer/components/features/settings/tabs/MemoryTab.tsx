@@ -1,5 +1,5 @@
 // ============================================================================
-// MemoryTab - Memory Management Settings Tab
+// MemoryTab - Memory Management Settings Tab (Phase 4)
 // ============================================================================
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -13,16 +13,41 @@ import {
   Trash2,
   AlertCircle,
   CheckCircle,
+  LayoutList,
+  Clock,
+  AlertTriangle,
+  BarChart3,
+  Cloud,
 } from 'lucide-react';
 import { Button, Input } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { MemoryCard } from './MemoryCard';
 import { MemoryEditModal } from './MemoryEditModal';
+import { MemoryTimeline } from './MemoryTimeline';
+import { MemoryConflictDetector } from './MemoryConflictDetector';
+import { MemoryStatsPanel } from './MemoryStatsPanel';
+import { MemorySyncPanel } from './MemorySyncPanel';
 import { useI18n } from '../../../../hooks/useI18n';
 import { createLogger } from '../../../../utils/logger';
 import type { MemoryItem, MemoryCategory, MemoryStats } from '@shared/types';
 
 const logger = createLogger('MemoryTab');
+
+// View mode types
+type ViewMode = 'category' | 'timeline' | 'conflicts' | 'stats' | 'sync';
+
+// View mode configuration
+const VIEW_MODES: Array<{
+  key: ViewMode;
+  icon: React.ReactNode;
+  label: string;
+}> = [
+  { key: 'category', icon: <LayoutList className="w-4 h-4" />, label: '分类' },
+  { key: 'timeline', icon: <Clock className="w-4 h-4" />, label: '时间线' },
+  { key: 'conflicts', icon: <AlertTriangle className="w-4 h-4" />, label: '冲突检测' },
+  { key: 'stats', icon: <BarChart3 className="w-4 h-4" />, label: '统计' },
+  { key: 'sync', icon: <Cloud className="w-4 h-4" />, label: '同步' },
+];
 
 // Category info with icons
 const CATEGORIES: Array<{
@@ -51,6 +76,9 @@ export const MemoryTab: React.FC = () => {
     new Set(['about_me', 'preference', 'frequent_info', 'learned'])
   );
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // View mode state (Phase 4)
+  const [viewMode, setViewMode] = useState<ViewMode>('category');
 
   // Edit modal state
   const [editingMemory, setEditingMemory] = useState<MemoryItem | null>(null);
@@ -295,58 +323,107 @@ export const MemoryTab: React.FC = () => {
         </p>
       </div>
 
-      {/* Stats */}
-      {stats && (
-        <div className="grid grid-cols-4 gap-2">
-          <div className="bg-zinc-800/50 rounded-lg p-2 text-center">
-            <div className="text-lg font-bold text-zinc-100">{stats.total}</div>
-            <div className="text-xs text-zinc-400">总计</div>
-          </div>
-          <div className="bg-zinc-800/50 rounded-lg p-2 text-center">
-            <div className="text-lg font-bold text-indigo-400">{stats.explicitCount}</div>
-            <div className="text-xs text-zinc-400">手动添加</div>
-          </div>
-          <div className="bg-zinc-800/50 rounded-lg p-2 text-center">
-            <div className="text-lg font-bold text-cyan-400">{stats.learnedCount}</div>
-            <div className="text-xs text-zinc-400">自动学习</div>
-          </div>
-          <div className="bg-zinc-800/50 rounded-lg p-2 text-center">
-            <div className="text-lg font-bold text-amber-400">{stats.recentlyAdded}</div>
-            <div className="text-xs text-zinc-400">近 7 天</div>
-          </div>
-        </div>
-      )}
-
-      {/* Search & Actions */}
-      <div className="flex items-center gap-2">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-          <Input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索记忆..."
-            className="pl-9"
-          />
-        </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={handleExport}
-          title="导出"
-        >
-          <Download className="w-4 h-4" />
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={handleImport}
-          title="导入"
-        >
-          <Upload className="w-4 h-4" />
-        </Button>
+      {/* View Mode Tabs (Phase 4) */}
+      <div className="flex items-center gap-1 p-1 bg-zinc-800/30 rounded-lg">
+        {VIEW_MODES.map((mode) => (
+          <button
+            key={mode.key}
+            onClick={() => setViewMode(mode.key)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+              viewMode === mode.key
+                ? 'bg-zinc-700 text-zinc-100'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
+            }`}
+          >
+            {mode.icon}
+            <span>{mode.label}</span>
+          </button>
+        ))}
       </div>
 
-      {/* Category Lists */}
+      {/* Conditional View Rendering (Phase 4) */}
+      {viewMode === 'timeline' && (
+        <MemoryTimeline
+          memories={memories}
+          onSelectMemory={(memory) => handleEdit(memory)}
+        />
+      )}
+
+      {viewMode === 'conflicts' && (
+        <MemoryConflictDetector
+          memories={memories}
+          onResolve={loadMemories}
+        />
+      )}
+
+      {viewMode === 'stats' && (
+        <MemoryStatsPanel
+          memories={memories}
+          stats={stats}
+        />
+      )}
+
+      {viewMode === 'sync' && (
+        <MemorySyncPanel
+          onSyncComplete={loadMemories}
+        />
+      )}
+
+      {/* Category View (Original) */}
+      {viewMode === 'category' && (
+        <>
+          {/* Stats */}
+          {stats && (
+            <div className="grid grid-cols-4 gap-2">
+              <div className="bg-zinc-800/50 rounded-lg p-2 text-center">
+                <div className="text-lg font-bold text-zinc-100">{stats.total}</div>
+                <div className="text-xs text-zinc-400">总计</div>
+              </div>
+              <div className="bg-zinc-800/50 rounded-lg p-2 text-center">
+                <div className="text-lg font-bold text-indigo-400">{stats.explicitCount}</div>
+                <div className="text-xs text-zinc-400">手动添加</div>
+              </div>
+              <div className="bg-zinc-800/50 rounded-lg p-2 text-center">
+                <div className="text-lg font-bold text-cyan-400">{stats.learnedCount}</div>
+                <div className="text-xs text-zinc-400">自动学习</div>
+              </div>
+              <div className="bg-zinc-800/50 rounded-lg p-2 text-center">
+                <div className="text-lg font-bold text-amber-400">{stats.recentlyAdded}</div>
+                <div className="text-xs text-zinc-400">近 7 天</div>
+              </div>
+            </div>
+          )}
+
+          {/* Search & Actions */}
+          <div className="flex items-center gap-2">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="搜索记忆..."
+                className="pl-9"
+              />
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleExport}
+              title="导出"
+            >
+              <Download className="w-4 h-4" />
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleImport}
+              title="导入"
+            >
+              <Upload className="w-4 h-4" />
+            </Button>
+          </div>
+
+          {/* Category Lists */}
       <div className="space-y-2 max-h-[280px] overflow-y-auto">
         {CATEGORIES.map((cat) => {
           const categoryMemories = memoriesByCategory[cat.key];
@@ -409,7 +486,9 @@ export const MemoryTab: React.FC = () => {
             </div>
           );
         })}
-      </div>
+          </div>
+        </>
+      )}
 
       {/* Clear Category Confirmation */}
       {clearingCategory && (

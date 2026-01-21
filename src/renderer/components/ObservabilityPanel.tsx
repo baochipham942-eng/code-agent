@@ -92,7 +92,7 @@ const categoryConfig: Record<EventCategory, {
     color: 'text-orange-400',
     bgColor: 'bg-orange-500/10',
     borderColor: 'border-orange-500/30',
-    tools: ['task', 'ask_user_question'],
+    tools: ['task', 'ask_user_question', 'spawn_agent', 'agent_message', 'workflow_orchestrate'],
     minGeneration: 3,
   },
   mcp: {
@@ -140,9 +140,13 @@ const toolCategoryMap: Record<string, EventCategory> = {
   // Planning Tools
   todo_write: 'plan',
 
-  // Agent Tools
+  // Agent Tools (Gen3+)
   task: 'agent',
   ask_user_question: 'agent',
+  // Gen7 Multi-Agent Tools
+  spawn_agent: 'agent',
+  agent_message: 'agent',
+  workflow_orchestrate: 'agent',
 
   // Skill
   skill: 'skill',
@@ -211,6 +215,29 @@ function getToolSummary(toolCall: ToolCall): string {
       return `读取资源: ${(args.uri as string)?.split('/').pop() || '?'}`;
     case 'mcp_get_status':
       return '获取 MCP 状态';
+    // Gen7 Multi-Agent Tools
+    case 'spawn_agent': {
+      const role = args.role as string;
+      const parallel = args.parallel as boolean;
+      const agents = args.agents as Array<{ role: string }> | undefined;
+      if (parallel && agents) {
+        return `并行创建 ${agents.length} 个 Agent`;
+      }
+      return `创建 ${role || '未知'} Agent`;
+    }
+    case 'agent_message': {
+      const action = args.action as string;
+      const agentId = args.agentId as string;
+      if (action === 'list') return '列出所有 Agent';
+      if (action === 'status') return `查询 ${agentId || 'Agent'} 状态`;
+      if (action === 'result') return `获取 ${agentId || 'Agent'} 结果`;
+      if (action === 'cancel') return `取消 ${agentId || 'Agent'}`;
+      return 'Agent 消息';
+    }
+    case 'workflow_orchestrate': {
+      const workflow = args.workflow as string;
+      return workflow === 'custom' ? '自定义工作流' : `工作流: ${workflow || '未知'}`;
+    }
     default:
       return toolCall.name;
   }
@@ -239,6 +266,10 @@ function getToolIcon(name: string): React.ReactNode {
     mcp_list_resources: <Database className="w-3 h-3" />,
     mcp_read_resource: <Database className="w-3 h-3" />,
     mcp_get_status: <Server className="w-3 h-3" />,
+    // Gen7 Multi-Agent Tools
+    spawn_agent: <Users className="w-3 h-3" />,
+    agent_message: <Users className="w-3 h-3" />,
+    workflow_orchestrate: <Users className="w-3 h-3" />,
   };
   return iconMap[name] || <Wrench className="w-3 h-3" />;
 }

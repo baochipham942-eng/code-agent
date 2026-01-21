@@ -21,6 +21,8 @@ import { CloudTaskPanel } from './components/CloudTaskPanel';
 import { TaskListPanel } from './components/TaskListPanel';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
+import { ConversationTabs } from './components/features/chat/ConversationTabs';
+import { ConversationTabsProvider } from './contexts/ConversationTabsContext';
 import { useDisclosure } from './hooks/useDisclosure';
 import { Activity, Cloud, Zap } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest } from '@shared/ipc';
@@ -306,45 +308,49 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-zinc-900 text-zinc-100">
-      {/* Title Bar for macOS */}
-      <TitleBar />
+    <ConversationTabsProvider>
+      <div className="h-screen flex flex-col bg-zinc-900 text-zinc-100">
+        {/* Title Bar for macOS */}
+        <TitleBar />
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar - 仅在 Standard+ 显示 */}
-        {isStandard && <Sidebar />}
+        {/* Main Content */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Sidebar - 仅在 Standard+ 显示 */}
+          {isStandard && <Sidebar />}
 
-        {/* Chat Area */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Generation Badge with Observability Toggle */}
-          <div className="px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {isStandard && <GenerationBadge />}
+          {/* Chat Area */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {/* Generation Badge with Observability Toggle */}
+            <div className="px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {isStandard && <GenerationBadge />}
+              </div>
+              <div className="flex items-center gap-2">
+                {isObservabilityAvailable && <ObservabilityToggle />}
+                <TaskListToggle />
+                <CloudTaskToggle />
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              {isObservabilityAvailable && <ObservabilityToggle />}
-              <TaskListToggle />
-              <CloudTaskToggle />
-            </div>
+
+            {/* Conversation Tabs (Multi-session) */}
+            <ConversationTabs />
+
+            {/* Chat View */}
+            <ChatView />
           </div>
 
-          {/* Chat View */}
-          <ChatView />
+          {/* Observability Panel (Advanced+ disclosure) */}
+          {showPlanningPanel && isObservabilityAvailable && <ObservabilityPanel />}
+
+          {/* Cloud Task Panel (Advanced mode) */}
+          {showCloudTaskPanel && <CloudTaskPanel onClose={() => setShowCloudTaskPanel(false)} />}
+
+          {/* Local Task List Panel (Standard+ mode) */}
+          {showTaskListPanel && <TaskListPanel onClose={() => setShowTaskListPanel(false)} />}
+
+          {/* Workspace Panel (Standard+ disclosure) */}
+          {showWorkspace && isStandard && <WorkspacePanel />}
         </div>
-
-        {/* Observability Panel (Advanced+ disclosure) */}
-        {showPlanningPanel && isObservabilityAvailable && <ObservabilityPanel />}
-
-        {/* Cloud Task Panel (Advanced mode) */}
-        {showCloudTaskPanel && <CloudTaskPanel onClose={() => setShowCloudTaskPanel(false)} />}
-
-        {/* Local Task List Panel (Standard+ mode) */}
-        {showTaskListPanel && <TaskListPanel onClose={() => setShowTaskListPanel(false)} />}
-
-        {/* Workspace Panel (Standard+ disclosure) */}
-        {showWorkspace && isStandard && <WorkspacePanel />}
-      </div>
 
       {/* Settings Modal */}
       {showSettings && <SettingsModal />}
@@ -427,7 +433,8 @@ export const App: React.FC = () => {
           onClose={() => setConfirmActionRequest(null)}
         />
       )}
-    </div>
+      </div>
+    </ConversationTabsProvider>
   );
 };
 

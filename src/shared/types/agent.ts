@@ -49,6 +49,14 @@ export interface TaskCompleteData {
   toolsUsed: string[];     // 使用的工具列表
 }
 
+// Memory 学习完成事件数据
+export interface MemoryLearnedData {
+  sessionId: string;
+  knowledgeExtracted: number;
+  codeStylesLearned: number;
+  toolPreferencesUpdated: number;
+}
+
 export type AgentEvent =
   | { type: 'message'; data: Message }
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string } }
@@ -70,7 +78,9 @@ export type AgentEvent =
   | { type: 'api_key_required'; data: { provider: string; capability: string; message: string } }
   // 长时任务进度追踪（P0 新增）
   | { type: 'task_progress'; data: TaskProgressData }
-  | { type: 'task_complete'; data: TaskCompleteData };
+  | { type: 'task_complete'; data: TaskCompleteData }
+  // Gen5+ Memory 学习事件
+  | { type: 'memory_learned'; data: MemoryLearnedData };
 
 // Subagent Types (for Gen 3+)
 export type SubagentType = 'explore' | 'bash' | 'plan' | 'code-review';

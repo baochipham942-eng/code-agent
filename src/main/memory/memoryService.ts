@@ -662,6 +662,82 @@ export class MemoryService {
   }
 
   /**
+   * 会话结束时自动学习
+   * 从会话消息中提取知识并存储
+   */
+  async learnFromSession(messages: Message[]): Promise<{
+    knowledgeExtracted: number;
+    codeStylesLearned: number;
+    toolPreferencesUpdated: number;
+  }> {
+    let knowledgeExtracted = 0;
+    let codeStylesLearned = 0;
+    let toolPreferencesUpdated = 0;
+
+    // 分析对话中的模式
+    const toolUsage: Record<string, number> = {};
+    const codeSnippets: string[] = [];
+
+    for (const message of messages) {
+      // 统计工具使用情况
+      if (message.toolCalls) {
+        for (const tc of message.toolCalls) {
+          toolUsage[tc.name] = (toolUsage[tc.name] || 0) + 1;
+        }
+      }
+
+      // 提取代码片段
+      const codeMatches = message.content.match(/```[\s\S]*?```/g);
+      if (codeMatches) {
+        codeSnippets.push(...codeMatches.map(m => m.replace(/```\w*\n?/g, '')));
+      }
+
+      // 提取可能的知识点（用户明确陈述的偏好或需求）
+      if (message.role === 'user') {
+        // 检测用户偏好陈述
+        const preferencePatterns = [
+          /(?:我(?:喜欢|倾向于|习惯|偏好|想要)|please use|i prefer|i like)\s+(.+)/gi,
+          /(?:不要|不用|don't|avoid)\s+(.+)/gi,
+        ];
+
+        for (const pattern of preferencePatterns) {
+          const matches = message.content.match(pattern);
+          if (matches) {
+            for (const match of matches) {
+              await this.addKnowledge(match, 'user_preference');
+              knowledgeExtracted++;
+            }
+          }
+        }
+      }
+    }
+
+    // 更新工具偏好
+    if (Object.keys(toolUsage).length > 0) {
+      const currentPrefs = this.getUserPreference<Record<string, number>>('tool_preferences', {}) || {};
+      for (const [tool, count] of Object.entries(toolUsage)) {
+        currentPrefs[tool] = (currentPrefs[tool] || 0) + count;
+        toolPreferencesUpdated++;
+      }
+      this.setUserPreference('tool_preferences', currentPrefs);
+    }
+
+    // 学习代码风格
+    for (const snippet of codeSnippets.slice(0, 5)) { // 限制处理数量
+      if (snippet.length > 50) { // 只处理有意义的代码片段
+        this.learnCodeStyle(snippet);
+        codeStylesLearned++;
+      }
+    }
+
+    return {
+      knowledgeExtracted,
+      codeStylesLearned,
+      toolPreferencesUpdated,
+    };
+  }
+
+  /**
    * 学习代码风格
    */
   learnCodeStyle(codeSnippet: string): void {

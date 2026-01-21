@@ -22,6 +22,7 @@ import { TaskListPanel } from './components/TaskListPanel';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
+import { useMemoryEvents } from './hooks/useMemoryEvents';
 import { Activity, Cloud, Zap } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
@@ -64,6 +65,18 @@ export const App: React.FC = () => {
 
   // 渐进披露 Hook
   const { isStandard, isAdvanced } = useDisclosure();
+
+  // Gen5+ Memory 事件监听
+  useMemoryEvents({
+    onMemoryLearned: (data) => {
+      logger.info('Memory learning completed', {
+        knowledgeExtracted: data.knowledgeExtracted,
+        codeStylesLearned: data.codeStylesLearned,
+        toolPreferencesUpdated: data.toolPreferencesUpdated,
+      });
+      // 可以在这里添加 Toast 通知或其他 UI 反馈
+    },
+  });
 
   // Debug: Check if electronAPI is available on mount
   useEffect(() => {

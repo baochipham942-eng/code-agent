@@ -188,7 +188,8 @@ const statusConfig: Record<ToolStatus, ToolStatusConfig> = {
 export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
   toolCall,
   index,
-  total
+  total,
+  compact = false,
 }) => {
   const openPreview = useAppStore((state) => state.openPreview);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -264,6 +265,31 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
 
   const config = statusConfig[status];
   const htmlFilePath = getHtmlFilePath();
+
+  // Compact mode rendering for Cowork display
+  if (compact) {
+    return (
+      <div
+        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800/30 border border-zinc-700/30"
+        style={{ animationDelay: `${index * 30}ms` }}
+      >
+        {/* Tool icon */}
+        <div className={`p-1.5 rounded ${config.bg} ${config.text}`}>
+          {getToolIcon(toolCall.name)}
+        </div>
+
+        {/* Summary */}
+        <span className="text-xs text-zinc-400 flex-1 truncate">{summary}</span>
+
+        {/* Status indicator */}
+        <div className={`w-2 h-2 rounded-full ${
+          status === 'success' ? 'bg-emerald-400' :
+          status === 'error' ? 'bg-red-400' :
+          'bg-amber-400 animate-pulse'
+        }`} />
+      </div>
+    );
+  }
 
   return (
     <div

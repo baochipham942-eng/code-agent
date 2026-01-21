@@ -27,3 +27,6 @@ export * from './update';
 // Cloud & GUI types
 export * from './cloud';
 export * from './gui';
+
+// Memory types
+export * from './memory';

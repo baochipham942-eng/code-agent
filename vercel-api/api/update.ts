@@ -27,29 +27,25 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.8.6',
-  publishedAt: '2026-01-20T09:00:00.000Z',
+  version: '0.8.13',
+  publishedAt: '2026-01-21T10:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.8.6
+## Code Agent v0.8.13
 
-### 文档和测试完善
-- 为 7 个核心类添加完整 JSDoc 文档
-- 创建 OpenAPI 规范文档 (vercel-api/openapi.yaml)
-- TypeDoc 配置扩展，支持 19 个 entry points
-- 307 个单元测试全部通过
+### Gen5 Memory 系统完善
+- 会话开始自动触发记忆检索
+- 会话结束自动学习机制（知识提取、代码风格、工具偏好）
+- ObservabilityPanel 增强 Memory 工具展示
+- MemoryPanel 整合到设置页面
 
-### 架构文档
-- 新增 IPC 通道文档、插件系统文档、热更新文档
-- 更新工具系统文档，覆盖 Gen1-Gen8 所有工具
-
-### 修复
-- 修复所有代际测试的导入路径问题
-- 添加 isolated-vm mock 解决 Node 版本兼容问题
+### UI 优化
+- 记忆管理移至设置 → 记忆 tab
+- 统计、学习记录、搜索功能保持不变
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.8.6/Code.Agent-0.8.6-arm64.dmg',
+      url: 'https://github.com/anthropics/code-agent/releases/download/v0.8.13/Code.Agent-0.8.13-arm64.dmg',
       size: 160000000,
     },
   },

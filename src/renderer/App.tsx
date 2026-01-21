@@ -299,10 +299,10 @@ export const App: React.FC = () => {
             ? 'bg-yellow-500/20 text-yellow-300'
             : 'text-zinc-500 hover:bg-zinc-800'
         }`}
-        title="本地任务"
+        title="多任务面板"
       >
         <Zap className="w-3.5 h-3.5" />
-        <span>Cowork</span>
+        <span>任务</span>
       </button>
     );
   };

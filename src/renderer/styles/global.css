@@ -169,6 +169,32 @@ pre, code {
   }
 }
 
+@keyframes expandContent {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    max-height: 1000px;
+    transform: translateY(0);
+  }
+}
+
+@keyframes collapseContent {
+  from {
+    opacity: 1;
+    max-height: 1000px;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-8px);
+  }
+}
+
 @keyframes typing {
   0%, 60%, 100% {
     transform: translateY(0);
@@ -188,6 +214,16 @@ pre, code {
 
 .animate-slideDown {
   animation: slideDown 0.3s ease-out;
+}
+
+.animate-expand {
+  animation: expandContent 0.25s ease-out forwards;
+  overflow: hidden;
+}
+
+.animate-collapse {
+  animation: collapseContent 0.2s ease-out forwards;
+  overflow: hidden;
 }
 
 /* Shimmer loading effect */

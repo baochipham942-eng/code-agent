@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { X, Cpu, Palette, Info, Layers, Globe, Database, Download, Cloud, Plug } from 'lucide-react';
+import { X, Cpu, Palette, Info, Layers, Globe, Database, Download, Cloud, Plug, Settings } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
@@ -16,6 +16,7 @@ import { createLogger } from '../../../utils/logger';
 const logger = createLogger('SettingsModal');
 
 // Tab Components
+import { GeneralSettings } from './tabs/GeneralSettings';
 import { ModelSettings } from './tabs/ModelSettings';
 import { DisclosureSettings } from './tabs/DisclosureSettings';
 import { AppearanceSettings } from './tabs/AppearanceSettings';
@@ -30,7 +31,7 @@ import { AboutSettings } from './tabs/AboutSettings';
 // Types
 // ============================================================================
 
-type SettingsTab = 'model' | 'disclosure' | 'appearance' | 'language' | 'cache' | 'cloud' | 'mcp' | 'update' | 'about';
+type SettingsTab = 'general' | 'model' | 'disclosure' | 'appearance' | 'language' | 'cache' | 'cloud' | 'mcp' | 'update' | 'about';
 
 // ============================================================================
 // Component
@@ -39,7 +40,7 @@ type SettingsTab = 'model' | 'disclosure' | 'appearance' | 'language' | 'cache' 
 export const SettingsModal: React.FC = () => {
   const { setShowSettings, modelConfig, setModelConfig, disclosureLevel, setDisclosureLevel } = useAppStore();
   const { t } = useI18n();
-  const [activeTab, setActiveTab] = useState<SettingsTab>('model');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
 
   // Optional update state
   const [optionalUpdateInfo, setOptionalUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -62,6 +63,7 @@ export const SettingsModal: React.FC = () => {
   }, []);
 
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode; badge?: boolean }[] = [
+    { id: 'general', label: t.settings.tabs.general || '通用', icon: <Settings className="w-4 h-4" /> },
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
     { id: 'disclosure', label: t.settings.tabs.disclosure, icon: <Layers className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
@@ -120,6 +122,7 @@ export const SettingsModal: React.FC = () => {
 
           {/* Content */}
           <div className="flex-1 p-6 overflow-y-auto">
+            {activeTab === 'general' && <GeneralSettings />}
             {activeTab === 'model' && (
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}

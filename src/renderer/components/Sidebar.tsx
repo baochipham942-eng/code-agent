@@ -3,8 +3,9 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { useSessionStore, initializeSessionStore } from '../stores/sessionStore';
+import { useSessionStore, initializeSessionStore, type SessionWithMeta } from '../stores/sessionStore';
 import { useAppStore } from '../stores/appStore';
+import { useIsCoworkMode } from '../stores/modeStore';
 import {
   MessageSquare,
   Plus,
@@ -14,6 +15,7 @@ import {
   Calendar,
   Clock,
   Sparkles,
+  FolderOpen,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Button, IconButton } from './primitives';
@@ -59,8 +61,36 @@ const GroupIcon: React.FC<{ group: SessionGroup }> = ({ group }) => {
   }
 };
 
+// 获取工作空间名称（从路径提取最后一级目录名）
+function getWorkspaceName(path?: string): string {
+  if (!path) return '未指定工作空间';
+  const parts = path.split('/').filter(Boolean);
+  return parts[parts.length - 1] || path;
+}
+
+// 按工作空间分组会话
+function groupSessionsByWorkspace(sessions: SessionWithMeta[]): Record<string, SessionWithMeta[]> {
+  const groups: Record<string, SessionWithMeta[]> = {};
+
+  sessions.forEach(session => {
+    const workspace = session.workingDirectory || '未指定工作空间';
+    if (!groups[workspace]) {
+      groups[workspace] = [];
+    }
+    groups[workspace].push(session);
+  });
+
+  // 按最近更新时间排序每个分组内的会话
+  Object.keys(groups).forEach(key => {
+    groups[key].sort((a, b) => b.updatedAt - a.updatedAt);
+  });
+
+  return groups;
+}
+
 export const Sidebar: React.FC = () => {
   const { sidebarCollapsed, clearChat } = useAppStore();
+  const isCoworkMode = useIsCoworkMode();
   const {
     sessions,
     currentSessionId,
@@ -74,6 +104,7 @@ export const Sidebar: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string>('');
+  const [collapsedWorkspaces, setCollapsedWorkspaces] = useState<Set<string>>(new Set());
 
   // 初始化：加载会话列表
   useEffect(() => {
@@ -95,13 +126,16 @@ export const Sidebar: React.FC = () => {
     loadVersion();
   }, []);
 
-  // 过滤和分组会话
-  const groupedSessions = useMemo(() => {
-    const filtered = sessions.filter(session =>
+  // 过滤会话
+  const filteredSessions = useMemo(() => {
+    return sessions.filter(session =>
       session.title.toLowerCase().includes(searchQuery.toLowerCase())
     );
+  }, [sessions, searchQuery]);
 
-    const groups: Record<SessionGroup, typeof sessions> = {
+  // 按时间分组会话（开发者模式）
+  const groupedByTime = useMemo(() => {
+    const groups: Record<SessionGroup, SessionWithMeta[]> = {
       today: [],
       yesterday: [],
       week: [],
@@ -109,13 +143,31 @@ export const Sidebar: React.FC = () => {
       older: [],
     };
 
-    filtered.forEach(session => {
+    filteredSessions.forEach(session => {
       const group = getSessionGroup(session.updatedAt);
       groups[group].push(session);
     });
 
     return groups;
-  }, [sessions, searchQuery]);
+  }, [filteredSessions]);
+
+  // 按工作空间分组会话（Cowork 模式）
+  const groupedByWorkspace = useMemo(() => {
+    return groupSessionsByWorkspace(filteredSessions);
+  }, [filteredSessions]);
+
+  // 切换工作空间折叠状态
+  const toggleWorkspaceCollapse = (workspace: string) => {
+    setCollapsedWorkspaces(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(workspace)) {
+        newSet.delete(workspace);
+      } else {
+        newSet.add(workspace);
+      }
+      return newSet;
+    });
+  };
 
   const handleNewChat = async () => {
     await createSession('新对话');
@@ -138,7 +190,7 @@ export const Sidebar: React.FC = () => {
   }
 
   const hasAnySessions = sessions.length > 0;
-  const hasFilteredSessions = Object.values(groupedSessions).some(g => g.length > 0);
+  const hasFilteredSessions = filteredSessions.length > 0;
 
   return (
     <div className="w-64 border-r border-zinc-800/50 flex flex-col bg-surface-950/80 backdrop-blur-sm">
@@ -192,10 +244,82 @@ export const Sidebar: React.FC = () => {
             <Search className="w-8 h-8 text-zinc-600 mb-2" />
             <p className="text-sm text-zinc-400">没有匹配的对话</p>
           </div>
+        ) : isCoworkMode ? (
+          // Cowork 模式：按工作空间分组
+          <div className="space-y-3">
+            {Object.entries(groupedByWorkspace).map(([workspace, workspaceSessions]) => {
+              const isCollapsed = collapsedWorkspaces.has(workspace);
+              const workspaceName = getWorkspaceName(workspace);
+
+              return (
+                <div key={workspace} className="animate-fadeIn">
+                  {/* Workspace Header */}
+                  <button
+                    onClick={() => toggleWorkspaceCollapse(workspace)}
+                    className="w-full flex items-center gap-2 px-2 py-2 text-xs font-medium text-zinc-400 hover:text-zinc-300 hover:bg-zinc-800/30 rounded-lg transition-colors"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="flex-1 text-left truncate" title={workspace}>
+                      {workspaceName}
+                    </span>
+                    <span className="text-zinc-600">{workspaceSessions.length}</span>
+                    <div className={`transition-transform ${isCollapsed ? '' : 'rotate-90'}`}>
+                      <Sparkles className="w-3 h-3 text-zinc-600" />
+                    </div>
+                  </button>
+
+                  {/* Workspace Sessions */}
+                  {!isCollapsed && (
+                    <div className="space-y-0.5 mt-1 pl-2">
+                      {workspaceSessions.map((session, index) => {
+                        const isUnread = unreadSessionIds.has(session.id);
+                        return (
+                          <div
+                            key={session.id}
+                            onClick={() => handleSelectSession(session.id)}
+                            onMouseEnter={() => setHoveredSession(session.id)}
+                            onMouseLeave={() => setHoveredSession(null)}
+                            style={{ animationDelay: `${index * 30}ms` }}
+                            className={`group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer transition-all duration-200 animate-slideUp ${
+                              currentSessionId === session.id
+                                ? 'bg-primary-500/10 text-zinc-100 border border-primary-500/20'
+                                : isUnread
+                                  ? 'bg-purple-500/10 text-zinc-100 border border-purple-500/20'
+                                  : 'hover:bg-zinc-800/50 text-zinc-400 hover:text-zinc-200 border border-transparent'
+                            }`}
+                          >
+                            <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${
+                              currentSessionId === session.id ? 'text-primary-400' :
+                              isUnread ? 'text-purple-400' : 'text-zinc-500'
+                            }`} />
+                            <span className="text-sm truncate flex-1">{session.title}</span>
+                            {isUnread && (
+                              <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
+                            )}
+                            <IconButton
+                              icon={<Trash2 className="w-3 h-3" />}
+                              aria-label="Delete session"
+                              onClick={(e) => handleDeleteSession(session.id, e as unknown as React.MouseEvent)}
+                              variant="danger"
+                              size="sm"
+                              className={`!p-1 transition-all duration-200 ${
+                                hoveredSession === session.id ? 'opacity-100' : 'opacity-0'
+                              }`}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         ) : (
+          // 开发者模式：按时间分组
           <div className="space-y-4">
-            {(Object.keys(groupedSessions) as SessionGroup[]).map((group) => {
-              const groupSessions = groupedSessions[group];
+            {(Object.keys(groupedByTime) as SessionGroup[]).map((group) => {
+              const groupSessions = groupedByTime[group];
               if (groupSessions.length === 0) return null;
 
               return (

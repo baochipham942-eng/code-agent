@@ -21,8 +21,6 @@ import { CloudTaskPanel } from './components/CloudTaskPanel';
 import { TaskListPanel } from './components/TaskListPanel';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
-import { ConversationTabs } from './components/features/chat/ConversationTabs';
-import { ConversationTabsProvider } from './contexts/ConversationTabsContext';
 import { useDisclosure } from './hooks/useDisclosure';
 import { Activity, Cloud, Zap } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest } from '@shared/ipc';
@@ -308,7 +306,6 @@ export const App: React.FC = () => {
   };
 
   return (
-    <ConversationTabsProvider>
       <div className="h-screen flex flex-col bg-zinc-900 text-zinc-100">
         {/* Title Bar for macOS */}
         <TitleBar />
@@ -331,9 +328,6 @@ export const App: React.FC = () => {
                 <CloudTaskToggle />
               </div>
             </div>
-
-            {/* Conversation Tabs (Multi-session) */}
-            <ConversationTabs />
 
             {/* Chat View */}
             <ChatView />
@@ -434,7 +428,6 @@ export const App: React.FC = () => {
         />
       )}
       </div>
-    </ConversationTabsProvider>
   );
 };
 

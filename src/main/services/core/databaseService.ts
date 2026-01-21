@@ -8,6 +8,8 @@ import { app } from 'electron';
 import Database from 'better-sqlite3';
 import type {
   Session,
+  SessionStatus,
+  TokenUsage,
   Message,
   ToolResult,
   GenerationId,
@@ -89,7 +91,30 @@ export class DatabaseService {
     this.db.pragma('foreign_keys = ON');
 
     this.createTables();
+    this.migrateSessionsTable();
     this.createIndexes();
+  }
+
+  /**
+   * Sessions 表迁移 - 添加 Wave 3 新字段
+   * 使用 try-catch 模式，列已存在时静默忽略
+   */
+  private migrateSessionsTable(): void {
+    if (!this.db) return;
+
+    const migrations = [
+      { column: 'status', sql: "ALTER TABLE sessions ADD COLUMN status TEXT DEFAULT 'idle'" },
+      { column: 'workspace', sql: 'ALTER TABLE sessions ADD COLUMN workspace TEXT' },
+      { column: 'last_token_usage', sql: 'ALTER TABLE sessions ADD COLUMN last_token_usage TEXT' },
+    ];
+
+    for (const migration of migrations) {
+      try {
+        this.db.exec(migration.sql);
+      } catch {
+        // 列已存在，忽略
+      }
+    }
   }
 
   private createTables(): void {
@@ -223,8 +248,8 @@ export class DatabaseService {
     if (!this.db) throw new Error('Database not initialized');
 
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -235,7 +260,10 @@ export class DatabaseService {
       session.modelConfig.model,
       session.workingDirectory || null,
       session.createdAt,
-      session.updatedAt
+      session.updatedAt,
+      session.workspace || null,
+      session.status || 'idle',
+      session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null
     );
   }
 
@@ -314,9 +342,14 @@ export class DatabaseService {
     const stmt = this.db.prepare(`
       UPDATE sessions
       SET title = ?, generation_id = ?, model_provider = ?, model_name = ?,
-          working_directory = ?, updated_at = ?
+          working_directory = ?, updated_at = ?, workspace = ?, status = ?, last_token_usage = ?
       WHERE id = ?
     `);
+
+    // 处理 lastTokenUsage：如果更新中有新值则使用，否则保留旧值
+    const lastTokenUsage = updates.lastTokenUsage !== undefined
+      ? JSON.stringify(updates.lastTokenUsage)
+      : (session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null);
 
     stmt.run(
       updates.title ?? session.title,
@@ -325,6 +358,9 @@ export class DatabaseService {
       updates.modelConfig?.model ?? session.modelConfig.model,
       updates.workingDirectory ?? session.workingDirectory,
       Date.now(),
+      updates.workspace !== undefined ? updates.workspace : session.workspace,
+      updates.status ?? session.status ?? 'idle',
+      lastTokenUsage,
       sessionId
     );
   }
@@ -384,6 +420,16 @@ export class DatabaseService {
   }
 
   private rowToSession(row: SQLiteRow): StoredSession {
+    // 解析 lastTokenUsage JSON
+    let lastTokenUsage: TokenUsage | undefined;
+    if (row.last_token_usage) {
+      try {
+        lastTokenUsage = JSON.parse(row.last_token_usage as string);
+      } catch {
+        // 解析失败时忽略
+      }
+    }
+
     return {
       id: row.id as string,
       title: row.title as string,
@@ -396,6 +442,10 @@ export class DatabaseService {
       createdAt: row.created_at as number,
       updatedAt: row.updated_at as number,
       messageCount: (row.message_count as number) || 0,
+      // Wave 3 新字段
+      workspace: row.workspace as string | undefined,
+      status: (row.status as SessionStatus) || 'idle',
+      lastTokenUsage,
     };
   }
 

@@ -36,9 +36,6 @@ export { PlanningPanel } from './PlanningPanel';
 export { FindingsPanel } from './FindingsPanel';
 export { ErrorsPanel } from './ErrorsPanel';
 
-// Memory panel (Gen 5+)
-export { MemoryPanel } from './MemoryPanel';
-
 // -----------------------------------------------------------------------------
 // Modal Components
 // -----------------------------------------------------------------------------

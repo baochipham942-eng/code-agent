@@ -107,6 +107,7 @@ export const GENERATION_TOOLS: Record<GenerationId, string[]> = {
     'memory_search',
     'code_index',
     'auto_learn',
+    'ppt_generate',
   ],
 
   // Gen 6: 视觉和 Computer Use
@@ -141,6 +142,7 @@ export const GENERATION_TOOLS: Record<GenerationId, string[]> = {
     'memory_search',
     'code_index',
     'auto_learn',
+    'ppt_generate',
     'screenshot',
     'computer_use',
     'browser_navigate',
@@ -179,6 +181,7 @@ export const GENERATION_TOOLS: Record<GenerationId, string[]> = {
     'memory_search',
     'code_index',
     'auto_learn',
+    'ppt_generate',
     'screenshot',
     'computer_use',
     'browser_navigate',
@@ -220,6 +223,7 @@ export const GENERATION_TOOLS: Record<GenerationId, string[]> = {
     'memory_search',
     'code_index',
     'auto_learn',
+    'ppt_generate',
     'screenshot',
     'computer_use',
     'browser_navigate',

@@ -264,6 +264,177 @@ async function handleSearch(req: VercelRequest, res: VercelResponse) {
 }
 
 // ============================================================================
+// PPT 生成工具
+// ============================================================================
+
+interface PPTSlide {
+  title: string;
+  content: string[];
+  image_prompt?: string;
+}
+
+interface PPTStructure {
+  title: string;
+  theme: string;
+  slides: PPTSlide[];
+}
+
+async function generatePPTContent(
+  topic: string,
+  content: string | undefined,
+  slidesCount: number,
+  needImages: boolean
+): Promise<PPTStructure> {
+  const deepseekKey = process.env.DEEPSEEK_API_KEY;
+
+  if (!deepseekKey) {
+    throw new Error('DEEPSEEK_API_KEY not configured');
+  }
+
+  const systemPrompt = `你是一个专业的演示文稿设计师。根据用户的主题和要求，生成结构化的 PPT 内容。
+
+输出格式要求（JSON）：
+{
+  "title": "演示文稿标题",
+  "theme": "建议主题（default/seriph/dracula）",
+  "slides": [
+    {
+      "title": "幻灯片标题",
+      "content": ["要点1", "要点2", "要点3"],
+      "image_prompt": "如果需要配图，这里填写图片描述（英文）"
+    }
+  ]
+}
+
+注意：
+- 每个幻灯片 3-5 个要点
+- 内容简洁有力，每个要点不超过 20 个字
+- 如果需要配图，image_prompt 用英文描述，便于 AI 生图`;
+
+  const userPrompt = needImages
+    ? `主题：${topic}\n要求：生成 ${slidesCount} 页幻灯片，每页需要配图${content ? `\n大纲：${content}` : ''}`
+    : `主题：${topic}\n要求：生成 ${slidesCount} 页幻灯片${content ? `\n大纲：${content}` : ''}`;
+
+  const response = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${deepseekKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.7,
+      response_format: { type: 'json_object' },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`DeepSeek API error: ${response.status} - ${errorText}`);
+  }
+
+  const result = await response.json() as any;
+  const contentStr = result.choices?.[0]?.message?.content;
+
+  if (!contentStr) {
+    throw new Error('Empty response from DeepSeek');
+  }
+
+  return JSON.parse(contentStr) as PPTStructure;
+}
+
+function convertToSlidevMarkdown(ppt: PPTStructure): string {
+  let markdown = `---
+theme: ${ppt.theme || 'default'}
+title: ${ppt.title}
+class: text-center
+highlighter: shiki
+transition: slide-left
+mdc: true
+---
+
+# ${ppt.title}
+
+<div class="pt-12">
+  <span class="px-2 py-1 rounded cursor-pointer">
+    按空格键继续 →
+  </span>
+</div>
+
+---
+`;
+
+  for (const slide of ppt.slides) {
+    markdown += `
+# ${slide.title}
+
+<v-clicks>
+
+${slide.content.map(c => `- ${c}`).join('\n')}
+
+</v-clicks>
+
+---
+`;
+  }
+
+  markdown += `
+layout: center
+class: text-center
+---
+
+# 谢谢观看
+`;
+
+  return markdown;
+}
+
+async function handlePPT(req: VercelRequest, res: VercelResponse) {
+  const { topic, content, slides_count = 5, need_images = false } = req.body;
+
+  if (!topic) {
+    return res.status(400).json({ success: false, error: 'Topic is required' });
+  }
+
+  const startTime = Date.now();
+
+  try {
+    // 生成 PPT 结构
+    const pptStructure = await generatePPTContent(topic, content, slides_count, need_images);
+
+    // 转换为 Slidev Markdown
+    const slidevMarkdown = convertToSlidevMarkdown(pptStructure);
+
+    // 如果需要配图，收集 image prompts
+    const imagePrompts = need_images
+      ? pptStructure.slides
+          .filter(s => s.image_prompt)
+          .map(s => ({ slide: s.title, prompt: s.image_prompt }))
+      : [];
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        structure: pptStructure,
+        markdown: slidevMarkdown,
+        image_prompts: imagePrompts,
+      },
+      duration: Date.now() - startTime,
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+      duration: Date.now() - startTime,
+    });
+  }
+}
+
+// ============================================================================
 // 主处理函数
 // ============================================================================
 
@@ -284,13 +455,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return handleScrape(req, res);
     case 'search':
       return handleSearch(req, res);
+    case 'ppt':
+      return handlePPT(req, res);
     default:
       return res.status(400).json({
-        error: 'Invalid action. Use: api, scrape, search',
+        error: 'Invalid action. Use: api, scrape, search, ppt',
         examples: {
           api: 'POST /api/tools?action=api',
           scrape: 'POST /api/tools?action=scrape',
           search: 'POST /api/tools?action=search',
+          ppt: 'POST /api/tools?action=ppt',
         },
       });
   }

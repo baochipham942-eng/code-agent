@@ -131,6 +131,153 @@ const extractCreatedFilePath = (toolCall: { name: string; arguments?: Record<str
   return (toolCall.arguments?.file_path as string) || null;
 };
 
+// Extract image info from image_generate result
+interface ImageGenerateResult {
+  imagePath?: string;
+  imageBase64?: string;
+}
+
+const extractImageGenerateResult = (toolCall: { name: string; result?: { success: boolean; metadata?: ImageGenerateResult } }): ImageGenerateResult | null => {
+  if (toolCall.name !== 'image_generate' || !toolCall.result?.success) return null;
+  const metadata = toolCall.result.metadata;
+  if (!metadata) return null;
+  if (metadata.imagePath || metadata.imageBase64) {
+    return metadata;
+  }
+  return null;
+};
+
+// Image Result Display Component
+interface ImageResultDisplayProps {
+  imagePath?: string;
+  imageBase64?: string;
+}
+
+const ImageResultDisplay: React.FC<ImageResultDisplayProps> = ({ imagePath, imageBase64 }) => {
+  const [imageError, setImageError] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // Convert file path to file:// URL for local images
+  const imageSrc = imagePath
+    ? `file://${imagePath}`
+    : imageBase64
+      ? imageBase64.startsWith('data:') ? imageBase64 : `data:image/png;base64,${imageBase64}`
+      : '';
+
+  const handleOpenFile = async () => {
+    if (imagePath) {
+      try {
+        await window.domainAPI?.invoke('workspace', 'openPath', { filePath: imagePath });
+      } catch (error) {
+        console.error('Failed to open image:', error);
+      }
+    }
+  };
+
+  const handleShowInFolder = async () => {
+    if (imagePath) {
+      try {
+        await window.domainAPI?.invoke('workspace', 'showItemInFolder', { filePath: imagePath });
+      } catch (error) {
+        console.error('Failed to show in folder:', error);
+      }
+    }
+  };
+
+  const fileName = imagePath?.split('/').pop() || 'generated-image.png';
+
+  if (imageError || !imageSrc) {
+    // Fallback to file display if image fails to load
+    if (imagePath) {
+      return (
+        <div className="flex items-center gap-3 p-3 rounded-lg border bg-purple-500/10 border-purple-500/30">
+          <div className="p-2 rounded-lg bg-purple-500/10 text-purple-400">
+            <Image className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-medium truncate text-purple-400" title={imagePath}>
+              {fileName}
+            </div>
+            <div className="text-xs text-zinc-500 truncate" title={imagePath}>
+              {imagePath}
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={handleOpenFile}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-700/50 text-zinc-300 hover:bg-zinc-600/50 text-xs transition-colors border border-zinc-600/30"
+              title="Open with default application"
+            >
+              <ExternalLink className="w-3 h-3" />
+              Open
+            </button>
+            <button
+              onClick={handleShowInFolder}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-700/50 text-zinc-300 hover:bg-zinc-600/50 text-xs transition-colors border border-zinc-600/30"
+              title="Show in Finder"
+            >
+              <Folder className="w-3 h-3" />
+              Finder
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  }
+
+  return (
+    <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 overflow-hidden">
+      {/* Image preview */}
+      <div
+        className={`relative cursor-pointer transition-all duration-300 ${isExpanded ? '' : 'max-h-64'}`}
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <img
+          src={imageSrc}
+          alt="Generated image"
+          className={`w-full object-contain ${isExpanded ? '' : 'max-h-64'}`}
+          onError={() => setImageError(true)}
+        />
+        {!isExpanded && (
+          <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-zinc-900/80 to-transparent flex items-end justify-center pb-1">
+            <span className="text-xs text-zinc-400">点击展开</span>
+          </div>
+        )}
+      </div>
+
+      {/* Action bar */}
+      <div className="flex items-center gap-2 p-2 bg-zinc-900/50 border-t border-purple-500/20">
+        <div className="flex-1 min-w-0">
+          <div className="text-xs text-purple-400 truncate" title={imagePath || 'Base64 图片'}>
+            🎨 {fileName}
+          </div>
+        </div>
+        {imagePath && (
+          <>
+            <button
+              onClick={handleOpenFile}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-700/50 text-zinc-300 hover:bg-zinc-600/50 text-xs transition-colors border border-zinc-600/30"
+              title="Open with default application"
+            >
+              <ExternalLink className="w-3 h-3" />
+              Open
+            </button>
+            <button
+              onClick={handleShowInFolder}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-700/50 text-zinc-300 hover:bg-zinc-600/50 text-xs transition-colors border border-zinc-600/30"
+              title="Show in Finder"
+            >
+              <Folder className="w-3 h-3" />
+              Finder
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // File Link Component
 interface FileResultDisplayProps {
   filePath: string;
@@ -421,6 +568,9 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
   const createdFilePath = useMemo(() => extractCreatedFilePath(toolCall), [toolCall]);
   const isHtmlFile = createdFilePath?.toLowerCase().endsWith('.html') || createdFilePath?.toLowerCase().endsWith('.htm');
 
+  // Extract image generate result
+  const imageResult = useMemo(() => extractImageGenerateResult(toolCall), [toolCall]);
+
   const config = statusConfig[status];
 
   // Compact mode rendering for Cowork display
@@ -516,6 +666,16 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
           }}
         >
           <div className="px-4 pb-3 pt-2 border-t border-zinc-700/30">
+            {/* Image result display for image_generate success */}
+            {imageResult && status === 'success' && (
+              <div className="mb-3">
+                <ImageResultDisplay
+                  imagePath={imageResult.imagePath}
+                  imageBase64={imageResult.imageBase64}
+                />
+              </div>
+            )}
+
             {/* File result display for write_file success */}
             {createdFilePath && status === 'success' && (
               <div className="mb-3">
@@ -528,7 +688,7 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
             )}
 
             {/* Simplified result - no raw JSON, just human-readable text */}
-            {compactResult && (
+            {compactResult && !imageResult && (
               <div className={`text-sm px-3 py-2 rounded-lg ${
                 hasError
                   ? 'bg-red-500/10 text-red-300 border border-red-500/20'
@@ -704,6 +864,16 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
                 )}
               </div>
 
+              {/* Image result display for image_generate success */}
+              {imageResult && status === 'success' && (
+                <div className="mb-3">
+                  <ImageResultDisplay
+                    imagePath={imageResult.imagePath}
+                    imageBase64={imageResult.imageBase64}
+                  />
+                </div>
+              )}
+
               {/* File result display for write_file success */}
               {createdFilePath && status === 'success' && (
                 <div className="mb-3">
@@ -715,18 +885,20 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
                 </div>
               )}
 
-              {/* Standard result output */}
-              <pre className={`text-xs bg-zinc-900/50 rounded-lg p-3 overflow-x-auto max-h-48 border transition-colors duration-200 ${
-                status === 'error'
-                  ? 'text-red-300 border-red-500/20'
-                  : 'text-zinc-400 border-zinc-800/50'
-              }`}>
-                {toolCall.result.error
-                  ? toolCall.result.error
-                  : typeof toolCall.result.output === 'string'
-                    ? toolCall.result.output
-                    : JSON.stringify(toolCall.result.output, null, 2)}
-              </pre>
+              {/* Standard result output - hide for image_generate with image result */}
+              {!imageResult && (
+                <pre className={`text-xs bg-zinc-900/50 rounded-lg p-3 overflow-x-auto max-h-48 border transition-colors duration-200 ${
+                  status === 'error'
+                    ? 'text-red-300 border-red-500/20'
+                    : 'text-zinc-400 border-zinc-800/50'
+                }`}>
+                  {toolCall.result.error
+                    ? toolCall.result.error
+                    : typeof toolCall.result.output === 'string'
+                      ? toolCall.result.output
+                      : JSON.stringify(toolCall.result.output, null, 2)}
+                </pre>
+              )}
             </div>
           )}
 

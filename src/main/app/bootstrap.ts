@@ -31,7 +31,7 @@ import { GenerationManager } from '../generation/generationManager';
 import { createPlanningService, type PlanningService } from '../planning';
 import { getSessionManager, notificationService } from '../services';
 import { getTaskManager, type TaskManager } from '../task';
-import type { PlanningState } from '../../shared/types';
+import type { PlanningState, ToolCall } from '../../shared/types';
 
 const logger = createLogger('Bootstrap');
 
@@ -375,8 +375,11 @@ async function initializeServices(): Promise<void> {
   // Initialize generation manager
   generationManager = new GenerationManager();
 
-  // Track current assistant message for updating tool results
-  let currentAssistantMessageId: string | null = null;
+  // Track current assistant message for aggregating multiple messages in a turn
+  // This prevents creating multiple database records for a single agent turn
+  let currentTurnMessageId: string | null = null;
+  let accumulatedToolCalls: ToolCall[] = [];
+  let accumulatedContent = '';
 
   // Initialize agent orchestrator
   agentOrchestrator = new AgentOrchestrator({
@@ -391,41 +394,70 @@ async function initializeServices(): Promise<void> {
         logger.warn('mainWindow is null, cannot send event');
       }
 
-      // Persist assistant messages
+      // Aggregate assistant messages within a single turn
+      // Instead of creating a new DB record for each message event,
+      // we accumulate them and only persist one aggregated message per turn
       if (event.type === 'message' && event.data?.role === 'assistant') {
-        currentAssistantMessageId = event.data.id;
+        const message = event.data;
+
+        // Accumulate tool calls if present
+        if (message.toolCalls && message.toolCalls.length > 0) {
+          accumulatedToolCalls.push(...message.toolCalls);
+        }
+
+        // Accumulate content if present
+        if (message.content) {
+          accumulatedContent = message.content; // Use latest content (final response)
+        }
+
         try {
           const sessionManager = getSessionManager();
-          await sessionManager.addMessage(event.data);
+
+          if (!currentTurnMessageId) {
+            // First message in this turn - create new record
+            currentTurnMessageId = message.id;
+            await sessionManager.addMessage({
+              ...message,
+              toolCalls: accumulatedToolCalls.length > 0 ? [...accumulatedToolCalls] : undefined,
+              content: accumulatedContent,
+            });
+          } else {
+            // Subsequent message in this turn - update existing record
+            await sessionManager.updateMessage(currentTurnMessageId, {
+              toolCalls: accumulatedToolCalls.length > 0 ? [...accumulatedToolCalls] : undefined,
+              content: accumulatedContent,
+            });
+          }
         } catch (error) {
-          logger.error('Failed to save assistant message', error);
+          logger.error('Failed to save/update assistant message', error);
         }
       }
 
       // Update tool call results
-      if (event.type === 'tool_call_end' && currentAssistantMessageId && event.data) {
+      if (event.type === 'tool_call_end' && currentTurnMessageId && event.data) {
         try {
-          const sessionManager = getSessionManager();
-          const session = await sessionManager.getCurrentSession();
-          if (session) {
-            const currentMessage = session.messages.find((m) => m.id === currentAssistantMessageId);
-            if (currentMessage?.toolCalls) {
-              const updatedToolCalls = currentMessage.toolCalls.map((tc) =>
-                tc.id === event.data.toolCallId
-                  ? { ...tc, result: event.data }
-                  : tc
-              );
-              await sessionManager.updateMessage(currentAssistantMessageId, { toolCalls: updatedToolCalls });
-            }
+          // Update accumulated tool calls with results
+          const toolCallId = event.data.toolCallId;
+          const idx = accumulatedToolCalls.findIndex((tc) => tc.id === toolCallId);
+          if (idx !== -1) {
+            accumulatedToolCalls[idx] = { ...accumulatedToolCalls[idx], result: event.data };
           }
+
+          // Persist the update
+          const sessionManager = getSessionManager();
+          await sessionManager.updateMessage(currentTurnMessageId, {
+            toolCalls: [...accumulatedToolCalls],
+          });
         } catch (error) {
           logger.error('Failed to update tool call result', error);
         }
       }
 
-      // Clear current message reference
-      if (event.type === 'agent_complete') {
-        currentAssistantMessageId = null;
+      // Reset turn state when turn ends or agent completes
+      if (event.type === 'turn_end' || event.type === 'agent_complete') {
+        currentTurnMessageId = null;
+        accumulatedToolCalls = [];
+        accumulatedContent = '';
       }
 
       // Send desktop notification on task complete

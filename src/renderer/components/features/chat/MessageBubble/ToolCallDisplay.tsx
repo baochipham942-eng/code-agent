@@ -33,11 +33,183 @@ import {
   AlertCircle,
   Play,
   Clock,
+  FileSpreadsheet,
+  Image,
+  File,
+  ExternalLink,
+  Folder,
 } from 'lucide-react';
 import type { ToolCallDisplayProps, ToolStatus, ToolStatusConfig } from './types';
 import { useAppStore } from '../../../../stores/appStore';
 import { summarizeToolCall, getToolStatusText } from '../../../../utils/toolSummary';
 import { DiffView, DiffPreview } from '../../../DiffView';
+
+// ============================================================================
+// File Type Utilities
+// ============================================================================
+
+interface FileTypeConfig {
+  icon: React.ReactNode;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+}
+
+const getFileTypeConfig = (filePath: string): FileTypeConfig => {
+  const ext = filePath.split('.').pop()?.toLowerCase() || '';
+
+  switch (ext) {
+    case 'xlsx':
+    case 'xls':
+    case 'csv':
+      return {
+        icon: <FileSpreadsheet className="w-4 h-4" />,
+        color: 'text-emerald-400',
+        bgColor: 'bg-emerald-500/10',
+        borderColor: 'border-emerald-500/30',
+      };
+    case 'pdf':
+      return {
+        icon: <FileText className="w-4 h-4" />,
+        color: 'text-red-400',
+        bgColor: 'bg-red-500/10',
+        borderColor: 'border-red-500/30',
+      };
+    case 'png':
+    case 'jpg':
+    case 'jpeg':
+    case 'gif':
+    case 'webp':
+    case 'svg':
+      return {
+        icon: <Image className="w-4 h-4" />,
+        color: 'text-purple-400',
+        bgColor: 'bg-purple-500/10',
+        borderColor: 'border-purple-500/30',
+      };
+    case 'html':
+    case 'htm':
+      return {
+        icon: <Globe className="w-4 h-4" />,
+        color: 'text-blue-400',
+        bgColor: 'bg-blue-500/10',
+        borderColor: 'border-blue-500/30',
+      };
+    case 'json':
+    case 'js':
+    case 'ts':
+    case 'tsx':
+    case 'jsx':
+      return {
+        icon: <FileCode className="w-4 h-4" />,
+        color: 'text-yellow-400',
+        bgColor: 'bg-yellow-500/10',
+        borderColor: 'border-yellow-500/30',
+      };
+    default:
+      return {
+        icon: <File className="w-4 h-4" />,
+        color: 'text-zinc-400',
+        bgColor: 'bg-zinc-500/10',
+        borderColor: 'border-zinc-500/30',
+      };
+  }
+};
+
+// Extract file path from write_file result
+const extractCreatedFilePath = (toolCall: { name: string; arguments?: Record<string, unknown>; result?: { success: boolean; output?: unknown } }): string | null => {
+  if (toolCall.name !== 'write_file' || !toolCall.result?.success) return null;
+
+  const output = toolCall.result?.output as string;
+  if (output) {
+    // Try to extract path from "Created file: /path/to/file" or "Updated file: /path/to/file"
+    const match = output.match(/(?:Created|Updated) file: (.+)/);
+    if (match) return match[1].trim();
+  }
+
+  // Fallback to arguments
+  return (toolCall.arguments?.file_path as string) || null;
+};
+
+// File Link Component
+interface FileResultDisplayProps {
+  filePath: string;
+  isHtml: boolean;
+  onPreview: () => void;
+}
+
+const FileResultDisplay: React.FC<FileResultDisplayProps> = ({ filePath, isHtml, onPreview }) => {
+  const fileConfig = getFileTypeConfig(filePath);
+  const fileName = filePath.split('/').pop() || filePath;
+
+  const handleOpenFile = async () => {
+    try {
+      await window.domainAPI?.invoke('workspace', 'openPath', { filePath });
+    } catch (error) {
+      console.error('Failed to open file:', error);
+    }
+  };
+
+  const handleShowInFolder = async () => {
+    try {
+      await window.domainAPI?.invoke('workspace', 'showItemInFolder', { filePath });
+    } catch (error) {
+      console.error('Failed to show in folder:', error);
+    }
+  };
+
+  return (
+    <div className={`flex items-center gap-3 p-3 rounded-lg border ${fileConfig.bgColor} ${fileConfig.borderColor}`}>
+      {/* File icon */}
+      <div className={`p-2 rounded-lg ${fileConfig.bgColor} ${fileConfig.color}`}>
+        {fileConfig.icon}
+      </div>
+
+      {/* File name with tooltip */}
+      <div className="flex-1 min-w-0">
+        <div
+          className={`text-sm font-medium truncate ${fileConfig.color}`}
+          title={filePath}
+        >
+          {fileName}
+        </div>
+        <div className="text-xs text-zinc-500 truncate" title={filePath}>
+          {filePath}
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        {isHtml && (
+          <button
+            onClick={onPreview}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 text-xs transition-colors border border-blue-500/30"
+            title="Preview in sidebar"
+          >
+            <Play className="w-3 h-3" />
+            Preview
+          </button>
+        )}
+        <button
+          onClick={handleOpenFile}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-700/50 text-zinc-300 hover:bg-zinc-600/50 text-xs transition-colors border border-zinc-600/30"
+          title="Open with default application"
+        >
+          <ExternalLink className="w-3 h-3" />
+          Open
+        </button>
+        <button
+          onClick={handleShowInFolder}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-700/50 text-zinc-300 hover:bg-zinc-600/50 text-xs transition-colors border border-zinc-600/30"
+          title="Show in Finder"
+        >
+          <Folder className="w-3 h-3" />
+          Finder
+        </button>
+      </div>
+    </div>
+  );
+};
 
 // Tool icon mapping - 统一使用 Lucide 图标
 const getToolIcon = (name: string): React.ReactNode => {
@@ -245,48 +417,140 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
     newString: (toolCall.arguments?.new_string as string) || '',
   } : null;
 
-  // Check if this is an HTML file creation
-  const getHtmlFilePath = (): string | null => {
-    if (toolCall.name === 'write_file' && toolCall.result?.success) {
-      // Prefer extracting the absolute path from result output
-      const output = toolCall.result?.output as string;
-      if (output && output.includes('.html')) {
-        const match = output.match(/(?:Created|Updated) file: (.+\.html)/);
-        if (match) return match[1];
-      }
-      // Fallback to arguments
-      const filePath = toolCall.arguments?.file_path as string;
-      if (filePath && filePath.endsWith('.html')) {
-        return filePath;
-      }
-    }
-    return null;
-  };
+  // Extract created file path from write_file result
+  const createdFilePath = useMemo(() => extractCreatedFilePath(toolCall), [toolCall]);
+  const isHtmlFile = createdFilePath?.toLowerCase().endsWith('.html') || createdFilePath?.toLowerCase().endsWith('.htm');
 
   const config = statusConfig[status];
-  const htmlFilePath = getHtmlFilePath();
 
   // Compact mode rendering for Cowork display
+  // Shows human-readable summary without technical details
   if (compact) {
+    // Simplified result text for compact mode
+    const getCompactResultText = (): string | null => {
+      if (!toolCall.result) return null;
+      if (toolCall.result.error) return toolCall.result.error;
+      if (!toolCall.result.success) return '操作失败';
+
+      // For successful operations, show brief summary
+      switch (toolCall.name) {
+        case 'write_file':
+          return '文件已创建';
+        case 'edit_file':
+          return '文件已修改';
+        case 'read_file':
+          return '文件已读取';
+        case 'bash':
+          return '命令已执行';
+        case 'glob':
+        case 'grep':
+        case 'list_directory':
+          return '搜索完成';
+        default:
+          return '操作成功';
+      }
+    };
+
+    const compactResult = getCompactResultText();
+    const hasError = status === 'error';
+
     return (
       <div
-        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800/30 border border-zinc-700/30"
+        className={`rounded-xl bg-zinc-800/40 border overflow-hidden transition-all duration-300 ${
+          expanded ? 'shadow-lg border-zinc-600/60' : 'border-zinc-700/50'
+        } ${status === 'pending' ? 'ring-1 ring-amber-500/30' : ''}`}
         style={{ animationDelay: `${index * 30}ms` }}
       >
-        {/* Tool icon */}
-        <div className={`p-1.5 rounded ${config.bg} ${config.text}`}>
-          {getToolIcon(toolCall.name)}
+        {/* Header - Collapsible trigger */}
+        <button
+          onClick={toggleExpanded}
+          className={`w-full flex items-center gap-3 px-4 py-2.5 transition-all duration-200 ${
+            expanded ? 'bg-zinc-700/30' : 'hover:bg-zinc-700/20'
+          }`}
+        >
+          {/* Expand/Collapse indicator */}
+          <div
+            className={`flex-shrink-0 transition-transform duration-300 ease-out ${
+              expanded ? 'rotate-0' : '-rotate-90'
+            }`}
+          >
+            <ChevronDown className="w-4 h-4 text-zinc-500" />
+          </div>
+
+          {/* Tool icon */}
+          <div className={`flex-shrink-0 p-1.5 rounded-lg transition-colors duration-200 ${config.bg} ${config.text}`}>
+            {getToolIcon(toolCall.name)}
+          </div>
+
+          {/* Summary - human readable */}
+          <span className="text-sm text-zinc-300 flex-1 truncate text-left">{summary}</span>
+
+          {/* Preview button for HTML files */}
+          {isHtmlFile && createdFilePath && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                openPreview(createdFilePath);
+              }}
+              className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 text-xs transition-colors border border-blue-500/30"
+              title="Preview in sidebar"
+            >
+              <Play className="w-3 h-3" />
+              Preview
+            </button>
+          )}
+
+          {/* Status indicator */}
+          <div className={`flex-shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${config.bg} ${config.text} ${config.border} border`}>
+            {config.icon}
+            <span>{statusText}</span>
+          </div>
+        </button>
+
+        {/* Expandable content - simplified for compact mode */}
+        <div
+          className={`overflow-hidden transition-all duration-300 ease-out`}
+          style={{
+            maxHeight: expanded ? '500px' : '0px',
+            opacity: expanded ? 1 : 0,
+          }}
+        >
+          <div className="px-4 pb-3 pt-2 border-t border-zinc-700/30">
+            {/* File result display for write_file success */}
+            {createdFilePath && status === 'success' && (
+              <div className="mb-3">
+                <FileResultDisplay
+                  filePath={createdFilePath}
+                  isHtml={isHtmlFile || false}
+                  onPreview={() => openPreview(createdFilePath)}
+                />
+              </div>
+            )}
+
+            {/* Simplified result - no raw JSON, just human-readable text */}
+            {compactResult && (
+              <div className={`text-sm px-3 py-2 rounded-lg ${
+                hasError
+                  ? 'bg-red-500/10 text-red-300 border border-red-500/20'
+                  : 'bg-zinc-900/50 text-zinc-400 border border-zinc-800/50'
+              }`}>
+                {compactResult}
+              </div>
+            )}
+
+            {/* Pending indicator */}
+            {status === 'pending' && (
+              <div className="flex items-center gap-2 text-xs text-amber-400/80 mt-2">
+                <div className="flex gap-1">
+                  <span className="typing-dot w-1.5 h-1.5 bg-amber-400 rounded-full" />
+                  <span className="typing-dot w-1.5 h-1.5 bg-amber-400 rounded-full" />
+                  <span className="typing-dot w-1.5 h-1.5 bg-amber-400 rounded-full" />
+                </div>
+                <span>执行中...</span>
+              </div>
+            )}
+          </div>
         </div>
-
-        {/* Summary */}
-        <span className="text-xs text-zinc-400 flex-1 truncate">{summary}</span>
-
-        {/* Status indicator */}
-        <div className={`w-2 h-2 rounded-full ${
-          status === 'success' ? 'bg-emerald-400' :
-          status === 'error' ? 'bg-red-400' :
-          'bg-amber-400 animate-pulse'
-        }`} />
       </div>
     );
   }
@@ -344,12 +608,12 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
           />
         )}
 
-        {/* Preview button for HTML files */}
-        {htmlFilePath && (
+        {/* Preview button for HTML files - shown in header */}
+        {isHtmlFile && createdFilePath && (
           <button
             onClick={(e) => {
               e.stopPropagation();
-              openPreview(htmlFilePath);
+              openPreview(createdFilePath);
             }}
             className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 text-xs transition-colors border border-blue-500/30"
             title="Preview in sidebar"
@@ -439,6 +703,19 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
                   </span>
                 )}
               </div>
+
+              {/* File result display for write_file success */}
+              {createdFilePath && status === 'success' && (
+                <div className="mb-3">
+                  <FileResultDisplay
+                    filePath={createdFilePath}
+                    isHtml={isHtmlFile || false}
+                    onPreview={() => openPreview(createdFilePath)}
+                  />
+                </div>
+              )}
+
+              {/* Standard result output */}
               <pre className={`text-xs bg-zinc-900/50 rounded-lg p-3 overflow-x-auto max-h-48 border transition-colors duration-200 ${
                 status === 'error'
                   ? 'text-red-300 border-red-500/20'

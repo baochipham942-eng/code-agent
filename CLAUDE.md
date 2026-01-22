@@ -73,7 +73,7 @@ npm run typecheck    # 类型检查
 | Gen2 | + glob, grep, list_directory |
 | Gen3 | + task, todo_write, ask_user_question |
 | Gen4 | + skill, web_fetch, read_pdf, mcp, mcp_list_tools, mcp_list_resources, mcp_read_resource, mcp_get_status |
-| Gen5 | + memory_store, memory_search, code_index |
+| Gen5 | + memory_store, memory_search, code_index, ppt_generate |
 | Gen6 | + screenshot, computer_use, browser_action |
 | Gen7 | + spawn_agent, agent_message, workflow_orchestrate |
 | Gen8 | + strategy_optimize, tool_create, self_evaluate |
@@ -159,6 +159,29 @@ mcp { "server": "deepwiki", "tool": "ask_question", "arguments": { "repoName": "
 | `filesystem` | Stdio | ❌ | 文件系统访问 |
 | `git` | Stdio | ❌ | Git 版本控制 |
 | `brave-search` | Stdio | 需 BRAVE_API_KEY | 网络搜索 |
+
+### Gen5 PPT 生成
+
+`ppt_generate` 工具支持两种引擎生成演示文稿：
+
+| 引擎 | 场景 | 特点 |
+|------|------|------|
+| `slidev` | 技术演示、代码展示 | 本地生成，基于 Markdown，免费快速 |
+| `presenton` | 商务汇报、需要配图 | 云端 LLM 生成内容，支持 AI 配图 prompts |
+
+**使用示例：**
+
+```bash
+# 技术演示 - 使用 Slidev（本地）
+ppt_generate { "topic": "React 18 新特性", "slides_count": 5, "engine": "slidev" }
+
+# 商务演示 - 使用云端 LLM（带配图 prompts）
+ppt_generate { "topic": "公司年度总结", "slides_count": 10, "engine": "presenton", "need_images": true }
+```
+
+**输出**：生成 Slidev 项目目录，包含 `slides.md` 和 `package.json`，可直接 `npm install && npm run dev` 预览。
+
+**配图流程**：如果 `need_images: true`，工具会返回每页幻灯片的图片描述（英文 prompt），可配合 `image_generate` 工具生成配图。
 
 ## 云端 Prompt 管理
 

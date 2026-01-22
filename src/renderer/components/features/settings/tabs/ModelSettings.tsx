@@ -258,7 +258,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
             管理员功能
           </h4>
           <p className="text-xs text-zinc-500 mb-3">
-            从云端同步系统 API Key 到本地，用于图片生成等高级功能。
+            系统 API Key 会在登录时自动同步到本地。如需手动重新同步，点击下方按钮。
           </p>
           <Button
             onClick={handleSyncApiKeys}
@@ -267,7 +267,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
             variant="secondary"
             leftIcon={!isSyncing ? <CloudDownload className="w-4 h-4" /> : undefined}
           >
-            {isSyncing ? '同步中...' : '同步云端 API Key'}
+            {isSyncing ? '同步中...' : '重新同步云端 API Key'}
           </Button>
 
           {syncMessage && (

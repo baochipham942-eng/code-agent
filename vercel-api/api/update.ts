@@ -27,7 +27,7 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.8.23',
+  version: '0.8.28',
   publishedAt: '2026-01-22T18:00:00.000Z',
   releaseNotes: `
 ## Code Agent v0.8.23

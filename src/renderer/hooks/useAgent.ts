@@ -90,11 +90,18 @@ export const useAgent = () => {
   useEffect(() => {
     const unsubscribe = window.electronAPI?.on(
       'agent:event',
-      (event: { type: string; data: any }) => {
+      (event: { type: string; data: any; sessionId?: string }) => {
         // 只对非流式事件打印日志，避免控制台刷屏
         const silentEvents = ['stream_chunk', 'stream_tool_call_delta'];
         if (!silentEvents.includes(event.type)) {
-          logger.debug('Received event', { type: event.type });
+          logger.debug('Received event', { type: event.type, sessionId: event.sessionId });
+        }
+
+        // 会话隔离：只处理属于当前会话的事件
+        const currentSessionId = useSessionStore.getState().currentSessionId;
+        if (event.sessionId && event.sessionId !== currentSessionId) {
+          // 事件属于其他会话，忽略
+          return;
         }
 
         // Always get the latest messages from ref

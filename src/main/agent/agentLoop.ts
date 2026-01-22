@@ -954,6 +954,7 @@ export class AgentLoop {
         output: result.output,
         error: result.error,
         duration: Date.now() - startTime,
+        metadata: result.metadata, // 保留工具返回的元数据（如图片路径、base64 等）
       };
 
       logger.debug(` Tool ${toolCall.name} completed in ${toolResult.duration}ms`);

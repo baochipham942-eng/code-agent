@@ -27,22 +27,28 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.8.23',
-  publishedAt: '2026-01-22T18:00:00.000Z',
+  version: '0.9.0',
+  publishedAt: '2026-01-23T10:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.8.23
+## Code Agent v0.9.0
 
-### Bug 修复
-- 修复无限循环: 添加连续读操作硬限制 (15次强制停止)
-- 修复暂停按钮方块错位: 图标改为自适应容器尺寸
-- 修复系统标签泄露: 过滤 <critical-warning> 等系统标签
-- 修复 edit_file 失败显示: 失败时显示 "编辑文件失败" 而非行数统计
-- 修复 pptxgenjs 依赖: 添加到 esbuild external dependencies
+### 重大更新：宪法式 System Prompt
+- 从「规则式」转向「宪法式」架构，让 Agent 真正有灵魂
+- 参照 Anthropic Claude 新宪法（2026-01-21）设计
+- 统一所有代际的核心价值观：安全 > 伦理 > 指南 > 帮助
+- 新增身份定位、诚实原则、避免伤害、判断原则等模块
+- 简化代际定义，只保留工具差异
+
+### 详细变更
+- 新增 constitution/ 模块（soul, values, ethics, hardConstraints, safety, judgment）
+- 重构 builder.ts，Prompt 组装顺序：宪法 → 代际工具 → 规则
+- 云端 prompts API 升级到 v2.0.0，新增 action=constitution 端点
+- 新增 docs/CONSTITUTION.md 用户文档
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.8.23/Code.Agent-0.8.23-arm64.dmg',
+      url: 'https://github.com/anthropics/code-agent/releases/download/v0.9.0/Code.Agent-0.9.0-arm64.dmg',
       size: 160000000,
     },
   },

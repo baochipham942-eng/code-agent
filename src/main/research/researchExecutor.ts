@@ -281,9 +281,21 @@ export class ResearchExecutor {
       maxConcurrentFetches: this.config.maxConcurrentFetches,
     });
 
-    // 并行执行所有搜索查询
+    // 并行执行所有搜索查询（使用 allSettled 实现错误隔离）
     const searchPromises = queries.map(query => this.executeSearchWithFetch(query));
-    const searchResults = await Promise.all(searchPromises);
+    const searchSettled = await Promise.allSettled(searchPromises);
+
+    // 合并成功的结果，失败的记录日志但不阻断整体流程
+    const searchResults: string[][] = [];
+    for (let i = 0; i < searchSettled.length; i++) {
+      const result = searchSettled[i];
+      if (result.status === 'fulfilled') {
+        searchResults.push(result.value);
+      } else {
+        logger.warn(`Search query failed: ${queries[i]}`, result.reason);
+        searchResults.push([`搜索失败 [${queries[i]}]: ${result.reason?.message || '未知错误'}`]);
+      }
+    }
 
     // 合并结果
     const results = searchResults.flat().filter(r => r.length > 0);
@@ -320,16 +332,20 @@ export class ResearchExecutor {
 
       results.push(`## 搜索: ${query}\n${searchOutput}`);
 
-      // 提取 URL 并并行抓取页面内容
+      // 提取 URL 并并行抓取页面内容（使用 allSettled 实现错误隔离）
       const urls = this.extractUrls(searchOutput).slice(0, this.config.maxFetchPerSearch);
 
       if (urls.length > 0) {
         const fetchPromises = urls.map(url => this.fetchUrl(url));
-        const fetchResults = await Promise.all(fetchPromises);
+        const fetchSettled = await Promise.allSettled(fetchPromises);
 
-        for (const fetchResult of fetchResults) {
-          if (fetchResult) {
-            results.push(fetchResult);
+        for (let i = 0; i < fetchSettled.length; i++) {
+          const result = fetchSettled[i];
+          if (result.status === 'fulfilled' && result.value) {
+            results.push(result.value);
+          } else if (result.status === 'rejected') {
+            // 单个页面抓取失败不影响其他页面
+            logger.debug(`Fetch failed for URL: ${urls[i]}`, result.reason);
           }
         }
       }

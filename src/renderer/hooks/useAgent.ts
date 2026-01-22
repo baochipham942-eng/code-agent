@@ -387,9 +387,17 @@ export const useAgent = () => {
             break;
 
           case 'todo_update':
-            // Update todos
+            // Update todos - only for current session (fix cross-session pollution)
+            // Events from other sessions should be ignored
             if (event.data) {
-              setTodos(event.data);
+              if (!event.sessionId || event.sessionId === currentSessionId) {
+                setTodos(event.data);
+              } else {
+                logger.debug('Ignoring todo_update from different session', {
+                  eventSessionId: event.sessionId,
+                  currentSessionId
+                });
+              }
             }
             break;
 

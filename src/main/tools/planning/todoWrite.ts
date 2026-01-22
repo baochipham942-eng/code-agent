@@ -9,8 +9,24 @@ import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('TodoWrite');
 
-// Global todo state (in-memory, for backward compatibility)
-let currentTodos: TodoItem[] = [];
+// Session-scoped todo state (Map<sessionId, TodoItem[]>)
+// Fix: Use per-session storage to prevent cross-session pollution
+const sessionTodos: Map<string, TodoItem[]> = new Map();
+
+// Get todos for a specific session (or global fallback)
+function getSessionTodos(sessionId?: string): TodoItem[] {
+  if (sessionId && sessionTodos.has(sessionId)) {
+    return sessionTodos.get(sessionId)!;
+  }
+  return [];
+}
+
+// Set todos for a specific session
+function setSessionTodos(sessionId: string | undefined, todos: TodoItem[]): void {
+  if (sessionId) {
+    sessionTodos.set(sessionId, todos);
+  }
+}
 
 // Status icons
 const STATUS_ICONS: Record<TodoStatus, string> = {
@@ -117,16 +133,23 @@ export const todoWriteTool: Tool = {
       }
     }
 
-    // Update in-memory todos (backward compatibility)
-    currentTodos = todos.map((t) => ({
+    // Get sessionId from context (passed through AgentLoop)
+    const sessionId = (context as unknown as { sessionId?: string }).sessionId;
+
+    // Convert to TodoItem array
+    const todoItems: TodoItem[] = todos.map((t) => ({
       content: t.content,
       status: t.status,
       activeForm: t.activeForm,
     }));
 
-    // Emit todo update event if available
+    // Update session-scoped todos (fix cross-session pollution)
+    setSessionTodos(sessionId, todoItems);
+
+    // Emit todo update event with sessionId
+    // Frontend will filter events by sessionId
     if (context.emit) {
-      context.emit('todo_update', currentTodos);
+      context.emit('todo_update', todoItems);
     }
 
     // Handle persistence
@@ -136,9 +159,9 @@ export const todoWriteTool: Tool = {
       if (!planningService) {
         // Gracefully fall back to non-persistent mode
         logger.info('Planning service not available, using in-memory mode');
-        const formatted = formatTodoOutput(currentTodos);
-        const completed = currentTodos.filter((t) => t.status === 'completed').length;
-        const total = currentTodos.length;
+        const formatted = formatTodoOutput(todoItems);
+        const completed = todoItems.filter((t) => t.status === 'completed').length;
+        const total = todoItems.length;
 
         return {
           success: true,
@@ -181,7 +204,7 @@ export const todoWriteTool: Tool = {
           }
 
           const updatedPlan = await planningService.plan.read();
-          const formatted = formatTodoOutput(currentTodos);
+          const formatted = formatTodoOutput(todoItems);
 
           return {
             success: true,
@@ -225,7 +248,7 @@ export const todoWriteTool: Tool = {
             ],
           });
 
-          const formatted = formatTodoOutput(currentTodos);
+          const formatted = formatTodoOutput(todoItems);
 
           return {
             success: true,
@@ -249,9 +272,9 @@ export const todoWriteTool: Tool = {
     }
 
     // Non-persistent mode: just return formatted output
-    const formatted = formatTodoOutput(currentTodos);
-    const completed = currentTodos.filter((t) => t.status === 'completed').length;
-    const total = currentTodos.length;
+    const formatted = formatTodoOutput(todoItems);
+    const completed = todoItems.filter((t) => t.status === 'completed').length;
+    const total = todoItems.length;
 
     return {
       success: true,
@@ -268,12 +291,16 @@ function formatTodoOutput(todos: TodoItem[]): string {
   return todos.map((t) => `${STATUS_ICONS[t.status]} ${t.content}`).join('\n');
 }
 
-// Export function to get current todos (for backward compatibility)
-export function getCurrentTodos(): TodoItem[] {
-  return [...currentTodos];
+// Export function to get current todos for a session (for backward compatibility)
+export function getCurrentTodos(sessionId?: string): TodoItem[] {
+  return [...getSessionTodos(sessionId)];
 }
 
-// Export function to clear todos
-export function clearTodos(): void {
-  currentTodos = [];
+// Export function to clear todos for a session
+export function clearTodos(sessionId?: string): void {
+  if (sessionId) {
+    sessionTodos.delete(sessionId);
+  } else {
+    sessionTodos.clear();
+  }
 }

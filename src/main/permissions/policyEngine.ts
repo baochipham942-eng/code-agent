@@ -498,7 +498,8 @@ export class PolicyEngine {
     }
 
     if (options?.since) {
-      entries = entries.filter((e) => e.timestamp >= options.since);
+      const sinceTime = options.since;
+      entries = entries.filter((e) => e.timestamp >= sinceTime);
     }
 
     if (options?.limit) {

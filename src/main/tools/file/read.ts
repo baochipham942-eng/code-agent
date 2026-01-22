@@ -1,12 +1,15 @@
 // ============================================================================
 // Read File Tool - Read file contents
 // ============================================================================
+// Enhanced to track file reads for edit_file safety checks
+// ============================================================================
 
 import fs from 'fs/promises';
 import path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { resolvePath } from './pathUtils';
 import { createLogger } from '../../services/infra/logger';
+import { fileReadTracker } from '../fileReadTracker';
 
 const logger = createLogger('ReadFile');
 
@@ -87,12 +90,16 @@ Returns: File content with line numbers in format "  lineNum\\tcontent"`,
     const filePath = resolvePath(inputPath, context.workingDirectory);
 
     try {
-      // Check if file exists
-      await fs.access(filePath);
+      // Get file stats for tracking
+      const stats = await fs.stat(filePath);
 
       // Read file
       const content = await fs.readFile(filePath, 'utf-8');
       const lines = content.split('\n');
+
+      // Record the read in the tracker (for edit_file safety checks)
+      const resolvedPath = path.resolve(filePath);
+      fileReadTracker.recordRead(resolvedPath, stats.mtimeMs, stats.size);
 
       // Apply offset and limit
       const startLine = Math.max(0, offset - 1);

@@ -132,17 +132,12 @@ export const ChatView: React.FC = () => {
   );
 };
 
-// Thinking indicator - Claude/ChatGPT style, left-aligned with avatar
+// Thinking indicator - Claude/ChatGPT style, left-aligned, no avatar
 const ThinkingIndicator: React.FC = () => {
   return (
-    <div className="flex gap-3 animate-slideUp">
-      {/* Avatar - same as AssistantMessage */}
-      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-gradient-to-br from-accent-purple to-accent-pink">
-        <Bot className="w-3.5 h-3.5 text-white" />
-      </div>
-
-      {/* Thinking bubble */}
-      <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl rounded-tl-md bg-zinc-800/70 border border-zinc-700/40">
+    <div className="animate-slideUp">
+      {/* Thinking indicator - simple dots */}
+      <div className="inline-flex items-center gap-2">
         {/* Typing dots */}
         <div className="flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '0ms' }} />
@@ -185,14 +180,9 @@ const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ p
   const hasToolProgress = progress.phase === 'tool_running' && progress.toolTotal;
 
   return (
-    <div className="flex gap-3 animate-slideUp">
-      {/* Avatar - same as AssistantMessage */}
-      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-gradient-to-br from-accent-purple to-accent-pink">
-        <Bot className="w-3.5 h-3.5 text-white" />
-      </div>
-
-      {/* Progress bubble */}
-      <div className="inline-flex items-center gap-3 px-4 py-2.5 rounded-2xl rounded-tl-md bg-zinc-800/70 border border-zinc-700/40">
+    <div className="animate-slideUp">
+      {/* Progress indicator - no avatar, simple inline display */}
+      <div className="inline-flex items-center gap-3">
         {/* Status icon and text */}
         <div className="flex items-center gap-2">
           <span className={config.color}>{config.icon}</span>

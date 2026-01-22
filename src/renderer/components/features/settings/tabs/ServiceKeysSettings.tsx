@@ -17,7 +17,7 @@ const logger = createLogger('ServiceKeysSettings');
 // Types
 // ============================================================================
 
-type ServiceKey = 'brave' | 'github' | 'openrouter' | 'langfuse_public' | 'langfuse_secret';
+type ServiceKey = 'brave' | 'github' | 'openrouter' | 'langfuse_public' | 'langfuse_secret' | 'exa' | 'perplexity';
 
 interface ServiceConfig {
   id: ServiceKey;
@@ -40,6 +40,8 @@ export const ServiceKeysSettings: React.FC = () => {
     openrouter: '',
     langfuse_public: '',
     langfuse_secret: '',
+    exa: '',
+    perplexity: '',
   });
   const [visibleKeys, setVisibleKeys] = useState<Record<ServiceKey, boolean>>({
     brave: false,
@@ -47,6 +49,8 @@ export const ServiceKeysSettings: React.FC = () => {
     openrouter: false,
     langfuse_public: false,
     langfuse_secret: false,
+    exa: false,
+    perplexity: false,
   });
   const [saving, setSaving] = useState<ServiceKey | null>(null);
   const [saveStatus, setSaveStatus] = useState<Record<ServiceKey, 'idle' | 'success' | 'error'>>({
@@ -55,6 +59,8 @@ export const ServiceKeysSettings: React.FC = () => {
     openrouter: 'idle',
     langfuse_public: 'idle',
     langfuse_secret: 'idle',
+    exa: 'idle',
+    perplexity: 'idle',
   });
 
   // Load existing keys on mount
@@ -70,6 +76,8 @@ export const ServiceKeysSettings: React.FC = () => {
             openrouter: result.openrouter || '',
             langfuse_public: result.langfuse_public || '',
             langfuse_secret: result.langfuse_secret || '',
+            exa: result.exa || '',
+            perplexity: result.perplexity || '',
           }));
         }
       } catch (error) {
@@ -118,6 +126,22 @@ export const ServiceKeysSettings: React.FC = () => {
       description: '可观测性追踪（私钥）',
       icon: <Eye className="w-4 h-4 text-blue-400" />,
       placeholder: 'sk-lf-...',
+    },
+    {
+      id: 'exa',
+      name: 'EXA',
+      description: '高质量网络搜索（并行数据源）',
+      icon: <Search className="w-4 h-4 text-cyan-400" />,
+      placeholder: 'exa-...',
+      helpUrl: 'https://exa.ai/dashboard',
+    },
+    {
+      id: 'perplexity',
+      name: 'Perplexity',
+      description: 'AI 增强搜索（并行数据源）',
+      icon: <Search className="w-4 h-4 text-green-400" />,
+      placeholder: 'pplx-...',
+      helpUrl: 'https://www.perplexity.ai/settings/api',
     },
   ];
 

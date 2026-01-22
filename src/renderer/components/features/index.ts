@@ -9,6 +9,8 @@ export { ContextUsageIndicator } from './chat/ContextUsageIndicator';
 export type { ContextUsageIndicatorProps, ContextUsageSize } from './chat/ContextUsageIndicator';
 export { ThoughtDisplay, CompactThoughtDisplay } from './chat/ThoughtDisplay';
 export type { ThoughtDisplayProps, CompactThoughtDisplayProps } from './chat/ThoughtDisplay';
+export { TaskStatusBar } from './chat/TaskStatusBar';
+export type { TaskStatusBarProps } from './chat/TaskStatusBar';
 
 // Settings Components
 export {

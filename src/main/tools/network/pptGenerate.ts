@@ -40,7 +40,7 @@ ppt_generate { "topic": "公司年度总结", "slides_count": 10, "engine": "pre
 \`\`\``,
   generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
-  permissionLevel: 'file_write',
+  permissionLevel: 'write',
   inputSchema: {
     type: 'object',
     properties: {
@@ -94,7 +94,7 @@ ppt_generate { "topic": "公司年度总结", "slides_count": 10, "engine": "pre
       theme = 'default',
       output_dir,
       need_images = false,
-    } = params as PPTGenerateParams;
+    } = params as unknown as PPTGenerateParams;
 
     // 确定输出目录
     const outputDir = output_dir || context.workingDirectory;

@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { X, Cpu, Palette, Info, Layers, Globe, Database, Download, Cloud, Plug, Settings, Brain } from 'lucide-react';
+import { X, Cpu, Palette, Info, Layers, Globe, Database, Download, Cloud, Plug, Settings, Brain, Key } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
@@ -26,13 +26,14 @@ import { CloudSettings } from './tabs/CloudSettings';
 import { UpdateSettings } from './tabs/UpdateSettings';
 import { MCPSettings } from './tabs/MCPSettings';
 import { MemorySettings } from './tabs/MemorySettings';
+import { ServiceKeysSettings } from './tabs/ServiceKeysSettings';
 import { AboutSettings } from './tabs/AboutSettings';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type SettingsTab = 'general' | 'model' | 'disclosure' | 'appearance' | 'language' | 'cache' | 'cloud' | 'mcp' | 'memory' | 'update' | 'about';
+type SettingsTab = 'general' | 'model' | 'servicekeys' | 'disclosure' | 'appearance' | 'language' | 'cache' | 'cloud' | 'mcp' | 'memory' | 'update' | 'about';
 
 // ============================================================================
 // Component
@@ -66,6 +67,7 @@ export const SettingsModal: React.FC = () => {
   const tabs: { id: SettingsTab; label: string; icon: React.ReactNode; badge?: boolean }[] = [
     { id: 'general', label: t.settings.tabs.general || '通用', icon: <Settings className="w-4 h-4" /> },
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
+    { id: 'servicekeys', label: 'API Keys', icon: <Key className="w-4 h-4" /> },
     { id: 'disclosure', label: t.settings.tabs.disclosure, icon: <Layers className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
     { id: 'language', label: t.settings.tabs.language, icon: <Globe className="w-4 h-4" /> },
@@ -128,6 +130,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'model' && (
               <ModelSettings config={modelConfig} onChange={setModelConfig} />
             )}
+            {activeTab === 'servicekeys' && <ServiceKeysSettings />}
             {activeTab === 'disclosure' && (
               <DisclosureSettings level={disclosureLevel} onChange={setDisclosureLevel} />
             )}

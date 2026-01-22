@@ -101,6 +101,32 @@ async function handleGetServiceApiKey(
   return configService.getServiceApiKey(payload.service as 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github');
 }
 
+async function handleGetAllServiceKeys(
+  getConfigService: () => ConfigService | null
+): Promise<{
+  brave?: string;
+  github?: string;
+  openrouter?: string;
+  langfuse_public?: string;
+  langfuse_secret?: string;
+}> {
+  const configService = getConfigService();
+  if (!configService) throw new Error('Config service not initialized');
+
+  const services = ['brave', 'github', 'openrouter', 'langfuse_public', 'langfuse_secret'] as const;
+  const result: Record<string, string | undefined> = {};
+
+  for (const service of services) {
+    const key = configService.getServiceApiKey(service);
+    if (key) {
+      // Mask API key for display (show first 8 chars only)
+      result[service] = key.length > 8 ? key.substring(0, 8) + '...' : key;
+    }
+  }
+
+  return result;
+}
+
 async function handleSyncApiKeysFromCloud(
   getConfigService: () => ConfigService | null,
   payload: { authToken: string }
@@ -159,6 +185,9 @@ export function registerSettingsHandlers(
         case 'getServiceApiKey':
           data = await handleGetServiceApiKey(getConfigService, payload as { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' });
           break;
+        case 'getAllServiceKeys':
+          data = await handleGetAllServiceKeys(getConfigService);
+          break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
       }
@@ -207,6 +236,16 @@ export function registerSettingsHandlers(
   /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'testApiKey' */
   ipcMain.handle(IPC_CHANNELS.SETTINGS_TEST_API_KEY, async (_, provider: string, apiKey: string) =>
     handleTestApiKey({ provider, apiKey })
+  );
+
+  /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'getAllServiceKeys' */
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_SERVICE_KEYS, async () =>
+    handleGetAllServiceKeys(getConfigService)
+  );
+
+  /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'setServiceApiKey' */
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY, async (_, payload: { service: 'brave' | 'github' | 'openrouter' | 'langfuse_public' | 'langfuse_secret'; apiKey: string }) =>
+    handleSetServiceApiKey(getConfigService, payload)
   );
 
   /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'minimize' */

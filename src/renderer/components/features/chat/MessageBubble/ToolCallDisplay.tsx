@@ -562,17 +562,19 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
 }) => {
   const openPreview = useAppStore((state) => state.openPreview);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
+  // 订阅处理状态变化，确保组件在状态改变时重新渲染
+  const processingSessionIds = useAppStore((state) => state.processingSessionIds);
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Get status from result
   // 如果工具没有结果，需要判断是正在执行还是被中断
-  const getStatus = (): ToolStatus => {
+  const status: ToolStatus = useMemo(() => {
     if (!toolCall.result) {
       // 检查当前会话是否正在处理
       // 只有当前会话正在处理时，工具才显示为 pending
       // 否则（历史会话或已完成的会话）显示为 interrupted
       const isCurrentSessionProcessing = currentSessionId
-        ? useAppStore.getState().isSessionProcessing(currentSessionId)
+        ? processingSessionIds.has(currentSessionId)
         : false;
 
       if (isCurrentSessionProcessing) {
@@ -582,9 +584,7 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
       return 'interrupted';
     }
     return toolCall.result.success ? 'success' : 'error';
-  };
-
-  const status = getStatus();
+  }, [toolCall.result, currentSessionId, processingSessionIds]);
 
   // Default: expand only when pending (running) or error
   // interrupted 状态默认折叠（历史消息）

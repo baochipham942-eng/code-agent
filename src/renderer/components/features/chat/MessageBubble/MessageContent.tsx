@@ -219,6 +219,29 @@ const InlineCode = memo(function InlineCode({
   );
 });
 
+// System tags that should be filtered from user-visible content
+const SYSTEM_TAG_PATTERNS = [
+  /<critical-warning>[\s\S]*?<\/critical-warning>/g,
+  /<duplicate-call-warning>[\s\S]*?<\/duplicate-call-warning>/g,
+  /<tool-call-format-error>[\s\S]*?<\/tool-call-format-error>/g,
+  /<anti-pattern-warning>[\s\S]*?<\/anti-pattern-warning>/g,
+  /<system-reminder>[\s\S]*?<\/system-reminder>/g,
+  /<loop-prevention>[\s\S]*?<\/loop-prevention>/g,
+];
+
+/**
+ * Filter out system-injected tags that shouldn't be shown to users
+ */
+function filterSystemTags(text: string): string {
+  let filtered = text;
+  for (const pattern of SYSTEM_TAG_PATTERNS) {
+    filtered = filtered.replace(pattern, '');
+  }
+  // Clean up multiple consecutive newlines left by removed tags
+  filtered = filtered.replace(/\n{3,}/g, '\n\n');
+  return filtered.trim();
+}
+
 // Main message content component
 export const MessageContent: React.FC<MessageContentProps> = memo(function MessageContent({ content, isUser }) {
   const openPreview = useAppStore((state) => state.openPreview);
@@ -422,6 +445,9 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     [handleOpenFile, handlePreviewHtml]
   );
 
+  // Filter out system tags before rendering
+  const filteredContent = useMemo(() => filterSystemTags(content), [content]);
+
   return (
     <div className="text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none">
       <ReactMarkdown
@@ -429,7 +455,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         rehypePlugins={[rehypeKatex]}
         components={components}
       >
-        {content}
+        {filteredContent}
       </ReactMarkdown>
     </div>
   );

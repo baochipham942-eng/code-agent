@@ -199,9 +199,16 @@ export class AgentLoop {
   private toolFailureTracker: Map<string, { count: number; lastError: string }> = new Map();
   private maxSameToolFailures: number = 3;
 
+  // Anti-pattern detection: track repeated SUCCESSFUL calls with same arguments (infinite loop prevention)
+  private duplicateCallTracker: Map<string, number> = new Map();
+  private readonly MAX_DUPLICATE_CALLS: number = 3;
+
   // Circuit breaker: consecutive tool call failures
   private consecutiveToolFailures: number = 0;
   private readonly MAX_CONSECUTIVE_FAILURES: number = 5;
+
+  // Hard limit for consecutive read operations (force stop, not just warning)
+  private readonly MAX_CONSECUTIVE_READS_HARD_LIMIT: number = 15;
 
   // Plan Mode support (borrowed from Claude Code v2.0)
   private planModeActive: boolean = false;
@@ -1033,6 +1040,26 @@ export class AgentLoop {
         // Clear failure tracker on success
         const toolKey = `${toolCall.name}:${JSON.stringify(toolCall.arguments)}`;
         this.toolFailureTracker.delete(toolKey);
+
+        // Track duplicate successful calls (infinite loop prevention)
+        const duplicateCount = (this.duplicateCallTracker.get(toolKey) || 0) + 1;
+        this.duplicateCallTracker.set(toolKey, duplicateCount);
+
+        if (duplicateCount >= this.MAX_DUPLICATE_CALLS) {
+          logger.warn(`[AgentLoop] Detected ${duplicateCount} duplicate calls to ${toolCall.name} with same arguments`);
+          this.injectSystemMessage(
+            `<duplicate-call-warning>\n` +
+            `CRITICAL: You have called "${toolCall.name}" ${duplicateCount} times with the EXACT SAME arguments!\n` +
+            `This indicates an infinite loop. You MUST:\n` +
+            `1. STOP calling this tool with the same parameters\n` +
+            `2. The data you need is already available from previous calls\n` +
+            `3. If the task is complete, respond with a completion message\n` +
+            `4. If you need different data, use DIFFERENT parameters\n` +
+            `</duplicate-call-warning>`
+          );
+          // Clear tracker to avoid spamming
+          this.duplicateCallTracker.delete(toolKey);
+        }
       }
 
       // Auto-continuation detection for truncated files
@@ -1063,6 +1090,20 @@ export class AgentLoop {
         this.consecutiveReadOps = 0;
       } else if (readOnlyTools.includes(toolCall.name)) {
         this.consecutiveReadOps++;
+
+        // HARD LIMIT: Force stop if too many consecutive reads (prevents infinite loops)
+        if (this.consecutiveReadOps >= this.MAX_CONSECUTIVE_READS_HARD_LIMIT) {
+          logger.error(`[AgentLoop] HARD LIMIT: ${this.consecutiveReadOps} consecutive read ops! Force stopping.`);
+          logCollector.agent('ERROR', `Hard limit reached: ${this.consecutiveReadOps} consecutive reads, forcing stop`);
+
+          // Return a forced error result to break the loop
+          return {
+            toolCallId: toolCall.id,
+            success: false,
+            error: `操作已被系统中止：检测到无限循环（连续 ${this.consecutiveReadOps} 次只读操作）。请检查任务是否已完成，或尝试其他方法。`,
+            duration: Date.now() - startTime,
+          };
+        }
 
         // Warning threshold: 5 reads before first write, 10 reads after first write
         const warningThreshold = this.hasWrittenFile

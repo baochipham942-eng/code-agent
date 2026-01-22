@@ -36,7 +36,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
   if (isProcessing) {
     return (
       <IconButton
-        icon={<Square className="w-4 h-4 fill-current" />}
+        icon={<Square className="w-full h-full fill-current" />}
         aria-label="停止"
         type="button"
         variant="default"

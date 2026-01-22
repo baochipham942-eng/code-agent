@@ -6,18 +6,25 @@ import type { IpcMain } from 'electron';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { PermissionResponse } from '../../shared/types';
 import type { AgentOrchestrator } from '../agent/agentOrchestrator';
+import type { AgentRunOptions } from '../research/types';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
 // ----------------------------------------------------------------------------
 
+interface SendMessagePayload {
+  content: string;
+  attachments?: unknown[];
+  options?: AgentRunOptions;
+}
+
 async function handleSendMessage(
   getOrchestrator: () => AgentOrchestrator | null,
-  payload: { content: string; attachments?: unknown[] }
+  payload: SendMessagePayload
 ): Promise<void> {
   const orchestrator = getOrchestrator();
   if (!orchestrator) throw new Error('Agent not initialized');
-  await orchestrator.sendMessage(payload.content, payload.attachments);
+  await orchestrator.sendMessage(payload.content, payload.attachments, payload.options);
 }
 
 async function handleCancel(getOrchestrator: () => AgentOrchestrator | null): Promise<void> {
@@ -53,7 +60,7 @@ export function registerAgentHandlers(
     try {
       switch (action) {
         case 'send':
-          await handleSendMessage(getOrchestrator, payload as { content: string; attachments?: unknown[] });
+          await handleSendMessage(getOrchestrator, payload as SendMessagePayload);
           return { success: true, data: null };
         case 'cancel':
           await handleCancel(getOrchestrator);
@@ -80,10 +87,11 @@ export function registerAgentHandlers(
   /** @deprecated Use IPC_DOMAINS.AGENT with action: 'send' */
   ipcMain.handle(
     IPC_CHANNELS.AGENT_SEND_MESSAGE,
-    async (_, payload: string | { content: string; attachments?: unknown[] }) => {
-      const content = typeof payload === 'string' ? payload : payload.content;
-      const attachments = typeof payload === 'object' && payload !== null ? payload.attachments : undefined;
-      return handleSendMessage(getOrchestrator, { content, attachments });
+    async (_, payload: string | SendMessagePayload) => {
+      if (typeof payload === 'string') {
+        return handleSendMessage(getOrchestrator, { content: payload });
+      }
+      return handleSendMessage(getOrchestrator, payload);
     }
   );
 

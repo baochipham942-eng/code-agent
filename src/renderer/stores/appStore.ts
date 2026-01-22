@@ -67,6 +67,9 @@ interface AppState {
   // Model Config
   modelConfig: ModelConfig;
 
+  // Workspace State
+  workingDirectory: string | null;
+
   // Actions
   setShowSettings: (show: boolean) => void;
   setShowWorkspace: (show: boolean) => void;
@@ -92,6 +95,7 @@ interface AppState {
   setModelConfig: (config: ModelConfig) => void;
   clearChat: () => void;
   setCurrentSessionId: (id: string | null) => void;
+  setWorkingDirectory: (dir: string | null) => void;
 }
 
 // Default generation (Gen 1)
@@ -160,6 +164,9 @@ export const useAppStore = create<AppState>((set) => ({
   // Initial Model Config
   modelConfig: defaultModelConfig,
 
+  // Initial Workspace State
+  workingDirectory: null,
+
   // Actions
   setShowSettings: (show) => set({ showSettings: show }),
   setShowWorkspace: (show) => set({ showWorkspace: show }),
@@ -207,4 +214,6 @@ export const useAppStore = create<AppState>((set) => ({
     set({ messages: [], todos: [], taskPlan: null, findings: [], errors: [] }),
 
   setCurrentSessionId: (id) => set({ currentSessionId: id }),
+
+  setWorkingDirectory: (dir) => set({ workingDirectory: dir }),
 }));

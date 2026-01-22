@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import type { AgentEvent } from '../../shared/types';
+import type { AgentEvent, Message } from '../../shared/types';
 import { AgentOrchestrator, type AgentOrchestratorConfig } from '../agent/agentOrchestrator';
 import type { GenerationManager } from '../generation/generationManager';
 import type { ConfigService } from '../services/core/configService';
@@ -330,6 +330,37 @@ export class TaskManager extends EventEmitter {
   }
 
   /**
+   * 设置会话上下文（消息历史）
+   *
+   * 用于恢复会话时加载历史消息，确保 Agent 能够继续之前的对话。
+   *
+   * @param sessionId - 会话 ID
+   * @param messages - 历史消息数组
+   */
+  setSessionContext(sessionId: string, messages: Message[]): void {
+    const wrapper = this.activeOrchestrators.get(sessionId);
+    if (wrapper) {
+      wrapper.orchestrator.setMessages(messages);
+      logger.debug(`Session context set for ${sessionId}, ${messages.length} messages`);
+    } else {
+      // 如果 Orchestrator 还不存在，先创建再设置
+      const newWrapper = this.getOrCreateOrchestrator(sessionId);
+      newWrapper.orchestrator.setMessages(messages);
+      logger.debug(`Created orchestrator and set context for ${sessionId}, ${messages.length} messages`);
+    }
+  }
+
+  /**
+   * 获取会话的 Orchestrator（如果存在）
+   *
+   * @param sessionId - 会话 ID
+   * @returns Orchestrator 实例或 undefined
+   */
+  getOrchestrator(sessionId: string): AgentOrchestrator | undefined {
+    return this.activeOrchestrators.get(sessionId)?.orchestrator;
+  }
+
+  /**
    * 处理权限响应
    */
   handlePermissionResponse(
@@ -530,6 +561,11 @@ export class TaskManager extends EventEmitter {
 
   /**
    * 获取或创建 Orchestrator
+   *
+   * 每个会话有独立的 Orchestrator 实例，确保并行执行时的完全隔离：
+   * - 独立的消息历史
+   * - 独立的工具执行器
+   * - 独立的权限管理
    */
   private getOrCreateOrchestrator(sessionId: string): OrchestratorWrapper {
     let wrapper = this.activeOrchestrators.get(sessionId);
@@ -537,11 +573,13 @@ export class TaskManager extends EventEmitter {
     if (!wrapper) {
       logger.debug(`Creating new orchestrator for session ${sessionId}`);
 
+      // 每个会话创建独立的 Orchestrator，确保完全隔离
       const orchestrator = new AgentOrchestrator({
         generationManager: this.generationManager!,
         configService: this.configService!,
         planningService: this.planningService,
         onEvent: (event: AgentEvent) => {
+          // 事件携带 sessionId，确保前端能正确路由
           this.onAgentEvent!(sessionId, event);
         },
       });
@@ -553,9 +591,34 @@ export class TaskManager extends EventEmitter {
       };
 
       this.activeOrchestrators.set(sessionId, wrapper);
+      logger.info(`Orchestrator created for session ${sessionId}, total active: ${this.activeOrchestrators.size}`);
     }
 
     return wrapper;
+  }
+
+  /**
+   * 检查是否可以启动新任务
+   *
+   * @param sessionId - 会话 ID
+   * @returns 可启动返回 true，否则返回 false 和原因
+   */
+  canStartTask(sessionId: string): { canStart: boolean; reason?: string } {
+    const state = this.sessionStates.get(sessionId);
+
+    if (state?.status === 'running') {
+      return { canStart: false, reason: 'Session already has a running task' };
+    }
+
+    if (state?.status === 'queued') {
+      return { canStart: false, reason: 'Session is already queued' };
+    }
+
+    if (state?.status === 'cancelling') {
+      return { canStart: false, reason: 'Session is being cancelled' };
+    }
+
+    return { canStart: true };
   }
 
   /**

@@ -68,15 +68,20 @@ export async function getApiKey(
   return null;
 }
 
+// 扩展类型，包含 openrouter
+export type ExtendedKeyType = ApiKeyType | 'openrouter';
+
 /**
  * 从环境变量获取系统 API Key
+ * 支持扩展类型（如 openrouter）
  */
-export function getSystemApiKey(keyType: ApiKeyType): string | null {
-  const envMap: Record<ApiKeyType, string> = {
+export function getSystemApiKey(keyType: ExtendedKeyType): string | null {
+  const envMap: Record<ExtendedKeyType, string> = {
     deepseek: 'DEEPSEEK_API_KEY',
     openai: 'OPENAI_API_KEY',
     anthropic: 'ANTHROPIC_API_KEY',
     perplexity: 'PERPLEXITY_API_KEY',
+    openrouter: 'OPENROUTER_API_KEY',
   };
 
   return process.env[envMap[keyType]] || null;

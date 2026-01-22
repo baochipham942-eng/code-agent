@@ -83,6 +83,24 @@ async function handleCheckApiKeyConfigured(): Promise<boolean> {
   return getSecureStorage().getStoredApiKeyProviders().length > 0;
 }
 
+async function handleSetServiceApiKey(
+  getConfigService: () => ConfigService | null,
+  payload: { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter'; apiKey: string }
+): Promise<void> {
+  const configService = getConfigService();
+  if (!configService) throw new Error('Config service not initialized');
+  await configService.setServiceApiKey(payload.service as 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github', payload.apiKey);
+}
+
+async function handleGetServiceApiKey(
+  getConfigService: () => ConfigService | null,
+  payload: { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' }
+): Promise<string | undefined> {
+  const configService = getConfigService();
+  if (!configService) throw new Error('Config service not initialized');
+  return configService.getServiceApiKey(payload.service as 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github');
+}
+
 async function handleSyncApiKeysFromCloud(
   getConfigService: () => ConfigService | null,
   payload: { authToken: string }
@@ -133,6 +151,13 @@ export function registerSettingsHandlers(
           break;
         case 'syncApiKeysFromCloud':
           data = await handleSyncApiKeysFromCloud(getConfigService, payload as { authToken: string });
+          break;
+        case 'setServiceApiKey':
+          await handleSetServiceApiKey(getConfigService, payload as { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter'; apiKey: string });
+          data = null;
+          break;
+        case 'getServiceApiKey':
+          data = await handleGetServiceApiKey(getConfigService, payload as { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' });
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

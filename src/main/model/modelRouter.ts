@@ -639,6 +639,31 @@ export class ModelRouter {
   }
 
   /**
+   * 简便方法：纯文本对话（无工具调用）
+   * 适用于研究模式等只需要文本生成的场景
+   */
+  async chat(options: {
+    provider: ModelProvider;
+    model: string;
+    messages: Array<{ role: string; content: string }>;
+    maxTokens?: number;
+  }): Promise<{ content: string | null }> {
+    const config: ModelConfig = {
+      provider: options.provider,
+      model: options.model,
+      maxTokens: options.maxTokens ?? 2000,
+    };
+
+    const response = await this.inference(
+      options.messages as ModelMessage[],
+      [],
+      config
+    );
+
+    return { content: response.content ?? null };
+  }
+
+  /**
    * 主推理入口
    */
   async inference(

@@ -57,6 +57,45 @@ export interface MemoryLearnedData {
   toolPreferencesUpdated: number;
 }
 
+// Deep Research 相关类型
+export type ResearchPhase = 'planning' | 'researching' | 'reporting' | 'complete' | 'error';
+
+export type ReportStyle =
+  | 'default'
+  | 'academic'
+  | 'popular_science'
+  | 'news'
+  | 'social_media'
+  | 'strategic_investment';
+
+export interface ResearchProgressData {
+  phase: ResearchPhase;
+  message: string;
+  percent: number;
+  currentStep?: {
+    title: string;
+    status: 'running' | 'completed' | 'failed';
+  };
+}
+
+export interface ResearchModeStartedData {
+  topic: string;
+  reportStyle: ReportStyle;
+}
+
+export interface ResearchCompleteData {
+  success: boolean;
+  report?: {
+    title: string;
+    content: string;
+    sources: Array<{ title: string; url: string }>;
+  };
+}
+
+export interface ResearchErrorData {
+  error: string;
+}
+
 export type AgentEvent =
   | { type: 'message'; data: Message }
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string } }
@@ -80,7 +119,12 @@ export type AgentEvent =
   | { type: 'task_progress'; data: TaskProgressData }
   | { type: 'task_complete'; data: TaskCompleteData }
   // Gen5+ Memory 学习事件
-  | { type: 'memory_learned'; data: MemoryLearnedData };
+  | { type: 'memory_learned'; data: MemoryLearnedData }
+  // Deep Research 事件
+  | { type: 'research_mode_started'; data: ResearchModeStartedData }
+  | { type: 'research_progress'; data: ResearchProgressData }
+  | { type: 'research_complete'; data: ResearchCompleteData }
+  | { type: 'research_error'; data: ResearchErrorData };
 
 // Subagent Types (for Gen 3+)
 export type SubagentType = 'explore' | 'bash' | 'plan' | 'code-review';

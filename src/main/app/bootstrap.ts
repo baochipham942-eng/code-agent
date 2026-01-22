@@ -397,15 +397,17 @@ async function initializeServices(): Promise<void> {
         logger.warn('mainWindow is null, cannot send event');
       }
 
-      // Get current session ID for isolation
-      const sessionManager = getSessionManager();
-      const currentSession = await sessionManager.getCurrentSession();
-      const sessionId = currentSession?.id;
+      // 使用事件携带的 sessionId（由 AgentOrchestrator 在发送消息时注入）
+      // 这样即使用户在执行过程中切换会话，事件也会写入正确的会话
+      const eventWithSession = event as typeof event & { sessionId?: string };
+      const sessionId = eventWithSession.sessionId;
 
       if (!sessionId) {
-        logger.warn('No current session, skipping message persistence');
+        logger.warn('No sessionId in event, skipping message persistence');
         return;
       }
+
+      const sessionManager = getSessionManager();
 
       // Aggregate assistant messages within a single turn
       // Instead of creating a new DB record for each message event,
@@ -479,8 +481,8 @@ async function initializeServices(): Promise<void> {
       // Send desktop notification on task complete
       if (event.type === 'task_complete' && event.data) {
         try {
-          const sessionManager = getSessionManager();
-          const session = await sessionManager.getCurrentSession();
+          // 使用事件携带的 sessionId 获取会话信息
+          const session = await sessionManager.getSession(sessionId);
           if (session) {
             notificationService.notifyTaskComplete({
               sessionId: session.id,

@@ -73,7 +73,7 @@ npm run typecheck    # 类型检查
 | Gen2 | + glob, grep, list_directory |
 | Gen3 | + task, todo_write, ask_user_question |
 | Gen4 | + skill, web_fetch, read_pdf, mcp, mcp_list_tools, mcp_list_resources, mcp_read_resource, mcp_get_status |
-| Gen5 | + memory_store, memory_search, code_index, ppt_generate |
+| Gen5 | + memory_store, memory_search, code_index, ppt_generate, image_generate |
 | Gen6 | + screenshot, computer_use, browser_action |
 | Gen7 | + spawn_agent, agent_message, workflow_orchestrate |
 | Gen8 | + strategy_optimize, tool_create, self_evaluate |
@@ -182,6 +182,40 @@ ppt_generate { "topic": "公司年度总结", "slides_count": 10, "engine": "pre
 **输出**：生成 Slidev 项目目录，包含 `slides.md` 和 `package.json`，可直接 `npm install && npm run dev` 预览。
 
 **配图流程**：如果 `need_images: true`，工具会返回每页幻灯片的图片描述（英文 prompt），可配合 `image_generate` 工具生成配图。
+
+### Gen5 图片生成
+
+`image_generate` 工具通过 OpenRouter API 调用 FLUX 模型生成图片：
+
+| 用户类型 | 模型 | 特点 |
+|---------|------|------|
+| 管理员 (isAdmin: true) | FLUX 1.1 Pro | 最高质量，约 $0.04/张 |
+| 普通用户 | FLUX Schnell | 快速免费 |
+
+**使用示例：**
+
+```bash
+# 基础用法
+image_generate { "prompt": "sunset over mountains" }
+
+# 使用 prompt 扩展 + 指定宽高比
+image_generate { "prompt": "一只猫", "expand_prompt": true, "aspect_ratio": "16:9" }
+
+# 保存到文件 + 风格指定
+image_generate { "prompt": "产品展示图", "output_path": "./product.png", "style": "photo" }
+```
+
+**参数说明：**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `prompt` | string | 图片描述（必填，支持中英文）|
+| `expand_prompt` | boolean | 使用 LLM 扩展优化 prompt |
+| `aspect_ratio` | string | 宽高比: "1:1", "16:9", "9:16", "4:3", "3:4" |
+| `output_path` | string | 保存路径（不填返回 base64）|
+| `style` | string | 风格: "photo", "illustration", "3d", "anime" |
+
+**要求**：需要配置 OpenRouter API Key，或通过云端代理使用。
 
 ## 云端 Prompt 管理
 

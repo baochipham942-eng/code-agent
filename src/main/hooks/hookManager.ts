@@ -1,0 +1,404 @@
+// ============================================================================
+// Hook Manager - Unified API for the hooks system
+// ============================================================================
+
+import type {
+  HookEvent,
+  AnyHookContext,
+  HookExecutionResult,
+  ToolHookContext,
+  UserPromptContext,
+  StopContext,
+  SessionContext,
+} from './events';
+import type { HookDefinition, ParsedHookConfig } from './configParser';
+import type { MergedHookConfig, MergeStrategy } from './merger';
+import type { AICompletionFn } from './promptHook';
+
+import { loadAllHooksConfig } from './configParser';
+import { mergeHooks, getHooksForTool, getHooksForEvent } from './merger';
+import { executeScript } from './scriptExecutor';
+import { executePromptHook } from './promptHook';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('HookManager');
+
+// ----------------------------------------------------------------------------
+// Types
+// ----------------------------------------------------------------------------
+
+export interface HookManagerConfig {
+  /** Working directory for loading configs */
+  workingDirectory: string;
+  /** Merge strategy for hooks from multiple sources */
+  mergeStrategy?: MergeStrategy;
+  /** AI completion function for prompt hooks */
+  aiCompletion?: AICompletionFn;
+  /** Whether to enable hooks (default: true) */
+  enabled?: boolean;
+}
+
+export interface HookTriggerResult {
+  /** Whether the action should proceed */
+  shouldProceed: boolean;
+  /** Combined message from all hooks */
+  message?: string;
+  /** Modified input (if any hook modified it) */
+  modifiedInput?: string;
+  /** Individual hook results */
+  results: HookExecutionResult[];
+  /** Total duration of all hook executions */
+  totalDuration: number;
+}
+
+// ----------------------------------------------------------------------------
+// Hook Manager
+// ----------------------------------------------------------------------------
+
+export class HookManager {
+  private config: HookManagerConfig;
+  private hooks: MergedHookConfig[] = [];
+  private initialized = false;
+
+  constructor(config: HookManagerConfig) {
+    this.config = {
+      mergeStrategy: 'append',
+      enabled: true,
+      ...config,
+    };
+  }
+
+  /**
+   * Initialize the hook manager by loading configurations
+   */
+  async initialize(): Promise<void> {
+    if (this.initialized) return;
+
+    try {
+      const configs = await loadAllHooksConfig(this.config.workingDirectory);
+      this.hooks = mergeHooks(configs, this.config.mergeStrategy);
+
+      logger.info('HookManager initialized', {
+        hookCount: this.hooks.length,
+        events: [...new Set(this.hooks.map((h) => h.event))],
+      });
+
+      this.initialized = true;
+    } catch (error) {
+      logger.error('Failed to initialize HookManager', { error });
+      this.hooks = [];
+      this.initialized = true;
+    }
+  }
+
+  /**
+   * Reload hook configurations
+   */
+  async reload(): Promise<void> {
+    this.initialized = false;
+    await this.initialize();
+  }
+
+  /**
+   * Trigger hooks for a tool use event
+   */
+  async triggerPreToolUse(
+    toolName: string,
+    toolInput: string,
+    sessionId: string
+  ): Promise<HookTriggerResult> {
+    const context: ToolHookContext = {
+      event: 'PreToolUse',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      toolName,
+      toolInput,
+    };
+
+    return this.triggerToolHooks('PreToolUse', toolName, context);
+  }
+
+  /**
+   * Trigger hooks after successful tool use
+   */
+  async triggerPostToolUse(
+    toolName: string,
+    toolInput: string,
+    toolOutput: string,
+    sessionId: string
+  ): Promise<HookTriggerResult> {
+    const context: ToolHookContext = {
+      event: 'PostToolUse',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      toolName,
+      toolInput,
+      toolOutput,
+    };
+
+    return this.triggerToolHooks('PostToolUse', toolName, context);
+  }
+
+  /**
+   * Trigger hooks after tool use failure
+   */
+  async triggerPostToolUseFailure(
+    toolName: string,
+    toolInput: string,
+    errorMessage: string,
+    sessionId: string
+  ): Promise<HookTriggerResult> {
+    const context: ToolHookContext = {
+      event: 'PostToolUseFailure',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      toolName,
+      toolInput,
+      errorMessage,
+    };
+
+    return this.triggerToolHooks('PostToolUseFailure', toolName, context);
+  }
+
+  /**
+   * Trigger hooks for user prompt submission
+   */
+  async triggerUserPromptSubmit(
+    prompt: string,
+    sessionId: string
+  ): Promise<HookTriggerResult> {
+    const context: UserPromptContext = {
+      event: 'UserPromptSubmit',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      prompt,
+    };
+
+    return this.triggerEventHooks('UserPromptSubmit', context);
+  }
+
+  /**
+   * Trigger hooks when agent stops
+   */
+  async triggerStop(
+    response: string | undefined,
+    sessionId: string
+  ): Promise<HookTriggerResult> {
+    const context: StopContext = {
+      event: 'Stop',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      response,
+    };
+
+    return this.triggerEventHooks('Stop', context);
+  }
+
+  /**
+   * Trigger hooks for session start
+   */
+  async triggerSessionStart(sessionId: string): Promise<HookTriggerResult> {
+    const context: SessionContext = {
+      event: 'SessionStart',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+    };
+
+    return this.triggerEventHooks('SessionStart', context);
+  }
+
+  /**
+   * Trigger hooks for session end
+   */
+  async triggerSessionEnd(sessionId: string): Promise<HookTriggerResult> {
+    const context: SessionContext = {
+      event: 'SessionEnd',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+    };
+
+    return this.triggerEventHooks('SessionEnd', context);
+  }
+
+  // --------------------------------------------------------------------------
+  // Internal Methods
+  // --------------------------------------------------------------------------
+
+  /**
+   * Trigger hooks for tool-related events
+   */
+  private async triggerToolHooks(
+    event: 'PreToolUse' | 'PostToolUse' | 'PostToolUseFailure',
+    toolName: string,
+    context: ToolHookContext
+  ): Promise<HookTriggerResult> {
+    if (!this.config.enabled || !this.initialized) {
+      return this.createAllowResult();
+    }
+
+    const matchingHooks = getHooksForTool(this.hooks, event, toolName);
+    return this.executeHooks(matchingHooks, context);
+  }
+
+  /**
+   * Trigger hooks for non-tool events
+   */
+  private async triggerEventHooks(
+    event: HookEvent,
+    context: AnyHookContext
+  ): Promise<HookTriggerResult> {
+    if (!this.config.enabled || !this.initialized) {
+      return this.createAllowResult();
+    }
+
+    const matchingHooks = getHooksForEvent(this.hooks, event);
+    return this.executeHooks(matchingHooks, context);
+  }
+
+  /**
+   * Execute a list of merged hook configs
+   */
+  private async executeHooks(
+    hookConfigs: MergedHookConfig[],
+    context: AnyHookContext
+  ): Promise<HookTriggerResult> {
+    const results: HookExecutionResult[] = [];
+    let shouldProceed = true;
+    let message: string | undefined;
+    let modifiedInput: string | undefined;
+    const startTime = Date.now();
+
+    for (const config of hookConfigs) {
+      for (const hook of config.hooks) {
+        const result = await this.executeHook(hook, context);
+        results.push(result);
+
+        // Aggregate results
+        if (result.action === 'block') {
+          shouldProceed = false;
+          message = result.message || message;
+          break; // Stop on first block
+        }
+
+        if (result.action === 'continue') {
+          if (result.message) {
+            message = message ? `${message}\n${result.message}` : result.message;
+          }
+          if (result.modifiedInput) {
+            modifiedInput = result.modifiedInput;
+          }
+        }
+
+        if (result.action === 'error') {
+          logger.warn('Hook execution error', { error: result.error });
+          // Continue on error (don't block)
+        }
+      }
+
+      // Stop processing more hooks if blocked
+      if (!shouldProceed) break;
+    }
+
+    return {
+      shouldProceed,
+      message,
+      modifiedInput,
+      results,
+      totalDuration: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * Execute a single hook definition
+   */
+  private async executeHook(
+    hook: HookDefinition,
+    context: AnyHookContext
+  ): Promise<HookExecutionResult> {
+    try {
+      if (hook.type === 'command' && hook.command) {
+        return await executeScript(
+          {
+            command: hook.command,
+            timeout: hook.timeout,
+            workingDirectory: this.config.workingDirectory,
+          },
+          context
+        );
+      }
+
+      if (hook.type === 'prompt' && hook.prompt && this.config.aiCompletion) {
+        return await executePromptHook(
+          { prompt: hook.prompt, timeout: hook.timeout },
+          context,
+          this.config.aiCompletion
+        );
+      }
+
+      // No AI completion configured for prompt hooks
+      if (hook.type === 'prompt' && !this.config.aiCompletion) {
+        logger.warn('Prompt hook configured but no AI completion function provided');
+        return {
+          action: 'allow',
+          message: 'Prompt hook skipped - no AI completion configured',
+          duration: 0,
+        };
+      }
+
+      return {
+        action: 'error',
+        error: 'Invalid hook configuration',
+        duration: 0,
+      };
+    } catch (error: any) {
+      return {
+        action: 'error',
+        error: error.message || 'Hook execution failed',
+        duration: 0,
+      };
+    }
+  }
+
+  /**
+   * Create a default "allow" result
+   */
+  private createAllowResult(): HookTriggerResult {
+    return {
+      shouldProceed: true,
+      results: [],
+      totalDuration: 0,
+    };
+  }
+
+  /**
+   * Check if any hooks are configured for an event
+   */
+  hasHooksFor(event: HookEvent): boolean {
+    return this.hooks.some((h) => h.event === event);
+  }
+
+  /**
+   * Get count of hooks by event
+   */
+  getHookStats(): Record<string, number> {
+    const stats: Record<string, number> = {};
+    for (const hook of this.hooks) {
+      stats[hook.event] = (stats[hook.event] || 0) + hook.hooks.length;
+    }
+    return stats;
+  }
+}
+
+/**
+ * Create a hook manager instance
+ */
+export function createHookManager(config: HookManagerConfig): HookManager {
+  return new HookManager(config);
+}

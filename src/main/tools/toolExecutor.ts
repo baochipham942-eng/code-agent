@@ -147,6 +147,8 @@ export class ToolExecutor {
       setPlanMode: options.setPlanMode,
       isPlanMode: options.isPlanMode,
       emitEvent: options.emitEvent,
+      // Also set emit as alias for emitEvent (tools use context.emit)
+      emit: options.emitEvent,
     };
 
     // Check permission if required

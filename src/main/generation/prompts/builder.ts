@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { GenerationId } from '../../../shared/types';
+import { CONSTITUTION } from './constitution';
 import { BASE_PROMPTS } from './base';
 import {
   OUTPUT_FORMAT_RULES,
@@ -138,7 +139,11 @@ const GENERATION_RULES: Record<GenerationId, string[]> = {
 
 /**
  * Builds the complete system prompt for a generation.
- * Combines the base prompt with the appropriate rules.
+ *
+ * Prompt 组装顺序：
+ * 1. 宪法层 - 所有代际共享的身份、价值观和行为准则
+ * 2. 代际工具层 - 各代际的工具定义和使用说明
+ * 3. 规则层 - 输出格式、安全规则等
  */
 export function buildPrompt(generationId: GenerationId): string {
   const basePrompt = BASE_PROMPTS[generationId];
@@ -148,8 +153,9 @@ export function buildPrompt(generationId: GenerationId): string {
     throw new Error(`Unknown generation: ${generationId}`);
   }
 
-  // Combine base prompt with rules
-  return [basePrompt, ...rules].join('\n\n');
+  // 组装完整的 System Prompt
+  // 顺序：宪法 → 代际工具 → 规则
+  return [CONSTITUTION, basePrompt, ...rules].join('\n\n');
 }
 
 /**

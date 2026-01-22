@@ -61,4 +61,5 @@ export interface ToolResult {
   output?: string;
   error?: string;
   duration?: number;
+  metadata?: Record<string, unknown>; // 工具返回的元数据（如 imagePath, imageBase64 等）
 }

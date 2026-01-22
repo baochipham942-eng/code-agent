@@ -377,9 +377,12 @@ async function initializeServices(): Promise<void> {
 
   // Track current assistant message for aggregating multiple messages in a turn
   // This prevents creating multiple database records for a single agent turn
-  let currentTurnMessageId: string | null = null;
-  let accumulatedToolCalls: ToolCall[] = [];
-  let accumulatedContent = '';
+  // Use a Map to support multiple concurrent sessions
+  const turnStateBySession = new Map<string, {
+    messageId: string;
+    toolCalls: ToolCall[];
+    content: string;
+  }>();
 
   // Initialize agent orchestrator
   agentOrchestrator = new AgentOrchestrator({
@@ -394,38 +397,55 @@ async function initializeServices(): Promise<void> {
         logger.warn('mainWindow is null, cannot send event');
       }
 
+      // 使用事件携带的 sessionId（由 AgentOrchestrator 在发送消息时注入）
+      // 这样即使用户在执行过程中切换会话，事件也会写入正确的会话
+      const eventWithSession = event as typeof event & { sessionId?: string };
+      const sessionId = eventWithSession.sessionId;
+
+      if (!sessionId) {
+        logger.warn('No sessionId in event, skipping message persistence');
+        return;
+      }
+
+      const sessionManager = getSessionManager();
+
       // Aggregate assistant messages within a single turn
       // Instead of creating a new DB record for each message event,
       // we accumulate them and only persist one aggregated message per turn
       if (event.type === 'message' && event.data?.role === 'assistant') {
         const message = event.data;
 
+        // Get or create turn state for this session
+        let turnState = turnStateBySession.get(sessionId);
+        if (!turnState) {
+          turnState = { messageId: '', toolCalls: [], content: '' };
+          turnStateBySession.set(sessionId, turnState);
+        }
+
         // Accumulate tool calls if present
         if (message.toolCalls && message.toolCalls.length > 0) {
-          accumulatedToolCalls.push(...message.toolCalls);
+          turnState.toolCalls.push(...message.toolCalls);
         }
 
         // Accumulate content if present
         if (message.content) {
-          accumulatedContent = message.content; // Use latest content (final response)
+          turnState.content = message.content; // Use latest content (final response)
         }
 
         try {
-          const sessionManager = getSessionManager();
-
-          if (!currentTurnMessageId) {
+          if (!turnState.messageId) {
             // First message in this turn - create new record
-            currentTurnMessageId = message.id;
+            turnState.messageId = message.id;
             await sessionManager.addMessage({
               ...message,
-              toolCalls: accumulatedToolCalls.length > 0 ? [...accumulatedToolCalls] : undefined,
-              content: accumulatedContent,
+              toolCalls: turnState.toolCalls.length > 0 ? [...turnState.toolCalls] : undefined,
+              content: turnState.content,
             });
           } else {
             // Subsequent message in this turn - update existing record
-            await sessionManager.updateMessage(currentTurnMessageId, {
-              toolCalls: accumulatedToolCalls.length > 0 ? [...accumulatedToolCalls] : undefined,
-              content: accumulatedContent,
+            await sessionManager.updateMessage(turnState.messageId, {
+              toolCalls: turnState.toolCalls.length > 0 ? [...turnState.toolCalls] : undefined,
+              content: turnState.content,
             });
           }
         } catch (error) {
@@ -434,19 +454,19 @@ async function initializeServices(): Promise<void> {
       }
 
       // Update tool call results
-      if (event.type === 'tool_call_end' && currentTurnMessageId && event.data) {
+      const turnState = turnStateBySession.get(sessionId);
+      if (event.type === 'tool_call_end' && turnState?.messageId && event.data) {
         try {
           // Update accumulated tool calls with results
           const toolCallId = event.data.toolCallId;
-          const idx = accumulatedToolCalls.findIndex((tc) => tc.id === toolCallId);
+          const idx = turnState.toolCalls.findIndex((tc) => tc.id === toolCallId);
           if (idx !== -1) {
-            accumulatedToolCalls[idx] = { ...accumulatedToolCalls[idx], result: event.data };
+            turnState.toolCalls[idx] = { ...turnState.toolCalls[idx], result: event.data };
           }
 
           // Persist the update
-          const sessionManager = getSessionManager();
-          await sessionManager.updateMessage(currentTurnMessageId, {
-            toolCalls: [...accumulatedToolCalls],
+          await sessionManager.updateMessage(turnState.messageId, {
+            toolCalls: [...turnState.toolCalls],
           });
         } catch (error) {
           logger.error('Failed to update tool call result', error);
@@ -455,16 +475,14 @@ async function initializeServices(): Promise<void> {
 
       // Reset turn state when turn ends or agent completes
       if (event.type === 'turn_end' || event.type === 'agent_complete') {
-        currentTurnMessageId = null;
-        accumulatedToolCalls = [];
-        accumulatedContent = '';
+        turnStateBySession.delete(sessionId);
       }
 
       // Send desktop notification on task complete
       if (event.type === 'task_complete' && event.data) {
         try {
-          const sessionManager = getSessionManager();
-          const session = await sessionManager.getCurrentSession();
+          // 使用事件携带的 sessionId 获取会话信息
+          const session = await sessionManager.getSession(sessionId);
           if (session) {
             notificationService.notifyTaskComplete({
               sessionId: session.id,

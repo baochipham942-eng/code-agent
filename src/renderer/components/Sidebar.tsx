@@ -16,6 +16,8 @@ import {
   Clock,
   Sparkles,
   FolderOpen,
+  ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Button, IconButton } from './primitives';
@@ -263,9 +265,11 @@ export const Sidebar: React.FC = () => {
                       {workspaceName}
                     </span>
                     <span className="text-zinc-600">{workspaceSessions.length}</span>
-                    <div className={`transition-transform ${isCollapsed ? '' : 'rotate-90'}`}>
-                      <Sparkles className="w-3 h-3 text-zinc-600" />
-                    </div>
+                    {isCollapsed ? (
+                      <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
+                    )}
                   </button>
 
                   {/* Workspace Sessions */}

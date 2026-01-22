@@ -183,39 +183,39 @@ ppt_generate { "topic": "公司年度总结", "slides_count": 10, "engine": "pre
 
 **配图流程**：如果 `need_images: true`，工具会返回每页幻灯片的图片描述（英文 prompt），可配合 `image_generate` 工具生成配图。
 
-### Gen5 图片生成（待实现）
+### Gen5 图片生成
 
-`image_generate` 工具使用 OpenRouter API 调用 FLUX 模型生成图片：
+`image_generate` 工具通过 OpenRouter API 调用 FLUX 模型生成图片：
 
-| 用户类型 | 模型 | 说明 |
+| 用户类型 | 模型 | 特点 |
 |---------|------|------|
-| 管理员 | FLUX Pro (nano banana) | 高质量，适合商务场景 |
-| 普通用户 | FLUX Schnell | 快速便宜，适合日常使用 |
+| 管理员 (isAdmin: true) | FLUX 1.1 Pro | 最高质量，约 $0.04/张 |
+| 普通用户 | FLUX Schnell | 快速免费 |
 
-**设计要点**：
-
-1. **Prompt 扩展**：用户一句话需求 → LLM 扩展为详细的图片描述
-2. **风格预设**：提供技术图表、商务插图、艺术风格等预设
-3. **权限控制**：根据用户角色选择不同模型
-
-**使用示例（设计）**：
+**使用示例：**
 
 ```bash
 # 基础用法
-image_generate { "prompt": "一只可爱的猫咪" }
+image_generate { "prompt": "sunset over mountains" }
 
-# 指定风格
-image_generate { "prompt": "公司年度报告封面", "style": "business" }
+# 使用 prompt 扩展 + 指定宽高比
+image_generate { "prompt": "一只猫", "expand_prompt": true, "aspect_ratio": "16:9" }
 
-# 强制使用高质量模型（需管理员权限）
-image_generate { "prompt": "产品宣传图", "model": "flux-pro" }
+# 保存到文件 + 风格指定
+image_generate { "prompt": "产品展示图", "output_path": "./product.png", "style": "photo" }
 ```
 
-**实现状态**：待开发，需要：
-- OpenRouter API 集成
-- 用户角色判断逻辑
-- Prompt 扩展 LLM 调用
-- 图片存储和返回机制
+**参数说明：**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `prompt` | string | 图片描述（必填，支持中英文）|
+| `expand_prompt` | boolean | 使用 LLM 扩展优化 prompt |
+| `aspect_ratio` | string | 宽高比: "1:1", "16:9", "9:16", "4:3", "3:4" |
+| `output_path` | string | 保存路径（不填返回 base64）|
+| `style` | string | 风格: "photo", "illustration", "3d", "anime" |
+
+**要求**：需要配置 OpenRouter API Key，或通过云端代理使用。
 
 ## 云端 Prompt 管理
 

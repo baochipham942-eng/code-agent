@@ -7,3 +7,4 @@ export { webSearchTool } from './webSearch';
 export { readPdfTool } from './readPdf';
 export { skillTool } from './skill';
 export { pptGenerateTool } from './pptGenerate';
+export { imageGenerateTool } from './imageGenerate';

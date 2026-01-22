@@ -73,7 +73,7 @@ npm run typecheck    # 类型检查
 | Gen2 | + glob, grep, list_directory |
 | Gen3 | + task, todo_write, ask_user_question |
 | Gen4 | + skill, web_fetch, read_pdf, mcp, mcp_list_tools, mcp_list_resources, mcp_read_resource, mcp_get_status |
-| Gen5 | + memory_store, memory_search, code_index, ppt_generate |
+| Gen5 | + memory_store, memory_search, code_index, ppt_generate, image_generate |
 | Gen6 | + screenshot, computer_use, browser_action |
 | Gen7 | + spawn_agent, agent_message, workflow_orchestrate |
 | Gen8 | + strategy_optimize, tool_create, self_evaluate |
@@ -183,6 +183,40 @@ ppt_generate { "topic": "公司年度总结", "slides_count": 10, "engine": "pre
 
 **配图流程**：如果 `need_images: true`，工具会返回每页幻灯片的图片描述（英文 prompt），可配合 `image_generate` 工具生成配图。
 
+### Gen5 图片生成（待实现）
+
+`image_generate` 工具使用 OpenRouter API 调用 FLUX 模型生成图片：
+
+| 用户类型 | 模型 | 说明 |
+|---------|------|------|
+| 管理员 | FLUX Pro (nano banana) | 高质量，适合商务场景 |
+| 普通用户 | FLUX Schnell | 快速便宜，适合日常使用 |
+
+**设计要点**：
+
+1. **Prompt 扩展**：用户一句话需求 → LLM 扩展为详细的图片描述
+2. **风格预设**：提供技术图表、商务插图、艺术风格等预设
+3. **权限控制**：根据用户角色选择不同模型
+
+**使用示例（设计）**：
+
+```bash
+# 基础用法
+image_generate { "prompt": "一只可爱的猫咪" }
+
+# 指定风格
+image_generate { "prompt": "公司年度报告封面", "style": "business" }
+
+# 强制使用高质量模型（需管理员权限）
+image_generate { "prompt": "产品宣传图", "model": "flux-pro" }
+```
+
+**实现状态**：待开发，需要：
+- OpenRouter API 集成
+- 用户角色判断逻辑
+- Prompt 扩展 LLM 调用
+- 图片存储和返回机制
+
 ## 云端 Prompt 管理
 
 System Prompt 采用前后端分离架构，支持热更新：
@@ -250,7 +284,7 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 | /api/health | 健康检查 |
 | /api/prompts | System Prompt |
 | /api/sync | 数据同步 |
-| /api/tools | 云端工具（api/scrape/search）|
+| /api/tools | 云端工具（api/scrape/search/ppt）|
 | /api/update | 版本更新检查 |
 | /api/user-keys | 用户 API Key 管理 |
 | /api/v1/config | 云端配置中心（新）|

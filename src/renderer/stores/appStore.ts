@@ -127,7 +127,7 @@ const defaultModelConfig: ModelConfig = {
   maxTokens: 16384,
 };
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   // Initial UI State
   showSettings: false,
   showWorkspace: false,

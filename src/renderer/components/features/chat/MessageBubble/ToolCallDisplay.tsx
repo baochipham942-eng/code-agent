@@ -561,7 +561,6 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
   compact = false,
 }) => {
   const openPreview = useAppStore((state) => state.openPreview);
-  const isProcessing = useAppStore((state) => state.isProcessing);
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -569,17 +568,17 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
   // 如果工具没有结果，需要判断是正在执行还是被中断
   const getStatus = (): ToolStatus => {
     if (!toolCall.result) {
-      // 如果当前会话正在处理，则是正在执行
-      if (isProcessing) {
-        // 检查是否是当前会话正在处理
-        const isCurrentSessionProcessing = currentSessionId
-          ? useAppStore.getState().isSessionProcessing(currentSessionId)
-          : isProcessing;
-        if (isCurrentSessionProcessing) {
-          return 'pending';
-        }
+      // 检查当前会话是否正在处理
+      // 只有当前会话正在处理时，工具才显示为 pending
+      // 否则（历史会话或已完成的会话）显示为 interrupted
+      const isCurrentSessionProcessing = currentSessionId
+        ? useAppStore.getState().isSessionProcessing(currentSessionId)
+        : false;
+
+      if (isCurrentSessionProcessing) {
+        return 'pending';
       }
-      // 会话不在处理中，但工具没有结果，说明被中断了
+      // 当前会话不在处理中，但工具没有结果，说明被中断了
       return 'interrupted';
     }
     return toolCall.result.success ? 'success' : 'error';

@@ -206,6 +206,7 @@ export class AgentLoop {
   // Circuit breaker: consecutive tool call failures
   private consecutiveToolFailures: number = 0;
   private readonly MAX_CONSECUTIVE_FAILURES: number = 5;
+  private circuitBreakerTripped: boolean = false; // 熔断标志，触发后强制中断循环
 
   // Hard limit for consecutive read operations (force stop, not just warning)
   private readonly MAX_CONSECUTIVE_READS_HARD_LIMIT: number = 15;
@@ -350,7 +351,7 @@ export class AgentLoop {
 
     let iterations = 0;
 
-    while (!this.isCancelled && iterations < this.maxIterations) {
+    while (!this.isCancelled && !this.circuitBreakerTripped && iterations < this.maxIterations) {
       iterations++;
       logger.debug(` >>>>>> Iteration ${iterations} START <<<<<<`);
 
@@ -614,7 +615,27 @@ export class AgentLoop {
       break;
     }
 
-    if (iterations >= this.maxIterations) {
+    if (this.circuitBreakerTripped) {
+      // 熔断触发，生成一条 assistant 消息告知用户
+      logger.info('[AgentLoop] Loop exited due to circuit breaker');
+      logCollector.agent('WARN', `Circuit breaker stopped agent after ${iterations} iterations`);
+
+      // 发送一条文本消息给用户，解释发生了什么
+      const errorMessage: Message = {
+        id: this.generateId(),
+        role: 'assistant',
+        content: '⚠️ **工具调用异常**\n\n连续多次工具调用失败，已自动停止执行。这可能是由于：\n- 文件路径不存在\n- 网络连接问题\n- 工具参数错误\n\n请检查上面的错误信息，然后告诉我如何继续。',
+        timestamp: Date.now(),
+      };
+      this.messages.push(errorMessage);
+      this.onEvent({ type: 'message', data: errorMessage });
+
+      // Langfuse: End trace with error
+      langfuse.endTrace(this.traceId, `Circuit breaker tripped after ${iterations} iterations`, 'ERROR');
+
+      // 重置熔断标志，允许用户在新消息中继续
+      this.circuitBreakerTripped = false;
+    } else if (iterations >= this.maxIterations) {
       logger.debug('[AgentLoop] Max iterations reached!');
       logCollector.agent('WARN', `Max iterations reached (${this.maxIterations})`);
       this.onEvent({
@@ -999,7 +1020,12 @@ export class AgentLoop {
             },
           });
 
-          // Reset counter to allow future attempts after user intervention
+          // 设置熔断标志，强制中断 Agent 循环
+          // 不能依赖模型遵守"停止调用工具"的指令，必须在代码层面强制停止
+          this.circuitBreakerTripped = true;
+          logger.info(`[AgentLoop] Circuit breaker flag set, will exit loop after current iteration`);
+
+          // Reset counter to allow future attempts after user intervention (new session)
           this.consecutiveToolFailures = 0;
         }
       } else {
@@ -1209,6 +1235,10 @@ export class AgentLoop {
             code: 'CIRCUIT_BREAKER_TRIPPED',
           },
         });
+
+        // 设置熔断标志，强制中断 Agent 循环
+        this.circuitBreakerTripped = true;
+        logger.info(`[AgentLoop] Circuit breaker flag set (exception path), will exit loop after current iteration`);
 
         this.consecutiveToolFailures = 0;
       }

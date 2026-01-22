@@ -11,6 +11,7 @@ import { useAgent } from '../hooks/useAgent';
 import { useRequireAuth } from '../hooks/useRequireAuth';
 import { MessageBubble } from './features/chat/MessageBubble';
 import { ChatInput } from './features/chat/ChatInput';
+import { TaskStatusBar } from './features/chat/TaskStatusBar';
 import { TodoPanel } from './TodoPanel';
 import { PreviewPanel } from './PreviewPanel';
 import type { Message, MessageAttachment, TaskProgressData } from '../../shared/types';
@@ -89,6 +90,9 @@ export const ChatView: React.FC = () => {
     <div className="flex-1 flex overflow-hidden">
       {/* Main Chat */}
       <div className="flex-1 flex flex-col min-w-0 bg-gradient-to-b from-surface-950 to-void">
+        {/* Task Status Bar - 显示多任务状态 */}
+        <TaskStatusBar className="shrink-0 mx-4 mt-2" />
+
         {/* Messages */}
         <div className="flex-1 overflow-hidden">
           {filteredMessages.length === 0 ? (

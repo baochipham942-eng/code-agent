@@ -27,25 +27,27 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.8.13',
-  publishedAt: '2026-01-21T10:00:00.000Z',
+  version: '0.8.17',
+  publishedAt: '2026-01-22T12:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.8.13
+## Code Agent v0.8.17
 
-### Gen5 Memory 系统完善
-- 会话开始自动触发记忆检索
-- 会话结束自动学习机制（知识提取、代码风格、工具偏好）
-- ObservabilityPanel 增强 Memory 工具展示
-- MemoryPanel 整合到设置页面
+### UI/UX 改进
+- 用户消息长内容折叠（超过 15 行自动折叠，点击展开）
+- Cowork 模式渐进披露优化（显示 "✓ 3 个步骤已完成" + 流程简述）
+- 文件操作结果展示（显示文件图标、打开按钮、Finder 按钮）
+- 隐藏技术参数，只展示人类可读摘要
+- 自动展开失败的工具调用，成功时折叠
 
-### UI 优化
-- 记忆管理移至设置 → 记忆 tab
-- 统计、学习记录、搜索功能保持不变
+### 性能优化
+- 简单任务快速路径（跳过 RAG 和复杂 hooks）
+- 工具级并行执行（read_file/glob/grep 等无状态工具并行执行）
+- 最大并行工具数限制为 4
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.8.13/Code.Agent-0.8.13-arm64.dmg',
+      url: 'https://github.com/anthropics/code-agent/releases/download/v0.8.17/Code.Agent-0.8.17-arm64.dmg',
       size: 160000000,
     },
   },

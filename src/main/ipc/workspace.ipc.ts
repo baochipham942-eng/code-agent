@@ -63,6 +63,11 @@ async function handleOpenPath(payload: { filePath: string }): Promise<string> {
   return shell.openPath(payload.filePath);
 }
 
+async function handleShowItemInFolder(payload: { filePath: string }): Promise<void> {
+  const { shell } = await import('electron');
+  shell.showItemInFolder(payload.filePath);
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -97,6 +102,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'openPath':
           data = await handleOpenPath(payload as { filePath: string });
+          break;
+        case 'showItemInFolder':
+          data = await handleShowItemInFolder(payload as { filePath: string });
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

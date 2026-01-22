@@ -10,6 +10,7 @@ import type {
   PermissionResponse,
   ModelConfig,
 } from '../../shared/types';
+import type { ReportStyle, AgentRunOptions } from '../research/types';
 import { AgentLoop } from './agentLoop';
 import { ToolRegistry } from '../tools/toolRegistry';
 import { ToolExecutor } from '../tools/toolExecutor';
@@ -17,6 +18,8 @@ import type { GenerationManager } from '../generation/generationManager';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager } from '../services';
 import type { PlanningService } from '../planning';
+import { DeepResearchMode } from '../research';
+import { ModelRouter } from '../model/modelRouter';
 import { generateMessageId, generatePermissionRequestId } from '../../shared/utils/id';
 import { app } from 'electron';
 import * as fs from 'fs';
@@ -76,6 +79,7 @@ export class AgentOrchestrator {
   private toolRegistry: ToolRegistry;
   private toolExecutor: ToolExecutor;
   private agentLoop: AgentLoop | null = null;
+  private deepResearchMode: DeepResearchMode | null = null;
   private onEvent: (event: AgentEvent) => void;
   private workingDirectory: string;
   private messages: Message[] = [];
@@ -137,6 +141,7 @@ export class AgentOrchestrator {
    *
    * @param content - 用户消息内容
    * @param attachments - 可选的附件列表（图片、文件等）
+   * @param options - 可选的运行选项（模式、报告风格等）
    * @returns Promise 在 Agent 执行完成后 resolve
    * @throws 执行过程中的错误会通过 onEvent 发送 error 事件
    *
@@ -144,9 +149,14 @@ export class AgentOrchestrator {
    * ```typescript
    * await orchestrator.sendMessage('请帮我创建一个 React 组件');
    * await orchestrator.sendMessage('分析这张图片', [{ type: 'image', data: base64 }]);
+   * await orchestrator.sendMessage('研究 AI Agent', undefined, { mode: 'deep-research', reportStyle: 'academic' });
    * ```
    */
-  async sendMessage(content: string, attachments?: unknown[]): Promise<void> {
+  async sendMessage(
+    content: string,
+    attachments?: unknown[],
+    options?: AgentRunOptions
+  ): Promise<void> {
     const generation = this.generationManager.getCurrentGeneration();
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
@@ -186,6 +196,92 @@ export class AgentOrchestrator {
       this.onEvent({ ...event, sessionId } as AgentEvent & { sessionId?: string });
     };
 
+    // Check if deep research mode is requested
+    const mode = options?.mode ?? 'normal';
+
+    if (mode === 'deep-research') {
+      // Deep Research Mode
+      await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig, generation);
+    } else {
+      // Normal Mode: Create and run agent loop
+      await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, generation, sessionId);
+    }
+  }
+
+  /**
+   * 运行深度研究模式
+   */
+  private async runDeepResearchMode(
+    topic: string,
+    reportStyle: ReportStyle | undefined,
+    onEvent: (event: AgentEvent) => void,
+    modelConfig: ModelConfig,
+    generation: ReturnType<GenerationManager['getCurrentGeneration']>
+  ): Promise<void> {
+    logger.info('========== Starting deep research mode ==========');
+    logger.info('Topic:', topic);
+    logger.info('Report style:', reportStyle);
+
+    // Create model router
+    const modelRouter = new ModelRouter();
+
+    // Create deep research mode instance
+    this.deepResearchMode = new DeepResearchMode({
+      modelRouter,
+      toolExecutor: this.toolExecutor,
+      onEvent,
+      generation,
+    });
+
+    try {
+      const result = await this.deepResearchMode.run(topic, reportStyle ?? 'default');
+
+      if (result.success && result.report) {
+        // 将报告作为 assistant 消息添加
+        const reportMessage: Message = {
+          id: this.generateId(),
+          role: 'assistant',
+          content: result.report.content,
+          timestamp: Date.now(),
+        };
+        this.messages.push(reportMessage);
+
+        // 发送消息事件
+        onEvent({
+          type: 'message',
+          data: reportMessage,
+        });
+      }
+
+      logger.info('========== Deep research completed ==========');
+      logger.info('Success:', result.success);
+      logger.info('Duration:', result.duration, 'ms');
+    } catch (error) {
+      logger.error('========== Deep research EXCEPTION ==========');
+      logger.error('Error:', error);
+      onEvent({
+        type: 'error',
+        data: {
+          message: error instanceof Error ? error.message : 'Unknown error',
+        },
+      });
+    } finally {
+      this.deepResearchMode = null;
+      // 发送完成事件
+      onEvent({ type: 'agent_complete', data: null });
+    }
+  }
+
+  /**
+   * 运行正常模式
+   */
+  private async runNormalMode(
+    content: string,
+    onEvent: (event: AgentEvent) => void,
+    modelConfig: ModelConfig,
+    generation: ReturnType<GenerationManager['getCurrentGeneration']>,
+    sessionId?: string
+  ): Promise<void> {
     // Create agent loop
     this.agentLoop = new AgentLoop({
       generation,
@@ -193,7 +289,7 @@ export class AgentOrchestrator {
       toolRegistry: this.toolRegistry,
       toolExecutor: this.toolExecutor,
       messages: this.messages,
-      onEvent: sessionAwareOnEvent,
+      onEvent,
       planningService: this.planningService,
       sessionId, // Pass sessionId for tracing
     });
@@ -207,7 +303,7 @@ export class AgentOrchestrator {
       logger.error('========== Agent loop EXCEPTION ==========');
       logger.error('Error:', error);
       logger.error('Stack:', error instanceof Error ? error.stack : 'no stack');
-      this.onEvent({
+      onEvent({
         type: 'error',
         data: {
           message: error instanceof Error ? error.message : 'Unknown error',
@@ -228,6 +324,10 @@ export class AgentOrchestrator {
     if (this.agentLoop) {
       this.agentLoop.cancel();
       this.agentLoop = null;
+    }
+    if (this.deepResearchMode) {
+      this.deepResearchMode.cancel();
+      this.deepResearchMode = null;
     }
   }
 

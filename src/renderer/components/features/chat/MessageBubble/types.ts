@@ -50,7 +50,11 @@ export interface MarkdownBlockData {
 }
 
 // Tool status
-export type ToolStatus = 'success' | 'error' | 'pending';
+// - success: 工具执行成功
+// - error: 工具执行失败
+// - pending: 工具正在执行中
+// - interrupted: 工具执行被中断（历史消息中未完成的工具调用）
+export type ToolStatus = 'success' | 'error' | 'pending' | 'interrupted';
 
 export interface ToolStatusConfig {
   bg: string;

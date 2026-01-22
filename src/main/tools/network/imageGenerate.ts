@@ -171,6 +171,11 @@ function extractImageFromResponse(result: any): string {
 
 /**
  * 生成图片
+ *
+ * 策略：
+ * 1. 如果本地有 OpenRouter API Key，直接使用（避免云端代理 60 秒超时限制）
+ * 2. 否则尝试云端代理
+ * 3. FLUX 模型生成图片需要 30-90 秒，需要足够的超时时间
  */
 async function generateImage(
   model: string,
@@ -184,9 +189,39 @@ async function generateImage(
     image_config: { aspect_ratio: aspectRatio },
   };
 
-  // 1. 优先尝试云端代理
+  const configService = getConfigService();
+  const localApiKey = configService.getApiKey('openrouter');
+
+  // 优先使用本地 API Key（避免云端代理的 Vercel 60 秒超时限制）
+  // FLUX 图片生成需要 30-90 秒，Vercel serverless function 会被强制终止
+  if (localApiKey) {
+    logger.info('Using local API key for image generation (bypassing cloud proxy timeout)');
+    try {
+      const directResponse = await callDirectOpenRouter(localApiKey, requestBody, TIMEOUT_MS.DIRECT_API);
+
+      if (!directResponse.ok) {
+        const error = await directResponse.text();
+        throw new Error(`OpenRouter API 调用失败: ${error}`);
+      }
+
+      const result = await directResponse.json();
+      return extractImageFromResponse(result);
+    } catch (error: any) {
+      // 处理超时错误，给出友好提示
+      if (error.name === 'AbortError') {
+        throw new Error(
+          `图片生成超时（${TIMEOUT_MS.DIRECT_API / 1000}秒）。FLUX 模型可能繁忙，请稍后重试。`
+        );
+      }
+      throw error;
+    }
+  }
+
+  // 没有本地 API Key，尝试云端代理（可能会因 Vercel 超时而失败）
+  logger.info('No local API key, trying cloud proxy for image generation...');
+  logger.warn('Cloud proxy may timeout for FLUX image generation (Vercel 60s limit)');
+
   try {
-    logger.info('Trying cloud proxy for image generation...');
     const cloudResponse = await callViaCloudProxy(
       'openrouter',
       '/chat/completions',
@@ -202,41 +237,17 @@ async function generateImage(
 
     const errorText = await cloudResponse.text();
     logger.warn('Cloud proxy failed', { status: cloudResponse.status, error: errorText });
+    throw new Error(
+      `云端代理失败: ${errorText}\n\n` +
+      `建议：在设置中配置 OpenRouter API Key，以避免云端代理的超时限制。`
+    );
   } catch (error: any) {
     // 处理超时错误
     if (error.name === 'AbortError') {
-      logger.warn('Cloud proxy timeout after', { timeoutMs: TIMEOUT_MS.CLOUD_PROXY });
-    } else {
-      logger.warn('Cloud proxy error', { error: error.message });
-    }
-  }
-
-  // 2. 回退到本地 API Key
-  logger.info('Falling back to local API key...');
-  const configService = getConfigService();
-  const apiKey = configService.getApiKey('openrouter');
-
-  if (!apiKey) {
-    throw new Error(
-      'OpenRouter API Key 未配置，且云端代理不可用。请在设置中配置 OpenRouter API Key。'
-    );
-  }
-
-  try {
-    const directResponse = await callDirectOpenRouter(apiKey, requestBody, TIMEOUT_MS.DIRECT_API);
-
-    if (!directResponse.ok) {
-      const error = await directResponse.text();
-      throw new Error(`OpenRouter API 调用失败: ${error}`);
-    }
-
-    const result = await directResponse.json();
-    return extractImageFromResponse(result);
-  } catch (error: any) {
-    // 处理超时错误，给出友好提示
-    if (error.name === 'AbortError') {
       throw new Error(
-        `图片生成超时（${TIMEOUT_MS.DIRECT_API / 1000}秒）。FLUX 模型可能繁忙，请稍后重试。`
+        `云端代理超时（${TIMEOUT_MS.CLOUD_PROXY / 1000}秒）。\n\n` +
+        `FLUX 模型生成图片需要 30-90 秒，超过了云端代理的时间限制。\n` +
+        `解决方案：在设置中配置 OpenRouter API Key，直接调用 API。`
       );
     }
     throw error;

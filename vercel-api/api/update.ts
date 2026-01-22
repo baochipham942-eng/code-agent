@@ -27,22 +27,18 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.8.23',
-  publishedAt: '2026-01-22T18:00:00.000Z',
+  version: '0.8.28',
+  publishedAt: '2026-01-22T23:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.8.23
+## Code Agent v0.8.28
 
 ### Bug 修复
-- 修复无限循环: 添加连续读操作硬限制 (15次强制停止)
-- 修复暂停按钮方块错位: 图标改为自适应容器尺寸
-- 修复系统标签泄露: 过滤 <critical-warning> 等系统标签
-- 修复 edit_file 失败显示: 失败时显示 "编辑文件失败" 而非行数统计
-- 修复 pptxgenjs 依赖: 添加到 esbuild external dependencies
+- 修复上下文污染: 创建新会话时清空 orchestrator 消息历史，防止跨会话内容泄露
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.8.23/Code.Agent-0.8.23-arm64.dmg',
+      url: 'https://github.com/anthropics/code-agent/releases/download/v0.8.28/Code.Agent-0.8.28-arm64.dmg',
       size: 160000000,
     },
   },

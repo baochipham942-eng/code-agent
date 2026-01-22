@@ -59,6 +59,14 @@ const getFileTypeConfig = (filePath: string): FileTypeConfig => {
   const ext = filePath.split('.').pop()?.toLowerCase() || '';
 
   switch (ext) {
+    case 'pptx':
+    case 'ppt':
+      return {
+        icon: <FileText className="w-4 h-4" />,
+        color: 'text-orange-400',
+        bgColor: 'bg-orange-500/10',
+        borderColor: 'border-orange-500/30',
+      };
     case 'xlsx':
     case 'xls':
     case 'csv':
@@ -147,6 +155,36 @@ const extractImageGenerateResult = (toolCall: { name: string; result?: { success
 
   if (imagePath || imageBase64) {
     return { imagePath, imageBase64 };
+  }
+  return null;
+};
+
+// Extract generated file info from tool results (ppt_generate, etc.)
+interface GeneratedFileResult {
+  filePath: string;
+  fileName: string;
+  fileSize?: number;
+  slidesCount?: number;
+  theme?: string;
+}
+
+const extractGeneratedFileResult = (toolCall: { name: string; result?: { success: boolean; metadata?: Record<string, unknown> } }): GeneratedFileResult | null => {
+  // Support ppt_generate and similar tools
+  if (!['ppt_generate'].includes(toolCall.name) || !toolCall.result?.success) return null;
+  const metadata = toolCall.result.metadata;
+  if (!metadata) return null;
+
+  const filePath = metadata.filePath as string | undefined;
+  const fileName = metadata.fileName as string | undefined;
+
+  if (filePath && fileName) {
+    return {
+      filePath,
+      fileName,
+      fileSize: metadata.fileSize as number | undefined,
+      slidesCount: metadata.slidesCount as number | undefined,
+      theme: metadata.theme as string | undefined,
+    };
   }
   return null;
 };
@@ -575,6 +613,9 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
   // Extract image generate result
   const imageResult = useMemo(() => extractImageGenerateResult(toolCall), [toolCall]);
 
+  // Extract generated file result (ppt_generate, etc.)
+  const generatedFileResult = useMemo(() => extractGeneratedFileResult(toolCall), [toolCall]);
+
   const config = statusConfig[status];
 
   // Compact mode rendering for Cowork display
@@ -680,6 +721,17 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
               </div>
             )}
 
+            {/* Generated file display (ppt_generate, etc.) */}
+            {generatedFileResult && status === 'success' && (
+              <div className="mb-3">
+                <FileResultDisplay
+                  filePath={generatedFileResult.filePath}
+                  isHtml={false}
+                  onPreview={() => {}}
+                />
+              </div>
+            )}
+
             {/* File result display for write_file success */}
             {createdFilePath && status === 'success' && (
               <div className="mb-3">
@@ -692,7 +744,7 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
             )}
 
             {/* Simplified result - no raw JSON, just human-readable text */}
-            {compactResult && !imageResult && (
+            {compactResult && !imageResult && !generatedFileResult && (
               <div className={`text-sm px-3 py-2 rounded-lg ${
                 hasError
                   ? 'bg-red-500/10 text-red-300 border border-red-500/20'
@@ -878,6 +930,17 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
                 </div>
               )}
 
+              {/* Generated file display (ppt_generate, etc.) */}
+              {generatedFileResult && status === 'success' && (
+                <div className="mb-3">
+                  <FileResultDisplay
+                    filePath={generatedFileResult.filePath}
+                    isHtml={false}
+                    onPreview={() => {}}
+                  />
+                </div>
+              )}
+
               {/* File result display for write_file success */}
               {createdFilePath && status === 'success' && (
                 <div className="mb-3">
@@ -889,8 +952,8 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
                 </div>
               )}
 
-              {/* Standard result output - hide for image_generate with image result */}
-              {!imageResult && (
+              {/* Standard result output - hide for image_generate and generated file results */}
+              {!imageResult && !generatedFileResult && (
                 <pre className={`text-xs bg-zinc-900/50 rounded-lg p-3 overflow-x-auto max-h-48 border transition-colors duration-200 ${
                   status === 'error'
                     ? 'text-red-300 border-red-500/20'

@@ -162,26 +162,29 @@ mcp { "server": "deepwiki", "tool": "ask_question", "arguments": { "repoName": "
 
 ### Gen5 PPT 生成
 
-`ppt_generate` 工具支持两种引擎生成演示文稿：
+`ppt_generate` 工具直接生成 `.pptx` 文件，可用 PowerPoint/Keynote/WPS 打开：
 
-| 引擎 | 场景 | 特点 |
+| 主题 | 风格 | 特点 |
 |------|------|------|
-| `slidev` | 技术演示、代码展示 | 本地生成，基于 Markdown，免费快速 |
-| `presenton` | 商务汇报、需要配图 | 云端 LLM 生成内容，支持 AI 配图 prompts |
+| `professional` | 专业商务 | 蓝白配色，适合正式场合 |
+| `tech` | 科技风格 | 深色背景，青色点缀 |
+| `minimal` | 极简风格 | 浅灰背景，简洁清爽 |
+| `vibrant` | 活力风格 | 紫粉配色，适合创意展示 |
 
 **使用示例：**
 
 ```bash
-# 技术演示 - 使用 Slidev（本地）
-ppt_generate { "topic": "React 18 新特性", "slides_count": 5, "engine": "slidev" }
+# 基础用法
+ppt_generate { "topic": "产品介绍", "slides_count": 5 }
 
-# 商务演示 - 使用云端 LLM（带配图 prompts）
-ppt_generate { "topic": "公司年度总结", "slides_count": 10, "engine": "presenton", "need_images": true }
+# 指定主题风格
+ppt_generate { "topic": "技术分享", "theme": "tech", "slides_count": 8 }
+
+# 提供详细内容大纲（Markdown 格式）
+ppt_generate { "topic": "年度总结", "content": "# 背景\n- 要点1\n# 成果\n- 成果1" }
 ```
 
-**输出**：生成 Slidev 项目目录，包含 `slides.md` 和 `package.json`，可直接 `npm install && npm run dev` 预览。
-
-**配图流程**：如果 `need_images: true`，工具会返回每页幻灯片的图片描述（英文 prompt），可配合 `image_generate` 工具生成配图。
+**输出**：直接生成 `.pptx` 文件，在工具结果中展示为可点击的附件，点击即可打开。
 
 ### Gen5 图片生成
 

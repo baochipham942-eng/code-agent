@@ -172,7 +172,9 @@ export class AgentLoop {
     this.modelConfig = config.modelConfig;
     this.toolRegistry = config.toolRegistry;
     this.toolExecutor = config.toolExecutor;
-    this.messages = config.messages;
+    // 复制消息数组，确保并行会话之间的隔离
+    // 注意：这是浅拷贝，Message 对象本身是引用，但足够安全因为我们不修改已有消息
+    this.messages = [...config.messages];
     this.onEvent = config.onEvent;
     this.modelRouter = new ModelRouter();
 

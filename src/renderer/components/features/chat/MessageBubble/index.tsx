@@ -9,13 +9,20 @@ import React from 'react';
 import type { MessageBubbleProps } from './types';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
+import { CoworkMessageBubble } from './CoworkMessageBubble';
+import { useIsCoworkMode } from '../../../../stores/modeStore';
 
 // Main MessageBubble component - routes to appropriate display
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
-  const isUser = message.role === 'user';
+  const isCoworkMode = useIsCoworkMode();
 
-  if (isUser) {
+  if (message.role === 'user') {
     return <UserMessage message={message} />;
+  }
+
+  // Assistant message - choose component based on mode
+  if (isCoworkMode) {
+    return <CoworkMessageBubble message={message} />;
   }
 
   return <AssistantMessage message={message} />;
@@ -24,6 +31,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
 // Re-export sub-components for direct use if needed
 export { UserMessage } from './UserMessage';
 export { AssistantMessage } from './AssistantMessage';
+export { CoworkMessageBubble } from './CoworkMessageBubble';
 export { MessageContent, CodeBlock, InlineTextWithCode } from './MessageContent';
 export { ToolCallDisplay } from './ToolCallDisplay';
 export { AttachmentDisplay } from './AttachmentPreview';

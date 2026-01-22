@@ -28,6 +28,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import { generateMessageId } from '@shared/utils/id';
 import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData } from '@shared/types';
 import { createLogger } from '../utils/logger';
+import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 
 const logger = createLogger('useAgent');
 
@@ -59,6 +60,30 @@ export const useAgent = () => {
   // 任务进度状态（长时任务反馈）
   const [taskProgress, setTaskProgress] = useState<TaskProgressData | null>(null);
   const [lastTaskComplete, setLastTaskComplete] = useState<TaskCompleteData | null>(null);
+
+  // Message batcher for reducing re-renders during streaming
+  const handleBatchUpdate = useCallback((updates: MessageUpdate[]) => {
+    const currentMessages = messagesRef.current;
+    for (const update of updates) {
+      if (update.type === 'append' && update.content) {
+        const targetMessage = currentMessages.find(m => m.id === update.messageId);
+        if (targetMessage?.role === 'assistant') {
+          updateMessage(update.messageId, {
+            content: (targetMessage.content || '') + update.content,
+          });
+        }
+      }
+    }
+  }, [updateMessage]);
+
+  const { queueUpdate, flush } = useMessageBatcher(handleBatchUpdate, {
+    batchInterval: 50,
+    maxBatchSize: 10,
+  });
+
+  // Keep flush in a ref to avoid stale closures in event listener
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
 
   // Listen for agent events from the main process
   // Only register once, use refs to access latest state
@@ -101,7 +126,7 @@ export const useAgent = () => {
             break;
 
           case 'stream_chunk':
-            // 流式文本内容 - 追加到当前 turn 的消息
+            // 流式文本内容 - 追加到当前 turn 的消息（使用批处理优化）
             if (event.data?.content) {
               // 优先使用 turnId 定位消息，fallback 到最后一条 assistant 消息
               const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
@@ -110,8 +135,11 @@ export const useAgent = () => {
                 : currentMessages[currentMessages.length - 1];
 
               if (targetMessage?.role === 'assistant') {
-                updateMessage(targetMessage.id, {
-                  content: (targetMessage.content || '') + event.data.content,
+                // 使用批处理更新，减少重渲染频率
+                queueUpdate({
+                  type: 'append',
+                  messageId: targetMessage.id,
+                  content: event.data.content,
                 });
               } else {
                 // Fallback: 如果没有找到目标消息，创建一个新的（兼容旧事件格式）
@@ -132,8 +160,11 @@ export const useAgent = () => {
                     addMessage(newMessage);
                     currentTurnMessageIdRef.current = newMessage.id;
                   } else {
-                    updateMessage(lastMessage.id, {
-                      content: (lastMessage.content || '') + event.data.content,
+                    // 使用批处理更新
+                    queueUpdate({
+                      type: 'append',
+                      messageId: lastMessage.id,
+                      content: event.data.content,
                     });
                   }
                 }
@@ -169,7 +200,8 @@ export const useAgent = () => {
 
           case 'turn_end':
             // 本轮 Agent Loop 结束
-            // 可用于清理状态或触发 UI 更新
+            // 刷新所有待处理的流式更新，确保内容完整显示
+            flushRef.current();
             logger.debug('turn_end', { turnId: event.data?.turnId });
             break;
 
@@ -354,6 +386,8 @@ export const useAgent = () => {
 
           case 'agent_complete':
             // Agent has finished processing
+            // 刷新所有待处理的流式更新
+            flushRef.current();
             setIsProcessing(false);
             break;
 

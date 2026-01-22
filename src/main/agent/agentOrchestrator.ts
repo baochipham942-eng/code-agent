@@ -260,6 +260,38 @@ export class AgentOrchestrator {
     this.planningService = service;
   }
 
+  /**
+   * 设置消息历史
+   *
+   * 用于恢复会话时加载历史消息，确保 Agent 能够继续之前的对话。
+   * 会完全替换当前的消息历史。
+   *
+   * @param messages - 历史消息数组
+   */
+  setMessages(messages: Message[]): void {
+    this.messages = [...messages];
+    logger.debug(`Messages set, count: ${this.messages.length}`);
+  }
+
+  /**
+   * 获取当前消息历史
+   *
+   * @returns 消息数组的副本
+   */
+  getMessages(): Message[] {
+    return [...this.messages];
+  }
+
+  /**
+   * 清空消息历史
+   *
+   * 用于开始新对话时重置状态
+   */
+  clearMessages(): void {
+    this.messages = [];
+    logger.debug('Messages cleared');
+  }
+
   // --------------------------------------------------------------------------
   // Private Methods
   // --------------------------------------------------------------------------

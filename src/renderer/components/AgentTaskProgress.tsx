@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React from 'react';
-import { Loader2, Sparkles, Wrench, PenLine, CheckCircle2 } from 'lucide-react';
+import { Loader2, Sparkles, Wrench, PenLine, CheckCircle2, XCircle } from 'lucide-react';
 import type { AgentTaskPhase, TaskProgressData } from '@shared/types';
 
 // ============================================================================
@@ -55,6 +55,12 @@ const phaseConfig: Record<AgentTaskPhase, {
     label: '完成',
     color: 'text-emerald-400',
     bgColor: 'bg-emerald-500/20',
+  },
+  failed: {
+    icon: <XCircle className="w-3.5 h-3.5" />,
+    label: '失败',
+    color: 'text-red-400',
+    bgColor: 'bg-red-500/20',
   },
 };
 

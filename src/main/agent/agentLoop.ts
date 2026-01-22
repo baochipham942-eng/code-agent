@@ -25,6 +25,8 @@ import { generateMessageId } from '../../shared/utils/id';
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
 import { getMaxIterations } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';
+// User-configurable hooks system (Claude Code v2.0 style)
+import { HookManager, createHookManager } from '../hooks';
 
 const logger = createLogger('AgentLoop');
 
@@ -99,6 +101,8 @@ export interface AgentLoopConfig {
   planningService?: PlanningService;
   // New: enable/disable hooks
   enableHooks?: boolean;
+  // New: user-configurable hook manager (Claude Code v2.0 style)
+  hookManager?: HookManager;
   // Session metadata for tracing
   sessionId?: string;
   userId?: string;
@@ -186,6 +190,10 @@ export class AgentLoop {
   private stopHookRetryCount: number = 0;
   private maxStopHookRetries: number = 3;
 
+  // User-configurable hooks (Claude Code v2.0 style)
+  private hookManager?: HookManager;
+  private userHooksInitialized: boolean = false;
+
   // Tool call format retry (when model describes tool call as text instead of using tool_use)
   private toolCallRetryCount: number = 0;
   private maxToolCallRetries: number = 2;
@@ -248,9 +256,43 @@ export class AgentLoop {
     this.planningService = config.planningService;
     this.enableHooks = config.enableHooks ?? true;
 
+    // User-configurable hooks (from .claude/settings.json)
+    // Can be provided externally or created on demand
+    this.hookManager = config.hookManager;
+
     // Tracing metadata
     this.sessionId = config.sessionId || `session-${Date.now()}`;
     this.userId = config.userId;
+  }
+
+  /**
+   * Initialize user-configurable hooks if not already done
+   */
+  private async initializeUserHooks(): Promise<void> {
+    if (this.userHooksInitialized) return;
+
+    // Create hook manager if not provided and hooks are enabled
+    if (!this.hookManager && this.enableHooks) {
+      // Use current working directory since Generation doesn't have workingDirectory
+      this.hookManager = createHookManager({
+        workingDirectory: process.cwd(),
+        enabled: this.enableHooks,
+      });
+    }
+
+    // Initialize the hook manager
+    if (this.hookManager) {
+      try {
+        await this.hookManager.initialize();
+        logger.debug('[AgentLoop] User hooks initialized', {
+          stats: this.hookManager.getHookStats(),
+        });
+      } catch (error) {
+        logger.error('[AgentLoop] Failed to initialize user hooks', { error });
+      }
+    }
+
+    this.userHooksInitialized = true;
   }
 
   // --------------------------------------------------------------------------
@@ -321,6 +363,10 @@ export class AgentLoop {
       modelName: this.modelConfig.model,
     }, userMessage);
 
+    // Initialize user-configurable hooks (Claude Code v2.0 style)
+    // This loads hooks from .claude/settings.json
+    await this.initializeUserHooks();
+
     // Task Complexity Analysis - 自动检测任务复杂度并注入提示
     const complexityAnalysis = taskComplexityAnalyzer.analyze(userMessage);
     const isSimpleTask = complexityAnalysis.complexity === 'simple';
@@ -342,11 +388,37 @@ export class AgentLoop {
       this.injectSystemMessage(complexityHint);
     }
 
+    // User-configurable hooks: Trigger UserPromptSubmit
+    // This allows hooks to modify or block user prompts
+    if (this.hookManager) {
+      const promptResult = await this.hookManager.triggerUserPromptSubmit(userMessage, this.sessionId);
+      if (!promptResult.shouldProceed) {
+        logger.info('[AgentLoop] User prompt blocked by hook', { message: promptResult.message });
+        this.onEvent({
+          type: 'notification',
+          data: { message: promptResult.message || 'Prompt blocked by hook' },
+        });
+        return;
+      }
+      if (promptResult.message) {
+        // Hook wants to inject context
+        this.injectSystemMessage(`<user-prompt-hook>\n${promptResult.message}\n</user-prompt-hook>`);
+      }
+    }
+
     // PERFORMANCE OPTIMIZATION: Skip session start hook for simple tasks
     // Planning hooks add ~200-500ms overhead that simple tasks don't need
     const shouldRunHooks = this.enableHooks && this.planningService && !isSimpleTask;
     if (shouldRunHooks) {
       await this.runSessionStartHook();
+    }
+
+    // User-configurable hooks: Trigger SessionStart (runs alongside planning hooks)
+    if (this.hookManager && !isSimpleTask) {
+      const sessionResult = await this.hookManager.triggerSessionStart(this.sessionId);
+      if (sessionResult.message) {
+        this.injectSystemMessage(`<session-start-hook>\n${sessionResult.message}\n</session-start-hook>`);
+      }
     }
 
     let iterations = 0;
@@ -438,7 +510,28 @@ export class AgentLoop {
 
         // 发送生成中进度
         this.emitTaskProgress('generating', '生成回复中...');
-        // PERFORMANCE OPTIMIZATION: Skip stop hook for simple tasks
+
+        // User-configurable Stop hook
+        if (this.hookManager && !isSimpleTask) {
+          try {
+            const userStopResult = await this.hookManager.triggerStop(response.content, this.sessionId);
+            if (!userStopResult.shouldProceed) {
+              // User hook wants to prevent stopping (continue execution)
+              logger.info('[AgentLoop] Stop prevented by user hook', { message: userStopResult.message });
+              if (userStopResult.message) {
+                this.injectSystemMessage(`<stop-hook>\n${userStopResult.message}\n</stop-hook>`);
+              }
+              continue; // Force another iteration
+            }
+            if (userStopResult.message) {
+              this.injectSystemMessage(`<stop-hook>\n${userStopResult.message}\n</stop-hook>`);
+            }
+          } catch (error) {
+            logger.error('[AgentLoop] User stop hook error:', error);
+          }
+        }
+
+        // PERFORMANCE OPTIMIZATION: Skip planning stop hook for simple tasks
         // Stop hook reads plan from disk which adds ~100-200ms latency
         if (shouldRunHooks) {
           const stopResult = await this.planningService!.hooks.onStop();
@@ -661,6 +754,15 @@ export class AgentLoop {
       this.runSessionEndLearning().catch((err) => {
         logger.error('[AgentLoop] Session end learning error:', err);
       });
+    }
+
+    // User-configurable hooks: Trigger SessionEnd
+    if (this.hookManager) {
+      try {
+        await this.hookManager.triggerSessionEnd(this.sessionId);
+      } catch (error) {
+        logger.error('[AgentLoop] Session end hook error:', error);
+      }
     }
 
     // Signal completion to frontend
@@ -898,7 +1000,52 @@ export class AgentLoop {
   ): Promise<ToolResult> {
     logger.debug(` [${index + 1}/${total}] Processing tool: ${toolCall.name}, id: ${toolCall.id}`);
 
-    // Pre-Tool Hook (only for sequential tools to avoid race conditions)
+    // User-configurable Pre-Tool Hook (can block tool execution)
+    // Run before planning hooks so user hooks can veto tool calls
+    if (this.hookManager && !isParallelSafeTool(toolCall.name)) {
+      try {
+        const toolInput = JSON.stringify(toolCall.arguments);
+        const userHookResult = await this.hookManager.triggerPreToolUse(
+          toolCall.name,
+          toolInput,
+          this.sessionId
+        );
+
+        if (!userHookResult.shouldProceed) {
+          // User hook blocked this tool call
+          logger.info('[AgentLoop] Tool blocked by user hook', {
+            tool: toolCall.name,
+            message: userHookResult.message,
+          });
+
+          const blockedResult: ToolResult = {
+            toolCallId: toolCall.id,
+            success: false,
+            error: `Tool blocked by hook: ${userHookResult.message || 'User-defined hook rejected this tool call'}`,
+            duration: userHookResult.totalDuration,
+          };
+
+          this.injectSystemMessage(
+            `<tool-blocked-by-hook>\n` +
+            `⚠️ The tool "${toolCall.name}" was blocked by a user-defined hook.\n` +
+            `Reason: ${userHookResult.message || 'No reason provided'}\n` +
+            `You may need to adjust your approach or ask the user for guidance.\n` +
+            `</tool-blocked-by-hook>`
+          );
+
+          this.onEvent({ type: 'tool_call_end', data: blockedResult });
+          return blockedResult;
+        }
+
+        if (userHookResult.message) {
+          this.injectSystemMessage(`<pre-tool-hook>\n${userHookResult.message}\n</pre-tool-hook>`);
+        }
+      } catch (error) {
+        logger.error('[AgentLoop] User pre-tool hook error:', error);
+      }
+    }
+
+    // Planning Pre-Tool Hook (only for sequential tools to avoid race conditions)
     if (this.enableHooks && this.planningService && !isParallelSafeTool(toolCall.name)) {
       try {
         const preResult = await this.planningService.hooks.preToolUse({
@@ -1173,7 +1320,27 @@ export class AgentLoop {
         }
       }
 
-      // Post-Tool Hook
+      // User-configurable Post-Tool Hook (for successful tool execution)
+      if (this.hookManager) {
+        try {
+          const toolInput = JSON.stringify(toolCall.arguments);
+          const toolOutput = result.output || '';
+          const userPostResult = await this.hookManager.triggerPostToolUse(
+            toolCall.name,
+            toolInput,
+            toolOutput,
+            this.sessionId
+          );
+
+          if (userPostResult.message) {
+            this.injectSystemMessage(`<post-tool-hook>\n${userPostResult.message}\n</post-tool-hook>`);
+          }
+        } catch (error) {
+          logger.error('[AgentLoop] User post-tool hook error:', error);
+        }
+      }
+
+      // Planning Post-Tool Hook
       if (this.enableHooks && this.planningService) {
         try {
           const postResult = await this.planningService.hooks.postToolUse({
@@ -1249,7 +1416,27 @@ export class AgentLoop {
         this.consecutiveToolFailures = 0;
       }
 
-      // Error Hook
+      // User-configurable Post-Tool Failure Hook
+      if (this.hookManager) {
+        try {
+          const toolInput = JSON.stringify(toolCall.arguments);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          const userFailResult = await this.hookManager.triggerPostToolUseFailure(
+            toolCall.name,
+            toolInput,
+            errorMessage,
+            this.sessionId
+          );
+
+          if (userFailResult.message) {
+            this.injectSystemMessage(`<post-tool-failure-hook>\n${userFailResult.message}\n</post-tool-failure-hook>`);
+          }
+        } catch (hookError) {
+          logger.error('[AgentLoop] User post-tool failure hook error:', hookError);
+        }
+      }
+
+      // Planning Error Hook
       if (this.enableHooks && this.planningService) {
         try {
           const errorResult = await this.planningService.hooks.onError({

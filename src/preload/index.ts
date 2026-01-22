@@ -69,22 +69,27 @@ const electronAPI: ElectronAPI = {
 const domainAPI = {
   /**
    * 调用领域通道
-   * @param domain 领域名称 (session, generation, auth, etc.)
+   * @param domain 领域名称 (session, generation, auth, etc.) - 可带或不带 'domain:' 前缀
    * @param action 操作名称 (list, create, delete, etc.)
    * @param payload 可选的请求参数
    * @returns IPCResponse
    */
   invoke: async <T = unknown>(
-    domain: IPCDomain,
+    domain: IPCDomain | string,
     action: string,
     payload?: unknown
   ): Promise<IPCResponse<T>> => {
+    // Normalize domain: add 'domain:' prefix if not present
+    // This fixes the "No handler registered for 'workspace'" error
+    // when frontend calls domainAPI.invoke('workspace', ...) but backend expects 'domain:workspace'
+    const normalizedDomain = domain.startsWith('domain:') ? domain : `domain:${domain}`;
+
     const request: IPCRequest = {
       action,
       payload,
       requestId: `req_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
     };
-    return ipcRenderer.invoke(domain, request) as Promise<IPCResponse<T>>;
+    return ipcRenderer.invoke(normalizedDomain, request) as Promise<IPCResponse<T>>;
   },
 };
 

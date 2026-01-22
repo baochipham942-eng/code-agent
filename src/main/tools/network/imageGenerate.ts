@@ -12,6 +12,35 @@ import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('ImageGenerate');
 
+// 超时配置
+const TIMEOUT_MS = {
+  CLOUD_PROXY: 60000, // 云端代理 60 秒
+  DIRECT_API: 90000, // 直接 API 90 秒（图片生成较慢）
+  PROMPT_EXPAND: 30000, // Prompt 扩展 30 秒
+};
+
+/**
+ * 带超时的 fetch
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // 模型配置（2025-01 更新为 FLUX.2 系列）
 const FLUX_MODELS = {
   pro: 'black-forest-labs/flux.2-pro', // 管理员专用，最高质量
@@ -64,44 +93,57 @@ function getCloudApiUrl(): string {
 }
 
 /**
- * 通过云端代理调用模型 API
+ * 通过云端代理调用模型 API（带超时）
  */
 async function callViaCloudProxy(
   provider: string,
   endpoint: string,
-  body: unknown
+  body: unknown,
+  timeoutMs: number = TIMEOUT_MS.CLOUD_PROXY
 ): Promise<Response> {
   const cloudUrl = getCloudApiUrl();
 
-  const response = await fetch(`${cloudUrl}/api/model-proxy`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
+  const response = await fetchWithTimeout(
+    `${cloudUrl}/api/model-proxy`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        provider,
+        endpoint,
+        body,
+      }),
     },
-    body: JSON.stringify({
-      provider,
-      endpoint,
-      body,
-    }),
-  });
+    timeoutMs
+  );
 
   return response;
 }
 
 /**
- * 直接调用 OpenRouter API
+ * 直接调用 OpenRouter API（带超时）
  */
-async function callDirectOpenRouter(apiKey: string, body: unknown): Promise<Response> {
-  return fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://code-agent.app',
-      'X-Title': 'Code Agent',
+async function callDirectOpenRouter(
+  apiKey: string,
+  body: unknown,
+  timeoutMs: number = TIMEOUT_MS.DIRECT_API
+): Promise<Response> {
+  return fetchWithTimeout(
+    'https://openrouter.ai/api/v1/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://code-agent.app',
+        'X-Title': 'Code Agent',
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-  });
+    timeoutMs
+  );
 }
 
 /**
@@ -148,7 +190,8 @@ async function generateImage(
     const cloudResponse = await callViaCloudProxy(
       'openrouter',
       '/chat/completions',
-      requestBody
+      requestBody,
+      TIMEOUT_MS.CLOUD_PROXY
     );
 
     if (cloudResponse.ok) {
@@ -160,7 +203,12 @@ async function generateImage(
     const errorText = await cloudResponse.text();
     logger.warn('Cloud proxy failed', { status: cloudResponse.status, error: errorText });
   } catch (error: any) {
-    logger.warn('Cloud proxy error', { error: error.message });
+    // 处理超时错误
+    if (error.name === 'AbortError') {
+      logger.warn('Cloud proxy timeout after', { timeoutMs: TIMEOUT_MS.CLOUD_PROXY });
+    } else {
+      logger.warn('Cloud proxy error', { error: error.message });
+    }
   }
 
   // 2. 回退到本地 API Key
@@ -174,15 +222,25 @@ async function generateImage(
     );
   }
 
-  const directResponse = await callDirectOpenRouter(apiKey, requestBody);
+  try {
+    const directResponse = await callDirectOpenRouter(apiKey, requestBody, TIMEOUT_MS.DIRECT_API);
 
-  if (!directResponse.ok) {
-    const error = await directResponse.text();
-    throw new Error(`OpenRouter API 调用失败: ${error}`);
+    if (!directResponse.ok) {
+      const error = await directResponse.text();
+      throw new Error(`OpenRouter API 调用失败: ${error}`);
+    }
+
+    const result = await directResponse.json();
+    return extractImageFromResponse(result);
+  } catch (error: any) {
+    // 处理超时错误，给出友好提示
+    if (error.name === 'AbortError') {
+      throw new Error(
+        `图片生成超时（${TIMEOUT_MS.DIRECT_API / 1000}秒）。FLUX 模型可能繁忙，请稍后重试。`
+      );
+    }
+    throw error;
   }
-
-  const result = await directResponse.json();
-  return extractImageFromResponse(result);
 }
 
 /**
@@ -200,20 +258,25 @@ async function expandPromptWithLLM(prompt: string, style?: string): Promise<stri
     max_tokens: 500,
   };
 
-  // 优先云端代理
+  // 优先云端代理（使用较短的超时）
   try {
     const cloudResponse = await callViaCloudProxy(
       'openrouter',
       '/chat/completions',
-      requestBody
+      requestBody,
+      TIMEOUT_MS.PROMPT_EXPAND
     );
 
     if (cloudResponse.ok) {
       const result = await cloudResponse.json();
       return result.choices?.[0]?.message?.content?.trim() || prompt;
     }
-  } catch (e) {
-    logger.warn('Cloud proxy failed for prompt expansion');
+  } catch (e: any) {
+    if (e.name === 'AbortError') {
+      logger.warn('Cloud proxy timeout for prompt expansion');
+    } else {
+      logger.warn('Cloud proxy failed for prompt expansion');
+    }
   }
 
   // 回退本地
@@ -224,13 +287,17 @@ async function expandPromptWithLLM(prompt: string, style?: string): Promise<stri
   }
 
   try {
-    const response = await callDirectOpenRouter(apiKey, requestBody);
+    const response = await callDirectOpenRouter(apiKey, requestBody, TIMEOUT_MS.PROMPT_EXPAND);
     if (response.ok) {
       const result = await response.json();
       return result.choices?.[0]?.message?.content?.trim() || prompt;
     }
-  } catch (e) {
-    logger.warn('Direct API failed for prompt expansion');
+  } catch (e: any) {
+    if (e.name === 'AbortError') {
+      logger.warn('Direct API timeout for prompt expansion');
+    } else {
+      logger.warn('Direct API failed for prompt expansion');
+    }
   }
 
   return prompt;

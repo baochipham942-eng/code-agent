@@ -970,8 +970,10 @@ export class AgentLoop {
           // Plan Mode support (borrowed from Claude Code v2.0)
           setPlanMode: this.setPlanMode.bind(this),
           isPlanMode: this.isPlanMode.bind(this),
-          // emitEvent allows tools to emit custom events - use type assertion for flexibility
-          emitEvent: (event: string, data: unknown) => this.onEvent({ type: event, data } as AgentEvent),
+          // emitEvent allows tools to emit custom events - automatically includes sessionId
+          emitEvent: (event: string, data: unknown) => this.onEvent({ type: event, data, sessionId: this.sessionId } as AgentEvent),
+          // Session ID for cross-session isolation (fixes todo pollution)
+          sessionId: this.sessionId,
         }
       );
       logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);

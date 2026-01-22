@@ -41,6 +41,8 @@ export interface ExecuteOptions {
   setPlanMode?: (active: boolean) => void;
   isPlanMode?: () => boolean;
   emitEvent?: (event: string, data: unknown) => void;
+  // Session ID for cross-session isolation
+  sessionId?: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -135,7 +137,7 @@ export class ToolExecutor {
     }
 
     // Create tool context
-    const context: ToolContext = {
+    const context: ToolContext & { sessionId?: string } = {
       workingDirectory: this.workingDirectory,
       generation: options.generation,
       requestPermission: this.requestPermission,
@@ -149,6 +151,8 @@ export class ToolExecutor {
       emitEvent: options.emitEvent,
       // Also set emit as alias for emitEvent (tools use context.emit)
       emit: options.emitEvent,
+      // Session ID for cross-session isolation (fixes todo pollution)
+      sessionId: options.sessionId,
     };
 
     // Check permission if required

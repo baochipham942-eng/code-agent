@@ -83,6 +83,15 @@ async function handleCheckApiKeyConfigured(): Promise<boolean> {
   return getSecureStorage().getStoredApiKeyProviders().length > 0;
 }
 
+async function handleSyncApiKeysFromCloud(
+  getConfigService: () => ConfigService | null,
+  payload: { authToken: string }
+): Promise<{ success: boolean; syncedKeys: string[]; error?: string }> {
+  const configService = getConfigService();
+  if (!configService) throw new Error('Config service not initialized');
+  return configService.syncApiKeysFromCloud(payload.authToken);
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -121,6 +130,9 @@ export function registerSettingsHandlers(
           break;
         case 'checkApiKeyConfigured':
           data = await handleCheckApiKeyConfigured();
+          break;
+        case 'syncApiKeysFromCloud':
+          data = await handleSyncApiKeysFromCloud(getConfigService, payload as { authToken: string });
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

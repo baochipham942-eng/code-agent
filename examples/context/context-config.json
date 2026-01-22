@@ -1,0 +1,28 @@
+{
+  "$schema": "https://code-agent.dev/schemas/settings.json",
+  "description": "Example context management configuration for Code Agent",
+
+  "context": {
+    "maxTokens": 100000,
+
+    "compression": {
+      "enabled": true,
+      "strategy": "ai_summary",
+      "threshold": 80000,
+      "targetRatio": 0.5
+    },
+
+    "codePreservation": {
+      "enabled": true,
+      "recentBlocksToKeep": 5,
+      "preserveImports": true,
+      "preserveFunctionSignatures": true
+    },
+
+    "cache": {
+      "enabled": true,
+      "maxSessions": 10,
+      "ttlMinutes": 60
+    }
+  }
+}

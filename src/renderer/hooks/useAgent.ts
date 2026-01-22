@@ -35,6 +35,7 @@ const logger = createLogger('useAgent');
 export const useAgent = () => {
   const {
     setIsProcessing,
+    setSessionProcessing,
     isProcessing,
     currentGeneration,
     setPendingPermissionRequest,
@@ -45,6 +46,7 @@ export const useAgent = () => {
     addMessage,
     updateMessage,
     setTodos,
+    currentSessionId,
   } = useSessionStore();
 
   // Use refs to avoid stale closure issues
@@ -98,11 +100,24 @@ export const useAgent = () => {
         }
 
         // 会话隔离：只处理属于当前会话的事件
+        // 但完成类事件需要跨会话处理（清除处理状态）
         const currentSessionId = useSessionStore.getState().currentSessionId;
-        if (event.sessionId && event.sessionId !== currentSessionId) {
-          // 事件属于其他会话，忽略
+        const isCompletionEvent = ['agent_complete', 'error'].includes(event.type);
+
+        if (event.sessionId && event.sessionId !== currentSessionId && !isCompletionEvent) {
+          // 事件属于其他会话，且不是完成类事件，忽略
           return;
         }
+
+        // 辅助函数：清除会话处理状态
+        const clearSessionProcessing = () => {
+          const sessionId = event.sessionId || currentSessionId;
+          if (sessionId) {
+            useAppStore.getState().setSessionProcessing(sessionId, false);
+          } else {
+            setIsProcessing(false);
+          }
+        };
 
         // Always get the latest messages from ref
         const currentMessages = messagesRef.current;
@@ -200,7 +215,7 @@ export const useAgent = () => {
               }
               // 纯文本消息（无工具调用）表示本轮结束
               if (!event.data.toolCalls || event.data.toolCalls.length === 0) {
-                setIsProcessing(false);
+                clearSessionProcessing();
               }
             }
             break;
@@ -381,21 +396,26 @@ export const useAgent = () => {
           case 'error': {
             // Handle error - display it in the chat
             logger.error('Agent error', { message: event.data?.message });
-            const lastMessage = currentMessages[currentMessages.length - 1];
-            if (lastMessage?.role === 'assistant') {
-              updateMessage(lastMessage.id, {
-                content: `Error: ${event.data?.message || 'Unknown error'}`,
-              });
+            // 只有当前会话的错误才更新消息
+            if (!event.sessionId || event.sessionId === currentSessionId) {
+              const lastMessage = currentMessages[currentMessages.length - 1];
+              if (lastMessage?.role === 'assistant') {
+                updateMessage(lastMessage.id, {
+                  content: `Error: ${event.data?.message || 'Unknown error'}`,
+                });
+              }
             }
-            setIsProcessing(false);
+            clearSessionProcessing();
             break;
           }
 
           case 'agent_complete':
             // Agent has finished processing
-            // 刷新所有待处理的流式更新
-            flushRef.current();
-            setIsProcessing(false);
+            // 只有当前会话才刷新流式更新
+            if (!event.sessionId || event.sessionId === currentSessionId) {
+              flushRef.current();
+            }
+            clearSessionProcessing();
             break;
 
           case 'permission_request':
@@ -451,9 +471,21 @@ export const useAgent = () => {
   // Turn-based model: 不再预创建 placeholder，等待后端 turn_start 事件
   const sendMessage = useCallback(
     async (content: string, attachments?: MessageAttachment[]) => {
-      logger.debug('sendMessage called', { contentPreview: content.substring(0, 50) });
-      if ((!content.trim() && !attachments?.length) || isProcessing) {
-        logger.debug('sendMessage blocked - empty or processing');
+      logger.debug('sendMessage called', { contentPreview: content.substring(0, 50), sessionId: currentSessionId });
+
+      // 检查当前会话是否正在处理（允许其他会话并发发送）
+      const isCurrentSessionProcessing = currentSessionId
+        ? useAppStore.getState().isSessionProcessing(currentSessionId)
+        : isProcessing;
+
+      if ((!content.trim() && !attachments?.length) || isCurrentSessionProcessing) {
+        logger.debug('sendMessage blocked - empty or current session processing', { isCurrentSessionProcessing });
+        return;
+      }
+
+      // 没有会话时无法发送
+      if (!currentSessionId) {
+        logger.warn('sendMessage blocked - no current session');
         return;
       }
 
@@ -474,7 +506,8 @@ export const useAgent = () => {
       // 1. 每轮 Agent Loop 对应一条消息
       // 2. 工具调用后的新响应会创建新消息，而不是追加到旧消息
 
-      setIsProcessing(true);
+      // 按会话设置处理状态（允许多会话并发）
+      setSessionProcessing(currentSessionId, true);
       currentTurnMessageIdRef.current = null; // 重置 turn tracking
 
       try {
@@ -501,21 +534,27 @@ export const useAgent = () => {
           timestamp: Date.now(),
         };
         addMessage(errorMessage);
-        setIsProcessing(false);
+        // 按会话清除处理状态
+        setSessionProcessing(currentSessionId, false);
       }
     },
-    [addMessage, setIsProcessing, isProcessing]
+    [addMessage, setSessionProcessing, isProcessing, currentSessionId]
   );
 
   // Cancel the current operation
   const cancel = useCallback(async () => {
     try {
       await window.electronAPI?.invoke('agent:cancel');
-      setIsProcessing(false);
+      // 按会话清除处理状态
+      if (currentSessionId) {
+        setSessionProcessing(currentSessionId, false);
+      } else {
+        setIsProcessing(false);
+      }
     } catch (error) {
       logger.error('Cancel error', error);
     }
-  }, [setIsProcessing]);
+  }, [setIsProcessing, setSessionProcessing, currentSessionId]);
 
   return {
     messages,

@@ -24,6 +24,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
 // Re-export sub-components for direct use if needed
 export { UserMessage } from './UserMessage';
 export { AssistantMessage } from './AssistantMessage';
+export { CoworkMessageBubble } from './CoworkMessageBubble';
 export { MessageContent, CodeBlock, InlineTextWithCode } from './MessageContent';
 export { ToolCallDisplay } from './ToolCallDisplay';
 export { AttachmentDisplay } from './AttachmentPreview';

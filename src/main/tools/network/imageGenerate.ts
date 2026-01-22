@@ -377,19 +377,9 @@ image_generate { "prompt": "产品展示图", "output_path": "./product.png", "s
 
       const generationTime = Date.now() - startTime;
 
-      // 构建输出信息
-      let output = imagePath
-        ? `✅ 图片已生成并保存到: ${imagePath}`
-        : `✅ 图片已生成（base64 格式，${(imageData.length / 1024).toFixed(1)} KB）`;
-
-      output += `\n\n📊 生成信息:`;
-      output += `\n- 模型: ${model}`;
-      output += `\n- 宽高比: ${aspect_ratio}`;
-      output += `\n- 耗时: ${(generationTime / 1000).toFixed(1)} 秒`;
-
-      if (expand_prompt && finalPrompt !== prompt) {
-        output += `\n\n🔍 扩展后的 Prompt:\n${finalPrompt}`;
-      }
+      // 简化输出信息 - 图片会在 UI 中直接展示，无需在文本中重复路径
+      // AI 模型只需知道生成成功即可，用户可以在 UI 中查看和操作图片
+      const output = '图片生成成功。';
 
       return {
         success: true,

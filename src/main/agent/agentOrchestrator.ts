@@ -151,6 +151,11 @@ export class AgentOrchestrator {
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
 
+    // 获取当前会话 ID（在创建 AgentLoop 之前）
+    // 这样事件就会关联到正确的会话，即使用户在执行过程中切换会话
+    const currentSession = await sessionManager.getCurrentSession();
+    const sessionId = currentSession?.id;
+
     // Create user message
     const userMessage: Message = {
       id: this.generateId(),
@@ -174,6 +179,13 @@ export class AgentOrchestrator {
     // Get model config
     const modelConfig = this.getModelConfig(settings);
 
+    // Create agent loop with session-aware event handler
+    // Wrap onEvent to inject sessionId, ensuring events are associated with the correct session
+    const sessionAwareOnEvent = (event: AgentEvent) => {
+      // Inject sessionId into all events for proper session isolation
+      this.onEvent({ ...event, sessionId } as AgentEvent & { sessionId?: string });
+    };
+
     // Create agent loop
     this.agentLoop = new AgentLoop({
       generation,
@@ -181,8 +193,9 @@ export class AgentOrchestrator {
       toolRegistry: this.toolRegistry,
       toolExecutor: this.toolExecutor,
       messages: this.messages,
-      onEvent: this.onEvent,
+      onEvent: sessionAwareOnEvent,
       planningService: this.planningService,
+      sessionId, // Pass sessionId for tracing
     });
 
     try {

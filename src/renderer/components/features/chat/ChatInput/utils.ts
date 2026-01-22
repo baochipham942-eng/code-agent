@@ -56,7 +56,9 @@ export function getFileCategory(file: File): { category: AttachmentCategory; lan
     return { category: 'html', language: 'html' };
   }
   // Excel 文件（支持解析）
-  if (EXCEL_EXTENSIONS.includes(ext) || mimeType.includes('spreadsheet')) {
+  if (EXCEL_EXTENSIONS.includes(ext) ||
+      mimeType.includes('spreadsheet') ||
+      mimeType === 'application/vnd.ms-excel') {
     return { category: 'excel' };
   }
   if (CODE_EXTENSIONS[ext]) {

@@ -41,6 +41,7 @@ import {
 } from 'lucide-react';
 import type { ToolCallDisplayProps, ToolStatus, ToolStatusConfig } from './types';
 import { useAppStore } from '../../../../stores/appStore';
+import { useSessionStore } from '../../../../stores/sessionStore';
 import { summarizeToolCall, getToolStatusText } from '../../../../utils/toolSummary';
 import { DiffView, DiffPreview } from '../../../DiffView';
 
@@ -542,6 +543,13 @@ const statusConfig: Record<ToolStatus, ToolStatusConfig> = {
     border: 'border-amber-500/20',
     icon: <Loader className="w-3 h-3 animate-spin" />,
     label: 'Running'
+  },
+  interrupted: {
+    bg: 'bg-zinc-500/10',
+    text: 'text-zinc-400',
+    border: 'border-zinc-500/20',
+    icon: <AlertCircle className="w-3 h-3" />,
+    label: '已中断'
   }
 };
 
@@ -553,17 +561,33 @@ export const ToolCallDisplay: React.FC<ToolCallDisplayProps> = ({
   compact = false,
 }) => {
   const openPreview = useAppStore((state) => state.openPreview);
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const contentRef = useRef<HTMLDivElement>(null);
 
   // Get status from result
+  // 如果工具没有结果，需要判断是正在执行还是被中断
   const getStatus = (): ToolStatus => {
-    if (!toolCall.result) return 'pending';
+    if (!toolCall.result) {
+      // 检查当前会话是否正在处理
+      // 只有当前会话正在处理时，工具才显示为 pending
+      // 否则（历史会话或已完成的会话）显示为 interrupted
+      const isCurrentSessionProcessing = currentSessionId
+        ? useAppStore.getState().isSessionProcessing(currentSessionId)
+        : false;
+
+      if (isCurrentSessionProcessing) {
+        return 'pending';
+      }
+      // 当前会话不在处理中，但工具没有结果，说明被中断了
+      return 'interrupted';
+    }
     return toolCall.result.success ? 'success' : 'error';
   };
 
   const status = getStatus();
 
   // Default: expand only when pending (running) or error
+  // interrupted 状态默认折叠（历史消息）
   const [expanded, setExpanded] = useState(status === 'pending' || status === 'error');
   const [showDiff, setShowDiff] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);

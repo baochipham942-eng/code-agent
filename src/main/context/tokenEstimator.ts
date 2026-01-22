@@ -299,7 +299,7 @@ export function estimateTokensDetailed(text: string): TokenEstimateResult {
   const cjkTokens = Math.ceil(cjkChars / TOKEN_RATIOS.CJK);
   const nonCjkChars = totalChars - cjkChars;
 
-  let ratio = TOKEN_RATIOS.ENGLISH;
+  let ratio: number = TOKEN_RATIOS.ENGLISH;
   switch (primaryType) {
     case 'code': ratio = TOKEN_RATIOS.CODE; break;
     case 'json': ratio = TOKEN_RATIOS.JSON; break;

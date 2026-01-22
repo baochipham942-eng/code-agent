@@ -64,6 +64,11 @@ async function handleCreate(
   sessionManager.setCurrentSession(session.id);
   setCurrentSessionId(session.id);
 
+  // 关键：创建新会话时必须清空 orchestrator 的消息历史，防止上下文污染
+  if (orchestrator) {
+    orchestrator.clearMessages();
+  }
+
   memoryService.setContext(session.id, workingDirectory || undefined);
 
   // Gen5: Trigger memory retrieval on session start (async, non-blocking)

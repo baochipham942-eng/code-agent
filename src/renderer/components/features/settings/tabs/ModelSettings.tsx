@@ -3,13 +3,14 @@
 // ============================================================================
 
 import React, { useState } from 'react';
-import { Key } from 'lucide-react';
+import { Key, CloudDownload, CheckCircle, AlertCircle } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { ModelProvider } from '@shared/types';
 import { UI } from '@shared/constants';
 import { createLogger } from '../../../../utils/logger';
+import { useAuthStore } from '../../../../stores/authStore';
 
 const logger = createLogger('ModelSettings');
 
@@ -32,8 +33,11 @@ export interface ModelSettingsProps {
 
 export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }) => {
   const { t } = useI18n();
+  const { user, isAuthenticated } = useAuthStore();
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Save config to backend
   const handleSave = async () => {
@@ -62,6 +66,49 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       setSaveStatus('error');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Sync API keys from cloud (admin only)
+  const handleSyncApiKeys = async () => {
+    setIsSyncing(true);
+    setSyncMessage(null);
+    try {
+      // Get auth token
+      const token = await window.electronAPI?.invoke(IPC_CHANNELS.AUTH_GENERATE_QUICK_TOKEN);
+      if (!token) {
+        setSyncMessage({ type: 'error', text: '获取认证 token 失败，请重新登录' });
+        return;
+      }
+
+      // Call sync API via domain API
+      const result = await window.domainAPI?.invoke<{
+        success: boolean;
+        syncedKeys: string[];
+        error?: string;
+      }>('settings', 'syncApiKeysFromCloud', { authToken: token });
+
+      if (result?.success && result.data?.success) {
+        const syncedKeys = result.data.syncedKeys;
+        if (syncedKeys.length > 0) {
+          setSyncMessage({
+            type: 'success',
+            text: `已同步 ${syncedKeys.length} 个 API Key: ${syncedKeys.join(', ')}`,
+          });
+        } else {
+          setSyncMessage({ type: 'success', text: '云端没有可同步的 API Key' });
+        }
+      } else {
+        setSyncMessage({
+          type: 'error',
+          text: result?.data?.error || result?.error?.message || '同步失败',
+        });
+      }
+    } catch (error) {
+      logger.error('Failed to sync API keys', error);
+      setSyncMessage({ type: 'error', text: `同步失败: ${error instanceof Error ? error.message : String(error)}` });
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -203,6 +250,36 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : t.common.save || 'Save'}
         </Button>
       </div>
+
+      {/* Admin: Sync API Keys from Cloud */}
+      {isAuthenticated && user?.isAdmin && (
+        <div className="pt-4 border-t border-zinc-800">
+          <h4 className="text-sm font-medium text-zinc-100 mb-2">
+            管理员功能
+          </h4>
+          <p className="text-xs text-zinc-500 mb-3">
+            系统 API Key 会在登录时自动同步到本地。如需手动重新同步，点击下方按钮。
+          </p>
+          <Button
+            onClick={handleSyncApiKeys}
+            loading={isSyncing}
+            fullWidth
+            variant="secondary"
+            leftIcon={!isSyncing ? <CloudDownload className="w-4 h-4" /> : undefined}
+          >
+            {isSyncing ? '同步中...' : '重新同步云端 API Key'}
+          </Button>
+
+          {syncMessage && (
+            <div className={`flex items-center gap-2 mt-3 p-3 rounded-lg ${
+              syncMessage.type === 'success' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+            }`}>
+              {syncMessage.type === 'success' ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+              <span className="text-sm">{syncMessage.text}</span>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

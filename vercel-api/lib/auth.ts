@@ -59,16 +59,33 @@ export async function verifyToken(token: string): Promise<TokenPayload | null> {
   }
 }
 
+// 扩展的认证结果，包含管理员状态
+export interface AuthResult extends TokenPayload {
+  isAdmin: boolean;
+}
+
 // 从请求头中提取并验证 Token
 export async function authenticateRequest(
   authHeader: string | undefined
-): Promise<TokenPayload | null> {
+): Promise<AuthResult | null> {
   if (!authHeader?.startsWith('Bearer ')) {
     return null;
   }
 
   const token = authHeader.slice(7);
-  return verifyToken(token);
+  const payload = await verifyToken(token);
+
+  if (!payload) {
+    return null;
+  }
+
+  // 检查是否为管理员（基于邮箱）
+  const isAdmin = ADMIN_EMAILS.includes(payload.email);
+
+  return {
+    ...payload,
+    isAdmin,
+  };
 }
 
 // 获取或创建用户（OAuth 回调后使用）

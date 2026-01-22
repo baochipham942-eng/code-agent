@@ -236,6 +236,47 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   },
 }));
 
+/**
+ * 管理员自动同步云端 API Key
+ * 在管理员登录后自动调用，将系统 API Key 同步到本地
+ */
+async function syncApiKeysForAdmin(user: AuthUser): Promise<void> {
+  if (!user.isAdmin) {
+    return;
+  }
+
+  logger.info('Admin detected, syncing API keys from cloud...');
+
+  try {
+    // 获取 auth token
+    const token = await window.electronAPI?.invoke(IPC_CHANNELS.AUTH_GENERATE_QUICK_TOKEN);
+    if (!token) {
+      logger.warn('Failed to get auth token for API key sync');
+      return;
+    }
+
+    // 调用同步接口
+    const result = await window.domainAPI?.invoke<{
+      success: boolean;
+      syncedKeys: string[];
+      error?: string;
+    }>('settings', 'syncApiKeysFromCloud', { authToken: token });
+
+    if (result?.success && result.data?.success) {
+      const syncedKeys = result.data.syncedKeys;
+      if (syncedKeys.length > 0) {
+        logger.info('Admin API keys synced successfully', { syncedKeys });
+      } else {
+        logger.info('No API keys to sync from cloud');
+      }
+    } else {
+      logger.warn('Failed to sync admin API keys', { error: result?.data?.error || result?.error });
+    }
+  } catch (error) {
+    logger.error('Error syncing admin API keys', error);
+  }
+}
+
 // Initialize auth store: load status and set up event listeners
 export async function initializeAuthStore(): Promise<void> {
   const store = useAuthStore.getState();
@@ -245,6 +286,12 @@ export async function initializeAuthStore(): Promise<void> {
     const status = await window.electronAPI?.invoke(IPC_CHANNELS.AUTH_GET_STATUS);
     if (status) {
       store.setUser(status.user);
+
+      // 管理员自动同步 API Key
+      if (status.user?.isAdmin) {
+        // 延迟执行，避免阻塞初始化
+        setTimeout(() => syncApiKeysForAdmin(status.user), 1000);
+      }
     }
   } catch (error) {
     logger.error('Failed to load auth status', error);
@@ -268,6 +315,11 @@ export async function initializeAuthStore(): Promise<void> {
       store.setUser(event.user);
       store.setLoading(false);
       store.setShowAuthModal(false);
+
+      // 管理员登录后自动同步 API Key
+      if (event.user.isAdmin) {
+        setTimeout(() => syncApiKeysForAdmin(event.user), 1000);
+      }
     } else if (event.type === 'signed_out') {
       store.setUser(null);
     } else if (event.type === 'user_updated' && event.user) {

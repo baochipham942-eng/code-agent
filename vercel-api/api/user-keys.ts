@@ -1,8 +1,9 @@
 // ============================================================================
 // User API Keys Management
-// GET  /api/user-keys              - 获取 Key 配置状态
-// POST /api/user-keys              - 保存 API Key
-// DELETE /api/user-keys?type=xxx   - 删除 API Key
+// GET  /api/user-keys                    - 获取 Key 配置状态
+// GET  /api/user-keys?action=sync        - 管理员同步系统 Key 到本地（返回实际 Key）
+// POST /api/user-keys                    - 保存 API Key
+// DELETE /api/user-keys?type=xxx         - 删除 API Key
 // ============================================================================
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
@@ -11,13 +12,55 @@ import {
   getUserKeyStatus,
   saveUserApiKey,
   deleteUserApiKey,
+  getSystemApiKey,
   type ApiKeyType,
+  type ExtendedKeyType,
 } from '../lib/apiKeys.js';
 
 const VALID_KEY_TYPES: ApiKeyType[] = ['deepseek', 'openai', 'anthropic', 'perplexity'];
+const SYNC_KEY_TYPES: ExtendedKeyType[] = ['deepseek', 'openai', 'anthropic', 'perplexity', 'openrouter'];
 
 function isValidKeyType(type: string): type is ApiKeyType {
   return VALID_KEY_TYPES.includes(type as ApiKeyType);
+}
+
+// 管理员同步系统 Key（返回实际的 Key 值）
+// 安全注意：仅管理员可调用，Key 会传输到客户端本地存储
+async function handleSyncKeys(req: VercelRequest, res: VercelResponse) {
+  const auth = await authenticateRequest(req.headers.authorization);
+  if (!auth) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // 验证管理员身份
+  if (!auth.isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'Permission denied: only admins can sync system keys',
+    });
+  }
+
+  try {
+    // 收集所有可用的系统 Key
+    const keys: Record<string, string> = {};
+
+    for (const keyType of SYNC_KEY_TYPES) {
+      const systemKey = getSystemApiKey(keyType);
+      if (systemKey) {
+        keys[keyType] = systemKey;
+      }
+    }
+
+    // 返回找到的 Key
+    return res.status(200).json({
+      success: true,
+      keys,
+      message: `Synced ${Object.keys(keys).length} system keys`,
+    });
+  } catch (error) {
+    const err = error as Error;
+    return res.status(500).json({ success: false, error: err.message });
+  }
 }
 
 // 获取 Key 配置状态
@@ -102,6 +145,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   switch (req.method) {
     case 'GET':
+      // 检查是否是同步请求
+      if (req.query.action === 'sync') {
+        return handleSyncKeys(req, res);
+      }
       return handleGetStatus(req, res);
     case 'POST':
       return handleSaveKey(req, res);

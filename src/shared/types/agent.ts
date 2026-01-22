@@ -28,7 +28,8 @@ export type AgentTaskPhase =
   | 'tool_pending'  // 等待工具执行
   | 'tool_running'  // 工具执行中
   | 'generating'    // 生成回复中
-  | 'completed';    // 完成
+  | 'completed'     // 完成
+  | 'failed';       // 失败
 
 // 任务进度事件数据
 export interface TaskProgressData {
@@ -62,7 +63,7 @@ export type AgentEvent =
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string } }
   | { type: 'tool_call_end'; data: ToolResult }
   | { type: 'permission_request'; data: PermissionRequest }
-  | { type: 'error'; data: { message: string; code?: string; details?: { path?: string; command?: string; url?: string; changes?: string } | string } }
+  | { type: 'error'; data: { message: string; code?: string; suggestion?: string; details?: Record<string, unknown> } }
   | { type: 'stream_chunk'; data: { content: string | undefined; turnId?: string } }
   | { type: 'stream_tool_call_start'; data: { index?: number; id?: string; name?: string; turnId?: string } }
   | { type: 'stream_tool_call_delta'; data: { index?: number; name?: string; argumentsDelta?: string; turnId?: string } }

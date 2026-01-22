@@ -1,111 +1,262 @@
 // ============================================================================
-// useMultiAgentDetection - Detect locally installed AI CLI tools
+// useMultiAgentDetection - Detect multi-agent collaboration in session
 // ============================================================================
 
-import { useState, useEffect, useCallback } from 'react';
+import { useMemo } from 'react';
+import type { Message, ToolCall } from '@shared/types';
 
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
 
-export interface AgentInfo {
-  id: string;
-  name: string;
-  command: string;
-  version?: string;
-  installed: boolean;
-  description: string;
-}
+export type CollaborationPattern = 'sequential' | 'parallel' | 'hierarchical' | 'single' | null;
 
-interface MultiAgentDetectionResult {
-  agents: AgentInfo[];
-  isLoading: boolean;
-  error: string | null;
-  refresh: () => void;
+export interface MultiAgentInfo {
+  // Whether this is a multi-agent session
+  isMultiAgent: boolean;
+  // Number of agents detected
+  agentCount: number;
+  // List of active agent names
+  activeAgents: string[];
+  // Collaboration pattern
+  pattern: CollaborationPattern;
 }
 
 // -----------------------------------------------------------------------------
-// Known AI CLI Tools
+// Constants
 // -----------------------------------------------------------------------------
 
-const KNOWN_AGENTS: Omit<AgentInfo, 'installed' | 'version'>[] = [
-  {
-    id: 'claude-code',
-    name: 'Claude Code',
-    command: 'claude',
-    description: 'Anthropic 官方 CLI 工具',
-  },
-  {
-    id: 'gemini-cli',
-    name: 'Gemini CLI',
-    command: 'gemini',
-    description: 'Google Gemini 命令行工具',
-  },
-  {
-    id: 'codex',
-    name: 'OpenAI Codex',
-    command: 'codex',
-    description: 'OpenAI Codex CLI',
-  },
-  {
-    id: 'aider',
-    name: 'Aider',
-    command: 'aider',
-    description: 'AI pair programming in terminal',
-  },
-  {
-    id: 'cursor',
-    name: 'Cursor',
-    command: 'cursor',
-    description: 'Cursor AI 编辑器 CLI',
-  },
+// Tool names that indicate multi-agent collaboration
+const AGENT_SPAWN_TOOLS = ['spawn_agent', 'agent_create', 'create_agent'];
+const AGENT_COMMUNICATION_TOOLS = ['agent_message', 'agent_send', 'send_to_agent'];
+const TASK_DELEGATION_TOOLS = ['task', 'delegate_task', 'assign_task'];
+const ORCHESTRATION_TOOLS = ['workflow_orchestrate', 'orchestrate', 'coordinate_agents'];
+
+// All multi-agent related tools
+const MULTI_AGENT_TOOLS = [
+  ...AGENT_SPAWN_TOOLS,
+  ...AGENT_COMMUNICATION_TOOLS,
+  ...TASK_DELEGATION_TOOLS,
+  ...ORCHESTRATION_TOOLS,
 ];
+
+// -----------------------------------------------------------------------------
+// Helper Functions
+// -----------------------------------------------------------------------------
+
+/**
+ * Extract all tool calls from messages
+ */
+function extractToolCalls(messages: Message[]): ToolCall[] {
+  const toolCalls: ToolCall[] = [];
+
+  for (const message of messages) {
+    if (message.toolCalls && message.toolCalls.length > 0) {
+      toolCalls.push(...message.toolCalls);
+    }
+  }
+
+  return toolCalls;
+}
+
+/**
+ * Check if a tool call is related to multi-agent operations
+ */
+function isMultiAgentToolCall(toolCall: ToolCall): boolean {
+  return MULTI_AGENT_TOOLS.includes(toolCall.name);
+}
+
+/**
+ * Extract agent name from tool call arguments
+ */
+function extractAgentName(toolCall: ToolCall): string | null {
+  const args = toolCall.arguments;
+
+  // Common argument names for agent identification
+  const nameFields = ['agent_name', 'agentName', 'name', 'agent', 'agent_id', 'agentId', 'target'];
+
+  for (const field of nameFields) {
+    if (args[field] && typeof args[field] === 'string') {
+      return args[field] as string;
+    }
+  }
+
+  // For task tool, check if it has an agent assignment
+  if (toolCall.name === 'task' && args['assigned_to']) {
+    return args['assigned_to'] as string;
+  }
+
+  return null;
+}
+
+/**
+ * Detect collaboration pattern from tool call sequence
+ */
+function detectPattern(toolCalls: ToolCall[]): CollaborationPattern {
+  const agentToolCalls = toolCalls.filter(isMultiAgentToolCall);
+
+  if (agentToolCalls.length === 0) {
+    return 'single';
+  }
+
+  // Check for orchestration tools (hierarchical pattern)
+  const hasOrchestration = agentToolCalls.some(tc =>
+    ORCHESTRATION_TOOLS.includes(tc.name)
+  );
+  if (hasOrchestration) {
+    return 'hierarchical';
+  }
+
+  // Check for spawn patterns
+  const spawnCalls = agentToolCalls.filter(tc =>
+    AGENT_SPAWN_TOOLS.includes(tc.name)
+  );
+
+  // Check for task delegation
+  const taskCalls = agentToolCalls.filter(tc =>
+    TASK_DELEGATION_TOOLS.includes(tc.name)
+  );
+
+  // Check for agent communication
+  const messageCalls = agentToolCalls.filter(tc =>
+    AGENT_COMMUNICATION_TOOLS.includes(tc.name)
+  );
+
+  // Detect parallel pattern: multiple spawn calls close together
+  // or multiple task delegations without waiting for results
+  if (spawnCalls.length >= 2) {
+    // Check if spawns are in rapid succession (parallel)
+    // This is a simplified heuristic - in reality we'd check timestamps
+    const spawnIndices = spawnCalls.map(sc =>
+      toolCalls.findIndex(tc => tc.id === sc.id)
+    );
+
+    // If spawn calls are consecutive or very close, it's parallel
+    let isParallel = true;
+    for (let i = 1; i < spawnIndices.length; i++) {
+      if (spawnIndices[i] - spawnIndices[i - 1] > 3) {
+        isParallel = false;
+        break;
+      }
+    }
+
+    if (isParallel) {
+      return 'parallel';
+    }
+  }
+
+  // Multiple task delegations suggest parallel execution
+  if (taskCalls.length >= 2) {
+    // Check if tasks target different agents
+    const targetAgents = new Set<string>();
+    for (const tc of taskCalls) {
+      const agent = extractAgentName(tc);
+      if (agent) {
+        targetAgents.add(agent);
+      }
+    }
+
+    if (targetAgents.size >= 2) {
+      return 'parallel';
+    }
+  }
+
+  // Sequential pattern: one agent at a time with message passing
+  if (messageCalls.length > 0 || (spawnCalls.length >= 1 && taskCalls.length >= 1)) {
+    return 'sequential';
+  }
+
+  // If we have any multi-agent activity but can't determine pattern
+  if (agentToolCalls.length > 0) {
+    return 'sequential';
+  }
+
+  return null;
+}
+
+/**
+ * Extract unique agent names from tool calls
+ */
+function extractActiveAgents(toolCalls: ToolCall[]): string[] {
+  const agents = new Set<string>();
+
+  // Always include the main agent
+  agents.add('main');
+
+  for (const toolCall of toolCalls) {
+    if (!isMultiAgentToolCall(toolCall)) {
+      continue;
+    }
+
+    const agentName = extractAgentName(toolCall);
+    if (agentName) {
+      agents.add(agentName);
+    }
+
+    // For spawn_agent, also check for role or type
+    if (AGENT_SPAWN_TOOLS.includes(toolCall.name)) {
+      const role = toolCall.arguments['role'] as string | undefined;
+      const type = toolCall.arguments['type'] as string | undefined;
+      const agentType = toolCall.arguments['agent_type'] as string | undefined;
+
+      if (role) agents.add(role);
+      if (type) agents.add(type);
+      if (agentType) agents.add(agentType);
+    }
+  }
+
+  return Array.from(agents);
+}
 
 // -----------------------------------------------------------------------------
 // Hook
 // -----------------------------------------------------------------------------
 
 /**
- * Hook to detect locally installed AI CLI tools.
- * Note: This is a placeholder implementation that returns static data.
- * Full implementation would require IPC calls to check command availability.
+ * Hook to detect multi-agent collaboration patterns in a session.
+ * Analyzes message history to identify:
+ * - Whether multiple agents are involved
+ * - How many agents are active
+ * - Which agents are participating
+ * - The collaboration pattern (sequential, parallel, hierarchical)
+ *
+ * @param messages - Array of messages from the current session
+ * @returns MultiAgentInfo with detection results
  */
-export function useMultiAgentDetection(): MultiAgentDetectionResult {
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const detectAgents = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // For now, return all known agents as not installed
-      // Full implementation would check each command via IPC
-      const detectedAgents: AgentInfo[] = KNOWN_AGENTS.map(agent => ({
-        ...agent,
-        installed: false,
-        version: undefined,
-      }));
-
-      setAgents(detectedAgents);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to detect agents');
-    } finally {
-      setIsLoading(false);
+export function useMultiAgentDetection(messages: Message[]): MultiAgentInfo {
+  return useMemo(() => {
+    // Handle empty or undefined messages
+    if (!messages || messages.length === 0) {
+      return {
+        isMultiAgent: false,
+        agentCount: 1,
+        activeAgents: ['main'],
+        pattern: 'single',
+      };
     }
-  }, []);
 
-  useEffect(() => {
-    detectAgents();
-  }, [detectAgents]);
+    // Extract all tool calls from messages
+    const toolCalls = extractToolCalls(messages);
 
-  return {
-    agents,
-    isLoading,
-    error,
-    refresh: detectAgents,
-  };
+    // Check for multi-agent tool usage
+    const hasMultiAgentTools = toolCalls.some(isMultiAgentToolCall);
+
+    // Extract active agents
+    const activeAgents = extractActiveAgents(toolCalls);
+
+    // Detect collaboration pattern
+    const pattern = detectPattern(toolCalls);
+
+    // Determine if this is a multi-agent session
+    const isMultiAgent = hasMultiAgentTools || activeAgents.length > 1;
+
+    return {
+      isMultiAgent,
+      agentCount: activeAgents.length,
+      activeAgents,
+      pattern: isMultiAgent ? pattern : 'single',
+    };
+  }, [messages]);
 }
 
 // -----------------------------------------------------------------------------
@@ -113,18 +264,25 @@ export function useMultiAgentDetection(): MultiAgentDetectionResult {
 // -----------------------------------------------------------------------------
 
 /**
- * Get only installed agents
+ * Check if the current session has parallel agent execution
  */
-export function useInstalledAgents(): AgentInfo[] {
-  const { agents } = useMultiAgentDetection();
-  return agents.filter((agent) => agent.installed);
+export function useIsParallelExecution(messages: Message[]): boolean {
+  const { pattern } = useMultiAgentDetection(messages);
+  return pattern === 'parallel';
 }
 
 /**
- * Check if a specific agent is installed
+ * Check if the current session has hierarchical agent orchestration
  */
-export function useIsAgentInstalled(agentId: string): boolean {
-  const { agents } = useMultiAgentDetection();
-  const agent = agents.find((a) => a.id === agentId);
-  return agent?.installed ?? false;
+export function useIsHierarchicalOrchestration(messages: Message[]): boolean {
+  const { pattern } = useMultiAgentDetection(messages);
+  return pattern === 'hierarchical';
+}
+
+/**
+ * Get the count of active agents in the session
+ */
+export function useAgentCount(messages: Message[]): number {
+  const { agentCount } = useMultiAgentDetection(messages);
+  return agentCount;
 }

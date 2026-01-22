@@ -8,7 +8,15 @@ export { useRequireAuth } from './useRequireAuth';
 export { useCloudTasks, useCloudTask, useCloudTaskStats } from './useCloudTasks';
 export { useVoiceInput } from './useVoiceInput';
 export type { VoiceInputStatus } from './useVoiceInput';
-export { useMultiAgentDetection, useInstalledAgents, useIsAgentInstalled } from './useMultiAgentDetection';
-export type { AgentInfo } from './useMultiAgentDetection';
+export { useMultiAgentDetection, useIsParallelExecution, useIsHierarchicalOrchestration, useAgentCount } from './useMultiAgentDetection';
+export type { MultiAgentInfo, CollaborationPattern } from './useMultiAgentDetection';
 export { useMemoryEvents } from './useMemoryEvents';
 export type { MemoryEventCallbacks } from './useMemoryEvents';
+export { useMessageBatcher } from './useMessageBatcher';
+export type {
+  MessageBatcherConfig,
+  MessageBatcherReturn,
+  MessageUpdate,
+} from './useMessageBatcher';
+export { useTaskSync, useSessionTaskState, useHasRunningTasks, useTaskConcurrency } from './useTaskSync';
+export type { UseTaskSyncOptions, UseTaskSyncReturn } from './useTaskSync';

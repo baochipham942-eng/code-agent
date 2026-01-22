@@ -18,14 +18,20 @@ export interface ComplexityAnalysis {
 // 简单任务关键词 - 单一、明确、创建类
 const SIMPLE_KEYWORDS = [
   // 创建单个文件
-  'create a', 'make a', 'write a', 'build a',
-  '创建一个', '写一个', '做一个', '生成一个',
+  'create a', 'make a', 'write a', 'build a', 'generate a',
+  '创建一个', '写一个', '做一个', '生成一个', '生成',
   // 简单游戏/页面
   'snake game', 'todo app', 'calculator', 'hello world',
   '贪吃蛇', '计算器', '待办事项',
   // 单文件操作
   'single file', 'one file', 'simple',
   '单个文件', '简单的',
+  // 文档/数据文件生成
+  'excel', 'spreadsheet', 'csv', 'json file', 'pdf', 'document',
+  '表格', '文档', '数据文件',
+  // 快速任务指示词
+  'quickly', 'quick', 'fast', 'just',
+  '快速', '快', '直接',
 ];
 
 // 复杂任务关键词 - 系统性、重构、多文件

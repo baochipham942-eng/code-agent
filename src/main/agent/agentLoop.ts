@@ -29,6 +29,58 @@ import { createLogger } from '../services/infra/logger';
 const logger = createLogger('AgentLoop');
 
 // ----------------------------------------------------------------------------
+// Parallel Execution Configuration
+// ----------------------------------------------------------------------------
+
+/**
+ * Tools that are safe to execute in parallel (stateless, read-only)
+ * These tools don't modify state and can be safely parallelized
+ */
+const PARALLEL_SAFE_TOOLS = new Set([
+  'read_file',
+  'glob',
+  'grep',
+  'list_directory',
+  'web_fetch',
+  'web_search',
+  'memory_search',
+  'mcp_list_tools',
+  'mcp_list_resources',
+  'mcp_read_resource',
+  'mcp_get_status',
+]);
+
+/**
+ * Tools that modify state and must be executed sequentially
+ */
+const SEQUENTIAL_TOOLS = new Set([
+  'write_file',
+  'edit_file',
+  'bash',
+  'memory_store',
+  'ask_user_question',
+  'todo_write',
+  'task',
+  'spawn_agent',
+]);
+
+/**
+ * Maximum number of tools to execute in parallel
+ */
+const MAX_PARALLEL_TOOLS = 4;
+
+/**
+ * Check if a tool is safe for parallel execution
+ */
+function isParallelSafeTool(toolName: string): boolean {
+  // MCP tools that are read-only
+  if (toolName.startsWith('mcp_') && !toolName.includes('write') && !toolName.includes('create')) {
+    return true;
+  }
+  return PARALLEL_SAFE_TOOLS.has(toolName);
+}
+
+// ----------------------------------------------------------------------------
 // Types
 // ----------------------------------------------------------------------------
 
@@ -167,6 +219,9 @@ export class AgentLoop {
   private turnStartTime: number = 0;
   private toolsUsedInTurn: string[] = [];
 
+  // PERFORMANCE OPTIMIZATION: Track if current task is simple to skip expensive operations
+  private isSimpleTaskMode: boolean = false;
+
   constructor(config: AgentLoopConfig) {
     this.generation = config.generation;
     this.modelConfig = config.modelConfig;
@@ -258,19 +313,29 @@ export class AgentLoop {
 
     // Task Complexity Analysis - 自动检测任务复杂度并注入提示
     const complexityAnalysis = taskComplexityAnalyzer.analyze(userMessage);
-    const complexityHint = taskComplexityAnalyzer.generateComplexityHint(complexityAnalysis);
+    const isSimpleTask = complexityAnalysis.complexity === 'simple';
+
+    // Store in instance for use by buildEnhancedSystemPrompt
+    this.isSimpleTaskMode = isSimpleTask;
 
     logger.debug(` Task complexity: ${complexityAnalysis.complexity} (${Math.round(complexityAnalysis.confidence * 100)}%)`);
     logCollector.agent('INFO', `Task complexity: ${complexityAnalysis.complexity}`, {
       confidence: complexityAnalysis.confidence,
       reasons: complexityAnalysis.reasons,
+      fastPath: isSimpleTask, // 简单任务使用快速路径
     });
 
-    // Inject complexity hint as system message
-    this.injectSystemMessage(complexityHint);
+    // PERFORMANCE OPTIMIZATION: Skip complexity hint injection for simple tasks
+    // Simple tasks don't need explicit guidance - just execute directly
+    if (!isSimpleTask) {
+      const complexityHint = taskComplexityAnalyzer.generateComplexityHint(complexityAnalysis);
+      this.injectSystemMessage(complexityHint);
+    }
 
-    // Session Start Hook
-    if (this.enableHooks && this.planningService) {
+    // PERFORMANCE OPTIMIZATION: Skip session start hook for simple tasks
+    // Planning hooks add ~200-500ms overhead that simple tasks don't need
+    const shouldRunHooks = this.enableHooks && this.planningService && !isSimpleTask;
+    if (shouldRunHooks) {
       await this.runSessionStartHook();
     }
 
@@ -363,9 +428,10 @@ export class AgentLoop {
 
         // 发送生成中进度
         this.emitTaskProgress('generating', '生成回复中...');
-        // Stop Hook - verify completion before stopping
-        if (this.enableHooks && this.planningService) {
-          const stopResult = await this.planningService.hooks.onStop();
+        // PERFORMANCE OPTIMIZATION: Skip stop hook for simple tasks
+        // Stop hook reads plan from disk which adds ~100-200ms latency
+        if (shouldRunHooks) {
+          const stopResult = await this.planningService!.hooks.onStop();
 
           if (!stopResult.shouldContinue && stopResult.injectContext) {
             // Check retry limit to avoid infinite loops
@@ -642,7 +708,7 @@ export class AgentLoop {
   private emitTaskProgress(
     phase: AgentTaskPhase,
     step?: string,
-    extra?: { progress?: number; tool?: string; toolIndex?: number; toolTotal?: number }
+    extra?: { progress?: number; tool?: string; toolIndex?: number; toolTotal?: number; parallel?: boolean }
   ): void {
     this.onEvent({
       type: 'task_progress',
@@ -699,320 +765,212 @@ export class AgentLoop {
     toolCalls: ToolCall[]
   ): Promise<ToolResult[]> {
     logger.debug(` executeToolsWithHooks called with ${toolCalls.length} tool calls`);
-    const results: ToolResult[] = [];
+
+    // Phase 1: Classify tools into parallel-safe and sequential groups
+    const parallelGroup: Array<{ index: number; toolCall: ToolCall }> = [];
+    const sequentialGroup: Array<{ index: number; toolCall: ToolCall }> = [];
 
     for (let i = 0; i < toolCalls.length; i++) {
       const toolCall = toolCalls[i];
-      logger.debug(` [${i + 1}/${toolCalls.length}] Processing tool: ${toolCall.name}, id: ${toolCall.id}`);
+      if (isParallelSafeTool(toolCall.name)) {
+        parallelGroup.push({ index: i, toolCall });
+      } else {
+        sequentialGroup.push({ index: i, toolCall });
+      }
+    }
 
-      // 记录使用的工具
+    logger.debug(` Tool classification: ${parallelGroup.length} parallel-safe, ${sequentialGroup.length} sequential`);
+
+    // Results array to maintain original order
+    const results: ToolResult[] = new Array(toolCalls.length);
+
+    // Phase 2: Execute parallel-safe tools first (if any)
+    if (parallelGroup.length > 1) {
+      logger.debug(` Executing ${parallelGroup.length} parallel-safe tools in parallel (max ${MAX_PARALLEL_TOOLS})`);
+
+      // Execute in batches of MAX_PARALLEL_TOOLS
+      for (let batchStart = 0; batchStart < parallelGroup.length; batchStart += MAX_PARALLEL_TOOLS) {
+        const batch = parallelGroup.slice(batchStart, batchStart + MAX_PARALLEL_TOOLS);
+
+        // Emit start events for all tools in batch
+        for (const { index, toolCall } of batch) {
+          this.toolsUsedInTurn.push(toolCall.name);
+          this.emitTaskProgress('tool_running', `并行执行 ${batch.length} 个工具`, {
+            tool: toolCall.name,
+            toolIndex: index,
+            toolTotal: toolCalls.length,
+            parallel: true,
+          });
+          this.onEvent({ type: 'tool_call_start', data: { ...toolCall, _index: index, turnId: this.currentTurnId } });
+        }
+
+        // Execute batch in parallel
+        const batchPromises = batch.map(async ({ index, toolCall }) => {
+          const result = await this.executeSingleTool(toolCall, index, toolCalls.length);
+          return { index, result };
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+
+        // Store results in correct positions
+        for (const { index, result } of batchResults) {
+          results[index] = result;
+        }
+      }
+    } else if (parallelGroup.length === 1) {
+      // Single parallel-safe tool - execute normally
+      const { index, toolCall } = parallelGroup[0];
       this.toolsUsedInTurn.push(toolCall.name);
-
-      // 发送工具执行进度（显示当前是第几个，从 0 开始计数）
-      const progress = Math.round((i / toolCalls.length) * 100);
       this.emitTaskProgress('tool_running', `执行 ${toolCall.name}`, {
         tool: toolCall.name,
-        toolIndex: i,
+        toolIndex: index,
         toolTotal: toolCalls.length,
-        progress,
       });
+      this.onEvent({ type: 'tool_call_start', data: { ...toolCall, _index: index, turnId: this.currentTurnId } });
+      results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length);
+    }
 
+    // Phase 3: Execute sequential tools one by one
+    for (const { index, toolCall } of sequentialGroup) {
       if (this.isCancelled) {
-        logger.debug('[AgentLoop] Cancelled, breaking out of tool execution loop');
+        logger.debug('[AgentLoop] Cancelled, breaking out of sequential tool execution');
         break;
       }
 
-      // Pre-Tool Hook
-      if (this.enableHooks && this.planningService) {
-        try {
-          const preResult = await this.planningService.hooks.preToolUse({
-            toolName: toolCall.name,
-            toolParams: toolCall.arguments,
-          });
+      this.toolsUsedInTurn.push(toolCall.name);
+      const progress = Math.round((index / toolCalls.length) * 100);
+      this.emitTaskProgress('tool_running', `执行 ${toolCall.name}`, {
+        tool: toolCall.name,
+        toolIndex: index,
+        toolTotal: toolCalls.length,
+        progress,
+      });
+      this.onEvent({ type: 'tool_call_start', data: { ...toolCall, _index: index, turnId: this.currentTurnId } });
+      results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length);
+    }
 
-          if (preResult.injectContext) {
-            this.injectSystemMessage(preResult.injectContext);
-          }
-        } catch (error) {
-          logger.error('Pre-tool hook error:', error);
+    // Filter out undefined results (from cancelled executions)
+    return results.filter((r): r is ToolResult => r !== undefined);
+  }
+
+  /**
+   * Execute a single tool with hooks and event emission
+   * Extracted to support both parallel and sequential execution
+   */
+  private async executeSingleTool(
+    toolCall: ToolCall,
+    index: number,
+    total: number
+  ): Promise<ToolResult> {
+    logger.debug(` [${index + 1}/${total}] Processing tool: ${toolCall.name}, id: ${toolCall.id}`);
+
+    // Pre-Tool Hook (only for sequential tools to avoid race conditions)
+    if (this.enableHooks && this.planningService && !isParallelSafeTool(toolCall.name)) {
+      try {
+        const preResult = await this.planningService.hooks.preToolUse({
+          toolName: toolCall.name,
+          toolParams: toolCall.arguments,
+        });
+
+        if (preResult.injectContext) {
+          this.injectSystemMessage(preResult.injectContext);
         }
+      } catch (error) {
+        logger.error('Pre-tool hook error:', error);
       }
+    }
 
-      // Emit tool call start event with index and turnId for frontend matching
-      logger.debug(` Emitting tool_call_start for ${toolCall.name} (index: ${i}, turnId: ${this.currentTurnId})`);
-      this.onEvent({ type: 'tool_call_start', data: { ...toolCall, _index: i, turnId: this.currentTurnId } });
+    // Langfuse: Start tool span
+    const langfuse = getLangfuseService();
+    const toolSpanId = `tool-${toolCall.id}`;
+    langfuse.startNestedSpan(this.currentIterationSpanId, toolSpanId, {
+      name: `Tool: ${toolCall.name}`,
+      input: toolCall.arguments,
+      metadata: { toolId: toolCall.id, toolName: toolCall.name },
+    });
 
-      // Langfuse: Start tool span
-      const langfuse = getLangfuseService();
-      const toolSpanId = `tool-${toolCall.id}`;
-      langfuse.startNestedSpan(this.currentIterationSpanId, toolSpanId, {
-        name: `Tool: ${toolCall.name}`,
-        input: toolCall.arguments,
-        metadata: { toolId: toolCall.id, toolName: toolCall.name },
+    const startTime = Date.now();
+
+    // 检测工具参数是否解析失败
+    const args = toolCall.arguments as Record<string, unknown>;
+    if (args && args.__parseError === true) {
+      const errorMessage = args.__errorMessage as string || 'Unknown JSON parse error';
+      const rawArgs = args.__rawArguments as string || '';
+
+      logger.error(`[AgentLoop] Tool ${toolCall.name} arguments failed to parse: ${errorMessage}`);
+      logger.error(`[AgentLoop] Raw arguments: ${rawArgs.substring(0, 200)}`);
+      logCollector.tool('ERROR', `Tool ${toolCall.name} arguments parse error: ${errorMessage}`, {
+        toolCallId: toolCall.id,
+        rawArguments: rawArgs.substring(0, 500),
       });
 
-      const startTime = Date.now();
+      // 返回解析错误作为工具执行失败
+      const toolResult: ToolResult = {
+        toolCallId: toolCall.id,
+        success: false,
+        error: `Tool arguments JSON parse error: ${errorMessage}. Raw: ${rawArgs.substring(0, 200)}...`,
+        duration: Date.now() - startTime,
+      };
 
-      // 检测工具参数是否解析失败
-      const args = toolCall.arguments as Record<string, unknown>;
-      if (args && args.__parseError === true) {
-        const errorMessage = args.__errorMessage as string || 'Unknown JSON parse error';
-        const rawArgs = args.__rawArguments as string || '';
+      // 注入系统消息提醒模型
+      this.injectSystemMessage(
+        `<tool-arguments-parse-error>\n` +
+        `⚠️ ERROR: Failed to parse JSON arguments for tool "${toolCall.name}".\n` +
+        `Parse error: ${errorMessage}\n` +
+        `Raw arguments (truncated): ${rawArgs.substring(0, 300)}\n\n` +
+        `Please ensure your tool call arguments are valid JSON.\n` +
+        `</tool-arguments-parse-error>`
+      );
 
-        logger.error(`[AgentLoop] Tool ${toolCall.name} arguments failed to parse: ${errorMessage}`);
-        logger.error(`[AgentLoop] Raw arguments: ${rawArgs.substring(0, 200)}`);
-        logCollector.tool('ERROR', `Tool ${toolCall.name} arguments parse error: ${errorMessage}`, {
-          toolCallId: toolCall.id,
-          rawArguments: rawArgs.substring(0, 500),
-        });
+      // 发送工具调用结束事件
+      this.onEvent({ type: 'tool_call_end', data: toolResult });
+      return toolResult;
+    }
 
-        // 返回解析错误作为工具执行失败
-        const toolResult: ToolResult = {
-          toolCallId: toolCall.id,
-          success: false,
-          error: `Tool arguments JSON parse error: ${errorMessage}. Raw: ${rawArgs.substring(0, 200)}...`,
-          duration: Date.now() - startTime,
-        };
-
-        results.push(toolResult);
-
-        // 注入系统消息提醒模型
-        this.injectSystemMessage(
-          `<tool-arguments-parse-error>\n` +
-          `⚠️ ERROR: Failed to parse JSON arguments for tool "${toolCall.name}".\n` +
-          `Parse error: ${errorMessage}\n` +
-          `Raw arguments (truncated): ${rawArgs.substring(0, 300)}\n\n` +
-          `Please ensure your tool call arguments are valid JSON.\n` +
-          `</tool-arguments-parse-error>`
-        );
-
-        // 发送工具调用结束事件
-        this.onEvent({ type: 'tool_call_end', data: toolResult });
-        continue;
-      }
-
-      try {
-        // Execute tool
-        logger.debug(` Calling toolExecutor.execute for ${toolCall.name}...`);
-        const result = await this.toolExecutor.execute(
-          toolCall.name,
-          toolCall.arguments,
-          {
-            generation: this.generation,
-            planningService: this.planningService, // Pass planning service to tools
-            modelConfig: this.modelConfig, // Pass model config for subagent execution
-            // Plan Mode support (borrowed from Claude Code v2.0)
-            setPlanMode: this.setPlanMode.bind(this),
-            isPlanMode: this.isPlanMode.bind(this),
-            // emitEvent allows tools to emit custom events - use type assertion for flexibility
-            emitEvent: (event: string, data: unknown) => this.onEvent({ type: event, data } as AgentEvent),
-          }
-        );
-        logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);
-
-        const toolResult: ToolResult = {
-          toolCallId: toolCall.id,
-          success: result.success,
-          output: result.output,
-          error: result.error,
-          duration: Date.now() - startTime,
-        };
-
-        results.push(toolResult);
-        logger.debug(` Tool ${toolCall.name} completed in ${toolResult.duration}ms`);
-
-        // Circuit breaker: track consecutive tool failures
-        if (!result.success) {
-          this.consecutiveToolFailures++;
-          logger.debug(`[AgentLoop] Consecutive tool failures: ${this.consecutiveToolFailures}/${this.MAX_CONSECUTIVE_FAILURES}`);
-
-          // Check if circuit breaker should trip
-          if (this.consecutiveToolFailures >= this.MAX_CONSECUTIVE_FAILURES) {
-            logger.error(`[AgentLoop] Circuit breaker tripped! ${this.consecutiveToolFailures} consecutive failures`);
-            logCollector.agent('ERROR', `Circuit breaker tripped after ${this.consecutiveToolFailures} consecutive tool failures`);
-
-            // Inject a strong warning to the model
-            this.injectSystemMessage(
-              `<circuit-breaker-tripped>\n` +
-              `🛑 CRITICAL ERROR: ${this.consecutiveToolFailures} consecutive tool calls have FAILED.\n\n` +
-              `The last error was: ${result.error}\n\n` +
-              `You MUST:\n` +
-              `1. STOP calling tools immediately\n` +
-              `2. Report this error to the user clearly\n` +
-              `3. Explain what you were trying to do and why it failed\n` +
-              `4. Ask the user for guidance on how to proceed\n\n` +
-              `DO NOT continue attempting tool calls until the user responds.\n` +
-              `</circuit-breaker-tripped>`
-            );
-
-            // Emit error event to frontend
-            this.onEvent({
-              type: 'error',
-              data: {
-                message: `连续 ${this.consecutiveToolFailures} 次工具调用失败，已触发熔断机制。最后错误: ${result.error || 'Unknown error'}`,
-                code: 'CIRCUIT_BREAKER_TRIPPED',
-              },
-            });
-
-            // Reset counter to allow future attempts after user intervention
-            this.consecutiveToolFailures = 0;
-          }
-        } else {
-          // Reset consecutive failure counter on success
-          if (this.consecutiveToolFailures > 0) {
-            logger.debug(`[AgentLoop] Tool succeeded, resetting consecutive failure counter (was ${this.consecutiveToolFailures})`);
-          }
-          this.consecutiveToolFailures = 0;
+    try {
+      // Execute tool
+      logger.debug(` Calling toolExecutor.execute for ${toolCall.name}...`);
+      const result = await this.toolExecutor.execute(
+        toolCall.name,
+        toolCall.arguments,
+        {
+          generation: this.generation,
+          planningService: this.planningService, // Pass planning service to tools
+          modelConfig: this.modelConfig, // Pass model config for subagent execution
+          // Plan Mode support (borrowed from Claude Code v2.0)
+          setPlanMode: this.setPlanMode.bind(this),
+          isPlanMode: this.isPlanMode.bind(this),
+          // emitEvent allows tools to emit custom events - use type assertion for flexibility
+          emitEvent: (event: string, data: unknown) => this.onEvent({ type: event, data } as AgentEvent),
         }
+      );
+      logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);
 
-        // Anti-pattern detection: track repeated tool failures with same error
-        if (!result.success && result.error) {
-          const toolKey = `${toolCall.name}:${JSON.stringify(toolCall.arguments)}`;
-          const tracker = this.toolFailureTracker.get(toolKey);
+      const toolResult: ToolResult = {
+        toolCallId: toolCall.id,
+        success: result.success,
+        output: result.output,
+        error: result.error,
+        duration: Date.now() - startTime,
+      };
 
-          if (tracker && tracker.lastError === result.error) {
-            tracker.count++;
-            if (tracker.count >= this.maxSameToolFailures) {
-              logger.warn(`[AgentLoop] Tool ${toolCall.name} failed ${tracker.count} times with same error`);
-              this.injectSystemMessage(
-                `<repeated-failure-warning>\n` +
-                `CRITICAL: The tool "${toolCall.name}" has failed ${tracker.count} times with the SAME error:\n` +
-                `Error: ${result.error}\n\n` +
-                `You MUST:\n` +
-                `1. STOP retrying this exact operation - it will NOT work\n` +
-                `2. Analyze WHY it's failing (network issue? invalid parameters? missing config?)\n` +
-                `3. Either try a DIFFERENT approach or inform the user that you cannot complete this task\n` +
-                `4. If this is a network error, tell the user to check their network connection\n` +
-                `</repeated-failure-warning>`
-              );
-              // Clear tracker to avoid spamming
-              this.toolFailureTracker.delete(toolKey);
-            }
-          } else {
-            this.toolFailureTracker.set(toolKey, { count: 1, lastError: result.error });
-          }
-        } else if (result.success) {
-          // Clear failure tracker on success
-          const toolKey = `${toolCall.name}:${JSON.stringify(toolCall.arguments)}`;
-          this.toolFailureTracker.delete(toolKey);
-        }
+      logger.debug(` Tool ${toolCall.name} completed in ${toolResult.duration}ms`);
 
-        // Auto-continuation detection for truncated files
-        if (toolCall.name === 'write_file' && result.success && result.output) {
-          const outputStr = result.output;
-          if (outputStr.includes('⚠️ **代码完整性警告**') || outputStr.includes('代码完整性警告')) {
-            logger.debug('[AgentLoop] ⚠️ Detected truncated file! Injecting auto-continuation prompt');
-            this.injectSystemMessage(
-              `<auto-continuation-required>\n` +
-              `CRITICAL: The file you just wrote appears to be INCOMPLETE (truncated).\n` +
-              `The write_file tool detected missing closing brackets/tags.\n\n` +
-              `You MUST immediately:\n` +
-              `1. Use edit_file to APPEND the remaining code to complete the file\n` +
-              `2. Start from where the code was cut off\n` +
-              `3. Ensure all functions, classes, and HTML tags are properly closed\n\n` +
-              `DO NOT start over or rewrite the entire file - just APPEND the missing parts!\n` +
-              `</auto-continuation-required>`
-            );
-          }
-        }
-
-        // Track read vs write operations for anti-pattern detection
-        const readOnlyTools = ['read_file', 'glob', 'grep', 'list_directory', 'web_fetch'];
-        const writeTools = ['write_file', 'edit_file'];
-
-        if (writeTools.includes(toolCall.name) && result.success) {
-          this.hasWrittenFile = true;
-          this.consecutiveReadOps = 0;
-        } else if (readOnlyTools.includes(toolCall.name)) {
-          this.consecutiveReadOps++;
-
-          // Warning threshold: 5 reads before first write, 10 reads after first write
-          const warningThreshold = this.hasWrittenFile
-            ? this.maxConsecutiveReadsBeforeWarning * 2  // 10 after writing
-            : this.maxConsecutiveReadsBeforeWarning;      // 5 before writing
-
-          // Inject warning if too many consecutive reads
-          if (this.consecutiveReadOps >= warningThreshold) {
-            logger.debug(` WARNING: ${this.consecutiveReadOps} consecutive read ops! hasWritten=${this.hasWrittenFile}`);
-
-            if (this.hasWrittenFile) {
-              // Already wrote a file - stop over-verifying
-              this.injectSystemMessage(
-                `<critical-warning>\n` +
-                `WARNING: You have performed ${this.consecutiveReadOps} consecutive read operations!\n` +
-                `You have ALREADY created/modified files. The task may be COMPLETE.\n` +
-                `Options:\n` +
-                `1. If the task is done, respond with a completion message\n` +
-                `2. If you need to make ONE more edit, do it now and then STOP\n` +
-                `3. Do NOT keep reading the same file repeatedly\n` +
-                `</critical-warning>`
-              );
-            } else {
-              // Haven't written yet - need to start creating
-              this.injectSystemMessage(
-                `<critical-warning>\n` +
-                `WARNING: You have performed ${this.consecutiveReadOps} read operations without creating any files!\n` +
-                `If this is a CREATION task (like "create a snake game"), you must:\n` +
-                `1. STOP reading files\n` +
-                `2. IMMEDIATELY use write_file to create the requested content\n` +
-                `3. Do NOT continue researching - just CREATE!\n` +
-                `</critical-warning>`
-              );
-            }
-          }
-        }
-
-        // Post-Tool Hook
-        if (this.enableHooks && this.planningService) {
-          try {
-            const postResult = await this.planningService.hooks.postToolUse({
-              toolName: toolCall.name,
-              toolParams: toolCall.arguments,
-              toolResult: result,
-            });
-
-            if (postResult.injectContext) {
-              this.injectSystemMessage(postResult.injectContext);
-            }
-          } catch (error) {
-            logger.error('Post-tool hook error:', error);
-          }
-        }
-
-        // Langfuse: End tool span (success)
-        langfuse.endSpan(toolSpanId, {
-          success: result.success,
-          outputLength: result.output?.length || 0,
-          duration: toolResult.duration,
-        });
-
-        // Emit tool call end event
-        logger.debug(` Emitting tool_call_end for ${toolCall.name} (success)`);
-        this.onEvent({ type: 'tool_call_end', data: toolResult });
-      } catch (error) {
-        logger.error(`Tool ${toolCall.name} threw exception:`, error);
-        const toolResult: ToolResult = {
-          toolCallId: toolCall.id,
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          duration: Date.now() - startTime,
-        };
-
-        results.push(toolResult);
-        logger.debug(` Tool ${toolCall.name} failed with error: ${toolResult.error}`);
-
-        // Circuit breaker: count exception as failure
+      // Circuit breaker: track consecutive tool failures
+      if (!result.success) {
         this.consecutiveToolFailures++;
-        logger.debug(`[AgentLoop] Consecutive tool failures (exception): ${this.consecutiveToolFailures}/${this.MAX_CONSECUTIVE_FAILURES}`);
+        logger.debug(`[AgentLoop] Consecutive tool failures: ${this.consecutiveToolFailures}/${this.MAX_CONSECUTIVE_FAILURES}`);
 
+        // Check if circuit breaker should trip
         if (this.consecutiveToolFailures >= this.MAX_CONSECUTIVE_FAILURES) {
           logger.error(`[AgentLoop] Circuit breaker tripped! ${this.consecutiveToolFailures} consecutive failures`);
-          logCollector.agent('ERROR', `Circuit breaker tripped after ${this.consecutiveToolFailures} consecutive tool failures (exception)`);
+          logCollector.agent('ERROR', `Circuit breaker tripped after ${this.consecutiveToolFailures} consecutive tool failures`);
 
+          // Inject a strong warning to the model
           this.injectSystemMessage(
             `<circuit-breaker-tripped>\n` +
             `🛑 CRITICAL ERROR: ${this.consecutiveToolFailures} consecutive tool calls have FAILED.\n\n` +
-            `The last error was: ${toolResult.error}\n\n` +
+            `The last error was: ${result.error}\n\n` +
             `You MUST:\n` +
             `1. STOP calling tools immediately\n` +
             `2. Report this error to the user clearly\n` +
@@ -1022,48 +980,224 @@ export class AgentLoop {
             `</circuit-breaker-tripped>`
           );
 
+          // Emit error event to frontend
           this.onEvent({
             type: 'error',
             data: {
-              message: `连续 ${this.consecutiveToolFailures} 次工具调用失败，已触发熔断机制。最后错误: ${toolResult.error || 'Unknown error'}`,
+              message: `连续 ${this.consecutiveToolFailures} 次工具调用失败，已触发熔断机制。最后错误: ${result.error || 'Unknown error'}`,
               code: 'CIRCUIT_BREAKER_TRIPPED',
             },
           });
 
+          // Reset counter to allow future attempts after user intervention
           this.consecutiveToolFailures = 0;
         }
+      } else {
+        // Reset consecutive failure counter on success
+        if (this.consecutiveToolFailures > 0) {
+          logger.debug(`[AgentLoop] Tool succeeded, resetting consecutive failure counter (was ${this.consecutiveToolFailures})`);
+        }
+        this.consecutiveToolFailures = 0;
+      }
 
-        // Error Hook
-        if (this.enableHooks && this.planningService) {
-          try {
-            const errorResult = await this.planningService.hooks.onError({
-              toolName: toolCall.name,
-              toolParams: toolCall.arguments,
-              error: error instanceof Error ? error : new Error('Unknown error'),
-            });
+      // Anti-pattern detection: track repeated tool failures with same error
+      if (!result.success && result.error) {
+        const toolKey = `${toolCall.name}:${JSON.stringify(toolCall.arguments)}`;
+        const tracker = this.toolFailureTracker.get(toolKey);
 
-            if (errorResult.injectContext) {
-              this.injectSystemMessage(errorResult.injectContext);
-            }
-          } catch (hookError) {
-            logger.error('Error hook error:', hookError);
+        if (tracker && tracker.lastError === result.error) {
+          tracker.count++;
+          if (tracker.count >= this.maxSameToolFailures) {
+            logger.warn(`[AgentLoop] Tool ${toolCall.name} failed ${tracker.count} times with same error`);
+            this.injectSystemMessage(
+              `<repeated-failure-warning>\n` +
+              `CRITICAL: The tool "${toolCall.name}" has failed ${tracker.count} times with the SAME error:\n` +
+              `Error: ${result.error}\n\n` +
+              `You MUST:\n` +
+              `1. STOP retrying this exact operation - it will NOT work\n` +
+              `2. Analyze WHY it's failing (network issue? invalid parameters? missing config?)\n` +
+              `3. Either try a DIFFERENT approach or inform the user that you cannot complete this task\n` +
+              `4. If this is a network error, tell the user to check their network connection\n` +
+              `</repeated-failure-warning>`
+            );
+            // Clear tracker to avoid spamming
+            this.toolFailureTracker.delete(toolKey);
+          }
+        } else {
+          this.toolFailureTracker.set(toolKey, { count: 1, lastError: result.error });
+        }
+      } else if (result.success) {
+        // Clear failure tracker on success
+        const toolKey = `${toolCall.name}:${JSON.stringify(toolCall.arguments)}`;
+        this.toolFailureTracker.delete(toolKey);
+      }
+
+      // Auto-continuation detection for truncated files
+      if (toolCall.name === 'write_file' && result.success && result.output) {
+        const outputStr = result.output;
+        if (outputStr.includes('⚠️ **代码完整性警告**') || outputStr.includes('代码完整性警告')) {
+          logger.debug('[AgentLoop] ⚠️ Detected truncated file! Injecting auto-continuation prompt');
+          this.injectSystemMessage(
+            `<auto-continuation-required>\n` +
+            `CRITICAL: The file you just wrote appears to be INCOMPLETE (truncated).\n` +
+            `The write_file tool detected missing closing brackets/tags.\n\n` +
+            `You MUST immediately:\n` +
+            `1. Use edit_file to APPEND the remaining code to complete the file\n` +
+            `2. Start from where the code was cut off\n` +
+            `3. Ensure all functions, classes, and HTML tags are properly closed\n\n` +
+            `DO NOT start over or rewrite the entire file - just APPEND the missing parts!\n` +
+            `</auto-continuation-required>`
+          );
+        }
+      }
+
+      // Track read vs write operations for anti-pattern detection
+      const readOnlyTools = ['read_file', 'glob', 'grep', 'list_directory', 'web_fetch'];
+      const writeTools = ['write_file', 'edit_file'];
+
+      if (writeTools.includes(toolCall.name) && result.success) {
+        this.hasWrittenFile = true;
+        this.consecutiveReadOps = 0;
+      } else if (readOnlyTools.includes(toolCall.name)) {
+        this.consecutiveReadOps++;
+
+        // Warning threshold: 5 reads before first write, 10 reads after first write
+        const warningThreshold = this.hasWrittenFile
+          ? this.maxConsecutiveReadsBeforeWarning * 2  // 10 after writing
+          : this.maxConsecutiveReadsBeforeWarning;      // 5 before writing
+
+        // Inject warning if too many consecutive reads
+        if (this.consecutiveReadOps >= warningThreshold) {
+          logger.debug(` WARNING: ${this.consecutiveReadOps} consecutive read ops! hasWritten=${this.hasWrittenFile}`);
+
+          if (this.hasWrittenFile) {
+            // Already wrote a file - stop over-verifying
+            this.injectSystemMessage(
+              `<critical-warning>\n` +
+              `WARNING: You have performed ${this.consecutiveReadOps} consecutive read operations!\n` +
+              `You have ALREADY created/modified files. The task may be COMPLETE.\n` +
+              `Options:\n` +
+              `1. If the task is done, respond with a completion message\n` +
+              `2. If you need to make ONE more edit, do it now and then STOP\n` +
+              `3. Do NOT keep reading the same file repeatedly\n` +
+              `</critical-warning>`
+            );
+          } else {
+            // Haven't written yet - need to start creating
+            this.injectSystemMessage(
+              `<critical-warning>\n` +
+              `WARNING: You have performed ${this.consecutiveReadOps} read operations without creating any files!\n` +
+              `If this is a CREATION task (like "create a snake game"), you must:\n` +
+              `1. STOP reading files\n` +
+              `2. IMMEDIATELY use write_file to create the requested content\n` +
+              `3. Do NOT continue researching - just CREATE!\n` +
+              `</critical-warning>`
+            );
           }
         }
-
-        // Langfuse: End tool span (error)
-        langfuse.endSpan(toolSpanId, {
-          success: false,
-          error: toolResult.error,
-          duration: toolResult.duration,
-        }, 'ERROR', toolResult.error);
-
-        logger.debug(` Emitting tool_call_end for ${toolCall.name} (error)`);
-        this.onEvent({ type: 'tool_call_end', data: toolResult });
       }
-    }
 
-    logger.debug(` executeToolsWithHooks finished, returning ${results.length} results`);
-    return results;
+      // Post-Tool Hook
+      if (this.enableHooks && this.planningService) {
+        try {
+          const postResult = await this.planningService.hooks.postToolUse({
+            toolName: toolCall.name,
+            toolParams: toolCall.arguments,
+            toolResult: result,
+          });
+
+          if (postResult.injectContext) {
+            this.injectSystemMessage(postResult.injectContext);
+          }
+        } catch (error) {
+          logger.error('Post-tool hook error:', error);
+        }
+      }
+
+      // Langfuse: End tool span (success)
+      langfuse.endSpan(toolSpanId, {
+        success: result.success,
+        outputLength: result.output?.length || 0,
+        duration: toolResult.duration,
+      });
+
+      // Emit tool call end event
+      logger.debug(` Emitting tool_call_end for ${toolCall.name} (success)`);
+      this.onEvent({ type: 'tool_call_end', data: toolResult });
+
+      return toolResult;
+    } catch (error) {
+      logger.error(`Tool ${toolCall.name} threw exception:`, error);
+      const toolResult: ToolResult = {
+        toolCallId: toolCall.id,
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        duration: Date.now() - startTime,
+      };
+
+      logger.debug(` Tool ${toolCall.name} failed with error: ${toolResult.error}`);
+
+      // Circuit breaker: count exception as failure
+      this.consecutiveToolFailures++;
+      logger.debug(`[AgentLoop] Consecutive tool failures (exception): ${this.consecutiveToolFailures}/${this.MAX_CONSECUTIVE_FAILURES}`);
+
+      if (this.consecutiveToolFailures >= this.MAX_CONSECUTIVE_FAILURES) {
+        logger.error(`[AgentLoop] Circuit breaker tripped! ${this.consecutiveToolFailures} consecutive failures`);
+        logCollector.agent('ERROR', `Circuit breaker tripped after ${this.consecutiveToolFailures} consecutive tool failures (exception)`);
+
+        this.injectSystemMessage(
+          `<circuit-breaker-tripped>\n` +
+          `🛑 CRITICAL ERROR: ${this.consecutiveToolFailures} consecutive tool calls have FAILED.\n\n` +
+          `The last error was: ${toolResult.error}\n\n` +
+          `You MUST:\n` +
+          `1. STOP calling tools immediately\n` +
+          `2. Report this error to the user clearly\n` +
+          `3. Explain what you were trying to do and why it failed\n` +
+          `4. Ask the user for guidance on how to proceed\n\n` +
+          `DO NOT continue attempting tool calls until the user responds.\n` +
+          `</circuit-breaker-tripped>`
+        );
+
+        this.onEvent({
+          type: 'error',
+          data: {
+            message: `连续 ${this.consecutiveToolFailures} 次工具调用失败，已触发熔断机制。最后错误: ${toolResult.error || 'Unknown error'}`,
+            code: 'CIRCUIT_BREAKER_TRIPPED',
+          },
+        });
+
+        this.consecutiveToolFailures = 0;
+      }
+
+      // Error Hook
+      if (this.enableHooks && this.planningService) {
+        try {
+          const errorResult = await this.planningService.hooks.onError({
+            toolName: toolCall.name,
+            toolParams: toolCall.arguments,
+            error: error instanceof Error ? error : new Error('Unknown error'),
+          });
+
+          if (errorResult.injectContext) {
+            this.injectSystemMessage(errorResult.injectContext);
+          }
+        } catch (hookError) {
+          logger.error('Error hook error:', hookError);
+        }
+      }
+
+      // Langfuse: End tool span (error)
+      langfuse.endSpan(toolSpanId, {
+        success: false,
+        error: toolResult.error,
+        duration: toolResult.duration,
+      }, 'ERROR', toolResult.error);
+
+      logger.debug(` Emitting tool_call_end for ${toolCall.name} (error)`);
+      this.onEvent({ type: 'tool_call_end', data: toolResult });
+
+      return toolResult;
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -1585,8 +1719,18 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
    * Build enhanced system prompt with RAG context
    * Gen3-4: 轻量级 RAG（仅项目知识和用户偏好）
    * Gen5+: 完整 RAG（包含代码、知识库，支持云端搜索 + 主动上下文）
+   *
+   * PERFORMANCE OPTIMIZATION: Skip RAG entirely for simple tasks
+   * RAG adds 500ms-2s latency for vector search that simple tasks don't need
    */
   private buildEnhancedSystemPrompt(basePrompt: string): string {
+    // PERFORMANCE OPTIMIZATION: Skip all RAG for simple tasks
+    // Simple tasks like "generate Excel" or "create hello world" don't need context
+    if (this.isSimpleTaskMode) {
+      logger.debug(' Skipping RAG for simple task (fast path)');
+      return basePrompt;
+    }
+
     try {
       const memoryService = getMemoryService();
       let enhancedPrompt = basePrompt;

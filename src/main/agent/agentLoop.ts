@@ -15,7 +15,7 @@ import type {
 } from '../../shared/types';
 import type { ToolRegistry } from '../tools/toolRegistry';
 import type { ToolExecutor } from '../tools/toolExecutor';
-import { ModelRouter } from '../model/modelRouter';
+import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/memoryService';
 import { getConfigService, getAuthService, getLangfuseService } from '../services';
@@ -583,12 +583,16 @@ export class AgentLoop {
         });
 
         // Create tool result message
+        // 清理大型二进制数据（如 imageBase64）以避免上下文超限
+        // 前端已通过 tool_call_end 事件获取完整数据用于渲染
+        const sanitizedResults = this.sanitizeToolResultsForHistory(toolResults);
+
         const toolMessage: Message = {
           id: this.generateId(),
           role: 'tool',
-          content: JSON.stringify(toolResults),
+          content: JSON.stringify(sanitizedResults),
           timestamp: Date.now(),
-          toolResults,
+          toolResults: sanitizedResults,
         };
         this.messages.push(toolMessage);
 
@@ -1444,6 +1448,33 @@ export class AgentLoop {
         error instanceof Error ? error.message : 'Unknown error'
       );
 
+      // 特殊处理：上下文长度超限错误
+      if (error instanceof ContextLengthExceededError) {
+        logger.warn(`[AgentLoop] Context length exceeded: ${error.requestedTokens} > ${error.maxTokens}`);
+        logCollector.agent('ERROR', `Context length exceeded: requested ${error.requestedTokens}, max ${error.maxTokens}`);
+
+        // 发送友好的错误事件给前端
+        this.onEvent({
+          type: 'error',
+          data: {
+            code: 'CONTEXT_LENGTH_EXCEEDED',
+            message: '对话内容过长，已超出模型上下文限制。',
+            suggestion: '建议新开一个会话继续对话，或清理当前会话的历史消息。',
+            details: {
+              requested: error.requestedTokens,
+              max: error.maxTokens,
+              provider: error.provider,
+            },
+          },
+        });
+
+        // 发送任务失败状态
+        this.emitTaskProgress('failed', '上下文超限');
+
+        // 不再抛出错误，让循环正常结束
+        return { type: 'text', content: '' };
+      }
+
       throw error;
     }
   }
@@ -1992,6 +2023,94 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
 
   private generateId(): string {
     return generateMessageId();
+  }
+
+  // --------------------------------------------------------------------------
+  // Tool Result Sanitization (Token Optimization)
+  // --------------------------------------------------------------------------
+
+  /**
+   * 需要从工具结果中过滤的大型二进制数据字段
+   * 这些字段通常包含 base64 编码的图片、音频等数据
+   */
+  private static readonly LARGE_DATA_FIELDS = [
+    'imageBase64',      // image_generate 返回的图片
+    'screenshotData',   // screenshot (Gen6) 返回的截图
+    'pdfImages',        // read_pdf 视觉模式返回的页面图片
+    'audioData',        // 未来的音频工具
+    'videoData',        // 未来的视频工具
+    'base64',           // 通用 base64 字段
+    'data',             // 可能包含大型数据的通用字段（需要检测）
+  ];
+
+  /**
+   * 大型数据阈值（字节）
+   * 超过此大小的字符串字段会被检测是否为 base64 数据
+   */
+  private static readonly LARGE_DATA_THRESHOLD = 10000; // ~10KB
+
+  /**
+   * 清理工具结果用于历史存储
+   *
+   * 设计原则：
+   * 1. 大型二进制数据（base64 图片等）只保留引用，不存入历史
+   * 2. 前端通过 tool_call_end 事件获取完整数据用于渲染
+   * 3. 模型只需要知道"图片已生成"，不需要看到图片内容
+   *
+   * @param result 原始工具结果
+   * @returns 清理后的工具结果（不含大型二进制数据）
+   */
+  private sanitizeToolResultForHistory(result: ToolResult): ToolResult {
+    // 如果没有 metadata，无需处理
+    if (!result.metadata) {
+      return result;
+    }
+
+    // 深拷贝避免修改原始数据
+    const sanitized: ToolResult = {
+      ...result,
+      metadata: { ...result.metadata },
+    };
+
+    // 过滤已知的大型数据字段
+    for (const field of AgentLoop.LARGE_DATA_FIELDS) {
+      if (sanitized.metadata![field]) {
+        const data = sanitized.metadata![field];
+        if (typeof data === 'string' && data.length > 100) {
+          // 替换为占位符，保留大小信息便于调试
+          const sizeKB = (data.length / 1024).toFixed(1);
+          sanitized.metadata![field] = `[BINARY_DATA_FILTERED: ${sizeKB}KB]`;
+        }
+      }
+    }
+
+    // 检查其他可能的大型字段（动态检测）
+    for (const [key, value] of Object.entries(sanitized.metadata!)) {
+      // 跳过已处理的字段
+      if (AgentLoop.LARGE_DATA_FIELDS.includes(key)) continue;
+
+      // 检测大型字符串
+      if (typeof value === 'string' && value.length > AgentLoop.LARGE_DATA_THRESHOLD) {
+        // 检测是否为 base64 数据
+        const isBase64 = value.startsWith('data:') ||
+          /^[A-Za-z0-9+/]{1000,}={0,2}$/.test(value.slice(0, 1100));
+
+        if (isBase64) {
+          const sizeKB = (value.length / 1024).toFixed(1);
+          sanitized.metadata![key] = `[LARGE_BASE64_FILTERED: ${sizeKB}KB]`;
+          logger.debug(`[AgentLoop] Filtered large base64 field: ${key} (${sizeKB}KB)`);
+        }
+      }
+    }
+
+    return sanitized;
+  }
+
+  /**
+   * 批量清理工具结果
+   */
+  private sanitizeToolResultsForHistory(results: ToolResult[]): ToolResult[] {
+    return results.map(r => this.sanitizeToolResultForHistory(r));
   }
 
   /**

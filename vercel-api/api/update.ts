@@ -27,23 +27,23 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.9.0',
-  publishedAt: '2026-01-23T10:00:00.000Z',
+  version: '0.9.1',
+  publishedAt: '2026-01-23T16:30:00.000Z',
   releaseNotes: `
-## Code Agent v0.9.0
+## Code Agent v0.9.1
 
-### 重大更新：宪法式 System Prompt
-- 从「规则式」转向「宪法式」架构，让 Agent 真正有灵魂
-- 参照 Anthropic Claude 新宪法（2026-01-21）设计
-- 统一所有代际的核心价值观：安全 > 伦理 > 指南 > 帮助
-- 新增身份定位、诚实原则、避免伤害、判断原则等模块
-- 简化代际定义，只保留工具差异
+### 多数据源并行搜索
+- web_search 支持 Cloud/Perplexity/EXA/Brave 四个数据源并行搜索
+- 自动检测已配置的 API Key，使用所有可用数据源
+- 结果聚合去重，提供更全面的搜索结果
 
-### 详细变更
-- 新增 constitution/ 模块（soul, values, ethics, hardConstraints, safety, judgment）
-- 重构 builder.ts，Prompt 组装顺序：宪法 → 代际工具 → 规则
-- 云端 prompts API 升级到 v2.0.0，新增 action=constitution 端点
-- 新增 docs/CONSTITUTION.md 用户文档
+### 错误隔离优化
+- Promise.all → Promise.allSettled 实现错误隔离
+- 单个数据源失败不影响其他源
+- 深度研究模式：单个网页抓取失败不阻断整体流程
+
+### 新增 API Key 配置
+- 设置 > Service API Keys 新增 EXA 和 Perplexity 配置项
   `.trim(),
   forceUpdate: false,
   downloads: {

@@ -137,12 +137,16 @@ interface ImageGenerateResult {
   imageBase64?: string;
 }
 
-const extractImageGenerateResult = (toolCall: { name: string; result?: { success: boolean; metadata?: ImageGenerateResult } }): ImageGenerateResult | null => {
+const extractImageGenerateResult = (toolCall: { name: string; result?: { success: boolean; metadata?: Record<string, unknown> } }): ImageGenerateResult | null => {
   if (toolCall.name !== 'image_generate' || !toolCall.result?.success) return null;
   const metadata = toolCall.result.metadata;
   if (!metadata) return null;
-  if (metadata.imagePath || metadata.imageBase64) {
-    return metadata;
+
+  const imagePath = metadata.imagePath as string | undefined;
+  const imageBase64 = metadata.imageBase64 as string | undefined;
+
+  if (imagePath || imageBase64) {
+    return { imagePath, imageBase64 };
   }
   return null;
 };

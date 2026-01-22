@@ -6,14 +6,10 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Dynamic import for pptxgenjs (ES module)
-let PptxGenJS: any = null;
-
-async function getPptxGenJS() {
-  if (!PptxGenJS) {
-    const module = await import('pptxgenjs');
-    PptxGenJS = module.default;
-  }
+// Use require for pptxgenjs (CJS compatible with Electron)
+function getPptxGenJS() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const PptxGenJS = require('pptxgenjs');
   return PptxGenJS;
 }
 
@@ -130,7 +126,7 @@ ppt_generate { "topic": "技术分享", "content": "# 第一章\\n- 要点1\\n- 
 
     try {
       // 获取 PptxGenJS
-      const Pptx = await getPptxGenJS();
+      const Pptx = getPptxGenJS();
 
       // 确定输出路径
       const timestamp = Date.now();

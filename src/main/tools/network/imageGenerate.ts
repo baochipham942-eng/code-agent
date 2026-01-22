@@ -12,10 +12,10 @@ import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('ImageGenerate');
 
-// 模型配置
+// 模型配置（2025-01 更新为 FLUX.2 系列）
 const FLUX_MODELS = {
-  pro: 'black-forest-labs/flux-1.1-pro', // 管理员专用，最高质量
-  schnell: 'black-forest-labs/flux-schnell', // 普通用户，快速免费
+  pro: 'black-forest-labs/flux.2-pro', // 管理员专用，最高质量
+  schnell: 'black-forest-labs/flux.2-klein-4b', // 普通用户，快速便宜
 } as const;
 
 // Prompt 扩展模型

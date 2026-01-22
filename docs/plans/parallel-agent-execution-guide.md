@@ -198,18 +198,44 @@ claude --resume
 ### 2.4 Agent C 启动 Prompt
 
 ```markdown
-# 任务: Phase 1 System Prompt 重构
+# 任务: Phase 1 System Prompt 增强
 
-你是 Agent C (架构专家)，负责建立分层安全框架和详细工具描述。
+你是 Agent C (架构专家)，负责在宪法架构基础上增强工具描述和注入防御。
+
+> ⚠️ **重要**: 主仓库已完成"宪法式 System Prompt 架构改造"。
+> C5 (权限等级) 和 C6 (社工防御) 已融入宪法层，无需重复实现。
+
+## 当前架构 (宪法改造后)
+
+```
+src/main/generation/prompts/
+├── constitution/          # 宪法层 (已完成)
+│   ├── soul.ts           # 身份与使命
+│   ├── values.ts         # 价值优先级
+│   ├── safety.ts         # 安全行为 (原 C5)
+│   └── judgment.ts       # 判断原则 (原 C6)
+├── rules/                 # 规则层
+│   └── index.ts          # 含 INJECTION_DEFENSE_RULES
+├── tools/                 # 🆕 待创建
+└── builder.ts            # 组装器 (已更新)
+```
 
 ## 参考文档
 - 实施计划: docs/plans/2026-01-22-claude-code-alignment-plan.md
+- 宪法文档: docs/CONSTITUTION.md
 - 参考实现: https://github.com/Piebald-AI/claude-code-system-prompts
 
-## 任务清单
-1. [C1] 拆分注入防御为 3 层
+## 任务清单 (已调整)
+
+### 已完成 ✅
+- [C5] 权限等级架构 → constitution/safety.ts
+- [C6] 社工防御规则 → constitution/judgment.ts
+- [C7] builder.ts 集成 → 新架构已实现
+
+### 待完成
+1. [C1] 增强注入防御三层分离
    - 路径: src/main/generation/prompts/rules/injection/
-   - core.ts, verification.ts, meta.ts
+   - 将现有 INJECTION_DEFENSE_RULES 拆分为 core.ts, verification.ts, meta.ts
 
 2. [C2] 创建详细 Bash 工具描述
    - 路径: src/main/generation/prompts/tools/bash.ts
@@ -221,20 +247,14 @@ claude --resume
 4. [C4] 创建详细 Task 工具描述
    - 路径: src/main/generation/prompts/tools/task.ts
 
-5. [C5] 实现权限等级架构
-   - 路径: src/main/generation/prompts/rules/permissionLevels.ts
-   - Prohibited / Explicit / Regular
-
-6. [C6] 添加社工防御规则
-   - 路径: src/main/generation/prompts/rules/socialEngineering.ts
-
-7. [C7] 更新 builder.ts 集成
+5. [C8] 集成工具描述到 builder
    - 修改: src/main/generation/prompts/builder.ts
+   - 在代际工具层和规则层之间插入详细描述
 
 ## 验收标准
-- 注入防御分 3 层
+- 注入防御拆分为 core/verification/meta 三文件
 - 每个工具描述含"何时不使用"
-- Gen3+ 包含所有安全规则
+- 与宪法层协调一致，不重复定义
 
 ## 协作约定
 - 完成每个任务后立即 commit
@@ -265,7 +285,7 @@ claude --resume
 
 3. [D3] Prompt 构建测试
    - 路径: tests/unit/prompts/
-   - 等待 Agent C 完成 C1-C7
+   - 等待 Agent C 完成 C1-C4, C8 (C5-C7 已完成)
 
 4. [D4] 集成测试框架搭建
    - 路径: tests/integration/setup.ts

@@ -26,6 +26,9 @@ const DATA_EXTENSIONS = ['.json', '.csv', '.xml', '.yaml', '.yml', '.toml'];
 // 文本文件扩展名
 const TEXT_EXTENSIONS = ['.txt', '.md', '.markdown', '.rst', '.log'];
 
+// Excel 文件扩展名
+const EXCEL_EXTENSIONS = ['.xlsx', '.xls', '.xlsm', '.xlsb'];
+
 export interface InputAreaProps {
   /** 输入值 */
   value: string;
@@ -124,10 +127,14 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       ...STYLE_EXTENSIONS,
       ...DATA_EXTENSIONS,
       ...TEXT_EXTENSIONS,
+      ...EXCEL_EXTENSIONS,
       '.pdf',
       'application/pdf',
       '.html',
       '.htm',
+      // Excel MIME types
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
     ].join(',');
 
     return (

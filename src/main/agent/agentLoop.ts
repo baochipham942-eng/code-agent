@@ -1629,6 +1629,24 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
           break;
         }
 
+        case 'excel': {
+          // Excel 文件：已在前端解析为 CSV 格式文本
+          const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
+          const sheetInfo = attachment.sheetCount ? ` (${attachment.sheetCount} 个工作表` : '';
+          const rowInfo = attachment.rowCount ? `, ${attachment.rowCount} 行数据)` : sheetInfo ? ')' : '';
+          const filePath = attachment.path || attachment.name;
+
+          let contentText: string;
+          if (isLargeFile(attachment.data)) {
+            contentText = `📊 **Excel 文件: ${attachment.name}**${sheetInfo}${rowInfo}${pathInfo}\n\n⚠️ 以下是已解析的表格数据（CSV 格式），无需调用工具读取：\n\n${generateFilePreview(attachment.data, filePath, 'csv')}`;
+          } else {
+            contentText = `📊 **Excel 文件: ${attachment.name}**${sheetInfo}${rowInfo}${pathInfo}\n\n⚠️ 以下是已解析的表格数据（CSV 格式），无需调用工具读取：\n\n\`\`\`csv\n${attachment.data}\n\`\`\``;
+          }
+          totalAttachmentChars += contentText.length;
+          contents.push({ type: 'text', text: contentText });
+          break;
+        }
+
         case 'folder': {
           // 文件夹：只展示目录结构，不发送文件内容
           // Agent 可以用 read_file 工具按需读取具体文件

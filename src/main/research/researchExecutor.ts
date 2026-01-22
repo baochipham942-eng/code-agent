@@ -39,6 +39,12 @@ export interface ResearchExecutorConfig {
   maxFetchContentLength?: number;
   /** 当前代际配置（可选，会使用默认 Gen4 配置） */
   generation?: Generation;
+  /** 并行搜索的最大并发数，默认 3 */
+  maxConcurrentSearches?: number;
+  /** 并行抓取的最大并发数，默认 5 */
+  maxConcurrentFetches?: number;
+  /** 启用步骤级并行（独立 research 步骤并行执行），默认 true */
+  enableStepParallelism?: boolean;
 }
 
 /**
@@ -86,11 +92,19 @@ export class ResearchExecutor {
       maxFetchPerSearch: config.maxFetchPerSearch ?? 3,
       maxFetchContentLength: config.maxFetchContentLength ?? 3000,
       generation: config.generation ?? DEFAULT_GENERATION,
+      maxConcurrentSearches: config.maxConcurrentSearches ?? 3,
+      maxConcurrentFetches: config.maxConcurrentFetches ?? 5,
+      enableStepParallelism: config.enableStepParallelism ?? true,
     };
   }
 
   /**
    * 执行完整的研究计划
+   *
+   * 优化策略：
+   * 1. 独立的 research 步骤可以并行执行
+   * 2. analysis/processing 步骤依赖前序结果，必须串行
+   * 3. 同一批并行步骤完成后，才能执行下一批
    *
    * @param plan - 研究计划
    * @returns 执行后的计划（包含每步结果）
@@ -99,46 +113,18 @@ export class ResearchExecutor {
     logger.info('Executing research plan:', {
       topic: plan.clarifiedTopic,
       stepsCount: plan.steps.length,
+      parallelEnabled: this.config.enableStepParallelism,
     });
 
     const updatedPlan: ResearchPlan = {
       ...plan,
-      steps: [...plan.steps],
+      steps: plan.steps.map(s => ({ ...s })),
     };
 
-    for (let i = 0; i < updatedPlan.steps.length; i++) {
-      const step = { ...updatedPlan.steps[i] };
-      updatedPlan.steps[i] = step;
-
-      // 更新状态为运行中
-      step.status = 'running';
-      this.onProgress(step, (i / updatedPlan.steps.length) * 100);
-
-      logger.info(`Executing step ${i + 1}/${updatedPlan.steps.length}:`, step.title);
-
-      try {
-        const result = await this.executeStep(step, updatedPlan);
-        step.result = result;
-        step.status = 'completed';
-
-        logger.info(`Step completed:`, {
-          id: step.id,
-          resultLength: result.length,
-        });
-      } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        step.error = errorMessage;
-        step.status = 'failed';
-
-        logger.error(`Step failed:`, {
-          id: step.id,
-          error: errorMessage,
-        });
-
-        // 继续执行后续步骤（非阻塞）
-      }
-
-      this.onProgress(step, ((i + 1) / updatedPlan.steps.length) * 100);
+    if (this.config.enableStepParallelism) {
+      await this.executeWithParallelism(updatedPlan);
+    } else {
+      await this.executeSequentially(updatedPlan);
     }
 
     logger.info('Research plan execution completed:', {
@@ -147,6 +133,117 @@ export class ResearchExecutor {
     });
 
     return updatedPlan;
+  }
+
+  /**
+   * 串行执行所有步骤（原始逻辑）
+   */
+  private async executeSequentially(plan: ResearchPlan): Promise<void> {
+    for (let i = 0; i < plan.steps.length; i++) {
+      const step = plan.steps[i];
+      await this.executeSingleStep(step, plan, i, plan.steps.length);
+    }
+  }
+
+  /**
+   * 并行执行优化
+   *
+   * 策略：将步骤分成多个批次
+   * - 批次 1: 所有独立的 research 步骤（并行）
+   * - 批次 2+: analysis/processing 步骤（串行，因为依赖前序结果）
+   */
+  private async executeWithParallelism(plan: ResearchPlan): Promise<void> {
+    // 分离独立的 research 步骤和依赖步骤
+    const independentResearchSteps: number[] = [];
+    const dependentSteps: number[] = [];
+
+    for (let i = 0; i < plan.steps.length; i++) {
+      const step = plan.steps[i];
+      if (step.stepType === 'research') {
+        independentResearchSteps.push(i);
+      } else {
+        dependentSteps.push(i);
+      }
+    }
+
+    logger.info('Parallel execution plan:', {
+      independentResearch: independentResearchSteps.length,
+      dependent: dependentSteps.length,
+    });
+
+    // 批次 1: 并行执行所有独立的 research 步骤
+    if (independentResearchSteps.length > 0) {
+      logger.info(`Executing ${independentResearchSteps.length} research steps in parallel`);
+
+      // 更新所有 research 步骤状态为 running
+      for (const idx of independentResearchSteps) {
+        plan.steps[idx].status = 'running';
+        this.onProgress(plan.steps[idx], (idx / plan.steps.length) * 100);
+      }
+
+      // 并行执行
+      const researchPromises = independentResearchSteps.map(async (idx) => {
+        const step = plan.steps[idx];
+        try {
+          logger.info(`[Parallel] Executing research step: ${step.title}`);
+          const result = await this.executeStep(step, plan);
+          step.result = result;
+          step.status = 'completed';
+          logger.info(`[Parallel] Step completed: ${step.id}`);
+        } catch (error: unknown) {
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          step.error = errorMessage;
+          step.status = 'failed';
+          logger.error(`[Parallel] Step failed: ${step.id}`, errorMessage);
+        }
+        this.onProgress(step, ((idx + 1) / plan.steps.length) * 100);
+      });
+
+      await Promise.all(researchPromises);
+    }
+
+    // 批次 2+: 串行执行依赖步骤（analysis/processing）
+    for (const idx of dependentSteps) {
+      const step = plan.steps[idx];
+      await this.executeSingleStep(step, plan, idx, plan.steps.length);
+    }
+  }
+
+  /**
+   * 执行单个步骤（带状态更新和日志）
+   */
+  private async executeSingleStep(
+    step: ResearchStep,
+    plan: ResearchPlan,
+    index: number,
+    total: number
+  ): Promise<void> {
+    step.status = 'running';
+    this.onProgress(step, (index / total) * 100);
+
+    logger.info(`Executing step ${index + 1}/${total}:`, step.title);
+
+    try {
+      const result = await this.executeStep(step, plan);
+      step.result = result;
+      step.status = 'completed';
+
+      logger.info(`Step completed:`, {
+        id: step.id,
+        resultLength: result.length,
+      });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      step.error = errorMessage;
+      step.status = 'failed';
+
+      logger.error(`Step failed:`, {
+        id: step.id,
+        error: errorMessage,
+      });
+    }
+
+    this.onProgress(step, ((index + 1) / total) * 100);
   }
 
   /**
@@ -170,67 +267,106 @@ export class ResearchExecutor {
 
   /**
    * 执行研究步骤（网络搜索 + 内容抓取）
+   *
+   * 优化：搜索和抓取都并行执行
+   * - 多个搜索查询并行发起
+   * - 每个搜索结果的 URL 并行抓取
    */
   private async executeResearchStep(step: ResearchStep): Promise<string> {
-    const results: string[] = [];
     const queries = (step.searchQueries ?? []).slice(0, this.config.maxSearchPerStep);
 
-    logger.info('Executing research step with queries:', queries);
+    logger.info('Executing research step with queries (parallel):', {
+      queries,
+      maxConcurrentSearches: this.config.maxConcurrentSearches,
+      maxConcurrentFetches: this.config.maxConcurrentFetches,
+    });
 
-    for (const query of queries) {
-      try {
-        // 执行网络搜索
-        const searchResult = await this.toolExecutor.execute(
-          'web_search',
-          { query, count: 5 },
-          { generation: this.config.generation }
-        );
+    // 并行执行所有搜索查询
+    const searchPromises = queries.map(query => this.executeSearchWithFetch(query));
+    const searchResults = await Promise.all(searchPromises);
 
-        if (searchResult.success && searchResult.result) {
-          const searchOutput = typeof searchResult.result === 'string'
-            ? searchResult.result
-            : JSON.stringify(searchResult.result);
-
-          results.push(`## 搜索: ${query}\n${searchOutput}`);
-
-          // 提取 URL 并抓取页面内容
-          const urls = this.extractUrls(searchOutput).slice(0, this.config.maxFetchPerSearch);
-
-          for (const url of urls) {
-            try {
-              const fetchResult = await this.toolExecutor.execute(
-                'web_fetch',
-                { url },
-                { generation: this.config.generation }
-              );
-
-              if (fetchResult.success && fetchResult.result) {
-                const content = typeof fetchResult.result === 'string'
-                  ? fetchResult.result
-                  : JSON.stringify(fetchResult.result);
-
-                // 截取内容长度
-                const truncatedContent = content.slice(0, this.config.maxFetchContentLength);
-                results.push(`### 来源: ${url}\n${truncatedContent}${content.length > this.config.maxFetchContentLength ? '\n[内容已截断...]' : ''}`);
-              }
-            } catch (fetchError) {
-              // 忽略单个页面抓取失败
-              logger.debug('Failed to fetch URL:', url);
-            }
-          }
-        }
-      } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        results.push(`搜索失败 [${query}]: ${errorMessage}`);
-        logger.warn('Search failed for query:', query, errorMessage);
-      }
-    }
+    // 合并结果
+    const results = searchResults.flat().filter(r => r.length > 0);
 
     if (results.length === 0) {
       return `未能获取到关于"${step.title}"的相关信息，请检查网络连接或尝试其他搜索关键词。`;
     }
 
     return results.join('\n\n');
+  }
+
+  /**
+   * 执行单个搜索查询并抓取相关页面
+   */
+  private async executeSearchWithFetch(query: string): Promise<string[]> {
+    const results: string[] = [];
+
+    try {
+      // 执行网络搜索
+      const searchResult = await this.toolExecutor.execute(
+        'web_search',
+        { query, count: 5 },
+        { generation: this.config.generation }
+      );
+
+      if (!searchResult.success || !searchResult.result) {
+        results.push(`搜索失败 [${query}]: ${searchResult.error ?? '无结果'}`);
+        return results;
+      }
+
+      const searchOutput = typeof searchResult.result === 'string'
+        ? searchResult.result
+        : JSON.stringify(searchResult.result);
+
+      results.push(`## 搜索: ${query}\n${searchOutput}`);
+
+      // 提取 URL 并并行抓取页面内容
+      const urls = this.extractUrls(searchOutput).slice(0, this.config.maxFetchPerSearch);
+
+      if (urls.length > 0) {
+        const fetchPromises = urls.map(url => this.fetchUrl(url));
+        const fetchResults = await Promise.all(fetchPromises);
+
+        for (const fetchResult of fetchResults) {
+          if (fetchResult) {
+            results.push(fetchResult);
+          }
+        }
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      results.push(`搜索失败 [${query}]: ${errorMessage}`);
+      logger.warn('Search failed for query:', query, errorMessage);
+    }
+
+    return results;
+  }
+
+  /**
+   * 抓取单个 URL 内容
+   */
+  private async fetchUrl(url: string): Promise<string | null> {
+    try {
+      const fetchResult = await this.toolExecutor.execute(
+        'web_fetch',
+        { url },
+        { generation: this.config.generation }
+      );
+
+      if (fetchResult.success && fetchResult.result) {
+        const content = typeof fetchResult.result === 'string'
+          ? fetchResult.result
+          : JSON.stringify(fetchResult.result);
+
+        // 截取内容长度
+        const truncatedContent = content.slice(0, this.config.maxFetchContentLength);
+        return `### 来源: ${url}\n${truncatedContent}${content.length > this.config.maxFetchContentLength ? '\n[内容已截断...]' : ''}`;
+      }
+    } catch (fetchError) {
+      // 忽略单个页面抓取失败
+      logger.debug('Failed to fetch URL:', url);
+    }
+    return null;
   }
 
   /**

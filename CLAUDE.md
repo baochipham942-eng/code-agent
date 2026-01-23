@@ -17,6 +17,7 @@ AI 编程助手桌面应用，复刻 Claude Code 的 8 个架构代际来研究 
 docs/
 ├── ARCHITECTURE.md       # 架构索引（入口）
 ├── PRD.md               # 产品需求文档
+├── CONSTITUTION.md      # 宪法式 Prompt 设计
 ├── architecture/        # 详细架构文档
 │   ├── overview.md      # 系统概览
 │   ├── agent-core.md    # Agent 核心
@@ -24,6 +25,13 @@ docs/
 │   ├── frontend.md      # 前端架构
 │   ├── data-storage.md  # 数据存储
 │   └── cloud-architecture.md # 云端架构
+├── api-reference/       # API 文档 (v0.9+)
+│   ├── index.md         # API 索引
+│   ├── security.md      # 安全模块 API
+│   ├── tool-enhancements.md # 工具增强 API
+│   └── hooks.md         # Hooks 系统 API
+├── migration/           # 迁移指南
+│   └── v0.9-upgrade.md  # v0.9 升级指南
 └── decisions/           # 架构决策记录 (ADR)
     └── 001-turn-based-messaging.md
 ```
@@ -35,7 +43,38 @@ src/
 ├── main/                 # Electron 主进程
 │   ├── agent/           # AgentOrchestrator, AgentLoop
 │   ├── generation/      # GenerationManager
+│   │   └── prompts/     # System prompt 构建
+│   │       ├── constitution/  # 宪法层（soul, values, ethics, safety, judgment）
+│   │       ├── tools/         # 工具描述（bash, edit, task）
+│   │       ├── rules/         # 规则层
+│   │       │   └── injection/ # 注入防御（core, verification, meta）
+│   │       └── builder.ts     # Prompt 组装器
 │   ├── tools/           # gen1-gen4 工具实现
+│   │   ├── gen1/        # bash, read_file, write_file, edit_file
+│   │   ├── gen2/        # glob, grep, list_directory
+│   │   ├── gen3/        # task, todo_write, ask_user_question
+│   │   ├── gen4/        # skill, web_fetch, read_pdf, mcp
+│   │   ├── fileReadTracker.ts           # 文件读取跟踪
+│   │   ├── backgroundTaskPersistence.ts # 后台任务持久化
+│   │   └── utils/
+│   │       ├── quoteNormalizer.ts       # 智能引号规范化
+│   │       └── externalModificationDetector.ts # 外部修改检测
+│   ├── security/        # 安全模块 (v0.9+)
+│   │   ├── commandMonitor.ts     # 命令执行监控
+│   │   ├── sensitiveDetector.ts  # 敏感信息检测
+│   │   ├── auditLogger.ts        # JSONL 审计日志
+│   │   └── logMasker.ts          # 日志掩码
+│   ├── hooks/           # Hooks 系统 (v0.9+)
+│   │   ├── configParser.ts  # 配置解析
+│   │   ├── scriptExecutor.ts # 脚本执行
+│   │   ├── events.ts         # 11种事件类型
+│   │   ├── merger.ts         # 多源合并
+│   │   └── promptHook.ts     # AI 评估 Hook
+│   ├── context/         # 上下文管理 (v0.9+)
+│   │   ├── tokenEstimator.ts  # Token 估算
+│   │   ├── compressor.ts      # 增量压缩
+│   │   ├── codePreserver.ts   # 代码块保留
+│   │   └── summarizer.ts      # AI 摘要
 │   ├── services/        # Auth, Sync, Database
 │   ├── memory/          # 向量存储和记忆系统
 │   ├── hooks/           # 用户可配置 Hooks 系统
@@ -222,6 +261,116 @@ image_generate { "prompt": "产品展示图", "output_path": "./product.png", "s
 | `style` | string | 风格: "photo", "illustration", "3d", "anime" |
 
 **要求**：需要配置 OpenRouter API Key，或通过云端代理使用。
+
+## 安全模块 (v0.9+)
+
+运行时安全监控，敏感信息检测，审计日志。
+
+### 审计日志
+
+所有工具执行自动记录到 JSONL 日志：
+
+```bash
+# 查看今天的审计日志
+cat ~/.code-agent/audit/$(date +%Y-%m-%d).jsonl | jq .
+```
+
+### 敏感信息检测
+
+自动检测并掩码：
+- API Keys (`api_key=sk-...`)
+- AWS 凭证 (`AKIA...`, Secret Key)
+- GitHub Tokens (`ghp_...`, `ghs_...`)
+- 私钥 (`-----BEGIN ... PRIVATE KEY-----`)
+- 数据库 URL (`postgres://user:pass@...`)
+
+### 配置
+
+```json
+// .claude/settings.json
+{
+  "security": {
+    "auditLog": {
+      "enabled": true,
+      "retentionDays": 30
+    },
+    "sensitiveDetection": {
+      "enabled": true
+    },
+    "commandMonitor": {
+      "blockedPatterns": ["rm -rf /"],
+      "warningPatterns": ["sudo"]
+    }
+  }
+}
+```
+
+---
+
+## Hooks 系统 (v0.9+)
+
+用户可配置的事件钩子，支持 11 种事件类型。
+
+### 事件类型
+
+| 事件 | 触发时机 |
+|------|----------|
+| `PreToolUse` | 工具执行前 |
+| `PostToolUse` | 工具执行后（成功）|
+| `PostToolUseFailure` | 工具执行后（失败）|
+| `UserPromptSubmit` | 用户提交 prompt |
+| `SessionStart` | 会话开始 |
+| `SessionEnd` | 会话结束 |
+| `Stop` | Agent 停止 |
+| `SubagentStop` | 子代理停止 |
+| `PreCompact` | 上下文压缩前 |
+| `Setup` | 初始化时 |
+| `Notification` | 通知事件 |
+
+### 配置示例
+
+```json
+// .claude/settings.json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/validate-command.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/cleanup.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Hook 脚本环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `TOOL_NAME` | 工具名称 |
+| `TOOL_INPUT` | JSON 格式的工具输入 |
+| `SESSION_ID` | 当前会话 ID |
+| `FILE_PATH` | 文件路径（文件操作时）|
+| `COMMAND` | 命令（Bash 工具时）|
+
+---
 
 ## 云端 Prompt 管理
 

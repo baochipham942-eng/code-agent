@@ -2173,7 +2173,7 @@ export class ModelRouter {
     messages: ModelMessage[],
     tools: ToolDefinition[],
     config: ModelConfig,
-    _onStream?: StreamCallback
+    onStream?: StreamCallback
   ): Promise<ModelResponse> {
     const cloudUrl = this.getCloudApiUrl();
     const providerName = config.provider; // 例如 'openrouter'
@@ -2192,13 +2192,16 @@ export class ModelRouter {
       },
     }));
 
+    // 启用流式输出当有回调时
+    const useStream = !!onStream;
+
     // 构建请求体
     const requestBody: Record<string, unknown> = {
       model: config.model || 'google/gemini-2.0-flash-001',
       messages: this.convertToOpenAIMessages(messages),
       temperature: config.temperature ?? 0.7,
       max_tokens: config.maxTokens ?? recommendedMaxTokens,
-      stream: false, // 云端代理暂不支持流式
+      stream: useStream,
     };
 
     // T6: Add response_format for structured output
@@ -2213,9 +2216,15 @@ export class ModelRouter {
       requestBody.tool_choice = 'auto';
     }
 
-    logger.info(`通过云端代理调用 ${providerName}/${config.model}...`);
+    logger.info(`通过云端代理调用 ${providerName}/${config.model}...`, { streaming: useStream });
 
     try {
+      // 流式请求
+      if (useStream) {
+        return await this.callViaCloudProxyStreaming(cloudUrl, providerName, requestBody, onStream);
+      }
+
+      // 非流式请求
       const response = await axios.post(`${cloudUrl}/api/model-proxy`, {
         provider: providerName,
         endpoint: '/chat/completions',
@@ -2259,6 +2268,144 @@ export class ModelRouter {
         throw new Error(`云端代理 API 错误: ${error.response.status} - ${errorMessage}`);
       }
       throw new Error(`云端代理请求失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * 通过云端代理进行流式调用
+   */
+  private async callViaCloudProxyStreaming(
+    cloudUrl: string,
+    providerName: string,
+    requestBody: Record<string, unknown>,
+    onStream: StreamCallback
+  ): Promise<ModelResponse> {
+    const response = await fetch(`${cloudUrl}/api/model-proxy`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        provider: providerName,
+        endpoint: '/chat/completions',
+        body: requestBody,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`云端代理流式错误: ${response.status} - ${errorText}`);
+    }
+
+    if (!response.body) {
+      throw new Error('云端代理流式响应无 body');
+    }
+
+    // 解析 SSE 流
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    let fullContent = '';
+    const toolCalls: ToolCall[] = [];
+    const toolCallsInProgress: Map<number, { id: string; name: string; arguments: string }> = new Map();
+
+    try {
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // 处理 SSE 数据行
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // 保留未完成的行
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta;
+
+            if (!delta) continue;
+
+            // 文本内容
+            if (delta.content) {
+              fullContent += delta.content;
+              onStream({ type: 'text', content: delta.content });
+            }
+
+            // 工具调用
+            if (delta.tool_calls) {
+              for (const tc of delta.tool_calls) {
+                const index = tc.index ?? 0;
+
+                if (!toolCallsInProgress.has(index)) {
+                  // 新工具调用开始
+                  toolCallsInProgress.set(index, {
+                    id: tc.id || `tool-${index}`,
+                    name: tc.function?.name || '',
+                    arguments: '',
+                  });
+                  onStream({
+                    type: 'tool_call_start',
+                    toolCall: { index, id: tc.id, name: tc.function?.name },
+                  });
+                }
+
+                const inProgress = toolCallsInProgress.get(index)!;
+
+                // 更新名称
+                if (tc.function?.name) {
+                  inProgress.name = tc.function.name;
+                }
+
+                // 累积参数
+                if (tc.function?.arguments) {
+                  inProgress.arguments += tc.function.arguments;
+                  onStream({
+                    type: 'tool_call_delta',
+                    toolCall: { index, name: inProgress.name, argumentsDelta: tc.function.arguments },
+                  });
+                }
+              }
+            }
+          } catch {
+            // 忽略解析错误
+          }
+        }
+      }
+
+      // 完成工具调用
+      for (const [, tc] of toolCallsInProgress) {
+        try {
+          toolCalls.push({
+            id: tc.id,
+            name: tc.name,
+            arguments: JSON.parse(tc.arguments || '{}'),
+          });
+        } catch {
+          toolCalls.push({
+            id: tc.id,
+            name: tc.name,
+            arguments: {},
+          });
+        }
+      }
+
+      // 返回结果
+      if (toolCalls.length > 0) {
+        return { type: 'tool_use', toolCalls };
+      }
+
+      return { type: 'text', content: fullContent };
+    } finally {
+      reader.releaseLock();
     }
   }
 

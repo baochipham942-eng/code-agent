@@ -107,7 +107,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       headers['anthropic-version'] = '2023-06-01';
     }
 
-    logger.info('Proxying request', { provider, endpoint });
+    // 检查是否请求流式响应
+    const requestBody = body as Record<string, unknown>;
+    const isStreaming = requestBody.stream === true;
+
+    logger.info('Proxying request', { provider, endpoint, streaming: isStreaming });
 
     const response = await fetch(url, {
       method: 'POST',
@@ -115,6 +119,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify(body),
     });
 
+    // 流式响应处理
+    if (isStreaming && response.body) {
+      // 设置 SSE 响应头
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      // 转发流式响应
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          res.write(chunk);
+        }
+      } catch (streamError) {
+        logger.error('Stream error', streamError as Error);
+      } finally {
+        res.end();
+      }
+      return;
+    }
+
+    // 非流式响应处理
     const contentType = response.headers.get('content-type') || '';
 
     // 解析响应

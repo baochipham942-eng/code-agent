@@ -49,7 +49,8 @@ const LATEST_RELEASE: ReleaseInfo = {
   downloads: {
     darwin: {
       // 注意: 文件名中的空格需要 URL 编码为 %20
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.10.2/Code%20Agent-0.10.2-arm64.dmg',
+      // GitHub 会将文件名中的空格替换为点
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.10.2/Code.Agent-0.10.2-arm64.dmg',
       size: 136000000, // ~130MB
     },
   },

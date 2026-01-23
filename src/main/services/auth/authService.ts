@@ -469,6 +469,82 @@ class AuthService {
     return token;
   }
 
+  /**
+   * 发送密码重置邮件
+   */
+  async resetPassword(email: string): Promise<AuthResult> {
+    if (!isSupabaseInitialized()) {
+      return { success: false, error: 'Supabase not initialized' };
+    }
+
+    const supabase = getSupabase();
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: 'code-agent://auth/reset-callback',
+    });
+
+    if (error) {
+      logger.error('Failed to send password reset email:', error);
+      return { success: false, error: error.message };
+    }
+
+    logger.info('Password reset email sent to:', email);
+    return { success: true };
+  }
+
+  /**
+   * 更新密码（用户点击重置链接后调用）
+   */
+  async updatePassword(newPassword: string): Promise<AuthResult> {
+    if (!isSupabaseInitialized()) {
+      return { success: false, error: 'Supabase not initialized' };
+    }
+
+    const supabase = getSupabase();
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+
+    if (error) {
+      logger.error('Failed to update password:', error);
+      return { success: false, error: error.message };
+    }
+
+    logger.info('Password updated successfully');
+    return { success: true };
+  }
+
+  /**
+   * 处理密码重置回调（从 deep link 调用）
+   * Supabase 的重置链接会带有 access_token 和 refresh_token
+   */
+  async handlePasswordResetCallback(accessToken: string, refreshToken: string): Promise<AuthResult> {
+    if (!isSupabaseInitialized()) {
+      return { success: false, error: 'Supabase not initialized' };
+    }
+
+    const supabase = getSupabase();
+
+    // 使用 tokens 设置 session
+    const { data, error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+
+    if (error) {
+      logger.error('Failed to set session from reset callback:', error);
+      return { success: false, error: error.message };
+    }
+
+    if (data.user) {
+      this.currentUser = await this.fetchUserProfile(data.user);
+      this.cacheUser(this.currentUser);
+      logger.info('Session set from password reset callback');
+      return { success: true, user: this.currentUser };
+    }
+
+    return { success: false, error: 'Failed to get user from session' };
+  }
+
   private async fetchUserProfile(user: SupabaseUser): Promise<AuthUser> {
     logger.info(' fetchUserProfile started for:', user.id);
     if (!isSupabaseInitialized()) {

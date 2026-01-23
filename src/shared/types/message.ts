@@ -45,6 +45,9 @@ export interface MessageAttachment {
   folderStats?: { totalFiles: number; totalSize: number; byType: Record<string, number> };
 }
 
+// 消息来源类型
+export type MessageSource = 'user' | 'skill' | 'system';
+
 export interface Message {
   id: string;
   role: MessageRole;
@@ -54,4 +57,9 @@ export interface Message {
   toolResults?: ToolResult[];
   // 多模态支持
   attachments?: MessageAttachment[];
+  // Skill 系统支持 (Agent Skills 标准)
+  // isMeta: true 表示消息不渲染到 UI，但会发送给模型
+  isMeta?: boolean;
+  // 消息来源追踪
+  source?: MessageSource;
 }

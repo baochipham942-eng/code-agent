@@ -231,6 +231,12 @@ export class AgentLoop {
   // Turn-based message tracking
   private currentTurnId: string = '';
 
+  // Skill 系统支持 (Agent Skills 标准)
+  // 预授权工具：Skill 激活后，这些工具可以跳过权限确认
+  private preApprovedTools: Set<string> = new Set();
+  // Skill 指定的模型覆盖
+  private skillModelOverride?: string;
+
   // Task progress tracking (长时任务进度追踪)
   private turnStartTime: number = 0;
   private toolsUsedInTurn: string[] = [];
@@ -1125,6 +1131,8 @@ export class AgentLoop {
           emitEvent: (event: string, data: unknown) => this.onEvent({ type: event, data, sessionId: this.sessionId } as AgentEvent),
           // Session ID for cross-session isolation (fixes todo pollution)
           sessionId: this.sessionId,
+          // Skill 系统支持：预授权工具列表
+          preApprovedTools: this.preApprovedTools,
         }
       );
       logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);
@@ -1337,6 +1345,53 @@ export class AgentLoop {
           }
         } catch (error) {
           logger.error('[AgentLoop] User post-tool hook error:', error);
+        }
+      }
+
+      // Skill 系统支持：处理 Skill 工具的特殊返回值
+      if (
+        toolCall.name === 'skill' &&
+        result.success &&
+        result.metadata?.isSkillActivation &&
+        result.metadata?.skillResult
+      ) {
+        const skillResult = result.metadata.skillResult as import('../../shared/types/agentSkill').SkillToolResult;
+        logger.debug('[AgentLoop] Processing Skill activation result');
+
+        // 注入消息到 this.messages
+        if (skillResult.newMessages) {
+          for (const msg of skillResult.newMessages) {
+            const messageToInject: Message = {
+              id: this.generateId(),
+              role: msg.role,
+              content: msg.content,
+              timestamp: Date.now(),
+              isMeta: msg.isMeta,
+              source: 'skill',
+            };
+            this.messages.push(messageToInject);
+
+            // 非 meta 消息需要发送事件通知前端
+            if (!msg.isMeta) {
+              this.onEvent({ type: 'message', data: messageToInject });
+            }
+          }
+          logger.debug(`[AgentLoop] Injected ${skillResult.newMessages.length} skill messages`);
+        }
+
+        // 应用上下文修改
+        if (skillResult.contextModifier) {
+          if (skillResult.contextModifier.preApprovedTools) {
+            for (const tool of skillResult.contextModifier.preApprovedTools) {
+              this.preApprovedTools.add(tool);
+            }
+            logger.debug(`[AgentLoop] Pre-approved tools: ${[...this.preApprovedTools].join(', ')}`);
+          }
+
+          if (skillResult.contextModifier.modelOverride) {
+            this.skillModelOverride = skillResult.contextModifier.modelOverride;
+            logger.debug(`[AgentLoop] Model override set to: ${this.skillModelOverride}`);
+          }
         }
       }
 

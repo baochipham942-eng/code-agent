@@ -55,6 +55,8 @@ export function PermissionDialog() {
   const { pendingPermissionRequest, setPendingPermissionRequest } = useAppStore();
   const { checkMemory, saveMemory } = usePermissionStore();
   const dialogRef = useRef<HTMLDivElement>(null);
+  // 用于防止重复处理同一请求
+  const processedRequestRef = useRef<string | null>(null);
 
   // 如果没有待处理的权限请求，不渲染
   if (!pendingPermissionRequest) return null;
@@ -71,9 +73,11 @@ export function PermissionDialog() {
   // 获取危险原因
   const dangerReason = isDangerous ? getDangerReason(request.details.command) : undefined;
 
-  // 检查是否有记忆的决定
+  // 检查是否有记忆的决定（只在首次渲染时检查，避免保存后立即触发）
   const memoryRequest = toMemoryRequest(request);
-  const memoryResult = checkMemory(memoryRequest);
+  // 只有当这是一个新请求时才检查记忆
+  const isNewRequest = processedRequestRef.current !== request.id;
+  const memoryResult = isNewRequest ? checkMemory(memoryRequest) : null;
 
   // 将 ApprovalLevel 转换为 PermissionResponse
   const toPermissionResponse = (level: ApprovalLevel): PermissionResponse => {
@@ -93,9 +97,28 @@ export function PermissionDialog() {
   // 处理审批决定
   const handleApproval = useCallback(
     (level: ApprovalLevel) => {
+      // 防止重复处理同一请求
+      if (processedRequestRef.current === request.id) {
+        return;
+      }
+      processedRequestRef.current = request.id;
+
       // 保存记忆（如果是 session/always/never）
       if (level === 'session' || level === 'always' || level === 'never') {
-        saveMemory(memoryRequest, level);
+        // 在回调内部构建 memoryRequest，避免闭包问题
+        const memoryReq: PermissionRequestForMemory = {
+          id: request.id,
+          tool: request.tool,
+          type: request.type as import('../../stores/permissionStore').PermissionType,
+          details: {
+            filePath: request.details.filePath || request.details.path,
+            command: request.details.command,
+            url: request.details.url,
+            server: request.details.server,
+            toolName: request.details.toolName,
+          },
+        };
+        saveMemory(memoryReq, level);
       }
 
       // 转换为 IPC 响应格式
@@ -113,19 +136,20 @@ export function PermissionDialog() {
       // 清除待处理请求
       setPendingPermissionRequest(null);
     },
-    [request.id, memoryRequest, saveMemory, setPendingPermissionRequest]
+    // 使用 request 对象的关键属性作为依赖
+    [request.id, request.tool, request.type, request.details, saveMemory, setPendingPermissionRequest]
   );
 
-  // 如果有记忆的决定，自动应用
+  // 如果有记忆的决定，自动应用（只对新请求生效）
   useEffect(() => {
-    if (memoryResult) {
+    if (memoryResult && isNewRequest) {
       // 短暂延迟，让用户有机会看到对话框
       const timer = setTimeout(() => {
         handleApproval(memoryResult);
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [memoryResult, handleApproval]);
+  }, [memoryResult, handleApproval, isNewRequest]);
 
   // 键盘快捷键处理
   useEffect(() => {

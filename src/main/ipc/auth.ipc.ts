@@ -62,6 +62,20 @@ function handleClearSavedCredentials(): void {
   getSecureStorage().clearSavedCredentials();
 }
 
+// ========== Password Reset Handlers ==========
+
+async function handleResetPassword(payload: { email: string }) {
+  return getAuthService().resetPassword(payload.email);
+}
+
+async function handleUpdatePassword(payload: { password: string }) {
+  return getAuthService().updatePassword(payload.password);
+}
+
+async function handlePasswordResetCallback(payload: { accessToken: string; refreshToken: string }) {
+  return getAuthService().handlePasswordResetCallback(payload.accessToken, payload.refreshToken);
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -118,6 +132,15 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
           handleClearSavedCredentials();
           data = null;
           break;
+        case 'resetPassword':
+          data = await handleResetPassword(payload as { email: string });
+          break;
+        case 'updatePassword':
+          data = await handleUpdatePassword(payload as { password: string });
+          break;
+        case 'passwordResetCallback':
+          data = await handlePasswordResetCallback(payload as { accessToken: string; refreshToken: string });
+          break;
         default:
           return {
             success: false,
@@ -172,4 +195,14 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
 
   /** @deprecated Use IPC_DOMAINS.AUTH with action: 'generateQuickToken' */
   ipcMain.handle(IPC_CHANNELS.AUTH_GENERATE_QUICK_TOKEN, async () => handleGenerateQuickToken());
+
+  /** @deprecated Use IPC_DOMAINS.AUTH with action: 'resetPassword' */
+  ipcMain.handle(IPC_CHANNELS.AUTH_RESET_PASSWORD, async (_, email: string) =>
+    handleResetPassword({ email })
+  );
+
+  /** @deprecated Use IPC_DOMAINS.AUTH with action: 'updatePassword' */
+  ipcMain.handle(IPC_CHANNELS.AUTH_UPDATE_PASSWORD, async (_, password: string) =>
+    handleUpdatePassword({ password })
+  );
 }

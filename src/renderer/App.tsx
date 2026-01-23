@@ -16,6 +16,7 @@ import { GenerationBadge } from './components/GenerationBadge';
 import { ObservabilityPanel } from './components/ObservabilityPanel';
 import { UserQuestionModal } from './components/UserQuestionModal';
 import { AuthModal } from './components/AuthModal';
+import { PasswordResetModal } from './components/PasswordResetModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
 import { PermissionDialog } from './components/PermissionDialog';
 import { CloudTaskPanel } from './components/CloudTaskPanel';
@@ -61,7 +62,7 @@ export const App: React.FC = () => {
   const [confirmActionRequest, setConfirmActionRequest] = useState<ConfirmActionRequest | null>(null);
 
   // Auth store
-  const { showAuthModal } = useAuthStore();
+  const { showAuthModal, showPasswordResetModal } = useAuthStore();
 
   // 渐进披露 Hook
   const { isStandard, isAdvanced } = useDisclosure();
@@ -379,6 +380,9 @@ export const App: React.FC = () => {
 
       {/* Auth Modal */}
       {showAuthModal && <AuthModal />}
+
+      {/* Password Reset Modal - 设置新密码弹窗 */}
+      {showPasswordResetModal && <PasswordResetModal />}
 
       {/* Force Update Modal - 强制更新，不可关闭 */}
       {forceUpdateInfo && <ForceUpdateModal updateInfo={forceUpdateInfo} />}

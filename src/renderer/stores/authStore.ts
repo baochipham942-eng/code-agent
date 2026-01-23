@@ -21,6 +21,8 @@ interface AuthState {
 
   // UI state
   showAuthModal: boolean;
+  showPasswordResetModal: boolean;
+  passwordResetTokens: { accessToken: string; refreshToken: string } | null;
 
   // Setters
   setUser: (user: AuthUser | null) => void;
@@ -28,6 +30,8 @@ interface AuthState {
   setError: (error: string | null) => void;
   setSyncStatus: (status: SyncStatus) => void;
   setShowAuthModal: (show: boolean) => void;
+  setShowPasswordResetModal: (show: boolean) => void;
+  setPasswordResetTokens: (tokens: { accessToken: string; refreshToken: string } | null) => void;
 
   // Auth actions
   signInWithEmail: (email: string, password: string) => Promise<boolean>;
@@ -41,6 +45,9 @@ interface AuthState {
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<AuthUser>) => Promise<boolean>;
   generateQuickToken: () => Promise<string | null>;
+  resetPassword: (email: string) => Promise<boolean>;
+  updatePassword: (newPassword: string) => Promise<boolean>;
+  handlePasswordResetCallback: (accessToken: string, refreshToken: string) => Promise<boolean>;
 
   // Sync actions
   startSync: () => Promise<void>;
@@ -61,6 +68,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     pendingChanges: 0,
   },
   showAuthModal: false,
+  showPasswordResetModal: false,
+  passwordResetTokens: null,
 
   // Setters
   setUser: (user) =>
@@ -73,6 +82,8 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   setError: (error) => set({ error }),
   setSyncStatus: (syncStatus) => set({ syncStatus }),
   setShowAuthModal: (showAuthModal) => set({ showAuthModal }),
+  setShowPasswordResetModal: (showPasswordResetModal) => set({ showPasswordResetModal }),
+  setPasswordResetTokens: (passwordResetTokens) => set({ passwordResetTokens }),
 
   // Auth actions
   signInWithEmail: async (email, password) => {
@@ -202,6 +213,72 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
     }
   },
 
+  resetPassword: async (email) => {
+    set({ isLoading: true, error: null });
+    try {
+      const result = await window.electronAPI?.invoke(
+        IPC_CHANNELS.AUTH_RESET_PASSWORD,
+        email
+      );
+      set({ isLoading: false });
+      if (result?.success) {
+        return true;
+      }
+      set({ error: result?.error || '发送重置邮件失败' });
+      return false;
+    } catch (error) {
+      set({ error: (error as Error).message, isLoading: false });
+      return false;
+    }
+  },
+
+  updatePassword: async (newPassword) => {
+    set({ isLoading: true, error: null });
+    try {
+      const result = await window.electronAPI?.invoke(
+        IPC_CHANNELS.AUTH_UPDATE_PASSWORD,
+        newPassword
+      );
+      if (result?.success) {
+        set({
+          isLoading: false,
+          showPasswordResetModal: false,
+          passwordResetTokens: null,
+        });
+        return true;
+      }
+      set({ error: result?.error || '更新密码失败', isLoading: false });
+      return false;
+    } catch (error) {
+      set({ error: (error as Error).message, isLoading: false });
+      return false;
+    }
+  },
+
+  handlePasswordResetCallback: async (accessToken, refreshToken) => {
+    set({ isLoading: true, error: null });
+    try {
+      const result = await window.domainAPI?.invoke('auth', 'passwordResetCallback', {
+        accessToken,
+        refreshToken,
+      });
+      if (result?.success) {
+        // Session set successfully, show password reset modal
+        set({
+          isLoading: false,
+          showPasswordResetModal: true,
+          passwordResetTokens: { accessToken, refreshToken },
+        });
+        return true;
+      }
+      set({ error: result?.error?.message || '验证重置链接失败', isLoading: false });
+      return false;
+    } catch (error) {
+      set({ error: (error as Error).message, isLoading: false });
+      return false;
+    }
+  },
+
   // Sync actions
   startSync: async () => {
     try {
@@ -279,4 +356,13 @@ export async function initializeAuthStore(): Promise<void> {
   window.electronAPI?.on(IPC_CHANNELS.SYNC_EVENT, (status) => {
     store.setSyncStatus(status);
   });
+
+  // Listen for password reset callback (from deep link)
+  window.electronAPI?.on(
+    IPC_CHANNELS.AUTH_PASSWORD_RESET_CALLBACK,
+    (data: { accessToken: string; refreshToken: string }) => {
+      logger.info('Received password reset callback');
+      store.handlePasswordResetCallback(data.accessToken, data.refreshToken);
+    }
+  );
 }

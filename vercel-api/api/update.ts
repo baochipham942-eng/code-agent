@@ -27,22 +27,26 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.10.2',
+  version: '0.10.3',
   publishedAt: '2026-01-24T00:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.10.2
+## Code Agent v0.10.3
 
-### 安全性增强
-- 使用 crypto.randomUUID() 替换所有 Math.random() ID 生成
-- 为未保护的 JSON.parse 调用添加 try-catch
+### 功能增强
+- 新增密码重置功能（忘记密码）
+- 新增记住密码功能
+- 新增实现计划面板入口
+- 改进生成文件的路径显示和快速操作
 
-### 前端稳定性
-- 添加 ErrorBoundary 组件包装应用主内容
-- 修复 useCloudTasks 计时器泄漏问题
+### 架构重构
+- 借鉴 Claude Agent SDK 设计理念重构核心架构
+- 新增 Budget 预算追踪功能
+- 新增结构化输出支持
+- 运维 API 整合（health/init-db/migrate）
 
-### 资源管理
-- 修复 MCP 连接超时后的清理逻辑
-- 修复更新下载链接和文件名编码问题
+### 工作目录改进
+- 改进工作目录处理逻辑
+- 移除硬编码限制
   `.trim(),
   forceUpdate: false, // 可选更新
   minRequiredVersion: '0.10.0',
@@ -50,7 +54,7 @@ const LATEST_RELEASE: ReleaseInfo = {
     darwin: {
       // 注意: 文件名中的空格需要 URL 编码为 %20
       // GitHub 会将文件名中的空格替换为点
-      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.10.2/Code.Agent-0.10.2-arm64.dmg',
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.10.3/Code.Agent-0.10.3-arm64.dmg',
       size: 136000000, // ~130MB
     },
   },

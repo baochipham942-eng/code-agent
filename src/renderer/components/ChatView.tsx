@@ -15,6 +15,7 @@ import { TaskStatusBar } from './features/chat/TaskStatusBar';
 import { TodoPanel } from './TodoPanel';
 import { PreviewPanel } from './PreviewPanel';
 import { PlanPanel } from './features/chat/PlanPanel';
+import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import type { Message, MessageAttachment, TaskProgressData, TaskPlan } from '../../shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
 import {
@@ -34,7 +35,7 @@ import {
 export const ChatView: React.FC = () => {
   const { currentGeneration, showPreviewPanel } = useAppStore();
   const { todos, currentSessionId } = useSessionStore();
-  const { messages, isProcessing, sendMessage, cancel, taskProgress } = useAgent();
+  const { messages, isProcessing, sendMessage, cancel, taskProgress, researchDetected, dismissResearchDetected } = useAgent();
 
   // Plan 状态
   const [plan, setPlan] = useState<TaskPlan | null>(null);
@@ -153,6 +154,20 @@ export const ChatView: React.FC = () => {
             />
           )}
         </div>
+
+        {/* Semantic Research Indicator - 检测到需要深度研究时显示 */}
+        {researchDetected && (
+          <div className="px-4 max-w-3xl mx-auto w-full">
+            <SemanticResearchIndicator
+              intent={researchDetected.intent}
+              confidence={researchDetected.confidence}
+              suggestedDepth={researchDetected.suggestedDepth}
+              reasoning={researchDetected.reasoning}
+              visible={true}
+              onDismiss={dismissResearchDetected}
+            />
+          </div>
+        )}
 
         {/* Input */}
         <ChatInput

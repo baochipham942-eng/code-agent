@@ -57,19 +57,22 @@ export function ToolCallDisplay({
   const [expanded, setExpanded] = useState(
     status === 'error' || status === 'pending'
   );
+  // Track if user manually toggled - prevents auto-collapse from overriding user action
+  const [userToggled, setUserToggled] = useState(false);
 
-  // Auto-collapse on success after 500ms
+  // Auto-collapse on success after 500ms (only if user hasn't manually toggled)
   useEffect(() => {
-    if (status === 'success' && expanded) {
+    if (status === 'success' && expanded && !userToggled) {
       const timer = setTimeout(() => setExpanded(false), 500);
       return () => clearTimeout(timer);
     }
-  }, [status, expanded]);
+  }, [status, expanded, userToggled]);
 
   // Auto-expand on error or pending
   useEffect(() => {
     if (status === 'error' || status === 'pending') {
       setExpanded(true);
+      setUserToggled(false); // Reset user toggle on status change
     }
   }, [status]);
 
@@ -85,7 +88,10 @@ export function ToolCallDisplay({
       {/* Main row - clickable to expand/collapse */}
       <div
         className="flex items-center gap-2 cursor-pointer hover:bg-gray-800/50 rounded px-1 py-0.5 transition-colors"
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => {
+          setExpanded(!expanded);
+          setUserToggled(true);
+        }}
       >
         {/* Expand/collapse indicator */}
         <span className="text-gray-500 w-4 flex-shrink-0">

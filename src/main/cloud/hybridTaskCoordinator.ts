@@ -121,7 +121,7 @@ export class HybridTaskCoordinator extends EventEmitter {
     const location = request.location || routing.recommendedLocation;
 
     // 创建执行状态
-    const taskId = `hybrid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const taskId = `hybrid_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
     const state: ExecutionState = {
       taskId,
       status: 'pending',

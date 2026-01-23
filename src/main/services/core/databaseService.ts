@@ -612,7 +612,7 @@ export class DatabaseService {
     `);
 
     stmt.run(
-      `te_${now}_${Math.random().toString(36).substr(2, 9)}`,
+      `te_${now}_${crypto.randomUUID().split('-')[0]}`,
       sessionId,
       messageId,
       toolName,
@@ -742,7 +742,7 @@ export class DatabaseService {
     if (!this.db) throw new Error('Database not initialized');
 
     const now = Date.now();
-    const id = `pk_${now}_${Math.random().toString(36).substr(2, 9)}`;
+    const id = `pk_${now}_${crypto.randomUUID().split('-')[0]}`;
 
     const stmt = this.db.prepare(`
       INSERT INTO project_knowledge (id, project_path, key, value, source, confidence, created_at, updated_at)

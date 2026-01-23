@@ -55,7 +55,7 @@ export interface BackgroundTask {
  */
 function generateTaskId(): string {
   const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 8);
+  const random = crypto.randomUUID().split('-')[0];
   return `task_${timestamp}_${random}`;
 }
 
@@ -143,7 +143,12 @@ export async function loadTask(taskId: string): Promise<BackgroundTask | null> {
   try {
     const metadataPath = getTaskMetadataPath(taskId);
     const content = await fs.readFile(metadataPath, 'utf-8');
-    return JSON.parse(content) as BackgroundTask;
+    try {
+      return JSON.parse(content) as BackgroundTask;
+    } catch (parseError) {
+      logger.error('Failed to parse task JSON', { taskId, parseError });
+      return null;
+    }
   } catch (error: any) {
     if (error.code === 'ENOENT') {
       return null;

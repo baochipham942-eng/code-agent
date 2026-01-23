@@ -69,7 +69,7 @@ export class CloudTaskService extends EventEmitter {
     const location = request.location || routing.recommendedLocation;
 
     // 准备任务数据
-    const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const taskId = `task_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
     const now = new Date().toISOString();
 
     // 加密敏感数据

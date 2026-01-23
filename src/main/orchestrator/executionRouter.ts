@@ -71,7 +71,7 @@ export class ExecutionRouter {
     const analysis = this.analyzer.analyze(prompt, context);
 
     // 生成决策 ID
-    const decisionId = `routing_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const decisionId = `routing_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
 
     // 应用路由规则（按优先级）
     const decision = this.applyRoutingRules(decisionId, analysis, mergedPreferences);
@@ -331,7 +331,7 @@ export class ExecutionRouter {
     preferences: Partial<UserRoutingPreferences> = {}
   ): RoutingDecision {
     const mergedPreferences = { ...DEFAULT_PREFERENCES, ...preferences };
-    const decisionId = `routing_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const decisionId = `routing_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
     return this.applyRoutingRules(decisionId, analysis, mergedPreferences);
   }
 

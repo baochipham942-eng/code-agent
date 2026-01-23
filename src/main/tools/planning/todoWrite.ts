@@ -234,7 +234,7 @@ export const todoWriteTool: Tool = {
                 title: 'Main Tasks',
                 status: 'pending',
                 steps: todos.map((t) => ({
-                  id: `step-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                  id: `step-${Date.now()}-${crypto.randomUUID().split('-')[0]}`,
                   content: t.content,
                   status:
                     t.status === 'completed'

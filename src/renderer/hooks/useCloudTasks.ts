@@ -70,6 +70,11 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isMountedRef = useRef(true);
 
+  // 使用 ref 来存储最新的函数引用，避免 useEffect 依赖数组问题导致计时器泄漏
+  const loadTasksRef = useRef<(() => Promise<void>) | null>(null);
+  const loadSyncStateRef = useRef<(() => Promise<void>) | null>(null);
+  const loadStatsRef = useRef<(() => Promise<void>) | null>(null);
+
   // --------------------------------------------------------------------------
   // 数据加载
   // --------------------------------------------------------------------------
@@ -248,6 +253,13 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
     await Promise.all([loadTasks(), loadSyncState(), loadStats()]);
   }, [loadTasks, loadSyncState, loadStats]);
 
+  // 保持 ref 与最新函数同步
+  useEffect(() => {
+    loadTasksRef.current = loadTasks;
+    loadSyncStateRef.current = loadSyncState;
+    loadStatsRef.current = loadStats;
+  });
+
   // --------------------------------------------------------------------------
   // 事件监听
   // --------------------------------------------------------------------------
@@ -306,16 +318,16 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
   // --------------------------------------------------------------------------
 
   useEffect(() => {
-    // 初始加载
-    loadTasks();
-    loadSyncState();
-    loadStats();
+    // 初始加载 - 使用 ref 调用避免依赖数组问题
+    loadTasksRef.current?.();
+    loadSyncStateRef.current?.();
+    loadStatsRef.current?.();
 
     // 设置自动刷新
     if (autoRefresh && refreshInterval > 0) {
       refreshTimerRef.current = setInterval(() => {
-        loadTasks();
-        loadSyncState();
+        loadTasksRef.current?.();
+        loadSyncStateRef.current?.();
       }, refreshInterval);
     }
 
@@ -324,7 +336,7 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
         clearInterval(refreshTimerRef.current);
       }
     };
-  }, [autoRefresh, refreshInterval, loadTasks, loadSyncState, loadStats]);
+  }, [autoRefresh, refreshInterval]); // 移除函数依赖，避免计时器重复创建
 
   // 组件卸载标记
   useEffect(() => {
@@ -336,8 +348,8 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
 
   // 过滤器变化时重新加载
   useEffect(() => {
-    loadTasks();
-  }, [filter, loadTasks]);
+    loadTasksRef.current?.();
+  }, [filter]); // 只依赖 filter，使用 ref 调用函数
 
   // --------------------------------------------------------------------------
   // 返回值

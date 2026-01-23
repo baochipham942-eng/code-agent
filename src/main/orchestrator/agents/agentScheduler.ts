@@ -109,7 +109,7 @@ export class AgentScheduler extends EventEmitter {
 
     // 创建任务
     const task: AgentTask = {
-      id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `task_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
       agentId: '', // 待分配
       parentTaskId: options.parentTaskId,
       prompt,

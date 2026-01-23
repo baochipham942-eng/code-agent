@@ -301,7 +301,7 @@ export class Seatbelt {
    * Write profile to temp file and return path
    */
   private writeProfile(profile: string): string {
-    const profileId = `profile-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const profileId = `profile-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
     const profilePath = path.join(this.tempProfileDir, `${profileId}.sb`);
 
     fs.writeFileSync(profilePath, profile, 'utf-8');

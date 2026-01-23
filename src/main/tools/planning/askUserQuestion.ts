@@ -148,7 +148,7 @@ Example of good technical question:
 
     // Create request
     const request: UserQuestionRequest = {
-      id: `q-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: `q-${Date.now()}-${crypto.randomUUID().split('-')[0]}`,
       questions,
       timestamp: Date.now(),
     };

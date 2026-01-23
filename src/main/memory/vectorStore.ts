@@ -129,7 +129,7 @@ export class VectorStore {
     content: string,
     metadata: VectorDocumentMetadata
   ): Promise<string> {
-    const id = `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const id = `doc_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
     const embedding = await this.getEmbedding().embed(content);
 
     const document: VectorDocument = {

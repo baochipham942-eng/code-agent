@@ -182,7 +182,7 @@ export function createIPCRequest<T>(
   return {
     action,
     payload,
-    requestId: requestId || `req_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+    requestId: requestId || `req_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
   };
 }
 

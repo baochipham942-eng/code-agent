@@ -446,7 +446,7 @@ export class UnifiedOrchestrator extends EventEmitter {
    * 生成请求 ID
    */
   private generateRequestId(): string {
-    return `orch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    return `orch_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
   }
 
   /**

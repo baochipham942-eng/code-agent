@@ -270,18 +270,33 @@ export class MCPClient {
       // 使用超时机制包装连接
       const connectWithTimeout = async (): Promise<void> => {
         return new Promise<void>((resolve, reject) => {
+          let isSettled = false;
+
           const timeoutId = setTimeout(() => {
-            reject(new Error(`Connection to ${config.name} timed out after ${connectTimeout}ms`));
+            if (!isSettled) {
+              isSettled = true;
+              // 超时时尝试关闭 transport，防止资源泄漏
+              transport.close().catch(() => {
+                // 忽略关闭错误
+              });
+              reject(new Error(`Connection to ${config.name} timed out after ${connectTimeout}ms`));
+            }
           }, connectTimeout);
 
           client.connect(transport)
             .then(() => {
-              clearTimeout(timeoutId);
-              resolve();
+              if (!isSettled) {
+                isSettled = true;
+                clearTimeout(timeoutId);
+                resolve();
+              }
             })
             .catch((err) => {
-              clearTimeout(timeoutId);
-              reject(err);
+              if (!isSettled) {
+                isSettled = true;
+                clearTimeout(timeoutId);
+                reject(err);
+              }
             });
         });
       };
@@ -303,6 +318,14 @@ export class MCPClient {
 
       logger.info(`Connected to MCP server: ${config.name}`);
     } catch (error) {
+      // 确保 transport 被关闭，防止资源泄漏
+      // 注意：超时情况下 connectWithTimeout 已尝试关闭，这里做二次保障
+      try {
+        await transport!.close();
+      } catch {
+        // 忽略关闭错误（可能 transport 未创建或已关闭）
+      }
+
       // 更新状态为错误
       if (state) {
         state.status = 'error';

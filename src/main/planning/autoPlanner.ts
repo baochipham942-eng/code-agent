@@ -382,7 +382,7 @@ export class AutoPlanner {
     template: PlanTemplate,
     config: PlanningConfig
   ): TaskPlan {
-    const planId = `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const planId = `plan-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
     const now = Date.now();
 
     // Convert template phases to plan phases
@@ -421,7 +421,7 @@ export class AutoPlanner {
     complexity: ComplexityAnalysis,
     _config: PlanningConfig
   ): TaskPlan {
-    const planId = `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const planId = `plan-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
     const now = Date.now();
 
     // Generate phases based on complexity

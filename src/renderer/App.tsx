@@ -8,6 +8,7 @@ import { useAuthStore, initializeAuthStore } from './stores/authStore';
 import { useSessionStore } from './stores/sessionStore';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { WorkspacePanel } from './components/WorkspacePanel';
 import { TitleBar } from './components/TitleBar';
 import { SettingsModal } from './components/SettingsModal';
@@ -318,6 +319,7 @@ export const App: React.FC = () => {
   };
 
   return (
+    <ErrorBoundary>
       <div className="h-screen flex flex-col bg-zinc-900 text-zinc-100">
         {/* Title Bar for macOS */}
         <TitleBar />
@@ -423,6 +425,7 @@ export const App: React.FC = () => {
         />
       )}
       </div>
+    </ErrorBoundary>
   );
 };
 

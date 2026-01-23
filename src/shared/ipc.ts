@@ -311,7 +311,10 @@ export const IPC_CHANNELS = {
   AUTH_GET_USER: 'auth:get-user',
   AUTH_UPDATE_PROFILE: 'auth:update-profile',
   AUTH_GENERATE_QUICK_TOKEN: 'auth:generate-quick-token',
+  AUTH_RESET_PASSWORD: 'auth:reset-password',
+  AUTH_UPDATE_PASSWORD: 'auth:update-password',
   AUTH_EVENT: 'auth:event',
+  AUTH_PASSWORD_RESET_CALLBACK: 'auth:password-reset-callback',
 
   // Sync channels
   SYNC_GET_STATUS: 'sync:get-status',
@@ -494,6 +497,12 @@ export interface IpcInvokeHandlers {
     updates: Partial<AuthUser>
   ) => Promise<{ success: boolean; user?: AuthUser; error?: string }>;
   [IPC_CHANNELS.AUTH_GENERATE_QUICK_TOKEN]: () => Promise<string | null>;
+  [IPC_CHANNELS.AUTH_RESET_PASSWORD]: (
+    email: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.AUTH_UPDATE_PASSWORD]: (
+    newPassword: string
+  ) => Promise<{ success: boolean; error?: string }>;
 
   // Sync
   [IPC_CHANNELS.SYNC_GET_STATUS]: () => Promise<SyncStatus>;
@@ -623,6 +632,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.USER_QUESTION_ASK]: (request: UserQuestionRequest) => void;
   [IPC_CHANNELS.CONFIRM_ACTION_ASK]: (request: ConfirmActionRequest) => void;
   [IPC_CHANNELS.AUTH_EVENT]: (event: AuthEvent) => void;
+  [IPC_CHANNELS.AUTH_PASSWORD_RESET_CALLBACK]: (data: { accessToken: string; refreshToken: string }) => void;
   [IPC_CHANNELS.SYNC_EVENT]: (status: SyncStatus) => void;
   [IPC_CHANNELS.SESSION_UPDATED]: (event: SessionUpdatedEvent) => void;
   [IPC_CHANNELS.SESSION_LIST_UPDATED]: () => void;

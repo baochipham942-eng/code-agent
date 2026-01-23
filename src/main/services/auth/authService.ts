@@ -186,6 +186,24 @@ class AuthService {
     };
   }
 
+  /**
+   * 获取当前 session 的 access token（用于云端 API 调用）
+   */
+  async getAccessToken(): Promise<string | null> {
+    if (!isSupabaseInitialized()) {
+      return null;
+    }
+
+    try {
+      const supabase = getSupabase();
+      const { data } = await supabase.auth.getSession();
+      return data.session?.access_token || null;
+    } catch (error) {
+      logger.error('Failed to get access token:', error);
+      return null;
+    }
+  }
+
   async signInWithEmail(email: string, password: string): Promise<AuthResult> {
     if (!isSupabaseInitialized()) {
       return { success: false, error: 'Supabase not initialized' };

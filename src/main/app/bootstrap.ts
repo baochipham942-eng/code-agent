@@ -277,6 +277,21 @@ async function initializeServices(): Promise<void> {
           syncService.startAutoSync(SYNC.SYNC_INTERVAL);
           logger.info('Auto-sync started');
         });
+
+        // Auto-sync API keys for admin users
+        if (user.isAdmin) {
+          authService.getAccessToken().then((token) => {
+            if (token && configService) {
+              configService.syncApiKeysFromCloud(token).then((result) => {
+                if (result.success) {
+                  logger.info(`Admin API keys synced: ${result.syncedKeys.join(', ')}`);
+                } else {
+                  logger.warn(`Failed to sync admin API keys: ${result.error}`);
+                }
+              });
+            }
+          });
+        }
       } else {
         syncService.stopAutoSync();
         logger.info('Auto-sync stopped');

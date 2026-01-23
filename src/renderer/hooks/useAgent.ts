@@ -26,7 +26,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { generateMessageId } from '@shared/utils/id';
-import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData } from '@shared/types';
+import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData, ResearchDetectedData } from '@shared/types';
 import { createLogger } from '../utils/logger';
 import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 
@@ -62,6 +62,9 @@ export const useAgent = () => {
   // 任务进度状态（长时任务反馈）
   const [taskProgress, setTaskProgress] = useState<TaskProgressData | null>(null);
   const [lastTaskComplete, setLastTaskComplete] = useState<TaskCompleteData | null>(null);
+
+  // 语义研究检测状态
+  const [researchDetected, setResearchDetected] = useState<ResearchDetectedData | null>(null);
 
   // Message batcher for reducing re-renders during streaming
   const handleBatchUpdate = useCallback((updates: MessageUpdate[]) => {
@@ -479,6 +482,23 @@ export const useAgent = () => {
               taskSessionIdRef.current = null;
             }
             break;
+
+          // ================================================================
+          // 语义研究检测
+          // ================================================================
+
+          case 'research_detected':
+            // 语义检测到需要深度研究
+            if (event.data) {
+              logger.debug('research_detected', { data: event.data });
+              setResearchDetected(event.data as ResearchDetectedData);
+            }
+            break;
+
+          case 'research_mode_started':
+            // 研究模式开始，清除检测状态
+            setResearchDetected(null);
+            break;
         }
       }
     );
@@ -577,6 +597,11 @@ export const useAgent = () => {
     }
   }, [setIsProcessing, setSessionProcessing, currentSessionId]);
 
+  // 清除语义研究检测状态
+  const dismissResearchDetected = useCallback(() => {
+    setResearchDetected(null);
+  }, []);
+
   return {
     messages,
     isProcessing,
@@ -586,5 +611,8 @@ export const useAgent = () => {
     // 长时任务进度追踪
     taskProgress,
     lastTaskComplete,
+    // 语义研究检测
+    researchDetected,
+    dismissResearchDetected,
   };
 };

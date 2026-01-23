@@ -20,6 +20,7 @@ export {
   type ToolExecution,
   type UserPreference,
   type ProjectKnowledge,
+  type MemoryRecord,
 } from './databaseService';
 
 export {

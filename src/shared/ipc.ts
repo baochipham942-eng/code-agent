@@ -86,6 +86,51 @@ export interface MemoryStats {
   projectKnowledgeCount: number;
 }
 
+/**
+ * Memory Record - Gen5 记忆可视化
+ */
+export interface MemoryRecord {
+  id: string;
+  type: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage';
+  category: string;
+  content: string;
+  summary: string;
+  source: 'auto_learned' | 'user_defined' | 'session_extracted';
+  projectPath: string | null;
+  sessionId: string | null;
+  confidence: number;
+  accessCount: number;
+  lastAccessedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface MemoryListFilter {
+  type?: MemoryRecord['type'];
+  category?: string;
+  source?: MemoryRecord['source'];
+  currentProjectOnly?: boolean;
+  currentSessionOnly?: boolean;
+  limit?: number;
+  offset?: number;
+  orderBy?: 'created_at' | 'updated_at' | 'access_count' | 'confidence';
+  orderDir?: 'ASC' | 'DESC';
+}
+
+export interface MemorySearchOptions {
+  type?: MemoryRecord['type'];
+  category?: string;
+  limit?: number;
+}
+
+export interface MemoryStatsResult {
+  total: number;
+  byType: Record<string, number>;
+  bySource: Record<string, number>;
+  byCategory: Record<string, number>;
+}
+
 export interface MCPStatus {
   connectedServers: string[];
   toolCount: number;

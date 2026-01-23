@@ -766,6 +766,153 @@ export class MemoryService {
   }
 
   // --------------------------------------------------------------------------
+  // Memory CRUD (Gen5 记忆可视化)
+  // --------------------------------------------------------------------------
+
+  /**
+   * 创建记忆记录
+   */
+  createMemory(memory: {
+    type: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage';
+    category: string;
+    content: string;
+    summary: string;
+    source?: 'auto_learned' | 'user_defined' | 'session_extracted';
+    confidence?: number;
+    metadata?: Record<string, unknown>;
+  }): import('../services').MemoryRecord {
+    const db = getDatabase();
+    return db.createMemory({
+      type: memory.type,
+      category: memory.category,
+      content: memory.content,
+      summary: memory.summary,
+      source: memory.source || 'auto_learned',
+      projectPath: this.projectPath,
+      sessionId: this.sessionId,
+      confidence: memory.confidence ?? 1.0,
+      metadata: memory.metadata || {},
+    });
+  }
+
+  /**
+   * 获取单个记忆
+   */
+  getMemoryById(id: string): import('../services').MemoryRecord | null {
+    const db = getDatabase();
+    return db.getMemory(id);
+  }
+
+  /**
+   * 列出记忆（支持过滤）
+   */
+  listMemories(options: {
+    type?: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage';
+    category?: string;
+    source?: 'auto_learned' | 'user_defined' | 'session_extracted';
+    currentProjectOnly?: boolean;
+    currentSessionOnly?: boolean;
+    limit?: number;
+    offset?: number;
+    orderBy?: 'created_at' | 'updated_at' | 'access_count' | 'confidence';
+    orderDir?: 'ASC' | 'DESC';
+  } = {}): import('../services').MemoryRecord[] {
+    const db = getDatabase();
+    return db.listMemories({
+      type: options.type,
+      category: options.category,
+      source: options.source,
+      projectPath: options.currentProjectOnly ? this.projectPath || undefined : undefined,
+      sessionId: options.currentSessionOnly ? this.sessionId || undefined : undefined,
+      limit: options.limit,
+      offset: options.offset,
+      orderBy: options.orderBy,
+      orderDir: options.orderDir,
+    });
+  }
+
+  /**
+   * 更新记忆
+   */
+  updateMemory(
+    id: string,
+    updates: {
+      category?: string;
+      content?: string;
+      summary?: string;
+      confidence?: number;
+      metadata?: Record<string, unknown>;
+    }
+  ): import('../services').MemoryRecord | null {
+    const db = getDatabase();
+    return db.updateMemory(id, updates);
+  }
+
+  /**
+   * 删除记忆
+   */
+  deleteMemory(id: string): boolean {
+    const db = getDatabase();
+    return db.deleteMemory(id);
+  }
+
+  /**
+   * 批量删除记忆
+   */
+  deleteMemories(filter: {
+    type?: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage';
+    category?: string;
+    source?: 'auto_learned' | 'user_defined' | 'session_extracted';
+    currentProjectOnly?: boolean;
+    currentSessionOnly?: boolean;
+  }): number {
+    const db = getDatabase();
+    return db.deleteMemories({
+      type: filter.type,
+      category: filter.category,
+      source: filter.source,
+      projectPath: filter.currentProjectOnly ? this.projectPath || undefined : undefined,
+      sessionId: filter.currentSessionOnly ? this.sessionId || undefined : undefined,
+    });
+  }
+
+  /**
+   * 搜索记忆
+   */
+  searchMemories(
+    query: string,
+    options: {
+      type?: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage';
+      category?: string;
+      limit?: number;
+    } = {}
+  ): import('../services').MemoryRecord[] {
+    const db = getDatabase();
+    return db.searchMemories(query, options);
+  }
+
+  /**
+   * 获取记忆统计
+   */
+  getMemoryStats(): {
+    total: number;
+    byType: Record<string, number>;
+    bySource: Record<string, number>;
+    byCategory: Record<string, number>;
+  } {
+    const db = getDatabase();
+    return db.getMemoryStats();
+  }
+
+  /**
+   * 记录记忆访问
+   */
+  recordMemoryAccess(id: string): void {
+    const db = getDatabase();
+    db.recordMemoryAccess(id);
+  }
+
+  // --------------------------------------------------------------------------
   // Cleanup
   // --------------------------------------------------------------------------
 

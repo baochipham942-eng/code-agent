@@ -58,6 +58,27 @@ export interface ProjectKnowledge {
   updatedAt: number;
 }
 
+/**
+ * Memory 记录类型 - 用于记忆可视化
+ * 支持用户偏好、代码模式、项目知识等多种类型
+ */
+export interface MemoryRecord {
+  id: string;
+  type: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage';
+  category: string;
+  content: string;
+  summary: string;
+  source: 'auto_learned' | 'user_defined' | 'session_extracted';
+  projectPath: string | null;
+  sessionId: string | null;
+  confidence: number;
+  accessCount: number;
+  lastAccessedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+  metadata: Record<string, unknown>;
+}
+
 // SQLite 行类型（better-sqlite3 返回的原始行结构）
 // 使用 Record<string, unknown> 代替 any，但具体字段访问仍需类型断言
 type SQLiteRow = Record<string, unknown>;
@@ -222,6 +243,26 @@ export class DatabaseService {
         created_at INTEGER NOT NULL
       )
     `);
+
+    // Memories 表 (Gen5 记忆可视化)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS memories (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        category TEXT NOT NULL,
+        content TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        source TEXT NOT NULL,
+        project_path TEXT,
+        session_id TEXT,
+        confidence REAL NOT NULL DEFAULT 1.0,
+        access_count INTEGER NOT NULL DEFAULT 0,
+        last_accessed_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        metadata TEXT
+      )
+    `);
   }
 
   private createIndexes(): void {
@@ -237,6 +278,12 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_todos_session ON todos(session_id);
       CREATE INDEX IF NOT EXISTS idx_audit_log_session ON audit_log(session_id);
       CREATE INDEX IF NOT EXISTS idx_audit_log_type ON audit_log(event_type);
+      CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);
+      CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
+      CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_path);
+      CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id);
+      CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source);
+      CREATE INDEX IF NOT EXISTS idx_memories_updated ON memories(updated_at);
     `);
   }
 
@@ -889,6 +936,349 @@ export class DatabaseService {
       eventData: JSON.parse(row.event_data as string),
       createdAt: row.created_at as number,
     }));
+  }
+
+  // --------------------------------------------------------------------------
+  // Memories CRUD (Gen5 记忆可视化)
+  // --------------------------------------------------------------------------
+
+  /**
+   * 创建记忆记录
+   */
+  createMemory(memory: Omit<MemoryRecord, 'id' | 'accessCount' | 'lastAccessedAt' | 'createdAt' | 'updatedAt'>): MemoryRecord {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const now = Date.now();
+    const id = `mem_${now}_${Math.random().toString(36).substr(2, 9)}`;
+
+    const stmt = this.db.prepare(`
+      INSERT INTO memories (id, type, category, content, summary, source, project_path, session_id, confidence, access_count, last_accessed_at, created_at, updated_at, metadata)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      id,
+      memory.type,
+      memory.category,
+      memory.content,
+      memory.summary,
+      memory.source,
+      memory.projectPath,
+      memory.sessionId,
+      memory.confidence,
+      0,
+      null,
+      now,
+      now,
+      JSON.stringify(memory.metadata || {})
+    );
+
+    return {
+      id,
+      ...memory,
+      accessCount: 0,
+      lastAccessedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  /**
+   * 获取单个记忆记录
+   */
+  getMemory(id: string): MemoryRecord | null {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare('SELECT * FROM memories WHERE id = ?');
+    const row = stmt.get(id) as SQLiteRow | undefined;
+    if (!row) return null;
+
+    return this.rowToMemory(row);
+  }
+
+  /**
+   * 列出记忆记录（支持过滤和分页）
+   */
+  listMemories(options: {
+    type?: MemoryRecord['type'];
+    category?: string;
+    source?: MemoryRecord['source'];
+    projectPath?: string;
+    sessionId?: string;
+    limit?: number;
+    offset?: number;
+    orderBy?: 'created_at' | 'updated_at' | 'access_count' | 'confidence';
+    orderDir?: 'ASC' | 'DESC';
+  } = {}): MemoryRecord[] {
+    if (!this.db) throw new Error('Database not initialized');
+
+    let sql = 'SELECT * FROM memories WHERE 1=1';
+    const params: unknown[] = [];
+
+    if (options.type) {
+      sql += ' AND type = ?';
+      params.push(options.type);
+    }
+
+    if (options.category) {
+      sql += ' AND category = ?';
+      params.push(options.category);
+    }
+
+    if (options.source) {
+      sql += ' AND source = ?';
+      params.push(options.source);
+    }
+
+    if (options.projectPath) {
+      sql += ' AND project_path = ?';
+      params.push(options.projectPath);
+    }
+
+    if (options.sessionId) {
+      sql += ' AND session_id = ?';
+      params.push(options.sessionId);
+    }
+
+    const orderBy = options.orderBy || 'updated_at';
+    const orderDir = options.orderDir || 'DESC';
+    sql += ` ORDER BY ${orderBy} ${orderDir}`;
+
+    if (options.limit !== undefined) {
+      sql += ` LIMIT ${options.limit}`;
+      if (options.offset !== undefined) {
+        sql += ` OFFSET ${options.offset}`;
+      }
+    }
+
+    const stmt = this.db.prepare(sql);
+    const rows = stmt.all(...params) as SQLiteRow[];
+
+    return rows.map((row) => this.rowToMemory(row));
+  }
+
+  /**
+   * 更新记忆记录
+   */
+  updateMemory(id: string, updates: Partial<Omit<MemoryRecord, 'id' | 'createdAt'>>): MemoryRecord | null {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const existing = this.getMemory(id);
+    if (!existing) return null;
+
+    const setClauses: string[] = ['updated_at = ?'];
+    const values: unknown[] = [Date.now()];
+
+    if (updates.type !== undefined) {
+      setClauses.push('type = ?');
+      values.push(updates.type);
+    }
+    if (updates.category !== undefined) {
+      setClauses.push('category = ?');
+      values.push(updates.category);
+    }
+    if (updates.content !== undefined) {
+      setClauses.push('content = ?');
+      values.push(updates.content);
+    }
+    if (updates.summary !== undefined) {
+      setClauses.push('summary = ?');
+      values.push(updates.summary);
+    }
+    if (updates.source !== undefined) {
+      setClauses.push('source = ?');
+      values.push(updates.source);
+    }
+    if (updates.projectPath !== undefined) {
+      setClauses.push('project_path = ?');
+      values.push(updates.projectPath);
+    }
+    if (updates.sessionId !== undefined) {
+      setClauses.push('session_id = ?');
+      values.push(updates.sessionId);
+    }
+    if (updates.confidence !== undefined) {
+      setClauses.push('confidence = ?');
+      values.push(updates.confidence);
+    }
+    if (updates.accessCount !== undefined) {
+      setClauses.push('access_count = ?');
+      values.push(updates.accessCount);
+    }
+    if (updates.lastAccessedAt !== undefined) {
+      setClauses.push('last_accessed_at = ?');
+      values.push(updates.lastAccessedAt);
+    }
+    if (updates.metadata !== undefined) {
+      setClauses.push('metadata = ?');
+      values.push(JSON.stringify(updates.metadata));
+    }
+
+    values.push(id);
+    const sql = `UPDATE memories SET ${setClauses.join(', ')} WHERE id = ?`;
+    this.db.prepare(sql).run(...values);
+
+    return this.getMemory(id);
+  }
+
+  /**
+   * 删除记忆记录
+   */
+  deleteMemory(id: string): boolean {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare('DELETE FROM memories WHERE id = ?');
+    const result = stmt.run(id);
+    return result.changes > 0;
+  }
+
+  /**
+   * 批量删除记忆记录
+   */
+  deleteMemories(filter: {
+    type?: MemoryRecord['type'];
+    category?: string;
+    source?: MemoryRecord['source'];
+    projectPath?: string;
+    sessionId?: string;
+  }): number {
+    if (!this.db) throw new Error('Database not initialized');
+
+    let sql = 'DELETE FROM memories WHERE 1=1';
+    const params: unknown[] = [];
+
+    if (filter.type) {
+      sql += ' AND type = ?';
+      params.push(filter.type);
+    }
+    if (filter.category) {
+      sql += ' AND category = ?';
+      params.push(filter.category);
+    }
+    if (filter.source) {
+      sql += ' AND source = ?';
+      params.push(filter.source);
+    }
+    if (filter.projectPath) {
+      sql += ' AND project_path = ?';
+      params.push(filter.projectPath);
+    }
+    if (filter.sessionId) {
+      sql += ' AND session_id = ?';
+      params.push(filter.sessionId);
+    }
+
+    const stmt = this.db.prepare(sql);
+    const result = stmt.run(...params);
+    return result.changes;
+  }
+
+  /**
+   * 记录记忆访问（更新 access_count 和 last_accessed_at）
+   */
+  recordMemoryAccess(id: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare(`
+      UPDATE memories
+      SET access_count = access_count + 1, last_accessed_at = ?
+      WHERE id = ?
+    `);
+
+    stmt.run(Date.now(), id);
+  }
+
+  /**
+   * 搜索记忆（简单文本搜索）
+   */
+  searchMemories(query: string, options: {
+    type?: MemoryRecord['type'];
+    category?: string;
+    limit?: number;
+  } = {}): MemoryRecord[] {
+    if (!this.db) throw new Error('Database not initialized');
+
+    let sql = `
+      SELECT * FROM memories
+      WHERE (content LIKE ? OR summary LIKE ? OR category LIKE ?)
+    `;
+    const searchTerm = `%${query}%`;
+    const params: unknown[] = [searchTerm, searchTerm, searchTerm];
+
+    if (options.type) {
+      sql += ' AND type = ?';
+      params.push(options.type);
+    }
+
+    if (options.category) {
+      sql += ' AND category = ?';
+      params.push(options.category);
+    }
+
+    sql += ' ORDER BY confidence DESC, updated_at DESC';
+
+    if (options.limit) {
+      sql += ` LIMIT ${options.limit}`;
+    }
+
+    const stmt = this.db.prepare(sql);
+    const rows = stmt.all(...params) as SQLiteRow[];
+
+    return rows.map((row) => this.rowToMemory(row));
+  }
+
+  /**
+   * 获取记忆统计信息
+   */
+  getMemoryStats(): {
+    total: number;
+    byType: Record<string, number>;
+    bySource: Record<string, number>;
+    byCategory: Record<string, number>;
+  } {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const totalRow = this.db.prepare('SELECT COUNT(*) as c FROM memories').get() as SQLiteRow;
+    const total = totalRow.c as number;
+
+    const byTypeRows = this.db.prepare('SELECT type, COUNT(*) as c FROM memories GROUP BY type').all() as SQLiteRow[];
+    const byType: Record<string, number> = {};
+    for (const row of byTypeRows) {
+      byType[row.type as string] = row.c as number;
+    }
+
+    const bySourceRows = this.db.prepare('SELECT source, COUNT(*) as c FROM memories GROUP BY source').all() as SQLiteRow[];
+    const bySource: Record<string, number> = {};
+    for (const row of bySourceRows) {
+      bySource[row.source as string] = row.c as number;
+    }
+
+    const byCategoryRows = this.db.prepare('SELECT category, COUNT(*) as c FROM memories GROUP BY category').all() as SQLiteRow[];
+    const byCategory: Record<string, number> = {};
+    for (const row of byCategoryRows) {
+      byCategory[row.category as string] = row.c as number;
+    }
+
+    return { total, byType, bySource, byCategory };
+  }
+
+  private rowToMemory(row: SQLiteRow): MemoryRecord {
+    return {
+      id: row.id as string,
+      type: row.type as MemoryRecord['type'],
+      category: row.category as string,
+      content: row.content as string,
+      summary: row.summary as string,
+      source: row.source as MemoryRecord['source'],
+      projectPath: row.project_path as string | null,
+      sessionId: row.session_id as string | null,
+      confidence: row.confidence as number,
+      accessCount: row.access_count as number,
+      lastAccessedAt: row.last_accessed_at as number | null,
+      createdAt: row.created_at as number,
+      updatedAt: row.updated_at as number,
+      metadata: row.metadata ? JSON.parse(row.metadata as string) : {},
+    };
   }
 
   // --------------------------------------------------------------------------

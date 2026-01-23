@@ -33,6 +33,10 @@ interface SecureStorageData {
   'auth.quick_token'?: string;
   // User info cache
   'auth.user'?: string;
+  // Saved login credentials (remember password)
+  'auth.saved_email'?: string;
+  'auth.saved_password'?: string;
+  'auth.remember_enabled'?: string;
   // Developer settings (persisted across data clears)
   'settings.devModeAutoApprove'?: string;
   // API Keys - now stored encrypted via safeStorage
@@ -111,12 +115,61 @@ class SecureStorageService {
   }
 
   // Clear all auth data (for logout)
+  // Note: Does NOT clear saved credentials (remember password)
   clearAuthData(): void {
     this.store.delete('supabase.access_token');
     this.store.delete('supabase.refresh_token');
     this.store.delete('supabase.session');
     this.store.delete('auth.quick_token');
     this.store.delete('auth.user');
+  }
+
+  // ========== Saved Login Credentials (Remember Password) ==========
+
+  /**
+   * Save login credentials for quick re-login
+   * @param email User's email
+   * @param password User's password (will be encrypted)
+   */
+  saveLoginCredentials(email: string, password: string): void {
+    this.store.set('auth.saved_email', email);
+    this.store.set('auth.saved_password', password);
+    this.store.set('auth.remember_enabled', 'true');
+    logger.info(' Saved login credentials for:', email);
+  }
+
+  /**
+   * Get saved login credentials
+   * @returns { email, password } or null if not saved
+   */
+  getSavedCredentials(): { email: string; password: string } | null {
+    const enabled = this.store.get('auth.remember_enabled');
+    if (enabled !== 'true') return null;
+
+    const email = this.store.get('auth.saved_email');
+    const password = this.store.get('auth.saved_password');
+
+    if (email && password) {
+      return { email, password };
+    }
+    return null;
+  }
+
+  /**
+   * Clear saved login credentials
+   */
+  clearSavedCredentials(): void {
+    this.store.delete('auth.saved_email');
+    this.store.delete('auth.saved_password');
+    this.store.delete('auth.remember_enabled');
+    logger.info(' Cleared saved login credentials');
+  }
+
+  /**
+   * Check if remember password is enabled
+   */
+  isRememberEnabled(): boolean {
+    return this.store.get('auth.remember_enabled') === 'true';
   }
 
   // ========== API Key Management (Keychain + safeStorage) ==========

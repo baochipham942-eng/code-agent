@@ -7,6 +7,23 @@
 **预计工作量**: 4-5 个开发阶段
 **相关 ADR**: [ADR-002](../decisions/002-agent-skills-standard.md)
 
+## 当前架构要点（基于 2026-01 代码分析）
+
+| 组件 | 当前状态 | 备注 |
+|-----|---------|------|
+| `SkillDefinition` | `src/shared/types/skill.ts` | 仅 4 个字段: name, description, prompt, tools |
+| `skillTool` | `src/main/tools/network/skill.ts` | 使用 SubagentExecutor 隔离执行 |
+| `SubagentExecutor` | `src/main/agent/subagentExecutor.ts` | 185 行，独立 ReAct 循环，可复用 |
+| `AgentLoop` | `src/main/agent/agentLoop.ts` | 约 800 行，支持 Turn-Based 消息、并行工具执行、熔断机制 |
+| `Message` | `src/shared/types/message.ts` | 无 isMeta/source 字段，需扩展 |
+| 云端 Skills | `cloudConfigService.getSkills()` | 从 Vercel API 拉取，有本地缓存 |
+
+**关键发现**:
+1. AgentLoop 已有 `injectSystemMessage()` 方法，可用于注入 Skill prompt
+2. AgentLoop 已有 `emitTaskProgress()` 用于进度反馈，可复用于 Skill 状态
+3. 工具执行通过 `executeToolsWithHooks()` 统一处理，需在此加入 Skill 返回值特殊处理
+4. 前端消息渲染在 `MessageBubble.tsx`，已支持多种消息类型
+
 ---
 
 ## Phase 1: 数据层 - Skill 解析与发现
@@ -324,54 +341,65 @@ export interface Message {
 
 **文件**: `src/main/agent/agentLoop.ts` (修改)
 
+**现有架构分析**:
+- AgentLoop 使用 Turn-Based 消息模型，每轮迭代生成一个 turnId
+- 工具执行在 `executeToolsWithHooks()` 方法中处理
+- 已有 `injectSystemMessage()` 用于注入系统消息
+- 已有 `emitTaskProgress()` 用于进度状态
+
 **新增功能**:
 
-1. **预授权工具集合**:
+1. **预授权工具集合**（新增成员变量）:
 ```typescript
 class AgentLoop {
+  // ... 现有成员 ...
+
+  // Skill 预授权工具（Skill 激活后，这些工具无需确认）
   private preApprovedTools: Set<string> = new Set();
+  // Skill 指定的模型覆盖
   private modelOverride?: string;
 }
 ```
 
-2. **处理 Skill 工具返回**:
+2. **修改 `executeToolsWithHooks()` 处理 Skill 返回**:
+
+在工具执行完成后，检查是否为 Skill 工具并处理特殊返回值：
+
 ```typescript
-private async handleToolResult(tool: Tool, result: ToolResult, context: ToolContext) {
-  if (tool.name === 'Skill' && 'newMessages' in result) {
-    const skillResult = result as SkillToolResult;
+// 在 executeToolsWithHooks() 中，工具执行后：
+if (tool.name === 'skill' && result.metadata?.skillResult) {
+  const skillResult = result.metadata.skillResult as SkillToolResult;
 
-    // 注入消息
-    for (const msg of skillResult.newMessages || []) {
-      this.messages.push({
-        id: generateId(),
-        role: msg.role,
-        content: msg.content,
-        isMeta: msg.isMeta,
-        source: 'skill',
-        timestamp: Date.now(),
-      });
+  // 注入消息到 this.messages
+  for (const msg of skillResult.newMessages || []) {
+    const messageToInject: Message = {
+      id: this.generateId(),
+      role: msg.role as MessageRole,
+      content: msg.content,
+      timestamp: Date.now(),
+      isMeta: msg.isMeta,
+      source: 'skill',
+    };
+    this.messages.push(messageToInject);
 
-      // 非 meta 消息发送到前端
-      if (!msg.isMeta) {
-        this.emit('message', { role: msg.role, content: msg.content });
-      }
+    // 非 meta 消息发送到前端
+    if (!msg.isMeta) {
+      this.onEvent({ type: 'message', data: messageToInject });
     }
-
-    // 应用上下文修改
-    if (skillResult.contextModifier) {
-      const modified = skillResult.contextModifier(context);
-      if (modified.preApprovedTools) {
-        modified.preApprovedTools.forEach(t => this.preApprovedTools.add(t));
-      }
-      if (modified.modelOverride) {
-        this.modelOverride = modified.modelOverride;
-      }
-    }
-
-    return;
   }
 
-  // ... 普通工具处理 ...
+  // 应用上下文修改
+  if (skillResult.contextModifier) {
+    const modified = skillResult.contextModifier({
+      preApprovedTools: Array.from(this.preApprovedTools),
+    });
+    if (modified.preApprovedTools) {
+      modified.preApprovedTools.forEach((t: string) => this.preApprovedTools.add(t));
+    }
+    if (modified.modelOverride) {
+      this.modelOverride = modified.modelOverride;
+    }
+  }
 }
 ```
 

@@ -27,22 +27,28 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.8.23',
-  publishedAt: '2026-01-22T18:00:00.000Z',
+  version: '0.9.1',
+  publishedAt: '2026-01-23T16:30:00.000Z',
   releaseNotes: `
-## Code Agent v0.8.23
+## Code Agent v0.9.1
 
-### Bug 修复
-- 修复无限循环: 添加连续读操作硬限制 (15次强制停止)
-- 修复暂停按钮方块错位: 图标改为自适应容器尺寸
-- 修复系统标签泄露: 过滤 <critical-warning> 等系统标签
-- 修复 edit_file 失败显示: 失败时显示 "编辑文件失败" 而非行数统计
-- 修复 pptxgenjs 依赖: 添加到 esbuild external dependencies
+### 多数据源并行搜索
+- web_search 支持 Cloud/Perplexity/EXA/Brave 四个数据源并行搜索
+- 自动检测已配置的 API Key，使用所有可用数据源
+- 结果聚合去重，提供更全面的搜索结果
+
+### 错误隔离优化
+- Promise.all → Promise.allSettled 实现错误隔离
+- 单个数据源失败不影响其他源
+- 深度研究模式：单个网页抓取失败不阻断整体流程
+
+### 新增 API Key 配置
+- 设置 > Service API Keys 新增 EXA 和 Perplexity 配置项
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.8.23/Code.Agent-0.8.23-arm64.dmg',
+      url: 'https://github.com/anthropics/code-agent/releases/download/v0.9.0/Code.Agent-0.9.0-arm64.dmg',
       size: 160000000,
     },
   },

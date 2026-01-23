@@ -17,6 +17,7 @@ AI 编程助手桌面应用，复刻 Claude Code 的 8 个架构代际来研究 
 docs/
 ├── ARCHITECTURE.md       # 架构索引（入口）
 ├── PRD.md               # 产品需求文档
+├── CONSTITUTION.md      # 宪法式 Prompt 设计
 ├── architecture/        # 详细架构文档
 │   ├── overview.md      # 系统概览
 │   ├── agent-core.md    # Agent 核心
@@ -24,6 +25,13 @@ docs/
 │   ├── frontend.md      # 前端架构
 │   ├── data-storage.md  # 数据存储
 │   └── cloud-architecture.md # 云端架构
+├── api-reference/       # API 文档 (v0.9+)
+│   ├── index.md         # API 索引
+│   ├── security.md      # 安全模块 API
+│   ├── tool-enhancements.md # 工具增强 API
+│   └── hooks.md         # Hooks 系统 API
+├── migration/           # 迁移指南
+│   └── v0.9-upgrade.md  # v0.9 升级指南
 └── decisions/           # 架构决策记录 (ADR)
     └── 001-turn-based-messaging.md
 ```
@@ -35,9 +43,43 @@ src/
 ├── main/                 # Electron 主进程
 │   ├── agent/           # AgentOrchestrator, AgentLoop
 │   ├── generation/      # GenerationManager
+│   │   └── prompts/     # System prompt 构建
+│   │       ├── constitution/  # 宪法层（soul, values, ethics, safety, judgment）
+│   │       ├── tools/         # 工具描述（bash, edit, task）
+│   │       ├── rules/         # 规则层
+│   │       │   └── injection/ # 注入防御（core, verification, meta）
+│   │       └── builder.ts     # Prompt 组装器
 │   ├── tools/           # gen1-gen4 工具实现
+│   │   ├── gen1/        # bash, read_file, write_file, edit_file
+│   │   ├── gen2/        # glob, grep, list_directory
+│   │   ├── gen3/        # task, todo_write, ask_user_question
+│   │   ├── gen4/        # skill, web_fetch, read_pdf, mcp
+│   │   ├── fileReadTracker.ts           # 文件读取跟踪
+│   │   ├── backgroundTaskPersistence.ts # 后台任务持久化
+│   │   └── utils/
+│   │       ├── quoteNormalizer.ts       # 智能引号规范化
+│   │       └── externalModificationDetector.ts # 外部修改检测
+│   ├── security/        # 安全模块 (v0.9+)
+│   │   ├── commandMonitor.ts     # 命令执行监控
+│   │   ├── sensitiveDetector.ts  # 敏感信息检测
+│   │   ├── auditLogger.ts        # JSONL 审计日志
+│   │   └── logMasker.ts          # 日志掩码
+│   ├── hooks/           # Hooks 系统 (v0.9+)
+│   │   ├── configParser.ts  # 配置解析
+│   │   ├── scriptExecutor.ts # 脚本执行
+│   │   ├── events.ts         # 11种事件类型
+│   │   ├── merger.ts         # 多源合并
+│   │   └── promptHook.ts     # AI 评估 Hook
+│   ├── context/         # 上下文管理 (v0.9+)
+│   │   ├── tokenEstimator.ts  # Token 估算
+│   │   ├── compressor.ts      # 增量压缩
+│   │   ├── codePreserver.ts   # 代码块保留
+│   │   └── summarizer.ts      # AI 摘要
 │   ├── services/        # Auth, Sync, Database
-│   └── memory/          # 向量存储和记忆系统
+│   ├── memory/          # 向量存储和记忆系统
+│   ├── hooks/           # 用户可配置 Hooks 系统
+│   ├── errors/          # 统一错误类型和处理
+│   └── utils/           # 性能监控等工具函数
 ├── preload/             # 预加载脚本
 ├── renderer/            # React 前端
 │   ├── components/      # UI 组件
@@ -220,6 +262,116 @@ image_generate { "prompt": "产品展示图", "output_path": "./product.png", "s
 
 **要求**：需要配置 OpenRouter API Key，或通过云端代理使用。
 
+## 安全模块 (v0.9+)
+
+运行时安全监控，敏感信息检测，审计日志。
+
+### 审计日志
+
+所有工具执行自动记录到 JSONL 日志：
+
+```bash
+# 查看今天的审计日志
+cat ~/.code-agent/audit/$(date +%Y-%m-%d).jsonl | jq .
+```
+
+### 敏感信息检测
+
+自动检测并掩码：
+- API Keys (`api_key=sk-...`)
+- AWS 凭证 (`AKIA...`, Secret Key)
+- GitHub Tokens (`ghp_...`, `ghs_...`)
+- 私钥 (`-----BEGIN ... PRIVATE KEY-----`)
+- 数据库 URL (`postgres://user:pass@...`)
+
+### 配置
+
+```json
+// .claude/settings.json
+{
+  "security": {
+    "auditLog": {
+      "enabled": true,
+      "retentionDays": 30
+    },
+    "sensitiveDetection": {
+      "enabled": true
+    },
+    "commandMonitor": {
+      "blockedPatterns": ["rm -rf /"],
+      "warningPatterns": ["sudo"]
+    }
+  }
+}
+```
+
+---
+
+## Hooks 系统 (v0.9+)
+
+用户可配置的事件钩子，支持 11 种事件类型。
+
+### 事件类型
+
+| 事件 | 触发时机 |
+|------|----------|
+| `PreToolUse` | 工具执行前 |
+| `PostToolUse` | 工具执行后（成功）|
+| `PostToolUseFailure` | 工具执行后（失败）|
+| `UserPromptSubmit` | 用户提交 prompt |
+| `SessionStart` | 会话开始 |
+| `SessionEnd` | 会话结束 |
+| `Stop` | Agent 停止 |
+| `SubagentStop` | 子代理停止 |
+| `PreCompact` | 上下文压缩前 |
+| `Setup` | 初始化时 |
+| `Notification` | 通知事件 |
+
+### 配置示例
+
+```json
+// .claude/settings.json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/validate-command.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/cleanup.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Hook 脚本环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `TOOL_NAME` | 工具名称 |
+| `TOOL_INPUT` | JSON 格式的工具输入 |
+| `SESSION_ID` | 当前会话 ID |
+| `FILE_PATH` | 文件路径（文件操作时）|
+| `COMMAND` | 命令（Bash 工具时）|
+
+---
+
 ## 云端 Prompt 管理
 
 System Prompt 采用前后端分离架构，支持热更新：
@@ -244,6 +396,109 @@ curl "https://code-agent-beta.vercel.app/api/prompts?gen=gen4"
 # 只获取版本号
 curl "https://code-agent-beta.vercel.app/api/prompts?version=true"
 ```
+
+## 用户可配置 Hooks 系统
+
+基于 Claude Code v2.0 架构的 Hooks 系统，允许用户自定义 Agent 行为。
+
+### Hook 事件类型
+
+| 事件 | 触发时机 | 用途 |
+|------|----------|------|
+| `PreToolUse` | 工具执行前 | 验证/拦截工具调用 |
+| `PostToolUse` | 工具成功后 | 记录/分析工具结果 |
+| `PostToolUseFailure` | 工具失败后 | 错误处理/重试逻辑 |
+| `UserPromptSubmit` | 用户提交消息时 | 过滤/预处理输入 |
+| `Stop` | Agent 准备停止时 | 验证任务完成度 |
+| `SessionStart` | 会话开始时 | 初始化/环境设置 |
+| `SessionEnd` | 会话结束时 | 清理/日志记录 |
+| `Notification` | 通知触发时 | 自定义通知处理 |
+
+### 配置位置
+
+Hooks 配置在 `.claude/settings.json` 中：
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "matcher": "bash|write_file",
+        "command": "/path/to/validator.sh"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "prompt",
+        "prompt": "分析工具 $TOOL_NAME 的执行结果: $OUTPUT"
+      }
+    ]
+  }
+}
+```
+
+### Hook 类型
+
+| 类型 | 说明 | 返回值 |
+|------|------|--------|
+| `command` | 执行 shell 脚本 | 退出码 0=允许, 2=拦截 |
+| `prompt` | AI 评估（需要配置 AI 函数）| JSON: `{"action": "allow/block/continue"}` |
+
+### 环境变量
+
+脚本 Hook 可访问以下环境变量：
+
+| 变量 | 说明 |
+|------|------|
+| `HOOK_EVENT` | 事件类型 |
+| `HOOK_SESSION_ID` | 会话 ID |
+| `HOOK_WORKING_DIR` | 工作目录 |
+| `HOOK_TOOL_NAME` | 工具名（工具事件）|
+| `HOOK_TOOL_INPUT` | 工具输入（JSON）|
+| `HOOK_TOOL_OUTPUT` | 工具输出（PostToolUse）|
+| `HOOK_ERROR_MESSAGE` | 错误信息（PostToolUseFailure）|
+| `HOOK_USER_PROMPT` | 用户输入（UserPromptSubmit）|
+
+### 使用示例
+
+**拦截危险命令：**
+
+```bash
+#!/bin/bash
+# .claude/hooks/validate-bash.sh
+if echo "$HOOK_TOOL_INPUT" | grep -q "rm -rf"; then
+  echo "危险命令被拦截"
+  exit 2  # 拦截
+fi
+exit 0  # 允许
+```
+
+**配置：**
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "matcher": "bash",
+        "command": ".claude/hooks/validate-bash.sh"
+      }
+    ]
+  }
+}
+```
+
+### 架构说明
+
+- **HookManager**: 统一 API，管理 hook 配置加载和执行
+- **configParser**: 解析 `.claude/settings.json` 中的 hooks 配置
+- **scriptExecutor**: 执行 shell 脚本并注入环境变量
+- **promptHook**: 使用 AI 评估 hook 条件
+- **merger**: 合并全局和项目级 hooks 配置
+
+代码位置：`src/main/hooks/`
 
 ## 版本号规范
 

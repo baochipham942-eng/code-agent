@@ -77,11 +77,30 @@ export interface ResearchProgressData {
     title: string;
     status: 'running' | 'completed' | 'failed';
   };
+  /** 增强的进度信息（语义研究模式） */
+  triggeredBy?: 'semantic' | 'manual';
+  currentIteration?: number;
+  maxIterations?: number;
+  coverage?: number;
+  activeSources?: string[];
+  canDeepen?: boolean;
 }
 
 export interface ResearchModeStartedData {
   topic: string;
   reportStyle: ReportStyle;
+  /** 触发方式（语义自动触发或手动触发） */
+  triggeredBy?: 'semantic' | 'manual';
+}
+
+/**
+ * 语义检测结果事件数据
+ */
+export interface ResearchDetectedData {
+  intent: string;
+  confidence: number;
+  suggestedDepth: 'quick' | 'standard' | 'deep';
+  reasoning: string;
 }
 
 export interface ResearchCompleteData {
@@ -126,6 +145,8 @@ export type AgentEvent =
   | { type: 'research_progress'; data: ResearchProgressData }
   | { type: 'research_complete'; data: ResearchCompleteData }
   | { type: 'research_error'; data: ResearchErrorData }
+  // Semantic Research 事件（语义自动触发）
+  | { type: 'research_detected'; data: ResearchDetectedData }
   // Budget 预警事件
   | { type: 'budget_warning'; data: BudgetEventData }
   | { type: 'budget_exceeded'; data: BudgetEventData };

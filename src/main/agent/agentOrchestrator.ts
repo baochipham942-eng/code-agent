@@ -82,6 +82,7 @@ export class AgentOrchestrator {
   private deepResearchMode: DeepResearchMode | null = null;
   private onEvent: (event: AgentEvent) => void;
   private workingDirectory: string;
+  private isDefaultWorkingDirectory: boolean = true; // Track if using default sandbox
   private messages: Message[] = [];
   private pendingPermissions: Map<string, {
     resolve: (response: PermissionResponse) => void;
@@ -96,6 +97,7 @@ export class AgentOrchestrator {
 
     // 设置默认工作目录为 app/work 文件夹
     this.workingDirectory = this.initializeWorkDirectory();
+    this.isDefaultWorkingDirectory = true; // Default sandbox
     logger.info('Initial working directory:', this.workingDirectory);
     this.planningService = config.planningService;
 
@@ -292,6 +294,8 @@ export class AgentOrchestrator {
       onEvent,
       planningService: this.planningService,
       sessionId, // Pass sessionId for tracing
+      workingDirectory: this.workingDirectory,
+      isDefaultWorkingDirectory: this.isDefaultWorkingDirectory,
     });
 
     try {
@@ -352,7 +356,9 @@ export class AgentOrchestrator {
    */
   setWorkingDirectory(path: string): void {
     this.workingDirectory = path;
+    this.isDefaultWorkingDirectory = false; // User explicitly set a directory
     this.toolExecutor.setWorkingDirectory(path);
+    logger.info('Working directory changed to:', path);
   }
 
   /**
@@ -362,6 +368,10 @@ export class AgentOrchestrator {
    */
   getWorkingDirectory(): string {
     return this.workingDirectory;
+  }
+
+  isUsingDefaultWorkingDirectory(): boolean {
+    return this.isDefaultWorkingDirectory;
   }
 
   /**

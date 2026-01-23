@@ -44,6 +44,15 @@ import type {
   CloudExecutionStats,
 } from './types/cloud';
 
+import type {
+  MemoryItem,
+  MemoryCategory,
+  MemoryStats as MemoryStatsNew,
+  MemoryExport,
+  MemoryLearnedEvent,
+  MemoryConfirmRequest,
+} from './types/memory';
+
 // ----------------------------------------------------------------------------
 // Additional Types for IPC
 // ----------------------------------------------------------------------------
@@ -364,6 +373,12 @@ export const IPC_CHANNELS = {
   CLOUD_CONFIG_REFRESH: 'cloud:config:refresh',
   CLOUD_CONFIG_GET_INFO: 'cloud:config:get-info',
 
+  // Memory Phase 2/3 channels
+  MEMORY: 'memory:action', // 统一的 memory action 通道
+  MEMORY_LEARNED: 'memory:learned',
+  MEMORY_CONFIRM_REQUEST: 'memory:confirm-request',
+  MEMORY_CONFIRM_RESPONSE: 'memory:confirm-response',
+
   // Cloud task channels
   CLOUD_TASK_CREATE: 'cloud:task:create',
   CLOUD_TASK_UPDATE: 'cloud:task:update',
@@ -549,6 +564,21 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CLOUD_CONFIG_REFRESH]: () => Promise<{ success: boolean; version: string; error?: string }>;
   [IPC_CHANNELS.CLOUD_CONFIG_GET_INFO]: () => Promise<{ version: string; lastFetch: number; isStale: boolean; fromCloud: boolean; lastError: string | null }>;
 
+  // Memory (Phase 2/3)
+  [IPC_CHANNELS.MEMORY]: (payload: {
+    action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add';
+    category?: MemoryCategory;
+    id?: string;
+    content?: string;
+    data?: MemoryExport;
+    item?: Partial<MemoryItem>;
+  }) => Promise<{
+    success: boolean;
+    data?: MemoryItem[] | MemoryStatsNew | MemoryExport | { deleted: number } | { imported: number; skipped: number } | MemoryItem;
+    error?: string;
+  }>;
+  [IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE]: (payload: { id: string; confirmed: boolean }) => Promise<void>;
+
   // Cloud task
   [IPC_CHANNELS.CLOUD_TASK_CREATE]: (request: CreateCloudTaskRequest) => Promise<CloudTask>;
   [IPC_CHANNELS.CLOUD_TASK_UPDATE]: (taskId: string, updates: Partial<CloudTask>) => Promise<CloudTask | null>;
@@ -627,6 +657,8 @@ export interface ConfirmActionRequest {
 
 export interface IpcEventHandlers {
   [IPC_CHANNELS.AGENT_EVENT]: (event: AgentEvent) => void;
+  [IPC_CHANNELS.MEMORY_LEARNED]: (event: MemoryLearnedEvent) => void;
+  [IPC_CHANNELS.MEMORY_CONFIRM_REQUEST]: (request: MemoryConfirmRequest) => void;
   [IPC_CHANNELS.PLANNING_EVENT]: (event: PlanningEvent) => void;
   [IPC_CHANNELS.SECURITY_TOOL_CREATE_REQUEST]: (request: ToolCreateRequestEvent) => void;
   [IPC_CHANNELS.USER_QUESTION_ASK]: (request: UserQuestionRequest) => void;

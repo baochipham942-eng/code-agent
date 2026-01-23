@@ -187,6 +187,69 @@ export const en: Translations = {
     madeWith: 'Made with AI assistance',
   },
 
+  // Memory Tab
+  memory: {
+    title: 'Memory Management',
+    description: 'Knowledge AI learned from conversations and your preferences',
+    categories: {
+      aboutMe: 'About Me',
+      aboutMeDesc: 'Identity, role, communication style',
+      preference: 'My Preferences',
+      preferenceDesc: 'Format, style, tool preferences',
+      frequentInfo: 'Frequent Info',
+      frequentInfoDesc: 'Emails, templates, common data',
+      learned: 'Learned',
+      learnedDesc: 'Patterns and habits observed by AI',
+    },
+    source: {
+      explicit: 'User Defined',
+      learned: 'AI Learned',
+    },
+    actions: {
+      import: 'Import',
+      export: 'Export',
+      clearCategory: 'Clear this category',
+    },
+    stats: {
+      total: '{count} memories total',
+      aiLearned: 'AI Learned',
+      userDefined: 'User Defined',
+      recentlyAdded: 'Added this week',
+    },
+    empty: {
+      title: 'No Memories Yet',
+      description: 'AI will learn from conversations, or add your preferences manually',
+    },
+    edit: {
+      title: 'Edit Memory',
+      category: 'Category',
+      content: 'Content',
+      contentPlaceholder: 'Enter memory content...',
+      save: 'Save',
+      cancel: 'Cancel',
+    },
+    notification: {
+      learned: 'I remembered',
+      confirmTitle: 'Confirm Memory',
+      confirmDescription: 'AI learned the following. Save it?',
+      accept: 'Save',
+      reject: 'Skip',
+      timeout: 'Confirmation timeout',
+    },
+    messages: {
+      updateSuccess: 'Memory updated',
+      deleteSuccess: 'Memory deleted',
+      exportSuccess: 'Export successful',
+      importSuccess: 'Imported {count} memories',
+      clearSuccess: 'Cleared {count} memories',
+      updateFailed: 'Update failed',
+      deleteFailed: 'Delete failed',
+      exportFailed: 'Export failed',
+      importFailed: 'Import failed',
+      invalidJson: 'Invalid JSON file',
+    },
+  },
+
   // Generation Badge
   generation: {
     selectTitle: 'Select Generation',

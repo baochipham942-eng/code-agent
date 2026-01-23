@@ -169,6 +169,69 @@ export const zh = {
     madeWith: '由 AI 辅助制作',
   },
 
+  // Memory Tab
+  memory: {
+    title: '记忆管理',
+    description: 'AI 从对话中学习的知识和您定义的偏好',
+    categories: {
+      aboutMe: '关于我',
+      aboutMeDesc: '身份、角色、沟通风格',
+      preference: '我的偏好',
+      preferenceDesc: '格式、风格、工具偏好',
+      frequentInfo: '常用信息',
+      frequentInfoDesc: '邮箱、模板、常用数据',
+      learned: '学到的经验',
+      learnedDesc: 'AI 观察到的模式和习惯',
+    },
+    source: {
+      explicit: '用户定义',
+      learned: 'AI 学习',
+    },
+    actions: {
+      import: '导入',
+      export: '导出',
+      clearCategory: '清空此分类',
+    },
+    stats: {
+      total: '共 {count} 条记忆',
+      aiLearned: 'AI 学习',
+      userDefined: '用户定义',
+      recentlyAdded: '本周新增',
+    },
+    empty: {
+      title: '暂无记忆',
+      description: '与 AI 对话后会自动学习，或手动添加您的偏好',
+    },
+    edit: {
+      title: '编辑记忆',
+      category: '分类',
+      content: '内容',
+      contentPlaceholder: '输入记忆内容...',
+      save: '保存',
+      cancel: '取消',
+    },
+    notification: {
+      learned: '我记住了',
+      confirmTitle: '确认记忆',
+      confirmDescription: 'AI 学到了以下内容，是否保存？',
+      accept: '保存',
+      reject: '跳过',
+      timeout: '确认超时',
+    },
+    messages: {
+      updateSuccess: '记忆已更新',
+      deleteSuccess: '记忆已删除',
+      exportSuccess: '导出成功',
+      importSuccess: '导入成功: {count} 条',
+      clearSuccess: '已清空 {count} 条记忆',
+      updateFailed: '更新失败',
+      deleteFailed: '删除失败',
+      exportFailed: '导出失败',
+      importFailed: '导入失败',
+      invalidJson: '无效的 JSON 文件',
+    },
+  },
+
   // Generation Badge
   generation: {
     selectTitle: '选择代际',

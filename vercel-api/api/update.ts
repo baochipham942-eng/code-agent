@@ -27,28 +27,28 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.9.1',
-  publishedAt: '2026-01-23T16:30:00.000Z',
+  version: '0.10.0',
+  publishedAt: '2026-01-23T12:30:00.000Z',
   releaseNotes: `
-## Code Agent v0.9.1
+## Code Agent v0.10.0
 
-### 多数据源并行搜索
-- web_search 支持 Cloud/Perplexity/EXA/Brave 四个数据源并行搜索
-- 自动检测已配置的 API Key，使用所有可用数据源
-- 结果聚合去重，提供更全面的搜索结果
+### Agent Skills 标准实现 (Phase 3 & 4)
+- 实现 SKILL.md 解析和 YAML frontmatter 支持
+- 添加 isMeta 双通道消息机制（发送给模型但不渲染到 UI）
+- 预授权工具机制（preApprovedTools）支持 Skill 跳过权限确认
+- 通配符工具匹配模式支持（如 Bash(git:*)）
+- SkillStatusMessage 组件展示 Skill 加载状态
+- AgentLoop 集成 Skill 返回值处理和上下文修改
 
-### 错误隔离优化
-- Promise.all → Promise.allSettled 实现错误隔离
-- 单个数据源失败不影响其他源
-- 深度研究模式：单个网页抓取失败不阻断整体流程
-
-### 新增 API Key 配置
-- 设置 > Service API Keys 新增 EXA 和 Perplexity 配置项
+### 技术改进
+- Message 类型扩展 isMeta 和 source 字段
+- ChatView 过滤 isMeta 消息不渲染
+- ToolExecutor 支持预授权工具检测
   `.trim(),
   forceUpdate: false,
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.9.0/Code.Agent-0.9.0-arm64.dmg',
+      url: 'https://github.com/anthropics/code-agent/releases/download/v0.10.0/Code.Agent-0.10.0-arm64.dmg',
       size: 160000000,
     },
   },

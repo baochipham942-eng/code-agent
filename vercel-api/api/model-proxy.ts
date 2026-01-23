@@ -15,6 +15,11 @@ export const config = {
 
 // 支持的 provider 和对应的 API 配置
 const PROVIDERS: Record<string, { baseUrl: string; envKey: string; authHeader: string }> = {
+  deepseek: {
+    baseUrl: 'https://api.deepseek.com/v1',
+    envKey: 'DEEPSEEK_API_KEY',
+    authHeader: 'Authorization',
+  },
   openrouter: {
     baseUrl: 'https://openrouter.ai/api/v1',
     envKey: 'OPENROUTER_API_KEY',

@@ -208,14 +208,23 @@ function extractCreatedFilePath(toolCall: {
   arguments?: Record<string, unknown>;
   result?: { success: boolean; output?: unknown };
 }): string | null {
-  if (toolCall.name !== 'write_file' || !toolCall.result?.success) return null;
+  if (toolCall.name !== 'write_file') return null;
 
+  // If result exists and failed, don't show file
+  if (toolCall.result && !toolCall.result.success) return null;
+
+  // Try to extract from result output first (has absolute path)
   const output = toolCall.result?.output as string;
   if (output) {
-    const match = output.match(/(?:Created|Updated) file: (.+)/);
+    // Match path up to " (" which precedes the byte count, or end of line
+    // Output format: "Created file: /path/to/file (1234 bytes)"
+    const match = output.match(/(?:Created|Updated) file: (.+?)(?:\s+\(|\n|$)/);
     if (match) return match[1].trim();
   }
 
+  // Fallback to arguments.file_path (may be relative path)
+  // Note: This path may be relative and won't work for shell.openPath()
+  // but still useful for display purposes
   return (toolCall.arguments?.file_path as string) || null;
 }
 

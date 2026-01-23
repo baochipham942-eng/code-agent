@@ -486,22 +486,35 @@ async function initializeServices(): Promise<void> {
       }
 
       // Update tool call results
-      const turnState = turnStateBySession.get(sessionId);
-      if (event.type === 'tool_call_end' && turnState?.messageId && event.data) {
-        try {
-          // Update accumulated tool calls with results
-          const toolCallId = event.data.toolCallId;
-          const idx = turnState.toolCalls.findIndex((tc) => tc.id === toolCallId);
-          if (idx !== -1) {
-            turnState.toolCalls[idx] = { ...turnState.toolCalls[idx], result: event.data };
-          }
+      if (event.type === 'tool_call_end' && event.data) {
+        const turnState = turnStateBySession.get(sessionId);
+        const toolCallId = event.data.toolCallId;
 
-          // Persist the update
-          await sessionManager.updateMessage(turnState.messageId, {
-            toolCalls: [...turnState.toolCalls],
-          });
-        } catch (error) {
-          logger.error('Failed to update tool call result', error);
+        if (!turnState) {
+          logger.warn('tool_call_end: turnState not found', { sessionId, toolCallId });
+        } else if (!turnState.messageId) {
+          logger.warn('tool_call_end: messageId not set', { sessionId, toolCallId });
+        } else {
+          try {
+            // Update accumulated tool calls with results
+            const idx = turnState.toolCalls.findIndex((tc) => tc.id === toolCallId);
+            if (idx !== -1) {
+              turnState.toolCalls[idx] = { ...turnState.toolCalls[idx], result: event.data };
+              logger.debug('tool_call_end: updated result', { toolCallId, idx, hasOutput: !!event.data.output });
+            } else {
+              logger.warn('tool_call_end: toolCall not found in turnState', {
+                toolCallId,
+                availableIds: turnState.toolCalls.map(tc => tc.id),
+              });
+            }
+
+            // Persist the update
+            await sessionManager.updateMessage(turnState.messageId, {
+              toolCalls: [...turnState.toolCalls],
+            });
+          } catch (error) {
+            logger.error('Failed to update tool call result', error);
+          }
         }
       }
 

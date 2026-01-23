@@ -2,7 +2,7 @@
 // Auth Modal - Login/Register dialog
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { Loader2, UserPlus, LogIn } from 'lucide-react';
 import { FormField, Input } from './composites/FormField';
@@ -24,10 +24,63 @@ export const AuthModal: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [inviteCode, setInviteCode] = useState('');
+  const [rememberPassword, setRememberPassword] = useState(true);
+  const [credentialsLoaded, setCredentialsLoaded] = useState(false);
+
+  // Load saved credentials when modal opens
+  useEffect(() => {
+    if (showAuthModal && mode === 'signin' && !credentialsLoaded) {
+      loadSavedCredentials();
+    }
+  }, [showAuthModal, mode, credentialsLoaded]);
+
+  const loadSavedCredentials = async () => {
+    try {
+      if (!window.domainAPI) return;
+      const response = await window.domainAPI.invoke<{ email: string; password: string } | null>(
+        'auth',
+        'getSavedCredentials'
+      );
+      if (response.success && response.data) {
+        setEmail(response.data.email);
+        setPassword(response.data.password);
+        setRememberPassword(true);
+      }
+      setCredentialsLoaded(true);
+    } catch (err) {
+      console.error('Failed to load saved credentials:', err);
+      setCredentialsLoaded(true);
+    }
+  };
+
+  const saveCredentials = async (emailToSave: string, passwordToSave: string) => {
+    try {
+      if (!window.domainAPI) return;
+      await window.domainAPI.invoke('auth', 'saveCredentials', {
+        email: emailToSave,
+        password: passwordToSave,
+      });
+    } catch (err) {
+      console.error('Failed to save credentials:', err);
+    }
+  };
+
+  const clearCredentials = async () => {
+    try {
+      if (!window.domainAPI) return;
+      await window.domainAPI.invoke('auth', 'clearSavedCredentials');
+    } catch (err) {
+      console.error('Failed to clear credentials:', err);
+    }
+  };
 
   if (!showAuthModal) return null;
 
-  const onClose = () => setShowAuthModal(false);
+  const onClose = () => {
+    setShowAuthModal(false);
+    // Reset credentials loaded flag so next time we reload
+    setCredentialsLoaded(false);
+  };
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,8 +88,18 @@ export const AuthModal: React.FC = () => {
 
     if (mode === 'signin') {
       success = await signInWithEmail(email, password);
+      // Save credentials on successful login if remember is checked
+      if (success && rememberPassword) {
+        await saveCredentials(email, password);
+      } else if (success && !rememberPassword) {
+        await clearCredentials();
+      }
     } else {
       success = await signUpWithEmail(email, password, inviteCode || undefined);
+      // Also save credentials after successful registration
+      if (success && rememberPassword) {
+        await saveCredentials(email, password);
+      }
     }
 
     if (success) {
@@ -124,6 +187,17 @@ export const AuthModal: React.FC = () => {
             />
           </FormField>
         )}
+
+        {/* Remember password checkbox */}
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={rememberPassword}
+            onChange={(e) => setRememberPassword(e.target.checked)}
+            className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-zinc-900"
+          />
+          <span className="text-sm text-zinc-400">记住密码</span>
+        </label>
 
         <button
           type="submit"

@@ -6,6 +6,7 @@ import type { IpcMain } from 'electron';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { AuthUser, AuthStatus } from '../../shared/types';
 import { getAuthService } from '../services';
+import { getSecureStorage } from '../services/core/secureStorage';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -45,6 +46,20 @@ async function handleUpdateProfile(payload: { updates: Partial<AuthUser> }) {
 
 async function handleGenerateQuickToken(): Promise<string | null> {
   return getAuthService().generateQuickLoginToken();
+}
+
+// ========== Saved Credentials Handlers ==========
+
+function handleSaveCredentials(payload: { email: string; password: string }): void {
+  getSecureStorage().saveLoginCredentials(payload.email, payload.password);
+}
+
+function handleGetSavedCredentials(): { email: string; password: string } | null {
+  return getSecureStorage().getSavedCredentials();
+}
+
+function handleClearSavedCredentials(): void {
+  getSecureStorage().clearSavedCredentials();
 }
 
 // ----------------------------------------------------------------------------
@@ -91,6 +106,17 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
           break;
         case 'generateQuickToken':
           data = await handleGenerateQuickToken();
+          break;
+        case 'saveCredentials':
+          handleSaveCredentials(payload as { email: string; password: string });
+          data = null;
+          break;
+        case 'getSavedCredentials':
+          data = handleGetSavedCredentials();
+          break;
+        case 'clearSavedCredentials':
+          handleClearSavedCredentials();
+          data = null;
           break;
         default:
           return {

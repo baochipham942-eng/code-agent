@@ -26,6 +26,9 @@ const DATA_EXTENSIONS = ['.json', '.csv', '.xml', '.yaml', '.yml', '.toml'];
 // 文本文件扩展名
 const TEXT_EXTENSIONS = ['.txt', '.md', '.markdown', '.rst', '.log'];
 
+// Excel 文件扩展名
+const EXCEL_EXTENSIONS = ['.xlsx', '.xls', '.xlsm', '.xlsb'];
+
 export interface InputAreaProps {
   /** 输入值 */
   value: string;
@@ -45,6 +48,8 @@ export interface InputAreaProps {
   onFocusChange: (focused: boolean) => void;
   /** 操作按钮插槽（放在输入框内部右侧，包含语音输入和发送按钮） */
   actionButtons?: React.ReactNode;
+  /** 自定义 placeholder */
+  placeholder?: string;
   /** @deprecated 使用 actionButtons 代替 */
   sendButton?: React.ReactNode;
 }
@@ -71,6 +76,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       isFocused,
       onFocusChange,
       actionButtons,
+      placeholder,
       sendButton,
     },
     ref
@@ -124,10 +130,14 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       ...STYLE_EXTENSIONS,
       ...DATA_EXTENSIONS,
       ...TEXT_EXTENSIONS,
+      ...EXCEL_EXTENSIONS,
       '.pdf',
       'application/pdf',
       '.html',
       '.htm',
+      // Excel MIME types
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
     ].join(',');
 
     return (
@@ -166,7 +176,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           onKeyDown={handleKeyDown}
           onFocus={() => onFocusChange(true)}
           onBlur={() => onFocusChange(false)}
-          placeholder={hasAttachments ? '添加描述...' : '问我任何关于代码的问题...'}
+          placeholder={placeholder ?? (hasAttachments ? '添加描述...' : '问我任何关于代码的问题...')}
           disabled={disabled}
           rows={1}
           className="flex-1 min-w-0 bg-transparent py-3 px-2 text-sm text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none disabled:opacity-50 max-h-[200px] leading-relaxed"

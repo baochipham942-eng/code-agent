@@ -1,6 +1,6 @@
 {
   "name": "code-agent",
-  "version": "0.8.12",
+  "version": "0.10.2",
   "description": "AI Coding Assistant with Generation Comparison",
   "type": "module",
   "main": "dist/main/index.cjs",
@@ -9,12 +9,12 @@
   "scripts": {
     "dev": "npm run dev:cleanup && concurrently -k --kill-others-on-fail \"npm run dev:main\" \"npm run dev:renderer\" \"npm run dev:electron\"",
     "dev:cleanup": "lsof -ti:5173 | xargs kill -9 2>/dev/null || true",
-    "dev:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:playwright --external:playwright-core --external:keytar --external:isolated-vm --outfile=dist/main/index.cjs --sourcemap --watch",
+    "dev:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:playwright --external:playwright-core --external:keytar --external:isolated-vm --external:pptxgenjs --outfile=dist/main/index.cjs --sourcemap --watch",
     "dev:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/preload/index.cjs --sourcemap",
     "dev:renderer": "vite",
     "dev:electron": "sleep 3 && electron .",
     "build": "npm run build:main && npm run build:preload && npm run build:renderer",
-    "build:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:playwright --external:playwright-core --external:keytar --external:isolated-vm --outfile=dist/main/index.cjs --minify",
+    "build:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:playwright --external:playwright-core --external:keytar --external:isolated-vm --external:pptxgenjs --outfile=dist/main/index.cjs --minify",
     "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/preload/index.cjs --minify",
     "build:renderer": "vite build",
     "start": "npm run build:main && npm run build:preload && electron .",
@@ -52,6 +52,7 @@
     "node-fetch": "^3.3.2",
     "openai": "^4.70.0",
     "playwright": "^1.57.0",
+    "pptxgenjs": "^4.0.1",
     "react-virtuoso": "^4.18.1",
     "reflect-metadata": "^0.2.2",
     "uuid": "^13.0.0",
@@ -98,7 +99,8 @@
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.53.0",
     "vite": "^6.0.0",
-    "vitest": "^4.0.17"
+    "vitest": "^4.0.17",
+    "xlsx": "^0.18.5"
   },
   "build": {
     "appId": "com.codeagent.app",

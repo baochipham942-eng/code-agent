@@ -1,12 +1,43 @@
 // ============================================================================
 // Grep Tool - Search file contents
 // ============================================================================
+// Enhanced with context lines (-A/-B/-C) and file type filtering (--type)
+// ============================================================================
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { GREP, BASH } from '../../../shared/constants';
+
+/**
+ * File type to extension mapping for --type parameter
+ * Matches ripgrep's type definitions
+ */
+const FILE_TYPE_MAP: Record<string, string[]> = {
+  js: ['*.js', '*.mjs', '*.cjs'],
+  ts: ['*.ts', '*.mts', '*.cts'],
+  jsx: ['*.jsx'],
+  tsx: ['*.tsx'],
+  py: ['*.py', '*.pyi'],
+  rust: ['*.rs'],
+  go: ['*.go'],
+  java: ['*.java'],
+  c: ['*.c', '*.h'],
+  cpp: ['*.cpp', '*.cc', '*.cxx', '*.hpp', '*.hh', '*.hxx', '*.h'],
+  css: ['*.css', '*.scss', '*.sass', '*.less'],
+  html: ['*.html', '*.htm'],
+  json: ['*.json'],
+  yaml: ['*.yaml', '*.yml'],
+  md: ['*.md', '*.markdown'],
+  xml: ['*.xml'],
+  sql: ['*.sql'],
+  sh: ['*.sh', '*.bash', '*.zsh'],
+  ruby: ['*.rb'],
+  php: ['*.php'],
+  swift: ['*.swift'],
+  kotlin: ['*.kt', '*.kts'],
+};
 
 const execAsync = promisify(exec);
 
@@ -20,10 +51,15 @@ Usage:
 - pattern: Regex pattern to search for (e.g., "function\\s+\\w+", "TODO:")
 - path: File or directory to search in (default: working directory)
 - include: Glob pattern to filter files (e.g., "*.ts", "*.{js,jsx}")
+- type: Filter by file type (e.g., "ts", "py", "js") - more efficient than include
 - case_insensitive: Set to true for case-insensitive search
+- before_context (-B): Show N lines before each match
+- after_context (-A): Show N lines after each match
+- context (-C): Show N lines before and after each match
 
 Output format:
 - Returns file:line_number:matching_line
+- With context: includes separator (--) between non-adjacent matches
 - Results limited to 200 matches
 - Each line truncated at 500 characters
 
@@ -40,7 +76,8 @@ Best practices:
 - Use this tool instead of bash grep or rg commands
 - For finding file paths (not content), use glob instead
 - Escape special regex characters: . * + ? [ ] ( ) { } | \\ ^ $
-- Multiple searches can be run in parallel with separate tool calls`,
+- Multiple searches can be run in parallel with separate tool calls
+- Use type parameter for efficiency: type="ts" instead of include="*.ts"`,
   generations: ['gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
@@ -49,19 +86,60 @@ Best practices:
     properties: {
       pattern: {
         type: 'string',
-        description: 'The regex pattern to search for',
+        description:
+          'Regex pattern to search for. MUST be a string. ' +
+          'Examples: "function\\\\s+handleClick" (function definitions), ' +
+          '"import.*from" (import statements), "TODO|FIXME" (comments). ' +
+          'Escape special regex chars: . * + ? [ ] ( ) { } | \\\\ ^ $',
       },
       path: {
         type: 'string',
-        description: 'File or directory to search in',
+        description:
+          'File or directory to search in. MUST be a string. ' +
+          'Default: current working directory. ' +
+          'Examples: "/Users/name/project/src", "./src/components", "~/project". ' +
+          'Can be a specific file: "/path/to/file.ts".',
       },
       include: {
         type: 'string',
-        description: 'Glob pattern to filter files (e.g., "*.ts")',
+        description:
+          'Glob pattern to filter which files to search. MUST be a string. ' +
+          'Examples: "*.ts" (TypeScript only), "*.{js,jsx}" (JS and JSX), ' +
+          '"*.test.ts" (test files only). Without this, searches all text files.',
       },
       case_insensitive: {
         type: 'boolean',
-        description: 'Case-insensitive search (default: false)',
+        description:
+          'If true, performs case-insensitive matching. Default: false. ' +
+          'Example: with case_insensitive=true, "error" matches "Error", "ERROR", "error".',
+      },
+      type: {
+        type: 'string',
+        description:
+          'Filter by file type. More efficient than include glob. ' +
+          'Supported types: js, ts, jsx, tsx, py, rust, go, java, c, cpp, css, html, json, yaml, md, xml, sql, sh, ruby, php, swift, kotlin. ' +
+          'Example: type="ts" searches only TypeScript files.',
+      },
+      before_context: {
+        type: 'number',
+        description:
+          'Number of lines to show BEFORE each match (like grep -B). ' +
+          'Useful for seeing context leading up to a match. ' +
+          'Example: before_context=3 shows 3 lines before each match.',
+      },
+      after_context: {
+        type: 'number',
+        description:
+          'Number of lines to show AFTER each match (like grep -A). ' +
+          'Useful for seeing what follows a match. ' +
+          'Example: after_context=3 shows 3 lines after each match.',
+      },
+      context: {
+        type: 'number',
+        description:
+          'Number of lines to show BEFORE and AFTER each match (like grep -C). ' +
+          'Shorthand for setting both before_context and after_context. ' +
+          'Example: context=2 shows 2 lines before and 2 lines after each match.',
       },
     },
     required: ['pattern'],
@@ -74,12 +152,20 @@ Best practices:
     const pattern = params.pattern as string;
     let searchPath = (params.path as string) || context.workingDirectory;
     const include = params.include as string;
+    const fileType = params.type as string;
     const caseInsensitive = (params.case_insensitive as boolean) || false;
+    const beforeContext = params.before_context as number | undefined;
+    const afterContext = params.after_context as number | undefined;
+    const contextLines = params.context as number | undefined;
 
     // Resolve relative paths
     if (!path.isAbsolute(searchPath)) {
       searchPath = path.join(context.workingDirectory, searchPath);
     }
+
+    // Determine context settings (context overrides before/after if set)
+    const ctxBefore = contextLines ?? beforeContext;
+    const ctxAfter = contextLines ?? afterContext;
 
     try {
       // Build grep/rg command
@@ -101,7 +187,20 @@ Best practices:
           flags.push('-i');
         }
 
-        if (include) {
+        // Add context flags
+        if (ctxBefore !== undefined && ctxBefore > 0) {
+          flags.push('-B', String(Math.min(ctxBefore, 10))); // Cap at 10 lines
+        }
+        if (ctxAfter !== undefined && ctxAfter > 0) {
+          flags.push('-A', String(Math.min(ctxAfter, 10))); // Cap at 10 lines
+        }
+
+        // File type filtering (more efficient than glob)
+        if (fileType && FILE_TYPE_MAP[fileType]) {
+          for (const ext of FILE_TYPE_MAP[fileType]) {
+            flags.push('-g', ext);
+          }
+        } else if (include) {
           flags.push('-g', include);
         }
 
@@ -126,7 +225,20 @@ Best practices:
           flags.push('-i');
         }
 
-        if (include) {
+        // Add context flags
+        if (ctxBefore !== undefined && ctxBefore > 0) {
+          flags.push('-B', String(Math.min(ctxBefore, 10)));
+        }
+        if (ctxAfter !== undefined && ctxAfter > 0) {
+          flags.push('-A', String(Math.min(ctxAfter, 10)));
+        }
+
+        // File type filtering (convert to --include patterns)
+        if (fileType && FILE_TYPE_MAP[fileType]) {
+          for (const ext of FILE_TYPE_MAP[fileType]) {
+            flags.push('--include', ext);
+          }
+        } else if (include) {
           flags.push('--include', include);
         }
 

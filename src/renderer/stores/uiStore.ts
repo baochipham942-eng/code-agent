@@ -19,6 +19,31 @@ export type ModalType =
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
+// 深度研究相关类型
+export type ResearchPhase = 'planning' | 'researching' | 'reporting' | 'complete' | 'error';
+export type ReportStyle = 'default' | 'academic' | 'popular_science' | 'news' | 'social_media' | 'strategic_investment';
+
+export interface ResearchProgress {
+  isActive: boolean;
+  phase: ResearchPhase;
+  message: string;
+  percent: number;
+  currentStep?: {
+    title: string;
+    status: 'running' | 'completed' | 'failed';
+  };
+  error?: string;
+}
+
+export interface DeepResearchState {
+  /** 当前聊天模式 */
+  mode: 'normal' | 'deep-research';
+  /** 选择的报告风格 */
+  reportStyle: ReportStyle;
+  /** 研究进度状态 */
+  progress: ResearchProgress;
+}
+
 export interface Toast {
   id: string;
   type: ToastType;
@@ -48,6 +73,9 @@ interface UIState {
   // Toast State
   toasts: Toast[];
 
+  // Deep Research State
+  deepResearch: DeepResearchState;
+
   // Actions - Modal
   openModal: (modal: ModalType) => void;
   closeModal: (modal: ModalType) => void;
@@ -63,6 +91,12 @@ interface UIState {
   showToast: (type: ToastType, message: string, duration?: number) => string;
   hideToast: (id: string) => void;
   clearToasts: () => void;
+
+  // Actions - Deep Research
+  setDeepResearchMode: (mode: 'normal' | 'deep-research') => void;
+  setReportStyle: (style: ReportStyle) => void;
+  updateResearchProgress: (progress: Partial<ResearchProgress>) => void;
+  resetResearchProgress: () => void;
 }
 
 // -----------------------------------------------------------------------------
@@ -70,8 +104,20 @@ interface UIState {
 // -----------------------------------------------------------------------------
 
 function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  return `${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
 }
+
+// 深度研究初始状态
+const initialDeepResearchState: DeepResearchState = {
+  mode: 'normal',
+  reportStyle: 'default',
+  progress: {
+    isActive: false,
+    phase: 'planning',
+    message: '',
+    percent: 0,
+  },
+};
 
 // -----------------------------------------------------------------------------
 // Store
@@ -82,6 +128,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   activeModals: new Set(),
   confirmOptions: null,
   toasts: [],
+  deepResearch: initialDeepResearchState,
 
   // Modal Actions
   openModal: (modal) => {
@@ -156,6 +203,37 @@ export const useUIStore = create<UIState>((set, get) => ({
   clearToasts: () => {
     set({ toasts: [] });
   },
+
+  // Deep Research Actions
+  setDeepResearchMode: (mode) =>
+    set((state) => ({
+      deepResearch: { ...state.deepResearch, mode },
+    })),
+
+  setReportStyle: (style) =>
+    set((state) => ({
+      deepResearch: { ...state.deepResearch, reportStyle: style },
+    })),
+
+  updateResearchProgress: (progress) =>
+    set((state) => ({
+      deepResearch: {
+        ...state.deepResearch,
+        progress: {
+          ...state.deepResearch.progress,
+          ...progress,
+          isActive: progress.phase !== 'complete' && progress.phase !== 'error',
+        },
+      },
+    })),
+
+  resetResearchProgress: () =>
+    set((state) => ({
+      deepResearch: {
+        ...state.deepResearch,
+        progress: initialDeepResearchState.progress,
+      },
+    })),
 }));
 
 // -----------------------------------------------------------------------------
@@ -209,5 +287,27 @@ export function useConfirm() {
     options: confirmOptions,
     show: showConfirm,
     hide: hideConfirm,
+  };
+}
+
+/**
+ * Hook to manage deep research state
+ */
+export function useDeepResearch() {
+  const deepResearch = useUIStore((state) => state.deepResearch);
+  const setMode = useUIStore((state) => state.setDeepResearchMode);
+  const setReportStyle = useUIStore((state) => state.setReportStyle);
+  const updateProgress = useUIStore((state) => state.updateResearchProgress);
+  const resetProgress = useUIStore((state) => state.resetResearchProgress);
+
+  return {
+    mode: deepResearch.mode,
+    reportStyle: deepResearch.reportStyle,
+    progress: deepResearch.progress,
+    isActive: deepResearch.progress.isActive,
+    setMode,
+    setReportStyle,
+    updateProgress,
+    resetProgress,
   };
 }

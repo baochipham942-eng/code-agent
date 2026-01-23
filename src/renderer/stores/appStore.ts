@@ -46,6 +46,8 @@ interface AppState {
   // Chat State
   messages: Message[];
   isProcessing: boolean;
+  // 按会话追踪处理状态（支持多会话并发）
+  processingSessionIds: Set<string>;
   currentSessionId: string | null;
 
   // Todo State (for Gen 3+)
@@ -67,6 +69,9 @@ interface AppState {
   // Model Config
   modelConfig: ModelConfig;
 
+  // Workspace State
+  workingDirectory: string | null;
+
   // Actions
   setShowSettings: (show: boolean) => void;
   setShowWorkspace: (show: boolean) => void;
@@ -79,6 +84,10 @@ interface AppState {
   addMessage: (message: Message) => void;
   updateMessage: (id: string, updates: Partial<Message>) => void;
   setIsProcessing: (processing: boolean) => void;
+  // 按会话设置处理状态
+  setSessionProcessing: (sessionId: string, processing: boolean) => void;
+  // 检查指定会话是否正在处理
+  isSessionProcessing: (sessionId: string) => boolean;
   setTodos: (todos: TodoItem[]) => void;
   setTaskPlan: (plan: TaskPlan | null) => void;
   setFindings: (findings: Finding[]) => void;
@@ -92,6 +101,7 @@ interface AppState {
   setModelConfig: (config: ModelConfig) => void;
   clearChat: () => void;
   setCurrentSessionId: (id: string | null) => void;
+  setWorkingDirectory: (dir: string | null) => void;
 }
 
 // Default generation (Gen 1)
@@ -117,7 +127,7 @@ const defaultModelConfig: ModelConfig = {
   maxTokens: 16384,
 };
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   // Initial UI State
   showSettings: false,
   showWorkspace: false,
@@ -139,6 +149,7 @@ export const useAppStore = create<AppState>((set) => ({
   // Initial Chat State
   messages: [],
   isProcessing: false,
+  processingSessionIds: new Set<string>(),
   currentSessionId: null,
 
   // Initial Todo State
@@ -159,6 +170,9 @@ export const useAppStore = create<AppState>((set) => ({
 
   // Initial Model Config
   modelConfig: defaultModelConfig,
+
+  // Initial Workspace State
+  workingDirectory: null,
 
   // Actions
   setShowSettings: (show) => set({ showSettings: show }),
@@ -184,6 +198,24 @@ export const useAppStore = create<AppState>((set) => ({
 
   setIsProcessing: (processing) => set({ isProcessing: processing }),
 
+  // 按会话设置处理状态
+  setSessionProcessing: (sessionId, processing) =>
+    set((state) => {
+      const newSet = new Set(state.processingSessionIds);
+      if (processing) {
+        newSet.add(sessionId);
+      } else {
+        newSet.delete(sessionId);
+      }
+      // 同时更新全局 isProcessing（兼容旧代码）
+      // 当前会话正在处理时，全局也标记为处理中
+      const isCurrentProcessing = state.currentSessionId ? newSet.has(state.currentSessionId) : false;
+      return { processingSessionIds: newSet, isProcessing: isCurrentProcessing };
+    }),
+
+  // 检查指定会话是否正在处理
+  isSessionProcessing: (sessionId) => get().processingSessionIds.has(sessionId),
+
   setTodos: (todos) => set({ todos }),
 
   setTaskPlan: (plan) => set({ taskPlan: plan }),
@@ -207,4 +239,6 @@ export const useAppStore = create<AppState>((set) => ({
     set({ messages: [], todos: [], taskPlan: null, findings: [], errors: [] }),
 
   setCurrentSessionId: (id) => set({ currentSessionId: id }),
+
+  setWorkingDirectory: (dir) => set({ workingDirectory: dir }),
 }));

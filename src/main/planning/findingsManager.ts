@@ -241,6 +241,6 @@ export class FindingsManager {
   }
 
   private generateId(): string {
-    return `find-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return `find-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
   }
 }

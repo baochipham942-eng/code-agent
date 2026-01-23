@@ -95,7 +95,7 @@ class EvolutionPersistenceService {
   // --------------------------------------------------------------------------
 
   async createStrategy(strategy: Omit<Strategy, 'id' | 'createdAt' | 'updatedAt'>): Promise<Strategy> {
-    const id = `strategy_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const id = `strategy_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
     const now = Date.now();
 
     const newStrategy: Strategy = {
@@ -178,7 +178,7 @@ class EvolutionPersistenceService {
   // --------------------------------------------------------------------------
 
   async recordFeedback(feedback: Omit<StrategyFeedback, 'id' | 'createdAt'>): Promise<void> {
-    const id = `feedback_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const id = `feedback_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
 
     const newFeedback: StrategyFeedback = {
       ...feedback,
@@ -220,7 +220,7 @@ class EvolutionPersistenceService {
   // --------------------------------------------------------------------------
 
   async createPattern(pattern: Omit<LearnedPattern, 'id' | 'createdAt' | 'updatedAt'>): Promise<LearnedPattern> {
-    const id = `pattern_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const id = `pattern_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
     const now = Date.now();
 
     const newPattern: LearnedPattern = {

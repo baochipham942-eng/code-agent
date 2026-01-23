@@ -83,6 +83,59 @@ async function handleCheckApiKeyConfigured(): Promise<boolean> {
   return getSecureStorage().getStoredApiKeyProviders().length > 0;
 }
 
+async function handleSetServiceApiKey(
+  getConfigService: () => ConfigService | null,
+  payload: { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter'; apiKey: string }
+): Promise<void> {
+  const configService = getConfigService();
+  if (!configService) throw new Error('Config service not initialized');
+  await configService.setServiceApiKey(payload.service as 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github', payload.apiKey);
+}
+
+async function handleGetServiceApiKey(
+  getConfigService: () => ConfigService | null,
+  payload: { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' }
+): Promise<string | undefined> {
+  const configService = getConfigService();
+  if (!configService) throw new Error('Config service not initialized');
+  return configService.getServiceApiKey(payload.service as 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github');
+}
+
+async function handleGetAllServiceKeys(
+  getConfigService: () => ConfigService | null
+): Promise<{
+  brave?: string;
+  github?: string;
+  openrouter?: string;
+  langfuse_public?: string;
+  langfuse_secret?: string;
+}> {
+  const configService = getConfigService();
+  if (!configService) throw new Error('Config service not initialized');
+
+  const services = ['brave', 'github', 'openrouter', 'langfuse_public', 'langfuse_secret'] as const;
+  const result: Record<string, string | undefined> = {};
+
+  for (const service of services) {
+    const key = configService.getServiceApiKey(service);
+    if (key) {
+      // Mask API key for display (show first 8 chars only)
+      result[service] = key.length > 8 ? key.substring(0, 8) + '...' : key;
+    }
+  }
+
+  return result;
+}
+
+async function handleSyncApiKeysFromCloud(
+  getConfigService: () => ConfigService | null,
+  payload: { authToken: string }
+): Promise<{ success: boolean; syncedKeys: string[]; error?: string }> {
+  const configService = getConfigService();
+  if (!configService) throw new Error('Config service not initialized');
+  return configService.syncApiKeysFromCloud(payload.authToken);
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -121,6 +174,19 @@ export function registerSettingsHandlers(
           break;
         case 'checkApiKeyConfigured':
           data = await handleCheckApiKeyConfigured();
+          break;
+        case 'syncApiKeysFromCloud':
+          data = await handleSyncApiKeysFromCloud(getConfigService, payload as { authToken: string });
+          break;
+        case 'setServiceApiKey':
+          await handleSetServiceApiKey(getConfigService, payload as { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter'; apiKey: string });
+          data = null;
+          break;
+        case 'getServiceApiKey':
+          data = await handleGetServiceApiKey(getConfigService, payload as { service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' });
+          break;
+        case 'getAllServiceKeys':
+          data = await handleGetAllServiceKeys(getConfigService);
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
@@ -172,6 +238,16 @@ export function registerSettingsHandlers(
     handleTestApiKey({ provider, apiKey })
   );
 
+  /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'getAllServiceKeys' */
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_SERVICE_KEYS, async () =>
+    handleGetAllServiceKeys(getConfigService)
+  );
+
+  /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'setServiceApiKey' */
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY, async (_, payload: { service: 'brave' | 'github' | 'openrouter' | 'langfuse_public' | 'langfuse_secret'; apiKey: string }) =>
+    handleSetServiceApiKey(getConfigService, payload)
+  );
+
   /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'minimize' */
   ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, async () => {
     const { BrowserWindow } = await import('electron');
@@ -198,6 +274,43 @@ export function registerSettingsHandlers(
     text: `[PDF 文件将由 AI 模型解析: ${filePath}]`,
     pageCount: 0,
   }));
+
+  // Excel 文件解析
+  ipcMain.handle('extract-excel-text', async (_, filePath: string): Promise<{ text: string; sheetCount: number; rowCount: number }> => {
+    try {
+      const fs = await import('fs');
+      const XLSX = await import('xlsx');
+
+      const buffer = fs.readFileSync(filePath);
+      const workbook = XLSX.read(buffer, { type: 'buffer' });
+
+      const sheets: string[] = [];
+      let totalRows = 0;
+
+      for (const sheetName of workbook.SheetNames) {
+        const sheet = workbook.Sheets[sheetName];
+        // 转换为 CSV 格式（AI 更容易理解）
+        const csv = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+        const rows = csv.split('\n').filter((r: string) => r.trim()).length;
+        totalRows += rows;
+
+        // 添加 sheet 标题
+        sheets.push(`=== Sheet: ${sheetName} (${rows} 行) ===\n${csv}`);
+      }
+
+      return {
+        text: sheets.join('\n\n'),
+        sheetCount: workbook.SheetNames.length,
+        rowCount: totalRows,
+      };
+    } catch (error) {
+      return {
+        text: `[Excel 解析失败: ${error instanceof Error ? error.message : String(error)}]`,
+        sheetCount: 0,
+        rowCount: 0,
+      };
+    }
+  });
 
   /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'checkApiKeyConfigured' */
   ipcMain.handle(IPC_CHANNELS.SECURITY_CHECK_API_KEY_CONFIGURED, async () => handleCheckApiKeyConfigured());

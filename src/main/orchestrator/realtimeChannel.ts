@@ -236,7 +236,7 @@ export class RealtimeChannel extends EventEmitter {
    */
   private createMessage(type: MessageType, payload: unknown, taskId?: string): ChannelMessage {
     return {
-      id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `msg_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
       type,
       taskId,
       payload,

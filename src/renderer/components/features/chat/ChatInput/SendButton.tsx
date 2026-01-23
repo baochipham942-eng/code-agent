@@ -19,6 +19,8 @@ export interface SendButtonProps {
   onClick?: () => void;
   /** 停止回调 */
   onStop?: () => void;
+  /** 自定义按钮文字（如 "开始研究"），传入后按钮会显示文字 */
+  label?: string;
 }
 
 /**
@@ -31,12 +33,13 @@ export const SendButton: React.FC<SendButtonProps> = ({
   type = 'submit',
   onClick,
   onStop,
+  label,
 }) => {
   // 处理中时显示停止按钮（柔和样式，白色图标 + 浅灰背景）
   if (isProcessing) {
     return (
       <IconButton
-        icon={<Square className="w-4 h-4 fill-current" />}
+        icon={<Square className="w-full h-full fill-current" />}
         aria-label="停止"
         type="button"
         variant="default"
@@ -49,6 +52,29 @@ export const SendButton: React.FC<SendButtonProps> = ({
 
   const isDisabled = disabled || !hasContent;
   const showActiveState = hasContent && !disabled;
+
+  // 如果有 label，显示带文字的按钮
+  if (label) {
+    return (
+      <button
+        type={type}
+        disabled={isDisabled}
+        onClick={onClick}
+        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 mr-2 ${
+          showActiveState
+            ? 'bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-white shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30 scale-100 hover:scale-105'
+            : 'bg-zinc-700/50 text-zinc-400 cursor-not-allowed scale-95 opacity-60'
+        }`}
+      >
+        <Send
+          className={`w-4 h-4 transition-transform duration-200 ${
+            hasContent ? '-rotate-45' : ''
+          }`}
+        />
+        <span>{label}</span>
+      </button>
+    );
+  }
 
   return (
     <IconButton

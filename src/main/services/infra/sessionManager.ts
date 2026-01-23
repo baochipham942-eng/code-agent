@@ -63,7 +63,7 @@ export class SessionManager {
     const now = Date.now();
 
     const session: Session = {
-      id: `session_${now}_${Math.random().toString(36).substr(2, 9)}`,
+      id: `session_${now}_${crypto.randomUUID().split('-')[0]}`,
       title: options.title || this.generateSessionTitle(),
       generationId: options.generationId,
       modelConfig: options.modelConfig,
@@ -538,7 +538,7 @@ export class SessionManager {
     const now = Date.now();
 
     // 创建新的 session ID
-    const newId = `session_${now}_${Math.random().toString(36).substr(2, 9)}`;
+    const newId = `session_${now}_${crypto.randomUUID().split('-')[0]}`;
 
     const session: Session = {
       id: newId,
@@ -556,7 +556,7 @@ export class SessionManager {
     for (const message of data.messages) {
       const newMessage: Message = {
         ...message,
-        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        id: `msg_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
       };
       db.addMessage(newId, newMessage);
     }
@@ -582,7 +582,7 @@ export class SessionManager {
     for (const message of sourceMessages) {
       const newMessage: Message = {
         ...message,
-        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        id: `msg_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
       };
       db.addMessage(targetId, newMessage);
     }

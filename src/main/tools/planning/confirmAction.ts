@@ -112,7 +112,7 @@ Example:
 
     // Create request
     const request = {
-      id: `confirm-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      id: `confirm-${Date.now()}-${crypto.randomUUID().split('-')[0]}`,
       title,
       message,
       type,

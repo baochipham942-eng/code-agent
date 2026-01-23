@@ -30,6 +30,7 @@ export const STYLE_EXTENSIONS: Record<string, string> = {
 
 export const DATA_EXTENSIONS = ['.json', '.csv', '.xml', '.yaml', '.yml', '.toml'];
 export const TEXT_EXTENSIONS = ['.txt', '.md', '.markdown', '.rst', '.log'];
+export const EXCEL_EXTENSIONS = ['.xlsx', '.xls', '.xlsm', '.xlsb'];
 export const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 export const IGNORED_DIRS = ['node_modules', '.git', '.svn', '.hg', '__pycache__', '.DS_Store', 'dist', 'build', '.next', '.cache'];
 export const MAX_FOLDER_FILES = 50;
@@ -54,6 +55,12 @@ export function getFileCategory(file: File): { category: AttachmentCategory; lan
   if (mimeType === 'text/html' || ext === '.html' || ext === '.htm') {
     return { category: 'html', language: 'html' };
   }
+  // Excel 文件（支持解析）
+  if (EXCEL_EXTENSIONS.includes(ext) ||
+      mimeType.includes('spreadsheet') ||
+      mimeType === 'application/vnd.ms-excel') {
+    return { category: 'excel' };
+  }
   if (CODE_EXTENSIONS[ext]) {
     return { category: 'code', language: CODE_EXTENSIONS[ext] };
   }
@@ -67,7 +74,8 @@ export function getFileCategory(file: File): { category: AttachmentCategory; lan
   if (TEXT_EXTENSIONS.includes(ext) || mimeType === 'text/plain' || mimeType === 'text/markdown') {
     return { category: 'text', language: ext === '.md' || ext === '.markdown' ? 'markdown' : undefined };
   }
-  if (ext === '.docx' || ext === '.xlsx' || ext === '.pptx' ||
+  // 其他 Office 文档（暂不支持）
+  if (ext === '.docx' || ext === '.pptx' ||
       mimeType.includes('officedocument') || mimeType.includes('msword')) {
     return { category: 'document' };
   }
@@ -84,6 +92,7 @@ export function shouldProcessFile(fileName: string): boolean {
     STYLE_EXTENSIONS[ext] !== undefined ||
     DATA_EXTENSIONS.includes(ext) ||
     TEXT_EXTENSIONS.includes(ext) ||
+    EXCEL_EXTENSIONS.includes(ext) ||
     ext === '.pdf' || ext === '.html' || ext === '.htm' ||
     ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.gif' || ext === '.webp'
   );
@@ -163,5 +172,5 @@ export async function extractPdfText(filePath: string): Promise<{ text: string; 
  * 生成唯一的附件 ID
  */
 export function generateAttachmentId(): string {
-  return `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return `att-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
 }

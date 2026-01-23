@@ -28,12 +28,14 @@ import { useSessionStore } from '../stores/sessionStore';
 import { generateMessageId } from '@shared/utils/id';
 import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData } from '@shared/types';
 import { createLogger } from '../utils/logger';
+import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 
 const logger = createLogger('useAgent');
 
 export const useAgent = () => {
   const {
     setIsProcessing,
+    setSessionProcessing,
     isProcessing,
     currentGeneration,
     setPendingPermissionRequest,
@@ -44,6 +46,7 @@ export const useAgent = () => {
     addMessage,
     updateMessage,
     setTodos,
+    currentSessionId,
   } = useSessionStore();
 
   // Use refs to avoid stale closure issues
@@ -60,17 +63,61 @@ export const useAgent = () => {
   const [taskProgress, setTaskProgress] = useState<TaskProgressData | null>(null);
   const [lastTaskComplete, setLastTaskComplete] = useState<TaskCompleteData | null>(null);
 
+  // Message batcher for reducing re-renders during streaming
+  const handleBatchUpdate = useCallback((updates: MessageUpdate[]) => {
+    const currentMessages = messagesRef.current;
+    for (const update of updates) {
+      if (update.type === 'append' && update.content) {
+        const targetMessage = currentMessages.find(m => m.id === update.messageId);
+        if (targetMessage?.role === 'assistant') {
+          updateMessage(update.messageId, {
+            content: (targetMessage.content || '') + update.content,
+          });
+        }
+      }
+    }
+  }, [updateMessage]);
+
+  const { queueUpdate, flush } = useMessageBatcher(handleBatchUpdate, {
+    batchInterval: 50,
+    maxBatchSize: 10,
+  });
+
+  // Keep flush in a ref to avoid stale closures in event listener
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
+
   // Listen for agent events from the main process
   // Only register once, use refs to access latest state
   useEffect(() => {
     const unsubscribe = window.electronAPI?.on(
       'agent:event',
-      (event: { type: string; data: any }) => {
+      (event: { type: string; data: any; sessionId?: string }) => {
         // 只对非流式事件打印日志，避免控制台刷屏
         const silentEvents = ['stream_chunk', 'stream_tool_call_delta'];
         if (!silentEvents.includes(event.type)) {
-          logger.debug('Received event', { type: event.type });
+          logger.debug('Received event', { type: event.type, sessionId: event.sessionId });
         }
+
+        // 会话隔离：只处理属于当前会话的事件
+        // 但完成类事件需要跨会话处理（清除处理状态）
+        const currentSessionId = useSessionStore.getState().currentSessionId;
+        const isCompletionEvent = ['agent_complete', 'error'].includes(event.type);
+
+        if (event.sessionId && event.sessionId !== currentSessionId && !isCompletionEvent) {
+          // 事件属于其他会话，且不是完成类事件，忽略
+          return;
+        }
+
+        // 辅助函数：清除会话处理状态
+        const clearSessionProcessing = () => {
+          const sessionId = event.sessionId || currentSessionId;
+          if (sessionId) {
+            useAppStore.getState().setSessionProcessing(sessionId, false);
+          } else {
+            setIsProcessing(false);
+          }
+        };
 
         // Always get the latest messages from ref
         const currentMessages = messagesRef.current;
@@ -101,7 +148,7 @@ export const useAgent = () => {
             break;
 
           case 'stream_chunk':
-            // 流式文本内容 - 追加到当前 turn 的消息
+            // 流式文本内容 - 追加到当前 turn 的消息（使用批处理优化）
             if (event.data?.content) {
               // 优先使用 turnId 定位消息，fallback 到最后一条 assistant 消息
               const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
@@ -110,8 +157,11 @@ export const useAgent = () => {
                 : currentMessages[currentMessages.length - 1];
 
               if (targetMessage?.role === 'assistant') {
-                updateMessage(targetMessage.id, {
-                  content: (targetMessage.content || '') + event.data.content,
+                // 使用批处理更新，减少重渲染频率
+                queueUpdate({
+                  type: 'append',
+                  messageId: targetMessage.id,
+                  content: event.data.content,
                 });
               } else {
                 // Fallback: 如果没有找到目标消息，创建一个新的（兼容旧事件格式）
@@ -132,8 +182,11 @@ export const useAgent = () => {
                     addMessage(newMessage);
                     currentTurnMessageIdRef.current = newMessage.id;
                   } else {
-                    updateMessage(lastMessage.id, {
-                      content: (lastMessage.content || '') + event.data.content,
+                    // 使用批处理更新
+                    queueUpdate({
+                      type: 'append',
+                      messageId: lastMessage.id,
+                      content: event.data.content,
                     });
                   }
                 }
@@ -162,14 +215,15 @@ export const useAgent = () => {
               }
               // 纯文本消息（无工具调用）表示本轮结束
               if (!event.data.toolCalls || event.data.toolCalls.length === 0) {
-                setIsProcessing(false);
+                clearSessionProcessing();
               }
             }
             break;
 
           case 'turn_end':
             // 本轮 Agent Loop 结束
-            // 可用于清理状态或触发 UI 更新
+            // 刷新所有待处理的流式更新，确保内容完整显示
+            flushRef.current();
             logger.debug('turn_end', { turnId: event.data?.turnId });
             break;
 
@@ -333,28 +387,56 @@ export const useAgent = () => {
             break;
 
           case 'todo_update':
-            // Update todos
+            // Update todos - only for current session (fix cross-session pollution)
+            // Events from other sessions should be ignored
             if (event.data) {
-              setTodos(event.data);
+              if (!event.sessionId || event.sessionId === currentSessionId) {
+                setTodos(event.data);
+              } else {
+                logger.debug('Ignoring todo_update from different session', {
+                  eventSessionId: event.sessionId,
+                  currentSessionId
+                });
+              }
             }
             break;
 
           case 'error': {
             // Handle error - display it in the chat
-            logger.error('Agent error', { message: event.data?.message });
-            const lastMessage = currentMessages[currentMessages.length - 1];
-            if (lastMessage?.role === 'assistant') {
-              updateMessage(lastMessage.id, {
-                content: `Error: ${event.data?.message || 'Unknown error'}`,
-              });
+            logger.error('Agent error', { message: event.data?.message, code: event.data?.code });
+            // 只有当前会话的错误才更新消息
+            if (!event.sessionId || event.sessionId === currentSessionId) {
+              const lastMessage = currentMessages[currentMessages.length - 1];
+              if (lastMessage?.role === 'assistant') {
+                // 根据错误类型生成友好的提示
+                let errorContent: string;
+                if (event.data?.code === 'CONTEXT_LENGTH_EXCEEDED') {
+                  // 上下文超限错误：显示友好提示
+                  const details = event.data.details;
+                  const requestedK = details?.requested ? Math.round(details.requested / 1000) : '?';
+                  const maxK = details?.max ? Math.round(details.max / 1000) : '?';
+                  errorContent =
+                    `⚠️ **${event.data.message}**\n\n` +
+                    `当前对话长度约 ${requestedK}K tokens，超出模型限制 ${maxK}K tokens。\n\n` +
+                    `${event.data.suggestion || '建议新开一个会话继续对话。'}`;
+                } else {
+                  // 其他错误：显示原始错误信息
+                  errorContent = `Error: ${event.data?.message || 'Unknown error'}`;
+                }
+                updateMessage(lastMessage.id, { content: errorContent });
+              }
             }
-            setIsProcessing(false);
+            clearSessionProcessing();
             break;
           }
 
           case 'agent_complete':
             // Agent has finished processing
-            setIsProcessing(false);
+            // 只有当前会话才刷新流式更新
+            if (!event.sessionId || event.sessionId === currentSessionId) {
+              flushRef.current();
+            }
+            clearSessionProcessing();
             break;
 
           case 'permission_request':
@@ -410,9 +492,21 @@ export const useAgent = () => {
   // Turn-based model: 不再预创建 placeholder，等待后端 turn_start 事件
   const sendMessage = useCallback(
     async (content: string, attachments?: MessageAttachment[]) => {
-      logger.debug('sendMessage called', { contentPreview: content.substring(0, 50) });
-      if ((!content.trim() && !attachments?.length) || isProcessing) {
-        logger.debug('sendMessage blocked - empty or processing');
+      logger.debug('sendMessage called', { contentPreview: content.substring(0, 50), sessionId: currentSessionId });
+
+      // 检查当前会话是否正在处理（允许其他会话并发发送）
+      const isCurrentSessionProcessing = currentSessionId
+        ? useAppStore.getState().isSessionProcessing(currentSessionId)
+        : isProcessing;
+
+      if ((!content.trim() && !attachments?.length) || isCurrentSessionProcessing) {
+        logger.debug('sendMessage blocked - empty or current session processing', { isCurrentSessionProcessing });
+        return;
+      }
+
+      // 没有会话时无法发送
+      if (!currentSessionId) {
+        logger.warn('sendMessage blocked - no current session');
         return;
       }
 
@@ -433,7 +527,8 @@ export const useAgent = () => {
       // 1. 每轮 Agent Loop 对应一条消息
       // 2. 工具调用后的新响应会创建新消息，而不是追加到旧消息
 
-      setIsProcessing(true);
+      // 按会话设置处理状态（允许多会话并发）
+      setSessionProcessing(currentSessionId, true);
       currentTurnMessageIdRef.current = null; // 重置 turn tracking
 
       try {
@@ -460,21 +555,27 @@ export const useAgent = () => {
           timestamp: Date.now(),
         };
         addMessage(errorMessage);
-        setIsProcessing(false);
+        // 按会话清除处理状态
+        setSessionProcessing(currentSessionId, false);
       }
     },
-    [addMessage, setIsProcessing, isProcessing]
+    [addMessage, setSessionProcessing, isProcessing, currentSessionId]
   );
 
   // Cancel the current operation
   const cancel = useCallback(async () => {
     try {
       await window.electronAPI?.invoke('agent:cancel');
-      setIsProcessing(false);
+      // 按会话清除处理状态
+      if (currentSessionId) {
+        setSessionProcessing(currentSessionId, false);
+      } else {
+        setIsProcessing(false);
+      }
     } catch (error) {
       logger.error('Cancel error', error);
     }
-  }, [setIsProcessing]);
+  }, [setIsProcessing, setSessionProcessing, currentSessionId]);
 
   return {
     messages,

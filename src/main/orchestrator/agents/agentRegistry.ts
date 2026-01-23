@@ -323,7 +323,7 @@ export class AgentRegistry extends EventEmitter {
     }
 
     const instance: AgentInstance = {
-      id: `agent_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `agent_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
       definitionId,
       role: definition.role,
       status: 'idle',

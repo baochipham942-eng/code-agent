@@ -23,6 +23,7 @@ import { initCloudTaskService } from '../cloud/cloudTaskService';
 import { initUnifiedOrchestrator } from '../orchestrator';
 import { logBridge } from '../mcp/logBridge.js';
 import { initPluginSystem, shutdownPluginSystem } from '../plugins';
+import { getSkillDiscoveryService } from '../services/skills';
 import { getMainWindow } from './window';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { SYNC, UPDATE, CLOUD, TOOL_CACHE } from '../../shared/constants';
@@ -31,7 +32,7 @@ import { GenerationManager } from '../generation/generationManager';
 import { createPlanningService, type PlanningService } from '../planning';
 import { getSessionManager, notificationService } from '../services';
 import { getTaskManager, type TaskManager } from '../task';
-import type { PlanningState } from '../../shared/types';
+import type { PlanningState, ToolCall } from '../../shared/types';
 
 const logger = createLogger('Bootstrap');
 
@@ -181,12 +182,28 @@ async function initializeServices(): Promise<void> {
   const settings = configService.getSettings();
   const mainWindow = getMainWindow();
 
-  // Initialize CloudConfigService FIRST, then MCP (MCP depends on CloudConfig)
+  // Initialize CloudConfigService FIRST, then MCP and Skills (they depend on CloudConfig)
   // This is a chained initialization to avoid race conditions
   initCloudConfigService()
-    .then(() => {
+    .then(async () => {
       const info = getCloudConfigService().getInfo();
       logger.info('CloudConfig initialized', { source: info.fromCloud ? 'cloud' : 'builtin', version: info.version });
+
+      // Initialize SkillDiscoveryService AFTER CloudConfig is ready
+      // Skills depend on CloudConfig for builtin skills
+      try {
+        const skillDiscovery = getSkillDiscoveryService();
+        await skillDiscovery.initialize(process.cwd());
+        const stats = skillDiscovery.getStats();
+        logger.info('SkillDiscovery initialized', {
+          total: stats.total,
+          builtin: stats.bySource.builtin,
+          user: stats.bySource.user,
+          project: stats.bySource.project,
+        });
+      } catch (skillError) {
+        logger.warn('SkillDiscovery initialization failed (non-blocking)', { error: String(skillError) });
+      }
 
       // Now initialize MCP client AFTER CloudConfig is ready
       const mcpConfigs: MCPServerConfig[] = settings.mcp?.servers || [];
@@ -260,6 +277,21 @@ async function initializeServices(): Promise<void> {
           syncService.startAutoSync(SYNC.SYNC_INTERVAL);
           logger.info('Auto-sync started');
         });
+
+        // Auto-sync API keys for admin users
+        if (user.isAdmin) {
+          authService.getAccessToken().then((token) => {
+            if (token && configService) {
+              configService.syncApiKeysFromCloud(token).then((result) => {
+                if (result.success) {
+                  logger.info(`Admin API keys synced: ${result.syncedKeys.join(', ')}`);
+                } else {
+                  logger.warn(`Failed to sync admin API keys: ${result.error}`);
+                }
+              });
+            }
+          });
+        }
       } else {
         syncService.stopAutoSync();
         logger.info('Auto-sync stopped');
@@ -375,8 +407,14 @@ async function initializeServices(): Promise<void> {
   // Initialize generation manager
   generationManager = new GenerationManager();
 
-  // Track current assistant message for updating tool results
-  let currentAssistantMessageId: string | null = null;
+  // Track current assistant message for aggregating multiple messages in a turn
+  // This prevents creating multiple database records for a single agent turn
+  // Use a Map to support multiple concurrent sessions
+  const turnStateBySession = new Map<string, {
+    messageId: string;
+    toolCalls: ToolCall[];
+    content: string;
+  }>();
 
   // Initialize agent orchestrator
   agentOrchestrator = new AgentOrchestrator({
@@ -391,48 +429,105 @@ async function initializeServices(): Promise<void> {
         logger.warn('mainWindow is null, cannot send event');
       }
 
-      // Persist assistant messages
+      // 使用事件携带的 sessionId（由 AgentOrchestrator 在发送消息时注入）
+      // 这样即使用户在执行过程中切换会话，事件也会写入正确的会话
+      const eventWithSession = event as typeof event & { sessionId?: string };
+      const sessionId = eventWithSession.sessionId;
+
+      if (!sessionId) {
+        logger.warn('No sessionId in event, skipping message persistence');
+        return;
+      }
+
+      const sessionManager = getSessionManager();
+
+      // Aggregate assistant messages within a single turn
+      // Instead of creating a new DB record for each message event,
+      // we accumulate them and only persist one aggregated message per turn
       if (event.type === 'message' && event.data?.role === 'assistant') {
-        currentAssistantMessageId = event.data.id;
+        const message = event.data;
+
+        // Get or create turn state for this session
+        let turnState = turnStateBySession.get(sessionId);
+        if (!turnState) {
+          turnState = { messageId: '', toolCalls: [], content: '' };
+          turnStateBySession.set(sessionId, turnState);
+        }
+
+        // Accumulate tool calls if present
+        if (message.toolCalls && message.toolCalls.length > 0) {
+          turnState.toolCalls.push(...message.toolCalls);
+        }
+
+        // Accumulate content if present
+        if (message.content) {
+          turnState.content = message.content; // Use latest content (final response)
+        }
+
         try {
-          const sessionManager = getSessionManager();
-          await sessionManager.addMessage(event.data);
+          if (!turnState.messageId) {
+            // First message in this turn - create new record
+            turnState.messageId = message.id;
+            await sessionManager.addMessage({
+              ...message,
+              toolCalls: turnState.toolCalls.length > 0 ? [...turnState.toolCalls] : undefined,
+              content: turnState.content,
+            });
+          } else {
+            // Subsequent message in this turn - update existing record
+            await sessionManager.updateMessage(turnState.messageId, {
+              toolCalls: turnState.toolCalls.length > 0 ? [...turnState.toolCalls] : undefined,
+              content: turnState.content,
+            });
+          }
         } catch (error) {
-          logger.error('Failed to save assistant message', error);
+          logger.error('Failed to save/update assistant message', error);
         }
       }
 
       // Update tool call results
-      if (event.type === 'tool_call_end' && currentAssistantMessageId && event.data) {
-        try {
-          const sessionManager = getSessionManager();
-          const session = await sessionManager.getCurrentSession();
-          if (session) {
-            const currentMessage = session.messages.find((m) => m.id === currentAssistantMessageId);
-            if (currentMessage?.toolCalls) {
-              const updatedToolCalls = currentMessage.toolCalls.map((tc) =>
-                tc.id === event.data.toolCallId
-                  ? { ...tc, result: event.data }
-                  : tc
-              );
-              await sessionManager.updateMessage(currentAssistantMessageId, { toolCalls: updatedToolCalls });
+      if (event.type === 'tool_call_end' && event.data) {
+        const turnState = turnStateBySession.get(sessionId);
+        const toolCallId = event.data.toolCallId;
+
+        if (!turnState) {
+          logger.warn('tool_call_end: turnState not found', { sessionId, toolCallId });
+        } else if (!turnState.messageId) {
+          logger.warn('tool_call_end: messageId not set', { sessionId, toolCallId });
+        } else {
+          try {
+            // Update accumulated tool calls with results
+            const idx = turnState.toolCalls.findIndex((tc) => tc.id === toolCallId);
+            if (idx !== -1) {
+              turnState.toolCalls[idx] = { ...turnState.toolCalls[idx], result: event.data };
+              logger.debug('tool_call_end: updated result', { toolCallId, idx, hasOutput: !!event.data.output });
+            } else {
+              logger.warn('tool_call_end: toolCall not found in turnState', {
+                toolCallId,
+                availableIds: turnState.toolCalls.map(tc => tc.id),
+              });
             }
+
+            // Persist the update
+            await sessionManager.updateMessage(turnState.messageId, {
+              toolCalls: [...turnState.toolCalls],
+            });
+          } catch (error) {
+            logger.error('Failed to update tool call result', error);
           }
-        } catch (error) {
-          logger.error('Failed to update tool call result', error);
         }
       }
 
-      // Clear current message reference
-      if (event.type === 'agent_complete') {
-        currentAssistantMessageId = null;
+      // Reset turn state when turn ends or agent completes
+      if (event.type === 'turn_end' || event.type === 'agent_complete') {
+        turnStateBySession.delete(sessionId);
       }
 
       // Send desktop notification on task complete
       if (event.type === 'task_complete' && event.data) {
         try {
-          const sessionManager = getSessionManager();
-          const session = await sessionManager.getCurrentSession();
+          // 使用事件携带的 sessionId 获取会话信息
+          const session = await sessionManager.getSession(sessionId);
           if (session) {
             notificationService.notifyTaskComplete({
               sessionId: session.id,

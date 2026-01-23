@@ -18,15 +18,25 @@ export const listDirectoryTool: Tool = {
     properties: {
       path: {
         type: 'string',
-        description: 'Directory path to list (default: working directory)',
+        description:
+          'Directory path to list. MUST be a string. ' +
+          'Default: current working directory. ' +
+          'Examples: "/Users/name/project", "~/Documents", "./src". ' +
+          'Supports absolute paths, ~ for home, and relative paths.',
       },
       recursive: {
         type: 'boolean',
-        description: 'List recursively (default: false)',
+        description:
+          'If true, list contents of subdirectories recursively. ' +
+          'Default: false (only immediate contents). ' +
+          'Auto-ignores: node_modules, .git, dist, build, .next, coverage.',
       },
       max_depth: {
         type: 'number',
-        description: 'Maximum depth for recursive listing (default: 3)',
+        description:
+          'Maximum depth for recursive listing. Integer, must be positive. ' +
+          'Default: 3. Only effective when recursive=true. ' +
+          'Example: max_depth=1 shows only immediate subdirectories.',
       },
     },
     required: [],

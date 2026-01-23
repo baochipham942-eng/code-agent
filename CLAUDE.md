@@ -17,6 +17,7 @@ AI 编程助手桌面应用，复刻 Claude Code 的 8 个架构代际来研究 
 docs/
 ├── ARCHITECTURE.md       # 架构索引（入口）
 ├── PRD.md               # 产品需求文档
+├── CONSTITUTION.md      # 宪法式 Prompt 设计
 ├── architecture/        # 详细架构文档
 │   ├── overview.md      # 系统概览
 │   ├── agent-core.md    # Agent 核心
@@ -24,6 +25,13 @@ docs/
 │   ├── frontend.md      # 前端架构
 │   ├── data-storage.md  # 数据存储
 │   └── cloud-architecture.md # 云端架构
+├── api-reference/       # API 文档 (v0.9+)
+│   ├── index.md         # API 索引
+│   ├── security.md      # 安全模块 API
+│   ├── tool-enhancements.md # 工具增强 API
+│   └── hooks.md         # Hooks 系统 API
+├── migration/           # 迁移指南
+│   └── v0.9-upgrade.md  # v0.9 升级指南
 └── decisions/           # 架构决策记录 (ADR)
     └── 001-turn-based-messaging.md
 ```
@@ -35,9 +43,43 @@ src/
 ├── main/                 # Electron 主进程
 │   ├── agent/           # AgentOrchestrator, AgentLoop
 │   ├── generation/      # GenerationManager
+│   │   └── prompts/     # System prompt 构建
+│   │       ├── constitution/  # 宪法层（soul, values, ethics, safety, judgment）
+│   │       ├── tools/         # 工具描述（bash, edit, task）
+│   │       ├── rules/         # 规则层
+│   │       │   └── injection/ # 注入防御（core, verification, meta）
+│   │       └── builder.ts     # Prompt 组装器
 │   ├── tools/           # gen1-gen4 工具实现
+│   │   ├── gen1/        # bash, read_file, write_file, edit_file
+│   │   ├── gen2/        # glob, grep, list_directory
+│   │   ├── gen3/        # task, todo_write, ask_user_question
+│   │   ├── gen4/        # skill, web_fetch, read_pdf, mcp
+│   │   ├── fileReadTracker.ts           # 文件读取跟踪
+│   │   ├── backgroundTaskPersistence.ts # 后台任务持久化
+│   │   └── utils/
+│   │       ├── quoteNormalizer.ts       # 智能引号规范化
+│   │       └── externalModificationDetector.ts # 外部修改检测
+│   ├── security/        # 安全模块 (v0.9+)
+│   │   ├── commandMonitor.ts     # 命令执行监控
+│   │   ├── sensitiveDetector.ts  # 敏感信息检测
+│   │   ├── auditLogger.ts        # JSONL 审计日志
+│   │   └── logMasker.ts          # 日志掩码
+│   ├── hooks/           # Hooks 系统 (v0.9+)
+│   │   ├── configParser.ts  # 配置解析
+│   │   ├── scriptExecutor.ts # 脚本执行
+│   │   ├── events.ts         # 11种事件类型
+│   │   ├── merger.ts         # 多源合并
+│   │   └── promptHook.ts     # AI 评估 Hook
+│   ├── context/         # 上下文管理 (v0.9+)
+│   │   ├── tokenEstimator.ts  # Token 估算
+│   │   ├── compressor.ts      # 增量压缩
+│   │   ├── codePreserver.ts   # 代码块保留
+│   │   └── summarizer.ts      # AI 摘要
 │   ├── services/        # Auth, Sync, Database
-│   └── memory/          # 向量存储和记忆系统
+│   ├── memory/          # 向量存储和记忆系统
+│   ├── hooks/           # 用户可配置 Hooks 系统
+│   ├── errors/          # 统一错误类型和处理
+│   └── utils/           # 性能监控等工具函数
 ├── preload/             # 预加载脚本
 ├── renderer/            # React 前端
 │   ├── components/      # UI 组件
@@ -73,7 +115,7 @@ npm run typecheck    # 类型检查
 | Gen2 | + glob, grep, list_directory |
 | Gen3 | + task, todo_write, ask_user_question |
 | Gen4 | + skill, web_fetch, read_pdf, mcp, mcp_list_tools, mcp_list_resources, mcp_read_resource, mcp_get_status |
-| Gen5 | + memory_store, memory_search, code_index |
+| Gen5 | + memory_store, memory_search, code_index, ppt_generate, image_generate |
 | Gen6 | + screenshot, computer_use, browser_action |
 | Gen7 | + spawn_agent, agent_message, workflow_orchestrate |
 | Gen8 | + strategy_optimize, tool_create, self_evaluate |
@@ -160,6 +202,176 @@ mcp { "server": "deepwiki", "tool": "ask_question", "arguments": { "repoName": "
 | `git` | Stdio | ❌ | Git 版本控制 |
 | `brave-search` | Stdio | 需 BRAVE_API_KEY | 网络搜索 |
 
+### Gen5 PPT 生成
+
+`ppt_generate` 工具直接生成 `.pptx` 文件，可用 PowerPoint/Keynote/WPS 打开：
+
+| 主题 | 风格 | 特点 |
+|------|------|------|
+| `professional` | 专业商务 | 蓝白配色，适合正式场合 |
+| `tech` | 科技风格 | 深色背景，青色点缀 |
+| `minimal` | 极简风格 | 浅灰背景，简洁清爽 |
+| `vibrant` | 活力风格 | 紫粉配色，适合创意展示 |
+
+**使用示例：**
+
+```bash
+# 基础用法
+ppt_generate { "topic": "产品介绍", "slides_count": 5 }
+
+# 指定主题风格
+ppt_generate { "topic": "技术分享", "theme": "tech", "slides_count": 8 }
+
+# 提供详细内容大纲（Markdown 格式）
+ppt_generate { "topic": "年度总结", "content": "# 背景\n- 要点1\n# 成果\n- 成果1" }
+```
+
+**输出**：直接生成 `.pptx` 文件，在工具结果中展示为可点击的附件，点击即可打开。
+
+### Gen5 图片生成
+
+`image_generate` 工具通过 OpenRouter API 调用 FLUX 模型生成图片：
+
+| 用户类型 | 模型 | 特点 |
+|---------|------|------|
+| 管理员 (isAdmin: true) | FLUX 1.1 Pro | 最高质量，约 $0.04/张 |
+| 普通用户 | FLUX Schnell | 快速免费 |
+
+**使用示例：**
+
+```bash
+# 基础用法
+image_generate { "prompt": "sunset over mountains" }
+
+# 使用 prompt 扩展 + 指定宽高比
+image_generate { "prompt": "一只猫", "expand_prompt": true, "aspect_ratio": "16:9" }
+
+# 保存到文件 + 风格指定
+image_generate { "prompt": "产品展示图", "output_path": "./product.png", "style": "photo" }
+```
+
+**参数说明：**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `prompt` | string | 图片描述（必填，支持中英文）|
+| `expand_prompt` | boolean | 使用 LLM 扩展优化 prompt |
+| `aspect_ratio` | string | 宽高比: "1:1", "16:9", "9:16", "4:3", "3:4" |
+| `output_path` | string | 保存路径（不填返回 base64）|
+| `style` | string | 风格: "photo", "illustration", "3d", "anime" |
+
+**要求**：需要配置 OpenRouter API Key，或通过云端代理使用。
+
+## 安全模块 (v0.9+)
+
+运行时安全监控，敏感信息检测，审计日志。
+
+### 审计日志
+
+所有工具执行自动记录到 JSONL 日志：
+
+```bash
+# 查看今天的审计日志
+cat ~/.code-agent/audit/$(date +%Y-%m-%d).jsonl | jq .
+```
+
+### 敏感信息检测
+
+自动检测并掩码：
+- API Keys (`api_key=sk-...`)
+- AWS 凭证 (`AKIA...`, Secret Key)
+- GitHub Tokens (`ghp_...`, `ghs_...`)
+- 私钥 (`-----BEGIN ... PRIVATE KEY-----`)
+- 数据库 URL (`postgres://user:pass@...`)
+
+### 配置
+
+```json
+// .claude/settings.json
+{
+  "security": {
+    "auditLog": {
+      "enabled": true,
+      "retentionDays": 30
+    },
+    "sensitiveDetection": {
+      "enabled": true
+    },
+    "commandMonitor": {
+      "blockedPatterns": ["rm -rf /"],
+      "warningPatterns": ["sudo"]
+    }
+  }
+}
+```
+
+---
+
+## Hooks 系统 (v0.9+)
+
+用户可配置的事件钩子，支持 11 种事件类型。
+
+### 事件类型
+
+| 事件 | 触发时机 |
+|------|----------|
+| `PreToolUse` | 工具执行前 |
+| `PostToolUse` | 工具执行后（成功）|
+| `PostToolUseFailure` | 工具执行后（失败）|
+| `UserPromptSubmit` | 用户提交 prompt |
+| `SessionStart` | 会话开始 |
+| `SessionEnd` | 会话结束 |
+| `Stop` | Agent 停止 |
+| `SubagentStop` | 子代理停止 |
+| `PreCompact` | 上下文压缩前 |
+| `Setup` | 初始化时 |
+| `Notification` | 通知事件 |
+
+### 配置示例
+
+```json
+// .claude/settings.json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/validate-command.sh",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/cleanup.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Hook 脚本环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `TOOL_NAME` | 工具名称 |
+| `TOOL_INPUT` | JSON 格式的工具输入 |
+| `SESSION_ID` | 当前会话 ID |
+| `FILE_PATH` | 文件路径（文件操作时）|
+| `COMMAND` | 命令（Bash 工具时）|
+
+---
+
 ## 云端 Prompt 管理
 
 System Prompt 采用前后端分离架构，支持热更新：
@@ -184,6 +396,109 @@ curl "https://code-agent-beta.vercel.app/api/prompts?gen=gen4"
 # 只获取版本号
 curl "https://code-agent-beta.vercel.app/api/prompts?version=true"
 ```
+
+## 用户可配置 Hooks 系统
+
+基于 Claude Code v2.0 架构的 Hooks 系统，允许用户自定义 Agent 行为。
+
+### Hook 事件类型
+
+| 事件 | 触发时机 | 用途 |
+|------|----------|------|
+| `PreToolUse` | 工具执行前 | 验证/拦截工具调用 |
+| `PostToolUse` | 工具成功后 | 记录/分析工具结果 |
+| `PostToolUseFailure` | 工具失败后 | 错误处理/重试逻辑 |
+| `UserPromptSubmit` | 用户提交消息时 | 过滤/预处理输入 |
+| `Stop` | Agent 准备停止时 | 验证任务完成度 |
+| `SessionStart` | 会话开始时 | 初始化/环境设置 |
+| `SessionEnd` | 会话结束时 | 清理/日志记录 |
+| `Notification` | 通知触发时 | 自定义通知处理 |
+
+### 配置位置
+
+Hooks 配置在 `.claude/settings.json` 中：
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "matcher": "bash|write_file",
+        "command": "/path/to/validator.sh"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "prompt",
+        "prompt": "分析工具 $TOOL_NAME 的执行结果: $OUTPUT"
+      }
+    ]
+  }
+}
+```
+
+### Hook 类型
+
+| 类型 | 说明 | 返回值 |
+|------|------|--------|
+| `command` | 执行 shell 脚本 | 退出码 0=允许, 2=拦截 |
+| `prompt` | AI 评估（需要配置 AI 函数）| JSON: `{"action": "allow/block/continue"}` |
+
+### 环境变量
+
+脚本 Hook 可访问以下环境变量：
+
+| 变量 | 说明 |
+|------|------|
+| `HOOK_EVENT` | 事件类型 |
+| `HOOK_SESSION_ID` | 会话 ID |
+| `HOOK_WORKING_DIR` | 工作目录 |
+| `HOOK_TOOL_NAME` | 工具名（工具事件）|
+| `HOOK_TOOL_INPUT` | 工具输入（JSON）|
+| `HOOK_TOOL_OUTPUT` | 工具输出（PostToolUse）|
+| `HOOK_ERROR_MESSAGE` | 错误信息（PostToolUseFailure）|
+| `HOOK_USER_PROMPT` | 用户输入（UserPromptSubmit）|
+
+### 使用示例
+
+**拦截危险命令：**
+
+```bash
+#!/bin/bash
+# .claude/hooks/validate-bash.sh
+if echo "$HOOK_TOOL_INPUT" | grep -q "rm -rf"; then
+  echo "危险命令被拦截"
+  exit 2  # 拦截
+fi
+exit 0  # 允许
+```
+
+**配置：**
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "matcher": "bash",
+        "command": ".claude/hooks/validate-bash.sh"
+      }
+    ]
+  }
+}
+```
+
+### 架构说明
+
+- **HookManager**: 统一 API，管理 hook 配置加载和执行
+- **configParser**: 解析 `.claude/settings.json` 中的 hooks 配置
+- **scriptExecutor**: 执行 shell 脚本并注入环境变量
+- **promptHook**: 使用 AI 评估 hook 条件
+- **merger**: 合并全局和项目级 hooks 配置
+
+代码位置：`src/main/hooks/`
 
 ## 版本号规范
 
@@ -227,7 +542,7 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 | /api/health | 健康检查 |
 | /api/prompts | System Prompt |
 | /api/sync | 数据同步 |
-| /api/tools | 云端工具（api/scrape/search）|
+| /api/tools | 云端工具（api/scrape/search/ppt）|
 | /api/update | 版本更新检查 |
 | /api/user-keys | 用户 API Key 管理 |
 | /api/v1/config | 云端配置中心（新）|
@@ -310,6 +625,28 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 1. 将相关功能合并到一个文件，通过 `?action=xxx` 参数区分
 2. 当前已合并：`tools.ts` 包含 api/scrape/search 三个功能
 3. 当前 API 数量：10 个（预留 2 个空间）
+
+### GitHub Secret Scanning 阻止 Push
+**问题**: Git push 被 GitHub 阻止，错误 "Push cannot contain secrets"
+**原因**: 测试文件中使用了符合真实 API key 格式的字符串（如 `xoxb-*` Slack token, `sk_live_*` Stripe key）
+**正确做法**:
+1. **不要在代码中硬编码**任何符合 API key 格式的字符串，即使是测试用途
+2. 使用运行时字符串构建来生成测试数据：
+   ```typescript
+   // ❌ 错误 - 会被 GitHub 检测
+   const text = 'xoxb-123456789012-123456789012-abcdefghij';
+
+   // ✅ 正确 - 运行时构建
+   const buildSlackToken = (prefix: string) =>
+     `${prefix}-${'1'.repeat(12)}-${'2'.repeat(12)}-${'a'.repeat(10)}`;
+   const text = buildSlackToken('xoxb');
+   ```
+3. 常见被检测的格式：
+   - Slack: `xoxb-*`, `xoxp-*`, `xoxa-*`
+   - Stripe: `sk_live_*`, `sk_test_*`, `pk_live_*`, `pk_test_*`
+   - GitHub: `ghp_*`, `gho_*`, `ghu_*`, `ghs_*`, `ghr_*`
+   - AWS: `AKIA*`, `ASIA*`
+4. 如果历史提交已包含问题字符串，需要用 `git filter-branch` 重写历史
 
 ### 发布清单
 

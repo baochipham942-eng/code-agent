@@ -275,6 +275,8 @@ export const IPC_CHANNELS = {
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET: 'settings:set',
   SETTINGS_TEST_API_KEY: 'settings:test-api-key',
+  SETTINGS_GET_SERVICE_KEYS: 'settings:get-service-keys',
+  SETTINGS_SET_SERVICE_KEY: 'settings:set-service-key',
 
   // Window channels
   WINDOW_MINIMIZE: 'window:minimize',
@@ -437,6 +439,19 @@ export interface IpcInvokeHandlers {
     provider: string,
     apiKey: string
   ) => Promise<boolean>;
+  [IPC_CHANNELS.SETTINGS_GET_SERVICE_KEYS]: () => Promise<{
+    brave?: string;
+    github?: string;
+    openrouter?: string;
+    langfuse_public?: string;
+    langfuse_secret?: string;
+    exa?: string;
+    perplexity?: string;
+  }>;
+  [IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY]: (payload: {
+    service: 'brave' | 'github' | 'openrouter' | 'langfuse_public' | 'langfuse_secret' | 'exa' | 'perplexity';
+    apiKey: string;
+  }) => Promise<void>;
 
   // Window
   [IPC_CHANNELS.WINDOW_MINIMIZE]: () => Promise<void>;
@@ -647,6 +662,9 @@ export interface ElectronAPI {
 
   // PDF 文本提取（在主进程处理）
   extractPdfText: (filePath: string) => Promise<{ text: string; pageCount: number }>;
+
+  // Excel 文本提取（使用 xlsx 库）
+  extractExcelText: (filePath: string) => Promise<{ text: string; sheetCount: number; rowCount: number }>;
 
   // 语音转写（使用 Groq Whisper API）
   transcribeSpeech: (audioData: string, mimeType: string) => Promise<{

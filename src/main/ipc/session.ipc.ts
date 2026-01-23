@@ -64,6 +64,11 @@ async function handleCreate(
   sessionManager.setCurrentSession(session.id);
   setCurrentSessionId(session.id);
 
+  // 关键：创建新会话时必须清空 orchestrator 的消息历史，防止上下文污染
+  if (orchestrator) {
+    orchestrator.clearMessages();
+  }
+
   memoryService.setContext(session.id, workingDirectory || undefined);
 
   // Gen5: Trigger memory retrieval on session start (async, non-blocking)
@@ -94,8 +99,17 @@ async function handleLoad(
 
   memoryService.setContext(payload.sessionId, session.workingDirectory || undefined);
 
-  if (session.workingDirectory && orchestrator) {
-    orchestrator.setWorkingDirectory(session.workingDirectory);
+  if (orchestrator) {
+    // 关键：同步消息历史到 orchestrator，否则模型看不到之前的对话上下文
+    if (session.messages && session.messages.length > 0) {
+      orchestrator.setMessages(session.messages);
+    } else {
+      orchestrator.clearMessages();
+    }
+
+    if (session.workingDirectory) {
+      orchestrator.setWorkingDirectory(session.workingDirectory);
+    }
   }
 
   // Gen5: Trigger memory retrieval on session load (async, non-blocking)

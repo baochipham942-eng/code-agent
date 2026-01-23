@@ -388,7 +388,7 @@ export class StrategySyncer extends EventEmitter {
 
       case 'anonymous':
         delete shared.metadata.author;
-        shared.id = `shared_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        shared.id = `shared_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
         return shared;
 
       case 'aggregated':

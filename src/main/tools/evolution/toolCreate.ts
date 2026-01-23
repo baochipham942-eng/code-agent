@@ -77,7 +77,7 @@ async function requestUserConfirmation(
   }
 
   // Generate unique request ID
-  const requestId = `tool_create_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const requestId = `tool_create_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
 
   return new Promise<boolean>((resolve) => {
     // Set timeout (30 seconds to respond)
@@ -472,9 +472,16 @@ async function executeHttpApi(
   for (const [key, value] of Object.entries(args)) {
     url = url.replace(new RegExp(`\\$\\{${key}\\}`, 'g'), String(value));
     if (body) {
-      body = JSON.parse(
-        JSON.stringify(body).replace(new RegExp(`\\$\\{${key}\\}`, 'g'), String(value))
-      );
+      try {
+        body = JSON.parse(
+          JSON.stringify(body).replace(new RegExp(`\\$\\{${key}\\}`, 'g'), String(value))
+        );
+      } catch (parseError) {
+        return {
+          success: false,
+          output: `Failed to process body template: placeholder replacement for '${key}' created invalid JSON`,
+        };
+      }
     }
   }
 

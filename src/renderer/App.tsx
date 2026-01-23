@@ -8,6 +8,7 @@ import { useAuthStore, initializeAuthStore } from './stores/authStore';
 import { useSessionStore } from './stores/sessionStore';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { WorkspacePanel } from './components/WorkspacePanel';
 import { TitleBar } from './components/TitleBar';
 import { SettingsModal } from './components/SettingsModal';
@@ -16,11 +17,12 @@ import { ObservabilityPanel } from './components/ObservabilityPanel';
 import { UserQuestionModal } from './components/UserQuestionModal';
 import { AuthModal } from './components/AuthModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
-import { PermissionModal } from './components/PermissionModal';
+import { PermissionDialog } from './components/PermissionDialog';
 import { CloudTaskPanel } from './components/CloudTaskPanel';
 import { TaskListPanel } from './components/TaskListPanel';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
+import { StatusBar } from './components/StatusBar';
 import { useDisclosure } from './hooks/useDisclosure';
 import { useMemoryEvents } from './hooks/useMemoryEvents';
 import { Activity, Cloud, Zap } from 'lucide-react';
@@ -40,8 +42,6 @@ export const App: React.FC = () => {
     setShowSettings,
     currentGeneration,
     setLanguage,
-    pendingPermissionRequest,
-    setPendingPermissionRequest,
   } = useAppStore();
 
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
@@ -319,12 +319,13 @@ export const App: React.FC = () => {
   };
 
   return (
+    <ErrorBoundary>
       <div className="h-screen flex flex-col bg-zinc-900 text-zinc-100">
         {/* Title Bar for macOS */}
         <TitleBar />
 
-        {/* Main Content */}
-        <div className="flex-1 flex overflow-hidden">
+        {/* Main Content - pb-7 为底部状态栏留出空间 */}
+        <div className="flex-1 flex overflow-hidden pb-7">
           {/* Sidebar - 仅在 Standard+ 显示 */}
           {isStandard && <Sidebar />}
 
@@ -359,6 +360,9 @@ export const App: React.FC = () => {
           {showWorkspace && isStandard && <WorkspacePanel />}
         </div>
 
+      {/* Status Bar - 固定底部，Standard+ 模式显示 */}
+      <StatusBar />
+
       {/* Settings Modal */}
       {showSettings && <SettingsModal />}
 
@@ -370,28 +374,8 @@ export const App: React.FC = () => {
         />
       )}
 
-      {/* Permission Modal */}
-      {pendingPermissionRequest && (
-        <PermissionModal
-          request={pendingPermissionRequest}
-          onAllow={() => {
-            window.electronAPI?.invoke(
-              IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
-              pendingPermissionRequest.id,
-              'allow'
-            );
-            setPendingPermissionRequest(null);
-          }}
-          onDeny={() => {
-            window.electronAPI?.invoke(
-              IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
-              pendingPermissionRequest.id,
-              'deny'
-            );
-            setPendingPermissionRequest(null);
-          }}
-        />
-      )}
+      {/* Permission Dialog - 新版多级审批组件 */}
+      <PermissionDialog />
 
       {/* Auth Modal */}
       {showAuthModal && <AuthModal />}
@@ -441,6 +425,7 @@ export const App: React.FC = () => {
         />
       )}
       </div>
+    </ErrorBoundary>
   );
 };
 

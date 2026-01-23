@@ -359,10 +359,10 @@ export class ConfigService {
   }
 
   /**
-   * Get API key for non-model services (Brave, Langfuse, etc.)
+   * Get API key for non-model services (Brave, Langfuse, EXA, Perplexity, etc.)
    * Priority: secure storage > environment variable
    */
-  getServiceApiKey(service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github'): string | undefined {
+  getServiceApiKey(service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' | 'exa' | 'perplexity'): string | undefined {
     const storage = getSecureStorage();
 
     // Check secure storage first
@@ -375,6 +375,9 @@ export class ConfigService {
       langfuse_public: 'LANGFUSE_PUBLIC_KEY',
       langfuse_secret: 'LANGFUSE_SECRET_KEY',
       github: 'GITHUB_TOKEN',
+      openrouter: 'OPENROUTER_API_KEY',
+      exa: 'EXA_API_KEY',
+      perplexity: 'PERPLEXITY_API_KEY',
     };
 
     const envKey = envKeyMap[service];
@@ -384,7 +387,7 @@ export class ConfigService {
   /**
    * Set API key for non-model services
    */
-  async setServiceApiKey(service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github', apiKey: string): Promise<void> {
+  async setServiceApiKey(service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' | 'exa' | 'perplexity', apiKey: string): Promise<void> {
     const storage = getSecureStorage();
     storage.setApiKey(service, apiKey);
   }
@@ -433,6 +436,104 @@ export class ConfigService {
 
   isGUIAgentEnabled(): boolean {
     return this.settings.guiAgent.enabled;
+  }
+
+  // ============================================================================
+  // 云端 API Key 同步（管理员专用）
+  // ============================================================================
+
+  /**
+   * 从云端同步系统 API Key 到本地（仅管理员可用）
+   * @param authToken 云端认证 token（从 GitHub OAuth 获取）
+   * @returns 同步结果
+   */
+  async syncApiKeysFromCloud(authToken: string): Promise<{
+    success: boolean;
+    syncedKeys: string[];
+    error?: string;
+  }> {
+    const cloudUrl = this.getCloudApiUrl();
+
+    try {
+      logger.info('Syncing API keys from cloud...');
+
+      const response = await fetch(`${cloudUrl}/api/user-keys?action=sync`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({})) as { error?: string };
+        const errorMsg = errorData.error || `HTTP ${response.status}`;
+
+        if (response.status === 403) {
+          return {
+            success: false,
+            syncedKeys: [],
+            error: '权限不足：只有管理员可以同步系统 API Key',
+          };
+        }
+
+        return {
+          success: false,
+          syncedKeys: [],
+          error: `同步失败: ${errorMsg}`,
+        };
+      }
+
+      const data = await response.json() as {
+        success: boolean;
+        keys: Record<string, string>;
+        message?: string;
+      };
+
+      if (!data.success || !data.keys) {
+        return {
+          success: false,
+          syncedKeys: [],
+          error: '服务器返回数据格式错误',
+        };
+      }
+
+      // 将 Key 保存到本地安全存储
+      const storage = getSecureStorage();
+      const syncedKeys: string[] = [];
+
+      for (const [keyType, keyValue] of Object.entries(data.keys)) {
+        if (keyValue) {
+          storage.setApiKey(keyType as ModelProvider, keyValue);
+          syncedKeys.push(keyType);
+          logger.info(`Synced API key: ${keyType}`);
+        }
+      }
+
+      return {
+        success: true,
+        syncedKeys,
+      };
+    } catch (error: unknown) {
+      const err = error as Error;
+      logger.error('Failed to sync API keys from cloud', err);
+      return {
+        success: false,
+        syncedKeys: [],
+        error: `同步失败: ${err.message}`,
+      };
+    }
+  }
+
+  /**
+   * 获取云端 API URL
+   */
+  private getCloudApiUrl(): string {
+    return (
+      process.env.CLOUD_API_URL ||
+      this.settings.cloudApi?.url ||
+      'https://code-agent-beta.vercel.app'
+    );
   }
 
   // 模型路由方法

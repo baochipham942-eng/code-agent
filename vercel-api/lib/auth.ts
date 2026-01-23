@@ -59,16 +59,62 @@ export async function verifyToken(token: string): Promise<TokenPayload | null> {
   }
 }
 
+// 扩展的认证结果，包含管理员状态
+export interface AuthResult extends TokenPayload {
+  isAdmin: boolean;
+}
+
 // 从请求头中提取并验证 Token
 export async function authenticateRequest(
   authHeader: string | undefined
-): Promise<TokenPayload | null> {
+): Promise<AuthResult | null> {
   if (!authHeader?.startsWith('Bearer ')) {
     return null;
   }
 
   const token = authHeader.slice(7);
-  return verifyToken(token);
+  const payload = await verifyToken(token);
+
+  if (!payload) {
+    return null;
+  }
+
+  // 检查是否为管理员：硬编码列表 OR 数据库中的管理员标记
+  let isAdmin = ADMIN_EMAILS.includes(payload.email);
+
+  // 如果不在硬编码列表，查询数据库检查管理员状态
+  if (!isAdmin && payload.userId) {
+    try {
+      const sql = getDb();
+
+      // 检查 code_agent.users 表的 role 字段
+      const users = await sql`
+        SELECT role FROM code_agent.users WHERE id = ${payload.userId}
+      ` as unknown as { role: string }[];
+
+      if (users.length > 0 && users[0].role === 'admin') {
+        isAdmin = true;
+      }
+
+      // 如果还不是管理员，检查 public.profiles 表的 is_admin 字段（Supabase Auth）
+      if (!isAdmin) {
+        const profiles = await sql`
+          SELECT is_admin FROM public.profiles WHERE id = ${payload.userId}
+        ` as unknown as { is_admin: boolean }[];
+
+        if (profiles.length > 0 && profiles[0].is_admin === true) {
+          isAdmin = true;
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to check user admin status from database', error);
+    }
+  }
+
+  return {
+    ...payload,
+    isAdmin,
+  };
 }
 
 // 获取或创建用户（OAuth 回调后使用）

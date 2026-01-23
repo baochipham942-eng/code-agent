@@ -27,30 +27,31 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.8.6',
-  publishedAt: '2026-01-20T09:00:00.000Z',
+  version: '0.10.2',
+  publishedAt: '2026-01-24T00:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.8.6
+## Code Agent v0.10.2
 
-### 文档和测试完善
-- 为 7 个核心类添加完整 JSDoc 文档
-- 创建 OpenAPI 规范文档 (vercel-api/openapi.yaml)
-- TypeDoc 配置扩展，支持 19 个 entry points
-- 307 个单元测试全部通过
+### 安全性增强
+- 使用 crypto.randomUUID() 替换所有 Math.random() ID 生成
+- 为未保护的 JSON.parse 调用添加 try-catch
 
-### 架构文档
-- 新增 IPC 通道文档、插件系统文档、热更新文档
-- 更新工具系统文档，覆盖 Gen1-Gen8 所有工具
+### 前端稳定性
+- 添加 ErrorBoundary 组件包装应用主内容
+- 修复 useCloudTasks 计时器泄漏问题
 
-### 修复
-- 修复所有代际测试的导入路径问题
-- 添加 isolated-vm mock 解决 Node 版本兼容问题
+### 资源管理
+- 修复 MCP 连接超时后的清理逻辑
+- 修复更新下载链接和文件名编码问题
   `.trim(),
-  forceUpdate: false,
+  forceUpdate: false, // 可选更新
+  minRequiredVersion: '0.10.0',
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.8.6/Code.Agent-0.8.6-arm64.dmg',
-      size: 160000000,
+      // 注意: 文件名中的空格需要 URL 编码为 %20
+      // GitHub 会将文件名中的空格替换为点
+      url: 'https://github.com/baochipham942-eng/code-agent/releases/download/v0.10.2/Code.Agent-0.10.2-arm64.dmg',
+      size: 136000000, // ~130MB
     },
   },
 };

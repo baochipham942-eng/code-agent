@@ -98,6 +98,80 @@ interface StreamChunk {
 type StreamCallback = (chunk: string | StreamChunk) => void;
 
 // ----------------------------------------------------------------------------
+// Custom Error Types
+// ----------------------------------------------------------------------------
+
+/**
+ * 上下文长度超限错误
+ * 当请求的 token 数超过模型最大上下文限制时抛出
+ */
+export class ContextLengthExceededError extends Error {
+  public readonly code = 'CONTEXT_LENGTH_EXCEEDED';
+
+  constructor(
+    public readonly requestedTokens: number,
+    public readonly maxTokens: number,
+    public readonly provider: string
+  ) {
+    super(`上下文长度超出限制: 请求 ${requestedTokens.toLocaleString()} tokens，最大 ${maxTokens.toLocaleString()} tokens`);
+    this.name = 'ContextLengthExceededError';
+  }
+}
+
+/**
+ * 检测错误消息是否为上下文超限错误，并提取相关信息
+ */
+function parseContextLengthError(errorMessage: string, provider: string): ContextLengthExceededError | null {
+  // DeepSeek 格式: "This model's maximum context length is 131072 tokens. However, you requested 5472941 tokens"
+  const deepseekMatch = errorMessage.match(
+    /maximum context length is (\d+).*?requested (\d+)/i
+  );
+  if (deepseekMatch) {
+    return new ContextLengthExceededError(
+      parseInt(deepseekMatch[2]),
+      parseInt(deepseekMatch[1]),
+      provider
+    );
+  }
+
+  // OpenAI 格式: "This model's maximum context length is X tokens, however you requested Y tokens"
+  const openaiMatch = errorMessage.match(
+    /maximum context length is (\d+).*?you requested (\d+)/i
+  );
+  if (openaiMatch) {
+    return new ContextLengthExceededError(
+      parseInt(openaiMatch[2]),
+      parseInt(openaiMatch[1]),
+      provider
+    );
+  }
+
+  // Claude 格式: "prompt is too long: X tokens > Y maximum"
+  const claudeMatch = errorMessage.match(
+    /prompt is too long:\s*(\d+)\s*tokens?\s*>\s*(\d+)/i
+  );
+  if (claudeMatch) {
+    return new ContextLengthExceededError(
+      parseInt(claudeMatch[1]),
+      parseInt(claudeMatch[2]),
+      provider
+    );
+  }
+
+  // 通用检测：包含 "context length" 或 "token limit" 等关键词
+  if (/context.?length|token.?limit|max.?tokens?.*exceeded/i.test(errorMessage)) {
+    // 尝试提取数字
+    const numbers = errorMessage.match(/\d+/g);
+    if (numbers && numbers.length >= 2) {
+      const sorted = numbers.map(n => parseInt(n)).sort((a, b) => b - a);
+      return new ContextLengthExceededError(sorted[0], sorted[1], provider);
+    }
+  }
+
+  return null;
+}
+
+// ----------------------------------------------------------------------------
 // Provider Registry - 模型能力注册表
 // ----------------------------------------------------------------------------
 
@@ -639,6 +713,31 @@ export class ModelRouter {
   }
 
   /**
+   * 简便方法：纯文本对话（无工具调用）
+   * 适用于研究模式等只需要文本生成的场景
+   */
+  async chat(options: {
+    provider: ModelProvider;
+    model: string;
+    messages: Array<{ role: string; content: string }>;
+    maxTokens?: number;
+  }): Promise<{ content: string | null }> {
+    const config: ModelConfig = {
+      provider: options.provider,
+      model: options.model,
+      maxTokens: options.maxTokens ?? 2000,
+    };
+
+    const response = await this.inference(
+      options.messages as ModelMessage[],
+      [],
+      config
+    );
+
+    return { content: response.content ?? null };
+  }
+
+  /**
    * 主推理入口
    */
   async inference(
@@ -781,7 +880,18 @@ export class ModelRouter {
       return this.parseOpenAIResponse(response.data);
     } catch (error: any) {
       if (error.response) {
-        throw new Error(`DeepSeek API error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+        const errorData = error.response.data;
+        const errorMessage = typeof errorData === 'string'
+          ? errorData
+          : JSON.stringify(errorData);
+
+        // 检测上下文超限错误
+        const contextError = parseContextLengthError(errorMessage, 'deepseek');
+        if (contextError) {
+          throw contextError;
+        }
+
+        throw new Error(`DeepSeek API error: ${error.response.status} - ${errorMessage}`);
       }
       throw new Error(`DeepSeek request failed: ${error.message}`);
     }
@@ -990,15 +1100,198 @@ export class ModelRouter {
   }
 
   /**
-   * 安全解析 JSON，如果失败返回原始字符串
+   * 安全解析 JSON，支持多级备份提取策略
+   *
+   * 流式响应中，工具调用的 arguments 可能分散在多个 chunk 中，
+   * 有时会出现：
+   * 1. JSON 不完整（被截断）
+   * 2. JSON 格式错误（额外字符、未闭合）
+   * 3. 部分字段缺失
+   *
+   * 备份提取策略：
+   * 1. 直接解析 JSON
+   * 2. 尝试修复常见 JSON 问题后重新解析
+   * 3. 从原始字符串中提取键值对
    */
   private safeJsonParse(str: string): Record<string, unknown> {
+    // 策略 1: 直接解析
     try {
-      return JSON.parse(str);
-    } catch {
-      logger.warn(' Failed to parse tool arguments:', str.substring(0, 200));
-      return {};
+      const result = JSON.parse(str);
+      logger.debug('[safeJsonParse] Direct parse succeeded');
+      return result;
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : 'Unknown parse error';
+      logger.debug(`[safeJsonParse] Direct parse failed: ${errorMessage}, trying repair strategies...`);
     }
+
+    // 策略 2: 修复常见 JSON 问题
+    const repaired = this.repairJsonForArguments(str);
+    if (repaired) {
+      logger.info('[safeJsonParse] Repaired JSON parse succeeded');
+      return repaired;
+    }
+
+    // 策略 3: 从原始字符串提取键值对
+    const extracted = this.extractKeyValuePairs(str);
+    if (extracted && Object.keys(extracted).length > 0) {
+      logger.info('[safeJsonParse] Extracted key-value pairs:', Object.keys(extracted).join(', '));
+      return extracted;
+    }
+
+    // 所有策略失败，返回包含解析错误信息的对象
+    logger.warn('[safeJsonParse] All parse strategies failed');
+    logger.warn(`[safeJsonParse] Raw arguments (first 500 chars): ${str.substring(0, 500)}`);
+    return {
+      __parseError: true,
+      __errorMessage: 'All JSON parse strategies failed',
+      __rawArguments: str.substring(0, 1000), // 限制大小
+    };
+  }
+
+  /**
+   * 修复常见的 JSON 问题用于 arguments 解析
+   * 专门针对流式响应中可能出现的问题
+   */
+  private repairJsonForArguments(str: string): Record<string, unknown> | null {
+    if (!str || !str.trim()) return null;
+
+    let repaired = str.trim();
+
+    // 1. 移除开头的非 JSON 字符（如换行、空格、注释）
+    repaired = repaired.replace(/^[^{\[]*/, '');
+
+    // 2. 移除结尾的非 JSON 字符
+    repaired = repaired.replace(/[^}\]]*$/, '');
+
+    // 3. 如果没有找到 JSON 结构，返回 null
+    if (!repaired.startsWith('{') && !repaired.startsWith('[')) {
+      return null;
+    }
+
+    // 4. 尝试修复未闭合的 JSON
+    let braceCount = 0;
+    let bracketCount = 0;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = 0; i < repaired.length; i++) {
+      const char = repaired[i];
+
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escapeNext = true;
+        continue;
+      }
+
+      if (char === '"' && !escapeNext) {
+        inString = !inString;
+        continue;
+      }
+
+      if (!inString) {
+        if (char === '{') braceCount++;
+        else if (char === '}') braceCount--;
+        else if (char === '[') bracketCount++;
+        else if (char === ']') bracketCount--;
+      }
+    }
+
+    // 5. 关闭未闭合的字符串
+    if (inString) {
+      repaired += '"';
+    }
+
+    // 6. 关闭未闭合的括号
+    while (bracketCount > 0) {
+      repaired += ']';
+      bracketCount--;
+    }
+
+    while (braceCount > 0) {
+      repaired += '}';
+      braceCount--;
+    }
+
+    // 7. 尝试解析修复后的 JSON
+    try {
+      return JSON.parse(repaired);
+    } catch {
+      // 8. 尝试更激进的修复：截断到最后一个完整的键值对
+      const lastComma = repaired.lastIndexOf(',');
+      if (lastComma > 0) {
+        const truncated = repaired.substring(0, lastComma) + '}';
+        try {
+          return JSON.parse(truncated);
+        } catch {
+          // 继续尝试其他方法
+        }
+      }
+
+      return null;
+    }
+  }
+
+  /**
+   * 从原始字符串提取键值对
+   * 作为最后的备份方案，用正则表达式提取可识别的字段
+   */
+  private extractKeyValuePairs(str: string): Record<string, unknown> | null {
+    if (!str || !str.trim()) return null;
+
+    const result: Record<string, unknown> = {};
+
+    // 提取常见的工具参数字段
+    // 匹配 "key": "value" 或 "key": value
+    const stringPattern = /"(\w+)":\s*"([^"\\]*(?:\\.[^"\\]*)*)"/g;
+    const numberPattern = /"(\w+)":\s*(-?\d+\.?\d*)/g;
+    const booleanPattern = /"(\w+)":\s*(true|false)/g;
+    const nullPattern = /"(\w+)":\s*null/g;
+
+    // 提取字符串值
+    let match;
+    while ((match = stringPattern.exec(str)) !== null) {
+      result[match[1]] = match[2].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    }
+
+    // 提取数字值
+    while ((match = numberPattern.exec(str)) !== null) {
+      if (!(match[1] in result)) {  // 不覆盖已有的字符串值
+        result[match[1]] = parseFloat(match[2]);
+      }
+    }
+
+    // 提取布尔值
+    while ((match = booleanPattern.exec(str)) !== null) {
+      if (!(match[1] in result)) {
+        result[match[1]] = match[2] === 'true';
+      }
+    }
+
+    // 提取 null 值
+    while ((match = nullPattern.exec(str)) !== null) {
+      if (!(match[1] in result)) {
+        result[match[1]] = null;
+      }
+    }
+
+    // 尝试提取数组（简化版，只处理单层）
+    const arrayPattern = /"(\w+)":\s*\[([^\]]*)\]/g;
+    while ((match = arrayPattern.exec(str)) !== null) {
+      if (!(match[1] in result)) {
+        try {
+          result[match[1]] = JSON.parse(`[${match[2]}]`);
+        } catch {
+          // 如果数组解析失败，尝试分割字符串
+          result[match[1]] = match[2].split(',').map(s => s.trim().replace(/^"|"$/g, ''));
+        }
+      }
+    }
+
+    return Object.keys(result).length > 0 ? result : null;
   }
 
   /**
@@ -1924,11 +2217,28 @@ export class ModelRouter {
       if (response.status >= 200 && response.status < 300) {
         return this.parseOpenAIResponse(response.data);
       } else {
-        throw new Error(`云端代理错误: ${response.status} - ${JSON.stringify(response.data)}`);
+        const errorMessage = JSON.stringify(response.data);
+        // 检测上下文超限错误
+        const contextError = parseContextLengthError(errorMessage, 'cloud-proxy');
+        if (contextError) {
+          throw contextError;
+        }
+        throw new Error(`云端代理错误: ${response.status} - ${errorMessage}`);
       }
     } catch (error: any) {
+      // 如果已经是 ContextLengthExceededError，直接抛出
+      if (error instanceof ContextLengthExceededError) {
+        throw error;
+      }
+
       if (error.response) {
-        throw new Error(`云端代理 API 错误: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+        const errorMessage = JSON.stringify(error.response.data);
+        // 检测上下文超限错误
+        const contextError = parseContextLengthError(errorMessage, 'cloud-proxy');
+        if (contextError) {
+          throw contextError;
+        }
+        throw new Error(`云端代理 API 错误: ${error.response.status} - ${errorMessage}`);
       }
       throw new Error(`云端代理请求失败: ${error.message}`);
     }

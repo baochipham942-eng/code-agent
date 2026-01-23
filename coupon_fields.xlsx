@@ -1,0 +1,167 @@
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
+
+# 创建新的工作簿
+wb = openpyxl.Workbook()
+ws = wb.active
+ws.title = "优惠券字段"
+
+# 定义表头
+headers = ["参数名", "参数类型", "长度/范围", "必填", "描述", "备注"]
+
+# 设置表头样式
+header_font = Font(bold=True, color="FFFFFF", size=12)
+header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+header_alignment = Alignment(horizontal="center", vertical="center")
+
+# 写入表头
+for col_idx, header in enumerate(headers, 1):
+    cell = ws.cell(row=1, column=col_idx, value=header)
+    cell.font = header_font
+    cell.fill = header_fill
+    cell.alignment = header_alignment
+
+# 定义字段数据
+fields = [
+    # 基本信息
+    ["couponGroupCode", "String", "50", "是", "券组编码", ""],
+    ["quantity", "Integer", "[1,10万]", "是", "券组优惠券数量", ""],
+    ["groupTitle", "String", "255", "是", "券组标题", ""],
+    ["groupSubTitle", "String", "255", "否", "券组副标题", ""],
+    ["image", "String", "65535", "否", "券背景图片的URL", ""],
+    ["brief", "String", "512", "是", "给toB用户展示。券组简介，优惠券使用场景", ""],
+    ["status", "String", "20", "是", "券组状态：draft：草案、init：初始化、scrapped：作废", "草案状态可以直接作废；初始化后还未被核销的券可以作废"],
+    
+    # 类型和创建信息
+    ["couponGroupType", "Integer", "50", "是", "券组类型 0：自建 1：第三方导入", ""],
+    ["creator", "String", "50", "是", "券组创建者", ""],
+    ["creatorType", "Integer", "10", "是", "创建者类型", ""],
+    ["startTime", "Long", "13", "是", "券组开始时间 例：1663153200000", ""],
+    ["endTime", "Long", "13", "是", "券组截止时间 例：1663153200000", "过期类型时间和endtime时间判断标准"],
+    ["creationChannelCode", "String", "50", "是", "券组生产渠道编码", ""],
+    ["creationPlatformCode", "String", "50", "否", "券组创建应用系统，枚举值 OMP", ""],
+    
+    # 核销相关
+    ["redemptionChannels", "List<RedemptionChannel>", "", "是", "核销渠道", ""],
+    ["redemptionPlatformCodes", "List<String>", "", "否", "核销平台，枚举值：MyPorsche_APP, OMP_MiniProgram", ""],
+    ["couponType", "String", "50", "是", "优惠券类型：ONLINE：线上 OFFLINE：线下", ""],
+    ["content", "JSONObject", "", "是", "优惠券内容。Json格式", ""],
+    ["couponRuleCode", "String", "512", "是", "优惠券使用规则编码。UUID rule code列表，以逗号分隔", "例如 rule_uuid1, rule_uuid2,…"],
+    ["csvUploadId", "String", "200", "否", "三方上传fileId", ""],
+    
+    # 投放相关
+    ["distributionChannels", "List<DistributionChannel>", "", "是", "投放渠道即分发渠道，指的是用户可以在哪些渠道领券/被发放券", ""],
+    ["distributionPlatformCodes", "List<String>", "", "否", "投放平台，优惠券在哪个营销主题投放，枚举值", ""],
+    
+    # 过期相关
+    ["expirationType", "Integer", "10", "是", "过期类型 -1：永久 0：以endTime为过期时间 1：自领取之日起 2：自激活之日起", "expirationType为1或者2时periodOfValidity必填"],
+    ["periodOfValidity", "Integer", "10", "否", "有效天数", "expirationType为1或者2时必填"],
+    ["activateStartTime", "Long", "13", "否", "激活开始时间，例1663153200000", ""],
+    ["activateEndTime", "Long", "13", "否", "激活结束时间，例1663153200000。只在该激活时间范围内激活。", ""],
+    
+    # 限制相关
+    ["quantityLimit", "Integer", "[1-100]", "否", "用户可领取数量限制，取值区间1-100，根据ownerId限制", ""],
+    ["isDisplay", "Integer", "10", "否", "控制该券组的优惠券是否展示给用户 0 ：可以 1：否", ""],
+    ["isAutoActivate", "Integer", "10", "否", "是否自动激活0：不自动激活 1：系统自动激活", ""],
+    ["dssOwnerIdType", "Integer", "3", "否", "控制该券组的优惠券跟车，还是跟账号 1: ownerID 2: Mobile 3: vinCode 4: notApplicable", "owner id是openid吗？notApplicable是不限制吗？"],
+    
+    # 业务类型
+    ["serviceType", "Integer", "3", "否", "优惠券类型 0：不适用 1：服务券 2：实物券 3：综合券 4: 保险券 5: 购车券 6: 试驾券 7: 会籍券", ""],
+    ["usageType", "Integer", "3", "否", "优惠券抵扣类型 1：项目抵用券 2：现金券 3：折扣券 4: 兑换券", "现金券未来会废弃，会规划成serviceType"],
+    
+    # 金额相关
+    ["discountAmount", "Long", "20", "否", "优惠券抵扣金额 (单位：分)", ""],
+    ["discountRate", "float", "（6,4）", "否", "优惠券折扣率。", ""],
+    ["fullReductionAmount", "Long", "20", "否", "满减/满折金额 (单位：分)", ""],
+    ["maxDiscountAmount", "Long", "20", "否", "折扣券最高可抵扣金额 (单位：分)", ""],
+    
+    # 使用范围
+    ["applyRange", "Integer", "3", "否", "优惠券使用范围 0：整单使用 1：有条件使用 2：不适用于售后单据", ""],
+    ["applyType", "Integer", "3", "否", "优惠券适用类型 0.整单使用 1.仅适用于工时 2.仅适用于零配件 3.仅适用于外包 4.仅适用于钣喷车间工作项 5.仅适用于机电车间工作项 6.不适用于售后单据", ""],
+    
+    # 系统相关
+    ["eventNotification", "Integer", "3", "否", "是否通过消息队列推送优惠券组/优惠券的操作事件 1：不推送 2：推送", "如该券组需要下游应用监听处理，如POAS，该字段为2"],
+    ["displayDss", "Integer", "3", "否", "是否能被查询 1：不可查询 2：可查询", ""],
+    
+    # 业务配置
+    ["businessName", "String", "50", "是", "业务名称", "接口对接时，业务名称、业务场景需要先申请才能使用。已申请：[{businessName:ECommerce, scenario: [newUser, general]}]"],
+    ["scenario", "String", "59", "是", "业务场景，businessName和scenario关联使用", ""],
+    ["messsge2User", "List<String>", "", "否", "给用户发通知，目前仅支持在领取节点发SMS消息", "发送通知的节点：activated, taken, redeemed, scrapped, beingExpired, expired"]
+]
+
+# 写入字段数据
+for row_idx, field in enumerate(fields, 2):
+    for col_idx, value in enumerate(field, 1):
+        cell = ws.cell(row=row_idx, column=col_idx, value=value)
+        
+        # 设置必填字段样式
+        if col_idx == 4 and value == "是":
+            cell.fill = PatternFill(start_color="FFEB9C", end_color="FFEB9C", fill_type="solid")
+        
+        # 设置对齐方式
+        cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+# 设置列宽
+column_widths = [25, 15, 15, 8, 50, 40]
+for col_idx, width in enumerate(column_widths, 1):
+    ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+# 设置行高
+for row in ws.iter_rows(min_row=1, max_row=len(fields)+1):
+    ws.row_dimensions[row[0].row].height = 25
+
+# 添加边框
+thin_border = Border(
+    left=Side(style='thin'),
+    right=Side(style='thin'),
+    top=Side(style='thin'),
+    bottom=Side(style='thin')
+)
+
+for row in ws.iter_rows(min_row=1, max_row=len(fields)+1, max_col=len(headers)):
+    for cell in row:
+        cell.border = thin_border
+
+# 添加筛选器
+ws.auto_filter.ref = ws.dimensions
+
+# 创建第二个工作表 - 字段分类汇总
+ws2 = wb.create_sheet(title="字段分类汇总")
+
+# 分类汇总数据
+categories = [
+    ["分类", "字段数量", "必填字段", "非必填字段"],
+    ["基本信息", "7", "5", "2"],
+    ["类型和创建信息", "7", "6", "1"],
+    ["核销相关", "6", "4", "2"],
+    ["投放相关", "2", "1", "1"],
+    ["过期相关", "4", "1", "3"],
+    ["限制相关", "4", "0", "4"],
+    ["业务类型", "2", "0", "2"],
+    ["金额相关", "4", "0", "4"],
+    ["使用范围", "2", "0", "2"],
+    ["系统相关", "2", "0", "2"],
+    ["业务配置", "3", "2", "1"],
+    ["总计", "41", "19", "22"]
+]
+
+# 写入分类汇总
+for row_idx, row_data in enumerate(categories, 1):
+    for col_idx, value in enumerate(row_data, 1):
+        cell = ws2.cell(row=row_idx, column=col_idx, value=value)
+        if row_idx == 1:
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            cell.alignment = Alignment(horizontal="center")
+
+# 设置列宽
+ws2.column_dimensions['A'].width = 20
+ws2.column_dimensions['B'].width = 12
+ws2.column_dimensions['C'].width = 12
+ws2.column_dimensions['D'].width = 12
+
+# 保存文件
+wb.save("coupon_fields.xlsx")
+print("Excel文件已创建成功：coupon_fields.xlsx")
+print(f"共包含 {len(fields)} 个字段，其中必填字段：{sum(1 for f in fields if f[3] == '是')} 个")

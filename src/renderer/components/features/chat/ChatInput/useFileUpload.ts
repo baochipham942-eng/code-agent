@@ -41,7 +41,21 @@ export function useFileUpload() {
     }
 
     if (category === 'document') {
-      logger.warn('Office documents (.docx, .xlsx) are not yet supported');
+      logger.warn('Office documents (.docx, .pptx) are not yet supported');
+      return null;
+    }
+
+    // Excel 文件处理
+    if (category === 'excel' && filePath) {
+      const result = await window.electronAPI?.extractExcelText(filePath);
+      if (result) {
+        return {
+          id, type: 'file', category: 'excel', name: displayName, size: file.size,
+          mimeType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          data: result.text, sheetCount: result.sheetCount, rowCount: result.rowCount, path: filePath,
+        };
+      }
+      logger.warn('Excel extraction failed, falling back to binary warning');
       return null;
     }
 

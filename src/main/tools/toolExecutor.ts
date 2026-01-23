@@ -12,6 +12,12 @@ import type {
 } from './toolRegistry';
 import { getToolCache } from '../services';
 import { createLogger } from '../services/infra/logger';
+import {
+  getCommandMonitor,
+  getAuditLogger,
+  maskSensitiveData,
+  type ValidationResult,
+} from '../security';
 
 const logger = createLogger('ToolExecutor');
 
@@ -41,6 +47,10 @@ export interface ExecuteOptions {
   setPlanMode?: (active: boolean) => void;
   isPlanMode?: () => boolean;
   emitEvent?: (event: string, data: unknown) => void;
+  // Session ID for cross-session isolation
+  sessionId?: string;
+  // Skill 系统支持：预授权工具列表（跳过权限确认）
+  preApprovedTools?: Set<string>;
 }
 
 // ----------------------------------------------------------------------------
@@ -76,11 +86,19 @@ export class ToolExecutor {
   private toolRegistry: ToolRegistry;
   private requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   private workingDirectory: string;
+  private auditEnabled = true;
 
   constructor(config: ToolExecutorConfig) {
     this.toolRegistry = config.toolRegistry;
     this.requestPermission = config.requestPermission;
     this.workingDirectory = config.workingDirectory;
+  }
+
+  /**
+   * Enable or disable audit logging
+   */
+  setAuditEnabled(enabled: boolean): void {
+    this.auditEnabled = enabled;
   }
 
   /**
@@ -135,7 +153,7 @@ export class ToolExecutor {
     }
 
     // Create tool context
-    const context: ToolContext = {
+    const context: ToolContext & { sessionId?: string } = {
       workingDirectory: this.workingDirectory,
       generation: options.generation,
       requestPermission: this.requestPermission,
@@ -147,14 +165,82 @@ export class ToolExecutor {
       setPlanMode: options.setPlanMode,
       isPlanMode: options.isPlanMode,
       emitEvent: options.emitEvent,
+      // Also set emit as alias for emitEvent (tools use context.emit)
+      emit: options.emitEvent,
+      // Session ID for cross-session isolation (fixes todo pollution)
+      sessionId: options.sessionId,
     };
 
+    // Security: Pre-execution validation for bash commands
+    let commandValidation: ValidationResult | undefined;
+    if (toolName === 'bash' && params.command) {
+      const commandMonitor = getCommandMonitor(options.sessionId);
+      commandValidation = commandMonitor.preExecute(params.command as string);
+
+      // Block critical risk commands
+      if (!commandValidation.allowed) {
+        logger.warn('Command blocked by security', {
+          command: maskSensitiveData((params.command as string).substring(0, 100)),
+          reason: commandValidation.reason,
+          flags: commandValidation.securityFlags,
+        });
+
+        // Log security incident
+        if (this.auditEnabled) {
+          const auditLogger = getAuditLogger();
+          auditLogger.logSecurityIncident({
+            sessionId: options.sessionId || 'unknown',
+            toolName: 'bash',
+            incident: `Blocked command: ${commandValidation.reason}`,
+            details: {
+              command: maskSensitiveData((params.command as string).substring(0, 200)),
+              securityFlags: commandValidation.securityFlags,
+            },
+            riskLevel: commandValidation.riskLevel,
+          });
+        }
+
+        return {
+          success: false,
+          error: `Security: Command blocked - ${commandValidation.reason}`,
+        };
+      }
+
+      // Warn about high-risk commands but allow them
+      if (commandValidation.riskLevel === 'high') {
+        logger.warn('High-risk command detected', {
+          command: maskSensitiveData((params.command as string).substring(0, 100)),
+          flags: commandValidation.securityFlags,
+        });
+      }
+    }
+
     // Check permission if required
-    if (tool.requiresPermission) {
+    // Skill 系统：预授权工具跳过权限检查
+    const isPreApproved = this.isToolPreApproved(toolName, params, options.preApprovedTools);
+    if (isPreApproved) {
+      logger.debug('Tool pre-approved by Skill system, skipping permission check', { toolName });
+    }
+
+    if (tool.requiresPermission && !isPreApproved) {
       const permissionRequest = this.buildPermissionRequest(tool, params);
       const approved = await this.requestPermission(permissionRequest);
 
       if (!approved) {
+        // Log permission denial
+        if (this.auditEnabled) {
+          const auditLogger = getAuditLogger();
+          auditLogger.log({
+            eventType: 'permission_check',
+            sessionId: options.sessionId || 'unknown',
+            toolName,
+            input: this.sanitizeParams(params),
+            duration: 0,
+            success: false,
+            error: 'Permission denied by user',
+          });
+        }
+
         return {
           success: false,
           error: 'Permission denied by user',
@@ -179,10 +265,13 @@ export class ToolExecutor {
       logger.debug('Cache MISS', { toolName });
     }
 
+    const startTime = Date.now();
     try {
       // Execute the tool
       logger.debug('Calling tool.execute', { toolName });
       const result = await tool.execute(params, context);
+      const duration = Date.now() - startTime;
+
       logger.debug('Tool result', { toolName, success: result.success, error: result.error });
 
       // Cache successful results for cacheable tools
@@ -191,14 +280,72 @@ export class ToolExecutor {
         logger.debug('Cached result', { toolName });
       }
 
+      // Audit logging
+      if (this.auditEnabled) {
+        const auditLogger = getAuditLogger();
+        auditLogger.logToolUsage({
+          sessionId: options.sessionId || 'unknown',
+          toolName,
+          input: this.sanitizeParams(params),
+          output: result.result ? this.truncateOutput(String(result.result)) : undefined,
+          duration,
+          success: result.success,
+          error: result.error,
+          securityFlags: commandValidation?.securityFlags,
+          riskLevel: commandValidation?.riskLevel,
+        });
+      }
+
       return result;
     } catch (error) {
+      const duration = Date.now() - startTime;
       logger.error('Tool threw error', error, { toolName });
+
+      // Audit logging for errors
+      if (this.auditEnabled) {
+        const auditLogger = getAuditLogger();
+        auditLogger.logToolUsage({
+          sessionId: options.sessionId || 'unknown',
+          toolName,
+          input: this.sanitizeParams(params),
+          duration,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          securityFlags: commandValidation?.securityFlags,
+          riskLevel: commandValidation?.riskLevel,
+        });
+      }
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
+  }
+
+  /**
+   * Sanitize parameters for logging (mask sensitive data)
+   */
+  private sanitizeParams(params: Record<string, unknown>): Record<string, unknown> {
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(params)) {
+      if (typeof value === 'string') {
+        sanitized[key] = maskSensitiveData(value);
+      } else {
+        sanitized[key] = value;
+      }
+    }
+    return sanitized;
+  }
+
+  /**
+   * Truncate output for logging
+   */
+  private truncateOutput(output: string, maxLength = 1000): string {
+    if (output.length > maxLength) {
+      return output.substring(0, maxLength) + '...[truncated]';
+    }
+    return output;
   }
 
   private buildPermissionRequest(
@@ -299,5 +446,60 @@ export class ToolExecutor {
     ];
 
     return dangerousPatterns.some((pattern) => pattern.test(command));
+  }
+
+  /**
+   * 检查工具是否预授权（Skill 系统支持）
+   *
+   * 支持以下匹配模式：
+   * 1. 精确匹配：工具名完全相等（如 "bash", "read_file"）
+   * 2. 通配符匹配：Bash(prefix:*) 格式，匹配以指定前缀开头的命令
+   *    例如：Bash(git:*) 匹配所有以 "git" 开头的 bash 命令
+   *
+   * @param toolName - 工具名称
+   * @param params - 工具参数
+   * @param preApprovedTools - 预授权工具集合
+   * @returns 是否预授权
+   */
+  private isToolPreApproved(
+    toolName: string,
+    params: Record<string, unknown>,
+    preApprovedTools?: Set<string>
+  ): boolean {
+    if (!preApprovedTools || preApprovedTools.size === 0) {
+      return false;
+    }
+
+    // 1. 精确匹配（大小写不敏感）
+    const toolNameLower = toolName.toLowerCase();
+    for (const approved of preApprovedTools) {
+      if (approved.toLowerCase() === toolNameLower) {
+        return true;
+      }
+    }
+
+    // 2. 通配符匹配（如 Bash(git:*)）
+    for (const pattern of preApprovedTools) {
+      // 匹配格式: ToolName(prefix:*)
+      const match = pattern.match(/^(\w+)\(([^:]+):\*\)$/);
+      if (!match) continue;
+
+      const [, patternTool, prefix] = match;
+
+      // 检查工具名是否匹配
+      if (patternTool.toLowerCase() !== toolNameLower) continue;
+
+      // 对于 bash 命令，检查命令前缀
+      if (toolNameLower === 'bash') {
+        const command = (params.command as string) || '';
+        // 去除前导空格后检查前缀
+        const trimmedCommand = command.trimStart();
+        if (trimmedCommand.startsWith(prefix)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 }

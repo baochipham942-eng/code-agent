@@ -1,11 +1,17 @@
 // ============================================================================
 // Read File Tool - Read file contents
 // ============================================================================
+// Enhanced to track file reads for edit_file safety checks
+// ============================================================================
 
 import fs from 'fs/promises';
 import path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { resolvePath } from './pathUtils';
+import { createLogger } from '../../services/infra/logger';
+import { fileReadTracker } from '../fileReadTracker';
+
+const logger = createLogger('ReadFile');
 
 export const readFileTool: Tool = {
   name: 'read_file',
@@ -33,15 +39,25 @@ Returns: File content with line numbers in format "  lineNum\\tcontent"`,
     properties: {
       file_path: {
         type: 'string',
-        description: 'The absolute path to the file to read',
+        description:
+          'Absolute path to the file. MUST be a string, not an object. ' +
+          'Examples: "/Users/name/project/src/index.ts", "/home/user/config.json". ' +
+          'Supports ~ for home directory: "~/Documents/file.txt". ' +
+          'Do NOT include parameters like offset or limit in this string.',
       },
       offset: {
         type: 'number',
-        description: 'Line number to start reading from (1-indexed)',
+        description:
+          'Line number to start reading from. Integer, 1-indexed (first line is 1, not 0). ' +
+          'Default: 1. Example: offset=100 starts reading from line 100. ' +
+          'If offset exceeds total lines, returns empty content.',
       },
       limit: {
         type: 'number',
-        description: 'Maximum number of lines to read',
+        description:
+          'Maximum number of lines to read. Integer, must be positive. ' +
+          'Default: 2000. Example: limit=50 reads up to 50 lines. ' +
+          'Combined with offset: offset=100, limit=50 reads lines 100-149.',
       },
     },
     required: ['file_path'],
@@ -74,12 +90,16 @@ Returns: File content with line numbers in format "  lineNum\\tcontent"`,
     const filePath = resolvePath(inputPath, context.workingDirectory);
 
     try {
-      // Check if file exists
-      await fs.access(filePath);
+      // Get file stats for tracking
+      const stats = await fs.stat(filePath);
 
       // Read file
       const content = await fs.readFile(filePath, 'utf-8');
       const lines = content.split('\n');
+
+      // Record the read in the tracker (for edit_file safety checks)
+      const resolvedPath = path.resolve(filePath);
+      fileReadTracker.recordRead(resolvedPath, stats.mtimeMs, stats.size);
 
       // Apply offset and limit
       const startLine = Math.max(0, offset - 1);

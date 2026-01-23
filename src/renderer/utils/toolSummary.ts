@@ -139,6 +139,10 @@ export function summarizeToolCall(toolCall: ToolCall): string {
     case 'edit_file': {
       const filePath = (args?.file_path as string) || '';
       const fileName = filePath.split('/').pop() || filePath;
+      // If tool has result and failed, show failure message instead of line diff
+      if (toolCall.result && !toolCall.result.success) {
+        return `编辑文件失败: ${fileName}`;
+      }
       const oldStr = (args?.old_string as string) || '';
       const newStr = (args?.new_string as string) || '';
       const oldLines = oldStr.split('\n').length;

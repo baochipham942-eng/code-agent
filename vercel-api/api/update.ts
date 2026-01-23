@@ -27,28 +27,24 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.10.0',
-  publishedAt: '2026-01-23T12:30:00.000Z',
+  version: '0.10.1',
+  publishedAt: '2026-01-23T18:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.10.0
+## Code Agent v0.10.1
 
-### Agent Skills 标准实现 (Phase 3 & 4)
-- 实现 SKILL.md 解析和 YAML frontmatter 支持
-- 添加 isMeta 双通道消息机制（发送给模型但不渲染到 UI）
-- 预授权工具机制（preApprovedTools）支持 Skill 跳过权限确认
-- 通配符工具匹配模式支持（如 Bash(git:*)）
-- SkillStatusMessage 组件展示 Skill 加载状态
-- AgentLoop 集成 Skill 返回值处理和上下文修改
+### 管理员 API Key 自动同步
+- 管理员登录后自动从云端同步系统 API Key
+- 修复云端 isAdmin 判断逻辑，支持从数据库读取管理员状态
+- 添加 getAccessToken() 方法用于云端 API 调用
 
-### 技术改进
-- Message 类型扩展 isMeta 和 source 字段
-- ChatView 过滤 isMeta 消息不渲染
-- ToolExecutor 支持预授权工具检测
+### Bug 修复
+- 修复管理员用户无法获取系统 API Key 的问题
   `.trim(),
-  forceUpdate: false,
+  forceUpdate: true,
+  minRequiredVersion: '0.10.0',
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.10.0/Code.Agent-0.10.0-arm64.dmg',
+      url: 'https://github.com/anthropics/code-agent/releases/download/v0.10.1/Code.Agent-0.10.1-arm64.dmg',
       size: 160000000,
     },
   },

@@ -533,19 +533,34 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 
 ### API 端点列表
 
-> 注意：由于 Vercel Hobby 计划 12 函数限制，v1 版本化方案已放弃
+> 注意：由于 Vercel Hobby 计划 12 函数限制，运维类 API 已整合
 
 | 端点 | 说明 |
 |------|------|
 | /api/agent | 云端 Agent |
 | /api/auth | GitHub OAuth 认证 |
-| /api/health | 健康检查 |
+| /api/model-proxy | 模型代理 |
 | /api/prompts | System Prompt |
 | /api/sync | 数据同步 |
+| /api/system | 运维整合（health/init-db/migrate）|
 | /api/tools | 云端工具（api/scrape/search/ppt）|
 | /api/update | 版本更新检查 |
 | /api/user-keys | 用户 API Key 管理 |
-| /api/v1/config | 云端配置中心（新）|
+| /api/v1/config | 云端配置中心 |
+
+**system.ts 用法**：
+```bash
+# 健康检查
+curl "https://code-agent-beta.vercel.app/api/system?action=health"
+
+# 初始化数据库（需要 X-Init-Key header）
+curl -X POST "https://code-agent-beta.vercel.app/api/system?action=init-db" \
+  -H "X-Init-Key: $DB_INIT_KEY"
+
+# 数据库迁移
+curl -X POST "https://code-agent-beta.vercel.app/api/system?action=migrate" \
+  -H "X-Init-Key: $DB_INIT_KEY"
+```
 
 ---
 
@@ -623,8 +638,11 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 **原因**: Hobby 计划最多支持 12 个 API 函数，`vercel-api/api/` 下文件超过限制
 **正确做法**:
 1. 将相关功能合并到一个文件，通过 `?action=xxx` 参数区分
-2. 当前已合并：`tools.ts` 包含 api/scrape/search 三个功能
+2. 当前已合并：
+   - `tools.ts` 包含 api/scrape/search 三个功能
+   - `system.ts` 包含 health/init-db/migrate 三个功能
 3. 当前 API 数量：10 个（预留 2 个空间）
+4. 未来扩展策略：核心 API 保留主仓库，通用工具可拆到独立仓库
 
 ### GitHub Secret Scanning 阻止 Push
 **问题**: Git push 被 GitHub 阻止，错误 "Push cannot contain secrets"

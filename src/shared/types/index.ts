@@ -16,6 +16,7 @@ export * from './planning';
 export * from './question';
 export * from './agent';
 export * from './skill';
+export * from './agentSkill';
 
 // Infrastructure types
 export * from './auth';

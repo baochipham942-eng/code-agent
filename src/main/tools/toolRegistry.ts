@@ -23,7 +23,8 @@ import {
   enterPlanModeTool,
   exitPlanModeTool,
 } from './planning';
-import { skillTool, webFetchTool, webSearchTool, readPdfTool, pptGenerateTool, imageGenerateTool } from './network';
+import { webFetchTool, webSearchTool, readPdfTool, pptGenerateTool, imageGenerateTool } from './network';
+import { skillMetaTool } from './skill';
 import {
   mcpTool,
   mcpListToolsTool,
@@ -146,8 +147,8 @@ export class ToolRegistry {
     this.register(enterPlanModeTool);
     this.register(exitPlanModeTool);
 
-    // Gen 4 tools
-    this.register(skillTool);
+    // Gen 4 tools - Skill Meta Tool (Agent Skills Standard)
+    this.register(skillMetaTool);
     this.register(webFetchTool);
     this.register(webSearchTool);
     this.register(readPdfTool);

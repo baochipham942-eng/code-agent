@@ -23,6 +23,7 @@ import { initCloudTaskService } from '../cloud/cloudTaskService';
 import { initUnifiedOrchestrator } from '../orchestrator';
 import { logBridge } from '../mcp/logBridge.js';
 import { initPluginSystem, shutdownPluginSystem } from '../plugins';
+import { getSkillDiscoveryService } from '../services/skills';
 import { getMainWindow } from './window';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { SYNC, UPDATE, CLOUD, TOOL_CACHE } from '../../shared/constants';
@@ -181,12 +182,28 @@ async function initializeServices(): Promise<void> {
   const settings = configService.getSettings();
   const mainWindow = getMainWindow();
 
-  // Initialize CloudConfigService FIRST, then MCP (MCP depends on CloudConfig)
+  // Initialize CloudConfigService FIRST, then MCP and Skills (they depend on CloudConfig)
   // This is a chained initialization to avoid race conditions
   initCloudConfigService()
-    .then(() => {
+    .then(async () => {
       const info = getCloudConfigService().getInfo();
       logger.info('CloudConfig initialized', { source: info.fromCloud ? 'cloud' : 'builtin', version: info.version });
+
+      // Initialize SkillDiscoveryService AFTER CloudConfig is ready
+      // Skills depend on CloudConfig for builtin skills
+      try {
+        const skillDiscovery = getSkillDiscoveryService();
+        await skillDiscovery.initialize(process.cwd());
+        const stats = skillDiscovery.getStats();
+        logger.info('SkillDiscovery initialized', {
+          total: stats.total,
+          builtin: stats.bySource.builtin,
+          user: stats.bySource.user,
+          project: stats.bySource.project,
+        });
+      } catch (skillError) {
+        logger.warn('SkillDiscovery initialization failed (non-blocking)', { error: String(skillError) });
+      }
 
       // Now initialize MCP client AFTER CloudConfig is ready
       const mcpConfigs: MCPServerConfig[] = settings.mcp?.servers || [];

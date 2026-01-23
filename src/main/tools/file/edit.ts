@@ -106,16 +106,8 @@ Best practices:
     // Resolve path (handles ~, relative paths)
     const filePath = resolvePath(inputPath, context.workingDirectory);
 
-    // Security check: ensure file is within working directory
-    const resolvedPath = path.resolve(filePath);
-    const resolvedWorkingDir = path.resolve(context.workingDirectory);
-
-    if (!resolvedPath.startsWith(resolvedWorkingDir)) {
-      return {
-        success: false,
-        error: 'Cannot edit files outside the working directory',
-      };
-    }
+    // Note: Security is handled by the permission system (requiresPermission: true)
+    // User will see the full path and confirm before editing
 
     // Safety check 1: Ensure file has been read (unless force is true)
     if (!force && !fileReadTracker.hasBeenRead(resolvedPath)) {

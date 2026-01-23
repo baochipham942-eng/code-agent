@@ -204,16 +204,11 @@ NEVER create documentation files (*.md, README) unless explicitly requested.`,
     // Resolve path (handles ~, relative paths)
     const filePath = resolvePath(inputPath, context.workingDirectory);
 
-    // Security check: ensure file is within working directory
+    // Resolve to absolute path
     const resolvedPath = path.resolve(filePath);
-    const resolvedWorkingDir = path.resolve(context.workingDirectory);
 
-    if (!resolvedPath.startsWith(resolvedWorkingDir)) {
-      return {
-        success: false,
-        error: 'Cannot write files outside the working directory',
-      };
-    }
+    // Note: Security is handled by the permission system (requiresPermission: true)
+    // User will see the full path and confirm before writing
 
     try {
       // Create directory if it doesn't exist

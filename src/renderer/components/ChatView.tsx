@@ -2,7 +2,7 @@
 // ChatView - Main Chat Interface (Enhanced UI/UX - Terminal Noir)
 // ============================================================================
 
-import React, { useMemo, useCallback, useRef } from 'react';
+import React, { useMemo, useCallback, useRef, useState, useEffect } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
@@ -14,7 +14,9 @@ import { ChatInput } from './features/chat/ChatInput';
 import { TaskStatusBar } from './features/chat/TaskStatusBar';
 import { TodoPanel } from './TodoPanel';
 import { PreviewPanel } from './PreviewPanel';
-import type { Message, MessageAttachment, TaskProgressData } from '../../shared/types';
+import { PlanPanel } from './features/chat/PlanPanel';
+import type { Message, MessageAttachment, TaskProgressData, TaskPlan } from '../../shared/types';
+import { IPC_CHANNELS } from '@shared/ipc';
 import {
   Bot,
   Code2,
@@ -33,6 +35,39 @@ export const ChatView: React.FC = () => {
   const { currentGeneration, showPreviewPanel } = useAppStore();
   const { todos, currentSessionId } = useSessionStore();
   const { messages, isProcessing, sendMessage, cancel, taskProgress } = useAgent();
+
+  // Plan 状态
+  const [plan, setPlan] = useState<TaskPlan | null>(null);
+  const [showPlanPanel, setShowPlanPanel] = useState(false);
+
+  // 获取 Plan 数据
+  useEffect(() => {
+    const fetchPlan = async () => {
+      if (!currentSessionId) {
+        setPlan(null);
+        return;
+      }
+
+      try {
+        const planData = await window.electronAPI?.invoke(IPC_CHANNELS.PLANNING_GET_PLAN);
+        setPlan(planData || null);
+      } catch (error) {
+        console.error('Failed to fetch plan:', error);
+        setPlan(null);
+      }
+    };
+
+    fetchPlan();
+
+    // 监听 Plan 更新事件
+    const unsubscribe = window.electronAPI?.on(IPC_CHANNELS.PLANNING_EVENT, () => {
+      fetchPlan();
+    });
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [currentSessionId]);
 
   // Wave 5: 使用 taskStore 判断当前会话是否在处理中（支持多任务并行）
   const { sessionStates } = useTaskStore();
@@ -125,6 +160,8 @@ export const ChatView: React.FC = () => {
           disabled={effectiveIsProcessing}
           isProcessing={effectiveIsProcessing}
           onStop={cancel}
+          hasPlan={!!plan}
+          onPlanClick={() => setShowPlanPanel(true)}
         />
       </div>
 
@@ -133,6 +170,11 @@ export const ChatView: React.FC = () => {
 
       {/* HTML Preview Panel */}
       {showPreviewPanel && <PreviewPanel />}
+
+      {/* Plan Panel Modal */}
+      {showPlanPanel && plan && (
+        <PlanPanel plan={plan} onClose={() => setShowPlanPanel(false)} />
+      )}
     </div>
   );
 };

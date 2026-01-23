@@ -588,9 +588,15 @@ async function initializeSession(settings: any): Promise<void> {
   const recentSession = await sessionManager.getMostRecentSession();
 
   if (recentSession && settings.session?.autoRestore !== false) {
-    await sessionManager.restoreSession(recentSession.id);
+    const restoredSession = await sessionManager.restoreSession(recentSession.id);
     currentSessionId = recentSession.id;
     logger.info('Restored session', { sessionId: recentSession.id });
+
+    // 同步消息历史到 orchestrator，否则模型看不到之前的对话上下文
+    if (agentOrchestrator && restoredSession?.messages?.length) {
+      agentOrchestrator.setMessages(restoredSession.messages);
+      logger.info('Synced messages to orchestrator', { count: restoredSession.messages.length });
+    }
   } else {
     const session = await sessionManager.createSession({
       title: 'New Session',

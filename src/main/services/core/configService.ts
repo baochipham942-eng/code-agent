@@ -543,6 +543,34 @@ export class ConfigService {
     return this.settings.models.routing[capability];
   }
 
+  // Budget 配置方法
+  async setBudgetConfig(config: Partial<NonNullable<AppSettings['budget']>>): Promise<void> {
+    this.settings.budget = {
+      enabled: config.enabled ?? this.settings.budget?.enabled ?? true,
+      maxBudget: config.maxBudget ?? this.settings.budget?.maxBudget ?? 10.0,
+      silentThreshold: config.silentThreshold ?? this.settings.budget?.silentThreshold ?? 0.7,
+      warningThreshold: config.warningThreshold ?? this.settings.budget?.warningThreshold ?? 0.85,
+      blockThreshold: config.blockThreshold ?? this.settings.budget?.blockThreshold ?? 1.0,
+      resetPeriodHours: config.resetPeriodHours ?? this.settings.budget?.resetPeriodHours ?? 24,
+    };
+    await this.save();
+  }
+
+  getBudgetConfig(): NonNullable<AppSettings['budget']> {
+    return {
+      enabled: this.settings.budget?.enabled ?? true,
+      maxBudget: this.settings.budget?.maxBudget ?? 10.0,
+      silentThreshold: this.settings.budget?.silentThreshold ?? 0.7,
+      warningThreshold: this.settings.budget?.warningThreshold ?? 0.85,
+      blockThreshold: this.settings.budget?.blockThreshold ?? 1.0,
+      resetPeriodHours: this.settings.budget?.resetPeriodHours ?? 24,
+    };
+  }
+
+  isBudgetEnabled(): boolean {
+    return this.settings.budget?.enabled ?? true;
+  }
+
   async setModelRouting(
     capability: 'code' | 'vision' | 'fast' | 'gui',
     config: { provider: ModelProvider; model: string }

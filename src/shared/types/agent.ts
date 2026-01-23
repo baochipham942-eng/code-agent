@@ -125,7 +125,20 @@ export type AgentEvent =
   | { type: 'research_mode_started'; data: ResearchModeStartedData }
   | { type: 'research_progress'; data: ResearchProgressData }
   | { type: 'research_complete'; data: ResearchCompleteData }
-  | { type: 'research_error'; data: ResearchErrorData };
+  | { type: 'research_error'; data: ResearchErrorData }
+  // Budget 预警事件
+  | { type: 'budget_warning'; data: BudgetEventData }
+  | { type: 'budget_exceeded'; data: BudgetEventData };
+
+// Budget 事件数据
+export interface BudgetEventData {
+  currentCost: number;
+  maxBudget: number;
+  usagePercentage: number;
+  remaining: number;
+  alertLevel: 'silent' | 'warning' | 'blocked';
+  message?: string;
+}
 
 // Subagent Types (for Gen 3+)
 export type SubagentType = 'explore' | 'bash' | 'plan' | 'code-review';

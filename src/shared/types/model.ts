@@ -17,6 +17,19 @@ export type ModelProvider =
 // 模型能力标签
 export type ModelCapability = 'code' | 'vision' | 'fast' | 'reasoning' | 'gui' | 'general' | 'search';
 
+/**
+ * Response format configuration for structured output
+ * Compatible with OpenAI's response_format parameter
+ */
+export interface ResponseFormat {
+  type: 'text' | 'json_object' | 'json_schema';
+  json_schema?: {
+    name: string;
+    strict?: boolean;
+    schema: Record<string, unknown>;
+  };
+}
+
 export interface ModelConfig {
   provider: ModelProvider;
   model: string;
@@ -28,6 +41,8 @@ export interface ModelConfig {
   capabilities?: ModelCapability[];
   computerUse?: boolean; // Claude Computer Use 支持
   useCloudProxy?: boolean; // 使用云端代理（管理员专用）
+  // T6: Structured output support
+  responseFormat?: ResponseFormat; // OpenAI-compatible response_format
 }
 
 export interface ProviderConfig {

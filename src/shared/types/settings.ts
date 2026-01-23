@@ -96,4 +96,18 @@ export interface AppSettings {
     baseUrl?: string;
     enabled?: boolean;
   };
+  // Budget 配置 (成本控制)
+  budget?: {
+    enabled: boolean;
+    /** 最大预算 (USD) */
+    maxBudget: number;
+    /** 静默日志阈值 (默认 0.7 = 70%) */
+    silentThreshold?: number;
+    /** 警告阈值 (默认 0.85 = 85%) */
+    warningThreshold?: number;
+    /** 阻断阈值 (默认 1.0 = 100%) */
+    blockThreshold?: number;
+    /** 重置周期 (小时, 默认 24) */
+    resetPeriodHours?: number;
+  };
 }

@@ -18,3 +18,7 @@ export {
   type TaskComplexity,
   type ComplexityAnalysis,
 } from './taskComplexityAnalyzer';
+
+// Hooks dual-channel system
+export * from './hooks';
+export { matchers, matchTool, matchCategory } from './matchers';

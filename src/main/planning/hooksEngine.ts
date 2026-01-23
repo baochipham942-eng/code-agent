@@ -1,22 +1,49 @@
 // ============================================================================
-// HooksEngine - Implements Manus-style hooks for context engineering
+// HooksEngine - Dual-channel architecture for context engineering
+// ============================================================================
+//
+// This engine implements a dual-channel hooks system:
+// - Observer Channel: Passive hooks that observe and record (parallel, non-blocking)
+// - Decision Channel: Active hooks that can block or inject context (serial, can block)
+//
+// Execution order:
+// 1. Run all observers in parallel (fire-and-forget, errors logged but not thrown)
+// 2. Run all decision hooks in priority order (serial, can block execution)
+//
 // ============================================================================
 
 import type {
   HookContext,
   HookResult,
-  TaskPlan,
-  TaskPhase,
-  TaskStep,
   PlanningHooksConfig,
   PlanningRulesConfig,
 } from './types';
 import type { PlanManager } from './planManager';
 import type { ErrorTracker } from './errorTracker';
 import type { FindingsManager } from './findingsManager';
+import type {
+  ObserverHook,
+  DecisionHook,
+  HookDecision,
+  HookPoint,
+  DualChannelConfig,
+  AggregatedHookResult,
+} from './hooks/types';
+import { DEFAULT_DUAL_CHANNEL_CONFIG } from './hooks/types';
+import {
+  observerHooks,
+  getObserversForPoint,
+  resetObserverState,
+  getActionCount,
+} from './hooks/observerHooks';
+import {
+  createDecisionHooks,
+  getDecisionHooksForPoint,
+  type DecisionHooksConfig,
+} from './hooks/decisionHooks';
 
 // ----------------------------------------------------------------------------
-// Default Configurations
+// Legacy Configurations (for backward compatibility)
 // ----------------------------------------------------------------------------
 
 const DEFAULT_HOOKS_CONFIG: PlanningHooksConfig = {
@@ -27,26 +54,19 @@ const DEFAULT_HOOKS_CONFIG: PlanningHooksConfig = {
 };
 
 const DEFAULT_RULES_CONFIG: PlanningRulesConfig = {
-  actionThreshold: 5,  // Increased from 2 to reduce over-intervention
-  errorStrikeLimit: 3, // 3-Strike Rule
+  actionThreshold: 5,
+  errorStrikeLimit: 3,
 };
-
-// ----------------------------------------------------------------------------
-// Critical Tools
-// ----------------------------------------------------------------------------
-
-const CRITICAL_TOOLS = ['write_file', 'edit_file', 'bash'];
-const VIEW_TOOLS = ['read_file', 'glob', 'grep', 'list_directory', 'web_fetch'];
-const WRITE_TOOLS = ['write_file', 'edit_file'];
 
 // ----------------------------------------------------------------------------
 // HooksEngine
 // ----------------------------------------------------------------------------
 
 export class HooksEngine {
-  private actionCount: number = 0;
   private hooksConfig: PlanningHooksConfig;
   private rulesConfig: PlanningRulesConfig;
+  private dualChannelConfig: DualChannelConfig;
+  private decisionHooks: Array<{ point: HookPoint; hook: DecisionHook }>;
 
   constructor(
     private planManager: PlanManager,
@@ -55,344 +75,305 @@ export class HooksEngine {
     config?: {
       hooks?: Partial<PlanningHooksConfig>;
       rules?: Partial<PlanningRulesConfig>;
+      dualChannel?: Partial<DualChannelConfig>;
     }
   ) {
     this.hooksConfig = { ...DEFAULT_HOOKS_CONFIG, ...config?.hooks };
     this.rulesConfig = { ...DEFAULT_RULES_CONFIG, ...config?.rules };
+    this.dualChannelConfig = {
+      ...DEFAULT_DUAL_CHANNEL_CONFIG,
+      ...config?.dualChannel,
+    };
+
+    // Initialize decision hooks with dependencies
+    const decisionConfig: DecisionHooksConfig = {
+      actionThreshold: this.rulesConfig.actionThreshold,
+      errorStrikeLimit: this.rulesConfig.errorStrikeLimit,
+    };
+    this.decisionHooks = createDecisionHooks(
+      planManager,
+      errorTracker,
+      decisionConfig
+    );
   }
 
   // ==========================================================================
-  // Hook Entry Points
+  // Main Hook Entry Points
   // ==========================================================================
 
   /**
    * Session Start Hook
-   * - Check for existing incomplete plan
-   * - Reset action counter
    */
   async onSessionStart(): Promise<HookResult> {
-    this.actionCount = 0;
-
-    const existingPlan = await this.planManager.read();
-
-    if (existingPlan && !this.planManager.isComplete()) {
-      const current = this.planManager.getCurrentTask();
-      return {
-        shouldContinue: true,
-        injectContext: this.formatPlanReminder(existingPlan, current),
-        notification: `Found existing plan: ${existingPlan.title} (${existingPlan.metadata.completedSteps}/${existingPlan.metadata.totalSteps} completed)`,
-      };
-    }
-
-    return { shouldContinue: true };
+    resetObserverState();
+    return this.runHooksForPoint('session_start', {});
   }
 
   /**
    * Pre-Tool Use Hook
-   * - Re-read plan before critical decisions
-   * - Check error history to avoid repeating mistakes
    */
   async preToolUse(context: HookContext): Promise<HookResult> {
     if (!this.hooksConfig.preToolUse) {
       return { shouldContinue: true };
     }
-
-    const { toolName } = context;
-
-    // Only trigger for critical tools
-    if (!toolName || !CRITICAL_TOOLS.includes(toolName)) {
-      return { shouldContinue: true };
-    }
-
-    const plan = await this.planManager.read();
-    if (!plan) {
-      return { shouldContinue: true };
-    }
-
-    let injectContext = '';
-
-    // Check error history
-    const recentErrors = await this.errorTracker.getRecentErrors(toolName, 3);
-    if (recentErrors.length > 0) {
-      injectContext += this.formatErrorHistory(toolName, recentErrors);
-    }
-
-    // Add current task reminder
-    const currentTask = this.planManager.getCurrentTask();
-    if (currentTask) {
-      injectContext += this.formatCurrentTask(currentTask);
-    }
-
-    return {
-      shouldContinue: true,
-      injectContext: injectContext || undefined,
-    };
+    return this.runHooksForPoint('pre_tool_use', context);
   }
 
   /**
    * Post-Tool Use Hook
-   * - 2-Action Rule: Remind to save findings after view operations
-   * - Remind to update progress after write operations
-   * - Log errors
    */
   async postToolUse(context: HookContext): Promise<HookResult> {
     if (!this.hooksConfig.postToolUse) {
       return { shouldContinue: true };
     }
 
-    const { toolName, toolResult } = context;
-
-    // Log errors
-    if (toolResult && !toolResult.success && toolResult.error) {
+    // Log errors to error tracker
+    if (context.toolResult && !context.toolResult.success && context.toolResult.error) {
       await this.errorTracker.log({
-        toolName: toolName || 'unknown',
-        message: toolResult.error,
+        toolName: context.toolName || 'unknown',
+        message: context.toolResult.error,
         params: context.toolParams,
       });
     }
 
-    // Update action count
-    this.actionCount++;
-
-    let injectContext = '';
-
-    // 2-Action Rule: Check after view operations
-    if (toolName && VIEW_TOOLS.includes(toolName)) {
-      if (this.actionCount >= this.rulesConfig.actionThreshold) {
-        this.actionCount = 0; // Reset counter
-        injectContext += this.format2ActionReminder();
-      }
-    }
-
-    // Remind to update progress after write operations
-    if (
-      toolName &&
-      WRITE_TOOLS.includes(toolName) &&
-      toolResult?.success
-    ) {
-      injectContext += this.formatWriteReminder();
-    }
-
-    return {
-      shouldContinue: true,
-      injectContext: injectContext || undefined,
-    };
+    return this.runHooksForPoint('post_tool_use', context);
   }
 
   /**
    * Stop Hook
-   * - Verify all plan phases are complete before allowing stop
-   * - For simple tasks without plans, always allow stop
-   * - IMPORTANT: Don't force continuation too aggressively - better to finish than loop forever
    */
   async onStop(): Promise<HookResult> {
     if (!this.hooksConfig.onStop) {
       return { shouldContinue: true };
     }
-
-    const plan = await this.planManager.read();
-
-    // No plan exists - allow stop freely (simple task completed)
-    if (!plan) {
-      return { shouldContinue: true };
-    }
-
-    // Plan exists but has few steps - likely over-planned for a simple task, allow stop
-    // Increased threshold from 2 to 4 to avoid forcing continuation for small plans
-    if (plan.metadata.totalSteps <= 4) {
-      return { shouldContinue: true };
-    }
-
-    // If at least half the plan is done, allow stopping (user can always ask to continue)
-    if (plan.metadata.completedSteps >= plan.metadata.totalSteps / 2) {
-      const remaining = plan.metadata.totalSteps - plan.metadata.completedSteps;
-      return {
-        shouldContinue: true,
-        notification: `Good progress! ${remaining} items remaining - reply to continue.`,
-      };
-    }
-
-    if (!this.planManager.isComplete()) {
-      const incomplete = this.planManager.getIncompleteItems();
-      const incompleteCount = (incomplete.match(/\n/g) || []).length;
-
-      // If only a few remaining, suggest but don't force
-      if (incompleteCount <= 3) {
-        return {
-          shouldContinue: true,
-          notification: `Almost done! ${incompleteCount} items remaining.`,
-        };
-      }
-
-      // Only force continuation if very little progress made
-      return {
-        shouldContinue: false,
-        injectContext: this.formatCompletionCheck(incomplete),
-        notification: 'Plan incomplete - verification required',
-      };
-    }
-
-    return {
-      shouldContinue: true,
-      notification: `Plan completed: ${plan.metadata.completedSteps}/${plan.metadata.totalSteps} steps`,
-    };
+    return this.runHooksForPoint('on_stop', {});
   }
 
   /**
    * Error Hook
-   * - Log error
-   * - Check 3-Strike Rule
    */
   async onError(context: HookContext): Promise<HookResult> {
     if (!this.hooksConfig.onError) {
       return { shouldContinue: true };
     }
 
-    const { error, toolName } = context;
-
-    // Log error
+    // Log error to tracker
     await this.errorTracker.log({
-      toolName: toolName || 'unknown',
-      message: error?.message || 'Unknown error',
-      stack: error?.stack,
+      toolName: context.toolName || 'unknown',
+      message: context.error?.message || 'Unknown error',
+      stack: context.error?.stack,
       params: context.toolParams,
     });
 
-    // Check 3-Strike Rule
-    const errorCount = await this.errorTracker.getErrorCount(
-      toolName || 'unknown',
-      error?.message || ''
-    );
-
-    if (errorCount >= this.rulesConfig.errorStrikeLimit) {
-      return {
-        shouldContinue: true,
-        injectContext: this.format3StrikeWarning(errorCount),
-      };
-    }
-
-    return { shouldContinue: true };
+    return this.runHooksForPoint('on_error', context);
   }
 
   // ==========================================================================
-  // Reset Methods
+  // Dual-Channel Execution
   // ==========================================================================
 
   /**
-   * Reset action counter
+   * Run all hooks for a given hook point using dual-channel architecture
    */
-  resetActionCount(): void {
-    this.actionCount = 0;
-  }
+  private async runHooksForPoint(
+    point: HookPoint,
+    context: HookContext
+  ): Promise<AggregatedHookResult> {
+    const result: AggregatedHookResult = {
+      shouldContinue: true,
+      decisions: [],
+      observerErrors: [],
+    };
 
-  /**
-   * Get current action count
-   */
-  getActionCount(): number {
-    return this.actionCount;
-  }
+    // Inject current action count into context
+    const enrichedContext: HookContext = {
+      ...context,
+      actionCount: getActionCount(),
+    };
 
-  // ==========================================================================
-  // Formatting Methods
-  // ==========================================================================
+    // -----------------------------------------------------------------------
+    // Channel 1: Run Observers (parallel, non-blocking)
+    // -----------------------------------------------------------------------
+    if (this.dualChannelConfig.enableObservers) {
+      const observers = getObserversForPoint(point);
+      const matchedObservers = observers.filter((o) =>
+        o.matcher(enrichedContext)
+      );
 
-  private formatPlanReminder(
-    plan: TaskPlan,
-    current: { phase: TaskPhase; step: TaskStep } | null
-  ): string {
-    let reminder = `<existing-plan>\n`;
-    reminder += `Plan: ${plan.title}\n`;
-    reminder += `Objective: ${plan.objective}\n`;
-    reminder += `Progress: ${plan.metadata.completedSteps}/${plan.metadata.totalSteps} steps completed\n\n`;
+      if (this.dualChannelConfig.parallelObservers) {
+        // Run in parallel with timeout
+        const observerPromises = matchedObservers.map((observer) =>
+          this.runObserverWithTimeout(observer, enrichedContext)
+        );
+        const observerResults = await Promise.allSettled(observerPromises);
 
-    if (current) {
-      reminder += `Current task:\n`;
-      reminder += `- Phase: ${current.phase.title}\n`;
-      reminder += `- Step: ${current.step.content}\n`;
-    } else {
-      const next = this.planManager.getNextPendingTask();
-      if (next) {
-        reminder += `Next task:\n`;
-        reminder += `- Phase: ${next.phase.title}\n`;
-        reminder += `- Step: ${next.step.content}\n`;
+        // Collect any errors (for logging, not blocking)
+        observerResults.forEach((r, i) => {
+          if (r.status === 'rejected') {
+            result.observerErrors.push({
+              hookId: matchedObservers[i].id,
+              error: r.reason as Error,
+            });
+          }
+        });
+      } else {
+        // Run sequentially
+        for (const observer of matchedObservers) {
+          try {
+            await this.runObserverWithTimeout(observer, enrichedContext);
+          } catch (error) {
+            result.observerErrors.push({
+              hookId: observer.id,
+              error: error as Error,
+            });
+          }
+        }
       }
     }
 
-    reminder += `\nPlease continue from where you left off.\n`;
-    reminder += `</existing-plan>`;
+    // -----------------------------------------------------------------------
+    // Channel 2: Run Decision Hooks (serial, can block)
+    // -----------------------------------------------------------------------
+    if (this.dualChannelConfig.enableDecisions) {
+      const decisionHooks = getDecisionHooksForPoint(this.decisionHooks, point);
+      const matchedDecisions = decisionHooks.filter((d) =>
+        d.matcher(enrichedContext)
+      );
 
-    return reminder;
-  }
+      let combinedInjectContext = '';
 
-  private formatErrorHistory(
-    toolName: string,
-    errors: Array<{ message: string; count: number }>
-  ): string {
-    let history = `\n<error-history>\n`;
-    history += `Previous failures with ${toolName}:\n`;
+      for (const decisionHook of matchedDecisions) {
+        try {
+          const decision = await this.runDecisionWithTimeout(
+            decisionHook,
+            enrichedContext
+          );
 
-    for (const err of errors) {
-      const strikeNote = err.count >= 3 ? ' [3-STRIKE]' : '';
-      history += `- ${err.message} (${err.count} times)${strikeNote}\n`;
+          result.decisions.push({
+            hookId: decisionHook.id,
+            decision,
+          });
+
+          // Collect inject context
+          if (decision.injectContext) {
+            combinedInjectContext += decision.injectContext + '\n';
+          }
+
+          // Set notification (last one wins)
+          if (decision.notification) {
+            result.notification = decision.notification;
+          }
+
+          // If blocked, stop processing and return
+          if (!decision.allow) {
+            result.shouldContinue = false;
+            break;
+          }
+        } catch (error) {
+          // Decision hook errors are logged but don't block
+          console.error(
+            `Decision hook ${decisionHook.id} failed:`,
+            error
+          );
+        }
+      }
+
+      // Set combined inject context
+      if (combinedInjectContext) {
+        result.injectContext = combinedInjectContext.trim();
+      }
     }
 
-    history += `Avoid repeating these mistakes.\n`;
-    history += `</error-history>\n`;
-
-    return history;
+    return result;
   }
 
-  private formatCurrentTask(current: {
-    phase: TaskPhase;
-    step: TaskStep;
-  }): string {
-    let task = `\n<current-task>\n`;
-    task += `Phase: ${current.phase.title}\n`;
-    task += `Step: ${current.step.content}\n`;
-    task += `</current-task>\n`;
+  /**
+   * Run an observer hook with timeout protection
+   */
+  private async runObserverWithTimeout(
+    observer: ObserverHook,
+    context: HookContext
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`Observer ${observer.id} timed out`));
+      }, this.dualChannelConfig.observerTimeout);
 
-    return task;
+      Promise.resolve(observer.observe(context))
+        .then(() => {
+          clearTimeout(timeout);
+          resolve();
+        })
+        .catch((error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+    });
   }
 
-  private format2ActionReminder(): string {
-    return (
-      `\n<reminder>\n` +
-      `You've performed ${this.rulesConfig.actionThreshold} view operations without writing. ` +
-      `STOP READING AND START ACTING! If this is a creation task, use write_file NOW.\n` +
-      `</reminder>\n`
-    );
+  /**
+   * Run a decision hook with timeout protection
+   */
+  private async runDecisionWithTimeout(
+    decisionHook: DecisionHook,
+    context: HookContext
+  ): Promise<HookDecision> {
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        // On timeout, allow by default (fail-open)
+        resolve({ allow: true, reason: 'Decision hook timed out' });
+      }, this.dualChannelConfig.decisionTimeout);
+
+      Promise.resolve(decisionHook.decide(context))
+        .then((decision) => {
+          clearTimeout(timeout);
+          resolve(decision);
+        })
+        .catch((error) => {
+          clearTimeout(timeout);
+          reject(error);
+        });
+    });
   }
 
-  private formatWriteReminder(): string {
-    return (
-      `\n<reminder>\n` +
-      `File operation completed. Consider updating task_plan.md status if a step was completed.\n` +
-      `Use plan_read to check current progress.\n` +
-      `</reminder>\n`
-    );
+  // ==========================================================================
+  // Legacy Compatibility Methods
+  // ==========================================================================
+
+  /**
+   * Reset action counter (legacy method, now handled by observer)
+   * @deprecated Use resetObserverState() instead
+   */
+  resetActionCount(): void {
+    resetObserverState();
   }
 
-  private formatCompletionCheck(incomplete: string): string {
-    return (
-      `<completion-check>\n` +
-      `WARNING: Plan is not complete!\n\n` +
-      `Incomplete items:\n${incomplete}\n\n` +
-      `Please complete all tasks or explicitly mark them as skipped before stopping.\n` +
-      `</completion-check>`
-    );
+  /**
+   * Get current action count (legacy method)
+   * @deprecated Use getActionCount() from observerHooks instead
+   */
+  getActionCount(): number {
+    return getActionCount();
   }
 
-  private format3StrikeWarning(count: number): string {
-    return (
-      `<three-strike-warning>\n` +
-      `This error has occurred ${count} times!\n` +
-      `You must try a DIFFERENT approach. Do not repeat the same action.\n\n` +
-      `Consider:\n` +
-      `1. Checking error history in errors.md\n` +
-      `2. Re-reading the task_plan.md for alternative approaches\n` +
-      `3. Using ask_user_question to get guidance\n` +
-      `4. Adding a finding to findings.md about this blocker\n` +
-      `</three-strike-warning>`
-    );
+  // ==========================================================================
+  // Hook Registration (for custom hooks)
+  // ==========================================================================
+
+  /**
+   * Register a custom decision hook
+   */
+  registerDecisionHook(point: HookPoint, hook: DecisionHook): void {
+    this.decisionHooks.push({ point, hook });
+  }
+
+  /**
+   * Get registered decision hooks for testing/inspection
+   */
+  getRegisteredDecisionHooks(): Array<{
+    point: HookPoint;
+    hook: DecisionHook;
+  }> {
+    return [...this.decisionHooks];
   }
 }

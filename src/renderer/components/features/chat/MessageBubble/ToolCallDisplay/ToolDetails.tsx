@@ -212,7 +212,9 @@ function extractCreatedFilePath(toolCall: {
 
   const output = toolCall.result?.output as string;
   if (output) {
-    const match = output.match(/(?:Created|Updated) file: (.+)/);
+    // Match path up to " (" which precedes the byte count, or end of line
+    // Output format: "Created file: /path/to/file (1234 bytes)"
+    const match = output.match(/(?:Created|Updated) file: (.+?)(?:\s+\(|\n|$)/);
     if (match) return match[1].trim();
   }
 

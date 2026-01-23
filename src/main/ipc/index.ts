@@ -27,6 +27,7 @@ import { registerPlanningHandlers } from './planning.ipc';
 import { registerDataHandlers } from './data.ipc';
 import { registerSpeechHandlers } from './speech.ipc';
 import { registerTaskHandlers } from './task.ipc';
+import { registerStatusHandlers } from './status.ipc';
 
 export * from './types';
 
@@ -109,6 +110,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Task handlers (Wave 5: 多任务并行)
   registerTaskHandlers(ipcMain, getTaskManager);
+
+  // Status handlers (UX 改进)
+  registerStatusHandlers();
 
   logger.info('All handlers registered');
 }

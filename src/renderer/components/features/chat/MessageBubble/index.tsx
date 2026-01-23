@@ -33,7 +33,7 @@ export { UserMessage } from './UserMessage';
 export { AssistantMessage } from './AssistantMessage';
 export { CoworkMessageBubble } from './CoworkMessageBubble';
 export { MessageContent, CodeBlock, InlineTextWithCode } from './MessageContent';
-export { ToolCallDisplay } from './ToolCallDisplay';
+export { ToolCallDisplay } from './ToolCallDisplay/index';
 export { AttachmentDisplay } from './AttachmentPreview';
 
 // Re-export types

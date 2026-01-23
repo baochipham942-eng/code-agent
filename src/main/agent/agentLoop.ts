@@ -2566,7 +2566,7 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
         const parsedArgs = JSON.parse(matchedArgs);
         logger.debug(`[AgentLoop] Parsed tool args from regex match: ${JSON.stringify(parsedArgs)}`);
         return {
-          id: `force_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          id: `force_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
           name: toolName,
           arguments: parsedArgs,
         };
@@ -2596,7 +2596,7 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
         const parsedArgs = JSON.parse(jsonStr);
         logger.debug(`[AgentLoop] Parsed tool args from content: ${JSON.stringify(parsedArgs)}`);
         return {
-          id: `force_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          id: `force_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
           name: toolName,
           arguments: parsedArgs,
         };
@@ -2615,7 +2615,7 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
         if (parsedArgs.server || parsedArgs.tool || parsedArgs.arguments || parsedArgs.file_path || parsedArgs.command) {
           logger.debug(`[AgentLoop] Parsed tool args from code block: ${JSON.stringify(parsedArgs)}`);
           return {
-            id: `force_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            id: `force_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
             name: toolName,
             arguments: parsedArgs,
           };

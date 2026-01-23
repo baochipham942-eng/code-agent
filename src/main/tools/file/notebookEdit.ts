@@ -403,10 +403,5 @@ function clearCellOutputs(cell: NotebookCell): void {
  * Generate unique cell ID (8 random alphanumeric characters)
  */
 function generateCellId(): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let id = '';
-  for (let i = 0; i < 8; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return id;
+  return crypto.randomUUID().split('-')[0];
 }

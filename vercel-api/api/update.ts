@@ -44,8 +44,9 @@ const LATEST_RELEASE: ReleaseInfo = {
   minRequiredVersion: '0.10.0',
   downloads: {
     darwin: {
-      url: 'https://github.com/anthropics/code-agent/releases/download/v0.10.1/Code.Agent-0.10.1-arm64.dmg',
-      size: 160000000,
+      // 注意: 文件名中的空格需要 URL 编码为 %20
+      url: 'https://github.com/linchen/code-agent/releases/download/v0.10.1/Code%20Agent-0.10.1-arm64.dmg',
+      size: 136000000, // ~136MB 实际大小
     },
   },
 };

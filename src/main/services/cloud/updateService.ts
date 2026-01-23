@@ -286,7 +286,8 @@ export class UpdateService {
 
     try {
       const downloadsPath = app.getPath('downloads');
-      const fileName = path.basename(new URL(downloadUrl).pathname);
+      // 解码 URL 编码的文件名（如 %20 -> 空格）
+      const fileName = decodeURIComponent(path.basename(new URL(downloadUrl).pathname));
       const filePath = path.join(downloadsPath, fileName);
 
       await this.downloadFile(downloadUrl, filePath);

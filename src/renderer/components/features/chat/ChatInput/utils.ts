@@ -172,5 +172,5 @@ export async function extractPdfText(filePath: string): Promise<{ text: string; 
  * 生成唯一的附件 ID
  */
 export function generateAttachmentId(): string {
-  return `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return `att-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
 }

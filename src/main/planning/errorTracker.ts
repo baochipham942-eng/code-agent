@@ -228,6 +228,6 @@ export class ErrorTracker {
   }
 
   private generateId(): string {
-    return `err-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return `err-${Date.now()}-${crypto.randomUUID().split('-')[0]}`;
   }
 }

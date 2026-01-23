@@ -87,7 +87,7 @@ const domainAPI = {
     const request: IPCRequest = {
       action,
       payload,
-      requestId: `req_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+      requestId: `req_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
     };
     return ipcRenderer.invoke(normalizedDomain, request) as Promise<IPCResponse<T>>;
   },

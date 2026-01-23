@@ -27,3 +27,24 @@ export {
   getSecureStorage,
   type SecureStorageService,
 } from './secureStorage';
+
+export {
+  type PermissionPreset,
+  type PermissionConfig,
+  PERMISSION_PRESETS,
+  PRESET_DESCRIPTIONS,
+  getPresetConfig,
+  isPathTrusted,
+  isCommandBlocked,
+  isDangerousCommand,
+} from './permissionPresets';
+
+export {
+  BudgetService,
+  BudgetAlertLevel,
+  initBudgetService,
+  getBudgetService,
+  type BudgetConfig,
+  type BudgetStatus,
+  type TokenUsage,
+} from './budgetService';

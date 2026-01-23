@@ -13,12 +13,14 @@ import type {
   AgentEvent,
   AgentTaskPhase,
 } from '../../shared/types';
+import type { StructuredOutputConfig, StructuredOutputResult } from './structuredOutput';
+import { parseStructuredOutput, toOpenAIResponseFormat, generateFormatCorrectionPrompt } from './structuredOutput';
 import type { ToolRegistry } from '../tools/toolRegistry';
 import type { ToolExecutor } from '../tools/toolExecutor';
 import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/memoryService';
-import { getConfigService, getAuthService, getLangfuseService } from '../services';
+import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel } from '../services';
 import { getProactiveContextService } from '../memory/proactiveContext';
 import { logCollector } from '../mcp/logCollector.js';
 import { generateMessageId } from '../../shared/utils/id';
@@ -27,6 +29,7 @@ import { getMaxIterations } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';
 // User-configurable hooks system (Claude Code v2.0 style)
 import { HookManager, createHookManager } from '../hooks';
+import type { BudgetEventData } from '../../shared/types';
 
 const logger = createLogger('AgentLoop');
 
@@ -110,6 +113,9 @@ export interface AgentLoopConfig {
   workingDirectory: string;
   // Whether the working directory is the default sandbox (not user-specified)
   isDefaultWorkingDirectory?: boolean;
+  // T6: Structured output configuration for adaptive output mode
+  // When enabled, the model will return JSON that conforms to the specified schema
+  structuredOutput?: StructuredOutputConfig;
 }
 
 interface ModelResponse {
@@ -252,6 +258,14 @@ export class AgentLoop {
   private workingDirectory: string;
   private isDefaultWorkingDirectory: boolean;
 
+  // Budget tracking (预算追踪)
+  private budgetWarningEmitted: boolean = false;
+
+  // T6: Structured output configuration
+  private structuredOutput?: StructuredOutputConfig;
+  private structuredOutputRetryCount: number = 0;
+  private maxStructuredOutputRetries: number = 2;
+
   constructor(config: AgentLoopConfig) {
     this.generation = config.generation;
     this.modelConfig = config.modelConfig;
@@ -281,6 +295,9 @@ export class AgentLoop {
     // Tracing metadata
     this.sessionId = config.sessionId || `session-${Date.now()}`;
     this.userId = config.userId;
+
+    // T6: Structured output configuration
+    this.structuredOutput = config.structuredOutput;
   }
 
   /**
@@ -343,6 +360,83 @@ export class AgentLoop {
    */
   isPlanMode(): boolean {
     return this.planModeActive;
+  }
+
+  // --------------------------------------------------------------------------
+  // Structured Output Methods (T6: Adaptive Output Mode)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Set structured output configuration
+   *
+   * Used for adaptive output mode switching:
+   * - For humans: Call with undefined to disable structured output
+   * - For machines/APIs: Call with config to enable JSON schema output
+   *
+   * @param config - Structured output configuration, or undefined to disable
+   */
+  setStructuredOutput(config: StructuredOutputConfig | undefined): void {
+    this.structuredOutput = config;
+    this.structuredOutputRetryCount = 0;
+    logger.debug(` Structured output ${config?.enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  /**
+   * Get current structured output configuration
+   */
+  getStructuredOutput(): StructuredOutputConfig | undefined {
+    return this.structuredOutput;
+  }
+
+  /**
+   * Parse structured output from model response
+   *
+   * @param content - Raw content from model response
+   * @returns Parsed result with success flag and data or errors
+   */
+  private parseModelStructuredOutput<T = unknown>(content: string): StructuredOutputResult<T> {
+    if (!this.structuredOutput?.enabled) {
+      return {
+        success: true,
+        data: content as unknown as T,
+        rawContent: content,
+      };
+    }
+
+    return parseStructuredOutput<T>(content, this.structuredOutput);
+  }
+
+  /**
+   * Check if structured output retry is needed and possible
+   */
+  private shouldRetryStructuredOutput(result: StructuredOutputResult): boolean {
+    if (result.success) return false;
+    if (!this.structuredOutput?.enabled) return false;
+    if (this.structuredOutput.onParseError !== 'retry') return false;
+    if (this.structuredOutputRetryCount >= this.maxStructuredOutputRetries) return false;
+    return true;
+  }
+
+  /**
+   * Inject format correction prompt for structured output retry
+   */
+  private injectStructuredOutputCorrection(result: StructuredOutputResult): void {
+    if (!this.structuredOutput) return;
+
+    this.structuredOutputRetryCount++;
+    const correctionPrompt = generateFormatCorrectionPrompt(
+      result.rawContent || '',
+      this.structuredOutput.schema,
+      result.validationErrors || [result.error || 'Unknown error']
+    );
+
+    this.injectSystemMessage(
+      `<structured-output-correction>\n${correctionPrompt}\n</structured-output-correction>`
+    );
+
+    logger.warn(
+      `[AgentLoop] Structured output parse failed, retry ${this.structuredOutputRetryCount}/${this.maxStructuredOutputRetries}`
+    );
   }
 
   // --------------------------------------------------------------------------
@@ -444,6 +538,18 @@ export class AgentLoop {
     while (!this.isCancelled && !this.circuitBreakerTripped && iterations < this.maxIterations) {
       iterations++;
       logger.debug(` >>>>>> Iteration ${iterations} START <<<<<<`);
+
+      // Budget check before each iteration
+      const budgetBlocked = this.checkAndEmitBudgetStatus();
+      if (budgetBlocked) {
+        logger.warn('[AgentLoop] Budget exceeded, stopping execution');
+        logCollector.agent('WARN', 'Budget exceeded, execution blocked');
+        this.onEvent({
+          type: 'error',
+          data: { message: 'Budget exceeded. Please increase budget or wait for reset.', code: 'BUDGET_EXCEEDED' },
+        });
+        break;
+      }
 
       // Generate turn ID for this iteration
       // Turn-based message model: 每轮迭代对应一条前端消息
@@ -887,6 +993,70 @@ export class AgentLoop {
         duration,
         toolsUsed: [...new Set(this.toolsUsedInTurn)], // 去重
       },
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Budget Methods (预算管理)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Check budget status and emit events if thresholds are reached
+   * @returns true if execution should be blocked due to budget
+   */
+  private checkAndEmitBudgetStatus(): boolean {
+    const budgetService = getBudgetService();
+    const status = budgetService.checkBudget();
+
+    // Build event data
+    const eventData: BudgetEventData = {
+      currentCost: status.currentCost,
+      maxBudget: status.maxBudget,
+      usagePercentage: status.usagePercentage,
+      remaining: status.remaining,
+      alertLevel: status.alertLevel === BudgetAlertLevel.BLOCKED ? 'blocked' :
+                  status.alertLevel === BudgetAlertLevel.WARNING ? 'warning' : 'silent',
+      message: status.message,
+    };
+
+    // Handle different alert levels
+    switch (status.alertLevel) {
+      case BudgetAlertLevel.BLOCKED:
+        // Emit budget_exceeded event and return true to block
+        this.onEvent({ type: 'budget_exceeded', data: eventData });
+        return true;
+
+      case BudgetAlertLevel.WARNING:
+        // Emit budget_warning event (only once per session)
+        if (!this.budgetWarningEmitted) {
+          logger.warn(`[AgentLoop] Budget warning: ${status.message}`);
+          logCollector.agent('WARN', `Budget warning: ${(status.usagePercentage * 100).toFixed(0)}% used`);
+          this.onEvent({ type: 'budget_warning', data: eventData });
+          this.budgetWarningEmitted = true;
+        }
+        return false;
+
+      case BudgetAlertLevel.SILENT:
+        // Silent log already handled by BudgetService
+        return false;
+
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Record token usage after model inference
+   * Called after each successful model call
+   */
+  private recordTokenUsage(inputTokens: number, outputTokens: number): void {
+    const budgetService = getBudgetService();
+    budgetService.recordUsage({
+      inputTokens,
+      outputTokens,
+      model: this.modelConfig.model,
+      provider: this.modelConfig.provider,
+      timestamp: Date.now(),
     });
   }
 
@@ -1713,6 +1883,21 @@ export class AgentLoop {
       );
 
       logger.debug('[AgentLoop] Model response received:', response.type);
+
+      // Record token usage for budget tracking (estimate: ~4 chars per token)
+      const inputChars = modelMessages.reduce((sum, m) => {
+        const content = m.content;
+        if (typeof content === 'string') {
+          return sum + content.length;
+        }
+        // Multimodal: estimate text parts only
+        return sum + content.reduce((acc, part) => acc + (part.text?.length || 0), 0);
+      }, 0);
+      const outputChars = (response.content?.length || 0) +
+        (response.toolCalls?.reduce((sum, tc) => sum + JSON.stringify(tc.arguments || {}).length, 0) || 0);
+      const estimatedInputTokens = Math.ceil(inputChars / 4);
+      const estimatedOutputTokens = Math.ceil(outputChars / 4);
+      this.recordTokenUsage(estimatedInputTokens, estimatedOutputTokens);
 
       // Langfuse: End generation (success)
       langfuse.endGeneration(generationId, {

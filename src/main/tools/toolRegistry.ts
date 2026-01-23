@@ -10,8 +10,8 @@ import type {
 import { getCloudConfigService } from '../services/cloud';
 
 // Import tool definitions - organized by function
-import { bashTool, grepTool } from './shell';
-import { readFileTool, writeFileTool, editFileTool, globTool, listDirectoryTool, readClipboardTool } from './file';
+import { bashTool, grepTool, killShellTool, taskOutputTool } from './shell';
+import { readFileTool, writeFileTool, editFileTool, globTool, listDirectoryTool, readClipboardTool, notebookEditTool } from './file';
 import {
   taskTool,
   todoWriteTool,
@@ -35,6 +35,7 @@ import { memoryStoreTool, memorySearchTool, codeIndexTool, autoLearnTool } from 
 import { screenshotTool, computerUseTool, browserNavigateTool, browserActionTool } from './vision';
 import { spawnAgentTool, agentMessageTool, workflowOrchestrateTool } from './multiagent';
 import { strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternTool } from './evolution';
+import { lspTool } from './lsp';
 
 // ----------------------------------------------------------------------------
 // Tool Interface
@@ -124,6 +125,9 @@ export class ToolRegistry {
     this.register(readFileTool);
     this.register(writeFileTool);
     this.register(editFileTool);
+    this.register(killShellTool);
+    this.register(taskOutputTool);
+    this.register(notebookEditTool);
 
     // Gen 2 tools
     this.register(globTool);
@@ -147,6 +151,7 @@ export class ToolRegistry {
     this.register(webFetchTool);
     this.register(webSearchTool);
     this.register(readPdfTool);
+    this.register(lspTool);
 
     // Gen 5 tools - PPT & Image Generation
     this.register(pptGenerateTool);

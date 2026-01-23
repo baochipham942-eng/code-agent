@@ -152,19 +152,21 @@ const OPENABLE_FILE_EXTENSIONS = [
   '.mp3', '.mp4', '.wav', '.webm',
 ];
 
-// Check if text looks like a file path
+// Check if text looks like an openable file path
+// Only absolute paths or explicit relative paths (starting with ./ or ~/) are considered openable
+// Plain filenames like "example.html" are NOT openable because we can't reliably determine their location
 const isFilePath = (text: string): boolean => {
   const trimmed = text.trim();
-  // Check common file patterns
+  // Only accept explicit paths (absolute or relative with ./ or ~/)
+  // Plain filenames without path prefix are NOT openable
   if (trimmed.startsWith('/') || trimmed.startsWith('./') || trimmed.startsWith('~/')) {
-    return true;
+    // Check if it has a recognized file extension
+    const hasExtension = OPENABLE_FILE_EXTENSIONS.some(ext =>
+      trimmed.toLowerCase().endsWith(ext)
+    );
+    return hasExtension;
   }
-  // Check if it has a file extension
-  const hasExtension = OPENABLE_FILE_EXTENSIONS.some(ext =>
-    trimmed.toLowerCase().endsWith(ext)
-  );
-  // Must have extension and look like a filename (no spaces or special chars that aren't path-related)
-  return hasExtension && /^[\w\-./~]+$/.test(trimmed);
+  return false;
 };
 
 // Check if file is HTML (can be previewed in-app)

@@ -242,6 +242,7 @@ describe('Gen1 - Basic Tools Era', () => {
           file_path: filePath,
           old_string: 'Hello, World!',
           new_string: 'Hi, Universe!',
+          force: true, // bypass read-before-edit check in tests
         },
         context
       );
@@ -259,6 +260,7 @@ describe('Gen1 - Basic Tools Era', () => {
           file_path: filePath,
           old_string: 'nonexistent text',
           new_string: 'replacement',
+          force: true, // bypass read-before-edit check to test old_string matching
         },
         context
       );
@@ -275,6 +277,7 @@ describe('Gen1 - Basic Tools Era', () => {
           file_path: filePath,
           old_string: 'This is a test file.\nGoodbye!',
           new_string: 'This is modified.\nSee you later!',
+          force: true, // bypass read-before-edit check in tests
         },
         context
       );

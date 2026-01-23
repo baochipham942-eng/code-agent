@@ -10,11 +10,17 @@ import type { MessageBubbleProps } from './types';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
 import { CoworkMessageBubble } from './CoworkMessageBubble';
+import { SkillStatusMessage, isSkillStatusContent } from './SkillStatusMessage';
 import { useIsCoworkMode } from '../../../../stores/modeStore';
 
 // Main MessageBubble component - routes to appropriate display
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
   const isCoworkMode = useIsCoworkMode();
+
+  // Skill 系统：检测并渲染 Skill 状态消息
+  if (message.source === 'skill' && isSkillStatusContent(message.content)) {
+    return <SkillStatusMessage content={message.content} />;
+  }
 
   if (message.role === 'user') {
     return <UserMessage message={message} />;
@@ -32,6 +38,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
 export { UserMessage } from './UserMessage';
 export { AssistantMessage } from './AssistantMessage';
 export { CoworkMessageBubble } from './CoworkMessageBubble';
+export { SkillStatusMessage, isSkillStatusContent } from './SkillStatusMessage';
 export { MessageContent, CodeBlock, InlineTextWithCode } from './MessageContent';
 export { ToolCallDisplay } from './ToolCallDisplay/index';
 export { AttachmentDisplay } from './AttachmentPreview';

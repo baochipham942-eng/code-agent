@@ -49,6 +49,8 @@ export interface ExecuteOptions {
   emitEvent?: (event: string, data: unknown) => void;
   // Session ID for cross-session isolation
   sessionId?: string;
+  // Skill 系统支持：预授权工具列表（跳过权限确认）
+  preApprovedTools?: Set<string>;
 }
 
 // ----------------------------------------------------------------------------
@@ -214,7 +216,13 @@ export class ToolExecutor {
     }
 
     // Check permission if required
-    if (tool.requiresPermission) {
+    // Skill 系统：预授权工具跳过权限检查
+    const isPreApproved = this.isToolPreApproved(toolName, params, options.preApprovedTools);
+    if (isPreApproved) {
+      logger.debug('Tool pre-approved by Skill system, skipping permission check', { toolName });
+    }
+
+    if (tool.requiresPermission && !isPreApproved) {
       const permissionRequest = this.buildPermissionRequest(tool, params);
       const approved = await this.requestPermission(permissionRequest);
 
@@ -438,5 +446,60 @@ export class ToolExecutor {
     ];
 
     return dangerousPatterns.some((pattern) => pattern.test(command));
+  }
+
+  /**
+   * 检查工具是否预授权（Skill 系统支持）
+   *
+   * 支持以下匹配模式：
+   * 1. 精确匹配：工具名完全相等（如 "bash", "read_file"）
+   * 2. 通配符匹配：Bash(prefix:*) 格式，匹配以指定前缀开头的命令
+   *    例如：Bash(git:*) 匹配所有以 "git" 开头的 bash 命令
+   *
+   * @param toolName - 工具名称
+   * @param params - 工具参数
+   * @param preApprovedTools - 预授权工具集合
+   * @returns 是否预授权
+   */
+  private isToolPreApproved(
+    toolName: string,
+    params: Record<string, unknown>,
+    preApprovedTools?: Set<string>
+  ): boolean {
+    if (!preApprovedTools || preApprovedTools.size === 0) {
+      return false;
+    }
+
+    // 1. 精确匹配（大小写不敏感）
+    const toolNameLower = toolName.toLowerCase();
+    for (const approved of preApprovedTools) {
+      if (approved.toLowerCase() === toolNameLower) {
+        return true;
+      }
+    }
+
+    // 2. 通配符匹配（如 Bash(git:*)）
+    for (const pattern of preApprovedTools) {
+      // 匹配格式: ToolName(prefix:*)
+      const match = pattern.match(/^(\w+)\(([^:]+):\*\)$/);
+      if (!match) continue;
+
+      const [, patternTool, prefix] = match;
+
+      // 检查工具名是否匹配
+      if (patternTool.toLowerCase() !== toolNameLower) continue;
+
+      // 对于 bash 命令，检查命令前缀
+      if (toolNameLower === 'bash') {
+        const command = (params.command as string) || '';
+        // 去除前导空格后检查前缀
+        const trimmedCommand = command.trimStart();
+        if (trimmedCommand.startsWith(prefix)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 }

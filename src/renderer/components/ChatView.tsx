@@ -43,9 +43,14 @@ export const ChatView: React.FC = () => {
   const { requireAuthAsync } = useRequireAuth();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
 
-  // Filter empty assistant placeholder messages
+  // Filter empty assistant placeholder messages and isMeta messages (Skill system)
   const filteredMessages = useMemo(() => {
     return messages.filter((message) => {
+      // Skill 系统：isMeta 消息不渲染到 UI（仅发送给模型）
+      if (message.isMeta) {
+        return false;
+      }
+
       if (message.role === 'assistant') {
         const hasContent = message.content && message.content.trim().length > 0;
         const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;

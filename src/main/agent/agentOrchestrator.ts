@@ -16,7 +16,7 @@ import { ToolRegistry } from '../tools/toolRegistry';
 import { ToolExecutor } from '../tools/toolExecutor';
 import type { GenerationManager } from '../generation/generationManager';
 import type { ConfigService } from '../services/core/configService';
-import { getSessionManager } from '../services';
+import { getSessionManager, getAuthService } from '../services';
 import type { PlanningService } from '../planning';
 import { DeepResearchMode } from '../research';
 import { ModelRouter } from '../model/modelRouter';
@@ -477,9 +477,28 @@ export class AgentOrchestrator {
 
   private getModelConfig(_settings: ReturnType<ConfigService['getSettings']>): ModelConfig {
     const defaultProvider = 'deepseek';
-    const apiKey = this.configService.getApiKey(defaultProvider);
+    const authService = getAuthService();
+    const currentUser = authService.getCurrentUser();
+    const isAdmin = currentUser?.isAdmin === true;
 
     logger.debug(`Using provider: ${defaultProvider}`);
+    logger.debug(`Is admin: ${isAdmin}`);
+
+    // 管理员使用云端代理，不需要本地 API Key
+    if (isAdmin) {
+      logger.info('Admin user detected, using cloud proxy');
+      return {
+        provider: defaultProvider,
+        model: 'deepseek-chat',
+        apiKey: undefined,
+        useCloudProxy: true,
+        temperature: 0.7,
+        maxTokens: 4096,
+      };
+    }
+
+    // 非管理员使用本地 API Key
+    const apiKey = this.configService.getApiKey(defaultProvider);
     logger.debug(`API Key exists: ${!!apiKey}`);
     logger.debug(`API Key prefix: ${apiKey?.substring(0, 10)}...`);
 

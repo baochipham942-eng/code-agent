@@ -58,14 +58,44 @@ async function handleReadFile(payload: { filePath: string }): Promise<string> {
   return fs.readFile(payload.filePath, 'utf-8');
 }
 
-async function handleOpenPath(payload: { filePath: string }): Promise<string> {
+async function handleOpenPath(
+  payload: { filePath: string },
+  getOrchestrator: () => AgentOrchestrator | null
+): Promise<string> {
   const { shell } = await import('electron');
-  return shell.openPath(payload.filePath);
+  const pathModule = await import('path');
+
+  let resolvedPath = payload.filePath;
+
+  // If path is relative, resolve it against working directory
+  if (!pathModule.isAbsolute(resolvedPath)) {
+    const workingDir = getOrchestrator()?.getWorkingDirectory();
+    if (workingDir) {
+      resolvedPath = pathModule.join(workingDir, resolvedPath);
+    }
+  }
+
+  return shell.openPath(resolvedPath);
 }
 
-async function handleShowItemInFolder(payload: { filePath: string }): Promise<void> {
+async function handleShowItemInFolder(
+  payload: { filePath: string },
+  getOrchestrator: () => AgentOrchestrator | null
+): Promise<void> {
   const { shell } = await import('electron');
-  shell.showItemInFolder(payload.filePath);
+  const pathModule = await import('path');
+
+  let resolvedPath = payload.filePath;
+
+  // If path is relative, resolve it against working directory
+  if (!pathModule.isAbsolute(resolvedPath)) {
+    const workingDir = getOrchestrator()?.getWorkingDirectory();
+    if (workingDir) {
+      resolvedPath = pathModule.join(workingDir, resolvedPath);
+    }
+  }
+
+  shell.showItemInFolder(resolvedPath);
 }
 
 // ----------------------------------------------------------------------------
@@ -101,10 +131,10 @@ export function registerWorkspaceHandlers(
           data = await handleReadFile(payload as { filePath: string });
           break;
         case 'openPath':
-          data = await handleOpenPath(payload as { filePath: string });
+          data = await handleOpenPath(payload as { filePath: string }, getOrchestrator);
           break;
         case 'showItemInFolder':
-          data = await handleShowItemInFolder(payload as { filePath: string });
+          data = await handleShowItemInFolder(payload as { filePath: string }, getOrchestrator);
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
@@ -138,6 +168,6 @@ export function registerWorkspaceHandlers(
 
   /** @deprecated Use IPC_DOMAINS.WORKSPACE with action: 'openPath' */
   ipcMain.handle(IPC_CHANNELS.SHELL_OPEN_PATH, async (_, filePath: string) =>
-    handleOpenPath({ filePath })
+    handleOpenPath({ filePath }, getOrchestrator)
   );
 }

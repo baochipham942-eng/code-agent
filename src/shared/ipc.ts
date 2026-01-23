@@ -400,9 +400,11 @@ export interface IpcInvokeHandlers {
     openrouter?: string;
     langfuse_public?: string;
     langfuse_secret?: string;
+    exa?: string;
+    perplexity?: string;
   }>;
   [IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY]: (payload: {
-    service: 'brave' | 'github' | 'openrouter' | 'langfuse_public' | 'langfuse_secret';
+    service: 'brave' | 'github' | 'openrouter' | 'langfuse_public' | 'langfuse_secret' | 'exa' | 'perplexity';
     apiKey: string;
   }) => Promise<void>;
 

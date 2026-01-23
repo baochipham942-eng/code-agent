@@ -12,6 +12,12 @@ import type {
 } from './toolRegistry';
 import { getToolCache } from '../services';
 import { createLogger } from '../services/infra/logger';
+import {
+  getCommandMonitor,
+  getAuditLogger,
+  maskSensitiveData,
+  type ValidationResult,
+} from '../security';
 
 const logger = createLogger('ToolExecutor');
 
@@ -78,11 +84,19 @@ export class ToolExecutor {
   private toolRegistry: ToolRegistry;
   private requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   private workingDirectory: string;
+  private auditEnabled = true;
 
   constructor(config: ToolExecutorConfig) {
     this.toolRegistry = config.toolRegistry;
     this.requestPermission = config.requestPermission;
     this.workingDirectory = config.workingDirectory;
+  }
+
+  /**
+   * Enable or disable audit logging
+   */
+  setAuditEnabled(enabled: boolean): void {
+    this.auditEnabled = enabled;
   }
 
   /**
@@ -155,12 +169,70 @@ export class ToolExecutor {
       sessionId: options.sessionId,
     };
 
+    // Security: Pre-execution validation for bash commands
+    let commandValidation: ValidationResult | undefined;
+    if (toolName === 'bash' && params.command) {
+      const commandMonitor = getCommandMonitor(options.sessionId);
+      commandValidation = commandMonitor.preExecute(params.command as string);
+
+      // Block critical risk commands
+      if (!commandValidation.allowed) {
+        logger.warn('Command blocked by security', {
+          command: maskSensitiveData((params.command as string).substring(0, 100)),
+          reason: commandValidation.reason,
+          flags: commandValidation.securityFlags,
+        });
+
+        // Log security incident
+        if (this.auditEnabled) {
+          const auditLogger = getAuditLogger();
+          auditLogger.logSecurityIncident({
+            sessionId: options.sessionId || 'unknown',
+            toolName: 'bash',
+            incident: `Blocked command: ${commandValidation.reason}`,
+            details: {
+              command: maskSensitiveData((params.command as string).substring(0, 200)),
+              securityFlags: commandValidation.securityFlags,
+            },
+            riskLevel: commandValidation.riskLevel,
+          });
+        }
+
+        return {
+          success: false,
+          error: `Security: Command blocked - ${commandValidation.reason}`,
+        };
+      }
+
+      // Warn about high-risk commands but allow them
+      if (commandValidation.riskLevel === 'high') {
+        logger.warn('High-risk command detected', {
+          command: maskSensitiveData((params.command as string).substring(0, 100)),
+          flags: commandValidation.securityFlags,
+        });
+      }
+    }
+
     // Check permission if required
     if (tool.requiresPermission) {
       const permissionRequest = this.buildPermissionRequest(tool, params);
       const approved = await this.requestPermission(permissionRequest);
 
       if (!approved) {
+        // Log permission denial
+        if (this.auditEnabled) {
+          const auditLogger = getAuditLogger();
+          auditLogger.log({
+            eventType: 'permission_check',
+            sessionId: options.sessionId || 'unknown',
+            toolName,
+            input: this.sanitizeParams(params),
+            duration: 0,
+            success: false,
+            error: 'Permission denied by user',
+          });
+        }
+
         return {
           success: false,
           error: 'Permission denied by user',
@@ -185,10 +257,13 @@ export class ToolExecutor {
       logger.debug('Cache MISS', { toolName });
     }
 
+    const startTime = Date.now();
     try {
       // Execute the tool
       logger.debug('Calling tool.execute', { toolName });
       const result = await tool.execute(params, context);
+      const duration = Date.now() - startTime;
+
       logger.debug('Tool result', { toolName, success: result.success, error: result.error });
 
       // Cache successful results for cacheable tools
@@ -197,14 +272,72 @@ export class ToolExecutor {
         logger.debug('Cached result', { toolName });
       }
 
+      // Audit logging
+      if (this.auditEnabled) {
+        const auditLogger = getAuditLogger();
+        auditLogger.logToolUsage({
+          sessionId: options.sessionId || 'unknown',
+          toolName,
+          input: this.sanitizeParams(params),
+          output: result.result ? this.truncateOutput(String(result.result)) : undefined,
+          duration,
+          success: result.success,
+          error: result.error,
+          securityFlags: commandValidation?.securityFlags,
+          riskLevel: commandValidation?.riskLevel,
+        });
+      }
+
       return result;
     } catch (error) {
+      const duration = Date.now() - startTime;
       logger.error('Tool threw error', error, { toolName });
+
+      // Audit logging for errors
+      if (this.auditEnabled) {
+        const auditLogger = getAuditLogger();
+        auditLogger.logToolUsage({
+          sessionId: options.sessionId || 'unknown',
+          toolName,
+          input: this.sanitizeParams(params),
+          duration,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          securityFlags: commandValidation?.securityFlags,
+          riskLevel: commandValidation?.riskLevel,
+        });
+      }
+
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
+  }
+
+  /**
+   * Sanitize parameters for logging (mask sensitive data)
+   */
+  private sanitizeParams(params: Record<string, unknown>): Record<string, unknown> {
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(params)) {
+      if (typeof value === 'string') {
+        sanitized[key] = maskSensitiveData(value);
+      } else {
+        sanitized[key] = value;
+      }
+    }
+    return sanitized;
+  }
+
+  /**
+   * Truncate output for logging
+   */
+  private truncateOutput(output: string, maxLength = 1000): string {
+    if (output.length > maxLength) {
+      return output.substring(0, maxLength) + '...[truncated]';
+    }
+    return output;
   }
 
   private buildPermissionRequest(

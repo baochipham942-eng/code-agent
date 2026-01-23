@@ -1,0 +1,39 @@
+{
+  "$schema": "https://code-agent.dev/schemas/settings.json",
+  "description": "Example security configuration for Code Agent",
+
+  "security": {
+    "auditLog": {
+      "enabled": true,
+      "retentionDays": 30,
+      "location": "~/.code-agent/audit/"
+    },
+
+    "sensitiveDetection": {
+      "enabled": true,
+      "customPatterns": [
+        {
+          "name": "internal-api-key",
+          "pattern": "INTERNAL_KEY_[A-Z0-9]{32}",
+          "description": "Internal API keys"
+        }
+      ]
+    },
+
+    "commandMonitor": {
+      "blockedPatterns": [
+        "rm -rf /",
+        "rm -rf /*",
+        ":(){ :|:& };:",
+        "dd if=/dev/zero of=/dev/sda",
+        "> /dev/sda"
+      ],
+      "warningPatterns": [
+        "sudo",
+        "chmod 777",
+        "curl .* | sh",
+        "wget .* | sh"
+      ]
+    }
+  }
+}

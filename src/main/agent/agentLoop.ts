@@ -15,7 +15,7 @@ import type {
 } from '../../shared/types';
 import type { ToolRegistry } from '../tools/toolRegistry';
 import type { ToolExecutor } from '../tools/toolExecutor';
-import { ModelRouter } from '../model/modelRouter';
+import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/memoryService';
 import { getConfigService, getAuthService, getLangfuseService } from '../services';
@@ -25,6 +25,8 @@ import { generateMessageId } from '../../shared/utils/id';
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
 import { getMaxIterations } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';
+// User-configurable hooks system (Claude Code v2.0 style)
+import { HookManager, createHookManager } from '../hooks';
 
 const logger = createLogger('AgentLoop');
 
@@ -99,6 +101,8 @@ export interface AgentLoopConfig {
   planningService?: PlanningService;
   // New: enable/disable hooks
   enableHooks?: boolean;
+  // New: user-configurable hook manager (Claude Code v2.0 style)
+  hookManager?: HookManager;
   // Session metadata for tracing
   sessionId?: string;
   userId?: string;
@@ -186,6 +190,10 @@ export class AgentLoop {
   private stopHookRetryCount: number = 0;
   private maxStopHookRetries: number = 3;
 
+  // User-configurable hooks (Claude Code v2.0 style)
+  private hookManager?: HookManager;
+  private userHooksInitialized: boolean = false;
+
   // Tool call format retry (when model describes tool call as text instead of using tool_use)
   private toolCallRetryCount: number = 0;
   private maxToolCallRetries: number = 2;
@@ -248,9 +256,43 @@ export class AgentLoop {
     this.planningService = config.planningService;
     this.enableHooks = config.enableHooks ?? true;
 
+    // User-configurable hooks (from .claude/settings.json)
+    // Can be provided externally or created on demand
+    this.hookManager = config.hookManager;
+
     // Tracing metadata
     this.sessionId = config.sessionId || `session-${Date.now()}`;
     this.userId = config.userId;
+  }
+
+  /**
+   * Initialize user-configurable hooks if not already done
+   */
+  private async initializeUserHooks(): Promise<void> {
+    if (this.userHooksInitialized) return;
+
+    // Create hook manager if not provided and hooks are enabled
+    if (!this.hookManager && this.enableHooks) {
+      // Use current working directory since Generation doesn't have workingDirectory
+      this.hookManager = createHookManager({
+        workingDirectory: process.cwd(),
+        enabled: this.enableHooks,
+      });
+    }
+
+    // Initialize the hook manager
+    if (this.hookManager) {
+      try {
+        await this.hookManager.initialize();
+        logger.debug('[AgentLoop] User hooks initialized', {
+          stats: this.hookManager.getHookStats(),
+        });
+      } catch (error) {
+        logger.error('[AgentLoop] Failed to initialize user hooks', { error });
+      }
+    }
+
+    this.userHooksInitialized = true;
   }
 
   // --------------------------------------------------------------------------
@@ -321,6 +363,10 @@ export class AgentLoop {
       modelName: this.modelConfig.model,
     }, userMessage);
 
+    // Initialize user-configurable hooks (Claude Code v2.0 style)
+    // This loads hooks from .claude/settings.json
+    await this.initializeUserHooks();
+
     // Task Complexity Analysis - 自动检测任务复杂度并注入提示
     const complexityAnalysis = taskComplexityAnalyzer.analyze(userMessage);
     const isSimpleTask = complexityAnalysis.complexity === 'simple';
@@ -342,11 +388,37 @@ export class AgentLoop {
       this.injectSystemMessage(complexityHint);
     }
 
+    // User-configurable hooks: Trigger UserPromptSubmit
+    // This allows hooks to modify or block user prompts
+    if (this.hookManager) {
+      const promptResult = await this.hookManager.triggerUserPromptSubmit(userMessage, this.sessionId);
+      if (!promptResult.shouldProceed) {
+        logger.info('[AgentLoop] User prompt blocked by hook', { message: promptResult.message });
+        this.onEvent({
+          type: 'notification',
+          data: { message: promptResult.message || 'Prompt blocked by hook' },
+        });
+        return;
+      }
+      if (promptResult.message) {
+        // Hook wants to inject context
+        this.injectSystemMessage(`<user-prompt-hook>\n${promptResult.message}\n</user-prompt-hook>`);
+      }
+    }
+
     // PERFORMANCE OPTIMIZATION: Skip session start hook for simple tasks
     // Planning hooks add ~200-500ms overhead that simple tasks don't need
     const shouldRunHooks = this.enableHooks && this.planningService && !isSimpleTask;
     if (shouldRunHooks) {
       await this.runSessionStartHook();
+    }
+
+    // User-configurable hooks: Trigger SessionStart (runs alongside planning hooks)
+    if (this.hookManager && !isSimpleTask) {
+      const sessionResult = await this.hookManager.triggerSessionStart(this.sessionId);
+      if (sessionResult.message) {
+        this.injectSystemMessage(`<session-start-hook>\n${sessionResult.message}\n</session-start-hook>`);
+      }
     }
 
     let iterations = 0;
@@ -438,7 +510,28 @@ export class AgentLoop {
 
         // 发送生成中进度
         this.emitTaskProgress('generating', '生成回复中...');
-        // PERFORMANCE OPTIMIZATION: Skip stop hook for simple tasks
+
+        // User-configurable Stop hook
+        if (this.hookManager && !isSimpleTask) {
+          try {
+            const userStopResult = await this.hookManager.triggerStop(response.content, this.sessionId);
+            if (!userStopResult.shouldProceed) {
+              // User hook wants to prevent stopping (continue execution)
+              logger.info('[AgentLoop] Stop prevented by user hook', { message: userStopResult.message });
+              if (userStopResult.message) {
+                this.injectSystemMessage(`<stop-hook>\n${userStopResult.message}\n</stop-hook>`);
+              }
+              continue; // Force another iteration
+            }
+            if (userStopResult.message) {
+              this.injectSystemMessage(`<stop-hook>\n${userStopResult.message}\n</stop-hook>`);
+            }
+          } catch (error) {
+            logger.error('[AgentLoop] User stop hook error:', error);
+          }
+        }
+
+        // PERFORMANCE OPTIMIZATION: Skip planning stop hook for simple tasks
         // Stop hook reads plan from disk which adds ~100-200ms latency
         if (shouldRunHooks) {
           const stopResult = await this.planningService!.hooks.onStop();
@@ -584,12 +677,16 @@ export class AgentLoop {
         });
 
         // Create tool result message
+        // 清理大型二进制数据（如 imageBase64）以避免上下文超限
+        // 前端已通过 tool_call_end 事件获取完整数据用于渲染
+        const sanitizedResults = this.sanitizeToolResultsForHistory(toolResults);
+
         const toolMessage: Message = {
           id: this.generateId(),
           role: 'tool',
-          content: JSON.stringify(toolResults),
+          content: JSON.stringify(sanitizedResults),
           timestamp: Date.now(),
-          toolResults,
+          toolResults: sanitizedResults,
         };
         this.messages.push(toolMessage);
 
@@ -657,6 +754,15 @@ export class AgentLoop {
       this.runSessionEndLearning().catch((err) => {
         logger.error('[AgentLoop] Session end learning error:', err);
       });
+    }
+
+    // User-configurable hooks: Trigger SessionEnd
+    if (this.hookManager) {
+      try {
+        await this.hookManager.triggerSessionEnd(this.sessionId);
+      } catch (error) {
+        logger.error('[AgentLoop] Session end hook error:', error);
+      }
     }
 
     // Signal completion to frontend
@@ -894,7 +1000,52 @@ export class AgentLoop {
   ): Promise<ToolResult> {
     logger.debug(` [${index + 1}/${total}] Processing tool: ${toolCall.name}, id: ${toolCall.id}`);
 
-    // Pre-Tool Hook (only for sequential tools to avoid race conditions)
+    // User-configurable Pre-Tool Hook (can block tool execution)
+    // Run before planning hooks so user hooks can veto tool calls
+    if (this.hookManager && !isParallelSafeTool(toolCall.name)) {
+      try {
+        const toolInput = JSON.stringify(toolCall.arguments);
+        const userHookResult = await this.hookManager.triggerPreToolUse(
+          toolCall.name,
+          toolInput,
+          this.sessionId
+        );
+
+        if (!userHookResult.shouldProceed) {
+          // User hook blocked this tool call
+          logger.info('[AgentLoop] Tool blocked by user hook', {
+            tool: toolCall.name,
+            message: userHookResult.message,
+          });
+
+          const blockedResult: ToolResult = {
+            toolCallId: toolCall.id,
+            success: false,
+            error: `Tool blocked by hook: ${userHookResult.message || 'User-defined hook rejected this tool call'}`,
+            duration: userHookResult.totalDuration,
+          };
+
+          this.injectSystemMessage(
+            `<tool-blocked-by-hook>\n` +
+            `⚠️ The tool "${toolCall.name}" was blocked by a user-defined hook.\n` +
+            `Reason: ${userHookResult.message || 'No reason provided'}\n` +
+            `You may need to adjust your approach or ask the user for guidance.\n` +
+            `</tool-blocked-by-hook>`
+          );
+
+          this.onEvent({ type: 'tool_call_end', data: blockedResult });
+          return blockedResult;
+        }
+
+        if (userHookResult.message) {
+          this.injectSystemMessage(`<pre-tool-hook>\n${userHookResult.message}\n</pre-tool-hook>`);
+        }
+      } catch (error) {
+        logger.error('[AgentLoop] User pre-tool hook error:', error);
+      }
+    }
+
+    // Planning Pre-Tool Hook (only for sequential tools to avoid race conditions)
     if (this.enableHooks && this.planningService && !isParallelSafeTool(toolCall.name)) {
       try {
         const preResult = await this.planningService.hooks.preToolUse({
@@ -1169,7 +1320,27 @@ export class AgentLoop {
         }
       }
 
-      // Post-Tool Hook
+      // User-configurable Post-Tool Hook (for successful tool execution)
+      if (this.hookManager) {
+        try {
+          const toolInput = JSON.stringify(toolCall.arguments);
+          const toolOutput = result.output || '';
+          const userPostResult = await this.hookManager.triggerPostToolUse(
+            toolCall.name,
+            toolInput,
+            toolOutput,
+            this.sessionId
+          );
+
+          if (userPostResult.message) {
+            this.injectSystemMessage(`<post-tool-hook>\n${userPostResult.message}\n</post-tool-hook>`);
+          }
+        } catch (error) {
+          logger.error('[AgentLoop] User post-tool hook error:', error);
+        }
+      }
+
+      // Planning Post-Tool Hook
       if (this.enableHooks && this.planningService) {
         try {
           const postResult = await this.planningService.hooks.postToolUse({
@@ -1245,7 +1416,27 @@ export class AgentLoop {
         this.consecutiveToolFailures = 0;
       }
 
-      // Error Hook
+      // User-configurable Post-Tool Failure Hook
+      if (this.hookManager) {
+        try {
+          const toolInput = JSON.stringify(toolCall.arguments);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          const userFailResult = await this.hookManager.triggerPostToolUseFailure(
+            toolCall.name,
+            toolInput,
+            errorMessage,
+            this.sessionId
+          );
+
+          if (userFailResult.message) {
+            this.injectSystemMessage(`<post-tool-failure-hook>\n${userFailResult.message}\n</post-tool-failure-hook>`);
+          }
+        } catch (hookError) {
+          logger.error('[AgentLoop] User post-tool failure hook error:', hookError);
+        }
+      }
+
+      // Planning Error Hook
       if (this.enableHooks && this.planningService) {
         try {
           const errorResult = await this.planningService.hooks.onError({
@@ -1475,6 +1666,33 @@ export class AgentLoop {
         'ERROR',
         error instanceof Error ? error.message : 'Unknown error'
       );
+
+      // 特殊处理：上下文长度超限错误
+      if (error instanceof ContextLengthExceededError) {
+        logger.warn(`[AgentLoop] Context length exceeded: ${error.requestedTokens} > ${error.maxTokens}`);
+        logCollector.agent('ERROR', `Context length exceeded: requested ${error.requestedTokens}, max ${error.maxTokens}`);
+
+        // 发送友好的错误事件给前端
+        this.onEvent({
+          type: 'error',
+          data: {
+            code: 'CONTEXT_LENGTH_EXCEEDED',
+            message: '对话内容过长，已超出模型上下文限制。',
+            suggestion: '建议新开一个会话继续对话，或清理当前会话的历史消息。',
+            details: {
+              requested: error.requestedTokens,
+              max: error.maxTokens,
+              provider: error.provider,
+            },
+          },
+        });
+
+        // 发送任务失败状态
+        this.emitTaskProgress('failed', '上下文超限');
+
+        // 不再抛出错误，让循环正常结束
+        return { type: 'text', content: '' };
+      }
 
       throw error;
     }
@@ -2024,6 +2242,94 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
 
   private generateId(): string {
     return generateMessageId();
+  }
+
+  // --------------------------------------------------------------------------
+  // Tool Result Sanitization (Token Optimization)
+  // --------------------------------------------------------------------------
+
+  /**
+   * 需要从工具结果中过滤的大型二进制数据字段
+   * 这些字段通常包含 base64 编码的图片、音频等数据
+   */
+  private static readonly LARGE_DATA_FIELDS = [
+    'imageBase64',      // image_generate 返回的图片
+    'screenshotData',   // screenshot (Gen6) 返回的截图
+    'pdfImages',        // read_pdf 视觉模式返回的页面图片
+    'audioData',        // 未来的音频工具
+    'videoData',        // 未来的视频工具
+    'base64',           // 通用 base64 字段
+    'data',             // 可能包含大型数据的通用字段（需要检测）
+  ];
+
+  /**
+   * 大型数据阈值（字节）
+   * 超过此大小的字符串字段会被检测是否为 base64 数据
+   */
+  private static readonly LARGE_DATA_THRESHOLD = 10000; // ~10KB
+
+  /**
+   * 清理工具结果用于历史存储
+   *
+   * 设计原则：
+   * 1. 大型二进制数据（base64 图片等）只保留引用，不存入历史
+   * 2. 前端通过 tool_call_end 事件获取完整数据用于渲染
+   * 3. 模型只需要知道"图片已生成"，不需要看到图片内容
+   *
+   * @param result 原始工具结果
+   * @returns 清理后的工具结果（不含大型二进制数据）
+   */
+  private sanitizeToolResultForHistory(result: ToolResult): ToolResult {
+    // 如果没有 metadata，无需处理
+    if (!result.metadata) {
+      return result;
+    }
+
+    // 深拷贝避免修改原始数据
+    const sanitized: ToolResult = {
+      ...result,
+      metadata: { ...result.metadata },
+    };
+
+    // 过滤已知的大型数据字段
+    for (const field of AgentLoop.LARGE_DATA_FIELDS) {
+      if (sanitized.metadata![field]) {
+        const data = sanitized.metadata![field];
+        if (typeof data === 'string' && data.length > 100) {
+          // 替换为占位符，保留大小信息便于调试
+          const sizeKB = (data.length / 1024).toFixed(1);
+          sanitized.metadata![field] = `[BINARY_DATA_FILTERED: ${sizeKB}KB]`;
+        }
+      }
+    }
+
+    // 检查其他可能的大型字段（动态检测）
+    for (const [key, value] of Object.entries(sanitized.metadata!)) {
+      // 跳过已处理的字段
+      if (AgentLoop.LARGE_DATA_FIELDS.includes(key)) continue;
+
+      // 检测大型字符串
+      if (typeof value === 'string' && value.length > AgentLoop.LARGE_DATA_THRESHOLD) {
+        // 检测是否为 base64 数据
+        const isBase64 = value.startsWith('data:') ||
+          /^[A-Za-z0-9+/]{1000,}={0,2}$/.test(value.slice(0, 1100));
+
+        if (isBase64) {
+          const sizeKB = (value.length / 1024).toFixed(1);
+          sanitized.metadata![key] = `[LARGE_BASE64_FILTERED: ${sizeKB}KB]`;
+          logger.debug(`[AgentLoop] Filtered large base64 field: ${key} (${sizeKB}KB)`);
+        }
+      }
+    }
+
+    return sanitized;
+  }
+
+  /**
+   * 批量清理工具结果
+   */
+  private sanitizeToolResultsForHistory(results: ToolResult[]): ToolResult[] {
+    return results.map(r => this.sanitizeToolResultForHistory(r));
   }
 
   /**

@@ -403,14 +403,27 @@ export const useAgent = () => {
 
           case 'error': {
             // Handle error - display it in the chat
-            logger.error('Agent error', { message: event.data?.message });
+            logger.error('Agent error', { message: event.data?.message, code: event.data?.code });
             // 只有当前会话的错误才更新消息
             if (!event.sessionId || event.sessionId === currentSessionId) {
               const lastMessage = currentMessages[currentMessages.length - 1];
               if (lastMessage?.role === 'assistant') {
-                updateMessage(lastMessage.id, {
-                  content: `Error: ${event.data?.message || 'Unknown error'}`,
-                });
+                // 根据错误类型生成友好的提示
+                let errorContent: string;
+                if (event.data?.code === 'CONTEXT_LENGTH_EXCEEDED') {
+                  // 上下文超限错误：显示友好提示
+                  const details = event.data.details;
+                  const requestedK = details?.requested ? Math.round(details.requested / 1000) : '?';
+                  const maxK = details?.max ? Math.round(details.max / 1000) : '?';
+                  errorContent =
+                    `⚠️ **${event.data.message}**\n\n` +
+                    `当前对话长度约 ${requestedK}K tokens，超出模型限制 ${maxK}K tokens。\n\n` +
+                    `${event.data.suggestion || '建议新开一个会话继续对话。'}`;
+                } else {
+                  // 其他错误：显示原始错误信息
+                  errorContent = `Error: ${event.data?.message || 'Unknown error'}`;
+                }
+                updateMessage(lastMessage.id, { content: errorContent });
               }
             }
             clearSessionProcessing();

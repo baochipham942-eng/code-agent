@@ -1,0 +1,64 @@
+{
+  "$schema": "https://code-agent.dev/schemas/settings.json",
+  "description": "Example hooks configuration for Code Agent",
+
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/validate-command.sh",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"File operation: $TOOL_NAME on $FILE_PATH\" >> ~/.code-agent/file-ops.log"
+          }
+        ]
+      }
+    ],
+
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/log-tool-usage.sh"
+          }
+        ]
+      }
+    ],
+
+    "SessionStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/session-init.sh"
+          }
+        ]
+      }
+    ],
+
+    "SessionEnd": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./scripts/session-cleanup.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -28,7 +28,8 @@ export type AgentTaskPhase =
   | 'tool_pending'  // 等待工具执行
   | 'tool_running'  // 工具执行中
   | 'generating'    // 生成回复中
-  | 'completed';    // 完成
+  | 'completed'     // 完成
+  | 'failed';       // 失败
 
 // 任务进度事件数据
 export interface TaskProgressData {
@@ -57,12 +58,51 @@ export interface MemoryLearnedData {
   toolPreferencesUpdated: number;
 }
 
+// Deep Research 相关类型
+export type ResearchPhase = 'planning' | 'researching' | 'reporting' | 'complete' | 'error';
+
+export type ReportStyle =
+  | 'default'
+  | 'academic'
+  | 'popular_science'
+  | 'news'
+  | 'social_media'
+  | 'strategic_investment';
+
+export interface ResearchProgressData {
+  phase: ResearchPhase;
+  message: string;
+  percent: number;
+  currentStep?: {
+    title: string;
+    status: 'running' | 'completed' | 'failed';
+  };
+}
+
+export interface ResearchModeStartedData {
+  topic: string;
+  reportStyle: ReportStyle;
+}
+
+export interface ResearchCompleteData {
+  success: boolean;
+  report?: {
+    title: string;
+    content: string;
+    sources: Array<{ title: string; url: string }>;
+  };
+}
+
+export interface ResearchErrorData {
+  error: string;
+}
+
 export type AgentEvent =
   | { type: 'message'; data: Message }
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string } }
   | { type: 'tool_call_end'; data: ToolResult }
   | { type: 'permission_request'; data: PermissionRequest }
-  | { type: 'error'; data: { message: string; code?: string; details?: { path?: string; command?: string; url?: string; changes?: string } | string } }
+  | { type: 'error'; data: { message: string; code?: string; suggestion?: string; details?: Record<string, unknown> } }
   | { type: 'stream_chunk'; data: { content: string | undefined; turnId?: string } }
   | { type: 'stream_tool_call_start'; data: { index?: number; id?: string; name?: string; turnId?: string } }
   | { type: 'stream_tool_call_delta'; data: { index?: number; name?: string; argumentsDelta?: string; turnId?: string } }
@@ -80,7 +120,12 @@ export type AgentEvent =
   | { type: 'task_progress'; data: TaskProgressData }
   | { type: 'task_complete'; data: TaskCompleteData }
   // Gen5+ Memory 学习事件
-  | { type: 'memory_learned'; data: MemoryLearnedData };
+  | { type: 'memory_learned'; data: MemoryLearnedData }
+  // Deep Research 事件
+  | { type: 'research_mode_started'; data: ResearchModeStartedData }
+  | { type: 'research_progress'; data: ResearchProgressData }
+  | { type: 'research_complete'; data: ResearchCompleteData }
+  | { type: 'research_error'; data: ResearchErrorData };
 
 // Subagent Types (for Gen 3+)
 export type SubagentType = 'explore' | 'bash' | 'plan' | 'code-review';

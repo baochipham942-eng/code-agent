@@ -173,13 +173,13 @@ describe('GenerationManager', () => {
       const prompt = manager.getPrompt('gen5');
       expect(prompt).toContain('memory_store');
       expect(prompt).toContain('memory_search');
-      expect(prompt).toContain('Memory');
+      expect(prompt).toContain('记忆');
     });
 
     it('gen8 prompt should contain self-evolution description', () => {
       const prompt = manager.getPrompt('gen8');
       expect(prompt).toContain('strategy_optimize');
-      expect(prompt).toContain('Self-Evolution');
+      expect(prompt).toContain('自我进化');
     });
 
     it('should throw for invalid generation prompt', () => {

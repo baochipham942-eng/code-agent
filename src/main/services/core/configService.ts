@@ -359,10 +359,10 @@ export class ConfigService {
   }
 
   /**
-   * Get API key for non-model services (Brave, Langfuse, etc.)
+   * Get API key for non-model services (Brave, Langfuse, EXA, Perplexity, etc.)
    * Priority: secure storage > environment variable
    */
-  getServiceApiKey(service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github'): string | undefined {
+  getServiceApiKey(service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' | 'exa' | 'perplexity'): string | undefined {
     const storage = getSecureStorage();
 
     // Check secure storage first
@@ -375,6 +375,9 @@ export class ConfigService {
       langfuse_public: 'LANGFUSE_PUBLIC_KEY',
       langfuse_secret: 'LANGFUSE_SECRET_KEY',
       github: 'GITHUB_TOKEN',
+      openrouter: 'OPENROUTER_API_KEY',
+      exa: 'EXA_API_KEY',
+      perplexity: 'PERPLEXITY_API_KEY',
     };
 
     const envKey = envKeyMap[service];
@@ -384,7 +387,7 @@ export class ConfigService {
   /**
    * Set API key for non-model services
    */
-  async setServiceApiKey(service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github', apiKey: string): Promise<void> {
+  async setServiceApiKey(service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' | 'exa' | 'perplexity', apiKey: string): Promise<void> {
     const storage = getSecureStorage();
     storage.setApiKey(service, apiKey);
   }

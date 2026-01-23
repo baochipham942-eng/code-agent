@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Wrench, Check, AlertCircle, Loader2 } from 'lucide-react';
 import type { Message } from './types';
 import { MessageContent } from './MessageContent';
-import { ToolCallDisplay } from './ToolCallDisplay';
+import { ToolCallDisplay } from './ToolCallDisplay/index';
 import { summarizeToolCall } from '../../../../utils/toolSummary';
 
 interface CoworkMessageBubbleProps {

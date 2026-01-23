@@ -42,6 +42,11 @@ export { ErrorsPanel } from './ErrorsPanel';
 export { ForceUpdateModal } from './ForceUpdateModal';
 
 // -----------------------------------------------------------------------------
+// Permission Dialog
+// -----------------------------------------------------------------------------
+export { PermissionDialog } from './PermissionDialog';
+
+// -----------------------------------------------------------------------------
 // Notification Components
 // -----------------------------------------------------------------------------
 export { UpdateNotification } from './UpdateNotification';

@@ -1,11 +1,11 @@
 // ============================================================================
 // ChatInput - 消息输入组件主入口
 // 支持多模态输入：文本、图片、代码、PDF、文件夹
-// 支持模式切换：正常模式 / 深度研究模式
+// 支持语义自动触发深度研究模式
 // ============================================================================
 
 import React, { useState, useRef, useCallback } from 'react';
-import { Image, Sparkles, CornerDownLeft, FileText } from 'lucide-react';
+import { Image, Sparkles, CornerDownLeft, FileText, Microscope, Settings2 } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/types';
 import { UI } from '@shared/constants';
 
@@ -30,6 +30,10 @@ export interface ChatInputProps {
   hasPlan?: boolean;
   /** 点击 Plan 入口 */
   onPlanClick?: () => void;
+  /** 是否启用语义自动检测（默认 true） */
+  autoDetectEnabled?: boolean;
+  /** 切换自动检测设置 */
+  onToggleAutoDetect?: (enabled: boolean) => void;
 }
 
 // ============================================================================
@@ -43,11 +47,16 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onStop,
   hasPlan,
   onPlanClick,
+  autoDetectEnabled = true,
+  onToggleAutoDetect,
 }) => {
   const [value, setValue] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const [mode, setMode] = useState<ChatMode>('normal');
+  const [reportStyle, setReportStyle] = useState<ReportStyle>('default');
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const inputAreaRef = useRef<InputAreaRef>(null);
   const { processFile, processFolderEntry } = useFileUpload();
 
@@ -169,6 +178,88 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           </button>
         )}
 
+        {/* 语义自动检测指示器 */}
+        {autoDetectEnabled && mode === 'normal' && (
+          <div className="flex items-center gap-2 text-2xs text-zinc-500">
+            <Microscope className="w-3 h-3 text-primary-400" />
+            <span>深度研究将根据问题自动触发</span>
+          </div>
+        )}
+
+        {/* 高级选项区域（折叠） */}
+        {showAdvancedOptions && (
+          <div className="p-3 bg-surface-800/50 border border-zinc-700/30 rounded-lg space-y-3 animate-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-zinc-400">高级选项</span>
+              <button
+                type="button"
+                onClick={() => setShowAdvancedOptions(false)}
+                className="text-xs text-zinc-500 hover:text-zinc-300"
+              >
+                收起
+              </button>
+            </div>
+
+            {/* 模式切换 */}
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-zinc-500">研究模式</span>
+              <ModeSwitch
+                mode={mode}
+                onModeChange={handleModeChange}
+                disabled={isProcessing}
+              />
+            </div>
+
+            {/* 自动检测开关 */}
+            {onToggleAutoDetect && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-zinc-500">语义自动检测</span>
+                <button
+                  type="button"
+                  onClick={() => onToggleAutoDetect(!autoDetectEnabled)}
+                  disabled={isProcessing}
+                  className={`
+                    relative w-10 h-5 rounded-full transition-colors
+                    ${autoDetectEnabled ? 'bg-primary-500' : 'bg-zinc-600'}
+                    ${isProcessing ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                  `}
+                >
+                  <div
+                    className={`
+                      absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform
+                      ${autoDetectEnabled ? 'translate-x-5' : 'translate-x-0.5'}
+                    `}
+                  />
+                </button>
+              </div>
+            )}
+
+            {/* 深度研究模式的报告风格选择 */}
+            {isDeepResearch && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-zinc-500">报告风格</span>
+                <ReportStyleSelector
+                  value={reportStyle}
+                  onChange={setReportStyle}
+                  disabled={isProcessing}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 深度研究模式提示（手动选择时） */}
+        {isDeepResearch && (
+          <div className="px-3 py-2 bg-primary-500/10 border border-primary-500/20 rounded-lg">
+            <div className="flex items-center gap-2">
+              <Microscope className="w-4 h-4 text-primary-400" />
+              <p className="text-xs text-primary-400">
+                深度研究模式：输入研究主题，AI 将自动规划研究步骤、搜索信息、分析数据并生成结构化报告。
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* 附件预览区 */}
         <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
 
@@ -197,6 +288,17 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             onFocusChange={setIsFocused}
             actionButtons={
               <>
+                {/* 高级选项按钮 */}
+                {!showAdvancedOptions && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedOptions(true)}
+                    className="p-2 text-zinc-500 hover:text-zinc-300 hover:bg-surface-700 rounded-lg transition-colors"
+                    title="高级选项"
+                  >
+                    <Settings2 className="w-4 h-4" />
+                  </button>
+                )}
                 {/* 语音输入按钮 */}
                 {!disabled && (
                   <VoiceInputButton

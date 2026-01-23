@@ -10,7 +10,7 @@ import type {
   PermissionResponse,
   ModelConfig,
 } from '../../shared/types';
-import type { ReportStyle, AgentRunOptions } from '../research/types';
+import type { ReportStyle, AgentRunOptions, ResearchUserSettings } from '../research/types';
 import { AgentLoop } from './agentLoop';
 import { ToolRegistry } from '../tools/toolRegistry';
 import { ToolExecutor } from '../tools/toolExecutor';
@@ -18,7 +18,7 @@ import type { GenerationManager } from '../generation/generationManager';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager, getAuthService } from '../services';
 import type { PlanningService } from '../planning';
-import { DeepResearchMode } from '../research';
+import { DeepResearchMode, SemanticResearchOrchestrator } from '../research';
 import { ModelRouter } from '../model/modelRouter';
 import { generateMessageId, generatePermissionRequestId } from '../../shared/utils/id';
 import { app } from 'electron';
@@ -80,6 +80,7 @@ export class AgentOrchestrator {
   private toolExecutor: ToolExecutor;
   private agentLoop: AgentLoop | null = null;
   private deepResearchMode: DeepResearchMode | null = null;
+  private semanticResearchOrchestrator: SemanticResearchOrchestrator | null = null;
   private onEvent: (event: AgentEvent) => void;
   private workingDirectory: string;
   private isDefaultWorkingDirectory: boolean = true; // Track if using default sandbox
@@ -89,6 +90,10 @@ export class AgentOrchestrator {
     request: PermissionRequest;
   }> = new Map();
   private planningService?: PlanningService;
+  private researchUserSettings: Partial<ResearchUserSettings> = {
+    autoDetect: true,
+    confirmBeforeStart: false,
+  };
 
   constructor(config: AgentOrchestratorConfig) {
     this.generationManager = config.generationManager;
@@ -198,15 +203,105 @@ export class AgentOrchestrator {
       this.onEvent({ ...event, sessionId } as AgentEvent & { sessionId?: string });
     };
 
-    // Check if deep research mode is requested
+    // Check if deep research mode is requested or should be auto-detected
     const mode = options?.mode ?? 'normal';
 
     if (mode === 'deep-research') {
-      // Deep Research Mode
+      // Manual deep research mode
       await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig, generation);
+    } else if (this.researchUserSettings.autoDetect && mode === 'normal') {
+      // Semantic auto-detection: check if research is needed
+      const shouldResearch = await this.checkAndRunSemanticResearch(
+        content,
+        options?.reportStyle,
+        sessionAwareOnEvent,
+        modelConfig,
+        generation,
+        sessionId
+      );
+
+      if (!shouldResearch) {
+        // Research not triggered, run normal mode
+        await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, generation, sessionId);
+      }
     } else {
       // Normal Mode: Create and run agent loop
       await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, generation, sessionId);
+    }
+  }
+
+  /**
+   * 检查并运行语义研究模式
+   *
+   * @returns true 如果研究模式被触发并执行，false 否则
+   */
+  private async checkAndRunSemanticResearch(
+    content: string,
+    reportStyle: ReportStyle | undefined,
+    onEvent: (event: AgentEvent) => void,
+    modelConfig: ModelConfig,
+    generation: ReturnType<GenerationManager['getCurrentGeneration']>,
+    sessionId?: string
+  ): Promise<boolean> {
+    // Create model router
+    const modelRouter = new ModelRouter();
+
+    // Create semantic research orchestrator
+    this.semanticResearchOrchestrator = new SemanticResearchOrchestrator({
+      modelRouter,
+      toolExecutor: this.toolExecutor,
+      onEvent,
+      generation,
+      userSettings: this.researchUserSettings,
+    });
+
+    try {
+      // Run semantic analysis and potential research
+      const result = await this.semanticResearchOrchestrator.run(
+        content,
+        false, // Don't force research
+        reportStyle
+      );
+
+      if (result.researchTriggered && result.success && result.report) {
+        // Research was triggered and completed successfully
+        // Add report as assistant message
+        const reportMessage: Message = {
+          id: this.generateId(),
+          role: 'assistant',
+          content: result.report.content,
+          timestamp: Date.now(),
+        };
+        this.messages.push(reportMessage);
+
+        // Emit message event
+        onEvent({
+          type: 'message',
+          data: reportMessage,
+        });
+
+        logger.info('Semantic research completed:', {
+          duration: result.duration,
+          intent: result.classification?.intent,
+        });
+
+        // Emit completion event
+        onEvent({ type: 'agent_complete', data: null });
+
+        return true;
+      }
+
+      // Research was not triggered or failed
+      if (result.researchTriggered && !result.success) {
+        logger.warn('Semantic research failed:', result.error);
+      }
+
+      return false;
+    } catch (error) {
+      logger.error('Semantic research exception:', error);
+      return false;
+    } finally {
+      this.semanticResearchOrchestrator = null;
     }
   }
 
@@ -333,6 +428,27 @@ export class AgentOrchestrator {
       this.deepResearchMode.cancel();
       this.deepResearchMode = null;
     }
+    if (this.semanticResearchOrchestrator) {
+      this.semanticResearchOrchestrator.cancel();
+      this.semanticResearchOrchestrator = null;
+    }
+  }
+
+  /**
+   * 设置研究用户设置
+   *
+   * @param settings - 研究设置
+   */
+  setResearchUserSettings(settings: Partial<ResearchUserSettings>): void {
+    this.researchUserSettings = { ...this.researchUserSettings, ...settings };
+    logger.debug('Research user settings updated:', this.researchUserSettings);
+  }
+
+  /**
+   * 获取研究用户设置
+   */
+  getResearchUserSettings(): Partial<ResearchUserSettings> {
+    return { ...this.researchUserSettings };
   }
 
   /**

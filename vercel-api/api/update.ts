@@ -27,26 +27,30 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.10.1',
-  publishedAt: '2026-01-23T18:00:00.000Z',
+  version: '0.10.2',
+  publishedAt: '2026-01-24T00:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.10.1
+## Code Agent v0.10.2
 
-### 管理员 API Key 自动同步
-- 管理员登录后自动从云端同步系统 API Key
-- 修复云端 isAdmin 判断逻辑，支持从数据库读取管理员状态
-- 添加 getAccessToken() 方法用于云端 API 调用
+### 安全性增强
+- 使用 crypto.randomUUID() 替换所有 Math.random() ID 生成
+- 为未保护的 JSON.parse 调用添加 try-catch
 
-### Bug 修复
-- 修复管理员用户无法获取系统 API Key 的问题
+### 前端稳定性
+- 添加 ErrorBoundary 组件包装应用主内容
+- 修复 useCloudTasks 计时器泄漏问题
+
+### 资源管理
+- 修复 MCP 连接超时后的清理逻辑
+- 修复更新下载链接和文件名编码问题
   `.trim(),
-  forceUpdate: true,
+  forceUpdate: false, // 可选更新
   minRequiredVersion: '0.10.0',
   downloads: {
     darwin: {
       // 注意: 文件名中的空格需要 URL 编码为 %20
-      url: 'https://github.com/linchen/code-agent/releases/download/v0.10.1/Code%20Agent-0.10.1-arm64.dmg',
-      size: 136000000, // ~136MB 实际大小
+      url: 'https://github.com/linchen/code-agent/releases/download/v0.10.2/Code%20Agent-0.10.2-arm64.dmg',
+      size: 136000000, // ~130MB
     },
   },
 };

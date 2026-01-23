@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ChevronDown, Check, AlertTriangle, Loader2 } from 'lucide-react';
 import type { AssistantMessageProps } from './types';
 import { MessageContent } from './MessageContent';
-import { ToolCallDisplay } from './ToolCallDisplay';
+import { ToolCallDisplay } from './ToolCallDisplay/index';
 import { useIsCoworkMode } from '../../../../stores/modeStore';
 
 /**

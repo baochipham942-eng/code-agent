@@ -305,10 +305,13 @@ export class MCPClient {
     } catch (error) {
       // 确保 transport 被关闭，防止资源泄漏
       // 注意：超时情况下 connectWithTimeout 已尝试关闭，这里做二次保障
-      try {
-        await transport!.close();
-      } catch {
-        // 忽略关闭错误（可能 transport 未创建或已关闭）
+      if (this.transports.has(config.name)) {
+        try {
+          await this.transports.get(config.name)?.close();
+          this.transports.delete(config.name);
+        } catch {
+          // 忽略关闭错误（可能 transport 未创建或已关闭）
+        }
       }
 
       // 更新状态为错误

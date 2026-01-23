@@ -832,6 +832,76 @@ export class DatabaseService {
     }));
   }
 
+  /**
+   * 获取所有项目知识
+   */
+  getAllProjectKnowledge(): ProjectKnowledge[] {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare('SELECT * FROM project_knowledge ORDER BY updated_at DESC');
+    const rows = stmt.all() as SQLiteRow[];
+
+    return rows.map((row): ProjectKnowledge => ({
+      id: row.id as string,
+      projectPath: row.project_path as string,
+      key: row.key as string,
+      value: JSON.parse(row.value as string),
+      source: row.source as ProjectKnowledge['source'],
+      confidence: row.confidence as number,
+      createdAt: row.created_at as number,
+      updatedAt: row.updated_at as number,
+    }));
+  }
+
+  /**
+   * 更新项目知识
+   */
+  updateProjectKnowledge(id: string, value: string): boolean {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare(`
+      UPDATE project_knowledge
+      SET value = ?, updated_at = ?
+      WHERE id = ?
+    `);
+
+    const result = stmt.run(JSON.stringify(value), Date.now(), id);
+    return result.changes > 0;
+  }
+
+  /**
+   * 删除项目知识
+   */
+  deleteProjectKnowledge(id: string): boolean {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare('DELETE FROM project_knowledge WHERE id = ?');
+    const result = stmt.run(id);
+    return result.changes > 0;
+  }
+
+  /**
+   * 按来源删除项目知识
+   */
+  deleteProjectKnowledgeBySource(source: string): number {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare('DELETE FROM project_knowledge WHERE source = ?');
+    const result = stmt.run(source);
+    return result.changes;
+  }
+
+  /**
+   * 删除用户偏好
+   */
+  deletePreference(key: string): boolean {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare('DELETE FROM user_preferences WHERE key = ?');
+    const result = stmt.run(key);
+    return result.changes > 0;
+  }
+
   // --------------------------------------------------------------------------
   // Todos
   // --------------------------------------------------------------------------

@@ -110,7 +110,7 @@ Best practices:
     // User will see the full path and confirm before editing
 
     // Safety check 1: Ensure file has been read (unless force is true)
-    if (!force && !fileReadTracker.hasBeenRead(resolvedPath)) {
+    if (!force && !fileReadTracker.hasBeenRead(filePath)) {
       return {
         success: false,
         error:
@@ -121,8 +121,8 @@ Best practices:
     }
 
     // Safety check 2: Check for external modifications (unless force is true)
-    if (!force && fileReadTracker.hasBeenRead(resolvedPath)) {
-      const modCheck = await checkExternalModification(resolvedPath);
+    if (!force && fileReadTracker.hasBeenRead(filePath)) {
+      const modCheck = await checkExternalModification(filePath);
       if (modCheck.modified) {
         return {
           success: false,
@@ -221,7 +221,7 @@ Best practices:
 
       // Update the file read tracker with new mtime
       const stats = await fs.stat(filePath);
-      fileReadTracker.updateAfterEdit(resolvedPath, stats.mtimeMs, stats.size);
+      fileReadTracker.updateAfterEdit(filePath, stats.mtimeMs, stats.size);
 
       // Build output message
       let output = `Edited ${filePath}: replaced ${replacedCount} occurrence(s)`;

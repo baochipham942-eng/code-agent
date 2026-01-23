@@ -12,8 +12,19 @@ import {
   type MemoryListFilter,
   type MemorySearchOptions,
 } from '../../shared/ipc';
-import { getSessionManager } from '../services';
+import type {
+  MemoryItem,
+  MemoryCategory,
+  MemoryStats as MemoryStatsNew,
+  MemoryExport,
+} from '../../shared/types/memory';
+import { getSessionManager, getDatabase } from '../services';
 import { getMemoryService } from '../memory/memoryService';
+import { getVectorStore } from '../memory/vectorStore';
+import { handleMemoryConfirmResponse } from '../memory/memoryNotification';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('MemoryIPC');
 
 // ----------------------------------------------------------------------------
 // Types for Memory CRUD Payloads
@@ -145,6 +156,275 @@ async function handleRecordMemoryAccess(payload: { id: string }): Promise<void> 
 }
 
 // ----------------------------------------------------------------------------
+// Phase 2 Handlers - Memory Tab UI
+// ----------------------------------------------------------------------------
+
+/**
+ * 映射旧分类到新分类
+ */
+function mapToNewCategory(source: string): MemoryCategory {
+  switch (source) {
+    case 'explicit':
+    case 'user_defined':
+      return 'preference';
+    case 'learned':
+    case 'auto_learned':
+      return 'learned';
+    case 'inferred':
+      return 'frequent_info';
+    default:
+      return 'learned';
+  }
+}
+
+/**
+ * 映射新分类到旧分类
+ */
+function mapFromNewCategory(category: MemoryCategory): string {
+  switch (category) {
+    case 'about_me':
+      return 'explicit';
+    case 'preference':
+      return 'explicit';
+    case 'frequent_info':
+      return 'inferred';
+    case 'learned':
+      return 'learned';
+    default:
+      return 'learned';
+  }
+}
+
+/**
+ * 从 VectorStore 和 Database 获取所有记忆条目
+ * 映射到 MemoryItem 格式
+ */
+async function handleListMemoriesNew(payload: { category?: MemoryCategory }): Promise<MemoryItem[]> {
+  const db = getDatabase();
+
+  const memories: MemoryItem[] = [];
+
+  // 从项目知识库获取
+  const projectKnowledge = db.getAllProjectKnowledge();
+  for (const pk of projectKnowledge) {
+    // 映射旧分类到新分类
+    const category = mapToNewCategory(pk.source);
+    if (payload.category && category !== payload.category) continue;
+
+    memories.push({
+      id: `pk_${pk.id}`,
+      content: typeof pk.value === 'string' ? pk.value : JSON.stringify(pk.value),
+      category,
+      source: pk.source === 'explicit' ? 'explicit' : 'learned',
+      confidence: pk.confidence,
+      createdAt: pk.createdAt,
+      updatedAt: pk.updatedAt || pk.createdAt,
+      projectPath: pk.projectPath,
+    });
+  }
+
+  // 从用户偏好获取
+  const prefs = db.getAllPreferences();
+  for (const [key, value] of Object.entries(prefs)) {
+    if (payload.category && payload.category !== 'preference') continue;
+
+    memories.push({
+      id: `pref_${key}`,
+      content: `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`,
+      category: 'preference',
+      source: 'explicit',
+      confidence: 1.0,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  }
+
+  // 按更新时间排序
+  memories.sort((a, b) => b.updatedAt - a.updatedAt);
+
+  return memories;
+}
+
+/**
+ * 添加记忆条目
+ */
+async function handleAddMemory(payload: { item: Partial<MemoryItem> }): Promise<MemoryItem> {
+  const db = getDatabase();
+  const item = payload.item;
+
+  const id = `pk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const now = Date.now();
+
+  db.saveProjectKnowledge(
+    item.projectPath || 'global',
+    `memory_${now}`,
+    item.content || '',
+    item.source === 'explicit' ? 'explicit' : 'learned',
+    item.confidence ?? 1.0
+  );
+
+  return {
+    id,
+    content: item.content || '',
+    category: item.category || 'learned',
+    source: item.source || 'explicit',
+    confidence: item.confidence ?? 1.0,
+    createdAt: now,
+    updatedAt: now,
+    projectPath: item.projectPath,
+    tags: item.tags,
+  };
+}
+
+/**
+ * 更新记忆条目
+ */
+async function handleUpdateMemoryNew(payload: { id: string; content: string }): Promise<boolean> {
+  const db = getDatabase();
+
+  if (payload.id.startsWith('pk_')) {
+    const realId = payload.id.replace('pk_', '');
+    return db.updateProjectKnowledge(realId, payload.content);
+  }
+
+  if (payload.id.startsWith('pref_')) {
+    const key = payload.id.replace('pref_', '');
+    db.setPreference(key, payload.content);
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * 删除记忆条目
+ */
+async function handleDeleteMemoryNew(payload: { id: string }): Promise<boolean> {
+  const db = getDatabase();
+
+  if (payload.id.startsWith('pk_')) {
+    const realId = payload.id.replace('pk_', '');
+    return db.deleteProjectKnowledge(realId);
+  }
+
+  if (payload.id.startsWith('pref_')) {
+    const key = payload.id.replace('pref_', '');
+    db.deletePreference(key);
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * 按分类删除所有记忆
+ */
+async function handleDeleteByCategory(payload: { category: MemoryCategory }): Promise<number> {
+  const db = getDatabase();
+  let deleted = 0;
+
+  if (payload.category === 'preference') {
+    const prefs = db.getAllPreferences();
+    for (const key of Object.keys(prefs)) {
+      db.deletePreference(key);
+      deleted++;
+    }
+  } else {
+    // 删除对应分类的项目知识
+    deleted = db.deleteProjectKnowledgeBySource(mapFromNewCategory(payload.category));
+  }
+
+  return deleted;
+}
+
+/**
+ * 导出所有记忆
+ */
+async function handleExportMemories(): Promise<MemoryExport> {
+  const items = await handleListMemoriesNew({});
+
+  return {
+    version: 1,
+    exportedAt: Date.now(),
+    items,
+  };
+}
+
+/**
+ * 导入记忆
+ */
+async function handleImportMemories(payload: { data: MemoryExport }): Promise<{ imported: number; skipped: number }> {
+  const db = getDatabase();
+  let imported = 0;
+  let skipped = 0;
+
+  for (const item of payload.data.items) {
+    try {
+      if (item.category === 'preference') {
+        const key = item.content.split(':')[0]?.trim();
+        const value = item.content.split(':').slice(1).join(':').trim();
+        if (key) {
+          db.setPreference(key, value);
+          imported++;
+        }
+      } else {
+        db.saveProjectKnowledge(
+          item.projectPath || 'global',
+          `memory_${Date.now()}`,
+          item.content,
+          item.source,
+          item.confidence
+        );
+        imported++;
+      }
+    } catch {
+      skipped++;
+    }
+  }
+
+  return { imported, skipped };
+}
+
+/**
+ * 获取记忆统计（新格式）
+ */
+async function handleGetMemoryStatsNew(): Promise<MemoryStatsNew> {
+  const items = await handleListMemoriesNew({});
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+  const byCategory: Record<MemoryCategory, number> = {
+    about_me: 0,
+    preference: 0,
+    frequent_info: 0,
+    learned: 0,
+  };
+
+  let learnedCount = 0;
+  let explicitCount = 0;
+  let recentlyAdded = 0;
+
+  for (const item of items) {
+    byCategory[item.category]++;
+    if (item.source === 'learned') {
+      learnedCount++;
+    } else {
+      explicitCount++;
+    }
+    if (item.createdAt >= weekAgo) {
+      recentlyAdded++;
+    }
+  }
+
+  return {
+    total: items.length,
+    byCategory,
+    recentlyAdded,
+    learnedCount,
+    explicitCount,
+  };
+}
+
+// ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
 
@@ -152,6 +432,59 @@ async function handleRecordMemoryAccess(payload: { id: string }): Promise<void> 
  * 注册 Memory 相关 IPC handlers
  */
 export function registerMemoryHandlers(ipcMain: IpcMain): void {
+  // ========== Phase 2 Memory Tab Handler ==========
+  ipcMain.handle(IPC_CHANNELS.MEMORY, async (_, payload: {
+    action: string;
+    category?: MemoryCategory;
+    id?: string;
+    content?: string;
+    data?: MemoryExport;
+    item?: Partial<MemoryItem>;
+  }) => {
+    try {
+      switch (payload.action) {
+        case 'list':
+          return { success: true, data: await handleListMemoriesNew({ category: payload.category }) };
+        case 'add':
+          if (!payload.item) return { success: false, error: 'Missing item' };
+          return { success: true, data: await handleAddMemory({ item: payload.item }) };
+        case 'update':
+          if (!payload.id || !payload.content) return { success: false, error: 'Missing id or content' };
+          const updated = await handleUpdateMemoryNew({ id: payload.id, content: payload.content });
+          return { success: updated, error: updated ? undefined : 'Update failed' };
+        case 'delete':
+          if (!payload.id) return { success: false, error: 'Missing id' };
+          const deleted = await handleDeleteMemoryNew({ id: payload.id });
+          return { success: deleted, error: deleted ? undefined : 'Delete failed' };
+        case 'deleteByCategory':
+          if (!payload.category) return { success: false, error: 'Missing category' };
+          const deletedCount = await handleDeleteByCategory({ category: payload.category });
+          return { success: true, data: { deleted: deletedCount } };
+        case 'export':
+          return { success: true, data: await handleExportMemories() };
+        case 'import':
+          if (!payload.data) return { success: false, error: 'Missing data' };
+          return { success: true, data: await handleImportMemories({ data: payload.data }) };
+        case 'getStats':
+          return { success: true, data: await handleGetMemoryStatsNew() };
+        default:
+          return { success: false, error: `Unknown action: ${payload.action}` };
+      }
+    } catch (error) {
+      logger.error('Memory action failed', { action: payload.action, error });
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  // ========== Phase 3 Memory Confirm Response Handler ==========
+  ipcMain.handle(IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE, async (_, payload: { id: string; confirmed: boolean }) => {
+    try {
+      handleMemoryConfirmResponse(payload.id, payload.confirmed);
+    } catch (error) {
+      logger.error('Memory confirm response failed', error);
+    }
+  });
+
   // ========== New Domain Handler (TASK-04) ==========
   ipcMain.handle(IPC_DOMAINS.MEMORY, async (_, request: IPCRequest): Promise<IPCResponse> => {
     const { action, payload } = request;

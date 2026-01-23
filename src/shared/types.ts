@@ -19,6 +19,7 @@ export * from './types/planning';
 export * from './types/question';
 export * from './types/agent';
 export * from './types/skill';
+export * from './types/agentSkill';
 
 // Infrastructure types
 export * from './types/auth';
@@ -30,3 +31,6 @@ export * from './types/update';
 // Cloud & GUI types
 export * from './types/cloud';
 export * from './types/gui';
+
+// Memory types
+export * from './types/memory';

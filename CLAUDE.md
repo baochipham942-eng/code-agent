@@ -626,6 +626,28 @@ curl -s "https://code-agent-beta.vercel.app/api/update?action=health"
 2. 当前已合并：`tools.ts` 包含 api/scrape/search 三个功能
 3. 当前 API 数量：10 个（预留 2 个空间）
 
+### GitHub Secret Scanning 阻止 Push
+**问题**: Git push 被 GitHub 阻止，错误 "Push cannot contain secrets"
+**原因**: 测试文件中使用了符合真实 API key 格式的字符串（如 `xoxb-*` Slack token, `sk_live_*` Stripe key）
+**正确做法**:
+1. **不要在代码中硬编码**任何符合 API key 格式的字符串，即使是测试用途
+2. 使用运行时字符串构建来生成测试数据：
+   ```typescript
+   // ❌ 错误 - 会被 GitHub 检测
+   const text = 'xoxb-123456789012-123456789012-abcdefghij';
+
+   // ✅ 正确 - 运行时构建
+   const buildSlackToken = (prefix: string) =>
+     `${prefix}-${'1'.repeat(12)}-${'2'.repeat(12)}-${'a'.repeat(10)}`;
+   const text = buildSlackToken('xoxb');
+   ```
+3. 常见被检测的格式：
+   - Slack: `xoxb-*`, `xoxp-*`, `xoxa-*`
+   - Stripe: `sk_live_*`, `sk_test_*`, `pk_live_*`, `pk_test_*`
+   - GitHub: `ghp_*`, `gho_*`, `ghu_*`, `ghs_*`, `ghr_*`
+   - AWS: `AKIA*`, `ASIA*`
+4. 如果历史提交已包含问题字符串，需要用 `git filter-branch` 重写历史
+
 ### 发布清单
 
 ```

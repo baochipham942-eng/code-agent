@@ -18,6 +18,14 @@ export {
 // In-Process Server
 export { InProcessMCPServer, createInProcessServer } from './inProcessServer';
 
+// In-Process Servers (Built-in)
+export {
+  MemoryKVServer,
+  createMemoryKVServer,
+  CodeIndexServer,
+  createCodeIndexServer,
+} from './servers';
+
 // Server (for exposing Code Agent as MCP server)
 export { CodeAgentMCPServer, getMCPServer } from './mcpServer';
 

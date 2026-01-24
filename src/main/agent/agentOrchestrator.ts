@@ -579,6 +579,11 @@ export class AgentOrchestrator {
    * @returns Promise 在取消操作完成后 resolve
    */
   async cancel(): Promise<void> {
+    logger.info('Cancel requested');
+
+    // 获取当前会话 ID 用于事件
+    const sessionId = getSessionManager().getCurrentSessionId();
+
     if (this.agentLoop) {
       this.agentLoop.cancel();
       this.agentLoop = null;
@@ -591,6 +596,14 @@ export class AgentOrchestrator {
       this.semanticResearchOrchestrator.cancel();
       this.semanticResearchOrchestrator = null;
     }
+
+    // 立即发送 agent_complete 事件，让前端更新状态
+    // 这样用户可以立即看到反馈，而不需要等待当前 API 请求完成
+    this.onEvent({
+      type: 'agent_complete',
+      data: null,
+      sessionId,
+    } as AgentEvent & { sessionId?: string });
   }
 
   /**

@@ -19,6 +19,7 @@ import type { ConfigService } from '../services/core/configService';
 import { getSessionManager, getAuthService } from '../services';
 import type { PlanningService } from '../planning';
 import { DeepResearchMode, SemanticResearchOrchestrator } from '../research';
+import { getSessionStateManager } from '../session/sessionStateManager';
 import { ModelRouter } from '../model/modelRouter';
 import { generateMessageId, generatePermissionRequestId } from '../../shared/utils/id';
 import { app } from 'electron';
@@ -379,6 +380,12 @@ export class AgentOrchestrator {
     generation: ReturnType<GenerationManager['getCurrentGeneration']>,
     sessionId?: string
   ): Promise<void> {
+    // Update session state to running
+    const sessionStateManager = getSessionStateManager();
+    if (sessionId) {
+      sessionStateManager.updateStatus(sessionId, 'running');
+    }
+
     // Create agent loop
     this.agentLoop = new AgentLoop({
       generation,
@@ -411,6 +418,11 @@ export class AgentOrchestrator {
     } finally {
       logger.info('========== Finally block, agentLoop = null ==========');
       this.agentLoop = null;
+
+      // Update session state to idle
+      if (sessionId) {
+        sessionStateManager.updateStatus(sessionId, 'idle');
+      }
     }
   }
 

@@ -122,101 +122,226 @@ npm run typecheck    # 类型检查
 
 ---
 
-### Gen3 规划与交互工具
+## Gen3 计划与交互工具
 
-Gen3 引入任务规划和用户交互能力。
+Gen3 引入了计划模式、任务管理和用户交互能力。
 
-#### confirm_action - 危险操作确认
+### ask_user_question - 向用户提问
 
-弹窗确认危险或不可逆的操作：
+向用户提问并获取回复，支持预设选项。
 
 ```bash
-# 删除文件前确认
-confirm_action { "title": "删除文件", "message": "确定要删除以下 5 个文件吗？", "type": "danger" }
+# 简单问题
+ask_user_question { "question": "你想使用哪个数据库？" }
 
-# 执行危险命令前确认
-confirm_action { "title": "执行命令", "message": "将执行 rm -rf ./dist", "type": "warning", "confirmText": "执行", "cancelText": "取消" }
+# 带预设选项
+ask_user_question {
+  "question": "选择部署环境",
+  "options": ["development", "staging", "production"]
+}
+
+# 多选模式
+ask_user_question {
+  "question": "需要启用哪些功能？",
+  "options": ["日志", "监控", "报警"],
+  "allowMultiple": true
+}
 ```
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `title` | string | 对话框标题（必填）|
-| `message` | string | 详细说明（必填）|
-| `type` | string | danger（红色）/ warning（黄色）/ info（蓝色）|
-| `confirmText` | string | 确认按钮文字（默认"确认"）|
-| `cancelText` | string | 取消按钮文字（默认"取消"）|
+| `question` | string | 问题内容（必填）|
+| `options` | string[] | 预设选项（可选）|
+| `allowMultiple` | boolean | 是否允许多选（默认 false）|
 
-**返回**: `confirmed` 或 `cancelled`
+### todo_write - 任务清单管理
 
-#### read_clipboard - 读取剪贴板
-
-读取系统剪贴板内容（文本或图片）：
+管理会话内的任务清单，跟踪工作进度。
 
 ```bash
-# 自动检测格式
-read_clipboard {}
+# 添加任务
+todo_write { "action": "add", "task": "实现用户认证模块" }
 
-# 只读取文本
-read_clipboard { "format": "text" }
+# 标记完成
+todo_write { "action": "complete", "taskId": "task_1" }
 
-# 只读取图片
-read_clipboard { "format": "image" }
+# 更新任务
+todo_write { "action": "update", "taskId": "task_1", "task": "实现 OAuth 2.0 认证" }
+
+# 删除任务
+todo_write { "action": "remove", "taskId": "task_1" }
+
+# 列出所有任务
+todo_write { "action": "list" }
 ```
 
-#### plan_read / plan_update - 任务计划管理
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `action` | string | 操作类型: add, complete, update, remove, list |
+| `task` | string | 任务描述（add/update 时必填）|
+| `taskId` | string | 任务 ID（complete/update/remove 时必填）|
 
-管理 task_plan.md 中的任务计划：
+### task - 后台任务执行
+
+在后台执行长时间运行的任务，支持超时控制。
 
 ```bash
-# 读取当前计划
-plan_read {}
+# 执行后台任务
+task {
+  "command": "npm run build",
+  "description": "构建项目",
+  "timeout": 300000
+}
 
-# 读取简要摘要
-plan_read { "summary": true }
+# 查询任务状态
+task { "action": "status", "taskId": "task_xxx" }
 
-# 更新步骤状态
-plan_update { "stepContent": "实现登录功能", "status": "completed" }
-
-# 标记步骤为跳过
-plan_update { "stepContent": "优化性能", "status": "skipped", "phaseTitle": "Phase 2" }
+# 取消任务
+task { "action": "cancel", "taskId": "task_xxx" }
 ```
 
-#### enter_plan_mode / exit_plan_mode - 规划模式
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `command` | string | 要执行的命令 |
+| `description` | string | 任务描述 |
+| `timeout` | number | 超时时间（毫秒，默认 120000）|
+| `action` | string | 操作类型: status, cancel |
+| `taskId` | string | 任务 ID |
 
-进入/退出规划模式，用于复杂任务的设计阶段：
+### confirm_action - 确认危险操作
 
-```bash
-# 进入规划模式
-enter_plan_mode { "reason": "需要设计新功能架构" }
-
-# 退出规划模式并提交计划
-exit_plan_mode { "plan": "## 实现计划\n1. 创建组件\n2. 添加逻辑\n3. 编写测试" }
-```
-
-**规划模式期间**：
-- ✅ 可以：读取文件、搜索代码、分析架构
-- ❌ 避免：执行写入操作、提交代码
-
-#### findings_write - 保存研究发现
-
-将重要发现保存到 findings.md：
+在执行危险操作前请求用户确认。
 
 ```bash
-findings_write {
-  "category": "architecture",
-  "title": "发现模块循环依赖",
-  "content": "moduleA 和 moduleB 存在循环依赖，需要重构",
-  "source": "src/modules/index.ts"
+# 确认删除操作
+confirm_action {
+  "action": "删除 node_modules 目录",
+  "reason": "清理依赖以解决版本冲突",
+  "severity": "high"
 }
 ```
 
-| 分类 | 说明 |
-|------|------|
-| `code` | 代码相关发现 |
-| `architecture` | 架构设计 |
-| `dependency` | 依赖库信息 |
-| `issue` | 发现的问题 |
-| `insight` | 一般性洞察 |
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `action` | string | 要执行的操作描述 |
+| `reason` | string | 执行原因 |
+| `severity` | string | 严重程度: low, medium, high |
+
+### read_clipboard - 读取剪贴板
+
+读取系统剪贴板内容。
+
+```bash
+# 读取剪贴板
+read_clipboard {}
+
+# 读取并指定格式
+read_clipboard { "format": "text" }
+```
+
+### 计划模式工具
+
+Gen3 引入计划模式，允许 Agent 在执行前制定详细计划。
+
+**enter_plan_mode** - 进入计划模式：
+```bash
+enter_plan_mode { "reason": "需要规划复杂的重构任务" }
+```
+
+**exit_plan_mode** - 退出计划模式：
+```bash
+exit_plan_mode { "summary": "计划完成，准备开始执行" }
+```
+
+**plan_read** - 读取当前计划：
+```bash
+plan_read {}
+```
+
+**plan_update** - 更新计划：
+```bash
+plan_update {
+  "steps": [
+    { "id": 1, "description": "分析现有代码结构", "status": "pending" },
+    { "id": 2, "description": "设计新接口", "status": "pending" }
+  ]
+}
+```
+
+### findings_write - 记录发现
+
+在分析过程中记录重要发现，用于后续参考。
+
+```bash
+# 记录发现
+findings_write {
+  "category": "security",
+  "finding": "发现 SQL 注入风险",
+  "location": "src/api/users.ts:42",
+  "severity": "high"
+}
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `category` | string | 分类: bug, security, performance, style |
+| `finding` | string | 发现描述 |
+| `location` | string | 代码位置 |
+| `severity` | string | 严重程度 |
+
+---
+
+## Gen4 网络工具
+
+### web_fetch - HTTP 请求
+
+发送 HTTP 请求并获取响应内容。
+
+```bash
+# GET 请求
+web_fetch { "url": "https://api.example.com/data" }
+
+# POST 请求
+web_fetch {
+  "url": "https://api.example.com/submit",
+  "method": "POST",
+  "headers": { "Content-Type": "application/json" },
+  "body": "{\"name\": \"test\"}"
+}
+
+# 带认证
+web_fetch {
+  "url": "https://api.example.com/private",
+  "headers": { "Authorization": "Bearer token123" }
+}
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `url` | string | 请求 URL（必填）|
+| `method` | string | HTTP 方法（默认 GET）|
+| `headers` | object | 请求头 |
+| `body` | string | 请求体 |
+| `timeout` | number | 超时时间（毫秒）|
+
+### web_search - 网络搜索
+
+使用搜索引擎搜索信息（需配置 API Key）。
+
+```bash
+# 基础搜索
+web_search { "query": "TypeScript best practices 2024" }
+
+# 限制结果数量
+web_search { "query": "React hooks tutorial", "limit": 5 }
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `query` | string | 搜索关键词（必填）|
+| `limit` | number | 返回结果数量（默认 10）|
+
+**要求**：需配置 Brave Search API Key 或使用云端代理。
 
 ### Gen4 PDF 智能处理
 
@@ -260,34 +385,6 @@ skill { "name": "file-organizer", "input": "整理 ~/Desktop 目录，清理重�
 
 **安全机制**：删除操作必须通过 `ask_user_question` 获得用户确认，支持移动到废纸篓或永久删除。
 
-### Gen4 网络搜索
-
-`web_search` 工具提供多源并行网络搜索能力：
-
-```bash
-# 基础搜索
-web_search { "query": "React 18 新特性" }
-
-# 指定搜索源和数量
-web_search { "query": "TypeScript 5.0", "sources": ["google", "bing"], "limit": 5 }
-
-# 过滤特定域名
-web_search { "query": "Next.js 14", "site": "nextjs.org" }
-```
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `query` | string | 搜索查询（必填）|
-| `sources` | string[] | 搜索源: google, bing, duckduckgo（默认全部）|
-| `limit` | number | 每个源返回的结果数（默认 3）|
-| `site` | string | 限制搜索的域名 |
-| `freshness` | string | 时效性: day, week, month |
-
-**特点**：
-- 多源并行搜索，聚合去重
-- 自动提取页面摘要
-- 支持中英文查询
-
 ### Gen4 MCP 工具说明
 
 MCP (Model Context Protocol) 允许 Agent 调用外部服务提供的工具：
@@ -327,100 +424,6 @@ mcp { "server": "deepwiki", "tool": "ask_question", "arguments": { "repoName": "
 | `filesystem` | Stdio | ❌ | 文件系统访问 |
 | `git` | Stdio | ❌ | Git 版本控制 |
 | `brave-search` | Stdio | 需 BRAVE_API_KEY | 网络搜索 |
-
-### Gen5 记忆系统
-
-Gen5 引入持久化记忆能力，支持跨会话知识积累。
-
-#### memory_store - 存储长期记忆
-
-将重要信息存入向量数据库：
-
-```bash
-# 存储用户偏好
-memory_store { "content": "用户偏好使用 TypeScript 严格模式", "category": "preference" }
-
-# 存储代码模式
-memory_store { "content": "项目使用 Repository 模式处理数据访问", "category": "pattern", "key": "data-access-pattern" }
-
-# 存储错误解决方案
-memory_store { "content": "ESLint 报错 X 的解决方法是...", "category": "error_solution", "confidence": 0.9 }
-```
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `content` | string | 要存储的信息（必填）|
-| `category` | string | preference / pattern / decision / context / insight / error_solution |
-| `key` | string | 唯一标识，便于直接检索 |
-| `confidence` | number | 置信度 0-1（默认 1.0）|
-
-**安全机制**：自动检测并拒绝存储敏感信息（API Keys、密码等）。
-
-#### memory_search - 搜索记忆
-
-语义搜索存储的知识：
-
-```bash
-# 搜索相关记忆
-memory_search { "query": "用户的代码风格偏好" }
-
-# 按分类过滤
-memory_search { "query": "数据库连接", "category": "error_solution", "limit": 3 }
-
-# 搜索特定来源
-memory_search { "query": "架构决策", "source": "knowledge" }
-```
-
-| 参数 | 类型 | 说明 |
-|------|------|------|
-| `query` | string | 搜索查询（必填）|
-| `category` | string | 过滤分类 |
-| `source` | string | knowledge / conversation / file / all |
-| `limit` | number | 最大结果数（默认 5）|
-
-#### code_index - 代码索引
-
-建立代码库的语义索引，实现智能代码搜索：
-
-```bash
-# 索引项目代码
-code_index { "action": "index", "pattern": "**/*.ts" }
-
-# 语义搜索代码
-code_index { "action": "search", "query": "处理用户认证的函数" }
-
-# 查看索引状态
-code_index { "action": "status" }
-```
-
-| Action | 说明 |
-|--------|------|
-| `index` | 索引匹配 pattern 的文件 |
-| `search` | 语义搜索代码 |
-| `status` | 查看索引统计 |
-
-**默认索引模式**：`**/*.{ts,tsx,js,jsx,py,go,rs}`
-
-#### auto_learn - 自动学习
-
-自动从会话中提取并保存有价值的信息：
-
-```bash
-# 分析会话并学习
-auto_learn { "action": "analyze" }
-
-# 批量保存学到的知识
-auto_learn { "action": "save", "insights": ["用户偏好...", "项目使用..."] }
-
-# 查看学习历史
-auto_learn { "action": "history", "limit": 10 }
-```
-
-**自动学习的内容**：
-- 用户编码偏好和习惯
-- 项目特定的模式和约定
-- 错误解决方案
-- 架构决策和理由
 
 ### Gen5 PPT 生成
 
@@ -560,365 +563,590 @@ excel_generate { "title": "数据表", "data": "name,age\n张三,25\n李四,30" 
 
 ---
 
-### Gen6 计算机控制
+## Gen5 记忆与学习工具
 
-Gen6 引入计算机使用能力，可以控制屏幕、鼠标和键盘。
+Gen5 引入向量存储记忆系统和自动学习能力。
 
-#### screenshot - 屏幕截图
+### memory_store - 存储记忆
 
-捕获屏幕或特定窗口的截图：
+将信息存储到向量数据库，支持语义检索。
 
 ```bash
-# 截取全屏
-screenshot {}
+# 存储代码模式
+memory_store {
+  "content": "使用 useMemo 优化 React 组件渲染性能",
+  "type": "pattern",
+  "tags": ["react", "performance", "hooks"]
+}
 
-# 截取特定窗口
-screenshot { "target": "window", "windowName": "Visual Studio Code" }
+# 存储项目知识
+memory_store {
+  "content": "项目使用 pnpm workspace 管理 monorepo",
+  "type": "knowledge",
+  "metadata": { "project": "code-agent" }
+}
 
-# 保存到指定路径
-screenshot { "outputPath": "./screenshots/debug.png" }
-
-# 截取特定区域
-screenshot { "region": { "x": 100, "y": 100, "width": 800, "height": 600 } }
+# 存储用户偏好
+memory_store {
+  "content": "用户偏好使用 Tailwind CSS 而非 styled-components",
+  "type": "preference"
+}
 ```
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `target` | string | screen（全屏）/ window（窗口）|
-| `windowName` | string | 窗口名称（当 target=window 时）|
-| `outputPath` | string | 保存路径（默认 .screenshots/）|
-| `region` | object | 截取区域 { x, y, width, height } |
+| `content` | string | 要存储的内容（必填）|
+| `type` | string | 类型: pattern, knowledge, preference, snippet |
+| `tags` | string[] | 标签，用于筛选 |
+| `metadata` | object | 额外元数据 |
 
-**跨平台支持**：macOS（screencapture）、Linux（import）、Windows（PowerShell）
+### memory_search - 搜索记忆
 
-#### computer_use - 鼠标键盘控制
-
-控制鼠标和键盘进行自动化操作：
+语义搜索存储的记忆。
 
 ```bash
-# 点击指定位置
-computer_use { "action": "click", "x": 500, "y": 300 }
+# 语义搜索
+memory_search { "query": "React 性能优化技巧" }
 
-# 双击
-computer_use { "action": "doubleClick", "x": 500, "y": 300 }
+# 按类型筛选
+memory_search { "query": "数据库连接", "type": "knowledge" }
 
-# 输入文本
-computer_use { "action": "type", "text": "Hello World" }
-
-# 按键组合
-computer_use { "action": "key", "key": "s", "modifiers": ["cmd"] }
-
-# 滚动
-computer_use { "action": "scroll", "direction": "down", "amount": 200 }
-
-# 拖拽
-computer_use { "action": "drag", "x": 100, "y": 100, "toX": 300, "toY": 300 }
+# 限制结果数量
+memory_search { "query": "用户偏好", "limit": 5 }
 ```
 
-| Action | 参数 | 说明 |
-|--------|------|------|
-| `click` | x, y | 单击 |
-| `doubleClick` | x, y | 双击 |
-| `rightClick` | x, y | 右键点击 |
-| `move` | x, y | 移动鼠标 |
-| `type` | text | 输入文本 |
-| `key` | key, modifiers | 按键（支持 enter, tab, escape 等）|
-| `scroll` | direction, amount | 滚动（up/down/left/right）|
-| `drag` | x, y, toX, toY | 拖拽 |
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `query` | string | 搜索查询（必填）|
+| `type` | string | 筛选类型 |
+| `tags` | string[] | 筛选标签 |
+| `limit` | number | 返回数量（默认 10）|
 
-**安全机制**：需要通过云端 Feature Flag 启用。
+### code_index - 代码索引
 
-**提示**：使用前先调用 screenshot 了解当前屏幕状态。
+建立和查询代码库索引，支持符号跳转和引用查找。
 
-#### browser_navigate - 浏览器控制
+```bash
+# 索引当前项目
+code_index { "action": "index", "path": "." }
 
-控制浏览器导航和基本交互：
+# 查找符号定义
+code_index { "action": "definition", "symbol": "UserService" }
+
+# 查找引用
+code_index { "action": "references", "symbol": "handleSubmit" }
+
+# 搜索代码
+code_index { "action": "search", "query": "async function" }
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `action` | string | 操作: index, definition, references, search |
+| `path` | string | 索引路径（index 时）|
+| `symbol` | string | 符号名称 |
+| `query` | string | 搜索查询 |
+
+### auto_learn - 自动学习
+
+从代码库和会话中自动提取知识。
+
+```bash
+# 学习项目模式
+auto_learn { "source": "codebase", "path": "src/" }
+
+# 学习会话内容
+auto_learn { "source": "session" }
+
+# 学习特定文件
+auto_learn { "source": "file", "path": "src/utils/helpers.ts" }
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `source` | string | 来源: codebase, session, file |
+| `path` | string | 文件/目录路径 |
+| `depth` | number | 学习深度（默认 2）|
+
+---
+
+## Gen6 视觉与浏览器工具
+
+Gen6 引入计算机视觉和浏览器自动化能力。
+
+### screenshot - 屏幕截图
+
+捕获屏幕、窗口或区域截图。
+
+```bash
+# 全屏截图
+screenshot {}
+
+# 截取指定窗口
+screenshot { "window": "Code Agent" }
+
+# 截取指定区域
+screenshot { "region": { "x": 0, "y": 0, "width": 800, "height": 600 } }
+
+# 保存到文件
+screenshot { "output": "./screenshot.png" }
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `window` | string | 窗口标题 |
+| `region` | object | 截取区域 {x, y, width, height} |
+| `output` | string | 保存路径 |
+| `format` | string | 格式: png, jpeg（默认 png）|
+
+### computer_use - 计算机操作
+
+模拟键盘和鼠标操作。
+
+```bash
+# 鼠标点击
+computer_use { "action": "click", "x": 100, "y": 200 }
+
+# 双击
+computer_use { "action": "doubleClick", "x": 100, "y": 200 }
+
+# 右键点击
+computer_use { "action": "rightClick", "x": 100, "y": 200 }
+
+# 键盘输入
+computer_use { "action": "type", "text": "Hello World" }
+
+# 按键
+computer_use { "action": "key", "key": "Enter" }
+
+# 组合键
+computer_use { "action": "hotkey", "keys": ["Command", "S"] }
+
+# 鼠标拖拽
+computer_use { "action": "drag", "from": { "x": 100, "y": 100 }, "to": { "x": 200, "y": 200 } }
+
+# 滚动
+computer_use { "action": "scroll", "direction": "down", "amount": 3 }
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `action` | string | 操作类型（见上方示例）|
+| `x`, `y` | number | 坐标位置 |
+| `text` | string | 输入文本 |
+| `key` | string | 按键名称 |
+| `keys` | string[] | 组合键 |
+
+### browser_navigate - 浏览器导航
+
+控制浏览器导航（基于系统命令）。
 
 ```bash
 # 打开 URL
 browser_navigate { "action": "open", "url": "https://example.com" }
 
-# 使用特定浏览器
-browser_navigate { "action": "open", "url": "https://example.com", "browser": "chrome" }
-
-# 浏览器操作
+# 后退
 browser_navigate { "action": "back" }
+
+# 前进
 browser_navigate { "action": "forward" }
+
+# 刷新
 browser_navigate { "action": "refresh" }
+
+# 新标签页
 browser_navigate { "action": "newTab" }
+
+# 关闭标签页
 browser_navigate { "action": "close" }
 
-# 切换标签页
-browser_navigate { "action": "switchTab", "tabIndex": 2 }
+# 指定浏览器
+browser_navigate { "action": "open", "url": "https://example.com", "browser": "chrome" }
 ```
 
-| Action | 说明 |
-|--------|------|
-| `open` / `navigate` | 打开/跳转到 URL |
-| `back` / `forward` | 历史导航 |
-| `refresh` | 刷新页面 |
-| `newTab` | 新建标签页 |
-| `close` | 关闭当前窗口 |
-| `switchTab` | 切换标签页（需提供 tabIndex）|
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `action` | string | 操作: open, navigate, back, forward, refresh, close, newTab, switchTab |
+| `url` | string | 目标 URL |
+| `browser` | string | 浏览器: default, chrome, firefox, safari, edge |
 
-| 浏览器 | macOS | Linux |
-|--------|-------|-------|
-| `default` | 系统默认 | xdg-open |
-| `chrome` | Google Chrome | google-chrome |
-| `firefox` | Firefox | firefox |
-| `safari` | Safari | - |
-| `edge` | Microsoft Edge | microsoft-edge |
+### browser_action - 浏览器自动化
+
+基于 Playwright 的完整浏览器自动化，支持复杂交互。
+
+```bash
+# 启动浏览器
+browser_action { "action": "launch" }
+
+# 打开新标签页并导航
+browser_action { "action": "new_tab", "url": "https://example.com" }
+
+# 点击元素（CSS 选择器）
+browser_action { "action": "click", "selector": "button.submit" }
+
+# 点击元素（按文本）
+browser_action { "action": "click_text", "text": "Sign In" }
+
+# 输入文本
+browser_action { "action": "type", "selector": "#search", "text": "hello" }
+
+# 按键
+browser_action { "action": "press_key", "key": "Enter" }
+
+# 滚动页面
+browser_action { "action": "scroll", "direction": "down", "amount": 500 }
+
+# 截图
+browser_action { "action": "screenshot", "fullPage": true }
+
+# 获取页面内容
+browser_action { "action": "get_content" }
+
+# 查找元素
+browser_action { "action": "get_elements", "selector": "a.link" }
+
+# 等待元素
+browser_action { "action": "wait", "selector": ".loading", "timeout": 5000 }
+
+# 填充表单
+browser_action {
+  "action": "fill_form",
+  "formData": {
+    "#username": "user@example.com",
+    "#password": "secret"
+  }
+}
+
+# 列出标签页
+browser_action { "action": "list_tabs" }
+
+# 关闭浏览器
+browser_action { "action": "close" }
+
+# 获取调试日志
+browser_action { "action": "get_logs" }
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `action` | string | 操作类型（见上方示例）|
+| `url` | string | URL |
+| `selector` | string | CSS 选择器 |
+| `text` | string | 文本内容 |
+| `key` | string | 按键 |
+| `direction` | string | 滚动方向: up, down |
+| `amount` | number | 滚动量（像素）|
+| `fullPage` | boolean | 全页截图 |
+| `formData` | object | 表单数据 {selector: value} |
+| `timeout` | number | 超时时间（毫秒）|
+
+**注意**：使用前需先 `launch` 启动浏览器，使用完毕后 `close` 关闭。
 
 ---
 
-### Gen7 多代理协作
+## Gen7 多代理工具
 
-Gen7 引入多代理能力，支持创建专业化子代理并协调复杂工作流。
+Gen7 引入多代理协作能力。
 
-#### spawn_agent - 创建子代理
+### spawn_agent - 创建子代理
 
-创建专业化子代理处理特定任务：
+创建专业化子代理执行特定任务。
+
+**预定义角色：**
+
+| 角色 | 描述 | 可用工具 |
+|------|------|----------|
+| `coder` | 编写代码 | bash, read_file, write_file, edit_file, glob, grep |
+| `reviewer` | 代码审查 | read_file, glob, grep |
+| `tester` | 编写测试 | bash, read_file, write_file, edit_file, glob |
+| `architect` | 架构设计 | read_file, glob, grep, write_file |
+| `debugger` | 调试问题 | bash, read_file, edit_file, glob, grep |
+| `documenter` | 编写文档 | read_file, write_file, edit_file, glob |
 
 ```bash
 # 使用预定义角色
-spawn_agent { "role": "coder", "task": "实现用户登录功能" }
-
-# 使用自定义代理
 spawn_agent {
-  "customPrompt": "你是一个安全专家，专门检查代码中的安全漏洞",
-  "customTools": ["read_file", "glob", "grep"],
-  "task": "检查 src/auth 目录下的安全问题"
+  "role": "coder",
+  "task": "实现用户登录功能，包含表单验证"
 }
 
 # 后台运行
-spawn_agent { "role": "tester", "task": "编写测试用例", "waitForCompletion": false }
+spawn_agent {
+  "role": "tester",
+  "task": "为 UserService 编写单元测试",
+  "waitForCompletion": false
+}
+
+# 自定义代理（动态模式）
+spawn_agent {
+  "task": "分析 API 响应时间",
+  "customPrompt": "你是性能分析专家，专注于 API 性能优化",
+  "customTools": ["bash", "read_file", "grep"]
+}
 
 # 并行执行多个代理
 spawn_agent {
   "parallel": true,
   "agents": [
-    { "role": "reviewer", "task": "审查代码质量" },
-    { "role": "tester", "task": "编写测试用例" }
+    { "role": "reviewer", "task": "审查 PR #123 的代码质量" },
+    { "role": "tester", "task": "为 PR #123 的改动编写测试" }
+  ]
+}
+
+# 带依赖的并行执行
+spawn_agent {
+  "parallel": true,
+  "agents": [
+    { "role": "coder", "task": "实现功能 A" },
+    { "role": "coder", "task": "实现功能 B" },
+    { "role": "tester", "task": "测试功能 A 和 B", "dependsOn": ["agent_coder_0", "agent_coder_1"] }
   ]
 }
 ```
 
-**预定义角色：**
-
-| 角色 | 描述 | 工具 |
+| 参数 | 类型 | 说明 |
 |------|------|------|
-| `coder` | 编写高质量代码 | bash, read_file, write_file, edit_file, glob, grep |
-| `reviewer` | 代码审查，发现问题 | read_file, glob, grep |
-| `tester` | 编写测试用例 | bash, read_file, write_file, edit_file, glob |
-| `architect` | 系统架构设计 | read_file, glob, grep, write_file |
-| `debugger` | 调试和修复 bug | bash, read_file, edit_file, glob, grep |
-| `documenter` | 编写文档 | read_file, write_file, edit_file, glob |
+| `role` | string | 预定义角色 |
+| `task` | string | 任务描述（必填）|
+| `customPrompt` | string | 自定义系统提示（动态模式）|
+| `customTools` | string[] | 自定义工具列表 |
+| `waitForCompletion` | boolean | 是否等待完成（默认 true）|
+| `maxIterations` | number | 最大迭代次数（默认 20）|
+| `maxBudget` | number | 最大预算（USD）|
+| `parallel` | boolean | 启用并行执行 |
+| `agents` | array | 并行代理列表 |
 
-#### agent_message - 代理通信
+### agent_message - 代理通信
 
-与已创建的子代理进行交互：
+与已创建的代理通信和管理。
 
 ```bash
 # 列出所有代理
 agent_message { "action": "list" }
 
-# 检查代理状态
-agent_message { "action": "status", "agentId": "agent_coder_1234567890" }
+# 查询代理状态
+agent_message { "action": "status", "agentId": "agent_coder_123" }
 
 # 获取代理结果
-agent_message { "action": "result", "agentId": "agent_coder_1234567890" }
+agent_message { "action": "result", "agentId": "agent_coder_123" }
 
-# 取消运行中的代理
-agent_message { "action": "cancel", "agentId": "agent_coder_1234567890" }
+# 取消代理
+agent_message { "action": "cancel", "agentId": "agent_coder_123" }
 ```
 
-**代理状态**：
-- ⏸️ `idle` - 空闲
-- 🔄 `running` - 运行中
-- ✅ `completed` - 已完成
-- ❌ `failed` - 失败
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `action` | string | 操作: list, status, result, cancel |
+| `agentId` | string | 代理 ID |
 
-#### workflow_orchestrate - 工作流编排
+### workflow_orchestrate - 工作流编排
 
-编排多代理协作完成复杂任务：
+编排多代理工作流。
+
+**预定义工作流模板：**
+
+| 模板 | 描述 | 流程 |
+|------|------|------|
+| `code-review-pipeline` | 代码审查流水线 | Coder → Reviewer → Tester |
+| `bug-fix-flow` | Bug 修复流程 | Debugger → Coder → Tester |
+| `documentation-flow` | 文档生成流程 | Architect → Documenter |
+| `parallel-review` | 并行审查 | Reviewer + Tester |
 
 ```bash
 # 使用预定义工作流
-workflow_orchestrate { "workflow": "code-review-pipeline", "task": "实现支付功能" }
+workflow_orchestrate {
+  "workflow": "code-review-pipeline",
+  "task": "实现用户认证功能"
+}
 
 # 使用 bug 修复流程
-workflow_orchestrate { "workflow": "bug-fix-flow", "task": "修复用户无法登录的问题" }
+workflow_orchestrate {
+  "workflow": "bug-fix-flow",
+  "task": "修复登录超时问题"
+}
 
 # 自定义工作流
 workflow_orchestrate {
   "workflow": "custom",
-  "task": "重构认证模块",
+  "task": "重构数据层",
   "stages": [
-    { "name": "分析", "role": "architect", "prompt": "分析当前认证模块" },
-    { "name": "实现", "role": "coder", "prompt": "重构代码", "dependsOn": ["分析"] },
-    { "name": "测试", "role": "tester", "prompt": "编写测试", "dependsOn": ["实现"] }
-  ],
+    { "name": "分析", "role": "architect", "prompt": "分析现有数据层架构" },
+    { "name": "重构", "role": "coder", "prompt": "实施重构", "dependsOn": ["分析"] },
+    { "name": "测试", "role": "tester", "prompt": "编写测试", "dependsOn": ["重构"] },
+    { "name": "文档", "role": "documenter", "prompt": "更新文档", "dependsOn": ["重构"] }
+  ]
+}
+
+# 并行执行（无依赖的阶段并行运行）
+workflow_orchestrate {
+  "workflow": "parallel-review",
+  "task": "审查 PR #456",
   "parallel": true
 }
 ```
 
-**预定义工作流：**
-
-| 工作流 | 描述 | 阶段 |
-|--------|------|------|
-| `code-review-pipeline` | 功能开发流程 | Coder → Reviewer → Tester |
-| `bug-fix-flow` | Bug 修复流程 | Debugger → Coder → Tester |
-| `documentation-flow` | 文档编写流程 | Architect → Documenter |
-| `parallel-review` | 并行审查 | Reviewer + Tester（并行）|
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `workflow` | string | 工作流模板名或 "custom" |
+| `task` | string | 总体任务描述 |
+| `stages` | array | 自定义阶段（custom 时必填）|
+| `parallel` | boolean | 独立阶段是否并行（默认 true）|
 
 ---
 
-### Gen8 自我进化
+## Gen8 自进化工具
 
-Gen8 引入自我学习和进化能力，可以从经验中学习并持续改进。
+Gen8 引入自我优化和工具创建能力。
 
-#### learn_pattern - 模式学习
+### strategy_optimize - 策略优化
 
-学习和应用编码经验模式：
-
-```bash
-# 学习成功模式
-learn_pattern {
-  "action": "learn",
-  "name": "React Hook 错误处理",
-  "type": "success",
-  "context": "在自定义 Hook 中处理异步错误",
-  "pattern": "使用 try-catch 包裹 async 操作，并通过 state 暴露错误",
-  "solution": "const [error, setError] = useState(null); try { ... } catch (e) { setError(e); }",
-  "tags": ["react", "hooks", "error-handling"]
-}
-
-# 学习反模式
-learn_pattern {
-  "action": "learn",
-  "name": "直接修改 Props",
-  "type": "anti_pattern",
-  "context": "React 组件中",
-  "pattern": "直接修改传入的 props 对象",
-  "solution": "使用 useState 创建本地状态副本",
-  "tags": ["react", "anti-pattern"]
-}
-
-# 查找适用模式
-learn_pattern { "action": "apply", "query": "React 错误处理" }
-
-# 搜索模式
-learn_pattern { "action": "search", "query": "hooks", "type": "success" }
-
-# 列出所有模式
-learn_pattern { "action": "list" }
-
-# 强化模式（反馈）
-learn_pattern { "action": "reinforce", "patternId": "pattern_123", "success": true }
-```
-
-**模式类型**：
-- ✅ `success` - 成功模式，值得复用
-- ❌ `failure` - 失败模式，需要避免
-- ⚡ `optimization` - 优化模式，提升效率
-- 🚫 `anti_pattern` - 反模式，明确禁止
-
-#### strategy_optimize - 策略优化
-
-管理和优化工作策略：
+优化任务执行策略。
 
 ```bash
-# 创建策略
+# 优化执行策略
 strategy_optimize {
-  "action": "create",
-  "name": "TDD 开发流程",
-  "description": "测试驱动开发策略",
-  "steps": ["编写失败测试", "实现最小代码", "重构优化"],
-  "tags": ["tdd", "testing"]
+  "task": "代码审查",
+  "currentStrategy": "逐文件审查",
+  "metrics": { "time": 300, "accuracy": 0.85 }
 }
 
-# 获取推荐策略
-strategy_optimize { "action": "recommend", "task": "添加新功能" }
+# 分析历史性能
+strategy_optimize {
+  "action": "analyze",
+  "taskType": "code-review"
+}
 
-# 记录策略反馈
-strategy_optimize { "action": "feedback", "strategyId": "strategy_123", "success": true, "duration": 3600000 }
-
-# 分析策略效果
-strategy_optimize { "action": "analyze", "strategyId": "strategy_123" }
-
-# 列出所有策略
-strategy_optimize { "action": "list" }
+# 应用优化建议
+strategy_optimize {
+  "action": "apply",
+  "optimizationId": "opt_123"
+}
 ```
 
-#### tool_create - 动态工具创建
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `task` | string | 任务类型 |
+| `currentStrategy` | string | 当前策略描述 |
+| `metrics` | object | 性能指标 |
+| `action` | string | 操作: analyze, apply |
 
-在运行时创建新工具：
+### tool_create - 动态创建工具
+
+在运行时创建新工具。
 
 ```bash
-# 创建 bash 脚本工具
+# 创建简单工具
 tool_create {
-  "action": "create",
-  "name": "format_code",
-  "description": "格式化项目代码",
-  "type": "bash_script",
-  "script": "prettier --write ."
+  "name": "format_json",
+  "description": "格式化 JSON 字符串",
+  "type": "sandboxed_js",
+  "code": "return JSON.stringify(JSON.parse(input.json), null, 2);",
+  "parameters": {
+    "json": { "type": "string", "description": "JSON 字符串" }
+  }
 }
 
-# 创建沙盒 JS 工具
+# 创建文件处理工具
 tool_create {
-  "action": "create",
   "name": "count_lines",
   "description": "统计文件行数",
   "type": "sandboxed_js",
-  "code": "const content = await readFile(input.path); return content.split('\\n').length;"
+  "code": "return input.content.split('\\n').length;",
+  "parameters": {
+    "content": { "type": "string", "description": "文件内容" }
+  }
 }
 
-# 使用动态工具
-tool_create { "action": "use", "toolId": "format_code" }
-
-# 列出动态工具
+# 列出创建的工具
 tool_create { "action": "list" }
+
+# 删除工具
+tool_create { "action": "delete", "name": "format_json" }
 ```
 
-**工具类型**：
-- `bash_script` - Shell 脚本
-- `sandboxed_js` - 沙盒 JavaScript（安全执行）
-- `http_api` - HTTP API 调用
-- `file_processor` - 文件处理器
-- `composite` - 组合多个工具
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `name` | string | 工具名称 |
+| `description` | string | 工具描述 |
+| `type` | string | 类型: sandboxed_js |
+| `code` | string | 工具代码 |
+| `parameters` | object | 参数定义 |
+| `action` | string | 操作: list, delete |
 
-**安全机制**：创建工具需要用户确认（除非开启 devModeAutoApprove）。
+**安全说明**：动态创建的工具在沙箱中运行（isolated-vm），无法访问文件系统和网络。
 
-#### self_evaluate - 自我评估
+### self_evaluate - 自我评估
 
-评估和改进 Agent 性能：
+评估任务执行质量和效率。
 
 ```bash
-# 记录任务指标
+# 评估当前任务
 self_evaluate {
-  "action": "record",
-  "taskType": "coding",
-  "success": true,
-  "duration": 120000,
-  "toolsUsed": ["read_file", "edit_file", "bash"],
-  "iterations": 3
+  "task": "实现用户认证",
+  "result": "完成了登录、注册、密码重置功能",
+  "metrics": { "files_changed": 5, "tests_added": 12 }
 }
 
-# 分析性能
-self_evaluate { "action": "analyze", "period": 24 }
+# 评估代码质量
+self_evaluate {
+  "type": "code_quality",
+  "files": ["src/auth/login.ts", "src/auth/register.ts"]
+}
 
-# 生成报告
-self_evaluate { "action": "report", "period": 168 }
-
-# 获取改进洞察
-self_evaluate { "action": "insights" }
+# 评估测试覆盖率
+self_evaluate {
+  "type": "test_coverage",
+  "path": "src/auth/"
+}
 ```
 
-**分析维度**：
-- 任务成功率
-- 平均完成时间
-- 工具使用效率
-- 迭代次数趋势
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `task` | string | 任务描述 |
+| `result` | string | 执行结果 |
+| `metrics` | object | 相关指标 |
+| `type` | string | 评估类型: task, code_quality, test_coverage |
+| `files` | string[] | 要评估的文件 |
+
+### learn_pattern - 模式学习
+
+从代码和行为中学习模式。
+
+```bash
+# 学习代码模式
+learn_pattern {
+  "source": "code",
+  "path": "src/components/",
+  "patternType": "component_structure"
+}
+
+# 学习命名约定
+learn_pattern {
+  "source": "code",
+  "path": "src/",
+  "patternType": "naming_convention"
+}
+
+# 学习用户偏好
+learn_pattern {
+  "source": "session",
+  "patternType": "user_preference"
+}
+
+# 查看已学习模式
+learn_pattern { "action": "list" }
+
+# 应用模式
+learn_pattern { "action": "apply", "patternId": "pattern_123" }
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `source` | string | 来源: code, session, history |
+| `path` | string | 代码路径 |
+| `patternType` | string | 模式类型 |
+| `action` | string | 操作: list, apply |
+| `patternId` | string | 模式 ID |
 
 ## 安全模块 (v0.9+)
 

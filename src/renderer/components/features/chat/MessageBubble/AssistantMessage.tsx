@@ -119,7 +119,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
     <div className="py-3 px-4">
       {/* Text content - AI 消息无背景，左对齐 */}
       {message.content && (
-        <div className="text-zinc-200 leading-relaxed">
+        <div className="text-zinc-200 leading-relaxed select-text">
           <MessageContent content={message.content} isUser={false} />
         </div>
       )}

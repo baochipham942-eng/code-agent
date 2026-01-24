@@ -21,7 +21,7 @@ export const UserMessage: React.FC<UserMessageProps> = ({ message }) => {
 
         {/* Text content - 用户消息带背景 */}
         {message.content && (
-          <div className="bg-primary-600/90 text-white rounded-2xl rounded-br-sm px-4 py-2.5">
+          <div className="bg-primary-600/90 text-white rounded-2xl rounded-br-sm px-4 py-2.5 select-text">
             <MessageContent content={message.content} isUser={true} />
           </div>
         )}

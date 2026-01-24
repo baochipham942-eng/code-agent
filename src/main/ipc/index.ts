@@ -30,6 +30,7 @@ import { registerTaskHandlers } from './task.ipc';
 import { registerStatusHandlers } from './status.ipc';
 import { registerContextHealthHandlers } from './contextHealth.ipc';
 import { registerSessionStatusHandlers } from './sessionStatus.ipc';
+import { registerSkillHandlers } from './skill.ipc';
 
 export * from './types';
 
@@ -121,6 +122,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Session status handlers (多会话并行)
   registerSessionStatusHandlers();
+
+  // Skill handlers (Skill 仓库管理和会话挂载)
+  registerSkillHandlers(ipcMain);
 
   logger.info('All handlers registered');
 }

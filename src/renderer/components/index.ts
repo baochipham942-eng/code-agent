@@ -36,6 +36,9 @@ export { PlanningPanel } from './PlanningPanel';
 export { FindingsPanel } from './FindingsPanel';
 export { ErrorsPanel } from './ErrorsPanel';
 
+// Skill management panel
+export { SkillsPanel } from './SkillsPanel';
+
 // -----------------------------------------------------------------------------
 // Modal Components
 // -----------------------------------------------------------------------------

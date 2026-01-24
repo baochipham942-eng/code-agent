@@ -14,6 +14,18 @@ import { createLogger } from '../infra/logger';
 const logger = createLogger('SkillDiscoveryService');
 
 /**
+ * 库元数据接口
+ */
+interface LibraryMeta {
+  repoId: string;
+  repoName: string;
+  skillsPath?: string;
+  downloadedAt?: number;
+  lastUpdated?: number;
+  version?: string;
+}
+
+/**
  * Skill 发现服务
  *
  * 负责从多个来源发现和加载 Skills：
@@ -44,7 +56,10 @@ class SkillDiscoveryService {
     const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
     await this.scanDirectory(userSkillsDir, 'user');
 
-    // 3. 加载项目级 Skills（最高优先级）
+    // 3. 加载远程库 Skills
+    await this.loadFromLibraries();
+
+    // 4. 加载项目级 Skills（最高优先级）
     const projectSkillsDir = path.join(workingDirectory, '.claude', 'skills');
     await this.scanDirectory(projectSkillsDir, 'project');
 
@@ -124,6 +139,81 @@ class SkillDiscoveryService {
   }
 
   /**
+   * 从远程库目录加载 Skills
+   * 路径: ~/.code-agent/skills/
+   */
+  private async loadFromLibraries(): Promise<void> {
+    const librariesDir = path.join(os.homedir(), '.code-agent', 'skills');
+
+    try {
+      await fs.access(librariesDir);
+    } catch {
+      logger.debug('Libraries directory not found', { dir: librariesDir });
+      return;
+    }
+
+    try {
+      const entries = await fs.readdir(librariesDir, { withFileTypes: true });
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+
+        const libraryPath = path.join(librariesDir, entry.name);
+
+        // 读取 .meta.json 获取 skillsPath
+        const metaPath = path.join(libraryPath, '.meta.json');
+        let skillsSubPath = '.'; // 默认 skills 在根目录
+
+        try {
+          const metaContent = await fs.readFile(metaPath, 'utf-8');
+          const meta = JSON.parse(metaContent) as LibraryMeta;
+          skillsSubPath = meta.skillsPath || '.';
+          logger.debug('Loaded library meta', {
+            library: entry.name,
+            skillsPath: skillsSubPath,
+          });
+        } catch {
+          // 没有 meta 文件，使用默认值
+          logger.debug('No meta file found, using default skillsPath', {
+            library: entry.name,
+          });
+        }
+
+        const skillsDir = path.join(libraryPath, skillsSubPath);
+        await this.scanDirectory(skillsDir, 'library');
+      }
+
+      logger.debug('Loaded skills from libraries', {
+        libraryCount: entries.filter((e) => e.isDirectory()).length,
+      });
+    } catch (error) {
+      logger.error('Failed to load from libraries', { error });
+    }
+  }
+
+  /**
+   * 刷新远程库 Skills
+   * 在下载/更新/删除仓库后调用
+   */
+  async refreshLibraries(): Promise<void> {
+    // 清除 library 来源的 skills
+    for (const [name, skill] of this.skills) {
+      if (skill.source === 'library') {
+        this.skills.delete(name);
+      }
+    }
+
+    // 重新加载
+    await this.loadFromLibraries();
+
+    logger.info('Libraries refreshed', {
+      librarySkills: Array.from(this.skills.values()).filter(
+        (s) => s.source === 'library'
+      ).length,
+    });
+  }
+
+  /**
    * 获取指定名称的 Skill
    */
   getSkill(name: string): ParsedSkill | undefined {
@@ -183,6 +273,7 @@ class SkillDiscoveryService {
       project: 0,
       plugin: 0,
       builtin: 0,
+      library: 0,
     };
 
     for (const skill of skills) {

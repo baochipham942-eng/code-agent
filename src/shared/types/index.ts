@@ -17,6 +17,7 @@ export * from './question';
 export * from './agent';
 export * from './skill';
 export * from './agentSkill';
+export * from './skillRepository';
 
 // Infrastructure types
 export * from './auth';

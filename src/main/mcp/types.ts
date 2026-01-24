@@ -18,6 +18,12 @@ export interface MCPStdioServerConfig {
   args?: string[];
   env?: Record<string, string>;
   enabled: boolean;
+  /**
+   * 是否懒加载（按需启动）
+   * 默认为 true，服务器将在首次调用工具时才启动
+   * 设为 false 将在应用启动时立即连接
+   */
+  lazyLoad?: boolean;
 }
 
 /**
@@ -103,8 +109,13 @@ export interface MCPPrompt {
 
 /**
  * 服务器连接状态
+ * - lazy: 懒加载状态，服务器配置已加载但未连接，等待首次调用
+ * - disconnected: 已断开连接
+ * - connecting: 正在连接中
+ * - connected: 已连接
+ * - error: 连接错误
  */
-export type MCPServerStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type MCPServerStatus = 'lazy' | 'disconnected' | 'connecting' | 'connected' | 'error';
 
 /**
  * 服务器状态

@@ -424,10 +424,161 @@ mcp { "server": "deepwiki", "tool": "ask_question", "arguments": { "repoName": "
 | `firecrawl` | HTTP Streamable | 需 FIRECRAWL_API_KEY | 网页抓取、搜索和结构化数据提取 |
 | `tavily` | HTTP Streamable | 需 TAVILY_API_KEY | AI 实时网络搜索，支持新闻搜索和域名过滤 |
 | `deepwiki` | SSE | ✅ | 解读 GitHub 项目文档 |
+| `sequential-thinking` | Stdio | ✅ (懒加载) | 动态问题分解和逐步推理 |
 | `github` | Stdio | 需 GITHUB_TOKEN | GitHub API |
 | `filesystem` | Stdio | ❌ | 文件系统访问 |
 | `git` | Stdio | ❌ | Git 版本控制 |
 | `brave-search` | Stdio | 需 BRAVE_API_KEY | 网络搜索 |
+| `puppeteer` | Stdio | ❌ (懒加载) | 浏览器自动化（截图、PDF） |
+| `docker` | Stdio | ❌ (懒加载) | Docker 容器管理 |
+| `memory` | Stdio | ❌ | 知识图谱记忆服务 |
+
+**懒加载机制：**
+
+Stdio 类型的 MCP 服务器默认使用懒加载，不在应用启动时连接，而是在首次调用工具时按需启动。这可以：
+- 加快应用启动速度
+- 减少资源占用
+- 避免启动时网络超时问题
+
+首次调用懒加载服务器的工具时，可能需要等待 npx 下载包（最长 3 分钟超时）。
+
+---
+
+### Sequential Thinking 使用示例
+
+Sequential Thinking 服务器提供动态问题分解能力，适合处理复杂任务：
+
+```bash
+# 创建思考过程
+mcp {
+  "server": "sequential-thinking",
+  "tool": "sequentialthinking",
+  "arguments": {
+    "thought": "分析用户认证系统的安全漏洞",
+    "nextThoughtNeeded": true
+  }
+}
+
+# 继续推理
+mcp {
+  "server": "sequential-thinking",
+  "tool": "sequentialthinking",
+  "arguments": {
+    "thought": "检查 SQL 注入风险：用户输入是否被正确转义？",
+    "thoughtNumber": 2,
+    "totalThoughts": 5,
+    "nextThoughtNeeded": true
+  }
+}
+```
+
+**适用场景：**
+- 复杂问题的分步分析
+- 需要多轮推理的任务
+- 代码审查和安全分析
+- 架构设计决策
+
+---
+
+### Puppeteer 使用示例
+
+Puppeteer 服务器提供浏览器自动化能力（默认禁用，需在设置中启用）：
+
+```bash
+# 截取网页截图
+mcp {
+  "server": "puppeteer",
+  "tool": "puppeteer_screenshot",
+  "arguments": {
+    "url": "https://example.com",
+    "fullPage": true
+  }
+}
+
+# 生成 PDF
+mcp {
+  "server": "puppeteer",
+  "tool": "puppeteer_pdf",
+  "arguments": {
+    "url": "https://example.com/report",
+    "format": "A4"
+  }
+}
+
+# 点击元素
+mcp {
+  "server": "puppeteer",
+  "tool": "puppeteer_click",
+  "arguments": {
+    "selector": "button.submit"
+  }
+}
+
+# 填充表单
+mcp {
+  "server": "puppeteer",
+  "tool": "puppeteer_fill",
+  "arguments": {
+    "selector": "#email",
+    "value": "test@example.com"
+  }
+}
+```
+
+**适用场景：**
+- 网页截图和 PDF 生成
+- 表单自动填充测试
+- 网页内容抓取
+- UI 自动化测试
+
+---
+
+### Docker 使用示例
+
+Docker 服务器提供容器管理能力（默认禁用，需要 Docker 环境）：
+
+```bash
+# 列出容器
+mcp {
+  "server": "docker",
+  "tool": "list_containers",
+  "arguments": {}
+}
+
+# 列出镜像
+mcp {
+  "server": "docker",
+  "tool": "list_images",
+  "arguments": {}
+}
+
+# 运行容器
+mcp {
+  "server": "docker",
+  "tool": "run_container",
+  "arguments": {
+    "image": "nginx:latest",
+    "name": "my-nginx",
+    "ports": ["8080:80"]
+  }
+}
+
+# 停止容器
+mcp {
+  "server": "docker",
+  "tool": "stop_container",
+  "arguments": {
+    "container": "my-nginx"
+  }
+}
+```
+
+**适用场景：**
+- 开发环境容器管理
+- 构建和测试自动化
+- 服务部署和监控
+
+---
 
 **新增 MCP 服务器详情：**
 

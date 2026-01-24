@@ -5,6 +5,9 @@
 import { createLogger } from '../services/infra/logger';
 import { getSubagentExecutor, type SubagentResult } from './subagentExecutor';
 import { getSessionStateManager } from '../session/sessionStateManager';
+import { getResourceLockManager } from './resourceLockManager';
+import { createProgressAggregator, type ProgressAggregator } from './progressAggregator';
+import { createParallelErrorHandler, type ParallelErrorHandler } from './parallelErrorHandler';
 import type { DynamicAgentDefinition } from './dynamicAgentFactory';
 import type { AgentRequirements, ExecutionStrategy } from './agentRequirementsAnalyzer';
 import type { ModelConfig } from '../../shared/types';

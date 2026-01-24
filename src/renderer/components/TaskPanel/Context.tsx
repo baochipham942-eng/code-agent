@@ -3,6 +3,8 @@
 // ============================================================================
 
 import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { FileText, Wrench, Image, FolderArchive, ChevronDown, ChevronRight } from 'lucide-react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useI18n } from '../../hooks/useI18n';
@@ -83,6 +85,31 @@ export const Context: React.FC = () => {
     });
   };
 
+  // Render details with markdown support for string values
+  const renderDetails = (details: Record<string, unknown>) => {
+    return Object.entries(details).map(([key, value]) => {
+      const stringValue = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+      const isLongText = typeof value === 'string' && value.length > 100;
+
+      return (
+        <div key={key} className="mb-2 last:mb-0">
+          <div className="text-zinc-500 font-medium mb-0.5">{key}:</div>
+          {isLongText ? (
+            <div className="text-zinc-300 prose prose-sm prose-invert max-w-none prose-p:my-1 prose-pre:my-1 prose-code:text-xs">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {stringValue}
+              </ReactMarkdown>
+            </div>
+          ) : (
+            <pre className="text-zinc-400 overflow-x-auto whitespace-pre-wrap break-all">
+              {stringValue}
+            </pre>
+          )}
+        </div>
+      );
+    });
+  };
+
   if (displayItems.length === 0) {
     return null;
   }
@@ -118,12 +145,10 @@ export const Context: React.FC = () => {
                 )}
               </button>
 
-              {/* Expanded details */}
+              {/* Expanded details with scroll and markdown support */}
               {isExpanded && hasDetails && (
-                <div className="px-2 py-2 bg-zinc-900/50 text-xs">
-                  <pre className="text-zinc-400 overflow-x-auto whitespace-pre-wrap break-all">
-                    {JSON.stringify(item.details, null, 2)}
-                  </pre>
+                <div className="px-2 py-2 bg-zinc-900/50 text-xs max-h-48 overflow-y-auto custom-scrollbar">
+                  {renderDetails(item.details!)}
                 </div>
               )}
             </div>

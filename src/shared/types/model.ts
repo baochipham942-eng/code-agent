@@ -15,7 +15,9 @@ export type ModelProvider =
   | 'openrouter'; // OpenRouter 中转（Gemini、Claude、GPT 等）
 
 // 模型能力标签
-export type ModelCapability = 'code' | 'vision' | 'fast' | 'reasoning' | 'gui' | 'general' | 'search';
+// - compact: 上下文压缩、摘要生成（便宜快速的模型）
+// - quick: 简单操作、格式化、快速判断（最便宜的模型）
+export type ModelCapability = 'code' | 'vision' | 'fast' | 'reasoning' | 'gui' | 'general' | 'search' | 'compact' | 'quick';
 
 /**
  * Response format configuration for structured output

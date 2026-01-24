@@ -25,6 +25,9 @@ import {
   postToolUseFailureEvolutionHook,
   type ToolExecutionRecord,
 } from './builtins/evolutionHooks';
+import {
+  sessionStartAgentsInjectHook,
+} from './builtins/agentsHooks';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('BuiltinHookExecutor');
@@ -189,6 +192,9 @@ export class BuiltinHookExecutor {
       case 'session-start-memory-inject':
         return this.executeSessionStartMemoryInject(config, context, startTime);
 
+      case 'session-start-agents-inject':
+        return this.executeSessionStartAgentsInject(config, context, startTime);
+
       case 'session-end-memory-persist':
         return this.executeSessionEndMemoryPersist(config, context, startTime);
 
@@ -228,6 +234,38 @@ export class BuiltinHookExecutor {
           duration: Date.now() - startTime,
         };
     }
+  }
+
+  /**
+   * 执行会话开始 AGENTS.md 注入
+   */
+  private async executeSessionStartAgentsInject(
+    config: BuiltinHookConfig,
+    context: BuiltinHookContext,
+    startTime: number
+  ): Promise<BuiltinHookResult> {
+    const sessionContext: SessionContext = {
+      event: 'SessionStart',
+      sessionId: context.sessionId,
+      workingDirectory: context.workingDirectory,
+      timestamp: Date.now(),
+    };
+
+    const maxDepth = (config.options?.maxDepth as number) || 3;
+    const includeParents = config.options?.includeParents !== false;
+
+    const hookResult = await sessionStartAgentsInjectHook(
+      sessionContext,
+      maxDepth,
+      includeParents
+    );
+
+    return {
+      action: hookResult.action === 'continue' ? 'continue' : 'allow',
+      message: hookResult.message,
+      injectedContext: hookResult.message,
+      duration: Date.now() - startTime,
+    };
   }
 
   /**

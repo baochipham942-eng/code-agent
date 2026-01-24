@@ -610,3 +610,18 @@ export function initializeSummarizer(
   summarizer.setAISummarizer(aiSummarize);
   return summarizer;
 }
+
+/**
+ * Initialize default summarizer with compact model
+ * Uses the cheap, fast compact model for context compression
+ */
+export async function initializeSummarizerWithCompactModel(): Promise<AISummarizer> {
+  const { compactModelSummarize, isCompactModelAvailable } = await import('./compactModel');
+
+  if (!isCompactModelAvailable()) {
+    logger.warn('Compact model not available, summarizer will use extractive summarization only');
+    return getDefaultSummarizer();
+  }
+
+  return initializeSummarizer(compactModelSummarize);
+}

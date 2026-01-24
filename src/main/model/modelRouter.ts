@@ -646,6 +646,9 @@ export class ModelRouter {
     general: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' },
     gui: { provider: 'claude', model: 'claude-sonnet-4-20250514' },
     search: { provider: 'perplexity', model: 'sonar-pro' },
+    // 新增：上下文压缩和快速操作用的便宜模型
+    compact: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' }, // 压缩摘要
+    quick: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' },   // 简单操作
   };
 
   /**

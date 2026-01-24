@@ -354,4 +354,21 @@ export function registerSettingsHandlers(
   ipcMain.handle(IPC_CHANNELS.PERSISTENT_SET_DEV_MODE, async (_, enabled: boolean) =>
     handleSetDevMode(getConfigService, { enabled })
   );
+
+  // Permission mode handlers
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_GET_MODE, async () => {
+    const { getPermissionModeManager } = await import('../permissions/modes');
+    return getPermissionModeManager().getMode();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.PERMISSION_SET_MODE, async (_, mode: string) => {
+    const { getPermissionModeManager } = await import('../permissions/modes');
+    const validModes = ['default', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan', 'delegate'];
+    if (!validModes.includes(mode)) {
+      return false;
+    }
+    // bypassPermissions 需要用户审批
+    const approved = mode === 'bypassPermissions';
+    return getPermissionModeManager().setMode(mode as 'default' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate', approved);
+  });
 }

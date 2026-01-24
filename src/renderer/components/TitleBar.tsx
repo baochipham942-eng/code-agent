@@ -27,7 +27,7 @@ export const TitleBar: React.FC = () => {
   const workspaceName = getWorkspaceName(workingDirectory);
 
   return (
-    <div className="h-12 flex items-center justify-between px-4 border-b border-white/[0.06] window-drag bg-transparent backdrop-blur-sm">
+    <div className="h-12 flex items-center justify-between px-4 border-b border-white/[0.06] window-drag bg-transparent backdrop-blur-sm relative z-30">
       {/* Left: macOS traffic lights space + sidebar toggle + workspace path */}
       <div className="flex items-center gap-3">
         {/* Space for macOS traffic lights */}

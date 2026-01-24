@@ -40,6 +40,9 @@ import {
   youtubeTranscriptTool,
   twitterFetchTool,
   mermaidExportTool,
+  pdfGenerateTool,
+  imageProcessTool,
+  screenshotPageTool,
 } from './network';
 import { skillMetaTool } from './skill';
 import {
@@ -185,6 +188,9 @@ export class ToolRegistry {
     this.register(youtubeTranscriptTool);
     this.register(twitterFetchTool);
     this.register(mermaidExportTool);
+    this.register(pdfGenerateTool);
+    this.register(imageProcessTool);
+    this.register(screenshotPageTool);
 
     // MCP tools (Gen 4+)
     this.register(mcpTool);

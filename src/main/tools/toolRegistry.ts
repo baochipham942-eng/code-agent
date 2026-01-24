@@ -32,7 +32,7 @@ import {
   mcpReadResourceTool,
   mcpGetStatusTool,
 } from './mcp';
-import { memoryStoreTool, memorySearchTool, codeIndexTool, autoLearnTool } from './memory';
+import { memoryStoreTool, memorySearchTool, codeIndexTool, autoLearnTool, forkSessionTool } from './memory';
 import { screenshotTool, computerUseTool, browserNavigateTool, browserActionTool } from './vision';
 import { spawnAgentTool, agentMessageTool, workflowOrchestrateTool } from './multiagent';
 import { strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternTool } from './evolution';
@@ -170,6 +170,7 @@ export class ToolRegistry {
     this.register(memorySearchTool);
     this.register(codeIndexTool);
     this.register(autoLearnTool);
+    this.register(forkSessionTool);
 
     // Gen 6 tools - Computer Use
     this.register(screenshotTool);

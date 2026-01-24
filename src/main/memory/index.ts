@@ -59,3 +59,31 @@ export {
   type SessionMemoryContext,
   type MemoryTriggerConfig,
 } from './memoryTriggerService';
+
+// Session Summarizer (Smart Forking Phase 2)
+export {
+  SessionSummarizer,
+  getSessionSummarizer,
+  initSessionSummarizer,
+  type SessionSummary,
+  type SummarizerConfig,
+} from './sessionSummarizer';
+
+// Fork Detector (Smart Forking Phase 2)
+export {
+  ForkDetector,
+  getForkDetector,
+  initForkDetector,
+  type RelevantSession,
+  type ForkDetectionResult,
+  type ForkDetectorConfig,
+} from './forkDetector';
+
+// Context Injector (Smart Forking Phase 2)
+export {
+  ContextInjector,
+  getContextInjector,
+  initContextInjector,
+  type InjectedContext,
+  type InjectorConfig,
+} from './contextInjector';

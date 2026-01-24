@@ -412,8 +412,11 @@ export const SEMANTIC_RELATION_TYPES: readonly SemanticRelationType[] = [
   'related_to',
   'solves',
   'conflicts_with',
-  'depends_on',
   'similar_to',
+  'alternative_to',
+  'causes',
+  'requires',
+  'mentions',
 ];
 
 export const TEMPORAL_RELATION_TYPES: readonly TemporalRelationType[] = [
@@ -515,6 +518,7 @@ export function getRelationTypeLabel(type: RelationType): string {
     // 时序关系
     supersedes: '替代',
     derived_from: '衍生自',
+    precedes: '前置',
     concurrent_with: '并发',
     before: '之前',
     after: '之后',

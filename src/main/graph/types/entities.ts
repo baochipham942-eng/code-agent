@@ -387,7 +387,7 @@ export const KNOWLEDGE_ENTITY_TYPES: readonly KnowledgeEntityType[] = [
   'architecture_pattern',
   'api_endpoint',
   'dependency',
-  'concept',
+  'configuration',
 ] as const;
 export const ALL_ENTITY_TYPES: readonly EntityType[] = [
   ...CODE_ENTITY_TYPES,

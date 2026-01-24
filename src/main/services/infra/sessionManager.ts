@@ -43,6 +43,7 @@ export interface SessionListOptions {
   limit?: number;
   offset?: number;
   searchQuery?: string;
+  includeArchived?: boolean;
 }
 
 // ----------------------------------------------------------------------------
@@ -180,9 +181,9 @@ export class SessionManager {
    */
   async listSessions(options: SessionListOptions = {}): Promise<StoredSession[]> {
     const db = getDatabase();
-    const { limit = 50, offset = 0 } = options;
+    const { limit = 50, offset = 0, includeArchived = false } = options;
 
-    let sessions = db.listSessions(limit, offset);
+    let sessions = db.listSessions(limit, offset, includeArchived);
 
     // 搜索过滤
     if (options.searchQuery) {
@@ -200,6 +201,14 @@ export class SessionManager {
     });
 
     return sessions;
+  }
+
+  /**
+   * 列出已归档的会话
+   */
+  async listArchivedSessions(limit: number = 50, offset: number = 0): Promise<StoredSession[]> {
+    const db = getDatabase();
+    return db.listArchivedSessions(limit, offset);
   }
 
   /**
@@ -328,6 +337,54 @@ export class SessionManager {
 
     // 记录审计日志
     db.logAuditEvent('session_deleted', { sessionId });
+  }
+
+  /**
+   * 归档会话
+   */
+  async archiveSession(sessionId: string): Promise<Session | null> {
+    const db = getDatabase();
+
+    // 归档会话
+    db.archiveSession(sessionId);
+
+    // 清除缓存
+    this.sessionCache.delete(sessionId);
+
+    // 通知前端
+    this.notifySessionListUpdated();
+
+    // 获取更新后的会话
+    const session = db.getSession(sessionId);
+
+    // 记录审计日志
+    db.logAuditEvent('session_archived', { sessionId }, sessionId);
+
+    return session;
+  }
+
+  /**
+   * 取消归档会话
+   */
+  async unarchiveSession(sessionId: string): Promise<Session | null> {
+    const db = getDatabase();
+
+    // 取消归档
+    db.unarchiveSession(sessionId);
+
+    // 清除缓存
+    this.sessionCache.delete(sessionId);
+
+    // 通知前端
+    this.notifySessionListUpdated();
+
+    // 获取更新后的会话
+    const session = db.getSession(sessionId);
+
+    // 记录审计日志
+    db.logAuditEvent('session_unarchived', { sessionId }, sessionId);
+
+    return session;
   }
 
   // --------------------------------------------------------------------------

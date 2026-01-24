@@ -18,6 +18,9 @@ export interface SessionWithMeta extends Session {
   messageCount: number;
 }
 
+// 会话过滤器类型
+export type SessionFilter = 'active' | 'archived' | 'all';
+
 interface SessionState {
   // 会话列表
   sessions: SessionWithMeta[];
@@ -33,6 +36,8 @@ interface SessionState {
   error: string | null;
   // 未读会话集合（用于跨会话通知）
   unreadSessionIds: Set<string>;
+  // 当前过滤器
+  filter: SessionFilter;
 }
 
 interface SessionActions {
@@ -44,6 +49,12 @@ interface SessionActions {
   switchSession: (sessionId: string) => Promise<void>;
   // 删除会话
   deleteSession: (sessionId: string) => Promise<void>;
+  // 归档会话
+  archiveSession: (sessionId: string) => Promise<void>;
+  // 取消归档
+  unarchiveSession: (sessionId: string) => Promise<void>;
+  // 设置过滤器
+  setFilter: (filter: SessionFilter) => void;
   // 添加消息到当前会话
   addMessage: (message: Message) => void;
   // 更新消息
@@ -79,17 +90,30 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     isLoading: false,
     error: null,
     unreadSessionIds: new Set<string>(),
+    filter: 'active' as SessionFilter,
 
     // 加载会话列表
     loadSessions: async () => {
+      const { filter } = get();
       set({ isLoading: true, error: null });
       try {
-        const sessions = await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_LIST);
-        // 转换为 SessionWithMeta 格式
-        const sessionsWithMeta: SessionWithMeta[] = (sessions || []).map((s: Session & { messageCount?: number }) => ({
+        // 根据过滤器决定是否包含归档会话
+        const includeArchived = filter === 'archived' || filter === 'all';
+        const sessions = await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_LIST, { includeArchived });
+
+        // 转换为 SessionWithMeta 格式并根据过滤器筛选
+        let sessionsWithMeta: SessionWithMeta[] = (sessions || []).map((s: Session & { messageCount?: number }) => ({
           ...s,
           messageCount: s.messageCount || 0,
         }));
+
+        // 客户端过滤：active 只显示未归档，archived 只显示已归档，all 显示全部
+        if (filter === 'active') {
+          sessionsWithMeta = sessionsWithMeta.filter(s => !s.isArchived);
+        } else if (filter === 'archived') {
+          sessionsWithMeta = sessionsWithMeta.filter(s => s.isArchived);
+        }
+
         set({ sessions: sessionsWithMeta, isLoading: false });
       } catch (error) {
         logger.error('Failed to load sessions', error);
@@ -188,6 +212,84 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           error: error instanceof Error ? error.message : 'Failed to delete session',
         });
       }
+    },
+
+    // 归档会话
+    archiveSession: async (sessionId: string) => {
+      try {
+        await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_ARCHIVE, sessionId);
+
+        const { currentSessionId, sessions, filter } = get();
+
+        // 如果当前过滤器是 active，从列表中移除
+        if (filter === 'active') {
+          const newSessions = sessions.filter((s) => s.id !== sessionId);
+
+          // 如果归档的是当前会话，切换到第一个
+          if (currentSessionId === sessionId) {
+            if (newSessions.length > 0) {
+              set({ sessions: newSessions });
+              await get().switchSession(newSessions[0].id);
+            } else {
+              set({ sessions: newSessions });
+              await get().createSession();
+            }
+          } else {
+            set({ sessions: newSessions });
+          }
+        } else {
+          // 如果是 all 过滤器，更新会话状态
+          set({
+            sessions: sessions.map((s) =>
+              s.id === sessionId ? { ...s, isArchived: true, archivedAt: Date.now() } : s
+            ),
+          });
+        }
+
+        logger.info('Session archived', { sessionId });
+      } catch (error) {
+        logger.error('Failed to archive session', error);
+        set({
+          error: error instanceof Error ? error.message : 'Failed to archive session',
+        });
+      }
+    },
+
+    // 取消归档
+    unarchiveSession: async (sessionId: string) => {
+      try {
+        await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_UNARCHIVE, sessionId);
+
+        const { sessions, filter } = get();
+
+        // 如果当前过滤器是 archived，从列表中移除
+        if (filter === 'archived') {
+          set({
+            sessions: sessions.filter((s) => s.id !== sessionId),
+          });
+        } else {
+          // 如果是 all 或 active 过滤器，更新会话状态
+          set({
+            sessions: sessions.map((s) =>
+              s.id === sessionId ? { ...s, isArchived: false, archivedAt: undefined } : s
+            ),
+          });
+        }
+
+        logger.info('Session unarchived', { sessionId });
+      } catch (error) {
+        logger.error('Failed to unarchive session', error);
+        set({
+          error: error instanceof Error ? error.message : 'Failed to unarchive session',
+        });
+      }
+    },
+
+    // 设置过滤器
+    setFilter: (filter: SessionFilter) => {
+      set({ filter });
+      // 切换过滤器后重新加载会话列表
+      get().loadSessions();
     },
 
     // 添加消息

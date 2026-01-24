@@ -40,7 +40,7 @@ export type AgentAction = 'send' | 'cancel' | 'retry';
 /**
  * Session 通道 actions
  */
-export type SessionAction = 'list' | 'create' | 'load' | 'delete' | 'export' | 'import' | 'getMessages';
+export type SessionAction = 'list' | 'create' | 'load' | 'delete' | 'export' | 'import' | 'getMessages' | 'archive' | 'unarchive';
 
 /**
  * Generation 通道 actions

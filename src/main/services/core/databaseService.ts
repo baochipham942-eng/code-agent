@@ -117,16 +117,20 @@ export class DatabaseService {
   }
 
   /**
-   * Sessions 表迁移 - 添加 Wave 3 新字段
+   * Sessions 表迁移 - 添加新字段
    * 使用 try-catch 模式，列已存在时静默忽略
    */
   private migrateSessionsTable(): void {
     if (!this.db) return;
 
     const migrations = [
+      // Wave 3 新字段
       { column: 'status', sql: "ALTER TABLE sessions ADD COLUMN status TEXT DEFAULT 'idle'" },
       { column: 'workspace', sql: 'ALTER TABLE sessions ADD COLUMN workspace TEXT' },
       { column: 'last_token_usage', sql: 'ALTER TABLE sessions ADD COLUMN last_token_usage TEXT' },
+      // 归档功能字段
+      { column: 'is_archived', sql: 'ALTER TABLE sessions ADD COLUMN is_archived INTEGER DEFAULT 0' },
+      { column: 'archived_at', sql: 'ALTER TABLE sessions ADD COLUMN archived_at INTEGER' },
     ];
 
     for (const migration of migrations) {
@@ -364,20 +368,82 @@ export class DatabaseService {
     return this.rowToSession(row);
   }
 
-  listSessions(limit: number = 50, offset: number = 0): StoredSession[] {
+  listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false): StoredSession[] {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const sql = includeArchived
+      ? `
+        SELECT s.*, COUNT(m.id) as message_count
+        FROM sessions s
+        LEFT JOIN messages m ON s.id = m.session_id
+        GROUP BY s.id
+        ORDER BY s.updated_at DESC
+        LIMIT ? OFFSET ?
+      `
+      : `
+        SELECT s.*, COUNT(m.id) as message_count
+        FROM sessions s
+        LEFT JOIN messages m ON s.id = m.session_id
+        WHERE COALESCE(s.is_archived, 0) = 0
+        GROUP BY s.id
+        ORDER BY s.updated_at DESC
+        LIMIT ? OFFSET ?
+      `;
+
+    const stmt = this.db.prepare(sql);
+    const rows = stmt.all(limit, offset) as SQLiteRow[];
+    return rows.map((row) => this.rowToSession(row));
+  }
+
+  /**
+   * 列出已归档的会话
+   */
+  listArchivedSessions(limit: number = 50, offset: number = 0): StoredSession[] {
     if (!this.db) throw new Error('Database not initialized');
 
     const stmt = this.db.prepare(`
       SELECT s.*, COUNT(m.id) as message_count
       FROM sessions s
       LEFT JOIN messages m ON s.id = m.session_id
+      WHERE s.is_archived = 1
       GROUP BY s.id
-      ORDER BY s.updated_at DESC
+      ORDER BY s.archived_at DESC
       LIMIT ? OFFSET ?
     `);
 
     const rows = stmt.all(limit, offset) as SQLiteRow[];
     return rows.map((row) => this.rowToSession(row));
+  }
+
+  /**
+   * 归档会话
+   */
+  archiveSession(sessionId: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare(`
+      UPDATE sessions
+      SET is_archived = 1, archived_at = ?, updated_at = ?
+      WHERE id = ?
+    `);
+
+    const now = Date.now();
+    stmt.run(now, now, sessionId);
+  }
+
+  /**
+   * 取消归档会话
+   */
+  unarchiveSession(sessionId: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare(`
+      UPDATE sessions
+      SET is_archived = 0, archived_at = NULL, updated_at = ?
+      WHERE id = ?
+    `);
+
+    stmt.run(Date.now(), sessionId);
   }
 
   updateSession(sessionId: string, updates: Partial<Session>): void {
@@ -493,6 +559,9 @@ export class DatabaseService {
       workspace: row.workspace as string | undefined,
       status: (row.status as SessionStatus) || 'idle',
       lastTokenUsage,
+      // 归档字段
+      isArchived: (row.is_archived as number) === 1,
+      archivedAt: row.archived_at as number | undefined,
     };
   }
 

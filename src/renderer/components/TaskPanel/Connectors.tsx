@@ -119,9 +119,9 @@ export const Connectors: React.FC = () => {
                         </span>
                       )}
                       {isServerExpanded ? (
-                        <ChevronDown className="w-3 h-3 text-zinc-500" />
+                        <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
                       ) : (
-                        <ChevronRight className="w-3 h-3 text-zinc-500" />
+                        <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
                       )}
                     </div>
                   </button>

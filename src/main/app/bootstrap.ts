@@ -23,7 +23,7 @@ import { initCloudTaskService } from '../cloud/cloudTaskService';
 import { initUnifiedOrchestrator } from '../orchestrator';
 import { logBridge } from '../mcp/logBridge.js';
 import { initPluginSystem, shutdownPluginSystem } from '../plugins';
-import { getSkillDiscoveryService } from '../services/skills';
+import { getSkillDiscoveryService, getSkillRepositoryService } from '../services/skills';
 import { getMainWindow } from './window';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { SYNC, UPDATE, CLOUD, TOOL_CACHE } from '../../shared/constants';
@@ -189,7 +189,28 @@ async function initializeServices(): Promise<void> {
       const info = getCloudConfigService().getInfo();
       logger.info('CloudConfig initialized', { source: info.fromCloud ? 'cloud' : 'builtin', version: info.version });
 
-      // Initialize SkillDiscoveryService AFTER CloudConfig is ready
+      // Initialize SkillRepositoryService AFTER CloudConfig is ready
+      // This handles local skill library downloads and management
+      try {
+        const skillRepoService = getSkillRepositoryService();
+        await skillRepoService.initialize();
+        logger.info('SkillRepositoryService initialized', {
+          libraryCount: skillRepoService.getLocalLibraries().length,
+        });
+
+        // Preload recommended repositories in background (non-blocking)
+        skillRepoService.preloadRecommendedRepositories()
+          .then(() => {
+            logger.info('Recommended skill repositories preloaded');
+          })
+          .catch((preloadError) => {
+            logger.warn('Failed to preload recommended repositories', { error: String(preloadError) });
+          });
+      } catch (repoError) {
+        logger.warn('SkillRepositoryService initialization failed (non-blocking)', { error: String(repoError) });
+      }
+
+      // Initialize SkillDiscoveryService AFTER CloudConfig and SkillRepositoryService are ready
       // Skills depend on CloudConfig for builtin skills
       try {
         const skillDiscovery = getSkillDiscoveryService();
@@ -200,6 +221,7 @@ async function initializeServices(): Promise<void> {
           builtin: stats.bySource.builtin,
           user: stats.bySource.user,
           project: stats.bySource.project,
+          library: stats.bySource.library,
         });
       } catch (skillError) {
         logger.warn('SkillDiscovery initialization failed (non-blocking)', { error: String(skillError) });

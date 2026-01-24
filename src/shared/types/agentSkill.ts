@@ -51,7 +51,7 @@ export interface ParsedSkill {
   source: SkillSource;
 }
 
-export type SkillSource = 'user' | 'project' | 'plugin' | 'builtin';
+export type SkillSource = 'user' | 'project' | 'plugin' | 'builtin' | 'library';
 
 /**
  * Skill 注入消息类型

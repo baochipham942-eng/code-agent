@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Cpu, Server, Database, Info } from 'lucide-react';
+import { X, Settings, Cpu, Server, Database, Info, Sparkles } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useAuthStore } from '../../../stores/authStore';
 import { useI18n } from '../../../hooks/useI18n';
@@ -19,6 +19,7 @@ import { ModelSection } from './sections/ModelSection';
 import { ServiceSection } from './sections/ServiceSection';
 import { DataSection } from './sections/DataSection';
 import { AboutSection } from './sections/AboutSection';
+import { SkillsSettings } from './tabs/SkillsSettings';
 
 const logger = createLogger('SettingsModal');
 
@@ -26,7 +27,7 @@ const logger = createLogger('SettingsModal');
 // Types
 // ============================================================================
 
-type SectionId = 'general' | 'model' | 'service' | 'data' | 'about';
+type SectionId = 'general' | 'model' | 'service' | 'skills' | 'data' | 'about';
 
 interface Section {
   id: SectionId;
@@ -82,6 +83,11 @@ export const SettingsModal: React.FC = () => {
       icon: <Server className="w-4 h-4" />
     },
     {
+      id: 'skills',
+      label: 'Skills',
+      icon: <Sparkles className="w-4 h-4" />
+    },
+    {
       id: 'data',
       label: t.settings?.tabs?.data || '数据',
       icon: <Database className="w-4 h-4" />
@@ -102,6 +108,8 @@ export const SettingsModal: React.FC = () => {
         return <ModelSection config={modelConfig} onChange={setModelConfig} />;
       case 'service':
         return <ServiceSection />;
+      case 'skills':
+        return <SkillsSettings />;
       case 'data':
         return <DataSection />;
       case 'about':

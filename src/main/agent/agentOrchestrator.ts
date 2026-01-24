@@ -26,6 +26,10 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
+// Auto Agent Generation
+import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
+import { getDynamicAgentFactory } from './dynamicAgentFactory';
+import { getAutoAgentCoordinator } from './autoAgentCoordinator';
 
 const logger = createLogger('AgentOrchestrator');
 
@@ -386,6 +390,59 @@ export class AgentOrchestrator {
       sessionStateManager.updateStatus(sessionId, 'running');
     }
 
+    try {
+      // Check if auto agent generation is needed
+      const requirementsAnalyzer = getAgentRequirementsAnalyzer();
+      const requirements = await requirementsAnalyzer.analyze(content, this.workingDirectory);
+
+      if (requirements.needsAutoAgent) {
+        // Use auto agent mode
+        await this.runAutoAgentMode(
+          content,
+          requirements,
+          onEvent,
+          modelConfig,
+          generation,
+          sessionId
+        );
+      } else {
+        // Use standard agent loop
+        await this.runStandardAgentLoop(
+          content,
+          onEvent,
+          modelConfig,
+          generation,
+          sessionId
+        );
+      }
+    } catch (error) {
+      logger.error('========== Normal mode EXCEPTION ==========');
+      logger.error('Error:', error);
+      logger.error('Stack:', error instanceof Error ? error.stack : 'no stack');
+      onEvent({
+        type: 'error',
+        data: {
+          message: error instanceof Error ? error.message : 'Unknown error',
+        },
+      });
+    } finally {
+      // Update session state to idle
+      if (sessionId) {
+        sessionStateManager.updateStatus(sessionId, 'idle');
+      }
+    }
+  }
+
+  /**
+   * 运行标准 Agent Loop
+   */
+  private async runStandardAgentLoop(
+    content: string,
+    onEvent: (event: AgentEvent) => void,
+    modelConfig: ModelConfig,
+    generation: ReturnType<GenerationManager['getCurrentGeneration']>,
+    sessionId?: string
+  ): Promise<void> {
     // Create agent loop
     this.agentLoop = new AgentLoop({
       generation,
@@ -405,25 +462,115 @@ export class AgentOrchestrator {
       logger.info('========== Starting agent loop ==========');
       await this.agentLoop.run(content);
       logger.info('========== Agent loop completed normally ==========');
-    } catch (error) {
-      logger.error('========== Agent loop EXCEPTION ==========');
-      logger.error('Error:', error);
-      logger.error('Stack:', error instanceof Error ? error.stack : 'no stack');
-      onEvent({
-        type: 'error',
-        data: {
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
-      });
     } finally {
       logger.info('========== Finally block, agentLoop = null ==========');
       this.agentLoop = null;
-
-      // Update session state to idle
-      if (sessionId) {
-        sessionStateManager.updateStatus(sessionId, 'idle');
-      }
     }
+  }
+
+  /**
+   * 运行自动 Agent 模式
+   */
+  private async runAutoAgentMode(
+    content: string,
+    requirements: Awaited<ReturnType<ReturnType<typeof getAgentRequirementsAnalyzer>['analyze']>>,
+    onEvent: (event: AgentEvent) => void,
+    modelConfig: ModelConfig,
+    generation: ReturnType<GenerationManager['getCurrentGeneration']>,
+    sessionId?: string
+  ): Promise<void> {
+    logger.info('========== Starting auto agent mode ==========');
+    logger.info('Task type:', requirements.taskType);
+    logger.info('Execution strategy:', requirements.executionStrategy);
+    logger.info('Confidence:', requirements.confidence);
+
+    // Create dynamic agents
+    const factory = getDynamicAgentFactory();
+    const agents = factory.create(requirements, {
+      userMessage: content,
+      workingDirectory: this.workingDirectory,
+      sessionId,
+    });
+
+    if (agents.length === 0) {
+      // Fallback to standard agent loop if no agents generated
+      logger.warn('No auto agents generated, falling back to standard loop');
+      await this.runStandardAgentLoop(content, onEvent, modelConfig, generation, sessionId);
+      return;
+    }
+
+    // Notify UI about auto agent planning
+    onEvent({
+      type: 'agent_thinking',
+      data: {
+        message: `正在规划自动 Agent 执行...\n任务类型: ${requirements.taskType}\n策略: ${requirements.executionStrategy}\nAgent 数量: ${agents.length}`,
+      },
+    });
+
+    // Execute agents through coordinator
+    const coordinator = getAutoAgentCoordinator();
+    const toolMap = new Map<string, import('../tools/toolRegistry').Tool>();
+    for (const tool of this.toolRegistry.getAllTools()) {
+      toolMap.set(tool.name, tool);
+    }
+
+    const result = await coordinator.execute(agents, requirements, {
+      sessionId: sessionId || 'unknown',
+      modelConfig,
+      toolRegistry: toolMap,
+      toolContext: {
+        workingDirectory: this.workingDirectory,
+        generation: { id: generation.id },
+        requestPermission: async () => true, // Auto-approve for auto agents
+      },
+      onProgress: (agentId, status, progress) => {
+        onEvent({
+          type: 'agent_thinking',
+          data: {
+            message: `Agent ${agentId}: ${status}${progress !== undefined ? ` (${progress}%)` : ''}`,
+            agentId,
+            progress,
+          },
+        });
+      },
+    });
+
+    // Process result
+    if (result.success && result.aggregatedOutput) {
+      // Create assistant message with aggregated output
+      const assistantMessage: Message = {
+        id: this.generateId(),
+        role: 'assistant',
+        content: result.aggregatedOutput,
+        timestamp: Date.now(),
+      };
+      this.messages.push(assistantMessage);
+
+      // Save and emit message
+      const sessionManager = getSessionManager();
+      try {
+        await sessionManager.addMessage(assistantMessage);
+      } catch (error) {
+        logger.error('Failed to save auto agent result:', error);
+      }
+
+      onEvent({
+        type: 'message',
+        data: assistantMessage,
+      });
+    }
+
+    // Log summary
+    logger.info('========== Auto agent mode completed ==========');
+    logger.info('Success:', result.success);
+    logger.info('Total iterations:', result.totalIterations);
+    logger.info('Total cost:', result.totalCost);
+    if (result.errors.length > 0) {
+      logger.warn('Errors:', result.errors);
+    }
+
+    // Emit completion
+    onEvent({ type: 'agent_complete', data: null });
   }
 
   /**

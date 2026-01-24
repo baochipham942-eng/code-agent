@@ -204,15 +204,14 @@ export const GenerationBadge: React.FC = () => {
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Badge Button - text-only style, no background */}
+      {/* Badge Button - compact text style, chevron aligned with section chevrons */}
       <button
         onClick={() => setShowDropdown(!showDropdown)}
-        className={`flex items-center gap-1.5 px-2 py-1 text-sm transition-colors hover:opacity-80 ${config.textColor}`}
+        className={`flex items-center gap-1 text-xs transition-colors hover:opacity-80 ${config.textColor}`}
       >
         {config.icon}
         <span className="font-medium">Gen{currentGeneration.id.replace('gen', '')}</span>
-        <span className="text-zinc-500 text-xs">{currentGeneration.name}</span>
-        <ChevronDown className={`w-3 h-3 text-zinc-500 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-3.5 h-3.5 text-zinc-500 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Dropdown */}

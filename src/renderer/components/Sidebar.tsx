@@ -3,22 +3,22 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { useSessionStore, initializeSessionStore, type SessionWithMeta } from '../stores/sessionStore';
+import { useSessionStore, initializeSessionStore, type SessionWithMeta, type SessionFilter } from '../stores/sessionStore';
 import { useAppStore } from '../stores/appStore';
 import { useAuthStore } from '../stores/authStore';
 import {
   MessageSquare,
   Plus,
   Archive,
+  ArchiveRestore,
   Loader2,
   User,
   Settings,
-  LogOut,
   LogIn,
   ChevronDown,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { Button, IconButton } from './primitives';
+import { IconButton } from './primitives';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('Sidebar');
@@ -40,14 +40,11 @@ function getRelativeTime(timestamp: number): string {
 }
 
 // 获取会话预览（最后一条消息内容）
-function getSessionPreview(session: SessionWithMeta): string {
+function getSessionPreview(_session: SessionWithMeta): string {
   // If we have preview content stored, use it
   // For now, return placeholder
   return '好的，我来帮你处理...';
 }
-
-// Filter type
-type FilterType = 'active' | 'archived';
 
 export const Sidebar: React.FC = () => {
   const { clearChat, setShowSettings } = useAppStore();
@@ -57,14 +54,17 @@ export const Sidebar: React.FC = () => {
     isLoading,
     createSession,
     switchSession,
+    archiveSession,
+    unarchiveSession,
     unreadSessionIds,
+    filter,
+    setFilter,
   } = useSessionStore();
 
-  const { user, isAuthenticated, signOut, setShowAuthModal } = useAuthStore();
+  const { user, isAuthenticated, setShowAuthModal } = useAuthStore();
 
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string>('');
-  const [filter, setFilter] = useState<FilterType>('active');
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
   // 初始化：加载会话列表
@@ -87,7 +87,7 @@ export const Sidebar: React.FC = () => {
     loadVersion();
   }, []);
 
-  // 过滤会话（暂时只显示 active，归档功能待实现）
+  // 过滤会话
   const filteredSessions = useMemo(() => {
     // Sort by updatedAt desc
     return [...sessions].sort((a, b) => b.updatedAt - a.updatedAt);
@@ -104,10 +104,28 @@ export const Sidebar: React.FC = () => {
     }
   };
 
-  const handleArchiveSession = async (id: string, e: React.MouseEvent) => {
+  const handleArchiveSession = async (id: string, isArchived: boolean, e: React.MouseEvent) => {
     e.stopPropagation();
-    // TODO: Implement archive functionality
-    logger.info('Archive session', { id });
+    if (isArchived) {
+      await unarchiveSession(id);
+    } else {
+      await archiveSession(id);
+    }
+  };
+
+  // 过滤器显示文本
+  const filterLabels: Record<SessionFilter, string> = {
+    active: '进行中',
+    archived: '已归档',
+    all: '全部',
+  };
+
+  // 循环切换过滤器
+  const cycleFilter = () => {
+    const filters: SessionFilter[] = ['active', 'archived', 'all'];
+    const currentIndex = filters.indexOf(filter);
+    const nextIndex = (currentIndex + 1) % filters.length;
+    setFilter(filters[nextIndex]);
   };
 
   const hasAnySessions = sessions.length > 0;
@@ -133,10 +151,10 @@ export const Sidebar: React.FC = () => {
         {/* Filter Dropdown */}
         <div className="relative">
           <button
-            onClick={() => setFilter(filter === 'active' ? 'archived' : 'active')}
+            onClick={cycleFilter}
             className="flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
           >
-            <span>{filter === 'active' ? '进行中' : '已归档'}</span>
+            <span>{filterLabels[filter]}</span>
             <ChevronDown className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -184,12 +202,13 @@ export const Sidebar: React.FC = () => {
                     </span>
                     {hoveredSession === session.id && (
                       <IconButton
-                        icon={<Archive className="w-3.5 h-3.5" />}
-                        aria-label="Archive session"
-                        onClick={(e) => handleArchiveSession(session.id, e as unknown as React.MouseEvent)}
+                        icon={session.isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+                        aria-label={session.isArchived ? "Unarchive session" : "Archive session"}
+                        onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e as unknown as React.MouseEvent)}
                         variant="ghost"
                         size="sm"
                         className="!p-1 opacity-0 group-hover:opacity-100"
+                        title={session.isArchived ? "取消归档" : "归档"}
                       />
                     )}
                   </div>

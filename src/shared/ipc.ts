@@ -258,6 +258,8 @@ export const IPC_CHANNELS = {
   SESSION_IMPORT: 'session:import',
   SESSION_UPDATED: 'session:updated',
   SESSION_LIST_UPDATED: 'session:list-updated',
+  SESSION_ARCHIVE: 'session:archive',
+  SESSION_UNARCHIVE: 'session:unarchive',
 
   // Memory channels
   MEMORY_GET_CONTEXT: 'memory:get-context',
@@ -422,13 +424,15 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.GENERATION_GET_CURRENT]: () => Promise<Generation>;
 
   // Session
-  [IPC_CHANNELS.SESSION_LIST]: () => Promise<Session[]>;
+  [IPC_CHANNELS.SESSION_LIST]: (options?: { includeArchived?: boolean }) => Promise<Session[]>;
   [IPC_CHANNELS.SESSION_CREATE]: (title?: string) => Promise<Session>;
   [IPC_CHANNELS.SESSION_LOAD]: (id: string) => Promise<Session>;
   [IPC_CHANNELS.SESSION_DELETE]: (id: string) => Promise<void>;
   [IPC_CHANNELS.SESSION_GET_MESSAGES]: (sessionId: string) => Promise<Message[]>;
   [IPC_CHANNELS.SESSION_EXPORT]: (sessionId: string) => Promise<SessionExport>;
   [IPC_CHANNELS.SESSION_IMPORT]: (data: SessionExport) => Promise<string>;
+  [IPC_CHANNELS.SESSION_ARCHIVE]: (sessionId: string) => Promise<Session>;
+  [IPC_CHANNELS.SESSION_UNARCHIVE]: (sessionId: string) => Promise<Session>;
 
   // Memory
   [IPC_CHANNELS.MEMORY_GET_CONTEXT]: (query: string) => Promise<MemoryContextResult>;

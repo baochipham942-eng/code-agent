@@ -59,3 +59,54 @@ export {
   type SessionMemoryContext,
   type MemoryTriggerConfig,
 } from './memoryTriggerService';
+
+// Session Summarizer (Smart Forking Phase 2)
+export {
+  SessionSummarizer,
+  getSessionSummarizer,
+  initSessionSummarizer,
+  initSessionSummarizerWithLLM,
+  type SessionSummary,
+  type SummarizerConfig,
+} from './sessionSummarizer';
+
+// LLM Summarizer (Week 4 Enhancement)
+export {
+  LLMSummarizer,
+  getLLMSummarizer,
+  initLLMSummarizer,
+  createLLMSummarizer,
+  type LLMSummarizerConfig,
+} from './llmSummarizer';
+
+// Fork Detector (Smart Forking Phase 2)
+export {
+  ForkDetector,
+  getForkDetector,
+  initForkDetector,
+  type RelevantSession,
+  type ForkDetectionResult,
+  type ForkDetectorConfig,
+} from './forkDetector';
+
+// Context Injector (Smart Forking Phase 2)
+export {
+  ContextInjector,
+  getContextInjector,
+  initContextInjector,
+  type InjectedContext,
+  type InjectorConfig,
+} from './contextInjector';
+
+// Core Memory (Enhanced User Preferences - Week 3)
+export {
+  CoreMemoryService,
+  getCoreMemoryService,
+  initCoreMemoryService,
+  type CoreMemory,
+  type HumanProfile,
+  type CodingStyle,
+  type WorkflowPreferences,
+  type AgentPersona,
+  type LearnedPreferences,
+} from './coreMemory';

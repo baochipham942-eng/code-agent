@@ -17,6 +17,8 @@ import type {
   TodoItem,
 } from '../../../shared/types';
 import { createLogger } from './logger';
+import { getSessionSummarizer } from '../../memory/sessionSummarizer';
+import { getCoreMemoryService } from '../../memory/coreMemory';
 
 const logger = createLogger('SessionManager');
 
@@ -41,6 +43,7 @@ export interface SessionListOptions {
   limit?: number;
   offset?: number;
   searchQuery?: string;
+  includeArchived?: boolean;
 }
 
 // ----------------------------------------------------------------------------
@@ -178,9 +181,9 @@ export class SessionManager {
    */
   async listSessions(options: SessionListOptions = {}): Promise<StoredSession[]> {
     const db = getDatabase();
-    const { limit = 50, offset = 0 } = options;
+    const { limit = 50, offset = 0, includeArchived = false } = options;
 
-    let sessions = db.listSessions(limit, offset);
+    let sessions = db.listSessions(limit, offset, includeArchived);
 
     // 搜索过滤
     if (options.searchQuery) {
@@ -198,6 +201,14 @@ export class SessionManager {
     });
 
     return sessions;
+  }
+
+  /**
+   * 列出已归档的会话
+   */
+  async listArchivedSessions(limit: number = 50, offset: number = 0): Promise<StoredSession[]> {
+    const db = getDatabase();
+    return db.listArchivedSessions(limit, offset);
   }
 
   /**
@@ -328,14 +339,72 @@ export class SessionManager {
     db.logAuditEvent('session_deleted', { sessionId });
   }
 
+  /**
+   * 归档会话
+   */
+  async archiveSession(sessionId: string): Promise<Session | null> {
+    const db = getDatabase();
+
+    // 归档会话
+    db.archiveSession(sessionId);
+
+    // 清除缓存
+    this.sessionCache.delete(sessionId);
+
+    // 通知前端
+    this.notifySessionListUpdated();
+
+    // 获取更新后的会话
+    const session = db.getSession(sessionId);
+
+    // 记录审计日志
+    db.logAuditEvent('session_archived', { sessionId }, sessionId);
+
+    return session;
+  }
+
+  /**
+   * 取消归档会话
+   */
+  async unarchiveSession(sessionId: string): Promise<Session | null> {
+    const db = getDatabase();
+
+    // 取消归档
+    db.unarchiveSession(sessionId);
+
+    // 清除缓存
+    this.sessionCache.delete(sessionId);
+
+    // 通知前端
+    this.notifySessionListUpdated();
+
+    // 获取更新后的会话
+    const session = db.getSession(sessionId);
+
+    // 记录审计日志
+    db.logAuditEvent('session_unarchived', { sessionId }, sessionId);
+
+    return session;
+  }
+
   // --------------------------------------------------------------------------
   // Current Session Management
   // --------------------------------------------------------------------------
 
   /**
    * 设置当前会话
+   * 会自动结束前一个会话（异步生成摘要）
    */
   setCurrentSession(sessionId: string): void {
+    // 如果有前一个会话，异步结束它（不阻塞）
+    if (this.currentSessionId && this.currentSessionId !== sessionId) {
+      const previousSessionId = this.currentSessionId;
+      // 异步生成摘要，不阻塞会话切换
+      this.endSession(previousSessionId).catch((error) => {
+        logger.error('Failed to end previous session', { error, previousSessionId });
+      });
+    }
+
     this.currentSessionId = sessionId;
 
     // 设置工具缓存的 session
@@ -466,6 +535,78 @@ export class SessionManager {
     db.logAuditEvent('session_restored', { sessionId }, sessionId);
 
     return session;
+  }
+
+  /**
+   * 结束会话（生成摘要用于 Smart Forking）
+   * 在切换会话或关闭应用时调用
+   */
+  async endSession(sessionId?: string): Promise<void> {
+    const targetSessionId = sessionId || this.currentSessionId;
+    if (!targetSessionId) return;
+
+    logger.info('Ending session, generating summary', { sessionId: targetSessionId });
+
+    try {
+      const session = await this.getSession(targetSessionId);
+      if (!session || session.messages.length < 4) {
+        logger.debug('Session too short for summary', {
+          sessionId: targetSessionId,
+          messageCount: session?.messages.length || 0,
+        });
+        return;
+      }
+
+      // 生成会话摘要
+      const summarizer = getSessionSummarizer();
+      const summary = await summarizer.generateSummary(
+        targetSessionId,
+        session.messages,
+        session.workingDirectory
+      );
+
+      if (summary) {
+        // 保存摘要到向量库（用于后续 Fork 检索）
+        await summarizer.saveSummary(summary);
+
+        logger.info('Session summary saved', {
+          sessionId: targetSessionId,
+          title: summary.title,
+          topics: summary.topics.length,
+          decisions: summary.keyDecisions.length,
+        });
+
+        // 记录审计日志
+        const db = getDatabase();
+        db.logAuditEvent('session_summary_generated', {
+          sessionId: targetSessionId,
+          title: summary.title,
+          generatedBy: summary.generatedBy,
+        }, targetSessionId);
+      }
+
+      // 从会话中学习用户偏好
+      try {
+        const coreMemory = getCoreMemoryService();
+        const learned = coreMemory.learnFromSession(session.messages);
+        if (Object.keys(learned).length > 0) {
+          logger.info('Learned user preferences from session', {
+            sessionId: targetSessionId,
+            learned: Object.keys(learned),
+          });
+        }
+      } catch (learnError) {
+        logger.warn('Failed to learn preferences from session', { error: learnError });
+      }
+    } catch (error) {
+      // 摘要生成失败不应该阻止会话结束
+      logger.error('Failed to generate session summary', { error, sessionId: targetSessionId });
+    }
+
+    // 如果结束的是当前会话，清除 current session
+    if (targetSessionId === this.currentSessionId) {
+      this.currentSessionId = null;
+    }
   }
 
   /**

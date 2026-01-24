@@ -1,6 +1,6 @@
 {
   "name": "code-agent",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "AI Coding Assistant with Generation Comparison",
   "type": "module",
   "main": "dist/main/index.cjs",
@@ -47,6 +47,7 @@
     "https-proxy-agent": "^7.0.6",
     "isolated-vm": "^6.0.2",
     "keytar": "^7.9.0",
+    "kuzu": "^0.11.3",
     "langfuse": "^3.38.6",
     "marked": "^15.0.0",
     "node-fetch": "^3.3.2",
@@ -55,6 +56,8 @@
     "pptxgenjs": "^4.0.1",
     "react-virtuoso": "^4.18.1",
     "reflect-metadata": "^0.2.2",
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-typescript": "^0.23.2",
     "uuid": "^13.0.0",
     "zustand": "^5.0.0"
   },

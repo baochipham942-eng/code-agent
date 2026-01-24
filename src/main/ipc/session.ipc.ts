@@ -24,9 +24,19 @@ interface SessionHandlerDeps {
 // Internal Handlers
 // ----------------------------------------------------------------------------
 
-async function handleList(): Promise<Session[]> {
+async function handleList(options?: { includeArchived?: boolean }): Promise<Session[]> {
   const sessionManager = getSessionManager();
-  return sessionManager.listSessions();
+  return sessionManager.listSessions({ includeArchived: options?.includeArchived });
+}
+
+async function handleArchive(payload: { sessionId: string }): Promise<Session | null> {
+  const sessionManager = getSessionManager();
+  return sessionManager.archiveSession(payload.sessionId);
+}
+
+async function handleUnarchive(payload: { sessionId: string }): Promise<Session | null> {
+  const sessionManager = getSessionManager();
+  return sessionManager.unarchiveSession(payload.sessionId);
 }
 
 async function handleCreate(
@@ -209,7 +219,7 @@ export function registerSessionHandlers(ipcMain: IpcMain, deps: SessionHandlerDe
 
       switch (action) {
         case 'list':
-          data = await handleList();
+          data = await handleList(payload as { includeArchived?: boolean } | undefined);
           break;
         case 'create':
           data = await handleCreate(deps, payload as { title?: string });
@@ -234,6 +244,12 @@ export function registerSessionHandlers(ipcMain: IpcMain, deps: SessionHandlerDe
           data = await handleGetMemoryContext(
             payload as { sessionId: string; workingDirectory?: string; query?: string }
           );
+          break;
+        case 'archive':
+          data = await handleArchive(payload as { sessionId: string });
+          break;
+        case 'unarchive':
+          data = await handleUnarchive(payload as { sessionId: string });
           break;
         default:
           return {
@@ -260,8 +276,18 @@ export function registerSessionHandlers(ipcMain: IpcMain, deps: SessionHandlerDe
   // ========== Legacy Handlers (Deprecated) ==========
 
   /** @deprecated Use IPC_DOMAINS.SESSION with action: 'list' */
-  ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async () => {
-    return handleList();
+  ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async (_, options?: { includeArchived?: boolean }) => {
+    return handleList(options);
+  });
+
+  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'archive' */
+  ipcMain.handle(IPC_CHANNELS.SESSION_ARCHIVE, async (_, sessionId: string) => {
+    return handleArchive({ sessionId });
+  });
+
+  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'unarchive' */
+  ipcMain.handle(IPC_CHANNELS.SESSION_UNARCHIVE, async (_, sessionId: string) => {
+    return handleUnarchive({ sessionId });
   });
 
   /** @deprecated Use IPC_DOMAINS.SESSION with action: 'create' */

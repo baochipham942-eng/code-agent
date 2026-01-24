@@ -106,24 +106,20 @@ export const Connectors: React.FC = () => {
                 <div key={server.name} className="rounded overflow-hidden">
                   <button
                     onClick={() => toggleServerExpand(server.name)}
-                    className="w-full flex items-center justify-between py-1.5 px-2 rounded hover:bg-zinc-800/50 transition-colors"
+                    className="w-full flex items-center gap-2 py-1.5 rounded hover:bg-zinc-800/50 transition-colors"
                   >
-                    <div className="flex items-center gap-2">
-                      {getStatusIcon(server.status)}
-                      <span className="text-sm text-zinc-300">{server.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {server.toolCount !== undefined && server.toolCount > 0 && (
-                        <span className="text-xs text-zinc-500">
-                          {server.toolCount} {t.taskPanel.tools}
-                        </span>
-                      )}
-                      {isServerExpanded ? (
-                        <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-                      ) : (
-                        <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
-                      )}
-                    </div>
+                    {getStatusIcon(server.status)}
+                    <span className="flex-1 text-sm text-zinc-300 truncate">{server.name}</span>
+                    {server.toolCount !== undefined && server.toolCount > 0 && (
+                      <span className="text-xs text-zinc-500">
+                        {server.toolCount} {t.taskPanel.tools}
+                      </span>
+                    )}
+                    {isServerExpanded ? (
+                      <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                    ) : (
+                      <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                    )}
                   </button>
 
                   {/* Expanded server details */}
@@ -155,9 +151,8 @@ export const Connectors: React.FC = () => {
           )}
 
           {/* View all link */}
-          <button className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 mt-2 transition-colors">
-            <span>{t.taskPanel.viewAllConnectors}</span>
-            <ChevronRight className="w-3 h-3" />
+          <button className="text-xs text-zinc-500 hover:text-zinc-300 mt-2 transition-colors">
+            {t.taskPanel.viewAllConnectors}
           </button>
         </div>
       )}

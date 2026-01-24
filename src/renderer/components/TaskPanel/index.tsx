@@ -16,7 +16,7 @@ export const TaskPanel: React.FC = () => {
   const { t } = useI18n();
 
   return (
-    <div className="w-80 border-l border-white/[0.06] bg-[#161619] flex flex-col">
+    <div className="w-80 border-l border-white/[0.06] bg-[#1c1c21] flex flex-col">
       {/* Header - with Gen selector on the right, aligned with Progress chevron */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
         <span className="text-sm font-medium text-zinc-400">{t.taskPanel.title}</span>

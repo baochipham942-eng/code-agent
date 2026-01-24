@@ -75,6 +75,15 @@ const CLASSIFICATION_RULES: ClassificationRule[] = [
     sources: [],
   },
 
+  // 文件操作任务（跳过研究）- 本地文件系统操作
+  {
+    pattern: /(?:统计|计数|列出|显示|查找|搜索|打开|删除|移动|复制|重命名|整理).*(?:文件|文件夹|目录|图片|照片|截图|视频|音频|文档)|(?:有多少|多少个).*(?:文件|图片|照片)|count|list|find|open|delete|move|copy|rename.*(?:file|folder|directory|image|photo|screenshot)/i,
+    intent: 'code_task',
+    confidence: 0.95,
+    depth: 'quick',
+    sources: [],
+  },
+
   // 创意任务（跳过研究）
   {
     pattern: /(?:设计|写作|起草|创作|画|生成).*(?:文案|故事|文章|邮件|PPT|报告|UI|界面)|design|draft|compose/i,

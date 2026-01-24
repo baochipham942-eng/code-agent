@@ -422,6 +422,7 @@ mcp { "server": "deepwiki", "tool": "ask_question", "arguments": { "repoName": "
 | `context7` | HTTP Streamable | ✅ | 获取最新库/框架文档（API Key 可选但推荐）|
 | `exa` | HTTP Streamable | 需 EXA_API_KEY | AI 驱动的语义搜索和代码搜索 |
 | `firecrawl` | HTTP Streamable | 需 FIRECRAWL_API_KEY | 网页抓取、搜索和结构化数据提取 |
+| `tavily` | HTTP Streamable | 需 TAVILY_API_KEY | AI 实时网络搜索，支持新闻搜索和域名过滤 |
 | `deepwiki` | SSE | ✅ | 解读 GitHub 项目文档 |
 | `github` | Stdio | 需 GITHUB_TOKEN | GitHub API |
 | `filesystem` | Stdio | ❌ | 文件系统访问 |
@@ -444,6 +445,12 @@ mcp { "server": "deepwiki", "tool": "ask_question", "arguments": { "repoName": "
   - 工具: `firecrawl_scrape`, `firecrawl_map`, `firecrawl_search`, `firecrawl_crawl`, `firecrawl_extract`, `firecrawl_agent`
   - 端点: `https://mcp.firecrawl.dev/v2/mcp`
   - 需要 `FIRECRAWL_API_KEY` 环境变量
+
+- **Tavily**: AI 驱动的实时网络搜索和内容提取
+  - 工具: `tavily_search`, `tavily_extract`
+  - 端点: `https://mcp.tavily.com/mcp/`
+  - 需要 `TAVILY_API_KEY` 环境变量
+  - 支持新闻搜索、域名过滤、高级搜索等功能
 
 ### Gen5 PPT 生成
 

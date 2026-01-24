@@ -74,8 +74,8 @@ describe('Entity Types', () => {
       expect(KNOWLEDGE_ENTITY_TYPES).toContain('architecture_pattern');
       expect(KNOWLEDGE_ENTITY_TYPES).toContain('api_endpoint');
       expect(KNOWLEDGE_ENTITY_TYPES).toContain('dependency');
-      expect(KNOWLEDGE_ENTITY_TYPES).toContain('concept');
-      expect(KNOWLEDGE_ENTITY_TYPES.length).toBeGreaterThanOrEqual(4);
+      expect(KNOWLEDGE_ENTITY_TYPES).toContain('configuration');
+      expect(KNOWLEDGE_ENTITY_TYPES.length).toBe(4);
     });
 
     it('should have ALL_ENTITY_TYPES containing all types', () => {
@@ -107,7 +107,7 @@ describe('Entity Types', () => {
 
     it('should correctly identify knowledge entity types', () => {
       expect(isKnowledgeEntityType('architecture_pattern')).toBe(true);
-      expect(isKnowledgeEntityType('concept')).toBe(true);
+      expect(isKnowledgeEntityType('configuration')).toBe(true);
       expect(isKnowledgeEntityType('function')).toBe(false);
       expect(isKnowledgeEntityType('invalid' as EntityType)).toBe(false);
     });
@@ -115,7 +115,7 @@ describe('Entity Types', () => {
     it('should validate entity types', () => {
       expect(isValidEntityType('function')).toBe(true);
       expect(isValidEntityType('user_preference')).toBe(true);
-      expect(isValidEntityType('concept')).toBe(true);
+      expect(isValidEntityType('configuration')).toBe(true);
       expect(isValidEntityType('invalid')).toBe(false);
       expect(isValidEntityType('')).toBe(false);
     });
@@ -139,7 +139,7 @@ describe('Entity Types', () => {
 
     it('should return correct category for knowledge entities', () => {
       expect(getEntityTypeCategory('architecture_pattern')).toBe('knowledge');
-      expect(getEntityTypeCategory('concept')).toBe('knowledge');
+      expect(getEntityTypeCategory('configuration')).toBe('knowledge');
       expect(getEntityTypeCategory('dependency')).toBe('knowledge');
     });
 
@@ -225,9 +225,12 @@ describe('Relation Types', () => {
       expect(SEMANTIC_RELATION_TYPES).toContain('related_to');
       expect(SEMANTIC_RELATION_TYPES).toContain('solves');
       expect(SEMANTIC_RELATION_TYPES).toContain('conflicts_with');
-      expect(SEMANTIC_RELATION_TYPES).toContain('depends_on');
       expect(SEMANTIC_RELATION_TYPES).toContain('similar_to');
-      expect(SEMANTIC_RELATION_TYPES.length).toBe(5);
+      expect(SEMANTIC_RELATION_TYPES).toContain('alternative_to');
+      expect(SEMANTIC_RELATION_TYPES).toContain('causes');
+      expect(SEMANTIC_RELATION_TYPES).toContain('requires');
+      expect(SEMANTIC_RELATION_TYPES).toContain('mentions');
+      expect(SEMANTIC_RELATION_TYPES.length).toBe(8);
     });
 
     it('should have correct temporal relation types', () => {

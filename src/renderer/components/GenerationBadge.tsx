@@ -16,38 +16,47 @@ const logger = createLogger('GenerationBadge');
 const generationConfigs: Record<string, {
   icon: React.ReactNode;
   color: string;
+  textColor: string;
 }> = {
   gen1: {
     icon: <Zap className="w-3.5 h-3.5" />,
     color: 'text-green-400 bg-green-500/10',
+    textColor: 'text-green-400',
   },
   gen2: {
     icon: <Layers className="w-3.5 h-3.5" />,
     color: 'text-blue-400 bg-blue-500/10',
+    textColor: 'text-blue-400',
   },
   gen3: {
     icon: <Brain className="w-3.5 h-3.5" />,
     color: 'text-purple-400 bg-purple-500/10',
+    textColor: 'text-purple-400',
   },
   gen4: {
     icon: <Sparkles className="w-3.5 h-3.5" />,
     color: 'text-orange-400 bg-orange-500/10',
+    textColor: 'text-orange-400',
   },
   gen5: {
     icon: <Database className="w-3.5 h-3.5" />,
     color: 'text-cyan-400 bg-cyan-500/10',
+    textColor: 'text-cyan-400',
   },
   gen6: {
     icon: <Monitor className="w-3.5 h-3.5" />,
     color: 'text-pink-400 bg-pink-500/10',
+    textColor: 'text-pink-400',
   },
   gen7: {
     icon: <Users className="w-3.5 h-3.5" />,
     color: 'text-indigo-400 bg-indigo-500/10',
+    textColor: 'text-indigo-400',
   },
   gen8: {
     icon: <Dna className="w-3.5 h-3.5" />,
     color: 'text-rose-400 bg-rose-500/10',
+    textColor: 'text-rose-400',
   },
 };
 
@@ -195,15 +204,15 @@ export const GenerationBadge: React.FC = () => {
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Badge Button - 格式: Gen1 基础工具期 */}
+      {/* Badge Button - text-only style, no background */}
       <button
         onClick={() => setShowDropdown(!showDropdown)}
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${config.color}`}
+        className={`flex items-center gap-1.5 px-2 py-1 text-sm transition-colors hover:opacity-80 ${config.textColor}`}
       >
         {config.icon}
         <span className="font-medium">Gen{currentGeneration.id.replace('gen', '')}</span>
-        <span className="text-xs opacity-70">{currentGeneration.name}</span>
-        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
+        <span className="text-zinc-500 text-xs">{currentGeneration.name}</span>
+        <ChevronDown className={`w-3 h-3 text-zinc-500 transition-transform ${showDropdown ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Dropdown */}

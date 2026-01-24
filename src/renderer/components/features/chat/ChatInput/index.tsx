@@ -184,8 +184,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           </div>
         )}
 
-        {/* 输入区域 - 浮动样式 */}
-        <div className="relative bg-zinc-800/50 rounded-xl border border-zinc-700/50 focus-within:border-primary-500/50 focus-within:ring-1 focus-within:ring-primary-500/20 transition-all">
+        {/* 输入区域 - 玻璃质感样式 */}
+        <div className="relative bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.08] focus-within:border-white/[0.15] focus-within:bg-white/[0.05] transition-all duration-200 shadow-lg shadow-black/20">
           <InputArea
             ref={inputAreaRef}
             value={value}
@@ -196,6 +196,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             hasAttachments={attachments.length > 0}
             isFocused={isFocused}
             onFocusChange={setIsFocused}
+            placeholder="描述你想解决的问题..."
             actionButtons={
               <>
                 {/* 语音输入按钮 */}

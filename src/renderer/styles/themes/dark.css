@@ -5,13 +5,13 @@
 
 :root[data-theme="dark"],
 .dark {
-  /* Background layers - from deepest to elevated */
-  --bg-void: #0A0A0B;
-  --bg-deep: #0F0F10;
-  --bg-surface: #141416;
-  --bg-elevated: #1A1A1D;
-  --bg-hover: #222226;
-  --bg-active: #2A2A2E;
+  /* Background layers - from deepest to elevated (with subtle warmth) */
+  --bg-void: #101012;
+  --bg-deep: #141417;
+  --bg-surface: #18181B;
+  --bg-elevated: #1F1F23;
+  --bg-hover: #27272B;
+  --bg-active: #2F2F34;
 
   /* Text hierarchy */
   --text-primary: #F4F4F5;

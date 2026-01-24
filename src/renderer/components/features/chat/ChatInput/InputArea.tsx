@@ -152,14 +152,14 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           className="hidden"
         />
 
-        {/* 附件按钮 */}
+        {/* 附件按钮 - 更柔和的样式 */}
         <IconButton
-          icon={<Paperclip className="w-5 h-5" />}
+          icon={<Paperclip className="w-4.5 h-4.5" />}
           aria-label="添加图片或文件"
           onClick={handleAttachClick}
           variant="ghost"
           size="lg"
-          className="flex-shrink-0 ml-2 !rounded-xl"
+          className="flex-shrink-0 ml-2 !rounded-xl text-zinc-500 hover:text-zinc-300"
         />
 
         {/* 文本输入框 */}
@@ -170,14 +170,14 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           onKeyDown={handleKeyDown}
           onFocus={() => onFocusChange(true)}
           onBlur={() => onFocusChange(false)}
-          placeholder={placeholder ?? (hasAttachments ? '添加描述...' : '问我任何关于代码的问题...')}
+          placeholder={placeholder ?? (hasAttachments ? '添加描述...' : '描述你想解决的问题...')}
           disabled={disabled}
           rows={1}
-          className="flex-1 min-w-0 bg-transparent py-3 px-2 text-sm text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none disabled:opacity-50 max-h-[200px] leading-relaxed"
+          className="flex-1 min-w-0 bg-transparent py-3 px-2 text-sm text-zinc-200 placeholder-zinc-500 resize-none focus:outline-none disabled:opacity-50 max-h-[200px] leading-relaxed"
         />
 
         {/* 操作按钮区（语音输入 + 发送） */}
-        <div className="flex items-center gap-1 mr-1">
+        <div className="flex items-center gap-1.5 mr-2">
           {actionButtons || sendButton}
         </div>
       </div>

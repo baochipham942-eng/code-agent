@@ -66,26 +66,26 @@ export const Skills: React.FC = () => {
   }
 
   return (
-    <div className="bg-zinc-800/30 rounded-lg p-3">
+    <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl p-3 border border-white/[0.04]">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center justify-between w-full mb-2"
+        className="flex items-center w-full"
       >
-        <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-amber-400" />
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
           <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
             {t.taskPanel.skills}
           </span>
         </div>
         {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
+          <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
+          <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
         )}
       </button>
 
       {expanded && (
-        <div className="space-y-1">
+        <div className="space-y-1 mt-3">
           {triggeredSkills.map((skill, index) => {
             const isExpanded = expandedSkills.has(skill.name);
 

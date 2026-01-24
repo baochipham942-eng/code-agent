@@ -131,7 +131,7 @@ export const Sidebar: React.FC = () => {
   const hasAnySessions = sessions.length > 0;
 
   return (
-    <div className="w-60 border-r border-zinc-800/50 flex flex-col bg-surface-950">
+    <div className="w-60 border-r border-white/[0.06] flex flex-col bg-transparent">
       {/* Header: New Chat + Filter */}
       <div className="px-3 py-3 flex items-center justify-between">
         {/* New Chat - icon + text style */}
@@ -235,37 +235,45 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* Bottom: Settings or Login */}
-      <div className="border-t border-zinc-800/50 p-2" ref={accountMenuRef}>
+      <div className="border-t border-white/[0.06] p-2" ref={accountMenuRef}>
         {isAuthenticated && user ? (
           <button
             onClick={() => setShowSettings(true)}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-zinc-800/50 transition-colors"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.04] transition-colors"
           >
             {user.avatarUrl ? (
               <img
                 src={user.avatarUrl}
                 alt=""
-                className="w-8 h-8 rounded-full object-cover"
+                className="w-9 h-9 rounded-xl object-cover ring-1 ring-white/10"
               />
             ) : (
-              <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center">
-                <User className="w-4 h-4 text-zinc-300" />
+              /* Quality default avatar - gradient mesh style */
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-zinc-700 via-zinc-800 to-zinc-900 flex items-center justify-center ring-1 ring-white/10 relative overflow-hidden">
+                {/* Subtle mesh pattern overlay */}
+                <div className="absolute inset-0 opacity-30">
+                  <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-primary-500/20 to-transparent" />
+                  <div className="absolute bottom-0 right-0 w-2/3 h-2/3 bg-gradient-to-tl from-purple-500/20 to-transparent" />
+                </div>
+                <span className="text-sm font-medium text-zinc-400 relative z-10">
+                  {(user.nickname || user.email?.split('@')[0])?.charAt(0)?.toUpperCase() || 'U'}
+                </span>
               </div>
             )}
             <div className="flex-1 text-left min-w-0">
-              <div className="text-sm font-medium text-zinc-200 truncate">
+              <div className="text-sm font-medium text-zinc-400 truncate">
                 {user.nickname || user.email?.split('@')[0]}
               </div>
-              <div className="text-xs text-zinc-500">
+              <div className="text-xs text-zinc-600">
                 查看设置
               </div>
             </div>
-            <Settings className="w-4 h-4 text-zinc-500" />
+            <Settings className="w-4 h-4 text-zinc-600" />
           </button>
         ) : (
           <button
             onClick={() => setShowAuthModal(true)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm font-medium transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-300 text-sm font-medium transition-colors"
           >
             <LogIn className="w-4 h-4" />
             登录

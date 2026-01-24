@@ -18,6 +18,7 @@ import type {
 } from '../../../shared/types';
 import { createLogger } from './logger';
 import { getSessionSummarizer } from '../../memory/sessionSummarizer';
+import { getCoreMemoryService } from '../../memory/coreMemory';
 
 const logger = createLogger('SessionManager');
 
@@ -525,6 +526,20 @@ export class SessionManager {
           title: summary.title,
           generatedBy: summary.generatedBy,
         }, targetSessionId);
+      }
+
+      // 从会话中学习用户偏好
+      try {
+        const coreMemory = getCoreMemoryService();
+        const learned = coreMemory.learnFromSession(session.messages);
+        if (Object.keys(learned).length > 0) {
+          logger.info('Learned user preferences from session', {
+            sessionId: targetSessionId,
+            learned: Object.keys(learned),
+          });
+        }
+      } catch (learnError) {
+        logger.warn('Failed to learn preferences from session', { error: learnError });
       }
     } catch (error) {
       // 摘要生成失败不应该阻止会话结束

@@ -2,6 +2,8 @@
 // Hooks - Index
 // ============================================================================
 
+export { useTheme } from './useTheme';
+export type { Theme, ResolvedTheme } from './useTheme';
 export { useAgent } from './useAgent';
 export { useGeneration } from './useGeneration';
 export { useRequireAuth } from './useRequireAuth';

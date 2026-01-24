@@ -26,6 +26,7 @@ import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { StatusBar } from './components/StatusBar';
 import { useDisclosure } from './hooks/useDisclosure';
 import { useMemoryEvents } from './hooks/useMemoryEvents';
+import { useTheme } from './hooks/useTheme';
 import { Activity, Cloud, Zap } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
@@ -66,6 +67,9 @@ export const App: React.FC = () => {
 
   // 渐进披露 Hook
   const { isStandard, isAdvanced } = useDisclosure();
+
+  // Theme Hook - 初始化主题系统
+  useTheme();
 
   // Gen5+ Memory 事件监听
   useMemoryEvents({

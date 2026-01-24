@@ -1,0 +1,76 @@
+/* ============================================================================
+   Linear-style Dark Theme
+   Refined, minimal, sophisticated dark interface
+   ============================================================================ */
+
+:root[data-theme="dark"],
+.dark {
+  /* Background layers - from deepest to elevated */
+  --bg-void: #0A0A0B;
+  --bg-deep: #0F0F10;
+  --bg-surface: #141416;
+  --bg-elevated: #1A1A1D;
+  --bg-hover: #222226;
+  --bg-active: #2A2A2E;
+
+  /* Text hierarchy */
+  --text-primary: #F4F4F5;
+  --text-secondary: #A1A1AA;
+  --text-tertiary: #71717A;
+  --text-disabled: #52525B;
+  --text-inverse: #18181B;
+
+  /* Brand color - Teal */
+  --brand-primary: #14B8A6;
+  --brand-primary-hover: #0D9488;
+  --brand-primary-muted: rgba(20, 184, 166, 0.15);
+  --brand-primary-glow: rgba(20, 184, 166, 0.25);
+
+  /* Semantic colors */
+  --color-success: #4ADE80;
+  --color-success-muted: rgba(74, 222, 128, 0.15);
+  --color-warning: #FBBF24;
+  --color-warning-muted: rgba(251, 191, 36, 0.15);
+  --color-error: #F87171;
+  --color-error-muted: rgba(248, 113, 113, 0.15);
+  --color-info: #60A5FA;
+  --color-info-muted: rgba(96, 165, 250, 0.15);
+
+  /* Border colors */
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --border-focus: var(--brand-primary);
+
+  /* Shadow system */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.7);
+
+  /* Overlay */
+  --overlay-backdrop: rgba(0, 0, 0, 0.6);
+
+  /* Selection */
+  --selection-bg: rgba(20, 184, 166, 0.3);
+  --selection-text: #FFFFFF;
+
+  /* Scrollbar */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(113, 113, 122, 0.4);
+  --scrollbar-thumb-hover: rgba(113, 113, 122, 0.6);
+
+  /* Code */
+  --code-bg: #1E1E22;
+  --code-border: rgba(255, 255, 255, 0.06);
+
+  /* Input */
+  --input-bg: #1A1A1D;
+  --input-border: rgba(255, 255, 255, 0.08);
+  --input-border-focus: var(--brand-primary);
+  --input-placeholder: #52525B;
+
+  /* Focus ring */
+  --focus-ring: rgba(20, 184, 166, 0.5);
+}

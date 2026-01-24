@@ -3,78 +3,74 @@
 @tailwind utilities;
 
 /* ============================================================================
-   Terminal Noir Design System
-   A sophisticated dark theme with subtle neon accents
+   Linear Design System
+   A refined, minimal design system inspired by Linear's aesthetic
    ============================================================================ */
 
-/* CSS Custom Properties for theming */
+/* Import theme files */
+@import './themes/dark.css';
+@import './themes/light.css';
+
+/* ============================================================================
+   Design Tokens
+   ============================================================================ */
+
 :root {
-  /* Background layers */
-  --bg-void: #08080a;
-  --bg-deep: #0c0c10;
-  --bg-surface: #121218;
-  --bg-elevated: #1a1a22;
-  --bg-hover: #22222c;
+  /* Spacing scale (4px base) */
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
 
-  /* Text hierarchy */
-  --text-primary: #f0f0f5;
-  --text-secondary: #9898a8;
-  --text-tertiary: #5c5c6a;
-  --text-muted: #3a3a44;
+  /* Border radius scale */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-2xl: 12px;
+  --radius-full: 9999px;
 
-  /* Accent colors - neon but refined */
-  --accent-primary: #6366f1;
-  --accent-primary-glow: rgba(99, 102, 241, 0.15);
-  --accent-cyan: #22d3ee;
-  --accent-cyan-glow: rgba(34, 211, 238, 0.12);
-  --accent-emerald: #10b981;
-  --accent-amber: #f59e0b;
-  --accent-rose: #f43f5e;
+  /* Typography scale */
+  --font-size-xs: 0.75rem;    /* 12px */
+  --font-size-sm: 0.8125rem;  /* 13px */
+  --font-size-base: 0.875rem; /* 14px */
+  --font-size-lg: 1rem;       /* 16px */
+  --font-size-xl: 1.125rem;   /* 18px */
+  --font-size-2xl: 1.25rem;   /* 20px */
+  --font-size-3xl: 1.5rem;    /* 24px */
 
-  /* Border colors */
-  --border-subtle: rgba(255, 255, 255, 0.04);
-  --border-default: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.12);
-  --border-glow: rgba(99, 102, 241, 0.4);
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.625;
 
-  /* Shadows and glows */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --glow-primary: 0 0 20px var(--accent-primary-glow);
-  --glow-cyan: 0 0 20px var(--accent-cyan-glow);
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* Animation timing */
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 300ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Layout */
+  --sidebar-width: 240px;
+  --task-panel-width: 320px;
+  --header-height: 44px;
 }
 
-/* Custom scrollbar - 更精致的滚动条 */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+/* ============================================================================
+   Base Styles
+   ============================================================================ */
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(113, 113, 122, 0.4);
-  border-radius: 3px;
-  transition: background 0.2s ease;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(113, 113, 122, 0.6);
-}
-
-/* 隐藏滚动条直到 hover */
-.scrollbar-hide::-webkit-scrollbar {
-  opacity: 0;
-}
-
-.scrollbar-hide:hover::-webkit-scrollbar-thumb {
-  opacity: 1;
-}
-
-/* Base styles */
 html, body, #root {
   height: 100%;
   margin: 0;
@@ -82,16 +78,106 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-  background-color: #0f0f12;
-  color: #fafafa;
+  font-family: 'Inter', 'Source Han Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  background-color: var(--bg-deep);
+  color: var(--text-primary);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: -0.01em;
 }
 
-/* macOS window controls spacing */
+/* Theme transition */
+body,
+body * {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-duration: var(--duration-normal);
+  transition-timing-function: var(--ease-in-out);
+}
+
+/* Disable transition during theme switch to prevent flash */
+body.theme-switching,
+body.theme-switching * {
+  transition: none !important;
+}
+
+/* ============================================================================
+   Scrollbar
+   ============================================================================ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Hide scrollbar until hover */
+.scrollbar-on-hover::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.scrollbar-on-hover:hover::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+}
+
+/* ============================================================================
+   Selection
+   ============================================================================ */
+
+::selection {
+  background-color: var(--selection-bg);
+  color: var(--selection-text);
+}
+
+/* ============================================================================
+   Focus Styles
+   ============================================================================ */
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-md);
+}
+
+/* ============================================================================
+   Code & Monospace
+   ============================================================================ */
+
+pre, code {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', Menlo, Monaco, 'Courier New', monospace;
+  font-feature-settings: 'liga' on, 'calt' on;
+}
+
+code {
+  font-size: 0.9em;
+  padding: 0.125em 0.375em;
+  background: var(--code-bg);
+  border-radius: var(--radius-sm);
+}
+
+pre code {
+  padding: 0;
+  background: transparent;
+}
+
+/* ============================================================================
+   macOS Window Controls
+   ============================================================================ */
+
 .window-drag {
   -webkit-app-region: drag;
 }
@@ -100,39 +186,24 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* Code blocks - 增强的代码样式 */
-pre, code {
-  font-family: 'JetBrains Mono', 'Fira Code', Menlo, Monaco, 'Courier New', monospace;
-  font-feature-settings: 'liga' on, 'calt' on;
-}
+/* ============================================================================
+   Animations
+   ============================================================================ */
 
-/* Selection - 使用主题色 */
-::selection {
-  background-color: rgba(99, 102, 241, 0.4);
-  color: white;
-}
-
-/* Focus outline - 更现代的焦点样式 */
-:focus-visible {
-  outline: 2px solid rgba(99, 102, 241, 0.6);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
-/* Animations */
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 @keyframes slideUp {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -143,96 +214,94 @@ pre, code {
 @keyframes slideDown {
   from {
     opacity: 0;
-    transform: translateY(-10px);
+    transform: translateY(-8px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes expandHeight {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+  }
+}
+
+@keyframes collapseHeight {
+  from {
+    opacity: 1;
+    max-height: 500px;
+  }
+  to {
+    opacity: 0;
+    max-height: 0;
   }
 }
 
 @keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 @keyframes shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-@keyframes expandContent {
-  from {
-    opacity: 0;
-    max-height: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    max-height: 1000px;
-    transform: translateY(0);
-  }
-}
-
-@keyframes collapseContent {
-  from {
-    opacity: 1;
-    max-height: 1000px;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    max-height: 0;
-    transform: translateY(-8px);
-  }
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
 @keyframes typing {
-  0%, 60%, 100% {
-    transform: translateY(0);
-  }
-  30% {
-    transform: translateY(-4px);
-  }
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-3px); }
 }
 
-.animate-fadeIn {
-  animation: fadeIn 0.2s ease-out;
+.animate-fade-in {
+  animation: fadeIn var(--duration-fast) var(--ease-out);
 }
 
-.animate-slideUp {
-  animation: slideUp 0.3s ease-out;
+.animate-slide-up {
+  animation: slideUp var(--duration-normal) var(--ease-out);
 }
 
-.animate-slideDown {
-  animation: slideDown 0.3s ease-out;
+.animate-slide-down {
+  animation: slideDown var(--duration-normal) var(--ease-out);
+}
+
+.animate-scale-in {
+  animation: scaleIn var(--duration-fast) var(--ease-out);
 }
 
 .animate-expand {
-  animation: expandContent 0.25s ease-out forwards;
+  animation: expandHeight var(--duration-normal) var(--ease-out) forwards;
   overflow: hidden;
 }
 
 .animate-collapse {
-  animation: collapseContent 0.2s ease-out forwards;
+  animation: collapseHeight var(--duration-fast) var(--ease-out) forwards;
   overflow: hidden;
 }
 
-/* Shimmer loading effect */
 .animate-shimmer {
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.05) 50%,
-    rgba(255, 255, 255, 0) 100%
+    transparent 0%,
+    var(--bg-hover) 50%,
+    transparent 100%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
@@ -243,347 +312,348 @@ pre, code {
   animation: typing 1.4s infinite ease-in-out;
 }
 
-.typing-dot:nth-child(1) {
-  animation-delay: 0s;
-}
-
-.typing-dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.typing-dot:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-/* Glass morphism effect */
-.glass {
-  background: rgba(24, 24, 27, 0.8);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.glass-light {
-  background: rgba(39, 39, 42, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* Gradient borders */
-.gradient-border {
-  position: relative;
-}
-
-.gradient-border::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  padding: 1px;
-  border-radius: inherit;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.4), rgba(168, 85, 247, 0.4));
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-}
+.typing-dot:nth-child(1) { animation-delay: 0s; }
+.typing-dot:nth-child(2) { animation-delay: 0.2s; }
+.typing-dot:nth-child(3) { animation-delay: 0.4s; }
 
 /* ============================================================================
-   Tailwind Component Classes
-   Extracted from common UI patterns across the codebase
+   Component Classes
    ============================================================================ */
 
 @layer components {
-  /* ========================================
-     Button Components
-     ======================================== */
-
-  /* Base button - shared styles for all buttons */
+  /* ----------------------------------------
+     Buttons
+     ---------------------------------------- */
   .btn {
     @apply inline-flex items-center justify-center gap-2
-           px-4 py-2 rounded-lg text-sm font-medium
-           transition-colors duration-200
-           focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/50
+           px-4 py-2 rounded-md text-sm font-medium
+           transition-colors duration-150
+           focus:outline-none focus-visible:ring-2
            disabled:opacity-50 disabled:cursor-not-allowed;
+    border-radius: var(--radius-md);
   }
 
-  /* Primary button - main action */
   .btn-primary {
-    @apply btn bg-primary-600 hover:bg-primary-500 text-white
-           shadow-sm hover:shadow-md;
+    @apply btn text-white;
+    background-color: var(--brand-primary);
   }
 
-  /* Secondary button - less prominent action */
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--brand-primary-hover);
+  }
+
+  .btn-primary:focus-visible {
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+
   .btn-secondary {
-    @apply btn bg-zinc-700 hover:bg-zinc-600 text-zinc-100;
+    @apply btn;
+    background-color: var(--bg-elevated);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-default);
   }
 
-  /* Ghost button - subtle, text-only style */
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
   .btn-ghost {
-    @apply btn text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800;
+    @apply btn;
+    color: var(--text-tertiary);
+    background: transparent;
   }
 
-  /* Danger button - destructive actions */
+  .btn-ghost:hover:not(:disabled) {
+    color: var(--text-primary);
+    background-color: var(--bg-hover);
+  }
+
   .btn-danger {
-    @apply btn bg-red-600 hover:bg-red-500 text-white;
+    @apply btn text-white;
+    background-color: var(--color-error);
   }
 
-  /* Warning button - caution actions */
-  .btn-warning {
-    @apply btn bg-amber-600 hover:bg-amber-500 text-white;
+  .btn-danger:hover:not(:disabled) {
+    opacity: 0.9;
   }
 
-  /* Small button variant */
   .btn-sm {
     @apply px-3 py-1.5 text-xs;
   }
 
-  /* Large button variant */
   .btn-lg {
     @apply px-6 py-3 text-base;
   }
 
-  /* Icon-only button */
   .btn-icon {
-    @apply p-2 rounded-lg text-zinc-400 hover:text-zinc-100
-           hover:bg-zinc-800 transition-colors;
+    @apply p-2 rounded-md;
+    color: var(--text-tertiary);
+    background: transparent;
+    transition: all var(--duration-fast) var(--ease-out);
   }
 
-  /* ========================================
-     Input Components
-     ======================================== */
+  .btn-icon:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-hover);
+  }
 
-  /* Base input */
+  /* ----------------------------------------
+     Inputs
+     ---------------------------------------- */
   .input {
-    @apply w-full px-4 py-2
-           bg-zinc-800 border border-zinc-700 rounded-lg
-           text-sm text-zinc-100 placeholder-zinc-500
-           focus:outline-none focus:border-zinc-600 focus:ring-1 focus:ring-primary-500/30
-           disabled:opacity-50 disabled:cursor-not-allowed
-           transition-colors duration-200;
+    @apply w-full px-3 py-2 text-sm;
+    background-color: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    transition: border-color var(--duration-fast) var(--ease-out);
   }
 
-  /* Input with error state */
+  .input::placeholder {
+    color: var(--input-placeholder);
+  }
+
+  .input:focus {
+    outline: none;
+    border-color: var(--input-border-focus);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+
+  .input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .input-error {
-    @apply input border-red-500/50 focus:border-red-500 focus:ring-red-500/30;
+    @apply input;
+    border-color: var(--color-error);
   }
 
-  /* Input with success state */
-  .input-success {
-    @apply input border-green-500/50 focus:border-green-500 focus:ring-green-500/30;
+  .input-error:focus {
+    box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.2);
   }
 
-  /* Textarea variant */
   .textarea {
-    @apply input resize-none min-h-[100px];
+    @apply input resize-none;
+    min-height: 100px;
   }
 
-  /* Select dropdown */
   .select {
-    @apply input appearance-none cursor-pointer
-           bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2371717a%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22m6%209%206%206%206-6%22%2F%3E%3C%2Fsvg%3E')]
-           bg-no-repeat bg-[right_0.75rem_center] pr-10;
+    @apply input appearance-none cursor-pointer pr-10;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2371717A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
   }
 
-  /* ========================================
-     Panel Components
-     ======================================== */
-
-  /* Panel container - for sidebars, modals */
+  /* ----------------------------------------
+     Panels & Cards
+     ---------------------------------------- */
   .panel {
-    @apply bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl overflow-hidden;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
   }
 
-  /* Panel header */
   .panel-header {
-    @apply flex items-center justify-between px-6 py-4 border-b border-zinc-800;
+    @apply flex items-center justify-between px-4 py-3;
+    border-bottom: 1px solid var(--border-subtle);
   }
 
-  /* Panel body/content */
   .panel-body {
-    @apply p-6;
+    @apply p-4;
   }
 
-  /* Panel footer */
   .panel-footer {
-    @apply px-6 py-4 border-t border-zinc-800 flex items-center justify-end gap-3;
+    @apply px-4 py-3 flex items-center justify-end gap-3;
+    border-top: 1px solid var(--border-subtle);
   }
 
-  /* ========================================
-     Badge Components
-     ======================================== */
+  .card {
+    @apply p-4;
+    background-color: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+  }
 
-  /* Base badge */
+  .card-hover {
+    @apply card cursor-pointer;
+    transition: all var(--duration-fast) var(--ease-out);
+  }
+
+  .card-hover:hover {
+    background-color: var(--bg-hover);
+    border-color: var(--border-default);
+  }
+
+  .card-selected {
+    @apply card;
+    border-left: 2px solid var(--brand-primary);
+    background-color: var(--brand-primary-muted);
+  }
+
+  /* ----------------------------------------
+     Badges
+     ---------------------------------------- */
   .badge {
-    @apply inline-flex items-center gap-1.5
-           px-2.5 py-0.5 rounded-full
-           text-xs font-medium;
-  }
-
-  /* Status badges */
-  .badge-success {
-    @apply badge bg-green-500/10 text-green-400;
-  }
-
-  .badge-warning {
-    @apply badge bg-amber-500/10 text-amber-400;
-  }
-
-  .badge-error {
-    @apply badge bg-red-500/10 text-red-400;
-  }
-
-  .badge-info {
-    @apply badge bg-blue-500/10 text-blue-400;
+    @apply inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium;
+    border-radius: var(--radius-sm);
   }
 
   .badge-primary {
-    @apply badge bg-primary-500/10 text-primary-400;
+    @apply badge;
+    background-color: var(--brand-primary-muted);
+    color: var(--brand-primary);
+  }
+
+  .badge-success {
+    @apply badge;
+    background-color: var(--color-success-muted);
+    color: var(--color-success);
+  }
+
+  .badge-warning {
+    @apply badge;
+    background-color: var(--color-warning-muted);
+    color: var(--color-warning);
+  }
+
+  .badge-error {
+    @apply badge;
+    background-color: var(--color-error-muted);
+    color: var(--color-error);
+  }
+
+  .badge-info {
+    @apply badge;
+    background-color: var(--color-info-muted);
+    color: var(--color-info);
   }
 
   .badge-neutral {
-    @apply badge bg-zinc-800 text-zinc-400;
+    @apply badge;
+    background-color: var(--bg-hover);
+    color: var(--text-tertiary);
   }
 
-  /* ========================================
-     Card Components
-     ======================================== */
-
-  /* Base card */
-  .card {
-    @apply bg-zinc-800/50 rounded-lg p-4 border border-zinc-700/50;
-  }
-
-  /* Card with hover effect */
-  .card-hover {
-    @apply card hover:bg-zinc-800/70 hover:border-zinc-600/50
-           transition-colors duration-200 cursor-pointer;
-  }
-
-  /* Card with selected/active state */
-  .card-selected {
-    @apply card border-primary-500 bg-primary-500/10 ring-1 ring-primary-500/50;
-  }
-
-  /* Elevated card - more prominent */
-  .card-elevated {
-    @apply bg-zinc-800 rounded-xl p-4 border border-zinc-700
-           shadow-elevated;
-  }
-
-  /* ========================================
-     Modal/Dialog Components
-     ======================================== */
-
-  /* Modal backdrop */
+  /* ----------------------------------------
+     Modal
+     ---------------------------------------- */
   .modal-backdrop {
-    @apply fixed inset-0 bg-black/60 backdrop-blur-sm z-50;
+    @apply fixed inset-0 z-50;
+    background-color: var(--overlay-backdrop);
+    backdrop-filter: blur(4px);
   }
 
-  /* Modal container */
   .modal {
-    @apply fixed inset-0 z-50 flex items-center justify-center;
+    @apply fixed inset-0 z-50 flex items-center justify-center p-4;
   }
 
-  /* Modal content */
   .modal-content {
-    @apply relative w-full max-w-md bg-zinc-900 rounded-xl
-           border border-zinc-800 shadow-2xl overflow-hidden
-           animate-fadeIn;
+    @apply relative w-full max-w-md overflow-hidden;
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-xl);
+    animation: scaleIn var(--duration-fast) var(--ease-out);
   }
 
-  /* ========================================
-     List Components
-     ======================================== */
-
-  /* List item - interactive */
+  /* ----------------------------------------
+     List Items
+     ---------------------------------------- */
   .list-item {
-    @apply flex items-center gap-3 px-3 py-2 rounded-lg
-           text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50
-           transition-colors duration-200 cursor-pointer;
+    @apply flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer;
+    color: var(--text-secondary);
+    transition: all var(--duration-fast) var(--ease-out);
   }
 
-  /* List item - active state */
+  .list-item:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-hover);
+  }
+
   .list-item-active {
-    @apply list-item bg-zinc-800 text-zinc-100;
+    @apply list-item;
+    color: var(--text-primary);
+    background-color: var(--bg-active);
   }
 
-  /* ========================================
-     Divider
-     ======================================== */
-
+  /* ----------------------------------------
+     Dividers
+     ---------------------------------------- */
   .divider {
-    @apply border-t border-zinc-800;
+    border-top: 1px solid var(--border-default);
   }
 
   .divider-subtle {
-    @apply border-t border-zinc-800/50;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  /* ----------------------------------------
+     AI Message Indicator
+     ---------------------------------------- */
+  .ai-message-indicator {
+    width: 2px;
+    background-color: var(--brand-primary);
+    border-radius: var(--radius-full);
   }
 }
 
-/* Custom utility classes */
+/* ============================================================================
+   Utility Classes
+   ============================================================================ */
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
 
-  .text-gradient {
-    background: linear-gradient(135deg, #6366f1, #a78bfa);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+  /* Glass effect */
+  .glass {
+    background: var(--bg-elevated);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-subtle);
   }
 
-  .bg-noise {
-    position: relative;
+  /* Smooth interaction */
+  .interactive {
+    transition: all var(--duration-fast) var(--ease-out);
   }
 
-  .bg-noise::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-    opacity: 0.02;
-    pointer-events: none;
+  .interactive:hover {
+    transform: translateY(-1px);
+  }
+
+  .interactive:active {
+    transform: translateY(0);
+  }
+
+  /* Truncate with ellipsis */
+  .truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 }
 
-/* Button hover glow effect */
-.btn-glow {
-  position: relative;
-  overflow: hidden;
-}
+/* ============================================================================
+   Syntax Highlighting Base
+   ============================================================================ */
 
-.btn-glow::after {
-  content: '';
-  position: absolute;
-  inset: -2px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0), rgba(99, 102, 241, 0.3), rgba(99, 102, 241, 0));
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  filter: blur(8px);
-  z-index: -1;
-}
-
-.btn-glow:hover::after {
-  opacity: 1;
-}
-
-/* Code syntax highlighting base */
 .hljs {
   background: transparent !important;
 }
 
-/* Smooth transitions for interactive elements */
-.interactive {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
+/* ============================================================================
+   Responsive Utilities
+   ============================================================================ */
 
-.interactive:hover {
-  transform: translateY(-1px);
-}
-
-.interactive:active {
-  transform: translateY(0);
+@media (max-width: 768px) {
+  :root {
+    --sidebar-width: 0px;
+    --task-panel-width: 0px;
+  }
 }

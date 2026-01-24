@@ -18,12 +18,13 @@ import { PasswordResetModal } from './components/PasswordResetModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
 import { PermissionDialog } from './components/PermissionDialog';
 import { TaskPanel } from './components/TaskPanel';
+import { SkillsPanel } from './components/SkillsPanel';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
 import { useMemoryEvents } from './hooks/useMemoryEvents';
 import { useTheme } from './hooks/useTheme';
-import { Activity, Cloud, Zap } from 'lucide-react';
+import { Activity, Cloud, Zap, Sparkles } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 import { UI } from '@shared/constants';
@@ -36,6 +37,8 @@ export const App: React.FC = () => {
     showSettings,
     showTaskPanel,
     setShowTaskPanel,
+    showSkillsPanel,
+    setShowSkillsPanel,
     setShowSettings,
     setLanguage,
   } = useAppStore();
@@ -342,6 +345,26 @@ export const App: React.FC = () => {
     );
   };
 
+  // Skills panel toggle button (Standard+ mode)
+  const SkillsToggle: React.FC = () => {
+    if (!isStandard) return null;
+
+    return (
+      <button
+        onClick={() => setShowSkillsPanel(!showSkillsPanel)}
+        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
+          showSkillsPanel
+            ? 'bg-purple-500/20 text-purple-300'
+            : 'text-zinc-500 hover:bg-zinc-800'
+        }`}
+        title="Skills 面板"
+      >
+        <Sparkles className="w-3.5 h-3.5" />
+        <span>Skills</span>
+      </button>
+    );
+  };
+
   return (
     <ErrorBoundary>
       <div className="h-screen flex flex-col bg-void text-zinc-100">
@@ -372,6 +395,11 @@ export const App: React.FC = () => {
 
               {/* Task Panel - 320px fixed width, right side */}
               {showTaskPanel && <TaskPanel />}
+
+              {/* Skills Panel - 右侧面板，显示当前会话的 Skills */}
+              {showSkillsPanel && (
+                <SkillsPanel onClose={() => setShowSkillsPanel(false)} />
+              )}
             </div>
           </div>
         </div>

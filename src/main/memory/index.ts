@@ -87,3 +87,16 @@ export {
   type InjectedContext,
   type InjectorConfig,
 } from './contextInjector';
+
+// Core Memory (Enhanced User Preferences - Week 3)
+export {
+  CoreMemoryService,
+  getCoreMemoryService,
+  initCoreMemoryService,
+  type CoreMemory,
+  type HumanProfile,
+  type CodingStyle,
+  type WorkflowPreferences,
+  type AgentPersona,
+  type LearnedPreferences,
+} from './coreMemory';

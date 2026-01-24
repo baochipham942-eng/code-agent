@@ -245,6 +245,58 @@ export const BUILT_IN_TEMPLATES: HookTemplate[] = [
       },
     ],
   },
+
+  // Evolution Hooks (Gen8)
+  {
+    id: 'session-end-meta-learning',
+    name: '会话结束元学习',
+    description: '会话结束时自动分析工具使用模式，提取可复用模式',
+    event: 'SessionEnd',
+    enabled: true,
+    category: 'memory',
+    dependencies: ['EvolutionPersistence'],
+    options: [
+      {
+        id: 'extractPatterns',
+        name: '提取工具模式',
+        description: '是否提取工具使用序列模式',
+        type: 'boolean',
+        defaultValue: true,
+      },
+      {
+        id: 'detectGaps',
+        name: '检测能力缺口',
+        description: '是否检测并记录能力缺口',
+        type: 'boolean',
+        defaultValue: true,
+      },
+      {
+        id: 'updateStrategies',
+        name: '更新策略',
+        description: '是否根据会话结果更新策略',
+        type: 'boolean',
+        defaultValue: true,
+      },
+    ],
+  },
+  {
+    id: 'tool-failure-learning',
+    name: '工具失败学习',
+    description: '工具执行失败时分析错误模式，避免重复错误',
+    event: 'PostToolUseFailure',
+    enabled: true,
+    category: 'memory',
+    dependencies: ['EvolutionPersistence'],
+    options: [
+      {
+        id: 'minOccurrences',
+        name: '最小出现次数',
+        description: '触发模式提取的最小失败次数',
+        type: 'number',
+        defaultValue: 2,
+      },
+    ],
+  },
 ];
 
 // ----------------------------------------------------------------------------

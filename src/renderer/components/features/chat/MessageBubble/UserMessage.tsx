@@ -19,9 +19,9 @@ export const UserMessage: React.FC<UserMessageProps> = ({ message }) => {
           </div>
         )}
 
-        {/* Text content - 用户消息带背景 */}
+        {/* Text content - 用户消息带背景 (teal/cyan style like Claude Cowork) */}
         {message.content && (
-          <div className="bg-primary-600/90 text-white rounded-2xl rounded-br-sm px-4 py-2.5 select-text">
+          <div className="bg-teal-700/80 text-white rounded-2xl px-4 py-3 select-text">
             <MessageContent content={message.content} isUser={true} />
           </div>
         )}

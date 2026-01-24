@@ -127,18 +127,20 @@ export const Sidebar: React.FC = () => {
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
       {/* Header: New Chat + Filter */}
       <div className="px-3 py-3 flex items-center justify-between">
-        {/* New Chat - icon + text style (Claude Code style) */}
+        {/* New Chat - icon with circle background + text */}
         <button
           onClick={handleNewChat}
           disabled={isLoading}
           className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
         >
-          {isLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Plus className="w-4 h-4 stroke-[1.5]" />
-          )}
-          <span className="text-sm font-normal">New session</span>
+          <span className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center">
+            {isLoading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Plus className="w-3.5 h-3.5 stroke-[2]" />
+            )}
+          </span>
+          <span className="text-sm font-normal">新会话</span>
         </button>
 
         {/* Filter Dropdown */}

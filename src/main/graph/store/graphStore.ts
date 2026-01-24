@@ -639,6 +639,7 @@ export class GraphStore {
       id: uuidv4(),
       weight: 1.0,
       confidence: 1.0,
+      source: 'inferred',
       createdAt: now,
       validFrom: now,
       ...input,

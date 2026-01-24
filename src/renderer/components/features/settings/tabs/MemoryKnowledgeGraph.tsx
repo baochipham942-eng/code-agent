@@ -144,23 +144,27 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
 const CapabilityRadar: React.FC<{
   categories: Array<{ category: CapabilityCategory; count: number; percentage: number }>;
 }> = ({ categories }) => {
-  const angleStep = (2 * Math.PI) / categories.length;
-  const centerX = 120;
-  const centerY = 120;
-  const maxRadius = 90;
+  // 固定4个分类，确保正确的角度分布
+  const angleStep = (2 * Math.PI) / 4;
+  const centerX = 140;
+  const centerY = 140;
+  const maxRadius = 80;
+  const labelRadius = maxRadius + 35;
 
-  // 计算各点位置
+  // 计算各点位置 - 从顶部开始（-90度）
   const maxCount = Math.max(...categories.map(c => c.count), 1);
   const points = categories.map((item, i) => {
-    const angle = i * angleStep - Math.PI / 2;
+    const angle = i * angleStep - Math.PI / 2; // 从顶部开始
     const radius = (item.count / maxCount) * maxRadius * 0.85;
     return {
       x: centerX + Math.cos(angle) * radius,
       y: centerY + Math.sin(angle) * radius,
-      labelX: centerX + Math.cos(angle) * (maxRadius + 20),
-      labelY: centerY + Math.sin(angle) * (maxRadius + 20),
+      labelX: centerX + Math.cos(angle) * labelRadius,
+      labelY: centerY + Math.sin(angle) * labelRadius,
       item,
       angle,
+      // 位置标识：top, right, bottom, left
+      position: i === 0 ? 'top' : i === 1 ? 'right' : i === 2 ? 'bottom' : 'left',
     };
   });
 
@@ -168,7 +172,7 @@ const CapabilityRadar: React.FC<{
 
   return (
     <div className="relative">
-      <svg viewBox="0 0 240 240" className="w-full h-56">
+      <svg viewBox="0 0 280 280" className="w-full h-64">
         {/* 背景圈 */}
         {[0.25, 0.5, 0.75, 1].map((scale, i) => (
           <circle
@@ -183,19 +187,18 @@ const CapabilityRadar: React.FC<{
           />
         ))}
 
-        {/* 射线和标签 */}
+        {/* 射线 */}
         {points.map((p, i) => (
-          <g key={i}>
-            <line
-              x1={centerX}
-              y1={centerY}
-              x2={centerX + Math.cos(p.angle) * maxRadius}
-              y2={centerY + Math.sin(p.angle) * maxRadius}
-              stroke="currentColor"
-              strokeWidth="1"
-              className="text-zinc-700/40"
-            />
-          </g>
+          <line
+            key={i}
+            x1={centerX}
+            y1={centerY}
+            x2={centerX + Math.cos(p.angle) * maxRadius}
+            y2={centerY + Math.sin(p.angle) * maxRadius}
+            stroke="currentColor"
+            strokeWidth="1"
+            className="text-zinc-700/40"
+          />
         ))}
 
         {/* 数据多边形 */}
@@ -225,30 +228,54 @@ const CapabilityRadar: React.FC<{
             className={p.item.category.color.replace('text-', 'fill-')}
           />
         ))}
-      </svg>
 
-      {/* 标签 */}
-      <div className="absolute inset-0 pointer-events-none">
+        {/* 标签直接在 SVG 中绘制，确保居中 */}
         {points.map((p, i) => {
-          const isLeft = p.labelX < centerX;
-          const isTop = p.labelY < centerY;
+          // 根据位置调整锚点
+          let textAnchor: 'start' | 'middle' | 'end' = 'middle';
+          let dy = 0;
+          let dx = 0;
+
+          if (p.position === 'top') {
+            textAnchor = 'middle';
+            dy = -8;
+          } else if (p.position === 'bottom') {
+            textAnchor = 'middle';
+            dy = 20;
+          } else if (p.position === 'left') {
+            textAnchor = 'end';
+            dx = -8;
+            dy = 5;
+          } else if (p.position === 'right') {
+            textAnchor = 'start';
+            dx = 8;
+            dy = 5;
+          }
+
           return (
-            <div
-              key={i}
-              className="absolute flex items-center gap-1"
-              style={{
-                left: `${(p.labelX / 240) * 100}%`,
-                top: `${(p.labelY / 240) * 100}%`,
-                transform: `translate(${isLeft ? '-100%' : '0'}, ${isTop ? '-100%' : '0'})`,
-              }}
-            >
-              <span className={`${p.item.category.color}`}>{p.item.category.icon}</span>
-              <span className="text-xs text-zinc-300">{p.item.category.name}</span>
-              <span className="text-xs text-zinc-500">({p.item.count})</span>
-            </div>
+            <g key={i}>
+              <text
+                x={p.labelX + dx}
+                y={p.labelY + dy}
+                textAnchor={textAnchor}
+                className={`text-xs fill-zinc-300`}
+                style={{ fontSize: '11px' }}
+              >
+                {p.item.category.name}
+              </text>
+              <text
+                x={p.labelX + dx}
+                y={p.labelY + dy + 14}
+                textAnchor={textAnchor}
+                className="fill-zinc-500"
+                style={{ fontSize: '10px' }}
+              >
+                ({p.item.count})
+              </text>
+            </g>
           );
         })}
-      </div>
+      </svg>
     </div>
   );
 };

@@ -9,6 +9,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { ToolDefinition, ToolResult } from '../../shared/types';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { createLogger } from '../services/infra/logger';
@@ -20,6 +21,7 @@ import type {
   MCPServerConfig,
   MCPStdioServerConfig,
   MCPSSEServerConfig,
+  MCPHttpStreamableServerConfig,
   MCPInProcessServerConfig,
   MCPTool,
   MCPResource,
@@ -28,13 +30,14 @@ import type {
   MCPServerState,
   InProcessMCPServerInterface,
 } from './types';
-import { isStdioConfig, isSSEConfig, isInProcessConfig } from './types';
+import { isStdioConfig, isSSEConfig, isHttpStreamableConfig, isInProcessConfig } from './types';
 
 // Re-export types for backward compatibility
 export type {
   MCPServerConfig,
   MCPStdioServerConfig,
   MCPSSEServerConfig,
+  MCPHttpStreamableServerConfig,
   MCPInProcessServerConfig,
   MCPTool,
   MCPResource,
@@ -43,7 +46,7 @@ export type {
   MCPServerState,
   InProcessMCPServerInterface,
 };
-export { isStdioConfig, isSSEConfig, isInProcessConfig };
+export { isStdioConfig, isSSEConfig, isHttpStreamableConfig, isInProcessConfig };
 
 const logger = createLogger('MCPClient');
 
@@ -223,10 +226,35 @@ export class MCPClient {
       let connectTimeout: number;
 
       // 根据配置类型创建不同的传输
-      if (isSSEConfig(config)) {
+      if (isHttpStreamableConfig(config)) {
+        // HTTP Streamable 远程服务器 (现代 MCP 传输协议)
+        logger.info(`Using HTTP Streamable transport for ${config.name}: ${config.serverUrl}`);
+
+        // Build URL with optional headers
+        const url = new URL(config.serverUrl);
+        const requestInit: RequestInit = {};
+
+        if (config.headers) {
+          requestInit.headers = config.headers;
+        }
+
+        transport = new StreamableHTTPClientTransport(url, {
+          requestInit,
+        });
+        connectTimeout = MCPClient.SSE_CONNECT_TIMEOUT;
+      } else if (isSSEConfig(config)) {
         // SSE 远程服务器
         logger.info(`Using SSE transport for ${config.name}: ${config.serverUrl}`);
-        transport = new SSEClientTransport(new URL(config.serverUrl));
+
+        // SSE transport with optional headers
+        const url = new URL(config.serverUrl);
+        const eventSourceInit: EventSourceInit = {};
+
+        // Note: SSE doesn't support custom headers in standard EventSource
+        // Headers are typically passed via URL params or handled server-side
+        transport = new SSEClientTransport(url, {
+          eventSourceInit,
+        });
         connectTimeout = MCPClient.SSE_CONNECT_TIMEOUT;
       } else {
         // Stdio 本地服务器 (默认)
@@ -1040,11 +1068,21 @@ function convertCloudConfigToInternal(cloudConfig: MCPServerCloudConfig): MCPSer
     return result;
   };
 
-  if (type === 'sse') {
+  if (type === 'http-streamable') {
+    return {
+      name: id,
+      type: 'http-streamable',
+      serverUrl: config.url!,
+      headers: resolveEnvVars(config.headers),
+      enabled: shouldEnable,
+      requiredEnvVars,
+    } as MCPHttpStreamableServerConfig;
+  } else if (type === 'sse') {
     return {
       name: id,
       type: 'sse',
       serverUrl: config.url!,
+      headers: resolveEnvVars(config.headers),
       enabled: shouldEnable,
     } as MCPSSEServerConfig;
   } else {

@@ -28,13 +28,14 @@ export interface FeatureFlags {
 export interface MCPServerCloudConfig {
   id: string;
   name: string;
-  type: 'stdio' | 'sse';
+  type: 'stdio' | 'sse' | 'http-streamable';
   enabled: boolean;
   config: {
     command?: string;
     args?: string[];
     url?: string;
     env?: Record<string, string>;
+    headers?: Record<string, string>;
   };
   requiredEnvVars?: string[];
   description?: string;
@@ -428,6 +429,53 @@ const BUILTIN_RULES: Record<string, string> = {
 // ----------------------------------------------------------------------------
 
 const BUILTIN_MCP_SERVERS: MCPServerCloudConfig[] = [
+  // ========== HTTP Streamable 远程服务器 (推荐) ==========
+
+  {
+    id: 'context7',
+    name: 'Context7',
+    type: 'http-streamable',
+    enabled: true,
+    config: {
+      url: 'https://mcp.context7.com/mcp',
+      headers: {
+        'CONTEXT7_API_KEY': '${CONTEXT7_API_KEY}',
+      },
+    },
+    requiredEnvVars: [],  // API key optional but recommended for higher rate limits
+    description: '获取最新的库/框架文档和代码示例，解决 LLM 训练数据过时问题',
+  },
+  {
+    id: 'exa',
+    name: 'Exa AI Search',
+    type: 'http-streamable',
+    enabled: false,  // Requires API key
+    config: {
+      url: 'https://mcp.exa.ai/mcp',
+      headers: {
+        'x-api-key': '${EXA_API_KEY}',
+      },
+    },
+    requiredEnvVars: ['EXA_API_KEY'],
+    description: 'AI 驱动的网络搜索，支持语义搜索和代码搜索',
+  },
+  {
+    id: 'firecrawl',
+    name: 'Firecrawl',
+    type: 'http-streamable',
+    enabled: false,  // Requires API key
+    config: {
+      url: 'https://mcp.firecrawl.dev/v2/mcp',
+      headers: {
+        'Authorization': 'Bearer ${FIRECRAWL_API_KEY}',
+      },
+    },
+    requiredEnvVars: ['FIRECRAWL_API_KEY'],
+    description: '强大的网页抓取和内容提取，支持批量抓取、搜索和结构化数据提取',
+  },
+
+  // ========== SSE 远程服务器 ==========
+
   {
     id: 'deepwiki',
     name: 'DeepWiki',

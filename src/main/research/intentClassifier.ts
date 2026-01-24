@@ -15,6 +15,133 @@ import { createLogger } from '../services/infra/logger';
 const logger = createLogger('IntentClassifier');
 
 // ----------------------------------------------------------------------------
+// 明确指代检测
+// ----------------------------------------------------------------------------
+
+/**
+ * 检测消息中是否有明确的指代内容
+ * 返回提取的明确内容和类型
+ */
+interface ExplicitReference {
+  type: 'quoted_text' | 'book_title' | 'url' | 'code_block' | 'file_path' | 'specific_name';
+  content: string;
+}
+
+/**
+ * 从消息中提取明确指代
+ */
+function extractExplicitReferences(message: string): ExplicitReference[] {
+  const references: ExplicitReference[] = [];
+
+  // 中文引号内容："xxx" 或 'xxx'
+  const chineseQuotes = message.match(/[""]([^""]+)[""]|['']([^'']+)['']/g);
+  if (chineseQuotes) {
+    chineseQuotes.forEach(q => {
+      const content = q.replace(/["'""'']/g, '').trim();
+      if (content.length > 0) {
+        references.push({ type: 'quoted_text', content });
+      }
+    });
+  }
+
+  // 英文引号内容
+  const englishQuotes = message.match(/"([^"]+)"|'([^']+)'/g);
+  if (englishQuotes) {
+    englishQuotes.forEach(q => {
+      const content = q.replace(/["']/g, '').trim();
+      if (content.length > 0 && !references.some(r => r.content === content)) {
+        references.push({ type: 'quoted_text', content });
+      }
+    });
+  }
+
+  // 书名号内容：《xxx》
+  const bookTitles = message.match(/《([^》]+)》/g);
+  if (bookTitles) {
+    bookTitles.forEach(t => {
+      const content = t.replace(/[《》]/g, '').trim();
+      if (content.length > 0) {
+        references.push({ type: 'book_title', content });
+      }
+    });
+  }
+
+  // URL
+  const urls = message.match(/https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi);
+  if (urls) {
+    urls.forEach(url => {
+      references.push({ type: 'url', content: url });
+    });
+  }
+
+  // 文件路径 (Unix/Windows)
+  const filePaths = message.match(/(?:\/[\w\-\.]+)+\.\w+|[A-Z]:\\(?:[\w\-\.]+\\)*[\w\-\.]+\.\w+/g);
+  if (filePaths) {
+    filePaths.forEach(path => {
+      references.push({ type: 'file_path', content: path });
+    });
+  }
+
+  // 代码块 `xxx`
+  const codeBlocks = message.match(/`([^`]+)`/g);
+  if (codeBlocks) {
+    codeBlocks.forEach(block => {
+      const content = block.replace(/`/g, '').trim();
+      if (content.length > 0) {
+        references.push({ type: 'code_block', content });
+      }
+    });
+  }
+
+  // 具体名称（如项目名、库名等）- 以大写开头或全大写
+  const specificNames = message.match(/\b[A-Z][a-zA-Z0-9]*(?:\.[a-zA-Z0-9]+)*\b|\b[A-Z]{2,}[a-zA-Z0-9]*\b/g);
+  if (specificNames) {
+    specificNames.forEach(name => {
+      // 排除常见词
+      const commonWords = ['I', 'A', 'The', 'This', 'That', 'What', 'How', 'Why', 'When', 'Where', 'API', 'URL', 'HTTP', 'HTTPS'];
+      if (!commonWords.includes(name) && name.length > 1) {
+        references.push({ type: 'specific_name', content: name });
+      }
+    });
+  }
+
+  return references;
+}
+
+/**
+ * 检测是否为模糊指代（需要询问用户）
+ */
+function detectAmbiguousReference(message: string, hasExplicitRefs: boolean): {
+  isAmbiguous: boolean;
+  reason?: string;
+} {
+  // 如果有明确引用，则不是模糊指代
+  if (hasExplicitRefs) {
+    return { isAmbiguous: false };
+  }
+
+  // 模糊指代词检测
+  const ambiguousPatterns = [
+    { pattern: /(?:这个|那个|它|这|那)(?:东西|玩意|项目|文件|代码|问题)?(?:是什么|怎么|如何)?/i, reason: '指示代词"这/那"无明确指向' },
+    { pattern: /(?:上面|前面|刚才|之前)(?:提到|说|讲)的/i, reason: '引用上文内容但无具体指明' },
+    { pattern: /^(?:帮我|请|麻烦).{0,10}(?:搜索?|查找?|找)一下$/i, reason: '请求过于笼统' },
+    { pattern: /^(?:搜索?|查找?|找).*(?:相关|有关).*$/i, reason: '搜索目标不明确' },
+  ];
+
+  for (const { pattern, reason } of ambiguousPatterns) {
+    if (pattern.test(message)) {
+      // 二次检查：如果消息中有其他具体内容，则不算模糊
+      const hasConcreteContent = message.length > 20 && !/^[这那它]/.test(message);
+      if (!hasConcreteContent) {
+        return { isAmbiguous: true, reason };
+      }
+    }
+  }
+
+  return { isAmbiguous: false };
+}
+
+// ----------------------------------------------------------------------------
 // 规则匹配模式
 // ----------------------------------------------------------------------------
 
@@ -167,41 +294,132 @@ const INTENT_DEFAULT_SOURCES: Record<QueryIntent, DataSourceType[]> = {
 // ----------------------------------------------------------------------------
 
 /**
+ * 意图分类器配置
+ */
+export interface IntentClassifierConfig {
+  /** LLM 回退阈值 */
+  llmFallbackThreshold?: number;
+  /** LLM 最大 token */
+  maxLLMTokens?: number;
+  /** 启用先执行后反馈策略（减少询问） */
+  executeFirstStrategy?: boolean;
+}
+
+/**
  * 意图分类器
  *
  * 使用混合策略进行意图分类：
- * 1. 规则匹配快速路径（高置信度）
- * 2. LLM 分类回退（低置信度时）
+ * 1. 明确指代检测（快速路径）
+ * 2. 规则匹配快速路径（高置信度）
+ * 3. LLM 分类回退（低置信度时）
+ *
+ * 优化策略：
+ * - 有明确引号/书名号/URL 等内容时直接执行，不询问
+ * - 只有真正模糊的指代（如无上下文的"这个"）才询问
  */
 export class IntentClassifier {
   private modelRouter: ModelRouter;
   private llmFallbackThreshold: number;
   private maxLLMTokens: number;
+  private executeFirstStrategy: boolean;
 
   constructor(
     modelRouter: ModelRouter,
-    options: {
-      llmFallbackThreshold?: number;
-      maxLLMTokens?: number;
-    } = {}
+    options: IntentClassifierConfig = {}
   ) {
     this.modelRouter = modelRouter;
     this.llmFallbackThreshold = options.llmFallbackThreshold ?? 0.7;
     this.maxLLMTokens = options.maxLLMTokens ?? 150;
+    this.executeFirstStrategy = options.executeFirstStrategy ?? true;
   }
 
   /**
    * 分类用户查询
    *
    * @param userMessage - 用户消息
+   * @param conversationContext - 可选的对话上下文（用于理解指代）
    * @returns 分类结果
    */
-  async classify(userMessage: string): Promise<IntentClassification> {
+  async classify(
+    userMessage: string,
+    conversationContext?: string[]
+  ): Promise<IntentClassification> {
     const trimmedMessage = userMessage.trim();
 
     // 空消息处理
     if (!trimmedMessage) {
       return this.createClassification('simple_lookup', 0.5, '空消息');
+    }
+
+    // 0. 明确指代检测（优先级最高）
+    const explicitRefs = extractExplicitReferences(trimmedMessage);
+    const hasExplicitRefs = explicitRefs.length > 0;
+    const ambiguityCheck = detectAmbiguousReference(trimmedMessage, hasExplicitRefs);
+
+    logger.debug('Reference analysis:', {
+      explicitRefs: explicitRefs.map(r => r.type),
+      isAmbiguous: ambiguityCheck.isAmbiguous,
+    });
+
+    // 如果有明确引用，提升置信度并跳过询问
+    if (hasExplicitRefs && this.executeFirstStrategy) {
+      // 检测引用类型来决定意图
+      const refTypes = explicitRefs.map(r => r.type);
+
+      // URL -> 可能是网页抓取
+      if (refTypes.includes('url')) {
+        return {
+          intent: 'analysis',
+          confidence: 0.9,
+          suggestsResearch: true,
+          suggestedDepth: 'standard',
+          suggestedSources: ['web_search'],
+          reasoning: `检测到明确 URL: ${explicitRefs.find(r => r.type === 'url')?.content}`,
+          explicitReferences: explicitRefs,
+          requiresClarification: false,
+        };
+      }
+
+      // 书名号 -> 可能是学术搜索
+      if (refTypes.includes('book_title')) {
+        return {
+          intent: 'analysis',
+          confidence: 0.9,
+          suggestsResearch: true,
+          suggestedDepth: 'standard',
+          suggestedSources: ['academic_search', 'web_search'],
+          reasoning: `检测到书名/论文名: ${explicitRefs.find(r => r.type === 'book_title')?.content}`,
+          explicitReferences: explicitRefs,
+          requiresClarification: false,
+        };
+      }
+
+      // 文件路径 -> 本地操作
+      if (refTypes.includes('file_path')) {
+        return {
+          intent: 'code_task',
+          confidence: 0.95,
+          suggestsResearch: false,
+          suggestedDepth: 'quick',
+          suggestedSources: [],
+          reasoning: `检测到文件路径: ${explicitRefs.find(r => r.type === 'file_path')?.content}`,
+          explicitReferences: explicitRefs,
+          requiresClarification: false,
+        };
+      }
+    }
+
+    // 如果是模糊指代且没有上下文，标记需要澄清（但不一定要询问）
+    if (ambiguityCheck.isAmbiguous && !conversationContext?.length) {
+      logger.debug('Ambiguous reference detected:', ambiguityCheck.reason);
+      // 只有在非 executeFirstStrategy 模式下才强制要求澄清
+      if (!this.executeFirstStrategy) {
+        return {
+          ...this.createClassification('simple_lookup', 0.4, ambiguityCheck.reason || '需要澄清'),
+          requiresClarification: true,
+          clarificationReason: ambiguityCheck.reason,
+        };
+      }
     }
 
     // 1. 规则匹配快速路径
@@ -211,7 +429,12 @@ export class IntentClassifier {
         intent: ruleResult.intent,
         confidence: ruleResult.confidence,
       });
-      return ruleResult;
+      // 附加明确引用信息
+      return {
+        ...ruleResult,
+        explicitReferences: explicitRefs,
+        requiresClarification: false,
+      };
     }
 
     // 2. 消息长度和结构分析
@@ -221,7 +444,11 @@ export class IntentClassifier {
         intent: structureAnalysis.intent,
         confidence: structureAnalysis.confidence,
       });
-      return structureAnalysis;
+      return {
+        ...structureAnalysis,
+        explicitReferences: explicitRefs,
+        requiresClarification: false,
+      };
     }
 
     // 3. LLM 分类回退
@@ -231,12 +458,47 @@ export class IntentClassifier {
         intent: llmResult.intent,
         confidence: llmResult.confidence,
       });
-      return llmResult;
+      return {
+        ...llmResult,
+        explicitReferences: explicitRefs,
+        requiresClarification: false,
+      };
     } catch (error) {
       logger.warn('LLM classification failed, using fallback:', error);
       // 回退到规则结果或默认
-      return ruleResult ?? this.createClassification('explanation', 0.5, 'LLM 分类失败，使用默认');
+      const fallback = ruleResult ?? this.createClassification('explanation', 0.5, 'LLM 分类失败，使用默认');
+      return {
+        ...fallback,
+        explicitReferences: explicitRefs,
+        requiresClarification: ambiguityCheck.isAmbiguous,
+      };
     }
+  }
+
+  /**
+   * 检查消息是否需要用户澄清
+   */
+  checkRequiresClarification(userMessage: string, hasContext: boolean = false): {
+    requires: boolean;
+    reason?: string;
+    explicitRefs: ExplicitReference[];
+  } {
+    const explicitRefs = extractExplicitReferences(userMessage);
+    const ambiguityCheck = detectAmbiguousReference(userMessage, explicitRefs.length > 0);
+
+    if (explicitRefs.length > 0) {
+      return { requires: false, explicitRefs };
+    }
+
+    if (ambiguityCheck.isAmbiguous && !hasContext) {
+      return {
+        requires: !this.executeFirstStrategy,
+        reason: ambiguityCheck.reason,
+        explicitRefs: [],
+      };
+    }
+
+    return { requires: false, explicitRefs };
   }
 
   /**

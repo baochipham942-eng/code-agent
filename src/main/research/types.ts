@@ -165,7 +165,20 @@ export type DataSourceType =
   | 'mcp_deepwiki'         // DeepWiki MCP（GitHub 项目解读）
   | 'mcp_github'           // GitHub MCP
   | 'local_codebase'       // 本地代码库
-  | 'memory_store';        // 记忆存储
+  | 'memory_store'         // 记忆存储
+  | 'firecrawl_search'     // Firecrawl 网络搜索
+  | 'firecrawl_scrape'     // Firecrawl 页面抓取
+  | 'firecrawl_extract'    // Firecrawl 结构化提取
+  | 'exa_search'           // Exa AI 搜索
+  | 'exa_code';            // Exa 代码搜索
+
+/**
+ * 明确指代类型
+ */
+export interface ExplicitReference {
+  type: 'quoted_text' | 'book_title' | 'url' | 'code_block' | 'file_path' | 'specific_name';
+  content: string;
+}
 
 /**
  * 意图分类结果
@@ -183,6 +196,12 @@ export interface IntentClassification {
   suggestedSources: DataSourceType[];
   /** 分类推理过程 */
   reasoning: string;
+  /** 提取的明确引用（可选） */
+  explicitReferences?: ExplicitReference[];
+  /** 是否需要用户澄清（可选） */
+  requiresClarification?: boolean;
+  /** 需要澄清的原因（可选） */
+  clarificationReason?: string;
 }
 
 /**

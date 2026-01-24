@@ -58,6 +58,14 @@ import type {
   ContextHealthUpdateEvent,
 } from './types/contextHealth';
 
+import type {
+  MarketplaceInfo,
+  MarketplacePluginEntry,
+  InstalledPlugin,
+  MarketplaceResult,
+  PluginInstallResult,
+} from '../main/skills/marketplace/types';
+
 // Re-export context health types for consumer convenience
 export type { ContextHealthState, ContextHealthUpdateEvent } from './types/contextHealth';
 
@@ -399,6 +407,20 @@ export const IPC_CHANNELS = {
   CLOUD_CONFIG_REFRESH: 'cloud:config:refresh',
   CLOUD_CONFIG_GET_INFO: 'cloud:config:get-info',
 
+  // Skill Marketplace channels
+  MARKETPLACE_LIST: 'marketplace:list',
+  MARKETPLACE_ADD: 'marketplace:add',
+  MARKETPLACE_REMOVE: 'marketplace:remove',
+  MARKETPLACE_REFRESH: 'marketplace:refresh',
+  MARKETPLACE_INFO: 'marketplace:info',
+  MARKETPLACE_LIST_PLUGINS: 'marketplace:list-plugins',
+  MARKETPLACE_SEARCH_PLUGINS: 'marketplace:search-plugins',
+  MARKETPLACE_INSTALL_PLUGIN: 'marketplace:install-plugin',
+  MARKETPLACE_UNINSTALL_PLUGIN: 'marketplace:uninstall-plugin',
+  MARKETPLACE_LIST_INSTALLED: 'marketplace:list-installed',
+  MARKETPLACE_ENABLE_PLUGIN: 'marketplace:enable-plugin',
+  MARKETPLACE_DISABLE_PLUGIN: 'marketplace:disable-plugin',
+
   // Memory Phase 2/3 channels
   MEMORY: 'memory:action', // 统一的 memory action 通道
   MEMORY_LEARNED: 'memory:learned',
@@ -642,6 +664,20 @@ export interface IpcInvokeHandlers {
   // Session status (multi-session parallel support)
   [IPC_CHANNELS.SESSION_STATUS_GET]: (sessionId: string) => Promise<SessionRuntimeSummary | null>;
   [IPC_CHANNELS.SESSION_STATUS_GET_ALL]: () => Promise<SessionRuntimeSummary[]>;
+
+  // Skill Marketplace
+  [IPC_CHANNELS.MARKETPLACE_LIST]: () => Promise<MarketplaceResult<MarketplaceInfo[]>>;
+  [IPC_CHANNELS.MARKETPLACE_ADD]: (url: string) => Promise<MarketplaceResult<MarketplaceInfo>>;
+  [IPC_CHANNELS.MARKETPLACE_REMOVE]: (id: string) => Promise<MarketplaceResult<void>>;
+  [IPC_CHANNELS.MARKETPLACE_REFRESH]: (id?: string) => Promise<MarketplaceResult<void>>;
+  [IPC_CHANNELS.MARKETPLACE_INFO]: (id: string) => Promise<MarketplaceResult<MarketplaceInfo>>;
+  [IPC_CHANNELS.MARKETPLACE_LIST_PLUGINS]: (marketplaceId?: string) => Promise<MarketplaceResult<MarketplacePluginEntry[]>>;
+  [IPC_CHANNELS.MARKETPLACE_SEARCH_PLUGINS]: (query: string) => Promise<MarketplaceResult<MarketplacePluginEntry[]>>;
+  [IPC_CHANNELS.MARKETPLACE_INSTALL_PLUGIN]: (spec: string, options?: { scope?: 'user' | 'project'; projectPath?: string }) => Promise<PluginInstallResult>;
+  [IPC_CHANNELS.MARKETPLACE_UNINSTALL_PLUGIN]: (pluginId: string, scope?: 'user' | 'project') => Promise<MarketplaceResult<void>>;
+  [IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED]: (scope?: 'user' | 'project' | 'all') => Promise<MarketplaceResult<InstalledPlugin[]>>;
+  [IPC_CHANNELS.MARKETPLACE_ENABLE_PLUGIN]: (pluginId: string) => Promise<MarketplaceResult<void>>;
+  [IPC_CHANNELS.MARKETPLACE_DISABLE_PLUGIN]: (pluginId: string) => Promise<MarketplaceResult<void>>;
 }
 
 // ----------------------------------------------------------------------------

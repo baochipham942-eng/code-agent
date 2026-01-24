@@ -1,0 +1,76 @@
+/* ============================================================================
+   Linear-style Light Theme
+   Clean, warm, professional light interface
+   ============================================================================ */
+
+:root[data-theme="light"],
+.light {
+  /* Background layers - subtle warm grays */
+  --bg-void: #FFFFFF;
+  --bg-deep: #FAFAFA;
+  --bg-surface: #F4F4F5;
+  --bg-elevated: #FFFFFF;
+  --bg-hover: #EBEBED;
+  --bg-active: #E4E4E7;
+
+  /* Text hierarchy */
+  --text-primary: #18181B;
+  --text-secondary: #52525B;
+  --text-tertiary: #71717A;
+  --text-disabled: #A1A1AA;
+  --text-inverse: #F4F4F5;
+
+  /* Brand color - Teal */
+  --brand-primary: #0D9488;
+  --brand-primary-hover: #0F766E;
+  --brand-primary-muted: rgba(13, 148, 136, 0.12);
+  --brand-primary-glow: rgba(13, 148, 136, 0.2);
+
+  /* Semantic colors */
+  --color-success: #22C55E;
+  --color-success-muted: rgba(34, 197, 94, 0.12);
+  --color-warning: #F59E0B;
+  --color-warning-muted: rgba(245, 158, 11, 0.12);
+  --color-error: #EF4444;
+  --color-error-muted: rgba(239, 68, 68, 0.12);
+  --color-info: #3B82F6;
+  --color-info-muted: rgba(59, 130, 246, 0.12);
+
+  /* Border colors */
+  --border-subtle: rgba(0, 0, 0, 0.04);
+  --border-default: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.12);
+  --border-focus: var(--brand-primary);
+
+  /* Shadow system - lighter, softer */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.12);
+
+  /* Overlay */
+  --overlay-backdrop: rgba(0, 0, 0, 0.4);
+
+  /* Selection */
+  --selection-bg: rgba(13, 148, 136, 0.2);
+  --selection-text: #18181B;
+
+  /* Scrollbar */
+  --scrollbar-track: transparent;
+  --scrollbar-thumb: rgba(113, 113, 122, 0.3);
+  --scrollbar-thumb-hover: rgba(113, 113, 122, 0.5);
+
+  /* Code */
+  --code-bg: #F4F4F5;
+  --code-border: rgba(0, 0, 0, 0.06);
+
+  /* Input */
+  --input-bg: #FFFFFF;
+  --input-border: rgba(0, 0, 0, 0.12);
+  --input-border-focus: var(--brand-primary);
+  --input-placeholder: #A1A1AA;
+
+  /* Focus ring */
+  --focus-ring: rgba(13, 148, 136, 0.5);
+}

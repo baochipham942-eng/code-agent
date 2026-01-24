@@ -20,6 +20,38 @@ export const WorkingFolder: React.FC = () => {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(true);
 
+  // Infer working directory from generated files if not set
+  const inferredDirectory = useMemo(() => {
+    if (workingDirectory) return null; // Already set, no need to infer
+
+    // Look for file paths in recent tool calls
+    for (const message of messages.slice(-20).reverse()) {
+      if (message.toolCalls) {
+        for (const toolCall of message.toolCalls) {
+          if (['write_file', 'edit_file', 'read_file'].includes(toolCall.name)) {
+            const args = toolCall.arguments as Record<string, unknown>;
+            const filePath = (args?.path || args?.file_path) as string | undefined;
+            if (filePath && filePath.startsWith('/')) {
+              // Extract directory from file path
+              const lastSlash = filePath.lastIndexOf('/');
+              if (lastSlash > 0) {
+                return filePath.substring(0, lastSlash);
+              }
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }, [workingDirectory, messages]);
+
+  // Auto-set working directory if inferred
+  React.useEffect(() => {
+    if (inferredDirectory && !workingDirectory) {
+      setWorkingDirectory(inferredDirectory);
+    }
+  }, [inferredDirectory, workingDirectory, setWorkingDirectory]);
+
   // Extract file paths from tool calls in messages
   const recentFiles = useMemo(() => {
     const files: FileInfo[] = [];

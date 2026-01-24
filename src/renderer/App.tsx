@@ -345,21 +345,35 @@ export const App: React.FC = () => {
   return (
     <ErrorBoundary>
       <div className="h-screen flex flex-col bg-void text-zinc-100">
-        {/* Title Bar for macOS - includes Gen selector, workspace path, session title */}
-        <TitleBar />
-
-        {/* Main Content - Linear-style three-column layout */}
+        {/* Main Content - Three-column layout with integrated title bars */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Sidebar - 240px fixed width, collapsible */}
-          {isStandard && !sidebarCollapsed && <Sidebar />}
+          {/* Left Column: Sidebar with its own title bar */}
+          {isStandard && !sidebarCollapsed && (
+            <div className="flex flex-col w-60 border-r border-white/[0.06]">
+              {/* Sidebar Title Bar - macOS traffic lights space */}
+              <div className="h-12 flex items-center px-3 border-b border-white/[0.06] window-drag">
+                <div className="w-[68px]" /> {/* Space for macOS traffic lights */}
+              </div>
+              <Sidebar />
+            </div>
+          )}
 
-          {/* Chat Area - flexible width */}
+          {/* Right Area: Chat + TaskPanel with shared title bar */}
           <div className="flex-1 flex flex-col min-w-0">
-            <ChatView />
-          </div>
+            {/* Right Title Bar */}
+            <TitleBar />
 
-          {/* Task Panel - 320px fixed width, right side */}
-          {showTaskPanel && <TaskPanel />}
+            {/* Content Area */}
+            <div className="flex-1 flex overflow-hidden">
+              {/* Chat Area - flexible width, slightly lighter background */}
+              <div className="flex-1 flex flex-col min-w-0 bg-[#161619]">
+                <ChatView />
+              </div>
+
+              {/* Task Panel - 320px fixed width, right side */}
+              {showTaskPanel && <TaskPanel />}
+            </div>
+          </div>
         </div>
 
       {/* Settings Modal */}

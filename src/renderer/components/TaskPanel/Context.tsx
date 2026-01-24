@@ -153,9 +153,9 @@ export const Context: React.FC = () => {
                 <span className="flex-1 text-sm text-zinc-300 truncate">{item.name}</span>
                 {hasDetails && (
                   isExpanded ? (
-                    <ChevronDown className="w-3 h-3 text-zinc-500" />
+                    <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
                   ) : (
-                    <ChevronRight className="w-3 h-3 text-zinc-500" />
+                    <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
                   )
                 )}
               </button>

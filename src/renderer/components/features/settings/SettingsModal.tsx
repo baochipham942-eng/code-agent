@@ -41,10 +41,18 @@ interface Section {
 // ============================================================================
 
 export const SettingsModal: React.FC = () => {
-  const { setShowSettings, modelConfig, setModelConfig } = useAppStore();
+  const { setShowSettings, modelConfig, setModelConfig, settingsInitialTab, clearSettingsInitialTab } = useAppStore();
   const { signOut, isAuthenticated } = useAuthStore();
   const { t } = useI18n();
-  const [activeSection, setActiveSection] = useState<SectionId>('general');
+  const [activeSection, setActiveSection] = useState<SectionId>(settingsInitialTab || 'general');
+
+  // 清除初始 Tab（使用后清除，避免下次打开设置时还是这个 Tab）
+  useEffect(() => {
+    if (settingsInitialTab) {
+      setActiveSection(settingsInitialTab);
+      clearSettingsInitialTab();
+    }
+  }, [settingsInitialTab, clearSettingsInitialTab]);
 
   // Optional update state
   const [optionalUpdateInfo, setOptionalUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -79,7 +87,7 @@ export const SettingsModal: React.FC = () => {
     },
     {
       id: 'service',
-      label: '服务',
+      label: 'MCP',
       icon: <Server className="w-4 h-4" />
     },
     {
@@ -89,7 +97,7 @@ export const SettingsModal: React.FC = () => {
     },
     {
       id: 'data',
-      label: t.settings?.tabs?.data || '数据',
+      label: t.settings?.tabs?.data || '记忆',
       icon: <Database className="w-4 h-4" />
     },
     {
@@ -170,10 +178,12 @@ export const SettingsModal: React.FC = () => {
             <div className="px-2 py-3 border-t border-zinc-800">
               <button
                 onClick={() => {
-                  signOut();
-                  setShowSettings(false);
+                  if (window.confirm('确定要退出登录吗？')) {
+                    signOut();
+                    setShowSettings(false);
+                  }
                 }}
-                className="w-full px-3 py-2 text-sm text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 rounded-lg transition-colors text-left"
+                className="w-full px-3 py-2 text-sm text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 rounded-lg transition-colors text-center"
               >
                 退出登录
               </button>

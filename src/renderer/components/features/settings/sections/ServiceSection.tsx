@@ -8,8 +8,6 @@ import {
   PlugZap,
   Loader2,
   ChevronDown,
-  Sparkles,
-  Github,
   Eye,
   EyeOff,
   Check,
@@ -19,8 +17,7 @@ import {
 } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input } from '../../../primitives';
-import { IPC_CHANNELS } from '@shared/ipc';
-import { IPC_DOMAINS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { UI } from '@shared/constants';
 import { createLogger } from '../../../../utils/logger';
 
@@ -55,12 +52,6 @@ interface JiraConfig {
 export const ServiceSection: React.FC = () => {
   const { t } = useI18n();
 
-  // GitHub Token state (kept separately for MCP)
-  const [githubToken, setGithubToken] = useState('');
-  const [showGithubToken, setShowGithubToken] = useState(false);
-  const [savingGithub, setSavingGithub] = useState(false);
-  const [githubSaveStatus, setGithubSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
-
   // MCP state
   const [mcpServers, setMcpServers] = useState<MCPServerState[]>([]);
   const [mcpLoading, setMcpLoading] = useState(true);
@@ -77,18 +68,8 @@ export const ServiceSection: React.FC = () => {
   const [jiraSaveStatus, setJiraSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [showJiraDetails, setShowJiraDetails] = useState(false);
 
-  // Load GitHub token and Jira config
+  // Load Jira config
   useEffect(() => {
-    const loadKeys = async () => {
-      try {
-        const result = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET_SERVICE_KEYS);
-        if (result) {
-          setGithubToken(result.github || '');
-        }
-      } catch (error) {
-        logger.error('Failed to load service keys', error);
-      }
-    };
     const loadJiraConfig = async () => {
       try {
         const result = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET_INTEGRATION, 'jira');
@@ -103,7 +84,6 @@ export const ServiceSection: React.FC = () => {
         logger.error('Failed to load Jira config', error);
       }
     };
-    loadKeys();
     loadJiraConfig();
   }, []);
 
@@ -123,26 +103,6 @@ export const ServiceSection: React.FC = () => {
     };
     loadMCPStatus();
   }, []);
-
-  const handleSaveGithubToken = async () => {
-    setSavingGithub(true);
-    setGithubSaveStatus('idle');
-
-    try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY, {
-        service: 'github',
-        apiKey: githubToken,
-      });
-      logger.info('GitHub token saved');
-      setGithubSaveStatus('success');
-      setTimeout(() => setGithubSaveStatus('idle'), UI.COPY_FEEDBACK_DURATION);
-    } catch (error) {
-      logger.error('Failed to save GitHub token', error);
-      setGithubSaveStatus('error');
-    } finally {
-      setSavingGithub(false);
-    }
-  };
 
   const connectedMcpCount = mcpServers.filter(s => s.status === 'connected').length;
 
@@ -170,52 +130,6 @@ export const ServiceSection: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* GitHub Token for MCP */}
-      <div>
-        <h4 className="text-sm font-medium text-zinc-100 mb-3 flex items-center gap-2">
-          <Github className="w-4 h-4 text-zinc-400" />
-          GitHub Token
-        </h4>
-        <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/50">
-          <p className="text-xs text-zinc-500 mb-2">用于 MCP GitHub 服务器访问</p>
-          <div className="flex gap-2">
-            <div className="flex-1 relative">
-              <Input
-                type={showGithubToken ? 'text' : 'password'}
-                value={githubToken}
-                onChange={(e) => setGithubToken(e.target.value)}
-                placeholder="ghp_..."
-                className="!py-1.5 !text-xs"
-              />
-              <button
-                type="button"
-                onClick={() => setShowGithubToken(!showGithubToken)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-300"
-              >
-                <Eye className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <Button
-              onClick={handleSaveGithubToken}
-              loading={savingGithub}
-              variant={githubSaveStatus === 'error' ? 'danger' : 'secondary'}
-              size="sm"
-              className={`!px-2 ${githubSaveStatus === 'success' ? '!bg-emerald-600 hover:!bg-emerald-500' : ''}`}
-            >
-              {savingGithub ? (
-                '...'
-              ) : githubSaveStatus === 'success' ? (
-                <Check className="w-3.5 h-3.5" />
-              ) : githubSaveStatus === 'error' ? (
-                <AlertCircle className="w-3.5 h-3.5" />
-              ) : (
-                '保存'
-              )}
-            </Button>
-          </div>
-        </div>
-      </div>
-
       {/* MCP Status */}
       <div>
         <button
@@ -368,17 +282,6 @@ export const ServiceSection: React.FC = () => {
             </div>
           </div>
         )}
-      </div>
-
-      {/* Skills Placeholder */}
-      <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/50">
-        <div className="flex items-center gap-3">
-          <Sparkles className="w-4 h-4 text-amber-400" />
-          <div>
-            <span className="text-sm font-medium text-zinc-100">Skills</span>
-            <p className="text-xs text-zinc-500 mt-0.5">预定义工作流（即将推出）</p>
-          </div>
-        </div>
       </div>
     </div>
   );

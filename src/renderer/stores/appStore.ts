@@ -25,9 +25,13 @@ type CloudUIStrings = {
   en: Record<string, string>;
 };
 
+// 设置页 Tab 类型
+export type SettingsTab = 'general' | 'model' | 'service' | 'skills' | 'data' | 'about';
+
 interface AppState {
   // UI State
   showSettings: boolean;
+  settingsInitialTab: SettingsTab | null; // 打开设置时默认选中的 Tab
   showWorkspace: boolean;
   showTaskPanel: boolean;
   showSkillsPanel: boolean;
@@ -81,6 +85,8 @@ interface AppState {
 
   // Actions
   setShowSettings: (show: boolean) => void;
+  openSettingsTab: (tab: SettingsTab) => void; // 打开设置并跳转到指定 Tab
+  clearSettingsInitialTab: () => void; // 清除初始 Tab（设置页使用后调用）
   setShowWorkspace: (show: boolean) => void;
   setShowTaskPanel: (show: boolean) => void;
   setShowSkillsPanel: (show: boolean) => void;
@@ -141,6 +147,7 @@ const defaultModelConfig: ModelConfig = {
 export const useAppStore = create<AppState>((set, get) => ({
   // Initial UI State
   showSettings: false,
+  settingsInitialTab: null,
   showWorkspace: false,
   showTaskPanel: true, // Task panel shown by default
   showSkillsPanel: false, // Skills panel hidden by default
@@ -193,6 +200,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Actions
   setShowSettings: (show) => set({ showSettings: show }),
+  openSettingsTab: (tab) => set({ showSettings: true, settingsInitialTab: tab }),
+  clearSettingsInitialTab: () => set({ settingsInitialTab: null }),
   setShowWorkspace: (show) => set({ showWorkspace: show }),
   setShowTaskPanel: (show) => set({ showTaskPanel: show }),
   setShowSkillsPanel: (show) => set({ showSkillsPanel: show }),

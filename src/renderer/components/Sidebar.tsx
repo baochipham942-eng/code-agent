@@ -15,8 +15,6 @@ import {
   Settings,
   LogOut,
   LogIn,
-  ChevronUp,
-  Filter,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Button, IconButton } from './primitives';
@@ -65,11 +63,8 @@ export const Sidebar: React.FC = () => {
 
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string>('');
-  const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [filter, setFilter] = useState<FilterType>('active');
-  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
-  const filterRef = useRef<HTMLDivElement>(null);
 
   // 初始化：加载会话列表
   useEffect(() => {
@@ -89,21 +84,6 @@ export const Sidebar: React.FC = () => {
       }
     };
     loadVersion();
-  }, []);
-
-  // Close menus when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (accountMenuRef.current && !accountMenuRef.current.contains(event.target as Node)) {
-        setShowAccountMenu(false);
-      }
-      if (filterRef.current && !filterRef.current.contains(event.target as Node)) {
-        setShowFilterDropdown(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   // 过滤会话（暂时只显示 active，归档功能待实现）
@@ -133,49 +113,41 @@ export const Sidebar: React.FC = () => {
 
   return (
     <div className="w-60 border-r border-zinc-800/50 flex flex-col bg-surface-950">
-      {/* Header: New Chat + Filter */}
-      <div className="p-3 flex items-center gap-2">
+      {/* Header: New Chat Button */}
+      <div className="p-3">
         <Button
           onClick={handleNewChat}
           loading={isLoading}
           variant="primary"
           leftIcon={!isLoading ? <Plus className="w-4 h-4" /> : undefined}
-          className="flex-1"
+          fullWidth
         >
           新对话
         </Button>
+      </div>
 
-        {/* Filter Dropdown */}
-        <div className="relative" ref={filterRef}>
-          <IconButton
-            icon={<Filter className="w-4 h-4" />}
-            aria-label="Filter sessions"
-            onClick={() => setShowFilterDropdown(!showFilterDropdown)}
-            variant={showFilterDropdown ? 'active' : 'default'}
-            size="md"
-          />
-
-          {showFilterDropdown && (
-            <div className="absolute right-0 top-full mt-1 w-36 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 py-1">
-              <button
-                onClick={() => { setFilter('active'); setShowFilterDropdown(false); }}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-zinc-700/50 ${
-                  filter === 'active' ? 'text-zinc-100' : 'text-zinc-400'
-                }`}
-              >
-                进行中
-              </button>
-              <button
-                onClick={() => { setFilter('archived'); setShowFilterDropdown(false); }}
-                className={`w-full text-left px-3 py-2 text-sm hover:bg-zinc-700/50 ${
-                  filter === 'archived' ? 'text-zinc-100' : 'text-zinc-400'
-                }`}
-              >
-                已归档
-              </button>
-            </div>
-          )}
-        </div>
+      {/* Filter Tabs */}
+      <div className="px-3 pb-2 flex gap-4 border-b border-zinc-800/50">
+        <button
+          onClick={() => setFilter('active')}
+          className={`text-sm pb-2 border-b-2 transition-colors ${
+            filter === 'active'
+              ? 'text-zinc-100 border-primary-500'
+              : 'text-zinc-500 border-transparent hover:text-zinc-300'
+          }`}
+        >
+          进行中
+        </button>
+        <button
+          onClick={() => setFilter('archived')}
+          className={`text-sm pb-2 border-b-2 transition-colors ${
+            filter === 'archived'
+              ? 'text-zinc-100 border-primary-500'
+              : 'text-zinc-500 border-transparent hover:text-zinc-300'
+          }`}
+        >
+          已归档
+        </button>
       </div>
 
       {/* Session List - Flat list, no grouping */}
@@ -194,7 +166,7 @@ export const Sidebar: React.FC = () => {
             <p className="text-xs text-zinc-500">开始新的对话</p>
           </div>
         ) : (
-          <div className="space-y-1 py-1">
+          <div className="space-y-1 py-2">
             {filteredSessions.map((session) => {
               const isUnread = unreadSessionIds.has(session.id);
               const isSelected = currentSessionId === session.id;
@@ -207,8 +179,8 @@ export const Sidebar: React.FC = () => {
                   onMouseLeave={() => setHoveredSession(null)}
                   className={`group relative flex flex-col px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 ${
                     isSelected
-                      ? 'bg-primary-500/10 border-l-2 border-primary-500'
-                      : 'hover:bg-zinc-800/50 border-l-2 border-transparent'
+                      ? 'bg-zinc-800/60'
+                      : 'hover:bg-zinc-800/40'
                   }`}
                 >
                   {/* Row 1: Title + Archive icon */}
@@ -251,77 +223,34 @@ export const Sidebar: React.FC = () => {
         )}
       </div>
 
-      {/* Account Menu (Bottom) */}
+      {/* Bottom: Settings or Login */}
       <div className="border-t border-zinc-800/50 p-2" ref={accountMenuRef}>
         {isAuthenticated && user ? (
-          <div className="relative">
-            {/* Account Button */}
-            <button
-              onClick={() => setShowAccountMenu(!showAccountMenu)}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-zinc-800/50 transition-colors"
-            >
-              {user.avatarUrl ? (
-                <img
-                  src={user.avatarUrl}
-                  alt=""
-                  className="w-8 h-8 rounded-full object-cover"
-                />
-              ) : (
-                <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center">
-                  <User className="w-4 h-4 text-white" />
-                </div>
-              )}
-              <div className="flex-1 text-left min-w-0">
-                <div className="text-sm font-medium text-zinc-200 truncate">
-                  {user.nickname || user.email?.split('@')[0]}
-                </div>
-                <div className="text-xs text-zinc-500">
-                  {sessions.length} 条消息
-                </div>
-              </div>
-              <ChevronUp className={`w-4 h-4 text-zinc-500 transition-transform ${showAccountMenu ? '' : 'rotate-180'}`} />
-            </button>
-
-            {/* Popup Menu (expands upward) */}
-            {showAccountMenu && (
-              <div className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 overflow-hidden animate-slideDown">
-                {/* Settings */}
-                <button
-                  onClick={() => {
-                    setShowSettings(true);
-                    setShowAccountMenu(false);
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-300 hover:bg-zinc-700/50 transition-colors"
-                >
-                  <Settings className="w-4 h-4" />
-                  设置
-                </button>
-
-                {/* Divider */}
-                <div className="border-t border-zinc-700" />
-
-                {/* Logout */}
-                <button
-                  onClick={() => {
-                    signOut();
-                    setShowAccountMenu(false);
-                  }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:bg-zinc-700/50 hover:text-zinc-200 transition-colors"
-                >
-                  <LogOut className="w-4 h-4" />
-                  退出登录
-                </button>
-
-                {/* Divider */}
-                <div className="border-t border-zinc-700" />
-
-                {/* Version */}
-                <div className="px-3 py-2 text-xs text-zinc-600">
-                  v{appVersion}
-                </div>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-zinc-800/50 transition-colors"
+          >
+            {user.avatarUrl ? (
+              <img
+                src={user.avatarUrl}
+                alt=""
+                className="w-8 h-8 rounded-full object-cover"
+              />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center">
+                <User className="w-4 h-4 text-white" />
               </div>
             )}
-          </div>
+            <div className="flex-1 text-left min-w-0">
+              <div className="text-sm font-medium text-zinc-200 truncate">
+                {user.nickname || user.email?.split('@')[0]}
+              </div>
+              <div className="text-xs text-zinc-500">
+                查看设置
+              </div>
+            </div>
+            <Settings className="w-4 h-4 text-zinc-500" />
+          </button>
         ) : (
           <button
             onClick={() => setShowAuthModal(true)}

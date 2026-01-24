@@ -1,11 +1,11 @@
 // ============================================================================
-// SettingsModal - 设置模态框 (重构版)
-// 5 分组手风琴布局，去除侧边栏 Tab 切换
+// SettingsModal - 设置模态框 (侧边栏 Tab 切换布局)
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { X, ChevronDown, Settings, Cpu, Server, Database, Info } from 'lucide-react';
+import { X, Settings, Cpu, Server, Database, Info } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
+import { useAuthStore } from '../../../stores/authStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
 import { UpdateNotification } from '../../UpdateNotification';
@@ -36,71 +36,14 @@ interface Section {
 }
 
 // ============================================================================
-// Accordion Section Component
-// ============================================================================
-
-interface AccordionSectionProps {
-  section: Section;
-  isOpen: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}
-
-const AccordionSection: React.FC<AccordionSectionProps> = ({
-  section,
-  isOpen,
-  onToggle,
-  children,
-}) => {
-  return (
-    <div className="border-b border-zinc-800/50 last:border-b-0">
-      {/* Header */}
-      <button
-        onClick={onToggle}
-        className={`w-full flex items-center justify-between px-6 py-4 text-left transition-colors hover:bg-zinc-800/30 ${
-          isOpen ? 'bg-zinc-800/20' : ''
-        }`}
-      >
-        <div className="flex items-center gap-3">
-          <span className={`transition-colors ${isOpen ? 'text-teal-400' : 'text-zinc-400'}`}>
-            {section.icon}
-          </span>
-          <span className={`text-sm font-medium ${isOpen ? 'text-zinc-100' : 'text-zinc-300'}`}>
-            {section.label}
-          </span>
-          {section.badge && (
-            <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
-          )}
-        </div>
-        <ChevronDown
-          className={`w-4 h-4 text-zinc-400 transition-transform duration-200 ${
-            isOpen ? 'rotate-180' : ''
-          }`}
-        />
-      </button>
-
-      {/* Content */}
-      <div
-        className={`overflow-hidden transition-all duration-200 ease-out ${
-          isOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'
-        }`}
-      >
-        <div className="px-6 py-4 bg-zinc-900/30">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ============================================================================
 // Main Component
 // ============================================================================
 
 export const SettingsModal: React.FC = () => {
-  const { setShowSettings, modelConfig, setModelConfig, disclosureLevel, setDisclosureLevel } = useAppStore();
+  const { setShowSettings, modelConfig, setModelConfig } = useAppStore();
+  const { signOut, isAuthenticated } = useAuthStore();
   const { t } = useI18n();
-  const [openSection, setOpenSection] = useState<SectionId>('general');
+  const [activeSection, setActiveSection] = useState<SectionId>('general');
 
   // Optional update state
   const [optionalUpdateInfo, setOptionalUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -151,8 +94,27 @@ export const SettingsModal: React.FC = () => {
     },
   ];
 
-  const handleToggle = (sectionId: SectionId) => {
-    setOpenSection(openSection === sectionId ? sectionId : sectionId);
+  const renderContent = () => {
+    switch (activeSection) {
+      case 'general':
+        return <GeneralSection />;
+      case 'model':
+        return <ModelSection config={modelConfig} onChange={setModelConfig} />;
+      case 'service':
+        return <ServiceSection />;
+      case 'data':
+        return <DataSection />;
+      case 'about':
+        return (
+          <AboutSection
+            updateInfo={optionalUpdateInfo}
+            onUpdateInfoChange={setOptionalUpdateInfo}
+            onShowUpdateModal={() => setShowUpdateModal(true)}
+          />
+        );
+      default:
+        return null;
+    }
   };
 
   return (
@@ -164,49 +126,73 @@ export const SettingsModal: React.FC = () => {
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-xl max-h-[85vh] bg-zinc-900 rounded-xl border border-zinc-800 shadow-2xl overflow-hidden animate-fadeIn flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 shrink-0">
-          <h2 className="text-lg font-semibold text-zinc-100">{t.settings?.title || '设置'}</h2>
-          <IconButton
-            icon={<X className="w-5 h-5" />}
-            aria-label="Close settings"
-            onClick={() => setShowSettings(false)}
-            variant="default"
-            size="md"
-          />
+      <div className="relative w-full max-w-2xl max-h-[85vh] bg-zinc-900 rounded-xl border border-zinc-800 shadow-2xl overflow-hidden animate-fadeIn flex">
+        {/* Sidebar */}
+        <div className="w-44 border-r border-zinc-800 bg-zinc-900/50 flex flex-col shrink-0">
+          {/* Header */}
+          <div className="px-4 py-4 border-b border-zinc-800">
+            <h2 className="text-base font-semibold text-zinc-100">{t.settings?.title || '设置'}</h2>
+          </div>
+
+          {/* Tab List */}
+          <div className="flex-1 py-2 px-2 space-y-1">
+            {sections.map((section) => (
+              <button
+                key={section.id}
+                onClick={() => setActiveSection(section.id)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
+                  activeSection === section.id
+                    ? 'bg-zinc-800 text-zinc-100'
+                    : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
+                }`}
+              >
+                <span className={activeSection === section.id ? 'text-primary-400' : ''}>
+                  {section.icon}
+                </span>
+                <span className="flex-1 text-left">{section.label}</span>
+                {section.badge && (
+                  <span className="w-2 h-2 rounded-full bg-primary-500 animate-pulse" />
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Bottom: Logout */}
+          {isAuthenticated && (
+            <div className="px-2 py-3 border-t border-zinc-800">
+              <button
+                onClick={() => {
+                  signOut();
+                  setShowSettings(false);
+                }}
+                className="w-full px-3 py-2 text-sm text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 rounded-lg transition-colors text-left"
+              >
+                退出登录
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Accordion Content */}
-        <div className="flex-1 overflow-y-auto">
-          {sections.map((section) => (
-            <AccordionSection
-              key={section.id}
-              section={section}
-              isOpen={openSection === section.id}
-              onToggle={() => handleToggle(section.id)}
-            >
-              {section.id === 'general' && (
-                <GeneralSection />
-              )}
-              {section.id === 'model' && (
-                <ModelSection config={modelConfig} onChange={setModelConfig} />
-              )}
-              {section.id === 'service' && (
-                <ServiceSection />
-              )}
-              {section.id === 'data' && (
-                <DataSection />
-              )}
-              {section.id === 'about' && (
-                <AboutSection
-                  updateInfo={optionalUpdateInfo}
-                  onUpdateInfoChange={setOptionalUpdateInfo}
-                  onShowUpdateModal={() => setShowUpdateModal(true)}
-                />
-              )}
-            </AccordionSection>
-          ))}
+        {/* Content Area */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Content Header with Close Button */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 shrink-0">
+            <h3 className="text-sm font-medium text-zinc-300">
+              {sections.find(s => s.id === activeSection)?.label}
+            </h3>
+            <IconButton
+              icon={<X className="w-5 h-5" />}
+              aria-label="Close settings"
+              onClick={() => setShowSettings(false)}
+              variant="default"
+              size="md"
+            />
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {renderContent()}
+          </div>
         </div>
       </div>
 

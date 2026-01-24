@@ -248,6 +248,22 @@ export const zh = {
       gen8: ['自我评估', '模式学习', '策略优化', '工具创建'],
     },
   },
+
+  // Task Panel (Right Sidebar)
+  taskPanel: {
+    title: '任务信息',
+    progress: '进度',
+    workingFolder: '工作目录',
+    context: '上下文',
+    connectors: '连接器',
+    skills: '技能',
+    noWorkspace: '未选择工作目录',
+    noRecentFiles: '暂无最近文件',
+    noConnectors: '未配置连接器',
+    viewAllConnectors: '查看所有连接器',
+    working: '处理中...',
+    tools: '工具',
+  },
 };
 
 export type Translations = typeof zh;

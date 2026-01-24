@@ -267,7 +267,7 @@ export const App: React.FC = () => {
           </div>
 
           {/* Task Panel - 320px fixed width, right side */}
-          {showTaskPanel && <TaskPanel onClose={() => setShowTaskPanel(false)} />}
+          {showTaskPanel && <TaskPanel />}
         </div>
 
       {/* Settings Modal */}

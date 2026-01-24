@@ -23,7 +23,7 @@ import {
   enterPlanModeTool,
   exitPlanModeTool,
 } from './planning';
-import { webFetchTool, webSearchTool, readPdfTool, pptGenerateTool, imageGenerateTool } from './network';
+import { webFetchTool, webSearchTool, readPdfTool, pptGenerateTool, imageGenerateTool, imageAnalyzeTool } from './network';
 import { skillMetaTool } from './skill';
 import {
   mcpTool,
@@ -154,9 +154,10 @@ export class ToolRegistry {
     this.register(readPdfTool);
     this.register(lspTool);
 
-    // Gen 5 tools - PPT & Image Generation
+    // Gen 5 tools - PPT & Image Generation & Analysis
     this.register(pptGenerateTool);
     this.register(imageGenerateTool);
+    this.register(imageAnalyzeTool);
 
     // MCP tools (Gen 4+)
     this.register(mcpTool);

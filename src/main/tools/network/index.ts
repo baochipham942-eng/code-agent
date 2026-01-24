@@ -9,3 +9,4 @@ export { readPdfTool } from './readPdf';
 // export { skillTool } from './skill';
 export { pptGenerateTool } from './pptGenerate';
 export { imageGenerateTool } from './imageGenerate';
+export { imageAnalyzeTool } from './imageAnalyze';

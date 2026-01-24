@@ -115,7 +115,7 @@ npm run typecheck    # 类型检查
 | Gen2 | + glob, grep, list_directory |
 | Gen3 | + task, todo_write, ask_user_question |
 | Gen4 | + skill, web_fetch, read_pdf, mcp, mcp_list_tools, mcp_list_resources, mcp_read_resource, mcp_get_status |
-| Gen5 | + memory_store, memory_search, code_index, ppt_generate, image_generate |
+| Gen5 | + memory_store, memory_search, code_index, ppt_generate, image_generate, image_analyze |
 | Gen6 | + screenshot, computer_use, browser_action |
 | Gen7 | + spawn_agent, agent_message, workflow_orchestrate |
 | Gen8 | + strategy_optimize, tool_create, self_evaluate |
@@ -261,6 +261,44 @@ image_generate { "prompt": "产品展示图", "output_path": "./product.png", "s
 | `style` | string | 风格: "photo", "illustration", "3d", "anime" |
 
 **要求**：需要配置 OpenRouter API Key，或通过云端代理使用。
+
+### Gen5 图片分析
+
+`image_analyze` 工具使用 Gemini 2.0 Flash 视觉模型分析图片，支持单图分析和批量筛选：
+
+**单图分析模式：**
+
+```bash
+# 分析单张图片
+image_analyze { "path": "photo.jpg", "prompt": "这张图片里有什么动物？" }
+
+# 识别 App 截图
+image_analyze { "path": "screenshot.png", "prompt": "这是哪个 App 的截图？" }
+```
+
+**批量筛选模式：**
+
+```bash
+# 从相册中筛选有猫的照片
+image_analyze { "paths": ["/Users/xxx/Photos/*.jpg"], "filter": "有猫的照片" }
+
+# 筛选包含文字的图片
+image_analyze { "paths": ["img1.png", "img2.png", "img3.png"], "filter": "包含文字的图片" }
+```
+
+**参数说明：**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `path` | string | 单张图片路径（单图模式）|
+| `prompt` | string | 分析提示（单图模式，默认"描述图片内容"）|
+| `paths` | string[] | 图片路径数组，支持 glob 模式（批量模式）|
+| `filter` | string | 筛选条件（批量模式）|
+| `detail` | string | 图片精度: "low"(默认,更便宜) \| "high"(更准确) |
+
+**成本估算：**
+- 100 张图片 ≈ $0.001（几乎免费）
+- 最大并行处理 10 张
 
 ## 安全模块 (v0.9+)
 

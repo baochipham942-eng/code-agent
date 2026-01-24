@@ -11,8 +11,11 @@ import {
   Sparkles,
   Github,
   Eye,
+  EyeOff,
   Check,
   AlertCircle,
+  Link2,
+  ExternalLink,
 } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input } from '../../../primitives';
@@ -39,6 +42,12 @@ interface MCPServerState {
   resourceCount: number;
 }
 
+interface JiraConfig {
+  baseUrl: string;
+  email: string;
+  apiToken: string;
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -57,7 +66,18 @@ export const ServiceSection: React.FC = () => {
   const [mcpLoading, setMcpLoading] = useState(true);
   const [showMcpDetails, setShowMcpDetails] = useState(false);
 
-  // Load GitHub token
+  // Jira state
+  const [jiraConfig, setJiraConfig] = useState<JiraConfig>({
+    baseUrl: '',
+    email: '',
+    apiToken: '',
+  });
+  const [showJiraToken, setShowJiraToken] = useState(false);
+  const [savingJira, setSavingJira] = useState(false);
+  const [jiraSaveStatus, setJiraSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [showJiraDetails, setShowJiraDetails] = useState(false);
+
+  // Load GitHub token and Jira config
   useEffect(() => {
     const loadKeys = async () => {
       try {
@@ -69,7 +89,22 @@ export const ServiceSection: React.FC = () => {
         logger.error('Failed to load service keys', error);
       }
     };
+    const loadJiraConfig = async () => {
+      try {
+        const result = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET_INTEGRATION, 'jira');
+        if (result) {
+          setJiraConfig({
+            baseUrl: result.baseUrl || '',
+            email: result.email || '',
+            apiToken: result.apiToken || '',
+          });
+        }
+      } catch (error) {
+        logger.error('Failed to load Jira config', error);
+      }
+    };
     loadKeys();
+    loadJiraConfig();
   }, []);
 
   // Load MCP status
@@ -110,6 +145,28 @@ export const ServiceSection: React.FC = () => {
   };
 
   const connectedMcpCount = mcpServers.filter(s => s.status === 'connected').length;
+
+  const handleSaveJiraConfig = async () => {
+    setSavingJira(true);
+    setJiraSaveStatus('idle');
+
+    try {
+      await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET_INTEGRATION, {
+        integration: 'jira',
+        config: jiraConfig as unknown as Record<string, string>,
+      });
+      logger.info('Jira config saved');
+      setJiraSaveStatus('success');
+      setTimeout(() => setJiraSaveStatus('idle'), UI.COPY_FEEDBACK_DURATION);
+    } catch (error) {
+      logger.error('Failed to save Jira config', error);
+      setJiraSaveStatus('error');
+    } finally {
+      setSavingJira(false);
+    }
+  };
+
+  const isJiraConfigured = jiraConfig.baseUrl && jiraConfig.email && jiraConfig.apiToken;
 
   return (
     <div className="space-y-6">
@@ -208,6 +265,107 @@ export const ServiceSection: React.FC = () => {
                 </div>
               ))
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Jira Integration */}
+      <div>
+        <button
+          onClick={() => setShowJiraDetails(!showJiraDetails)}
+          className="w-full flex items-center justify-between p-3 rounded-lg border border-zinc-800 bg-zinc-900/50 hover:border-zinc-700 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <Link2 className="w-4 h-4 text-blue-400" />
+            <span className="text-sm font-medium text-zinc-100">Jira</span>
+            {isJiraConfigured && (
+              <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
+                已配置
+              </span>
+            )}
+          </div>
+          <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform ${showJiraDetails ? 'rotate-180' : ''}`} />
+        </button>
+
+        {showJiraDetails && (
+          <div className="mt-2 p-3 rounded-lg border border-zinc-800 bg-zinc-900/30 space-y-3">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs text-zinc-500">用于 jira 工具查询和创建 Issue</p>
+              <a
+                href="https://id.atlassian.com/manage-profile/security/api-tokens"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+              >
+                获取 Token
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+
+            {/* Jira URL */}
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">Jira URL</label>
+              <Input
+                value={jiraConfig.baseUrl}
+                onChange={(e) => setJiraConfig(prev => ({ ...prev, baseUrl: e.target.value }))}
+                placeholder="https://your-company.atlassian.net"
+                className="!py-1.5 !text-xs"
+              />
+            </div>
+
+            {/* Email */}
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">邮箱</label>
+              <Input
+                type="email"
+                value={jiraConfig.email}
+                onChange={(e) => setJiraConfig(prev => ({ ...prev, email: e.target.value }))}
+                placeholder="your-email@company.com"
+                className="!py-1.5 !text-xs"
+              />
+            </div>
+
+            {/* API Token */}
+            <div>
+              <label className="block text-xs text-zinc-400 mb-1">API Token</label>
+              <div className="relative">
+                <Input
+                  type={showJiraToken ? 'text' : 'password'}
+                  value={jiraConfig.apiToken}
+                  onChange={(e) => setJiraConfig(prev => ({ ...prev, apiToken: e.target.value }))}
+                  placeholder="ATATT..."
+                  className="!py-1.5 !text-xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowJiraToken(!showJiraToken)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-300"
+                >
+                  {showJiraToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <div className="pt-2">
+              <Button
+                onClick={handleSaveJiraConfig}
+                loading={savingJira}
+                variant={jiraSaveStatus === 'error' ? 'danger' : 'secondary'}
+                size="sm"
+                className={jiraSaveStatus === 'success' ? '!bg-emerald-600 hover:!bg-emerald-500' : ''}
+              >
+                {savingJira ? (
+                  '...'
+                ) : jiraSaveStatus === 'success' ? (
+                  <><Check className="w-3.5 h-3.5 mr-1" /> 已保存</>
+                ) : jiraSaveStatus === 'error' ? (
+                  <><AlertCircle className="w-3.5 h-3.5 mr-1" /> 失败</>
+                ) : (
+                  '保存配置'
+                )}
+              </Button>
+            </div>
           </div>
         )}
       </div>

@@ -392,6 +392,32 @@ export class ConfigService {
     storage.setApiKey(service, apiKey);
   }
 
+  /**
+   * Get integration config (e.g., Jira)
+   */
+  getIntegration(integration: string): Record<string, string> | null {
+    const storage = getSecureStorage();
+    const key = `integration.${integration}` as `integration.${string}`;
+    const value = storage.get(key);
+    if (value) {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Set integration config (e.g., Jira)
+   */
+  async setIntegration(integration: string, config: Record<string, string>): Promise<void> {
+    const storage = getSecureStorage();
+    const key = `integration.${integration}` as `integration.${string}`;
+    storage.set(key, JSON.stringify(config));
+  }
+
   async addRecentDirectory(dir: string): Promise<void> {
     const recent = this.settings.workspace.recentDirectories;
     const index = recent.indexOf(dir);

@@ -36,19 +36,28 @@ interface JiraQueryParams {
  * 获取 Jira 配置
  */
 function getJiraConfig(): JiraConfig | null {
-  const configService = getConfigService();
-  const settings = configService.getSettings();
+  // 优先从环境变量读取
+  const envBaseUrl = process.env.JIRA_BASE_URL;
+  const envEmail = process.env.JIRA_EMAIL;
+  const envApiToken = process.env.JIRA_API_TOKEN;
 
-  const jiraSettings = (settings as any).jira || {};
-  const baseUrl = process.env.JIRA_BASE_URL || jiraSettings.baseUrl;
-  const email = process.env.JIRA_EMAIL || jiraSettings.email;
-  const apiToken = process.env.JIRA_API_TOKEN || jiraSettings.apiToken;
-
-  if (!baseUrl || !email || !apiToken) {
-    return null;
+  if (envBaseUrl && envEmail && envApiToken) {
+    return { baseUrl: envBaseUrl, email: envEmail, apiToken: envApiToken };
   }
 
-  return { baseUrl, email, apiToken };
+  // 从设置中读取（secureStorage）
+  const configService = getConfigService();
+  const integration = configService.getIntegration('jira');
+
+  if (integration?.baseUrl && integration?.email && integration?.apiToken) {
+    return {
+      baseUrl: integration.baseUrl,
+      email: integration.email,
+      apiToken: integration.apiToken,
+    };
+  }
+
+  return null;
 }
 
 /**

@@ -10,3 +10,5 @@ export { readPdfTool } from './readPdf';
 export { pptGenerateTool } from './pptGenerate';
 export { imageGenerateTool } from './imageGenerate';
 export { imageAnalyzeTool } from './imageAnalyze';
+export { docxGenerateTool } from './docxGenerate';
+export { excelGenerateTool } from './excelGenerate';

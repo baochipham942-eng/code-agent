@@ -115,7 +115,7 @@ npm run typecheck    # 类型检查
 | Gen2 | + glob, grep, list_directory |
 | Gen3 | + task, todo_write, ask_user_question |
 | Gen4 | + skill, web_fetch, read_pdf, mcp, mcp_list_tools, mcp_list_resources, mcp_read_resource, mcp_get_status |
-| Gen5 | + memory_store, memory_search, code_index, ppt_generate, image_generate, image_analyze |
+| Gen5 | + memory_store, memory_search, code_index, ppt_generate, image_generate, image_analyze, docx_generate, excel_generate |
 | Gen6 | + screenshot, computer_use, browser_action |
 | Gen7 | + spawn_agent, agent_message, workflow_orchestrate |
 | Gen8 | + strategy_optimize, tool_create, self_evaluate |
@@ -299,6 +299,44 @@ image_analyze { "paths": ["img1.png", "img2.png", "img3.png"], "filter": "包含
 **成本估算：**
 - 100 张图片 ≈ $0.001（几乎免费）
 - 最大并行处理 10 张
+
+### Gen5 Word 文档生成
+
+`docx_generate` 工具生成 Word 文档（.docx），支持 Markdown 格式内容：
+
+```bash
+# 生成报告
+docx_generate { "title": "项目报告", "content": "# 概述\n这是一份报告..." }
+
+# 使用学术风格
+docx_generate { "title": "论文", "content": "## 摘要\n...", "theme": "academic" }
+```
+
+**支持的 Markdown 格式：**
+- 标题（# ## ###）
+- 列表（- 或 1.）
+- 粗体、斜体、代码
+- 引用块、代码块
+- 表格
+
+**主题选项：** professional、academic、minimal、creative
+
+### Gen5 Excel 表格生成
+
+`excel_generate` 工具生成 Excel 表格（.xlsx），支持多种输入格式：
+
+```bash
+# JSON 数组
+excel_generate { "title": "员工名单", "data": "[{\"姓名\": \"张三\", \"部门\": \"技术部\"}]" }
+
+# Markdown 表格
+excel_generate { "title": "销售数据", "data": "| 月份 | 销售额 |\n|---|---|\n| 1月 | 10000 |" }
+
+# CSV 格式
+excel_generate { "title": "数据表", "data": "name,age\n张三,25\n李四,30" }
+```
+
+**主题选项：** professional、colorful、minimal、dark
 
 ## 安全模块 (v0.9+)
 

@@ -71,7 +71,8 @@ Returns: File content with line numbers in format "  lineNum\\tcontent"`,
     let offset = (params.offset as number) || 1;
     let limit = (params.limit as number) || 2000;
 
-    // 兼容处理：AI 可能把参数写到 file_path 里（如 "file.txt offset=10 limit=20"）
+    // 兼容处理：AI 可能把参数写到 file_path 里
+    // 格式1: "file.txt offset=10 limit=20" (带等号)
     if (inputPath.includes(' offset=') || inputPath.includes(' limit=')) {
       const parts = inputPath.split(' ');
       inputPath = parts[0]; // 第一部分是实际路径
@@ -84,6 +85,33 @@ Returns: File content with line numbers in format "  lineNum\\tcontent"`,
           limit = Number(value);
         }
       }
+    }
+
+    // 格式2: "file.txt offset 10 limit 20" (空格分隔，无等号)
+    const spaceParamMatch = inputPath.match(
+      /^(.+?)\s+(offset|limit)\s+(\d+)(?:\s+(offset|limit)\s+(\d+))?$/i
+    );
+    if (spaceParamMatch) {
+      inputPath = spaceParamMatch[1].trim();
+      const extractedParams: Record<string, number> = {};
+      if (spaceParamMatch[2] && spaceParamMatch[3]) {
+        extractedParams[spaceParamMatch[2].toLowerCase()] = parseInt(spaceParamMatch[3], 10);
+      }
+      if (spaceParamMatch[4] && spaceParamMatch[5]) {
+        extractedParams[spaceParamMatch[4].toLowerCase()] = parseInt(spaceParamMatch[5], 10);
+      }
+      if (extractedParams.offset) offset = extractedParams.offset;
+      if (extractedParams.limit) limit = extractedParams.limit;
+    }
+
+    // 格式3: "file.txt lines 7-9" 或 "file.txt lines 7" (行范围)
+    const linesMatch = inputPath.match(/^(.+?)\s+lines?\s+(\d+)(?:-(\d+))?$/i);
+    if (linesMatch) {
+      inputPath = linesMatch[1].trim();
+      const startLine = parseInt(linesMatch[2], 10);
+      const endLine = linesMatch[3] ? parseInt(linesMatch[3], 10) : startLine;
+      offset = startLine;
+      limit = endLine - startLine + 1;
     }
 
     // Resolve path (handles ~, relative paths)

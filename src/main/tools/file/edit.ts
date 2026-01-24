@@ -103,6 +103,34 @@ Best practices:
     const replaceAll = (params.replace_all as boolean) || false;
     const force = (params.force as boolean) || false;
 
+    // Parameter validation - check required params before any logic
+    if (!inputPath || typeof inputPath !== 'string') {
+      return {
+        success: false,
+        error: 'Missing required parameter: file_path. Provide the absolute path to the file.',
+      };
+    }
+
+    if (oldString === undefined || oldString === null) {
+      return {
+        success: false,
+        error:
+          'Missing required parameter: old_string. ' +
+          'Provide the exact text to find and replace. ' +
+          'Example: {"file_path": "/path/file.txt", "old_string": "old text", "new_string": "new text"}',
+      };
+    }
+
+    if (newString === undefined || newString === null) {
+      return {
+        success: false,
+        error:
+          'Missing required parameter: new_string. ' +
+          'Provide the replacement text (use "" to delete). ' +
+          'Example: {"file_path": "/path/file.txt", "old_string": "old text", "new_string": "new text"}',
+      };
+    }
+
     // Resolve path (handles ~, relative paths)
     const filePath = resolvePath(inputPath, context.workingDirectory);
 

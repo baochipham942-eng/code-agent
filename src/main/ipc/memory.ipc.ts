@@ -156,6 +156,107 @@ async function handleRecordMemoryAccess(payload: { id: string }): Promise<void> 
 }
 
 // ----------------------------------------------------------------------------
+// Learning Insights Handler - 学习图谱数据
+// ----------------------------------------------------------------------------
+
+interface ToolPreference {
+  name: string;
+  count: number;
+  percentage: number;
+}
+
+interface CodingStyle {
+  semicolons: boolean;
+  indent: string;
+  quotes: string;
+}
+
+interface EvolutionPattern {
+  name: string;
+  type: string;
+  context: string;
+  pattern: string;
+  solution: string;
+  confidence: number;
+  occurrences: number;
+  tags: string[];
+}
+
+interface LearningInsights {
+  toolPreferences: ToolPreference[];
+  codingStyle: CodingStyle | null;
+  evolutionPatterns: EvolutionPattern[];
+  totalToolUsage: number;
+  topTools: string[];
+}
+
+/**
+ * 获取学习洞察数据（用于知识图谱可视化）
+ */
+async function handleGetLearningInsights(): Promise<LearningInsights> {
+  const db = getDatabase();
+  const prefs = db.getAllPreferences();
+
+  // 1. 工具使用偏好
+  const toolPrefsRaw = prefs.tool_preferences as Record<string, number> | undefined;
+  let toolPreferences: ToolPreference[] = [];
+  let totalToolUsage = 0;
+  let topTools: string[] = [];
+
+  if (toolPrefsRaw && typeof toolPrefsRaw === 'object') {
+    const entries = Object.entries(toolPrefsRaw);
+    totalToolUsage = entries.reduce((sum, [_, count]) => sum + (count as number), 0);
+
+    toolPreferences = entries
+      .map(([name, count]) => ({
+        name,
+        count: count as number,
+        percentage: totalToolUsage > 0 ? ((count as number) / totalToolUsage) * 100 : 0,
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    topTools = toolPreferences.slice(0, 5).map(t => t.name);
+  }
+
+  // 2. 代码风格
+  const codingStyleRaw = prefs.coding_style as CodingStyle | undefined;
+  let codingStyle: CodingStyle | null = null;
+
+  if (codingStyleRaw && typeof codingStyleRaw === 'object') {
+    codingStyle = {
+      semicolons: codingStyleRaw.semicolons ?? false,
+      indent: codingStyleRaw.indent ?? '2spaces',
+      quotes: codingStyleRaw.quotes ?? 'single',
+    };
+  }
+
+  // 3. 演化模式（成功模式）
+  const evolutionPatternsRaw = prefs.evolution_patterns as EvolutionPattern[] | undefined;
+  let evolutionPatterns: EvolutionPattern[] = [];
+
+  if (Array.isArray(evolutionPatternsRaw)) {
+    evolutionPatterns = evolutionPatternsRaw.map(p => ({
+      name: p.name || '未命名模式',
+      type: p.type || 'success',
+      context: p.context || '',
+      pattern: p.pattern || '',
+      solution: p.solution || '',
+      confidence: p.confidence ?? 0.5,
+      occurrences: p.occurrences ?? 1,
+      tags: Array.isArray(p.tags) ? p.tags : [],
+    }));
+  }
+
+  return {
+    toolPreferences,
+    codingStyle,
+    evolutionPatterns,
+    totalToolUsage,
+    topTools,
+  };
+}
+
+// ----------------------------------------------------------------------------
 // Phase 2 Handlers - Memory Tab UI
 // ----------------------------------------------------------------------------
 
@@ -467,6 +568,8 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           return { success: true, data: await handleImportMemories({ data: payload.data }) };
         case 'getStats':
           return { success: true, data: await handleGetMemoryStatsNew() };
+        case 'getLearningInsights':
+          return { success: true, data: await handleGetLearningInsights() };
         default:
           return { success: false, error: `Unknown action: ${payload.action}` };
       }

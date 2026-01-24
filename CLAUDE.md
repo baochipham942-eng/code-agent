@@ -419,11 +419,31 @@ mcp { "server": "deepwiki", "tool": "ask_question", "arguments": { "repoName": "
 
 | 服务器 | 类型 | 默认启用 | 说明 |
 |--------|------|----------|------|
+| `context7` | HTTP Streamable | ✅ | 获取最新库/框架文档（API Key 可选但推荐）|
+| `exa` | HTTP Streamable | 需 EXA_API_KEY | AI 驱动的语义搜索和代码搜索 |
+| `firecrawl` | HTTP Streamable | 需 FIRECRAWL_API_KEY | 网页抓取、搜索和结构化数据提取 |
 | `deepwiki` | SSE | ✅ | 解读 GitHub 项目文档 |
 | `github` | Stdio | 需 GITHUB_TOKEN | GitHub API |
 | `filesystem` | Stdio | ❌ | 文件系统访问 |
 | `git` | Stdio | ❌ | Git 版本控制 |
 | `brave-search` | Stdio | 需 BRAVE_API_KEY | 网络搜索 |
+
+**新增 MCP 服务器详情：**
+
+- **Context7**: 提供最新的库/框架文档和代码示例，解决 LLM 训练数据过时问题
+  - 工具: `resolve-library-id`, `query-docs`
+  - 端点: `https://mcp.context7.com/mcp`
+  - API Key 可选但推荐（设置 `CONTEXT7_API_KEY` 环境变量获得更高速率限制）
+
+- **Exa**: AI 驱动的网络搜索引擎
+  - 工具: `web_search_exa`, `company_research_exa`, `get_code_context_exa`
+  - 端点: `https://mcp.exa.ai/mcp`
+  - 需要 `EXA_API_KEY` 环境变量
+
+- **Firecrawl**: 强大的网页抓取和内容提取服务
+  - 工具: `firecrawl_scrape`, `firecrawl_map`, `firecrawl_search`, `firecrawl_crawl`, `firecrawl_extract`, `firecrawl_agent`
+  - 端点: `https://mcp.firecrawl.dev/v2/mcp`
+  - 需要 `FIRECRAWL_API_KEY` 环境变量
 
 ### Gen5 PPT 生成
 

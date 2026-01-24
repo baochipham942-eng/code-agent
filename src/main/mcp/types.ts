@@ -21,13 +21,30 @@ export interface MCPStdioServerConfig {
 }
 
 /**
- * SSE 服务器配置 (远程 HTTP)
+ * SSE 服务器配置 (远程 HTTP - SSE Transport)
  */
 export interface MCPSSEServerConfig {
   name: string;
   type: 'sse';
   serverUrl: string;
   enabled: boolean;
+  /** Optional headers for authentication */
+  headers?: Record<string, string>;
+}
+
+/**
+ * HTTP Streamable 服务器配置 (远程 HTTP - Streamable Transport)
+ * 这是 MCP 推荐的现代传输协议
+ */
+export interface MCPHttpStreamableServerConfig {
+  name: string;
+  type: 'http-streamable';
+  serverUrl: string;
+  enabled: boolean;
+  /** Optional headers for authentication */
+  headers?: Record<string, string>;
+  /** Required environment variables (server disabled if missing) */
+  requiredEnvVars?: string[];
 }
 
 /**
@@ -48,7 +65,7 @@ export interface MCPInProcessServerConfig {
 /**
  * 统一的服务器配置类型
  */
-export type MCPServerConfig = MCPStdioServerConfig | MCPSSEServerConfig | MCPInProcessServerConfig;
+export type MCPServerConfig = MCPStdioServerConfig | MCPSSEServerConfig | MCPHttpStreamableServerConfig | MCPInProcessServerConfig;
 
 // ----------------------------------------------------------------------------
 // MCP Entity Types
@@ -236,6 +253,13 @@ export function isStdioConfig(config: MCPServerConfig): config is MCPStdioServer
  */
 export function isSSEConfig(config: MCPServerConfig): config is MCPSSEServerConfig {
   return config.type === 'sse';
+}
+
+/**
+ * 判断是否为 HTTP Streamable 服务器配置
+ */
+export function isHttpStreamableConfig(config: MCPServerConfig): config is MCPHttpStreamableServerConfig {
+  return config.type === 'http-streamable';
 }
 
 /**

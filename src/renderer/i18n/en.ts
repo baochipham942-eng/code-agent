@@ -266,4 +266,20 @@ export const en: Translations = {
       gen8: ['Self-evaluation', 'Pattern Learning', 'Strategy Optimization', 'Tool Creation'],
     },
   },
+
+  // Task Panel (Right Sidebar)
+  taskPanel: {
+    title: 'Task Info',
+    progress: 'Progress',
+    workingFolder: 'Working Folder',
+    context: 'Context',
+    connectors: 'Connectors',
+    skills: 'Skills',
+    noWorkspace: 'No workspace selected',
+    noRecentFiles: 'No recent files',
+    noConnectors: 'No connectors configured',
+    viewAllConnectors: 'View all connectors',
+    working: 'Working...',
+    tools: 'tools',
+  },
 };

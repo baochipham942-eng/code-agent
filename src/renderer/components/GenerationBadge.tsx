@@ -2,7 +2,7 @@
 // GenerationBadge - Display and Switch Generations
 // ============================================================================
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useI18n } from '../hooks/useI18n';
 import { ChevronDown, Zap, Layers, Brain, Sparkles, Database, Monitor, Users, Dna } from 'lucide-react';
@@ -133,8 +133,24 @@ export const GenerationBadge: React.FC = () => {
   const { t } = useI18n();
   const [showDropdown, setShowDropdown] = useState(false);
   const [generations, setGenerations] = useState<Generation[]>(defaultGenerations);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const config = generationConfigs[currentGeneration.id] || generationConfigs.gen1;
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+
+    if (showDropdown) {
+      // Use mousedown instead of click for better responsiveness
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showDropdown]);
 
   // Load generations from main process on mount
   useEffect(() => {
@@ -178,7 +194,7 @@ export const GenerationBadge: React.FC = () => {
   };
 
   return (
-    <div className="relative">
+    <div className="relative" ref={dropdownRef}>
       {/* Badge Button - 格式: Gen1 基础工具期 */}
       <button
         onClick={() => setShowDropdown(!showDropdown)}
@@ -192,15 +208,7 @@ export const GenerationBadge: React.FC = () => {
 
       {/* Dropdown */}
       {showDropdown && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 z-10"
-            onClick={() => setShowDropdown(false)}
-          />
-
-          {/* Menu */}
-          <div className="absolute top-full left-0 mt-1 w-[520px] bg-zinc-800 rounded-lg shadow-xl border border-zinc-700 z-20 overflow-hidden animate-fadeIn">
+        <div className="absolute top-full right-0 mt-1 w-[520px] bg-zinc-900 rounded-lg shadow-2xl border border-zinc-700 z-50 overflow-hidden animate-fadeIn">
             {/* Header */}
             <div className="px-3 py-2 border-b border-zinc-700 bg-zinc-800">
               <span className="text-xs font-medium text-zinc-400">{t.generation.selectTitle}</span>
@@ -251,13 +259,12 @@ export const GenerationBadge: React.FC = () => {
             </div>
 
             {/* Footer with comparison hint */}
-            <div className="px-4 py-2 bg-zinc-900/50 border-t border-zinc-700">
+            <div className="px-4 py-2 bg-zinc-950 border-t border-zinc-700">
               <p className="text-xs text-zinc-500">
                 {t.generation.footer}
               </p>
             </div>
-          </div>
-        </>
+        </div>
       )}
     </div>
   );

@@ -638,7 +638,7 @@ export interface IpcInvokeHandlers {
 
   // Memory (Phase 2/3)
   [IPC_CHANNELS.MEMORY]: (payload: {
-    action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add';
+    action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights';
     category?: MemoryCategory;
     id?: string;
     content?: string;

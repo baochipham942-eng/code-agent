@@ -347,9 +347,9 @@ export const App: React.FC = () => {
       <div className="h-screen flex flex-col bg-void text-zinc-100">
         {/* Main Content - Three-column layout with integrated title bars */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Left Column: Sidebar with its own title bar */}
+          {/* Left Column: Sidebar with its own title bar - darker background */}
           {isStandard && !sidebarCollapsed && (
-            <div className="flex flex-col w-60 bg-[#1a1a1d]">
+            <div className="flex flex-col w-60 bg-[#141417]">
               {/* Sidebar Title Bar - macOS traffic lights space */}
               <div className="h-12 flex items-center px-3 window-drag">
                 <div className="w-[68px]" /> {/* Space for macOS traffic lights */}
@@ -365,8 +365,8 @@ export const App: React.FC = () => {
 
             {/* Content Area */}
             <div className="flex-1 flex overflow-hidden">
-              {/* Chat Area - flexible width, same gray background as sidebar */}
-              <div className="flex-1 flex flex-col min-w-0 bg-[#1a1a1d]">
+              {/* Chat Area - flexible width, lighter background */}
+              <div className="flex-1 flex flex-col min-w-0 bg-[#1c1c21]">
                 <ChatView />
               </div>
 

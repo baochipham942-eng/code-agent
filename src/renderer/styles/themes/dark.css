@@ -52,8 +52,8 @@
   /* Overlay */
   --overlay-backdrop: rgba(0, 0, 0, 0.6);
 
-  /* Selection */
-  --selection-bg: rgba(20, 184, 166, 0.3);
+  /* Selection - more visible highlight */
+  --selection-bg: rgba(20, 184, 166, 0.5);
   --selection-text: #FFFFFF;
 
   /* Scrollbar */

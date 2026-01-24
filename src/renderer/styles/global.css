@@ -139,29 +139,36 @@ body.theme-switching * {
    ============================================================================ */
 
 ::selection {
-  background-color: var(--selection-bg);
-  color: var(--selection-text);
+  background-color: rgba(20, 184, 166, 0.5) !important;
+  color: #FFFFFF !important;
+}
+
+::-moz-selection {
+  background-color: rgba(20, 184, 166, 0.5) !important;
+  color: #FFFFFF !important;
 }
 
 /* Ensure text selection is visible in chat messages */
+.select-text::selection,
+.select-text *::selection,
 .prose ::selection,
 .prose *::selection,
-[class*="MessageContent"] ::selection,
-[class*="MessageContent"] *::selection,
-[class*="message"] ::selection,
-[class*="message"] *::selection,
-.text-sm ::selection,
-.text-sm *::selection,
-.whitespace-pre-wrap ::selection,
-.whitespace-pre-wrap *::selection {
-  background-color: var(--selection-bg) !important;
-  color: var(--selection-text) !important;
+p::selection,
+span::selection,
+div::selection {
+  background-color: rgba(20, 184, 166, 0.5) !important;
+  color: #FFFFFF !important;
 }
 
-/* Force selection style for user-select: text elements */
-[style*="user-select"] ::selection {
-  background-color: var(--selection-bg) !important;
-  color: var(--selection-text) !important;
+.select-text::-moz-selection,
+.select-text *::-moz-selection,
+.prose ::-moz-selection,
+.prose *::-moz-selection,
+p::-moz-selection,
+span::-moz-selection,
+div::-moz-selection {
+  background-color: rgba(20, 184, 166, 0.5) !important;
+  color: #FFFFFF !important;
 }
 
 /* ============================================================================

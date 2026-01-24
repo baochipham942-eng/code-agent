@@ -5,7 +5,7 @@
 
 import { create } from 'zustand';
 import type { Session, Message, TodoItem } from '@shared/types';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('SessionStore');
@@ -38,6 +38,10 @@ interface SessionState {
   unreadSessionIds: Set<string>;
   // 当前过滤器
   filter: SessionFilter;
+  // 运行中的会话 ID 集合（多会话并行支持）
+  runningSessionIds: Set<string>;
+  // 会话运行时状态（多会话并行支持）
+  sessionRuntimes: Map<string, SessionRuntimeSummary>;
 }
 
 interface SessionActions {
@@ -73,6 +77,12 @@ interface SessionActions {
   markSessionRead: (sessionId: string) => void;
   // 检查会话是否未读
   isSessionUnread: (sessionId: string) => boolean;
+  // 更新会话运行状态（多会话并行支持）
+  updateSessionRuntime: (event: SessionStatusUpdateEvent) => void;
+  // 检查会话是否在运行
+  isSessionRunning: (sessionId: string) => boolean;
+  // 获取运行中的会话数量
+  getRunningSessionCount: () => number;
 }
 
 type SessionStore = SessionState & SessionActions;
@@ -91,6 +101,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     error: null,
     unreadSessionIds: new Set<string>(),
     filter: 'active' as SessionFilter,
+    runningSessionIds: new Set<string>(),
+    sessionRuntimes: new Map<string, SessionRuntimeSummary>(),
 
     // 加载会话列表
     loadSessions: async () => {
@@ -370,6 +382,50 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     isSessionUnread: (sessionId: string) => {
       return get().unreadSessionIds.has(sessionId);
     },
+
+    // 更新会话运行状态（多会话并行支持）
+    updateSessionRuntime: (event: SessionStatusUpdateEvent) => {
+      const { runningSessionIds, sessionRuntimes } = get();
+
+      // 更新运行状态
+      const newRunningIds = new Set(runningSessionIds);
+      if (event.status === 'running') {
+        newRunningIds.add(event.sessionId);
+      } else {
+        newRunningIds.delete(event.sessionId);
+      }
+
+      // 更新运行时摘要
+      const newRuntimes = new Map(sessionRuntimes);
+      newRuntimes.set(event.sessionId, {
+        sessionId: event.sessionId,
+        status: event.status,
+        activeAgentCount: event.activeAgentCount,
+        contextHealth: event.contextHealth,
+        lastActivityAt: Date.now(),
+      });
+
+      set({
+        runningSessionIds: newRunningIds,
+        sessionRuntimes: newRuntimes,
+      });
+
+      logger.debug('Session runtime updated', {
+        sessionId: event.sessionId,
+        status: event.status,
+        activeAgentCount: event.activeAgentCount,
+      });
+    },
+
+    // 检查会话是否在运行
+    isSessionRunning: (sessionId: string) => {
+      return get().runningSessionIds.has(sessionId);
+    },
+
+    // 获取运行中的会话数量
+    getRunningSessionCount: () => {
+      return get().runningSessionIds.size;
+    },
   }));
 
 // ----------------------------------------------------------------------------
@@ -396,5 +452,10 @@ export async function initializeSessionStore(): Promise<void> {
   window.electronAPI?.on(IPC_CHANNELS.SESSION_UPDATED, (event) => {
     const { sessionId, updates } = event;
     useSessionStore.getState().updateSessionTitle(sessionId, updates.title || '');
+  });
+
+  // 监听会话状态更新事件（多会话并行支持）
+  window.electronAPI?.on(IPC_CHANNELS.SESSION_STATUS_UPDATE, (event: SessionStatusUpdateEvent) => {
+    useSessionStore.getState().updateSessionRuntime(event);
   });
 }

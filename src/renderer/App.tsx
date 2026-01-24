@@ -23,7 +23,8 @@ import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
 import { useMemoryEvents } from './hooks/useMemoryEvents';
 import { useTheme } from './hooks/useTheme';
-import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest } from '@shared/ipc';
+import { Activity, Cloud, Zap } from 'lucide-react';
+import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 import { UI } from '@shared/constants';
 import { createLogger } from './utils/logger';
@@ -57,7 +58,18 @@ export const App: React.FC = () => {
   const { showAuthModal, showPasswordResetModal } = useAuthStore();
 
   // 渐进披露 Hook
-  const { isStandard } = useDisclosure();
+  const { isStandard, isAdvanced, showPlanningPanel: showPlanningPanelEnabled } = useDisclosure();
+  const isObservabilityAvailable = isAdvanced; // 追踪面板在 Advanced+ 模式可用
+
+  // Panel toggle states from appStore
+  const {
+    showPlanningPanel,
+    setShowPlanningPanel,
+  } = useAppStore();
+
+  // Cloud task panel state
+  const [showCloudTaskPanel, setShowCloudTaskPanel] = useState(false);
+  const [showTaskListPanel, setShowTaskListPanel] = useState(false);
 
   // Theme Hook - 初始化主题系统
   useTheme();
@@ -249,6 +261,86 @@ export const App: React.FC = () => {
       unsubscribe?.();
     };
   }, []);
+
+  // Listen for context health updates
+  const { setContextHealth } = useAppStore();
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.on(
+      IPC_CHANNELS.CONTEXT_HEALTH_EVENT,
+      (event: ContextHealthUpdateEvent) => {
+        // 只更新当前会话的健康状态
+        const currentSessionId = useSessionStore.getState().currentSessionId;
+        if (event.sessionId === currentSessionId) {
+          setContextHealth(event.health);
+        }
+      }
+    );
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [setContextHealth]);
+
+  // Observability panel toggle button (Advanced+ mode)
+  const ObservabilityToggle: React.FC = () => {
+    if (!isObservabilityAvailable) return null;
+
+    return (
+      <button
+        onClick={() => setShowPlanningPanel(!showPlanningPanel)}
+        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
+          showPlanningPanel
+            ? 'bg-indigo-500/20 text-indigo-300'
+            : 'text-zinc-500 hover:bg-zinc-800'
+        }`}
+        title="执行追踪面板"
+      >
+        <Activity className="w-3.5 h-3.5" />
+        <span>追踪</span>
+      </button>
+    );
+  };
+
+
+  // Cloud task panel toggle button (Advanced mode)
+  const CloudTaskToggle: React.FC = () => {
+    if (!isAdvanced) return null;
+
+    return (
+      <button
+        onClick={() => setShowCloudTaskPanel(!showCloudTaskPanel)}
+        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
+          showCloudTaskPanel
+            ? 'bg-sky-500/20 text-sky-300'
+            : 'text-zinc-500 hover:bg-zinc-800'
+        }`}
+        title="云端任务"
+      >
+        <Cloud className="w-3.5 h-3.5" />
+        <span>云端任务</span>
+      </button>
+    );
+  };
+
+  // Local task list panel toggle button (Standard+ mode)
+  const TaskListToggle: React.FC = () => {
+    if (!isStandard) return null;
+
+    return (
+      <button
+        onClick={() => setShowTaskListPanel(!showTaskListPanel)}
+        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
+          showTaskListPanel
+            ? 'bg-yellow-500/20 text-yellow-300'
+            : 'text-zinc-500 hover:bg-zinc-800'
+        }`}
+        title="多任务面板"
+      >
+        <Zap className="w-3.5 h-3.5" />
+        <span>任务</span>
+      </button>
+    );
+  };
 
   return (
     <ErrorBoundary>

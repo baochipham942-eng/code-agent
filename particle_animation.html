@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>✨ 粒子动画系统</title>
+    <style>
+        /* 所有 CSS 样式将在下一步添加 */
+    </style>
+</head>
+<body>
+    <!-- 主容器 -->
+    <div id="container">
+        <!-- 画布容器 -->
+        <div id="canvas-container">
+            <canvas id="particle-canvas"></canvas>
+            
+            <!-- 标题和说明 -->
+            <div id="title-overlay">
+                <h1>✨ 粒子动画系统</h1>
+                <p>移动鼠标、点击或拖拽来体验不同的粒子效果</p>
+            </div>
+        </div>
+
+        <!-- 控制面板 -->
+        <div id="control-panel">
+            <div class="panel-section">
+                <h3>🎨 粒子效果</h3>
+                <div class="effect-buttons">
+                    <button class="effect-btn active" data-effect="spark">🔥 火花</button>
+                    <button class="effect-btn" data-effect="snow">❄️ 雪花</button>
+                    <button class="effect-btn" data-effect="bubble">💧 气泡</button>
+                    <button class="effect-btn" data-effect="meteor">🌠 流星</button>
+                    <button class="effect-btn" data-effect="fireworks">🎆 烟花</button>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h3>⚙️ 参数调节</h3>
+                <div class="slider-group">
+                    <label>
+                        <span>粒子数量: <span id="count-value">500</span></span>
+                        <input type="range" id="particle-count" min="50" max="2000" value="500" step="50">
+                    </label>
+                    <label>
+                        <span>粒子大小: <span id="size-value">3</span></span>
+                        <input type="range" id="particle-size" min="1" max="10" value="3" step="0.5">
+                    </label>
+                    <label>
+                        <span>移动速度: <span id="speed-value">1.0</span></span>
+                        <input type="range" id="particle-speed" min="0.1" max="3.0" value="1.0" step="0.1">
+                    </label>
+                    <label>
+                        <span>重力强度: <span id="gravity-value">0.1</span></span>
+                        <input type="range" id="gravity-strength" min="0" max="0.5" value="0.1" step="0.01">
+                    </label>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h3>🎮 交互模式</h3>
+                <div class="toggle-group">
+                    <label class="toggle">
+                        <input type="checkbox" id="mouse-follow" checked>
+                        <span>鼠标跟随</span>
+                    </label>
+                    <label class="toggle">
+                        <input type="checkbox" id="click-effect" checked>
+                        <span>点击效果</span>
+                    </label>
+                    <label class="toggle">
+                        <input type="checkbox" id="trail-effect">
+                        <span>拖拽轨迹</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h3>📊 系统信息</h3>
+                <div class="stats">
+                    <div class="stat-item">
+                        <span class="stat-label">FPS:</span>
+                        <span id="fps-counter">60</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">粒子数:</span>
+                        <span id="particle-counter">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">效果:</span>
+                        <span id="effect-name">火花</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <button id="reset-btn">🔄 重置参数</button>
+                <button id="fullscreen-btn">📺 全屏模式</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 快捷键提示 -->
+    <div id="shortcut-hint">
+        <p>快捷键: <kbd>1-5</kbd> 切换效果 | <kbd>空格</kbd> 暂停/继续 | <kbd>R</kbd> 重置 | <kbd>F</kbd> 全屏</p>
+    </div>
+
+    <script>
+        // 所有 JavaScript 代码将在后续步骤添加
+    </script>
+</body>
+</html>

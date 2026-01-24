@@ -5,6 +5,8 @@
 import { BrowserWindow } from 'electron';
 import path from 'path';
 import { createLogger } from '../services/infra/logger';
+import { initContextHealthService } from '../context/contextHealthService';
+import { initSessionStateManager } from '../session/sessionStateManager';
 
 const logger = createLogger('Window');
 
@@ -86,6 +88,14 @@ export async function createWindow(): Promise<void> {
   }
 
   logger.info('Window created successfully');
+
+  // Initialize context health service with main window for IPC events
+  initContextHealthService(mainWindow);
+  logger.info('Context health service initialized');
+
+  // Initialize session state manager for multi-session parallel support
+  initSessionStateManager(mainWindow);
+  logger.info('Session state manager initialized');
 
   mainWindow.on('closed', () => {
     mainWindow = null;

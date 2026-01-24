@@ -32,6 +32,7 @@ import {
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import type { ToolCall } from '@shared/types';
+import { ContextHealthPanel } from './ContextHealthPanel';
 
 // 事件类型 - 7个核心分类（Gen4 新增 MCP 和 Skill）
 type EventCategory = 'plan' | 'bash' | 'tools' | 'memory' | 'agent' | 'mcp' | 'skill';
@@ -487,7 +488,7 @@ function formatMemoryDetails(event: ObservableEvent): {
 const categoryOrder: EventCategory[] = ['plan', 'bash', 'agent', 'tools', 'skill', 'mcp', 'memory'];
 
 export const ObservabilityPanel: React.FC = () => {
-  const { currentGeneration } = useAppStore();
+  const { currentGeneration, contextHealth, contextHealthCollapsed, setContextHealthCollapsed } = useAppStore();
   const { messages } = useSessionStore();
   const [expandedCategories, setExpandedCategories] = useState<Set<EventCategory>>(new Set(['plan', 'bash']));
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
@@ -614,6 +615,13 @@ export const ObservabilityPanel: React.FC = () => {
           <X className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Context Health Panel - 上下文健康度指示器 */}
+      <ContextHealthPanel
+        health={contextHealth}
+        collapsed={contextHealthCollapsed}
+        onToggle={() => setContextHealthCollapsed(!contextHealthCollapsed)}
+      />
 
       {/* Accordion Categories */}
       <div className="flex-1 overflow-y-auto">

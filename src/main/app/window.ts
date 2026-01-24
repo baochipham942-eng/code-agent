@@ -5,6 +5,7 @@
 import { BrowserWindow } from 'electron';
 import path from 'path';
 import { createLogger } from '../services/infra/logger';
+import { initContextHealthService } from '../context/contextHealthService';
 
 const logger = createLogger('Window');
 
@@ -86,6 +87,10 @@ export async function createWindow(): Promise<void> {
   }
 
   logger.info('Window created successfully');
+
+  // Initialize context health service with main window for IPC events
+  initContextHealthService(mainWindow);
+  logger.info('Context health service initialized');
 
   mainWindow.on('closed', () => {
     mainWindow = null;

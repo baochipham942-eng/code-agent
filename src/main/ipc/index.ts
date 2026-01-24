@@ -28,6 +28,7 @@ import { registerDataHandlers } from './data.ipc';
 import { registerSpeechHandlers } from './speech.ipc';
 import { registerTaskHandlers } from './task.ipc';
 import { registerStatusHandlers } from './status.ipc';
+import { registerContextHealthHandlers } from './contextHealth.ipc';
 
 export * from './types';
 
@@ -113,6 +114,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Status handlers (UX 改进)
   registerStatusHandlers();
+
+  // Context health handlers (上下文健康度)
+  registerContextHealthHandlers();
 
   logger.info('All handlers registered');
 }

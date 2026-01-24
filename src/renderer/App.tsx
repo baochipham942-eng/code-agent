@@ -27,7 +27,7 @@ import { StatusBar } from './components/StatusBar';
 import { useDisclosure } from './hooks/useDisclosure';
 import { useMemoryEvents } from './hooks/useMemoryEvents';
 import { Activity, Cloud, Zap } from 'lucide-react';
-import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest } from '@shared/ipc';
+import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 import { UI } from '@shared/constants';
 import { createLogger } from './utils/logger';
@@ -257,6 +257,25 @@ export const App: React.FC = () => {
       unsubscribe?.();
     };
   }, []);
+
+  // Listen for context health updates
+  const { setContextHealth } = useAppStore();
+  useEffect(() => {
+    const unsubscribe = window.electronAPI?.on(
+      IPC_CHANNELS.CONTEXT_HEALTH_EVENT,
+      (event: ContextHealthUpdateEvent) => {
+        // 只更新当前会话的健康状态
+        const currentSessionId = useSessionStore.getState().currentSessionId;
+        if (event.sessionId === currentSessionId) {
+          setContextHealth(event.health);
+        }
+      }
+    );
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [setContextHealth]);
 
   // Observability panel toggle button (Advanced+ mode)
   const ObservabilityToggle: React.FC = () => {

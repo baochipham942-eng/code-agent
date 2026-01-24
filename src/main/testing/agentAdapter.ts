@@ -43,7 +43,7 @@ export class AgentLoopAdapter implements AgentInterface {
     let turnCount = 0;
 
     // Set up event listeners to capture outputs
-    const originalEmit = this.agentLoop.emit?.bind(this.agentLoop);
+    const originalEmit = (this.agentLoop as any).emit?.bind(this.agentLoop);
 
     try {
       // Hook into agent events if possible
@@ -215,9 +215,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
     try {
       // Dynamic import to avoid circular dependencies
       const { AgentLoop } = await import('../agent/agentLoop');
-      const { GenerationManager } = await import('../generation/GenerationManager');
-      const { ModelRouter } = await import('../model/ModelRouter');
-      const { ToolRegistry } = await import('../tools/ToolRegistry');
+      const { GenerationManager } = await import('../generation/generationManager');
+      const { ModelRouter } = await import('../model/modelRouter');
+      const { ToolRegistry } = await import('../tools/toolRegistry');
 
       const generationManager = new GenerationManager();
       generationManager.switchGeneration(this.generation as any);
@@ -230,30 +230,31 @@ export class StandaloneAgentAdapter implements AgentInterface {
       const loop = new AgentLoop({
         sessionId: `test-${Date.now()}`,
         workingDirectory: this.workingDirectory,
-        generationManager,
-        modelRouter,
-        toolRegistry,
+        generation,
         modelConfig: this.modelConfig as any,
-        onMessage: (msg) => {
-          if (msg.role === 'assistant' && msg.content) {
-            responses.push(msg.content);
+        toolRegistry,
+        toolExecutor: null as any,
+        messages: [],
+        onEvent: (event: any) => {
+          if (event.type === 'message' && event.data?.role === 'assistant') {
+            responses.push(event.data.content || '');
           }
-        },
-        onToolExecution: (te) => {
-          toolExecutions.push({
-            tool: te.tool,
-            input: te.input,
-            output: te.output || '',
-            success: te.success,
-            error: te.error,
-            duration: te.duration,
-            timestamp: Date.now(),
-          });
+          if (event.type === 'tool_execution') {
+            toolExecutions.push({
+              tool: event.data?.tool || '',
+              input: event.data?.input || {},
+              output: event.data?.output || '',
+              success: event.data?.success ?? true,
+              error: event.data?.error,
+              duration: event.data?.duration || 0,
+              timestamp: Date.now(),
+            });
+          }
         },
       });
 
       await loop.run(prompt);
-      turnCount = loop.getTurnCount?.() || responses.length;
+      turnCount = (loop as any).getTurnCount?.() || responses.length;
 
     } catch (error: any) {
       errors.push(error.message || String(error));

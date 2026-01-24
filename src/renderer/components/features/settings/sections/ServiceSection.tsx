@@ -1,21 +1,18 @@
 // ============================================================================
-// ServiceSection - 服务设置（第三方 API Keys、MCP 状态、Skills）
+// ServiceSection - 服务设置（MCP 状态、Skills）
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
 import {
-  Key,
-  Search,
-  Github,
-  Eye,
-  Zap,
-  Check,
-  AlertCircle,
   Plug,
   PlugZap,
   Loader2,
   ChevronDown,
   Sparkles,
+  Github,
+  Eye,
+  Check,
+  AlertCircle,
 } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input } from '../../../primitives';
@@ -29,17 +26,6 @@ const logger = createLogger('ServiceSection');
 // ============================================================================
 // Types
 // ============================================================================
-
-type ServiceKey = 'brave' | 'github' | 'openrouter' | 'exa' | 'perplexity';
-
-interface ServiceConfig {
-  id: ServiceKey;
-  name: string;
-  description: string;
-  icon: React.ReactNode;
-  placeholder: string;
-  helpUrl?: string;
-}
 
 interface MCPServerState {
   config: {
@@ -60,49 +46,24 @@ interface MCPServerState {
 export const ServiceSection: React.FC = () => {
   const { t } = useI18n();
 
-  // API Keys state
-  const [keys, setKeys] = useState<Record<ServiceKey, string>>({
-    brave: '',
-    github: '',
-    openrouter: '',
-    exa: '',
-    perplexity: '',
-  });
-  const [visibleKeys, setVisibleKeys] = useState<Record<ServiceKey, boolean>>({
-    brave: false,
-    github: false,
-    openrouter: false,
-    exa: false,
-    perplexity: false,
-  });
-  const [saving, setSaving] = useState<ServiceKey | null>(null);
-  const [saveStatus, setSaveStatus] = useState<Record<ServiceKey, 'idle' | 'success' | 'error'>>({
-    brave: 'idle',
-    github: 'idle',
-    openrouter: 'idle',
-    exa: 'idle',
-    perplexity: 'idle',
-  });
+  // GitHub Token state (kept separately for MCP)
+  const [githubToken, setGithubToken] = useState('');
+  const [showGithubToken, setShowGithubToken] = useState(false);
+  const [savingGithub, setSavingGithub] = useState(false);
+  const [githubSaveStatus, setGithubSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
 
   // MCP state
   const [mcpServers, setMcpServers] = useState<MCPServerState[]>([]);
   const [mcpLoading, setMcpLoading] = useState(true);
   const [showMcpDetails, setShowMcpDetails] = useState(false);
 
-  // Load API keys
+  // Load GitHub token
   useEffect(() => {
     const loadKeys = async () => {
       try {
         const result = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET_SERVICE_KEYS);
         if (result) {
-          setKeys(prev => ({
-            ...prev,
-            brave: result.brave || '',
-            github: result.github || '',
-            openrouter: result.openrouter || '',
-            exa: result.exa || '',
-            perplexity: result.perplexity || '',
-          }));
+          setGithubToken(result.github || '');
         }
       } catch (error) {
         logger.error('Failed to load service keys', error);
@@ -128,135 +89,73 @@ export const ServiceSection: React.FC = () => {
     loadMCPStatus();
   }, []);
 
-  const services: ServiceConfig[] = [
-    {
-      id: 'brave',
-      name: 'Brave Search',
-      description: '网络搜索',
-      icon: <Search className="w-4 h-4 text-orange-400" />,
-      placeholder: 'BSA...',
-      helpUrl: 'https://brave.com/search/api/',
-    },
-    {
-      id: 'github',
-      name: 'GitHub',
-      description: 'MCP 服务器',
-      icon: <Github className="w-4 h-4 text-zinc-300" />,
-      placeholder: 'ghp_...',
-      helpUrl: 'https://github.com/settings/tokens',
-    },
-    {
-      id: 'openrouter',
-      name: 'OpenRouter',
-      description: 'PDF 解析 / 图片生成',
-      icon: <Zap className="w-4 h-4 text-purple-400" />,
-      placeholder: 'sk-or-...',
-      helpUrl: 'https://openrouter.ai/keys',
-    },
-    {
-      id: 'exa',
-      name: 'EXA',
-      description: '高质量搜索',
-      icon: <Search className="w-4 h-4 text-cyan-400" />,
-      placeholder: 'exa-...',
-      helpUrl: 'https://exa.ai/dashboard',
-    },
-    {
-      id: 'perplexity',
-      name: 'Perplexity',
-      description: 'AI 增强搜索',
-      icon: <Search className="w-4 h-4 text-green-400" />,
-      placeholder: 'pplx-...',
-      helpUrl: 'https://www.perplexity.ai/settings/api',
-    },
-  ];
-
-  const handleSave = async (serviceId: ServiceKey) => {
-    setSaving(serviceId);
-    setSaveStatus(prev => ({ ...prev, [serviceId]: 'idle' }));
+  const handleSaveGithubToken = async () => {
+    setSavingGithub(true);
+    setGithubSaveStatus('idle');
 
     try {
       await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY, {
-        service: serviceId,
-        apiKey: keys[serviceId],
+        service: 'github',
+        apiKey: githubToken,
       });
-      logger.info('Service key saved', { service: serviceId });
-      setSaveStatus(prev => ({ ...prev, [serviceId]: 'success' }));
-      setTimeout(() => {
-        setSaveStatus(prev => ({ ...prev, [serviceId]: 'idle' }));
-      }, UI.COPY_FEEDBACK_DURATION);
+      logger.info('GitHub token saved');
+      setGithubSaveStatus('success');
+      setTimeout(() => setGithubSaveStatus('idle'), UI.COPY_FEEDBACK_DURATION);
     } catch (error) {
-      logger.error('Failed to save service key', { service: serviceId, error });
-      setSaveStatus(prev => ({ ...prev, [serviceId]: 'error' }));
+      logger.error('Failed to save GitHub token', error);
+      setGithubSaveStatus('error');
     } finally {
-      setSaving(null);
+      setSavingGithub(false);
     }
-  };
-
-  const toggleVisibility = (serviceId: ServiceKey) => {
-    setVisibleKeys(prev => ({ ...prev, [serviceId]: !prev[serviceId] }));
   };
 
   const connectedMcpCount = mcpServers.filter(s => s.status === 'connected').length;
 
   return (
     <div className="space-y-6">
-      {/* API Keys */}
+      {/* GitHub Token for MCP */}
       <div>
         <h4 className="text-sm font-medium text-zinc-100 mb-3 flex items-center gap-2">
-          <Key className="w-4 h-4 text-zinc-400" />
-          第三方 API Keys
+          <Github className="w-4 h-4 text-zinc-400" />
+          GitHub Token
         </h4>
-        <div className="space-y-3">
-          {services.map((service) => (
-            <div
-              key={service.id}
-              className="flex items-center gap-3 p-3 rounded-lg border border-zinc-800 bg-zinc-900/50"
-            >
-              <div className="shrink-0">{service.icon}</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-zinc-100">{service.name}</span>
-                  <span className="text-xs text-zinc-500">{service.description}</span>
-                </div>
-                <div className="flex gap-2 mt-2">
-                  <div className="flex-1 relative">
-                    <Input
-                      type={visibleKeys[service.id] ? 'text' : 'password'}
-                      value={keys[service.id]}
-                      onChange={(e) => setKeys(prev => ({ ...prev, [service.id]: e.target.value }))}
-                      placeholder={service.placeholder}
-                      className="!py-1.5 !text-xs"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => toggleVisibility(service.id)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-300"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <Button
-                    onClick={() => handleSave(service.id)}
-                    loading={saving === service.id}
-                    variant={saveStatus[service.id] === 'error' ? 'danger' : 'secondary'}
-                    size="sm"
-                    className={`!px-2 ${saveStatus[service.id] === 'success' ? '!bg-emerald-600 hover:!bg-emerald-500' : ''}`}
-                  >
-                    {saving === service.id ? (
-                      '...'
-                    ) : saveStatus[service.id] === 'success' ? (
-                      <Check className="w-3.5 h-3.5" />
-                    ) : saveStatus[service.id] === 'error' ? (
-                      <AlertCircle className="w-3.5 h-3.5" />
-                    ) : (
-                      '保存'
-                    )}
-                  </Button>
-                </div>
-              </div>
+        <div className="p-3 rounded-lg border border-zinc-800 bg-zinc-900/50">
+          <p className="text-xs text-zinc-500 mb-2">用于 MCP GitHub 服务器访问</p>
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <Input
+                type={showGithubToken ? 'text' : 'password'}
+                value={githubToken}
+                onChange={(e) => setGithubToken(e.target.value)}
+                placeholder="ghp_..."
+                className="!py-1.5 !text-xs"
+              />
+              <button
+                type="button"
+                onClick={() => setShowGithubToken(!showGithubToken)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-300"
+              >
+                <Eye className="w-3.5 h-3.5" />
+              </button>
             </div>
-          ))}
+            <Button
+              onClick={handleSaveGithubToken}
+              loading={savingGithub}
+              variant={githubSaveStatus === 'error' ? 'danger' : 'secondary'}
+              size="sm"
+              className={`!px-2 ${githubSaveStatus === 'success' ? '!bg-emerald-600 hover:!bg-emerald-500' : ''}`}
+            >
+              {savingGithub ? (
+                '...'
+              ) : githubSaveStatus === 'success' ? (
+                <Check className="w-3.5 h-3.5" />
+              ) : githubSaveStatus === 'error' ? (
+                <AlertCircle className="w-3.5 h-3.5" />
+              ) : (
+                '保存'
+              )}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -323,11 +222,6 @@ export const ServiceSection: React.FC = () => {
           </div>
         </div>
       </div>
-
-      {/* Security Note */}
-      <p className="text-xs text-zinc-500">
-        API Keys 安全存储在系统 Keychain 中
-      </p>
     </div>
   );
 };

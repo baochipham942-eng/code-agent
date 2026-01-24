@@ -5,7 +5,7 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { FileText, Wrench, Image, FolderArchive, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, Wrench, Image, FolderArchive, ChevronDown, ChevronRight, Layers } from 'lucide-react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useI18n } from '../../hooks/useI18n';
 
@@ -19,6 +19,7 @@ interface ContextItem {
 export const Context: React.FC = () => {
   const { messages } = useSessionStore();
   const { t } = useI18n();
+  const [expanded, setExpanded] = useState(true);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
   // Extract context from recent messages
@@ -116,11 +117,25 @@ export const Context: React.FC = () => {
 
   return (
     <div className="bg-zinc-800/30 rounded-lg p-3">
-      <div className="text-xs font-medium text-zinc-400 uppercase tracking-wide mb-2">
-        {t.taskPanel.context}
-      </div>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center justify-between w-full mb-2"
+      >
+        <div className="flex items-center gap-2">
+          <Layers className="w-4 h-4 text-primary-400" />
+          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+            {t.taskPanel.context}
+          </span>
+        </div>
+        {expanded ? (
+          <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
+        )}
+      </button>
 
       {/* Vertical list with expandable items */}
+      {expanded && (
       <div className="space-y-1">
         {displayItems.map((item, index) => {
           const isExpanded = expandedItems.has(item.name);
@@ -155,6 +170,7 @@ export const Context: React.FC = () => {
           );
         })}
       </div>
+      )}
     </div>
   );
 };

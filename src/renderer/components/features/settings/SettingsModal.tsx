@@ -126,7 +126,7 @@ export const SettingsModal: React.FC = () => {
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-2xl max-h-[85vh] bg-zinc-900 rounded-xl border border-zinc-800 shadow-2xl overflow-hidden animate-fadeIn flex">
+      <div className="relative w-full max-w-2xl h-[70vh] bg-zinc-900 rounded-xl border border-zinc-800 shadow-2xl overflow-hidden animate-fadeIn flex">
         {/* Sidebar */}
         <div className="w-44 border-r border-zinc-800 bg-zinc-900/50 flex flex-col shrink-0">
           {/* Header */}

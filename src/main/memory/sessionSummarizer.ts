@@ -407,3 +407,20 @@ export function initSessionSummarizer(
   summarizerInstance = new SessionSummarizer(config);
   return summarizerInstance;
 }
+
+/**
+ * 初始化带 LLM 增强的摘要器
+ * 需要在应用启动时调用，配置 API Key 后生效
+ */
+export async function initSessionSummarizerWithLLM(): Promise<SessionSummarizer> {
+  // 动态导入避免循环依赖
+  const { createLLMSummarizer } = await import('./llmSummarizer');
+
+  summarizerInstance = new SessionSummarizer({
+    useLLMEnhancement: true,
+    llmSummarizer: createLLMSummarizer(),
+  });
+
+  logger.info('SessionSummarizer initialized with LLM enhancement');
+  return summarizerInstance;
+}

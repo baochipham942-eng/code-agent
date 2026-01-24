@@ -65,9 +65,19 @@ export {
   SessionSummarizer,
   getSessionSummarizer,
   initSessionSummarizer,
+  initSessionSummarizerWithLLM,
   type SessionSummary,
   type SummarizerConfig,
 } from './sessionSummarizer';
+
+// LLM Summarizer (Week 4 Enhancement)
+export {
+  LLMSummarizer,
+  getLLMSummarizer,
+  initLLMSummarizer,
+  createLLMSummarizer,
+  type LLMSummarizerConfig,
+} from './llmSummarizer';
 
 // Fork Detector (Smart Forking Phase 2)
 export {

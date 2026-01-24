@@ -1,0 +1,124 @@
+# ============================================================================
+# Tool Execution Tests - 工具执行能力测试
+# ============================================================================
+# 测试各个工具是否正常工作
+
+name: "工具执行能力测试"
+description: "测试 Agent 的基础工具调用能力"
+default_timeout: 30000
+tags:
+  - tools
+  - basic
+
+cases:
+  # --------------------------------------------------------------------------
+  # Bash 工具测试
+  # --------------------------------------------------------------------------
+  - id: bash-ls
+    type: tool
+    description: "bash 工具 - 列出目录"
+    prompt: "列出当前目录的文件"
+    expect:
+      tool: bash
+      success: true
+      output_contains:
+        - package.json
+
+  - id: bash-pwd
+    type: tool
+    description: "bash 工具 - 显示当前路径"
+    prompt: "显示当前工作目录的完整路径"
+    expect:
+      tool: bash
+      success: true
+      output_contains:
+        - /
+
+  - id: bash-echo
+    type: tool
+    description: "bash 工具 - 输出文本"
+    prompt: "执行 echo 命令输出 'Hello Test'"
+    expect:
+      tool: bash
+      success: true
+      output_contains:
+        - Hello Test
+
+  # --------------------------------------------------------------------------
+  # 文件读取测试
+  # --------------------------------------------------------------------------
+  - id: read-file-exists
+    type: tool
+    description: "read_file 工具 - 读取存在的文件"
+    prompt: "读取 package.json 文件的内容"
+    expect:
+      tool: read_file
+      success: true
+      output_contains:
+        - name
+        - version
+
+  - id: read-file-not-exists
+    type: error_handling
+    description: "read_file 工具 - 读取不存在的文件"
+    prompt: "读取 this-file-does-not-exist-12345.txt 文件"
+    expect:
+      error_handled: true
+      no_crash: true
+
+  # --------------------------------------------------------------------------
+  # 文件写入测试
+  # --------------------------------------------------------------------------
+  - id: write-file-new
+    type: tool
+    description: "write_file 工具 - 创建新文件"
+    prompt: "创建一个名为 test-write-temp.txt 的文件，内容是 'Test content 123'"
+    expect:
+      tool: write_file
+      success: true
+      files_created:
+        - test-write-temp.txt
+      file_contains:
+        test-write-temp.txt: Test content 123
+    cleanup:
+      - rm -f test-write-temp.txt
+
+  # --------------------------------------------------------------------------
+  # 文件编辑测试
+  # --------------------------------------------------------------------------
+  - id: edit-file-modify
+    type: tool
+    description: "edit_file 工具 - 修改现有文件"
+    prompt: "先读取 test-edit-temp.txt，然后把 'OLD' 替换成 'NEW'"
+    setup:
+      - echo "This is OLD content" > test-edit-temp.txt
+    expect:
+      tool: edit_file
+      success: true
+      file_contains:
+        test-edit-temp.txt: NEW
+    cleanup:
+      - rm -f test-edit-temp.txt
+
+  # --------------------------------------------------------------------------
+  # Glob 工具测试
+  # --------------------------------------------------------------------------
+  - id: glob-find-ts
+    type: tool
+    description: "glob 工具 - 查找 TypeScript 文件"
+    prompt: "查找 src 目录下所有的 .ts 文件"
+    expect:
+      tool: glob
+      success: true
+      min_tool_calls: 1
+
+  # --------------------------------------------------------------------------
+  # Grep 工具测试
+  # --------------------------------------------------------------------------
+  - id: grep-search
+    type: tool
+    description: "grep 工具 - 搜索代码"
+    prompt: "在 src 目录中搜索包含 'import' 的文件"
+    expect:
+      tool: grep
+      success: true

@@ -19,6 +19,7 @@ import { Button, Input } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { MemoryStats, SearchResult } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
+import { MemoryKnowledgeGraph } from '../tabs/MemoryKnowledgeGraph';
 
 const logger = createLogger('DataSection');
 
@@ -219,6 +220,11 @@ export const DataSection: React.FC = () => {
         {searchQuery && searchResults.length === 0 && !isSearching && (
           <p className="text-xs text-zinc-500 text-center py-3 mt-2">未找到结果</p>
         )}
+      </div>
+
+      {/* Memory Knowledge Graph */}
+      <div>
+        <MemoryKnowledgeGraph />
       </div>
 
       {/* Clear Cache */}

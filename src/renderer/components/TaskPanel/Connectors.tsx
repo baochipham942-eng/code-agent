@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { Plug, ChevronRight, ChevronDown, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useI18n } from '../../hooks/useI18n';
+import { useAppStore } from '../../stores/appStore';
 
 interface McpServer {
   name: string;
@@ -15,6 +16,7 @@ interface McpServer {
 
 export const Connectors: React.FC = () => {
   const { t } = useI18n();
+  const { openSettingsTab } = useAppStore();
   const [servers, setServers] = useState<McpServer[]>([]);
   const [expanded, setExpanded] = useState(true);
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set());
@@ -151,7 +153,10 @@ export const Connectors: React.FC = () => {
           )}
 
           {/* View all link */}
-          <button className="text-xs text-zinc-500 hover:text-zinc-300 mt-2 transition-colors">
+          <button
+            onClick={() => openSettingsTab('service')}
+            className="text-xs text-zinc-500 hover:text-zinc-300 mt-2 transition-colors"
+          >
             {t.taskPanel.viewAllConnectors}
           </button>
         </div>

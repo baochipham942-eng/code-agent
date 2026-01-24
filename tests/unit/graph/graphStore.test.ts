@@ -45,7 +45,13 @@ describeWithKuzu('GraphStore', () => {
   });
 
   beforeEach(async () => {
-    const dbPath = path.join(tempDir, `test-${Date.now()}`);
+    // 使用 uuid 生成唯一路径，避免重复
+    const uniqueId = Math.random().toString(36).substring(2, 15);
+    const dbPath = path.join(tempDir, `test-${uniqueId}`);
+    // 确保路径不存在
+    if (fs.existsSync(dbPath)) {
+      fs.rmSync(dbPath, { recursive: true, force: true });
+    }
     store = new GraphStore({ dbPath });
     await store.initialize();
   });

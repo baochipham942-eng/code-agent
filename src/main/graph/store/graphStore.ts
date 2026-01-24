@@ -93,9 +93,10 @@ export class GraphStore {
   async initialize(): Promise<void> {
     if (this.initialized) return;
 
-    // 确保目录存在
-    if (!fs.existsSync(this.config.dbPath)) {
-      fs.mkdirSync(this.config.dbPath, { recursive: true });
+    // 确保父目录存在（Kuzu 会自己创建数据库目录）
+    const parentDir = path.dirname(this.config.dbPath);
+    if (!fs.existsSync(parentDir)) {
+      fs.mkdirSync(parentDir, { recursive: true });
     }
 
     try {

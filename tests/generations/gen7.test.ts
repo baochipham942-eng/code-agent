@@ -97,7 +97,7 @@ describe('Gen7 - Multi-Agent Era', () => {
       );
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Unknown agent role');
+      expect(result.error).toContain('Unknown agent');
     });
 
     it('should spawn coder agent', async () => {

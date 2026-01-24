@@ -23,7 +23,24 @@ import {
   enterPlanModeTool,
   exitPlanModeTool,
 } from './planning';
-import { webFetchTool, webSearchTool, readPdfTool, pptGenerateTool, imageGenerateTool, imageAnalyzeTool, docxGenerateTool, excelGenerateTool } from './network';
+import {
+  webFetchTool,
+  webSearchTool,
+  readPdfTool,
+  pptGenerateTool,
+  imageGenerateTool,
+  imageAnalyzeTool,
+  docxGenerateTool,
+  excelGenerateTool,
+  chartGenerateTool,
+  qrcodeGenerateTool,
+  readDocxTool,
+  readXlsxTool,
+  jiraTool,
+  youtubeTranscriptTool,
+  twitterFetchTool,
+  mermaidExportTool,
+} from './network';
 import { skillMetaTool } from './skill';
 import {
   mcpTool,
@@ -154,12 +171,20 @@ export class ToolRegistry {
     this.register(readPdfTool);
     this.register(lspTool);
 
-    // Gen 5 tools - Office Documents & Image
+    // Gen 5 tools - Office Documents & Image & Data
     this.register(pptGenerateTool);
     this.register(imageGenerateTool);
     this.register(imageAnalyzeTool);
     this.register(docxGenerateTool);
     this.register(excelGenerateTool);
+    this.register(chartGenerateTool);
+    this.register(qrcodeGenerateTool);
+    this.register(readDocxTool);
+    this.register(readXlsxTool);
+    this.register(jiraTool);
+    this.register(youtubeTranscriptTool);
+    this.register(twitterFetchTool);
+    this.register(mermaidExportTool);
 
     // MCP tools (Gen 4+)
     this.register(mcpTool);

@@ -44,6 +44,7 @@ import {
   imageProcessTool,
   screenshotPageTool,
   academicSearchTool,
+  httpRequestTool,
 } from './network';
 import { skillMetaTool } from './skill';
 import {
@@ -52,6 +53,7 @@ import {
   mcpListResourcesTool,
   mcpReadResourceTool,
   mcpGetStatusTool,
+  mcpAddServerTool,
 } from './mcp';
 import { memoryStoreTool, memorySearchTool, codeIndexTool, autoLearnTool, forkSessionTool } from './memory';
 import { screenshotTool, computerUseTool, browserNavigateTool, browserActionTool } from './vision';
@@ -194,12 +196,16 @@ export class ToolRegistry {
     this.register(screenshotPageTool);
     this.register(academicSearchTool);
 
+    // Gen 4 tools - HTTP API
+    this.register(httpRequestTool);
+
     // MCP tools (Gen 4+)
     this.register(mcpTool);
     this.register(mcpListToolsTool);
     this.register(mcpListResourcesTool);
     this.register(mcpReadResourceTool);
     this.register(mcpGetStatusTool);
+    this.register(mcpAddServerTool);
 
     // Gen 5 tools
     this.register(memoryStoreTool);

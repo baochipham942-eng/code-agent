@@ -9,3 +9,4 @@ export {
   mcpReadResourceTool,
   mcpGetStatusTool,
 } from './mcpTool';
+export { mcpAddServerTool } from './mcpAddServer';

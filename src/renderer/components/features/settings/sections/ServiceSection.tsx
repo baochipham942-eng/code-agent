@@ -55,7 +55,7 @@ export const ServiceSection: React.FC = () => {
   // MCP state
   const [mcpServers, setMcpServers] = useState<MCPServerState[]>([]);
   const [mcpLoading, setMcpLoading] = useState(true);
-  const [showMcpDetails, setShowMcpDetails] = useState(false);
+  const [showMcpDetails, setShowMcpDetails] = useState(true);
 
   // Jira state
   const [jiraConfig, setJiraConfig] = useState<JiraConfig>({

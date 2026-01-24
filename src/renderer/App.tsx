@@ -365,8 +365,8 @@ export const App: React.FC = () => {
 
             {/* Content Area */}
             <div className="flex-1 flex overflow-hidden">
-              {/* Chat Area - flexible width, slightly lighter background */}
-              <div className="flex-1 flex flex-col min-w-0 bg-[#161619]">
+              {/* Chat Area - flexible width, lighter background */}
+              <div className="flex-1 flex flex-col min-w-0 bg-[#1c1c21]">
                 <ChatView />
               </div>
 

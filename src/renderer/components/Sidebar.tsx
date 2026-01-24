@@ -39,13 +39,6 @@ function getRelativeTime(timestamp: number): string {
   return `${Math.floor(days / 30)}月`;
 }
 
-// 获取会话预览（最后一条消息内容）
-function getSessionPreview(_session: SessionWithMeta): string {
-  // If we have preview content stored, use it
-  // For now, return placeholder
-  return '好的，我来帮你处理...';
-}
-
 export const Sidebar: React.FC = () => {
   const { clearChat, setShowSettings } = useAppStore();
   const {
@@ -134,18 +127,18 @@ export const Sidebar: React.FC = () => {
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
       {/* Header: New Chat + Filter */}
       <div className="px-3 py-3 flex items-center justify-between">
-        {/* New Chat - icon + text style */}
+        {/* New Chat - icon + text style (Claude Code style) */}
         <button
           onClick={handleNewChat}
           disabled={isLoading}
-          className="flex items-center gap-1.5 text-zinc-300 hover:text-zinc-100 transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
         >
           {isLoading ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4 stroke-[1.5]" />
           )}
-          <span className="text-sm">新对话</span>
+          <span className="text-sm font-normal">New session</span>
         </button>
 
         {/* Filter Dropdown */}
@@ -193,12 +186,15 @@ export const Sidebar: React.FC = () => {
                       : 'hover:bg-zinc-800/40'
                   }`}
                 >
-                  {/* Row 1: Title + Archive icon */}
+                  {/* Single row: Title + Time + Archive icon */}
                   <div className="flex items-center justify-between gap-2">
-                    <span className={`text-sm truncate font-medium ${
+                    <span className={`text-sm truncate font-medium flex-1 ${
                       isSelected ? 'text-zinc-100' : 'text-zinc-300'
                     }`}>
                       {session.title}
+                    </span>
+                    <span className="text-xs text-zinc-500 shrink-0">
+                      {getRelativeTime(session.updatedAt)}
                     </span>
                     {hoveredSession === session.id && (
                       <IconButton
@@ -211,16 +207,6 @@ export const Sidebar: React.FC = () => {
                         title={session.isArchived ? "取消归档" : "归档"}
                       />
                     )}
-                  </div>
-
-                  {/* Row 2: Preview + Time */}
-                  <div className="flex items-center justify-between gap-2 mt-0.5">
-                    <span className="text-xs text-zinc-500 truncate flex-1">
-                      {getSessionPreview(session)}
-                    </span>
-                    <span className="text-xs text-zinc-600 shrink-0">
-                      {getRelativeTime(session.updatedAt)}
-                    </span>
                   </div>
 
                   {/* Unread indicator */}
@@ -245,20 +231,15 @@ export const Sidebar: React.FC = () => {
               <img
                 src={user.avatarUrl}
                 alt=""
-                className="w-8 h-8 rounded-lg object-cover"
+                className="w-7 h-7 rounded-full object-cover"
               />
             ) : (
               /* Simple user icon - no background */
               <User className="w-5 h-5 text-zinc-500" />
             )}
-            <div className="flex-1 text-left min-w-0">
-              <div className="text-sm font-medium text-zinc-400 truncate">
-                {user.nickname || user.email?.split('@')[0]}
-              </div>
-              <div className="text-xs text-zinc-600">
-                查看设置
-              </div>
-            </div>
+            <span className="flex-1 text-left text-sm font-medium text-zinc-400 truncate">
+              {user.nickname || user.email?.split('@')[0]}
+            </span>
             <Settings className="w-4 h-4 text-zinc-600" />
           </button>
         ) : (

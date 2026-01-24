@@ -54,6 +54,10 @@ interface SecureStorageData {
   'apikey.github'?: string;
   'apikey.langfuse_public'?: string;
   'apikey.langfuse_secret'?: string;
+  // Integration configs (stored as JSON strings)
+  'integration.jira'?: string;
+  // Allow arbitrary integration keys
+  [key: `integration.${string}`]: string | undefined;
 }
 
 /**

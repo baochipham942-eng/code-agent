@@ -288,6 +288,8 @@ export const IPC_CHANNELS = {
   SETTINGS_TEST_API_KEY: 'settings:test-api-key',
   SETTINGS_GET_SERVICE_KEYS: 'settings:get-service-keys',
   SETTINGS_SET_SERVICE_KEY: 'settings:set-service-key',
+  SETTINGS_GET_INTEGRATION: 'settings:get-integration',
+  SETTINGS_SET_INTEGRATION: 'settings:set-integration',
 
   // Window channels
   WINDOW_MINIMIZE: 'window:minimize',
@@ -473,6 +475,11 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY]: (payload: {
     service: 'brave' | 'github' | 'openrouter' | 'langfuse_public' | 'langfuse_secret' | 'exa' | 'perplexity';
     apiKey: string;
+  }) => Promise<void>;
+  [IPC_CHANNELS.SETTINGS_GET_INTEGRATION]: (integration: string) => Promise<Record<string, string> | null>;
+  [IPC_CHANNELS.SETTINGS_SET_INTEGRATION]: (payload: {
+    integration: string;
+    config: Record<string, string>;
   }) => Promise<void>;
 
   // Window

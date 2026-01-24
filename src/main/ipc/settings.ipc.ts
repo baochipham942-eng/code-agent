@@ -136,6 +136,24 @@ async function handleSyncApiKeysFromCloud(
   return configService.syncApiKeysFromCloud(payload.authToken);
 }
 
+async function handleGetIntegration(
+  getConfigService: () => ConfigService | null,
+  integration: string
+): Promise<Record<string, string> | null> {
+  const configService = getConfigService();
+  if (!configService) throw new Error('Config service not initialized');
+  return configService.getIntegration(integration);
+}
+
+async function handleSetIntegration(
+  getConfigService: () => ConfigService | null,
+  payload: { integration: string; config: Record<string, string> }
+): Promise<void> {
+  const configService = getConfigService();
+  if (!configService) throw new Error('Config service not initialized');
+  await configService.setIntegration(payload.integration, payload.config);
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -246,6 +264,15 @@ export function registerSettingsHandlers(
   /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'setServiceApiKey' */
   ipcMain.handle(IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY, async (_, payload: { service: 'brave' | 'github' | 'openrouter' | 'langfuse_public' | 'langfuse_secret'; apiKey: string }) =>
     handleSetServiceApiKey(getConfigService, payload)
+  );
+
+  /** Integration config handlers */
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_INTEGRATION, async (_, integration: string) =>
+    handleGetIntegration(getConfigService, integration)
+  );
+
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_SET_INTEGRATION, async (_, payload: { integration: string; config: Record<string, string> }) =>
+    handleSetIntegration(getConfigService, payload)
   );
 
   /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'minimize' */

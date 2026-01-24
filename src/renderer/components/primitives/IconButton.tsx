@@ -9,7 +9,7 @@ import { Loader2 } from 'lucide-react';
 // Types
 // ============================================================================
 
-export type IconButtonVariant = 'default' | 'ghost' | 'danger' | 'active';
+export type IconButtonVariant = 'default' | 'ghost' | 'danger' | 'active' | 'outline';
 export type IconButtonSize = 'sm' | 'md' | 'lg';
 
 export interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -51,6 +51,12 @@ const variantStyles: Record<IconButtonVariant, string> = {
     'bg-blue-500/20',
     'text-blue-400',
     'disabled:text-blue-400/50',
+  ].join(' '),
+  outline: [
+    'bg-transparent hover:bg-white/5',
+    'text-zinc-400 hover:text-zinc-200',
+    'border border-white/10 hover:border-white/20',
+    'disabled:text-zinc-600',
   ].join(' '),
 };
 

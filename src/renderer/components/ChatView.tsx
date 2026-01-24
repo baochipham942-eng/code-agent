@@ -130,7 +130,7 @@ export const ChatView: React.FC = () => {
   return (
     <div className="flex-1 flex overflow-hidden">
       {/* Main Chat */}
-      <div className="flex-1 flex flex-col min-w-0 bg-gradient-to-b from-surface-950 to-void">
+      <div className="flex-1 flex flex-col min-w-0 bg-[#141417]">
         {/* Task Status Bar - 显示多任务状态 */}
         <TaskStatusBar className="shrink-0 mx-4 mt-2" />
 

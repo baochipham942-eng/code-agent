@@ -27,7 +27,7 @@ export const TitleBar: React.FC = () => {
   const workspaceName = getWorkspaceName(workingDirectory);
 
   return (
-    <div className="h-12 flex items-center justify-between px-4 border-b border-zinc-800/50 window-drag bg-surface-950/80 backdrop-blur-sm">
+    <div className="h-12 flex items-center justify-between px-4 border-b border-white/[0.06] window-drag bg-transparent backdrop-blur-sm">
       {/* Left: macOS traffic lights space + sidebar toggle + workspace path */}
       <div className="flex items-center gap-3">
         {/* Space for macOS traffic lights */}
@@ -51,21 +51,23 @@ export const TitleBar: React.FC = () => {
         )}
       </div>
 
-      {/* Right: Gen Badge + Task Panel Toggle */}
-      <div className="flex items-center gap-2">
-        {/* Generation Badge */}
-        <div className="window-no-drag">
-          <GenerationBadge />
-        </div>
-
+      {/* Right: Task Panel Toggle + Gen Badge */}
+      <div className="flex items-center gap-3">
+        {/* Task Panel Toggle - outline style, no background */}
         <IconButton
           icon={<LayoutGrid className="w-4 h-4" />}
           aria-label={showTaskPanel ? 'Hide task panel' : 'Show task panel'}
           onClick={() => setShowTaskPanel(!showTaskPanel)}
-          variant={showTaskPanel ? 'active' : 'default'}
+          variant="outline"
           size="md"
           windowNoDrag
+          className={showTaskPanel ? '!border-white/30 !text-zinc-200' : ''}
         />
+
+        {/* Generation Badge - text only */}
+        <div className="window-no-drag">
+          <GenerationBadge />
+        </div>
       </div>
     </div>
   );

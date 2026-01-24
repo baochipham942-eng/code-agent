@@ -473,6 +473,21 @@ const BUILTIN_MCP_SERVERS: MCPServerCloudConfig[] = [
     requiredEnvVars: ['FIRECRAWL_API_KEY'],
     description: '强大的网页抓取和内容提取，支持批量抓取、搜索和结构化数据提取',
   },
+  {
+    id: 'tavily',
+    name: 'Tavily Search',
+    type: 'http-streamable',
+    enabled: true,  // Enable if TAVILY_API_KEY is set
+    config: {
+      // Tavily uses API key in URL query parameter
+      url: 'https://mcp.tavily.com/mcp/',
+      headers: {
+        'x-api-key': '${TAVILY_API_KEY}',
+      },
+    },
+    requiredEnvVars: ['TAVILY_API_KEY'],
+    description: 'AI 驱动的实时网络搜索和内容提取，支持新闻搜索和域名过滤',
+  },
 
   // ========== SSE 远程服务器 ==========
 

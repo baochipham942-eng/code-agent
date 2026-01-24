@@ -1,16 +1,23 @@
 // ============================================================================
-// Computer Use Tool - Mouse and keyboard automation
-// Gen 6: Computer Use capability
+// Computer Use Tool - Mouse and keyboard automation with smart element location
+// Gen 6: Computer Use capability enhanced with Playwright integration
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { isComputerUseEnabled } from '../../services/cloud/featureFlagService';
+import { browserService } from '../../services/infra/browserService.js';
 
 const execAsync = promisify(exec);
 
-type ActionType = 'click' | 'doubleClick' | 'rightClick' | 'move' | 'type' | 'key' | 'scroll' | 'drag';
+// Extended action types with smart location capabilities
+type ActionType =
+  | 'click' | 'doubleClick' | 'rightClick' | 'move' | 'type' | 'key' | 'scroll' | 'drag'
+  // Smart location actions (Playwright-powered)
+  | 'locate_element' | 'locate_text' | 'locate_role'
+  | 'smart_click' | 'smart_type' | 'smart_hover'
+  | 'get_elements';
 
 interface ComputerAction {
   action: ActionType;
@@ -23,29 +30,55 @@ interface ComputerAction {
   amount?: number;
   toX?: number;
   toY?: number;
+  // Smart location parameters
+  selector?: string;
+  role?: string;
+  name?: string;
+  exact?: boolean;
+  timeout?: number;
 }
 
 export const computerUseTool: Tool = {
   name: 'computer_use',
-  description: `Control the computer with mouse and keyboard actions.
+  description: `Control the computer with mouse, keyboard, and smart element location.
 
-Use this tool to:
-- Click at specific screen coordinates
-- Type text into focused applications
-- Press keyboard shortcuts
-- Scroll in any direction
-- Drag and drop elements
+## Basic Actions (coordinate-based):
+- click/doubleClick/rightClick: Click at x,y coordinates
+- move: Move mouse to x,y
+- type: Type text into focused element
+- key: Press keyboard key with optional modifiers
+- scroll: Scroll in direction (up/down/left/right)
+- drag: Drag from x,y to toX,toY
 
-Parameters:
+## Smart Actions (Playwright-powered, for browser):
+- locate_element: Find element by CSS selector, return coordinates
+- locate_text: Find element by text content, return coordinates
+- locate_role: Find element by ARIA role and name
+- smart_click: Click element by selector or text (no coordinates needed)
+- smart_type: Type into element by selector (no coordinates needed)
+- smart_hover: Hover over element by selector
+- get_elements: List interactive elements on page
+
+## Parameters:
 - action: The action to perform
-- x, y: Screen coordinates (for mouse actions)
-- text: Text to type (for 'type' action)
-- key: Key to press (for 'key' action, e.g., 'enter', 'tab', 'escape')
+- x, y: Screen coordinates (for basic mouse actions)
+- selector: CSS selector (for smart actions)
+- text: Text to type or text to find
+- role: ARIA role (button, link, textbox, etc.)
+- name: Accessible name for role-based location
+- key: Key to press (enter, tab, escape, etc.)
 - modifiers: Modifier keys ['cmd', 'ctrl', 'alt', 'shift']
-- direction: Scroll direction (for 'scroll' action)
-- amount: Scroll amount in pixels
+- exact: Exact text match (default: false)
+- timeout: Wait timeout in ms (default: 5000)
 
-IMPORTANT: Use screenshot tool first to understand current screen state.`,
+## Examples:
+- {"action": "smart_click", "selector": "button.submit"}
+- {"action": "smart_click", "text": "Sign In"}
+- {"action": "locate_role", "role": "button", "name": "Submit"}
+- {"action": "smart_type", "selector": "#email", "text": "user@example.com"}
+- {"action": "get_elements"} - list all interactive elements
+
+IMPORTANT: For smart actions, browser must be launched via browser_action first.`,
   generations: ['gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
@@ -54,20 +87,37 @@ IMPORTANT: Use screenshot tool first to understand current screen state.`,
     properties: {
       action: {
         type: 'string',
-        enum: ['click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag'],
+        enum: [
+          'click', 'doubleClick', 'rightClick', 'move', 'type', 'key', 'scroll', 'drag',
+          'locate_element', 'locate_text', 'locate_role',
+          'smart_click', 'smart_type', 'smart_hover', 'get_elements'
+        ],
         description: 'The action to perform',
       },
       x: {
         type: 'number',
-        description: 'X coordinate on screen',
+        description: 'X coordinate on screen (for basic mouse actions)',
       },
       y: {
         type: 'number',
-        description: 'Y coordinate on screen',
+        description: 'Y coordinate on screen (for basic mouse actions)',
+      },
+      selector: {
+        type: 'string',
+        description: 'CSS selector for smart element location',
       },
       text: {
         type: 'string',
-        description: 'Text to type (for type action)',
+        description: 'Text to type or text content to locate',
+      },
+      role: {
+        type: 'string',
+        enum: ['button', 'link', 'textbox', 'checkbox', 'radio', 'combobox', 'listbox', 'menu', 'menuitem', 'tab', 'dialog', 'alert'],
+        description: 'ARIA role for element location',
+      },
+      name: {
+        type: 'string',
+        description: 'Accessible name for role-based location',
       },
       key: {
         type: 'string',
@@ -95,6 +145,14 @@ IMPORTANT: Use screenshot tool first to understand current screen state.`,
         type: 'number',
         description: 'Destination Y coordinate (for drag action)',
       },
+      exact: {
+        type: 'boolean',
+        description: 'Require exact text match (default: false)',
+      },
+      timeout: {
+        type: 'number',
+        description: 'Wait timeout in milliseconds (default: 5000)',
+      },
     },
     required: ['action'],
   },
@@ -114,6 +172,12 @@ IMPORTANT: Use screenshot tool first to understand current screen state.`,
     const action = params as unknown as ComputerAction;
 
     try {
+      // Smart actions use Playwright (browser must be running)
+      if (isSmartAction(action.action)) {
+        return await executeSmartAction(action);
+      }
+
+      // Basic actions use platform-specific implementations
       if (process.platform === 'darwin') {
         return await executeMacOSAction(action);
       } else if (process.platform === 'linux') {
@@ -134,6 +198,317 @@ IMPORTANT: Use screenshot tool first to understand current screen state.`,
     }
   },
 };
+
+// Check if action is a smart (Playwright-based) action
+function isSmartAction(action: ActionType): boolean {
+  return [
+    'locate_element', 'locate_text', 'locate_role',
+    'smart_click', 'smart_type', 'smart_hover', 'get_elements'
+  ].includes(action);
+}
+
+// Execute smart actions using Playwright browserService
+async function executeSmartAction(action: ComputerAction): Promise<ToolExecutionResult> {
+  // Verify browser is running
+  if (!browserService.isRunning()) {
+    return {
+      success: false,
+      error: 'Browser not running. Use browser_action with action="launch" first, then "new_tab" to open a page.',
+    };
+  }
+
+  const activeTab = browserService.getActiveTab();
+  if (!activeTab) {
+    return {
+      success: false,
+      error: 'No active tab. Use browser_action with action="new_tab" first.',
+    };
+  }
+
+  const page = activeTab.page;
+  const timeout = action.timeout || 5000;
+
+  switch (action.action) {
+    case 'locate_element':
+      return await locateBySelector(page, action.selector, timeout);
+
+    case 'locate_text':
+      return await locateByText(page, action.text, action.exact, timeout);
+
+    case 'locate_role':
+      return await locateByRole(page, action.role, action.name, action.exact, timeout);
+
+    case 'smart_click':
+      return await smartClick(page, action, timeout);
+
+    case 'smart_type':
+      return await smartType(page, action, timeout);
+
+    case 'smart_hover':
+      return await smartHover(page, action, timeout);
+
+    case 'get_elements':
+      return await getInteractiveElements(page);
+
+    default:
+      return { success: false, error: `Unknown smart action: ${action.action}` };
+  }
+}
+
+// Helper: Locate element by CSS selector
+async function locateBySelector(
+  page: import('playwright').Page,
+  selector: string | undefined,
+  timeout: number
+): Promise<ToolExecutionResult> {
+  if (!selector) {
+    return { success: false, error: 'selector required for locate_element' };
+  }
+  try {
+    const element = await page.waitForSelector(selector, { timeout });
+    if (!element) {
+      return { success: false, error: `Element not found: ${selector}` };
+    }
+    const box = await element.boundingBox();
+    if (!box) {
+      return { success: false, error: 'Element has no bounding box (may be hidden)' };
+    }
+    const centerX = Math.round(box.x + box.width / 2);
+    const centerY = Math.round(box.y + box.height / 2);
+    return {
+      success: true,
+      output: `Element found at (${centerX}, ${centerY})\nBounding box: x=${Math.round(box.x)}, y=${Math.round(box.y)}, width=${Math.round(box.width)}, height=${Math.round(box.height)}`,
+      metadata: { x: centerX, y: centerY, box },
+    };
+  } catch {
+    return { success: false, error: `Element not found within ${timeout}ms: ${selector}` };
+  }
+}
+
+// Helper: Locate element by text content
+async function locateByText(
+  page: import('playwright').Page,
+  text: string | undefined,
+  exact: boolean | undefined,
+  timeout: number
+): Promise<ToolExecutionResult> {
+  if (!text) {
+    return { success: false, error: 'text required for locate_text' };
+  }
+  try {
+    const textSelector = exact ? `text="${text}"` : `text=${text}`;
+    const element = await page.waitForSelector(textSelector, { timeout });
+    if (!element) {
+      return { success: false, error: `Text not found: "${text}"` };
+    }
+    const box = await element.boundingBox();
+    if (!box) {
+      return { success: false, error: 'Element has no bounding box (may be hidden)' };
+    }
+    const centerX = Math.round(box.x + box.width / 2);
+    const centerY = Math.round(box.y + box.height / 2);
+    return {
+      success: true,
+      output: `Text "${text}" found at (${centerX}, ${centerY})`,
+      metadata: { x: centerX, y: centerY, box },
+    };
+  } catch {
+    return { success: false, error: `Text not found within ${timeout}ms: "${text}"` };
+  }
+}
+
+// Helper: Locate element by ARIA role
+async function locateByRole(
+  page: import('playwright').Page,
+  role: string | undefined,
+  name: string | undefined,
+  exact: boolean | undefined,
+  timeout: number
+): Promise<ToolExecutionResult> {
+  if (!role) {
+    return { success: false, error: 'role required for locate_role' };
+  }
+  try {
+    type RoleType = Parameters<typeof page.getByRole>[0];
+    const locator = name
+      ? page.getByRole(role as RoleType, { name, exact })
+      : page.getByRole(role as RoleType);
+
+    await locator.waitFor({ timeout });
+    const box = await locator.boundingBox();
+    if (!box) {
+      return { success: false, error: 'Element has no bounding box (may be hidden)' };
+    }
+    const centerX = Math.round(box.x + box.width / 2);
+    const centerY = Math.round(box.y + box.height / 2);
+    return {
+      success: true,
+      output: `Role="${role}"${name ? ` name="${name}"` : ''} found at (${centerX}, ${centerY})`,
+      metadata: { x: centerX, y: centerY, box },
+    };
+  } catch {
+    return { success: false, error: `Role not found within ${timeout}ms: role="${role}"${name ? ` name="${name}"` : ''}` };
+  }
+}
+
+// Helper: Smart click by selector, text, or role
+async function smartClick(
+  page: import('playwright').Page,
+  action: ComputerAction,
+  timeout: number
+): Promise<ToolExecutionResult> {
+  if (!action.selector && !action.text && !action.role) {
+    return { success: false, error: 'selector, text, or role required for smart_click' };
+  }
+  try {
+    if (action.selector) {
+      await page.click(action.selector, { timeout });
+      return { success: true, output: `Clicked element: ${action.selector}` };
+    } else if (action.text) {
+      const textSelector = action.exact ? `text="${action.text}"` : `text=${action.text}`;
+      await page.click(textSelector, { timeout });
+      return { success: true, output: `Clicked text: "${action.text}"` };
+    } else if (action.role) {
+      type RoleType = Parameters<typeof page.getByRole>[0];
+      const locator = action.name
+        ? page.getByRole(action.role as RoleType, { name: action.name, exact: action.exact })
+        : page.getByRole(action.role as RoleType);
+      await locator.click({ timeout });
+      return { success: true, output: `Clicked role="${action.role}"${action.name ? ` name="${action.name}"` : ''}` };
+    }
+    return { success: false, error: 'No valid target specified' };
+  } catch (e) {
+    return { success: false, error: `Click failed: ${e instanceof Error ? e.message : 'Unknown error'}` };
+  }
+}
+
+// Helper: Smart type into element by selector or role
+async function smartType(
+  page: import('playwright').Page,
+  action: ComputerAction,
+  timeout: number
+): Promise<ToolExecutionResult> {
+  if (!action.selector && !action.role) {
+    return { success: false, error: 'selector or role required for smart_type' };
+  }
+  if (action.text === undefined) {
+    return { success: false, error: 'text required for smart_type' };
+  }
+  try {
+    const preview = action.text.length > 30 ? action.text.substring(0, 30) + '...' : action.text;
+    if (action.selector) {
+      await page.fill(action.selector, action.text, { timeout });
+      return { success: true, output: `Typed into ${action.selector}: "${preview}"` };
+    } else if (action.role) {
+      type RoleType = Parameters<typeof page.getByRole>[0];
+      const locator = action.name
+        ? page.getByRole(action.role as RoleType, { name: action.name, exact: action.exact })
+        : page.getByRole(action.role as RoleType);
+      await locator.fill(action.text, { timeout });
+      return { success: true, output: `Typed into role="${action.role}": "${preview}"` };
+    }
+    return { success: false, error: 'No valid target specified' };
+  } catch (e) {
+    return { success: false, error: `Type failed: ${e instanceof Error ? e.message : 'Unknown error'}` };
+  }
+}
+
+// Helper: Smart hover by selector or text
+async function smartHover(
+  page: import('playwright').Page,
+  action: ComputerAction,
+  timeout: number
+): Promise<ToolExecutionResult> {
+  if (!action.selector && !action.text) {
+    return { success: false, error: 'selector or text required for smart_hover' };
+  }
+  try {
+    if (action.selector) {
+      await page.hover(action.selector, { timeout });
+      return { success: true, output: `Hovered over: ${action.selector}` };
+    } else if (action.text) {
+      const textSelector = action.exact ? `text="${action.text}"` : `text=${action.text}`;
+      await page.hover(textSelector, { timeout });
+      return { success: true, output: `Hovered over text: "${action.text}"` };
+    }
+    return { success: false, error: 'No valid target specified' };
+  } catch (e) {
+    return { success: false, error: `Hover failed: ${e instanceof Error ? e.message : 'Unknown error'}` };
+  }
+}
+
+// Helper: Get all interactive elements on page
+async function getInteractiveElements(
+  page: import('playwright').Page
+): Promise<ToolExecutionResult> {
+  try {
+    const selector = 'button, a, input, select, textarea, [role="button"], [role="link"], [onclick], [tabindex]';
+    const elements = await page.locator(selector).all();
+
+    if (elements.length === 0) {
+      return { success: true, output: 'No interactive elements found on page.' };
+    }
+
+    const results: Array<{
+      index: number;
+      tag: string;
+      role: string;
+      text: string;
+      selector: string;
+      x: number;
+      y: number;
+    }> = [];
+
+    // Process up to 30 elements
+    const limit = Math.min(elements.length, 30);
+    for (let i = 0; i < limit; i++) {
+      const el = elements[i];
+      try {
+        const box = await el.boundingBox();
+        if (!box || box.width === 0 || box.height === 0) continue;
+
+        const tagName = await el.evaluate(node => node.tagName.toLowerCase());
+        const role = await el.getAttribute('role') || '';
+        const text = (await el.textContent() || '').trim().substring(0, 50);
+        const placeholder = await el.getAttribute('placeholder') || '';
+        const ariaLabel = await el.getAttribute('aria-label') || '';
+        const id = await el.getAttribute('id');
+        const className = await el.getAttribute('class');
+
+        const displayText = text || placeholder || ariaLabel || '(no text)';
+        const selectorHint = id ? `#${id}` : (className ? `.${className.split(' ').filter(Boolean)[0]}` : tagName);
+
+        results.push({
+          index: results.length + 1,
+          tag: tagName,
+          role,
+          text: displayText,
+          selector: selectorHint,
+          x: Math.round(box.x + box.width / 2),
+          y: Math.round(box.y + box.height / 2),
+        });
+      } catch {
+        // Skip elements that can't be processed
+      }
+    }
+
+    if (results.length === 0) {
+      return { success: true, output: 'No visible interactive elements found on page.' };
+    }
+
+    const output = results.map(el =>
+      `${el.index}. <${el.tag}${el.role ? ` role="${el.role}"` : ''}> "${el.text}" at (${el.x}, ${el.y}) - ${el.selector}`
+    ).join('\n');
+
+    return {
+      success: true,
+      output: `Found ${results.length} interactive elements:\n${output}`,
+      metadata: { elements: results },
+    };
+  } catch (e) {
+    return { success: false, error: `Failed to get elements: ${e instanceof Error ? e.message : 'Unknown error'}` };
+  }
+}
 
 // macOS implementation using AppleScript/cliclick
 async function executeMacOSAction(action: ComputerAction): Promise<ToolExecutionResult> {

@@ -13,6 +13,7 @@ import type {
   ErrorRecord,
   PermissionRequest,
 } from '@shared/types';
+import type { ContextHealthState } from '@shared/types/contextHealth';
 import { defaultLanguage, type Language } from '../i18n';
 
 // 渐进披露级别
@@ -73,6 +74,10 @@ interface AppState {
   // Workspace State
   workingDirectory: string | null;
 
+  // Context Health State (上下文健康度)
+  contextHealth: ContextHealthState | null;
+  contextHealthCollapsed: boolean;
+
   // Actions
   setShowSettings: (show: boolean) => void;
   setShowWorkspace: (show: boolean) => void;
@@ -104,6 +109,8 @@ interface AppState {
   clearChat: () => void;
   setCurrentSessionId: (id: string | null) => void;
   setWorkingDirectory: (dir: string | null) => void;
+  setContextHealth: (health: ContextHealthState | null) => void;
+  setContextHealthCollapsed: (collapsed: boolean) => void;
 }
 
 // Default generation (Gen 1)
@@ -177,6 +184,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Initial Workspace State
   workingDirectory: null,
 
+  // Initial Context Health State
+  contextHealth: null,
+  contextHealthCollapsed: true, // 默认收起
+
   // Actions
   setShowSettings: (show) => set({ showSettings: show }),
   setShowWorkspace: (show) => set({ showWorkspace: show }),
@@ -245,4 +256,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setCurrentSessionId: (id) => set({ currentSessionId: id }),
 
   setWorkingDirectory: (dir) => set({ workingDirectory: dir }),
+
+  setContextHealth: (health) => set({ contextHealth: health }),
+  setContextHealthCollapsed: (collapsed) => set({ contextHealthCollapsed: collapsed }),
 }));

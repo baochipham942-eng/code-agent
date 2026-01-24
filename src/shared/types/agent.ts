@@ -128,6 +128,8 @@ export type AgentEvent =
   | { type: 'todo_update'; data: TodoItem[] }
   | { type: 'notification'; data: { message: string } }
   | { type: 'agent_complete'; data: null }
+  // Auto Agent 思考/规划事件
+  | { type: 'agent_thinking'; data: { message: string; agentId?: string; progress?: number } }
   // Turn-based message events (行业最佳实践: Vercel AI SDK / LangGraph 模式)
   | { type: 'turn_start'; data: { turnId: string; iteration?: number } }
   | { type: 'turn_end'; data: { turnId: string } }

@@ -31,6 +31,8 @@ import { createLogger } from '../services/infra/logger';
 // User-configurable hooks system (Claude Code v2.0 style)
 import { HookManager, createHookManager } from '../hooks';
 import type { BudgetEventData } from '../../shared/types';
+// Context health tracking
+import { getContextHealthService } from '../context/contextHealthService';
 
 const logger = createLogger('AgentLoop');
 
@@ -719,6 +721,9 @@ export class AgentLoop {
           type: 'turn_end',
           data: { turnId: this.currentTurnId },
         });
+
+        // Update context health after turn completes
+        this.updateContextHealth();
         break;
       }
 
@@ -828,6 +833,9 @@ export class AgentLoop {
           data: { turnId: this.currentTurnId },
         });
 
+        // Update context health after turn completes
+        this.updateContextHealth();
+
         // Continue loop
         logger.debug(` >>>>>> Iteration ${iterations} END (continuing) <<<<<<`);
         continue;
@@ -897,6 +905,36 @@ export class AgentLoop {
 
     // Langfuse: Flush to ensure data is sent
     langfuse.flush().catch((err) => logger.error('[Langfuse] Flush error:', err));
+  }
+
+  /**
+   * 更新上下文健康度
+   * 在每轮迭代结束后调用，计算并发送上下文使用情况
+   */
+  private updateContextHealth(): void {
+    try {
+      const contextHealthService = getContextHealthService();
+      const model = this.modelConfig.model || 'deepseek-chat';
+
+      // 将内部消息转换为 ContextMessage 格式
+      const messagesForEstimation = this.messages.map(msg => ({
+        role: msg.role as 'user' | 'assistant' | 'system' | 'tool',
+        content: msg.content,
+        toolResults: msg.toolResults?.map(tr => ({
+          output: tr.output,
+          error: tr.error,
+        })),
+      }));
+
+      contextHealthService.update(
+        this.sessionId,
+        messagesForEstimation,
+        this.generation.systemPrompt,
+        model
+      );
+    } catch (error) {
+      logger.error('[AgentLoop] Failed to update context health:', error);
+    }
   }
 
   /**

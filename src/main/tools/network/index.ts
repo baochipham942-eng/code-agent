@@ -24,3 +24,4 @@ export { pdfGenerateTool } from './pdfGenerate';
 export { imageProcessTool } from './imageProcess';
 export { screenshotPageTool } from './screenshotPage';
 export { academicSearchTool } from './academicSearch';
+export { httpRequestTool } from './httpRequest';

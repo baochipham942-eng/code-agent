@@ -61,6 +61,20 @@ import type {
 // Re-export context health types for consumer convenience
 export type { ContextHealthState, ContextHealthUpdateEvent } from './types/contextHealth';
 
+import type {
+  SessionStatus,
+  SessionStatusUpdateEvent,
+  SessionRuntimeSummary,
+} from './types/sessionState';
+
+// Re-export session state types for consumer convenience
+export type {
+  SessionStatus,
+  SubagentState,
+  SessionRuntimeSummary,
+  SessionStatusUpdateEvent,
+} from './types/sessionState';
+
 // ----------------------------------------------------------------------------
 // Additional Types for IPC
 // ----------------------------------------------------------------------------
@@ -391,6 +405,11 @@ export const IPC_CHANNELS = {
   CONTEXT_HEALTH_GET: 'context:health:get',
   CONTEXT_HEALTH_EVENT: 'context:health:event',
 
+  // Session status channels (multi-session parallel support)
+  SESSION_STATUS_UPDATE: 'session:status:update',
+  SESSION_STATUS_GET: 'session:status:get',
+  SESSION_STATUS_GET_ALL: 'session:status:get-all',
+
   // Cloud task channels
   CLOUD_TASK_CREATE: 'cloud:task:create',
   CLOUD_TASK_UPDATE: 'cloud:task:update',
@@ -608,6 +627,10 @@ export interface IpcInvokeHandlers {
 
   // Context health
   [IPC_CHANNELS.CONTEXT_HEALTH_GET]: (sessionId?: string) => Promise<ContextHealthState>;
+
+  // Session status (multi-session parallel support)
+  [IPC_CHANNELS.SESSION_STATUS_GET]: (sessionId: string) => Promise<SessionRuntimeSummary | null>;
+  [IPC_CHANNELS.SESSION_STATUS_GET_ALL]: () => Promise<SessionRuntimeSummary[]>;
 }
 
 // ----------------------------------------------------------------------------
@@ -690,6 +713,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.CLOUD_TASK_COMPLETED]: (task: CloudTask) => void;
   [IPC_CHANNELS.CLOUD_TASK_FAILED]: (task: CloudTask) => void;
   [IPC_CHANNELS.CONTEXT_HEALTH_EVENT]: (event: ContextHealthUpdateEvent) => void;
+  [IPC_CHANNELS.SESSION_STATUS_UPDATE]: (event: SessionStatusUpdateEvent) => void;
 }
 
 // ----------------------------------------------------------------------------

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { useSessionStore, initializeSessionStore, type SessionWithMeta } from '../stores/sessionStore';
+import { useSessionStore, initializeSessionStore, type SessionWithMeta, type SessionFilter } from '../stores/sessionStore';
 import { useAppStore } from '../stores/appStore';
 import { useIsCoworkMode } from '../stores/modeStore';
 import {
@@ -18,6 +18,8 @@ import {
   FolderOpen,
   ChevronRight,
   ChevronDown,
+  Archive,
+  ArchiveRestore,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Button, IconButton } from './primitives';
@@ -100,7 +102,11 @@ export const Sidebar: React.FC = () => {
     createSession,
     switchSession,
     deleteSession,
+    archiveSession,
+    unarchiveSession,
     unreadSessionIds,
+    filter,
+    setFilter,
   } = useSessionStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -187,6 +193,22 @@ export const Sidebar: React.FC = () => {
     await deleteSession(id);
   };
 
+  const handleArchiveSession = async (id: string, isArchived: boolean, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isArchived) {
+      await unarchiveSession(id);
+    } else {
+      await archiveSession(id);
+    }
+  };
+
+  // 过滤器选项
+  const filterOptions: { value: SessionFilter; label: string }[] = [
+    { value: 'active', label: '活跃' },
+    { value: 'archived', label: '已归档' },
+    { value: 'all', label: '全部' },
+  ];
+
   if (sidebarCollapsed) {
     return null;
   }
@@ -225,6 +247,25 @@ export const Sidebar: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Filter Tabs */}
+      <div className="px-3 pb-2">
+        <div className="flex gap-1 p-1 bg-zinc-800/30 rounded-lg">
+          {filterOptions.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setFilter(option.value)}
+              className={`flex-1 px-2 py-1.5 text-xs font-medium rounded-md transition-all ${
+                filter === option.value
+                  ? 'bg-primary-500/20 text-primary-300'
+                  : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* Chat History */}
       <div className="flex-1 overflow-y-auto px-2 pb-2">
@@ -300,16 +341,27 @@ export const Sidebar: React.FC = () => {
                             {isUnread && (
                               <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
                             )}
-                            <IconButton
-                              icon={<Trash2 className="w-3 h-3" />}
-                              aria-label="Delete session"
-                              onClick={(e) => handleDeleteSession(session.id, e as unknown as React.MouseEvent)}
-                              variant="danger"
-                              size="sm"
-                              className={`!p-1 transition-all duration-200 ${
-                                hoveredSession === session.id ? 'opacity-100' : 'opacity-0'
-                              }`}
-                            />
+                            <div className={`flex gap-0.5 transition-all duration-200 ${
+                              hoveredSession === session.id ? 'opacity-100' : 'opacity-0'
+                            }`}>
+                              <IconButton
+                                icon={session.isArchived ? <ArchiveRestore className="w-3 h-3" /> : <Archive className="w-3 h-3" />}
+                                aria-label={session.isArchived ? "Unarchive session" : "Archive session"}
+                                onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e as unknown as React.MouseEvent)}
+                                variant="ghost"
+                                size="sm"
+                                className="!p-1"
+                                title={session.isArchived ? "取消归档" : "归档"}
+                              />
+                              <IconButton
+                                icon={<Trash2 className="w-3 h-3" />}
+                                aria-label="Delete session"
+                                onClick={(e) => handleDeleteSession(session.id, e as unknown as React.MouseEvent)}
+                                variant="danger"
+                                size="sm"
+                                className="!p-1"
+                              />
+                            </div>
                           </div>
                         );
                       })}
@@ -377,16 +429,25 @@ export const Sidebar: React.FC = () => {
                               </span>
                             )}
                           </div>
-                          <IconButton
-                            icon={<Trash2 className="w-3.5 h-3.5" />}
-                            aria-label="Delete session"
-                            onClick={(e) => handleDeleteSession(session.id, e as unknown as React.MouseEvent)}
-                            variant="danger"
-                            size="sm"
-                            className={`transition-all duration-200 ${
-                              hoveredSession === session.id ? 'opacity-100' : 'opacity-0'
-                            }`}
-                          />
+                          <div className={`flex gap-1 transition-all duration-200 ${
+                            hoveredSession === session.id ? 'opacity-100' : 'opacity-0'
+                          }`}>
+                            <IconButton
+                              icon={session.isArchived ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+                              aria-label={session.isArchived ? "Unarchive session" : "Archive session"}
+                              onClick={(e) => handleArchiveSession(session.id, !!session.isArchived, e as unknown as React.MouseEvent)}
+                              variant="ghost"
+                              size="sm"
+                              title={session.isArchived ? "取消归档" : "归档"}
+                            />
+                            <IconButton
+                              icon={<Trash2 className="w-3.5 h-3.5" />}
+                              aria-label="Delete session"
+                              onClick={(e) => handleDeleteSession(session.id, e as unknown as React.MouseEvent)}
+                              variant="danger"
+                              size="sm"
+                            />
+                          </div>
                         </div>
                       );
                     })}

@@ -246,6 +246,32 @@ export const BUILT_IN_TEMPLATES: HookTemplate[] = [
     ],
   },
 
+  // Context Injection Hooks
+  {
+    id: 'session-start-agents-inject',
+    name: 'AGENTS.md 指令注入',
+    description: '会话开始时自动发现并注入项目目录中的 AGENTS.md 指令',
+    event: 'SessionStart',
+    enabled: true,
+    category: 'workflow',
+    options: [
+      {
+        id: 'maxDepth',
+        name: '最大搜索深度',
+        description: '向下搜索 AGENTS.md 的最大目录深度',
+        type: 'number',
+        defaultValue: 3,
+      },
+      {
+        id: 'includeParents',
+        name: '包含父目录',
+        description: '是否包含工作目录的父目录中的 AGENTS.md',
+        type: 'boolean',
+        defaultValue: true,
+      },
+    ],
+  },
+
   // Evolution Hooks (Gen8)
   {
     id: 'session-end-meta-learning',

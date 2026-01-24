@@ -395,6 +395,10 @@ export const IPC_CHANNELS = {
   PERSISTENT_GET_DEV_MODE: 'persistent:get-dev-mode',
   PERSISTENT_SET_DEV_MODE: 'persistent:set-dev-mode',
 
+  // Permission mode channels
+  PERMISSION_GET_MODE: 'permission:get-mode',
+  PERMISSION_SET_MODE: 'permission:set-mode',
+
   // Notification channels
   NOTIFICATION_CLICKED: 'notification:clicked',
 
@@ -619,6 +623,10 @@ export interface IpcInvokeHandlers {
   // Persistent settings (survive data clear)
   [IPC_CHANNELS.PERSISTENT_GET_DEV_MODE]: () => Promise<boolean>;
   [IPC_CHANNELS.PERSISTENT_SET_DEV_MODE]: (enabled: boolean) => Promise<void>;
+
+  // Permission mode
+  [IPC_CHANNELS.PERMISSION_GET_MODE]: () => Promise<string>;
+  [IPC_CHANNELS.PERMISSION_SET_MODE]: (mode: string) => Promise<boolean>;
 
   // Security
   [IPC_CHANNELS.SECURITY_CHECK_API_KEY_CONFIGURED]: () => Promise<boolean>;

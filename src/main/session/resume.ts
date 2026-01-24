@@ -16,7 +16,8 @@ import {
   getDefaultCache,
 } from './localCache';
 import { estimateTokens, estimateConversationTokens, Message } from '../context/tokenEstimator';
-import { summarizeConversation, SummaryResult } from '../context/summarizer';
+import { summarizeConversation, SummaryResult, initializeSummarizerWithCompactModel } from '../context/summarizer';
+import { compactModelSummarize, isCompactModelAvailable } from '../context/compactModel';
 
 const logger = createLogger('SessionResume');
 
@@ -188,14 +189,17 @@ export async function resumeSession(
             1000 // Minimum summary budget
           );
 
-          // Generate summary
+          // Generate summary using compact model if available
+          // Compact model is cheap and fast, ideal for summarization
+          const aiSummarizer = summarizer || (isCompactModelAvailable() ? compactModelSummarize : undefined);
+
           const summaryResult: SummaryResult = await summarizeConversation(
             olderMessages,
             {
               targetTokens: summaryBudget,
               detailLevel: 'standard',
               preserveCodeBlocks: true,
-              aiSummarize: summarizer,
+              aiSummarize: aiSummarizer,
             }
           );
 

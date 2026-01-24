@@ -449,7 +449,7 @@ const BUILTIN_MCP_SERVERS: MCPServerCloudConfig[] = [
     id: 'exa',
     name: 'Exa AI Search',
     type: 'http-streamable',
-    enabled: false,  // Requires API key
+    enabled: true,  // Enable if EXA_API_KEY is set
     config: {
       url: 'https://mcp.exa.ai/mcp',
       headers: {
@@ -463,7 +463,7 @@ const BUILTIN_MCP_SERVERS: MCPServerCloudConfig[] = [
     id: 'firecrawl',
     name: 'Firecrawl',
     type: 'http-streamable',
-    enabled: false,  // Requires API key
+    enabled: true,  // Enable if FIRECRAWL_API_KEY is set
     config: {
       url: 'https://mcp.firecrawl.dev/v2/mcp',
       headers: {

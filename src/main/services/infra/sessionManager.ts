@@ -17,6 +17,7 @@ import type {
   TodoItem,
 } from '../../../shared/types';
 import { createLogger } from './logger';
+import { getSessionSummarizer } from '../../memory/sessionSummarizer';
 
 const logger = createLogger('SessionManager');
 
@@ -334,8 +335,18 @@ export class SessionManager {
 
   /**
    * 设置当前会话
+   * 会自动结束前一个会话（异步生成摘要）
    */
   setCurrentSession(sessionId: string): void {
+    // 如果有前一个会话，异步结束它（不阻塞）
+    if (this.currentSessionId && this.currentSessionId !== sessionId) {
+      const previousSessionId = this.currentSessionId;
+      // 异步生成摘要，不阻塞会话切换
+      this.endSession(previousSessionId).catch((error) => {
+        logger.error('Failed to end previous session', { error, previousSessionId });
+      });
+    }
+
     this.currentSessionId = sessionId;
 
     // 设置工具缓存的 session
@@ -466,6 +477,64 @@ export class SessionManager {
     db.logAuditEvent('session_restored', { sessionId }, sessionId);
 
     return session;
+  }
+
+  /**
+   * 结束会话（生成摘要用于 Smart Forking）
+   * 在切换会话或关闭应用时调用
+   */
+  async endSession(sessionId?: string): Promise<void> {
+    const targetSessionId = sessionId || this.currentSessionId;
+    if (!targetSessionId) return;
+
+    logger.info('Ending session, generating summary', { sessionId: targetSessionId });
+
+    try {
+      const session = await this.getSession(targetSessionId);
+      if (!session || session.messages.length < 4) {
+        logger.debug('Session too short for summary', {
+          sessionId: targetSessionId,
+          messageCount: session?.messages.length || 0,
+        });
+        return;
+      }
+
+      // 生成会话摘要
+      const summarizer = getSessionSummarizer();
+      const summary = await summarizer.generateSummary(
+        targetSessionId,
+        session.messages,
+        session.workingDirectory
+      );
+
+      if (summary) {
+        // 保存摘要到向量库（用于后续 Fork 检索）
+        await summarizer.saveSummary(summary);
+
+        logger.info('Session summary saved', {
+          sessionId: targetSessionId,
+          title: summary.title,
+          topics: summary.topics.length,
+          decisions: summary.keyDecisions.length,
+        });
+
+        // 记录审计日志
+        const db = getDatabase();
+        db.logAuditEvent('session_summary_generated', {
+          sessionId: targetSessionId,
+          title: summary.title,
+          generatedBy: summary.generatedBy,
+        }, targetSessionId);
+      }
+    } catch (error) {
+      // 摘要生成失败不应该阻止会话结束
+      logger.error('Failed to generate session summary', { error, sessionId: targetSessionId });
+    }
+
+    // 如果结束的是当前会话，清除 current session
+    if (targetSessionId === this.currentSessionId) {
+      this.currentSessionId = null;
+    }
   }
 
   /**

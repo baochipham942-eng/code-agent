@@ -198,7 +198,7 @@ export const GenerationBadge: React.FC = () => {
       {/* Badge Button - 格式: Gen1 基础工具期 */}
       <button
         onClick={() => setShowDropdown(!showDropdown)}
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors ${config.color}`}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${config.color}`}
       >
         {config.icon}
         <span className="font-medium">Gen{currentGeneration.id.replace('gen', '')}</span>
@@ -208,7 +208,7 @@ export const GenerationBadge: React.FC = () => {
 
       {/* Dropdown */}
       {showDropdown && (
-        <div className="absolute top-full right-0 mt-1 w-[520px] bg-zinc-900 rounded-lg shadow-2xl border border-zinc-700 z-50 overflow-hidden animate-fadeIn">
+        <div className="absolute top-full right-0 mt-1 w-[520px] bg-zinc-900 rounded-lg shadow-2xl border border-zinc-700 z-[100] overflow-hidden animate-fadeIn">
             {/* Header */}
             <div className="px-3 py-2 border-b border-zinc-700 bg-zinc-800">
               <span className="text-xs font-medium text-zinc-400">{t.generation.selectTitle}</span>

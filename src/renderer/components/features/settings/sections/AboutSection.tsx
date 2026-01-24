@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { Download, RefreshCw, CheckCircle, AlertCircle, Cpu, ExternalLink } from 'lucide-react';
+import { Download, RefreshCw, CheckCircle, AlertCircle, Cpu } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -70,16 +70,6 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
-
-  const technologies = [
-    'Electron',
-    'React',
-    'TypeScript',
-    'Tailwind CSS',
-    'DeepSeek API',
-    'Zustand',
-    'SQLite',
-  ];
 
   return (
     <div className="space-y-6">
@@ -164,40 +154,6 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
             <span>{error}</span>
           </div>
         )}
-      </div>
-
-      {/* Technologies */}
-      <div>
-        <h4 className="text-sm font-medium text-zinc-100 mb-3">
-          {t.about?.technologies || '技术栈'}
-        </h4>
-        <div className="flex flex-wrap gap-2">
-          {technologies.map((tech) => (
-            <span
-              key={tech}
-              className="px-2.5 py-1 text-xs rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700/50"
-            >
-              {tech}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* Links */}
-      <div className="pt-4 border-t border-zinc-800/50">
-        <div className="flex items-center gap-4 text-xs">
-          <a
-            href="https://github.com/anthropics/claude-code"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 text-zinc-400 hover:text-zinc-200 transition-colors"
-          >
-            GitHub
-            <ExternalLink className="w-3 h-3" />
-          </a>
-          <span className="text-zinc-600">|</span>
-          <span className="text-zinc-500">{t.about?.madeWith || 'Made with love'}</span>
-        </div>
       </div>
     </div>
   );

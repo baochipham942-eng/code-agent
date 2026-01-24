@@ -15,6 +15,7 @@ import {
   Settings,
   LogOut,
   LogIn,
+  ChevronDown,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Button, IconButton } from './primitives';
@@ -113,41 +114,32 @@ export const Sidebar: React.FC = () => {
 
   return (
     <div className="w-60 border-r border-zinc-800/50 flex flex-col bg-surface-950">
-      {/* Header: New Chat Button */}
-      <div className="p-3">
-        <Button
+      {/* Header: New Chat + Filter */}
+      <div className="px-3 py-3 flex items-center justify-between">
+        {/* New Chat - icon + text style */}
+        <button
           onClick={handleNewChat}
-          loading={isLoading}
-          variant="primary"
-          leftIcon={!isLoading ? <Plus className="w-4 h-4" /> : undefined}
-          fullWidth
+          disabled={isLoading}
+          className="flex items-center gap-1.5 text-zinc-300 hover:text-zinc-100 transition-colors disabled:opacity-50"
         >
-          新对话
-        </Button>
-      </div>
+          {isLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Plus className="w-4 h-4" />
+          )}
+          <span className="text-sm">新对话</span>
+        </button>
 
-      {/* Filter Tabs */}
-      <div className="px-3 pb-2 flex gap-4 border-b border-zinc-800/50">
-        <button
-          onClick={() => setFilter('active')}
-          className={`text-sm pb-2 border-b-2 transition-colors ${
-            filter === 'active'
-              ? 'text-zinc-100 border-primary-500'
-              : 'text-zinc-500 border-transparent hover:text-zinc-300'
-          }`}
-        >
-          进行中
-        </button>
-        <button
-          onClick={() => setFilter('archived')}
-          className={`text-sm pb-2 border-b-2 transition-colors ${
-            filter === 'archived'
-              ? 'text-zinc-100 border-primary-500'
-              : 'text-zinc-500 border-transparent hover:text-zinc-300'
-          }`}
-        >
-          已归档
-        </button>
+        {/* Filter Dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setFilter(filter === 'active' ? 'archived' : 'active')}
+            className="flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+          >
+            <span>{filter === 'active' ? '进行中' : '已归档'}</span>
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Session List - Flat list, no grouping */}
@@ -237,8 +229,8 @@ export const Sidebar: React.FC = () => {
                 className="w-8 h-8 rounded-full object-cover"
               />
             ) : (
-              <div className="w-8 h-8 rounded-full bg-primary-600 flex items-center justify-center">
-                <User className="w-4 h-4 text-white" />
+              <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center">
+                <User className="w-4 h-4 text-zinc-300" />
               </div>
             )}
             <div className="flex-1 text-left min-w-0">
@@ -254,7 +246,7 @@ export const Sidebar: React.FC = () => {
         ) : (
           <button
             onClick={() => setShowAuthModal(true)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary-600 hover:bg-primary-500 text-white text-sm font-medium transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-100 text-sm font-medium transition-colors"
           >
             <LogIn className="w-4 h-4" />
             登录

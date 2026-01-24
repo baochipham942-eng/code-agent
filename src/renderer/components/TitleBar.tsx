@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
-import { PanelLeftClose, PanelLeft, ChevronRight } from 'lucide-react';
+import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight } from 'lucide-react';
 import { IconButton } from './primitives';
 
 export const TitleBar: React.FC = () => {
@@ -47,18 +47,15 @@ export const TitleBar: React.FC = () => {
         )}
       </div>
 
-      {/* Right: Task Panel Toggle - ghost style with chevron, aligned with section chevrons */}
-      <button
+      {/* Right: Task Panel Toggle - simple icon only */}
+      <IconButton
+        icon={showTaskPanel ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
+        aria-label={showTaskPanel ? 'Hide task panel' : 'Show task panel'}
         onClick={() => setShowTaskPanel(!showTaskPanel)}
-        className={`flex items-center gap-1.5 px-2 py-1 text-xs transition-colors window-no-drag ${
-          showTaskPanel
-            ? 'text-zinc-300'
-            : 'text-zinc-500 hover:text-zinc-300'
-        }`}
-      >
-        <span>任务信息</span>
-        <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showTaskPanel ? 'rotate-180' : ''}`} />
-      </button>
+        variant="ghost"
+        size="md"
+        windowNoDrag
+      />
     </div>
   );
 };

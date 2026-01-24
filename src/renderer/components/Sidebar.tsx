@@ -131,7 +131,7 @@ export const Sidebar: React.FC = () => {
   const hasAnySessions = sessions.length > 0;
 
   return (
-    <div className="w-60 border-r border-white/[0.06] flex flex-col bg-transparent">
+    <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
       {/* Header: New Chat + Filter */}
       <div className="px-3 py-3 flex items-center justify-between">
         {/* New Chat - icon + text style */}
@@ -248,16 +248,30 @@ export const Sidebar: React.FC = () => {
                 className="w-9 h-9 rounded-xl object-cover ring-1 ring-white/10"
               />
             ) : (
-              /* Quality default avatar - gradient mesh style */
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-zinc-700 via-zinc-800 to-zinc-900 flex items-center justify-center ring-1 ring-white/10 relative overflow-hidden">
-                {/* Subtle mesh pattern overlay */}
-                <div className="absolute inset-0 opacity-30">
-                  <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-primary-500/20 to-transparent" />
-                  <div className="absolute bottom-0 right-0 w-2/3 h-2/3 bg-gradient-to-tl from-purple-500/20 to-transparent" />
-                </div>
-                <span className="text-sm font-medium text-zinc-400 relative z-10">
-                  {(user.nickname || user.email?.split('@')[0])?.charAt(0)?.toUpperCase() || 'U'}
-                </span>
+              /* Quality default avatar - abstract gradient SVG */
+              <div className="w-9 h-9 rounded-xl ring-1 ring-white/10 overflow-hidden">
+                <svg viewBox="0 0 36 36" className="w-full h-full">
+                  <defs>
+                    <linearGradient id="avatar-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#3f3f46" />
+                      <stop offset="50%" stopColor="#27272a" />
+                      <stop offset="100%" stopColor="#18181b" />
+                    </linearGradient>
+                    <linearGradient id="avatar-accent1" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
+                      <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+                    </linearGradient>
+                    <linearGradient id="avatar-accent2" x1="100%" y1="100%" x2="0%" y2="0%">
+                      <stop offset="0%" stopColor="#a855f7" stopOpacity="0.25" />
+                      <stop offset="100%" stopColor="#a855f7" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+                  <rect width="36" height="36" fill="url(#avatar-bg)" />
+                  <circle cx="8" cy="8" r="16" fill="url(#avatar-accent1)" />
+                  <circle cx="28" cy="28" r="14" fill="url(#avatar-accent2)" />
+                  <circle cx="18" cy="14" r="6" fill="#52525b" />
+                  <ellipse cx="18" cy="30" rx="10" ry="8" fill="#52525b" />
+                </svg>
               </div>
             )}
             <div className="flex-1 text-left min-w-0">

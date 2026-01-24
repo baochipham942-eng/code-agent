@@ -31,6 +31,7 @@ import { registerStatusHandlers } from './status.ipc';
 import { registerContextHealthHandlers } from './contextHealth.ipc';
 import { registerSessionStatusHandlers } from './sessionStatus.ipc';
 import { registerSkillHandlers } from './skill.ipc';
+import { registerMarketplaceHandlers } from './marketplace.ipc';
 
 export * from './types';
 
@@ -125,6 +126,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Skill handlers (Skill 仓库管理和会话挂载)
   registerSkillHandlers(ipcMain);
+
+  // Marketplace handlers (Skill Marketplace)
+  registerMarketplaceHandlers(ipcMain);
 
   logger.info('All handlers registered');
 }

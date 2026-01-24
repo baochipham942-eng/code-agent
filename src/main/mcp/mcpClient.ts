@@ -32,6 +32,10 @@ import type {
 } from './types';
 import { isStdioConfig, isSSEConfig, isHttpStreamableConfig, isInProcessConfig } from './types';
 
+// Import In-Process Servers
+import { createMemoryKVServer } from './servers/memoryKVServer';
+import { createCodeIndexServer } from './servers/codeIndexServer';
+
 // Re-export types for backward compatibility
 export type {
   MCPServerConfig,
@@ -1288,6 +1292,24 @@ export async function initMCPClient(customConfigs?: MCPServerConfig[]): Promise<
     for (const config of customConfigs) {
       client.addServer(config);
     }
+  }
+
+  // 注册内置的 In-Process 服务器
+  try {
+    logger.info('Registering built-in in-process MCP servers...');
+
+    // Memory KV Server - 简单的键值存储
+    const memoryKVServer = createMemoryKVServer();
+    await client.registerInProcessServer(memoryKVServer);
+
+    // Code Index Server - 代码索引和符号查找
+    const codeIndexServer = createCodeIndexServer();
+    await client.registerInProcessServer(codeIndexServer);
+
+    logger.info('Built-in in-process MCP servers registered');
+  } catch (error) {
+    logger.error('Failed to register in-process servers:', error);
+    // 不阻止其他服务器连接
   }
 
   // 连接到所有启用的服务器

@@ -93,18 +93,20 @@ export const Skills: React.FC = () => {
               <div key={`${skill.name}-${index}`} className="rounded overflow-hidden">
                 <button
                   onClick={() => skill.input && toggleSkillExpand(skill.name)}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 text-left transition-colors ${
+                  className={`w-full flex items-center gap-2 py-1.5 text-left transition-colors ${
                     skill.input ? 'hover:bg-zinc-800/50 cursor-pointer' : 'cursor-default'
                   }`}
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-400/70" />
                   <span className="flex-1 text-sm text-zinc-300 truncate">{skill.name}</span>
-                  {skill.input && (
+                  {skill.input ? (
                     isExpanded ? (
-                      <ChevronDown className="w-3 h-3 text-zinc-500" />
+                      <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
                     ) : (
-                      <ChevronRight className="w-3 h-3 text-zinc-500" />
+                      <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
                     )
+                  ) : (
+                    <ChevronRight className="w-3.5 h-3.5 text-zinc-500/30 flex-shrink-0" />
                   )}
                 </button>
 

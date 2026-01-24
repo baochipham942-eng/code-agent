@@ -5,8 +5,7 @@
 
 import React from 'react';
 import { Mic, Loader2 } from 'lucide-react';
-import { IconButton } from '../../../primitives';
-import { useVoiceInput, VoiceInputStatus } from '../../../../hooks/useVoiceInput';
+import { useVoiceInput } from '../../../../hooks/useVoiceInput';
 
 export interface VoiceInputButtonProps {
   /** 转写完成回调 */
@@ -63,33 +62,30 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
 
   return (
     <div className="relative">
-      <IconButton
-        icon={
-          isTranscribing ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
-          ) : (
-            <Mic
-              className={`w-5 h-5 transition-all ${
-                isRecording ? 'text-white animate-pulse' : ''
-              }`}
-            />
-          )
-        }
-        aria-label={isRecording ? '停止录音' : '开始语音输入'}
-        title={getTitle()}
+      <button
+        type="button"
         onClick={toggle}
         disabled={disabled || isTranscribing}
-        variant="ghost"
-        size="lg"
-        className={`flex-shrink-0 !rounded-xl transition-all duration-300 ${
+        title={getTitle()}
+        aria-label={isRecording ? '停止录音' : '开始语音输入'}
+        className={`flex-shrink-0 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 ${
           isRecording
             ? 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/30'
             : isTranscribing
               ? 'bg-primary-500 text-white'
-              : ''
+              : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50'
         } ${(disabled || isTranscribing) ? 'opacity-50 cursor-not-allowed' : ''}`}
-      />
-
+      >
+        {isTranscribing ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Mic
+            className={`w-4 h-4 transition-all ${
+              isRecording ? 'text-white animate-pulse' : ''
+            }`}
+          />
+        )}
+      </button>
 
       {/* 录音时长显示 */}
       {isRecording && duration > 0 && (

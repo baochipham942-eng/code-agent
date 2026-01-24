@@ -43,6 +43,7 @@ import {
   pdfGenerateTool,
   imageProcessTool,
   screenshotPageTool,
+  academicSearchTool,
 } from './network';
 import { skillMetaTool } from './skill';
 import {
@@ -191,6 +192,7 @@ export class ToolRegistry {
     this.register(pdfGenerateTool);
     this.register(imageProcessTool);
     this.register(screenshotPageTool);
+    this.register(academicSearchTool);
 
     // MCP tools (Gen 4+)
     this.register(mcpTool);

@@ -23,3 +23,4 @@ export { mermaidExportTool } from './mermaidExport';
 export { pdfGenerateTool } from './pdfGenerate';
 export { imageProcessTool } from './imageProcess';
 export { screenshotPageTool } from './screenshotPage';
+export { academicSearchTool } from './academicSearch';

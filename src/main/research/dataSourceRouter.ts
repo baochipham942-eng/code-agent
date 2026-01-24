@@ -29,54 +29,55 @@ interface SourceMapping {
 
 /**
  * 意图到数据源的映射
+ * 优先使用 Firecrawl 和 Exa 作为高质量数据源
  */
 const SOURCE_MAPPINGS: SourceMapping[] = [
   {
     intent: 'analysis',
-    primarySources: ['web_search', 'academic_search', 'documentation'],
-    secondarySources: ['mcp_deepwiki', 'news_search'],
-    rationale: '深度分析需要权威来源和学术支持',
+    primarySources: ['firecrawl_search', 'exa_search', 'academic_search'],
+    secondarySources: ['web_search', 'documentation', 'mcp_deepwiki'],
+    rationale: '深度分析优先使用 Firecrawl/Exa 获取高质量结果',
   },
   {
     intent: 'comparison',
-    primarySources: ['web_search', 'documentation'],
-    secondarySources: ['code_search', 'academic_search'],
+    primarySources: ['firecrawl_search', 'documentation'],
+    secondarySources: ['web_search', 'code_search', 'exa_search'],
     rationale: '对比研究需要多角度信息和官方文档',
   },
   {
     intent: 'current_events',
-    primarySources: ['web_search', 'news_search'],
-    secondarySources: [],
-    rationale: '时事新闻需要最新的网络信息',
+    primarySources: ['firecrawl_search', 'news_search'],
+    secondarySources: ['web_search', 'exa_search'],
+    rationale: '时事新闻使用 Firecrawl 获取最新内容',
   },
   {
     intent: 'technical_deep_dive',
-    primarySources: ['documentation', 'mcp_deepwiki', 'code_search'],
-    secondarySources: ['web_search', 'academic_search'],
+    primarySources: ['documentation', 'mcp_deepwiki', 'exa_code'],
+    secondarySources: ['firecrawl_scrape', 'code_search', 'web_search'],
     rationale: '技术深挖优先使用官方文档和代码库',
   },
   {
     intent: 'explanation',
-    primarySources: ['web_search', 'documentation'],
-    secondarySources: ['mcp_deepwiki'],
+    primarySources: ['firecrawl_search', 'documentation'],
+    secondarySources: ['web_search', 'mcp_deepwiki'],
     rationale: '解释说明需要清晰的文档和教程',
   },
   {
     intent: 'simple_lookup',
     primarySources: ['web_search'],
-    secondarySources: [],
-    rationale: '简单查询只需通用搜索',
+    secondarySources: ['firecrawl_search'],
+    rationale: '简单查询使用快速通用搜索',
   },
   {
     intent: 'factual_question',
-    primarySources: ['web_search'],
+    primarySources: ['web_search', 'firecrawl_search'],
     secondarySources: ['documentation'],
     rationale: '事实问题需要可靠的信息来源',
   },
   {
     intent: 'multi_faceted',
-    primarySources: ['web_search', 'academic_search', 'documentation'],
-    secondarySources: ['news_search', 'code_search', 'mcp_deepwiki'],
+    primarySources: ['firecrawl_search', 'exa_search', 'academic_search'],
+    secondarySources: ['news_search', 'code_search', 'mcp_deepwiki', 'documentation'],
     rationale: '多面分析需要综合多种数据源',
   },
   {
@@ -95,17 +96,23 @@ const SOURCE_MAPPINGS: SourceMapping[] = [
 
 /**
  * 数据源优先级（数值越小优先级越高）
+ * Firecrawl 和 Exa 作为高质量来源排在前面
  */
 const SOURCE_PRIORITY: Record<DataSourceType, number> = {
-  web_search: 1,
-  documentation: 2,
-  mcp_deepwiki: 3,
-  code_search: 4,
-  news_search: 5,
-  academic_search: 6,
-  mcp_github: 7,
-  local_codebase: 8,
-  memory_store: 9,
+  firecrawl_search: 1,   // Firecrawl 搜索最优先
+  exa_search: 2,         // Exa 搜索次之
+  firecrawl_scrape: 3,   // Firecrawl 抓取
+  exa_code: 4,           // Exa 代码搜索
+  web_search: 5,         // 通用网络搜索
+  documentation: 6,      // 文档
+  mcp_deepwiki: 7,       // DeepWiki
+  code_search: 8,        // 代码搜索
+  news_search: 9,        // 新闻搜索
+  academic_search: 10,   // 学术搜索
+  firecrawl_extract: 11, // Firecrawl 结构化提取
+  mcp_github: 12,        // GitHub MCP
+  local_codebase: 13,    // 本地代码库
+  memory_store: 14,      // 记忆存储
 };
 
 // ----------------------------------------------------------------------------
@@ -350,25 +357,138 @@ export class DataSourceRouter {
     parallel: boolean;
     maxConcurrent: number;
     timeout: number;
+    retryCount: number;
+    fallbackSources: DataSourceType[];
   } {
     switch (source) {
+      case 'firecrawl_search':
+        return {
+          parallel: true,
+          maxConcurrent: 3,
+          timeout: 20000,
+          retryCount: 1,
+          fallbackSources: ['exa_search', 'web_search'],
+        };
+      case 'firecrawl_scrape':
+        return {
+          parallel: true,
+          maxConcurrent: 2,
+          timeout: 30000,
+          retryCount: 1,
+          fallbackSources: ['web_search'],
+        };
+      case 'firecrawl_extract':
+        return {
+          parallel: false,
+          maxConcurrent: 1,
+          timeout: 45000,
+          retryCount: 0,
+          fallbackSources: ['firecrawl_scrape'],
+        };
+      case 'exa_search':
+        return {
+          parallel: true,
+          maxConcurrent: 3,
+          timeout: 15000,
+          retryCount: 1,
+          fallbackSources: ['firecrawl_search', 'web_search'],
+        };
+      case 'exa_code':
+        return {
+          parallel: true,
+          maxConcurrent: 2,
+          timeout: 15000,
+          retryCount: 1,
+          fallbackSources: ['code_search'],
+        };
       case 'web_search':
       case 'news_search':
-        return { parallel: true, maxConcurrent: 3, timeout: 15000 };
+        return {
+          parallel: true,
+          maxConcurrent: 3,
+          timeout: 15000,
+          retryCount: 2,
+          fallbackSources: [],
+        };
       case 'academic_search':
-        return { parallel: true, maxConcurrent: 2, timeout: 20000 };
+        return {
+          parallel: true,
+          maxConcurrent: 2,
+          timeout: 20000,
+          retryCount: 1,
+          fallbackSources: ['exa_search'],
+        };
       case 'documentation':
       case 'code_search':
-        return { parallel: true, maxConcurrent: 3, timeout: 15000 };
+        return {
+          parallel: true,
+          maxConcurrent: 3,
+          timeout: 15000,
+          retryCount: 1,
+          fallbackSources: [],
+        };
       case 'mcp_deepwiki':
       case 'mcp_github':
-        return { parallel: true, maxConcurrent: 2, timeout: 30000 };
+        return {
+          parallel: true,
+          maxConcurrent: 2,
+          timeout: 30000,
+          retryCount: 0,
+          fallbackSources: ['firecrawl_scrape'],
+        };
       case 'local_codebase':
-        return { parallel: false, maxConcurrent: 1, timeout: 10000 };
+        return {
+          parallel: false,
+          maxConcurrent: 1,
+          timeout: 10000,
+          retryCount: 0,
+          fallbackSources: [],
+        };
       case 'memory_store':
-        return { parallel: false, maxConcurrent: 1, timeout: 5000 };
+        return {
+          parallel: false,
+          maxConcurrent: 1,
+          timeout: 5000,
+          retryCount: 0,
+          fallbackSources: [],
+        };
       default:
-        return { parallel: true, maxConcurrent: 2, timeout: 15000 };
+        return {
+          parallel: true,
+          maxConcurrent: 2,
+          timeout: 15000,
+          retryCount: 1,
+          fallbackSources: ['web_search'],
+        };
     }
+  }
+
+  /**
+   * 获取指定数据源的回退源列表
+   */
+  getFallbackSources(source: DataSourceType): DataSourceType[] {
+    const strategy = this.getExecutionStrategy(source);
+    return strategy.fallbackSources;
+  }
+
+  /**
+   * 检查是否为 Firecrawl 数据源
+   */
+  isFirecrawlSource(source: DataSourceType): boolean {
+    return source.startsWith('firecrawl_');
+  }
+
+  /**
+   * 检查是否为 Exa 数据源
+   */
+  isExaSource(source: DataSourceType): boolean {
+    return source.startsWith('exa_');
+  }
+
+  /**
+   * 检查是否为 MCP 数据源
+   */
+  isMCPSource(source: DataSourceType): boolean {
+    return source.startsWith('mcp_');
   }
 }

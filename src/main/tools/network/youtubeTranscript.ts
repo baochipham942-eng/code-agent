@@ -1,6 +1,6 @@
 // ============================================================================
 // YouTube Transcript Tool - 获取 YouTube 视频字幕
-// 使用公开 API 提取字幕，无需 API Key
+// 主要使用 Supadata API，备用公开 API
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
@@ -8,9 +8,14 @@ import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('YouTubeTranscript');
 
+// Supadata API 配置
+const SUPADATA_API_KEY = 'sd_6d67f18e6ab981827c75e754cad993ca';
+const SUPADATA_API_URL = 'https://api.supadata.ai/v1/youtube/transcript';
+
 interface YouTubeTranscriptParams {
   url: string;
   language?: string;
+  text_only?: boolean;
 }
 
 interface TranscriptSegment {
@@ -19,13 +24,33 @@ interface TranscriptSegment {
   duration: number;
 }
 
+interface SupadataTranscriptResponse {
+  content: Array<{
+    text: string;
+    offset: number;
+    duration: number;
+    lang?: string;
+  }>;
+  lang?: string;
+  availableLangs?: string[];
+}
+
 /**
  * 从 URL 提取视频 ID
+ * 支持多种 YouTube URL 格式
  */
 function extractVideoId(url: string): string | null {
   const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
-    /^([a-zA-Z0-9_-]{11})$/, // 直接是 video ID
+    // 标准 watch URL
+    /(?:youtube\.com\/watch\?(?:[^&]+&)*v=)([^&\n?#]+)/,
+    // 短链接
+    /(?:youtu\.be\/)([^&\n?#]+)/,
+    // 嵌入链接
+    /(?:youtube\.com\/embed\/)([^&\n?#]+)/,
+    // Shorts
+    /(?:youtube\.com\/shorts\/)([^&\n?#]+)/,
+    // 直接是 video ID (11 字符)
+    /^([a-zA-Z0-9_-]{11})$/,
   ];
 
   for (const pattern of patterns) {
@@ -69,11 +94,53 @@ async function getVideoInfo(videoId: string): Promise<{ title: string; author: s
 }
 
 /**
- * 获取字幕
- * 使用多个备用方案
+ * 使用 Supadata API 获取字幕
  */
-async function fetchTranscript(videoId: string, language: string = 'en'): Promise<TranscriptSegment[]> {
-  // 方案1: 使用第三方 API
+async function fetchTranscriptFromSupadata(
+  videoId: string,
+  language?: string
+): Promise<{ segments: TranscriptSegment[]; lang: string; availableLangs?: string[] }> {
+  const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const params = new URLSearchParams({ url: youtubeUrl });
+  if (language) {
+    params.append('lang', language);
+  }
+
+  const response = await fetch(`${SUPADATA_API_URL}?${params.toString()}`, {
+    headers: {
+      'x-api-key': SUPADATA_API_KEY,
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    logger.warn('Supadata API failed', { status: response.status, error: errorText });
+    throw new Error(`Supadata API error: ${response.status} - ${errorText}`);
+  }
+
+  const data: SupadataTranscriptResponse = await response.json();
+
+  if (!data.content || data.content.length === 0) {
+    throw new Error('No transcript content returned');
+  }
+
+  const segments: TranscriptSegment[] = data.content.map(item => ({
+    text: item.text,
+    start: item.offset / 1000, // 转换为秒
+    duration: item.duration / 1000,
+  }));
+
+  return {
+    segments,
+    lang: data.lang || language || 'unknown',
+    availableLangs: data.availableLangs,
+  };
+}
+
+/**
+ * 备用方案：使用公开 API 获取字幕
+ */
+async function fetchTranscriptFallback(videoId: string, language: string = 'en'): Promise<TranscriptSegment[]> {
   const apis = [
     `https://yt.lemnoslife.com/videos?part=transcript&id=${videoId}`,
   ];
@@ -89,7 +156,6 @@ async function fetchTranscript(videoId: string, language: string = 'en'): Promis
       if (response.ok) {
         const data = await response.json();
 
-        // 解析 lemnoslife API 响应
         if (data.items?.[0]?.transcript?.content) {
           const content = data.items[0].transcript.content;
           return content.map((item: any) => ({
@@ -100,41 +166,38 @@ async function fetchTranscript(videoId: string, language: string = 'en'): Promis
         }
       }
     } catch (e) {
-      logger.warn('API failed', { api: apiUrl, error: (e as Error).message });
+      logger.warn('Fallback API failed', { api: apiUrl, error: (e as Error).message });
     }
   }
 
-  // 方案2: 直接从 YouTube 页面提取（备用）
+  throw new Error('所有 API 都失败了');
+}
+
+/**
+ * 获取字幕（主入口）
+ * 优先使用 Supadata API，失败后回退到公开 API
+ */
+async function fetchTranscript(
+  videoId: string,
+  language?: string
+): Promise<{ segments: TranscriptSegment[]; lang: string; availableLangs?: string[] }> {
+  // 1. 优先尝试 Supadata API
   try {
-    const pageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-        'Accept-Language': `${language},en;q=0.9`,
-      },
-    });
-
-    if (pageResponse.ok) {
-      const html = await pageResponse.text();
-
-      // 提取 captions 数据
-      const captionMatch = html.match(/"captions":\s*(\{[^}]+\})/);
-      if (captionMatch) {
-        // 简单解析，实际需要更复杂的处理
-        logger.info('Found captions data in page');
-      }
-
-      // 查找是否有字幕
-      if (html.includes('"captionTracks"')) {
-        throw new Error('视频有字幕，但无法通过公开 API 获取。请尝试使用 youtube-transcript-api Python 库');
-      }
-    }
-  } catch (e) {
-    if ((e as Error).message.includes('视频有字幕')) {
-      throw e;
-    }
+    const result = await fetchTranscriptFromSupadata(videoId, language);
+    logger.info('Fetched transcript from Supadata', { videoId, lang: result.lang });
+    return result;
+  } catch (supadataError) {
+    logger.warn('Supadata API failed, trying fallback', { error: (supadataError as Error).message });
   }
 
-  throw new Error('无法获取字幕。可能原因：1) 视频没有字幕 2) 字幕被禁用 3) API 限制');
+  // 2. 回退到公开 API
+  try {
+    const segments = await fetchTranscriptFallback(videoId, language || 'en');
+    return { segments, lang: language || 'en' };
+  } catch (fallbackError) {
+    logger.error('All transcript APIs failed', { videoId });
+    throw new Error('无法获取字幕。可能原因：1) 视频没有字幕 2) 字幕被禁用 3) API 限制');
+  }
 }
 
 export const youtubeTranscriptTool: Tool = {
@@ -203,9 +266,10 @@ youtube_transcript { "url": "dQw4w9WgXcQ", "language": "zh" }
       const videoInfo = await getVideoInfo(videoId);
 
       // 获取字幕
-      const transcript = await fetchTranscript(videoId, language);
+      const transcriptResult = await fetchTranscript(videoId, language);
+      const { segments, lang, availableLangs } = transcriptResult;
 
-      if (transcript.length === 0) {
+      if (segments.length === 0) {
         return {
           success: false,
           error: '该视频没有可用的字幕',
@@ -220,7 +284,10 @@ youtube_transcript { "url": "dQw4w9WgXcQ", "language": "zh" }
         output += `**作者**: ${videoInfo.author}\n`;
       }
       output += `**视频ID**: ${videoId}\n`;
-      output += `**语言**: ${language}\n`;
+      output += `**语言**: ${lang}\n`;
+      if (availableLangs && availableLangs.length > 0) {
+        output += `**可用语言**: ${availableLangs.join(', ')}\n`;
+      }
       output += `**链接**: https://www.youtube.com/watch?v=${videoId}\n`;
       output += `${'─'.repeat(50)}\n\n`;
 
@@ -228,8 +295,8 @@ youtube_transcript { "url": "dQw4w9WgXcQ", "language": "zh" }
       let currentParagraph = '';
       let paragraphStart = 0;
 
-      for (let i = 0; i < transcript.length; i++) {
-        const segment = transcript[i];
+      for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i];
 
         if (currentParagraph === '') {
           paragraphStart = segment.start;
@@ -241,17 +308,17 @@ youtube_transcript { "url": "dQw4w9WgXcQ", "language": "zh" }
         const isEndOfSentence = /[.!?。！？]$/.test(segment.text.trim());
         const timeSinceParagraphStart = segment.start - paragraphStart;
 
-        if (isEndOfSentence || timeSinceParagraphStart > 30 || i === transcript.length - 1) {
+        if (isEndOfSentence || timeSinceParagraphStart > 30 || i === segments.length - 1) {
           output += `[${formatTimestamp(paragraphStart)}] ${currentParagraph.trim()}\n\n`;
           currentParagraph = '';
         }
       }
 
       // 计算总时长
-      const lastSegment = transcript[transcript.length - 1];
+      const lastSegment = segments[segments.length - 1];
       const totalDuration = lastSegment.start + lastSegment.duration;
 
-      logger.info('Transcript fetched', { videoId, segments: transcript.length });
+      logger.info('Transcript fetched', { videoId, segments: segments.length, lang });
 
       return {
         success: true,
@@ -260,8 +327,9 @@ youtube_transcript { "url": "dQw4w9WgXcQ", "language": "zh" }
           videoId,
           title: videoInfo?.title,
           author: videoInfo?.author,
-          language,
-          segmentCount: transcript.length,
+          language: lang,
+          availableLanguages: availableLangs,
+          segmentCount: segments.length,
           duration: totalDuration,
           url: `https://www.youtube.com/watch?v=${videoId}`,
         },

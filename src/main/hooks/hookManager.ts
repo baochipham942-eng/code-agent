@@ -2,6 +2,7 @@
 // Hook Manager - Unified API for the hooks system
 // ============================================================================
 
+import type { Message } from '../../shared/types';
 import type {
   HookEvent,
   AnyHookContext,
@@ -10,6 +11,7 @@ import type {
   UserPromptContext,
   StopContext,
   SessionContext,
+  CompactContext,
 } from './events';
 import type { HookDefinition, ParsedHookConfig } from './configParser';
 import type { MergedHookConfig, MergeStrategy } from './merger';
@@ -19,6 +21,11 @@ import { loadAllHooksConfig } from './configParser';
 import { mergeHooks, getHooksForTool, getHooksForEvent } from './merger';
 import { executeScript } from './scriptExecutor';
 import { executePromptHook } from './promptHook';
+import {
+  getBuiltinHookExecutor,
+  type BuiltinHookContext,
+  type BuiltinHookResult,
+} from './builtinHookExecutor';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('HookManager');
@@ -202,7 +209,9 @@ export class HookManager {
   /**
    * Trigger hooks for session start
    */
-  async triggerSessionStart(sessionId: string): Promise<HookTriggerResult> {
+  async triggerSessionStart(
+    sessionId: string
+  ): Promise<HookTriggerResult & { injectedContext?: string }> {
     const context: SessionContext = {
       event: 'SessionStart',
       sessionId,
@@ -210,13 +219,47 @@ export class HookManager {
       workingDirectory: this.config.workingDirectory,
     };
 
-    return this.triggerEventHooks('SessionStart', context);
+    // 执行用户配置的钩子
+    const userResult = await this.triggerEventHooks('SessionStart', context);
+
+    // 执行内置钩子
+    const builtinContext: BuiltinHookContext = {
+      sessionId,
+      workingDirectory: this.config.workingDirectory,
+    };
+
+    const builtinResults = await getBuiltinHookExecutor().executeForEvent(
+      'SessionStart',
+      builtinContext
+    );
+
+    // 合并结果，提取注入的上下文
+    const merged = this.mergeResults(userResult, builtinResults);
+    const injectedContext = builtinResults
+      .filter((r): r is BuiltinHookResult => 'injectedContext' in r && !!r.injectedContext)
+      .map((r) => r.injectedContext)
+      .join('\n\n');
+
+    return {
+      ...merged,
+      injectedContext: injectedContext || undefined,
+    };
   }
 
   /**
    * Trigger hooks for session end
    */
-  async triggerSessionEnd(sessionId: string): Promise<HookTriggerResult> {
+  async triggerSessionEnd(
+    sessionId: string,
+    messages?: Message[],
+    toolExecutions?: Array<{
+      name: string;
+      input: unknown;
+      output?: unknown;
+      success: boolean;
+      timestamp: number;
+    }>
+  ): Promise<HookTriggerResult> {
     const context: SessionContext = {
       event: 'SessionEnd',
       sessionId,
@@ -224,7 +267,72 @@ export class HookManager {
       workingDirectory: this.config.workingDirectory,
     };
 
-    return this.triggerEventHooks('SessionEnd', context);
+    // 执行用户配置的钩子
+    const userResult = await this.triggerEventHooks('SessionEnd', context);
+
+    // 执行内置钩子
+    const builtinContext: BuiltinHookContext = {
+      sessionId,
+      workingDirectory: this.config.workingDirectory,
+      messages,
+      toolExecutions,
+    };
+
+    const builtinResults = await getBuiltinHookExecutor().executeForEvent(
+      'SessionEnd',
+      builtinContext
+    );
+
+    // 合并结果
+    return this.mergeResults(userResult, builtinResults);
+  }
+
+  /**
+   * Trigger hooks before context compaction
+   */
+  async triggerPreCompact(
+    sessionId: string,
+    messages: Message[],
+    tokenCount: number,
+    targetTokenCount: number
+  ): Promise<HookTriggerResult & { preservedContext?: string }> {
+    const context: CompactContext = {
+      event: 'PreCompact',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      tokenCount,
+      targetTokenCount,
+    };
+
+    // 执行用户配置的钩子
+    const userResult = await this.triggerEventHooks('PreCompact', context);
+
+    // 执行内置钩子
+    const builtinContext: BuiltinHookContext = {
+      sessionId,
+      workingDirectory: this.config.workingDirectory,
+      messages,
+      tokenCount,
+      targetTokenCount,
+    };
+
+    const builtinResults = await getBuiltinHookExecutor().executeForEvent(
+      'PreCompact',
+      builtinContext
+    );
+
+    // 合并结果，提取保留的上下文
+    const merged = this.mergeResults(userResult, builtinResults);
+    const preservedContext = builtinResults
+      .filter((r): r is BuiltinHookResult => 'injectedContext' in r && !!r.injectedContext)
+      .map((r) => r.injectedContext)
+      .join('\n\n');
+
+    return {
+      ...merged,
+      preservedContext: preservedContext || undefined,
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -374,6 +482,38 @@ export class HookManager {
       shouldProceed: true,
       results: [],
       totalDuration: 0,
+    };
+  }
+
+  /**
+   * Merge user hook results with builtin hook results
+   */
+  private mergeResults(
+    userResult: HookTriggerResult,
+    builtinResults: BuiltinHookResult[]
+  ): HookTriggerResult {
+    const allResults = [...userResult.results, ...builtinResults];
+    const builtinDuration = builtinResults.reduce((sum, r) => sum + r.duration, 0);
+
+    // 如果用户钩子或内置钩子任一阻止，则阻止
+    const anyBlock = builtinResults.some((r) => r.action === 'block');
+
+    // 合并消息
+    const builtinMessages = builtinResults
+      .filter((r) => r.message)
+      .map((r) => r.message)
+      .join('\n');
+
+    const combinedMessage = [userResult.message, builtinMessages]
+      .filter(Boolean)
+      .join('\n');
+
+    return {
+      shouldProceed: userResult.shouldProceed && !anyBlock,
+      message: combinedMessage || undefined,
+      modifiedInput: userResult.modifiedInput,
+      results: allResults,
+      totalDuration: userResult.totalDuration + builtinDuration,
     };
   }
 

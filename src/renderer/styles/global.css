@@ -143,6 +143,27 @@ body.theme-switching * {
   color: var(--selection-text);
 }
 
+/* Ensure text selection is visible in chat messages */
+.prose ::selection,
+.prose *::selection,
+[class*="MessageContent"] ::selection,
+[class*="MessageContent"] *::selection,
+[class*="message"] ::selection,
+[class*="message"] *::selection,
+.text-sm ::selection,
+.text-sm *::selection,
+.whitespace-pre-wrap ::selection,
+.whitespace-pre-wrap *::selection {
+  background-color: var(--selection-bg) !important;
+  color: var(--selection-text) !important;
+}
+
+/* Force selection style for user-select: text elements */
+[style*="user-select"] ::selection {
+  background-color: var(--selection-bg) !important;
+  color: var(--selection-text) !important;
+}
+
 /* ============================================================================
    Focus Styles
    ============================================================================ */

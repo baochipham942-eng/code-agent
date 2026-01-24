@@ -4,7 +4,6 @@
 
 import React, { useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { Paperclip } from 'lucide-react';
-import { IconButton } from '../../../primitives';
 import { UI } from '@shared/constants';
 
 // 图片 MIME 类型
@@ -152,15 +151,15 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           className="hidden"
         />
 
-        {/* 附件按钮 - 更柔和的样式 */}
-        <IconButton
-          icon={<Paperclip className="w-4.5 h-4.5" />}
-          aria-label="添加图片或文件"
+        {/* 附件按钮 - 与发送按钮大小一致 */}
+        <button
+          type="button"
           onClick={handleAttachClick}
-          variant="ghost"
-          size="lg"
-          className="flex-shrink-0 ml-2 !rounded-xl text-zinc-500 hover:text-zinc-300"
-        />
+          className="flex-shrink-0 ml-2 w-9 h-9 rounded-xl flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors"
+          aria-label="添加图片或文件"
+        >
+          <Paperclip className="w-4 h-4" />
+        </button>
 
         {/* 文本输入框 */}
         <textarea

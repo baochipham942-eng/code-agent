@@ -20,6 +20,7 @@ import type { ToolExecutor } from '../tools/toolExecutor';
 import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/memoryService';
+import { getCoreMemoryService } from '../memory/coreMemory';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel } from '../services';
 import { getProactiveContextService } from '../memory/proactiveContext';
 import { logCollector } from '../mcp/logCollector.js';
@@ -2347,13 +2348,22 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
         enhancedPrompt += `\n\n## Project Knowledge\n\n${knowledgeStr}`;
       }
 
-      // Add user coding preferences (all Gen3+)
-      const codingStyle = memoryService.getUserPreference<Record<string, unknown>>('coding_style');
-      if (codingStyle && Object.keys(codingStyle).length > 0) {
-        const styleStr = Object.entries(codingStyle)
-          .map(([key, value]) => `- ${key}: ${value}`)
-          .join('\n');
-        enhancedPrompt += `\n\n## User Coding Preferences\n\n${styleStr}`;
+      // Add user preferences from Core Memory (all Gen3+)
+      try {
+        const coreMemory = getCoreMemoryService();
+        const preferencesPrompt = coreMemory.formatForSystemPrompt();
+        if (preferencesPrompt) {
+          enhancedPrompt += `\n\n${preferencesPrompt}`;
+        }
+      } catch {
+        // Fallback to legacy KV-based preferences if CoreMemory fails
+        const codingStyle = memoryService.getUserPreference<Record<string, unknown>>('coding_style');
+        if (codingStyle && Object.keys(codingStyle).length > 0) {
+          const styleStr = Object.entries(codingStyle)
+            .map(([key, value]) => `- ${key}: ${value}`)
+            .join('\n');
+          enhancedPrompt += `\n\n## User Coding Preferences\n\n${styleStr}`;
+        }
       }
 
       const ragType = isFullRAG ? 'full' : isLightRAG ? 'light' : 'none';

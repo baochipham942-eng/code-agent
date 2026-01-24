@@ -32,4 +32,7 @@ export interface Session {
   workspace?: string;              // 工作空间标识
   status?: SessionStatus;          // 会话状态
   lastTokenUsage?: TokenUsage;     // 最近一次 Token 使用统计
+  // 归档状态
+  isArchived?: boolean;            // 是否已归档
+  archivedAt?: number;             // 归档时间
 }

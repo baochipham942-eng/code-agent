@@ -1,0 +1,85 @@
+# ============================================================================
+# Task Completion Tests - 任务完成能力测试
+# ============================================================================
+# 测试 Agent 完成完整任务的能力
+
+name: "任务完成能力测试"
+description: "测试 Agent 完成完整编程任务的能力"
+default_timeout: 120000
+tags:
+  - tasks
+  - integration
+
+cases:
+  # --------------------------------------------------------------------------
+  # 简单任务
+  # --------------------------------------------------------------------------
+  - id: task-create-js-file
+    type: task
+    description: "创建简单 JavaScript 文件"
+    prompt: "创建一个 hello-test.js 文件，包含一个打印 'Hello World' 的函数"
+    expect:
+      files_created:
+        - hello-test.js
+      file_contains:
+        hello-test.js:
+          - console.log
+          - Hello
+    cleanup:
+      - rm -f hello-test.js
+
+  - id: task-create-json-config
+    type: task
+    description: "创建 JSON 配置文件"
+    prompt: "创建一个 test-config.json 文件，包含 name, version, enabled 三个字段"
+    expect:
+      files_created:
+        - test-config.json
+      file_contains:
+        test-config.json:
+          - name
+          - version
+          - enabled
+    cleanup:
+      - rm -f test-config.json
+
+  # --------------------------------------------------------------------------
+  # 多步骤任务
+  # --------------------------------------------------------------------------
+  - id: task-multi-step-readme
+    type: task
+    description: "多步骤 - 读取项目信息并生成说明"
+    prompt: "读取 package.json，然后创建一个 test-readme.md 文件，包含项目名称和描述"
+    expect:
+      min_tool_calls: 2
+      files_created:
+        - test-readme.md
+      file_contains:
+        test-readme.md: code-agent
+    cleanup:
+      - rm -f test-readme.md
+
+  - id: task-analyze-structure
+    type: task
+    description: "分析项目结构"
+    prompt: "列出 src/main 目录下的所有子目录，并简单说明每个目录的用途"
+    expect:
+      min_tool_calls: 1
+      response_contains:
+        - agent
+        - tools
+    timeout: 60000
+
+  # --------------------------------------------------------------------------
+  # 代码理解任务
+  # --------------------------------------------------------------------------
+  - id: task-explain-code
+    type: task
+    description: "代码解释任务"
+    prompt: "读取 src/main/testing/types.ts 文件，解释 TestCase 接口的用途"
+    expect:
+      tool: read_file
+      success: true
+      response_contains:
+        - test
+    timeout: 60000

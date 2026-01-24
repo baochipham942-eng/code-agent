@@ -1,0 +1,110 @@
+# ============================================================================
+# Error Handling Tests - 错误处理能力测试
+# ============================================================================
+# 测试 Agent 在遇到错误时的恢复能力
+
+name: "错误处理能力测试"
+description: "测试 Agent 的错误处理和恢复能力"
+default_timeout: 60000
+tags:
+  - errors
+  - recovery
+
+cases:
+  # --------------------------------------------------------------------------
+  # 文件不存在错误
+  # --------------------------------------------------------------------------
+  - id: error-file-not-found
+    type: error_handling
+    description: "处理文件不存在错误"
+    prompt: "读取 nonexistent-file-xyz-123.txt 文件并显示内容"
+    expect:
+      error_handled: true
+      no_crash: true
+      response_not_contains:
+        - FATAL
+        - crash
+
+  - id: error-directory-not-found
+    type: error_handling
+    description: "处理目录不存在错误"
+    prompt: "列出 /this/path/does/not/exist/12345 目录的内容"
+    expect:
+      error_handled: true
+      no_crash: true
+
+  # --------------------------------------------------------------------------
+  # 权限错误
+  # --------------------------------------------------------------------------
+  - id: error-permission-denied
+    type: error_handling
+    description: "处理权限拒绝错误"
+    prompt: "尝试读取 /etc/shadow 文件"
+    expect:
+      error_handled: true
+      no_crash: true
+
+  # --------------------------------------------------------------------------
+  # 命令执行错误
+  # --------------------------------------------------------------------------
+  - id: error-command-failed
+    type: error_handling
+    description: "处理命令执行失败"
+    prompt: "执行命令 this-command-does-not-exist-xyz"
+    expect:
+      error_handled: true
+      no_crash: true
+
+  - id: error-command-syntax
+    type: error_handling
+    description: "处理命令语法错误"
+    prompt: "执行 bash 命令：if then else"
+    expect:
+      error_handled: true
+      no_crash: true
+
+  # --------------------------------------------------------------------------
+  # 恢复能力
+  # --------------------------------------------------------------------------
+  - id: error-recovery-retry
+    type: error_handling
+    description: "错误后继续执行"
+    prompt: "先尝试读取 nonexistent.txt，如果失败就创建它并写入 'Created after error'"
+    expect:
+      no_crash: true
+      files_created:
+        - nonexistent.txt
+    cleanup:
+      - rm -f nonexistent.txt
+
+  - id: error-graceful-fallback
+    type: error_handling
+    description: "优雅降级"
+    prompt: "尝试读取 config.yaml，如果不存在就读取 package.json"
+    expect:
+      no_crash: true
+      min_tool_calls: 1
+      output_contains:
+        - name
+
+  # --------------------------------------------------------------------------
+  # 超时处理
+  # --------------------------------------------------------------------------
+  - id: error-handle-long-task
+    type: error_handling
+    description: "长时间任务不崩溃"
+    prompt: "搜索 src 目录下所有包含 'function' 的文件"
+    expect:
+      no_crash: true
+    timeout: 90000
+
+  # --------------------------------------------------------------------------
+  # 无效输入
+  # --------------------------------------------------------------------------
+  - id: error-invalid-json
+    type: error_handling
+    description: "处理无效路径"
+    prompt: "读取文件路径：\"\""
+    expect:
+      error_handled: true
+      no_crash: true

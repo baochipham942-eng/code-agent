@@ -131,6 +131,7 @@
       "package.json"
     ],
     "npmRebuild": false,
+    "generateUpdatesFilesForAllChannels": false,
     "mac": {
       "category": "public.app-category.developer-tools",
       "target": [
@@ -160,6 +161,9 @@
         "deb"
       ],
       "icon": "resources/icon.png"
+    },
+    "dmg": {
+      "writeUpdateInfo": false
     },
     "publish": null
   }

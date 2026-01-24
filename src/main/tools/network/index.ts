@@ -20,3 +20,6 @@ export { jiraTool } from './jira';
 export { youtubeTranscriptTool } from './youtubeTranscript';
 export { twitterFetchTool } from './twitterFetch';
 export { mermaidExportTool } from './mermaidExport';
+export { pdfGenerateTool } from './pdfGenerate';
+export { imageProcessTool } from './imageProcess';
+export { screenshotPageTool } from './screenshotPage';

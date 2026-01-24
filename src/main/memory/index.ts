@@ -59,3 +59,37 @@ export {
   type SessionMemoryContext,
   type MemoryTriggerConfig,
 } from './memoryTriggerService';
+
+// Pattern Extractor
+export {
+  PatternExtractor,
+  getPatternExtractor,
+  createPatternExtractor,
+  type PatternType,
+  type ExtractedPattern,
+  type ToolExecution,
+  type ExtractionConfig,
+} from './patternExtractor';
+
+// Skill Synthesizer
+export {
+  SkillSynthesizer,
+  getSkillSynthesizer,
+  createSkillSynthesizer,
+  type SkillType,
+  type SynthesizedSkill,
+  type SkillTrigger,
+  type SkillContent,
+  type SkillUsageTracking,
+  type SynthesisConfig,
+} from './skillSynthesizer';
+
+// Continuous Learning Service
+export {
+  ContinuousLearningService,
+  getContinuousLearningService,
+  createContinuousLearningService,
+  type LearningResult,
+  type LearningConfig,
+  type SkillRecommendation,
+} from './continuousLearningService';

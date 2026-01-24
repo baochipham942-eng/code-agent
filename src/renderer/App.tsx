@@ -1,5 +1,6 @@
 // ============================================================================
 // App - Main Application Component
+// Linear-style UI refactor: Clean layout with task panel
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
@@ -9,25 +10,19 @@ import { useSessionStore } from './stores/sessionStore';
 import { Sidebar } from './components/Sidebar';
 import { ChatView } from './components/ChatView';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { WorkspacePanel } from './components/WorkspacePanel';
 import { TitleBar } from './components/TitleBar';
 import { SettingsModal } from './components/SettingsModal';
-import { GenerationBadge } from './components/GenerationBadge';
-import { ObservabilityPanel } from './components/ObservabilityPanel';
 import { UserQuestionModal } from './components/UserQuestionModal';
 import { AuthModal } from './components/AuthModal';
 import { PasswordResetModal } from './components/PasswordResetModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
 import { PermissionDialog } from './components/PermissionDialog';
-import { CloudTaskPanel } from './components/CloudTaskPanel';
-import { TaskListPanel } from './components/TaskListPanel';
+import { TaskPanel } from './components/TaskPanel';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
-import { StatusBar } from './components/StatusBar';
 import { useDisclosure } from './hooks/useDisclosure';
 import { useMemoryEvents } from './hooks/useMemoryEvents';
 import { useTheme } from './hooks/useTheme';
-import { Activity, Cloud, Zap } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 import { UI } from '@shared/constants';
@@ -38,17 +33,13 @@ const logger = createLogger('App');
 export const App: React.FC = () => {
   const {
     showSettings,
-    showWorkspace,
-    showPlanningPanel,
-    setShowPlanningPanel,
+    showTaskPanel,
+    setShowTaskPanel,
     setShowSettings,
-    currentGeneration,
     setLanguage,
   } = useAppStore();
 
   const [userQuestion, setUserQuestion] = useState<UserQuestionRequest | null>(null);
-  const [showCloudTaskPanel, setShowCloudTaskPanel] = useState(false);
-  const [showTaskListPanel, setShowTaskListPanel] = useState(false);
 
   // 强制更新状态
   const [forceUpdateInfo, setForceUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -66,7 +57,7 @@ export const App: React.FC = () => {
   const { showAuthModal, showPasswordResetModal } = useAuthStore();
 
   // 渐进披露 Hook
-  const { isStandard, isAdvanced } = useDisclosure();
+  const { isStandard } = useDisclosure();
 
   // Theme Hook - 初始化主题系统
   useTheme();
@@ -99,7 +90,7 @@ export const App: React.FC = () => {
   }, []);
 
   // Load settings from backend on mount
-  const { setModelConfig, setDisclosureLevel, setCurrentGeneration } = useAppStore();
+  const { setModelConfig, setDisclosureLevel, setCurrentGeneration, sidebarCollapsed } = useAppStore();
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -214,9 +205,6 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Check if observability panel is available (Advanced+ disclosure level)
-  const isObservabilityAvailable = isAdvanced;
-
   // Listen for user question events (Gen 3+)
   useEffect(() => {
     const unsubscribe = window.electronAPI?.on(
@@ -262,111 +250,25 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Observability panel toggle button (Advanced+ mode)
-  const ObservabilityToggle: React.FC = () => {
-    if (!isObservabilityAvailable) return null;
-
-    return (
-      <button
-        onClick={() => setShowPlanningPanel(!showPlanningPanel)}
-        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
-          showPlanningPanel
-            ? 'bg-indigo-500/20 text-indigo-300'
-            : 'text-zinc-500 hover:bg-zinc-800'
-        }`}
-        title="执行追踪面板"
-      >
-        <Activity className="w-3.5 h-3.5" />
-        <span>追踪</span>
-      </button>
-    );
-  };
-
-
-  // Cloud task panel toggle button (Advanced mode)
-  const CloudTaskToggle: React.FC = () => {
-    if (!isAdvanced) return null;
-
-    return (
-      <button
-        onClick={() => setShowCloudTaskPanel(!showCloudTaskPanel)}
-        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
-          showCloudTaskPanel
-            ? 'bg-sky-500/20 text-sky-300'
-            : 'text-zinc-500 hover:bg-zinc-800'
-        }`}
-        title="云端任务"
-      >
-        <Cloud className="w-3.5 h-3.5" />
-        <span>云端任务</span>
-      </button>
-    );
-  };
-
-  // Local task list panel toggle button (Standard+ mode)
-  const TaskListToggle: React.FC = () => {
-    if (!isStandard) return null;
-
-    return (
-      <button
-        onClick={() => setShowTaskListPanel(!showTaskListPanel)}
-        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
-          showTaskListPanel
-            ? 'bg-yellow-500/20 text-yellow-300'
-            : 'text-zinc-500 hover:bg-zinc-800'
-        }`}
-        title="多任务面板"
-      >
-        <Zap className="w-3.5 h-3.5" />
-        <span>任务</span>
-      </button>
-    );
-  };
-
   return (
     <ErrorBoundary>
-      <div className="h-screen flex flex-col bg-zinc-900 text-zinc-100">
-        {/* Title Bar for macOS */}
+      <div className="h-screen flex flex-col bg-void text-zinc-100">
+        {/* Title Bar for macOS - includes Gen selector, workspace path, session title */}
         <TitleBar />
 
-        {/* Main Content - pb-7 为底部状态栏留出空间 */}
-        <div className="flex-1 flex overflow-hidden pb-7">
-          {/* Sidebar - 仅在 Standard+ 显示 */}
-          {isStandard && <Sidebar />}
+        {/* Main Content - Linear-style three-column layout */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Sidebar - 240px fixed width, collapsible */}
+          {isStandard && !sidebarCollapsed && <Sidebar />}
 
-          {/* Chat Area */}
+          {/* Chat Area - flexible width */}
           <div className="flex-1 flex flex-col min-w-0">
-            {/* Generation Badge with Observability Toggle */}
-            <div className="px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                {isStandard && <GenerationBadge />}
-              </div>
-              <div className="flex items-center gap-2">
-                {isObservabilityAvailable && <ObservabilityToggle />}
-                <TaskListToggle />
-                <CloudTaskToggle />
-              </div>
-            </div>
-
-            {/* Chat View */}
             <ChatView />
           </div>
 
-          {/* Observability Panel (Advanced+ disclosure) */}
-          {showPlanningPanel && isObservabilityAvailable && <ObservabilityPanel />}
-
-          {/* Cloud Task Panel (Advanced mode) */}
-          {showCloudTaskPanel && <CloudTaskPanel onClose={() => setShowCloudTaskPanel(false)} />}
-
-          {/* Local Task List Panel (Standard+ mode) */}
-          {showTaskListPanel && <TaskListPanel onClose={() => setShowTaskListPanel(false)} />}
-
-          {/* Workspace Panel (Standard+ disclosure) */}
-          {showWorkspace && isStandard && <WorkspacePanel />}
+          {/* Task Panel - 320px fixed width, right side */}
+          {showTaskPanel && <TaskPanel onClose={() => setShowTaskPanel(false)} />}
         </div>
-
-      {/* Status Bar - 固定底部，Standard+ 模式显示 */}
-      <StatusBar />
 
       {/* Settings Modal */}
       {showSettings && <SettingsModal />}

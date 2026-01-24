@@ -414,9 +414,16 @@ export class GraphStore {
    * 删除实体
    */
   async deleteEntity(id: string): Promise<boolean> {
-    // 先删除相关的关系
+    // 先删除相关的关系（Kuzu 不支持无向关系删除，需要分别删除出边和入边）
+    // 删除出边关系
     await this.executeWithParams(
-      'MATCH (e:Entity {id: $id})-[r]-() DELETE r',
+      'MATCH (e:Entity {id: $id})-[r:Relates]->() DELETE r',
+      { id }
+    );
+
+    // 删除入边关系
+    await this.executeWithParams(
+      'MATCH ()-[r:Relates]->(e:Entity {id: $id}) DELETE r',
       { id }
     );
 
@@ -911,6 +918,9 @@ export class GraphStore {
 
   /**
    * 获取邻域（指定深度内的相邻节点）
+   *
+   * 注意：Kuzu 的递归关系查询不支持 ALL() 谓词过滤，
+   * 所以 relationTypes 和 minWeight 过滤在查询后应用。
    */
   async getNeighborhood(options: NeighborhoodQueryOptions): Promise<{
     entities: GraphEntity[];
@@ -926,7 +936,7 @@ export class GraphStore {
       onlyValid = true,
     } = options;
 
-    // 构建方向模式
+    // 构建方向模式 - Kuzu 递归关系语法
     let relationPattern: string;
     switch (direction) {
       case 'outgoing':
@@ -936,28 +946,18 @@ export class GraphStore {
         relationPattern = `<-[r:Relates*1..${depth}]-`;
         break;
       default:
+        // 双向遍历
         relationPattern = `-[r:Relates*1..${depth}]-`;
     }
 
-    // 构建过滤条件
+    // 构建过滤条件 - 只使用简单的节点过滤
     const conditions: string[] = ['start.id IN $entityIds'];
     const params: Record<string, kuzu.KuzuValue> = {
       entityIds,
       maxNodes: BigInt(maxNodes),
     };
 
-    if (relationTypes?.length) {
-      conditions.push('ALL(rel IN r WHERE rel.type IN $relationTypes)');
-      params.relationTypes = relationTypes;
-    }
-
-    if (minWeight !== undefined) {
-      conditions.push('ALL(rel IN r WHERE rel.weight >= $minWeight)');
-      params.minWeight = minWeight;
-    }
-
     if (onlyValid) {
-      conditions.push('ALL(rel IN r WHERE rel.validTo IS NULL)');
       conditions.push('neighbor.validTo IS NULL');
     }
 
@@ -966,7 +966,7 @@ export class GraphStore {
     const query = `
       MATCH (start:Entity)${relationPattern}(neighbor:Entity)
       WHERE ${whereClause}
-      RETURN DISTINCT neighbor, r
+      RETURN DISTINCT neighbor, rels(r) as relations, nodes(r) as pathNodes
       LIMIT $maxNodes
     `;
 
@@ -986,13 +986,37 @@ export class GraphStore {
       }
 
       // 处理关系路径
-      const relPath = row.r;
-      if (Array.isArray(relPath)) {
-        for (const relData of relPath) {
+      const relations = row.relations;
+      if (Array.isArray(relations)) {
+        for (const relData of relations) {
           const relation = this.relValueToRelation(relData as kuzu.RelValue);
           if (relation) {
+            // 应用 relationTypes 过滤
+            if (relationTypes?.length && !relationTypes.includes(relation.type)) {
+              continue;
+            }
+            // 应用 minWeight 过滤
+            if (minWeight !== undefined && relation.weight < minWeight) {
+              continue;
+            }
             relationsMap.set(relation.id, relation);
           }
+        }
+      }
+    }
+
+    // 如果有 relationTypes 过滤，需要过滤掉不符合条件的实体
+    // 只保留通过符合条件的关系连接的实体
+    if (relationTypes?.length) {
+      const validEntityIds = new Set<string>();
+      for (const relation of relationsMap.values()) {
+        validEntityIds.add(relation.fromId);
+        validEntityIds.add(relation.toId);
+      }
+      // 过滤实体
+      for (const [id, entity] of entitiesMap) {
+        if (!validEntityIds.has(id) && !entityIds.includes(id)) {
+          entitiesMap.delete(id);
         }
       }
     }

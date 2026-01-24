@@ -5,6 +5,11 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['tests/**/*.test.ts'],
+    // 排除需要特殊处理的原生模块测试
+    exclude: [
+      '**/node_modules/**',
+      '**/graphStore.test.ts', // Kuzu 原生模块需要单独运行
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

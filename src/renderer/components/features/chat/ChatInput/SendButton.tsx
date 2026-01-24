@@ -3,8 +3,7 @@
 // ============================================================================
 
 import React from 'react';
-import { Send, Loader2, Square } from 'lucide-react';
-import { IconButton } from '../../../primitives';
+import { Send, Square } from 'lucide-react';
 
 export interface SendButtonProps {
   /** 是否禁用 */
@@ -38,15 +37,14 @@ export const SendButton: React.FC<SendButtonProps> = ({
   // 处理中时显示停止按钮（柔和样式，白色图标 + 浅灰背景）
   if (isProcessing) {
     return (
-      <IconButton
-        icon={<Square className="w-full h-full fill-current" />}
-        aria-label="停止"
+      <button
         type="button"
-        variant="default"
-        size="lg"
         onClick={onStop}
-        className="flex-shrink-0 mr-2 !rounded-xl !text-zinc-300 transition-all duration-200 bg-zinc-700 hover:bg-zinc-600 hover:!text-white"
-      />
+        className="flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-zinc-300 transition-all duration-200 bg-zinc-700 hover:bg-zinc-600 hover:text-white"
+        aria-label="停止"
+      >
+        <Square className="w-4 h-4 fill-current" />
+      </button>
     );
   }
 
@@ -77,26 +75,23 @@ export const SendButton: React.FC<SendButtonProps> = ({
   }
 
   return (
-    <IconButton
-      icon={
-        <Send
-          className={`w-5 h-5 transition-transform duration-200 ${
-            hasContent ? '-rotate-45' : ''
-          }`}
-        />
-      }
-      aria-label="发送消息"
+    <button
       type={type}
       disabled={isDisabled}
-      variant={showActiveState ? 'default' : 'ghost'}
-      size="lg"
       onClick={onClick}
-      className={`flex-shrink-0 mr-2 !rounded-xl !text-white transition-all duration-300 ${
+      className={`flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-white transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${
         showActiveState
           ? 'bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30 scale-100 hover:scale-105'
           : 'bg-zinc-700/50 cursor-not-allowed scale-95 opacity-60'
       }`}
-    />
+      aria-label="发送消息"
+    >
+      <Send
+        className={`w-4 h-4 transition-transform duration-200 ${
+          hasContent ? '-rotate-45' : ''
+        }`}
+      />
+    </button>
   );
 };
 

@@ -21,7 +21,7 @@ import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/memoryService';
 import { getCoreMemoryService } from '../memory/coreMemory';
-import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel } from '../services';
+import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../services';
 import { getProactiveContextService } from '../memory/proactiveContext';
 import { logCollector } from '../mcp/logCollector.js';
 import { generateMessageId } from '../../shared/utils/id';
@@ -706,7 +706,7 @@ export class AgentLoop {
           content: response.content,
           timestamp: Date.now(),
         };
-        this.messages.push(assistantMessage);
+        await this.addAndPersistMessage(assistantMessage);
         this.onEvent({ type: 'message', data: assistantMessage });
 
         // Langfuse: End iteration span and break
@@ -782,7 +782,7 @@ export class AgentLoop {
           timestamp: Date.now(),
           toolCalls: response.toolCalls,
         };
-        this.messages.push(assistantMessage);
+        await this.addAndPersistMessage(assistantMessage);
 
         // Send the message event to frontend so it can display tool calls
         logger.debug('[AgentLoop] Emitting message event for tool calls');
@@ -818,7 +818,7 @@ export class AgentLoop {
           timestamp: Date.now(),
           toolResults: sanitizedResults,
         };
-        this.messages.push(toolMessage);
+        await this.addAndPersistMessage(toolMessage);
 
         // Langfuse: End iteration span
         langfuse.endSpan(this.currentIterationSpanId, {
@@ -857,7 +857,7 @@ export class AgentLoop {
         content: '⚠️ **工具调用异常**\n\n连续多次工具调用失败，已自动停止执行。这可能是由于：\n- 文件路径不存在\n- 网络连接问题\n- 工具参数错误\n\n请检查上面的错误信息，然后告诉我如何继续。',
         timestamp: Date.now(),
       };
-      this.messages.push(errorMessage);
+      await this.addAndPersistMessage(errorMessage);
       this.onEvent({ type: 'message', data: errorMessage });
 
       // Langfuse: End trace with error
@@ -2582,6 +2582,22 @@ Use relative paths (resolved against this directory) or absolute paths.`;
 
   private generateId(): string {
     return generateMessageId();
+  }
+
+  /**
+   * 添加消息到历史并持久化到数据库
+   * 确保 AI 回复不会丢失
+   */
+  private async addAndPersistMessage(message: Message): Promise<void> {
+    this.messages.push(message);
+
+    // 持久化到数据库（非阻塞，失败只记录日志不影响流程）
+    try {
+      const sessionManager = getSessionManager();
+      await sessionManager.addMessage(message);
+    } catch (error) {
+      logger.error('Failed to persist message:', error);
+    }
   }
 
   // --------------------------------------------------------------------------

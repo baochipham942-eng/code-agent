@@ -28,6 +28,7 @@ interface AppState {
   // UI State
   showSettings: boolean;
   showWorkspace: boolean;
+  showTaskPanel: boolean;
   sidebarCollapsed: boolean;
 
   // 语言设置 - Language
@@ -75,6 +76,7 @@ interface AppState {
   // Actions
   setShowSettings: (show: boolean) => void;
   setShowWorkspace: (show: boolean) => void;
+  setShowTaskPanel: (show: boolean) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setLanguage: (language: Language) => void;
   setCloudUIStrings: (strings: CloudUIStrings | null) => void;
@@ -131,6 +133,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Initial UI State
   showSettings: false,
   showWorkspace: false,
+  showTaskPanel: true, // Task panel shown by default
   sidebarCollapsed: false,
 
   // 语言默认为中文
@@ -177,6 +180,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Actions
   setShowSettings: (show) => set({ showSettings: show }),
   setShowWorkspace: (show) => set({ showWorkspace: show }),
+  setShowTaskPanel: (show) => set({ showTaskPanel: show }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setLanguage: (language) => set({ language }),
   setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),

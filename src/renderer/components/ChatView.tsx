@@ -12,7 +12,7 @@ import { useRequireAuth } from '../hooks/useRequireAuth';
 import { MessageBubble } from './features/chat/MessageBubble';
 import { ChatInput } from './features/chat/ChatInput';
 import { TaskStatusBar } from './features/chat/TaskStatusBar';
-import { TodoPanel } from './TodoPanel';
+import { TodoBar } from './TodoBar';
 import { PreviewPanel } from './PreviewPanel';
 import { PlanPanel } from './features/chat/PlanPanel';
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
@@ -103,8 +103,8 @@ export const ChatView: React.FC = () => {
     });
   }, [requireAuthAsync, sendMessage]);
 
-  // Show Gen 3+ todo panel if there are todos
-  const showTodoPanel = currentGeneration.tools.includes('todo_write') && todos.length > 0;
+  // Show Gen 3+ todo bar if there are todos
+  const showTodoBar = currentGeneration.tools.includes('todo_write') && todos.length > 0;
 
   // Render individual message item
   const renderMessageItem = useCallback((_index: number, message: Message) => (
@@ -169,6 +169,13 @@ export const ChatView: React.FC = () => {
           </div>
         )}
 
+        {/* Todo Bar - compact progress above input */}
+        {showTodoBar && (
+          <div className="px-4 max-w-3xl mx-auto w-full">
+            <TodoBar />
+          </div>
+        )}
+
         {/* Input */}
         <ChatInput
           onSend={handleSendMessage}
@@ -179,9 +186,6 @@ export const ChatView: React.FC = () => {
           onPlanClick={() => setShowPlanPanel(true)}
         />
       </div>
-
-      {/* Todo Panel (Gen 3+) - hide when preview panel is open */}
-      {showTodoPanel && !showPreviewPanel && <TodoPanel />}
 
       {/* HTML Preview Panel */}
       {showPreviewPanel && <PreviewPanel />}

@@ -141,13 +141,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
     ].join(',');
 
     return (
-      <div
-        className={`relative flex items-center bg-zinc-800/60 rounded-2xl border transition-all duration-300 ${
-          isFocused
-            ? 'border-primary-500/40 shadow-lg shadow-primary-500/5 ring-1 ring-primary-500/20'
-            : 'border-zinc-700/50 hover:border-zinc-600/50'
-        }`}
-      >
+      <div className="relative flex items-center">
         {/* 隐藏的文件输入 */}
         <input
           ref={fileInputRef}

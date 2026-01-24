@@ -5,7 +5,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useCallback } from 'react';
-import { Image, Sparkles, CornerDownLeft, FileText } from 'lucide-react';
+import { Image, FileText } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/types';
 import { UI } from '@shared/constants';
 
@@ -149,20 +149,18 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   return (
     <div
-      className={`border-t border-zinc-800/50 bg-gradient-to-t from-surface-950 to-surface-950/80 backdrop-blur-sm p-4 transition-colors ${
-        isDragOver ? 'bg-primary-500/10' : ''
-      }`}
+      className={`px-4 pb-4 pt-2 transition-colors ${isDragOver ? 'bg-primary-500/5' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <form onSubmit={handleSubmit} className="max-w-3xl mx-auto space-y-3">
+      <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
         {/* Plan 入口按钮 - 仅当有 Plan 时显示 */}
         {hasPlan && onPlanClick && (
           <button
             type="button"
             onClick={onPlanClick}
-            className="flex items-center gap-2 px-3 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-lg hover:bg-indigo-500/20 transition-colors w-full text-left"
+            className="flex items-center gap-2 px-3 py-2 mb-2 bg-indigo-500/10 border border-indigo-500/20 rounded-lg hover:bg-indigo-500/20 transition-colors w-full text-left"
           >
             <FileText className="w-4 h-4 text-indigo-400" />
             <span className="text-sm text-indigo-400">查看实现计划</span>
@@ -170,7 +168,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         )}
 
         {/* 附件预览区 */}
-        <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
+        {attachments.length > 0 && (
+          <div className="mb-2">
+            <AttachmentBar attachments={attachments} onRemove={removeAttachment} />
+          </div>
+        )}
 
         {/* 拖放提示 */}
         {isDragOver && (
@@ -178,13 +180,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             <div className="flex flex-col items-center gap-2 text-primary-400">
               <Image className="w-8 h-8" />
               <span className="text-sm">拖放文件或文件夹到这里</span>
-              <span className="text-xs text-zinc-500">支持代码、文档、图片等多种格式</span>
             </div>
           </div>
         )}
 
-        {/* 输入区域 */}
-        <div className="relative">
+        {/* 输入区域 - 浮动样式 */}
+        <div className="relative bg-zinc-800/50 rounded-xl border border-zinc-700/50 focus-within:border-primary-500/50 focus-within:ring-1 focus-within:ring-primary-500/20 transition-all">
           <InputArea
             ref={inputAreaRef}
             value={value}
@@ -215,32 +216,6 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               </>
             }
           />
-        </div>
-
-        {/* 提示信息 */}
-        <div className="flex items-center justify-between mt-2.5 px-2">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-              <kbd className="px-1.5 py-0.5 rounded-md bg-zinc-800/80 text-zinc-400 font-mono text-2xs border border-zinc-700/50">
-                <CornerDownLeft className="w-3 h-3 inline" />
-              </kbd>
-              <span>发送</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-              <kbd className="px-1.5 py-0.5 rounded-md bg-zinc-800/80 text-zinc-400 font-mono text-2xs border border-zinc-700/50">
-                Shift
-              </kbd>
-              <span>+</span>
-              <kbd className="px-1.5 py-0.5 rounded-md bg-zinc-800/80 text-zinc-400 font-mono text-2xs border border-zinc-700/50">
-                <CornerDownLeft className="w-3 h-3 inline" />
-              </kbd>
-              <span>换行</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 text-xs text-zinc-500">
-            <Sparkles className="w-3 h-3 text-primary-400" />
-            <span>由 DeepSeek 驱动</span>
-          </div>
         </div>
       </form>
     </div>

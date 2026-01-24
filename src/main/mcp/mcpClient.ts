@@ -60,6 +60,8 @@ export class MCPClient {
   private tools: MCPTool[] = [];
   private resources: MCPResource[] = [];
   private prompts: MCPPrompt[] = [];
+  // 懒加载：正在连接中的服务器 Promise（防止重复连接）
+  private connectingServers: Map<string, Promise<void>> = new Map();
 
   constructor() {}
 
@@ -69,13 +71,18 @@ export class MCPClient {
 
   /**
    * 添加 MCP 服务器配置
+   * Stdio 服务器默认使用懒加载（按需启动）
    */
   addServer(config: MCPServerConfig): void {
     const name = config.name;
     this.serverConfigs.set(name, config);
+
+    // 判断是否是懒加载服务器（Stdio 类型且 lazyLoad 未显式设置为 false）
+    const isLazyLoad = isStdioConfig(config) && config.lazyLoad !== false;
+
     this.serverStates.set(name, {
       config,
-      status: 'disconnected',
+      status: isLazyLoad ? 'lazy' : 'disconnected',
       toolCount: 0,
       resourceCount: 0,
     });
@@ -164,28 +171,39 @@ export class MCPClient {
 
   /**
    * 连接到所有启用的服务器
+   * 懒加载服务器（Stdio）跳过，等待首次调用时按需连接
    */
   async connectAll(): Promise<void> {
     for (const config of this.serverConfigs.values()) {
-      if (config.enabled) {
-        try {
-          await this.connect(config);
-        } catch (error) {
-          logger.error(`Failed to connect to MCP server ${config.name}:`, error);
-          // 更新状态为错误
-          const state = this.serverStates.get(config.name);
-          if (state) {
-            state.status = 'error';
-            state.error = error instanceof Error ? error.message : 'Unknown error';
-          }
+      if (!config.enabled) continue;
+
+      // 跳过懒加载服务器（Stdio 类型且 lazyLoad 未设为 false）
+      if (isStdioConfig(config) && config.lazyLoad !== false) {
+        logger.debug(`Skipping lazy-load server: ${config.name} (will connect on first use)`);
+        continue;
+      }
+
+      try {
+        await this.connect(config);
+      } catch (error) {
+        logger.error(`Failed to connect to MCP server ${config.name}:`, error);
+        // 更新状态为错误
+        const state = this.serverStates.get(config.name);
+        if (state) {
+          state.status = 'error';
+          state.error = error instanceof Error ? error.message : 'Unknown error';
         }
       }
     }
   }
 
-  // Connection timeout in milliseconds (30 seconds for SSE, 60 for stdio)
+  // Connection timeout in milliseconds
+  // SSE: 30 seconds (remote server should respond quickly)
+  // Stdio: 120 seconds (npx may need to download packages on first run)
   private static readonly SSE_CONNECT_TIMEOUT = 30000;
-  private static readonly STDIO_CONNECT_TIMEOUT = 60000;
+  private static readonly STDIO_CONNECT_TIMEOUT = 120000;
+  // First-time Stdio connection (package download): 180 seconds
+  private static readonly STDIO_FIRST_RUN_TIMEOUT = 180000;
 
   /**
    * 连接到单个服务器
@@ -259,6 +277,8 @@ export class MCPClient {
       } else {
         // Stdio 本地服务器 (默认)
         const stdioConfig = config as MCPStdioServerConfig;
+        logger.info(`Using Stdio transport for ${config.name}: ${stdioConfig.command} ${(stdioConfig.args || []).join(' ')}`);
+
         transport = new StdioClientTransport({
           command: stdioConfig.command,
           args: stdioConfig.args || [],
@@ -267,7 +287,18 @@ export class MCPClient {
             ...stdioConfig.env,
           } as Record<string, string>,
         });
-        connectTimeout = MCPClient.STDIO_CONNECT_TIMEOUT;
+
+        // 首次连接使用更长超时（npx 可能需要下载包）
+        // 检测是否是 npx 命令（可能需要下载包）
+        const isNpxCommand = stdioConfig.command === 'npx' ||
+          stdioConfig.command.endsWith('/npx') ||
+          (stdioConfig.args || []).some(arg => arg.includes('npx'));
+
+        connectTimeout = isNpxCommand
+          ? MCPClient.STDIO_FIRST_RUN_TIMEOUT
+          : MCPClient.STDIO_CONNECT_TIMEOUT;
+
+        logger.debug(`Stdio connection timeout: ${connectTimeout}ms (npx: ${isNpxCommand})`);
       }
 
       const client = new Client(
@@ -292,7 +323,18 @@ export class MCPClient {
               transport.close().catch(() => {
                 // 忽略关闭错误
               });
-              reject(new Error(`Connection to ${config.name} timed out after ${connectTimeout}ms`));
+
+              // 生成更有帮助的错误消息
+              let errorMsg = `Connection to ${config.name} timed out after ${Math.round(connectTimeout / 1000)}s.`;
+              if (isStdioConfig(config)) {
+                const stdioConfig = config as MCPStdioServerConfig;
+                if (stdioConfig.command === 'npx') {
+                  const packageName = stdioConfig.args?.find(arg => arg.startsWith('@') || !arg.startsWith('-')) || 'package';
+                  errorMsg += ` This may be due to slow network or package download issues. `;
+                  errorMsg += `Try running 'npx -y ${packageName}' manually to pre-download the package.`;
+                }
+              }
+              reject(new Error(errorMsg));
             }
           }, connectTimeout);
 
@@ -579,8 +621,69 @@ export class MCPClient {
   }
 
   /**
+   * 确保服务器已连接（支持懒加载）
+   * 如果服务器处于 lazy 状态，触发连接
+   * 使用 connectingServers Map 防止重复连接
+   */
+  async ensureConnected(serverName: string): Promise<boolean> {
+    // 已连接
+    if (this.clients.has(serverName) || this.inProcessServers.has(serverName)) {
+      return true;
+    }
+
+    const config = this.serverConfigs.get(serverName);
+    if (!config) {
+      logger.warn(`Server config not found: ${serverName}`);
+      return false;
+    }
+
+    if (!config.enabled) {
+      logger.warn(`Server ${serverName} is disabled`);
+      return false;
+    }
+
+    // 检查是否正在连接中（防止并发连接）
+    const existingPromise = this.connectingServers.get(serverName);
+    if (existingPromise) {
+      logger.debug(`Server ${serverName} is already connecting, waiting...`);
+      try {
+        await existingPromise;
+        return this.clients.has(serverName) || this.inProcessServers.has(serverName);
+      } catch {
+        return false;
+      }
+    }
+
+    // 开始懒加载连接
+    const state = this.serverStates.get(serverName);
+    if (state?.status === 'lazy' || state?.status === 'disconnected' || state?.status === 'error') {
+      logger.info(`Lazy-loading MCP server: ${serverName}`);
+
+      const connectPromise = this.connect(config).then(() => {
+        this.connectingServers.delete(serverName);
+      }).catch((error) => {
+        this.connectingServers.delete(serverName);
+        throw error;
+      });
+
+      this.connectingServers.set(serverName, connectPromise);
+
+      try {
+        await connectPromise;
+        return this.clients.has(serverName) || this.inProcessServers.has(serverName);
+      } catch (error) {
+        logger.error(`Failed to lazy-load server ${serverName}:`, error);
+        return false;
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * 调用 MCP 工具
    * 支持外部服务器和进程内服务器
+   * 支持懒加载：如果服务器未连接，自动触发连接
    * @param toolCallId - 工具调用 ID（用于前端匹配）
    * @param serverName - MCP 服务器名称
    * @param toolName - 工具名称
@@ -599,14 +702,31 @@ export class MCPClient {
       return this.callInProcessTool(toolCallId, serverName, toolName, args, inProcessServer);
     }
 
-    // 检查外部服务器
-    const client = this.clients.get(serverName);
+    // 懒加载：如果服务器未连接，尝试连接
+    let client = this.clients.get(serverName);
     if (!client) {
-      return {
-        toolCallId,
-        success: false,
-        error: `MCP server ${serverName} not connected`,
-      };
+      const state = this.serverStates.get(serverName);
+      if (state?.status === 'lazy' || state?.status === 'disconnected') {
+        logger.info(`Server ${serverName} not connected, triggering lazy-load for tool: ${toolName}`);
+        const connected = await this.ensureConnected(serverName);
+        if (!connected) {
+          const errorMsg = state?.error || 'Failed to connect to server';
+          return {
+            toolCallId,
+            success: false,
+            error: `MCP server ${serverName} connection failed: ${errorMsg}`,
+          };
+        }
+        client = this.clients.get(serverName);
+      }
+
+      if (!client) {
+        return {
+          toolCallId,
+          success: false,
+          error: `MCP server ${serverName} not connected`,
+        };
+      }
     }
 
     const startTime = Date.now();
@@ -1029,6 +1149,33 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-memory'],
       enabled: false, // 默认禁用，可在设置中启用
+    },
+
+    // ========== Phase 1: Sequential Thinking ==========
+    // Sequential Thinking 服务器 - 动态问题分解和逐步推理
+    {
+      name: 'sequential-thinking',
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-sequential-thinking'],
+      enabled: true, // 默认启用，提升复杂任务处理能力
+    },
+
+    // ========== Phase 3: Puppeteer ==========
+    // Puppeteer 服务器 - 浏览器自动化
+    {
+      name: 'puppeteer',
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-puppeteer'],
+      enabled: false, // 默认禁用，需要时启用
+    },
+
+    // ========== Phase 3: Docker ==========
+    // Docker 服务器 - 容器管理
+    {
+      name: 'docker',
+      command: 'npx',
+      args: ['-y', 'mcp-server-docker'],
+      enabled: false, // 默认禁用，需要 Docker 环境
     },
   ];
 }

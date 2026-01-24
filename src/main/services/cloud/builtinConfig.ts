@@ -564,6 +564,42 @@ const BUILTIN_MCP_SERVERS: MCPServerCloudConfig[] = [
     },
     description: '知识图谱记忆服务',
   },
+  // ========== Phase 1: Sequential Thinking ==========
+  {
+    id: 'sequential-thinking',
+    name: 'Sequential Thinking',
+    type: 'stdio',
+    enabled: true,
+    config: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-sequential-thinking'],
+    },
+    description: '动态问题分解和逐步推理，适合复杂任务规划',
+  },
+  // ========== Phase 3: Puppeteer ==========
+  {
+    id: 'puppeteer',
+    name: 'Puppeteer',
+    type: 'stdio',
+    enabled: false,
+    config: {
+      command: 'npx',
+      args: ['-y', '@modelcontextprotocol/server-puppeteer'],
+    },
+    description: '浏览器自动化，支持网页截图、PDF 生成、表单填充',
+  },
+  // ========== Phase 3: Docker ==========
+  {
+    id: 'docker',
+    name: 'Docker',
+    type: 'stdio',
+    enabled: false,
+    config: {
+      command: 'npx',
+      args: ['-y', 'mcp-server-docker'],
+    },
+    description: '容器管理，支持 Docker 镜像和容器操作',
+  },
 ];
 
 // ----------------------------------------------------------------------------

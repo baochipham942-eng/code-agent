@@ -53,6 +53,8 @@ export interface ProviderConfig {
   models: ModelInfo[];
   requiresApiKey: boolean;
   baseUrl?: string;
+  /** 智谱 Coding 套餐专用端点 */
+  codingBaseUrl?: string;
 }
 
 export interface ModelInfo {
@@ -63,4 +65,6 @@ export interface ModelInfo {
   supportsTool: boolean;
   supportsVision: boolean;
   supportsStreaming: boolean;
+  /** 是否使用 coding 端点 (智谱 GLM-4.7) */
+  useCodingEndpoint?: boolean;
 }

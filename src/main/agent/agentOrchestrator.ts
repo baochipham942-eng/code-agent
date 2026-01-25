@@ -774,20 +774,39 @@ export class AgentOrchestrator {
   }
 
   private getModelConfig(_settings: ReturnType<ConfigService['getSettings']>): ModelConfig {
-    const defaultProvider = 'deepseek';
     const authService = getAuthService();
     const currentUser = authService.getCurrentUser();
     const isAdmin = currentUser?.isAdmin === true;
 
-    logger.debug(`Using provider: ${defaultProvider}`);
+    // 优先级：智谱 > DeepSeek (如果配置了对应的 API Key)
+    const zhipuApiKey = this.configService.getApiKey('zhipu');
+    const deepseekApiKey = this.configService.getApiKey('deepseek');
+
+    // 选择提供商：优先智谱，其次 DeepSeek
+    let selectedProvider: 'zhipu' | 'deepseek' = 'deepseek';
+    let selectedModel = 'deepseek-chat';
+    let selectedApiKey = deepseekApiKey;
+
+    if (zhipuApiKey) {
+      selectedProvider = 'zhipu';
+      selectedModel = 'glm-4.7';  // 使用 Coding 套餐模型
+      selectedApiKey = zhipuApiKey;
+      logger.info('[模型选择] 检测到智谱 API Key，使用智谱 GLM-4.7 (Coding 套餐)');
+    } else if (deepseekApiKey) {
+      logger.info('[模型选择] 使用 DeepSeek');
+    } else {
+      logger.warn('[模型选择] 未配置任何 API Key，使用默认 DeepSeek');
+    }
+
+    logger.debug(`Using provider: ${selectedProvider}, model: ${selectedModel}`);
     logger.debug(`Is admin: ${isAdmin}`);
 
     // 管理员使用云端代理，不需要本地 API Key
     if (isAdmin) {
       logger.info('Admin user detected, using cloud proxy');
       return {
-        provider: defaultProvider,
-        model: 'deepseek-chat',
+        provider: selectedProvider,
+        model: selectedModel,
         apiKey: undefined,
         useCloudProxy: true,
         temperature: 0.7,
@@ -796,14 +815,13 @@ export class AgentOrchestrator {
     }
 
     // 非管理员使用本地 API Key
-    const apiKey = this.configService.getApiKey(defaultProvider);
-    logger.debug(`API Key exists: ${!!apiKey}`);
-    logger.debug(`API Key prefix: ${apiKey?.substring(0, 10)}...`);
+    logger.debug(`API Key exists: ${!!selectedApiKey}`);
+    logger.debug(`API Key prefix: ${selectedApiKey?.substring(0, 10)}...`);
 
     return {
-      provider: defaultProvider,
-      model: 'deepseek-chat',
-      apiKey,
+      provider: selectedProvider,
+      model: selectedModel,
+      apiKey: selectedApiKey,
       temperature: 0.7,
       maxTokens: 4096,
     };

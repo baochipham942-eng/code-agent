@@ -9,6 +9,7 @@ export { readPdfTool } from './readPdf';
 // export { skillTool } from './skill';
 export { pptGenerateTool } from './pptGenerate';
 export { imageGenerateTool } from './imageGenerate';
+export { videoGenerateTool } from './videoGenerate';
 export { imageAnalyzeTool } from './imageAnalyze';
 export { docxGenerateTool } from './docxGenerate';
 export { excelGenerateTool } from './excelGenerate';

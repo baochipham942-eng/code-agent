@@ -35,6 +35,26 @@ const PROVIDERS: Record<string, { baseUrl: string; envKey: string; authHeader: s
     envKey: 'ANTHROPIC_API_KEY',
     authHeader: 'x-api-key',
   },
+  zhipu: {
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    envKey: 'ZHIPU_API_KEY',
+    authHeader: 'Authorization',
+  },
+  groq: {
+    baseUrl: 'https://api.groq.com/openai/v1',
+    envKey: 'GROQ_API_KEY',
+    authHeader: 'Authorization',
+  },
+  qwen: {
+    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    envKey: 'QWEN_API_KEY',
+    authHeader: 'Authorization',
+  },
+  moonshot: {
+    baseUrl: 'https://api.moonshot.cn/v1',
+    envKey: 'MOONSHOT_API_KEY',
+    authHeader: 'Authorization',
+  },
 };
 
 interface ProxyRequest {

@@ -16,7 +16,7 @@ const logger = createLogger('ImageAnnotate');
 // 本地图片必须用 glm-4v-plus，因为需要 base64 编码
 const CONFIG = {
   ZHIPU_MODEL: 'glm-4v-plus',   // 必须用 plus 版本，flash 不支持 base64
-  ZHIPU_MODEL_MAX_TOKENS: 8000, // glm-4v-plus 最大 8192
+  ZHIPU_MODEL_MAX_TOKENS: 2048, // glm-4v-plus 实际最大是 2048，超过会报 1210 错误
   ZHIPU_API_URL: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
   TIMEOUT_MS: 60000,
   SUPPORTED_FORMATS: ['.jpg', '.jpeg', '.png', '.webp', '.gif'],

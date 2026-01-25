@@ -1680,6 +1680,44 @@ exit 0  # 允许
 
 ## 部署配置
 
+### 部署架构总览
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Code Agent 部署架构                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────┐                                               │
+│  │   客户端      │ Electron 桌面应用                             │
+│  │  (macOS)     │ - 打包: npm run dist:mac                      │
+│  └──────┬───────┘ - 产物: release/*.dmg                         │
+│         │                                                       │
+│         │ HTTPS                                                 │
+│         ▼                                                       │
+│  ┌──────────────────────────────────────────────────────┐       │
+│  │                    Vercel                             │       │
+│  │  https://code-agent-beta.vercel.app                   │       │
+│  │                                                       │       │
+│  │  /api/update    - 版本检查                            │       │
+│  │  /api/auth      - GitHub OAuth                        │       │
+│  │  /api/sync      - 数据同步                            │       │
+│  │  /api/prompts   - System Prompt                       │       │
+│  │  /api/model-proxy - AI 模型代理                       │       │
+│  │  /api/tools     - 云端工具 (搜索/抓取/PPT)            │       │
+│  └──────────────────────┬───────────────────────────────┘       │
+│                         │                                       │
+│         ┌───────────────┼───────────────┐                       │
+│         │               │               │                       │
+│         ▼               ▼               ▼                       │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐                 │
+│  │  Supabase  │  │ 阿里云 FC  │  │  AI APIs   │                 │
+│  │  PostgreSQL│  │ DDG 代理   │  │ DeepSeek   │                 │
+│  │  + pgvector│  │            │  │ 智谱/OpenAI│                 │
+│  └────────────┘  └────────────┘  └────────────┘                 │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
 ### Vercel
 
 | 配置项 | 值 |
@@ -1728,6 +1766,32 @@ curl -X POST "https://code-agent-beta.vercel.app/api/system?action=init-db" \
 # 数据库迁移
 curl -X POST "https://code-agent-beta.vercel.app/api/system?action=migrate" \
   -H "X-Init-Key: $DB_INIT_KEY"
+```
+
+### 阿里云函数计算 (FC)
+
+用于 DuckDuckGo 搜索代理，绕过国内网络限制。
+
+| 配置项 | 值 |
+|--------|-----|
+| 服务名 | `code-agent-proxy` |
+| 运行环境 | Node.js 18 |
+| 内存 | 128MB |
+| 超时 | 30s |
+| 代码位置 | `vercel-api/docs/aliyun-fc-proxy.js` |
+
+**部署步骤**：
+1. 登录阿里云函数计算控制台 https://fc.console.aliyun.com
+2. 创建服务 `code-agent-proxy`
+3. 创建函数，粘贴 `vercel-api/docs/aliyun-fc-proxy.js` 代码
+4. 配置 HTTP 触发器（公网访问）
+5. 复制触发器 URL 到 Vercel 环境变量 `DUCKDUCKGO_PROXY_URL`
+
+**验证**：
+```bash
+curl -X POST "https://<your-fc-trigger-url>" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "test search", "maxResults": 5}'
 ```
 
 ---

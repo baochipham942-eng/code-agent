@@ -185,27 +185,25 @@ interface StageResult {
 
 export const workflowOrchestrateTool: Tool = {
   name: 'workflow_orchestrate',
-  description: `Orchestrate multi-agent workflows for complex tasks.
+  description: `协调多个专业 Agent 完成需要多步骤协作的复杂任务。
 
-Available workflow templates:
-- code-review-pipeline: Coder -> Reviewer -> Tester
-- bug-fix-flow: Debugger -> Coder -> Tester
-- documentation-flow: Architect -> Documenter
-- parallel-review: Reviewer + Tester in parallel
-- image-annotation: 视觉理解 -> 视觉处理（通用图片标注）
-- image-ocr-annotate: OCR 识别 -> 矩形标注（文字识别并标注）
+**何时使用此工具**：
+当任务需要"先理解后处理"或"多种能力协作"时使用。
 
-Use this tool to:
-- Execute predefined workflow templates
-- Define custom multi-stage workflows
-- Coordinate multiple agents on a complex task
-- Process images with multi-step workflows (理解 + 处理)
+**核心判断逻辑**：
+1. 任务是否需要多个不同能力的步骤？（如：识别 → 标注）
+2. 任务是否需要不同类型的模型？（如：视觉模型 → 工具调用模型）
+3. 前一步的输出是否是后一步的输入？
 
-Parameters:
-- workflow: Template name or 'custom'
-- task: The overall task description
-- stages: (for custom) Array of stage definitions
-- parallel: (optional) Run independent stages in parallel`,
+**可用工作流**：
+- image-ocr-annotate: 图片文字识别 + 标注绘制
+- image-annotation: 图片元素识别 + 标注绘制
+- code-review-pipeline: 代码编写 + 审查 + 测试
+- bug-fix-flow: 问题诊断 + 修复 + 验证
+
+**参数**：
+- workflow: 选择合适的工作流模板
+- task: 用户的原始任务描述`,
   generations: ['gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',

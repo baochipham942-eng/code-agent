@@ -6,11 +6,13 @@ export type ModelProvider =
   | 'deepseek'
   | 'claude'
   | 'openai'
+  | 'gemini'     // Google Gemini
   | 'groq'
   | 'local'
   | 'zhipu'      // 智谱 GLM
   | 'qwen'       // 通义千问
   | 'moonshot'   // Kimi
+  | 'minimax'    // MiniMax
   | 'perplexity' // 联网搜索
   | 'openrouter'; // OpenRouter 中转（Gemini、Claude、GPT 等）
 

@@ -9,6 +9,8 @@ import {
   Image as ImageIcon,
   FileText,
   Play,
+  Video,
+  Download,
 } from 'lucide-react';
 import type { ToolCall } from '@shared/types';
 import { DiffView } from '../../../../DiffView';
@@ -37,6 +39,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
   // Check for special file results
   const createdFilePath = extractCreatedFilePath(toolCall);
   const imageResult = extractImageResult(toolCall);
+  const videoResult = extractVideoResult(toolCall);
   const generatedFileResult = extractGeneratedFile(toolCall);
 
   const isHtmlFile =
@@ -93,7 +96,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
       {/* Result section */}
       {result && (
         <div className="animate-fadeIn">
-          {!imageResult && !generatedFileResult && !createdFilePath && (
+          {!imageResult && !videoResult && !generatedFileResult && !createdFilePath && (
             <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">
               <span>{result.success ? 'Result' : 'Error'}</span>
               <div className="flex-1 h-px bg-gray-700/50" />
@@ -105,6 +108,17 @@ export function ToolDetails({ toolCall, compact }: Props) {
             <ImageResultDisplay
               imagePath={imageResult.imagePath}
               imageBase64={imageResult.imageBase64}
+            />
+          )}
+
+          {/* Video result display */}
+          {videoResult && result.success && (
+            <VideoResultDisplay
+              videoUrl={videoResult.videoUrl}
+              coverUrl={videoResult.coverUrl}
+              videoPath={videoResult.videoPath}
+              duration={videoResult.duration}
+              aspectRatio={videoResult.aspectRatio}
             />
           )}
 
@@ -127,7 +141,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
           )}
 
           {/* Standard result output */}
-          {!imageResult && !generatedFileResult && !createdFilePath && (
+          {!imageResult && !videoResult && !generatedFileResult && !createdFilePath && (
             <pre
               className={`text-xs bg-gray-900/50 rounded-lg p-3 overflow-x-auto max-h-48 border transition-colors duration-200 ${
                 result.success
@@ -260,6 +274,33 @@ function extractGeneratedFile(toolCall: {
 
   if (filePath && fileName) {
     return { filePath, fileName };
+  }
+  return null;
+}
+
+function extractVideoResult(toolCall: {
+  name: string;
+  result?: { success: boolean; metadata?: Record<string, unknown> };
+}): {
+  videoUrl?: string;
+  coverUrl?: string;
+  videoPath?: string;
+  duration?: number;
+  aspectRatio?: string;
+} | null {
+  if (toolCall.name !== 'video_generate' || !toolCall.result?.success)
+    return null;
+  const metadata = toolCall.result.metadata;
+  if (!metadata) return null;
+
+  const videoUrl = metadata.videoUrl as string | undefined;
+  const coverUrl = metadata.coverUrl as string | undefined;
+  const videoPath = metadata.videoPath as string | undefined;
+  const duration = metadata.duration as number | undefined;
+  const aspectRatio = metadata.aspectRatio as string | undefined;
+
+  if (videoUrl || videoPath) {
+    return { videoUrl, coverUrl, videoPath, duration, aspectRatio };
   }
   return null;
 }
@@ -468,6 +509,151 @@ function FileResultDisplay({
           <Folder className="w-3 h-3" />
           Finder
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Video Result Display Component
+// ============================================================================
+
+interface VideoResultDisplayProps {
+  videoUrl?: string;
+  coverUrl?: string;
+  videoPath?: string;
+  duration?: number;
+  aspectRatio?: string;
+}
+
+function VideoResultDisplay({
+  videoUrl,
+  coverUrl,
+  videoPath,
+  duration,
+  aspectRatio,
+}: VideoResultDisplayProps) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [showCover, setShowCover] = useState(true);
+
+  const handleOpenFile = async () => {
+    if (videoPath) {
+      try {
+        await window.domainAPI?.invoke('workspace', 'openPath', {
+          filePath: videoPath,
+        });
+      } catch (error) {
+        console.error('Failed to open video:', error);
+      }
+    }
+  };
+
+  const handleShowInFolder = async () => {
+    if (videoPath) {
+      try {
+        await window.domainAPI?.invoke('workspace', 'showItemInFolder', {
+          filePath: videoPath,
+        });
+      } catch (error) {
+        console.error('Failed to show in folder:', error);
+      }
+    }
+  };
+
+  const handleDownload = () => {
+    if (videoUrl) {
+      window.open(videoUrl, '_blank');
+    }
+  };
+
+  const handlePlayInline = () => {
+    setShowCover(false);
+    setIsPlaying(true);
+  };
+
+  const fileName = videoPath?.split('/').pop() || 'video.mp4';
+  const infoText = [duration ? `${duration}s` : null, aspectRatio]
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 overflow-hidden">
+      {/* Video preview area */}
+      <div className="relative aspect-video bg-gray-900/50">
+        {showCover && coverUrl ? (
+          <>
+            <img
+              src={coverUrl}
+              alt="Video cover"
+              className="w-full h-full object-cover"
+            />
+            <button
+              onClick={handlePlayInline}
+              className="absolute inset-0 flex items-center justify-center bg-black/40 hover:bg-black/30 transition-colors"
+            >
+              <div className="w-16 h-16 rounded-full bg-cyan-500/90 flex items-center justify-center">
+                <Play className="w-8 h-8 text-white ml-1" />
+              </div>
+            </button>
+          </>
+        ) : videoUrl ? (
+          <video
+            src={videoUrl}
+            controls
+            autoPlay={isPlaying}
+            className="w-full h-full"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Video className="w-12 h-12 text-cyan-500/50" />
+          </div>
+        )}
+      </div>
+
+      {/* Info bar */}
+      <div className="flex items-center gap-2 p-2 bg-gray-900/50 border-t border-cyan-500/20">
+        <div className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-400">
+          <Video className="w-4 h-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs text-cyan-400 truncate font-medium">
+            {fileName}
+          </div>
+          {infoText && (
+            <div className="text-xs text-gray-500">{infoText}</div>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {videoUrl && (
+            <button
+              onClick={handleDownload}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 text-xs"
+              title="在浏览器中打开"
+            >
+              <Download className="w-3 h-3" />
+              下载
+            </button>
+          )}
+          {videoPath && (
+            <>
+              <button
+                onClick={handleOpenFile}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 text-xs"
+                title="用默认播放器打开"
+              >
+                <ExternalLink className="w-3 h-3" />
+                打开
+              </button>
+              <button
+                onClick={handleShowInFolder}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-600/50 text-xs"
+                title="在 Finder 中显示"
+              >
+                <Folder className="w-3 h-3" />
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

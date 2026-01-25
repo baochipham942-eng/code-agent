@@ -14,7 +14,8 @@ const logger = createLogger('ImageAnalyze');
 
 // 配置
 const CONFIG = {
-  MODEL: 'google/gemini-2.0-flash-001',
+  OPENROUTER_MODEL: 'google/gemini-2.0-flash-001',
+  ZHIPU_MODEL: 'glm-4.6v-flash', // 智谱免费视觉模型
   MAX_PARALLEL: 10,
   TIMEOUT_MS: 30000,
   SUPPORTED_FORMATS: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'],
@@ -121,7 +122,58 @@ async function callDirectOpenRouter(apiKey: string, body: unknown): Promise<Resp
 }
 
 /**
+ * 调用智谱视觉模型 API
+ */
+async function callZhipuVision(
+  apiKey: string,
+  base64Image: string,
+  mimeType: string,
+  prompt: string
+): Promise<string> {
+  const requestBody = {
+    model: CONFIG.ZHIPU_MODEL,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          {
+            type: 'image_url',
+            image_url: {
+              url: `data:${mimeType};base64,${base64Image}`,
+            },
+          },
+        ],
+      },
+    ],
+    max_tokens: 1024,
+  };
+
+  const response = await fetchWithTimeout(
+    'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+    },
+    CONFIG.TIMEOUT_MS
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`智谱视觉 API 错误: ${response.status} - ${error}`);
+  }
+
+  const result = await response.json();
+  return result.choices?.[0]?.message?.content || '';
+}
+
+/**
  * 调用视觉模型分析图片
+ * 优先级：智谱 > OpenRouter > 云端代理
  */
 async function analyzeImage(
   imagePath: string,
@@ -134,8 +186,58 @@ async function analyzeImage(
   const ext = path.extname(imagePath).toLowerCase();
   const mimeType = MIME_TYPES[ext] || 'image/jpeg';
 
+  const configService = getConfigService();
+
+  // 1. 优先尝试智谱视觉 API（GLM-4.6V-Flash 免费）
+  const zhipuApiKey = configService.getApiKey('zhipu');
+  if (zhipuApiKey) {
+    try {
+      logger.info('[图片分析] 使用智谱视觉模型 GLM-4.6V-Flash');
+      return await callZhipuVision(zhipuApiKey, base64Image, mimeType, prompt);
+    } catch (error: any) {
+      logger.warn('[图片分析] 智谱视觉 API 失败，尝试回退', { error: error.message });
+    }
+  }
+
+  // 2. 尝试 OpenRouter 本地 API Key
+  const openrouterApiKey = configService.getApiKey('openrouter');
+  if (openrouterApiKey) {
+    const requestBody = {
+      model: CONFIG.OPENROUTER_MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${base64Image}`,
+                detail,
+              },
+            },
+          ],
+        },
+      ],
+      max_tokens: 1024,
+    };
+
+    try {
+      logger.info('[图片分析] 使用 OpenRouter Gemini');
+      const directResponse = await callDirectOpenRouter(openrouterApiKey, requestBody);
+      if (directResponse.ok) {
+        const result = await directResponse.json();
+        return result.choices?.[0]?.message?.content || '';
+      }
+      logger.warn('[图片分析] OpenRouter 失败', { status: directResponse.status });
+    } catch (error: any) {
+      logger.warn('[图片分析] OpenRouter 错误', { error: error.message });
+    }
+  }
+
+  // 3. 回退到云端代理
   const requestBody = {
-    model: CONFIG.MODEL,
+    model: CONFIG.OPENROUTER_MODEL,
     messages: [
       {
         role: 'user',
@@ -154,35 +256,19 @@ async function analyzeImage(
     max_tokens: 1024,
   };
 
-  // 1. 优先尝试云端代理
   try {
+    logger.info('[图片分析] 使用云端代理');
     const cloudResponse = await callViaCloudProxy(requestBody);
     if (cloudResponse.ok) {
       const result = await cloudResponse.json();
       return result.choices?.[0]?.message?.content || '';
     }
-    logger.warn('Cloud proxy failed', { status: cloudResponse.status });
+    logger.warn('[图片分析] 云端代理失败', { status: cloudResponse.status });
   } catch (error: any) {
-    logger.warn('Cloud proxy error', { error: error.message });
+    logger.warn('[图片分析] 云端代理错误', { error: error.message });
   }
 
-  // 2. 回退到本地 API Key
-  const configService = getConfigService();
-  const apiKey = configService.getApiKey('openrouter');
-
-  if (!apiKey) {
-    throw new Error('OpenRouter API Key 未配置，且云端代理不可用');
-  }
-
-  const directResponse = await callDirectOpenRouter(apiKey, requestBody);
-
-  if (!directResponse.ok) {
-    const error = await directResponse.text();
-    throw new Error(`API 调用失败: ${error}`);
-  }
-
-  const result = await directResponse.json();
-  return result.choices?.[0]?.message?.content || '';
+  throw new Error('所有视觉 API 均不可用。请配置智谱或 OpenRouter API Key。');
 }
 
 /**

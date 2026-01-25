@@ -1,11 +1,120 @@
 // ============================================================================
-// Browser Action Tool - Comprehensive browser automation
+// Browser Action Tool - Comprehensive browser automation with AI vision
 // Available for all generations with tool calling capability
 // Playwright-based browser control for testing and automation
+// 支持智谱 GLM-4.6V-Flash 视觉分析
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { browserService } from '../../services/infra/browserService.js';
+import { getConfigService } from '../../services';
+import { createLogger } from '../../services/infra/logger';
+import * as fs from 'fs';
+
+const logger = createLogger('BrowserAction');
+
+// 视觉分析配置
+const VISION_CONFIG = {
+  ZHIPU_MODEL: 'glm-4.6v-flash',
+  ZHIPU_API_URL: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+  TIMEOUT_MS: 30000,
+};
+
+/**
+ * 带超时的 fetch
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * 使用智谱视觉模型分析截图
+ */
+async function analyzeWithVision(
+  imagePath: string,
+  prompt: string
+): Promise<string | null> {
+  const configService = getConfigService();
+  const zhipuApiKey = configService.getApiKey('zhipu');
+
+  if (!zhipuApiKey) {
+    logger.info('[浏览器截图分析] 未配置智谱 API Key，跳过视觉分析');
+    return null;
+  }
+
+  try {
+    // 读取图片并转 base64
+    const imageData = fs.readFileSync(imagePath);
+    const base64Image = imageData.toString('base64');
+
+    const requestBody = {
+      model: VISION_CONFIG.ZHIPU_MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:image/png;base64,${base64Image}`,
+              },
+            },
+          ],
+        },
+      ],
+      max_tokens: 2048,
+    };
+
+    logger.info('[浏览器截图分析] 使用智谱视觉模型 GLM-4.6V-Flash');
+
+    const response = await fetchWithTimeout(
+      VISION_CONFIG.ZHIPU_API_URL,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${zhipuApiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+      },
+      VISION_CONFIG.TIMEOUT_MS
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.warn('[浏览器截图分析] API 调用失败', { status: response.status, error: errorText });
+      return null;
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content;
+
+    if (content) {
+      logger.info('[浏览器截图分析] 分析完成', { contentLength: content.length });
+    }
+
+    return content || null;
+  } catch (error: any) {
+    logger.warn('[浏览器截图分析] 分析失败', { error: error.message });
+    return null;
+  }
+}
 
 type BrowserActionType =
   | 'launch'
@@ -55,7 +164,7 @@ Actions:
 - type: Type text into element
 - press_key: Press keyboard key (Enter, Tab, Escape, etc.)
 - scroll: Scroll page (up/down)
-- screenshot: Capture page screenshot
+- screenshot: Capture page screenshot (with optional AI analysis)
 - get_content: Get page text and links
 - get_elements: Find elements by selector
 - wait: Wait for element or timeout
@@ -71,6 +180,7 @@ Examples:
 - {"action": "click_text", "text": "Sign In"}
 - {"action": "type", "selector": "#search", "text": "hello"}
 - {"action": "screenshot"}
+- {"action": "screenshot", "analyze": true, "prompt": "描述页面内容"}
 - {"action": "get_content"}`,
   generations: ['gen6', 'gen7', 'gen8'],
   requiresPermission: true,
@@ -129,6 +239,14 @@ Examples:
         type: 'object',
         description: 'Form fields as {selector: value} pairs',
       },
+      analyze: {
+        type: 'boolean',
+        description: 'Enable AI analysis for screenshot action (default: false)',
+      },
+      prompt: {
+        type: 'string',
+        description: 'Custom prompt for AI analysis',
+      },
     },
     required: ['action'],
   },
@@ -148,6 +266,12 @@ Examples:
     const timeout = params.timeout as number | undefined;
     const fullPage = params.fullPage as boolean | undefined;
     const formData = params.formData as Record<string, string> | undefined;
+    const analyze = params.analyze as boolean | undefined;
+    const analysisPrompt = (params.prompt as string) || `请分析这个网页截图的内容，包括：
+1. 页面的主要用途和类型
+2. 可见的主要元素（按钮、链接、表单等）
+3. 关键的文字信息
+4. 当前的页面状态`;
 
     try {
       switch (action) {
@@ -274,9 +398,25 @@ Examples:
           if (!result.success) {
             return { success: false, error: result.error };
           }
+
+          let output = `Screenshot saved: ${result.path}`;
+
+          // 如果启用分析，进行视觉分析
+          if (analyze && result.path) {
+            logger.info('[浏览器截图] 启用视觉分析');
+            const analysis = await analyzeWithVision(result.path, analysisPrompt);
+            if (analysis) {
+              output += `\n\n📝 AI 分析结果:\n${analysis}`;
+            }
+          }
+
           return {
             success: true,
-            output: `Screenshot saved: ${result.path}\n(Base64 data available for processing)`,
+            output,
+            metadata: {
+              path: result.path,
+              analyzed: !!analyze,
+            },
           };
         }
 

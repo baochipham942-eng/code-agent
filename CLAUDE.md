@@ -701,6 +701,48 @@ image_analyze { "paths": ["img1.png", "img2.png", "img3.png"], "filter": "包含
 - 100 张图片 ≈ $0.001（几乎免费）
 - 最大并行处理 10 张
 
+### Gen5 视频生成
+
+`video_generate` 工具使用智谱 CogVideoX 模型生成视频：
+
+| 模式 | 说明 |
+|------|------|
+| 文生视频 | 根据文字描述生成视频 |
+| 图生视频 | 从起始图片生成视频 |
+
+**使用示例：**
+
+```bash
+# 文生视频
+video_generate { "prompt": "海浪拍打沙滩，日落余晖" }
+
+# 指定时长和宽高比
+video_generate { "prompt": "城市夜景延时", "aspect_ratio": "16:9", "duration": 10 }
+
+# 图生视频
+video_generate { "prompt": "人物缓慢走动", "image_url": "https://example.com/start.jpg" }
+
+# 保存到本地
+video_generate { "prompt": "科技感动画", "output_path": "./video.mp4" }
+```
+
+**参数说明：**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `prompt` | string | 视频描述（必填，支持中英文）|
+| `image_url` | string | 起始图片 URL（图生视频模式）|
+| `aspect_ratio` | string | 宽高比: "16:9", "9:16", "1:1"（默认 16:9）|
+| `quality` | string | 质量: "quality"（高质量）, "speed"（快速）|
+| `duration` | number | 时长: 5 或 10 秒（默认 5）|
+| `fps` | number | 帧率: 30 或 60（默认 30）|
+| `output_path` | string | 保存路径（不填返回 URL）|
+
+**注意：**
+- 视频生成需要 30-180 秒，是异步任务
+- 费用：约 1 元/次
+- 需要配置智谱 API Key
+
 ### Gen5 Word 文档生成
 
 `docx_generate` 工具生成 Word 文档（.docx），支持 Markdown 格式内容：
@@ -1571,6 +1613,68 @@ exit 0  # 允许
 - **MAJOR**: 架构重构 (0.4.0 → 1.0.0)
 
 代际版本 (v1.0-v8.0) 表示 Agent 能力等级，与应用版本独立。
+
+---
+
+## 智谱 vs DeepSeek 对比
+
+本应用支持智谱和 DeepSeek 两个基础模型提供商。如果配置了智谱 API Key，将优先使用智谱。
+
+### 价格对比（2025-01 更新）
+
+| 能力 | 智谱 GLM-4.7 | DeepSeek V3.2 | 说明 |
+|------|-------------|---------------|------|
+| 输入价格 | ¥2-4/M tokens | $0.28/M (~¥2/M) | 智谱按上下文长度分层 |
+| 输出价格 | ¥8-16/M tokens | $0.42/M (~¥3/M) | DeepSeek 更便宜 |
+| 缓存命中 | ¥0.4-0.8/M | $0.028/M (~¥0.2/M) | 缓存后 DeepSeek 优势明显 |
+| 免费模型 | GLM-4.7-Flash ✅ | ❌ | 智谱有免费快速模型 |
+| 上下文 | 200K | 128K | 智谱支持更长上下文 |
+
+### 功能对比
+
+| 功能 | 智谱 | DeepSeek | 备注 |
+|------|------|----------|------|
+| Tool Calls | ✅ | ✅ | 均支持 |
+| JSON Mode | ✅ | ✅ | 均支持 |
+| Streaming | ✅ | ✅ | 均支持 |
+| 视觉理解 | GLM-4.6V | ❌ | 智谱支持多模态 |
+| 图片生成 | CogView-4 (¥0.06/张) | ❌ | 智谱独有 |
+| 视频生成 | CogVideoX-3 (¥1/个) | ❌ | 智谱独有 |
+| 语音对话 | GLM-4-Voice | ❌ | 智谱独有 |
+| 思维链推理 | GLM-Z1 系列 | deepseek-reasoner | 均支持 |
+| FIM 补全 | ❌ | ✅ | DeepSeek 支持中间插入补全 |
+
+### 智谱 Coding 套餐
+
+智谱提供专用 Coding 套餐，使用独立端点 `https://open.bigmodel.cn/api/coding/paas/v4`：
+
+| 套餐 | Prompts/5小时 | 价格 | 特点 |
+|------|---------------|------|------|
+| Pro | 600 | 包月 | 基础版 |
+| Max | 2400 | 包年 | 含内置 MCP 服务器 |
+
+**Max 套餐内置 MCP 服务器：**
+- Vision（视觉识别）
+- Web Search（网络搜索）
+- Web Reader（网页读取）
+- Open Source Repo（开源仓库分析）
+
+### 推荐配置
+
+| 场景 | 推荐 | 原因 |
+|------|------|------|
+| 编程助手（高频使用） | 智谱 Coding Max | 固定成本，高速率 |
+| 多模态（图片/视频） | 智谱 | 独有能力 |
+| 长上下文处理 | 智谱 GLM-4.7 | 200K 上下文 |
+| 成本敏感（按量付费） | DeepSeek | 输出价格便宜 50%+ |
+| 推理能力 | DeepSeek Reasoner | 思维链更强 |
+
+### 兼容性说明
+
+1. **API 兼容性**：两者都兼容 OpenAI API 格式，切换只需改 baseUrl
+2. **Tool Calls 格式**：格式相同，无需适配
+3. **Streaming**：两者都支持 SSE 流式输出
+4. **错误码**：错误格式略有差异，已在 `modelRouter.ts` 中统一处理
 
 ---
 

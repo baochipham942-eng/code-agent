@@ -383,7 +383,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         id: 'glm-4v-plus',
         name: 'GLM-4V Plus (视觉)',
         capabilities: ['vision', 'gui'],
-        maxTokens: 8192, // 智谱文档: glm-4v-plus 最大 8192
+        maxTokens: 2048, // 实测: glm-4v-plus 实际最大只支持 2048，超过会报 1210 错误
         supportsTool: false,
         supportsVision: true,
         supportsStreaming: true,

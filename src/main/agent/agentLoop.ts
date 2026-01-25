@@ -1820,11 +1820,12 @@ export class AgentLoop {
 
               // 优先使用本地 API Key，本地没有且是管理员时才用云端代理
               const fallbackApiKey = configService.getApiKey(fallbackConfig.provider);
+              logger.info(`[Fallback] provider=${fallbackConfig.provider}, model=${fallbackConfig.model}, hasLocalKey=${!!fallbackApiKey}, isAdmin=${isAdmin}`);
 
               if (fallbackApiKey) {
                 // 本地有 API Key，优先使用本地
                 fallbackConfig.apiKey = fallbackApiKey;
-                logger.debug(`[Fallback] 主模型 ${this.modelConfig.model} 不支持 ${capability}，使用本地 ${fallbackConfig.provider} API Key 切换到 ${fallbackConfig.model}`);
+                logger.info(`[Fallback] 使用本地 ${fallbackConfig.provider} Key 切换到 ${fallbackConfig.model}`);
                 this.onEvent({
                   type: 'model_fallback',
                   data: {
@@ -1841,7 +1842,7 @@ export class AgentLoop {
               } else if (isAdmin) {
                 // 本地没有 API Key，但是管理员，使用云端代理
                 fallbackConfig.useCloudProxy = true;
-                logger.debug(`[Fallback] 主模型 ${this.modelConfig.model} 不支持 ${capability}，本地无 ${fallbackConfig.provider} Key，管理员使用云端代理 ${fallbackConfig.model}`);
+                logger.info(`[Fallback] 本地无 ${fallbackConfig.provider} Key，管理员使用云端代理 ${fallbackConfig.model}`);
                 this.onEvent({
                   type: 'model_fallback',
                   data: {
@@ -1857,7 +1858,7 @@ export class AgentLoop {
                 break;
               } else {
                 // 非管理员且未配置本地 Key，发送提示事件
-                logger.warn(`[Fallback] 备用模型 ${fallbackConfig.provider} 未配置 API Key，无法切换`);
+                logger.info(`[Fallback] 非管理员，${fallbackConfig.provider} 未配置 Key，无法切换`);
                 this.onEvent({
                   type: 'api_key_required',
                   data: {

@@ -214,6 +214,70 @@ async function waitForZhipuVideoCompletion(
 }
 
 /**
+ * 扩展视频 prompt，将简短描述转换为详细的视频生成提示词
+ */
+async function expandVideoPrompt(
+  apiKey: string,
+  shortPrompt: string
+): Promise<string> {
+  const systemPrompt = `你是一个专业的视频提示词优化师。将用户的简短描述扩展成适合 AI 视频生成的详细提示词。
+
+要求：
+1. 保持原意，但添加视觉细节（光线、色彩、氛围）
+2. 描述动作和运动方式
+3. 添加场景环境细节
+4. 控制在 100 字以内
+5. 直接输出优化后的提示词，不要解释
+
+示例：
+输入：一只柯基在跑
+输出：一只可爱的柯基犬在阳光明媚的草地上欢快奔跑，毛发随风飘动，短腿快速交替，尾巴摇摆，背景是蓝天白云和绿色草坪`;
+
+  try {
+    const response = await fetchWithTimeout(
+      'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'glm-4-flash',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: shortPrompt },
+          ],
+          max_tokens: 200,
+        }),
+      },
+      10000
+    );
+
+    if (!response.ok) {
+      logger.warn('[Prompt扩展] 失败，使用原始 prompt');
+      return shortPrompt;
+    }
+
+    const result = await response.json();
+    const expandedPrompt = result.choices?.[0]?.message?.content?.trim();
+
+    if (expandedPrompt) {
+      logger.info('[Prompt扩展] 成功', {
+        original: shortPrompt.substring(0, 30),
+        expanded: expandedPrompt.substring(0, 50)
+      });
+      return expandedPrompt;
+    }
+
+    return shortPrompt;
+  } catch (error) {
+    logger.warn('[Prompt扩展] 出错，使用原始 prompt', { error });
+    return shortPrompt;
+  }
+}
+
+/**
  * 使用智谱生成视频
  */
 async function generateVideoWithZhipu(
@@ -224,9 +288,13 @@ async function generateVideoWithZhipu(
   const aspectRatio = params.aspect_ratio || '16:9';
   const size = VIDEO_SIZES[aspectRatio] || VIDEO_SIZES['16:9'];
 
+  // 扩展 prompt
+  onProgress?.('✨ 优化视频描述...');
+  const expandedPrompt = await expandVideoPrompt(apiKey, params.prompt);
+
   // 提交任务
   const taskId = await submitZhipuVideoTask(apiKey, {
-    prompt: params.prompt,
+    prompt: expandedPrompt,
     imageUrl: params.image_url,
     size,
     quality: params.quality || 'quality',

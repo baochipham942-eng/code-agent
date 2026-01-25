@@ -761,27 +761,79 @@ export class ModelRouter {
 
   /**
    * 获取备用模型配置
+   * 优先使用同 provider 的能力模型（复用 API Key），其次使用默认 fallback
    */
   getFallbackConfig(
     capability: ModelCapability,
     originalConfig: ModelConfig
   ): ModelConfig | null {
+    // 1. 优先检查当前 provider 是否有支持该能力的模型
+    const sameProviderModel = this.findSameProviderFallback(
+      originalConfig.provider,
+      capability
+    );
+    if (sameProviderModel) {
+      console.log(
+        `[ModelRouter] 使用同 provider (${originalConfig.provider}) 的 ${capability} 模型: ${sameProviderModel}`
+      );
+      return {
+        ...originalConfig,
+        model: sameProviderModel,
+      };
+    }
+
+    // 2. 使用默认 fallback 配置
     const fallback = this.fallbackModels[capability];
     if (!fallback) return null;
 
-    // 如果备用模型需要 API Key，检查是否有配置
-    const providerConfig = PROVIDER_REGISTRY[fallback.provider];
-    if (providerConfig?.requiresApiKey) {
-      // OpenRouter 使用同一个 key，其他 provider 需要单独的 key
-      // 这里简化处理：如果是 openrouter，复用原 config 的 apiKey（假设用户已配置 openrouter）
-      // 实际使用中应该从配置服务获取对应 provider 的 key
-    }
+    console.log(
+      `[ModelRouter] 使用默认 fallback: ${fallback.provider}/${fallback.model}`
+    );
 
     return {
       ...originalConfig,
       provider: fallback.provider as ModelProvider,
       model: fallback.model,
     };
+  }
+
+  /**
+   * 查找同 provider 中支持指定能力的模型
+   * 返回模型 ID，如果没有找到返回 null
+   */
+  private findSameProviderFallback(
+    provider: ModelProvider,
+    capability: ModelCapability
+  ): string | null {
+    const providerConfig = PROVIDER_REGISTRY[provider];
+    if (!providerConfig) return null;
+
+    // 根据能力类型查找对应的模型
+    // 优先选择快速/便宜的模型
+    const capabilityToFlag: Partial<Record<ModelCapability, keyof typeof providerConfig.models[0]>> = {
+      vision: 'supportsVision',
+      // 其他能力可以扩展
+    };
+
+    const flag = capabilityToFlag[capability];
+    if (!flag) return null;
+
+    // 查找支持该能力的模型，优先选择名称包含 "flash" 或 "fast" 的
+    const supportingModels = providerConfig.models.filter(
+      (m) => m[flag] === true
+    );
+
+    if (supportingModels.length === 0) return null;
+
+    // 优先返回快速/便宜模型
+    const fastModel = supportingModels.find(
+      (m) =>
+        m.id.toLowerCase().includes('flash') ||
+        m.id.toLowerCase().includes('fast') ||
+        m.id.toLowerCase().includes('mini')
+    );
+
+    return fastModel?.id || supportingModels[0].id;
   }
 
   /**

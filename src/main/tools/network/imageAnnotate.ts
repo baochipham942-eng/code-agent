@@ -75,43 +75,29 @@ async function analyzeAndGetAnnotations(
   mimeType: string,
   query: string
 ): Promise<AnnotationResult> {
-  const systemPrompt = `你是一个图片分析专家。用户会上传图片并提问，请：
-1. 分析图片内容，回答用户问题
-2. 如果用户要求标记某个元素，请以 JSON 格式返回该元素的位置信息
+  // 注意：智谱视觉模型在有 system message 时可能拒绝处理某些图片
+  // 把所有指令放到 user message 中可以避免这个问题
+  const instruction = `请分析图片并完成以下任务：${query}
 
-位置信息格式：
+请返回 JSON 格式的区域位置信息：
 \`\`\`json
 {
   "regions": [
-    {
-      "type": "circle",  // circle, rectangle, arrow, highlight
-      "x": 100,          // 中心点 x 坐标 (像素)
-      "y": 200,          // 中心点 y 坐标 (像素)
-      "radius": 50,      // 圆形半径 (像素)
-      "label": "按钮"    // 标签文字
-    }
+    {"type": "rectangle", "x": 0, "y": 0, "width": 100, "height": 50, "label": "文字内容"}
   ]
 }
 \`\`\`
 
-坐标估算规则：
-- x, y 坐标从图片左上角开始，向右、向下为正
-- 根据图片比例和元素位置估算大致坐标
-- 如果无法准确定位，给出合理的估算值
-
-请先用自然语言描述图片内容和目标位置，然后在描述结尾附上 JSON 标注信息。`;
+坐标说明：x/y 从左上角开始，width/height 为区域大小（像素）。
+请在描述后附上 JSON 标注信息。`;
 
   const requestBody = {
     model: CONFIG.ZHIPU_MODEL,
     messages: [
       {
-        role: 'system',
-        content: systemPrompt,
-      },
-      {
         role: 'user',
         content: [
-          { type: 'text', text: query },
+          { type: 'text', text: instruction },
           {
             type: 'image_url',
             image_url: {

@@ -142,10 +142,16 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
   };
 
   const providers: { id: ModelProvider; name: string; description: string }[] = [
-    { id: 'deepseek', name: t.model.providers.deepseek.name, description: t.model.providers.deepseek.description },
-    { id: 'claude', name: t.model.providers.anthropic.name, description: t.model.providers.anthropic.description },
+    // 国外御三家
     { id: 'openai', name: t.model.providers.openai.name, description: t.model.providers.openai.description },
-    { id: 'openrouter', name: t.model.providers.openrouter?.name || 'OpenRouter', description: t.model.providers.openrouter?.description || '中转服务' },
+    { id: 'claude', name: t.model.providers.anthropic.name, description: t.model.providers.anthropic.description },
+    { id: 'gemini', name: t.model.providers.gemini?.name || 'Gemini', description: t.model.providers.gemini?.description || 'Google Gemini 2.5' },
+    // 国内梯队
+    { id: 'deepseek', name: t.model.providers.deepseek.name, description: t.model.providers.deepseek.description },
+    { id: 'zhipu', name: t.model.providers.zhipu?.name || '智谱 AI', description: t.model.providers.zhipu?.description || 'GLM-4 系列' },
+    { id: 'qwen', name: t.model.providers.qwen?.name || '通义千问', description: t.model.providers.qwen?.description || 'Qwen 模型' },
+    { id: 'moonshot', name: t.model.providers.moonshot?.name || 'Kimi', description: t.model.providers.moonshot?.description || 'Moonshot AI' },
+    { id: 'minimax', name: t.model.providers.minimax?.name || 'MiniMax', description: t.model.providers.minimax?.description || '海螺 AI' },
   ];
 
   const services: ServiceConfig[] = [
@@ -226,42 +232,75 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
         >
           {config.provider === 'deepseek' && (
             <>
-              <option value="deepseek-chat">DeepSeek Chat</option>
-              <option value="deepseek-coder">DeepSeek Coder</option>
+              <option value="deepseek-chat">DeepSeek V3.2 Chat (推荐)</option>
+              <option value="deepseek-reasoner">DeepSeek V3.2 Reasoner</option>
             </>
           )}
           {config.provider === 'claude' && (
             <>
+              <option value="claude-opus-4-5-20251124">Claude 4.5 Opus (最强)</option>
+              <option value="claude-sonnet-4-5-20251124">Claude 4.5 Sonnet (推荐)</option>
+              <option value="claude-haiku-4-5-20251124">Claude 4.5 Haiku (快速)</option>
+              <option value="claude-opus-4-1-20250805">Claude 4.1 Opus</option>
               <option value="claude-sonnet-4-20250514">Claude 4 Sonnet</option>
-              <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
-              <option value="claude-3-opus-20240229">Claude 3 Opus</option>
             </>
           )}
           {config.provider === 'openai' && (
             <>
-              <option value="gpt-4o">GPT-4o</option>
-              <option value="gpt-4-turbo">GPT-4 Turbo</option>
-              <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+              <optgroup label="GPT 系列">
+                <option value="gpt-4.1">GPT-4.1 (推荐)</option>
+                <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
+                <option value="gpt-4.1-nano">GPT-4.1 Nano (快速)</option>
+                <option value="gpt-4o">GPT-4o</option>
+              </optgroup>
+              <optgroup label="推理模型 (o 系列)">
+                <option value="o3">o3 (最强推理)</option>
+                <option value="o3-mini">o3 Mini</option>
+                <option value="o4-mini">o4 Mini (高性价比)</option>
+              </optgroup>
             </>
           )}
-          {config.provider === 'openrouter' && (
+          {config.provider === 'gemini' && (
             <>
-              <optgroup label="Google Gemini">
-                <option value="google/gemini-2.0-flash-001">Gemini 2.0 Flash</option>
-                <option value="google/gemini-2.0-flash-thinking-exp:free">Gemini 2.0 Flash Thinking (Free)</option>
-              </optgroup>
-              <optgroup label="Anthropic Claude">
-                <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                <option value="anthropic/claude-3.5-haiku">Claude 3.5 Haiku</option>
-              </optgroup>
-              <optgroup label="OpenAI">
-                <option value="openai/gpt-4o">GPT-4o</option>
-                <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
-              </optgroup>
-              <optgroup label="DeepSeek">
-                <option value="deepseek/deepseek-chat">DeepSeek Chat</option>
-                <option value="deepseek/deepseek-r1">DeepSeek R1</option>
-              </optgroup>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro (推荐)</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (最便宜)</option>
+              <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+            </>
+          )}
+          {config.provider === 'zhipu' && (
+            <>
+              <option value="glm-4.7">GLM-4.7 (最新)</option>
+              <option value="glm-4.6">GLM-4.6</option>
+              <option value="glm-4-plus">GLM-4 Plus</option>
+              <option value="glm-4-air">GLM-4 Air</option>
+              <option value="glm-4-flash">GLM-4 Flash (快速)</option>
+              <option value="glm-4.6v">GLM-4.6V (视觉)</option>
+            </>
+          )}
+          {config.provider === 'qwen' && (
+            <>
+              <option value="qwen3-max">Qwen3 Max (推荐)</option>
+              <option value="qwen-max-latest">Qwen Max Latest</option>
+              <option value="qwen-plus-latest">Qwen Plus Latest</option>
+              <option value="qwen3-coder">Qwen3 Coder</option>
+              <option value="qwen-vl-max">Qwen VL Max (视觉)</option>
+            </>
+          )}
+          {config.provider === 'moonshot' && (
+            <>
+              <option value="kimi-k2-turbo-preview">Kimi K2 Turbo (推荐)</option>
+              <option value="kimi-k2-thinking">Kimi K2 Thinking</option>
+              <option value="moonshot-v1-auto">Moonshot V1 Auto</option>
+              <option value="moonshot-v1-128k">Moonshot V1 128K</option>
+            </>
+          )}
+          {config.provider === 'minimax' && (
+            <>
+              <option value="MiniMax-M2">MiniMax M2 (推荐)</option>
+              <option value="MiniMax-M1">MiniMax M1</option>
+              <option value="MiniMax-Text-01">MiniMax Text-01</option>
+              <option value="abab7-preview">ABAB7 Preview</option>
             </>
           )}
         </Select>

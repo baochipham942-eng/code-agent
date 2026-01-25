@@ -27,19 +27,14 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.16.3',
-  publishedAt: '2026-01-25T00:00:00.000Z',
+  version: '0.16.4',
+  publishedAt: '2026-01-25T12:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.16.2
+## Code Agent v0.16.4
 
 ### 功能增强
-- 支持剪贴板粘贴图片（微信截图、QQ截图等）
-
-### Bug 修复
-- 修复复制用户消息再粘贴时末尾多出换行符的问题
-
-### 使用方式
-- 直接 Ctrl+V / Cmd+V 粘贴截图到输入框即可添加为附件
+- 视频下载直接保存到本地，无需打开浏览器
+- 优化图片工具描述，改善语义匹配
   `.trim(),
   forceUpdate: false, // 可选更新
   minRequiredVersion: '0.10.0',

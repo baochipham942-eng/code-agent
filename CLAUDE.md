@@ -2034,8 +2034,22 @@ Claude Code 使用 git worktree 机制：
 □ vercel-api/api/update.ts 已更新
 □ git push 推送到远程
 □ npm run dist:mac 打包
+□ 同步 .env 文件到应用: cp .env "/Applications/Code Agent.app/Contents/Resources/.env"
 □ 验证新版本可正常启动
 ```
+
+### ⚠️ 打包后必做
+
+**同步 .env 文件**（打包不会自动包含）：
+
+```bash
+cp /Users/linchen/Downloads/ai/code-agent/.env "/Applications/Code Agent.app/Contents/Resources/.env"
+```
+
+否则以下功能会失效：
+- SkillsMP 社区搜索（SKILLSMP_API_KEY）
+- Brave 搜索（BRAVE_API_KEY）
+- 各种 AI 模型 API Key
 
 ---
 

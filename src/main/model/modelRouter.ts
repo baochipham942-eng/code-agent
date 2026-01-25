@@ -858,7 +858,18 @@ export class ModelRouter {
       // 不再基于文件扩展名猜测，避免误判（如 HTML 文件名包含 .png 字样）
       if (Array.isArray(msg.content)) {
         const hasImage = msg.content.some((c) => c.type === 'image');
-        if (hasImage) capabilities.add('vision');
+        if (hasImage) {
+          // 检查是否是标注请求 - 如果用户想要在图片上画框/标注，应该使用主模型+工具
+          // 而不是 fallback 到视觉模型（视觉模型不支持工具调用）
+          const annotationKeywords = ['框', '圈', '标注', '标记', '画', 'annotate', 'mark', 'highlight', 'box'];
+          const isAnnotationRequest = annotationKeywords.some(kw => contentLower.includes(kw));
+
+          if (!isAnnotationRequest) {
+            // 纯图片理解请求，需要视觉能力
+            capabilities.add('vision');
+          }
+          // 如果是标注请求，不添加 vision capability，让主模型处理并调用 image_annotate 工具
+        }
       }
 
       // 检测推理需求（只在明确需要深度推理时触发，避免误判）

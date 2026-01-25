@@ -2161,6 +2161,14 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
               data: base64Data,
             },
           });
+
+          // 添加图片路径信息，以便工具（如 image_annotate）可以使用
+          if (attachment.path) {
+            contents.push({
+              type: 'text',
+              text: `📍 图片文件路径: ${attachment.path}`,
+            });
+          }
           break;
         }
 
@@ -2347,10 +2355,11 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
       for (const part of msg.content) {
         if (part.type === 'image') {
           hasImage = true;
-          // 将图片替换为文字说明
+          // 移除图片数据，但保留文字描述
+          // 注意：图片路径信息已经作为单独的 text 部分添加，会被保留
           newContent.push({
             type: 'text',
-            text: '[图片内容: 当前模型不支持图片分析，请配置 OPENROUTER_API_KEY 以启用视觉模型]',
+            text: '[用户上传了图片，但当前模型不支持直接处理图片。如需在图片上标注，请使用 image_annotate 工具并提供图片路径]',
           });
         } else {
           newContent.push(part);

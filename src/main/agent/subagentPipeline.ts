@@ -239,8 +239,6 @@ export class SubagentPipeline {
     parentConfig: PermissionConfig
   ): PermissionConfig {
     return {
-      name: childConfig.name,
-      description: childConfig.description,
       // 自动批准：取交集（更严格）
       autoApprove: {
         read: childConfig.autoApprove.read && parentConfig.autoApprove.read,

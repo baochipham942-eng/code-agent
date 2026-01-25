@@ -265,7 +265,24 @@ export class ConfigService {
   }
 
   getSettings(): AppSettings {
-    return { ...this.settings };
+    // Deep clone settings
+    const settings = JSON.parse(JSON.stringify(this.settings)) as AppSettings;
+
+    // Populate API keys from secure storage for UI display
+    const storage = getSecureStorage();
+    if (settings.models?.providers) {
+      for (const provider of Object.keys(settings.models.providers)) {
+        const apiKey = storage.getApiKey(provider);
+        if (apiKey) {
+          settings.models.providers[provider as keyof typeof settings.models.providers] = {
+            ...settings.models.providers[provider as keyof typeof settings.models.providers],
+            apiKey,
+          };
+        }
+      }
+    }
+
+    return settings;
   }
 
   /**
@@ -305,6 +322,20 @@ export class ConfigService {
       if (isProduction() && updates.permissions.devModeAutoApprove) {
         logger.warn('Ignoring devModeAutoApprove=true in production');
         updates.permissions.devModeAutoApprove = false;
+      }
+    }
+
+    // Extract and securely store API keys from model provider configs
+    if (updates.models?.providers) {
+      const storage = getSecureStorage();
+      for (const [provider, config] of Object.entries(updates.models.providers)) {
+        if (config && 'apiKey' in config && config.apiKey) {
+          // Store API key securely
+          storage.setApiKey(provider, config.apiKey);
+          logger.info('Stored API key to secure storage', { provider });
+          // Remove from config to avoid storing in plaintext
+          delete (config as Record<string, unknown>).apiKey;
+        }
       }
     }
 

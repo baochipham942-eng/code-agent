@@ -28,3 +28,4 @@ export { academicSearchTool } from './academicSearch';
 export { httpRequestTool } from './httpRequest';
 export { speechToTextTool } from './speechToText';
 export { textToSpeechTool } from './textToSpeech';
+export { imageAnnotateTool } from './imageAnnotate';

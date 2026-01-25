@@ -1907,6 +1907,29 @@ export class AgentLoop {
         modelMessages = this.stripImagesFromMessages(modelMessages);
       }
 
+      // 额外安全检查：确保主模型不支持视觉时，历史消息中不包含图片
+      // 这处理了以下场景：
+      // 1. 第一轮用户发送图片+标注请求，图片被移除，主模型调用 image_annotate 工具
+      // 2. 第二轮工具返回结果，但 buildModelMessages() 重新构建了包含图片的历史消息
+      // 3. 由于工具结果文本不含"标注"等关键词，needsToolForImage=false，图片没被移除
+      // 4. 主模型收到它不支持的图片数据 → API 错误
+      if (effectiveConfig === this.modelConfig) {
+        const mainModelInfo = this.modelRouter.getModelInfo(
+          this.modelConfig.provider,
+          this.modelConfig.model
+        );
+        if (!mainModelInfo?.supportsVision) {
+          // 检查消息中是否包含图片
+          const hasImages = modelMessages.some(msg =>
+            Array.isArray(msg.content) && msg.content.some((c: any) => c.type === 'image')
+          );
+          if (hasImages) {
+            logger.warn('[AgentLoop] 主模型不支持视觉，但历史消息中包含图片，移除图片避免 API 错误');
+            modelMessages = this.stripImagesFromMessages(modelMessages);
+          }
+        }
+      }
+
       // 检查 fallback 后的模型是否支持 tool calls
       // 如果不支持（如视觉模型 glm-4v-flash），需要清空工具列表避免 API 错误
       let effectiveTools = tools;

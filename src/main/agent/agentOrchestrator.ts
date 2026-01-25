@@ -801,9 +801,30 @@ export class AgentOrchestrator {
     logger.debug(`Using provider: ${selectedProvider}, model: ${selectedModel}`);
     logger.debug(`Is admin: ${isAdmin}`);
 
-    // 管理员使用云端代理，不需要本地 API Key
+    // 优先使用本地 API Key（无论是否管理员）
+    // 只有当本地 Key 不存在且是管理员时，才走云端代理
+    if (selectedApiKey) {
+      logger.info(`[模型选择] 使用本地 API Key: ${selectedProvider}`);
+      return {
+        provider: selectedProvider,
+        model: selectedModel,
+        apiKey: selectedApiKey,
+        temperature: 0.7,
+        maxTokens: 4096,
+      };
+    }
+
+    // 没有本地 Key，管理员走云端代理
     if (isAdmin) {
-      logger.info('Admin user detected, using cloud proxy');
+      // 云端代理支持的 provider（需要在 Vercel 环境变量中配置对应的 API Key）
+      const cloudSupportedProviders = ['deepseek', 'openrouter', 'openai', 'anthropic', 'zhipu', 'groq', 'qwen', 'moonshot'];
+      if (!cloudSupportedProviders.includes(selectedProvider)) {
+        // 不支持的 provider，回退到 deepseek
+        logger.warn(`[模型选择] 云端代理不支持 ${selectedProvider}，回退到 deepseek`);
+        selectedProvider = 'deepseek';
+        selectedModel = 'deepseek-chat';
+      }
+      logger.info(`[模型选择] 管理员使用云端代理: ${selectedProvider}`);
       return {
         provider: selectedProvider,
         model: selectedModel,
@@ -814,14 +835,12 @@ export class AgentOrchestrator {
       };
     }
 
-    // 非管理员使用本地 API Key
-    logger.debug(`API Key exists: ${!!selectedApiKey}`);
-    logger.debug(`API Key prefix: ${selectedApiKey?.substring(0, 10)}...`);
-
+    // 非管理员且没有 Key，报错
+    logger.warn(`[模型选择] 未配置 ${selectedProvider} API Key`);
     return {
       provider: selectedProvider,
       model: selectedModel,
-      apiKey: selectedApiKey,
+      apiKey: undefined,
       temperature: 0.7,
       maxTokens: 4096,
     };

@@ -535,6 +535,7 @@ function VideoResultDisplay({
 }: VideoResultDisplayProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [showCover, setShowCover] = useState(true);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const handleOpenFile = async () => {
     if (videoPath) {
@@ -560,9 +561,29 @@ function VideoResultDisplay({
     }
   };
 
-  const handleDownload = () => {
-    if (videoUrl) {
+  const handleDownload = async () => {
+    if (!videoUrl || isDownloading) return;
+
+    try {
+      setIsDownloading(true);
+      // 调用主进程下载视频到用户下载目录
+      const response = await window.domainAPI?.invoke('workspace', 'downloadFile', {
+        url: videoUrl,
+        filename: `video_${Date.now()}.mp4`,
+      });
+      const downloadResult = response?.data as { filePath?: string } | undefined;
+      if (downloadResult?.filePath) {
+        // 下载成功，在 Finder 中显示
+        await window.domainAPI?.invoke('workspace', 'showItemInFolder', {
+          filePath: downloadResult.filePath,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to download video:', error);
+      // 下载失败时回退到浏览器打开
       window.open(videoUrl, '_blank');
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -627,11 +648,16 @@ function VideoResultDisplay({
           {videoUrl && (
             <button
               onClick={handleDownload}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 text-xs"
-              title="在浏览器中打开"
+              disabled={isDownloading}
+              className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs ${
+                isDownloading
+                  ? 'bg-cyan-500/10 text-cyan-400/50 cursor-wait'
+                  : 'bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30'
+              }`}
+              title="下载到本地"
             >
-              <Download className="w-3 h-3" />
-              下载
+              <Download className={`w-3 h-3 ${isDownloading ? 'animate-pulse' : ''}`} />
+              {isDownloading ? '下载中...' : '下载'}
             </button>
           )}
           {videoPath && (

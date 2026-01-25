@@ -37,6 +37,8 @@ export interface InputAreaProps {
   onSubmit: () => void;
   /** 文件选择回调 */
   onFileSelect: (files: FileList) => void;
+  /** 图片粘贴回调 */
+  onImagePaste?: (file: File) => void;
   /** 是否禁用 */
   disabled?: boolean;
   /** 是否有附件 */
@@ -70,6 +72,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       onChange,
       onSubmit,
       onFileSelect,
+      onImagePaste,
       disabled = false,
       hasAttachments = false,
       isFocused,
@@ -106,6 +109,23 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
         e.preventDefault();
         onSubmit();
       }
+    };
+
+    // 处理粘贴事件 - 支持从剪贴板粘贴图片（如微信截图）
+    const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = e.clipboardData.items;
+      for (const item of Array.from(items)) {
+        // 检查是否是图片类型
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file && onImagePaste) {
+            e.preventDefault();
+            onImagePaste(file);
+            return;
+          }
+        }
+      }
+      // 非图片内容，让默认粘贴行为继续
     };
 
     // 点击附件按钮
@@ -167,6 +187,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           onFocus={() => onFocusChange(true)}
           onBlur={() => onFocusChange(false)}
           placeholder={placeholder ?? (hasAttachments ? '添加描述...' : '描述你想解决的问题...')}

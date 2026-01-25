@@ -54,9 +54,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   // 处理提交
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if ((value.trim() || attachments.length > 0) && !disabled) {
+    const trimmedValue = value.trim();
+    if ((trimmedValue || attachments.length > 0) && !disabled) {
       onSend(
-        value,
+        trimmedValue,
         attachments.length > 0 ? attachments : undefined
       );
       setValue('');
@@ -75,6 +76,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       setAttachments((prev) => [...prev, ...newAttachments].slice(0, UI.MAX_ATTACHMENTS_FILE_SELECT));
     }
   };
+
+  // 处理图片粘贴（如微信截图）
+  const handleImagePaste = useCallback(async (file: File) => {
+    const attachment = await processFile(file);
+    if (attachment) {
+      setAttachments((prev) => [...prev, attachment].slice(0, UI.MAX_ATTACHMENTS_FILE_SELECT));
+    }
+  }, [processFile]);
 
   // 拖放处理
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -192,6 +201,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             onChange={setValue}
             onSubmit={handleSubmit}
             onFileSelect={handleFileSelect}
+            onImagePaste={handleImagePaste}
             disabled={disabled}
             hasAttachments={attachments.length > 0}
             isFocused={isFocused}

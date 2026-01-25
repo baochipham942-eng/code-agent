@@ -50,7 +50,7 @@ export const GEN8_TOOLS = `
 #### 多 Agent 协作
 - **spawn_agent**: 创建专门的子代理
 - **agent_message**: 与子代理通信
-- **workflow_orchestrate**: 执行多 Agent 工作流
+- **workflow_orchestrate**: 协调多 Agent 完成需要多步骤协作的任务
 
 #### 自我进化
 - **strategy_optimize**: 创建、追踪和优化工作策略

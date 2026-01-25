@@ -48,9 +48,9 @@ export const GEN7_TOOLS = `
 - **browser_action**: 控制浏览器
 
 #### 多 Agent 协作
-- **spawn_agent**: 创建专门的子代理（coder、reviewer、tester、architect、debugger、documenter）
+- **spawn_agent**: 创建专门的子代理
 - **agent_message**: 与子代理通信
-- **workflow_orchestrate**: 执行预定义的多 Agent 工作流
+- **workflow_orchestrate**: 协调多 Agent 完成需要多步骤协作的任务
 
 ### 能力边界
 

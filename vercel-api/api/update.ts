@@ -27,14 +27,15 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.16.5',
-  publishedAt: '2026-01-25T12:00:00.000Z',
+  version: '0.16.6',
+  publishedAt: '2026-01-25T20:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.16.4
+## Code Agent v0.16.6
 
-### 功能增强
-- 视频下载直接保存到本地，无需打开浏览器
-- 优化图片工具描述，改善语义匹配
+### Bug 修复
+- 修复多 Agent 图片工作流中视觉模型调用问题
+- 修复 subagent 对不支持 tool calls 模型的检查
+- 修复图片附件传递到子 Agent 的问题
   `.trim(),
   forceUpdate: false, // 可选更新
   minRequiredVersion: '0.10.0',

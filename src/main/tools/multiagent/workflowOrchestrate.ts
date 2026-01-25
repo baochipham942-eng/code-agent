@@ -495,6 +495,16 @@ Overall Task: ${task}${contextFromPrevious}`;
       });
     }
 
+    // Pass attachments to subagent for multimodal processing (e.g., images for vision models)
+    const attachments = context.currentAttachments;
+    if (attachments && attachments.length > 0) {
+      logger.info('[Stage] Passing attachments to subagent', {
+        stage: stage.name,
+        attachmentCount: attachments.length,
+        types: attachments.map(a => a.type),
+      });
+    }
+
     const result = await executor.execute(
       fullPrompt,
       {
@@ -509,6 +519,8 @@ Overall Task: ${task}${contextFromPrevious}`;
           context.toolRegistry!.getAllTools().map((t) => [t.name, t])
         ),
         toolContext: context,
+        // Pass attachments for multimodal support
+        attachments: attachments,
       }
     );
 

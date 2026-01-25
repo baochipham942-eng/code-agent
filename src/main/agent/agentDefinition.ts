@@ -349,12 +349,12 @@ Guidelines:
 - 只做理解和分析，不做图片编辑
 - 如果用户需要编辑图片（标注、裁剪等），告知需要使用视觉处理 Agent
 - 尽可能详细地描述你看到的内容`,
-    tools: ['image_analyze'],  // 只使用分析工具，不包含编辑工具
-    maxIterations: 10,
+    tools: [],  // 视觉模型不支持 tool calls，直接输出分析结果
+    maxIterations: 5,  // 视觉理解通常只需一轮
     permissionPreset: 'development',
     modelOverride: {
       provider: 'zhipu',
-      model: 'glm-4v-flash',  // 使用视觉模型
+      model: 'glm-4v-flash',  // 使用视觉模型（不支持 tool calls）
     },
     tags: ['vision', 'analysis', 'ocr', 'understanding'],
     canSpawnSubagents: false,

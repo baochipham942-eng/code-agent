@@ -1791,8 +1791,11 @@ export class AgentLoop {
 
     try {
       // 检测任务是否需要特殊能力，如果主模型不支持则自动切换
+      // 重要：只检测当前 turn 的消息（最后一条用户消息），避免历史消息中的图片导致后续所有请求都 fallback 到视觉模型
       let effectiveConfig = this.modelConfig;
-      const requiredCapabilities = this.modelRouter.detectRequiredCapabilities(modelMessages);
+      const lastUserMessage = modelMessages.filter(m => m.role === 'user').pop();
+      const currentTurnMessages = lastUserMessage ? [lastUserMessage] : [];
+      const requiredCapabilities = this.modelRouter.detectRequiredCapabilities(currentTurnMessages);
       let needsVisionFallback = false;
       let visionFallbackSucceeded = false;
 

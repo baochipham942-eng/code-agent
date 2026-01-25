@@ -2326,7 +2326,8 @@ export class ModelRouter {
       requestBody.tool_choice = 'auto';
     }
 
-    logger.info(`[智谱] 请求: model=${requestBody.model}, stream=true`);
+    logger.info(`[智谱] 请求: model=${requestBody.model}, max_tokens=${requestBody.max_tokens}, stream=true`);
+    logger.debug(`[智谱] 完整请求体:`, JSON.stringify(requestBody).substring(0, 500));
 
     // 使用原生 https 模块处理流式响应（electronFetch 基于 axios 不支持流式 body）
     return this.callZhipuStream(baseUrl, requestBody, config.apiKey!, onStream);
@@ -2364,7 +2365,11 @@ export class ModelRouter {
         agent: httpsAgent,
       };
 
+      logger.debug(`[智谱] 发起请求到: ${url.hostname}${url.pathname}`);
+
       const req = httpModule.request(options, (res) => {
+        logger.debug(`[智谱] 响应状态码: ${res.statusCode}`);
+
         if (res.statusCode !== 200) {
           let errorData = '';
           res.on('data', (chunk) => { errorData += chunk; });
@@ -2435,6 +2440,7 @@ export class ModelRouter {
                   // 处理文本内容
                   if (delta.content) {
                     content += delta.content;
+                    logger.debug(`[智谱] 收到文本块: "${delta.content.substring(0, 30)}..."`);
                     // 发送文本流式更新
                     if (onStream) {
                       onStream({ type: 'text', content: delta.content });

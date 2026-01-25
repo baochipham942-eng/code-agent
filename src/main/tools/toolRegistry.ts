@@ -46,6 +46,8 @@ import {
   screenshotPageTool,
   academicSearchTool,
   httpRequestTool,
+  speechToTextTool,
+  textToSpeechTool,
 } from './network';
 import { skillMetaTool } from './skill';
 import {
@@ -197,6 +199,8 @@ export class ToolRegistry {
     this.register(imageProcessTool);
     this.register(screenshotPageTool);
     this.register(academicSearchTool);
+    this.register(speechToTextTool);
+    this.register(textToSpeechTool);
 
     // Gen 4 tools - HTTP API
     this.register(httpRequestTool);

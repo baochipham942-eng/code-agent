@@ -15,6 +15,11 @@ import {
 import type { AgentDefinition, DynamicAgentConfig } from './agentDefinition';
 import type { PermissionPreset } from '../services/core/permissionPresets';
 import { PROVIDER_REGISTRY } from '../model/modelRouter';
+import {
+  normalizeImageData,
+  type ImageAttachmentInput,
+  type NormalizedImageData,
+} from '../utils/imageUtils';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -139,7 +144,11 @@ export class SubagentExecutor {
     ];
 
     // Build user message content (potentially multimodal)
-    const imageAttachments = context.attachments?.filter(att => att.type === 'image') || [];
+    // 使用 normalizeImageData 统一处理图片数据格式
+    const imageAttachments = context.attachments?.filter(
+      att => att.type === 'image' || att.category === 'image'
+    ) || [];
+
     if (imageAttachments.length > 0) {
       // Multimodal message with images
       const multimodalContent: MessageContent[] = [];
@@ -147,42 +156,51 @@ export class SubagentExecutor {
       // Add text first
       multimodalContent.push({ type: 'text', text: prompt });
 
-      // Add images
+      // Add images using normalized data
+      let successCount = 0;
       for (const img of imageAttachments) {
-        if (img.data) {
-          // Base64 data
-          const mimeType = img.mimeType || 'image/png';
+        // 使用统一的图片数据规范化函数
+        // 这会正确处理：
+        // 1. data URL (data:image/png;base64,xxx) - 提取纯 base64
+        // 2. 纯 base64 字符串 - 直接使用
+        // 3. 文件路径 - 读取文件并转换为 base64
+        const normalized = normalizeImageData(img.data, img.path, img.mimeType);
+
+        if (normalized) {
           multimodalContent.push({
             type: 'image',
             source: {
               type: 'base64',
-              media_type: mimeType,
-              data: img.data,
+              media_type: normalized.mimeType,
+              data: normalized.base64,
             }
           });
-        } else if (img.path) {
-          // Load image from path
-          try {
-            const fs = require('fs');
-            const imageData = fs.readFileSync(img.path);
-            const base64 = imageData.toString('base64');
-            const mimeType = img.mimeType || (img.path.endsWith('.png') ? 'image/png' : 'image/jpeg');
+          successCount++;
+
+          // 如果图片有路径，添加路径信息供工具使用
+          if (normalized.path || img.path) {
             multimodalContent.push({
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mimeType,
-                data: base64,
-              }
+              type: 'text',
+              text: `📍 图片文件路径: ${normalized.path || img.path}`,
             });
-          } catch (err) {
-            logger.warn(`[${config.name}] Failed to load image from ${img.path}:`, err);
           }
+
+          logger.debug(`[${config.name}] Added image`, {
+            mimeType: normalized.mimeType,
+            dataLength: normalized.base64.length,
+            path: normalized.path,
+          });
+        } else {
+          logger.warn(`[${config.name}] Failed to normalize image data`, {
+            hasData: !!img.data,
+            dataLength: img.data?.length,
+            path: img.path,
+          });
         }
       }
 
       messages.push({ role: 'user', content: multimodalContent });
-      logger.info(`[${config.name}] Built multimodal message with ${imageAttachments.length} images`);
+      logger.info(`[${config.name}] Built multimodal message with ${successCount}/${imageAttachments.length} images`);
     } else {
       // Text-only message
       messages.push({ role: 'user', content: prompt });

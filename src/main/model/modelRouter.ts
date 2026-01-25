@@ -2268,27 +2268,206 @@ export class ModelRouter {
 
     logger.info(`[智谱] 请求: model=${requestBody.model}, stream=true`);
 
-    const response = await electronFetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify(requestBody),
+    // 使用原生 https 模块处理流式响应（electronFetch 基于 axios 不支持流式 body）
+    return this.callZhipuStream(baseUrl, requestBody, config.apiKey!, onStream);
+  }
+
+  /**
+   * 智谱流式 API 调用（使用原生 https 模块）
+   */
+  private async callZhipuStream(
+    baseUrl: string,
+    requestBody: Record<string, unknown>,
+    apiKey: string,
+    onStream?: StreamCallback
+  ): Promise<ModelResponse> {
+    return new Promise((resolve, reject) => {
+      const url = new URL(`${baseUrl}/chat/completions`);
+      const isHttps = url.protocol === 'https:';
+      const httpModule = isHttps ? https : http;
+
+      // 累积响应数据
+      let content = '';
+      let finishReason: string | undefined;
+      const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
+
+      const options: https.RequestOptions = {
+        hostname: url.hostname,
+        port: url.port || (isHttps ? 443 : 80),
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+          Accept: 'text/event-stream',
+        },
+        agent: httpsAgent,
+      };
+
+      const req = httpModule.request(options, (res) => {
+        if (res.statusCode !== 200) {
+          let errorData = '';
+          res.on('data', (chunk) => { errorData += chunk; });
+          res.on('end', () => {
+            logger.error(`[智谱] API 错误: ${res.statusCode}`, errorData);
+            reject(new Error(`智谱 API error: ${res.statusCode} - ${errorData}`));
+          });
+          return;
+        }
+
+        let buffer = '';
+
+        res.on('data', (chunk: Buffer) => {
+          buffer += chunk.toString();
+
+          // 处理 SSE 数据行
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // 保留不完整的行
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6).trim();
+
+              if (data === '[DONE]') {
+                // 流式输出完成
+                const truncated = finishReason === 'length';
+                const result: ModelResponse = {
+                  type: toolCalls.size > 0 ? 'tool_use' : 'text',
+                  content: content || undefined,
+                  truncated,
+                  finishReason,
+                };
+
+                if (toolCalls.size > 0) {
+                  result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
+                    id: tc.id,
+                    name: tc.name,
+                    arguments: this.safeJsonParse(tc.arguments),
+                  }));
+                }
+
+                logger.info('[智谱] stream complete:', {
+                  contentLength: content.length,
+                  toolCallCount: toolCalls.size,
+                  finishReason,
+                  truncated,
+                });
+
+                if (truncated) {
+                  logger.warn('[智谱] ⚠️ Output was truncated due to max_tokens limit!');
+                }
+
+                resolve(result);
+                return;
+              }
+
+              try {
+                const parsed = JSON.parse(data);
+                const choice = parsed.choices?.[0];
+                const delta = choice?.delta;
+
+                // 捕获 finish_reason
+                if (choice?.finish_reason) {
+                  finishReason = choice.finish_reason;
+                }
+
+                if (delta) {
+                  // 处理文本内容
+                  if (delta.content) {
+                    content += delta.content;
+                    // 发送文本流式更新
+                    if (onStream) {
+                      onStream({ type: 'text', content: delta.content });
+                    }
+                  }
+
+                  // 处理工具调用
+                  if (delta.tool_calls) {
+                    for (const tc of delta.tool_calls) {
+                      const index = tc.index ?? 0;
+                      const isNewToolCall = !toolCalls.has(index);
+
+                      if (isNewToolCall) {
+                        toolCalls.set(index, {
+                          id: tc.id || `call_${index}`,
+                          name: tc.function?.name || '',
+                          arguments: '',
+                        });
+                        // 发送新工具调用开始事件
+                        if (onStream) {
+                          onStream({
+                            type: 'tool_call_start',
+                            toolCall: {
+                              index,
+                              id: tc.id || `call_${index}`,
+                              name: tc.function?.name || '',
+                            },
+                          });
+                        }
+                      }
+
+                      // 累积参数
+                      if (tc.function?.arguments) {
+                        const existing = toolCalls.get(index)!;
+                        existing.arguments += tc.function.arguments;
+                        // 发送参数流式更新
+                        if (onStream) {
+                          onStream({
+                            type: 'tool_call_delta',
+                            toolCall: {
+                              index,
+                              argumentsDelta: tc.function.arguments,
+                            },
+                          });
+                        }
+                      }
+                    }
+                  }
+                }
+              } catch {
+                // 忽略解析错误，继续处理下一行
+              }
+            }
+          }
+        });
+
+        res.on('end', () => {
+          // 如果没有收到 [DONE]，也返回结果
+          if (content || toolCalls.size > 0) {
+            const result: ModelResponse = {
+              type: toolCalls.size > 0 ? 'tool_use' : 'text',
+              content: content || undefined,
+              finishReason,
+            };
+
+            if (toolCalls.size > 0) {
+              result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
+                id: tc.id,
+                name: tc.name,
+                arguments: this.safeJsonParse(tc.arguments),
+              }));
+            }
+
+            resolve(result);
+          } else {
+            reject(new Error('[智谱] 流式响应无内容'));
+          }
+        });
+
+        res.on('error', (err) => {
+          logger.error('[智谱] 响应错误:', err);
+          reject(err);
+        });
+      });
+
+      req.on('error', (err) => {
+        logger.error('[智谱] 请求错误:', err);
+        reject(err);
+      });
+
+      req.write(JSON.stringify(requestBody));
+      req.end();
     });
-
-    if (!response.ok) {
-      const error = await response.text();
-      logger.error(`[智谱] API 错误: ${response.status}`, error);
-      throw new Error(`智谱 API error: ${response.status} - ${error}`);
-    }
-
-    // 智谱总是使用流式处理
-    if (response.body) {
-      return this.handleStream(response.body, onStream);
-    }
-
-    throw new Error('智谱 API 响应无 body');
   }
 
   // --------------------------------------------------------------------------

@@ -27,26 +27,17 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.10.3',
-  publishedAt: '2026-01-24T00:00:00.000Z',
+  version: '0.16.1',
+  publishedAt: '2026-01-25T00:00:00.000Z',
   releaseNotes: `
-## Code Agent v0.10.3
+## Code Agent v0.16.1
 
 ### 功能增强
-- 新增密码重置功能（忘记密码）
-- 新增记住密码功能
-- 新增实现计划面板入口
-- 改进生成文件的路径显示和快速操作
+- 支持剪贴板粘贴图片（微信截图、QQ截图等）
+- 修复复制消息内容粘贴时多出换行符的问题
 
-### 架构重构
-- 借鉴 Claude Agent SDK 设计理念重构核心架构
-- 新增 Budget 预算追踪功能
-- 新增结构化输出支持
-- 运维 API 整合（health/init-db/migrate）
-
-### 工作目录改进
-- 改进工作目录处理逻辑
-- 移除硬编码限制
+### 使用方式
+- 直接 Ctrl+V / Cmd+V 粘贴截图到输入框即可添加为附件
   `.trim(),
   forceUpdate: false, // 可选更新
   minRequiredVersion: '0.10.0',

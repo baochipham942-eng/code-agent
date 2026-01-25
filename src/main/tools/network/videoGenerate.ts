@@ -255,30 +255,16 @@ async function downloadVideo(url: string, outputPath: string): Promise<void> {
 
 export const videoGenerateTool: Tool = {
   name: 'video_generate',
-  description: `生成 AI 视频。
-
-使用智谱 CogVideoX 模型生成视频。支持文生视频和图生视频两种模式。
+  description: `生成 AI 视频。支持文生视频和图生视频。
 
 参数：
 - prompt: 视频描述（支持中英文）
-- image_url: 起始图片 URL（可选，用于图生视频）
-- aspect_ratio: 宽高比 "16:9" | "9:16" | "1:1"（默认 16:9）
-- quality: 质量 "quality" | "speed"（默认 quality）
-- duration: 时长 5 | 10 秒（默认 5）
-- fps: 帧率 30 | 60（默认 30）
+- image_url: 起始图片 URL（可选，图生视频）
+- aspect_ratio: "16:9"(1920x1080) | "9:16"(1080x1920) | "1:1"(1024x1024)，默认 16:9
+- duration: 5 | 10 秒（默认 5）
 - output_path: 保存路径（可选）
 
-示例：
-\`\`\`
-video_generate { "prompt": "海浪拍打沙滩，日落余晖" }
-video_generate { "prompt": "城市夜景延时", "aspect_ratio": "16:9", "duration": 10 }
-video_generate { "prompt": "人物走动", "image_url": "https://example.com/start.jpg" }
-\`\`\`
-
-注意：
-- 视频生成需要 30-180 秒，请耐心等待
-- 费用：约 1 元/次
-- 需要配置智谱 API Key`,
+生成需要 30-180 秒。`,
   generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',

@@ -1898,6 +1898,27 @@ curl -X POST "https://<your-fc-trigger-url>" \
    - AWS: `AKIA*`, `ASIA*`
 4. 如果历史提交已包含问题字符串，需要用 `git filter-branch` 重写历史
 
+### 模型能力定义不完整
+**问题**: 调用视觉模型时反复出错（模型名错误、参数格式不支持等）
+**根本原因**: `ModelInfo` 类型只定义了基础能力（supportsTool, supportsVision），缺少关键细节：
+- 图片输入格式支持（base64 vs URL）
+- 各参数的具体限制（如 glm-4v-flash 的 max_tokens 只有 1024）
+- 模型间的能力差异（glm-4v-flash 不支持 base64，只有 glm-4v-plus 支持）
+
+**当前临时方案**: 在工具代码中硬编码模型选择（如 imageAnnotate 用 glm-4v-plus）
+
+**TODO - 架构改进**:
+1. 扩展 `ModelInfo` 类型，添加 `visionInputFormats?: ('base64' | 'url')[]` 字段
+2. 在 modelRouter.ts 中为所有视觉模型补充完整的能力定义
+3. 工具代码根据 ModelInfo 动态选择正确的输入格式和参数
+4. 建立模型能力文档，记录各厂商 API 的差异和限制
+
+**相关文件**:
+- `src/shared/types/model.ts` - ModelInfo 类型定义
+- `src/main/model/modelRouter.ts` - 模型配置
+- `src/main/tools/network/imageAnnotate.ts` - 图片标注工具
+- `src/main/tools/network/imageAnalyze.ts` - 图片分析工具
+
 ---
 
 ## Git 分支开发流程

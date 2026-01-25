@@ -1919,7 +1919,10 @@ export class ModelRouter {
   private parseOpenAIResponse(data: any): ModelResponse {
     const choice = data.choices?.[0];
     if (!choice) {
-      throw new Error('No response from model');
+      // 提供更详细的错误信息
+      const dataPreview = JSON.stringify(data).substring(0, 200);
+      logger.error('[parseOpenAIResponse] No choices in response:', dataPreview);
+      throw new Error(`No response from model. Response: ${dataPreview}`);
     }
 
     const message = choice.message;
@@ -2272,6 +2275,7 @@ export class ModelRouter {
 
     if (!response.ok) {
       const error = await response.text();
+      logger.error(`[智谱] API 错误: ${response.status}`, error);
       throw new Error(`智谱 API error: ${response.status} - ${error}`);
     }
 
@@ -2280,6 +2284,14 @@ export class ModelRouter {
     }
 
     const data = await response.json();
+    logger.debug('[智谱] API 响应:', JSON.stringify(data).substring(0, 500));
+
+    // 检查智谱特有的错误格式
+    if (data.error) {
+      const errMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
+      throw new Error(`智谱 API error: ${errMsg}`);
+    }
+
     return this.parseOpenAIResponse(data);
   }
 

@@ -1,14 +1,119 @@
 // ============================================================================
-// Screenshot Page Tool - 网页截图工具
+// Screenshot Page Tool - 网页截图工具（支持视觉分析）
 // 使用 Electron webContents 或外部 API 截图
+// 支持智谱 GLM-4.6V-Flash 视觉分析
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../../services/infra/logger';
+import { getConfigService } from '../../services';
 
 const logger = createLogger('ScreenshotPage');
+
+// 视觉分析配置
+const VISION_CONFIG = {
+  ZHIPU_MODEL: 'glm-4.6v-flash',
+  ZHIPU_API_URL: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+  TIMEOUT_MS: 30000,
+};
+
+/**
+ * 带超时的 fetch
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * 使用智谱视觉模型分析截图
+ */
+async function analyzeWithVision(
+  imagePath: string,
+  prompt: string
+): Promise<string | null> {
+  const configService = getConfigService();
+  const zhipuApiKey = configService.getApiKey('zhipu');
+
+  if (!zhipuApiKey) {
+    logger.info('[网页截图分析] 未配置智谱 API Key，跳过视觉分析');
+    return null;
+  }
+
+  try {
+    // 读取图片并转 base64
+    const imageData = fs.readFileSync(imagePath);
+    const base64Image = imageData.toString('base64');
+
+    const requestBody = {
+      model: VISION_CONFIG.ZHIPU_MODEL,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:image/png;base64,${base64Image}`,
+              },
+            },
+          ],
+        },
+      ],
+      max_tokens: 2048,
+    };
+
+    logger.info('[网页截图分析] 使用智谱视觉模型 GLM-4.6V-Flash');
+
+    const response = await fetchWithTimeout(
+      VISION_CONFIG.ZHIPU_API_URL,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${zhipuApiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+      },
+      VISION_CONFIG.TIMEOUT_MS
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.warn('[网页截图分析] API 调用失败', { status: response.status, error: errorText });
+      return null;
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content;
+
+    if (content) {
+      logger.info('[网页截图分析] 分析完成', { contentLength: content.length });
+    }
+
+    return content || null;
+  } catch (error: any) {
+    logger.warn('[网页截图分析] 分析失败', { error: error.message });
+    return null;
+  }
+}
 
 interface ScreenshotPageParams {
   url: string;
@@ -18,6 +123,8 @@ interface ScreenshotPageParams {
   full_page?: boolean;
   format?: 'png' | 'jpg';
   delay?: number;
+  analyze?: boolean;
+  prompt?: string;
 }
 
 /**
@@ -118,15 +225,18 @@ async function screenshotViaThumio(
 
 export const screenshotPageTool: Tool = {
   name: 'screenshot_page',
-  description: `截取网页屏幕截图。
+  description: `截取网页屏幕截图，支持 AI 内容分析。
 
 使用在线 API 服务截取网页，支持自定义视口大小和全页截图。
+可选启用 AI 分析，理解网页内容、布局、文字等。
 
 **使用示例：**
 \`\`\`
 screenshot_page { "url": "https://example.com" }
 screenshot_page { "url": "https://github.com", "width": 1920, "height": 1080 }
 screenshot_page { "url": "https://news.ycombinator.com", "full_page": true }
+screenshot_page { "url": "https://example.com", "analyze": true }
+screenshot_page { "url": "https://example.com", "analyze": true, "prompt": "这个网页是做什么的？" }
 \`\`\`
 
 **参数说明：**
@@ -134,7 +244,9 @@ screenshot_page { "url": "https://news.ycombinator.com", "full_page": true }
 - height: 视口高度（默认: 800）
 - full_page: 截取完整页面（默认: false）
 - format: 输出格式 png/jpg（默认: png）
-- delay: 等待页面加载的毫秒数（默认: 0）`,
+- delay: 等待页面加载的毫秒数（默认: 0）
+- analyze: 启用 AI 分析（默认: false）
+- prompt: 自定义分析提示词`,
   generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',
@@ -175,6 +287,15 @@ screenshot_page { "url": "https://news.ycombinator.com", "full_page": true }
         description: '等待页面加载的毫秒数（默认: 0）',
         default: 0,
       },
+      analyze: {
+        type: 'boolean',
+        description: '启用 AI 分析网页内容（默认: false）',
+        default: false,
+      },
+      prompt: {
+        type: 'string',
+        description: '自定义分析提示词（默认: 分析网页内容和布局）',
+      },
     },
     required: ['url'],
   },
@@ -191,7 +312,15 @@ screenshot_page { "url": "https://news.ycombinator.com", "full_page": true }
       full_page = false,
       format = 'png',
       delay = 0,
+      analyze = false,
+      prompt: analysisPrompt,
     } = params as unknown as ScreenshotPageParams;
+
+    const defaultAnalysisPrompt = `请分析这个网页的内容，包括：
+1. 网页的主要用途和类型
+2. 主要的内容区域和布局
+3. 关键的文字信息和链接
+4. 如果有表单、按钮等交互元素，请描述其功能`;
 
     try {
       // 验证 URL
@@ -266,9 +395,7 @@ screenshot_page { "url": "https://news.ycombinator.com", "full_page": true }
 
       logger.info('Screenshot captured', { url, path: finalPath, size: stats.size, api: usedApi });
 
-      return {
-        success: true,
-        output: `✅ 网页截图完成！
+      let output = `✅ 网页截图完成！
 
 🌐 URL: ${url}
 📐 尺寸: ${width}x${height}
@@ -276,7 +403,25 @@ screenshot_page { "url": "https://news.ycombinator.com", "full_page": true }
 📄 文件: ${finalPath}
 📦 大小: ${formatFileSize(stats.size)}
 
-点击上方路径可直接打开。`,
+点击上方路径可直接打开。`;
+
+      // 如果启用分析，进行视觉分析
+      let analysis: string | null = null;
+      if (analyze) {
+        context.emit?.('tool_output', {
+          tool: 'screenshot_page',
+          message: '🔍 正在分析网页内容...',
+        });
+
+        analysis = await analyzeWithVision(finalPath, analysisPrompt || defaultAnalysisPrompt);
+        if (analysis) {
+          output += `\n\n📝 AI 分析结果:\n${analysis}`;
+        }
+      }
+
+      return {
+        success: true,
+        output,
         metadata: {
           filePath: finalPath,
           fileName: path.basename(finalPath),
@@ -287,6 +432,8 @@ screenshot_page { "url": "https://news.ycombinator.com", "full_page": true }
           fullPage: full_page,
           format,
           api: usedApi,
+          analyzed: !!analysis,
+          analysis,
           attachment: {
             id: `screenshot-${timestamp}`,
             type: 'file',

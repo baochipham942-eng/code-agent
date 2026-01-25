@@ -338,7 +338,20 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     name: '智谱 GLM',
     requiresApiKey: true,
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    // Coding 套餐专用端点: https://open.bigmodel.cn/api/coding/paas/v4
+    codingBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
     models: [
+      {
+        id: 'glm-4.7',
+        name: 'GLM-4.7 (Coding 套餐)',
+        capabilities: ['general', 'code', 'reasoning'],
+        maxTokens: 16384,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        // 标记使用 coding 端点
+        useCodingEndpoint: true,
+      },
       {
         id: 'glm-4-flash',
         name: 'GLM-4 Flash',
@@ -2209,7 +2222,19 @@ export class ModelRouter {
     config: ModelConfig,
     onStream?: StreamCallback
   ): Promise<ModelResponse> {
-    const baseUrl = config.baseUrl || 'https://open.bigmodel.cn/api/paas/v4';
+    // 检查模型是否需要使用 Coding 端点
+    const modelInfo = this.getModelInfo('zhipu', config.model);
+    const providerConfig = PROVIDER_REGISTRY.zhipu;
+
+    // GLM-4.7 等 Coding 套餐模型使用专用端点
+    let baseUrl: string;
+    if (modelInfo?.useCodingEndpoint && providerConfig.codingBaseUrl) {
+      baseUrl = providerConfig.codingBaseUrl;
+      logger.info(`[智谱] 使用 Coding 套餐端点: ${baseUrl}, 模型: ${config.model}`);
+    } else {
+      baseUrl = config.baseUrl || providerConfig.baseUrl || 'https://open.bigmodel.cn/api/paas/v4';
+      logger.info(`[智谱] 使用标准端点: ${baseUrl}, 模型: ${config.model}`);
+    }
 
     // 智谱使用 OpenAI 兼容格式
     const zhipuTools = tools.map((tool) => ({
@@ -2223,7 +2248,7 @@ export class ModelRouter {
 
     // 智谱模型使用更高的默认 maxTokens
     const requestBody: Record<string, unknown> = {
-      model: config.model || 'glm-4-flash',
+      model: config.model || 'glm-4.7',
       messages: this.convertToOpenAIMessages(messages),
       temperature: config.temperature ?? 0.7,
       max_tokens: config.maxTokens ?? 8192,
@@ -2231,7 +2256,6 @@ export class ModelRouter {
     };
 
     // 检查模型是否支持工具调用
-    const modelInfo = this.getModelInfo('zhipu', config.model);
     if (zhipuTools.length > 0 && modelInfo?.supportsTool) {
       requestBody.tools = zhipuTools;
       requestBody.tool_choice = 'auto';

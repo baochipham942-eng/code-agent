@@ -66,7 +66,8 @@ async function callDirectOpenRouter(
 
 /**
  * 调用视觉模型处理 PDF
- * 优先使用云端代理，失败时回退到本地 API Key
+ * 优先级：OpenRouter 本地 Key > 云端代理
+ * 注意：智谱 GLM-4.6V 不支持 PDF，只能用 Gemini
  */
 async function processWithVisionModel(
   filePath: string,
@@ -99,45 +100,48 @@ async function processWithVisionModel(
     max_tokens: 8192,
   };
 
-  // 1. 优先尝试云端代理
+  const configService = getConfigService();
+
+  // 1. 优先使用本地 OpenRouter API Key（避免云端代理限制）
+  const apiKey = configService.getApiKey('openrouter');
+  if (apiKey) {
+    try {
+      logger.info('[PDF解析] 使用 OpenRouter Gemini (本地 Key)');
+      const directResponse = await callDirectOpenRouter(apiKey, requestBody);
+
+      if (directResponse.ok) {
+        const result = await directResponse.json();
+        return {
+          content: result.choices?.[0]?.message?.content || '无法解析 PDF 内容',
+        };
+      }
+
+      const errorText = await directResponse.text();
+      logger.warn('[PDF解析] OpenRouter 失败', { status: directResponse.status, error: errorText });
+    } catch (error: any) {
+      logger.warn('[PDF解析] OpenRouter 错误', { error: error.message });
+    }
+  }
+
+  // 2. 回退到云端代理
   try {
-    logger.info('Trying cloud proxy...');
+    logger.info('[PDF解析] 使用云端代理');
     const cloudResponse = await callViaCloudProxy('openrouter', '/chat/completions', requestBody);
 
     if (cloudResponse.ok) {
       const result = await cloudResponse.json();
-      logger.info('Cloud proxy success');
       return {
         content: result.choices?.[0]?.message?.content || '无法解析 PDF 内容',
       };
     }
 
     const errorText = await cloudResponse.text();
-    logger.warn('Cloud proxy failed', { status: cloudResponse.status, error: errorText });
+    logger.warn('[PDF解析] 云端代理失败', { status: cloudResponse.status, error: errorText });
   } catch (error: any) {
-    logger.warn('Cloud proxy error', { error: error.message });
+    logger.warn('[PDF解析] 云端代理错误', { error: error.message });
   }
 
-  // 2. 回退到本地 API Key
-  logger.info('Falling back to local API key...');
-  const configService = getConfigService();
-  const apiKey = configService.getApiKey('openrouter');
-
-  if (!apiKey) {
-    throw new Error('OpenRouter API Key 未配置，且云端代理不可用。请在设置中配置 OpenRouter API Key。');
-  }
-
-  const directResponse = await callDirectOpenRouter(apiKey, requestBody);
-
-  if (!directResponse.ok) {
-    const error = await directResponse.text();
-    throw new Error(`OpenRouter API 调用失败: ${error}`);
-  }
-
-  const result = await directResponse.json();
-  return {
-    content: result.choices?.[0]?.message?.content || '无法解析 PDF 内容',
-  };
+  throw new Error('PDF 解析失败。请配置 OpenRouter API Key 或检查网络连接。');
 }
 
 export const readPdfTool: Tool = {

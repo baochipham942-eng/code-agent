@@ -146,6 +146,70 @@ async function callDirectOpenRouter(
   );
 }
 
+// 智谱图像生成模型
+const ZHIPU_IMAGE_MODELS = {
+  standard: 'cogview-4',           // 标准模型
+  fast: 'cogview-3-flash',         // 快速模型
+  latest: 'cogview-4-250304',      // 最新版本
+} as const;
+
+/**
+ * 调用智谱图像生成 API
+ * 端点: https://open.bigmodel.cn/api/paas/v4/images/generations
+ */
+async function callZhipuImageGeneration(
+  apiKey: string,
+  prompt: string,
+  aspectRatio: string,
+  timeoutMs: number = TIMEOUT_MS.DIRECT_API
+): Promise<{ url: string }> {
+  // 将 aspect ratio 转换为智谱支持的 size 格式
+  const sizeMap: Record<string, string> = {
+    '1:1': '1024x1024',
+    '16:9': '1440x720',
+    '9:16': '720x1440',
+    '4:3': '1152x864',
+    '3:4': '864x1152',
+  };
+  const size = sizeMap[aspectRatio] || '1024x1024';
+
+  const requestBody = {
+    model: ZHIPU_IMAGE_MODELS.standard,
+    prompt,
+    size,
+  };
+
+  logger.info(`[智谱图像生成] 使用模型: ${requestBody.model}, 尺寸: ${size}`);
+
+  const response = await fetchWithTimeout(
+    'https://open.bigmodel.cn/api/paas/v4/images/generations',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+    },
+    timeoutMs
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`智谱图像生成 API 错误: ${response.status} - ${error}`);
+  }
+
+  const result = await response.json();
+
+  // 智谱返回格式: { data: [{ url: "..." }] }
+  if (!result.data || result.data.length === 0 || !result.data[0].url) {
+    throw new Error('智谱图像生成: 未返回图片 URL');
+  }
+
+  logger.info('[智谱图像生成] 成功生成图片');
+  return { url: result.data[0].url };
+}
+
 /**
  * 从响应中提取图片数据
  */
@@ -172,32 +236,48 @@ function extractImageFromResponse(result: any): string {
 /**
  * 生成图片
  *
- * 策略：
- * 1. 如果本地有 OpenRouter API Key，直接使用（避免云端代理 60 秒超时限制）
- * 2. 否则尝试云端代理
- * 3. FLUX 模型生成图片需要 30-90 秒，需要足够的超时时间
+ * 策略（优先级从高到低）：
+ * 1. 智谱 API Key -> 使用 CogView-4（国内直连，快速稳定）
+ * 2. OpenRouter API Key -> 使用 FLUX（需 30-90 秒，避免云端代理超时）
+ * 3. 云端代理 -> 可能因 Vercel 60 秒超时而失败
  */
 async function generateImage(
   model: string,
   prompt: string,
   aspectRatio: string
 ): Promise<string> {
-  const requestBody = {
-    model,
-    messages: [{ role: 'user', content: prompt }],
-    modalities: ['image', 'text'],
-    image_config: { aspect_ratio: aspectRatio },
-  };
-
   const configService = getConfigService();
-  const localApiKey = configService.getApiKey('openrouter');
 
-  // 优先使用本地 API Key（避免云端代理的 Vercel 60 秒超时限制）
-  // FLUX 图片生成需要 30-90 秒，Vercel serverless function 会被强制终止
-  if (localApiKey) {
-    logger.info('Using local API key for image generation (bypassing cloud proxy timeout)');
+  // 优先级 1: 智谱 API Key -> 使用 CogView-4
+  const zhipuApiKey = configService.getApiKey('zhipu');
+  if (zhipuApiKey) {
+    logger.info('[图像生成] 检测到智谱 API Key，使用 CogView-4 生成图片');
     try {
-      const directResponse = await callDirectOpenRouter(localApiKey, requestBody, TIMEOUT_MS.DIRECT_API);
+      const result = await callZhipuImageGeneration(zhipuApiKey, prompt, aspectRatio, TIMEOUT_MS.DIRECT_API);
+      return result.url;
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        throw new Error(`智谱图像生成超时（${TIMEOUT_MS.DIRECT_API / 1000}秒），请稍后重试。`);
+      }
+      logger.warn('[图像生成] 智谱 API 失败，尝试回退到 OpenRouter', { error: error.message });
+      // 继续尝试 OpenRouter
+    }
+  }
+
+  // 优先级 2: OpenRouter API Key -> 使用 FLUX
+  const openrouterApiKey = configService.getApiKey('openrouter');
+  if (openrouterApiKey) {
+    logger.info('[图像生成] 使用 OpenRouter FLUX 生成图片');
+
+    const requestBody = {
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      modalities: ['image', 'text'],
+      image_config: { aspect_ratio: aspectRatio },
+    };
+
+    try {
+      const directResponse = await callDirectOpenRouter(openrouterApiKey, requestBody, TIMEOUT_MS.DIRECT_API);
 
       if (!directResponse.ok) {
         const error = await directResponse.text();
@@ -217,9 +297,16 @@ async function generateImage(
     }
   }
 
-  // 没有本地 API Key，尝试云端代理（可能会因 Vercel 超时而失败）
-  logger.info('No local API key, trying cloud proxy for image generation...');
-  logger.warn('Cloud proxy may timeout for FLUX image generation (Vercel 60s limit)');
+  // 优先级 3: 云端代理（可能会因 Vercel 超时而失败）
+  logger.info('[图像生成] 无本地 API Key，尝试云端代理...');
+  logger.warn('[图像生成] 云端代理可能因 Vercel 60s 限制而超时');
+
+  const requestBody = {
+    model,
+    messages: [{ role: 'user', content: prompt }],
+    modalities: ['image', 'text'],
+    image_config: { aspect_ratio: aspectRatio },
+  };
 
   try {
     const cloudResponse = await callViaCloudProxy(

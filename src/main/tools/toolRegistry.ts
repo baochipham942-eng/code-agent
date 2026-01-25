@@ -29,6 +29,7 @@ import {
   readPdfTool,
   pptGenerateTool,
   imageGenerateTool,
+  videoGenerateTool,
   imageAnalyzeTool,
   docxGenerateTool,
   excelGenerateTool,
@@ -45,6 +46,9 @@ import {
   screenshotPageTool,
   academicSearchTool,
   httpRequestTool,
+  speechToTextTool,
+  textToSpeechTool,
+  imageAnnotateTool,
 } from './network';
 import { skillMetaTool } from './skill';
 import {
@@ -180,6 +184,7 @@ export class ToolRegistry {
     // Gen 5 tools - Office Documents & Image & Data
     this.register(pptGenerateTool);
     this.register(imageGenerateTool);
+    this.register(videoGenerateTool);
     this.register(imageAnalyzeTool);
     this.register(docxGenerateTool);
     this.register(excelGenerateTool);
@@ -195,6 +200,9 @@ export class ToolRegistry {
     this.register(imageProcessTool);
     this.register(screenshotPageTool);
     this.register(academicSearchTool);
+    this.register(speechToTextTool);
+    this.register(textToSpeechTool);
+    this.register(imageAnnotateTool);
 
     // Gen 4 tools - HTTP API
     this.register(httpRequestTool);

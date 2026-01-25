@@ -14,7 +14,7 @@ const logger = createLogger('ScreenshotPage');
 
 // 视觉分析配置
 const VISION_CONFIG = {
-  ZHIPU_MODEL: 'glm-4.6v-flash',
+  ZHIPU_MODEL: 'glm-4v-plus', // flash 不支持 base64，必须用 plus
   ZHIPU_API_URL: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
   TIMEOUT_MS: 30000,
 };

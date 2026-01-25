@@ -776,9 +776,13 @@ export class ModelRouter {
       console.log(
         `[ModelRouter] 使用同 provider (${originalConfig.provider}) 的 ${capability} 模型: ${sameProviderModel}`
       );
+      // 获取 fallback 模型的 maxTokens 限制
+      const fallbackModelInfo = this.getModelInfo(originalConfig.provider, sameProviderModel);
       return {
         ...originalConfig,
         model: sameProviderModel,
+        // 使用 fallback 模型的 maxTokens，避免超过限制
+        maxTokens: fallbackModelInfo?.maxTokens || 1024,
       };
     }
 
@@ -790,10 +794,14 @@ export class ModelRouter {
       `[ModelRouter] 使用默认 fallback: ${fallback.provider}/${fallback.model}`
     );
 
+    // 获取 fallback 模型的 maxTokens 限制
+    const fallbackModelInfo = this.getModelInfo(fallback.provider, fallback.model);
     return {
       ...originalConfig,
       provider: fallback.provider as ModelProvider,
       model: fallback.model,
+      // 使用 fallback 模型的 maxTokens，避免超过限制
+      maxTokens: fallbackModelInfo?.maxTokens || 1024,
     };
   }
 

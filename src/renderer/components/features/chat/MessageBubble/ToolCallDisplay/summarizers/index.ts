@@ -64,6 +64,9 @@ export function summarizeTool(toolCall: ToolCall): string | null {
     case 'image_generate':
       return summarizeImageGenerate(toolCall);
 
+    case 'video_generate':
+      return summarizeVideoGenerate(toolCall);
+
     case 'web_fetch':
       return summarizeWebFetch(toolCall);
 
@@ -142,6 +145,29 @@ function summarizeImageGenerate(toolCall: ToolCall): string | null {
     }
   }
   return 'Generated';
+}
+
+function summarizeVideoGenerate(toolCall: ToolCall): string | null {
+  const metadata = toolCall.result?.metadata;
+  if (metadata) {
+    const duration = metadata.duration as number | undefined;
+    const aspectRatio = metadata.aspectRatio as string | undefined;
+    const videoPath = metadata.videoPath as string | undefined;
+
+    if (videoPath) {
+      const fileName = videoPath.split('/').pop() || 'video.mp4';
+      return fileName;
+    }
+
+    const parts: string[] = [];
+    if (duration) parts.push(`${duration}s`);
+    if (aspectRatio) parts.push(aspectRatio);
+
+    if (parts.length > 0) {
+      return `视频生成完成 (${parts.join(', ')})`;
+    }
+  }
+  return '视频生成完成';
 }
 
 function summarizeWebFetch(toolCall: ToolCall): string | null {

@@ -2,7 +2,7 @@
 // Window Management - 窗口创建和管理
 // ============================================================================
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, shell } from 'electron';
 import path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { initContextHealthService } from '../context/contextHealthService';
@@ -70,6 +70,17 @@ export async function createWindow(): Promise<void> {
 
   mainWindow.webContents.on('did-finish-load', () => {
     logger.info('Page finished loading');
+  });
+
+  // Handle external links - open in default browser instead of new Electron window
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    // Check if it's an external URL (http/https)
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      logger.info('Opening external URL in browser', { url: url.substring(0, 100) });
+      shell.openExternal(url);
+      return { action: 'deny' }; // Prevent Electron from opening a new window
+    }
+    return { action: 'allow' };
   });
 
   // Load the app

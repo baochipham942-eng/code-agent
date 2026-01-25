@@ -29,6 +29,7 @@ import {
   readPdfTool,
   pptGenerateTool,
   imageGenerateTool,
+  videoGenerateTool,
   imageAnalyzeTool,
   docxGenerateTool,
   excelGenerateTool,
@@ -180,6 +181,7 @@ export class ToolRegistry {
     // Gen 5 tools - Office Documents & Image & Data
     this.register(pptGenerateTool);
     this.register(imageGenerateTool);
+    this.register(videoGenerateTool);
     this.register(imageAnalyzeTool);
     this.register(docxGenerateTool);
     this.register(excelGenerateTool);

@@ -1805,6 +1805,23 @@ export class AgentLoop {
       let needsVisionFallback = false;
       let visionFallbackSucceeded = false;
 
+      // 检查用户请求是否需要使用工具处理图片（如标注、画框等）
+      // 这种情况下不应该 fallback 到纯视觉模型，而应该让主模型调用 image_annotate 等工具
+      const userRequestText = this.extractUserRequestText(lastUserMessage);
+      const needsToolForImage = /标[注记]|画框|框[出住]|圈[出住]|矩形|annotate|mark|highlight|draw/i.test(userRequestText);
+
+      if (needsToolForImage && requiredCapabilities.includes('vision')) {
+        logger.info('[AgentLoop] 用户请求需要工具处理图片（标注/画框），跳过视觉 fallback，让主模型调用 image_annotate');
+        // 移除 vision 能力需求，让主模型处理并调用工具
+        const visionIndex = requiredCapabilities.indexOf('vision');
+        if (visionIndex > -1) {
+          requiredCapabilities.splice(visionIndex, 1);
+        }
+        // 同时需要移除消息中的图片，因为主模型不支持图片
+        // image_annotate 工具会自己读取图片文件
+        modelMessages = this.stripImagesFromMessages(modelMessages);
+      }
+
       if (requiredCapabilities.length > 0) {
         const currentModelInfo = this.modelRouter.getModelInfo(
           this.modelConfig.provider,
@@ -2382,6 +2399,27 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
     }
 
     return contents;
+  }
+
+  /**
+   * 从用户消息中提取文本内容
+   * 用于分析用户请求意图
+   */
+  private extractUserRequestText(message: ModelMessage | undefined): string {
+    if (!message) return '';
+
+    if (typeof message.content === 'string') {
+      return message.content;
+    }
+
+    if (Array.isArray(message.content)) {
+      return message.content
+        .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+        .map((part) => part.text)
+        .join(' ');
+    }
+
+    return '';
   }
 
   /**

@@ -89,6 +89,15 @@ export interface ToolContext {
   // Plan Mode support (borrowed from Claude Code v2.0)
   setPlanMode?: (active: boolean) => void;
   isPlanMode?: () => boolean;
+  // Current message attachments (images, files) for multi-agent workflows
+  currentAttachments?: Array<{
+    type: string;
+    category?: string;
+    name?: string;
+    path?: string;
+    data?: string;
+    mimeType?: string;
+  }>;
 }
 
 export interface PermissionRequestData {

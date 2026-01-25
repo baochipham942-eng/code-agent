@@ -51,6 +51,15 @@ export interface ExecuteOptions {
   sessionId?: string;
   // Skill 系统支持：预授权工具列表（跳过权限确认）
   preApprovedTools?: Set<string>;
+  // Current message attachments for multi-agent workflows
+  currentAttachments?: Array<{
+    type: string;
+    category?: string;
+    name?: string;
+    path?: string;
+    data?: string;
+    mimeType?: string;
+  }>;
 }
 
 // ----------------------------------------------------------------------------
@@ -169,6 +178,8 @@ export class ToolExecutor {
       emit: options.emitEvent,
       // Session ID for cross-session isolation (fixes todo pollution)
       sessionId: options.sessionId,
+      // Current message attachments for multi-agent workflows
+      currentAttachments: options.currentAttachments,
     };
 
     // Security: Pre-execution validation for bash commands

@@ -13,7 +13,8 @@ const logger = createLogger('ImageAnnotate');
 
 // 配置
 const CONFIG = {
-  ZHIPU_MODEL: 'glm-4v-flash',  // 智谱视觉模型：glm-4v-flash (免费快速) 或 glm-4v-plus (付费高质量)
+  ZHIPU_MODEL: 'glm-4v-flash',  // 智谱免费视觉模型
+  ZHIPU_MODEL_MAX_TOKENS: 1024, // glm-4v-flash 最大只支持 1024
   ZHIPU_API_URL: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
   TIMEOUT_MS: 60000,
   SUPPORTED_FORMATS: ['.jpg', '.jpeg', '.png', '.webp', '.gif'],
@@ -118,7 +119,7 @@ async function analyzeAndGetAnnotations(
         ],
       },
     ],
-    max_tokens: 2048,
+    max_tokens: CONFIG.ZHIPU_MODEL_MAX_TOKENS,
   };
 
   logger.info('[图片标注] 调用智谱视觉模型', { query });

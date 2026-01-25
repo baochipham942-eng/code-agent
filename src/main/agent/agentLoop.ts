@@ -1884,12 +1884,34 @@ export class AgentLoop {
         modelMessages = this.stripImagesFromMessages(modelMessages);
       }
 
+      // 检查 fallback 后的模型是否支持 tool calls
+      // 如果不支持（如视觉模型 glm-4v-flash），需要清空工具列表避免 API 错误
+      let effectiveTools = tools;
+      if (effectiveConfig !== this.modelConfig) {
+        const fallbackModelInfo = this.modelRouter.getModelInfo(
+          effectiveConfig.provider,
+          effectiveConfig.model
+        );
+        if (fallbackModelInfo && !fallbackModelInfo.supportsTool) {
+          logger.warn(`[AgentLoop] Fallback 模型 ${effectiveConfig.model} 不支持 tool calls，清空工具列表`);
+          effectiveTools = [];
+          // 发送事件通知前端
+          this.onEvent({
+            type: 'notification',
+            data: {
+              message: `视觉模型 ${effectiveConfig.model} 不支持工具调用，本次请求将仅使用纯文本回复`,
+            },
+          });
+        }
+      }
+
       // Call model through router
       logger.debug('[AgentLoop] Calling modelRouter.inference()...');
       logger.debug('[AgentLoop] Effective model:', effectiveConfig.model);
+      logger.debug('[AgentLoop] Effective tools count:', effectiveTools.length);
       const response = await this.modelRouter.inference(
         modelMessages,
-        tools,
+        effectiveTools,
         effectiveConfig,
         (chunk) => {
           // Handle streaming chunks - 支持新的结构化流式事件

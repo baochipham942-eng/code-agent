@@ -1,0 +1,433 @@
+// ============================================================================
+// Agent Definition Tests
+// Tests for predefined agent definitions and utility functions
+// ============================================================================
+
+import { describe, it, expect } from 'vitest';
+import {
+  PREDEFINED_AGENTS,
+  getPredefinedAgent,
+  listPredefinedAgentIds,
+  listPredefinedAgents,
+  isPredefinedAgent,
+  getAgentsByTag,
+  type AgentDefinition,
+} from '../../../src/main/agent/agentDefinition';
+
+describe('AgentDefinition', () => {
+  // --------------------------------------------------------------------------
+  // PREDEFINED_AGENTS Structure
+  // --------------------------------------------------------------------------
+  describe('PREDEFINED_AGENTS structure', () => {
+    it('should have all code-related agents', () => {
+      expect(PREDEFINED_AGENTS['code-reviewer']).toBeDefined();
+      expect(PREDEFINED_AGENTS['test-writer']).toBeDefined();
+      expect(PREDEFINED_AGENTS['refactorer']).toBeDefined();
+      expect(PREDEFINED_AGENTS['coder']).toBeDefined();
+    });
+
+    it('should have all analysis agents', () => {
+      expect(PREDEFINED_AGENTS['debugger']).toBeDefined();
+      expect(PREDEFINED_AGENTS['architect']).toBeDefined();
+      expect(PREDEFINED_AGENTS['explorer']).toBeDefined();
+    });
+
+    it('should have documentation agents', () => {
+      expect(PREDEFINED_AGENTS['documenter']).toBeDefined();
+    });
+
+    it('should have devops agents', () => {
+      expect(PREDEFINED_AGENTS['devops']).toBeDefined();
+    });
+
+    it('should have vision agents', () => {
+      expect(PREDEFINED_AGENTS['visual-understanding']).toBeDefined();
+      expect(PREDEFINED_AGENTS['visual-processing']).toBeDefined();
+    });
+
+    it('should have meta agents (explore, plan, bash, general)', () => {
+      expect(PREDEFINED_AGENTS['explore']).toBeDefined();
+      expect(PREDEFINED_AGENTS['plan']).toBeDefined();
+      expect(PREDEFINED_AGENTS['bash-executor']).toBeDefined();
+      expect(PREDEFINED_AGENTS['general-purpose']).toBeDefined();
+    });
+
+    it('should have external resource agents', () => {
+      expect(PREDEFINED_AGENTS['web-researcher']).toBeDefined();
+      expect(PREDEFINED_AGENTS['mcp-connector']).toBeDefined();
+      expect(PREDEFINED_AGENTS['doc-retriever']).toBeDefined();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Agent Definition Properties
+  // --------------------------------------------------------------------------
+  describe('Agent Definition Properties', () => {
+    const allAgents = Object.values(PREDEFINED_AGENTS);
+
+    it('all agents should have required properties', () => {
+      for (const agent of allAgents) {
+        expect(agent.id).toBeDefined();
+        expect(agent.name).toBeDefined();
+        expect(agent.description).toBeDefined();
+        expect(agent.systemPrompt).toBeDefined();
+        expect(agent.tools).toBeDefined();
+        expect(agent.permissionPreset).toBeDefined();
+      }
+    });
+
+    it('all agent IDs should match their keys', () => {
+      for (const [key, agent] of Object.entries(PREDEFINED_AGENTS)) {
+        expect(agent.id).toBe(key);
+      }
+    });
+
+    it('all agents should have valid permission presets', () => {
+      const validPresets = ['readonly', 'development', 'automation', 'admin'];
+      for (const agent of allAgents) {
+        expect(validPresets).toContain(agent.permissionPreset);
+      }
+    });
+
+    it('all agents should have tags array (optional)', () => {
+      for (const agent of allAgents) {
+        if (agent.tags) {
+          expect(Array.isArray(agent.tags)).toBe(true);
+        }
+      }
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Specific Agent Configurations
+  // --------------------------------------------------------------------------
+  describe('Specific Agent Configurations', () => {
+    describe('explore agent', () => {
+      const agent = PREDEFINED_AGENTS['explore'];
+
+      it('should have read-only tools', () => {
+        expect(agent.tools).toContain('glob');
+        expect(agent.tools).toContain('grep');
+        expect(agent.tools).toContain('read_file');
+        expect(agent.tools).toContain('list_directory');
+        // Should NOT have write tools
+        expect(agent.tools).not.toContain('write_file');
+        expect(agent.tools).not.toContain('edit_file');
+      });
+
+      it('should not be able to spawn subagents', () => {
+        expect(agent.canSpawnSubagents).toBe(false);
+      });
+
+      it('should have readonly tag', () => {
+        expect(agent.tags).toContain('readonly');
+      });
+    });
+
+    describe('plan agent', () => {
+      const agent = PREDEFINED_AGENTS['plan'];
+
+      it('should have exploration tools plus bash', () => {
+        expect(agent.tools).toContain('glob');
+        expect(agent.tools).toContain('grep');
+        expect(agent.tools).toContain('read_file');
+        expect(agent.tools).toContain('list_directory');
+        expect(agent.tools).toContain('bash');
+      });
+
+      it('should be able to spawn subagents', () => {
+        expect(agent.canSpawnSubagents).toBe(true);
+      });
+
+      it('should have planning tag', () => {
+        expect(agent.tags).toContain('planning');
+      });
+    });
+
+    describe('bash-executor agent', () => {
+      const agent = PREDEFINED_AGENTS['bash-executor'];
+
+      it('should only have bash tool', () => {
+        expect(agent.tools).toEqual(['bash']);
+      });
+
+      it('should not be able to spawn subagents', () => {
+        expect(agent.canSpawnSubagents).toBe(false);
+      });
+
+      it('should have command tag', () => {
+        expect(agent.tags).toContain('command');
+      });
+    });
+
+    describe('general-purpose agent', () => {
+      const agent = PREDEFINED_AGENTS['general-purpose'];
+
+      it('should have full tool set', () => {
+        expect(agent.tools).toContain('bash');
+        expect(agent.tools).toContain('read_file');
+        expect(agent.tools).toContain('write_file');
+        expect(agent.tools).toContain('edit_file');
+        expect(agent.tools).toContain('glob');
+        expect(agent.tools).toContain('grep');
+        expect(agent.tools).toContain('list_directory');
+      });
+
+      it('should have external capabilities', () => {
+        expect(agent.tools).toContain('web_search');
+        expect(agent.tools).toContain('web_fetch');
+        expect(agent.tools).toContain('skill');
+        expect(agent.tools).toContain('mcp');
+        expect(agent.tools).toContain('mcp_list_tools');
+      });
+
+      it('should be able to spawn subagents', () => {
+        expect(agent.canSpawnSubagents).toBe(true);
+      });
+
+      it('should have high max iterations', () => {
+        expect(agent.maxIterations).toBe(30);
+      });
+    });
+
+    describe('visual-understanding agent', () => {
+      const agent = PREDEFINED_AGENTS['visual-understanding'];
+
+      it('should have no tools (vision model does not support tool calls)', () => {
+        expect(agent.tools).toEqual([]);
+      });
+
+      it('should have model override for vision', () => {
+        expect(agent.modelOverride).toBeDefined();
+        expect(agent.modelOverride?.provider).toBe('zhipu');
+        expect(agent.modelOverride?.model).toBe('glm-4v-flash');
+      });
+
+      it('should have vision-related tags', () => {
+        expect(agent.tags).toContain('vision');
+        expect(agent.tags).toContain('understanding');
+      });
+    });
+
+    describe('visual-processing agent', () => {
+      const agent = PREDEFINED_AGENTS['visual-processing'];
+
+      it('should have image processing tools', () => {
+        expect(agent.tools).toContain('image_annotate');
+      });
+
+      it('should NOT have model override (uses main model for tool calls)', () => {
+        expect(agent.modelOverride).toBeUndefined();
+      });
+
+      it('should have processing-related tags', () => {
+        expect(agent.tags).toContain('vision');
+        expect(agent.tags).toContain('processing');
+      });
+    });
+
+    describe('web-researcher agent', () => {
+      const agent = PREDEFINED_AGENTS['web-researcher'];
+
+      it('should have web search tools', () => {
+        expect(agent.tools).toContain('web_search');
+        expect(agent.tools).toContain('web_fetch');
+      });
+
+      it('should have external and web tags', () => {
+        expect(agent.tags).toContain('external');
+        expect(agent.tags).toContain('web');
+      });
+    });
+
+    describe('mcp-connector agent', () => {
+      const agent = PREDEFINED_AGENTS['mcp-connector'];
+
+      it('should have all MCP tools', () => {
+        expect(agent.tools).toContain('mcp');
+        expect(agent.tools).toContain('mcp_list_tools');
+        expect(agent.tools).toContain('mcp_list_resources');
+        expect(agent.tools).toContain('mcp_read_resource');
+        expect(agent.tools).toContain('mcp_get_status');
+      });
+
+      it('should have mcp tag', () => {
+        expect(agent.tags).toContain('mcp');
+      });
+    });
+
+    describe('doc-retriever agent', () => {
+      const agent = PREDEFINED_AGENTS['doc-retriever'];
+
+      it('should have document reading tools', () => {
+        expect(agent.tools).toContain('read_pdf');
+        expect(agent.tools).toContain('read_docx');
+        expect(agent.tools).toContain('read_xlsx');
+      });
+
+      it('should have web and MCP tools for online docs', () => {
+        expect(agent.tools).toContain('web_fetch');
+        expect(agent.tools).toContain('mcp');
+      });
+
+      it('should have documentation tag', () => {
+        expect(agent.tags).toContain('documentation');
+      });
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Utility Functions
+  // --------------------------------------------------------------------------
+  describe('Utility Functions', () => {
+    describe('getPredefinedAgent', () => {
+      it('should return agent definition for valid ID', () => {
+        const agent = getPredefinedAgent('explore');
+        expect(agent).toBeDefined();
+        expect(agent?.id).toBe('explore');
+      });
+
+      it('should return undefined for invalid ID', () => {
+        const agent = getPredefinedAgent('nonexistent');
+        expect(agent).toBeUndefined();
+      });
+    });
+
+    describe('listPredefinedAgentIds', () => {
+      it('should return array of agent IDs', () => {
+        const ids = listPredefinedAgentIds();
+        expect(Array.isArray(ids)).toBe(true);
+        expect(ids).toContain('explore');
+        expect(ids).toContain('plan');
+        expect(ids).toContain('general-purpose');
+      });
+
+      it('should match number of agents in PREDEFINED_AGENTS', () => {
+        const ids = listPredefinedAgentIds();
+        expect(ids.length).toBe(Object.keys(PREDEFINED_AGENTS).length);
+      });
+    });
+
+    describe('listPredefinedAgents', () => {
+      it('should return array of agent summaries', () => {
+        const agents = listPredefinedAgents();
+        expect(Array.isArray(agents)).toBe(true);
+
+        const agent = agents.find((a) => a.id === 'explore');
+        expect(agent).toBeDefined();
+        expect(agent?.name).toBe('Explore Agent');
+        expect(agent?.description).toBeDefined();
+      });
+    });
+
+    describe('isPredefinedAgent', () => {
+      it('should return true for predefined agent IDs', () => {
+        expect(isPredefinedAgent('explore')).toBe(true);
+        expect(isPredefinedAgent('plan')).toBe(true);
+        expect(isPredefinedAgent('coder')).toBe(true);
+      });
+
+      it('should return false for unknown IDs', () => {
+        expect(isPredefinedAgent('unknown')).toBe(false);
+        expect(isPredefinedAgent('')).toBe(false);
+      });
+    });
+
+    describe('getAgentsByTag', () => {
+      it('should return agents with matching tag', () => {
+        const visionAgents = getAgentsByTag('vision');
+        expect(visionAgents.length).toBeGreaterThanOrEqual(2);
+
+        const ids = visionAgents.map((a) => a.id);
+        expect(ids).toContain('visual-understanding');
+        expect(ids).toContain('visual-processing');
+      });
+
+      it('should return empty array for unknown tag', () => {
+        const agents = getAgentsByTag('nonexistent-tag');
+        expect(agents).toEqual([]);
+      });
+
+      it('should return meta agents', () => {
+        const metaAgents = getAgentsByTag('meta');
+        expect(metaAgents.length).toBeGreaterThanOrEqual(2);
+
+        const ids = metaAgents.map((a) => a.id);
+        expect(ids).toContain('explore');
+        expect(ids).toContain('plan');
+      });
+
+      it('should return external agents', () => {
+        const externalAgents = getAgentsByTag('external');
+        expect(externalAgents.length).toBeGreaterThanOrEqual(3);
+
+        const ids = externalAgents.map((a) => a.id);
+        expect(ids).toContain('web-researcher');
+        expect(ids).toContain('mcp-connector');
+        expect(ids).toContain('doc-retriever');
+      });
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Agent Tool Sets Validation
+  // --------------------------------------------------------------------------
+  describe('Agent Tool Sets Validation', () => {
+    it('readonly agents should not have write tools', () => {
+      const readonlyAgents = getAgentsByTag('readonly');
+
+      for (const agent of readonlyAgents) {
+        expect(agent.tools).not.toContain('write_file');
+        expect(agent.tools).not.toContain('edit_file');
+      }
+    });
+
+    it('code agents should have file access tools', () => {
+      const codeAgents = getAgentsByTag('code');
+
+      for (const agent of codeAgents) {
+        // At minimum, should be able to read files
+        expect(agent.tools).toContain('read_file');
+      }
+    });
+
+    it('debugging agent should have comprehensive tools', () => {
+      const debugger_ = getPredefinedAgent('debugger');
+      expect(debugger_?.tools).toContain('bash');
+      expect(debugger_?.tools).toContain('read_file');
+      expect(debugger_?.tools).toContain('grep');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Permission and Budget Constraints
+  // --------------------------------------------------------------------------
+  describe('Permission and Budget Constraints', () => {
+    it('all agents should have permissionPreset', () => {
+      const agents = Object.values(PREDEFINED_AGENTS);
+      for (const agent of agents) {
+        expect(agent.permissionPreset).toBeDefined();
+      }
+    });
+
+    it('agents with maxBudget should have reasonable values', () => {
+      const agents = Object.values(PREDEFINED_AGENTS);
+      for (const agent of agents) {
+        if (agent.maxBudget !== undefined) {
+          expect(agent.maxBudget).toBeGreaterThan(0);
+          expect(agent.maxBudget).toBeLessThan(100); // Reasonable budget limit
+        }
+      }
+    });
+
+    it('agents with maxIterations should have reasonable values', () => {
+      const agents = Object.values(PREDEFINED_AGENTS);
+      for (const agent of agents) {
+        if (agent.maxIterations !== undefined) {
+          expect(agent.maxIterations).toBeGreaterThanOrEqual(1);
+          expect(agent.maxIterations).toBeLessThanOrEqual(50); // Reasonable iteration limit
+        }
+      }
+    });
+  });
+});

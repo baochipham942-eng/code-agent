@@ -354,7 +354,7 @@ Guidelines:
     permissionPreset: 'development',
     modelOverride: {
       provider: 'zhipu',
-      model: 'glm-4v-flash',  // 使用视觉模型（不支持 tool calls）
+      model: 'glm-4v-plus',  // 必须用 plus 版本，flash 不支持 base64
     },
     tags: ['vision', 'analysis', 'ocr', 'understanding'],
     canSpawnSubagents: false,

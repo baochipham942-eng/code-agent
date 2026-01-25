@@ -16,7 +16,7 @@ const logger = createLogger('ImageAnnotate');
 // 本地图片必须用 glm-4v-plus，因为需要 base64 编码
 const CONFIG = {
   ZHIPU_MODEL: 'glm-4v-plus',   // 必须用 plus 版本，flash 不支持 base64
-  ZHIPU_MODEL_MAX_TOKENS: 2048, // glm-4v-plus 最大 8192，这里用 2048 够用
+  ZHIPU_MODEL_MAX_TOKENS: 8000, // glm-4v-plus 最大 8192
   ZHIPU_API_URL: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
   TIMEOUT_MS: 60000,
   SUPPORTED_FORMATS: ['.jpg', '.jpeg', '.png', '.webp', '.gif'],
@@ -77,19 +77,24 @@ async function analyzeAndGetAnnotations(
 ): Promise<AnnotationResult> {
   // 注意：智谱视觉模型在有 system message 时可能拒绝处理某些图片
   // 把所有指令放到 user message 中可以避免这个问题
-  const instruction = `请分析图片并完成以下任务：${query}
+  const instruction = `请仔细分析这张图片，完成以下任务：${query}
 
-请返回 JSON 格式的区域位置信息：
+**重要**：请根据图片的实际尺寸，精确估算每个文字区域的位置和大小。
+- 图片通常是手机截图，宽度约 375-428 像素，高度约 800-900 像素
+- x 坐标：从左边缘开始计算，0 是最左边
+- y 坐标：从顶部开始计算，0 是最顶部
+- width/height：根据文字实际占用的区域大小估算
+
+请返回 JSON 格式：
 \`\`\`json
 {
   "regions": [
-    {"type": "rectangle", "x": 0, "y": 0, "width": 100, "height": 50, "label": "文字内容"}
+    {"type": "rectangle", "x": 10, "y": 50, "width": 200, "height": 30, "label": "文字内容"}
   ]
 }
 \`\`\`
 
-坐标说明：x/y 从左上角开始，width/height 为区域大小（像素）。
-请在描述后附上 JSON 标注信息。`;
+请确保坐标能准确框住对应的文字区域。`;
 
   const requestBody = {
     model: CONFIG.ZHIPU_MODEL,

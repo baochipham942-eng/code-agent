@@ -826,14 +826,15 @@ export class ModelRouter {
     const flag = capabilityToFlag[capability];
     if (!flag) return null;
 
-    // 查找支持该能力的模型，优先选择名称包含 "flash" 或 "fast" 的
+    // 查找支持该能力的模型
+    // 注意：智谱 glm-4v-flash 不支持 base64 编码，必须排除
     const supportingModels = providerConfig.models.filter(
-      (m) => m[flag] === true
+      (m) => m[flag] === true && m.id !== 'glm-4v-flash' // 排除不支持 base64 的模型
     );
 
     if (supportingModels.length === 0) return null;
 
-    // 优先返回快速/便宜模型
+    // 优先返回快速/便宜模型（但已排除 glm-4v-flash）
     const fastModel = supportingModels.find(
       (m) =>
         m.id.toLowerCase().includes('flash') ||

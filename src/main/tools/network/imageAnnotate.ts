@@ -341,40 +341,29 @@ interface ImageAnnotateParams {
 
 export const imageAnnotateTool: Tool = {
   name: 'image_annotate',
-  description: `图片标注工具 - 在图片上画框、圈出、标记指定元素。
+  description: `在图片上绘制矩形框、圆圈等标注，输出带标记的新图片。
 
-**核心能力**：识别图片中的元素并在原图上绘制标注（矩形框、圆圈、箭头、高亮），输出带标注的新图片。
+**触发关键词**（用户提到这些词时必须使用此工具）：
+- "矩形框"、"矩形工具"、"框出"、"画框"、"标记"
+- "在图片上标注"、"在截图上画"、"圈出"
+- "用框框起来"、"框选"、"标出位置"
 
-**适用场景**：
-- 框出/圈出图片中的文字、按钮、图标等元素
-- 用矩形线框标记 UI 组件位置
-- OCR 文字识别并在原图上画框标注
-- 标记截图中的特定区域
+**核心能力**：
+1. 分析图片内容，识别元素位置
+2. 在原图上绘制矩形框/圆圈/箭头/高亮
+3. 输出带标注的新图片文件
 
-**与 image_analyze 的区别**：
-- image_analyze：只分析图片内容，返回文字描述
-- image_annotate：分析 + 在图片上画框，输出带标注的图片文件
+**使用场景**：
+- 用户发送图片并要求"用矩形框框出文字"
+- 用户要求"在截图上标记按钮位置"
+- 用户说"框出图片中的XX"
 
 参数：
-- image_path: 图片文件路径（必填）
-- query: 标注指令（必填）
-  - "框出所有文字"、"用矩形框标记文字区域"
-  - "圈出登录按钮"、"标记所有输入框"
-  - "高亮显示价格信息"
-- output_path: 标注后的图片保存路径（可选）
-- draw_annotations: 是否绘制标注（默认 true）
+- image_path: 图片路径（当前对话有附件图片时，自动使用该图片）
+- query: 标注指令，如"用矩形框框出所有文字"
+- output_path: 输出路径（可选）
 
-支持格式：${CONFIG.SUPPORTED_FORMATS.join(', ')}
-限制：最大 ${CONFIG.MAX_IMAGE_SIZE_MB}MB
-
-示例：
-\`\`\`
-image_annotate { "image_path": "screenshot.png", "query": "用矩形框框出所有文字" }
-image_annotate { "image_path": "ui.png", "query": "圈出提交按钮", "output_path": "marked.png" }
-image_annotate { "image_path": "receipt.jpg", "query": "框出金额和日期" }
-\`\`\`
-
-注意：需要配置智谱 API Key`,
+重要：当用户上传图片并要求"画框"、"标注"、"框出"时，必须调用此工具，而不是只用视觉模型分析。`,
   generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',

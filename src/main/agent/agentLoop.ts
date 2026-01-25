@@ -1820,6 +1820,8 @@ export class AgentLoop {
 
               // 优先使用本地 API Key，本地没有且是管理员时才用云端代理
               const fallbackApiKey = configService.getApiKey(fallbackConfig.provider);
+              // 使用 console.log 确保日志可见
+              console.log(`🔄 [FALLBACK] provider=${fallbackConfig.provider}, model=${fallbackConfig.model}, hasLocalKey=${!!fallbackApiKey}, isAdmin=${isAdmin}`);
               logger.info(`[Fallback] provider=${fallbackConfig.provider}, model=${fallbackConfig.model}, hasLocalKey=${!!fallbackApiKey}, isAdmin=${isAdmin}`);
 
               if (fallbackApiKey) {

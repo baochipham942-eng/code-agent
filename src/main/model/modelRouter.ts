@@ -2285,6 +2285,7 @@ export class ModelRouter {
     config: ModelConfig,
     onStream?: StreamCallback
   ): Promise<ModelResponse> {
+    console.log(`📡 [ZHIPU-CALL] 进入智谱调用, model=${config.model}, hasApiKey=${!!config.apiKey}, useCloudProxy=${config.useCloudProxy}`);
     // 检查模型是否需要使用 Coding 端点
     const modelInfo = this.getModelInfo('zhipu', config.model);
     const providerConfig = PROVIDER_REGISTRY.zhipu;

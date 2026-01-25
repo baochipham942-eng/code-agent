@@ -773,33 +773,24 @@ export class AgentOrchestrator {
     }
   }
 
-  private getModelConfig(_settings: ReturnType<ConfigService['getSettings']>): ModelConfig {
+  private getModelConfig(settings: ReturnType<ConfigService['getSettings']>): ModelConfig {
     const authService = getAuthService();
     const currentUser = authService.getCurrentUser();
     const isAdmin = currentUser?.isAdmin === true;
 
-    // 优先级：智谱 > DeepSeek (如果配置了对应的 API Key)
-    const zhipuApiKey = this.configService.getApiKey('zhipu');
-    const deepseekApiKey = this.configService.getApiKey('deepseek');
+    // 从用户配置获取选择的 provider 和 model
+    const userProvider = settings.models?.default || settings.models?.defaultProvider || 'deepseek';
+    const providerConfig = settings.models?.providers?.[userProvider as keyof typeof settings.models.providers];
+    const userModel = providerConfig?.model || this.getDefaultModel(userProvider);
 
-    // 选择提供商：优先智谱，其次 DeepSeek
-    let selectedProvider: 'zhipu' | 'deepseek' = 'deepseek';
-    let selectedModel = 'deepseek-chat';
-    let selectedApiKey = deepseekApiKey;
+    // 获取对应的 API Key
+    const selectedApiKey = this.configService.getApiKey(userProvider as ModelProvider);
 
-    if (zhipuApiKey) {
-      selectedProvider = 'zhipu';
-      selectedModel = 'glm-4.7';  // 使用 Coding 套餐模型
-      selectedApiKey = zhipuApiKey;
-      logger.info('[模型选择] 检测到智谱 API Key，使用智谱 GLM-4.7 (Coding 套餐)');
-    } else if (deepseekApiKey) {
-      logger.info('[模型选择] 使用 DeepSeek');
-    } else {
-      logger.warn('[模型选择] 未配置任何 API Key，使用默认 DeepSeek');
-    }
+    let selectedProvider = userProvider;
+    let selectedModel = userModel;
 
-    logger.debug(`Using provider: ${selectedProvider}, model: ${selectedModel}`);
-    logger.debug(`Is admin: ${isAdmin}`);
+    logger.info(`[模型选择] 用户配置: provider=${selectedProvider}, model=${selectedModel}`);
+    logger.debug(`Is admin: ${isAdmin}, hasApiKey: ${!!selectedApiKey}`);
 
     // 优先使用本地 API Key（无论是否管理员）
     // 只有当本地 Key 不存在且是管理员时，才走云端代理
@@ -848,5 +839,20 @@ export class AgentOrchestrator {
 
   private generateId(): string {
     return generateMessageId();
+  }
+
+  private getDefaultModel(provider: string): string {
+    const defaultModels: Record<string, string> = {
+      zhipu: 'glm-4.7',
+      deepseek: 'deepseek-chat',
+      openai: 'gpt-4o',
+      anthropic: 'claude-sonnet-4-20250514',
+      openrouter: 'google/gemini-2.0-flash-exp:free',
+      groq: 'llama-3.3-70b-versatile',
+      qwen: 'qwen-max',
+      moonshot: 'moonshot-v1-8k',
+      gemini: 'gemini-1.5-pro',
+    };
+    return defaultModels[provider] || 'deepseek-chat';
   }
 }

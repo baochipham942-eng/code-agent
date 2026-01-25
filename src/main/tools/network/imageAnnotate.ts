@@ -13,7 +13,7 @@ const logger = createLogger('ImageAnnotate');
 
 // 配置
 const CONFIG = {
-  ZHIPU_MODEL: 'glm-4.6v-flash',
+  ZHIPU_MODEL: 'glm-4v-flash',  // 智谱视觉模型：glm-4v-flash (免费快速) 或 glm-4v-plus (付费高质量)
   ZHIPU_API_URL: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
   TIMEOUT_MS: 60000,
   SUPPORTED_FORMATS: ['.jpg', '.jpeg', '.png', '.webp', '.gif'],

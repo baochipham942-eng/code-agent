@@ -2387,7 +2387,22 @@ export class ModelRouter {
           res.on('data', (chunk) => { errorData += chunk; });
           res.on('end', () => {
             logger.error(`[智谱] API 错误: ${res.statusCode}`, errorData);
-            reject(new Error(`智谱 API error: ${res.statusCode} - ${errorData}`));
+            // 尝试解析错误信息，提供更友好的提示
+            let errorMessage = `智谱 API 错误 (${res.statusCode})`;
+            try {
+              const parsed = JSON.parse(errorData);
+              if (parsed.error?.message) {
+                errorMessage = `智谱 API: ${parsed.error.message}`;
+                // 对常见错误码提供额外说明
+                if (parsed.error.code === '1210') {
+                  errorMessage += ' (请检查模型是否支持当前请求参数)';
+                }
+              }
+            } catch {
+              // 解析失败，使用原始数据
+              errorMessage = `智谱 API error: ${res.statusCode} - ${errorData}`;
+            }
+            reject(new Error(errorMessage));
           });
           return;
         }

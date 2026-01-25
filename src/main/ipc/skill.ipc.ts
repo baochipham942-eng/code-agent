@@ -174,22 +174,48 @@ function handleRecommendedRepos() {
 // SkillsMP Search
 // ----------------------------------------------------------------------------
 
+// API 返回的单个 skill 结构
+interface SkillsMPAPISkill {
+  id: string;
+  name: string;
+  author: string;
+  description: string;
+  githubUrl: string;
+  skillUrl: string;
+  stars: number;
+  updatedAt: number;
+}
+
+// API 原始响应
+interface SkillsMPAPIResponse {
+  success: boolean;
+  data?: {
+    skills: SkillsMPAPISkill[];
+    pagination: {
+      total: number;
+      page: number;
+      limit: number;
+    };
+  };
+  error?: string;
+}
+
+// 转换后给前端的结构
 interface SkillsMPSearchResult {
   id: string;
   name: string;
   description: string;
-  repo: string;
-  repoOwner: string;
-  repoName: string;
+  author: string;
+  githubUrl: string;
+  skillUrl: string;
   stars: number;
-  lastUpdated: string;
-  skillPath: string;
-  url: string;
+  updatedAt: number;
 }
 
 interface SkillsMPSearchResponse {
   success: boolean;
   data?: SkillsMPSearchResult[];
+  total?: number;
   error?: {
     code: string;
     message: string;
@@ -249,8 +275,35 @@ async function handleSkillsMPSearch(query: string, limit: number = 10): Promise<
       };
     }
 
-    const data = await response.json() as SkillsMPSearchResponse;
-    return data;
+    const apiResponse = await response.json() as SkillsMPAPIResponse;
+
+    // 转换 API 响应为前端期望的格式
+    if (apiResponse.success && apiResponse.data?.skills) {
+      const skills = apiResponse.data.skills.map((skill) => ({
+        id: skill.id,
+        name: skill.name,
+        description: skill.description,
+        author: skill.author,
+        githubUrl: skill.githubUrl,
+        skillUrl: skill.skillUrl,
+        stars: skill.stars,
+        updatedAt: skill.updatedAt,
+      }));
+
+      return {
+        success: true,
+        data: skills,
+        total: apiResponse.data.pagination?.total,
+      };
+    }
+
+    return {
+      success: false,
+      error: {
+        code: 'EMPTY_RESPONSE',
+        message: apiResponse.error || '搜索返回空结果',
+      },
+    };
   } catch (error) {
     logger.error('SkillsMP search error', { error });
 

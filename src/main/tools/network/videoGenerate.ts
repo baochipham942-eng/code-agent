@@ -41,8 +41,9 @@ async function fetchWithTimeout(
 }
 
 // 智谱视频生成模型
+// 参考文档: https://bigmodel.cn/dev/api/videomodel/cogvideox
 const ZHIPU_VIDEO_MODELS = {
-  standard: 'cogvideox-v2',       // CogVideoX 2.0 标准版
+  standard: 'cogvideox-2',        // CogVideoX 2.0 标准版（注意：不是 cogvideox-v2）
   flash: 'cogvideox-flash',       // CogVideoX Flash（快速版）
 } as const;
 

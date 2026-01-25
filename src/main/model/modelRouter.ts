@@ -383,7 +383,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         id: 'glm-4v-plus',
         name: 'GLM-4V Plus (视觉)',
         capabilities: ['vision', 'gui'],
-        maxTokens: 4096,
+        maxTokens: 8192, // 智谱文档: glm-4v-plus 最大 8192
         supportsTool: false,
         supportsVision: true,
         supportsStreaming: true,
@@ -392,7 +392,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         id: 'glm-4v-flash',
         name: 'GLM-4V Flash (视觉)',
         capabilities: ['vision', 'fast'],
-        maxTokens: 4096,
+        maxTokens: 1024, // 智谱文档: glm-4v-flash 最大只支持 1024
         supportsTool: false,
         supportsVision: true,
         supportsStreaming: true,

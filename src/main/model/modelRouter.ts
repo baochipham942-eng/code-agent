@@ -2899,10 +2899,14 @@ export class ModelRouter {
 
     try {
       let buffer = '';
+      logger.debug('[云端代理] 开始读取流式响应...');
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          logger.debug('[云端代理] 流式响应读取完成, fullContent长度:', fullContent.length);
+          break;
+        }
 
         buffer += decoder.decode(value, { stream: true });
 
@@ -2914,17 +2918,24 @@ export class ModelRouter {
           if (!line.startsWith('data: ')) continue;
 
           const data = line.slice(6).trim();
-          if (data === '[DONE]') continue;
+          if (data === '[DONE]') {
+            logger.debug('[云端代理] 收到 [DONE] 标记');
+            continue;
+          }
 
           try {
             const parsed = JSON.parse(data);
             const delta = parsed.choices?.[0]?.delta;
 
-            if (!delta) continue;
+            if (!delta) {
+              logger.debug('[云端代理] delta 为空, parsed:', JSON.stringify(parsed).substring(0, 200));
+              continue;
+            }
 
             // 文本内容
             if (delta.content) {
               fullContent += delta.content;
+              logger.debug('[云端代理] 收到文本块:', delta.content.substring(0, 50));
               onStream({ type: 'text', content: delta.content });
             }
 

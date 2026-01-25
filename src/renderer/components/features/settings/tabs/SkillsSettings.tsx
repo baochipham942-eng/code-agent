@@ -37,18 +37,17 @@ interface SkillsMPSearchResult {
   id: string;
   name: string;
   description: string;
-  repo: string;
-  repoOwner: string;
-  repoName: string;
+  author: string;
+  githubUrl: string;
+  skillUrl: string;
   stars: number;
-  lastUpdated: string;
-  skillPath: string;
-  url: string;
+  updatedAt: number;
 }
 
 interface SkillsMPSearchResponse {
   success: boolean;
   data?: SkillsMPSearchResult[];
+  total?: number;
   error?: {
     code: string;
     message: string;
@@ -293,29 +292,40 @@ const SkillSearchResultCard: React.FC<SkillSearchResultCardProps> = ({
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h4 className="text-sm font-medium text-zinc-100 truncate">{skill.name}</h4>
+            <a
+              href={skill.skillUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-medium text-zinc-100 truncate hover:text-blue-400"
+            >
+              {skill.name}
+            </a>
             <div className="flex items-center gap-1 text-xs text-amber-400 shrink-0">
               <Star className="w-3 h-3 fill-current" />
               <span>{formatStars(skill.stars)}</span>
             </div>
           </div>
           <p className="text-xs text-zinc-500 mt-0.5 truncate">
-            from {skill.repoOwner}/{skill.repoName}
+            by {skill.author}
           </p>
           {skill.description && (
             <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{skill.description}</p>
           )}
         </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => onInstall(skill)}
-          loading={isInstalling}
-          leftIcon={!isInstalling ? <Download className="w-3 h-3" /> : undefined}
+        <a
+          href={skill.githubUrl}
+          target="_blank"
+          rel="noopener noreferrer"
           className="shrink-0"
         >
-          安装
-        </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            leftIcon={<ExternalLink className="w-3 h-3" />}
+          >
+            查看
+          </Button>
+        </a>
       </div>
     </div>
   );
@@ -337,6 +347,7 @@ export const SkillsSettings: React.FC = () => {
   // SkillsMP Search State
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SkillsMPSearchResult[]>([]);
+  const [searchTotal, setSearchTotal] = useState<number | undefined>();
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
@@ -515,11 +526,13 @@ export const SkillsSettings: React.FC = () => {
 
       if (result.success && result.data) {
         setSearchResults(result.data);
+        setSearchTotal(result.total);
         if (result.data.length === 0) {
           setSearchError('没有找到匹配的 Skill');
         }
       } else {
         setSearchError(result.error?.message || '搜索失败');
+        setSearchTotal(undefined);
       }
     } catch (err) {
       logger.error('SkillsMP search failed', err);
@@ -533,12 +546,20 @@ export const SkillsSettings: React.FC = () => {
   const handleClearSearch = () => {
     setSearchQuery('');
     setSearchResults([]);
+    setSearchTotal(undefined);
     setSearchError(null);
   };
 
-  // Install skill from SkillsMP
+  // Install skill from SkillsMP (kept for potential future use)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleInstallFromSkillsMP = async (skill: SkillsMPSearchResult) => {
-    const repoUrl = `https://github.com/${skill.repoOwner}/${skill.repoName}`;
+    // Extract repo info from githubUrl: https://github.com/owner/repo/tree/branch/path
+    const match = skill.githubUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
+    if (!match) {
+      setMessage({ type: 'error', text: '无法解析仓库地址' });
+      return;
+    }
+    const repoUrl = `https://github.com/${match[1]}/${match[2]}`;
     setActionLoading(`skillsmp-${skill.id}`);
     setMessage(null);
 
@@ -696,9 +717,11 @@ export const SkillsSettings: React.FC = () => {
 
           {/* Search Results */}
           {searchResults.length > 0 && (
-            <div className="mt-4 space-y-2 max-h-64 overflow-y-auto">
+            <div className="mt-4 space-y-2 max-h-80 overflow-y-auto">
               <div className="text-xs text-zinc-400 mb-2">
-                找到 {searchResults.length} 个结果：
+                {searchTotal
+                  ? `共 ${searchTotal.toLocaleString()} 个结果，显示前 ${searchResults.length} 个：`
+                  : `找到 ${searchResults.length} 个结果：`}
               </div>
               {searchResults.map((skill) => (
                 <SkillSearchResultCard

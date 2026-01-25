@@ -48,13 +48,15 @@ const AttachmentItem: React.FC<{
   const category = attachment.category || (attachment.type === 'image' ? 'image' : 'other');
 
   if (category === 'image') {
+    // 优先使用 data/thumbnail，否则回退到本地文件路径
+    const imageSrc = attachment.thumbnail || attachment.data || (attachment.path ? `file://${attachment.path}` : '');
     return (
       <div
         className="relative group cursor-pointer"
-        onClick={() => onImageClick(attachment.thumbnail || attachment.data || '')}
+        onClick={() => onImageClick(imageSrc)}
       >
         <img
-          src={attachment.thumbnail || attachment.data}
+          src={imageSrc}
           alt={attachment.name}
           className="max-w-[200px] max-h-[150px] rounded-xl border border-zinc-700/50 shadow-lg object-cover hover:border-primary-500/50 transition-colors"
         />

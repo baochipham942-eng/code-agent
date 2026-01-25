@@ -28,6 +28,7 @@ import { generateMessageId } from '../../shared/utils/id';
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
 import { getMaxIterations } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';
+import * as fs from 'fs';
 // User-configurable hooks system (Claude Code v2.0 style)
 import { HookManager, createHookManager } from '../hooks';
 import type { BudgetEventData } from '../../shared/types';
@@ -2090,7 +2091,10 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
 
     // 按类别处理每个附件
     for (const attachment of attachments) {
-      if (!attachment.data) continue;
+      // 图片可以从 path 加载，其他类型需要 data
+      const category = attachment.category || (attachment.type === 'image' ? 'image' : 'other');
+      if (!attachment.data && category !== 'image') continue;
+      if (!attachment.data && !attachment.path) continue;
 
       // 检查总大小是否超限
       if (totalAttachmentChars >= MAX_TOTAL_ATTACHMENT_CHARS) {
@@ -2101,20 +2105,48 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
         continue;
       }
 
-      const category = attachment.category || (attachment.type === 'image' ? 'image' : 'other');
-
       switch (category) {
         case 'image': {
           // 图片：转换为 base64 图片内容块
           let base64Data = attachment.data;
           let mediaType = attachment.mimeType;
 
-          if (attachment.data.startsWith('data:')) {
-            const match = attachment.data.match(/^data:([^;]+);base64,(.+)$/);
+          // 如果没有 data 但有 path，从本地文件读取
+          if (!base64Data && attachment.path) {
+            try {
+              if (fs.existsSync(attachment.path)) {
+                const imageBuffer = fs.readFileSync(attachment.path);
+                base64Data = imageBuffer.toString('base64');
+                logger.debug('[AgentLoop] Loaded image from path:', attachment.path);
+              } else {
+                logger.warn('[AgentLoop] Image file not found:', attachment.path);
+                contents.push({
+                  type: 'text',
+                  text: `⚠️ 图片文件不存在: ${attachment.path}`,
+                });
+                break;
+              }
+            } catch (err) {
+              logger.error('[AgentLoop] Failed to read image file:', err);
+              contents.push({
+                type: 'text',
+                text: `⚠️ 无法读取图片: ${attachment.name}`,
+              });
+              break;
+            }
+          }
+
+          if (base64Data?.startsWith('data:')) {
+            const match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
             if (match) {
               mediaType = match[1];
               base64Data = match[2];
             }
+          }
+
+          if (!base64Data) {
+            logger.warn('[AgentLoop] No image data available for:', attachment.name);
+            break;
           }
 
           contents.push({

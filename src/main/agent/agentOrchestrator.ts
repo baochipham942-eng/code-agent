@@ -9,6 +9,7 @@ import type {
   PermissionRequest,
   PermissionResponse,
   ModelConfig,
+  ModelProvider,
 } from '../../shared/types';
 import type { ReportStyle, AgentRunOptions, ResearchUserSettings } from '../research/types';
 import { AgentLoop } from './agentLoop';
@@ -779,14 +780,14 @@ export class AgentOrchestrator {
     const isAdmin = currentUser?.isAdmin === true;
 
     // 从用户配置获取选择的 provider 和 model
-    const userProvider = settings.models?.default || settings.models?.defaultProvider || 'deepseek';
-    const providerConfig = settings.models?.providers?.[userProvider as keyof typeof settings.models.providers];
-    const userModel = providerConfig?.model || this.getDefaultModel(userProvider);
+    const userProviderStr = settings.models?.default || settings.models?.defaultProvider || 'deepseek';
+    const providerConfig = settings.models?.providers?.[userProviderStr as keyof typeof settings.models.providers];
+    const userModel = providerConfig?.model || this.getDefaultModel(userProviderStr);
 
     // 获取对应的 API Key
-    const selectedApiKey = this.configService.getApiKey(userProvider as ModelProvider);
+    const selectedApiKey = this.configService.getApiKey(userProviderStr as ModelProvider);
 
-    let selectedProvider = userProvider;
+    let selectedProvider: ModelProvider = userProviderStr as ModelProvider;
     let selectedModel = userModel;
 
     logger.info(`[模型选择] 用户配置: provider=${selectedProvider}, model=${selectedModel}`);
@@ -812,7 +813,7 @@ export class AgentOrchestrator {
       if (!cloudSupportedProviders.includes(selectedProvider)) {
         // 不支持的 provider，回退到 deepseek
         logger.warn(`[模型选择] 云端代理不支持 ${selectedProvider}，回退到 deepseek`);
-        selectedProvider = 'deepseek';
+        selectedProvider = 'deepseek' as ModelProvider;
         selectedModel = 'deepseek-chat';
       }
       logger.info(`[模型选择] 管理员使用云端代理: ${selectedProvider}`);

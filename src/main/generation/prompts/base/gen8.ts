@@ -42,6 +42,10 @@ export const GEN8_TOOLS = `
 - **ppt_generate**: 生成 PPT
 - **image_generate**: 生成图片
 
+#### 图片处理
+- **image_analyze**: 分析图片内容、OCR 文字识别、批量筛选图片
+- **image_annotate**: 在图片上绘制矩形框、圆圈、箭头等标注，输出带标记的新图片
+
 #### 桌面控制
 - **screenshot**: 截取屏幕
 - **computer_use**: 控制鼠标和键盘

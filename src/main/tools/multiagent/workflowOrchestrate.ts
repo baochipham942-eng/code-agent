@@ -287,14 +287,22 @@ Parameters:
     const results: StageResult[] = [];
     const stageOutputs: Map<string, string> = new Map();
 
-    logger.info('Starting workflow', { name: workflow.name, stageCount: workflow.stages.length });
+    logger.info('[Workflow] 开始执行工作流', {
+      name: workflow.name,
+      stageCount: workflow.stages.length,
+      stages: workflow.stages.map(s => `${s.name}(${s.role})`).join(' -> '),
+    });
 
     try {
       // Build execution groups (stages with same dependencies can run in parallel)
       const executionGroups = buildExecutionGroups(workflow.stages);
+      logger.info('[Workflow] 执行组构建完成', {
+        groupCount: executionGroups.length,
+        groups: executionGroups.map((g, i) => `Group${i+1}: [${g.map(s => s.name).join(', ')}]`).join(', '),
+      });
 
       for (const group of executionGroups) {
-        logger.debug('Executing group', { stages: group.map(s => s.name).join(', ') });
+        logger.info('[Workflow] 执行阶段组', { stages: group.map(s => s.name).join(', ') });
 
         if (parallel && group.length > 1) {
           // Execute stages in parallel
@@ -428,8 +436,11 @@ async function executeStage(
 ): Promise<StageResult> {
   const startTime = Date.now();
 
+  logger.info('[Stage] 开始执行阶段', { stage: stage.name, role: stage.role });
+
   const agentConfig = resolveAgentConfig(stage.role, roles);
   if (!agentConfig) {
+    logger.error('[Stage] 未找到 agent 配置', { role: stage.role });
     return {
       stage: stage.name,
       role: stage.role,
@@ -439,6 +450,13 @@ async function executeStage(
       duration: 0,
     };
   }
+
+  logger.info('[Stage] Agent 配置已解析', {
+    stage: stage.name,
+    agentName: agentConfig.name,
+    tools: agentConfig.tools,
+    hasModelOverride: !!agentConfig.modelOverride,
+  });
 
   // Build context from previous stages
   let contextFromPrevious = '';
@@ -496,6 +514,13 @@ Overall Task: ${task}${contextFromPrevious}`;
       }
     );
 
+    logger.info('[Stage] 阶段执行完成', {
+      stage: stage.name,
+      success: result.success,
+      duration: Date.now() - startTime,
+      outputLength: result.output?.length || 0,
+    });
+
     return {
       stage: stage.name,
       role: stage.role,
@@ -505,6 +530,10 @@ Overall Task: ${task}${contextFromPrevious}`;
       duration: Date.now() - startTime,
     };
   } catch (error) {
+    logger.error('[Stage] 阶段执行异常', {
+      stage: stage.name,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
     return {
       stage: stage.name,
       role: stage.role,

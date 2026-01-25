@@ -760,52 +760,26 @@ export class ModelRouter {
   }
 
   /**
-   * 云端代理支持的 provider 列表
-   * 这些 provider 在 Vercel 云端已配置 API Key
-   * 其他 provider 如果走云端代理会失败
-   */
-  private cloudSupportedProviders: Set<ModelProvider> = new Set([
-    'deepseek',
-    'openrouter',
-    'openai',
-  ]);
-
-  /**
    * 获取备用模型配置
    * 优先使用同 provider 的能力模型（复用 API Key），其次使用默认 fallback
-   *
-   * @param capability 需要的能力
-   * @param originalConfig 原始模型配置
-   * @param options.preferCloudSafe 是否优先使用云端支持的 provider（管理员走云端代理时使用）
    */
   getFallbackConfig(
     capability: ModelCapability,
-    originalConfig: ModelConfig,
-    options?: { preferCloudSafe?: boolean }
+    originalConfig: ModelConfig
   ): ModelConfig | null {
-    const { preferCloudSafe = false } = options || {};
-
     // 1. 优先检查当前 provider 是否有支持该能力的模型
     const sameProviderModel = this.findSameProviderFallback(
       originalConfig.provider,
       capability
     );
     if (sameProviderModel) {
-      // 如果需要云端安全模式，检查 provider 是否支持
-      if (preferCloudSafe && !this.cloudSupportedProviders.has(originalConfig.provider)) {
-        console.log(
-          `[ModelRouter] 同 provider (${originalConfig.provider}) 的 ${capability} 模型 ${sameProviderModel} 云端不支持，使用默认 fallback`
-        );
-        // 继续使用默认 fallback
-      } else {
-        console.log(
-          `[ModelRouter] 使用同 provider (${originalConfig.provider}) 的 ${capability} 模型: ${sameProviderModel}`
-        );
-        return {
-          ...originalConfig,
-          model: sameProviderModel,
-        };
-      }
+      console.log(
+        `[ModelRouter] 使用同 provider (${originalConfig.provider}) 的 ${capability} 模型: ${sameProviderModel}`
+      );
+      return {
+        ...originalConfig,
+        model: sameProviderModel,
+      };
     }
 
     // 2. 使用默认 fallback 配置

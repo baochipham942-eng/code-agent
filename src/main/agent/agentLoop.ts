@@ -1810,20 +1810,14 @@ export class AgentLoop {
             if (capability === 'vision') {
               needsVisionFallback = true;
             }
-
-            const configService = getConfigService();
-            const authService = getAuthService();
-            const currentUser = authService.getCurrentUser();
-            const isAdmin = currentUser?.isAdmin === true;
-
             // 主模型缺少此能力，尝试获取备用模型
-            // 管理员走云端代理时，优先使用云端支持的 provider
-            const fallbackConfig = this.modelRouter.getFallbackConfig(
-              capability,
-              this.modelConfig,
-              { preferCloudSafe: isAdmin }
-            );
+            const fallbackConfig = this.modelRouter.getFallbackConfig(capability, this.modelConfig);
             if (fallbackConfig) {
+              const configService = getConfigService();
+              const authService = getAuthService();
+              const currentUser = authService.getCurrentUser();
+              const isAdmin = currentUser?.isAdmin === true;
+
               // 管理员走云端代理，非管理员走本地 API Key
               if (isAdmin) {
                 // 管理员：使用云端代理（标记为使用云端 Key）

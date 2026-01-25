@@ -84,11 +84,35 @@ export const en: Translations = {
       },
       openai: {
         name: 'OpenAI',
-        description: 'OpenAI GPT API',
+        description: 'GPT-4.1 / o3 Series',
+      },
+      gemini: {
+        name: 'Gemini',
+        description: 'Google Gemini 2.5 Series',
       },
       openrouter: {
         name: 'OpenRouter',
         description: 'Proxy (Gemini/Claude/GPT)',
+      },
+      zhipu: {
+        name: 'Zhipu AI',
+        description: 'GLM-4 Series Models',
+      },
+      qwen: {
+        name: 'Qwen',
+        description: 'Alibaba Cloud Qwen Models',
+      },
+      moonshot: {
+        name: 'Kimi',
+        description: 'Moonshot AI Models',
+      },
+      minimax: {
+        name: 'MiniMax',
+        description: 'MiniMax Hailuo AI',
+      },
+      perplexity: {
+        name: 'Perplexity',
+        description: 'AI Search Service',
       },
     },
   },

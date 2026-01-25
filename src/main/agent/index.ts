@@ -154,6 +154,23 @@ export {
   type ToolConstraints,
 } from './agentRequirementsAnalyzer';
 
+// Built-in Agent Types (Architecture Evolution)
+export {
+  BUILTIN_AGENTS,
+  AGENT_PARALLEL_CONFIG,
+  EFFORT_CONFIG,
+  getBuiltinAgent,
+  listBuiltinAgents,
+  getAgentsByLayer,
+  canAgentsRunInParallel,
+  getAgentModelConfig,
+  getAgentTools,
+  type BuiltinAgentConfig,
+  type AgentLayer,
+  type ParallelCapability,
+  type EffortLevel,
+} from './types/builtinAgents';
+
 // Existing exports (re-export for convenience)
 export { AgentOrchestrator, type AgentOrchestratorConfig } from './agentOrchestrator';
 export { AgentLoop } from './agentLoop';

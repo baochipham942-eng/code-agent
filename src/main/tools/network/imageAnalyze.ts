@@ -15,7 +15,7 @@ const logger = createLogger('ImageAnalyze');
 // 配置
 const CONFIG = {
   OPENROUTER_MODEL: 'google/gemini-2.0-flash-001',
-  ZHIPU_MODEL: 'glm-4.6v-flash', // 智谱免费视觉模型
+  ZHIPU_MODEL: 'glm-4v-flash', // 智谱免费视觉模型
   MAX_PARALLEL: 10,
   TIMEOUT_MS: 30000,
   SUPPORTED_FORMATS: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'],

@@ -1901,6 +1901,23 @@ export class AgentLoop {
         if (fallbackModelInfo && !fallbackModelInfo.supportsTool) {
           logger.warn(`[AgentLoop] Fallback 模型 ${effectiveConfig.model} 不支持 tool calls，清空工具列表`);
           effectiveTools = [];
+
+          // 简化 system prompt: 视觉模型不需要复杂的工具描述和宪法内容
+          // 只保留简洁的视觉任务指导，避免 token 浪费和模型混淆
+          const simplifiedPrompt = `你是一个图片理解助手。请仔细观察图片内容，按照用户的要求进行分析。
+
+输出要求：
+- 使用清晰、结构化的格式
+- 如果用户要求识别文字(OCR)，按阅读顺序列出所有文字
+- 如果用户要求描述位置，使用相对位置描述（如"左上角"、"中央"）
+- 只输出分析结果，不要解释你的能力或限制`;
+
+          // 替换 system prompt
+          if (modelMessages.length > 0 && modelMessages[0].role === 'system') {
+            modelMessages[0].content = simplifiedPrompt;
+            logger.info(`[AgentLoop] 简化视觉模型 system prompt (${simplifiedPrompt.length} chars)`);
+          }
+
           // 发送事件通知前端
           this.onEvent({
             type: 'notification',

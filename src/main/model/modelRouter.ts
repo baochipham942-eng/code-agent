@@ -2250,12 +2250,14 @@ export class ModelRouter {
     }));
 
     // 智谱模型使用更高的默认 maxTokens
+    // 注意：智谱 API 总是使用流式响应，即使 stream: false 也返回 chunk 格式
+    // 所以我们总是启用流式处理
     const requestBody: Record<string, unknown> = {
       model: config.model || 'glm-4.7',
       messages: this.convertToOpenAIMessages(messages),
       temperature: config.temperature ?? 0.7,
       max_tokens: config.maxTokens ?? 8192,
-      stream: !!onStream,
+      stream: true, // 智谱总是使用流式
     };
 
     // 检查模型是否支持工具调用
@@ -2263,6 +2265,8 @@ export class ModelRouter {
       requestBody.tools = zhipuTools;
       requestBody.tool_choice = 'auto';
     }
+
+    logger.info(`[智谱] 请求: model=${requestBody.model}, stream=true`);
 
     const response = await electronFetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -2279,20 +2283,12 @@ export class ModelRouter {
       throw new Error(`智谱 API error: ${response.status} - ${error}`);
     }
 
-    if (onStream && response.body) {
+    // 智谱总是使用流式处理
+    if (response.body) {
       return this.handleStream(response.body, onStream);
     }
 
-    const data = await response.json();
-    logger.debug('[智谱] API 响应:', JSON.stringify(data).substring(0, 500));
-
-    // 检查智谱特有的错误格式
-    if (data.error) {
-      const errMsg = typeof data.error === 'string' ? data.error : JSON.stringify(data.error);
-      throw new Error(`智谱 API error: ${errMsg}`);
-    }
-
-    return this.parseOpenAIResponse(data);
+    throw new Error('智谱 API 响应无 body');
   }
 
   // --------------------------------------------------------------------------

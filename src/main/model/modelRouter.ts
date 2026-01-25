@@ -474,6 +474,94 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
       },
     ],
   },
+  minimax: {
+    id: 'minimax',
+    name: 'MiniMax',
+    requiresApiKey: true,
+    baseUrl: 'https://api.minimax.chat/v1',
+    models: [
+      {
+        id: 'abab6.5s-chat',
+        name: 'abab6.5s (快速)',
+        capabilities: ['general', 'code', 'fast'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+      },
+      {
+        id: 'abab6.5-chat',
+        name: 'abab6.5',
+        capabilities: ['general', 'code'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+      },
+      {
+        id: 'abab5.5s-chat',
+        name: 'abab5.5s (快速)',
+        capabilities: ['fast', 'general'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+      },
+      {
+        id: 'abab5.5-chat',
+        name: 'abab5.5',
+        capabilities: ['general'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+      },
+    ],
+  },
+  gemini: {
+    id: 'gemini',
+    name: 'Google Gemini',
+    requiresApiKey: true,
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    models: [
+      {
+        id: 'gemini-2.5-pro',
+        name: 'Gemini 2.5 Pro (最强)',
+        capabilities: ['general', 'code', 'vision', 'reasoning'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: true,
+        supportsStreaming: true,
+      },
+      {
+        id: 'gemini-2.5-flash',
+        name: 'Gemini 2.5 Flash',
+        capabilities: ['general', 'code', 'vision', 'fast'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: true,
+        supportsStreaming: true,
+      },
+      {
+        id: 'gemini-2.5-flash-lite',
+        name: 'Gemini 2.5 Flash Lite (最便宜)',
+        capabilities: ['fast', 'general'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: true,
+        supportsStreaming: true,
+      },
+      {
+        id: 'gemini-2.0-flash',
+        name: 'Gemini 2.0 Flash',
+        capabilities: ['general', 'code', 'vision', 'fast'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: true,
+        supportsStreaming: true,
+      },
+    ],
+  },
   perplexity: {
     id: 'perplexity',
     name: 'Perplexity',
@@ -761,6 +849,8 @@ export class ModelRouter {
         return this.callClaude(messages, tools, config, onStream);
       case 'openai':
         return this.callOpenAI(messages, tools, config, onStream);
+      case 'gemini':
+        return this.callGemini(messages, tools, config, onStream);
       case 'groq':
         return this.callGroq(messages, tools, config, onStream);
       case 'local':
@@ -771,6 +861,8 @@ export class ModelRouter {
         return this.callQwen(messages, tools, config, onStream);
       case 'moonshot':
         return this.callMoonshot(messages, tools, config, onStream);
+      case 'minimax':
+        return this.callMinimax(messages, tools, config, onStream);
       case 'perplexity':
         return this.callPerplexity(messages, tools, config, onStream);
       case 'openrouter':
@@ -1542,6 +1634,170 @@ export class ModelRouter {
     return this.parseOpenAIResponse(data);
   }
 
+  // --------------------------------------------------------------------------
+  // Google Gemini 调用
+  // --------------------------------------------------------------------------
+
+  private async callGemini(
+    messages: ModelMessage[],
+    tools: ToolDefinition[],
+    config: ModelConfig,
+    onStream?: StreamCallback
+  ): Promise<ModelResponse> {
+    const baseUrl = config.baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
+    const model = config.model || 'gemini-2.5-flash';
+
+    // 转换消息为 Gemini 格式
+    const geminiContents = this.convertToGeminiMessages(messages);
+
+    // 转换工具为 Gemini 格式
+    const geminiTools = tools.length > 0 ? [{
+      function_declarations: tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema,
+      })),
+    }] : undefined;
+
+    const requestBody: Record<string, unknown> = {
+      contents: geminiContents,
+      generationConfig: {
+        temperature: config.temperature ?? 0.7,
+        maxOutputTokens: config.maxTokens ?? 8192,
+      },
+    };
+
+    if (geminiTools) {
+      requestBody.tools = geminiTools;
+    }
+
+    const endpoint = onStream ? 'streamGenerateContent' : 'generateContent';
+    const url = `${baseUrl}/models/${model}:${endpoint}?key=${config.apiKey}`;
+
+    const response = await electronFetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Gemini API error: ${response.status} - ${error}`);
+    }
+
+    if (onStream && response.body) {
+      return this.handleGeminiStream(response.body, onStream);
+    }
+
+    const data = await response.json();
+    return this.parseGeminiResponse(data);
+  }
+
+  private convertToGeminiMessages(messages: ModelMessage[]): any[] {
+    const contents: any[] = [];
+
+    for (const m of messages) {
+      if (m.role === 'system') {
+        // Gemini 使用 system_instruction，这里作为第一个 user 消息处理
+        contents.push({
+          role: 'user',
+          parts: [{ text: typeof m.content === 'string' ? m.content : '' }],
+        });
+        contents.push({
+          role: 'model',
+          parts: [{ text: 'Understood. I will follow these instructions.' }],
+        });
+      } else if (m.role === 'user' || m.role === 'tool') {
+        contents.push({
+          role: 'user',
+          parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
+        });
+      } else if (m.role === 'assistant') {
+        contents.push({
+          role: 'model',
+          parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
+        });
+      }
+    }
+
+    return contents;
+  }
+
+  private async handleGeminiStream(
+    body: ReadableStream<Uint8Array>,
+    onStream: StreamCallback
+  ): Promise<ModelResponse> {
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let fullContent = '';
+    let buffer = '';
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Gemini 流式返回的是 JSON 数组片段
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim() || line.startsWith('data: [DONE]')) continue;
+
+          try {
+            const cleanLine = line.replace(/^data:\s*/, '');
+            if (!cleanLine) continue;
+
+            const json = JSON.parse(cleanLine);
+            const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) {
+              fullContent += text;
+              onStream({ type: 'text', content: text });
+            }
+          } catch {
+            // 忽略解析错误
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return { type: 'text', content: fullContent, toolCalls: [] };
+  }
+
+  private parseGeminiResponse(data: any): ModelResponse {
+    const candidate = data.candidates?.[0];
+    if (!candidate) {
+      throw new Error('No response from Gemini');
+    }
+
+    const content = candidate.content?.parts?.[0]?.text || '';
+    const toolCalls: ToolCall[] = [];
+
+    // 处理函数调用
+    const functionCalls = candidate.content?.parts?.filter((p: any) => p.functionCall);
+    if (functionCalls?.length > 0) {
+      for (const fc of functionCalls) {
+        toolCalls.push({
+          id: `gemini_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+          name: fc.functionCall.name,
+          arguments: fc.functionCall.args || {},
+        });
+      }
+    }
+
+    return {
+      type: toolCalls.length > 0 ? 'tool_use' : 'text',
+      content,
+      toolCalls,
+    };
+  }
+
   private async callLocal(
     messages: ModelMessage[],
     tools: ToolDefinition[],
@@ -2110,6 +2366,64 @@ export class ModelRouter {
     if (!response.ok) {
       const error = await response.text();
       throw new Error(`Moonshot API error: ${response.status} - ${error}`);
+    }
+
+    if (onStream && response.body) {
+      return this.handleStream(response.body, onStream);
+    }
+
+    const data = await response.json();
+    return this.parseOpenAIResponse(data);
+  }
+
+  // --------------------------------------------------------------------------
+  // MiniMax 调用
+  // --------------------------------------------------------------------------
+
+  private async callMinimax(
+    messages: ModelMessage[],
+    tools: ToolDefinition[],
+    config: ModelConfig,
+    onStream?: StreamCallback
+  ): Promise<ModelResponse> {
+    const baseUrl = config.baseUrl || 'https://api.minimax.chat/v1';
+
+    // MiniMax 使用 OpenAI 兼容格式
+    const minimaxTools = tools.map((tool) => ({
+      type: 'function' as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema,
+      },
+    }));
+
+    const requestBody: Record<string, unknown> = {
+      model: config.model || 'abab6.5s-chat',
+      messages: this.convertToOpenAIMessages(messages),
+      temperature: config.temperature ?? 0.7,
+      max_tokens: config.maxTokens ?? 8192,
+      stream: !!onStream,
+    };
+
+    const modelInfo = this.getModelInfo('minimax', config.model);
+    if (minimaxTools.length > 0 && modelInfo?.supportsTool) {
+      requestBody.tools = minimaxTools;
+      requestBody.tool_choice = 'auto';
+    }
+
+    const response = await electronFetch(`${baseUrl}/text/chatcompletion_v2`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`MiniMax API error: ${response.status} - ${error}`);
     }
 
     if (onStream && response.body) {

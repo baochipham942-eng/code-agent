@@ -82,11 +82,35 @@ export const zh = {
       },
       openai: {
         name: 'OpenAI',
-        description: 'OpenAI GPT API',
+        description: 'GPT-4.1 / o3 系列',
+      },
+      gemini: {
+        name: 'Gemini',
+        description: 'Google Gemini 2.5 系列',
       },
       openrouter: {
         name: 'OpenRouter',
         description: '中转服务 (Gemini/Claude/GPT)',
+      },
+      zhipu: {
+        name: '智谱 AI',
+        description: 'GLM-4 系列模型',
+      },
+      qwen: {
+        name: '通义千问',
+        description: '阿里云 Qwen 模型',
+      },
+      moonshot: {
+        name: 'Kimi',
+        description: 'Moonshot AI 模型',
+      },
+      minimax: {
+        name: 'MiniMax',
+        description: 'MiniMax 海螺 AI',
+      },
+      perplexity: {
+        name: 'Perplexity',
+        description: 'AI 搜索服务',
       },
     },
   },

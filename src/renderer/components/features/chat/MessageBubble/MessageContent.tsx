@@ -274,11 +274,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   }, [openPreview, workingDirectory]);
 
   // For user messages, render as plain text (no markdown processing)
+  // 使用 span 而非 div，避免复制时末尾多出换行符
   if (isUser) {
     return (
-      <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+      <span className="text-sm leading-relaxed whitespace-pre-wrap break-words block">
         {content}
-      </div>
+      </span>
     );
   }
 

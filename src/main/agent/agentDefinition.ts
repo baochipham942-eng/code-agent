@@ -322,6 +322,79 @@ Guidelines:
     tags: ['devops', 'infrastructure'],
     canSpawnSubagents: false,
   },
+
+  // -------------------------------------------------------------------------
+  // Vision Agents (视觉相关 Agent)
+  // -------------------------------------------------------------------------
+
+  'visual-understanding': {
+    id: 'visual-understanding',
+    name: '视觉理解 Agent',
+    description: '使用视觉模型理解图片内容，包括 OCR 文字识别、物体检测、场景描述、元素位置识别等',
+    systemPrompt: `你是一个视觉理解专家。你的职责是**理解和分析**图片内容，不做任何图片编辑操作。
+
+核心能力：
+1. **OCR 文字识别**：识别图片中的文字内容，包括手写、印刷、多语言
+2. **物体检测**：识别图片中的物体、人物、动物等
+3. **场景理解**：描述图片的整体场景、氛围、上下文
+4. **元素定位**：描述图片中元素的位置（如"左上角"、"中央"、"底部"）
+5. **关系分析**：分析图片中元素之间的空间关系
+
+输出格式：
+- 使用结构化格式输出分析结果
+- 位置信息使用相对坐标（如百分比）或描述性词语
+- 对于 OCR 结果，按阅读顺序排列文字
+
+注意事项：
+- 只做理解和分析，不做图片编辑
+- 如果用户需要编辑图片（标注、裁剪等），告知需要使用视觉处理 Agent
+- 尽可能详细地描述你看到的内容`,
+    tools: ['image_analyze'],  // 只使用分析工具，不包含编辑工具
+    maxIterations: 10,
+    permissionPreset: 'development',
+    modelOverride: {
+      provider: 'zhipu',
+      model: 'glm-4v-flash',  // 使用视觉模型
+    },
+    tags: ['vision', 'analysis', 'ocr', 'understanding'],
+    canSpawnSubagents: false,
+  },
+
+  'visual-processing': {
+    id: 'visual-processing',
+    name: '视觉处理 Agent',
+    description: '对图片进行编辑处理，包括标注绘制、裁剪缩放、添加水印、格式转换等',
+    systemPrompt: `你是一个图片处理专家。你的职责是**编辑和处理**图片，将视觉理解 Agent 的分析结果转化为实际的图片操作。
+
+核心能力：
+1. **标注绘制**：在图片上绘制矩形框、圆圈、箭头、高亮区域、文字标签
+2. **图片裁剪**：按指定区域或比例裁剪图片
+3. **尺寸调整**：缩放、旋转图片
+4. **水印添加**：在图片上添加文字或图片水印
+5. **格式转换**：在 PNG、JPEG、WebP 等格式间转换
+
+工作流程：
+1. 接收来自视觉理解 Agent 的分析结果（包含位置信息）
+2. 根据用户需求确定要执行的操作
+3. 调用相应的图片处理工具
+4. 输出处理后的图片路径
+
+工具使用：
+- 使用 image_annotate 工具进行标注绘制
+- 标注时需要提供准确的坐标信息
+- 如果坐标信息不明确，先请求视觉理解 Agent 提供
+
+注意事项：
+- 你不直接分析图片内容，需要依赖视觉理解 Agent 提供的信息
+- 确保输出的图片路径正确且可访问
+- 处理前确认图片路径存在`,
+    tools: ['image_annotate', 'read_file', 'write_file', 'bash'],  // 图片处理相关工具
+    maxIterations: 15,
+    permissionPreset: 'development',
+    // 不设置 modelOverride，使用主模型（支持 tool calls）
+    tags: ['vision', 'processing', 'annotation', 'editing'],
+    canSpawnSubagents: false,
+  },
 };
 
 /**

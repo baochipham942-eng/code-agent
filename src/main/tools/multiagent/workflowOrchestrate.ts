@@ -4,9 +4,10 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
-import type { ModelConfig } from '../../../shared/types';
+import type { ModelConfig, ModelProvider } from '../../../shared/types';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
 import { getAvailableRoles } from './spawnAgent';
+import { getPredefinedAgent, type AgentDefinition } from '../../agent/agentDefinition';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('WorkflowOrchestrate');
@@ -92,6 +93,72 @@ const WORKFLOW_TEMPLATES: Record<string, WorkflowTemplate> = {
       },
     ],
   },
+  'image-annotation': {
+    name: '图片标注流程',
+    description: '视觉理解 -> 视觉处理：先识别图片内容和位置，再进行标注',
+    stages: [
+      {
+        name: '视觉理解',
+        role: 'visual-understanding',
+        prompt: `分析图片内容，识别所有需要标注的元素。
+
+输出格式要求：
+1. 列出所有识别到的元素
+2. 为每个元素提供位置信息（如：左上角、中央、右下角，或百分比坐标）
+3. 描述元素的大致尺寸（相对于图片的占比）
+
+注意：位置信息要尽可能精确，以便后续标注处理。`,
+      },
+      {
+        name: '视觉处理',
+        role: 'visual-processing',
+        prompt: `根据视觉理解阶段的分析结果，在图片上绘制标注。
+
+使用 image_annotate 工具进行标注绘制：
+- 根据识别到的位置信息计算坐标
+- 选择合适的标注类型（矩形框、圆圈、箭头等）
+- 添加必要的标签文字
+
+确保所有识别到的元素都被正确标注。`,
+        dependsOn: ['视觉理解'],
+      },
+    ],
+  },
+  'image-ocr-annotate': {
+    name: 'OCR 文字标注流程',
+    description: '专门用于识别图片中的文字并用矩形框标注',
+    stages: [
+      {
+        name: 'OCR 识别',
+        role: 'visual-understanding',
+        prompt: `识别图片中的所有文字区域。
+
+输出格式要求：
+1. 列出每个文字区域的内容
+2. 提供每个文字区域的位置（x%, y% 相对于图片左上角）
+3. 提供每个文字区域的大小（宽度%、高度%）
+4. 按从上到下、从左到右的阅读顺序排列
+
+示例输出格式：
+- 文字1: "标题文字", 位置: (10%, 5%), 尺寸: (80%, 8%)
+- 文字2: "正文内容", 位置: (10%, 20%), 尺寸: (60%, 5%)`,
+      },
+      {
+        name: '矩形标注',
+        role: 'visual-processing',
+        prompt: `根据 OCR 识别结果，用矩形框标注所有文字区域。
+
+使用 image_annotate 工具：
+- 将百分比坐标转换为像素坐标（假设图片尺寸，或使用相对坐标）
+- 为每个文字区域绘制矩形框
+- 矩形框颜色使用红色(#FF0000)
+- 可选：添加标签显示文字内容
+
+确保标注清晰可见，不遮挡原文字。`,
+        dependsOn: ['OCR 识别'],
+      },
+    ],
+  },
 };
 
 interface WorkflowStage {
@@ -125,11 +192,14 @@ Available workflow templates:
 - bug-fix-flow: Debugger -> Coder -> Tester
 - documentation-flow: Architect -> Documenter
 - parallel-review: Reviewer + Tester in parallel
+- image-annotation: 视觉理解 -> 视觉处理（通用图片标注）
+- image-ocr-annotate: OCR 识别 -> 矩形标注（文字识别并标注）
 
 Use this tool to:
 - Execute predefined workflow templates
 - Define custom multi-stage workflows
 - Coordinate multiple agents on a complex task
+- Process images with multi-step workflows (理解 + 处理)
 
 Parameters:
 - workflow: Template name or 'custom'
@@ -319,6 +389,35 @@ function buildExecutionGroups(stages: WorkflowStage[]): WorkflowStage[][] {
   return groups;
 }
 
+// Resolve agent configuration from either predefined agents or legacy roles
+function resolveAgentConfig(
+  roleOrId: string,
+  legacyRoles: Record<string, { name: string; systemPrompt: string; tools: string[] }>
+): { name: string; systemPrompt: string; tools: string[]; modelOverride?: AgentDefinition['modelOverride'] } | undefined {
+  // First check predefined agents (new system)
+  const predefined = getPredefinedAgent(roleOrId);
+  if (predefined) {
+    return {
+      name: predefined.name,
+      systemPrompt: predefined.systemPrompt,
+      tools: predefined.tools,
+      modelOverride: predefined.modelOverride,
+    };
+  }
+
+  // Fall back to legacy roles
+  const legacy = legacyRoles[roleOrId];
+  if (legacy) {
+    return {
+      name: legacy.name,
+      systemPrompt: legacy.systemPrompt,
+      tools: legacy.tools,
+    };
+  }
+
+  return undefined;
+}
+
 // Execute a single stage
 async function executeStage(
   stage: WorkflowStage,
@@ -329,14 +428,14 @@ async function executeStage(
 ): Promise<StageResult> {
   const startTime = Date.now();
 
-  const role = roles[stage.role];
-  if (!role) {
+  const agentConfig = resolveAgentConfig(stage.role, roles);
+  if (!agentConfig) {
     return {
       stage: stage.name,
       role: stage.role,
       success: false,
       output: '',
-      error: `Unknown role: ${stage.role}`,
+      error: `Unknown role: ${stage.role}. Use predefined agents or legacy roles.`,
       duration: 0,
     };
   }
@@ -363,16 +462,33 @@ Overall Task: ${task}${contextFromPrevious}`;
 
   try {
     const executor = getSubagentExecutor();
+
+    // Apply model override if specified
+    let effectiveModelConfig = context.modelConfig as ModelConfig;
+    if (agentConfig.modelOverride) {
+      effectiveModelConfig = {
+        ...effectiveModelConfig,
+        provider: (agentConfig.modelOverride.provider as ModelProvider) || effectiveModelConfig.provider,
+        model: agentConfig.modelOverride.model || effectiveModelConfig.model,
+        temperature: agentConfig.modelOverride.temperature ?? effectiveModelConfig.temperature,
+      };
+      logger.info('Using model override for stage', {
+        stage: stage.name,
+        provider: effectiveModelConfig.provider,
+        model: effectiveModelConfig.model,
+      });
+    }
+
     const result = await executor.execute(
       fullPrompt,
       {
         name: `Stage:${stage.name}`,
-        systemPrompt: role.systemPrompt,
-        availableTools: role.tools,
+        systemPrompt: agentConfig.systemPrompt,
+        availableTools: agentConfig.tools,
         maxIterations: 15,
       },
       {
-        modelConfig: context.modelConfig as ModelConfig,
+        modelConfig: effectiveModelConfig,
         toolRegistry: new Map(
           context.toolRegistry!.getAllTools().map((t) => [t.name, t])
         ),

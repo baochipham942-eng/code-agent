@@ -255,16 +255,9 @@ async function downloadVideo(url: string, outputPath: string): Promise<void> {
 
 export const videoGenerateTool: Tool = {
   name: 'video_generate',
-  description: `生成 AI 视频。支持文生视频和图生视频。
+  description: `生成 AI 视频，可以根据文字描述或图片生成短视频。
 
-参数：
-- prompt: 视频描述（支持中英文）
-- image_url: 起始图片 URL（可选，图生视频）
-- aspect_ratio: "16:9"(1920x1080) | "9:16"(1080x1920) | "1:1"(1024x1024)，默认 16:9
-- duration: 5 | 10 秒（默认 5）
-- output_path: 保存路径（可选）
-
-生成需要 30-180 秒。`,
+支持横屏、竖屏、方形三种比例，时长 5 秒或 10 秒。生成需要 30-180 秒。`,
   generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',

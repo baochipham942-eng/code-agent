@@ -15,6 +15,10 @@ import {
   BookOpen,
   ChevronDown,
   ChevronUp,
+  Search,
+  Star,
+  X,
+  Download,
 } from 'lucide-react';
 import { Button, Input } from '../../../primitives';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
@@ -24,6 +28,32 @@ import type {
   SkillRepository,
 } from '@shared/types/skillRepository';
 import { createLogger } from '../../../../utils/logger';
+
+// ============================================================================
+// SkillsMP API Types
+// ============================================================================
+
+interface SkillsMPSearchResult {
+  id: string;
+  name: string;
+  description: string;
+  repo: string;
+  repoOwner: string;
+  repoName: string;
+  stars: number;
+  lastUpdated: string;
+  skillPath: string;
+  url: string;
+}
+
+interface SkillsMPSearchResponse {
+  success: boolean;
+  data?: SkillsMPSearchResult[];
+  error?: {
+    code: string;
+    message: string;
+  };
+}
 
 const logger = createLogger('SkillsSettings');
 
@@ -237,6 +267,61 @@ const RecommendedRepoCard: React.FC<RecommendedRepoCardProps> = ({
 };
 
 // ============================================================================
+// SkillsMP Search Result Card
+// ============================================================================
+
+interface SkillSearchResultCardProps {
+  skill: SkillsMPSearchResult;
+  onInstall: (skill: SkillsMPSearchResult) => void;
+  isInstalling: boolean;
+}
+
+const SkillSearchResultCard: React.FC<SkillSearchResultCardProps> = ({
+  skill,
+  onInstall,
+  isInstalling,
+}) => {
+  const formatStars = (stars: number) => {
+    if (stars >= 1000) {
+      return `${(stars / 1000).toFixed(1)}k`;
+    }
+    return stars.toString();
+  };
+
+  return (
+    <div className="bg-zinc-800/50 rounded-lg border border-zinc-700 p-3 hover:border-zinc-600 transition-colors">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h4 className="text-sm font-medium text-zinc-100 truncate">{skill.name}</h4>
+            <div className="flex items-center gap-1 text-xs text-amber-400 shrink-0">
+              <Star className="w-3 h-3 fill-current" />
+              <span>{formatStars(skill.stars)}</span>
+            </div>
+          </div>
+          <p className="text-xs text-zinc-500 mt-0.5 truncate">
+            from {skill.repoOwner}/{skill.repoName}
+          </p>
+          {skill.description && (
+            <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{skill.description}</p>
+          )}
+        </div>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => onInstall(skill)}
+          loading={isInstalling}
+          leftIcon={!isInstalling ? <Download className="w-3 h-3" /> : undefined}
+          className="shrink-0"
+        >
+          安装
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+// ============================================================================
 // Main Component
 // ============================================================================
 
@@ -248,6 +333,12 @@ export const SkillsSettings: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // SkillsMP Search State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SkillsMPSearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   // Load data
   const loadData = useCallback(async () => {
@@ -400,6 +491,76 @@ export const SkillsSettings: React.FC = () => {
     }
   };
 
+  // SkillsMP Search
+  const handleSearch = async () => {
+    const query = searchQuery.trim();
+    if (!query) return;
+
+    setIsSearching(true);
+    setSearchError(null);
+    setSearchResults([]);
+
+    try {
+      // Use AI search for semantic matching
+      const response = await fetch(
+        `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(query)}&limit=10`
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data: SkillsMPSearchResponse = await response.json();
+
+      if (data.success && data.data) {
+        setSearchResults(data.data);
+        if (data.data.length === 0) {
+          setSearchError('没有找到匹配的 Skill');
+        }
+      } else {
+        setSearchError(data.error?.message || '搜索失败');
+      }
+    } catch (err) {
+      logger.error('SkillsMP search failed', err);
+      setSearchError('搜索服务暂时不可用，请稍后重试');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Clear search
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setSearchError(null);
+  };
+
+  // Install skill from SkillsMP
+  const handleInstallFromSkillsMP = async (skill: SkillsMPSearchResult) => {
+    const repoUrl = `https://github.com/${skill.repoOwner}/${skill.repoName}`;
+    setActionLoading(`skillsmp-${skill.id}`);
+    setMessage(null);
+
+    try {
+      const result = await invokeSkillIPC<{ success: boolean; error?: string }>(
+        SKILL_CHANNELS.REPO_ADD_CUSTOM,
+        repoUrl
+      );
+      if (result?.success) {
+        setMessage({ type: 'success', text: `${skill.name} 安装成功` });
+        handleClearSearch();
+        await loadData();
+      } else {
+        setMessage({ type: 'error', text: result?.error || '安装失败' });
+      }
+    } catch (err) {
+      logger.error('Failed to install skill from SkillsMP', err);
+      setMessage({ type: 'error', text: '安装失败' });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Loading state
   if (loading) {
     return (
@@ -479,6 +640,85 @@ export const SkillsSettings: React.FC = () => {
           ))}
         </div>
       )}
+
+      {/* Search Skills from SkillsMP */}
+      <div className="space-y-3">
+        <h4 className="text-sm font-medium text-zinc-100">搜索 Skill</h4>
+        <div className="bg-zinc-800/50 rounded-lg border border-zinc-700 p-4">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !isSearching) {
+                    handleSearch();
+                  }
+                }}
+                placeholder="输入需求，如：代码审查、Git 提交..."
+                inputSize="sm"
+                disabled={isSearching}
+                className="pr-8"
+              />
+              {searchQuery && !isSearching && (
+                <button
+                  onClick={handleClearSearch}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant="primary"
+              onClick={handleSearch}
+              loading={isSearching}
+              leftIcon={!isSearching ? <Search className="w-3 h-3" /> : undefined}
+              disabled={!searchQuery.trim()}
+            >
+              搜索
+            </Button>
+          </div>
+          <p className="text-xs text-zinc-500 mt-2">
+            从{' '}
+            <a
+              href="https://skillsmp.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300"
+            >
+              SkillsMP
+            </a>
+            {' '}搜索 9 万+ 社区 Skills
+          </p>
+
+          {/* Search Results */}
+          {searchResults.length > 0 && (
+            <div className="mt-4 space-y-2 max-h-64 overflow-y-auto">
+              <div className="text-xs text-zinc-400 mb-2">
+                找到 {searchResults.length} 个结果：
+              </div>
+              {searchResults.map((skill) => (
+                <SkillSearchResultCard
+                  key={skill.id}
+                  skill={skill}
+                  onInstall={handleInstallFromSkillsMP}
+                  isInstalling={actionLoading === `skillsmp-${skill.id}`}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Search Error */}
+          {searchError && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-zinc-400">
+              <AlertCircle className="w-3 h-3" />
+              {searchError}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Add Custom Repository */}
       <div className="space-y-3">

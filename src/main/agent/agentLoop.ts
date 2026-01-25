@@ -2167,10 +2167,11 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
           const filePath = attachment.path || attachment.name;
 
           let contentText: string;
-          if (isLargeFile(attachment.data)) {
-            contentText = `📄 **PDF 文档: ${attachment.name}**${pageInfo}${pathInfo}\n\n${generateFilePreview(attachment.data, filePath, 'text')}`;
+          const data = attachment.data || '';
+          if (isLargeFile(data)) {
+            contentText = `📄 **PDF 文档: ${attachment.name}**${pageInfo}${pathInfo}\n\n${generateFilePreview(data, filePath || attachment.name, 'text')}`;
           } else {
-            contentText = `📄 **PDF 文档: ${attachment.name}**${pageInfo}${pathInfo}\n\n${attachment.data}`;
+            contentText = `📄 **PDF 文档: ${attachment.name}**${pageInfo}${pathInfo}\n\n${data}`;
           }
           totalAttachmentChars += contentText.length;
           contents.push({ type: 'text', text: contentText });
@@ -2182,12 +2183,13 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
           const lang = attachment.language || 'plaintext';
           const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
           const filePath = attachment.path || attachment.name;
+          const data = attachment.data || '';
 
           let contentText: string;
-          if (isLargeFile(attachment.data)) {
-            contentText = `📝 **代码文件: ${attachment.name}** (${lang})${pathInfo}\n\n${generateFilePreview(attachment.data, filePath, lang)}`;
+          if (isLargeFile(data)) {
+            contentText = `📝 **代码文件: ${attachment.name}** (${lang})${pathInfo}\n\n${generateFilePreview(data, filePath, lang)}`;
           } else {
-            contentText = `📝 **代码文件: ${attachment.name}** (${lang})${pathInfo}\n\`\`\`${lang}\n${attachment.data}\n\`\`\``;
+            contentText = `📝 **代码文件: ${attachment.name}** (${lang})${pathInfo}\n\`\`\`${lang}\n${data}\n\`\`\``;
           }
           totalAttachmentChars += contentText.length;
           contents.push({ type: 'text', text: contentText });
@@ -2199,12 +2201,13 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
           const lang = attachment.language || 'json';
           const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
           const filePath = attachment.path || attachment.name;
+          const data = attachment.data || '';
 
           let contentText: string;
-          if (isLargeFile(attachment.data)) {
-            contentText = `📊 **数据文件: ${attachment.name}**${pathInfo}\n\n${generateFilePreview(attachment.data, filePath, lang)}`;
+          if (isLargeFile(data)) {
+            contentText = `📊 **数据文件: ${attachment.name}**${pathInfo}\n\n${generateFilePreview(data, filePath, lang)}`;
           } else {
-            contentText = `📊 **数据文件: ${attachment.name}**${pathInfo}\n\`\`\`${lang}\n${attachment.data}\n\`\`\``;
+            contentText = `📊 **数据文件: ${attachment.name}**${pathInfo}\n\`\`\`${lang}\n${data}\n\`\`\``;
           }
           totalAttachmentChars += contentText.length;
           contents.push({ type: 'text', text: contentText });
@@ -2215,12 +2218,13 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
           // HTML 文件
           const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
           const filePath = attachment.path || attachment.name;
+          const data = attachment.data || '';
 
           let contentText: string;
-          if (isLargeFile(attachment.data)) {
-            contentText = `🌐 **HTML 文件: ${attachment.name}**${pathInfo}\n\n${generateFilePreview(attachment.data, filePath, 'html')}`;
+          if (isLargeFile(data)) {
+            contentText = `🌐 **HTML 文件: ${attachment.name}**${pathInfo}\n\n${generateFilePreview(data, filePath, 'html')}`;
           } else {
-            contentText = `🌐 **HTML 文件: ${attachment.name}**${pathInfo}\n\`\`\`html\n${attachment.data}\n\`\`\``;
+            contentText = `🌐 **HTML 文件: ${attachment.name}**${pathInfo}\n\`\`\`html\n${data}\n\`\`\``;
           }
           totalAttachmentChars += contentText.length;
           contents.push({ type: 'text', text: contentText });
@@ -2235,12 +2239,13 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
           const icon = isMarkdown ? '📝' : '📄';
           const fileType = isMarkdown ? 'Markdown 文件' : '文本文件';
           const lang = isMarkdown ? 'markdown' : 'text';
+          const data = attachment.data || '';
 
           let contentText: string;
-          if (isLargeFile(attachment.data)) {
-            contentText = `${icon} **${fileType}: ${attachment.name}**${pathInfo}\n\n${generateFilePreview(attachment.data, filePath, lang)}`;
+          if (isLargeFile(data)) {
+            contentText = `${icon} **${fileType}: ${attachment.name}**${pathInfo}\n\n${generateFilePreview(data, filePath, lang)}`;
           } else {
-            contentText = `${icon} **${fileType}: ${attachment.name}**${pathInfo}\n\n${attachment.data}`;
+            contentText = `${icon} **${fileType}: ${attachment.name}**${pathInfo}\n\n${data}`;
           }
           totalAttachmentChars += contentText.length;
           contents.push({ type: 'text', text: contentText });
@@ -2253,12 +2258,13 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
           const sheetInfo = attachment.sheetCount ? ` (${attachment.sheetCount} 个工作表` : '';
           const rowInfo = attachment.rowCount ? `, ${attachment.rowCount} 行数据)` : sheetInfo ? ')' : '';
           const filePath = attachment.path || attachment.name;
+          const data = attachment.data || '';
 
           let contentText: string;
-          if (isLargeFile(attachment.data)) {
-            contentText = `📊 **Excel 文件: ${attachment.name}**${sheetInfo}${rowInfo}${pathInfo}\n\n⚠️ 以下是已解析的表格数据（CSV 格式），无需调用工具读取：\n\n${generateFilePreview(attachment.data, filePath, 'csv')}`;
+          if (isLargeFile(data)) {
+            contentText = `📊 **Excel 文件: ${attachment.name}**${sheetInfo}${rowInfo}${pathInfo}\n\n⚠️ 以下是已解析的表格数据（CSV 格式），无需调用工具读取：\n\n${generateFilePreview(data, filePath, 'csv')}`;
           } else {
-            contentText = `📊 **Excel 文件: ${attachment.name}**${sheetInfo}${rowInfo}${pathInfo}\n\n⚠️ 以下是已解析的表格数据（CSV 格式），无需调用工具读取：\n\n\`\`\`csv\n${attachment.data}\n\`\`\``;
+            contentText = `📊 **Excel 文件: ${attachment.name}**${sheetInfo}${rowInfo}${pathInfo}\n\n⚠️ 以下是已解析的表格数据（CSV 格式），无需调用工具读取：\n\n\`\`\`csv\n${data}\n\`\`\``;
           }
           totalAttachmentChars += contentText.length;
           contents.push({ type: 'text', text: contentText });
@@ -2299,12 +2305,13 @@ ${totalLines > MAX_PREVIEW_LINES ? `\n⚠️ 还有 ${totalLines - MAX_PREVIEW_L
           // 其他文件类型
           const pathInfo = attachment.path ? `\n📍 路径: ${attachment.path}` : '';
           const filePath = attachment.path || attachment.name;
+          const data = attachment.data || '';
 
           let contentText: string;
-          if (isLargeFile(attachment.data)) {
-            contentText = `📎 **文件: ${attachment.name}**${pathInfo}\n\n${generateFilePreview(attachment.data, filePath, 'text')}`;
+          if (isLargeFile(data)) {
+            contentText = `📎 **文件: ${attachment.name}**${pathInfo}\n\n${generateFilePreview(data, filePath, 'text')}`;
           } else {
-            contentText = `📎 **文件: ${attachment.name}**${pathInfo}\n\`\`\`\n${attachment.data}\n\`\`\``;
+            contentText = `📎 **文件: ${attachment.name}**${pathInfo}\n\`\`\`\n${data}\n\`\`\``;
           }
           totalAttachmentChars += contentText.length;
           contents.push({ type: 'text', text: contentText });

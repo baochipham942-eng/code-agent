@@ -12,9 +12,11 @@ import { createLogger } from '../../services/infra/logger';
 const logger = createLogger('ImageAnnotate');
 
 // 配置
+// 注意：glm-4v-flash 免费但不支持 base64，glm-4v-plus 收费但支持 base64
+// 本地图片必须用 glm-4v-plus，因为需要 base64 编码
 const CONFIG = {
-  ZHIPU_MODEL: 'glm-4v-flash',  // 智谱免费视觉模型
-  ZHIPU_MODEL_MAX_TOKENS: 1024, // glm-4v-flash 最大只支持 1024
+  ZHIPU_MODEL: 'glm-4v-plus',   // 必须用 plus 版本，flash 不支持 base64
+  ZHIPU_MODEL_MAX_TOKENS: 2048, // glm-4v-plus 最大 8192，这里用 2048 够用
   ZHIPU_API_URL: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
   TIMEOUT_MS: 60000,
   SUPPORTED_FORMATS: ['.jpg', '.jpeg', '.png', '.webp', '.gif'],

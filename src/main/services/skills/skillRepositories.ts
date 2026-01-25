@@ -41,7 +41,7 @@ export const RECOMMENDED_REPOSITORIES: SkillRepository[] = [
     branch: 'master',
     skillsPath: '.', // skills 在根目录
     category: 'productivity',
-    recommended: false,
+    recommended: true,
     description: '生产力 Skills (文件整理, 会议分析, 简历生成)',
     author: 'ComposioHQ',
   },

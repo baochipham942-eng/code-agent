@@ -1339,6 +1339,10 @@ export class AgentLoop {
     try {
       // Execute tool
       logger.debug(` Calling toolExecutor.execute for ${toolCall.name}...`);
+
+      // Get current attachments from the latest user message (for multi-agent workflows)
+      const currentAttachments = this.getCurrentAttachments();
+
       const result = await this.toolExecutor.execute(
         toolCall.name,
         toolCall.arguments,
@@ -1355,6 +1359,8 @@ export class AgentLoop {
           sessionId: this.sessionId,
           // Skill 系统支持：预授权工具列表
           preApprovedTools: this.preApprovedTools,
+          // Current message attachments for multi-agent workflows (images, files)
+          currentAttachments,
         }
       );
       logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);
@@ -2656,6 +2662,35 @@ Use relative paths (resolved against this directory) or absolute paths.`;
 
   private generateId(): string {
     return generateMessageId();
+  }
+
+  /**
+   * Get attachments from the most recent user message
+   * Used by multi-agent workflows to pass images/files to subagents
+   */
+  private getCurrentAttachments(): Array<{
+    type: string;
+    category?: string;
+    name?: string;
+    path?: string;
+    data?: string;
+    mimeType?: string;
+  }> {
+    // Find the most recent user message with attachments
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const msg = this.messages[i];
+      if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
+        return msg.attachments.map(att => ({
+          type: att.type,
+          category: att.category,
+          name: att.name,
+          path: att.path,
+          data: att.data,
+          mimeType: att.mimeType,
+        }));
+      }
+    }
+    return [];
   }
 
   /**

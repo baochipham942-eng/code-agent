@@ -14,6 +14,7 @@ import {
 } from './subagentPipeline';
 import type { AgentDefinition, DynamicAgentConfig } from './agentDefinition';
 import type { PermissionPreset } from '../services/core/permissionPresets';
+import { PROVIDER_REGISTRY } from '../model/modelRouter';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -48,6 +49,15 @@ interface SubagentContext {
   modelConfig: ModelConfig;
   toolRegistry: Map<string, Tool>;
   toolContext: ToolContext;
+  /** Attachments (images, files) to include in the first message */
+  attachments?: Array<{
+    type: string;
+    category?: string;
+    name?: string;
+    path?: string;
+    data?: string;
+    mimeType?: string;
+  }>;
 }
 
 // ----------------------------------------------------------------------------
@@ -92,22 +102,93 @@ export class SubagentExecutor {
 
     // Filter tools to only those allowed for this subagent
     const allowedTools = this.filterTools(config.availableTools, context.toolRegistry);
-    const toolDefinitions = allowedTools.map((tool) => ({
+
+    // Check if the model supports tool calls
+    const providerConfig = PROVIDER_REGISTRY[context.modelConfig.provider];
+    const modelInfo = providerConfig?.models.find((m: { id: string; supportsTool?: boolean }) => m.id === context.modelConfig.model);
+    const supportsTool = modelInfo?.supportsTool ?? true; // Default to true if unknown
+
+    // Only provide tool definitions if the model supports them
+    const toolDefinitions = supportsTool ? allowedTools.map((tool) => ({
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema,
       generations: tool.generations,
       requiresPermission: tool.requiresPermission,
       permissionLevel: tool.permissionLevel,
-    }));
+    })) : [];
 
-    // Build messages
-    const messages: Array<{ role: string; content: string }> = [
+    if (!supportsTool && allowedTools.length > 0) {
+      logger.warn(`[${config.name}] Model ${context.modelConfig.model} does not support tool calls, tools will be ignored`);
+    }
+
+    // MessageContent type matching modelRouter.ts
+    type MessageContent = {
+      type: 'text' | 'image';
+      text?: string;
+      source?: {
+        type: 'base64';
+        media_type: string;
+        data: string;
+      };
+    };
+
+    // Build messages with multimodal support for images
+    const messages: Array<{ role: string; content: string | MessageContent[] }> = [
       { role: 'system', content: config.systemPrompt },
-      { role: 'user', content: prompt },
     ];
 
-    logger.info(`[${config.name}] Starting with ${allowedTools.length} tools (agentId: ${pipelineContext.agentId})`);
+    // Build user message content (potentially multimodal)
+    const imageAttachments = context.attachments?.filter(att => att.type === 'image') || [];
+    if (imageAttachments.length > 0) {
+      // Multimodal message with images
+      const multimodalContent: MessageContent[] = [];
+
+      // Add text first
+      multimodalContent.push({ type: 'text', text: prompt });
+
+      // Add images
+      for (const img of imageAttachments) {
+        if (img.data) {
+          // Base64 data
+          const mimeType = img.mimeType || 'image/png';
+          multimodalContent.push({
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: mimeType,
+              data: img.data,
+            }
+          });
+        } else if (img.path) {
+          // Load image from path
+          try {
+            const fs = require('fs');
+            const imageData = fs.readFileSync(img.path);
+            const base64 = imageData.toString('base64');
+            const mimeType = img.mimeType || (img.path.endsWith('.png') ? 'image/png' : 'image/jpeg');
+            multimodalContent.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mimeType,
+                data: base64,
+              }
+            });
+          } catch (err) {
+            logger.warn(`[${config.name}] Failed to load image from ${img.path}:`, err);
+          }
+        }
+      }
+
+      messages.push({ role: 'user', content: multimodalContent });
+      logger.info(`[${config.name}] Built multimodal message with ${imageAttachments.length} images`);
+    } else {
+      // Text-only message
+      messages.push({ role: 'user', content: prompt });
+    }
+
+    logger.info(`[${config.name}] Starting with ${toolDefinitions.length} tools (agentId: ${pipelineContext.agentId}, supportsTool: ${supportsTool})`);
 
     try {
       // Initial budget check

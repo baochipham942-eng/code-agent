@@ -65,12 +65,16 @@ export interface SubagentExecutionContext {
   agentId: string;
   agentName: string;
   parentAgentId?: string;
+  parentPermissionConfig?: PermissionConfig;  // 父 Agent 权限配置（用于继承约束）
   permissionConfig: PermissionConfig;
   maxBudget?: number;
+  inheritedMaxBudget?: number;  // 从父 Agent 继承的预算上限
   workingDirectory: string;
   startTime: number;
   toolsUsed: string[];
   tokenUsage: TokenUsage[];
+  /** 允许使用的工具列表（继承自父 Agent 或定义）*/
+  allowedTools?: string[];
 }
 
 // ----------------------------------------------------------------------------
@@ -115,11 +119,24 @@ export class SubagentPipeline {
 
   /**
    * Create execution context for a subagent
+   *
+   * 权限继承规则：
+   * 1. 子 Agent 的权限不能超过父 Agent 的权限
+   * 2. 子 Agent 的预算不能超过父 Agent 的剩余预算
+   * 3. 子 Agent 的工具集必须是父 Agent 工具集的子集
    */
   createContext(
     config: AgentDefinition | DynamicAgentConfig,
     workingDirectory: string,
-    parentAgentId?: string
+    parentAgentId?: string,
+    options?: {
+      /** 父 Agent 的权限配置（用于继承约束）*/
+      parentPermissionConfig?: PermissionConfig;
+      /** 父 Agent 剩余预算 */
+      parentRemainingBudget?: number;
+      /** 父 Agent 允许的工具列表 */
+      parentAllowedTools?: string[];
+    }
   ): SubagentExecutionContext {
     const agentId = `subagent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -143,18 +160,52 @@ export class SubagentPipeline {
       preset = config.permissionPreset || 'development';
     }
 
-    const permissionConfig = getPresetConfig(preset, workingDirectory);
+    let permissionConfig = getPresetConfig(preset, workingDirectory);
+
+    // 权限继承：如果有父 Agent 配置，应用更严格的限制
+    if (options?.parentPermissionConfig) {
+      permissionConfig = this.mergePermissionConfigs(permissionConfig, options.parentPermissionConfig);
+    }
+
+    // 解析子 Agent 自己的预算
+    let maxBudget = 'maxBudget' in config ? config.maxBudget : (config as DynamicAgentConfig).maxBudget;
+
+    // 预算继承：子 Agent 预算不能超过父 Agent 剩余预算
+    let inheritedMaxBudget: number | undefined;
+    if (options?.parentRemainingBudget !== undefined) {
+      inheritedMaxBudget = options.parentRemainingBudget;
+      if (maxBudget === undefined || maxBudget > options.parentRemainingBudget) {
+        maxBudget = options.parentRemainingBudget;
+        logger.info(`Subagent budget constrained to parent's remaining: $${maxBudget.toFixed(2)}`);
+      }
+    }
+
+    // 工具继承：子 Agent 工具必须是父 Agent 工具的子集
+    let allowedTools: string[] | undefined;
+    const configTools = 'tools' in config ? config.tools : undefined;
+    if (options?.parentAllowedTools && configTools) {
+      // 取交集
+      allowedTools = configTools.filter(t => options.parentAllowedTools!.includes(t));
+      if (allowedTools.length < configTools.length) {
+        logger.info(`Subagent tools constrained: ${configTools.length} -> ${allowedTools.length}`);
+      }
+    } else if (configTools) {
+      allowedTools = configTools;
+    }
 
     const context: SubagentExecutionContext = {
       agentId,
       agentName,
       parentAgentId,
+      parentPermissionConfig: options?.parentPermissionConfig,
       permissionConfig,
-      maxBudget: 'maxBudget' in config ? config.maxBudget : (config as DynamicAgentConfig).maxBudget,
+      maxBudget,
+      inheritedMaxBudget,
       workingDirectory,
       startTime: Date.now(),
       toolsUsed: [],
       tokenUsage: [],
+      allowedTools,
     };
 
     this.activeContexts.set(agentId, context);
@@ -170,12 +221,42 @@ export class SubagentPipeline {
         parentAgentId,
         workingDirectory,
         maxBudget: context.maxBudget,
+        inheritedMaxBudget,
+        allowedToolsCount: allowedTools?.length,
       },
     });
 
     logger.info(`Subagent context created: ${agentName} (${agentId})`);
 
     return context;
+  }
+
+  /**
+   * 合并权限配置，取更严格的限制
+   */
+  private mergePermissionConfigs(
+    childConfig: PermissionConfig,
+    parentConfig: PermissionConfig
+  ): PermissionConfig {
+    return {
+      name: childConfig.name,
+      description: childConfig.description,
+      // 自动批准：取交集（更严格）
+      autoApprove: {
+        read: childConfig.autoApprove.read && parentConfig.autoApprove.read,
+        write: childConfig.autoApprove.write && parentConfig.autoApprove.write,
+        execute: childConfig.autoApprove.execute && parentConfig.autoApprove.execute,
+        network: childConfig.autoApprove.network && parentConfig.autoApprove.network,
+      },
+      // 确认危险命令：任一要求确认则确认
+      confirmDangerousCommands: childConfig.confirmDangerousCommands || parentConfig.confirmDangerousCommands,
+      // 信任项目目录：两者都信任才信任
+      trustProjectDirectory: childConfig.trustProjectDirectory && parentConfig.trustProjectDirectory,
+      // 阻止命令：合并两者的阻止列表
+      blockedCommands: [...new Set([...childConfig.blockedCommands, ...parentConfig.blockedCommands])],
+      // 信任目录：取交集
+      trustedDirectories: childConfig.trustedDirectories.filter(d => parentConfig.trustedDirectories.includes(d)),
+    };
   }
 
   /**

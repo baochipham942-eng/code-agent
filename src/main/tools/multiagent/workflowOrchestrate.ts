@@ -174,6 +174,26 @@ interface WorkflowTemplate {
   stages: WorkflowStage[];
 }
 
+/**
+ * 结构化的阶段上下文
+ * 用于在阶段之间传递结构化数据
+ */
+interface StageContext {
+  /** 文本输出 */
+  textOutput: string;
+  /** 结构化数据（从输出中解析的 JSON） */
+  structuredData?: Record<string, unknown>;
+  /** 生成的文件 */
+  generatedFiles?: Array<{
+    path: string;
+    type: 'image' | 'text' | 'data';
+  }>;
+  /** 工具调用记录 */
+  toolsUsed: string[];
+  /** 执行时间 */
+  duration: number;
+}
+
 interface StageResult {
   stage: string;
   role: string;
@@ -181,6 +201,92 @@ interface StageResult {
   output: string;
   error?: string;
   duration: number;
+  /** 结构化上下文 */
+  context?: StageContext;
+}
+
+/**
+ * 尝试从输出中提取 JSON 数据
+ */
+function extractStructuredData(output: string): Record<string, unknown> | undefined {
+  // 1. 尝试提取 ```json ... ``` 代码块
+  const jsonCodeBlockMatch = output.match(/```json\s*([\s\S]*?)\s*```/);
+  if (jsonCodeBlockMatch) {
+    try {
+      return JSON.parse(jsonCodeBlockMatch[1]);
+    } catch (e) {
+      logger.debug('Failed to parse JSON code block', { error: (e as Error).message });
+    }
+  }
+
+  // 2. 尝试提取 ``` ... ``` 代码块中的 JSON
+  const codeBlockMatch = output.match(/```\s*([\s\S]*?)\s*```/);
+  if (codeBlockMatch) {
+    try {
+      return JSON.parse(codeBlockMatch[1]);
+    } catch (e) {
+      // Not valid JSON, continue
+    }
+  }
+
+  // 3. 尝试直接解析整个输出为 JSON
+  try {
+    const trimmed = output.trim();
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      return JSON.parse(trimmed);
+    }
+  } catch (e) {
+    // Not valid JSON
+  }
+
+  // 4. 尝试提取内联 JSON 对象
+  const inlineJsonMatch = output.match(/\{[\s\S]*"(?:type|regions|elements|textRegions)"[\s\S]*\}/);
+  if (inlineJsonMatch) {
+    try {
+      return JSON.parse(inlineJsonMatch[0]);
+    } catch (e) {
+      // Not valid JSON
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * 从输出中提取生成的文件路径
+ */
+function extractGeneratedFiles(output: string): Array<{ path: string; type: 'image' | 'text' | 'data' }> {
+  const files: Array<{ path: string; type: 'image' | 'text' | 'data' }> = [];
+
+  // 匹配常见的文件路径模式
+  const patterns = [
+    // 📄 标注图片: /path/to/file.png
+    /📄\s*标注图片:\s*([^\n]+)/g,
+    // 文件已保存到: /path/to/file
+    /文件已保存到:\s*([^\n]+)/g,
+    // 输出路径: /path/to/file
+    /输出路径:\s*([^\n]+)/g,
+    // 已生成: /path/to/file
+    /已生成:\s*([^\n]+)/g,
+  ];
+
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(output)) !== null) {
+      const filePath = match[1].trim();
+      // 判断文件类型
+      const ext = filePath.toLowerCase().split('.').pop() || '';
+      let fileType: 'image' | 'text' | 'data' = 'data';
+      if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {
+        fileType = 'image';
+      } else if (['txt', 'md', 'json', 'yaml', 'yml'].includes(ext)) {
+        fileType = 'text';
+      }
+      files.push({ path: filePath, type: fileType });
+    }
+  }
+
+  return files;
 }
 
 export const workflowOrchestrateTool: Tool = {
@@ -283,7 +389,8 @@ export const workflowOrchestrateTool: Tool = {
 
     const roles = getAvailableRoles();
     const results: StageResult[] = [];
-    const stageOutputs: Map<string, string> = new Map();
+    // 使用结构化上下文替代纯文本输出
+    const stageContexts: Map<string, StageContext> = new Map();
 
     logger.info('[Workflow] 开始执行工作流', {
       name: workflow.name,
@@ -305,22 +412,22 @@ export const workflowOrchestrateTool: Tool = {
         if (parallel && group.length > 1) {
           // Execute stages in parallel
           const groupResults = await Promise.all(
-            group.map((stage) => executeStage(stage, task, stageOutputs, roles, context))
+            group.map((stage) => executeStage(stage, task, stageContexts, roles, context))
           );
 
           for (let i = 0; i < group.length; i++) {
             results.push(groupResults[i]);
-            if (groupResults[i].success) {
-              stageOutputs.set(group[i].name, groupResults[i].output);
+            if (groupResults[i].success && groupResults[i].context) {
+              stageContexts.set(group[i].name, groupResults[i].context!);
             }
           }
         } else {
           // Execute stages sequentially
           for (const stage of group) {
-            const result = await executeStage(stage, task, stageOutputs, roles, context);
+            const result = await executeStage(stage, task, stageContexts, roles, context);
             results.push(result);
-            if (result.success) {
-              stageOutputs.set(stage.name, result.output);
+            if (result.success && result.context) {
+              stageContexts.set(stage.name, result.context);
             }
           }
         }
@@ -428,7 +535,7 @@ function resolveAgentConfig(
 async function executeStage(
   stage: WorkflowStage,
   task: string,
-  previousOutputs: Map<string, string>,
+  previousContexts: Map<string, StageContext>,
   roles: Record<string, { name: string; systemPrompt: string; tools: string[] }>,
   context: ToolContext
 ): Promise<StageResult> {
@@ -456,25 +563,52 @@ async function executeStage(
     hasModelOverride: !!agentConfig.modelOverride,
   });
 
-  // Build context from previous stages
+  // Build context from previous stages - 使用结构化上下文
   let contextFromPrevious = '';
   if (stage.dependsOn && stage.dependsOn.length > 0) {
-    const previousResults = stage.dependsOn
-      .map((dep) => {
-        const output = previousOutputs.get(dep);
-        return output ? `## ${dep} Output:\n${output}` : null;
-      })
-      .filter(Boolean)
-      .join('\n\n');
+    const previousResults: string[] = [];
 
-    if (previousResults) {
-      contextFromPrevious = `\n\n---\nContext from previous stages:\n${previousResults}`;
+    for (const dep of stage.dependsOn) {
+      const prevContext = previousContexts.get(dep);
+      if (!prevContext) continue;
+
+      let depOutput = `## ${dep} Output:\n`;
+
+      // 1. 如果有结构化数据，优先使用 JSON 格式
+      if (prevContext.structuredData) {
+        depOutput += '### Structured Data (JSON):\n';
+        depOutput += '```json\n';
+        depOutput += JSON.stringify(prevContext.structuredData, null, 2);
+        depOutput += '\n```\n\n';
+      }
+
+      // 2. 添加生成的文件信息
+      if (prevContext.generatedFiles && prevContext.generatedFiles.length > 0) {
+        depOutput += '### Generated Files:\n';
+        for (const file of prevContext.generatedFiles) {
+          depOutput += `- [${file.type}] ${file.path}\n`;
+        }
+        depOutput += '\n';
+      }
+
+      // 3. 添加文本输出（如果没有结构化数据）
+      if (!prevContext.structuredData && prevContext.textOutput) {
+        depOutput += '### Text Output:\n';
+        depOutput += prevContext.textOutput;
+        depOutput += '\n';
+      }
+
+      previousResults.push(depOutput);
+    }
+
+    if (previousResults.length > 0) {
+      contextFromPrevious = `\n\n---\n**Context from previous stages:**\n\n${previousResults.join('\n\n')}`;
     }
   }
 
   const fullPrompt = `${stage.prompt}
 
-Overall Task: ${task}${contextFromPrevious}`;
+**Overall Task:** ${task}${contextFromPrevious}`;
 
   try {
     const executor = getSubagentExecutor();
@@ -524,11 +658,24 @@ Overall Task: ${task}${contextFromPrevious}`;
       }
     );
 
+    const duration = Date.now() - startTime;
+
+    // 构建结构化上下文
+    const stageContext: StageContext = {
+      textOutput: result.output,
+      structuredData: extractStructuredData(result.output),
+      generatedFiles: extractGeneratedFiles(result.output),
+      toolsUsed: result.toolsUsed || [],
+      duration,
+    };
+
     logger.info('[Stage] 阶段执行完成', {
       stage: stage.name,
       success: result.success,
-      duration: Date.now() - startTime,
+      duration,
       outputLength: result.output?.length || 0,
+      hasStructuredData: !!stageContext.structuredData,
+      generatedFilesCount: stageContext.generatedFiles?.length || 0,
     });
 
     return {
@@ -537,7 +684,8 @@ Overall Task: ${task}${contextFromPrevious}`;
       success: result.success,
       output: result.output,
       error: result.error,
-      duration: Date.now() - startTime,
+      duration,
+      context: stageContext,
     };
   } catch (error) {
     logger.error('[Stage] 阶段执行异常', {

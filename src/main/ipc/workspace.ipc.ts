@@ -98,6 +98,30 @@ async function handleShowItemInFolder(
   shell.showItemInFolder(resolvedPath);
 }
 
+async function handleDownloadFile(
+  payload: { url: string; filename?: string }
+): Promise<{ filePath: string }> {
+  const { app } = await import('electron');
+  const fs = await import('fs/promises');
+  const pathModule = await import('path');
+
+  // 下载到用户下载目录
+  const downloadsDir = app.getPath('downloads');
+  const filename = payload.filename || `download_${Date.now()}`;
+  const filePath = pathModule.join(downloadsDir, filename);
+
+  // 下载文件
+  const response = await fetch(payload.url);
+  if (!response.ok) {
+    throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+  }
+
+  const buffer = await response.arrayBuffer();
+  await fs.writeFile(filePath, Buffer.from(buffer));
+
+  return { filePath };
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -135,6 +159,9 @@ export function registerWorkspaceHandlers(
           break;
         case 'showItemInFolder':
           data = await handleShowItemInFolder(payload as { filePath: string }, getOrchestrator);
+          break;
+        case 'downloadFile':
+          data = await handleDownloadFile(payload as { url: string; filename?: string });
           break;
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };

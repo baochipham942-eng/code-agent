@@ -154,8 +154,8 @@ export async function getLatestCommit(
 // ============================================================================
 
 /**
- * Extract a tar.gz file to a directory
- * Uses a simple tar parser since we don't have a tar package
+ * Extract a tar.gz file to a directory using system tar command
+ * Falls back to custom parser if tar is not available
  */
 async function extractTarGz(
   tarGzPath: string,
@@ -165,6 +165,37 @@ async function extractTarGz(
   // Create destination directory
   await fs.mkdir(destDir, { recursive: true });
 
+  // Try using system tar command first (more reliable for large archives)
+  try {
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+
+    // Use execFile with array args to prevent shell injection
+    await execFileAsync('tar', [
+      '-xzf', tarGzPath,
+      '-C', destDir,
+      `--strip-components=${stripComponents}`
+    ], { timeout: 120000 });
+
+    logger.debug('Extracted using system tar', { tarGzPath, destDir });
+    return;
+  } catch (tarError) {
+    logger.debug('System tar failed, falling back to custom parser', { error: tarError });
+  }
+
+  // Fallback to custom parser
+  await extractTarGzCustom(tarGzPath, destDir, stripComponents);
+}
+
+/**
+ * Custom tar.gz extractor for platforms without tar command
+ */
+async function extractTarGzCustom(
+  tarGzPath: string,
+  destDir: string,
+  stripComponents: number = 1
+): Promise<void> {
   // Read and decompress
   const compressedData = await fs.readFile(tarGzPath);
   const decompressed = await new Promise<Buffer>((resolve, reject) => {

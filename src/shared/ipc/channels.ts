@@ -52,6 +52,13 @@ export const SKILL_CHANNELS = {
 
   /** 获取推荐仓库列表 */
   RECOMMENDED_REPOS: 'skill:recommended-repos',
+
+  // ------------------------------------------------------------------------
+  // SkillsMP 搜索
+  // ------------------------------------------------------------------------
+
+  /** 搜索 SkillsMP 社区 Skills */
+  SKILLSMP_SEARCH: 'skill:skillsmp:search',
 } as const;
 
 /**

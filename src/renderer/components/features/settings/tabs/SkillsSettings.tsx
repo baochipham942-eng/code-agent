@@ -501,24 +501,25 @@ export const SkillsSettings: React.FC = () => {
     setSearchResults([]);
 
     try {
-      // Use AI search for semantic matching
-      const response = await fetch(
-        `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(query)}&limit=10`
+      // Use IPC to search via backend (which has API key access)
+      const result = await invokeSkillIPC<SkillsMPSearchResponse>(
+        SKILL_CHANNELS.SKILLSMP_SEARCH,
+        query,
+        10
       );
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      if (!result) {
+        setSearchError('搜索请求失败');
+        return;
       }
 
-      const data: SkillsMPSearchResponse = await response.json();
-
-      if (data.success && data.data) {
-        setSearchResults(data.data);
-        if (data.data.length === 0) {
+      if (result.success && result.data) {
+        setSearchResults(result.data);
+        if (result.data.length === 0) {
           setSearchError('没有找到匹配的 Skill');
         }
       } else {
-        setSearchError(data.error?.message || '搜索失败');
+        setSearchError(result.error?.message || '搜索失败');
       }
     } catch (err) {
       logger.error('SkillsMP search failed', err);

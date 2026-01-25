@@ -11,6 +11,7 @@ import { getSkillDiscoveryService } from '../services/skills/skillDiscoveryServi
 import { RECOMMENDED_REPOSITORIES } from '../services/skills/skillRepositories';
 import type { SkillRepository } from '../../shared/types/skillRepository';
 import { createLogger } from '../services/infra/logger';
+import { getConfigService } from '../services/core/configService';
 
 const logger = createLogger('SkillIPC');
 
@@ -169,6 +170,110 @@ function handleRecommendedRepos() {
   return RECOMMENDED_REPOSITORIES;
 }
 
+// ----------------------------------------------------------------------------
+// SkillsMP Search
+// ----------------------------------------------------------------------------
+
+interface SkillsMPSearchResult {
+  id: string;
+  name: string;
+  description: string;
+  repo: string;
+  repoOwner: string;
+  repoName: string;
+  stars: number;
+  lastUpdated: string;
+  skillPath: string;
+  url: string;
+}
+
+interface SkillsMPSearchResponse {
+  success: boolean;
+  data?: SkillsMPSearchResult[];
+  error?: {
+    code: string;
+    message: string;
+  };
+}
+
+/**
+ * 搜索 SkillsMP 社区 Skills
+ */
+async function handleSkillsMPSearch(query: string, limit: number = 10): Promise<SkillsMPSearchResponse> {
+  const configService = getConfigService();
+  const apiKey = configService.getServiceApiKey('skillsmp');
+
+  if (!apiKey) {
+    return {
+      success: false,
+      error: {
+        code: 'MISSING_API_KEY',
+        message: '未配置 SkillsMP API Key。请在设置中配置 SKILLSMP_API_KEY 环境变量。',
+      },
+    };
+  }
+
+  try {
+    const response = await fetch(
+      `https://skillsmp.com/api/v1/skills/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        // 30 second timeout
+        signal: AbortSignal.timeout(30000),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error('SkillsMP search failed', { status: response.status, error: errorText });
+
+      if (response.status === 401 || response.status === 403) {
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_API_KEY',
+            message: 'SkillsMP API Key 无效或已过期。',
+          },
+        };
+      }
+
+      return {
+        success: false,
+        error: {
+          code: 'HTTP_ERROR',
+          message: `HTTP ${response.status}: ${errorText}`,
+        },
+      };
+    }
+
+    const data = await response.json() as SkillsMPSearchResponse;
+    return data;
+  } catch (error) {
+    logger.error('SkillsMP search error', { error });
+
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      return {
+        success: false,
+        error: {
+          code: 'TIMEOUT',
+          message: '搜索请求超时，请稍后重试。',
+        },
+      };
+    }
+
+    return {
+      success: false,
+      error: {
+        code: 'NETWORK_ERROR',
+        message: '网络请求失败，请检查网络连接。',
+      },
+    };
+  }
+}
+
 // ============================================================================
 // Public Registration
 // ============================================================================
@@ -323,6 +428,22 @@ export function registerSkillHandlers(ipcMain: IpcMain): void {
       throw error;
     }
   });
+
+  // ------------------------------------------------------------------------
+  // SkillsMP Search
+  // ------------------------------------------------------------------------
+
+  ipcMain.handle(
+    SKILL_CHANNELS.SKILLSMP_SEARCH,
+    async (_, query: string, limit?: number) => {
+      try {
+        return await handleSkillsMPSearch(query, limit);
+      } catch (error) {
+        logger.error('Failed to search SkillsMP', { error });
+        throw error;
+      }
+    }
+  );
 
   logger.info('Skill handlers registered', {
     channels: Object.values(SKILL_CHANNELS),

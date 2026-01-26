@@ -318,6 +318,151 @@ Plan Mode 从 **Gen3** 开始可用，覆盖 Gen3-Gen8。
 | OpenAI | gpt-4o, gpt-4o-mini | 备选 |
 | Claude | claude-sonnet-4, claude-opus-4 | 高级推理 |
 | Groq | llama-3.3-70b | 快速推理 |
-| 智谱 | glm-4-plus | 中文优化 |
+| 智谱 | glm-4-plus, glm-4v-plus | 中文优化、视觉理解 |
 | 通义千问 | qwen-max, qwen-coder-plus | 代码专用 |
 | Moonshot | moonshot-v1-128k | 超长上下文 |
+
+---
+
+## DAG 任务调度系统 (v0.16+)
+
+**位置**: `src/main/scheduler/`
+
+基于有向无环图的并行任务调度系统，用于协调多代理和工作流执行。
+
+### 架构概览
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       DAG Scheduler                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐     │
+│  │ Task A       │────→│ Task B       │────→│ Task D       │     │
+│  │ (architect)  │     │ (coder)      │     │ (tester)     │     │
+│  └──────────────┘     └──────────────┘     └──────────────┘     │
+│         │                                         ↑              │
+│         │             ┌──────────────┐            │              │
+│         └────────────→│ Task C       │────────────┘              │
+│                       │ (reviewer)   │                           │
+│                       └──────────────┘                           │
+│                                                                  │
+│  并行执行: A → (B, C 并行) → D                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 核心组件
+
+| 组件 | 位置 | 职责 |
+|------|------|------|
+| **DAGScheduler** | `DAGScheduler.ts` | 调度器核心，管理 DAG 执行生命周期 |
+| **TaskStateManager** | `TaskStateManager.ts` | 任务状态机，处理状态转换 |
+| **DependencyResolver** | `DependencyResolver.ts` | 依赖分析和拓扑排序 |
+| **ResourceLimiter** | `ResourceLimiter.ts` | 并发控制和资源限制 |
+
+### 任务状态机
+
+```
+┌─────────┐
+│ pending │ ← 初始状态
+└────┬────┘
+     │ 依赖满足
+     ▼
+┌─────────┐
+│  ready  │ ← 可执行
+└────┬────┘
+     │ 开始执行
+     ▼
+┌─────────┐     ┌───────────┐
+│ running │────→│ completed │ ← 成功
+└────┬────┘     └───────────┘
+     │
+     ├────────→ failed     ← 失败
+     ├────────→ cancelled  ← 取消
+     └────────→ skipped    ← 跳过（依赖失败）
+```
+
+### 失败策略
+
+| 策略 | 行为 | 适用场景 |
+|------|------|----------|
+| `fail-fast` | 任一失败立即停止 | 关键流程 |
+| `continue` | 失败后继续无依赖任务 | 容错流程 |
+| `retry-then-continue` | 重试 N 次后继续 | 网络/临时故障 |
+
+### 可视化 (React Flow)
+
+**位置**: `src/renderer/components/features/workflow/`
+
+- **DAGVisualization.tsx**: DAG 图形展示
+- **TaskNode.tsx**: 任务节点组件
+- **useDAGLayout.ts**: 自动布局 Hook
+
+实时展示任务执行状态，支持节点交互和状态过滤。
+
+---
+
+## 依赖注入容器 (v0.16+)
+
+**位置**: `src/main/core/container.ts`
+
+轻量级 DI 容器，管理服务生命周期和依赖关系。
+
+### 生命周期
+
+| 类型 | 说明 |
+|------|------|
+| `Singleton` | 全局单例，首次获取时创建 |
+| `Factory` | 每次获取创建新实例 |
+| `Transient` | 临时实例，不缓存 |
+
+### 接口定义
+
+```typescript
+// 可初始化接口
+interface Initializable {
+  initialize(): Promise<void>;
+}
+
+// 可销毁接口
+interface Disposable {
+  dispose(): Promise<void>;
+}
+```
+
+### 使用示例
+
+```typescript
+// 注册服务
+container.register('database', DatabaseService, Lifecycle.Singleton);
+container.register('logger', LoggerService, Lifecycle.Singleton);
+container.register('agentLoop', AgentLoop, Lifecycle.Factory);
+
+// 获取服务
+const db = container.get<DatabaseService>('database');
+
+// 初始化所有服务
+await container.initializeAll();
+
+// 销毁所有服务
+await container.disposeAll();
+```
+
+### 生命周期管理
+
+**位置**: `src/main/core/lifecycle.ts`
+
+统一管理应用启动和关闭时的服务初始化/销毁顺序。
+
+```typescript
+// 启动顺序
+await lifecycleManager.startup([
+  'config',      // 1. 配置
+  'database',    // 2. 数据库
+  'auth',        // 3. 认证
+  'agent'        // 4. Agent
+]);
+
+// 关闭顺序（自动反转）
+await lifecycleManager.shutdown();
+```

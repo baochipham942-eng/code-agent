@@ -199,6 +199,82 @@ Search results for: "query"
 - 子代理专注特定任务（代码审查、测试、文档）
 - 异步通信，支持并行执行
 
+### DAG 任务调度系统 (v0.16+)
+
+**位置**: `src/main/scheduler/`
+
+基于有向无环图（DAG）的并行任务调度系统，自动分析任务依赖关系并最大化并行执行。
+
+**核心组件**:
+
+| 组件 | 文件 | 功能 |
+|------|------|------|
+| DAGScheduler | `DAGScheduler.ts` | DAG 调度器核心，管理任务执行 |
+| TaskStateManager | `TaskStateManager.ts` | 任务状态机管理 |
+| DependencyResolver | `DependencyResolver.ts` | 依赖解析和拓扑排序 |
+| ResourceLimiter | `ResourceLimiter.ts` | 并发资源限制 |
+
+**任务状态机**:
+
+```
+pending → ready → running → completed
+                       ↘ failed
+                       ↘ cancelled
+                       ↘ skipped
+```
+
+**任务类型**:
+
+| 类型 | 说明 | 示例 |
+|------|------|------|
+| `agent` | 代理任务 | 代码审查、文档生成 |
+| `shell` | Shell 命令 | npm install, git commit |
+| `workflow` | 子工作流 | 嵌套 DAG |
+| `checkpoint` | 检查点 | 用户确认、状态保存 |
+| `conditional` | 条件分支 | 根据结果决定路径 |
+
+**失败策略**:
+
+| 策略 | 行为 |
+|------|------|
+| `fail-fast` | 任一任务失败立即停止整个 DAG |
+| `continue` | 失败后继续执行无依赖的任务 |
+| `retry-then-continue` | 重试 N 次后继续 |
+
+**使用示例**:
+
+```typescript
+const dag: DAGDefinition = {
+  tasks: [
+    { id: 'analyze', type: 'agent', config: { role: 'architect', task: '分析代码结构' } },
+    { id: 'test', type: 'shell', config: { command: 'npm test' }, dependsOn: ['analyze'] },
+    { id: 'review', type: 'agent', config: { role: 'reviewer', task: '代码审查' }, dependsOn: ['analyze'] },
+    { id: 'report', type: 'agent', config: { role: 'documenter', task: '生成报告' }, dependsOn: ['test', 'review'] }
+  ],
+  options: { maxConcurrency: 3, failureStrategy: 'continue' }
+};
+
+const scheduler = new DAGScheduler(dag);
+await scheduler.execute();
+```
+
+**可视化**:
+
+DAG 执行状态可通过 React Flow 组件实时展示，位于 `src/renderer/components/features/workflow/`。
+
+### 内置 Agent 角色 (v0.16+)
+
+**位置**: `src/shared/types/builtInAgents.ts`
+
+| 角色 | 描述 | 可用工具 |
+|------|------|----------|
+| `coder` | 编写代码 | bash, read_file, write_file, edit_file, glob, grep |
+| `reviewer` | 代码审查 | read_file, glob, grep |
+| `tester` | 编写测试 | bash, read_file, write_file, edit_file, glob |
+| `architect` | 架构设计 | read_file, glob, grep, write_file |
+| `debugger` | 调试问题 | bash, read_file, edit_file, glob, grep |
+| `documenter` | 编写文档 | read_file, write_file, edit_file, glob |
+
 ## Gen8 工具集 - 自我进化
 
 | 工具 | 功能 | 权限 |

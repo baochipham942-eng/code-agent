@@ -3,10 +3,18 @@
 // Gen 7: Multi-Agent capability
 // Enhanced with parallel execution support (Enhancement 3)
 // T4: Dual mode support (declarative + dynamic)
+// Refactored: Uses type-safe BuiltInAgentConfig from shared/types
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import type { ModelConfig } from '../../../shared/types';
+import type { BuiltInAgentConfig } from '../../../shared/types/builtInAgents';
+import {
+  BUILT_IN_AGENTS,
+  getBuiltInAgent,
+  isBuiltInAgentRole,
+  listBuiltInAgents,
+} from '../../../shared/types/builtInAgents';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
 import {
   getParallelAgentCoordinator,
@@ -18,107 +26,25 @@ import {
   type AgentDefinition,
 } from '../../agent/agentDefinition';
 
-// Legacy agent roles (kept for backward compatibility)
-// New code should use PREDEFINED_AGENTS from agentDefinition.ts
-const AGENT_ROLES: Record<string, AgentRole> = {
-  coder: {
-    name: 'Coder',
-    description: 'Writes clean, efficient code following best practices',
-    systemPrompt: `You are a senior software engineer. Your job is to:
-- Write clean, maintainable, well-documented code
-- Follow project conventions and patterns
-- Consider edge cases and error handling
-- Write code that is testable
-
-Always explain your design decisions briefly.`,
-    tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep'],
-  },
-  reviewer: {
-    name: 'Code Reviewer',
-    description: 'Reviews code for bugs, security issues, and best practices',
-    systemPrompt: `You are a code review expert. Your job is to:
-- Find bugs and logic errors
-- Identify security vulnerabilities
-- Check for performance issues
-- Ensure code follows project conventions
-- Suggest improvements
-
-Be constructive and specific in your feedback.`,
-    tools: ['read_file', 'glob', 'grep'],
-  },
-  tester: {
-    name: 'Test Engineer',
-    description: 'Writes and runs comprehensive tests',
-    systemPrompt: `You are a QA engineer specialized in testing. Your job is to:
-- Write comprehensive unit tests
-- Write integration tests
-- Identify edge cases
-- Run tests and analyze results
-- Ensure high code coverage
-
-Focus on testing behavior, not implementation details.`,
-    tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob'],
-  },
-  architect: {
-    name: 'Software Architect',
-    description: 'Designs system architecture and makes technical decisions',
-    systemPrompt: `You are a software architect. Your job is to:
-- Design scalable system architectures
-- Make technology choices
-- Define interfaces and contracts
-- Consider non-functional requirements
-- Document architectural decisions
-
-Think about maintainability, scalability, and simplicity.`,
-    tools: ['read_file', 'glob', 'grep', 'write_file'],
-  },
-  debugger: {
-    name: 'Debugger',
-    description: 'Investigates and fixes bugs',
-    systemPrompt: `You are a debugging specialist. Your job is to:
-- Analyze error messages and stack traces
-- Reproduce issues systematically
-- Identify root causes
-- Propose and implement fixes
-- Verify the fix doesn't introduce regressions
-
-Be methodical and document your investigation process.`,
-    tools: ['bash', 'read_file', 'edit_file', 'glob', 'grep'],
-  },
-  documenter: {
-    name: 'Technical Writer',
-    description: 'Writes documentation and comments',
-    systemPrompt: `You are a technical writer. Your job is to:
-- Write clear README files
-- Document APIs and interfaces
-- Add helpful code comments
-- Create usage examples
-- Keep documentation up to date
-
-Write for your audience - be clear and concise.`,
-    tools: ['read_file', 'write_file', 'edit_file', 'glob'],
-  },
-};
-
-interface AgentRole {
-  name: string;
-  description: string;
-  systemPrompt: string;
-  tools: string[];
-}
+/**
+ * Unified agent configuration type
+ * Supports both BuiltInAgentConfig and AgentDefinition
+ */
+type ResolvedAgentConfig = BuiltInAgentConfig | AgentDefinition;
 
 /**
- * Get agent configuration from either predefined agents or legacy roles
+ * Get agent configuration from built-in agents or predefined agents
+ * Priority: Built-in agents > Predefined agents (from agentDefinition.ts)
  */
-function resolveAgentConfig(roleOrId: string): AgentRole | AgentDefinition | undefined {
-  // First, check predefined agents (new system)
-  const predefined = getPredefinedAgent(roleOrId);
-  if (predefined) {
-    return predefined;
+function resolveAgentConfig(roleOrId: string): ResolvedAgentConfig | undefined {
+  // First, check built-in agents (type-safe, 6 core roles)
+  const builtIn = getBuiltInAgent(roleOrId);
+  if (builtIn) {
+    return builtIn;
   }
 
-  // Fall back to legacy roles
-  return AGENT_ROLES[roleOrId];
+  // Fall back to predefined agents (extended agents from agentDefinition.ts)
+  return getPredefinedAgent(roleOrId);
 }
 
 interface SpawnedAgent {
@@ -138,13 +64,15 @@ export const spawnAgentTool: Tool = {
   description: `Create a specialized sub-agent to handle a specific task.
 
 DUAL MODE SUPPORT:
-1. Declarative Mode - Use predefined agent IDs (recommended):
-   ${listPredefinedAgents().map(a => `   - ${a.id}: ${a.description}`).join('\n')}
+1. Declarative Mode - Use built-in or predefined agent IDs (recommended):
+
+   Built-in Agents (6 core roles):
+${listBuiltInAgents().map(a => `   - ${a.role}: ${a.description}`).join('\n')}
+
+   Extended Agents:
+${listPredefinedAgents().filter(a => !isBuiltInAgentRole(a.id)).map(a => `   - ${a.id}: ${a.description}`).join('\n')}
 
 2. Dynamic Mode - Create custom agents at runtime with customPrompt and tools
-
-Legacy roles (backward compatible):
-- coder, reviewer, tester, architect, debugger, documenter
 
 Use this tool to:
 - Delegate tasks to specialized agents
@@ -170,7 +98,7 @@ Parameters:
     properties: {
       role: {
         type: 'string',
-        description: 'The role/ID of the agent (predefined or legacy)',
+        description: 'The role/ID of the agent (built-in or predefined)',
       },
       task: {
         type: 'string',
@@ -260,9 +188,9 @@ Parameters:
       };
     }
 
-    // Determine agent mode: declarative (predefined) or dynamic
+    // Determine agent mode: declarative (built-in/predefined) or dynamic
     const isDynamicMode = customPrompt && !role;
-    let agentConfig: AgentRole | AgentDefinition | undefined;
+    let agentConfig: ResolvedAgentConfig | undefined;
     let agentName: string;
     let systemPrompt: string;
     let tools: string[];
@@ -273,21 +201,23 @@ Parameters:
       systemPrompt = customPrompt!;
       tools = customTools || ['read_file', 'glob', 'grep']; // Default read-only tools for safety
     } else {
-      // Declarative mode: resolve from predefined or legacy
+      // Declarative mode: resolve from built-in or predefined agents
       if (!role) {
         return {
           success: false,
-          error: 'Either provide role (for predefined agent) or customPrompt (for dynamic agent)',
+          error: 'Either provide role (for built-in/predefined agent) or customPrompt (for dynamic agent)',
         };
       }
 
       agentConfig = resolveAgentConfig(role);
       if (!agentConfig) {
-        const predefinedIds = listPredefinedAgents().map(a => a.id);
-        const legacyRoles = Object.keys(AGENT_ROLES);
+        const builtInRoles = listBuiltInAgents().map(a => a.role);
+        const predefinedIds = listPredefinedAgents()
+          .filter(a => !isBuiltInAgentRole(a.id))
+          .map(a => a.id);
         return {
           success: false,
-          error: `Unknown agent: ${role}. Available predefined: ${predefinedIds.join(', ')}. Legacy roles: ${legacyRoles.join(', ')}`,
+          error: `Unknown agent: ${role}. Built-in roles: ${builtInRoles.join(', ')}. Extended agents: ${predefinedIds.join(', ')}`,
         };
       }
 
@@ -430,9 +360,9 @@ export function listSpawnedAgents(): SpawnedAgent[] {
   return Array.from(spawnedAgents.values());
 }
 
-// Export available roles
-export function getAvailableRoles(): Record<string, AgentRole> {
-  return { ...AGENT_ROLES };
+// Export available roles (returns built-in agents)
+export function getAvailableRoles(): Record<string, BuiltInAgentConfig> {
+  return { ...BUILT_IN_AGENTS };
 }
 
 // Execute multiple agents in parallel using the ParallelAgentCoordinator
@@ -451,12 +381,18 @@ async function executeParallelAgents(
     toolContext: context,
   });
 
-  // Convert to AgentTask format (supports both predefined and legacy roles)
+  // Convert to AgentTask format (supports both built-in and predefined agents)
   const tasks: AgentTask[] = agents.map((agent, index) => {
-    // Try predefined agent first, then legacy
+    // Try built-in agents first, then predefined agents
     const agentConfig = resolveAgentConfig(agent.role);
     if (!agentConfig) {
-      throw new Error(`Unknown agent: ${agent.role}. Use predefined agents or legacy roles.`);
+      const builtInRoles = listBuiltInAgents().map(a => a.role);
+      const predefinedIds = listPredefinedAgents()
+        .filter(a => !isBuiltInAgentRole(a.id))
+        .map(a => a.id);
+      throw new Error(
+        `Unknown agent: ${agent.role}. Built-in roles: ${builtInRoles.join(', ')}. Extended agents: ${predefinedIds.join(', ')}`
+      );
     }
 
     return {
@@ -465,7 +401,7 @@ async function executeParallelAgents(
       task: agent.task,
       systemPrompt: agentConfig.systemPrompt,
       tools: agentConfig.tools,
-      maxIterations: 'maxIterations' in agentConfig ? agentConfig.maxIterations || 20 : 20,
+      maxIterations: agentConfig.maxIterations || 20,
       dependsOn: agent.dependsOn,
     };
   });

@@ -85,9 +85,11 @@ export class SessionManager {
 
   /**
    * 获取会话（带消息）
-   * 策略：如果本地没有消息，从云端按需拉取
+   * 策略：懒加载 - 只加载最近 N 条消息，如果本地没有消息，从云端按需拉取
+   * @param sessionId 会话 ID
+   * @param messageLimit 加载的消息数量限制，默认 30 条（首轮响应优化）
    */
-  async getSession(sessionId: string): Promise<SessionWithMessages | null> {
+  async getSession(sessionId: string, messageLimit: number = 30): Promise<SessionWithMessages | null> {
     // 检查缓存
     if (this.sessionCache.has(sessionId)) {
       return this.sessionCache.get(sessionId)!;
@@ -97,8 +99,8 @@ export class SessionManager {
     const storedSession = db.getSession(sessionId);
     if (!storedSession) return null;
 
-    // 检查本地是否有消息缓存
-    let messages = db.getMessages(sessionId);
+    // 懒加载：只加载最近 N 条消息（性能优化）
+    let messages = db.getRecentMessages(sessionId, messageLimit);
 
     // 如果本地没有消息，尝试从云端拉取
     if (messages.length === 0) {
@@ -108,7 +110,8 @@ export class SessionManager {
         for (const msg of cloudMessages) {
           db.addMessage(sessionId, msg);
         }
-        messages = cloudMessages;
+        // 云端拉取后也只取最近 N 条
+        messages = cloudMessages.slice(-messageLimit);
       }
     }
 

@@ -27,15 +27,14 @@ interface ReleaseInfo {
 // forceUpdate: true  - 强制更新，弹出不可关闭的弹窗
 // forceUpdate: false - 可选更新，仅在设置中提示
 const LATEST_RELEASE: ReleaseInfo = {
-  version: '0.16.6',
-  publishedAt: '2026-01-25T20:00:00.000Z',
+  version: '0.16.7',
+  publishedAt: '2026-01-26T08:30:00.000Z',
   releaseNotes: `
-## Code Agent v0.16.6
+## Code Agent v0.16.7
 
 ### Bug 修复
-- 修复多 Agent 图片工作流中视觉模型调用问题
-- 修复 subagent 对不支持 tool calls 模型的检查
-- 修复图片附件传递到子 Agent 的问题
+- 修复流式传输中文乱码问题（SSE 边界截断导致 Unicode 替换字符）
+- 修复图片标注坐标不准确问题，改用百度 OCR API 获取精确坐标
   `.trim(),
   forceUpdate: false, // 可选更新
   minRequiredVersion: '0.10.0',

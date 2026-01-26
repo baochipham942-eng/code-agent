@@ -59,6 +59,9 @@ interface AppState {
   errors: ErrorRecord[];
   showPlanningPanel: boolean;
 
+  // DAG Visualization State (任务执行图可视化)
+  showDAGPanel: boolean;
+
   // HTML Preview State
   previewFilePath: string | null;
   showPreviewPanel: boolean;
@@ -97,6 +100,8 @@ interface AppState {
   setFindings: (findings: Finding[]) => void;
   setErrors: (errors: ErrorRecord[]) => void;
   setShowPlanningPanel: (show: boolean) => void;
+  setShowDAGPanel: (show: boolean) => void;
+  toggleDAGPanel: () => void;
   setPreviewFilePath: (path: string | null) => void;
   setShowPreviewPanel: (show: boolean) => void;
   openPreview: (filePath: string) => void;
@@ -165,6 +170,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   errors: [],
   showPlanningPanel: false,
 
+  // Initial DAG Visualization State
+  showDAGPanel: false,
+
   // Initial HTML Preview State
   previewFilePath: null,
   showPreviewPanel: false,
@@ -222,6 +230,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   setErrors: (errors) => set({ errors }),
 
   setShowPlanningPanel: (show) => set({ showPlanningPanel: show }),
+
+  setShowDAGPanel: (show) => set({ showDAGPanel: show }),
+  toggleDAGPanel: () => set((state) => ({ showDAGPanel: !state.showDAGPanel })),
 
   setPreviewFilePath: (path) => set({ previewFilePath: path }),
   setShowPreviewPanel: (show) => set({ showPreviewPanel: show }),

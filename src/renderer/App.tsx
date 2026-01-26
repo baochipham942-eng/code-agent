@@ -19,12 +19,13 @@ import { ForceUpdateModal } from './components/ForceUpdateModal';
 import { PermissionDialog } from './components/PermissionDialog';
 import { TaskPanel } from './components/TaskPanel';
 import { SkillsPanel } from './components/SkillsPanel';
+import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
 import { useMemoryEvents } from './hooks/useMemoryEvents';
 import { useTheme } from './hooks/useTheme';
-import { Activity, Cloud, Zap, Sparkles } from 'lucide-react';
+import { Activity, Cloud, Zap, Sparkles, GitBranch } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 import { UI } from '@shared/constants';
@@ -60,14 +61,16 @@ export const App: React.FC = () => {
   // Auth store
   const { showAuthModal, showPasswordResetModal } = useAuthStore();
 
-  // 渐进披露 Hook
-  const { isStandard, isAdvanced, showPlanningPanel: showPlanningPanelEnabled } = useDisclosure();
+  // 渐进披露 Hook（权限层：*Enabled 表示功能是否可用）
+  const { isStandard, isAdvanced, dagPanelEnabled } = useDisclosure();
   const isObservabilityAvailable = isAdvanced; // 追踪面板在 Advanced+ 模式可用
 
-  // Panel toggle states from appStore
+  // Panel toggle states from appStore（用户偏好层：show* 表示用户手动开关）
   const {
     showPlanningPanel,
     setShowPlanningPanel,
+    showDAGPanel,
+    setShowDAGPanel,
   } = useAppStore();
 
   // Cloud task panel state
@@ -304,6 +307,26 @@ export const App: React.FC = () => {
     );
   };
 
+  // DAG 可视化面板切换按钮 (Advanced+ mode)
+  const DAGToggle: React.FC = () => {
+    if (!dagPanelEnabled) return null;
+
+    return (
+      <button
+        onClick={() => setShowDAGPanel(!showDAGPanel)}
+        className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
+          showDAGPanel
+            ? 'bg-blue-500/20 text-blue-300'
+            : 'text-zinc-500 hover:bg-zinc-800'
+        }`}
+        title="任务执行图"
+      >
+        <GitBranch className="w-3.5 h-3.5" />
+        <span>DAG</span>
+      </button>
+    );
+  };
+
 
   // Cloud task panel toggle button (Advanced mode)
   const CloudTaskToggle: React.FC = () => {
@@ -399,6 +422,15 @@ export const App: React.FC = () => {
               {/* Skills Panel - 右侧面板，显示当前会话的 Skills */}
               {showSkillsPanel && (
                 <SkillsPanel onClose={() => setShowSkillsPanel(false)} />
+              )}
+
+              {/* DAG Visualization Panel - 任务执行图 */}
+              {dagPanelEnabled && showDAGPanel && (
+                <WorkflowPanel
+                  height={400}
+                  closable={true}
+                  onClose={() => setShowDAGPanel(false)}
+                />
               )}
             </div>
           </div>

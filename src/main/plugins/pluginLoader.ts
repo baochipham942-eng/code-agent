@@ -122,6 +122,7 @@ export async function loadPlugin(pluginDir: string): Promise<PluginLoadResult> {
       state: 'inactive',
       entry,
       registeredTools: [],
+      registeredHooks: [],
     };
 
     return {

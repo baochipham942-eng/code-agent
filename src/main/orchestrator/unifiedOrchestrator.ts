@@ -23,6 +23,7 @@ import { getLocalExecutor, LocalExecutor } from './localExecutor';
 import { getCloudExecutor, CloudExecutor } from './cloudExecutor';
 import { getHybridTaskCoordinator, HybridTaskCoordinator } from '../cloud/hybridTaskCoordinator';
 import { createLogger } from '../services/infra/logger';
+import { ORCHESTRATOR_TIMEOUTS } from '../../shared/constants';
 
 const logger = createLogger('UnifiedOrchestrator');
 
@@ -33,12 +34,12 @@ const logger = createLogger('UnifiedOrchestrator');
 const DEFAULT_CONFIG: OrchestratorConfig = {
   localExecutor: {
     maxConcurrent: 2,
-    defaultTimeout: 120000,
+    defaultTimeout: ORCHESTRATOR_TIMEOUTS.UNIFIED_DEFAULT,
     maxIterations: 30,
   },
   cloudExecutor: {
     maxConcurrent: 5,
-    defaultTimeout: 180000,
+    defaultTimeout: ORCHESTRATOR_TIMEOUTS.UNIFIED_EXTENDED,
     maxIterations: 50,
   },
   hybridCoordinator: {

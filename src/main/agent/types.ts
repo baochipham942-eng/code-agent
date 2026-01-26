@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { PermissionMode, PermissionLevel } from '../permissions/modes';
+import { AGENT_TIMEOUTS } from '../../shared/constants';
 
 // ----------------------------------------------------------------------------
 // Agent Definition Types
@@ -259,7 +260,7 @@ export const BUILT_IN_AGENTS: AgentDefinition[] = [
     priority: 'normal',
     executionMode: 'autonomous',
     maxIterations: 20,
-    timeout: 300000, // 5 minutes
+    timeout: AGENT_TIMEOUTS.CODE_REVIEWER,
     canDelegate: false,
   },
   {
@@ -275,7 +276,7 @@ export const BUILT_IN_AGENTS: AgentDefinition[] = [
     priority: 'normal',
     executionMode: 'supervised',
     maxIterations: 10,
-    timeout: 600000, // 10 minutes
+    timeout: AGENT_TIMEOUTS.DOC_GENERATOR,
     canDelegate: false,
   },
   {
@@ -291,7 +292,7 @@ export const BUILT_IN_AGENTS: AgentDefinition[] = [
     priority: 'high',
     executionMode: 'autonomous',
     maxIterations: 15,
-    timeout: 300000, // 5 minutes
+    timeout: AGENT_TIMEOUTS.CODE_REVIEWER,
     canDelegate: false,
   },
   {
@@ -307,7 +308,7 @@ export const BUILT_IN_AGENTS: AgentDefinition[] = [
     priority: 'normal',
     executionMode: 'autonomous',
     maxIterations: 20,
-    timeout: 300000, // 5 minutes
+    timeout: AGENT_TIMEOUTS.CODE_REVIEWER,
     canDelegate: false,
   },
   {
@@ -323,7 +324,7 @@ export const BUILT_IN_AGENTS: AgentDefinition[] = [
     priority: 'normal',
     executionMode: 'autonomous',
     maxIterations: 30,
-    timeout: 900000, // 15 minutes
+    timeout: AGENT_TIMEOUTS.SECURITY_AUDITOR,
     canDelegate: true,
     allowedSubagents: ['explore'],
   },
@@ -340,7 +341,7 @@ export const BUILT_IN_AGENTS: AgentDefinition[] = [
     priority: 'critical',
     executionMode: 'interactive',
     maxIterations: 50,
-    timeout: 1800000, // 30 minutes
+    timeout: AGENT_TIMEOUTS.ARCHITECTURE_ANALYZER,
     canDelegate: true,
     allowedSubagents: ['explore', 'bash', 'plan', 'code-review', 'researcher'],
   },

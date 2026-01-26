@@ -18,6 +18,7 @@ import type {
 import { getAgentRegistry, AgentRegistry } from './agentRegistry';
 import type { ModelConfig } from '../../../shared/types';
 import type { Tool, ToolContext } from '../../tools/toolRegistry';
+import { ORCHESTRATOR_TIMEOUTS } from '../../../shared/constants';
 
 // ============================================================================
 // 类型定义
@@ -47,7 +48,7 @@ interface ConversationMessage {
 
 const DEFAULT_CONFIG: ExecutorConfig = {
   defaultMaxIterations: 30,
-  defaultTimeout: 180000,
+  defaultTimeout: ORCHESTRATOR_TIMEOUTS.AGENT_EXECUTOR,
   streamOutput: true,
 };
 

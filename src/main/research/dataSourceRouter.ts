@@ -9,6 +9,7 @@ import type {
   IntentClassification,
 } from './types';
 import { createLogger } from '../services/infra/logger';
+import { DATA_SOURCE_TIMEOUTS } from '../../shared/constants';
 
 const logger = createLogger('DataSourceRouter');
 
@@ -365,7 +366,7 @@ export class DataSourceRouter {
         return {
           parallel: true,
           maxConcurrent: 3,
-          timeout: 20000,
+          timeout: DATA_SOURCE_TIMEOUTS.WEB_SEARCH,
           retryCount: 1,
           fallbackSources: ['exa_search', 'web_search'],
         };
@@ -373,7 +374,7 @@ export class DataSourceRouter {
         return {
           parallel: true,
           maxConcurrent: 2,
-          timeout: 30000,
+          timeout: DATA_SOURCE_TIMEOUTS.WEB_CRAWL,
           retryCount: 1,
           fallbackSources: ['web_search'],
         };
@@ -381,7 +382,7 @@ export class DataSourceRouter {
         return {
           parallel: false,
           maxConcurrent: 1,
-          timeout: 45000,
+          timeout: DATA_SOURCE_TIMEOUTS.DEEP_SEARCH,
           retryCount: 0,
           fallbackSources: ['firecrawl_scrape'],
         };
@@ -389,7 +390,7 @@ export class DataSourceRouter {
         return {
           parallel: true,
           maxConcurrent: 3,
-          timeout: 15000,
+          timeout: DATA_SOURCE_TIMEOUTS.CODE_SEARCH,
           retryCount: 1,
           fallbackSources: ['firecrawl_search', 'web_search'],
         };
@@ -397,7 +398,7 @@ export class DataSourceRouter {
         return {
           parallel: true,
           maxConcurrent: 2,
-          timeout: 15000,
+          timeout: DATA_SOURCE_TIMEOUTS.CODE_SEARCH,
           retryCount: 1,
           fallbackSources: ['code_search'],
         };
@@ -406,7 +407,7 @@ export class DataSourceRouter {
         return {
           parallel: true,
           maxConcurrent: 3,
-          timeout: 15000,
+          timeout: DATA_SOURCE_TIMEOUTS.DEFAULT,
           retryCount: 2,
           fallbackSources: [],
         };
@@ -414,7 +415,7 @@ export class DataSourceRouter {
         return {
           parallel: true,
           maxConcurrent: 2,
-          timeout: 20000,
+          timeout: DATA_SOURCE_TIMEOUTS.NEWS_SEARCH,
           retryCount: 1,
           fallbackSources: ['exa_search'],
         };
@@ -423,7 +424,7 @@ export class DataSourceRouter {
         return {
           parallel: true,
           maxConcurrent: 3,
-          timeout: 15000,
+          timeout: DATA_SOURCE_TIMEOUTS.CODE_SEARCH,
           retryCount: 1,
           fallbackSources: [],
         };
@@ -432,7 +433,7 @@ export class DataSourceRouter {
         return {
           parallel: true,
           maxConcurrent: 2,
-          timeout: 30000,
+          timeout: DATA_SOURCE_TIMEOUTS.WEB_CRAWL,
           retryCount: 0,
           fallbackSources: ['firecrawl_scrape'],
         };
@@ -440,7 +441,7 @@ export class DataSourceRouter {
         return {
           parallel: false,
           maxConcurrent: 1,
-          timeout: 10000,
+          timeout: DATA_SOURCE_TIMEOUTS.SOCIAL_SEARCH,
           retryCount: 0,
           fallbackSources: [],
         };
@@ -448,7 +449,7 @@ export class DataSourceRouter {
         return {
           parallel: false,
           maxConcurrent: 1,
-          timeout: 5000,
+          timeout: DATA_SOURCE_TIMEOUTS.QUICK_VALIDATION,
           retryCount: 0,
           fallbackSources: [],
         };
@@ -456,7 +457,7 @@ export class DataSourceRouter {
         return {
           parallel: true,
           maxConcurrent: 2,
-          timeout: 15000,
+          timeout: DATA_SOURCE_TIMEOUTS.DEFAULT,
           retryCount: 1,
           fallbackSources: ['web_search'],
         };

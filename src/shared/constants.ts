@@ -620,3 +620,187 @@ export const PERFORMANCE_THRESHOLDS = {
   /** 网络重试最大延迟 */
   NETWORK_RETRY_MAX_DELAY: 30_000,
 } as const;
+
+/** 数据源路由超时配置 */
+export const DATA_SOURCE_TIMEOUTS = {
+  /** Web 搜索 */
+  WEB_SEARCH: 20_000,
+  /** Web 爬取 */
+  WEB_CRAWL: 30_000,
+  /** 深度搜索 */
+  DEEP_SEARCH: 45_000,
+  /** 代码搜索 */
+  CODE_SEARCH: 15_000,
+  /** 文件搜索 */
+  FILE_SEARCH: 15_000,
+  /** 学术搜索 */
+  ACADEMIC_SEARCH: 15_000,
+  /** 新闻搜索 */
+  NEWS_SEARCH: 20_000,
+  /** 图片搜索 */
+  IMAGE_SEARCH: 15_000,
+  /** 视频搜索 */
+  VIDEO_SEARCH: 30_000,
+  /** 社交搜索 */
+  SOCIAL_SEARCH: 10_000,
+  /** 快速验证 */
+  QUICK_VALIDATION: 5_000,
+  /** 默认搜索 */
+  DEFAULT: 15_000,
+} as const;
+
+/** Agent 复杂度配置 */
+export const AGENT_COMPLEXITY = {
+  LOW: {
+    maxTurns: 5,
+    timeout: 30_000,
+  },
+  MEDIUM: {
+    maxTurns: 15,
+    timeout: 120_000,
+  },
+  HIGH: {
+    maxTurns: 50,
+    timeout: 600_000,
+  },
+} as const;
+
+/** 预定义 Agent 超时配置 */
+export const AGENT_TIMEOUTS = {
+  /** 代码审查 */
+  CODE_REVIEWER: 300_000,
+  /** 文档生成 */
+  DOC_GENERATOR: 600_000,
+  /** 测试生成 */
+  TEST_GENERATOR: 300_000,
+  /** 重构助手 */
+  REFACTOR_ASSISTANT: 300_000,
+  /** 安全审计 */
+  SECURITY_AUDITOR: 900_000,
+  /** 架构分析 */
+  ARCHITECTURE_ANALYZER: 1_800_000,
+  /** 动态协调器 - Agent 超时 */
+  DYNAMIC_AGENT: 300_000,
+  /** 动态协调器 - 总超时 */
+  DYNAMIC_TOTAL: 1_800_000,
+  /** 并行协调器 - 任务超时 */
+  PARALLEL_TASK: 120_000,
+} as const;
+
+/** 沙箱执行超时 */
+export const SANDBOX_TIMEOUTS = {
+  /** 默认执行超时 */
+  DEFAULT: 120_000,
+  /** 命令检测超时 */
+  COMMAND_CHECK: 5_000,
+  /** 路径检测超时 */
+  PATH_CHECK: 1_000,
+  /** 脚本执行超时 */
+  SCRIPT_EXECUTION: 5_000,
+  /** 工具验证超时 */
+  TOOL_VALIDATION: 5_000,
+  /** 工具测试超时 */
+  TOOL_TEST: 30_000,
+} as const;
+
+/** Hook 超时配置 */
+export const HOOK_TIMEOUTS = {
+  /** 脚本执行默认超时 */
+  SCRIPT_DEFAULT: 5_000,
+  /** Prompt Hook AI 评估超时 */
+  AI_EVALUATION: 10_000,
+  /** 观察者超时 */
+  OBSERVER: 5_000,
+  /** 决策超时 */
+  DECISION: 10_000,
+} as const;
+
+/** 网络工具超时 */
+export const NETWORK_TOOL_TIMEOUTS = {
+  /** HTTP 请求默认超时 */
+  HTTP_DEFAULT: 30_000,
+  /** HTTP 请求最大超时 */
+  HTTP_MAX: 300_000,
+  /** 图片分析超时 */
+  IMAGE_ANALYZE: 30_000,
+  /** 图片标注超时 */
+  IMAGE_ANNOTATE: 60_000,
+  /** 截图超时 */
+  SCREENSHOT: 30_000,
+  /** 语音转文本超时 */
+  SPEECH_TO_TEXT: 60_000,
+  /** 文本转语音超时 */
+  TEXT_TO_SPEECH: 60_000,
+  /** Git 克隆超时 */
+  GIT_CLONE: 120_000,
+  /** Git 操作超时 */
+  GIT_OPERATION: 30_000,
+} as const;
+
+/** 浏览器操作超时 */
+export const BROWSER_TIMEOUTS = {
+  /** 浏览器操作默认超时 */
+  ACTION_DEFAULT: 30_000,
+  /** 等待选择器超时 */
+  WAIT_SELECTOR: 5_000,
+  /** 等待超时 */
+  WAIT_DEFAULT: 1_000,
+  /** Computer Use 等待超时 */
+  COMPUTER_USE_WAIT: 5_000,
+} as const;
+
+/** 内存服务超时 */
+export const MEMORY_TIMEOUTS = {
+  /** 云搜索超时 */
+  CLOUD_SEARCH: 3_000,
+  /** LLM 摘要超时 */
+  LLM_SUMMARIZE: 30_000,
+  /** 触发器超时 */
+  TRIGGER: 5_000,
+} as const;
+
+/** 测试运行器超时 */
+export const TEST_TIMEOUTS = {
+  /** 默认测试超时 */
+  DEFAULT: 60_000,
+} as const;
+
+/** 资源锁超时 */
+export const RESOURCE_LOCK_TIMEOUTS = {
+  /** 锁获取超时 */
+  ACQUIRE: 300_000,
+  /** 等待超时 */
+  WAIT: 30_000,
+} as const;
+
+/** 认证服务超时 */
+export const AUTH_TIMEOUTS = {
+  /** 会话获取超时 */
+  SESSION_FETCH: 5_000,
+  /** 配置文件获取超时 */
+  PROFILE_FETCH: 5_000,
+} as const;
+
+/** 状态检查超时 */
+export const STATUS_TIMEOUTS = {
+  /** API 健康检查超时 */
+  API_HEALTH_CHECK: 5_000,
+} as const;
+
+/** 任务输出超时 */
+export const TASK_OUTPUT_TIMEOUTS = {
+  /** 默认超时 */
+  DEFAULT: 30_000,
+} as const;
+
+/** 后台任务超时 */
+export const BACKGROUND_TASK_TIMEOUTS = {
+  /** 默认超时 */
+  DEFAULT: 30_000,
+} as const;
+
+/** Skill 服务超时 */
+export const SKILL_TIMEOUTS = {
+  /** 安装超时 */
+  INSTALL: 30_000,
+} as const;

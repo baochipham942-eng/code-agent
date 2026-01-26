@@ -1,6 +1,7 @@
 // ============================================================================
 // ParallelAgentCoordinator - True parallel agent execution and coordination
 // Enhancement 3: Multi-Agent Parallelism
+// Refactored: Now supports Task DAG scheduler for advanced dependency handling
 // ============================================================================
 
 import { EventEmitter } from 'events';
@@ -8,6 +9,7 @@ import type { ModelConfig } from '../../shared/types';
 import type { Tool, ToolContext } from '../tools/toolRegistry';
 import { getSubagentExecutor, type SubagentResult } from './subagentExecutor';
 import { createLogger } from '../services/infra/logger';
+import { TaskDAG, getDAGScheduler, type SchedulerResult } from '../scheduler';
 
 const logger = createLogger('ParallelAgentCoordinator');
 
@@ -443,6 +445,123 @@ export class ParallelAgentCoordinator extends EventEmitter {
     this.completedTasks.clear();
     this.clearSharedContext();
     this.removeAllListeners();
+  }
+
+  // ============================================================================
+  // DAG-based Execution (New in Session 4)
+  // ============================================================================
+
+  /**
+   * Execute tasks using the new DAG scheduler
+   * Provides better dependency handling and parallel scheduling
+   */
+  async executeWithDAG(tasks: AgentTask[]): Promise<ParallelExecutionResult> {
+    if (!this.modelConfig || !this.toolRegistry || !this.toolContext) {
+      throw new Error('Coordinator not initialized. Call initialize() first.');
+    }
+
+    // Create DAG from tasks
+    const dag = new TaskDAG(
+      `parallel_${Date.now()}`,
+      'Parallel Agent Execution',
+      {
+        maxParallelism: this.config.maxParallelTasks,
+        defaultTimeout: this.config.taskTimeout,
+        enableOutputPassing: this.config.enableSharedContext,
+        enableSharedContext: this.config.enableSharedContext,
+        failureStrategy: 'continue',
+      }
+    );
+
+    // Add tasks to DAG
+    for (const task of tasks) {
+      dag.addAgentTask(
+        task.id,
+        {
+          role: task.role,
+          prompt: task.task,
+          systemPrompt: task.systemPrompt,
+          tools: task.tools,
+          maxIterations: task.maxIterations,
+        },
+        {
+          name: task.role,
+          dependencies: task.dependsOn,
+          priority: task.priority === undefined ? 'normal' :
+            task.priority >= 3 ? 'critical' :
+            task.priority >= 2 ? 'high' :
+            task.priority >= 1 ? 'normal' : 'low',
+        }
+      );
+    }
+
+    // Validate DAG
+    const validation = dag.validate();
+    if (!validation.valid) {
+      logger.error('DAG validation failed', { errors: validation.errors });
+      throw new Error(`Invalid DAG: ${validation.errors.join(', ')}`);
+    }
+
+    // Get scheduler and execute
+    const scheduler = getDAGScheduler();
+    const result = await scheduler.execute(dag, {
+      modelConfig: this.modelConfig,
+      toolRegistry: this.toolRegistry,
+      toolContext: this.toolContext,
+      workingDirectory: process.cwd(),
+    });
+
+    // Convert scheduler result to coordinator result format
+    return this.convertSchedulerResult(result);
+  }
+
+  /**
+   * Convert DAG scheduler result to coordinator result format
+   */
+  private convertSchedulerResult(result: SchedulerResult): ParallelExecutionResult {
+    const dagTasks = result.dag.getAllTasks();
+    const results: AgentTaskResult[] = [];
+    const errors: Array<{ taskId: string; error: string }> = [];
+
+    for (const task of dagTasks) {
+      const taskResult: AgentTaskResult = {
+        success: task.status === 'completed',
+        output: task.output?.text || '',
+        error: task.failure?.message,
+        toolsUsed: task.output?.toolsUsed || [],
+        iterations: task.output?.iterations || 0,
+        taskId: task.id,
+        role: task.config.type === 'agent' ? (task.config as { role: string }).role : task.name,
+        startTime: task.metadata.startedAt || 0,
+        endTime: task.metadata.completedAt || 0,
+        duration: task.metadata.duration || 0,
+      };
+
+      if (taskResult.success) {
+        results.push(taskResult);
+        this.completedTasks.set(task.id, taskResult);
+
+        // Update shared context
+        if (this.config.enableSharedContext) {
+          this.updateSharedContext(taskResult);
+        }
+      } else if (task.failure) {
+        errors.push({ taskId: task.id, error: task.failure.message });
+      }
+    }
+
+    // Aggregate results
+    const aggregatedResults = this.config.aggregateResults
+      ? this.aggregateResults(results)
+      : results;
+
+    return {
+      success: result.success,
+      results: aggregatedResults,
+      totalDuration: result.totalDuration,
+      parallelism: result.maxParallelism,
+      errors,
+    };
   }
 }
 

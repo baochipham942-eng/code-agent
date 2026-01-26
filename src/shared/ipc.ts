@@ -58,6 +58,9 @@ import type {
   ContextHealthUpdateEvent,
 } from './types/contextHealth';
 
+import type { DAGVisualizationEvent } from './types/dagVisualization';
+import { DAG_CHANNELS } from './ipc/channels';
+
 import type {
   MarketplaceInfo,
   MarketplacePluginEntry,
@@ -769,6 +772,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.CLOUD_TASK_FAILED]: (task: CloudTask) => void;
   [IPC_CHANNELS.CONTEXT_HEALTH_EVENT]: (event: ContextHealthUpdateEvent) => void;
   [IPC_CHANNELS.SESSION_STATUS_UPDATE]: (event: SessionStatusUpdateEvent) => void;
+  // DAG Visualization events
+  [DAG_CHANNELS.EVENT]: (event: DAGVisualizationEvent) => void;
 }
 
 // ----------------------------------------------------------------------------

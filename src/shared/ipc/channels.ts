@@ -65,3 +65,29 @@ export const SKILL_CHANNELS = {
  * Skill 通道名称类型
  */
 export type SkillChannel = (typeof SKILL_CHANNELS)[keyof typeof SKILL_CHANNELS];
+
+// ============================================================================
+// DAG 可视化系统 IPC 通道
+// ============================================================================
+
+/**
+ * DAG 可视化 IPC 通道
+ * 用于前端订阅 DAG 执行状态更新
+ */
+export const DAG_CHANNELS = {
+  /** DAG 事件推送（主进程 -> 渲染进程） */
+  EVENT: 'dag:event',
+  /** DAG 状态初始化 */
+  INIT: 'dag:init',
+  /** DAG 任务状态更新 */
+  TASK_STATUS: 'dag:task:status',
+  /** DAG 任务进度更新 */
+  TASK_PROGRESS: 'dag:task:progress',
+  /** DAG 统计信息更新 */
+  STATISTICS: 'dag:statistics',
+} as const;
+
+/**
+ * DAG 通道名称类型
+ */
+export type DAGChannel = (typeof DAG_CHANNELS)[keyof typeof DAG_CHANNELS];

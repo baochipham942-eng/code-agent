@@ -97,11 +97,14 @@ export class DatabaseService {
   // --------------------------------------------------------------------------
 
   async initialize(): Promise<void> {
-    // 确保目录存在
+    // 确保目录存在（异步，性能优化）
     const dir = path.dirname(this.dbPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    await fs.promises.mkdir(dir, { recursive: true }).catch((err) => {
+      // EEXIST 表示目录已存在，不是错误
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
+        throw err;
+      }
+    });
 
     this.db = new Database(this.dbPath);
     this.db.pragma('journal_mode = WAL');

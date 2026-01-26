@@ -1,6 +1,11 @@
 // ============================================================================
 // DAG Store - DAG 可视化状态管理
 // Session 5: React Flow 可视化
+//
+// 性能优化：
+// 1. 使用 Map 索引加速任务查找（O(1) vs O(n)）
+// 2. 边的索引加速依赖关系查找
+// 3. 细粒度选择器减少重渲染
 // ============================================================================
 
 import { create } from 'zustand';
@@ -18,6 +23,56 @@ import type { DAGStatus, DAGStatistics, TaskStatus } from '@shared/types/taskDAG
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('DAGStore');
+
+// ----------------------------------------------------------------------------
+// 性能优化：索引结构
+// ----------------------------------------------------------------------------
+
+/** 每个 DAG 的索引缓存 */
+interface DAGIndex {
+  /** taskId -> node 索引位置 */
+  nodeIndexByTaskId: Map<string, number>;
+  /** taskId -> 出边列表 */
+  edgesBySource: Map<string, number[]>;
+  /** taskId -> 入边列表 */
+  edgesByTarget: Map<string, number[]>;
+}
+
+/** 全局索引缓存 */
+const dagIndexCache = new Map<string, DAGIndex>();
+
+/** 构建 DAG 索引 */
+function buildDAGIndex(dag: DAGVisualizationState): DAGIndex {
+  const nodeIndexByTaskId = new Map<string, number>();
+  const edgesBySource = new Map<string, number[]>();
+  const edgesByTarget = new Map<string, number[]>();
+
+  dag.nodes.forEach((node, index) => {
+    nodeIndexByTaskId.set(node.data.taskId, index);
+  });
+
+  dag.edges.forEach((edge, index) => {
+    const sourceEdges = edgesBySource.get(edge.source) || [];
+    sourceEdges.push(index);
+    edgesBySource.set(edge.source, sourceEdges);
+
+    const targetEdges = edgesByTarget.get(edge.target) || [];
+    targetEdges.push(index);
+    edgesByTarget.set(edge.target, targetEdges);
+  });
+
+  return { nodeIndexByTaskId, edgesBySource, edgesByTarget };
+}
+
+/** 获取或创建 DAG 索引 */
+function getDAGIndex(dagId: string, dag: DAGVisualizationState): DAGIndex {
+  let index = dagIndexCache.get(dagId);
+  if (!index) {
+    index = buildDAGIndex(dag);
+    dagIndexCache.set(dagId, index);
+  }
+  return index;
+}
 
 // ----------------------------------------------------------------------------
 // Types
@@ -110,14 +165,16 @@ export const useDAGStore = create<DAGStore>((set, get) => ({
     });
   },
 
-  // 更新任务状态
+  // 更新任务状态（使用索引优化，O(1) 查找）
   updateTaskStatus: (dagId, data) => {
     set((prev) => {
       const dag = prev.dags.get(dagId);
       if (!dag) return prev;
 
-      const nodeIndex = dag.nodes.findIndex((n) => n.data.taskId === data.taskId);
-      if (nodeIndex === -1) return prev;
+      // 使用索引快速定位节点（O(1) vs O(n)）
+      const index = getDAGIndex(dagId, dag);
+      const nodeIndex = index.nodeIndexByTaskId.get(data.taskId);
+      if (nodeIndex === undefined) return prev;
 
       const newNodes = [...dag.nodes];
       const node = newNodes[nodeIndex];
@@ -135,25 +192,28 @@ export const useDAGStore = create<DAGStore>((set, get) => ({
         },
       };
 
-      // 更新边的激活状态
-      const newEdges = dag.edges.map((edge) => {
-        // 如果源节点刚开始运行，激活出边
-        if (edge.source === data.taskId && data.status === 'running') {
-          return { ...edge, data: { ...edge.data, isActive: true } };
+      // 使用索引只更新相关的边（O(k) vs O(n)，k 是相关边数）
+      const newEdges = [...dag.edges];
+      const sourceEdgeIndices = index.edgesBySource.get(data.taskId) || [];
+      const targetEdgeIndices = index.edgesByTarget.get(data.taskId) || [];
+
+      // 更新出边
+      for (const edgeIdx of sourceEdgeIndices) {
+        const edge = newEdges[edgeIdx];
+        if (data.status === 'running') {
+          newEdges[edgeIdx] = { ...edge, data: { ...edge.data, isActive: true } };
+        } else if (['completed', 'failed', 'cancelled', 'skipped'].includes(data.status)) {
+          newEdges[edgeIdx] = { ...edge, data: { ...edge.data, isActive: false } };
         }
-        // 如果目标节点开始运行，取消入边激活
-        if (edge.target === data.taskId && data.status === 'running') {
-          return { ...edge, data: { ...edge.data, isActive: false } };
+      }
+
+      // 更新入边
+      if (data.status === 'running') {
+        for (const edgeIdx of targetEdgeIndices) {
+          const edge = newEdges[edgeIdx];
+          newEdges[edgeIdx] = { ...edge, data: { ...edge.data, isActive: false } };
         }
-        // 如果源节点完成，取消出边激活
-        if (
-          edge.source === data.taskId &&
-          ['completed', 'failed', 'cancelled', 'skipped'].includes(data.status)
-        ) {
-          return { ...edge, data: { ...edge.data, isActive: false } };
-        }
-        return edge;
-      });
+      }
 
       const newDags = new Map(prev.dags);
       newDags.set(dagId, { ...dag, nodes: newNodes, edges: newEdges });

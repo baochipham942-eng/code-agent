@@ -80,6 +80,9 @@ export interface AgentOrchestratorConfig {
  * @see ToolRegistry - 工具注册表
  * @see ToolExecutor - 工具执行器
  */
+// 消息历史最大长度（内存管理）
+const MAX_MESSAGES_IN_MEMORY = 200;
+
 export class AgentOrchestrator {
   private generationManager: GenerationManager;
   private configService: ConfigService;
@@ -125,6 +128,8 @@ export class AgentOrchestrator {
   /**
    * 初始化工作目录
    * 默认使用 app 数据目录下的 work 文件夹，确保有写入权限
+   *
+   * 性能优化：目录创建延迟到后台执行，构造函数不阻塞
    */
   private initializeWorkDirectory(): string {
     try {
@@ -132,11 +137,15 @@ export class AgentOrchestrator {
       const userDataPath = app.getPath('userData');
       const workDir = path.join(userDataPath, 'work');
 
-      // 确保目录存在
-      if (!fs.existsSync(workDir)) {
-        fs.mkdirSync(workDir, { recursive: true });
-        logger.info('Created work directory:', workDir);
-      }
+      // 异步确保目录存在（不阻塞构造函数）
+      fs.promises.mkdir(workDir, { recursive: true })
+        .then(() => logger.debug('Work directory ensured:', workDir))
+        .catch((err) => {
+          // EEXIST 表示目录已存在，不是错误
+          if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
+            logger.warn('Failed to create work directory:', err);
+          }
+        });
 
       return workDir;
     } catch (error) {
@@ -189,7 +198,7 @@ export class AgentOrchestrator {
       attachments: attachments as MessageAttachment[] | undefined,
     };
 
-    this.messages.push(userMessage);
+    this.addMessage(userMessage);
     logger.debug('User message added, hasAttachments:', !!userMessage.attachments?.length, 'count:', userMessage.attachments?.length || 0);
     // Note: Don't emit user message event - frontend already added it
 
@@ -279,7 +288,7 @@ export class AgentOrchestrator {
           content: result.report.content,
           timestamp: Date.now(),
         };
-        this.messages.push(reportMessage);
+        this.addMessage(reportMessage);
 
         // Emit message event
         onEvent({
@@ -348,7 +357,7 @@ export class AgentOrchestrator {
           content: result.report.content,
           timestamp: Date.now(),
         };
-        this.messages.push(reportMessage);
+        this.addMessage(reportMessage);
 
         // 发送消息事件
         onEvent({
@@ -546,7 +555,7 @@ export class AgentOrchestrator {
         content: result.aggregatedOutput,
         timestamp: Date.now(),
       };
-      this.messages.push(assistantMessage);
+      this.addMessage(assistantMessage);
 
       // Save and emit message
       const sessionManager = getSessionManager();
@@ -703,6 +712,25 @@ export class AgentOrchestrator {
   clearMessages(): void {
     this.messages = [];
     logger.debug('Messages cleared');
+  }
+
+  /**
+   * 添加消息到历史（带内存管理）
+   *
+   * 性能优化：限制内存中消息数量，防止长会话 OOM
+   * 超出限制时保留最近的消息
+   *
+   * @param message - 要添加的消息
+   */
+  private addMessage(message: Message): void {
+    this.messages.push(message);
+
+    // 内存管理：限制消息数量
+    if (this.messages.length > MAX_MESSAGES_IN_MEMORY) {
+      const trimCount = this.messages.length - MAX_MESSAGES_IN_MEMORY;
+      this.messages = this.messages.slice(trimCount);
+      logger.debug(`Trimmed ${trimCount} old messages, keeping ${this.messages.length}`);
+    }
   }
 
   // --------------------------------------------------------------------------

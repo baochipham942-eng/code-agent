@@ -96,18 +96,30 @@ export function getTaskManagerInstance(): TaskManager | null {
 /**
  * 核心服务初始化 - 必须在窗口创建前完成
  * 只包含 IPC handlers 依赖的最小服务集
+ *
+ * 性能优化：
+ * 1. ConfigService 和 Database 并行初始化
+ * 2. Supabase 延迟到后台服务阶段（authService 支持离线模式）
+ * 3. MemoryService 在数据库就绪后初始化
  */
 export async function initializeCoreServices(): Promise<ConfigService> {
-  // Initialize config service
+  const startTime = Date.now();
+
+  // 并行初始化 ConfigService 和 Database（无依赖关系）
   configService = new ConfigService();
-  await configService.initialize();
 
-  // Initialize database (SQLite persistence)
-  await initDatabase();
+  const [, dbResult] = await Promise.all([
+    configService.initialize(),
+    initDatabase(),
+  ]);
+
   const userDataPath = app.getPath('userData');
-  logger.info('Database initialized', { path: path.join(userDataPath, 'code-agent.db') });
+  logger.info('Config & Database initialized (parallel)', {
+    path: path.join(userDataPath, 'code-agent.db'),
+    elapsed: Date.now() - startTime,
+  });
 
-  // Initialize memory service (needed for session management)
+  // Initialize memory service (depends on database)
   initMemoryService({
     maxRecentMessages: 10,
     toolCacheTTL: TOOL_CACHE.DEFAULT_TTL,
@@ -117,19 +129,10 @@ export async function initializeCoreServices(): Promise<ConfigService> {
   });
   logger.info('Memory service initialized');
 
-  // Initialize Supabase (MUST be in core services for auth IPC handlers)
-  // Default Supabase config (public anon key, safe to hardcode)
-  const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
-  const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcGJ1bmFoemJtZXhzbW1pcXlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODkyMTcsImV4cCI6MjA4NDA2NTIxN30.8swN1QdRX5vIjNyCLNhQTPAx-k2qxeS8EN4Ot2idY7w';
+  // NOTE: Supabase 延迟到 initializeBackgroundServices() 中初始化
+  // authService.initialize() 支持 Supabase 未就绪时从本地缓存读取用户
 
-  const settings = configService.getSettings();
-  const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url || DEFAULT_SUPABASE_URL;
-  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey || DEFAULT_SUPABASE_ANON_KEY;
-
-  initSupabase(supabaseUrl, supabaseAnonKey);
-  logger.info('Supabase initialized (core)');
-
-  logger.info('Core services initialized');
+  logger.info('Core services initialized', { totalElapsed: Date.now() - startTime });
   return configService;
 }
 
@@ -182,6 +185,17 @@ async function initializeServices(): Promise<void> {
 
   const settings = configService.getSettings();
   const mainWindow = getMainWindow();
+
+  // Initialize Supabase (延迟初始化，从核心服务移到这里)
+  // authService.initialize() 支持 Supabase 未初始化时从本地缓存读取用户
+  const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
+  const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcGJ1bmFoemJtZXhzbW1pcXlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODkyMTcsImV4cCI6MjA4NDA2NTIxN30.8swN1QdRX5vIjNyCLNhQTPAx-k2qxeS8EN4Ot2idY7w';
+
+  const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url || DEFAULT_SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey || DEFAULT_SUPABASE_ANON_KEY;
+
+  initSupabase(supabaseUrl, supabaseAnonKey);
+  logger.info('Supabase initialized (background)');
 
   // Initialize CloudConfigService FIRST, then MCP and Skills (they depend on CloudConfig)
   // This is a chained initialization to avoid race conditions

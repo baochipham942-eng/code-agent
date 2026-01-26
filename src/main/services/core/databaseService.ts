@@ -264,6 +264,7 @@ export class DatabaseService {
   private createIndexes(): void {
     if (!this.db) return;
 
+    // 基础索引
     this.db.exec(`
       CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
       CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
@@ -280,6 +281,12 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_path);
       CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id);
     `);
+
+    // 性能优化：复合索引（首轮响应加速）
+    // 会话列表查询：按状态过滤 + 按更新时间排序
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_status_updated ON sessions(status, updated_at DESC)`);
+    // 消息懒加载：按会话 + 时间戳排序（覆盖索引，避免回表）
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session_timestamp ON messages(session_id, timestamp DESC)`);
   }
 
   // --------------------------------------------------------------------------

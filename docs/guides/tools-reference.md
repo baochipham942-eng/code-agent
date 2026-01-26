@@ -351,10 +351,37 @@ browser_action { "action": "close" }
 
 ### spawn_agent - 创建子代理
 
-预定义角色：`coder`、`reviewer`、`tester`、`architect`、`debugger`、`documenter`
+支持两种模式：声明式（使用预定义角色）和动态模式（自定义 prompt）。
+
+**核心内置角色（6 个）：**
+- `coder` - 编写代码
+- `reviewer` - 代码审查
+- `tester` - 编写测试
+- `architect` - 架构设计
+- `debugger` - 调试排错
+- `documenter` - 编写文档
+
+**扩展角色（11 个）：**
+
+| 分类 | 角色 | 说明 |
+|------|------|------|
+| 代码 | `refactorer` | 代码重构 |
+| DevOps | `devops` | CI/CD 和基础设施 |
+| 视觉 | `visual-understanding` | 图片分析（OCR、物体检测）|
+| 视觉 | `visual-processing` | 图片编辑（标注、裁剪）|
+| 元 | `code-explore` | 本地代码库搜索（只读）|
+| 元 | `plan` | 任务规划（只读）|
+| 元 | `bash-executor` | Shell 命令执行 |
+| 元 | `general-purpose` | 通用全能 Agent |
+| 外部 | `web-search` | 网络搜索 |
+| 外部 | `mcp-connector` | MCP 服务连接 |
+| 外部 | `doc-reader` | 本地文档读取（PDF/Word/Excel）|
 
 ```bash
 spawn_agent { "role": "coder", "task": "实现用户登录功能" }
+
+# 使用扩展角色
+spawn_agent { "role": "code-explore", "task": "查找认证相关代码" }
 
 # 并行执行
 spawn_agent {

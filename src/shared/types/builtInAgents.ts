@@ -90,7 +90,7 @@ Output Format:
 
 Be constructive and specific. Focus on actionable feedback.`,
     tools: ['read_file', 'glob', 'grep', 'list_directory'],
-    maxIterations: 15,
+    maxIterations: 20,
     canSpawnSubagents: false,
     tags: ['code', 'review', 'quality'],
   },

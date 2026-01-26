@@ -7,8 +7,12 @@ import { getCoreMemoryService } from '../../memory/coreMemory';
 import { getProactiveContextService } from '../../memory/proactiveContext';
 import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector';
+import { RAGContextCache } from '../../context/tokenOptimizer';
 
 const logger = createLogger('ContextBuilder');
+
+// Session-level RAG cache to avoid redundant queries
+const ragCache = new RAGContextCache({ ttl: 5 * 60 * 1000, maxEntries: 10 });
 
 // ----------------------------------------------------------------------------
 // Working Directory Context
@@ -98,12 +102,26 @@ export function buildEnhancedSystemPrompt(
 
     if (isFullRAG) {
       // Gen5+: Full RAG with code, knowledge, and cloud search
-      const ragContext = memoryService.getRAGContext(userQuery, {
-        includeCode: true,
-        includeKnowledge: true,
-        includeConversations: false,
-        maxTokens: 1500,
-      });
+      // Check cache first to avoid redundant queries
+      let ragContext: string | undefined;
+      const cached = ragCache.get(userQuery);
+
+      if (cached) {
+        ragContext = cached.context;
+        logger.debug(`RAG cache hit: ${cached.tokens} tokens saved`);
+      } else {
+        ragContext = memoryService.getRAGContext(userQuery, {
+          includeCode: true,
+          includeKnowledge: true,
+          includeConversations: false,
+          maxTokens: 1500,
+        });
+
+        // Cache the result for future queries
+        if (ragContext && ragContext.trim().length > 0) {
+          ragCache.set(userQuery, ragContext);
+        }
+      }
 
       if (ragContext && ragContext.trim().length > 0) {
         enhancedPrompt += `\n\n## Relevant Context from Memory\n\nThe following context was retrieved from your knowledge base and may be helpful:\n\n${ragContext}`;

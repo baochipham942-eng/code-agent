@@ -87,6 +87,12 @@ export const ChatView: React.FC = () => {
         return false;
       }
 
+      // 过滤 tool 消息：工具结果已在 assistant 消息的 toolCalls[].result 中展示
+      // tool 消息的 content 是原始 JSON，不应显示给用户
+      if (message.role === 'tool') {
+        return false;
+      }
+
       if (message.role === 'assistant') {
         const hasContent = message.content && message.content.trim().length > 0;
         const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;

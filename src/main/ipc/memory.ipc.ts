@@ -47,10 +47,22 @@ function formatValueForDisplay(key: string, value: unknown): string {
   if (key === 'coding_style' && typeof value === 'object') {
     const style = value as Record<string, unknown>;
     const parts: string[] = [];
-    if (style.indentation) parts.push(`缩进: ${style.indentation}`);
-    if (style.quotes) parts.push(`引号: ${style.quotes}`);
-    if (style.semicolons !== undefined) parts.push(`分号: ${style.semicolons ? '是' : '否'}`);
-    return parts.length > 0 ? parts.join(', ') : '已学习编码风格';
+    // 处理 indent/indentation 字段
+    const indent = style.indent || style.indentation;
+    if (indent) {
+      const indentLabel = indent === '2spaces' ? '2 空格' : indent === '4spaces' ? '4 空格' : indent === 'tab' ? 'Tab' : String(indent);
+      parts.push(`缩进: ${indentLabel}`);
+    }
+    // 处理 quotes 字段
+    if (style.quotes) {
+      const quotesLabel = style.quotes === 'single' ? '单引号' : style.quotes === 'double' ? '双引号' : String(style.quotes);
+      parts.push(`引号: ${quotesLabel}`);
+    }
+    // 处理 semicolons 字段
+    if (style.semicolons !== undefined) {
+      parts.push(`分号: ${style.semicolons ? '使用' : '不使用'}`);
+    }
+    return parts.length > 0 ? `编码风格: ${parts.join(', ')}` : '已学习编码风格';
   }
 
   // 数组：显示数量
@@ -58,9 +70,16 @@ function formatValueForDisplay(key: string, value: unknown): string {
     return `${value.length} 项`;
   }
 
-  // 其他对象：显示键数量
+  // 特殊处理 pattern 类型的对象（学到的经验）
   if (typeof value === 'object') {
-    const keys = Object.keys(value);
+    const obj = value as Record<string, unknown>;
+    // 如果是 pattern 对象，显示 name
+    if (obj.name && typeof obj.name === 'string') {
+      const typeLabel = obj.type === 'success' ? '✓' : obj.type === 'failure' ? '✗' : '';
+      return typeLabel ? `${typeLabel} ${obj.name}` : obj.name;
+    }
+    // 其他对象：显示键数量
+    const keys = Object.keys(obj);
     return `${keys.length} 项配置`;
   }
 
@@ -74,8 +93,8 @@ function formatValueForDisplay(key: string, value: unknown): string {
  */
 function shouldHidePreference(key: string): boolean {
   const hiddenKeys = [
-    'tool_preferences', // 工具使用统计是内部数据
-    // 可以添加其他需要隐藏的 key
+    'tool_preferences',    // 工具使用统计是内部数据
+    'evolution_patterns',  // 进化模式是内部数据
   ];
   return hiddenKeys.includes(key);
 }

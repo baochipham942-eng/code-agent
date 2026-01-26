@@ -1234,7 +1234,6 @@ export class AgentLoop {
               const isAdmin = currentUser?.isAdmin === true;
 
               const fallbackApiKey = configService.getApiKey(fallbackConfig.provider);
-              console.log(`🔄 [FALLBACK] provider=${fallbackConfig.provider}, model=${fallbackConfig.model}, hasLocalKey=${!!fallbackApiKey}, isAdmin=${isAdmin}`);
               logger.info(`[Fallback] provider=${fallbackConfig.provider}, model=${fallbackConfig.model}, hasLocalKey=${!!fallbackApiKey}, isAdmin=${isAdmin}`);
 
               if (fallbackApiKey) {

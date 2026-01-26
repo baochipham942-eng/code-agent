@@ -1,11 +1,11 @@
 // ============================================================================
-// SettingsModal - 设置模态框 (侧边栏 Tab 切换布局)
+// SettingsModal - Main Settings Modal Entry Point
+// Layout + Tab Switching (~100 lines)
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Cpu, Server, Database, Info, Sparkles } from 'lucide-react';
+import { X, Cpu, Palette, Info, Layers, Globe, Database, Download, Cloud, Plug, Settings, Brain } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
-import { useAuthStore } from '../../../stores/authStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
 import { UpdateNotification } from '../../UpdateNotification';
@@ -13,46 +13,35 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/types';
 import { createLogger } from '../../../utils/logger';
 
-// Section Components
-import { GeneralSection } from './sections/GeneralSection';
-import { ModelSection } from './sections/ModelSection';
-import { ServiceSection } from './sections/ServiceSection';
-import { DataSection } from './sections/DataSection';
-import { AboutSection } from './sections/AboutSection';
-import { SkillsSettings } from './tabs/SkillsSettings';
-
 const logger = createLogger('SettingsModal');
+
+// Tab Components
+import { GeneralSettings } from './tabs/GeneralSettings';
+import { ModelSettings } from './tabs/ModelSettings';
+import { DisclosureSettings } from './tabs/DisclosureSettings';
+import { AppearanceSettings } from './tabs/AppearanceSettings';
+import { LanguageSettings } from './tabs/LanguageSettings';
+import { DataSettings } from './tabs/DataSettings';
+import { CloudSettings } from './tabs/CloudSettings';
+import { UpdateSettings } from './tabs/UpdateSettings';
+import { MCPSettings } from './tabs/MCPSettings';
+import { MemoryTab } from './tabs/MemoryTab';
+import { AboutSettings } from './tabs/AboutSettings';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type SectionId = 'general' | 'model' | 'service' | 'skills' | 'data' | 'about';
-
-interface Section {
-  id: SectionId;
-  label: string;
-  icon: React.ReactNode;
-  badge?: boolean;
-}
+type SettingsTab = 'general' | 'model' | 'disclosure' | 'appearance' | 'language' | 'cache' | 'cloud' | 'mcp' | 'memory' | 'update' | 'about';
 
 // ============================================================================
-// Main Component
+// Component
 // ============================================================================
 
 export const SettingsModal: React.FC = () => {
-  const { setShowSettings, modelConfig, setModelConfig, settingsInitialTab, clearSettingsInitialTab } = useAppStore();
-  const { signOut, isAuthenticated } = useAuthStore();
+  const { setShowSettings, modelConfig, setModelConfig, disclosureLevel, setDisclosureLevel } = useAppStore();
   const { t } = useI18n();
-  const [activeSection, setActiveSection] = useState<SectionId>(settingsInitialTab || 'general');
-
-  // 清除初始 Tab（使用后清除，避免下次打开设置时还是这个 Tab）
-  useEffect(() => {
-    if (settingsInitialTab) {
-      setActiveSection(settingsInitialTab);
-      clearSettingsInitialTab();
-    }
-  }, [settingsInitialTab, clearSettingsInitialTab]);
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
 
   // Optional update state
   const [optionalUpdateInfo, setOptionalUpdateInfo] = useState<UpdateInfo | null>(null);
@@ -74,64 +63,19 @@ export const SettingsModal: React.FC = () => {
     checkUpdate();
   }, []);
 
-  const sections: Section[] = [
-    {
-      id: 'general',
-      label: t.settings?.tabs?.general || '通用',
-      icon: <Settings className="w-4 h-4" />
-    },
-    {
-      id: 'model',
-      label: t.settings?.tabs?.model || '模型',
-      icon: <Cpu className="w-4 h-4" />
-    },
-    {
-      id: 'service',
-      label: 'MCP',
-      icon: <Server className="w-4 h-4" />
-    },
-    {
-      id: 'skills',
-      label: 'Skills',
-      icon: <Sparkles className="w-4 h-4" />
-    },
-    {
-      id: 'data',
-      label: t.settings?.tabs?.data || '记忆',
-      icon: <Database className="w-4 h-4" />
-    },
-    {
-      id: 'about',
-      label: t.settings?.tabs?.about || '关于',
-      icon: <Info className="w-4 h-4" />,
-      badge: optionalUpdateInfo?.hasUpdate,
-    },
+  const tabs: { id: SettingsTab; label: string; icon: React.ReactNode; badge?: boolean }[] = [
+    { id: 'general', label: t.settings.tabs.general || '通用', icon: <Settings className="w-4 h-4" /> },
+    { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
+    { id: 'disclosure', label: t.settings.tabs.disclosure, icon: <Layers className="w-4 h-4" /> },
+    { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
+    { id: 'language', label: t.settings.tabs.language, icon: <Globe className="w-4 h-4" /> },
+    { id: 'cache', label: t.settings.tabs.data || '数据', icon: <Database className="w-4 h-4" /> },
+    { id: 'cloud', label: t.settings.tabs.cloud || '云端', icon: <Cloud className="w-4 h-4" /> },
+    { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
+    { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <Brain className="w-4 h-4" /> },
+    { id: 'update', label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: optionalUpdateInfo?.hasUpdate },
+    { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
   ];
-
-  const renderContent = () => {
-    switch (activeSection) {
-      case 'general':
-        return <GeneralSection />;
-      case 'model':
-        return <ModelSection config={modelConfig} onChange={setModelConfig} />;
-      case 'service':
-        return <ServiceSection />;
-      case 'skills':
-        return <SkillsSettings />;
-      case 'data':
-        return <DataSection />;
-      case 'about':
-        return (
-          <AboutSection
-            updateInfo={optionalUpdateInfo}
-            onUpdateInfoChange={setOptionalUpdateInfo}
-            onShowUpdateModal={() => setShowUpdateModal(true)}
-          />
-        );
-      default:
-        return null;
-    }
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -142,74 +86,65 @@ export const SettingsModal: React.FC = () => {
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-2xl h-[70vh] bg-zinc-900 rounded-xl border border-zinc-800 shadow-2xl overflow-hidden animate-fadeIn flex">
-        {/* Sidebar */}
-        <div className="w-44 border-r border-zinc-800 bg-zinc-900/50 flex flex-col shrink-0">
-          {/* Header */}
-          <div className="px-4 py-4 border-b border-zinc-800">
-            <h2 className="text-base font-semibold text-zinc-100">{t.settings?.title || '设置'}</h2>
-          </div>
+      <div className="relative w-full max-w-2xl max-h-[80vh] bg-zinc-900 rounded-xl border border-zinc-800 shadow-2xl overflow-hidden animate-fadeIn">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+          <h2 className="text-lg font-semibold text-zinc-100">{t.settings.title}</h2>
+          <IconButton
+            icon={<X className="w-5 h-5" />}
+            aria-label="Close settings"
+            onClick={() => setShowSettings(false)}
+            variant="default"
+            size="md"
+          />
+        </div>
 
-          {/* Tab List */}
-          <div className="flex-1 py-2 px-2 space-y-1">
-            {sections.map((section) => (
+        <div className="flex h-[500px]">
+          {/* Sidebar */}
+          <div className="w-48 border-r border-zinc-800 p-2">
+            {tabs.map((tab) => (
               <button
-                key={section.id}
-                onClick={() => setActiveSection(section.id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
-                  activeSection === section.id
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors ${
+                  activeTab === tab.id
                     ? 'bg-zinc-800 text-zinc-100'
-                    : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
+                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
                 }`}
               >
-                <span className={activeSection === section.id ? 'text-primary-400' : ''}>
-                  {section.icon}
-                </span>
-                <span className="flex-1 text-left">{section.label}</span>
-                {section.badge && (
-                  <span className="w-2 h-2 rounded-full bg-primary-500 animate-pulse" />
+                {tab.icon}
+                <span className="text-sm flex-1">{tab.label}</span>
+                {/* Update badge */}
+                {tab.badge && (
+                  <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
                 )}
               </button>
             ))}
           </div>
 
-          {/* Bottom: Logout */}
-          {isAuthenticated && (
-            <div className="px-2 py-3 border-t border-zinc-800">
-              <button
-                onClick={() => {
-                  if (window.confirm('确定要退出登录吗？')) {
-                    signOut();
-                    setShowSettings(false);
-                  }
-                }}
-                className="w-full px-3 py-2 text-sm text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50 rounded-lg transition-colors text-center"
-              >
-                退出登录
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Content Area */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Content Header with Close Button */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 shrink-0">
-            <h3 className="text-sm font-medium text-zinc-300">
-              {sections.find(s => s.id === activeSection)?.label}
-            </h3>
-            <IconButton
-              icon={<X className="w-5 h-5" />}
-              aria-label="Close settings"
-              onClick={() => setShowSettings(false)}
-              variant="default"
-              size="md"
-            />
-          </div>
-
           {/* Content */}
-          <div className="flex-1 overflow-y-auto p-6">
-            {renderContent()}
+          <div className="flex-1 p-6 overflow-y-auto">
+            {activeTab === 'general' && <GeneralSettings />}
+            {activeTab === 'model' && (
+              <ModelSettings config={modelConfig} onChange={setModelConfig} />
+            )}
+            {activeTab === 'disclosure' && (
+              <DisclosureSettings level={disclosureLevel} onChange={setDisclosureLevel} />
+            )}
+            {activeTab === 'appearance' && <AppearanceSettings />}
+            {activeTab === 'language' && <LanguageSettings />}
+            {activeTab === 'cache' && <DataSettings />}
+            {activeTab === 'cloud' && <CloudSettings />}
+            {activeTab === 'mcp' && <MCPSettings />}
+            {activeTab === 'memory' && <MemoryTab />}
+            {activeTab === 'update' && (
+              <UpdateSettings
+                updateInfo={optionalUpdateInfo}
+                onUpdateInfoChange={setOptionalUpdateInfo}
+                onShowUpdateModal={() => setShowUpdateModal(true)}
+              />
+            )}
+            {activeTab === 'about' && <AboutSettings />}
           </div>
         </div>
       </div>

@@ -13,6 +13,74 @@ import { createLogger } from '../services/infra/logger';
 const logger = createLogger('MemoryIPC');
 
 // ----------------------------------------------------------------------------
+// Helper Functions
+// ----------------------------------------------------------------------------
+
+/**
+ * 格式化复杂值为人类可读的字符串
+ * 避免直接显示原始 JSON 给用户
+ */
+function formatValueForDisplay(key: string, value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (value === null || value === undefined) {
+    return '';
+  }
+
+  // 特殊处理 tool_preferences：工具使用统计
+  if (key === 'tool_preferences' && typeof value === 'object') {
+    const prefs = value as Record<string, number>;
+    const entries = Object.entries(prefs)
+      .sort((a, b) => b[1] - a[1]) // 按使用次数降序
+      .slice(0, 5); // 只显示前 5 个
+
+    if (entries.length === 0) return '暂无工具使用记录';
+
+    const formatted = entries.map(([tool, count]) => `${tool}(${count})`).join(', ');
+    const total = Object.keys(prefs).length;
+    return total > 5 ? `${formatted} 等 ${total} 项` : formatted;
+  }
+
+  // 特殊处理 coding_style：编码风格偏好
+  if (key === 'coding_style' && typeof value === 'object') {
+    const style = value as Record<string, unknown>;
+    const parts: string[] = [];
+    if (style.indentation) parts.push(`缩进: ${style.indentation}`);
+    if (style.quotes) parts.push(`引号: ${style.quotes}`);
+    if (style.semicolons !== undefined) parts.push(`分号: ${style.semicolons ? '是' : '否'}`);
+    return parts.length > 0 ? parts.join(', ') : '已学习编码风格';
+  }
+
+  // 数组：显示数量
+  if (Array.isArray(value)) {
+    return `${value.length} 项`;
+  }
+
+  // 其他对象：显示键数量
+  if (typeof value === 'object') {
+    const keys = Object.keys(value);
+    return `${keys.length} 项配置`;
+  }
+
+  // 其他类型：转字符串
+  return String(value);
+}
+
+/**
+ * 判断是否应该在用户界面隐藏该偏好项
+ * 某些内部系统数据不应该展示给用户
+ */
+function shouldHidePreference(key: string): boolean {
+  const hiddenKeys = [
+    'tool_preferences', // 工具使用统计是内部数据
+    // 可以添加其他需要隐藏的 key
+  ];
+  return hiddenKeys.includes(key);
+}
+
+// ----------------------------------------------------------------------------
 // Memory Management (new for Phase 2)
 // ----------------------------------------------------------------------------
 
@@ -35,7 +103,7 @@ async function handleListMemories(payload: { category?: MemoryCategory }): Promi
 
     memories.push({
       id: `pk_${pk.id}`,
-      content: typeof pk.value === 'string' ? pk.value : JSON.stringify(pk.value),
+      content: formatValueForDisplay(pk.key, pk.value),
       category,
       source: pk.source === 'explicit' ? 'explicit' : 'learned',
       confidence: pk.confidence,
@@ -50,9 +118,12 @@ async function handleListMemories(payload: { category?: MemoryCategory }): Promi
   for (const [key, value] of Object.entries(prefs)) {
     if (payload.category && payload.category !== 'preference') continue;
 
+    // 跳过应该隐藏的内部系统数据
+    if (shouldHidePreference(key)) continue;
+
     memories.push({
       id: `pref_${key}`,
-      content: `${key}: ${typeof value === 'string' ? value : JSON.stringify(value)}`,
+      content: formatValueForDisplay(key, value),
       category: 'preference',
       source: 'explicit',
       confidence: 1.0,

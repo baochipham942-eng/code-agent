@@ -52,8 +52,15 @@ import {
   buildEnhancedSystemPromptWithProactiveContext,
   buildEnhancedSystemPromptAsync,
 } from './messageHandling/contextBuilder';
+import { getPromptForTask } from '../generation/prompts/builder';
 import { AntiPatternDetector } from './antiPattern/detector';
 import { MAX_PARALLEL_TOOLS } from './loopTypes';
+import {
+  compressToolResult,
+  HookMessageBuffer,
+  estimateModelMessageTokens,
+  MessageHistoryCompressor,
+} from '../context/tokenOptimizer';
 
 const logger = createLogger('AgentLoop');
 
@@ -102,6 +109,10 @@ export class AgentLoop {
   // Refactored modules
   private circuitBreaker: CircuitBreaker;
   private antiPatternDetector: AntiPatternDetector;
+
+  // Token optimization
+  private hookMessageBuffer: HookMessageBuffer;
+  private messageHistoryCompressor: MessageHistoryCompressor;
 
   // Plan Mode support
   private planModeActive: boolean = false;
@@ -167,6 +178,15 @@ export class AgentLoop {
     // Initialize refactored modules
     this.circuitBreaker = new CircuitBreaker();
     this.antiPatternDetector = new AntiPatternDetector();
+
+    // Initialize token optimization
+    this.hookMessageBuffer = new HookMessageBuffer();
+    this.messageHistoryCompressor = new MessageHistoryCompressor({
+      threshold: 8000,
+      targetTokens: 4000,
+      preserveRecentCount: 6,
+      preserveUserMessages: true,
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -552,14 +572,29 @@ export class AgentLoop {
 
         const sanitizedResults = sanitizeToolResultsForHistory(toolResults);
 
+        // Compress tool results to save tokens
+        const compressedResults = sanitizedResults.map(result => {
+          if (result.output && typeof result.output === 'string') {
+            const { content, compressed, savedTokens } = compressToolResult(result.output);
+            if (compressed) {
+              logger.debug(`[AgentLoop] Tool result compressed, saved ${savedTokens} tokens`);
+              return { ...result, output: content };
+            }
+          }
+          return result;
+        });
+
         const toolMessage: Message = {
           id: this.generateId(),
           role: 'tool',
-          content: JSON.stringify(sanitizedResults),
+          content: JSON.stringify(compressedResults),
           timestamp: Date.now(),
-          toolResults: sanitizedResults,
+          toolResults: compressedResults,
         };
         await this.addAndPersistMessage(toolMessage);
+
+        // Flush hook message buffer at end of iteration
+        this.flushHookMessageBuffer();
 
         langfuse.endSpan(this.currentIterationSpanId, {
           type: 'tool_calls',
@@ -1376,18 +1411,18 @@ export class AgentLoop {
 
       logger.debug('[AgentLoop] Model response received:', response.type);
 
-      // Record token usage
-      const inputChars = modelMessages.reduce((sum, m) => {
-        const content = m.content;
-        if (typeof content === 'string') {
-          return sum + content.length;
-        }
-        return sum + content.reduce((acc, part) => acc + (part.text?.length || 0), 0);
-      }, 0);
-      const outputChars = (response.content?.length || 0) +
-        (response.toolCalls?.reduce((sum, tc) => sum + JSON.stringify(tc.arguments || {}).length, 0) || 0);
-      const estimatedInputTokens = Math.ceil(inputChars / 4);
-      const estimatedOutputTokens = Math.ceil(outputChars / 4);
+      // Record token usage with precise estimation
+      const estimatedInputTokens = estimateModelMessageTokens(
+        modelMessages.map(m => ({
+          role: m.role,
+          content: m.content,
+        }))
+      );
+      const outputContent = (response.content || '') +
+        (response.toolCalls?.map(tc => JSON.stringify(tc.arguments || {})).join('') || '');
+      const estimatedOutputTokens = estimateModelMessageTokens([
+        { role: 'assistant', content: outputContent },
+      ]);
       this.recordTokenUsage(estimatedInputTokens, estimatedOutputTokens);
 
       langfuse.endGeneration(generationId, {
@@ -1441,10 +1476,12 @@ export class AgentLoop {
   private buildModelMessages(): ModelMessage[] {
     const modelMessages: ModelMessage[] = [];
 
-    let systemPrompt = this.generation.systemPrompt;
+    // Use optimized prompt based on task complexity
+    let systemPrompt = getPromptForTask(this.generation.id, this.isSimpleTaskMode);
 
     const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
-    if (genNum >= 3) {
+    if (genNum >= 3 && !this.isSimpleTaskMode) {
+      // Only enhance with RAG for non-simple tasks
       const lastUserMessage = [...this.messages].reverse().find((m) => m.role === 'user');
       const userQuery = lastUserMessage?.content || '';
       systemPrompt = buildEnhancedSystemPrompt(systemPrompt, userQuery, this.generation.id, this.isSimpleTaskMode);
@@ -1457,25 +1494,49 @@ export class AgentLoop {
       content: systemPrompt,
     });
 
-    logger.debug('[AgentLoop] Building model messages, total messages:', this.messages.length);
-    for (const message of this.messages) {
-      logger.debug(` Message role=${message.role}, hasAttachments=${!!message.attachments?.length}, attachmentCount=${message.attachments?.length || 0}`);
+    // Apply message history compression for long conversations
+    const messagesToProcess = this.messages.map(m => ({
+      role: m.role,
+      content: m.content,
+      timestamp: m.timestamp,
+    }));
+
+    const compressionResult = this.messageHistoryCompressor.compress(messagesToProcess);
+    const processedMessages = compressionResult.wasCompressed
+      ? compressionResult.messages.map((m, i) => ({
+          ...this.messages[i] || { id: '', role: m.role, content: m.content, timestamp: m.timestamp || Date.now() },
+          content: m.content,
+        }))
+      : this.messages;
+
+    if (compressionResult.wasCompressed) {
+      logger.debug(`[AgentLoop] Message history compressed, saved ${compressionResult.stats.savedTokens} tokens`);
+      logCollector.agent('INFO', `Message history compressed`, {
+        savedTokens: compressionResult.stats.savedTokens,
+        totalSavedTokens: compressionResult.stats.totalSavedTokens,
+        compressionCount: compressionResult.stats.compressionCount,
+      });
+    }
+
+    logger.debug('[AgentLoop] Building model messages, total messages:', processedMessages.length);
+    for (const message of processedMessages) {
+      logger.debug(` Message role=${message.role}, hasAttachments=${!!(message as Message).attachments?.length}, attachmentCount=${(message as Message).attachments?.length || 0}`);
 
       if (message.role === 'tool') {
         modelMessages.push({
           role: 'user',
           content: `Tool results:\n${message.content}`,
         });
-      } else if (message.role === 'assistant' && message.toolCalls) {
-        const toolCallsStr = message.toolCalls
+      } else if (message.role === 'assistant' && (message as Message).toolCalls) {
+        const toolCallsStr = (message as Message).toolCalls!
           .map((tc) => formatToolCallForHistory(tc))
           .join('\n');
         modelMessages.push({
           role: 'assistant',
           content: toolCallsStr || message.content,
         });
-      } else if (message.role === 'user' && message.attachments?.length) {
-        const multimodalContent = buildMultimodalContent(message.content, message.attachments);
+      } else if (message.role === 'user' && (message as Message).attachments?.length) {
+        const multimodalContent = buildMultimodalContent(message.content, (message as Message).attachments!);
         modelMessages.push({
           role: 'user',
           content: multimodalContent,
@@ -1495,7 +1556,20 @@ export class AgentLoop {
   // Helper Methods
   // --------------------------------------------------------------------------
 
-  private injectSystemMessage(content: string): void {
+  /**
+   * Inject system message with optional buffering for hook messages
+   * @param content Message content
+   * @param category Optional category for hook message buffering (e.g., 'pre-tool', 'post-tool')
+   *                 If provided, message will be buffered and merged with other messages of same category
+   */
+  private injectSystemMessage(content: string, category?: string): void {
+    if (category) {
+      // Buffer hook messages for later merging
+      this.hookMessageBuffer.add(content, category);
+      return;
+    }
+
+    // Direct injection for non-hook messages
     const systemMessage: Message = {
       id: this.generateId(),
       role: 'system',
@@ -1503,6 +1577,24 @@ export class AgentLoop {
       timestamp: Date.now(),
     };
     this.messages.push(systemMessage);
+  }
+
+  /**
+   * Flush buffered hook messages into a single system message
+   * Call this at the end of each iteration to merge hook messages
+   */
+  private flushHookMessageBuffer(): void {
+    const merged = this.hookMessageBuffer.flush();
+    if (merged) {
+      const systemMessage: Message = {
+        id: this.generateId(),
+        role: 'system',
+        content: merged,
+        timestamp: Date.now(),
+      };
+      this.messages.push(systemMessage);
+      logger.debug(`[AgentLoop] Flushed ${this.hookMessageBuffer.size} buffered hook messages`);
+    }
   }
 
   private generateId(): string {

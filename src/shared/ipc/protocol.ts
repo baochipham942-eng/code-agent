@@ -116,6 +116,11 @@ export type DataAction = 'getStats' | 'clearToolCache' | 'cleanExpired';
  */
 export type DeviceAction = 'list' | 'register' | 'remove';
 
+/**
+ * DAG 通道 actions
+ */
+export type DAGAction = 'getState' | 'subscribe' | 'unsubscribe' | 'list';
+
 // ----------------------------------------------------------------------------
 // 通道映射
 // ----------------------------------------------------------------------------
@@ -139,6 +144,7 @@ export interface IPCChannelActions {
   window: WindowAction;
   data: DataAction;
   device: DeviceAction;
+  dag: DAGAction;
 }
 
 /**
@@ -165,6 +171,7 @@ export const IPC_DOMAINS = {
   WINDOW: 'window',
   DATA: 'data',
   DEVICE: 'device',
+  DAG: 'dag',
 } as const;
 
 // ----------------------------------------------------------------------------

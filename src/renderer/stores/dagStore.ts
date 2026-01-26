@@ -9,6 +9,7 @@
 // ============================================================================
 
 import { create } from 'zustand';
+import { useShallow } from 'zustand/shallow';
 import type {
   DAGVisualizationState,
   DAGVisualizationEvent,
@@ -371,9 +372,10 @@ export const useDAGStore = create<DAGStore>((set, get) => ({
 
 /**
  * 获取所有 DAG 列表
+ * 使用 useShallow 避免不必要的重渲染
  */
-export const useDAGList = () => {
-  return useDAGStore((state) => Array.from(state.dags.values()));
+export const useDAGList = (): DAGVisualizationState[] => {
+  return useDAGStore(useShallow((state) => Array.from(state.dags.values())));
 };
 
 /**

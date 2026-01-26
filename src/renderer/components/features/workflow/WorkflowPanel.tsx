@@ -24,8 +24,9 @@ interface WorkflowPanelProps {
 export const WorkflowPanel = memo(({ height = 400, closable = true, onClose }: WorkflowPanelProps) => {
   const currentDAG = useCurrentDAG();
   const dagList = useDAGList();
-  const isVisible = useDAGVisible();
-  const { selectDAG, setVisible, handleEvent } = useDAGStore();
+  // 注意：可见性由父组件 App.tsx 通过 showDAGPanel 控制，
+  // 这里不再使用 dagStore.isVisible 判断
+  const { selectDAG, handleEvent } = useDAGStore();
 
   // 订阅 DAG 事件
   useEffect(() => {
@@ -47,9 +48,8 @@ export const WorkflowPanel = memo(({ height = 400, closable = true, onClose }: W
 
   // 处理关闭
   const handleClose = useCallback(() => {
-    setVisible(false);
     onClose?.();
-  }, [setVisible, onClose]);
+  }, [onClose]);
 
   // 处理 DAG 选择
   const handleSelectDAG = useCallback(
@@ -58,10 +58,6 @@ export const WorkflowPanel = memo(({ height = 400, closable = true, onClose }: W
     },
     [selectDAG]
   );
-
-  if (!isVisible) {
-    return null;
-  }
 
   return (
     <div

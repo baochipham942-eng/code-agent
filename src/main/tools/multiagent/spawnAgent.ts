@@ -33,14 +33,32 @@ import {
 type ResolvedAgentConfig = BuiltInAgentConfig | AgentDefinition;
 
 /**
+ * Alias mappings for backward compatibility
+ * Maps old agent IDs to built-in agent roles
+ */
+const AGENT_ALIASES: Record<string, string> = {
+  'code-reviewer': 'reviewer',
+  'test-writer': 'tester',
+};
+
+/**
  * Get agent configuration from built-in agents or predefined agents
- * Priority: Built-in agents > Predefined agents (from agentDefinition.ts)
+ * Priority: Built-in agents > Aliases > Predefined agents (from agentDefinition.ts)
  */
 function resolveAgentConfig(roleOrId: string): ResolvedAgentConfig | undefined {
   // First, check built-in agents (type-safe, 6 core roles)
   const builtIn = getBuiltInAgent(roleOrId);
   if (builtIn) {
     return builtIn;
+  }
+
+  // Check aliases for backward compatibility
+  const aliasTarget = AGENT_ALIASES[roleOrId];
+  if (aliasTarget) {
+    const aliasedAgent = getBuiltInAgent(aliasTarget);
+    if (aliasedAgent) {
+      return aliasedAgent;
+    }
   }
 
   // Fall back to predefined agents (extended agents from agentDefinition.ts)

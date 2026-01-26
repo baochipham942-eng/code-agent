@@ -1,5 +1,5 @@
 // ============================================================================
-// Provider Registry - Model provider configurations
+// Provider Registry - 模型能力注册表
 // ============================================================================
 
 import type { ProviderConfig } from '../../shared/types';

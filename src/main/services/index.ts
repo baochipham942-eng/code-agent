@@ -16,3 +16,6 @@ export * from './cloud';
 
 // Infra Services - 基础设施服务
 export * from './infra';
+
+// Lab Services - 实验室服务
+export * from './lab';

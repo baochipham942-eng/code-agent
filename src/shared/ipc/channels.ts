@@ -91,3 +91,35 @@ export const DAG_CHANNELS = {
  * DAG 通道名称类型
  */
 export type DAGChannel = (typeof DAG_CHANNELS)[keyof typeof DAG_CHANNELS];
+
+// ============================================================================
+// Lab 实验室系统 IPC 通道
+// ============================================================================
+
+/**
+ * Lab 实验室 IPC 通道
+ * 用于前端与主进程之间的模型训练实验室通信
+ */
+export const LAB_CHANNELS = {
+  /** 下载项目仓库 */
+  DOWNLOAD_PROJECT: 'lab:download-project',
+  /** 上传自定义数据集 */
+  UPLOAD_DATA: 'lab:upload-data',
+  /** 开始训练 */
+  START_TRAINING: 'lab:start-training',
+  /** 停止训练 */
+  STOP_TRAINING: 'lab:stop-training',
+  /** 推理测试 */
+  INFERENCE: 'lab:inference',
+  /** 训练进度事件 */
+  TRAINING_PROGRESS: 'lab:training-progress',
+  /** 获取项目状态 */
+  GET_PROJECT_STATUS: 'lab:get-project-status',
+  /** 检查 Python 环境 */
+  CHECK_PYTHON_ENV: 'lab:check-python-env',
+} as const;
+
+/**
+ * Lab 通道名称类型
+ */
+export type LABChannel = (typeof LAB_CHANNELS)[keyof typeof LAB_CHANNELS];

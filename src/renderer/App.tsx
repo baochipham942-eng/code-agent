@@ -20,6 +20,7 @@ import { PermissionDialog } from './components/PermissionDialog';
 import { TaskPanel } from './components/TaskPanel';
 import { SkillsPanel } from './components/SkillsPanel';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
+import { LabPage } from './components/features/lab/LabPage';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
@@ -40,6 +41,7 @@ export const App: React.FC = () => {
     setShowTaskPanel,
     showSkillsPanel,
     setShowSkillsPanel,
+    showLab,
     setShowSettings,
     setLanguage,
   } = useAppStore();
@@ -438,6 +440,9 @@ export const App: React.FC = () => {
 
       {/* Settings Modal */}
       {showSettings && <SettingsModal />}
+
+      {/* Lab Page */}
+      {showLab && <LabPage />}
 
       {/* User Question Modal (Gen 3+) */}
       {userQuestion && (

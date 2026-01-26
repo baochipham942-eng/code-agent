@@ -15,9 +15,14 @@ const NODE_WIDTH = 240;
 const NODE_HEIGHT = 140;
 
 /**
+ * 默认空对象（避免每次渲染创建新引用导致无限循环）
+ */
+const EMPTY_OPTIONS: Partial<DAGLayoutOptions> = {};
+
+/**
  * 使用 Dagre 进行 DAG 自动布局
  */
-export function useDAGLayout(options: Partial<DAGLayoutOptions> = {}) {
+export function useDAGLayout(options: Partial<DAGLayoutOptions> = EMPTY_OPTIONS) {
   const layoutOptions = useMemo(
     () => ({ ...DEFAULT_LAYOUT_OPTIONS, ...options }),
     [options]

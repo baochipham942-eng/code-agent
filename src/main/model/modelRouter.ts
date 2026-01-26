@@ -225,6 +225,11 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        visionCapabilities: {
+          supportsBase64: true,
+          supportsUrl: true,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
+        },
       },
       {
         id: 'claude-3-5-sonnet-20241022',
@@ -234,6 +239,11 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        visionCapabilities: {
+          supportsBase64: true,
+          supportsUrl: true,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
+        },
       },
       {
         id: 'claude-3-5-haiku-20241022',
@@ -243,6 +253,11 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        visionCapabilities: {
+          supportsBase64: true,
+          supportsUrl: true,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
+        },
       },
     ],
   },
@@ -260,6 +275,11 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        visionCapabilities: {
+          supportsBase64: true,
+          supportsUrl: true,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
+        },
       },
       {
         id: 'gpt-4o-mini',
@@ -304,6 +324,11 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: false,
         supportsVision: true,
         supportsStreaming: true,
+        visionCapabilities: {
+          supportsBase64: true,
+          supportsUrl: true,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
+        },
       },
       {
         id: 'mixtral-8x7b-32768',
@@ -387,6 +412,13 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: false,
         supportsVision: true,
         supportsStreaming: true,
+        visionCapabilities: {
+          supportsBase64: true,
+          supportsUrl: true,
+          maxVisionTokens: 2048,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
+          note: '智谱高性能视觉模型，支持 base64 和 URL',
+        },
       },
       {
         id: 'glm-4v-flash',
@@ -396,6 +428,13 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: false,
         supportsVision: true,
         supportsStreaming: true,
+        visionCapabilities: {
+          supportsBase64: false, // 关键差异: glm-4v-flash 不支持 base64
+          supportsUrl: true,
+          maxVisionTokens: 1024,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
+          note: '智谱快速视觉模型，仅支持 URL 输入',
+        },
       },
       {
         id: 'codegeex-4',
@@ -440,6 +479,11 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: false,
         supportsVision: true,
         supportsStreaming: true,
+        visionCapabilities: {
+          supportsBase64: true,
+          supportsUrl: true,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
+        },
       },
       {
         id: 'qwen-coder-plus',
@@ -2810,7 +2854,8 @@ export class ModelRouter {
   // --------------------------------------------------------------------------
 
   private getCloudApiUrl(): string {
-    return process.env.CLOUD_API_URL || 'https://code-agent-beta.vercel.app';
+    const { getCloudApiUrl: getUrl } = require('../../shared/constants');
+    return getUrl();
   }
 
   private async callViaCloudProxy(

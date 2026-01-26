@@ -352,3 +352,177 @@ export const STRATEGY_SYNC = {
   /** 最大本地策略数 */
   MAX_LOCAL_STRATEGIES: 50,
 } as const;
+
+// ============================================================================
+// 云端 API 端点配置
+// ============================================================================
+
+/** 默认云端 API 基础 URL */
+const DEFAULT_CLOUD_API_URL = 'https://code-agent-beta.vercel.app';
+
+/** 获取云端 API URL（支持环境变量覆盖） */
+export function getCloudApiUrl(): string {
+  return process.env.CLOUD_API_URL || DEFAULT_CLOUD_API_URL;
+}
+
+/** 云端 API 端点 */
+export const CLOUD_ENDPOINTS = {
+  /** 获取基础 URL */
+  get baseUrl() {
+    return getCloudApiUrl();
+  },
+  /** 版本更新检查 */
+  get update() {
+    return `${getCloudApiUrl()}/api/update`;
+  },
+  /** 认证 */
+  get auth() {
+    return `${getCloudApiUrl()}/api/auth`;
+  },
+  /** 数据同步 */
+  get sync() {
+    return `${getCloudApiUrl()}/api/sync`;
+  },
+  /** System Prompt */
+  get prompts() {
+    return `${getCloudApiUrl()}/api/prompts`;
+  },
+  /** 模型代理 */
+  get modelProxy() {
+    return `${getCloudApiUrl()}/api/model-proxy`;
+  },
+  /** 云端工具（搜索/抓取等） */
+  get tools() {
+    return `${getCloudApiUrl()}/api/tools`;
+  },
+  /** 云端 Agent */
+  get agent() {
+    return `${getCloudApiUrl()}/api/agent`;
+  },
+  /** 云端配置 */
+  get config() {
+    return `${getCloudApiUrl()}/api/v1/config`;
+  },
+  /** 用户 API Key 管理 */
+  get userKeys() {
+    return `${getCloudApiUrl()}/api/user-keys`;
+  },
+  /** WebSocket 端点 */
+  get websocket() {
+    const url = getCloudApiUrl();
+    return url.replace(/^https?:\/\//, 'wss://') + '/ws';
+  },
+} as const;
+
+// ============================================================================
+// AI 模型 API 端点
+// ============================================================================
+
+export const MODEL_API_ENDPOINTS = {
+  /** DeepSeek */
+  deepseek: 'https://api.deepseek.com/v1',
+  /** Anthropic Claude */
+  claude: 'https://api.anthropic.com/v1',
+  /** OpenAI */
+  openai: 'https://api.openai.com/v1',
+  /** Groq */
+  groq: 'https://api.groq.com/openai/v1',
+  /** 智谱 GLM */
+  zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+  /** 智谱 Coding 套餐 */
+  zhipuCoding: 'https://open.bigmodel.cn/api/coding/paas/v4',
+  /** 通义千问 */
+  qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  /** Moonshot/Kimi */
+  moonshot: 'https://api.moonshot.cn/v1',
+  /** MiniMax */
+  minimax: 'https://api.minimax.chat/v1',
+  /** Perplexity */
+  perplexity: 'https://api.perplexity.ai',
+  /** OpenRouter */
+  openrouter: 'https://openrouter.ai/api/v1',
+  /** Google Gemini */
+  gemini: 'https://generativelanguage.googleapis.com/v1beta',
+} as const;
+
+// ============================================================================
+// 搜索 API 端点
+// ============================================================================
+
+export const SEARCH_API_ENDPOINTS = {
+  /** Brave Search */
+  brave: 'https://api.search.brave.com/res/v1/web/search',
+  /** Exa AI */
+  exa: 'https://api.exa.ai/search',
+  /** Perplexity */
+  perplexity: 'https://api.perplexity.ai/chat/completions',
+  /** Tavily */
+  tavily: 'https://api.tavily.com/search',
+} as const;
+
+// ============================================================================
+// 默认模型配置
+// ============================================================================
+
+export const DEFAULT_MODELS = {
+  /** 主要对话模型 */
+  chat: 'deepseek-chat',
+  /** 推理模型 */
+  reasoning: 'deepseek-reasoner',
+  /** 视觉理解模型 */
+  vision: 'glm-4v-plus',
+  /** 视觉快速模型（不支持 base64） */
+  visionFast: 'glm-4v-flash',
+  /** 代码模型 */
+  code: 'deepseek-chat',
+  /** 压缩/摘要模型（便宜） */
+  compact: 'deepseek-chat',
+  /** 快速判断模型（最便宜） */
+  quick: 'glm-4-flash',
+} as const;
+
+// ============================================================================
+// 视觉模型能力配置
+// ============================================================================
+
+/** 视觉模型能力详情 */
+export const VISION_MODEL_CAPABILITIES: Record<string, {
+  supportsBase64: boolean;
+  supportsUrl: boolean;
+  maxTokens: number;
+  note: string;
+}> = {
+  'glm-4v-plus': {
+    supportsBase64: true,
+    supportsUrl: true,
+    maxTokens: 2048, // 实测限制
+    note: '智谱视觉模型，支持 base64 和 URL',
+  },
+  'glm-4v-flash': {
+    supportsBase64: false,
+    supportsUrl: true,
+    maxTokens: 1024, // 文档限制
+    note: '智谱快速视觉模型，仅支持 URL',
+  },
+  'gpt-4o': {
+    supportsBase64: true,
+    supportsUrl: true,
+    maxTokens: 4096,
+    note: 'OpenAI 视觉模型',
+  },
+  'claude-3-5-sonnet-20241022': {
+    supportsBase64: true,
+    supportsUrl: false,
+    maxTokens: 8192,
+    note: 'Claude 视觉模型，仅支持 base64',
+  },
+} as const;
+
+// ============================================================================
+// 网络端口配置
+// ============================================================================
+
+export const PORTS = {
+  /** Log Bridge 默认端口 */
+  logBridge: parseInt(process.env.LOG_BRIDGE_PORT || '51820', 10),
+} as const;

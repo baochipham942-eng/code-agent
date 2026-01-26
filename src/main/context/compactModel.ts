@@ -11,6 +11,7 @@ import { ModelRouter } from '../model/modelRouter';
 import { getConfigService } from '../services';
 import type { ModelConfig, ModelProvider } from '../../shared/types';
 import { createLogger } from '../services/infra/logger';
+import { DEFAULT_MODELS } from '../../shared/constants';
 
 const logger = createLogger('CompactModel');
 
@@ -45,7 +46,7 @@ function initializeCompactModel(): ModelConfig | null {
     const provider = (settings.model?.provider || 'deepseek') as ModelProvider;
     const baseConfig: ModelConfig = {
       provider,
-      model: settings.model?.model || 'deepseek-chat',
+      model: settings.model?.model || DEFAULT_MODELS.chat,
       apiKey: '', // Will be retrieved from secure storage
       baseUrl: settings.models?.providers?.[provider]?.baseUrl,
       temperature: 0.3, // Lower temperature for consistent summaries

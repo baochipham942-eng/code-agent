@@ -8,17 +8,9 @@ import path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { getConfigService } from '../../services';
 import { createLogger } from '../../services/infra/logger';
+import { CLOUD_ENDPOINTS, MODEL_API_ENDPOINTS } from '../../../shared/constants';
 
 const logger = createLogger('ReadPdf');
-
-/**
- * 获取云端 API URL
- */
-function getCloudApiUrl(): string {
-  const configService = getConfigService();
-  const settings = configService.getSettings();
-  return process.env.CLOUD_API_URL || settings.cloudApi?.url || 'https://code-agent-beta.vercel.app';
-}
 
 /**
  * 通过云端代理调用模型 API（服务端注入 API Key）
@@ -28,9 +20,7 @@ async function callViaCloudProxy(
   endpoint: string,
   body: unknown
 ): Promise<Response> {
-  const cloudUrl = getCloudApiUrl();
-
-  const response = await fetch(`${cloudUrl}/api/model-proxy`, {
+  const response = await fetch(CLOUD_ENDPOINTS.modelProxy, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -52,7 +42,7 @@ async function callDirectOpenRouter(
   apiKey: string,
   body: unknown
 ): Promise<Response> {
-  return fetch('https://openrouter.ai/api/v1/chat/completions', {
+  return fetch(`${MODEL_API_ENDPOINTS.openrouter}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

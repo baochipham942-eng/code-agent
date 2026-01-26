@@ -11,6 +11,7 @@ import type { ConfigService } from '../services';
 import type { GenerationManager } from '../generation/generationManager';
 import type { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { Session, Message } from '../../shared/types';
+import { DEFAULT_MODELS } from '../../shared/constants';
 
 interface SessionHandlerDeps {
   getConfigService: () => ConfigService | null;
@@ -64,7 +65,7 @@ async function handleCreate(
     generationId: currentGen.id,
     modelConfig: {
       provider: settings.model?.provider || 'deepseek',
-      model: settings.model?.model || 'deepseek-chat',
+      model: settings.model?.model || DEFAULT_MODELS.chat,
       temperature: settings.model?.temperature || 0.7,
       maxTokens: settings.model?.maxTokens || 4096,
     },
@@ -152,7 +153,7 @@ async function handleDelete(
       generationId: currentGen.id,
       modelConfig: {
         provider: settings.model?.provider || 'deepseek',
-        model: settings.model?.model || 'deepseek-chat',
+        model: settings.model?.model || DEFAULT_MODELS.chat,
         temperature: settings.model?.temperature || 0.7,
         maxTokens: settings.model?.maxTokens || 4096,
       },

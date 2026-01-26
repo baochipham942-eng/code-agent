@@ -69,4 +69,17 @@ export interface ModelInfo {
   supportsStreaming: boolean;
   /** 是否使用 coding 端点 (智谱 GLM-4.7) */
   useCodingEndpoint?: boolean;
+  /** 视觉模型能力详情 (仅当 supportsVision=true 时有效) */
+  visionCapabilities?: {
+    /** 支持 base64 编码图片输入 */
+    supportsBase64: boolean;
+    /** 支持 URL 图片输入 */
+    supportsUrl: boolean;
+    /** 视觉请求最大 token 限制 (可能低于 maxTokens) */
+    maxVisionTokens?: number;
+    /** 支持的图片格式 */
+    supportedFormats?: ('png' | 'jpeg' | 'gif' | 'webp' | 'pdf')[];
+    /** 备注说明 */
+    note?: string;
+  };
 }

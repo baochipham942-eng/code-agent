@@ -16,6 +16,7 @@ import type {
   ExecutionProgressEvent,
 } from './types';
 import { createLogger } from '../services/infra/logger';
+import { getCloudApiUrl } from '../../shared/constants';
 
 const logger = createLogger('CloudExecutor');
 
@@ -34,7 +35,7 @@ const DEFAULT_CONFIG: CloudExecutorConfig = {
   maxConcurrent: 5,
   defaultTimeout: 180000,
   maxIterations: 50,
-  apiEndpoint: process.env.CLOUD_API_ENDPOINT || 'https://code-agent-beta.vercel.app',
+  apiEndpoint: getCloudApiUrl(),
 };
 
 // ============================================================================

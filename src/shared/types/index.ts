@@ -35,3 +35,6 @@ export * from './memory';
 
 // Built-in Agent types (Gen7+)
 export * from './builtInAgents';
+
+// Workflow types (Gen7+)
+export * from './workflow';

@@ -2217,16 +2217,21 @@ export class ModelRouter {
     const decoder = new TextDecoder();
     let fullContent = '';
     let toolCalls: ToolCall[] = [];
+    let buffer = ''; // 用于累积跨 chunk 的不完整行，避免中文字符被截断导致乱码
 
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n').filter((line) => line.trim().startsWith('data:'));
+        // 将新数据追加到 buffer，处理跨 chunk 的不完整行
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        // 保留最后一行（可能不完整），等待下一个 chunk
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
+          if (!line.trim().startsWith('data:')) continue;
           const data = line.replace('data:', '').trim();
           if (data === '[DONE]') continue;
 
@@ -2260,6 +2265,23 @@ export class ModelRouter {
             }
           } catch {
             // Ignore parse errors for incomplete chunks
+          }
+        }
+      }
+
+      // 处理 buffer 中剩余的最后一行（如果有）
+      if (buffer.trim().startsWith('data:')) {
+        const data = buffer.replace('data:', '').trim();
+        if (data && data !== '[DONE]') {
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta;
+            if (delta?.content) {
+              fullContent += delta.content;
+              onStream(delta.content);
+            }
+          } catch {
+            // 最后一行解析失败，忽略
           }
         }
       }

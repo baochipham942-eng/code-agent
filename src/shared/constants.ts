@@ -526,3 +526,97 @@ export const PORTS = {
   /** Log Bridge 默认端口 */
   logBridge: parseInt(process.env.LOG_BRIDGE_PORT || '51820', 10),
 } as const;
+
+// ============================================================================
+// 超时配置 - 按功能域分组（v0.17+）
+// ============================================================================
+
+/** MCP 连接超时配置 */
+export const MCP_TIMEOUTS = {
+  /** SSE 连接超时 */
+  SSE_CONNECT: 30_000,
+  /** stdio 连接超时 */
+  STDIO_CONNECT: 120_000,
+  /** 首次运行超时（需要安装依赖等） */
+  FIRST_RUN: 180_000,
+  /** 工具调用重试超时 */
+  TOOL_RETRY: 30_000,
+} as const;
+
+/** DAG 调度器配置 */
+export const DAG_SCHEDULER = {
+  /** 默认超时 */
+  DEFAULT_TIMEOUT: 120_000,
+  /** 默认并行度 */
+  DEFAULT_PARALLELISM: 4,
+  /** 调度间隔 */
+  SCHEDULE_INTERVAL: 100,
+  /** 默认最大重试次数（显式配置重试，默认不重试） */
+  DEFAULT_MAX_RETRIES: 0,
+} as const;
+
+/** 编排器超时配置 */
+export const ORCHESTRATOR_TIMEOUTS = {
+  /** 本地执行超时 */
+  LOCAL_EXECUTOR: 120_000,
+  /** 云端执行超时 */
+  CLOUD_EXECUTOR: 180_000,
+  /** Agent 委托超时 */
+  AGENT_DELEGATION: 60_000,
+  /** Agent 执行器超时 */
+  AGENT_EXECUTOR: 180_000,
+  /** 统一编排器默认超时 */
+  UNIFIED_DEFAULT: 120_000,
+  /** 统一编排器扩展超时 */
+  UNIFIED_EXTENDED: 180_000,
+} as const;
+
+/** 服务初始化超时 */
+export const SERVICE_TIMEOUTS = {
+  /** MCP 连接 */
+  MCP_CONNECT: 60_000,
+  /** 容器初始化 */
+  CONTAINER_INIT: 30_000,
+  /** 生命周期操作 */
+  LIFECYCLE: 30_000,
+  /** 引导程序 */
+  BOOTSTRAP: 30_000,
+} as const;
+
+/** 用户交互超时 */
+export const INTERACTION_TIMEOUTS = {
+  /** 用户问题等待超时 */
+  USER_QUESTION: 300_000,
+  /** 确认操作超时 */
+  CONFIRM_ACTION: 60_000,
+  /** 权限请求超时 */
+  PERMISSION: 60_000,
+} as const;
+
+/** 锁和资源管理超时 */
+export const LOCK_TIMEOUTS = {
+  /** 锁默认超时 */
+  DEFAULT: 300_000,
+  /** 锁清理间隔 */
+  CLEANUP_INTERVAL: 30_000,
+  /** Agent Bus 超时 */
+  AGENT_BUS: 300_000,
+  /** Agent Bus 清理间隔 */
+  AGENT_BUS_CLEANUP: 30_000,
+} as const;
+
+/** 性能阈值（毫秒） */
+export const PERFORMANCE_THRESHOLDS = {
+  /** 快速响应阈值 */
+  FAST_RESPONSE: 60_000,
+  /** 慢响应阈值 */
+  SLOW_RESPONSE: 120_000,
+  /** 策略优化阈值 */
+  STRATEGY_OPTIMIZATION: 300_000,
+  /** 模型请求超时 */
+  MODEL_REQUEST: 300_000,
+  /** 任务队列超时 */
+  TASK_QUEUE: 300_000,
+  /** 网络重试最大延迟 */
+  NETWORK_RETRY_MAX_DELAY: 30_000,
+} as const;

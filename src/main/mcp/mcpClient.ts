@@ -15,6 +15,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { createLogger } from '../services/infra/logger';
 import { getCloudConfigService, type MCPServerCloudConfig } from '../services/cloud/cloudConfigService';
 import { getConfigService } from '../services/core/configService';
+import { MCP_TIMEOUTS } from '../../shared/constants';
 
 // Import types from the new types module
 import type {
@@ -201,13 +202,13 @@ export class MCPClient {
     }
   }
 
-  // Connection timeout in milliseconds
+  // Connection timeout in milliseconds (configured in shared/constants.ts)
   // SSE: 30 seconds (remote server should respond quickly)
   // Stdio: 120 seconds (npx may need to download packages on first run)
-  private static readonly SSE_CONNECT_TIMEOUT = 30000;
-  private static readonly STDIO_CONNECT_TIMEOUT = 120000;
+  private static readonly SSE_CONNECT_TIMEOUT = MCP_TIMEOUTS.SSE_CONNECT;
+  private static readonly STDIO_CONNECT_TIMEOUT = MCP_TIMEOUTS.STDIO_CONNECT;
   // First-time Stdio connection (package download): 180 seconds
-  private static readonly STDIO_FIRST_RUN_TIMEOUT = 180000;
+  private static readonly STDIO_FIRST_RUN_TIMEOUT = MCP_TIMEOUTS.FIRST_RUN;
 
   /**
    * 连接到单个服务器
@@ -795,8 +796,8 @@ export class MCPClient {
             try {
               const retryTimeoutPromise = new Promise<never>((_, reject) => {
                 setTimeout(() => {
-                  reject(new Error(`MCP tool call retry timed out after 30000ms`));
-                }, 30000); // 重试用 30 秒超时
+                  reject(new Error(`MCP tool call retry timed out after ${MCP_TIMEOUTS.TOOL_RETRY}ms`));
+                }, MCP_TIMEOUTS.TOOL_RETRY);
               });
 
               const retryResult = await Promise.race([

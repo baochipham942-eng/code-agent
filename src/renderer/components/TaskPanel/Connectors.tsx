@@ -7,6 +7,7 @@ import { Plug, ChevronRight, ChevronDown, CheckCircle2, AlertCircle, Loader2, Sp
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
+import { useSessionStore } from '../../stores/sessionStore';
 
 interface McpServer {
   name: string;
@@ -25,7 +26,8 @@ interface ToolCallSummary {
 
 export const Connectors: React.FC = () => {
   const { t } = useI18n();
-  const { openSettingsTab, messages } = useAppStore();
+  const { openSettingsTab } = useAppStore();
+  const messages = useSessionStore((state) => state.messages);
   const [servers, setServers] = useState<McpServer[]>([]);
   const [expanded, setExpanded] = useState(true);
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set());

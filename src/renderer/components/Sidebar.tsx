@@ -40,7 +40,7 @@ function getRelativeTime(timestamp: number): string {
 }
 
 export const Sidebar: React.FC = () => {
-  const { clearChat, setShowSettings } = useAppStore();
+  const { clearPlanningState, setShowSettings } = useAppStore();
   const {
     sessions,
     currentSessionId,
@@ -88,7 +88,8 @@ export const Sidebar: React.FC = () => {
 
   const handleNewChat = async () => {
     await createSession('新对话');
-    clearChat();
+    // 清空 appStore 中的计划相关状态（messages/todos 由 sessionStore.createSession 处理）
+    clearPlanningState();
   };
 
   const handleSelectSession = async (sessionId: string) => {

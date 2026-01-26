@@ -5,8 +5,6 @@
 import { create } from 'zustand';
 import type {
   Generation,
-  Message,
-  TodoItem,
   ModelConfig,
   TaskPlan,
   Finding,
@@ -50,15 +48,10 @@ interface AppState {
   currentGeneration: Generation;
   availableGenerations: Generation[];
 
-  // Chat State
-  messages: Message[];
+  // Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
   isProcessing: boolean;
   // 按会话追踪处理状态（支持多会话并发）
   processingSessionIds: Set<string>;
-  currentSessionId: string | null;
-
-  // Todo State (for Gen 3+)
-  todos: TodoItem[];
 
   // Planning State (for Gen 3+ persistent planning)
   taskPlan: TaskPlan | null;
@@ -95,15 +88,11 @@ interface AppState {
   setCloudUIStrings: (strings: CloudUIStrings | null) => void;
   setDisclosureLevel: (level: DisclosureLevel) => void;
   setCurrentGeneration: (gen: Generation) => void;
-  setMessages: (messages: Message[]) => void;
-  addMessage: (message: Message) => void;
-  updateMessage: (id: string, updates: Partial<Message>) => void;
   setIsProcessing: (processing: boolean) => void;
   // 按会话设置处理状态
   setSessionProcessing: (sessionId: string, processing: boolean) => void;
   // 检查指定会话是否正在处理
   isSessionProcessing: (sessionId: string) => boolean;
-  setTodos: (todos: TodoItem[]) => void;
   setTaskPlan: (plan: TaskPlan | null) => void;
   setFindings: (findings: Finding[]) => void;
   setErrors: (errors: ErrorRecord[]) => void;
@@ -114,8 +103,8 @@ interface AppState {
   closePreview: () => void;
   setPendingPermissionRequest: (request: PermissionRequest | null) => void;
   setModelConfig: (config: ModelConfig) => void;
-  clearChat: () => void;
-  setCurrentSessionId: (id: string | null) => void;
+  // clearChat 简化：只清除 planning 相关状态（messages/todos 由 sessionStore 管理）
+  clearPlanningState: () => void;
   setWorkingDirectory: (dir: string | null) => void;
   setContextHealth: (health: ContextHealthState | null) => void;
   setContextHealthCollapsed: (collapsed: boolean) => void;
@@ -166,14 +155,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentGeneration: defaultGeneration,
   availableGenerations: [],
 
-  // Initial Chat State
-  messages: [],
+  // Initial Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
   isProcessing: false,
   processingSessionIds: new Set<string>(),
-  currentSessionId: null,
-
-  // Initial Todo State
-  todos: [],
 
   // Initial Planning State
   taskPlan: null,
@@ -212,18 +196,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setCurrentGeneration: (gen) => set({ currentGeneration: gen }),
 
-  setMessages: (messages) => set({ messages }),
-
-  addMessage: (message) =>
-    set((state) => ({ messages: [...state.messages, message] })),
-
-  updateMessage: (id, updates) =>
-    set((state) => ({
-      messages: state.messages.map((msg) =>
-        msg.id === id ? { ...msg, ...updates } : msg
-      ),
-    })),
-
   setIsProcessing: (processing) => set({ isProcessing: processing }),
 
   // 按会话设置处理状态
@@ -236,15 +208,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         newSet.delete(sessionId);
       }
       // 同时更新全局 isProcessing（兼容旧代码）
-      // 当前会话正在处理时，全局也标记为处理中
-      const isCurrentProcessing = state.currentSessionId ? newSet.has(state.currentSessionId) : false;
-      return { processingSessionIds: newSet, isProcessing: isCurrentProcessing };
+      // 有任何会话正在处理时，全局也标记为处理中
+      return { processingSessionIds: newSet, isProcessing: newSet.size > 0 };
     }),
 
   // 检查指定会话是否正在处理
   isSessionProcessing: (sessionId) => get().processingSessionIds.has(sessionId),
-
-  setTodos: (todos) => set({ todos }),
 
   setTaskPlan: (plan) => set({ taskPlan: plan }),
 
@@ -263,10 +232,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setModelConfig: (config) => set({ modelConfig: config }),
 
-  clearChat: () =>
-    set({ messages: [], todos: [], taskPlan: null, findings: [], errors: [] }),
-
-  setCurrentSessionId: (id) => set({ currentSessionId: id }),
+  // 清除 planning 相关状态（messages/todos 由 sessionStore 管理）
+  clearPlanningState: () =>
+    set({ taskPlan: null, findings: [], errors: [] }),
 
   setWorkingDirectory: (dir) => set({ workingDirectory: dir }),
 

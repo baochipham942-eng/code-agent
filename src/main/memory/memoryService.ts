@@ -788,8 +788,8 @@ export class MemoryService {
       content: memory.content,
       summary: memory.summary,
       source: memory.source || 'auto_learned',
-      projectPath: this.projectPath,
-      sessionId: this.sessionId,
+      projectPath: this.projectPath || undefined,
+      sessionId: this.sessionId || undefined,
       confidence: memory.confidence ?? 1.0,
       metadata: memory.metadata || {},
     });

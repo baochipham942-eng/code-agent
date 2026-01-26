@@ -427,7 +427,6 @@ export const IPC_CHANNELS = {
   MARKETPLACE_DISABLE_PLUGIN: 'marketplace:disable-plugin',
 
   // Memory Phase 2/3 channels
-  MEMORY: 'memory:action', // 统一的 memory action 通道
   MEMORY_LEARNED: 'memory:learned',
   MEMORY_CONFIRM_REQUEST: 'memory:confirm-request',
   MEMORY_CONFIRM_RESPONSE: 'memory:confirm-response',
@@ -494,8 +493,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SESSION_ARCHIVE]: (sessionId: string) => Promise<Session>;
   [IPC_CHANNELS.SESSION_UNARCHIVE]: (sessionId: string) => Promise<Session>;
 
-  // Memory
-  [IPC_CHANNELS.MEMORY]: (request: { action: string; [key: string]: unknown }) => Promise<{ success: boolean; data?: unknown; error?: string }>;
+  // Memory (legacy - kept for compatibility)
   [IPC_CHANNELS.MEMORY_GET_CONTEXT]: (query: string) => Promise<MemoryContextResult>;
   [IPC_CHANNELS.MEMORY_SEARCH_CODE]: (query: string, topK?: number) => Promise<SearchResult[]>;
   [IPC_CHANNELS.MEMORY_SEARCH_CONVERSATIONS]: (query: string, topK?: number) => Promise<SearchResult[]>;

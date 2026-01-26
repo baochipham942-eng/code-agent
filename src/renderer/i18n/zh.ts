@@ -83,11 +83,35 @@ export const zh = {
       },
       openai: {
         name: 'OpenAI',
-        description: 'OpenAI GPT API',
+        description: 'GPT-4.1 / o3 系列',
+      },
+      gemini: {
+        name: 'Gemini',
+        description: 'Google Gemini 2.5 系列',
       },
       openrouter: {
         name: 'OpenRouter',
         description: '中转服务 (Gemini/Claude/GPT)',
+      },
+      zhipu: {
+        name: '智谱 AI',
+        description: 'GLM-4 系列模型',
+      },
+      qwen: {
+        name: '通义千问',
+        description: '阿里云通义千问模型',
+      },
+      moonshot: {
+        name: 'Kimi',
+        description: 'Moonshot AI 模型',
+      },
+      minimax: {
+        name: 'MiniMax',
+        description: 'MiniMax 海螺 AI',
+      },
+      perplexity: {
+        name: 'Perplexity',
+        description: 'AI 搜索服务',
       },
     },
   },
@@ -185,6 +209,22 @@ export const zh = {
       gen7: ['工作流编排', '代理派生', '消息传递'],
       gen8: ['自我评估', '模式学习', '策略优化', '工具创建'],
     },
+  },
+
+  // Task Panel (Right Sidebar)
+  taskPanel: {
+    title: '任务信息',
+    progress: '进度',
+    workingFolder: '工作目录',
+    context: '上下文',
+    connectors: '连接器',
+    skills: '技能',
+    noWorkspace: '未选择工作区',
+    noRecentFiles: '暂无最近文件',
+    noConnectors: '未配置连接器',
+    viewAllConnectors: '查看所有连接器',
+    working: '工作中...',
+    tools: '工具',
   },
 
   // Memory Tab

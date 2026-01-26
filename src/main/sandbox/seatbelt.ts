@@ -13,6 +13,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 import { createLogger } from '../services/infra/logger';
+import { SANDBOX_TIMEOUTS } from '../../shared/constants';
 
 const logger = createLogger('Seatbelt');
 
@@ -112,7 +113,7 @@ const DEFAULT_CONFIG: SeatbeltConfig = {
     'TMPDIR',
   ],
   customEnv: {},
-  timeout: 120000, // 2 minutes default
+  timeout: SANDBOX_TIMEOUTS.DEFAULT,
 };
 
 // ----------------------------------------------------------------------------

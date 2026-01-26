@@ -19,6 +19,7 @@ const featureVisibility: Record<string, DisclosureLevel> = {
 
   // Advanced 级别可见
   'planning-panel': 'advanced',
+  'dag-panel': 'advanced',
   'findings-panel': 'advanced',
   'errors-panel': 'advanced',
   'tool-execution-details': 'advanced',
@@ -115,10 +116,17 @@ export function useDisclosure() {
     isAdvanced: isAtLeast('advanced'),
     isExpert: isAtLeast('expert'),
 
-    // 常用功能检查
+    // 常用功能检查（权限层：只读，表示功能是否可用）
     showTodoPanel: isAtLeast('standard'),
+    /** @deprecated 使用 planningPanelEnabled 代替 */
     showPlanningPanel: isAtLeast('advanced'),
     showDebugInfo: isAtLeast('expert'),
+
+    // 面板权限检查（新命名规范：*Enabled 表示权限）
+    planningPanelEnabled: isAtLeast('advanced'),
+    dagPanelEnabled: isAtLeast('advanced'),
+    findingsPanelEnabled: isAtLeast('advanced'),
+    errorsPanelEnabled: isAtLeast('advanced'),
   };
 }
 

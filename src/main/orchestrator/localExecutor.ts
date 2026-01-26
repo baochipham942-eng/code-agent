@@ -12,6 +12,7 @@ import type {
   ExecutionProgressEvent,
 } from './types';
 import { getSubagentExecutor } from '../agent/subagentExecutor';
+import { ORCHESTRATOR_TIMEOUTS } from '../../shared/constants';
 
 // ============================================================================
 // 配置
@@ -25,7 +26,7 @@ export interface LocalExecutorConfig {
 
 const DEFAULT_CONFIG: LocalExecutorConfig = {
   maxConcurrent: 2,
-  defaultTimeout: 120000,
+  defaultTimeout: ORCHESTRATOR_TIMEOUTS.LOCAL_EXECUTOR,
   maxIterations: 30,
 };
 

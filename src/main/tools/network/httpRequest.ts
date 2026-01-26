@@ -5,12 +5,13 @@
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { createLogger } from '../../services/infra/logger';
+import { NETWORK_TOOL_TIMEOUTS } from '../../../shared/constants';
 
 const logger = createLogger('HttpRequest');
 
 // Security constants
-const DEFAULT_TIMEOUT = 30000; // 30 seconds
-const MAX_TIMEOUT = 300000; // 5 minutes
+const DEFAULT_TIMEOUT = NETWORK_TOOL_TIMEOUTS.HTTP_DEFAULT;
+const MAX_TIMEOUT = NETWORK_TOOL_TIMEOUTS.HTTP_MAX;
 const MAX_RESPONSE_SIZE = 10 * 1024 * 1024; // 10MB
 
 // HTTP methods

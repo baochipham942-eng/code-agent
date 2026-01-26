@@ -23,6 +23,7 @@ import { initCloudTaskService } from '../cloud/cloudTaskService';
 import { initUnifiedOrchestrator } from '../orchestrator';
 import { logBridge } from '../mcp/logBridge.js';
 import { initPluginSystem, shutdownPluginSystem } from '../plugins';
+import { initDAGEventBridge } from '../scheduler';
 import { getSkillDiscoveryService, getSkillRepositoryService } from '../services/skills';
 import { getMainWindow } from './window';
 import { IPC_CHANNELS } from '../../shared/ipc';
@@ -274,6 +275,14 @@ async function initializeServices(): Promise<void> {
     .catch((error) => {
       logger.error('Plugin system failed to initialize (non-blocking)', error);
     });
+
+  // Initialize DAG Event Bridge (forwards DAG events to renderer for visualization)
+  try {
+    initDAGEventBridge();
+    logger.info('DAG event bridge initialized');
+  } catch (error) {
+    logger.warn('DAG event bridge initialization failed (non-blocking)', { error: String(error) });
+  }
 
   // Setup LogBridge command handler
   await setupLogBridge();

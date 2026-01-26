@@ -12,6 +12,7 @@ import { spawn, execSync } from 'child_process';
 import * as path from 'path';
 import * as os from 'os';
 import { createLogger } from '../services/infra/logger';
+import { SANDBOX_TIMEOUTS } from '../../shared/constants';
 
 const logger = createLogger('Bubblewrap');
 
@@ -106,7 +107,7 @@ const DEFAULT_CONFIG: BubblewrapConfig = {
     'SHELL',
   ],
   customEnv: {},
-  timeout: 120000, // 2 minutes default
+  timeout: SANDBOX_TIMEOUTS.DEFAULT,
 };
 
 // ----------------------------------------------------------------------------

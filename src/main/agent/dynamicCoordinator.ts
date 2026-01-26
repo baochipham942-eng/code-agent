@@ -13,6 +13,7 @@ import { getDynamicAgentFactory, type DynamicAgentDefinition } from './dynamicAg
 import { getAgentRequirementsAnalyzer, type AgentRequirements, type ExecutionStrategy } from './agentRequirementsAnalyzer';
 import type { ModelConfig } from '../../shared/types';
 import type { Tool, ToolContext } from '../tools/toolRegistry';
+import { AGENT_TIMEOUTS } from '../../shared/constants';
 
 const logger = createLogger('DynamicCoordinator');
 
@@ -110,8 +111,8 @@ export interface DynamicCoordinatorConfig {
 
 const DEFAULT_CONFIG: DynamicCoordinatorConfig = {
   maxParallelAgents: 4,
-  agentTimeout: 300000, // 5 分钟
-  totalTimeout: 1800000, // 30 分钟
+  agentTimeout: AGENT_TIMEOUTS.DYNAMIC_AGENT,
+  totalTimeout: AGENT_TIMEOUTS.DYNAMIC_TOTAL,
   maxRetries: 2,
   enableAutoRecovery: true,
   shareDiscoveries: true,

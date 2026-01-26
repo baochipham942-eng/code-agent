@@ -6,6 +6,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { BrowserWindow, ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { createLogger } from '../../services/infra/logger';
+import { INTERACTION_TIMEOUTS } from '../../../shared/constants';
 
 const logger = createLogger('ConfirmAction');
 
@@ -137,7 +138,7 @@ Example:
     mainWindow.webContents.send(IPC_CHANNELS.CONFIRM_ACTION_ASK, request);
 
     // Wait for response with timeout
-    const TIMEOUT_MS = 60000; // 1 minute
+    const TIMEOUT_MS = INTERACTION_TIMEOUTS.CONFIRM_ACTION;
 
     try {
       const confirmed = await new Promise<boolean>((resolve, reject) => {

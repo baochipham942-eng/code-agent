@@ -225,7 +225,10 @@ export class SessionPersistence {
     const sessionPath = this.getSessionPath(sessionId);
 
     try {
-      if (!fs.existsSync(sessionPath)) {
+      // 异步检查文件是否存在（性能优化：避免 sync I/O 阻塞主进程）
+      try {
+        await fs.promises.access(sessionPath, fs.constants.F_OK);
+      } catch {
         logger.debug('Session not found', { sessionId });
         return null;
       }
@@ -255,9 +258,13 @@ export class SessionPersistence {
     const sessionPath = this.getSessionPath(sessionId);
 
     try {
-      if (fs.existsSync(sessionPath)) {
-        await fs.promises.unlink(sessionPath);
-      }
+      // 异步删除文件（性能优化：避免 sync I/O 阻塞主进程）
+      await fs.promises.unlink(sessionPath).catch((err) => {
+        // ENOENT 表示文件不存在，不是错误
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw err;
+        }
+      });
 
       this.sessionIndex.delete(sessionId);
       await this.saveIndex();
@@ -401,8 +408,15 @@ export class SessionPersistence {
     const indexPath = this.getIndexPath();
 
     try {
-      if (fs.existsSync(indexPath)) {
-        const content = await fs.promises.readFile(indexPath, 'utf-8');
+      // 异步检查并加载索引文件（性能优化：避免 sync I/O 阻塞主进程）
+      const content = await fs.promises.readFile(indexPath, 'utf-8').catch((err) => {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          return null; // 文件不存在，返回 null
+        }
+        throw err;
+      });
+
+      if (content) {
         const entries = JSON.parse(content) as SessionIndexEntry[];
 
         this.sessionIndex.clear();

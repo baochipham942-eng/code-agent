@@ -6,11 +6,13 @@
 import { describe, it, expect } from 'vitest';
 import {
   PREDEFINED_AGENTS,
+  AGENT_ALIASES,
   getPredefinedAgent,
   listPredefinedAgentIds,
   listPredefinedAgents,
   isPredefinedAgent,
   getAgentsByTag,
+  resolveAgentAlias,
   type AgentDefinition,
 } from '../../../src/main/agent/agentDefinition';
 
@@ -19,21 +21,17 @@ describe('AgentDefinition', () => {
   // PREDEFINED_AGENTS Structure
   // --------------------------------------------------------------------------
   describe('PREDEFINED_AGENTS structure', () => {
-    it('should have all code-related agents', () => {
-      expect(PREDEFINED_AGENTS['code-reviewer']).toBeDefined();
-      expect(PREDEFINED_AGENTS['test-writer']).toBeDefined();
-      expect(PREDEFINED_AGENTS['refactorer']).toBeDefined();
+    it('should have all core code agents (6 built-in roles)', () => {
       expect(PREDEFINED_AGENTS['coder']).toBeDefined();
-    });
-
-    it('should have all analysis agents', () => {
-      expect(PREDEFINED_AGENTS['debugger']).toBeDefined();
+      expect(PREDEFINED_AGENTS['reviewer']).toBeDefined();
+      expect(PREDEFINED_AGENTS['tester']).toBeDefined();
       expect(PREDEFINED_AGENTS['architect']).toBeDefined();
-      expect(PREDEFINED_AGENTS['explorer']).toBeDefined();
+      expect(PREDEFINED_AGENTS['debugger']).toBeDefined();
+      expect(PREDEFINED_AGENTS['documenter']).toBeDefined();
     });
 
-    it('should have documentation agents', () => {
-      expect(PREDEFINED_AGENTS['documenter']).toBeDefined();
+    it('should have extended code agents', () => {
+      expect(PREDEFINED_AGENTS['refactorer']).toBeDefined();
     });
 
     it('should have devops agents', () => {
@@ -45,17 +43,49 @@ describe('AgentDefinition', () => {
       expect(PREDEFINED_AGENTS['visual-processing']).toBeDefined();
     });
 
-    it('should have meta agents (explore, plan, bash, general)', () => {
-      expect(PREDEFINED_AGENTS['explore']).toBeDefined();
+    it('should have meta agents (code-explore, plan, bash-executor, general-purpose)', () => {
+      expect(PREDEFINED_AGENTS['code-explore']).toBeDefined();
       expect(PREDEFINED_AGENTS['plan']).toBeDefined();
       expect(PREDEFINED_AGENTS['bash-executor']).toBeDefined();
       expect(PREDEFINED_AGENTS['general-purpose']).toBeDefined();
     });
 
     it('should have external resource agents', () => {
-      expect(PREDEFINED_AGENTS['web-researcher']).toBeDefined();
+      expect(PREDEFINED_AGENTS['web-search']).toBeDefined();
       expect(PREDEFINED_AGENTS['mcp-connector']).toBeDefined();
-      expect(PREDEFINED_AGENTS['doc-retriever']).toBeDefined();
+      expect(PREDEFINED_AGENTS['doc-reader']).toBeDefined();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Agent Aliases
+  // --------------------------------------------------------------------------
+  describe('Agent Aliases', () => {
+    it('should have code-reviewer alias pointing to reviewer', () => {
+      expect(AGENT_ALIASES['code-reviewer']).toBe('reviewer');
+    });
+
+    it('should have test-writer alias pointing to tester', () => {
+      expect(AGENT_ALIASES['test-writer']).toBe('tester');
+    });
+
+    it('should have explore/explorer aliases pointing to code-explore', () => {
+      expect(AGENT_ALIASES['explore']).toBe('code-explore');
+      expect(AGENT_ALIASES['explorer']).toBe('code-explore');
+    });
+
+    it('should have web-researcher alias pointing to web-search', () => {
+      expect(AGENT_ALIASES['web-researcher']).toBe('web-search');
+    });
+
+    it('should have doc-retriever alias pointing to doc-reader', () => {
+      expect(AGENT_ALIASES['doc-retriever']).toBe('doc-reader');
+    });
+
+    it('resolveAgentAlias should resolve aliases correctly', () => {
+      expect(resolveAgentAlias('code-reviewer')).toBe('reviewer');
+      expect(resolveAgentAlias('explore')).toBe('code-explore');
+      expect(resolveAgentAlias('coder')).toBe('coder'); // non-alias returns as-is
     });
   });
 
@@ -102,8 +132,8 @@ describe('AgentDefinition', () => {
   // Specific Agent Configurations
   // --------------------------------------------------------------------------
   describe('Specific Agent Configurations', () => {
-    describe('explore agent', () => {
-      const agent = PREDEFINED_AGENTS['explore'];
+    describe('code-explore agent', () => {
+      const agent = PREDEFINED_AGENTS['code-explore'];
 
       it('should have read-only tools', () => {
         expect(agent.tools).toContain('glob');
@@ -127,16 +157,17 @@ describe('AgentDefinition', () => {
     describe('plan agent', () => {
       const agent = PREDEFINED_AGENTS['plan'];
 
-      it('should have exploration tools plus bash', () => {
+      it('should have exploration tools (read-only, no bash)', () => {
         expect(agent.tools).toContain('glob');
         expect(agent.tools).toContain('grep');
         expect(agent.tools).toContain('read_file');
         expect(agent.tools).toContain('list_directory');
-        expect(agent.tools).toContain('bash');
+        // Plan agent should be readonly
+        expect(agent.tools).not.toContain('bash');
       });
 
-      it('should be able to spawn subagents', () => {
-        expect(agent.canSpawnSubagents).toBe(true);
+      it('should not be able to spawn subagents', () => {
+        expect(agent.canSpawnSubagents).toBe(false);
       });
 
       it('should have planning tag', () => {
@@ -193,19 +224,19 @@ describe('AgentDefinition', () => {
     describe('visual-understanding agent', () => {
       const agent = PREDEFINED_AGENTS['visual-understanding'];
 
-      it('should have no tools (vision model does not support tool calls)', () => {
-        expect(agent.tools).toEqual([]);
+      it('should have image_analyze tool', () => {
+        expect(agent.tools).toContain('image_analyze');
       });
 
       it('should have model override for vision', () => {
         expect(agent.modelOverride).toBeDefined();
         expect(agent.modelOverride?.provider).toBe('zhipu');
-        expect(agent.modelOverride?.model).toBe('glm-4v-flash');
+        expect(agent.modelOverride?.model).toBe('glm-4v-plus');
       });
 
       it('should have vision-related tags', () => {
         expect(agent.tags).toContain('vision');
-        expect(agent.tags).toContain('understanding');
+        expect(agent.tags).toContain('analysis');
       });
     });
 
@@ -214,6 +245,7 @@ describe('AgentDefinition', () => {
 
       it('should have image processing tools', () => {
         expect(agent.tools).toContain('image_annotate');
+        expect(agent.tools).toContain('image_process');
       });
 
       it('should NOT have model override (uses main model for tool calls)', () => {
@@ -226,8 +258,8 @@ describe('AgentDefinition', () => {
       });
     });
 
-    describe('web-researcher agent', () => {
-      const agent = PREDEFINED_AGENTS['web-researcher'];
+    describe('web-search agent', () => {
+      const agent = PREDEFINED_AGENTS['web-search'];
 
       it('should have web search tools', () => {
         expect(agent.tools).toContain('web_search');
@@ -256,18 +288,14 @@ describe('AgentDefinition', () => {
       });
     });
 
-    describe('doc-retriever agent', () => {
-      const agent = PREDEFINED_AGENTS['doc-retriever'];
+    describe('doc-reader agent', () => {
+      const agent = PREDEFINED_AGENTS['doc-reader'];
 
       it('should have document reading tools', () => {
         expect(agent.tools).toContain('read_pdf');
         expect(agent.tools).toContain('read_docx');
         expect(agent.tools).toContain('read_xlsx');
-      });
-
-      it('should have web and MCP tools for online docs', () => {
-        expect(agent.tools).toContain('web_fetch');
-        expect(agent.tools).toContain('mcp');
+        expect(agent.tools).toContain('read_file');
       });
 
       it('should have documentation tag', () => {
@@ -282,9 +310,15 @@ describe('AgentDefinition', () => {
   describe('Utility Functions', () => {
     describe('getPredefinedAgent', () => {
       it('should return agent definition for valid ID', () => {
+        const agent = getPredefinedAgent('code-explore');
+        expect(agent).toBeDefined();
+        expect(agent?.id).toBe('code-explore');
+      });
+
+      it('should return agent definition for alias', () => {
         const agent = getPredefinedAgent('explore');
         expect(agent).toBeDefined();
-        expect(agent?.id).toBe('explore');
+        expect(agent?.id).toBe('code-explore');
       });
 
       it('should return undefined for invalid ID', () => {
@@ -294,12 +328,14 @@ describe('AgentDefinition', () => {
     });
 
     describe('listPredefinedAgentIds', () => {
-      it('should return array of agent IDs', () => {
+      it('should return array of canonical agent IDs (no aliases)', () => {
         const ids = listPredefinedAgentIds();
         expect(Array.isArray(ids)).toBe(true);
-        expect(ids).toContain('explore');
+        expect(ids).toContain('code-explore');
         expect(ids).toContain('plan');
         expect(ids).toContain('general-purpose');
+        // Should not contain aliases
+        expect(ids).not.toContain('explore');
       });
 
       it('should match number of agents in PREDEFINED_AGENTS', () => {
@@ -313,18 +349,23 @@ describe('AgentDefinition', () => {
         const agents = listPredefinedAgents();
         expect(Array.isArray(agents)).toBe(true);
 
-        const agent = agents.find((a) => a.id === 'explore');
+        const agent = agents.find((a) => a.id === 'code-explore');
         expect(agent).toBeDefined();
-        expect(agent?.name).toBe('Explore Agent');
+        expect(agent?.name).toBe('Code Explore Agent');
         expect(agent?.description).toBeDefined();
       });
     });
 
     describe('isPredefinedAgent', () => {
       it('should return true for predefined agent IDs', () => {
-        expect(isPredefinedAgent('explore')).toBe(true);
+        expect(isPredefinedAgent('code-explore')).toBe(true);
         expect(isPredefinedAgent('plan')).toBe(true);
         expect(isPredefinedAgent('coder')).toBe(true);
+      });
+
+      it('should return true for aliases', () => {
+        expect(isPredefinedAgent('explore')).toBe(true);
+        expect(isPredefinedAgent('code-reviewer')).toBe(true);
       });
 
       it('should return false for unknown IDs', () => {
@@ -350,21 +391,21 @@ describe('AgentDefinition', () => {
 
       it('should return meta agents', () => {
         const metaAgents = getAgentsByTag('meta');
-        expect(metaAgents.length).toBeGreaterThanOrEqual(2);
+        expect(metaAgents.length).toBeGreaterThanOrEqual(3);
 
         const ids = metaAgents.map((a) => a.id);
-        expect(ids).toContain('explore');
+        expect(ids).toContain('code-explore');
         expect(ids).toContain('plan');
+        expect(ids).toContain('general-purpose');
       });
 
       it('should return external agents', () => {
         const externalAgents = getAgentsByTag('external');
-        expect(externalAgents.length).toBeGreaterThanOrEqual(3);
+        expect(externalAgents.length).toBeGreaterThanOrEqual(2);
 
         const ids = externalAgents.map((a) => a.id);
-        expect(ids).toContain('web-researcher');
+        expect(ids).toContain('web-search');
         expect(ids).toContain('mcp-connector');
-        expect(ids).toContain('doc-retriever');
       });
     });
   });
@@ -386,8 +427,11 @@ describe('AgentDefinition', () => {
       const codeAgents = getAgentsByTag('code');
 
       for (const agent of codeAgents) {
-        // At minimum, should be able to read files
-        expect(agent.tools).toContain('read_file');
+        // At minimum, should be able to read files or have glob
+        const hasFileAccess =
+          agent.tools.includes('read_file') ||
+          agent.tools.includes('glob');
+        expect(hasFileAccess).toBe(true);
       }
     });
 

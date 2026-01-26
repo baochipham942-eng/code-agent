@@ -10,6 +10,9 @@ import type {
   ModelProvider
 } from '../../shared/types';
 import { PROVIDER_REGISTRY } from './providerRegistry';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('ModelRouter');
 import type { ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
 export { ContextLengthExceededError } from './types';
 
@@ -107,9 +110,7 @@ export class ModelRouter {
       capability
     );
     if (sameProviderModel) {
-      console.log(
-        `[ModelRouter] 使用同 provider (${originalConfig.provider}) 的 ${capability} 模型: ${sameProviderModel}`
-      );
+      logger.debug(`使用同 provider (${originalConfig.provider}) 的 ${capability} 模型: ${sameProviderModel}`);
       const fallbackModelInfo = this.getModelInfo(originalConfig.provider, sameProviderModel);
       return {
         ...originalConfig,
@@ -122,9 +123,7 @@ export class ModelRouter {
     const fallback = this.fallbackModels[capability];
     if (!fallback) return null;
 
-    console.log(
-      `[ModelRouter] 使用默认 fallback: ${fallback.provider}/${fallback.model}`
-    );
+    logger.debug(`使用默认 fallback: ${fallback.provider}/${fallback.model}`);
 
     const fallbackModelInfo = this.getModelInfo(fallback.provider, fallback.model);
     return {

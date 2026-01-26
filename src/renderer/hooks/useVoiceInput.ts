@@ -4,6 +4,9 @@
 // ============================================================================
 
 import { useState, useRef, useCallback } from 'react';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('VoiceInput');
 
 export type VoiceInputStatus = 'idle' | 'recording' | 'transcribing' | 'error';
 
@@ -143,10 +146,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
               )
             );
 
-            console.log('[VoiceInput] Uploading audio:', {
-              mimeType,
-              size: audioBlob.size,
-            });
+            logger.debug('Uploading audio', { mimeType, size: audioBlob.size });
 
             // 调用主进程转写
             const result = await window.electronAPI!.transcribeSpeech(audioData, mimeType);

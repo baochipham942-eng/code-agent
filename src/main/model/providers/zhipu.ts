@@ -25,7 +25,7 @@ export async function callZhipu(
   providerConfig: ProviderConfig,
   onStream?: StreamCallback
 ): Promise<ModelResponse> {
-  console.log(`📡 [ZHIPU-CALL] 进入智谱调用, model=${config.model}, hasApiKey=${!!config.apiKey}, useCloudProxy=${config.useCloudProxy}`);
+  logger.debug(`进入智谱调用, model=${config.model}, hasApiKey=${!!config.apiKey}, useCloudProxy=${config.useCloudProxy}`);
 
   // GLM-4.7 等 Coding 套餐模型使用专用端点
   let baseUrl: string;

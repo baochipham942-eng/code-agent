@@ -1,10 +1,5 @@
 // ============================================================================
-// Agent Definition - Extended agent configurations
-// T4: Subagent dual mode support
-//
-// NOTE: Core built-in agents (coder, reviewer, tester, architect, debugger,
-// documenter) are defined in src/shared/types/builtInAgents.ts
-// This file contains extended/specialized agents only.
+// Agent Definition - Unified agent configurations for Gen7 multi-agent system
 // ============================================================================
 
 import type { PermissionPreset } from '../services/core/permissionPresets';
@@ -81,16 +76,202 @@ export interface DynamicAgentConfig {
   maxBudget?: number;
 }
 
+// ============================================================================
+// Agent ID Aliases - Maps alternative names to canonical IDs
+// ============================================================================
+
 /**
- * Extended Agent Definitions
- * These can be referenced by ID in spawn_agent tool
- *
- * Core built-in agents (coder, reviewer, tester, architect, debugger, documenter)
- * are defined in src/shared/types/builtInAgents.ts
+ * Agent ID aliases for backward compatibility and convenience
+ * Key: alias name, Value: canonical agent ID
+ */
+export const AGENT_ALIASES: Record<string, string> = {
+  // Code-related aliases
+  'code-reviewer': 'reviewer',
+  'test-writer': 'tester',
+
+  // Exploration aliases
+  'explore': 'code-explore',
+  'explorer': 'code-explore',
+
+  // External resource aliases
+  'web-researcher': 'web-search',
+  'doc-retriever': 'doc-reader',
+};
+
+/**
+ * Resolve agent ID from alias or return original if not an alias
+ */
+export function resolveAgentAlias(idOrAlias: string): string {
+  return AGENT_ALIASES[idOrAlias] || idOrAlias;
+}
+
+// ============================================================================
+// Predefined Agents - All agent definitions in one place
+// ============================================================================
+
+/**
+ * All Predefined Agent Definitions
+ * Includes both core agents and extended/specialized agents
  */
 export const PREDEFINED_AGENTS: Record<string, AgentDefinition> = {
   // -------------------------------------------------------------------------
-  // Code-related Agents (Extended)
+  // Core Code Agents (6 built-in roles)
+  // -------------------------------------------------------------------------
+
+  'coder': {
+    id: 'coder',
+    name: 'Coder',
+    description: 'Writes clean, efficient code following best practices',
+    systemPrompt: `You are a senior software engineer. Your responsibilities:
+
+1. **Clean Code**: Write readable, maintainable code
+2. **Best Practices**: Follow project conventions and patterns
+3. **Error Handling**: Handle edge cases and errors properly
+4. **Documentation**: Add helpful comments where needed
+5. **Testing**: Write testable code
+
+Guidelines:
+- Understand the codebase before making changes
+- Keep changes minimal and focused
+- Explain design decisions briefly
+- Consider performance implications`,
+    tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep'],
+    maxIterations: 25,
+    permissionPreset: 'development',
+    tags: ['code', 'development'],
+    canSpawnSubagents: false,
+  },
+
+  'reviewer': {
+    id: 'reviewer',
+    name: 'Code Reviewer',
+    description: 'Reviews code for bugs, security issues, and best practices',
+    systemPrompt: `You are an expert code reviewer. Your responsibilities:
+
+1. **Bug Detection**: Find logic errors, null pointer issues, race conditions
+2. **Security Review**: Identify vulnerabilities (XSS, injection, auth issues)
+3. **Best Practices**: Check coding standards, naming conventions, DRY principle
+4. **Performance**: Spot inefficient algorithms, memory leaks, N+1 queries
+5. **Maintainability**: Assess readability, complexity, documentation
+
+Output Format:
+- Start with a brief summary (1-2 sentences)
+- List issues by severity: CRITICAL > HIGH > MEDIUM > LOW
+- For each issue: location, description, suggested fix
+- End with positive observations
+
+Be constructive and specific. Focus on actionable feedback.`,
+    tools: ['read_file', 'glob', 'grep', 'list_directory'],
+    maxIterations: 20,
+    permissionPreset: 'development',
+    tags: ['code', 'review', 'quality', 'readonly'],
+    canSpawnSubagents: false,
+  },
+
+  'tester': {
+    id: 'tester',
+    name: 'Test Engineer',
+    description: 'Writes comprehensive unit and integration tests',
+    systemPrompt: `You are a testing specialist. Your responsibilities:
+
+1. **Unit Tests**: Write isolated tests for individual functions/methods
+2. **Integration Tests**: Test component interactions
+3. **Edge Cases**: Cover boundary conditions, error cases, null inputs
+4. **Mocking**: Properly mock external dependencies
+5. **Coverage**: Aim for high coverage of critical paths
+
+Guidelines:
+- Use the project's existing test framework
+- Follow AAA pattern: Arrange, Act, Assert
+- Write descriptive test names that explain the behavior
+- Include both positive and negative test cases
+- Keep tests independent and idempotent
+
+After writing tests, suggest how to run them.`,
+    tools: ['bash', 'read_file', 'write_file', 'edit_file', 'glob'],
+    maxIterations: 25,
+    permissionPreset: 'development',
+    tags: ['code', 'testing', 'quality'],
+    canSpawnSubagents: false,
+  },
+
+  'architect': {
+    id: 'architect',
+    name: 'Software Architect',
+    description: 'Designs system architecture and makes technical decisions',
+    systemPrompt: `You are a software architect. Your responsibilities:
+
+1. **System Design**: Design scalable, maintainable systems
+2. **Technology Choice**: Recommend appropriate technologies
+3. **Interfaces**: Define clear contracts between components
+4. **Non-functional**: Consider performance, security, reliability
+5. **Documentation**: Document decisions and rationale
+
+Approach:
+- Understand requirements first (functional and non-functional)
+- Consider trade-offs explicitly
+- Prefer simplicity over complexity
+- Think about team capabilities
+- Plan for evolution and change
+
+Output architectural decisions with clear reasoning.`,
+    tools: ['read_file', 'glob', 'grep', 'write_file'],
+    maxIterations: 15,
+    permissionPreset: 'development',
+    tags: ['architecture', 'design', 'planning'],
+    canSpawnSubagents: false,
+  },
+
+  'debugger': {
+    id: 'debugger',
+    name: 'Debugger',
+    description: 'Investigates and fixes bugs systematically',
+    systemPrompt: `You are a debugging specialist. Your approach:
+
+1. **Reproduce**: Understand and reproduce the issue
+2. **Isolate**: Narrow down the problem area
+3. **Analyze**: Read error messages, logs, stack traces
+4. **Hypothesize**: Form theories about the cause
+5. **Test**: Verify hypotheses with targeted tests
+6. **Fix**: Implement and verify the fix
+7. **Prevent**: Suggest how to prevent similar issues
+
+Be methodical. Document your investigation process.
+Use print/log statements if needed to trace execution.`,
+    tools: ['bash', 'read_file', 'edit_file', 'glob', 'grep'],
+    maxIterations: 30,
+    permissionPreset: 'development',
+    tags: ['debugging', 'analysis'],
+    canSpawnSubagents: false,
+  },
+
+  'documenter': {
+    id: 'documenter',
+    name: 'Technical Writer',
+    description: 'Writes documentation and comments',
+    systemPrompt: `You are a technical writer. Your responsibilities:
+
+1. **README**: Write clear project documentation
+2. **API Docs**: Document APIs and interfaces
+3. **Comments**: Add helpful inline comments
+4. **Examples**: Create usage examples
+5. **Guides**: Write how-to guides
+
+Guidelines:
+- Write for your audience (developers, users, etc.)
+- Be clear and concise
+- Use examples liberally
+- Keep documentation up to date
+- Structure content logically`,
+    tools: ['read_file', 'write_file', 'edit_file', 'glob'],
+    maxIterations: 15,
+    permissionPreset: 'development',
+    tags: ['documentation', 'writing'],
+    canSpawnSubagents: false,
+  },
+
+  // -------------------------------------------------------------------------
+  // Extended Code Agents
   // -------------------------------------------------------------------------
 
   'refactorer': {
@@ -150,7 +331,7 @@ Guidelines:
   },
 
   // -------------------------------------------------------------------------
-  // Vision Agents (视觉相关 Agent)
+  // Vision Agents
   // -------------------------------------------------------------------------
 
   'visual-understanding': {
@@ -226,7 +407,7 @@ Guidelines:
   },
 
   // -------------------------------------------------------------------------
-  // Meta Agents (元 Agent - 规划、探索、协调)
+  // Meta Agents (Exploration, Planning, Execution)
   // -------------------------------------------------------------------------
 
   'code-explore': {
@@ -272,7 +453,7 @@ Guidelines:
     tools: ['glob', 'grep', 'read_file', 'list_directory'],
     maxIterations: 25,
     permissionPreset: 'development',
-    tags: ['local', 'code', 'exploration', 'search', 'readonly'],
+    tags: ['meta', 'local', 'code', 'exploration', 'search', 'readonly'],
     canSpawnSubagents: false,
   },
 
@@ -395,7 +576,7 @@ Guidelines:
     tools: ['bash'],
     maxIterations: 15,
     permissionPreset: 'development',
-    tags: ['execution', 'shell', 'command'],
+    tags: ['meta', 'execution', 'shell', 'command'],
     canSpawnSubagents: false,
   },
 
@@ -460,12 +641,12 @@ Guidelines:
     ],
     maxIterations: 30,
     permissionPreset: 'development',
-    tags: ['general', 'full-capability'],
+    tags: ['meta', 'general', 'full-capability'],
     canSpawnSubagents: true,
   },
 
   // -------------------------------------------------------------------------
-  // External Resource Agents (外部资源搜索 Agent)
+  // External Resource Agents
   // -------------------------------------------------------------------------
 
   'web-search': {
@@ -612,24 +793,27 @@ Guidelines:
     tools: ['read_pdf', 'read_docx', 'read_xlsx', 'read_file', 'glob'],
     maxIterations: 15,
     permissionPreset: 'development',
-    tags: ['local', 'documentation', 'pdf', 'readonly'],
+    tags: ['external', 'local', 'documentation', 'pdf', 'readonly'],
     canSpawnSubagents: false,
   },
 };
 
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
 /**
- * Get a predefined agent definition by ID
- * NOTE: Aliases (code-reviewer -> reviewer, test-writer -> tester) are handled
- * in spawnAgent.ts resolveAgentConfig() function
- * @param id Agent ID
+ * Get a predefined agent definition by ID or alias
+ * @param idOrAlias Agent ID or alias
  * @returns AgentDefinition or undefined
  */
-export function getPredefinedAgent(id: string): AgentDefinition | undefined {
-  return PREDEFINED_AGENTS[id];
+export function getPredefinedAgent(idOrAlias: string): AgentDefinition | undefined {
+  const canonicalId = resolveAgentAlias(idOrAlias);
+  return PREDEFINED_AGENTS[canonicalId];
 }
 
 /**
- * List all predefined agent IDs
+ * List all predefined agent IDs (canonical IDs only, no aliases)
  */
 export function listPredefinedAgentIds(): string[] {
   return Object.keys(PREDEFINED_AGENTS);
@@ -647,10 +831,11 @@ export function listPredefinedAgents(): Array<{ id: string; name: string; descri
 }
 
 /**
- * Check if an agent ID is predefined
+ * Check if an agent ID or alias is predefined
  */
-export function isPredefinedAgent(id: string): boolean {
-  return id in PREDEFINED_AGENTS;
+export function isPredefinedAgent(idOrAlias: string): boolean {
+  const canonicalId = resolveAgentAlias(idOrAlias);
+  return canonicalId in PREDEFINED_AGENTS;
 }
 
 /**
@@ -658,4 +843,11 @@ export function isPredefinedAgent(id: string): boolean {
  */
 export function getAgentsByTag(tag: string): AgentDefinition[] {
   return Object.values(PREDEFINED_AGENTS).filter((agent) => agent.tags?.includes(tag));
+}
+
+/**
+ * Get all agent aliases
+ */
+export function getAgentAliases(): Record<string, string> {
+  return { ...AGENT_ALIASES };
 }

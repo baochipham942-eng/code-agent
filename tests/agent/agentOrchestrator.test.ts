@@ -18,6 +18,7 @@ vi.mock('isolated-vm', () => ({}));
 vi.mock('../../src/main/services', () => ({
   getSessionManager: vi.fn(() => ({
     addMessage: vi.fn().mockResolvedValue(undefined),
+    getCurrentSessionId: vi.fn().mockReturnValue('test-session-id'),
   })),
 }));
 

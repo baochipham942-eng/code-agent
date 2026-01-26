@@ -8,9 +8,10 @@ import { X, FlaskConical, Sparkles, Lock, ChevronRight } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { GPT1Lab } from './gpt1/GPT1Lab';
 import { NanoGPTLab } from './nanogpt/NanoGPTLab';
+import { AlignmentLab } from './alignment/AlignmentLab';
 
 // 实验类型
-type LabType = 'home' | 'gpt1' | 'nanogpt';
+type LabType = 'home' | 'gpt1' | 'nanogpt' | 'alignment';
 
 // 实验卡片配置
 interface LabCard {
@@ -52,14 +53,14 @@ const labCards: LabCard[] = [
     iconBg: 'bg-blue-500/20',
   },
   {
-    id: 'nanogpt' as LabType, // placeholder
-    title: 'Fine-tuning & RLHF',
+    id: 'alignment',
+    title: 'SFT & RLHF 对齐',
     subtitle: '后训练技术',
     description: '学习监督微调（SFT）和人类反馈强化学习（RLHF），理解如何让模型更好地遵循指令。',
     level: '高级',
     levelStars: 3,
     params: '后训练阶段',
-    status: 'locked',
+    status: 'available',
     gradient: 'from-purple-500/20 to-pink-500/20',
     iconBg: 'bg-purple-500/20',
   },
@@ -138,7 +139,13 @@ export const LabPage: React.FC = () => {
           <div className="flex items-center gap-2">
             <FlaskConical className="w-5 h-5 text-emerald-400" />
             <h1 className="text-lg font-semibold text-zinc-100">
-              {currentLab === 'home' ? '实验室' : currentLab === 'gpt1' ? 'GPT-1 对话模型' : 'nanoGPT 2.0'}
+              {currentLab === 'home'
+                ? '实验室'
+                : currentLab === 'gpt1'
+                  ? 'GPT-1 对话模型'
+                  : currentLab === 'nanogpt'
+                    ? 'nanoGPT 2.0'
+                    : 'SFT & RLHF 对齐'}
             </h1>
           </div>
         </div>
@@ -154,6 +161,7 @@ export const LabPage: React.FC = () => {
       {currentLab === 'home' && renderHome()}
       {currentLab === 'gpt1' && <GPT1Lab />}
       {currentLab === 'nanogpt' && <NanoGPTLab />}
+      {currentLab === 'alignment' && <AlignmentLab />}
     </div>
   );
 };

@@ -74,6 +74,26 @@ npm run typecheck    # 类型检查
 
 > 完整工具文档见 [docs/guides/tools-reference.md](docs/guides/tools-reference.md)
 
+## 子 Agent 系统 (Gen7)
+
+**核心角色（6 个）**：`coder`、`reviewer`、`tester`、`architect`、`debugger`、`documenter`
+
+**扩展角色（11 个）**：
+
+| 分类 | 角色 | 说明 |
+|------|------|------|
+| 本地搜索 | `code-explore` | 代码库搜索（只读）|
+| 本地搜索 | `doc-reader` | 本地文档读取（PDF/Word/Excel）|
+| 外部搜索 | `web-search` | 网络搜索 |
+| 外部搜索 | `mcp-connector` | MCP 服务连接 |
+| 视觉 | `visual-understanding` | 图片分析 |
+| 视觉 | `visual-processing` | 图片编辑 |
+| 元 | `plan` | 任务规划 |
+| 元 | `bash-executor` | 命令执行 |
+| 元 | `general-purpose` | 通用 Agent |
+| 代码 | `refactorer` | 代码重构 |
+| DevOps | `devops` | CI/CD |
+
 ---
 
 ## 开发规范

@@ -16,7 +16,7 @@ import type {
   ExecutionProgressEvent,
 } from './types';
 import { createLogger } from '../services/infra/logger';
-import { getCloudApiUrl } from '../../shared/constants';
+import { getCloudApiUrl, ORCHESTRATOR_TIMEOUTS } from '../../shared/constants';
 
 const logger = createLogger('CloudExecutor');
 
@@ -33,7 +33,7 @@ export interface CloudExecutorConfig {
 
 const DEFAULT_CONFIG: CloudExecutorConfig = {
   maxConcurrent: 5,
-  defaultTimeout: 180000,
+  defaultTimeout: ORCHESTRATOR_TIMEOUTS.CLOUD_EXECUTOR,
   maxIterations: 50,
   apiEndpoint: getCloudApiUrl(),
 };

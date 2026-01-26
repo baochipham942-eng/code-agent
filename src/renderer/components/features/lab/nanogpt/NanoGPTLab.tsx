@@ -1,0 +1,302 @@
+// ============================================================================
+// NanoGPTLab - GPT-2 模型训练完整学习流程
+// 支持两种模式：模拟学习 & 真实训练
+// 重点：预训练 + 微调（后训练）
+// ============================================================================
+
+import React, { useState } from 'react';
+import {
+  Database,
+  Type,
+  Boxes,
+  GraduationCap,
+  Wrench,
+  MessageSquare,
+  Check,
+  Sparkles,
+  Cpu,
+} from 'lucide-react';
+import { DataPreparation } from './stages/DataPreparation';
+import { Tokenizer } from './stages/Tokenizer';
+import { ModelArchitecture } from './stages/ModelArchitecture';
+import { Pretraining } from './stages/Pretraining';
+import { Finetuning } from './stages/Finetuning';
+import { Inference } from './stages/Inference';
+import { RealModePanel } from './RealModePanel';
+
+// 学习模式
+export type LabMode = 'simulation' | 'real';
+
+// 学习阶段定义
+type Stage = 'data' | 'tokenizer' | 'architecture' | 'pretraining' | 'finetuning' | 'inference';
+
+interface StageConfig {
+  id: Stage;
+  title: string;
+  shortTitle: string;
+  icon: React.ReactNode;
+  description: string;
+  learningPoint: string;
+  isNew?: boolean;
+}
+
+const stages: StageConfig[] = [
+  {
+    id: 'data',
+    title: '数据准备',
+    shortTitle: '数据',
+    icon: <Database className="w-4 h-4" />,
+    description: '准备 Shakespeare 或 OpenWebText 数据集',
+    learningPoint: '字符级 vs 子词级数据处理的差异',
+  },
+  {
+    id: 'tokenizer',
+    title: '分词器',
+    shortTitle: '分词',
+    icon: <Type className="w-4 h-4" />,
+    description: '对比字符级分词与 BPE 分词',
+    learningPoint: 'BPE 平衡了词汇表大小和序列长度',
+  },
+  {
+    id: 'architecture',
+    title: '模型架构',
+    shortTitle: '架构',
+    icon: <Boxes className="w-4 h-4" />,
+    description: 'GPT-2 架构改进：Pre-LN、更深网络',
+    learningPoint: 'Pre-Layer Norm 让深层网络更稳定',
+  },
+  {
+    id: 'pretraining',
+    title: '预训练',
+    shortTitle: '预训练',
+    icon: <GraduationCap className="w-4 h-4" />,
+    description: '大规模无监督预训练过程',
+    learningPoint: '预训练学习通用语言知识',
+  },
+  {
+    id: 'finetuning',
+    title: '微调',
+    shortTitle: '微调',
+    icon: <Wrench className="w-4 h-4" />,
+    description: '加载预训练权重，适应特定任务',
+    learningPoint: '微调让模型专精于特定领域',
+    isNew: true,
+  },
+  {
+    id: 'inference',
+    title: '推理生成',
+    shortTitle: '推理',
+    icon: <MessageSquare className="w-4 h-4" />,
+    description: 'Temperature、Top-k、Top-p 采样策略',
+    learningPoint: '采样参数控制创造性与确定性的平衡',
+  },
+];
+
+export const NanoGPTLab: React.FC = () => {
+  const [mode, setMode] = useState<LabMode>('simulation');
+  const [currentStage, setCurrentStage] = useState<Stage>('data');
+  const [completedStages, setCompletedStages] = useState<Set<Stage>>(new Set());
+
+  const currentStageIndex = stages.findIndex((s) => s.id === currentStage);
+  const currentStageConfig = stages[currentStageIndex];
+
+  // 标记阶段完成
+  const markStageComplete = (stage: Stage) => {
+    setCompletedStages((prev) => new Set(prev).add(stage));
+  };
+
+  // 导航到下一阶段
+  const goToNextStage = () => {
+    markStageComplete(currentStage);
+    if (currentStageIndex < stages.length - 1) {
+      setCurrentStage(stages[currentStageIndex + 1].id);
+    }
+  };
+
+  // 导航到上一阶段
+  const goToPrevStage = () => {
+    if (currentStageIndex > 0) {
+      setCurrentStage(stages[currentStageIndex - 1].id);
+    }
+  };
+
+  // 渲染阶段内容
+  const renderStageContent = () => {
+    switch (currentStage) {
+      case 'data':
+        return <DataPreparation onComplete={goToNextStage} />;
+      case 'tokenizer':
+        return <Tokenizer onComplete={goToNextStage} onBack={goToPrevStage} />;
+      case 'architecture':
+        return <ModelArchitecture onComplete={goToNextStage} onBack={goToPrevStage} />;
+      case 'pretraining':
+        return <Pretraining onComplete={goToNextStage} onBack={goToPrevStage} />;
+      case 'finetuning':
+        return <Finetuning onComplete={goToNextStage} onBack={goToPrevStage} />;
+      case 'inference':
+        return <Inference onBack={goToPrevStage} />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Mode Switcher */}
+      <div className="px-6 py-3 border-b border-zinc-800/50 bg-zinc-900/30">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg bg-zinc-800/50 p-1">
+              <button
+                onClick={() => setMode('simulation')}
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  mode === 'simulation'
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Sparkles className="w-4 h-4" />
+                模拟学习
+              </button>
+              <button
+                onClick={() => setMode('real')}
+                className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  mode === 'real'
+                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                    : 'text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                <Cpu className="w-4 h-4" />
+                真实训练
+              </button>
+            </div>
+          </div>
+
+          {/* Mode Description */}
+          <div className="text-xs text-zinc-500">
+            {mode === 'simulation' ? (
+              <span>📚 可视化演示，帮助理解 GPT-2 预训练与微调</span>
+            ) : (
+              <span>🔬 克隆 nanoGPT，执行真实训练</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Real Mode Panel */}
+      {mode === 'real' ? (
+        <RealModePanel />
+      ) : (
+        <>
+          {/* Progress Bar */}
+          <div className="px-6 py-4 border-b border-zinc-800/50">
+            <div className="flex items-center justify-between max-w-5xl mx-auto">
+              {stages.map((stage, index) => {
+                const isCompleted = completedStages.has(stage.id);
+                const isCurrent = stage.id === currentStage;
+                const isPast = index < currentStageIndex;
+
+                return (
+                  <React.Fragment key={stage.id}>
+                    {/* Stage Node */}
+                    <button
+                      onClick={() => setCurrentStage(stage.id)}
+                      className={`
+                        flex flex-col items-center gap-2 group relative
+                        ${isCurrent ? 'opacity-100' : 'opacity-60 hover:opacity-80'}
+                        transition-opacity
+                      `}
+                    >
+                      {/* New Badge */}
+                      {stage.isNew && (
+                        <span className="absolute -top-2 -right-2 px-1.5 py-0.5 text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded">
+                          NEW
+                        </span>
+                      )}
+                      <div
+                        className={`
+                          w-10 h-10 rounded-full flex items-center justify-center
+                          transition-all duration-300
+                          ${isCompleted ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : ''}
+                          ${isCurrent ? 'bg-blue-500/20 border-blue-500/50 text-blue-400 ring-2 ring-blue-500/30' : ''}
+                          ${!isCompleted && !isCurrent ? 'bg-zinc-800/50 border-zinc-700/50 text-zinc-500' : ''}
+                          border
+                        `}
+                      >
+                        {isCompleted ? <Check className="w-4 h-4" /> : stage.icon}
+                      </div>
+                      <span
+                        className={`
+                          text-xs font-medium
+                          ${isCurrent ? 'text-blue-400' : isCompleted ? 'text-emerald-400' : 'text-zinc-500'}
+                        `}
+                      >
+                        {stage.shortTitle}
+                      </span>
+                    </button>
+
+                    {/* Connector Line */}
+                    {index < stages.length - 1 && (
+                      <div className="flex-1 mx-2">
+                        <div
+                          className={`
+                            h-0.5 rounded-full transition-colors duration-300
+                            ${isPast || isCompleted ? 'bg-emerald-500/50' : 'bg-zinc-800'}
+                          `}
+                        />
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Stage Header */}
+          <div className="px-6 py-4 bg-zinc-900/50">
+            <div className="max-w-5xl mx-auto">
+              <div className="flex items-center gap-3 mb-2">
+                <div
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                    currentStageConfig.isNew
+                      ? 'bg-amber-500/20 border border-amber-500/30 text-amber-400'
+                      : 'bg-blue-500/20 border border-blue-500/30 text-blue-400'
+                  }`}
+                >
+                  {currentStageConfig.icon}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-semibold text-zinc-100">
+                      阶段 {currentStageIndex + 1}: {currentStageConfig.title}
+                    </h2>
+                    {currentStageConfig.isNew && (
+                      <span className="px-2 py-0.5 text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30 rounded">
+                        核心新增
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-zinc-500">{currentStageConfig.description}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Stage Content */}
+          <div className="flex-1 overflow-y-auto">{renderStageContent()}</div>
+
+          {/* Learning Point Footer */}
+          <div className="px-6 py-3 border-t border-zinc-800/50 bg-zinc-900/30">
+            <div className="max-w-5xl mx-auto flex items-center gap-2">
+              <span className="text-amber-400">💡</span>
+              <span className="text-sm text-zinc-400">
+                <span className="text-zinc-300 font-medium">学习要点：</span>
+                {currentStageConfig.learningPoint}
+              </span>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};

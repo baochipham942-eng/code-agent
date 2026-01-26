@@ -13,15 +13,11 @@ import {
   Trash2,
   AlertCircle,
   CheckCircle,
-  Plus,
-  LayoutList,
-  Brain,
 } from 'lucide-react';
 import { Button, Input } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { MemoryCard } from './MemoryCard';
 import { MemoryEditModal } from './MemoryEditModal';
-import { MemoryKnowledgeGraph } from './MemoryKnowledgeGraph';
 import { useI18n } from '../../../../hooks/useI18n';
 import { createLogger } from '../../../../utils/logger';
 import type { MemoryItem, MemoryCategory, MemoryStats } from '@shared/types';
@@ -41,20 +37,9 @@ const CATEGORIES: Array<{
   { key: 'learned', icon: '💡', labelKey: 'learned', descKey: 'learnedDesc' },
 ];
 
-// Category labels
-const CATEGORY_LABELS: Record<MemoryCategory, string> = {
-  about_me: '关于我',
-  preference: '我的偏好',
-  frequent_info: '常用信息',
-  learned: '学到的经验',
-};
-
 // ============================================================================
 // Component
 // ============================================================================
-
-// View mode type
-type ViewMode = 'list' | 'graph';
 
 export const MemoryTab: React.FC = () => {
   const { t } = useI18n();
@@ -62,7 +47,6 @@ export const MemoryTab: React.FC = () => {
   const [stats, setStats] = useState<MemoryStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<ViewMode>('graph'); // 默认展示图谱
   const [expandedCategories, setExpandedCategories] = useState<Set<MemoryCategory>>(
     new Set(['about_me', 'preference', 'frequent_info', 'learned'])
   );
@@ -101,14 +85,6 @@ export const MemoryTab: React.FC = () => {
   useEffect(() => {
     loadMemories();
   }, []);
-
-  // Auto-hide message after 3 seconds
-  useEffect(() => {
-    if (message) {
-      const timer = setTimeout(() => setMessage(null), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [message]);
 
   // Filter memories by search query
   const filteredMemories = useMemo(() => {
@@ -283,10 +259,24 @@ export const MemoryTab: React.FC = () => {
     }
   };
 
-  // Loading state
+  // Get category label
+  const getCategoryLabel = (key: string) => {
+    const labels: Record<string, string> = {
+      aboutMe: '关于我',
+      aboutMeDesc: '身份、角色、沟通风格',
+      preference: '我的偏好',
+      preferenceDesc: '格式、风格、工具偏好',
+      frequentInfo: '常用信息',
+      frequentInfoDesc: '邮箱、模板、常用数据',
+      learned: '学到的经验',
+      learnedDesc: 'AI 观察到的模式和习惯',
+    };
+    return (t.memory as Record<string, string>)?.[key] || labels[key] || key;
+  };
+
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex items-center justify-center h-48">
         <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
       </div>
     );
@@ -295,100 +285,173 @@ export const MemoryTab: React.FC = () => {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-medium text-zinc-100">记忆管理</h3>
-          <p className="text-sm text-zinc-400 mt-0.5">
-            AI 从对话中学习的知识和您定义的偏好
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* View mode toggle */}
-          <div className="flex items-center bg-zinc-800/50 rounded-lg p-0.5">
-            <button
-              onClick={() => setViewMode('graph')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                viewMode === 'graph'
-                  ? 'bg-zinc-700 text-zinc-100'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              <Brain className="w-3.5 h-3.5" />
-              图谱
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                viewMode === 'list'
-                  ? 'bg-zinc-700 text-zinc-100'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              <LayoutList className="w-3.5 h-3.5" />
-              列表
-            </button>
-          </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleImport}
-            className="flex items-center gap-1.5"
-          >
-            <Upload className="w-4 h-4" />
-            导入
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleExport}
-            className="flex items-center gap-1.5"
-          >
-            <Download className="w-4 h-4" />
-            导出
-          </Button>
-        </div>
+      <div>
+        <h3 className="text-sm font-medium text-zinc-100 mb-1">
+          {(t.memory as Record<string, string>)?.title || '记忆管理'}
+        </h3>
+        <p className="text-xs text-zinc-400">
+          {(t.memory as Record<string, string>)?.description ||
+            '查看和管理 AI 记住的关于你的信息'}
+        </p>
       </div>
 
       {/* Stats */}
       {stats && (
-        <div className="flex items-center gap-4 px-3 py-2 bg-zinc-800/30 rounded-lg text-sm">
-          <span className="text-zinc-400">
-            共 <span className="text-zinc-200">{stats.total}</span> 条记忆
-          </span>
-          <span className="text-zinc-600">|</span>
-          <span className="text-zinc-400">
-            AI 学习 <span className="text-purple-400">{stats.learnedCount}</span>
-          </span>
-          <span className="text-zinc-400">
-            用户定义 <span className="text-blue-400">{stats.explicitCount}</span>
-          </span>
-          {stats.recentlyAdded > 0 && (
-            <>
-              <span className="text-zinc-600">|</span>
-              <span className="text-zinc-400">
-                本周新增 <span className="text-green-400">{stats.recentlyAdded}</span>
-              </span>
-            </>
-          )}
+        <div className="grid grid-cols-4 gap-2">
+          <div className="bg-zinc-800/50 rounded-lg p-2 text-center">
+            <div className="text-lg font-bold text-zinc-100">{stats.total}</div>
+            <div className="text-xs text-zinc-400">总计</div>
+          </div>
+          <div className="bg-zinc-800/50 rounded-lg p-2 text-center">
+            <div className="text-lg font-bold text-indigo-400">{stats.explicitCount}</div>
+            <div className="text-xs text-zinc-400">手动添加</div>
+          </div>
+          <div className="bg-zinc-800/50 rounded-lg p-2 text-center">
+            <div className="text-lg font-bold text-cyan-400">{stats.learnedCount}</div>
+            <div className="text-xs text-zinc-400">自动学习</div>
+          </div>
+          <div className="bg-zinc-800/50 rounded-lg p-2 text-center">
+            <div className="text-lg font-bold text-amber-400">{stats.recentlyAdded}</div>
+            <div className="text-xs text-zinc-400">近 7 天</div>
+          </div>
         </div>
       )}
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-        <Input
-          type="text"
-          placeholder="搜索记忆..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="pl-9"
-        />
+      {/* Search & Actions */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="搜索记忆..."
+            className="pl-9"
+          />
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={handleExport}
+          title="导出"
+        >
+          <Download className="w-4 h-4" />
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={handleImport}
+          title="导入"
+        >
+          <Upload className="w-4 h-4" />
+        </Button>
       </div>
+
+      {/* Category Lists */}
+      <div className="space-y-2 max-h-[280px] overflow-y-auto">
+        {CATEGORIES.map((cat) => {
+          const categoryMemories = memoriesByCategory[cat.key];
+          const isExpanded = expandedCategories.has(cat.key);
+          const count = categoryMemories.length;
+
+          return (
+            <div key={cat.key} className="bg-zinc-800/30 rounded-lg overflow-hidden">
+              {/* Category Header */}
+              <button
+                onClick={() => toggleCategory(cat.key)}
+                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800/50 transition-colors"
+              >
+                {isExpanded ? (
+                  <ChevronDown className="w-4 h-4 text-zinc-400" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-zinc-400" />
+                )}
+                <span className="text-base">{cat.icon}</span>
+                <span className="text-sm font-medium text-zinc-100 flex-1 text-left">
+                  {getCategoryLabel(cat.labelKey)}
+                </span>
+                <span className="text-xs text-zinc-500">{count} 条</span>
+                {count > 0 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setClearingCategory(cat.key);
+                    }}
+                    className="p-1 hover:bg-zinc-700 rounded text-zinc-500 hover:text-red-400 transition-colors"
+                    title="清空分类"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                )}
+              </button>
+
+              {/* Category Content */}
+              {isExpanded && (
+                <div className="px-3 pb-2 space-y-1">
+                  {count === 0 ? (
+                    <p className="text-xs text-zinc-500 py-2 text-center">
+                      暂无记忆
+                    </p>
+                  ) : (
+                    categoryMemories.map((memory) => (
+                      <MemoryCard
+                        key={memory.id}
+                        memory={memory}
+                        onEdit={() => handleEdit(memory)}
+                        onDelete={() => setDeletingId(memory.id)}
+                        isDeleting={deletingId === memory.id}
+                        onConfirmDelete={() => handleDelete(memory.id)}
+                        onCancelDelete={() => setDeletingId(null)}
+                      />
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Clear Category Confirmation */}
+      {clearingCategory && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setClearingCategory(null)}
+          />
+          <div className="relative bg-zinc-900 rounded-lg p-4 max-w-sm border border-zinc-800">
+            <h4 className="text-sm font-medium text-zinc-100 mb-2">确认清空</h4>
+            <p className="text-xs text-zinc-400 mb-4">
+              确定要清空「
+              {CATEGORIES.find((c) => c.key === clearingCategory)?.icon}{' '}
+              {getCategoryLabel(
+                CATEGORIES.find((c) => c.key === clearingCategory)?.labelKey || ''
+              )}
+              」分类下的所有记忆吗？此操作不可恢复。
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setClearingCategory(null)}
+              >
+                取消
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => handleClearCategory(clearingCategory)}
+              >
+                清空
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Message */}
       {message && (
         <div
-          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
+          className={`flex items-center gap-2 p-2 rounded-lg text-xs ${
             message.type === 'success'
               ? 'bg-green-500/10 text-green-400'
               : 'bg-red-500/10 text-red-400'
@@ -399,132 +462,22 @@ export const MemoryTab: React.FC = () => {
           ) : (
             <AlertCircle className="w-4 h-4" />
           )}
-          {message.text}
+          <span>{message.text}</span>
         </div>
       )}
 
-      {/* Graph View */}
-      {viewMode === 'graph' && (
-        <MemoryKnowledgeGraph />
-      )}
-
-      {/* List View - Categories */}
-      {viewMode === 'list' && (
-        <>
-          <div className="space-y-3">
-            {CATEGORIES.map((category) => {
-              const categoryMemories = memoriesByCategory[category.key];
-              const isExpanded = expandedCategories.has(category.key);
-              const count = categoryMemories.length;
-
-              return (
-                <div key={category.key} className="border border-zinc-700/50 rounded-lg overflow-hidden">
-                  {/* Category header */}
-                  <button
-                    onClick={() => toggleCategory(category.key)}
-                    className="w-full flex items-center justify-between px-3 py-2.5 bg-zinc-800/30 hover:bg-zinc-800/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      {isExpanded ? (
-                        <ChevronDown className="w-4 h-4 text-zinc-400" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 text-zinc-400" />
-                      )}
-                      <span className="text-lg">{category.icon}</span>
-                      <span className="text-sm font-medium text-zinc-200">
-                        {CATEGORY_LABELS[category.key]}
-                      </span>
-                      <span className="text-xs text-zinc-500">({count})</span>
-                    </div>
-
-                    {/* Category actions */}
-                    {count > 0 && (
-                      <div
-                        className="flex items-center gap-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {clearingCategory === category.key ? (
-                          <>
-                            <span className="text-xs text-red-400 mr-2">确认清空?</span>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleClearCategory(category.key)}
-                              className="text-red-400 hover:bg-red-500/10 px-2 py-1 h-auto text-xs"
-                            >
-                              确认
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setClearingCategory(null)}
-                              className="px-2 py-1 h-auto text-xs"
-                            >
-                              取消
-                            </Button>
-                          </>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setClearingCategory(category.key)}
-                            className="p-1 h-auto opacity-0 group-hover:opacity-100"
-                            title="清空此分类"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-zinc-500 hover:text-red-400" />
-                          </Button>
-                        )}
-                      </div>
-                    )}
-                  </button>
-
-                  {/* Category content */}
-                  {isExpanded && (
-                    <div className="p-3 space-y-2">
-                      {count === 0 ? (
-                        <p className="text-sm text-zinc-500 text-center py-4">
-                          暂无记忆
-                        </p>
-                      ) : (
-                        categoryMemories.map((memory) => (
-                          <MemoryCard
-                            key={memory.id}
-                            memory={memory}
-                            onEdit={handleEdit}
-                            onDelete={handleDelete}
-                          />
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Empty state */}
-          {memories.length === 0 && (
-            <div className="text-center py-12">
-              <div className="text-4xl mb-3">🧠</div>
-              <h4 className="text-zinc-200 font-medium mb-1">暂无记忆</h4>
-              <p className="text-sm text-zinc-500">
-                与 AI 对话后会自动学习，或手动添加您的偏好
-              </p>
-            </div>
-          )}
-        </>
-      )}
-
       {/* Edit Modal */}
-      <MemoryEditModal
-        memory={editingMemory}
-        isOpen={isEditModalOpen}
-        onClose={() => {
-          setIsEditModalOpen(false);
-          setEditingMemory(null);
-        }}
-        onSave={handleSaveEdit}
-      />
+      {editingMemory && (
+        <MemoryEditModal
+          isOpen={isEditModalOpen}
+          memory={editingMemory}
+          onClose={() => {
+            setIsEditModalOpen(false);
+            setEditingMemory(null);
+          }}
+          onSave={handleSaveEdit}
+        />
+      )}
     </div>
   );
 };

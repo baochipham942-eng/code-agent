@@ -3,305 +3,26 @@
 // ============================================================================
 
 import type { IpcMain } from 'electron';
-import {
-  IPC_CHANNELS,
-  IPC_DOMAINS,
-  type IPCRequest,
-  type IPCResponse,
-  type MemoryRecord,
-  type MemoryListFilter,
-  type MemorySearchOptions,
-} from '../../shared/ipc';
-import type {
-  MemoryItem,
-  MemoryCategory,
-  MemoryStats as MemoryStatsNew,
-  MemoryExport,
-} from '../../shared/types/memory';
+import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getSessionManager, getDatabase } from '../services';
 import { getMemoryService } from '../memory/memoryService';
 import { getVectorStore } from '../memory/vectorStore';
-import { handleMemoryConfirmResponse } from '../memory/memoryNotification';
+import type { MemoryItem, MemoryCategory, MemoryExport, MemoryStats } from '../../shared/types';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('MemoryIPC');
 
 // ----------------------------------------------------------------------------
-// Types for Memory CRUD Payloads
+// Memory Management (new for Phase 2)
 // ----------------------------------------------------------------------------
-
-interface CreateMemoryPayload {
-  type: MemoryRecord['type'];
-  category: string;
-  content: string;
-  summary: string;
-  source?: MemoryRecord['source'];
-  confidence?: number;
-  metadata?: Record<string, unknown>;
-}
-
-interface UpdateMemoryPayload {
-  id: string;
-  updates: {
-    category?: string;
-    content?: string;
-    summary?: string;
-    confidence?: number;
-    metadata?: Record<string, unknown>;
-  };
-}
-
-interface DeleteMemoriesPayload {
-  type?: MemoryRecord['type'];
-  category?: string;
-  source?: MemoryRecord['source'];
-  currentProjectOnly?: boolean;
-  currentSessionOnly?: boolean;
-}
-
-// ----------------------------------------------------------------------------
-// Internal Handlers - Legacy (RAG Context)
-// ----------------------------------------------------------------------------
-
-async function handleGetContext(payload: { query: string }): Promise<unknown> {
-  const memoryService = getMemoryService();
-  const ragContext = memoryService.getRAGContext(payload.query);
-  const projectKnowledge = memoryService.getProjectKnowledge();
-  const relevantCode = memoryService.searchRelevantCode(payload.query);
-  const relevantConversations = memoryService.searchRelevantConversations(payload.query);
-
-  return {
-    ragContext,
-    projectKnowledge: projectKnowledge.map((k) => ({ key: k.key, value: k.value })),
-    relevantCode,
-    relevantConversations,
-  };
-}
-
-async function handleSearchCode(payload: { query: string; topK?: number }): Promise<unknown> {
-  const memoryService = getMemoryService();
-  return memoryService.searchRelevantCode(payload.query, payload.topK);
-}
-
-async function handleSearchConversations(payload: { query: string; topK?: number }): Promise<unknown> {
-  const memoryService = getMemoryService();
-  return memoryService.searchRelevantConversations(payload.query, payload.topK);
-}
-
-async function handleGetStats(): Promise<unknown> {
-  const sessionManager = getSessionManager();
-  const sessions = await sessionManager.listSessions();
-
-  return {
-    sessionCount: sessions.length,
-    messageCount: sessions.reduce((sum, s) => sum + s.messageCount, 0),
-    toolCacheSize: 0,
-    vectorStoreSize: 0,
-    projectKnowledgeCount: 0,
-  };
-}
-
-// ----------------------------------------------------------------------------
-// Internal Handlers - Memory CRUD (Gen5 记忆可视化)
-// ----------------------------------------------------------------------------
-
-async function handleCreateMemory(payload: CreateMemoryPayload): Promise<MemoryRecord> {
-  const memoryService = getMemoryService();
-  return memoryService.createMemory(payload) as MemoryRecord;
-}
-
-async function handleGetMemory(payload: { id: string }): Promise<MemoryRecord | null> {
-  const memoryService = getMemoryService();
-  return memoryService.getMemoryById(payload.id) as MemoryRecord | null;
-}
-
-async function handleListMemories(payload: MemoryListFilter): Promise<MemoryRecord[]> {
-  const memoryService = getMemoryService();
-  return memoryService.listMemories(payload) as MemoryRecord[];
-}
-
-async function handleUpdateMemory(payload: UpdateMemoryPayload): Promise<MemoryRecord | null> {
-  const memoryService = getMemoryService();
-  return memoryService.updateMemory(payload.id, payload.updates) as MemoryRecord | null;
-}
-
-async function handleDeleteMemory(payload: { id: string }): Promise<boolean> {
-  const memoryService = getMemoryService();
-  return memoryService.deleteMemory(payload.id);
-}
-
-async function handleDeleteMemories(payload: DeleteMemoriesPayload): Promise<number> {
-  const memoryService = getMemoryService();
-  return memoryService.deleteMemories(payload);
-}
-
-async function handleSearchMemories(payload: { query: string; options?: MemorySearchOptions }): Promise<MemoryRecord[]> {
-  const memoryService = getMemoryService();
-  return memoryService.searchMemories(payload.query, payload.options) as MemoryRecord[];
-}
-
-async function handleGetMemoryStats(): Promise<{
-  total: number;
-  byType: Record<string, number>;
-  bySource: Record<string, number>;
-  byCategory: Record<string, number>;
-}> {
-  const memoryService = getMemoryService();
-  return memoryService.getMemoryStats();
-}
-
-async function handleRecordMemoryAccess(payload: { id: string }): Promise<void> {
-  const memoryService = getMemoryService();
-  memoryService.recordMemoryAccess(payload.id);
-}
-
-// ----------------------------------------------------------------------------
-// Learning Insights Handler - 学习图谱数据
-// ----------------------------------------------------------------------------
-
-interface ToolPreference {
-  name: string;
-  count: number;
-  percentage: number;
-}
-
-interface CodingStyle {
-  semicolons: boolean;
-  indent: string;
-  quotes: string;
-}
-
-interface EvolutionPattern {
-  name: string;
-  type: string;
-  context: string;
-  pattern: string;
-  solution: string;
-  confidence: number;
-  occurrences: number;
-  tags: string[];
-}
-
-interface LearningInsights {
-  toolPreferences: ToolPreference[];
-  codingStyle: CodingStyle | null;
-  evolutionPatterns: EvolutionPattern[];
-  totalToolUsage: number;
-  topTools: string[];
-}
-
-/**
- * 获取学习洞察数据（用于知识图谱可视化）
- */
-async function handleGetLearningInsights(): Promise<LearningInsights> {
-  const db = getDatabase();
-  const prefs = db.getAllPreferences();
-
-  // 1. 工具使用偏好
-  const toolPrefsRaw = prefs.tool_preferences as Record<string, number> | undefined;
-  let toolPreferences: ToolPreference[] = [];
-  let totalToolUsage = 0;
-  let topTools: string[] = [];
-
-  if (toolPrefsRaw && typeof toolPrefsRaw === 'object') {
-    const entries = Object.entries(toolPrefsRaw);
-    totalToolUsage = entries.reduce((sum, [_, count]) => sum + (count as number), 0);
-
-    toolPreferences = entries
-      .map(([name, count]) => ({
-        name,
-        count: count as number,
-        percentage: totalToolUsage > 0 ? ((count as number) / totalToolUsage) * 100 : 0,
-      }))
-      .sort((a, b) => b.count - a.count);
-
-    topTools = toolPreferences.slice(0, 5).map(t => t.name);
-  }
-
-  // 2. 代码风格
-  const codingStyleRaw = prefs.coding_style as CodingStyle | undefined;
-  let codingStyle: CodingStyle | null = null;
-
-  if (codingStyleRaw && typeof codingStyleRaw === 'object') {
-    codingStyle = {
-      semicolons: codingStyleRaw.semicolons ?? false,
-      indent: codingStyleRaw.indent ?? '2spaces',
-      quotes: codingStyleRaw.quotes ?? 'single',
-    };
-  }
-
-  // 3. 演化模式（成功模式）
-  const evolutionPatternsRaw = prefs.evolution_patterns as EvolutionPattern[] | undefined;
-  let evolutionPatterns: EvolutionPattern[] = [];
-
-  if (Array.isArray(evolutionPatternsRaw)) {
-    evolutionPatterns = evolutionPatternsRaw.map(p => ({
-      name: p.name || '未命名模式',
-      type: p.type || 'success',
-      context: p.context || '',
-      pattern: p.pattern || '',
-      solution: p.solution || '',
-      confidence: p.confidence ?? 0.5,
-      occurrences: p.occurrences ?? 1,
-      tags: Array.isArray(p.tags) ? p.tags : [],
-    }));
-  }
-
-  return {
-    toolPreferences,
-    codingStyle,
-    evolutionPatterns,
-    totalToolUsage,
-    topTools,
-  };
-}
-
-// ----------------------------------------------------------------------------
-// Phase 2 Handlers - Memory Tab UI
-// ----------------------------------------------------------------------------
-
-/**
- * 映射旧分类到新分类
- */
-function mapToNewCategory(source: string): MemoryCategory {
-  switch (source) {
-    case 'explicit':
-    case 'user_defined':
-      return 'preference';
-    case 'learned':
-    case 'auto_learned':
-      return 'learned';
-    case 'inferred':
-      return 'frequent_info';
-    default:
-      return 'learned';
-  }
-}
-
-/**
- * 映射新分类到旧分类
- */
-function mapFromNewCategory(category: MemoryCategory): string {
-  switch (category) {
-    case 'about_me':
-      return 'explicit';
-    case 'preference':
-      return 'explicit';
-    case 'frequent_info':
-      return 'inferred';
-    case 'learned':
-      return 'learned';
-    default:
-      return 'learned';
-  }
-}
 
 /**
  * 从 VectorStore 和 Database 获取所有记忆条目
  * 映射到 MemoryItem 格式
  */
-async function handleListMemoriesNew(payload: { category?: MemoryCategory }): Promise<MemoryItem[]> {
+async function handleListMemories(payload: { category?: MemoryCategory }): Promise<MemoryItem[]> {
   const db = getDatabase();
+  const vectorStore = getVectorStore();
 
   const memories: MemoryItem[] = [];
 
@@ -340,6 +61,14 @@ async function handleListMemoriesNew(payload: { category?: MemoryCategory }): Pr
     });
   }
 
+  // 从向量存储获取知识条目
+  const stats = vectorStore.getStats();
+  if (stats.bySource['knowledge']) {
+    // VectorStore 的知识条目需要单独处理
+    // 目前 VectorStore 没有直接列出所有文档的方法
+    // 这里只返回已有的 projectKnowledge 数据
+  }
+
   // 按更新时间排序
   memories.sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -347,40 +76,9 @@ async function handleListMemoriesNew(payload: { category?: MemoryCategory }): Pr
 }
 
 /**
- * 添加记忆条目
- */
-async function handleAddMemory(payload: { item: Partial<MemoryItem> }): Promise<MemoryItem> {
-  const db = getDatabase();
-  const item = payload.item;
-
-  const id = `pk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  const now = Date.now();
-
-  db.saveProjectKnowledge(
-    item.projectPath || 'global',
-    `memory_${now}`,
-    item.content || '',
-    item.source === 'explicit' ? 'explicit' : 'learned',
-    item.confidence ?? 1.0
-  );
-
-  return {
-    id,
-    content: item.content || '',
-    category: item.category || 'learned',
-    source: item.source || 'explicit',
-    confidence: item.confidence ?? 1.0,
-    createdAt: now,
-    updatedAt: now,
-    projectPath: item.projectPath,
-    tags: item.tags,
-  };
-}
-
-/**
  * 更新记忆条目
  */
-async function handleUpdateMemoryNew(payload: { id: string; content: string }): Promise<boolean> {
+async function handleUpdateMemory(payload: { id: string; content: string }): Promise<boolean> {
   const db = getDatabase();
 
   if (payload.id.startsWith('pk_')) {
@@ -400,7 +98,7 @@ async function handleUpdateMemoryNew(payload: { id: string; content: string }): 
 /**
  * 删除记忆条目
  */
-async function handleDeleteMemoryNew(payload: { id: string }): Promise<boolean> {
+async function handleDeleteMemory(payload: { id: string }): Promise<boolean> {
   const db = getDatabase();
 
   if (payload.id.startsWith('pk_')) {
@@ -442,7 +140,7 @@ async function handleDeleteByCategory(payload: { category: MemoryCategory }): Pr
  * 导出所有记忆
  */
 async function handleExportMemories(): Promise<MemoryExport> {
-  const items = await handleListMemoriesNew({});
+  const items = await handleListMemories({});
 
   return {
     version: 1,
@@ -487,10 +185,10 @@ async function handleImportMemories(payload: { data: MemoryExport }): Promise<{ 
 }
 
 /**
- * 获取记忆统计（新格式）
+ * 获取记忆统计
  */
-async function handleGetMemoryStatsNew(): Promise<MemoryStatsNew> {
-  const items = await handleListMemoriesNew({});
+async function handleGetMemoryStats(): Promise<MemoryStats> {
+  const items = await handleListMemories({});
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
   const byCategory: Record<MemoryCategory, number> = {
@@ -506,14 +204,9 @@ async function handleGetMemoryStatsNew(): Promise<MemoryStatsNew> {
 
   for (const item of items) {
     byCategory[item.category]++;
-    if (item.source === 'learned') {
-      learnedCount++;
-    } else {
-      explicitCount++;
-    }
-    if (item.createdAt >= weekAgo) {
-      recentlyAdded++;
-    }
+    if (item.source === 'learned') learnedCount++;
+    else explicitCount++;
+    if (item.createdAt > weekAgo) recentlyAdded++;
   }
 
   return {
@@ -526,6 +219,92 @@ async function handleGetMemoryStatsNew(): Promise<MemoryStatsNew> {
 }
 
 // ----------------------------------------------------------------------------
+// Category Mapping Helpers
+// ----------------------------------------------------------------------------
+
+/**
+ * 映射旧分类到新分类
+ */
+function mapToNewCategory(source: string): MemoryCategory {
+  switch (source) {
+    case 'preference':
+      return 'preference';
+    case 'pattern':
+    case 'decision':
+    case 'insight':
+    case 'error_solution':
+    case 'learned':
+      return 'learned';
+    case 'context':
+      return 'frequent_info';
+    case 'about_me':
+      return 'about_me';
+    default:
+      return 'learned';
+  }
+}
+
+/**
+ * 映射新分类到旧分类（用于数据库查询）
+ */
+function mapFromNewCategory(category: MemoryCategory): string {
+  switch (category) {
+    case 'about_me':
+      return 'about_me';
+    case 'preference':
+      return 'preference';
+    case 'frequent_info':
+      return 'context';
+    case 'learned':
+      return 'learned';
+    default:
+      return 'learned';
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Original Handlers
+// ----------------------------------------------------------------------------
+
+async function handleGetContext(payload: { query: string }): Promise<unknown> {
+  const memoryService = getMemoryService();
+  const ragContext = memoryService.getRAGContext(payload.query);
+  const projectKnowledge = memoryService.getProjectKnowledge();
+  const relevantCode = memoryService.searchRelevantCode(payload.query);
+  const relevantConversations = memoryService.searchRelevantConversations(payload.query);
+
+  return {
+    ragContext,
+    projectKnowledge: projectKnowledge.map((k) => ({ key: k.key, value: k.value })),
+    relevantCode,
+    relevantConversations,
+  };
+}
+
+async function handleSearchCode(payload: { query: string; topK?: number }): Promise<unknown> {
+  const memoryService = getMemoryService();
+  return memoryService.searchRelevantCode(payload.query, payload.topK);
+}
+
+async function handleSearchConversations(payload: { query: string; topK?: number }): Promise<unknown> {
+  const memoryService = getMemoryService();
+  return memoryService.searchRelevantConversations(payload.query, payload.topK);
+}
+
+async function handleGetStats(): Promise<unknown> {
+  const sessionManager = getSessionManager();
+  const sessions = await sessionManager.listSessions();
+
+  return {
+    sessionCount: sessions.length,
+    messageCount: sessions.reduce((sum, s) => sum + s.messageCount, 0),
+    toolCacheSize: 0,
+    vectorStoreSize: 0,
+    projectKnowledgeCount: 0,
+  };
+}
+
+// ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
 
@@ -533,61 +312,6 @@ async function handleGetMemoryStatsNew(): Promise<MemoryStatsNew> {
  * 注册 Memory 相关 IPC handlers
  */
 export function registerMemoryHandlers(ipcMain: IpcMain): void {
-  // ========== Phase 2 Memory Tab Handler ==========
-  ipcMain.handle(IPC_CHANNELS.MEMORY, async (_, payload: {
-    action: string;
-    category?: MemoryCategory;
-    id?: string;
-    content?: string;
-    data?: MemoryExport;
-    item?: Partial<MemoryItem>;
-  }) => {
-    try {
-      switch (payload.action) {
-        case 'list':
-          return { success: true, data: await handleListMemoriesNew({ category: payload.category }) };
-        case 'add':
-          if (!payload.item) return { success: false, error: 'Missing item' };
-          return { success: true, data: await handleAddMemory({ item: payload.item }) };
-        case 'update':
-          if (!payload.id || !payload.content) return { success: false, error: 'Missing id or content' };
-          const updated = await handleUpdateMemoryNew({ id: payload.id, content: payload.content });
-          return { success: updated, error: updated ? undefined : 'Update failed' };
-        case 'delete':
-          if (!payload.id) return { success: false, error: 'Missing id' };
-          const deleted = await handleDeleteMemoryNew({ id: payload.id });
-          return { success: deleted, error: deleted ? undefined : 'Delete failed' };
-        case 'deleteByCategory':
-          if (!payload.category) return { success: false, error: 'Missing category' };
-          const deletedCount = await handleDeleteByCategory({ category: payload.category });
-          return { success: true, data: { deleted: deletedCount } };
-        case 'export':
-          return { success: true, data: await handleExportMemories() };
-        case 'import':
-          if (!payload.data) return { success: false, error: 'Missing data' };
-          return { success: true, data: await handleImportMemories({ data: payload.data }) };
-        case 'getStats':
-          return { success: true, data: await handleGetMemoryStatsNew() };
-        case 'getLearningInsights':
-          return { success: true, data: await handleGetLearningInsights() };
-        default:
-          return { success: false, error: `Unknown action: ${payload.action}` };
-      }
-    } catch (error) {
-      logger.error('Memory action failed', { action: payload.action, error });
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
-    }
-  });
-
-  // ========== Phase 3 Memory Confirm Response Handler ==========
-  ipcMain.handle(IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE, async (_, payload: { id: string; confirmed: boolean }) => {
-    try {
-      handleMemoryConfirmResponse(payload.id, payload.confirmed);
-    } catch (error) {
-      logger.error('Memory confirm response failed', error);
-    }
-  });
-
   // ========== New Domain Handler (TASK-04) ==========
   ipcMain.handle(IPC_DOMAINS.MEMORY, async (_, request: IPCRequest): Promise<IPCResponse> => {
     const { action, payload } = request;
@@ -596,7 +320,6 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
       let data: unknown;
 
       switch (action) {
-        // Legacy RAG Context actions
         case 'getContext':
           data = await handleGetContext(payload as { query: string });
           break;
@@ -609,44 +332,75 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
         case 'getStats':
           data = await handleGetStats();
           break;
-
-        // Memory CRUD actions (Gen5 记忆可视化)
-        case 'createMemory':
-          data = await handleCreateMemory(payload as CreateMemoryPayload);
+        // Phase 2: Memory Management
+        case 'list':
+          data = await handleListMemories(payload as { category?: MemoryCategory });
           break;
-        case 'getMemory':
-          data = await handleGetMemory(payload as { id: string });
+        case 'update':
+          data = await handleUpdateMemory(payload as { id: string; content: string });
           break;
-        case 'listMemories':
-          data = await handleListMemories((payload || {}) as MemoryListFilter);
-          break;
-        case 'updateMemory':
-          data = await handleUpdateMemory(payload as UpdateMemoryPayload);
-          break;
-        case 'deleteMemory':
+        case 'delete':
           data = await handleDeleteMemory(payload as { id: string });
           break;
-        case 'deleteMemories':
-          data = await handleDeleteMemories((payload || {}) as DeleteMemoriesPayload);
+        case 'deleteByCategory':
+          data = await handleDeleteByCategory(payload as { category: MemoryCategory });
           break;
-        case 'searchMemories':
-          data = await handleSearchMemories(payload as { query: string; options?: MemorySearchOptions });
+        case 'export':
+          data = await handleExportMemories();
+          break;
+        case 'import':
+          data = await handleImportMemories(payload as { data: MemoryExport });
           break;
         case 'getMemoryStats':
           data = await handleGetMemoryStats();
           break;
-        case 'recordAccess':
-          await handleRecordMemoryAccess(payload as { id: string });
-          data = { success: true };
-          break;
-
         default:
           return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown action: ${action}` } };
       }
 
       return { success: true, data };
     } catch (error) {
+      logger.error('Memory IPC error:', error);
       return { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) } };
+    }
+  });
+
+  // ========== Simple Memory Management Channel ==========
+  // For frontend use - simpler API than domain-based
+  ipcMain.handle(IPC_CHANNELS.MEMORY, async (_, request: { action: string; [key: string]: unknown }) => {
+    try {
+      let data: unknown;
+
+      switch (request.action) {
+        case 'list':
+          data = await handleListMemories({ category: request.category as MemoryCategory | undefined });
+          break;
+        case 'update':
+          data = await handleUpdateMemory({ id: request.id as string, content: request.content as string });
+          break;
+        case 'delete':
+          data = await handleDeleteMemory({ id: request.id as string });
+          break;
+        case 'deleteByCategory':
+          data = { deleted: await handleDeleteByCategory({ category: request.category as MemoryCategory }) };
+          break;
+        case 'export':
+          data = await handleExportMemories();
+          break;
+        case 'import':
+          data = await handleImportMemories({ data: request.data as MemoryExport });
+          break;
+        case 'getStats':
+          data = await handleGetMemoryStats();
+          break;
+        default:
+          return { success: false, error: `Unknown action: ${request.action}` };
+      }
+
+      return { success: true, data };
+    } catch (error) {
+      logger.error('Memory IPC error:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
   });
 

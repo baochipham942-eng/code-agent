@@ -94,28 +94,3 @@ export const MEMORY_CATEGORIES: MemoryCategoryInfo[] = [
     description: 'AI 观察到的模式和习惯',
   },
 ];
-
-/**
- * 学习事件数据
- */
-export interface MemoryLearnedEvent {
-  id: string;
-  content: string;
-  category: string;
-  type: string;
-  confidence: number;
-  needsConfirmation: boolean;
-  timestamp: number;
-}
-
-/**
- * 确认请求数据
- */
-export interface MemoryConfirmRequest {
-  id: string;
-  content: string;
-  category: string;
-  type: string;
-  confidence: number;
-  timestamp: number;
-}

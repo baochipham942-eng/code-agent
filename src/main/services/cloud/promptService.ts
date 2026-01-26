@@ -6,7 +6,7 @@
 import type { GenerationId } from '../../../shared/types';
 import { SYSTEM_PROMPTS } from '../../generation/prompts/builder';
 import { createLogger } from '../infra/logger';
-import { CACHE, CLOUD } from '../../../shared/constants';
+import { CACHE, CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';
 
 const logger = createLogger('PromptService');
 
@@ -24,12 +24,6 @@ interface CachedPrompts {
   prompts: Record<string, string>;
   fetchedAt: number;
 }
-
-// ----------------------------------------------------------------------------
-// Constants
-// ----------------------------------------------------------------------------
-
-const CLOUD_API_URL = 'https://code-agent-beta.vercel.app/api/prompts';
 
 // ----------------------------------------------------------------------------
 // State
@@ -50,7 +44,7 @@ async function fetchCloudPrompts(): Promise<CloudPromptsResponse | null> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), CLOUD.FETCH_TIMEOUT);
 
-    const response = await fetch(`${CLOUD_API_URL}?gen=all`, {
+    const response = await fetch(`${CLOUD_ENDPOINTS.prompts}?gen=all`, {
       signal: controller.signal,
     });
 

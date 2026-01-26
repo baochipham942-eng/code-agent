@@ -5,8 +5,7 @@
 
 import http from 'http';
 import { logCollector, LogSource } from './logCollector.js';
-
-const DEFAULT_PORT = 51820; // Arbitrary port for log bridge
+import { PORTS } from '../../shared/constants.js';
 
 // Command handler type
 export type CommandHandler = (command: string, params: Record<string, unknown>) => Promise<{
@@ -17,13 +16,13 @@ export type CommandHandler = (command: string, params: Record<string, unknown>) 
 
 class LogBridge {
   private server: http.Server | null = null;
-  private port: number = DEFAULT_PORT;
+  private port: number = PORTS.logBridge;
   private commandHandler: CommandHandler | null = null;
 
   /**
    * Start the HTTP log bridge server (called from Electron main process)
    */
-  async start(port: number = DEFAULT_PORT): Promise<void> {
+  async start(port: number = PORTS.logBridge): Promise<void> {
     if (this.server) {
       console.log('[LogBridge] Already running');
       return;

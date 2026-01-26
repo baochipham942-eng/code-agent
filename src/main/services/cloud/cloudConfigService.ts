@@ -6,15 +6,9 @@
 import type { GenerationId, SkillDefinition } from '../../../shared/types';
 import { getBuiltinConfig, type CloudConfig, type ToolMetadata, type FeatureFlags, type MCPServerCloudConfig } from './builtinConfig';
 import { createLogger } from '../infra/logger';
-import { CACHE, CLOUD } from '../../../shared/constants';
+import { CACHE, CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';
 
 const logger = createLogger('CloudConfigService');
-
-// ----------------------------------------------------------------------------
-// Constants
-// ----------------------------------------------------------------------------
-
-const CLOUD_CONFIG_URL = 'https://code-agent-beta.vercel.app/api/v1/config';
 
 // ----------------------------------------------------------------------------
 // CloudConfigService
@@ -261,7 +255,7 @@ export class CloudConfigService {
         headers['If-None-Match'] = this.etag;
       }
 
-      const response = await fetch(CLOUD_CONFIG_URL, {
+      const response = await fetch(CLOUD_ENDPOINTS.config, {
         method: 'GET',
         headers,
         signal: controller.signal,

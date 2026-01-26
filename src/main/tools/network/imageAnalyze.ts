@@ -9,6 +9,7 @@ import { glob } from 'glob';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { getConfigService } from '../../services';
 import { createLogger } from '../../services/infra/logger';
+import { CLOUD_ENDPOINTS, MODEL_API_ENDPOINTS } from '../../../shared/constants';
 
 const logger = createLogger('ImageAnalyze');
 
@@ -55,15 +56,6 @@ interface AnalysisResult {
 }
 
 /**
- * 获取云端 API URL
- */
-function getCloudApiUrl(): string {
-  const configService = getConfigService();
-  const settings = configService.getSettings();
-  return process.env.CLOUD_API_URL || settings.cloudApi?.url || 'https://code-agent-beta.vercel.app';
-}
-
-/**
  * 带超时的 fetch
  */
 async function fetchWithTimeout(
@@ -85,10 +77,8 @@ async function fetchWithTimeout(
  * 通过云端代理调用模型 API
  */
 async function callViaCloudProxy(body: unknown): Promise<Response> {
-  const cloudUrl = getCloudApiUrl();
-
   return fetchWithTimeout(
-    `${cloudUrl}/api/model-proxy`,
+    CLOUD_ENDPOINTS.modelProxy,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -107,7 +97,7 @@ async function callViaCloudProxy(body: unknown): Promise<Response> {
  */
 async function callDirectOpenRouter(apiKey: string, body: unknown): Promise<Response> {
   return fetchWithTimeout(
-    'https://openrouter.ai/api/v1/chat/completions',
+    `${MODEL_API_ENDPOINTS.openrouter}/chat/completions`,
     {
       method: 'POST',
       headers: {
@@ -151,7 +141,7 @@ async function callZhipuVision(
   };
 
   const response = await fetchWithTimeout(
-    'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+    `${MODEL_API_ENDPOINTS.zhipu}/chat/completions`,
     {
       method: 'POST',
       headers: {

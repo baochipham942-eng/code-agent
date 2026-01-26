@@ -34,6 +34,7 @@ import { HookManager, createHookManager } from '../hooks';
 import type { BudgetEventData } from '../../shared/types';
 // Context health tracking
 import { getContextHealthService } from '../context/contextHealthService';
+import { DEFAULT_MODELS } from '../../shared/constants';
 
 const logger = createLogger('AgentLoop');
 
@@ -915,7 +916,7 @@ export class AgentLoop {
   private updateContextHealth(): void {
     try {
       const contextHealthService = getContextHealthService();
-      const model = this.modelConfig.model || 'deepseek-chat';
+      const model = this.modelConfig.model || DEFAULT_MODELS.chat;
 
       // 将内部消息转换为 ContextMessage 格式
       const messagesForEstimation = this.messages.map(msg => ({

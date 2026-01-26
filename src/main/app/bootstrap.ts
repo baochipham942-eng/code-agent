@@ -26,7 +26,7 @@ import { initPluginSystem, shutdownPluginSystem } from '../plugins';
 import { getSkillDiscoveryService, getSkillRepositoryService } from '../services/skills';
 import { getMainWindow } from './window';
 import { IPC_CHANNELS } from '../../shared/ipc';
-import { SYNC, UPDATE, CLOUD, TOOL_CACHE } from '../../shared/constants';
+import { SYNC, UPDATE, CLOUD, TOOL_CACHE, getCloudApiUrl, DEFAULT_MODELS } from '../../shared/constants';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import { GenerationManager } from '../generation/generationManager';
 import { createPlanningService, type PlanningService } from '../planning';
@@ -331,7 +331,7 @@ async function initializeServices(): Promise<void> {
 
     // Initialize unified orchestrator (cloud task execution)
     try {
-      const updateServerUrl = process.env.CLOUD_API_URL || settings.cloudApi?.url || 'https://code-agent-beta.vercel.app';
+      const updateServerUrl = settings.cloudApi?.url || getCloudApiUrl();
       initUnifiedOrchestrator({
         cloudExecutor: {
           maxConcurrent: 3,
@@ -371,7 +371,7 @@ async function initializeServices(): Promise<void> {
 
   // Initialize update service
   try {
-    const updateServerUrl = process.env.CLOUD_API_URL || settings.cloudApi?.url || 'https://code-agent-beta.vercel.app';
+    const updateServerUrl = settings.cloudApi?.url || getCloudApiUrl();
     initUpdateService({
       updateServerUrl,
       checkInterval: UPDATE.CLOUD_CHECK_INTERVAL,
@@ -625,7 +625,7 @@ async function initializeSession(settings: any): Promise<void> {
       generationId: settings.generation.default || 'gen3',
       modelConfig: {
         provider: settings.model?.provider || 'deepseek',
-        model: settings.model?.model || 'deepseek-chat',
+        model: settings.model?.model || DEFAULT_MODELS.chat,
         temperature: settings.model?.temperature || 0.7,
         maxTokens: settings.model?.maxTokens || 4096,
       },

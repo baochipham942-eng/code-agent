@@ -14,6 +14,7 @@ import type {
   LearningFeedback,
 } from './types';
 import { getStrategyManager, StrategyManager } from './strategyManager';
+import { getCloudApiUrl } from '../../../shared/constants';
 
 // ============================================================================
 // 配置
@@ -29,7 +30,7 @@ export interface SyncerConfig {
 }
 
 const DEFAULT_CONFIG: SyncerConfig = {
-  apiEndpoint: process.env.CLOUD_API_ENDPOINT || 'https://code-agent-beta.vercel.app',
+  apiEndpoint: getCloudApiUrl(),
   syncInterval: 300000, // 5 分钟
   autoSync: true,
   conflictResolution: 'local',

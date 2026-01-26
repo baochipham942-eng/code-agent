@@ -6,13 +6,14 @@
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { getConfigService } from '../../services/core/configService';
 import { createLogger } from '../../services/infra/logger';
+import { CLOUD_ENDPOINTS, SEARCH_API_ENDPOINTS } from '../../../shared/constants';
 
 const logger = createLogger('WebSearch');
 
-const CLOUD_SEARCH_URL = 'https://code-agent-beta.vercel.app/api/tools?action=search';
-const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
-const EXA_SEARCH_URL = 'https://api.exa.ai/search';
-const PERPLEXITY_API_URL = 'https://api.perplexity.ai/chat/completions';
+const CLOUD_SEARCH_URL = `${CLOUD_ENDPOINTS.tools}?action=search`;
+const BRAVE_SEARCH_URL = SEARCH_API_ENDPOINTS.brave;
+const EXA_SEARCH_URL = SEARCH_API_ENDPOINTS.exa;
+const PERPLEXITY_API_URL = SEARCH_API_ENDPOINTS.perplexity;
 
 // ============================================================================
 // Types

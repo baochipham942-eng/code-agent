@@ -589,13 +589,12 @@ export class ConfigService {
 
   /**
    * 获取云端 API URL
+   * @deprecated 使用 shared/constants 中的 getCloudApiUrl() 代替
    */
   private getCloudApiUrl(): string {
-    return (
-      process.env.CLOUD_API_URL ||
-      this.settings.cloudApi?.url ||
-      'https://code-agent-beta.vercel.app'
-    );
+    // 引用统一常量，避免重复定义
+    const { getCloudApiUrl: getUrl } = require('../../../shared/constants');
+    return this.settings.cloudApi?.url || getUrl();
   }
 
   // 模型路由方法

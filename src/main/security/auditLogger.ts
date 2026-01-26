@@ -134,18 +134,21 @@ export class AuditLogger {
   }
 
   /**
-   * Ensure audit directory exists
+   * Ensure audit directory exists (异步，性能优化)
    */
   private ensureAuditDir(): void {
-    try {
-      if (!fs.existsSync(this.auditDir)) {
-        fs.mkdirSync(this.auditDir, { recursive: true });
-        logger.info('Created audit directory', { path: this.auditDir });
-      }
-    } catch (error) {
-      logger.error('Failed to create audit directory', error as Error);
-      this.enabled = false;
-    }
+    // 异步创建目录，不阻塞主进程
+    fs.promises.mkdir(this.auditDir, { recursive: true })
+      .then(() => {
+        logger.debug('Audit directory ensured', { path: this.auditDir });
+      })
+      .catch((error) => {
+        // EEXIST 表示目录已存在，不是错误
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+          logger.error('Failed to create audit directory', error as Error);
+          this.enabled = false;
+        }
+      });
   }
 
   /**
@@ -368,14 +371,12 @@ export class AuditLogger {
     // Get list of log files in date range
     const logFiles = this.getLogFilesInRange(startDate, endDate);
 
-    for (const filePath of logFiles) {
-      if (!fs.existsSync(filePath)) {
-        continue;
-      }
-
+    // 异步读取所有日志文件（性能优化：并行读取）
+    const readPromises = logFiles.map(async (filePath) => {
       try {
-        const content = fs.readFileSync(filePath, 'utf-8');
+        const content = await fs.promises.readFile(filePath, 'utf-8');
         const lines = content.split('\n').filter(line => line.trim());
+        const fileEntries: AuditEntry[] = [];
 
         for (const line of lines) {
           try {
@@ -390,14 +391,24 @@ export class AuditLogger {
             if (failedOnly && entry.success) continue;
             if (securityOnly && entry.eventType !== 'security_incident') continue;
 
-            entries.push(entry);
+            fileEntries.push(entry);
           } catch {
             // Skip malformed lines
           }
         }
+        return fileEntries;
       } catch (error) {
-        logger.error('Failed to read audit file', error as Error, { filePath });
+        // ENOENT 表示文件不存在，跳过
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          logger.error('Failed to read audit file', error as Error, { filePath });
+        }
+        return [];
       }
+    });
+
+    const results = await Promise.all(readPromises);
+    for (const fileEntries of results) {
+      entries.push(...fileEntries);
     }
 
     // Sort by timestamp descending
@@ -486,7 +497,7 @@ export class AuditLogger {
   }
 
   /**
-   * Clean up old audit logs
+   * Clean up old audit logs (异步，性能优化)
    *
    * @param retentionDays - Number of days to retain logs (default: 30)
    */
@@ -497,21 +508,26 @@ export class AuditLogger {
     let deletedCount = 0;
 
     try {
-      const files = fs.readdirSync(this.auditDir);
+      const files = await fs.promises.readdir(this.auditDir);
 
-      for (const file of files) {
-        if (!file.endsWith('.jsonl')) continue;
+      // 并行删除过期文件
+      const deletePromises = files
+        .filter(file => file.endsWith('.jsonl'))
+        .map(async (file) => {
+          const dateStr = file.replace('.jsonl', '');
+          const fileDate = new Date(dateStr);
 
-        const dateStr = file.replace('.jsonl', '');
-        const fileDate = new Date(dateStr);
+          if (fileDate < cutoffDate) {
+            const filePath = path.join(this.auditDir, file);
+            await fs.promises.unlink(filePath);
+            logger.info('Deleted old audit log', { file });
+            return 1;
+          }
+          return 0;
+        });
 
-        if (fileDate < cutoffDate) {
-          const filePath = path.join(this.auditDir, file);
-          fs.unlinkSync(filePath);
-          deletedCount++;
-          logger.info('Deleted old audit log', { file });
-        }
-      }
+      const results = await Promise.all(deletePromises);
+      deletedCount = results.reduce<number>((sum, count) => sum + count, 0);
     } catch (error) {
       logger.error('Failed to cleanup audit logs', error as Error);
     }

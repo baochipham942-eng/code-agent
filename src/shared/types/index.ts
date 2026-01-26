@@ -42,3 +42,6 @@ export * from './workflow';
 // Gen7 unified exports (convenience re-export)
 // Users can import from '@shared/types/gen7' for all Gen7 types in one place
 export * from './gen7';
+
+// Lab types (实验室)
+export * from './lab';

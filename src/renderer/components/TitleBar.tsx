@@ -5,7 +5,7 @@
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useDisclosure } from '../hooks/useDisclosure';
-import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, GitBranch } from 'lucide-react';
+import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, GitBranch, FlaskConical } from 'lucide-react';
 import { IconButton } from './primitives';
 
 export const TitleBar: React.FC = () => {
@@ -16,6 +16,7 @@ export const TitleBar: React.FC = () => {
     setShowTaskPanel,
     showDAGPanel,
     setShowDAGPanel,
+    setShowLab,
     workingDirectory,
   } = useAppStore();
 
@@ -53,8 +54,19 @@ export const TitleBar: React.FC = () => {
         )}
       </div>
 
-      {/* Right: DAG Panel Toggle + Task Panel Toggle */}
+      {/* Right: Lab + DAG Panel Toggle + Task Panel Toggle */}
       <div className="flex items-center gap-1">
+        {/* Lab Button */}
+        <IconButton
+          icon={<FlaskConical className="w-4 h-4" />}
+          aria-label="实验室"
+          onClick={() => setShowLab(true)}
+          variant="ghost"
+          size="md"
+          windowNoDrag
+          className="text-emerald-400/70 hover:text-emerald-400"
+        />
+
         {/* DAG Panel Toggle (Advanced+ mode) */}
         {dagPanelEnabled && (
           <IconButton

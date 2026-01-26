@@ -32,6 +32,7 @@ import { registerContextHealthHandlers } from './contextHealth.ipc';
 import { registerSessionStatusHandlers } from './sessionStatus.ipc';
 import { registerSkillHandlers } from './skill.ipc';
 import { registerMarketplaceHandlers } from './marketplace.ipc';
+import { registerLabHandlers } from './lab.ipc';
 
 export * from './types';
 
@@ -129,6 +130,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Marketplace handlers (Skill Marketplace)
   registerMarketplaceHandlers(ipcMain);
+
+  // Lab handlers (实验室)
+  registerLabHandlers(ipcMain, getMainWindow);
 
   logger.info('All handlers registered');
 }

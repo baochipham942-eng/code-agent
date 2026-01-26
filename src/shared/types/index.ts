@@ -32,3 +32,6 @@ export * from './gui';
 
 // Memory types
 export * from './memory';
+
+// Built-in Agent types (Gen7+)
+export * from './builtInAgents';

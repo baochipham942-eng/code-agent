@@ -59,7 +59,22 @@ import type {
 } from './types/contextHealth';
 
 import type { DAGVisualizationEvent } from './types/dagVisualization';
-import { DAG_CHANNELS } from './ipc/channels';
+import { DAG_CHANNELS, LAB_CHANNELS } from './ipc/channels';
+
+import type {
+  LabProjectType,
+  LabProjectStatus,
+  PythonEnvStatus,
+  TrainingProgressEvent,
+  DownloadProjectRequest,
+  DownloadProjectResponse,
+  UploadDataRequest,
+  UploadDataResponse,
+  StartTrainingRequest,
+  StartTrainingResponse,
+  InferenceRequest,
+  InferenceResult,
+} from './types/lab';
 
 import type {
   MarketplaceInfo,
@@ -460,6 +475,16 @@ export const IPC_CHANNELS = {
   CLOUD_TASK_COMPLETED: 'cloud:task:completed',
   CLOUD_TASK_FAILED: 'cloud:task:failed',
   CLOUD_TASK_STATS: 'cloud:task:stats',
+
+  // Lab channels (实验室)
+  LAB_DOWNLOAD_PROJECT: LAB_CHANNELS.DOWNLOAD_PROJECT,
+  LAB_UPLOAD_DATA: LAB_CHANNELS.UPLOAD_DATA,
+  LAB_START_TRAINING: LAB_CHANNELS.START_TRAINING,
+  LAB_STOP_TRAINING: LAB_CHANNELS.STOP_TRAINING,
+  LAB_INFERENCE: LAB_CHANNELS.INFERENCE,
+  LAB_TRAINING_PROGRESS: LAB_CHANNELS.TRAINING_PROGRESS,
+  LAB_GET_PROJECT_STATUS: LAB_CHANNELS.GET_PROJECT_STATUS,
+  LAB_CHECK_PYTHON_ENV: LAB_CHANNELS.CHECK_PYTHON_ENV,
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -689,6 +714,15 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.MARKETPLACE_LIST_INSTALLED]: (scope?: 'user' | 'project' | 'all') => Promise<MarketplaceResult<InstalledPlugin[]>>;
   [IPC_CHANNELS.MARKETPLACE_ENABLE_PLUGIN]: (pluginId: string) => Promise<MarketplaceResult<void>>;
   [IPC_CHANNELS.MARKETPLACE_DISABLE_PLUGIN]: (pluginId: string) => Promise<MarketplaceResult<void>>;
+
+  // Lab (实验室)
+  [IPC_CHANNELS.LAB_DOWNLOAD_PROJECT]: (request: DownloadProjectRequest) => Promise<DownloadProjectResponse>;
+  [IPC_CHANNELS.LAB_UPLOAD_DATA]: (request: UploadDataRequest) => Promise<UploadDataResponse>;
+  [IPC_CHANNELS.LAB_START_TRAINING]: (request: StartTrainingRequest) => Promise<StartTrainingResponse>;
+  [IPC_CHANNELS.LAB_STOP_TRAINING]: (projectType: LabProjectType) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.LAB_INFERENCE]: (request: InferenceRequest) => Promise<InferenceResult>;
+  [IPC_CHANNELS.LAB_GET_PROJECT_STATUS]: (projectType: LabProjectType) => Promise<LabProjectStatus>;
+  [IPC_CHANNELS.LAB_CHECK_PYTHON_ENV]: () => Promise<PythonEnvStatus>;
 }
 
 // ----------------------------------------------------------------------------
@@ -774,6 +808,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.SESSION_STATUS_UPDATE]: (event: SessionStatusUpdateEvent) => void;
   // DAG Visualization events
   [DAG_CHANNELS.EVENT]: (event: DAGVisualizationEvent) => void;
+  // Lab training progress events
+  [IPC_CHANNELS.LAB_TRAINING_PROGRESS]: (event: TrainingProgressEvent) => void;
 }
 
 // ----------------------------------------------------------------------------

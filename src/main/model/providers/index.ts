@@ -1,0 +1,54 @@
+// ============================================================================
+// Provider Exports
+// ============================================================================
+
+// DeepSeek
+export { callDeepSeek } from './deepseek';
+
+// Anthropic
+export { callClaude } from './anthropic';
+
+// OpenAI-compatible providers
+export {
+  callOpenAI,
+  callGroq,
+  callLocal,
+  callQwen,
+  callMoonshot,
+  callMinimax,
+  callPerplexity,
+} from './openai-compatible';
+
+// Gemini
+export { callGemini } from './gemini';
+
+// 智谱
+export { callZhipu } from './zhipu';
+
+// OpenRouter
+export { callOpenRouter } from './openrouter';
+
+// Cloud Proxy
+export { callViaCloudProxy } from './cloud-proxy';
+
+// Shared utilities
+export {
+  logger,
+  httpsAgent,
+  electronFetch,
+  parseContextLengthError,
+  normalizeJsonSchema,
+  convertToolsToOpenAI,
+  convertToolsToClaude,
+  convertToOpenAIMessages,
+  convertToClaudeMessages,
+  convertToGeminiMessages,
+  safeJsonParse,
+  repairJson,
+  parseOpenAIResponse,
+  parseClaudeResponse,
+  parseGeminiResponse,
+  handleStream,
+  handleGeminiStream,
+  createStreamResultBuilder,
+} from './shared';

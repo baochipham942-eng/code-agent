@@ -14,6 +14,7 @@ import {
   type SearchResult,
 } from './vectorStore';
 import type { Message, TodoItem, ToolResult } from '../../shared/types';
+import { MEMORY_TIMEOUTS } from '../../shared/constants';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -85,7 +86,7 @@ export class MemoryService {
       ragTokenLimit: 2000,
       enableCloudSearch: true,
       crossProjectSearch: false,
-      cloudSearchTimeout: 3000,
+      cloudSearchTimeout: MEMORY_TIMEOUTS.CLOUD_SEARCH,
       ...config,
     };
   }

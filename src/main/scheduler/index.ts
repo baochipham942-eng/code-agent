@@ -18,6 +18,9 @@ export {
   type TaskExecutor,
 } from './DAGScheduler';
 
+// Event Bridge (DAG events → Renderer)
+export { initDAGEventBridge, sendDAGInitEvent } from './dagEventBridge';
+
 // Re-export types from shared
 export type {
   DAGTask,

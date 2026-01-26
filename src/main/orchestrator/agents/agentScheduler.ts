@@ -22,6 +22,7 @@ import { getAgentRegistry, AgentRegistry } from './agentRegistry';
 import { getAgentExecutor, AgentExecutor } from './agentExecutor';
 import type { ModelConfig } from '../../../shared/types';
 import type { Tool, ToolContext } from '../../tools/toolRegistry';
+import { ORCHESTRATOR_TIMEOUTS } from '../../../shared/constants';
 
 // ============================================================================
 // 类型定义
@@ -44,7 +45,7 @@ const DEFAULT_CONFIG: SchedulerConfig = {
   strategy: 'skill_match',
   maxConcurrentAgents: 5,
   taskQueueSize: 100,
-  delegationTimeout: 60000,
+  delegationTimeout: ORCHESTRATOR_TIMEOUTS.AGENT_DELEGATION,
   retryOnFailure: true,
   maxRetries: 2,
 };

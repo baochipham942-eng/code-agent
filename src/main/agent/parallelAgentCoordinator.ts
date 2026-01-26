@@ -10,6 +10,7 @@ import type { Tool, ToolContext } from '../tools/toolRegistry';
 import { getSubagentExecutor, type SubagentResult } from './subagentExecutor';
 import { createLogger } from '../services/infra/logger';
 import { TaskDAG, getDAGScheduler, type SchedulerResult } from '../scheduler';
+import { AGENT_TIMEOUTS } from '../../shared/constants';
 
 const logger = createLogger('ParallelAgentCoordinator');
 
@@ -73,7 +74,7 @@ export interface CoordinatorConfig {
 
 const DEFAULT_CONFIG: CoordinatorConfig = {
   maxParallelTasks: 4,
-  taskTimeout: 120000, // 2 minutes
+  taskTimeout: AGENT_TIMEOUTS.PARALLEL_TASK,
   enableSharedContext: true,
   aggregateResults: true,
 };

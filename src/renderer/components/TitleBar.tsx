@@ -4,7 +4,8 @@
 
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
-import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight } from 'lucide-react';
+import { useDisclosure } from '../hooks/useDisclosure';
+import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, GitBranch } from 'lucide-react';
 import { IconButton } from './primitives';
 
 export const TitleBar: React.FC = () => {
@@ -13,8 +14,13 @@ export const TitleBar: React.FC = () => {
     setSidebarCollapsed,
     showTaskPanel,
     setShowTaskPanel,
+    showDAGPanel,
+    setShowDAGPanel,
     workingDirectory,
   } = useAppStore();
+
+  // DAG 面板权限检查
+  const { dagPanelEnabled } = useDisclosure();
 
   // Get workspace name from path
   const getWorkspaceName = (path: string | null): string => {
@@ -47,15 +53,31 @@ export const TitleBar: React.FC = () => {
         )}
       </div>
 
-      {/* Right: Task Panel Toggle - simple icon only */}
-      <IconButton
-        icon={showTaskPanel ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
-        aria-label={showTaskPanel ? 'Hide task panel' : 'Show task panel'}
-        onClick={() => setShowTaskPanel(!showTaskPanel)}
-        variant="ghost"
-        size="md"
-        windowNoDrag
-      />
+      {/* Right: DAG Panel Toggle + Task Panel Toggle */}
+      <div className="flex items-center gap-1">
+        {/* DAG Panel Toggle (Advanced+ mode) */}
+        {dagPanelEnabled && (
+          <IconButton
+            icon={<GitBranch className="w-4 h-4" />}
+            aria-label={showDAGPanel ? '隐藏任务执行图' : '显示任务执行图'}
+            onClick={() => setShowDAGPanel(!showDAGPanel)}
+            variant="ghost"
+            size="md"
+            windowNoDrag
+            className={showDAGPanel ? 'text-blue-400' : ''}
+          />
+        )}
+
+        {/* Task Panel Toggle */}
+        <IconButton
+          icon={showTaskPanel ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}
+          aria-label={showTaskPanel ? 'Hide task panel' : 'Show task panel'}
+          onClick={() => setShowTaskPanel(!showTaskPanel)}
+          variant="ghost"
+          size="md"
+          windowNoDrag
+        />
+      </div>
     </div>
   );
 };

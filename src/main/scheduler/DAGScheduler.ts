@@ -25,6 +25,7 @@ import { getPredefinedAgent } from '../agent/agentDefinition';
 import { createLogger } from '../services/infra/logger';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { DAG_SCHEDULER } from '../../shared/constants';
 
 const execAsync = promisify(exec);
 const logger = createLogger('DAGScheduler');
@@ -56,10 +57,10 @@ export interface DAGSchedulerConfig {
 }
 
 const DEFAULT_CONFIG: DAGSchedulerConfig = {
-  maxParallelism: 4,
-  scheduleInterval: 100,
+  maxParallelism: DAG_SCHEDULER.DEFAULT_PARALLELISM,
+  scheduleInterval: DAG_SCHEDULER.SCHEDULE_INTERVAL,
   enableOutputPassing: true,
-  defaultTimeout: 120000,
+  defaultTimeout: DAG_SCHEDULER.DEFAULT_TIMEOUT,
 };
 
 /**

@@ -6,6 +6,7 @@ import * as os from 'os';
 import { createLogger } from '../services/infra/logger';
 import { getBubblewrap, type BubblewrapConfig, type BubblewrapStatus } from './bubblewrap';
 import { getSeatbelt, type SeatbeltConfig, type SeatbeltStatus } from './seatbelt';
+import { SANDBOX_TIMEOUTS } from '../../shared/constants';
 
 const logger = createLogger('SandboxManager');
 
@@ -85,7 +86,7 @@ const DEFAULT_CONFIG: SandboxConfig = {
   allowNetwork: false,
   readPaths: [],
   writePaths: [],
-  timeout: 120000, // 2 minutes
+  timeout: SANDBOX_TIMEOUTS.DEFAULT,
   envPassthrough: ['PATH', 'HOME', 'USER', 'LANG', 'TERM'],
   customEnv: {},
 };

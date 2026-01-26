@@ -7,6 +7,7 @@ import type { UserQuestionRequest, UserQuestionResponse, UserQuestion } from '..
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { BrowserWindow, ipcMain } from 'electron';
 import { createLogger } from '../../services/infra/logger';
+import { INTERACTION_TIMEOUTS } from '../../../shared/constants';
 
 const logger = createLogger('AskUserQuestion');
 
@@ -177,7 +178,7 @@ Example of good technical question:
     mainWindow.webContents.send(IPC_CHANNELS.USER_QUESTION_ASK, request);
 
     // Wait for response with timeout
-    const TIMEOUT_MS = 300000; // 5 minutes
+    const TIMEOUT_MS = INTERACTION_TIMEOUTS.USER_QUESTION;
 
     try {
       const response = await new Promise<UserQuestionResponse>((resolve, reject) => {

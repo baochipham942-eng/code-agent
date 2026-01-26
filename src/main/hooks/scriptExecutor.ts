@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import type { HookExecutionResult, AnyHookContext, HookActionResult } from './events';
 import { createHookEnvVars } from './events';
 import { createLogger } from '../services/infra/logger';
+import { HOOK_TIMEOUTS } from '../../shared/constants';
 
 const execAsync = promisify(exec);
 const logger = createLogger('ScriptExecutor');
@@ -15,7 +16,7 @@ const logger = createLogger('ScriptExecutor');
 // Constants
 // ----------------------------------------------------------------------------
 
-const DEFAULT_TIMEOUT = 5000; // 5 seconds
+const DEFAULT_TIMEOUT = HOOK_TIMEOUTS.SCRIPT_DEFAULT;
 const MAX_OUTPUT_LENGTH = 10000; // 10KB
 
 // ----------------------------------------------------------------------------

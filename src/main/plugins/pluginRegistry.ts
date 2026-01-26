@@ -8,10 +8,17 @@ import type {
   LoadedPlugin,
   PluginAPI,
   PluginStorage,
-  PluginState,
+  PluginHookRegistration,
+  RegisteredPluginHook,
+  PluginHookContext,
+  PluginHookResult,
 } from './types';
+import type { HookEvent } from '../hooks/events';
 import { discoverPlugins, loadPlugin, watchPluginsDir } from './pluginLoader';
 import { createPluginStorage, initPluginStorageTable } from './pluginStorage';
+import { createLogger } from '../services/infra/logger';
+
+const logger = createLogger('PluginRegistry');
 
 // ----------------------------------------------------------------------------
 // Plugin Registry Class
@@ -47,6 +54,10 @@ export class PluginRegistry {
   private plugins: Map<string, LoadedPlugin> = new Map();
   private stopWatcher: (() => void) | null = null;
 
+  // Hook management
+  private registeredHooks: Map<string, RegisteredPluginHook> = new Map();
+  private hookIdCounter: number = 0;
+
   /**
    * Get all registered plugins
    */
@@ -65,7 +76,7 @@ export class PluginRegistry {
    * Initialize plugin system
    */
   async initialize(): Promise<void> {
-    console.log('Initializing plugin system...');
+    logger.info('Initializing plugin system...');
 
     // Initialize storage table
     initPluginStorageTable();
@@ -82,14 +93,14 @@ export class PluginRegistry {
     // Start watching for changes
     this.startWatching();
 
-    console.log(`Plugin system initialized. ${this.plugins.size} plugins loaded.`);
+    logger.info(`Plugin system initialized. ${this.plugins.size} plugins loaded.`);
   }
 
   /**
    * Shutdown plugin system
    */
   async shutdown(): Promise<void> {
-    console.log('Shutting down plugin system...');
+    logger.info('Shutting down plugin system...');
 
     // Stop watching
     if (this.stopWatcher) {
@@ -101,7 +112,7 @@ export class PluginRegistry {
     await this.deactivateAll();
 
     this.plugins.clear();
-    console.log('Plugin system shut down.');
+    logger.info('Plugin system shut down.');
   }
 
   /**
@@ -122,7 +133,7 @@ export class PluginRegistry {
         registerTool(prefixedTool);
         pluginTools.push(prefixedTool.name);
         plugin.registeredTools.push(prefixedTool.name);
-        console.log(`Plugin ${plugin.manifest.id} registered tool: ${prefixedTool.name}`);
+        logger.info(`Plugin ${plugin.manifest.id} registered tool: ${prefixedTool.name}`);
       },
 
       unregisterTool: (toolName: string) => {
@@ -156,7 +167,31 @@ export class PluginRegistry {
 
       showNotification: (title, body) => {
         // TODO: Implement notifications
-        console.log(`[Notification] ${title}: ${body}`);
+        logger.info(`[Notification] ${title}: ${body}`);
+      },
+
+      registerHook: (registration: PluginHookRegistration) => {
+        const hookId = registration.id || `${plugin.manifest.id}:hook:${++this.hookIdCounter}`;
+        const hook: RegisteredPluginHook = {
+          id: hookId,
+          pluginId: plugin.manifest.id,
+          event: registration.event,
+          toolMatcher: registration.toolMatcher,
+          handler: registration.handler,
+          priority: registration.priority ?? 100,
+        };
+        this.registeredHooks.set(hookId, hook);
+        plugin.registeredHooks.push(hookId);
+        logger.info(`Plugin ${plugin.manifest.id} registered hook: ${hookId} for event ${registration.event}`);
+      },
+
+      unregisterHook: (hookId: string) => {
+        this.registeredHooks.delete(hookId);
+        const idx = plugin.registeredHooks.indexOf(hookId);
+        if (idx !== -1) {
+          plugin.registeredHooks.splice(idx, 1);
+        }
+        logger.debug(`Plugin ${plugin.manifest.id} unregistered hook: ${hookId}`);
       },
     };
   }
@@ -175,7 +210,7 @@ export class PluginRegistry {
   async activatePlugin(pluginId: string): Promise<boolean> {
     const plugin = this.plugins.get(pluginId);
     if (!plugin) {
-      console.error(`Plugin not found: ${pluginId}`);
+      logger.error(`Plugin not found: ${pluginId}`);
       return false;
     }
 
@@ -194,12 +229,12 @@ export class PluginRegistry {
       const api = this.createPluginAPI(plugin);
       await plugin.entry.activate(api);
       plugin.state = 'active';
-      console.log(`Plugin activated: ${pluginId}`);
+      logger.info(`Plugin activated: ${pluginId}`);
       return true;
     } catch (err: any) {
       plugin.state = 'error';
       plugin.error = err.message;
-      console.error(`Failed to activate plugin ${pluginId}:`, err);
+      logger.error(`Failed to activate plugin ${pluginId}:`, err);
       return false;
     }
   }
@@ -229,13 +264,19 @@ export class PluginRegistry {
       }
       plugin.registeredTools = [];
 
+      // Unregister all hooks
+      for (const hookId of plugin.registeredHooks) {
+        this.registeredHooks.delete(hookId);
+      }
+      plugin.registeredHooks = [];
+
       plugin.state = 'inactive';
-      console.log(`Plugin deactivated: ${pluginId}`);
+      logger.info(`Plugin deactivated: ${pluginId}`);
       return true;
     } catch (err: any) {
       plugin.state = 'error';
       plugin.error = err.message;
-      console.error(`Failed to deactivate plugin ${pluginId}:`, err);
+      logger.error(`Failed to deactivate plugin ${pluginId}:`, err);
       return false;
     }
   }
@@ -264,7 +305,7 @@ export class PluginRegistry {
   private startWatching(): void {
     this.stopWatcher = watchPluginsDir(
       async (pluginDir) => {
-        console.log(`New plugin detected: ${pluginDir}`);
+        logger.info(`New plugin detected: ${pluginDir}`);
         const result = await loadPlugin(pluginDir);
         if (result.success && result.plugin) {
           this.plugins.set(result.plugin.manifest.id, result.plugin);
@@ -272,7 +313,7 @@ export class PluginRegistry {
         }
       },
       async (pluginName) => {
-        console.log(`Plugin removed: ${pluginName}`);
+        logger.info(`Plugin removed: ${pluginName}`);
         // Find and deactivate plugin
         for (const [id, plugin] of this.plugins) {
           if (plugin.rootPath.endsWith(pluginName)) {
@@ -284,6 +325,156 @@ export class PluginRegistry {
       }
     );
   }
+
+  // --------------------------------------------------------------------------
+  // Hook Execution Methods
+  // --------------------------------------------------------------------------
+
+  /**
+   * Execute hooks for a specific event
+   * Returns aggregated result from all matching hooks
+   */
+  async executeHooks(
+    event: HookEvent,
+    context: PluginHookContext
+  ): Promise<PluginHookResult> {
+    // Find all matching hooks
+    const matchingHooks = Array.from(this.registeredHooks.values())
+      .filter(hook => {
+        if (hook.event !== event) return false;
+
+        // For tool events, check tool matcher
+        if (context.toolName && hook.toolMatcher) {
+          if (hook.toolMatcher.startsWith('/') && hook.toolMatcher.endsWith('/')) {
+            // Regex matcher
+            const regex = new RegExp(hook.toolMatcher.slice(1, -1));
+            return regex.test(context.toolName);
+          }
+          // Exact match or wildcard
+          return hook.toolMatcher === '*' || hook.toolMatcher === context.toolName;
+        }
+
+        return true;
+      })
+      .sort((a, b) => a.priority - b.priority);
+
+    if (matchingHooks.length === 0) {
+      return { allow: true };
+    }
+
+    // Execute hooks in priority order
+    let result: PluginHookResult = { allow: true };
+
+    for (const hook of matchingHooks) {
+      try {
+        const hookResult = await hook.handler(context);
+
+        // Merge results
+        if (hookResult.allow === false) {
+          result.allow = false;
+          result.message = hookResult.message;
+          // Stop on first block
+          break;
+        }
+
+        if (hookResult.message) {
+          result.message = (result.message || '') + '\n' + hookResult.message;
+        }
+
+        if (hookResult.modifiedInput) {
+          result.modifiedInput = hookResult.modifiedInput;
+          // Update context for next hook
+          context.toolInput = hookResult.modifiedInput;
+        }
+      } catch (error) {
+        logger.error(`Hook ${hook.id} execution failed:`, error);
+        // Continue with next hook on error
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Execute PreToolUse hooks
+   */
+  async executePreToolUseHooks(
+    toolName: string,
+    toolInput: Record<string, unknown>,
+    sessionId: string,
+    workingDirectory: string
+  ): Promise<PluginHookResult> {
+    return this.executeHooks('PreToolUse', {
+      event: 'PreToolUse',
+      toolName,
+      toolInput,
+      sessionId,
+      workingDirectory,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Execute PostToolUse hooks
+   */
+  async executePostToolUseHooks(
+    toolName: string,
+    toolInput: Record<string, unknown>,
+    toolOutput: string,
+    sessionId: string,
+    workingDirectory: string
+  ): Promise<void> {
+    await this.executeHooks('PostToolUse', {
+      event: 'PostToolUse',
+      toolName,
+      toolInput,
+      toolOutput,
+      sessionId,
+      workingDirectory,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Execute SessionStart hooks
+   */
+  async executeSessionStartHooks(
+    sessionId: string,
+    workingDirectory: string
+  ): Promise<void> {
+    await this.executeHooks('SessionStart', {
+      event: 'SessionStart',
+      sessionId,
+      workingDirectory,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Execute SessionEnd hooks
+   */
+  async executeSessionEndHooks(
+    sessionId: string,
+    workingDirectory: string
+  ): Promise<void> {
+    await this.executeHooks('SessionEnd', {
+      event: 'SessionEnd',
+      sessionId,
+      workingDirectory,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Get all registered hooks for debugging
+   */
+  getRegisteredHooks(): RegisteredPluginHook[] {
+    return Array.from(this.registeredHooks.values());
+  }
+
+  // --------------------------------------------------------------------------
+  // Plugin Management Methods
+  // --------------------------------------------------------------------------
 
   /**
    * Reload a plugin

@@ -7,6 +7,7 @@
 import React from 'react';
 import { useStatusStore } from '../../stores/statusStore';
 import { useAppStore } from '../../stores/appStore';
+import { useSessionStore } from '../../stores/sessionStore';
 import { ModelIndicator } from './ModelIndicator';
 import { MessageCounter } from './MessageCounter';
 import { TokenUsage } from './TokenUsage';
@@ -24,7 +25,8 @@ function Separator() {
 }
 
 export function StatusBar() {
-  const { modelConfig, messages, disclosureLevel } = useAppStore();
+  const { modelConfig, disclosureLevel } = useAppStore();
+  const messages = useSessionStore((state) => state.messages);
   const {
     inputTokens,
     outputTokens,

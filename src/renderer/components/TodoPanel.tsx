@@ -3,12 +3,12 @@
 // ============================================================================
 
 import React from 'react';
-import { useAppStore } from '../stores/appStore';
+import { useSessionStore } from '../stores/sessionStore';
 import { CheckCircle2, Circle, Loader2, ListTodo } from 'lucide-react';
 import type { TodoItem } from '@shared/types';
 
 export const TodoPanel: React.FC = () => {
-  const { todos } = useAppStore();
+  const todos = useSessionStore((state) => state.todos);
 
   const completedCount = todos.filter((t) => t.status === 'completed').length;
   const totalCount = todos.length;

@@ -1,6 +1,6 @@
 // ============================================================================
 // Image Annotate Tool - 图片理解与标注
-// 使用智谱视觉模型理解图片内容，并在图片上进行标记
+// 使用 OCR 获取真实文字坐标，在图片上绘制精确的矩形框标注
 // ============================================================================
 
 import * as fs from 'fs';
@@ -12,15 +12,18 @@ import { createLogger } from '../../services/infra/logger';
 const logger = createLogger('ImageAnnotate');
 
 // 配置
-// 注意：glm-4v-flash 免费但不支持 base64，glm-4v-plus 收费但支持 base64
-// 本地图片必须用 glm-4v-plus，因为需要 base64 编码
 const CONFIG = {
-  ZHIPU_MODEL: 'glm-4v-plus',   // 必须用 plus 版本，flash 不支持 base64
-  ZHIPU_MODEL_MAX_TOKENS: 2048, // glm-4v-plus 实际最大是 2048，超过会报 1210 错误
+  // 智谱视觉模型配置（用于图片理解，不用于坐标定位）
+  ZHIPU_MODEL: 'glm-4v-plus',
+  ZHIPU_MODEL_MAX_TOKENS: 2048,
   ZHIPU_API_URL: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+  // 百度 OCR API 配置
+  BAIDU_OCR_TOKEN_URL: 'https://aip.baidubce.com/oauth/2.0/token',
+  BAIDU_OCR_API_URL: 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate',
+  // 通用配置
   TIMEOUT_MS: 60000,
-  SUPPORTED_FORMATS: ['.jpg', '.jpeg', '.png', '.webp', '.gif'],
-  MAX_IMAGE_SIZE_MB: 20,
+  SUPPORTED_FORMATS: ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'],
+  MAX_IMAGE_SIZE_MB: 10, // 百度 OCR 限制 10MB
 };
 
 // 标注类型
@@ -37,11 +40,34 @@ interface AnnotationRegion {
   endY?: number;
   label?: string;
   color?: string;
+  confidence?: number; // OCR 置信度
 }
 
 interface AnnotationResult {
   description: string;
   regions: AnnotationRegion[];
+  ocrMethod: 'baidu' | 'vision_llm' | 'none';
+}
+
+// 百度 OCR 响应类型
+interface BaiduOCRWord {
+  words: string;
+  location: {
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  };
+  probability?: {
+    average: number;
+  };
+}
+
+interface BaiduOCRResponse {
+  words_result?: BaiduOCRWord[];
+  words_result_num?: number;
+  error_code?: number;
+  error_msg?: string;
 }
 
 /**
@@ -67,34 +93,82 @@ async function fetchWithTimeout(
 }
 
 /**
- * 调用智谱视觉模型分析图片并获取标注区域
+ * 获取百度 OCR Access Token
  */
-async function analyzeAndGetAnnotations(
+async function getBaiduAccessToken(apiKey: string, secretKey: string): Promise<string> {
+  const url = `${CONFIG.BAIDU_OCR_TOKEN_URL}?grant_type=client_credentials&client_id=${apiKey}&client_secret=${secretKey}`;
+
+  const response = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  }, CONFIG.TIMEOUT_MS);
+
+  if (!response.ok) {
+    throw new Error(`获取百度 Access Token 失败: ${response.status}`);
+  }
+
+  const data = await response.json();
+  if (data.error) {
+    throw new Error(`百度 API 错误: ${data.error_description || data.error}`);
+  }
+
+  return data.access_token;
+}
+
+/**
+ * 调用百度 OCR API 获取文字位置（精确坐标）
+ */
+async function callBaiduOCR(
+  accessToken: string,
+  base64Image: string
+): Promise<AnnotationRegion[]> {
+  const url = `${CONFIG.BAIDU_OCR_API_URL}?access_token=${accessToken}`;
+
+  const response = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: `image=${encodeURIComponent(base64Image)}&detect_direction=true&paragraph=false&probability=true`,
+  }, CONFIG.TIMEOUT_MS);
+
+  if (!response.ok) {
+    throw new Error(`百度 OCR API 错误: ${response.status}`);
+  }
+
+  const data: BaiduOCRResponse = await response.json();
+
+  if (data.error_code) {
+    throw new Error(`百度 OCR 错误 ${data.error_code}: ${data.error_msg}`);
+  }
+
+  if (!data.words_result || data.words_result.length === 0) {
+    return [];
+  }
+
+  // 转换为标注区域
+  return data.words_result.map((word) => ({
+    type: 'rectangle' as AnnotationType,
+    x: word.location.left,
+    y: word.location.top,
+    width: word.location.width,
+    height: word.location.height,
+    label: word.words,
+    confidence: word.probability?.average,
+  }));
+}
+
+/**
+ * 调用智谱视觉模型分析图片内容（仅用于理解，不用于坐标定位）
+ */
+async function analyzeImageContent(
   apiKey: string,
   base64Image: string,
   mimeType: string,
   query: string
-): Promise<AnnotationResult> {
-  // 注意：智谱视觉模型在有 system message 时可能拒绝处理某些图片
-  // 把所有指令放到 user message 中可以避免这个问题
-  const instruction = `请仔细分析这张图片，完成以下任务：${query}
-
-**重要**：请根据图片的实际尺寸，精确估算每个文字区域的位置和大小。
-- 图片通常是手机截图，宽度约 375-428 像素，高度约 800-900 像素
-- x 坐标：从左边缘开始计算，0 是最左边
-- y 坐标：从顶部开始计算，0 是最顶部
-- width/height：根据文字实际占用的区域大小估算
-
-请返回 JSON 格式：
-\`\`\`json
-{
-  "regions": [
-    {"type": "rectangle", "x": 10, "y": 50, "width": 200, "height": 30, "label": "文字内容"}
-  ]
-}
-\`\`\`
-
-请确保坐标能准确框住对应的文字区域。`;
+): Promise<string> {
+  const instruction = `请仔细分析这张图片，${query}
+请直接描述图片内容，不需要返回坐标信息。`;
 
   const requestBody = {
     model: CONFIG.ZHIPU_MODEL,
@@ -115,7 +189,7 @@ async function analyzeAndGetAnnotations(
     max_tokens: CONFIG.ZHIPU_MODEL_MAX_TOKENS,
   };
 
-  logger.info('[图片标注] 调用智谱视觉模型', { query });
+  logger.info('[图片标注] 调用智谱视觉模型分析内容', { query });
 
   const response = await fetchWithTimeout(
     CONFIG.ZHIPU_API_URL,
@@ -136,45 +210,21 @@ async function analyzeAndGetAnnotations(
   }
 
   const result = await response.json();
-  const content = result.choices?.[0]?.message?.content || '';
-
-  // 解析响应，提取描述和 JSON 标注
-  return parseAnnotationResponse(content);
+  return result.choices?.[0]?.message?.content || '';
 }
 
 /**
- * 解析模型响应，提取描述和标注区域
- */
-function parseAnnotationResponse(content: string): AnnotationResult {
-  let description = content;
-  let regions: AnnotationRegion[] = [];
-
-  // 尝试提取 JSON 块
-  const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
-  if (jsonMatch) {
-    try {
-      const jsonData = JSON.parse(jsonMatch[1]);
-      if (jsonData.regions && Array.isArray(jsonData.regions)) {
-        regions = jsonData.regions;
-      }
-      // 移除 JSON 块，保留描述部分
-      description = content.replace(/```json\s*[\s\S]*?\s*```/, '').trim();
-    } catch (e) {
-      logger.warn('[图片标注] JSON 解析失败', { error: (e as Error).message });
-    }
-  }
-
-  return { description, regions };
-}
-
-/**
- * 使用 Canvas 在图片上绘制标注
- * 由于 Electron 环境没有原生 Canvas，使用 sharp 库处理
+ * 使用 sharp 在图片上绘制标注
  */
 async function drawAnnotations(
   imagePath: string,
   regions: AnnotationRegion[],
-  outputPath: string
+  outputPath: string,
+  options: {
+    showLabels?: boolean;
+    strokeColor?: string;
+    strokeWidth?: number;
+  } = {}
 ): Promise<void> {
   // 动态导入 sharp
   let sharp: typeof import('sharp');
@@ -186,23 +236,35 @@ async function drawAnnotations(
 
   const image = sharp(imagePath);
   const metadata = await image.metadata();
-  const width = metadata.width || 800;
-  const height = metadata.height || 600;
+  const imgWidth = metadata.width || 800;
+  const imgHeight = metadata.height || 600;
+
+  // 默认配置
+  const strokeColor = options.strokeColor || '#FF0000';
+  const defaultStrokeWidth = Math.max(2, Math.min(imgWidth, imgHeight) / 300);
+  const strokeWidth = options.strokeWidth || defaultStrokeWidth;
+  const showLabels = options.showLabels !== false;
 
   // 构建 SVG 覆盖层
-  let svgOverlay = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">`;
+  let svgOverlay = `<svg width="${imgWidth}" height="${imgHeight}" xmlns="http://www.w3.org/2000/svg">`;
 
-  for (const region of regions) {
-    const color = region.color || '#FF0000';
-    const strokeWidth = Math.max(3, Math.min(width, height) / 150); // 自适应线宽
+  // 生成不同颜色用于区分不同的标注区域
+  const colors = [
+    '#FF0000', '#00FF00', '#0000FF', '#FF00FF', '#00FFFF', '#FFFF00',
+    '#FF6600', '#6600FF', '#00FF66', '#FF0066', '#66FF00', '#0066FF'
+  ];
+
+  for (let i = 0; i < regions.length; i++) {
+    const region = regions[i];
+    const color = region.color || colors[i % colors.length];
 
     switch (region.type) {
       case 'circle':
         svgOverlay += `
           <circle
-            cx="${region.x}"
-            cy="${region.y}"
-            r="${region.radius || 30}"
+            cx="${region.x + (region.width || 0) / 2}"
+            cy="${region.y + (region.height || 0) / 2}"
+            r="${region.radius || Math.max(region.width || 30, region.height || 30) / 2}"
             fill="none"
             stroke="${color}"
             stroke-width="${strokeWidth}"
@@ -215,7 +277,7 @@ async function drawAnnotations(
             x="${region.x}"
             y="${region.y}"
             width="${region.width || 100}"
-            height="${region.height || 100}"
+            height="${region.height || 30}"
             fill="none"
             stroke="${color}"
             stroke-width="${strokeWidth}"
@@ -226,7 +288,6 @@ async function drawAnnotations(
         const endX = region.endX || region.x + 50;
         const endY = region.endY || region.y;
         const arrowSize = strokeWidth * 3;
-        // 计算箭头方向
         const angle = Math.atan2(endY - region.y, endX - region.x);
         const arrowX1 = endX - arrowSize * Math.cos(angle - Math.PI / 6);
         const arrowY1 = endY - arrowSize * Math.sin(angle - Math.PI / 6);
@@ -260,28 +321,32 @@ async function drawAnnotations(
             stroke-width="${strokeWidth / 2}"
           />`;
         break;
-
-      case 'text':
-        // 文字标签
-        break;
     }
 
-    // 添加标签
-    if (region.label) {
-      const fontSize = Math.max(14, Math.min(width, height) / 40);
-      const labelY = region.type === 'circle'
-        ? region.y - (region.radius || 30) - 10
-        : region.y - 10;
+    // 添加序号标签（不显示完整文字，避免遮挡）
+    if (showLabels && region.type === 'rectangle') {
+      const fontSize = Math.max(12, Math.min(imgWidth, imgHeight) / 60);
+      const labelX = region.x;
+      const labelY = region.y - 3;
+
+      // 添加背景框使序号更清晰
       svgOverlay += `
+        <rect
+          x="${labelX - 2}"
+          y="${labelY - fontSize}"
+          width="${fontSize * 1.5}"
+          height="${fontSize + 4}"
+          fill="white"
+          fill-opacity="0.8"
+        />
         <text
-          x="${region.x}"
+          x="${labelX}"
           y="${labelY}"
           fill="${color}"
           font-size="${fontSize}"
           font-family="Arial, sans-serif"
-          text-anchor="middle"
           font-weight="bold"
-        >${escapeXml(region.label)}</text>`;
+        >${i + 1}</text>`;
     }
   }
 
@@ -322,6 +387,7 @@ function getMimeType(filePath: string): string {
     '.png': 'image/png',
     '.webp': 'image/webp',
     '.gif': 'image/gif',
+    '.bmp': 'image/bmp',
   };
   return mimeTypes[ext] || 'image/png';
 }
@@ -331,11 +397,13 @@ interface ImageAnnotateParams {
   query: string;
   output_path?: string;
   draw_annotations?: boolean;
+  show_labels?: boolean;
+  stroke_color?: string;
 }
 
 export const imageAnnotateTool: Tool = {
   name: 'image_annotate',
-  description: `在图片上绘制矩形框、圆圈等标注，输出带标记的新图片。
+  description: `在图片上绘制矩形框标注文字位置，输出带标记的新图片。
 
 **触发关键词**（用户提到这些词时必须使用此工具）：
 - "矩形框"、"矩形工具"、"框出"、"画框"、"标记"
@@ -343,8 +411,8 @@ export const imageAnnotateTool: Tool = {
 - "用框框起来"、"框选"、"标出位置"
 
 **核心能力**：
-1. 分析图片内容，识别元素位置
-2. 在原图上绘制矩形框/圆圈/箭头/高亮
+1. 使用 OCR 精确识别文字位置（百度 OCR API）
+2. 在原图上绘制精确的矩形框
 3. 输出带标注的新图片文件
 
 **使用场景**：
@@ -353,11 +421,14 @@ export const imageAnnotateTool: Tool = {
 - 用户说"框出图片中的XX"
 
 参数：
-- image_path: 图片路径（当前对话有附件图片时，自动使用该图片）
+- image_path: 图片路径
 - query: 标注指令，如"用矩形框框出所有文字"
 - output_path: 输出路径（可选）
+- show_labels: 是否显示序号标签（默认 true）
 
-重要：当用户上传图片并要求"画框"、"标注"、"框出"时，必须调用此工具，而不是只用视觉模型分析。`,
+**需要配置**：
+- 百度 OCR API（需要 BAIDU_OCR_API_KEY 和 BAIDU_OCR_SECRET_KEY）
+- 或智谱 API Key（降级方案，坐标不精确）`,
   generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
@@ -381,6 +452,15 @@ export const imageAnnotateTool: Tool = {
         description: '是否绘制标注（默认 true）',
         default: true,
       },
+      show_labels: {
+        type: 'boolean',
+        description: '是否显示序号标签（默认 true）',
+        default: true,
+      },
+      stroke_color: {
+        type: 'string',
+        description: '标注框颜色（默认多彩）',
+      },
     },
     required: ['image_path', 'query'],
   },
@@ -394,14 +474,12 @@ export const imageAnnotateTool: Tool = {
 
     try {
       const configService = getConfigService();
-      const zhipuApiKey = configService.getApiKey('zhipu');
 
-      if (!zhipuApiKey) {
-        return {
-          success: false,
-          error: '图片标注需要配置智谱 API Key。请在设置中添加智谱 API Key。',
-        };
-      }
+      // 获取 API Keys
+      // 百度 OCR 只通过环境变量配置
+      const baiduApiKey = process.env.BAIDU_OCR_API_KEY;
+      const baiduSecretKey = process.env.BAIDU_OCR_SECRET_KEY;
+      const zhipuApiKey = configService.getApiKey('zhipu');
 
       // 解析文件路径
       let imagePath = typedParams.image_path;
@@ -438,7 +516,7 @@ export const imageAnnotateTool: Tool = {
 
       context.emit?.('tool_output', {
         tool: 'image_annotate',
-        message: '🔍 正在分析图片...',
+        message: '🔍 正在识别图片中的文字...',
       });
 
       // 读取图片并转 base64
@@ -446,23 +524,84 @@ export const imageAnnotateTool: Tool = {
       const base64Image = imageData.toString('base64');
       const mimeType = getMimeType(imagePath);
 
-      // 分析图片并获取标注
-      const result = await analyzeAndGetAnnotations(
-        zhipuApiKey,
-        base64Image,
-        mimeType,
-        typedParams.query
-      );
+      let regions: AnnotationRegion[] = [];
+      let ocrMethod: 'baidu' | 'vision_llm' | 'none' = 'none';
+      let description = '';
 
-      let output = `📝 分析结果:\n${result.description}`;
-      let annotatedPath: string | undefined;
+      // 优先使用百度 OCR（精确坐标）
+      if (baiduApiKey && baiduSecretKey) {
+        try {
+          context.emit?.('tool_output', {
+            tool: 'image_annotate',
+            message: '📡 使用百度 OCR 获取精确坐标...',
+          });
 
-      // 如果有标注区域且需要绘制
-      const shouldDraw = typedParams.draw_annotations !== false;
-      if (shouldDraw && result.regions.length > 0) {
+          const accessToken = await getBaiduAccessToken(baiduApiKey, baiduSecretKey);
+          regions = await callBaiduOCR(accessToken, base64Image);
+          ocrMethod = 'baidu';
+
+          // 构建描述
+          if (regions.length > 0) {
+            description = `识别到 ${regions.length} 处文字：\n`;
+            regions.forEach((r, i) => {
+              description += `${i + 1}. ${r.label}\n`;
+            });
+          } else {
+            description = '未识别到文字内容';
+          }
+
+          logger.info('[图片标注] 百度 OCR 识别完成', { regionCount: regions.length });
+        } catch (error: any) {
+          logger.warn('[图片标注] 百度 OCR 失败，尝试降级方案', { error: error.message });
+          // 降级到视觉模型
+        }
+      }
+
+      // 如果百度 OCR 失败或未配置，且有智谱 API，使用视觉模型分析
+      if (regions.length === 0 && zhipuApiKey) {
         context.emit?.('tool_output', {
           tool: 'image_annotate',
-          message: `🖍️ 正在绘制 ${result.regions.length} 个标注...`,
+          message: '⚠️ 百度 OCR 未配置，使用视觉模型分析（坐标可能不精确）...',
+        });
+
+        description = await analyzeImageContent(
+          zhipuApiKey,
+          base64Image,
+          mimeType,
+          typedParams.query
+        );
+        ocrMethod = 'vision_llm';
+
+        // 视觉模型无法提供精确坐标，返回分析结果但不绘制标注
+        return {
+          success: true,
+          output: `📝 图片内容分析（无法精确标注）:\n\n${description}\n\n⚠️ 如需精确的矩形框标注，请配置百度 OCR API：\n- BAIDU_OCR_API_KEY: 百度云 API Key\n- BAIDU_OCR_SECRET_KEY: 百度云 Secret Key\n\n申请地址: https://cloud.baidu.com/product/ocr`,
+          metadata: {
+            imagePath,
+            description,
+            ocrMethod,
+            processingTimeMs: Date.now() - startTime,
+          },
+        };
+      }
+
+      // 如果没有任何 API 配置
+      if (regions.length === 0 && !zhipuApiKey) {
+        return {
+          success: false,
+          error: '图片标注需要配置 OCR API。\n\n推荐配置百度 OCR（精确坐标）:\n- BAIDU_OCR_API_KEY\n- BAIDU_OCR_SECRET_KEY\n\n或配置智谱 API（仅分析内容，无法精确标注）',
+        };
+      }
+
+      let output = `📝 识别结果:\n${description}`;
+      let annotatedPath: string | undefined;
+
+      // 绘制标注
+      const shouldDraw = typedParams.draw_annotations !== false;
+      if (shouldDraw && regions.length > 0) {
+        context.emit?.('tool_output', {
+          tool: 'image_annotate',
+          message: `🖍️ 正在绘制 ${regions.length} 个标注...`,
         });
 
         // 确定输出路径
@@ -475,12 +614,16 @@ export const imageAnnotateTool: Tool = {
           : path.join(context.workingDirectory, `${baseName}_annotated_${timestamp}${ext}`);
 
         // 绘制标注
-        await drawAnnotations(imagePath, result.regions, annotatedPath);
+        await drawAnnotations(imagePath, regions, annotatedPath, {
+          showLabels: typedParams.show_labels,
+          strokeColor: typedParams.stroke_color,
+        });
 
-        output += `\n\n📍 标注区域: ${result.regions.length} 个`;
+        output += `\n\n📍 标注区域: ${regions.length} 个`;
         output += `\n📄 标注图片: ${annotatedPath}`;
-      } else if (result.regions.length === 0 && shouldDraw) {
-        output += '\n\n⚠️ 未能识别到需要标注的区域';
+        output += `\n🔧 OCR 方法: ${ocrMethod === 'baidu' ? '百度 OCR（精确坐标）' : '视觉模型'}`;
+      } else if (regions.length === 0 && shouldDraw) {
+        output += '\n\n⚠️ 未能识别到需要标注的文字区域';
       }
 
       const processingTime = Date.now() - startTime;
@@ -491,8 +634,9 @@ export const imageAnnotateTool: Tool = {
         metadata: {
           imagePath,
           annotatedPath,
-          description: result.description,
-          regions: result.regions,
+          description,
+          regions,
+          ocrMethod,
           processingTimeMs: processingTime,
           attachment: annotatedPath ? {
             id: `annotated-${Date.now()}`,

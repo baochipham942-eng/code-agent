@@ -27,6 +27,14 @@ export default tseslint.config(
       // 禁止 any（警告级别，逐步收紧）
       '@typescript-eslint/no-explicit-any': 'warn',
 
+      // 禁止不安全的类型断言（如 as any）
+      // 注意：这是严格规则，新代码必须遵守
+      '@typescript-eslint/no-unsafe-argument': 'warn',
+      '@typescript-eslint/no-unsafe-assignment': 'warn',
+      '@typescript-eslint/no-unsafe-call': 'warn',
+      '@typescript-eslint/no-unsafe-member-access': 'warn',
+      '@typescript-eslint/no-unsafe-return': 'warn',
+
       // 未使用变量（允许下划线前缀）
       '@typescript-eslint/no-unused-vars': [
         'warn',

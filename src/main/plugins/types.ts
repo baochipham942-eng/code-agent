@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { Tool } from '../tools/toolRegistry';
+import type { HookEvent } from '../hooks/events';
 
 /**
  * Plugin metadata from package.json or plugin.json
@@ -86,6 +87,10 @@ export interface PluginAPI {
   getStorage: () => PluginStorage;
   /** Show notification */
   showNotification?: (title: string, body: string) => void;
+  /** Register an event hook */
+  registerHook: (registration: PluginHookRegistration) => void;
+  /** Unregister an event hook */
+  unregisterHook: (hookId: string) => void;
 }
 
 /**
@@ -129,6 +134,8 @@ export interface LoadedPlugin {
   entry?: PluginEntry;
   /** Tools registered by this plugin */
   registeredTools: string[];
+  /** Hooks registered by this plugin */
+  registeredHooks: string[];
 }
 
 /**
@@ -138,4 +145,83 @@ export interface PluginLoadResult {
   success: boolean;
   plugin?: LoadedPlugin;
   error?: string;
+}
+
+// ----------------------------------------------------------------------------
+// Plugin Event Hook Types (HookManager Integration)
+// ----------------------------------------------------------------------------
+
+/**
+ * Plugin hook registration - register hooks with HookManager
+ */
+export interface PluginHookRegistration {
+  /** Unique hook ID (auto-generated if not provided) */
+  id?: string;
+  /** Event type to listen for */
+  event: HookEvent;
+  /** Tool name matcher for tool events (regex string or exact match) */
+  toolMatcher?: string;
+  /** Hook handler function */
+  handler: PluginHookHandler;
+  /** Priority (lower = earlier, default: 100) */
+  priority?: number;
+}
+
+/**
+ * Plugin hook handler function
+ */
+export type PluginHookHandler = (context: PluginHookContext) => Promise<PluginHookResult>;
+
+/**
+ * Context passed to plugin hook handlers
+ */
+export interface PluginHookContext {
+  /** Event type */
+  event: HookEvent;
+  /** Session ID */
+  sessionId: string;
+  /** Working directory */
+  workingDirectory: string;
+  /** Timestamp */
+  timestamp: number;
+  /** Tool name (for tool events) */
+  toolName?: string;
+  /** Tool input as object (for tool events) */
+  toolInput?: Record<string, unknown>;
+  /** Tool output (for PostToolUse) */
+  toolOutput?: string;
+  /** Error message (for failure events) */
+  errorMessage?: string;
+  /** User prompt (for UserPromptSubmit) */
+  prompt?: string;
+}
+
+/**
+ * Result returned by plugin hook handlers
+ */
+export interface PluginHookResult {
+  /** Whether to allow the action to proceed */
+  allow?: boolean;
+  /** Message to inject into context */
+  message?: string;
+  /** Modified tool input (for PreToolUse) */
+  modifiedInput?: Record<string, unknown>;
+}
+
+/**
+ * Internal hook registration record
+ */
+export interface RegisteredPluginHook {
+  /** Hook ID */
+  id: string;
+  /** Plugin ID */
+  pluginId: string;
+  /** Event type */
+  event: HookEvent;
+  /** Tool matcher */
+  toolMatcher?: string;
+  /** Handler function */
+  handler: PluginHookHandler;
+  /** Priority */
+  priority: number;
 }

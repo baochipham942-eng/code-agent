@@ -116,6 +116,8 @@ export const DAGViewer = memo(({
   const [selectedTask, setSelectedTask] = useState<TaskNodeData | null>(null);
 
   // 当 DAG 状态变化时更新节点和边
+  // 注意：setNodes 和 setEdges 是稳定的（来自 useNodesState/useEdgesState），
+  // 不需要放入依赖数组，避免 lint 警告使用 eslint-disable
   useEffect(() => {
     if (!dagState) {
       setNodes([]);
@@ -132,7 +134,8 @@ export const DAGViewer = memo(({
 
     setNodes(layoutedNodes);
     setEdges(layoutedEdges);
-  }, [dagState, getLayoutedElements, setNodes, setEdges]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dagState, getLayoutedElements]);
 
   // 处理节点选择
   const handleNodeClick = useCallback(

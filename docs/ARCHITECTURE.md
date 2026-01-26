@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 3.2 (对应 v0.7.22)
-> 日期: 2025-01-19
+> 版本: 4.0 (对应 v0.16.8)
+> 日期: 2026-01-26
 > 作者: Lin Chen
 
 本文档已拆分为模块化的架构文档，便于维护和查阅。
@@ -20,6 +20,16 @@
 | [前端架构](./architecture/frontend.md) | React 组件、Zustand 状态、useAgent Hook |
 | [数据存储](./architecture/data-storage.md) | SQLite、Supabase、pgvector、SecureStorage |
 | [云端架构](./architecture/cloud-architecture.md) | Orchestrator、云端任务、多代理调度、断点续传 |
+
+### v0.16+ 新增模块
+
+| 模块 | 位置 | 描述 |
+|------|------|------|
+| **DAG 调度器** | `src/main/scheduler/` | 基于 DAG 的并行任务调度 |
+| **DI 容器** | `src/main/core/container.ts` | 依赖注入容器 |
+| **生命周期管理** | `src/main/core/lifecycle.ts` | 服务生命周期管理 |
+| **DAG 可视化** | `src/renderer/components/features/workflow/` | React Flow DAG 展示 |
+| **内置 Agent** | `src/shared/types/builtInAgents.ts` | 6 个预定义 Agent 角色 |
 
 ### 架构决策记录 (ADR)
 

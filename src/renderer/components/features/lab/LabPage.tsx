@@ -30,36 +30,36 @@ interface LabCard {
 const labCards: LabCard[] = [
   {
     id: 'gpt1',
-    title: 'GPT-1 对话模型',
-    subtitle: '理解 Transformer 基础',
-    description: '从零训练一个中文对话 AI，完整体验数据准备、分词器训练、模型构建、训练循环、推理测试的全流程。',
+    title: '教 AI 学说话',
+    subtitle: '从零开始，亲手训练一个会聊天的 AI',
+    description: '就像教小孩说话一样：先给它听对话、教它认字、建立语言能力、反复练习，最后它就能自己说话了。',
     level: '入门级',
     levelStars: 1,
-    params: '~11M 参数',
+    params: '约 1100 万个"脑细胞"',
     status: 'available',
     gradient: 'from-emerald-500/20 to-teal-500/20',
     iconBg: 'bg-emerald-500/20',
   },
   {
     id: 'nanogpt',
-    title: 'nanoGPT 2.0',
-    subtitle: '更大规模的预训练',
-    description: '基于 Karpathy 的 nanoGPT，训练 Shakespeare 文本生成模型，学习更大规模的预训练技术。',
+    title: '让 AI 读更多书',
+    subtitle: '训练一个能写莎士比亚风格文章的 AI',
+    description: '如果说第一个实验是教 AI 说日常对话，这个实验就是让它读大量书籍，学会更复杂的写作风格。',
     level: '进阶级',
     levelStars: 2,
-    params: '~10M-124M 参数',
+    params: '约 1000 万~1.2 亿个"脑细胞"',
     status: 'available',
     gradient: 'from-blue-500/20 to-indigo-500/20',
     iconBg: 'bg-blue-500/20',
   },
   {
     id: 'alignment',
-    title: 'SFT & RLHF 对齐',
-    subtitle: '后训练技术',
-    description: '学习监督微调（SFT）和人类反馈强化学习（RLHF），理解如何让模型更好地遵循指令。',
+    title: '让 AI 学会听话',
+    subtitle: '教 AI 按照人类的要求来回答',
+    description: 'AI 学会说话后，还要学会"听指令"。这个实验教你如何让 AI 更好地理解和执行人类的要求。',
     level: '高级',
     levelStars: 3,
-    params: '后训练阶段',
+    params: '在已训练模型上调整',
     status: 'available',
     gradient: 'from-purple-500/20 to-pink-500/20',
     iconBg: 'bg-purple-500/20',
@@ -78,9 +78,9 @@ export const LabPage: React.FC = () => {
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 mb-4">
           <FlaskConical className="w-8 h-8 text-emerald-400" />
         </div>
-        <h1 className="text-2xl font-bold text-zinc-100 mb-2">AI 模型训练实验室</h1>
+        <h1 className="text-2xl font-bold text-zinc-100 mb-2">AI 学习实验室</h1>
         <p className="text-zinc-400 max-w-xl mx-auto">
-          亲手体验从数据到模型的完整训练流程，通过可视化交互理解 AI 是如何学习的
+          不需要任何编程基础，通过动手实验，亲眼看看 AI 是怎么一步步学会"说话"的
         </p>
       </div>
 
@@ -101,24 +101,23 @@ export const LabPage: React.FC = () => {
 
       {/* Learning Path */}
       <div className="mt-12 max-w-3xl mx-auto">
-        <h2 className="text-lg font-semibold text-zinc-200 mb-4 text-center">学习路径</h2>
-        <div className="flex items-center justify-center gap-2">
+        <h2 className="text-lg font-semibold text-zinc-200 mb-4 text-center">推荐学习顺序</h2>
+        <div className="flex items-center justify-center gap-2 flex-wrap">
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-            <span className="text-emerald-400 text-sm font-medium">GPT-1 入门</span>
+            <span className="text-emerald-400 text-sm font-medium">① 学说话</span>
           </div>
           <ChevronRight className="w-4 h-4 text-zinc-600" />
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
-            <span className="text-zinc-500 text-sm">nanoGPT 进阶</span>
+            <span className="text-zinc-500 text-sm">② 读更多书</span>
           </div>
           <ChevronRight className="w-4 h-4 text-zinc-600" />
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
-            <span className="text-zinc-500 text-sm">Fine-tuning</span>
-          </div>
-          <ChevronRight className="w-4 h-4 text-zinc-600" />
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
-            <span className="text-zinc-500 text-sm">RLHF</span>
+            <span className="text-zinc-500 text-sm">③ 学会听话</span>
           </div>
         </div>
+        <p className="text-xs text-zinc-500 mt-3 text-center">
+          建议从第一个实验开始，每个实验大约需要 15-30 分钟
+        </p>
       </div>
     </div>
   );
@@ -142,10 +141,10 @@ export const LabPage: React.FC = () => {
               {currentLab === 'home'
                 ? '实验室'
                 : currentLab === 'gpt1'
-                  ? 'GPT-1 对话模型'
+                  ? '教 AI 学说话'
                   : currentLab === 'nanogpt'
-                    ? 'nanoGPT 2.0'
-                    : 'SFT & RLHF 对齐'}
+                    ? '让 AI 读更多书'
+                    : '让 AI 学会听话'}
             </h1>
           </div>
         </div>

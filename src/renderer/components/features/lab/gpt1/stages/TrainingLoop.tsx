@@ -209,39 +209,42 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <RotateCcw className="w-4 h-4 text-blue-400" />
-              训练循环是什么？
+              AI 怎么「练习」？
             </h3>
             <div className="space-y-3 text-sm text-zinc-400">
-              <p>训练循环是模型学习的核心过程，每一步都包含：</p>
+              <p>就像学生做练习题一样，AI 的学习过程是：</p>
               <ol className="space-y-2">
                 <li className="flex items-start gap-2">
-                  <span className="text-emerald-400 font-bold">1.</span>
-                  <span><span className="text-zinc-300">前向传播：</span>输入数据，得到模型预测</span>
+                  <span className="text-2xl">📝</span>
+                  <span><span className="text-emerald-300 font-medium">做题：</span>看一句话，猜下一个字是什么</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-emerald-400 font-bold">2.</span>
-                  <span><span className="text-zinc-300">计算损失：</span>比较预测和真实答案的差距</span>
+                  <span className="text-2xl">❌</span>
+                  <span><span className="text-red-300 font-medium">对答案：</span>比较自己的猜测和正确答案，看差多少</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-emerald-400 font-bold">3.</span>
-                  <span><span className="text-zinc-300">反向传播：</span>计算每个参数对损失的贡献</span>
+                  <span className="text-2xl">🔍</span>
+                  <span><span className="text-amber-300 font-medium">找错因：</span>分析是哪里出了问题</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-emerald-400 font-bold">4.</span>
-                  <span><span className="text-zinc-300">参数更新：</span>调整参数以减小损失</span>
+                  <span className="text-2xl">✏️</span>
+                  <span><span className="text-blue-300 font-medium">改正：</span>调整自己的「思路」，下次争取做对</span>
                 </li>
               </ol>
+              <p className="text-xs text-zinc-500 mt-2">
+                💡 这个过程重复几万次，AI 就慢慢学会了！
+              </p>
             </div>
           </div>
 
-          {/* 超参数配置 */}
+          {/* 学习设置 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">超参数配置</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">调整学习方式</h3>
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between mb-1">
-                  <label className="text-xs text-zinc-500">Batch Size</label>
-                  <span className="text-xs font-mono text-emerald-400">{config.batchSize}</span>
+                  <label className="text-xs text-zinc-400">📚 每次看几道题</label>
+                  <span className="text-xs font-bold text-emerald-400">{config.batchSize} 道</span>
                 </div>
                 <input
                   type="range"
@@ -253,13 +256,13 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   disabled={isTraining}
                   className="w-full h-1.5 rounded-lg appearance-none bg-zinc-700 cursor-pointer disabled:opacity-50"
                 />
-                <p className="text-xs text-zinc-600 mt-1">每次训练使用的样本数量</p>
+                <p className="text-xs text-zinc-600 mt-1">一次看太多会消化不良，太少则学得慢</p>
               </div>
 
               <div>
                 <div className="flex justify-between mb-1">
-                  <label className="text-xs text-zinc-500">Learning Rate</label>
-                  <span className="text-xs font-mono text-blue-400">{config.learningRate.toExponential(0)}</span>
+                  <label className="text-xs text-zinc-400">🏃 改正的幅度</label>
+                  <span className="text-xs font-bold text-blue-400">{config.learningRate > 0.001 ? '大步走' : config.learningRate > 0.0001 ? '中等' : '小碎步'}</span>
                 </div>
                 <input
                   type="range"
@@ -271,13 +274,13 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   disabled={isTraining}
                   className="w-full h-1.5 rounded-lg appearance-none bg-zinc-700 cursor-pointer disabled:opacity-50"
                 />
-                <p className="text-xs text-zinc-600 mt-1">参数更新的步长大小</p>
+                <p className="text-xs text-zinc-600 mt-1">步子太大容易摔，太小则进步慢</p>
               </div>
 
               <div>
                 <div className="flex justify-between mb-1">
-                  <label className="text-xs text-zinc-500">Epochs</label>
-                  <span className="text-xs font-mono text-purple-400">{config.epochs}</span>
+                  <label className="text-xs text-zinc-400">🔄 复习几遍</label>
+                  <span className="text-xs font-bold text-purple-400">{config.epochs} 遍</span>
                 </div>
                 <input
                   type="range"
@@ -289,48 +292,35 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   disabled={isTraining}
                   className="w-full h-1.5 rounded-lg appearance-none bg-zinc-700 cursor-pointer disabled:opacity-50"
                 />
-                <p className="text-xs text-zinc-600 mt-1">完整遍历数据集的次数</p>
+                <p className="text-xs text-zinc-600 mt-1">好记性不如烂笔头，多练几遍记得牢</p>
               </div>
             </div>
           </div>
 
-          {/* 代码展示 */}
+          {/* Loss 是什么 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <span className="text-emerald-400">{'</>'}</span>
-              train.py (训练循环)
+              <TrendingDown className="w-4 h-4 text-amber-400" />
+              Loss（错误率）是什么？
             </h3>
-            <pre className="font-mono text-xs bg-zinc-950 rounded-lg p-3 overflow-x-auto text-zinc-300">
-{`# 优化器
-optimizer = torch.optim.AdamW(
-    model.parameters(),
-    lr=${config.learningRate.toExponential(0)}
-)
-
-# 训练循环
-for epoch in range(${config.epochs}):
-    for step in range(steps_per_epoch):
-        # 1. 获取批次数据
-        x, y = dataset.get_batch(${config.batchSize})
-
-        # 2. 前向传播
-        logits = model(x)
-
-        # 3. 计算损失
-        loss = F.cross_entropy(
-            logits.view(-1, vocab_size),
-            y.view(-1)
-        )
-
-        # 4. 反向传播
-        optimizer.zero_grad()
-        loss.backward()
-
-        # 5. 参数更新
-        optimizer.step()
-
-        print(f"Epoch {epoch} | Loss {loss:.4f}")`}
-            </pre>
+            <div className="space-y-3 text-sm text-zinc-400">
+              <p>
+                <span className="text-amber-400 font-medium">Loss</span> 就是 AI 的「错误程度」：
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-center">
+                  <div className="text-2xl font-bold text-red-400">5.8</div>
+                  <div className="text-xs text-zinc-500">刚开始：错得很离谱</div>
+                </div>
+                <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
+                  <div className="text-2xl font-bold text-emerald-400">0.02</div>
+                  <div className="text-xs text-zinc-500">训练后：几乎不出错</div>
+                </div>
+              </div>
+              <p className="text-xs text-zinc-500">
+                💡 Loss 越低越好！我们的目标就是让这个数字尽可能小
+              </p>
+            </div>
           </div>
         </div>
 
@@ -396,7 +386,7 @@ for epoch in range(${config.epochs}):
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 rounded-lg bg-zinc-900/50">
                 <div className="text-2xl font-bold text-blue-400">{currentLoss.toFixed(4)}</div>
-                <div className="text-xs text-zinc-500">当前 Loss</div>
+                <div className="text-xs text-zinc-500">当前错误率</div>
               </div>
               <div className="p-3 rounded-lg bg-zinc-900/50">
                 <div className="text-2xl font-bold text-emerald-400">
@@ -404,43 +394,42 @@ for epoch in range(${config.epochs}):
                     ? ((1 - currentLoss / lossHistory[0]) * 100).toFixed(1)
                     : 0}%
                 </div>
-                <div className="text-xs text-zinc-500">Loss 下降</div>
+                <div className="text-xs text-zinc-500">进步了多少</div>
               </div>
             </div>
           </div>
 
-          {/* Loss 曲线 */}
+          {/* 错误率变化图 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <TrendingDown className="w-4 h-4 text-blue-400" />
-              Loss 曲线
+              错误率变化（越低越好）
             </h3>
             <div className="bg-zinc-950 rounded-lg p-2">
               {lossHistory.length > 1 ? (
                 renderLossChart()
               ) : (
                 <div className="h-[150px] flex items-center justify-center text-sm text-zinc-600">
-                  开始训练后显示 Loss 变化曲线
+                  点击「开始训练」查看 AI 的进步过程 📈
                 </div>
               )}
             </div>
           </div>
 
-          {/* 训练日志 */}
+          {/* 训练记录 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">训练日志</h3>
-            <div className="space-y-1 max-h-40 overflow-y-auto font-mono text-xs">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">📋 学习记录</h3>
+            <div className="space-y-1 max-h-40 overflow-y-auto text-xs">
               {logs.length > 0 ? (
                 logs.map((log, i) => (
-                  <div key={i} className="text-zinc-400">
-                    <span className="text-zinc-600">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
-                    {' '}Epoch <span className="text-blue-400">{log.epoch}</span>/
-                    {config.epochs} | Step <span className="text-purple-400">{log.step}</span>/100
-                    {' '}| Loss <span className="text-emerald-400">{log.loss.toFixed(4)}</span>
+                  <div key={i} className="text-zinc-400 p-1.5 rounded bg-zinc-800/30">
+                    第 <span className="text-blue-400 font-bold">{log.epoch}</span> 遍 |
+                    {' '}做到第 <span className="text-purple-400">{log.step}</span> 题 |
+                    {' '}错误率 <span className="text-emerald-400 font-bold">{log.loss.toFixed(4)}</span>
                   </div>
                 ))
               ) : (
-                <div className="text-zinc-600">等待训练开始...</div>
+                <div className="text-zinc-600 text-center py-4">等待开始训练...</div>
               )}
             </div>
           </div>

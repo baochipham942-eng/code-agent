@@ -1,10 +1,10 @@
 // ============================================================================
 // ModelArchitecture - nanoGPT 模型架构阶段
-// 展示 GPT-2 架构与 GPT-1 的区别
+// 用通俗方式介绍 AI 的「大脑」结构
 // ============================================================================
 
 import React, { useState } from 'react';
-import { ChevronRight, ChevronLeft, Boxes, Layers, Calculator, ArrowRight } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Brain, Layers, ArrowRight } from 'lucide-react';
 
 interface ModelArchitectureProps {
   onComplete: () => void;
@@ -13,109 +13,59 @@ interface ModelArchitectureProps {
 
 type ModelSize = 'small' | 'medium' | 'large' | 'xl';
 
-const modelSizes: Record<ModelSize, { name: string; params: string; layers: number; heads: number; dModel: number }> = {
-  small: { name: 'GPT-2 Small', params: '124M', layers: 12, heads: 12, dModel: 768 },
-  medium: { name: 'GPT-2 Medium', params: '350M', layers: 24, heads: 16, dModel: 1024 },
-  large: { name: 'GPT-2 Large', params: '774M', layers: 36, heads: 20, dModel: 1280 },
-  xl: { name: 'GPT-2 XL', params: '1.5B', layers: 48, heads: 25, dModel: 1600 },
+const modelSizes: Record<ModelSize, { name: string; params: string; layers: number; heads: number; dModel: number; analogy: string }> = {
+  small: { name: '小型', params: '1.2 亿', layers: 12, heads: 12, dModel: 768, analogy: '像一个聪明的小学生' },
+  medium: { name: '中型', params: '3.5 亿', layers: 24, heads: 16, dModel: 1024, analogy: '像一个博学的中学生' },
+  large: { name: '大型', params: '7.7 亿', layers: 36, heads: 20, dModel: 1280, analogy: '像一个大学教授' },
+  xl: { name: '超大型', params: '15 亿', layers: 48, heads: 25, dModel: 1600, analogy: '像一个领域专家' },
 };
-
-// GPT-1 vs GPT-2 对比
-const architectureComparison = [
-  { feature: 'Layer Norm 位置', gpt1: 'Post-LN (后置)', gpt2: 'Pre-LN (前置)', highlight: true },
-  { feature: '层数', gpt1: '12 层', gpt2: '12-48 层', highlight: false },
-  { feature: '上下文长度', gpt1: '512', gpt2: '1024', highlight: false },
-  { feature: '词汇表大小', gpt1: '~40,000 (BPE)', gpt2: '50,257 (BPE)', highlight: false },
-  { feature: '初始化', gpt1: '标准初始化', gpt2: '残差缩放初始化', highlight: true },
-  { feature: '激活函数', gpt1: 'GELU', gpt2: 'GELU', highlight: false },
-];
 
 export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete, onBack }) => {
   const [selectedSize, setSelectedSize] = useState<ModelSize>('small');
   const model = modelSizes[selectedSize];
 
-  // 计算参数量
-  const calculateParams = (layers: number, dModel: number, vocabSize: number = 50257) => {
-    // Embedding: vocab_size * d_model + context_length * d_model
-    const embedding = vocabSize * dModel + 1024 * dModel;
-    // Per layer: 4 * d_model^2 (attention) + 8 * d_model^2 (ffn) + 4 * d_model (layer norms)
-    const perLayer = 4 * dModel * dModel + 8 * dModel * dModel + 4 * dModel;
-    const total = embedding + layers * perLayer;
-    return (total / 1e6).toFixed(0);
-  };
-
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
-      {/* GPT-1 vs GPT-2 Comparison */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300">GPT-1 vs GPT-2 架构对比</h3>
-        <div className="bg-zinc-900/50 rounded-lg border border-zinc-800/50 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-800/50">
-                <th className="px-4 py-3 text-left text-zinc-400 font-medium">特性</th>
-                <th className="px-4 py-3 text-center text-zinc-400 font-medium">GPT-1</th>
-                <th className="px-4 py-3 text-center text-zinc-400 font-medium">GPT-2</th>
-              </tr>
-            </thead>
-            <tbody>
-              {architectureComparison.map((row, idx) => (
-                <tr
-                  key={idx}
-                  className={`border-b border-zinc-800/30 ${row.highlight ? 'bg-amber-500/5' : ''}`}
-                >
-                  <td className="px-4 py-3 text-zinc-300">
-                    {row.feature}
-                    {row.highlight && <span className="ml-2 text-amber-400">⭐</span>}
-                  </td>
-                  <td className="px-4 py-3 text-center text-zinc-400">{row.gpt1}</td>
-                  <td className="px-4 py-3 text-center text-blue-400">{row.gpt2}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* 概念说明 */}
+      <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 rounded-lg border border-purple-500/20 p-4">
+        <div className="flex items-start gap-3">
+          <Brain className="w-5 h-5 text-purple-400 mt-0.5" />
+          <div>
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">🧠 AI 的「大脑」长什么样？</h3>
+            <p className="text-sm text-zinc-400">
+              AI 的大脑是由很多层「思考单元」堆叠起来的。层数越多，就像大脑越发达，
+              能理解的东西就越复杂。我们可以选择不同「大小」的大脑！
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Pre-LN vs Post-LN Explanation */}
+      {/* 大脑工作原理 */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300">Pre-LN vs Post-LN</h3>
-        <div className="grid grid-cols-2 gap-4">
-          {/* Post-LN (GPT-1) */}
-          <div className="bg-zinc-800/30 rounded-lg border border-zinc-700/30 p-4">
-            <h4 className="text-sm font-medium text-zinc-300 mb-3">Post-LN (GPT-1)</h4>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-xs">
-                <div className="px-2 py-1 bg-zinc-700/50 rounded text-zinc-300">Input</div>
-                <ArrowRight className="w-3 h-3 text-zinc-500" />
-                <div className="px-2 py-1 bg-blue-500/20 rounded text-blue-300">Attention</div>
-                <ArrowRight className="w-3 h-3 text-zinc-500" />
-                <div className="px-2 py-1 bg-emerald-500/20 rounded text-emerald-300">+ Residual</div>
-                <ArrowRight className="w-3 h-3 text-zinc-500" />
-                <div className="px-2 py-1 bg-amber-500/20 rounded text-amber-300">LayerNorm</div>
-              </div>
-              <p className="text-xs text-zinc-500 mt-2">
-                梯度在深层网络中可能不稳定，训练更困难
-              </p>
+        <h3 className="text-sm font-medium text-zinc-300">🔄 AI 大脑是怎么「思考」的？</h3>
+        <div className="bg-zinc-900/50 rounded-lg border border-zinc-800/50 p-4">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center p-4 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+              <div className="text-3xl mb-2">👁️</div>
+              <div className="text-sm font-medium text-emerald-400">看懂文字</div>
+              <div className="text-xs text-zinc-500 mt-1">把文字变成 AI 能理解的信号</div>
+            </div>
+            <div className="text-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
+              <div className="text-3xl mb-2">🤔</div>
+              <div className="text-sm font-medium text-blue-400">层层思考</div>
+              <div className="text-xs text-zinc-500 mt-1">每一层都会「琢磨」一遍，加深理解</div>
+            </div>
+            <div className="text-center p-4 bg-purple-500/10 rounded-lg border border-purple-500/20">
+              <div className="text-3xl mb-2">💬</div>
+              <div className="text-sm font-medium text-purple-400">说出答案</div>
+              <div className="text-xs text-zinc-500 mt-1">把理解转化成文字输出</div>
             </div>
           </div>
 
-          {/* Pre-LN (GPT-2) */}
-          <div className="bg-blue-500/5 rounded-lg border border-blue-500/30 p-4">
-            <h4 className="text-sm font-medium text-blue-300 mb-3">Pre-LN (GPT-2) ✓</h4>
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-xs">
-                <div className="px-2 py-1 bg-zinc-700/50 rounded text-zinc-300">Input</div>
-                <ArrowRight className="w-3 h-3 text-zinc-500" />
-                <div className="px-2 py-1 bg-amber-500/20 rounded text-amber-300">LayerNorm</div>
-                <ArrowRight className="w-3 h-3 text-zinc-500" />
-                <div className="px-2 py-1 bg-blue-500/20 rounded text-blue-300">Attention</div>
-                <ArrowRight className="w-3 h-3 text-zinc-500" />
-                <div className="px-2 py-1 bg-emerald-500/20 rounded text-emerald-300">+ Residual</div>
-              </div>
-              <p className="text-xs text-zinc-500 mt-2">
-                梯度更稳定，可以训练更深的网络
-              </p>
+          <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <div className="flex items-center gap-2 text-xs text-amber-400">
+              <span className="text-lg">💡</span>
+              <span>就像我们读书一样：先认字 → 理解意思 → 形成想法 → 说出来！</span>
             </div>
           </div>
         </div>
@@ -123,49 +73,45 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
 
       {/* Model Size Selector */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300">模型规模选择</h3>
+        <h3 className="text-sm font-medium text-zinc-300">📐 选择 AI 大脑的「尺寸」</h3>
         <div className="grid grid-cols-4 gap-3">
           {(Object.entries(modelSizes) as [ModelSize, typeof modelSizes.small][]).map(([key, size]) => (
             <button
               key={key}
               onClick={() => setSelectedSize(key)}
-              className={`p-3 rounded-lg border text-left transition-all ${
+              className={`p-4 rounded-lg border text-left transition-all ${
                 selectedSize === key
                   ? 'bg-blue-500/10 border-blue-500/50'
                   : 'bg-zinc-800/30 border-zinc-700/30 hover:border-zinc-600'
               }`}
             >
-              <div className="text-sm font-medium text-zinc-200">{size.name}</div>
-              <div className="text-lg font-bold text-blue-400">{size.params}</div>
-              <div className="text-xs text-zinc-500">
-                {size.layers}层 · {size.heads}头
+              <div className="text-sm font-medium text-zinc-200 mb-1">{size.name}大脑</div>
+              <div className="text-lg font-bold text-blue-400">{size.params} 个神经元</div>
+              <div className="text-xs text-zinc-500 mt-2">
+                {size.layers} 层思考 · {size.heads} 个关注点
+              </div>
+              <div className="text-xs text-emerald-400/70 mt-1">
+                {size.analogy}
               </div>
             </button>
           ))}
         </div>
+        <p className="text-xs text-zinc-500 text-center">
+          💡 神经元越多，AI 越聪明，但也需要更多计算资源
+        </p>
       </div>
 
       {/* Architecture Visualization */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300">架构可视化</h3>
+        <h3 className="text-sm font-medium text-zinc-300">🎨 AI 大脑的「结构图」</h3>
         <div className="bg-zinc-900/50 rounded-lg border border-zinc-800/50 p-6">
-          <div className="flex items-center justify-center gap-4">
+          <div className="flex items-center justify-center gap-3">
             {/* Input Embedding */}
             <div className="flex flex-col items-center gap-2">
-              <div className="w-24 h-16 bg-gradient-to-b from-emerald-500/20 to-emerald-500/5 border border-emerald-500/30 rounded-lg flex items-center justify-center">
-                <span className="text-xs text-emerald-400">Token Embed</span>
+              <div className="w-24 h-20 bg-gradient-to-b from-emerald-500/20 to-emerald-500/5 border border-emerald-500/30 rounded-lg flex flex-col items-center justify-center">
+                <span className="text-2xl">👁️</span>
+                <span className="text-xs text-emerald-400 mt-1">看懂文字</span>
               </div>
-              <div className="text-[10px] text-zinc-500">{model.dModel}d</div>
-            </div>
-
-            <div className="text-zinc-500">+</div>
-
-            {/* Position Embedding */}
-            <div className="flex flex-col items-center gap-2">
-              <div className="w-24 h-16 bg-gradient-to-b from-amber-500/20 to-amber-500/5 border border-amber-500/30 rounded-lg flex items-center justify-center">
-                <span className="text-xs text-amber-400">Pos Embed</span>
-              </div>
-              <div className="text-[10px] text-zinc-500">1024 × {model.dModel}</div>
             </div>
 
             <ArrowRight className="w-5 h-5 text-zinc-500" />
@@ -173,98 +119,85 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
             {/* Transformer Blocks */}
             <div className="flex flex-col items-center gap-2">
               <div className="relative">
-                <div className="w-32 h-20 bg-gradient-to-b from-blue-500/20 to-blue-500/5 border border-blue-500/30 rounded-lg flex flex-col items-center justify-center">
-                  <Layers className="w-4 h-4 text-blue-400 mb-1" />
-                  <span className="text-xs text-blue-400">Transformer Block</span>
+                <div className="w-36 h-20 bg-gradient-to-b from-blue-500/20 to-blue-500/5 border border-blue-500/30 rounded-lg flex flex-col items-center justify-center">
+                  <Layers className="w-5 h-5 text-blue-400 mb-1" />
+                  <span className="text-xs text-blue-400">思考层</span>
                 </div>
-                <div className="absolute -bottom-2 left-1/2 transform -translate-x-1/2 px-2 py-0.5 bg-blue-500/20 rounded text-[10px] text-blue-400">
-                  × {model.layers}
+                <div className="absolute -bottom-3 left-1/2 transform -translate-x-1/2 px-3 py-1 bg-blue-500/20 rounded-full text-xs text-blue-400 font-medium">
+                  × {model.layers} 层
                 </div>
               </div>
-              <div className="text-[10px] text-zinc-500 mt-2">{model.heads} heads</div>
             </div>
 
             <ArrowRight className="w-5 h-5 text-zinc-500" />
 
             {/* Output */}
             <div className="flex flex-col items-center gap-2">
-              <div className="w-24 h-16 bg-gradient-to-b from-purple-500/20 to-purple-500/5 border border-purple-500/30 rounded-lg flex items-center justify-center">
-                <span className="text-xs text-purple-400">LM Head</span>
+              <div className="w-24 h-20 bg-gradient-to-b from-purple-500/20 to-purple-500/5 border border-purple-500/30 rounded-lg flex flex-col items-center justify-center">
+                <span className="text-2xl">💬</span>
+                <span className="text-xs text-purple-400 mt-1">说出来</span>
               </div>
-              <div className="text-[10px] text-zinc-500">50,257 vocab</div>
             </div>
+          </div>
+
+          <div className="mt-6 text-center text-xs text-zinc-500">
+            选择的「{model.name}大脑」有 <span className="text-blue-400 font-bold">{model.layers}</span> 层思考，
+            每层有 <span className="text-blue-400 font-bold">{model.heads}</span> 个「关注点」同时思考
           </div>
         </div>
       </div>
 
-      {/* Parameter Calculator */}
+      {/* 什么是「关注点」 */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300 flex items-center gap-2">
-          <Calculator className="w-4 h-4 text-zinc-400" />
-          参数量计算
-        </h3>
+        <h3 className="text-sm font-medium text-zinc-300">🎯 什么是「关注点」？</h3>
         <div className="bg-zinc-900/50 rounded-lg border border-zinc-800/50 p-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <div className="text-xs text-zinc-500">Embedding 层</div>
-              <div className="font-mono text-sm text-zinc-300">
-                vocab_size × d_model = 50,257 × {model.dModel}
-              </div>
-              <div className="text-xs text-emerald-400">
-                ≈ {((50257 * model.dModel) / 1e6).toFixed(1)}M
-              </div>
+          <p className="text-sm text-zinc-400 mb-4">
+            当 AI 读一句话时，它会同时从多个角度「关注」不同的内容：
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+              <div className="text-sm text-blue-400 font-medium mb-1">关注点 1</div>
+              <div className="text-xs text-zinc-500">可能在看「谁做的」</div>
             </div>
-            <div className="space-y-2">
-              <div className="text-xs text-zinc-500">每个 Transformer Block</div>
-              <div className="font-mono text-sm text-zinc-300">
-                12 × d_model² ≈ 12 × {model.dModel}²
-              </div>
-              <div className="text-xs text-blue-400">
-                ≈ {((12 * model.dModel * model.dModel) / 1e6).toFixed(1)}M × {model.layers} 层
-              </div>
+            <div className="p-3 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+              <div className="text-sm text-emerald-400 font-medium mb-1">关注点 2</div>
+              <div className="text-xs text-zinc-500">可能在看「做了什么」</div>
+            </div>
+            <div className="p-3 bg-purple-500/10 rounded-lg border border-purple-500/20">
+              <div className="text-sm text-purple-400 font-medium mb-1">关注点 3</div>
+              <div className="text-xs text-zinc-500">可能在看「语气情感」</div>
             </div>
           </div>
-
-          <div className="mt-4 pt-3 border-t border-zinc-800/50 flex items-center justify-between">
-            <span className="text-sm text-zinc-400">总参数量（估算）</span>
-            <span className="text-lg font-bold text-blue-400">
-              ~{calculateParams(model.layers, model.dModel)}M
-            </span>
+          <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <div className="text-xs text-amber-400">
+              💡 就像你读书时，可以同时注意故事情节、人物性格、写作手法... 关注点越多，理解越全面！
+            </div>
           </div>
         </div>
       </div>
 
-      {/* nanoGPT Code Snippet */}
+      {/* 总结 */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300">nanoGPT 配置示例</h3>
-        <div className="bg-zinc-950/50 rounded-lg border border-zinc-800/50 p-4 font-mono text-xs">
-          <pre className="text-zinc-300">
-            <span className="text-zinc-500"># model.py 配置</span>
-            {'\n'}
-            <span className="text-blue-400">class</span>{' '}
-            <span className="text-amber-400">GPTConfig</span>:
-            {'\n'}
-            {'    '}block_size: <span className="text-blue-400">int</span> ={' '}
-            <span className="text-emerald-400">1024</span>
-            {'\n'}
-            {'    '}vocab_size: <span className="text-blue-400">int</span> ={' '}
-            <span className="text-emerald-400">50257</span>
-            {'\n'}
-            {'    '}n_layer: <span className="text-blue-400">int</span> ={' '}
-            <span className="text-emerald-400">{model.layers}</span>
-            {'\n'}
-            {'    '}n_head: <span className="text-blue-400">int</span> ={' '}
-            <span className="text-emerald-400">{model.heads}</span>
-            {'\n'}
-            {'    '}n_embd: <span className="text-blue-400">int</span> ={' '}
-            <span className="text-emerald-400">{model.dModel}</span>
-            {'\n'}
-            {'    '}dropout: <span className="text-blue-400">float</span> ={' '}
-            <span className="text-emerald-400">0.0</span>
-            {'\n'}
-            {'    '}bias: <span className="text-blue-400">bool</span> ={' '}
-            <span className="text-emerald-400">True</span>
-          </pre>
+        <h3 className="text-sm font-medium text-zinc-300">📊 你选择的 AI 大脑</h3>
+        <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-lg border border-blue-500/20 p-4">
+          <div className="grid grid-cols-4 gap-4 text-center">
+            <div>
+              <div className="text-2xl font-bold text-blue-400">{model.params}</div>
+              <div className="text-xs text-zinc-500 mt-1">神经元数量</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-emerald-400">{model.layers}</div>
+              <div className="text-xs text-zinc-500 mt-1">思考层数</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-purple-400">{model.heads}</div>
+              <div className="text-xs text-zinc-500 mt-1">关注点数</div>
+            </div>
+            <div>
+              <div className="text-lg font-medium text-amber-400">{model.analogy}</div>
+              <div className="text-xs text-zinc-500 mt-1">相当于</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -272,16 +205,16 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
       <div className="flex justify-between pt-4">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-4 py-2 bg-zinc-800/50 text-zinc-400 rounded-lg hover:bg-zinc-800 border border-zinc-700/50 transition-all"
+          className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800/50 text-zinc-400 rounded-lg hover:bg-zinc-800 border border-zinc-700/50 transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
           上一步
         </button>
         <button
           onClick={onComplete}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 border border-blue-500/30 transition-all"
+          className="flex items-center gap-2 px-5 py-2.5 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 border border-blue-500/30 transition-all font-medium"
         >
-          下一步：预训练
+          下一步：开始学习
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

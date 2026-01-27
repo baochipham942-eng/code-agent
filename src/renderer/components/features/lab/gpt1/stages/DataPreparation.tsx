@@ -50,76 +50,76 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <FileText className="w-4 h-4 text-blue-400" />
-              什么是训练数据？
+              为什么需要对话数据？
             </h3>
+            <p className="text-sm text-zinc-400 leading-relaxed mb-3">
+              想象你在教一个外星人学中文对话。你会怎么教？
+            </p>
             <p className="text-sm text-zinc-400 leading-relaxed">
-              训练数据是模型学习的"教材"。对于对话模型，我们需要准备大量的
-              <span className="text-emerald-400">「用户输入 → 助手回复」</span>
-              对，让模型学习如何回应各种问题。
+              最简单的方法：给它听大量的<span className="text-emerald-400">「你说一句，我说一句」</span>的对话，
+              让它自己找出规律。AI 学说话也是一样——先"听"足够多的对话，才能学会怎么回答。
             </p>
           </div>
 
           {/* 数据格式说明 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">数据格式</h3>
-            <div className="font-mono text-xs bg-zinc-950 rounded-lg p-3 text-zinc-300">
-              <div className="text-blue-400">用户: </div>
-              <div className="text-zinc-500 pl-4">[用户的问题或输入]</div>
-              <div className="text-emerald-400 mt-1">助手: </div>
-              <div className="text-zinc-500 pl-4">[AI 的回复]</div>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">对话长什么样？</h3>
+            <div className="bg-zinc-950 rounded-lg p-3 text-sm">
+              <div className="flex gap-2 items-start mb-2">
+                <span className="text-blue-400 font-medium shrink-0">你：</span>
+                <span className="text-zinc-300">你好呀</span>
+              </div>
+              <div className="flex gap-2 items-start">
+                <span className="text-emerald-400 font-medium shrink-0">AI：</span>
+                <span className="text-zinc-300">你好！很高兴和你聊天。</span>
+              </div>
             </div>
             <p className="text-xs text-zinc-500 mt-2">
-              每轮对话以换行分隔，模型通过这种格式学习对话的结构。
+              就是这么简单！一问一答，成千上万组。
             </p>
           </div>
 
           {/* 数据增强策略 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">数据增强策略</h3>
-            <div className="space-y-2 text-sm text-zinc-400">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">怎么让 AI 学得更好？</h3>
+            <div className="space-y-3 text-sm text-zinc-400">
               <div className="flex items-start gap-2">
-                <span className="text-amber-400 mt-0.5">•</span>
+                <span className="text-xl">📚</span>
                 <div>
-                  <span className="text-zinc-300">重复扩展：</span>
-                  将 {dataStats.dialoguePatterns} 种基础对话重复 {dataStats.repetitions} 次，
-                  增加数据量
+                  <span className="text-zinc-300 font-medium">多听几遍：</span>
+                  就像背单词要重复多遍，同样的对话让 AI 看 {dataStats.repetitions} 次，印象更深
                 </div>
               </div>
               <div className="flex items-start gap-2">
-                <span className="text-amber-400 mt-0.5">•</span>
+                <span className="text-xl">🎭</span>
                 <div>
-                  <span className="text-zinc-300">多样性覆盖：</span>
-                  包含问候、情感、学习、生活等多个对话主题
+                  <span className="text-zinc-300 font-medium">话题多样：</span>
+                  打招呼、聊天气、讲笑话……各种场景都要有
                 </div>
               </div>
             </div>
           </div>
 
-          {/* 代码展示 */}
+          {/* 数据准备过程 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <span className="text-emerald-400">{'</>'}</span>
-              create_dialogue_corpus.py
+              <span className="text-emerald-400">📝</span>
+              数据准备过程（简化版）
             </h3>
-            <pre className="font-mono text-xs bg-zinc-950 rounded-lg p-3 overflow-x-auto text-zinc-300">
-{`# 基础对话模板
-dialogues = [
-    ("你好", "你好！很高兴和你聊天。"),
-    ("今天天气怎么样", "我无法看到外面的天气..."),
-    # ... 更多对话模板
-]
-
-# 数据增强：重复 200 次
-corpus = ""
-for _ in range(200):
-    for user, assistant in dialogues:
-        corpus += f"用户: {user}\\n"
-        corpus += f"助手: {assistant}\\n\\n"
-
-# 保存到文件
-with open("dialogue_corpus.txt", "w") as f:
-    f.write(corpus)`}
-            </pre>
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center gap-3 p-2 rounded-lg bg-zinc-800/50">
+                <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-xs flex items-center justify-center font-bold">1</span>
+                <span className="text-zinc-300">收集 {dataStats.dialoguePatterns} 种不同的对话</span>
+              </div>
+              <div className="flex items-center gap-3 p-2 rounded-lg bg-zinc-800/50">
+                <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-xs flex items-center justify-center font-bold">2</span>
+                <span className="text-zinc-300">每种对话重复 {dataStats.repetitions} 次</span>
+              </div>
+              <div className="flex items-center gap-3 p-2 rounded-lg bg-zinc-800/50">
+                <span className="w-6 h-6 rounded-full bg-blue-500/20 text-blue-400 text-xs flex items-center justify-center font-bold">3</span>
+                <span className="text-zinc-300">得到约 {(dataStats.totalTokens / 1000).toFixed(0)}K 字的训练材料</span>
+              </div>
+            </div>
           </div>
         </div>
 

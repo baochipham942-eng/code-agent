@@ -1,6 +1,6 @@
 // ============================================================================
 // SFTStage - 监督微调阶段
-// 展示指令数据格式、训练流程和效果对比
+// 用通俗方式介绍「教 AI 按规矩回答」
 // ============================================================================
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -20,99 +20,46 @@ interface SFTStageProps {
   onComplete: () => void;
 }
 
-// 指令数据集示例
+// 指令数据集示例 - 用对话形式展示
 const instructionExamples = [
   {
-    instruction: '将以下英文翻译成中文',
-    input: 'Hello, how are you today?',
-    output: '你好，你今天怎么样？',
+    question: '帮我把这句英文翻译成中文：Hello, how are you today?',
+    answer: '你好，你今天怎么样？',
+    category: '翻译任务',
   },
   {
-    instruction: '写一首关于春天的诗',
-    input: '',
-    output: '春风拂面暖阳照，\n桃花盛开蝶飞舞。\n万物复苏生机显，\n大地换上新衣裳。',
+    question: '写一首关于春天的诗',
+    answer: '春风拂面暖阳照，\n桃花盛开蝶飞舞。\n万物复苏生机显，\n大地换上新衣裳。',
+    category: '创作任务',
   },
   {
-    instruction: '解释什么是机器学习',
-    input: '',
-    output:
-      '机器学习是人工智能的一个分支，它使计算机能够从数据中学习模式，而无需显式编程。通过分析大量数据，机器学习算法可以自动改进其性能。',
+    question: '用简单的话解释什么是 AI',
+    answer: 'AI 就像是一个会学习的程序。你给它看很多例子，它就能从中找规律，然后自己做类似的事情。就像小朋友看多了猫的照片，以后见到新的猫也能认出来！',
+    category: '解释任务',
   },
   {
-    instruction: '将下面的句子改写成更礼貌的形式',
-    input: '把文件给我',
-    output: '请问您方便把文件发给我吗？谢谢！',
+    question: '把「把文件给我」改写得更礼貌一点',
+    answer: '请问您方便把文件发给我吗？谢谢！',
+    category: '改写任务',
   },
 ];
 
-// 对话模板格式
-const templateFormats = {
-  alpaca: `Below is an instruction that describes a task. Write a response that appropriately completes the request.
-
-### Instruction:
-{instruction}
-
-### Input:
-{input}
-
-### Response:
-{output}`,
-  chatml: `<|im_start|>system
-You are a helpful assistant.
-<|im_end|>
-<|im_start|>user
-{instruction}
-{input}
-<|im_end|>
-<|im_start|>assistant
-{output}
-<|im_end|>`,
-  llama2: `[INST] <<SYS>>
-You are a helpful assistant.
-<</SYS>>
-
-{instruction}
-{input} [/INST] {output}`,
-};
-
-// 模拟训练前后对比
+// 训练前后对比 - 用更直观的例子
 const beforeAfterExamples = [
   {
-    prompt: '写一个 Python 函数计算阶乘',
-    before: `def factorial(n):
-    if n == 0:
-        return 1
-    else:
-        return n * factorial(n-1)
-
-这是一个递归函数但是没有处理负数情况也没有文档字符串而且格式不太好看`,
-    after: `def factorial(n: int) -> int:
-    """
-    计算非负整数的阶乘。
-
-    Args:
-        n: 非负整数
-
-    Returns:
-        n 的阶乘值
-
-    Raises:
-        ValueError: 如果 n 为负数
-    """
-    if n < 0:
-        raise ValueError("阶乘只能计算非负整数")
-    if n == 0 or n == 1:
-        return 1
-    return n * factorial(n - 1)`,
+    question: '今天天气怎么样？',
+    before: '天气是大气状态的表现，包括温度、湿度、气压等因素。气象学是研究天气的科学。在中国，中央气象台负责天气预报...',
+    after: '我没有实时查看天气的能力，不过你可以打开手机的天气 App 看看！如果你告诉我你在哪个城市，我可以给你一些穿衣建议哦～',
+    beforeComment: '像在背百科全书，没回答问题',
+    afterComment: '承认不能做的事，还给了实用建议',
   },
 ];
 
 export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
   const [selectedExample, setSelectedExample] = useState(0);
-  const [selectedTemplate, setSelectedTemplate] = useState<keyof typeof templateFormats>('alpaca');
   const [isTraining, setIsTraining] = useState(false);
   const [trainingStep, setTrainingStep] = useState(0);
-  const [lossHistory, setLossHistory] = useState<number[]>([]);
+  const [learnedCount, setLearnedCount] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -126,17 +73,16 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
       intervalRef.current = setInterval(() => {
         setTrainingStep((prev) => {
           const newStep = prev + 1;
-          const loss = 2.5 * Math.exp(-newStep / 300) + 0.5 + Math.random() * 0.1;
-          setLossHistory((h) => [...h.slice(-50), loss]);
+          setLearnedCount(Math.floor(newStep / 5));
 
-          if (newStep >= 500) {
+          if (newStep >= 100) {
             if (intervalRef.current) clearInterval(intervalRef.current);
             setIsTraining(false);
-            return 500;
+            return 100;
           }
           return newStep;
         });
-      }, 50);
+      }, 80);
     }
   };
 
@@ -144,7 +90,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
     if (intervalRef.current) clearInterval(intervalRef.current);
     setIsTraining(false);
     setTrainingStep(0);
-    setLossHistory([]);
+    setLearnedCount(0);
   };
 
   useEffect(() => {
@@ -152,35 +98,6 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
-
-  // 绘制 loss 曲线
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || lossHistory.length < 2) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const width = canvas.width;
-    const height = canvas.height;
-
-    ctx.fillStyle = 'rgba(24, 24, 27, 0.5)';
-    ctx.fillRect(0, 0, width, height);
-
-    const maxLoss = Math.max(...lossHistory) + 0.2;
-    const minLoss = Math.min(...lossHistory) - 0.2;
-
-    ctx.strokeStyle = '#a855f7';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    lossHistory.forEach((loss, i) => {
-      const x = (i / (lossHistory.length - 1)) * width;
-      const y = height - ((loss - minLoss) / (maxLoss - minLoss)) * height * 0.8 - height * 0.1;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-  }, [lossHistory]);
 
   const currentExample = instructionExamples[selectedExample];
 
@@ -191,20 +108,44 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
         <div className="flex items-start gap-3">
           <FileText className="w-5 h-5 text-purple-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-zinc-200 mb-1">监督微调 (SFT)</h3>
-            <p className="text-xs text-zinc-400">
-              SFT 使用人工标注的「指令-响应」对来训练模型。这是让模型学会遵循人类指令的第一步，
-              也是 RLHF 的前置条件。数据质量直接决定模型的指令遵循能力。
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">🎓 教 AI「按规矩回答」</h3>
+            <p className="text-sm text-zinc-400">
+              预训练后的 AI 就像一个读了很多书的学生，虽然知识渊博，但不知道怎么好好回答问题。
+              <span className="text-purple-400">监督微调</span>就是给它看很多「标准答案」，让它学会该怎么回答！
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* 打个比方 */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium text-zinc-300">💡 打个比方</h3>
+        <div className="bg-zinc-900/50 rounded-lg border border-zinc-800/50 p-4">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center p-4 bg-zinc-800/30 rounded-lg border border-zinc-700/30">
+              <div className="text-3xl mb-2">📚</div>
+              <div className="text-sm font-medium text-zinc-400">预训练后的 AI</div>
+              <div className="text-xs text-zinc-500 mt-1">读了很多书，但回答乱七八糟</div>
+            </div>
+            <div className="text-center p-4 bg-purple-500/10 rounded-lg border border-purple-500/20">
+              <div className="text-3xl mb-2">📝</div>
+              <div className="text-sm font-medium text-purple-400">看标准答案学习</div>
+              <div className="text-xs text-zinc-500 mt-1">「问这个要这样答」</div>
+            </div>
+            <div className="text-center p-4 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+              <div className="text-3xl mb-2">✨</div>
+              <div className="text-sm font-medium text-emerald-400">学会规矩的 AI</div>
+              <div className="text-xs text-zinc-500 mt-1">知道怎么好好回答了</div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Instruction Dataset */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300">指令数据集示例</h3>
+        <h3 className="text-sm font-medium text-zinc-300">📖 「标准答案」长什么样？</h3>
         <div className="flex gap-2 mb-3">
-          {instructionExamples.map((_, idx) => (
+          {instructionExamples.map((ex, idx) => (
             <button
               key={idx}
               onClick={() => setSelectedExample(idx)}
@@ -214,73 +155,50 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
                   : 'bg-zinc-800/30 text-zinc-500 border border-zinc-700/30 hover:border-zinc-600'
               }`}
             >
-              示例 {idx + 1}
+              {ex.category}
             </button>
           ))}
         </div>
 
-        <div className="bg-zinc-900/50 rounded-lg border border-zinc-800/50 p-4 space-y-3">
-          {/* Instruction */}
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-400">instruction</span>
+        <div className="bg-zinc-900/50 rounded-lg border border-zinc-800/50 p-4 space-y-4">
+          {/* Question */}
+          <div className="flex gap-3">
+            <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center flex-shrink-0">
+              <User className="w-4 h-4 text-blue-400" />
             </div>
-            <p className="text-sm text-zinc-300">{currentExample.instruction}</p>
+            <div className="flex-1">
+              <div className="text-xs text-blue-400 mb-1">用户问</div>
+              <p className="text-sm text-zinc-200 bg-blue-500/10 rounded-lg p-3 border border-blue-500/20">
+                {currentExample.question}
+              </p>
+            </div>
           </div>
 
-          {/* Input (if exists) */}
-          {currentExample.input && (
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-400">input</span>
-              </div>
-              <p className="text-sm text-zinc-400">{currentExample.input}</p>
+          {/* Answer */}
+          <div className="flex gap-3">
+            <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
+              <Bot className="w-4 h-4 text-emerald-400" />
             </div>
-          )}
-
-          {/* Output */}
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">output</span>
+            <div className="flex-1">
+              <div className="text-xs text-emerald-400 mb-1">标准答案</div>
+              <pre className="text-sm text-zinc-200 bg-emerald-500/10 rounded-lg p-3 border border-emerald-500/20 whitespace-pre-wrap">
+                {currentExample.answer}
+              </pre>
             </div>
-            <pre className="text-sm text-zinc-300 whitespace-pre-wrap">{currentExample.output}</pre>
           </div>
         </div>
-      </div>
 
-      {/* Template Format */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300">对话模板格式</h3>
-        <div className="flex gap-2 mb-3">
-          {(Object.keys(templateFormats) as (keyof typeof templateFormats)[]).map((format) => (
-            <button
-              key={format}
-              onClick={() => setSelectedTemplate(format)}
-              className={`px-3 py-1.5 rounded-lg text-xs transition-all ${
-                selectedTemplate === format
-                  ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                  : 'bg-zinc-800/30 text-zinc-500 border border-zinc-700/30 hover:border-zinc-600'
-              }`}
-            >
-              {format.toUpperCase()}
-            </button>
-          ))}
-        </div>
-
-        <div className="bg-zinc-950/50 rounded-lg border border-zinc-800/50 p-4">
-          <pre className="text-xs text-zinc-400 font-mono whitespace-pre-wrap overflow-auto max-h-48">
-            {templateFormats[selectedTemplate]
-              .replace('{instruction}', currentExample.instruction)
-              .replace('{input}', currentExample.input || '(无)')
-              .replace('{output}', currentExample.output)}
-          </pre>
+        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <div className="text-xs text-amber-400">
+            💡 就像老师批改作业一样，给 AI 看成千上万个「问题 + 标准答案」，它就学会该怎么回答了！
+          </div>
         </div>
       </div>
 
       {/* Training Simulation */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-zinc-300">SFT 训练过程</h3>
+          <h3 className="text-sm font-medium text-zinc-300">🏋️ 让 AI 学习</h3>
           <div className="flex items-center gap-2">
             <button
               onClick={resetTraining}
@@ -299,12 +217,12 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
               {isTraining ? (
                 <>
                   <Pause className="w-4 h-4" />
-                  暂停
+                  暂停学习
                 </>
               ) : (
                 <>
                   <Play className="w-4 h-4" />
-                  模拟训练
+                  开始学习
                 </>
               )}
             </button>
@@ -312,22 +230,30 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
         </div>
 
         <div className="bg-zinc-900/50 rounded-lg border border-zinc-800/50 p-4">
-          <canvas ref={canvasRef} width={700} height={120} className="w-full h-28 rounded-lg" />
-
-          <div className="mt-3 pt-3 border-t border-zinc-800/50 grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-4 text-center">
             <div>
-              <div className="text-xs text-zinc-500">训练步数</div>
-              <div className="text-lg font-mono text-zinc-300">{trainingStep} / 500</div>
+              <div className="text-xs text-zinc-500 mb-1">学习进度</div>
+              <div className="text-2xl font-bold text-purple-400">{trainingStep}%</div>
             </div>
             <div>
-              <div className="text-xs text-zinc-500">当前 Loss</div>
-              <div className="text-lg font-mono text-purple-400">
-                {lossHistory[lossHistory.length - 1]?.toFixed(4) || '-.----'}
+              <div className="text-xs text-zinc-500 mb-1">学会了多少题</div>
+              <div className="text-2xl font-bold text-emerald-400">{learnedCount} 道</div>
+            </div>
+            <div>
+              <div className="text-xs text-zinc-500 mb-1">状态</div>
+              <div className={`text-lg font-medium ${isTraining ? 'text-amber-400' : trainingStep >= 100 ? 'text-emerald-400' : 'text-zinc-400'}`}>
+                {isTraining ? '努力学习中...' : trainingStep >= 100 ? '学完啦！' : '准备好了'}
               </div>
             </div>
-            <div>
-              <div className="text-xs text-zinc-500">进度</div>
-              <div className="text-lg font-mono text-zinc-300">{((trainingStep / 500) * 100).toFixed(0)}%</div>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="mt-4">
+            <div className="h-3 bg-zinc-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-purple-600 to-purple-400 transition-all duration-100"
+                style={{ width: `${trainingStep}%` }}
+              />
             </div>
           </div>
         </div>
@@ -335,49 +261,51 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
 
       {/* Before/After Comparison */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300">训练前后对比</h3>
+        <h3 className="text-sm font-medium text-zinc-300">📊 学习前后对比</h3>
         <div className="grid grid-cols-2 gap-4">
           {/* Before SFT */}
           <div className="bg-zinc-800/30 rounded-lg border border-zinc-700/30 p-4">
             <div className="flex items-center gap-2 mb-3">
               <Bot className="w-4 h-4 text-zinc-500" />
-              <span className="text-sm font-medium text-zinc-400">预训练模型（SFT 前）</span>
+              <span className="text-sm font-medium text-zinc-400">学习前</span>
             </div>
-            <div className="bg-zinc-950/50 p-3 rounded text-xs font-mono text-zinc-500 whitespace-pre-wrap max-h-48 overflow-auto">
+            <div className="mb-2 text-xs text-blue-400">问：{beforeAfterExamples[0].question}</div>
+            <div className="bg-zinc-950/50 p-3 rounded text-sm text-zinc-500 whitespace-pre-wrap">
               {beforeAfterExamples[0].before}
             </div>
-            <div className="mt-2 text-xs text-red-400">❌ 格式混乱，缺少文档和错误处理</div>
+            <div className="mt-2 text-xs text-red-400">❌ {beforeAfterExamples[0].beforeComment}</div>
           </div>
 
           {/* After SFT */}
           <div className="bg-purple-500/5 rounded-lg border border-purple-500/30 p-4">
             <div className="flex items-center gap-2 mb-3">
               <Bot className="w-4 h-4 text-purple-400" />
-              <span className="text-sm font-medium text-purple-400">SFT 后</span>
+              <span className="text-sm font-medium text-purple-400">学习后</span>
             </div>
-            <div className="bg-zinc-950/50 p-3 rounded text-xs font-mono text-emerald-400 whitespace-pre-wrap max-h-48 overflow-auto">
+            <div className="mb-2 text-xs text-blue-400">问：{beforeAfterExamples[0].question}</div>
+            <div className="bg-zinc-950/50 p-3 rounded text-sm text-emerald-400 whitespace-pre-wrap">
               {beforeAfterExamples[0].after}
             </div>
-            <div className="mt-2 text-xs text-emerald-400">✓ 规范的代码、完整文档、错误处理</div>
+            <div className="mt-2 text-xs text-emerald-400">✓ {beforeAfterExamples[0].afterComment}</div>
           </div>
         </div>
       </div>
 
       {/* Key Takeaways */}
       <div className="bg-purple-500/5 rounded-lg border border-purple-500/20 p-4">
-        <h4 className="text-sm font-medium text-purple-400 mb-2">SFT 要点</h4>
-        <ul className="space-y-1 text-xs text-zinc-400">
-          <li>
-            • <strong className="text-zinc-300">数据质量至关重要</strong>：高质量的指令-响应对决定模型表现
+        <h4 className="text-sm font-medium text-purple-400 mb-2">📌 小结</h4>
+        <ul className="space-y-2 text-sm text-zinc-400">
+          <li className="flex items-start gap-2">
+            <span className="text-purple-400">•</span>
+            <span><strong className="text-zinc-300">标准答案的质量很重要</strong>：老师教得好，学生才能学得好</span>
           </li>
-          <li>
-            • <strong className="text-zinc-300">模板格式统一</strong>：训练和推理时使用相同的对话模板
+          <li className="flex items-start gap-2">
+            <span className="text-purple-400">•</span>
+            <span><strong className="text-zinc-300">要有足够多的例子</strong>：做一道题学不会，得多做才行</span>
           </li>
-          <li>
-            • <strong className="text-zinc-300">学习率要小</strong>：通常使用预训练 LR 的 1/10 ~ 1/100
-          </li>
-          <li>
-            • <strong className="text-zinc-300">是 RLHF 的基础</strong>：SFT 模型是后续 PPO 训练的起点
+          <li className="flex items-start gap-2">
+            <span className="text-purple-400">•</span>
+            <span><strong className="text-zinc-300">这只是第一步</strong>：学会「格式」，但还没学会什么是「好」</span>
           </li>
         </ul>
       </div>
@@ -386,9 +314,9 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
       <div className="flex justify-end pt-4">
         <button
           onClick={onComplete}
-          className="flex items-center gap-2 px-4 py-2 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 border border-purple-500/30 transition-all"
+          className="flex items-center gap-2 px-5 py-2.5 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 border border-purple-500/30 transition-all font-medium"
         >
-          下一步：奖励模型
+          下一步：教 AI 分辨好坏
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

@@ -102,45 +102,47 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-blue-400" />
-              推理是什么？
+              AI 是怎么「说话」的？
             </h3>
             <div className="space-y-3 text-sm text-zinc-400">
               <p>
-                推理（Inference）是使用训练好的模型生成文本的过程。模型通过
-                <span className="text-emerald-400">自回归</span>方式逐个预测下一个 token：
+                AI 说话不是一次性蹦出一整句，而是
+                <span className="text-emerald-400">一个字一个字地往外「挤」</span>：
               </p>
               <ol className="space-y-2">
                 <li className="flex items-start gap-2">
-                  <span className="text-emerald-400 font-bold">1.</span>
-                  <span>输入提示词（如"用户: 你好\n助手:"）</span>
+                  <span className="text-2xl">👂</span>
+                  <span>先「听」你说了什么（比如「你好」）</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-emerald-400 font-bold">2.</span>
-                  <span>模型预测每个 token 的概率分布</span>
+                  <span className="text-2xl">🤔</span>
+                  <span>想：下一个字应该是什么？可能是「你」「我」「很」...</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-emerald-400 font-bold">3.</span>
-                  <span>根据采样策略选择下一个 token</span>
+                  <span className="text-2xl">🎯</span>
+                  <span>选一个最可能的字（比如「你」）</span>
                 </li>
                 <li className="flex items-start gap-2">
-                  <span className="text-emerald-400 font-bold">4.</span>
-                  <span>重复直到生成完整回复</span>
+                  <span className="text-2xl">🔄</span>
+                  <span>重复这个过程，直到说完一整句话</span>
                 </li>
               </ol>
             </div>
           </div>
 
-          {/* 生成参数 */}
+          {/* 说话风格 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <Settings2 className="w-4 h-4 text-amber-400" />
-              生成参数
+              调整 AI 的「性格」
             </h3>
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between mb-1">
-                  <label className="text-xs text-zinc-500">Temperature</label>
-                  <span className="text-xs font-mono text-emerald-400">{temperature.toFixed(1)}</span>
+                  <label className="text-xs text-zinc-400">🎲 创意程度</label>
+                  <span className="text-xs font-bold text-emerald-400">
+                    {temperature < 0.5 ? '🤖 规规矩矩' : temperature < 1.0 ? '😊 正常发挥' : '🎨 天马行空'}
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -152,14 +154,14 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
                   className="w-full h-1.5 rounded-lg appearance-none bg-zinc-700 cursor-pointer"
                 />
                 <p className="text-xs text-zinc-600 mt-1">
-                  控制随机性：低温度更确定，高温度更多样
+                  越高越有创意，但也可能说些奇怪的话
                 </p>
               </div>
 
               <div>
                 <div className="flex justify-between mb-1">
-                  <label className="text-xs text-zinc-500">Top-K</label>
-                  <span className="text-xs font-mono text-blue-400">{topK}</span>
+                  <label className="text-xs text-zinc-400">🎯 选词范围</label>
+                  <span className="text-xs font-bold text-blue-400">前 {topK} 个候选字</span>
                 </div>
                 <input
                   type="range"
@@ -171,23 +173,23 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
                   className="w-full h-1.5 rounded-lg appearance-none bg-zinc-700 cursor-pointer"
                 />
                 <p className="text-xs text-zinc-600 mt-1">
-                  只从概率最高的 K 个 token 中采样
+                  只从最可能的几个字里选，数字越小越保守
                 </p>
               </div>
             </div>
           </div>
 
-          {/* Token 概率可视化 */}
+          {/* AI 在想什么 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-purple-400" />
-              Token 概率分布
+              AI 在想：下一个字说什么？
             </h3>
             {tokenProbs.length > 0 ? (
               <div className="space-y-2">
                 {tokenProbs.map((item, i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <span className="w-8 text-sm text-zinc-300 font-mono">{item.token}</span>
+                    <span className="w-8 text-sm text-zinc-300 font-bold">{item.token}</span>
                     <div className="flex-1 h-4 bg-zinc-800 rounded overflow-hidden">
                       <div
                         className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
@@ -200,51 +202,35 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
                   </div>
                 ))}
                 <p className="text-xs text-zinc-600 mt-2">
-                  显示最后一步生成时各 token 的预测概率
+                  👆 这是 AI 说最后一个字时，各个候选字的「可能性」
                 </p>
               </div>
             ) : (
               <div className="text-sm text-zinc-600 text-center py-4">
-                发送消息后显示 token 概率分布
+                发消息后，看看 AI 是怎么「选字」的 🤔
               </div>
             )}
           </div>
 
-          {/* 代码展示 */}
+          {/* 工作原理图解 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <span className="text-emerald-400">{'</>'}</span>
-              生成代码
-            </h3>
-            <pre className="font-mono text-xs bg-zinc-950 rounded-lg p-3 overflow-x-auto text-zinc-300">
-{`def generate(prompt, max_tokens=50):
-    ids = tokenizer.encode(prompt)
-
-    for _ in range(max_tokens):
-        # 前向传播得到 logits
-        logits = model(ids)[:, -1, :]
-
-        # 温度采样
-        logits = logits / temperature  # ${temperature.toFixed(1)}
-
-        # Top-K 过滤
-        top_k_logits, top_k_ids = torch.topk(
-            logits, k=${topK}
-        )
-
-        # Softmax 得到概率
-        probs = F.softmax(top_k_logits, dim=-1)
-
-        # 采样下一个 token
-        next_id = torch.multinomial(probs, 1)
-        ids = torch.cat([ids, next_id], dim=1)
-
-        # 检查停止条件
-        if decode(next_id) == '\\n':
-            break
-
-    return decode(ids)`}
-            </pre>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">AI 说话的过程</h3>
+            <div className="space-y-2 text-sm">
+              <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                <div className="text-blue-300">你说：「你好」</div>
+              </div>
+              <div className="text-center text-zinc-600">↓ AI 开始想</div>
+              <div className="p-2 rounded-lg bg-zinc-800/50">
+                <div className="text-zinc-400">想：下一个字...</div>
+                <div className="text-xs text-zinc-500 mt-1">
+                  「你」30% | 「我」25% | 「很」20% | ...
+                </div>
+              </div>
+              <div className="text-center text-zinc-600">↓ 选概率最高的</div>
+              <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                <div className="text-emerald-300">AI 说：「你」→「你好」→「你好！」→ ...</div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -335,8 +321,8 @@ export const InferenceTest: React.FC<Props> = ({ onBack }) => {
           {/* 提示 */}
           <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
             <p className="text-sm text-amber-200">
-              <span className="font-medium">注意：</span>这是一个约 11M 参数的小模型，
-              只在有限的对话数据上训练。它的回复能力有限，但足以展示 GPT 的工作原理。
+              <span className="font-medium">💡 小提示：</span>这个 AI 的「脑容量」很小（只有 ChatGPT 的万分之一），
+              只学过几十句对话。它的回答比较简单，但足够让你理解 AI 是怎么「说话」的！
             </p>
           </div>
         </div>

@@ -33,38 +33,38 @@ interface StageConfig {
 const stages: StageConfig[] = [
   {
     id: 'sft',
-    title: '监督微调 (SFT)',
-    shortTitle: 'SFT',
+    title: '教 AI 按格式回答',
+    shortTitle: '学格式',
     icon: <GraduationCap className="w-4 h-4" />,
-    description: '使用指令-响应对训练模型遵循指令',
-    learningPoint: 'SFT 让模型学会理解和执行人类指令',
+    description: '给 AI 看大量"问题→标准答案"的例子，让它学会这种对话格式',
+    learningPoint: '就像学生做例题：先看老师怎么答，再照着学',
     difficulty: 2,
   },
   {
     id: 'reward',
-    title: '奖励模型',
-    shortTitle: 'Reward',
+    title: '教 AI 分辨好坏',
+    shortTitle: '打分',
     icon: <Users className="w-4 h-4" />,
-    description: '训练模型预测人类偏好',
-    learningPoint: '奖励模型量化"好"与"坏"的区别',
+    description: '人类给 AI 的回答打分，AI 学会什么样的回答更好',
+    learningPoint: '就像老师批改作业：这个答案好，那个答案不好',
     difficulty: 3,
   },
   {
     id: 'ppo',
-    title: 'PPO 优化',
-    shortTitle: 'PPO',
+    title: '让 AI 追求高分',
+    shortTitle: '求好',
     icon: <Brain className="w-4 h-4" />,
-    description: '使用强化学习优化策略',
-    learningPoint: 'PPO 在保持稳定的同时最大化奖励',
+    description: 'AI 学会追求"高分"，努力给出人类喜欢的回答',
+    learningPoint: '就像学生为了得高分，会调整自己的答题方式',
     difficulty: 4,
   },
   {
     id: 'comparison',
-    title: '效果对比',
+    title: '前后对比',
     shortTitle: '对比',
     icon: <MessageSquare className="w-4 h-4" />,
-    description: '对比不同阶段模型的输出差异',
-    learningPoint: '对齐让模型输出更有帮助、更安全',
+    description: '看看训练前后 AI 的回答有什么变化',
+    learningPoint: '训练后的 AI 回答更有帮助、更礼貌、更安全',
     difficulty: 1,
   },
 ];
@@ -141,7 +141,7 @@ export const AlignmentLab: React.FC = () => {
             </span>
           </div>
           <div className="text-xs text-zinc-500">
-            📚 通过可视化理解 RLHF 对齐流程
+            📚 了解 ChatGPT 是如何变得"听话"的
           </div>
         </div>
       </div>

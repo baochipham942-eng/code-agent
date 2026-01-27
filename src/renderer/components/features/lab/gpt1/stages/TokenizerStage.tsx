@@ -72,84 +72,72 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <BookOpen className="w-4 h-4 text-blue-400" />
-              什么是分词器？
+              为什么要教 AI 认字？
             </h3>
+            <p className="text-sm text-zinc-400 leading-relaxed mb-3">
+              电脑只认识数字（0、1、2...），不认识汉字。所以我们需要给每个字
+              <span className="text-emerald-400">「编个号」</span>，
+              就像给学生分配学号一样。
+            </p>
             <p className="text-sm text-zinc-400 leading-relaxed">
-              计算机只能处理数字，所以我们需要将文本转换为数字序列。
-              <span className="text-emerald-400">分词器（Tokenizer）</span>
-              就是做这个转换的工具，它把文本切分成小单元（tokens），每个 token 对应一个数字 ID。
+              「你」= 42号，「好」= 18号... 这样 AI 就能用数字来「认字」了！
             </p>
           </div>
 
-          {/* 分词算法说明 */}
+          {/* 认字规则 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">SentencePiece Unigram</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">AI 的「认字」规则</h3>
             <div className="space-y-3 text-sm text-zinc-400">
-              <p>我们使用 SentencePiece 的 Unigram 模型进行分词：</p>
-              <ul className="space-y-2">
-                <li className="flex items-start gap-2">
-                  <span className="text-amber-400 mt-0.5">1.</span>
-                  <span><span className="text-zinc-300">无需空格分割：</span>直接处理原始文本，非常适合中文</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-amber-400 mt-0.5">2.</span>
-                  <span><span className="text-zinc-300">子词切分：</span>常见词保持完整，罕见词被拆分</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-amber-400 mt-0.5">3.</span>
-                  <span><span className="text-zinc-300">概率建模：</span>选择概率最高的分词方式</span>
-                </li>
-              </ul>
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                <span className="text-xl">📖</span>
+                <div>
+                  <div className="text-emerald-300 font-medium">常见的组合 → 记成一个词</div>
+                  <div className="text-xs text-zinc-500 mt-1">比如「天气」经常一起出现，就当成一个单位</div>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                <span className="text-xl">✂️</span>
+                <div>
+                  <div className="text-blue-300 font-medium">不常见的 → 拆成单个字</div>
+                  <div className="text-xs text-zinc-500 mt-1">生僻词就一个字一个字地认</div>
+                </div>
+              </div>
             </div>
           </div>
 
           {/* 词汇表配置 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">配置参数</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">AI 认识多少字？</h3>
             <div className="space-y-3">
-              <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-800/50">
-                <span className="text-sm text-zinc-400">词汇表大小</span>
-                <span className="text-sm font-mono text-emerald-400">280</span>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-zinc-800/50">
+                <span className="text-sm text-zinc-400">总共能认的字/词</span>
+                <span className="text-sm font-bold text-emerald-400">280 个</span>
               </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-800/50">
-                <span className="text-sm text-zinc-400">字符覆盖率</span>
-                <span className="text-sm font-mono text-blue-400">99.5%</span>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-zinc-800/50">
-                <span className="text-sm text-zinc-400">模型类型</span>
-                <span className="text-sm font-mono text-purple-400">unigram</span>
-              </div>
+              <p className="text-xs text-zinc-500">
+                💡 这是一个「迷你」词汇表，只够日常对话用。真正的 ChatGPT 能认识几万个词！
+              </p>
             </div>
           </div>
 
-          {/* 代码展示 */}
+          {/* 工作流程 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
-              <span className="text-emerald-400">{'</>'}</span>
-              tokenizer.py
-            </h3>
-            <pre className="font-mono text-xs bg-zinc-950 rounded-lg p-3 overflow-x-auto text-zinc-300">
-{`import sentencepiece as spm
-
-# 训练分词器
-spm.SentencePieceTrainer.train(
-    input="dialogue_corpus.txt",
-    model_prefix="tokenizer",
-    vocab_size=280,           # 词汇表大小
-    character_coverage=0.995, # 字符覆盖率
-    model_type='unigram'      # 算法类型
-)
-
-# 使用分词器
-sp = spm.SentencePieceProcessor()
-sp.load("tokenizer.model")
-
-# 编码
-tokens = sp.encode("你好")  # [42, 18]
-
-# 解码
-text = sp.decode([42, 18])  # "你好"`}
-            </pre>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">认字过程演示</h3>
+            <div className="space-y-3">
+              <div className="p-3 rounded-lg bg-zinc-800/50">
+                <div className="text-xs text-zinc-500 mb-2">第 1 步：看到一句话</div>
+                <div className="text-sm text-zinc-300">「你好，今天天气怎么样？」</div>
+              </div>
+              <div className="text-center text-zinc-600">↓ 查字典，找编号</div>
+              <div className="p-3 rounded-lg bg-zinc-800/50">
+                <div className="text-xs text-zinc-500 mb-2">第 2 步：翻译成数字</div>
+                <div className="text-sm">
+                  <span className="text-emerald-400">[42, 18, 5, 67, 123, 156, 78, 6]</span>
+                </div>
+              </div>
+              <p className="text-xs text-zinc-500 text-center">
+                这样 AI 就能「读懂」这句话了！
+              </p>
+            </div>
           </div>
         </div>
 
@@ -208,11 +196,11 @@ text = sp.decode([42, 18])  # "你好"`}
             </div>
           </div>
 
-          {/* 词汇表预览 */}
+          {/* AI 的字典 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
             <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <Type className="w-4 h-4 text-purple-400" />
-              词汇表预览 (280 tokens)
+              AI 的「字典」（部分）
             </h3>
             <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto">
               {Object.entries(mockVocab).slice(0, 32).map(([token, id]) => (
@@ -221,36 +209,41 @@ text = sp.decode([42, 18])  # "你好"`}
                   className="flex items-center justify-between p-2 rounded bg-zinc-800/50 text-xs"
                 >
                   <span className="text-zinc-300">
-                    {token === '\n' ? '\\n' : token === ' ' ? '␣' : token}
+                    {token === '\n' ? '换行' : token === ' ' ? '空格' : token}
                   </span>
-                  <span className="text-zinc-500 font-mono">{id}</span>
+                  <span className="text-emerald-400 font-bold">#{id}</span>
                 </div>
               ))}
             </div>
-            <p className="text-xs text-zinc-600 mt-2 text-center">显示前 32 个 tokens...</p>
+            <p className="text-xs text-zinc-600 mt-2 text-center">
+              每个字/词都有自己的「学号」👆
+            </p>
           </div>
 
-          {/* 编码解码示例 */}
+          {/* 双向转换 */}
           <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3">编码 ↔ 解码</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">字 ↔ 数字 可以互相转换</h3>
             <div className="space-y-3">
-              <div className="p-3 rounded-lg bg-zinc-800/50">
-                <div className="text-xs text-zinc-500 mb-1">编码 (文本 → 数字)</div>
-                <div className="font-mono text-sm">
-                  <span className="text-zinc-300">"你好"</span>
-                  <span className="text-zinc-600 mx-2">→</span>
-                  <span className="text-blue-400">[42, 18]</span>
+              <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                <div className="text-xs text-emerald-400 mb-1">📝 文字 → 数字（AI 读取时）</div>
+                <div className="text-sm">
+                  <span className="text-zinc-300">「你好」</span>
+                  <span className="text-zinc-600 mx-2">变成</span>
+                  <span className="text-emerald-400 font-bold">[42, 18]</span>
                 </div>
               </div>
-              <div className="p-3 rounded-lg bg-zinc-800/50">
-                <div className="text-xs text-zinc-500 mb-1">解码 (数字 → 文本)</div>
-                <div className="font-mono text-sm">
-                  <span className="text-blue-400">[42, 18]</span>
-                  <span className="text-zinc-600 mx-2">→</span>
-                  <span className="text-zinc-300">"你好"</span>
+              <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                <div className="text-xs text-blue-400 mb-1">💬 数字 → 文字（AI 输出时）</div>
+                <div className="text-sm">
+                  <span className="text-blue-400 font-bold">[42, 18]</span>
+                  <span className="text-zinc-600 mx-2">变回</span>
+                  <span className="text-zinc-300">「你好」</span>
                 </div>
               </div>
             </div>
+            <p className="text-xs text-zinc-500 mt-3 text-center">
+              💡 就像密码本：知道规则就能加密解密
+            </p>
           </div>
         </div>
       </div>

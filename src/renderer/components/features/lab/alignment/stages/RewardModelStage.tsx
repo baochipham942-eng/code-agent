@@ -314,6 +314,33 @@ export const RewardModelStage: React.FC<RewardModelStageProps> = ({ onComplete, 
         </ul>
       </div>
 
+      {/* 专有名词解释 */}
+      <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <span className="text-blue-400">📖</span>
+          本阶段专有名词
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            { en: 'Reward Model', zh: '奖励模型', desc: '学习人类偏好，能给回答打分的模型' },
+            { en: 'Human Preference', zh: '人类偏好', desc: '人类认为哪个回答更好的判断' },
+            { en: 'Pairwise Comparison', zh: '成对比较', desc: '通过比较两个回答的优劣来训练' },
+            { en: 'Ranking', zh: '排序', desc: '对多个回答按质量高低排序' },
+            { en: 'Preference Data', zh: '偏好数据', desc: '包含人类选择的回答对比数据' },
+            { en: 'Bradley-Terry Model', zh: '布拉德利-特里模型', desc: '将偏好转化为分数的数学模型' },
+          ].map((term) => (
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-300">{term.zh}</span>
+              </div>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Navigation */}
       <div className="flex justify-between pt-4">
         <button

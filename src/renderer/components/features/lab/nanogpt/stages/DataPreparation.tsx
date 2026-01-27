@@ -310,6 +310,31 @@ export const DataPreparation: React.FC<DataPreparationProps> = ({ onComplete }) 
         </div>
       )}
 
+      {/* 专有名词解释 */}
+      <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <span className="text-blue-400">📖</span>
+          本阶段专有名词
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            { en: 'Dataset', zh: '数据集', desc: '用于训练 AI 的数据集合，可以是书籍、文章等' },
+            { en: 'Train/Val Split', zh: '训练/验证集划分', desc: '把数据分成两部分：学习用和考试用，检验是否真的学会了' },
+            { en: 'Character-level', zh: '字符级', desc: '一个字一个字地处理文本的方式，词汇表小但序列长' },
+            { en: 'Corpus', zh: '语料库', desc: '大量文本数据的集合，AI 的"阅读材料"' },
+          ].map((term) => (
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-300">{term.zh}</span>
+              </div>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Next Button */}
       <div className="flex justify-end pt-4">
         <button

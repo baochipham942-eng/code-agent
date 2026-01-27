@@ -310,6 +310,31 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete }) => {
         </ul>
       </div>
 
+      {/* 专有名词解释 */}
+      <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <span className="text-blue-400">📖</span>
+          本阶段专有名词
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            { en: 'SFT', zh: '监督微调', desc: 'Supervised Fine-Tuning，用标注好的问答对训练模型' },
+            { en: 'Instruction Tuning', zh: '指令微调', desc: '教模型理解和遵循人类指令的训练方式' },
+            { en: 'Instruction Dataset', zh: '指令数据集', desc: '包含问题和标准答案的训练数据' },
+            { en: 'Demonstration', zh: '示范', desc: '给模型展示正确回答的例子，作为学习样本' },
+          ].map((term) => (
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-300">{term.zh}</span>
+              </div>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Navigation */}
       <div className="flex justify-end pt-4">
         <button

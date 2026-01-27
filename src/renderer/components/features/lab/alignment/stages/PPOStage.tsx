@@ -343,6 +343,33 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
         </ul>
       </div>
 
+      {/* 专有名词解释 */}
+      <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <span className="text-blue-400">📖</span>
+          本阶段专有名词
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            { en: 'PPO', zh: '近端策略优化', desc: 'Proximal Policy Optimization，一种稳定的强化学习算法' },
+            { en: 'Reinforcement Learning', zh: '强化学习', desc: '通过奖励信号指导模型改进的学习方式' },
+            { en: 'Policy', zh: '策略', desc: '模型生成回答的方式，PPO 优化的目标' },
+            { en: 'KL Divergence', zh: 'KL 散度', desc: '衡量两个分布差异的指标，用于限制模型变化幅度' },
+            { en: 'Reward', zh: '奖励', desc: '奖励模型给回答的评分，指导模型进步' },
+            { en: 'Clipping', zh: '裁剪', desc: '限制单次更新幅度，防止模型变化过大' },
+          ].map((term) => (
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-300">{term.zh}</span>
+              </div>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Navigation */}
       <div className="flex justify-between pt-4">
         <button

@@ -371,6 +371,33 @@ export const Pretraining: React.FC<PretrainingProps> = ({ onComplete, onBack }) 
         </p>
       </div>
 
+      {/* 专有名词解释 */}
+      <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <span className="text-blue-400">📖</span>
+          本阶段专有名词
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            { en: 'Pretraining', zh: '预训练', desc: '在大量通用数据上训练模型，学习语言的基本规律' },
+            { en: 'Loss', zh: '损失', desc: '衡量模型预测错误程度的指标，越小越好' },
+            { en: 'Validation Loss', zh: '验证损失', desc: '在未见过的数据上的表现，检验是否真正学会' },
+            { en: 'Gradient Accumulation', zh: '梯度累积', desc: '多次计算后再更新参数，相当于用更大批次训练' },
+            { en: 'Warmup', zh: '预热', desc: '训练初期逐渐增大学习率，防止一开始学歪' },
+            { en: 'Iteration', zh: '迭代', desc: '一次参数更新过程，训练通常需要数十万次迭代' },
+          ].map((term) => (
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-300">{term.zh}</span>
+              </div>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Navigation */}
       <div className="flex justify-between pt-4">
         <button

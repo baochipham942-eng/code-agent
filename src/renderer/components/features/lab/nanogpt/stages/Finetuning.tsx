@@ -475,6 +475,33 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
         </div>
       </div>
 
+      {/* 专有名词解释 */}
+      <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <span className="text-blue-400">📖</span>
+          本阶段专有名词
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            { en: 'Fine-tuning', zh: '微调', desc: '在预训练模型基础上，用特定数据继续训练' },
+            { en: 'Transfer Learning', zh: '迁移学习', desc: '把一个任务学到的知识用于另一个任务' },
+            { en: 'Pre-trained Weights', zh: '预训练权重', desc: '别人已经训练好的模型参数，可以直接使用' },
+            { en: 'Learning Rate', zh: '学习率', desc: '每次更新参数的幅度，微调时通常用较小值' },
+            { en: 'Checkpoint', zh: '检查点', desc: '训练过程中保存的模型状态，方便恢复和回退' },
+            { en: 'Overfitting', zh: '过拟合', desc: '模型记住了训练数据但泛化能力差的现象' },
+          ].map((term) => (
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-300">{term.zh}</span>
+              </div>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Navigation */}
       <div className="flex justify-between pt-4">
         <button

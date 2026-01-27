@@ -201,6 +201,33 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
         </div>
       </div>
 
+      {/* 专有名词解释 */}
+      <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <span className="text-blue-400">📖</span>
+          本阶段专有名词
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            { en: 'Transformer', zh: '变换器', desc: 'GPT 的核心架构，通过注意力机制理解文本' },
+            { en: 'Attention Head', zh: '注意力头', desc: '同时从不同角度关注文本的机制，多个头并行工作' },
+            { en: 'Layer', zh: '层', desc: '神经网络的处理单元，层数越多理解越深' },
+            { en: 'Embedding Dimension', zh: '嵌入维度', desc: '每个词元用多少个数字表示，越大表达能力越强' },
+            { en: 'Parameters', zh: '参数', desc: '模型中可学习的数值，决定模型的"知识容量"' },
+            { en: 'Context Length', zh: '上下文长度', desc: '模型一次能看多少个词元，影响理解范围' },
+          ].map((term) => (
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-300">{term.zh}</span>
+              </div>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Navigation */}
       <div className="flex justify-between pt-4">
         <button

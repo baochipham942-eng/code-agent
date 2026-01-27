@@ -222,6 +222,31 @@ export const DataPreparation: React.FC<Props> = ({ onComplete }) => {
         </div>
       </div>
 
+      {/* 专有名词解释 */}
+      <div className="mt-8 p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <span className="text-blue-400">📖</span>
+          本阶段专有名词
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            { en: 'Dataset', zh: '数据集', desc: '用于训练 AI 的数据集合，这里是大量的对话样本' },
+            { en: 'Token', zh: '词元/标记', desc: '文本被切分后的最小单位，可以是字、词或子词' },
+            { en: 'Training Data', zh: '训练数据', desc: 'AI 学习时使用的数据，"老师"的教材' },
+            { en: 'Data Augmentation', zh: '数据增强', desc: '通过重复、变换等方式增加数据量的技术' },
+          ].map((term) => (
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-300">{term.zh}</span>
+              </div>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* 下一步按钮 */}
       <div className="mt-8 flex justify-end">
         <button

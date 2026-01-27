@@ -436,6 +436,35 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
         </div>
       </div>
 
+      {/* 专有名词解释 */}
+      <div className="mt-8 p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <span className="text-blue-400">📖</span>
+          本阶段专有名词
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            { en: 'Training Loop', zh: '训练循环', desc: '反复"做题-改正"的过程，直到模型学会' },
+            { en: 'Epoch', zh: '轮次', desc: '完整遍历一次所有训练数据叫一个 epoch' },
+            { en: 'Batch', zh: '批次', desc: '每次训练时同时处理的样本数量，不是一个个学而是一批批学' },
+            { en: 'Loss', zh: '损失', desc: '衡量模型预测与正确答案差距的指标，越小越好' },
+            { en: 'Learning Rate', zh: '学习率', desc: '每次调整参数的幅度，太大会震荡，太小学得慢' },
+            { en: 'Gradient', zh: '梯度', desc: '指示参数应该往哪个方向调整的"指南针"' },
+            { en: 'Backpropagation', zh: '反向传播', desc: '从输出层往回计算梯度的算法，找出每个参数的责任' },
+            { en: 'Optimizer', zh: '优化器', desc: '根据梯度更新参数的策略，常用 Adam、SGD 等' },
+          ].map((term) => (
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-300">{term.zh}</span>
+              </div>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* 导航按钮 */}
       <div className="mt-8 flex justify-between">
         <button

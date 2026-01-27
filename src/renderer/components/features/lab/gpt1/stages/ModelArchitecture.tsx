@@ -276,6 +276,35 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
         </div>
       </div>
 
+      {/* 专有名词解释 */}
+      <div className="mt-8 p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <span className="text-blue-400">📖</span>
+          本阶段专有名词
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            { en: 'Transformer', zh: '变换器', desc: 'GPT 使用的核心架构，2017年由 Google 提出，革新了 NLP 领域' },
+            { en: 'Embedding', zh: '嵌入', desc: '把离散的字/词转换成连续的数字向量，捕捉语义信息' },
+            { en: 'Attention', zh: '注意力机制', desc: '让模型能同时"看"到句子中所有位置，理解词之间的关系' },
+            { en: 'Self-Attention', zh: '自注意力', desc: '句子内部各词相互关注的机制，是 Transformer 的核心' },
+            { en: 'FFN', zh: '前馈神经网络', desc: 'Feed-Forward Network，对注意力结果进行深度处理' },
+            { en: 'Parameters', zh: '参数', desc: '模型中可学习的数值，参数越多模型越"聪明"' },
+            { en: 'Residual Connection', zh: '残差连接', desc: '让信息可以"跳跃"传递，帮助训练更深的网络' },
+            { en: 'Layer Normalization', zh: '层归一化', desc: '稳定训练过程的技术，让数值保持在合理范围' },
+          ].map((term) => (
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-300">{term.zh}</span>
+              </div>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* 导航按钮 */}
       <div className="mt-8 flex justify-between">
         <button

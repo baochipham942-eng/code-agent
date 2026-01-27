@@ -248,6 +248,33 @@ export const TokenizerStage: React.FC<Props> = ({ onComplete, onBack }) => {
         </div>
       </div>
 
+      {/* 专有名词解释 */}
+      <div className="mt-8 p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <span className="text-blue-400">📖</span>
+          本阶段专有名词
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            { en: 'Tokenizer', zh: '分词器', desc: '把文本切分成词元的工具，相当于 AI 的"认字本"' },
+            { en: 'Vocabulary', zh: '词汇表', desc: 'AI 认识的所有字/词的集合，每个都有唯一编号' },
+            { en: 'Token ID', zh: '词元编号', desc: '每个字/词对应的数字编号，AI 通过编号来"认字"' },
+            { en: 'Encoding', zh: '编码', desc: '把文字转换成数字的过程（文字 → 数字）' },
+            { en: 'Decoding', zh: '解码', desc: '把数字转换回文字的过程（数字 → 文字）' },
+            { en: 'BPE', zh: '字节对编码', desc: 'Byte Pair Encoding，一种常用的分词算法' },
+          ].map((term) => (
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-300">{term.zh}</span>
+              </div>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* 导航按钮 */}
       <div className="mt-8 flex justify-between">
         <button

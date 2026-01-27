@@ -234,6 +234,33 @@ export const AlignmentComparison: React.FC<AlignmentComparisonProps> = ({ onBack
         </div>
       </div>
 
+      {/* 专有名词解释 */}
+      <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <span className="text-blue-400">📖</span>
+          本阶段专有名词
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            { en: 'RLHF', zh: '人类反馈强化学习', desc: 'Reinforcement Learning from Human Feedback，完整的对齐训练流程' },
+            { en: 'Alignment', zh: '对齐', desc: '让 AI 的行为符合人类期望和价值观' },
+            { en: 'Helpful', zh: '有帮助', desc: '回答能真正解决用户的问题' },
+            { en: 'Harmless', zh: '无害', desc: '回答不会造成伤害或误导' },
+            { en: 'Honest', zh: '诚实', desc: '回答真实可靠，不确定时会承认' },
+            { en: 'Base Model', zh: '基础模型', desc: '只经过预训练，还未对齐的原始模型' },
+          ].map((term) => (
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-300">{term.zh}</span>
+              </div>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Navigation */}
       <div className="flex justify-between pt-4">
         <button

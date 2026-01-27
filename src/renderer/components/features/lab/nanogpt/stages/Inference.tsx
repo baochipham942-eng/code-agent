@@ -340,6 +340,33 @@ export const Inference: React.FC<InferenceProps> = ({ onBack }) => {
         </p>
       </div>
 
+      {/* 专有名词解释 */}
+      <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <span className="text-blue-400">📖</span>
+          本阶段专有名词
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {[
+            { en: 'Inference', zh: '推理', desc: '使用训练好的模型生成输出的过程' },
+            { en: 'Temperature', zh: '温度', desc: '控制生成随机性的参数，越高越有创意' },
+            { en: 'Top-K Sampling', zh: 'Top-K 采样', desc: '只从概率最高的 K 个词中选择下一个词' },
+            { en: 'Top-P Sampling', zh: 'Top-P 采样', desc: '从累计概率达到 P 的词集中选择，又叫核采样' },
+            { en: 'Autoregressive', zh: '自回归', desc: '一个词一个词地生成，用前文预测后文' },
+            { en: 'Prompt', zh: '提示词', desc: '给模型的输入文本，引导生成方向' },
+          ].map((term) => (
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-bold text-emerald-400">{term.en}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-300">{term.zh}</span>
+              </div>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* Navigation */}
       <div className="flex justify-between pt-4">
         <button

@@ -45,3 +45,6 @@ export * from './gen7';
 
 // Lab types (实验室)
 export * from './lab';
+
+// Cron types (定时任务)
+export * from './cron';

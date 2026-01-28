@@ -1,5 +1,5 @@
 // ============================================================================
-// Bash Tool - Execute shell commands with background support
+// Bash Tool - Execute shell commands with background and PTY support
 // ============================================================================
 
 import { exec } from 'child_process';
@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { BASH } from '../../../shared/constants';
 import { startBackgroundTask } from './backgroundTasks';
+import { createPtySession, getPtySessionOutput } from './ptyExecutor';
 
 const execAsync = promisify(exec);
 
@@ -36,6 +37,11 @@ Background execution:
 - Use task_output tool to check status and get output
 - Use kill_shell tool to terminate background tasks
 
+PTY mode (for interactive commands):
+- Set pty=true for commands that require terminal emulation (vim, ssh, etc.)
+- PTY sessions support interactive input via process_write/process_submit tools
+- Use for commands that need ANSI escape sequences or terminal features
+
 Git best practices:
 - NEVER use --force push unless explicitly requested
 - NEVER skip hooks (--no-verify) unless explicitly requested
@@ -64,6 +70,22 @@ Git best practices:
         type: 'boolean',
         description: 'Run command in background and return immediately with task_id',
       },
+      pty: {
+        type: 'boolean',
+        description: 'Use PTY (pseudo-terminal) for interactive commands like vim, ssh, etc.',
+      },
+      cols: {
+        type: 'number',
+        description: 'Terminal columns for PTY mode (default: 80)',
+      },
+      rows: {
+        type: 'number',
+        description: 'Terminal rows for PTY mode (default: 24)',
+      },
+      wait_for_completion: {
+        type: 'boolean',
+        description: 'For PTY mode: wait for command to complete before returning (default: false)',
+      },
       description: {
         type: 'string',
         description: 'Short description of what this command does (for logging)',
@@ -81,6 +103,82 @@ Git best practices:
     const workingDirectory =
       (params.working_directory as string) || context.workingDirectory;
     const runInBackground = params.run_in_background as boolean;
+    const usePty = params.pty as boolean;
+    const cols = (params.cols as number) || 80;
+    const rows = (params.rows as number) || 24;
+    const waitForCompletion = params.wait_for_completion as boolean;
+
+    // PTY execution
+    if (usePty) {
+      const result = createPtySession({
+        command,
+        cwd: workingDirectory,
+        cols,
+        rows,
+        maxRuntime: timeout,
+      });
+
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error || 'Failed to create PTY session',
+        };
+      }
+
+      // If waiting for completion, block until done
+      if (waitForCompletion) {
+        const output = await getPtySessionOutput(result.sessionId!, true, timeout);
+        if (!output) {
+          return {
+            success: false,
+            error: 'PTY session ended unexpectedly',
+          };
+        }
+
+        let outputText = output.output;
+        if (outputText.length > BASH.MAX_OUTPUT_LENGTH) {
+          outputText = outputText.substring(0, BASH.MAX_OUTPUT_LENGTH) + '\n... (output truncated)';
+        }
+
+        return {
+          success: output.status === 'completed',
+          output: outputText,
+          error: output.status === 'failed' ? `Command exited with code ${output.exitCode}` : undefined,
+          metadata: {
+            sessionId: result.sessionId,
+            exitCode: output.exitCode,
+            duration: output.duration,
+            pty: true,
+          },
+        };
+      }
+
+      // Return session info for interactive use
+      const output = `PTY session started.
+
+<session-id>${result.sessionId}</session-id>
+<session-type>pty</session-type>
+<output-file>${result.outputFile}</output-file>
+<status>running</status>
+<terminal-size>${cols}x${rows}</terminal-size>
+<summary>PTY session for "${command.substring(0, 50)}${command.length > 50 ? '...' : ''}" started.</summary>
+
+Use process_write/process_submit to send input to this session.
+Use process_poll to check for new output.
+Use process_kill to terminate the session.`;
+
+      return {
+        success: true,
+        output,
+        metadata: {
+          sessionId: result.sessionId,
+          outputFile: result.outputFile,
+          pty: true,
+          cols,
+          rows,
+        },
+      };
+    }
 
     // Background execution
     if (runInBackground) {

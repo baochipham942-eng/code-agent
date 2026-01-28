@@ -24,6 +24,7 @@ import { initUnifiedOrchestrator } from '../orchestrator';
 import { logBridge } from '../mcp/logBridge.js';
 import { initPluginSystem, shutdownPluginSystem } from '../plugins';
 import { initDAGEventBridge } from '../scheduler';
+import { initCronService, getCronService, initHeartbeatService, getHeartbeatService } from '../cron';
 import { getSkillDiscoveryService, getSkillRepositoryService } from '../services/skills';
 import { getMainWindow } from './window';
 import { IPC_CHANNELS } from '../../shared/ipc';
@@ -297,6 +298,26 @@ async function initializeServices(): Promise<void> {
   } catch (error) {
     logger.warn('DAG event bridge initialization failed (non-blocking)', { error: String(error) });
   }
+
+  // Initialize Cron Service (scheduled tasks)
+  initCronService()
+    .then(() => {
+      const stats = getCronService().getStats();
+      logger.info('CronService initialized', { jobs: stats.totalJobs, active: stats.activeJobs });
+    })
+    .catch((error) => {
+      logger.warn('CronService initialization failed (non-blocking)', { error: String(error) });
+    });
+
+  // Initialize Heartbeat Service (health monitoring)
+  initHeartbeatService()
+    .then(() => {
+      const stats = getHeartbeatService().getStats();
+      logger.info('HeartbeatService initialized', { total: stats.total, healthy: stats.healthy });
+    })
+    .catch((error) => {
+      logger.warn('HeartbeatService initialization failed (non-blocking)', { error: String(error) });
+    });
 
   // Setup LogBridge command handler
   await setupLogBridge();

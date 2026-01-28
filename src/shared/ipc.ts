@@ -485,6 +485,13 @@ export const IPC_CHANNELS = {
   LAB_TRAINING_PROGRESS: LAB_CHANNELS.TRAINING_PROGRESS,
   LAB_GET_PROJECT_STATUS: LAB_CHANNELS.GET_PROJECT_STATUS,
   LAB_CHECK_PYTHON_ENV: LAB_CHANNELS.CHECK_PYTHON_ENV,
+
+  // Agent Routing channels
+  AGENT_ROUTING_LIST: 'agent-routing:list',
+  AGENT_ROUTING_UPSERT: 'agent-routing:upsert',
+  AGENT_ROUTING_DELETE: 'agent-routing:delete',
+  AGENT_ROUTING_SET_ENABLED: 'agent-routing:set-enabled',
+  AGENT_ROUTING_SET_DEFAULT: 'agent-routing:set-default',
 } as const;
 
 // ----------------------------------------------------------------------------

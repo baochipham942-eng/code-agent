@@ -32,6 +32,9 @@ import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
 import { getDynamicAgentFactory } from './dynamicAgentFactory';
 import { getAutoAgentCoordinator } from './autoAgentCoordinator';
 import { DEFAULT_MODELS } from '../../shared/constants';
+// Agent Routing
+import { getRoutingService } from '../routing';
+import type { RoutingContext, RoutingResolution } from '../../shared/types/agentRouting';
 
 const logger = createLogger('AgentOrchestrator');
 
@@ -454,10 +457,58 @@ export class AgentOrchestrator {
     generation: ReturnType<GenerationManager['getCurrentGeneration']>,
     sessionId?: string
   ): Promise<void> {
-    // Create agent loop
+    // Resolve agent routing
+    const routingResolution = await this.resolveAgentRouting(content, sessionId);
+    let effectiveModelConfig = modelConfig;
+    let effectiveGeneration = generation;
+
+    if (routingResolution) {
+      logger.info('Agent routing resolved', {
+        agentId: routingResolution.agent.id,
+        agentName: routingResolution.agent.name,
+        score: routingResolution.score,
+        reason: routingResolution.reason,
+      });
+
+      // Apply model override from agent config
+      if (routingResolution.agent.modelOverride) {
+        const override = routingResolution.agent.modelOverride;
+        effectiveModelConfig = {
+          ...modelConfig,
+          provider: (override.provider as ModelProvider) || modelConfig.provider,
+          model: override.model || modelConfig.model,
+          temperature: override.temperature ?? modelConfig.temperature,
+        };
+        logger.debug('Model config overridden by agent', {
+          provider: effectiveModelConfig.provider,
+          model: effectiveModelConfig.model,
+        });
+      }
+
+      // Create custom generation with agent's system prompt
+      if (routingResolution.agent.systemPrompt) {
+        effectiveGeneration = {
+          ...generation,
+          systemPrompt: routingResolution.agent.systemPrompt,
+        };
+        logger.debug('System prompt overridden by agent', {
+          agentId: routingResolution.agent.id,
+        });
+      }
+
+      // Notify UI about agent selection
+      onEvent({
+        type: 'notification',
+        data: {
+          message: `使用 Agent: ${routingResolution.agent.name}`,
+        },
+      });
+    }
+
+    // Create agent loop with potentially overridden config
     this.agentLoop = new AgentLoop({
-      generation,
-      modelConfig,
+      generation: effectiveGeneration,
+      modelConfig: effectiveModelConfig,
       toolRegistry: this.toolRegistry,
       toolExecutor: this.toolExecutor,
       messages: this.messages,
@@ -476,6 +527,41 @@ export class AgentOrchestrator {
     } finally {
       logger.info('========== Finally block, agentLoop = null ==========');
       this.agentLoop = null;
+    }
+  }
+
+  /**
+   * 解析 Agent 路由
+   */
+  private async resolveAgentRouting(
+    userMessage: string,
+    sessionId?: string
+  ): Promise<RoutingResolution | null> {
+    try {
+      const routingService = getRoutingService();
+
+      // Initialize routing service if not already
+      if (!routingService.isInitialized()) {
+        await routingService.initialize(this.workingDirectory);
+      }
+
+      const context: RoutingContext = {
+        workingDirectory: this.workingDirectory,
+        userMessage,
+        sessionId,
+      };
+
+      const resolution = routingService.resolve(context);
+
+      // Skip if default agent with no specific match
+      if (resolution.agent.id === 'default' && resolution.score <= 0) {
+        return null;
+      }
+
+      return resolution;
+    } catch (error) {
+      logger.warn('Agent routing failed, using default', { error });
+      return null;
     }
   }
 

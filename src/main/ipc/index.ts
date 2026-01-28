@@ -33,6 +33,7 @@ import { registerSessionStatusHandlers } from './sessionStatus.ipc';
 import { registerSkillHandlers } from './skill.ipc';
 import { registerMarketplaceHandlers } from './marketplace.ipc';
 import { registerLabHandlers } from './lab.ipc';
+import { registerAgentRoutingHandlers } from './agentRouting.ipc';
 
 export * from './types';
 
@@ -133,6 +134,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Lab handlers (实验室)
   registerLabHandlers(ipcMain, getMainWindow);
+
+  // Agent Routing handlers (Agent 路由)
+  registerAgentRoutingHandlers(ipcMain);
 
   logger.info('All handlers registered');
 }

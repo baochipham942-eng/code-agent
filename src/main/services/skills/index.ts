@@ -8,6 +8,21 @@ export {
 } from './skillParser';
 
 export {
+  checkSkillDependencies,
+  loadSkillReferences,
+  loadSkillFull,
+  loadSkillsBatch,
+  getDependencyStatusSummary,
+} from './skillLoader';
+
+export {
+  BUILTIN_SKILLS,
+  getBuiltinSkills,
+  getBuiltinSkill,
+  isBuiltinSkill,
+} from './builtinSkills';
+
+export {
   getSkillDiscoveryService,
   resetSkillDiscoveryService,
   SkillDiscoveryService,

@@ -19,6 +19,7 @@ import {
   Star,
   X,
   Download,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button, Input } from '../../../primitives';
 import { SKILL_CHANNELS } from '@shared/ipc/channels';
@@ -99,13 +100,36 @@ interface SkillCheckboxProps {
 }
 
 const SkillCheckbox: React.FC<SkillCheckboxProps> = ({ skill, onToggle, disabled }) => {
+  const hasMissingDeps = skill.dependencyStatus && !skill.dependencyStatus.satisfied;
+
+  // 构建 tooltip 内容
+  const getTooltipContent = () => {
+    if (!skill.dependencyStatus || skill.dependencyStatus.satisfied) return null;
+    const parts: string[] = [];
+    if (skill.dependencyStatus.missingBins?.length) {
+      parts.push(`缺少命令: ${skill.dependencyStatus.missingBins.join(', ')}`);
+    }
+    if (skill.dependencyStatus.missingEnvVars?.length) {
+      parts.push(`缺少环境变量: ${skill.dependencyStatus.missingEnvVars.join(', ')}`);
+    }
+    if (skill.dependencyStatus.missingReferences?.length) {
+      parts.push(`缺少文件: ${skill.dependencyStatus.missingReferences.join(', ')}`);
+    }
+    return parts.join('\n');
+  };
+
+  const tooltipContent = getTooltipContent();
+
   return (
     <label
       className={`inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer transition-colors ${
-        skill.enabled
-          ? 'bg-emerald-500/20 text-emerald-400'
-          : 'bg-zinc-700/50 text-zinc-400 hover:bg-zinc-700'
+        hasMissingDeps
+          ? 'bg-amber-500/20 text-amber-400'
+          : skill.enabled
+            ? 'bg-emerald-500/20 text-emerald-400'
+            : 'bg-zinc-700/50 text-zinc-400 hover:bg-zinc-700'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+      title={tooltipContent || undefined}
     >
       <input
         type="checkbox"
@@ -116,12 +140,23 @@ const SkillCheckbox: React.FC<SkillCheckboxProps> = ({ skill, onToggle, disabled
       />
       <span
         className={`w-3 h-3 rounded border flex items-center justify-center ${
-          skill.enabled ? 'bg-emerald-500 border-emerald-500' : 'border-zinc-500'
+          hasMissingDeps
+            ? 'bg-amber-500 border-amber-500'
+            : skill.enabled
+              ? 'bg-emerald-500 border-emerald-500'
+              : 'border-zinc-500'
         }`}
       >
-        {skill.enabled && <Check className="w-2 h-2 text-white" />}
+        {hasMissingDeps ? (
+          <AlertTriangle className="w-2 h-2 text-white" />
+        ) : (
+          skill.enabled && <Check className="w-2 h-2 text-white" />
+        )}
       </span>
       <span>{skill.name}</span>
+      {hasMissingDeps && (
+        <AlertTriangle className="w-3 h-3 ml-0.5" />
+      )}
     </label>
   );
 };

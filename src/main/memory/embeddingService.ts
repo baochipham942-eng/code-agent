@@ -1,6 +1,7 @@
 // ============================================================================
 // Embedding Service - Advanced embedding with API support
-// Supports DeepSeek, OpenAI APIs with local fallback
+// Supports DeepSeek, OpenAI, Gemini APIs with local fallback
+// Features auto-fallback mechanism for resilience
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
@@ -12,11 +13,12 @@ const logger = createLogger('EmbeddingService');
 // ----------------------------------------------------------------------------
 
 export interface EmbeddingConfig {
-  provider: 'deepseek' | 'openai' | 'local';
+  provider: 'deepseek' | 'openai' | 'gemini' | 'local';
   model?: string;
   dimension: number;
   batchSize: number;
   cacheEnabled: boolean;
+  fallbackChain?: Array<'deepseek' | 'openai' | 'gemini' | 'local'>;
 }
 
 export interface EmbeddingProvider {
@@ -231,15 +233,105 @@ export class OpenAIEmbedding implements EmbeddingProvider {
 }
 
 // ----------------------------------------------------------------------------
+// Gemini Embedding
+// ----------------------------------------------------------------------------
+
+export class GeminiEmbedding implements EmbeddingProvider {
+  private apiKey: string;
+  private model: string;
+  private dimension: number = 768; // text-embedding-004
+
+  constructor(apiKey: string, model?: string) {
+    this.apiKey = apiKey;
+    this.model = model || 'text-embedding-004';
+  }
+
+  async embed(text: string): Promise<number[]> {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:embedContent?key=${this.apiKey}`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: `models/${this.model}`,
+        content: {
+          parts: [{ text }],
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Gemini embedding error: ${error}`);
+    }
+
+    const data = await response.json() as {
+      embedding: { values: number[] };
+    };
+
+    if (!data.embedding?.values) {
+      throw new Error('Invalid response from Gemini embedding API');
+    }
+
+    this.dimension = data.embedding.values.length;
+    return data.embedding.values;
+  }
+
+  async embedBatch(texts: string[]): Promise<number[][]> {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:batchEmbedContents?key=${this.apiKey}`;
+
+    const requests = texts.map((text) => ({
+      model: `models/${this.model}`,
+      content: {
+        parts: [{ text }],
+      },
+    }));
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ requests }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Gemini batch embedding error: ${error}`);
+    }
+
+    const data = await response.json() as {
+      embeddings: Array<{ values: number[] }>;
+    };
+
+    if (!data.embeddings) {
+      throw new Error('Invalid response from Gemini batch embedding API');
+    }
+
+    return data.embeddings.map((e) => e.values);
+  }
+
+  getDimension(): number {
+    return this.dimension;
+  }
+}
+
+// ----------------------------------------------------------------------------
 // Embedding Service (with caching and auto-fallback)
 // ----------------------------------------------------------------------------
 
 export class EmbeddingService {
   private provider: EmbeddingProvider;
+  private fallbackChain: EmbeddingProvider[] = [];
   private fallbackProvider: LocalEmbedding;
   private cache: Map<string, number[]> = new Map();
   private cacheEnabled: boolean;
   private maxCacheSize: number = 10000;
+  private currentProviderIndex: number = 0;
+  private failureCount: Map<number, number> = new Map();
+  private readonly maxFailures: number = 3;
 
   constructor(config?: Partial<EmbeddingConfig>) {
     const defaultConfig: EmbeddingConfig = {
@@ -247,25 +339,50 @@ export class EmbeddingService {
       dimension: 384,
       batchSize: 100,
       cacheEnabled: true,
+      fallbackChain: ['deepseek', 'openai', 'gemini', 'local'],
     };
 
     const finalConfig = { ...defaultConfig, ...config };
     this.cacheEnabled = finalConfig.cacheEnabled;
     this.fallbackProvider = new LocalEmbedding(finalConfig.dimension);
 
-    // Initialize provider based on config
-    this.provider = this.initializeProvider(finalConfig);
+    // Initialize provider chain for fallback
+    this.fallbackChain = this.initializeFallbackChain(finalConfig);
+    this.provider = this.fallbackChain[0] || this.fallbackProvider;
   }
 
-  private initializeProvider(config: EmbeddingConfig): EmbeddingProvider {
+  private initializeFallbackChain(config: EmbeddingConfig): EmbeddingProvider[] {
+    const chain: EmbeddingProvider[] = [];
+    const chainConfig = config.fallbackChain || ['deepseek', 'openai', 'gemini', 'local'];
+
+    for (const providerName of chainConfig) {
+      const provider = this.createProvider(providerName, config.model);
+      if (provider) {
+        chain.push(provider);
+        logger.debug(`Added ${providerName} to fallback chain`);
+      }
+    }
+
+    // Always ensure local is available as final fallback
+    if (chain.length === 0 || !(chain[chain.length - 1] instanceof LocalEmbedding)) {
+      chain.push(this.fallbackProvider);
+    }
+
+    logger.info(`Embedding fallback chain initialized with ${chain.length} providers`);
+    return chain;
+  }
+
+  private createProvider(
+    name: 'deepseek' | 'openai' | 'gemini' | 'local',
+    model?: string
+  ): EmbeddingProvider | null {
     try {
-      // Read API keys from environment variables
-      switch (config.provider) {
+      switch (name) {
         case 'deepseek': {
           const apiKey = process.env.DEEPSEEK_API_KEY;
           if (apiKey) {
-            logger.info(' Using DeepSeek embedding API');
-            return new DeepSeekEmbedding(apiKey, undefined, config.model);
+            logger.info('DeepSeek embedding available');
+            return new DeepSeekEmbedding(apiKey, undefined, model);
           }
           break;
         }
@@ -273,18 +390,71 @@ export class EmbeddingService {
         case 'openai': {
           const apiKey = process.env.OPENAI_API_KEY;
           if (apiKey) {
-            logger.info(' Using OpenAI embedding API');
-            return new OpenAIEmbedding(apiKey, undefined, config.model);
+            logger.info('OpenAI embedding available');
+            return new OpenAIEmbedding(apiKey, undefined, model);
           }
           break;
         }
+
+        case 'gemini': {
+          const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+          if (apiKey) {
+            logger.info('Gemini embedding available');
+            return new GeminiEmbedding(apiKey, model);
+          }
+          break;
+        }
+
+        case 'local':
+          return this.fallbackProvider;
       }
     } catch (error) {
-      logger.warn(' Failed to initialize API provider:', error);
+      logger.warn(`Failed to create ${name} provider:`, error);
     }
 
-    logger.info(' Using local embedding (TF-IDF hash)');
-    return this.fallbackProvider;
+    return null;
+  }
+
+  private async tryWithFallback<T>(
+    operation: (provider: EmbeddingProvider) => Promise<T>
+  ): Promise<T> {
+    let lastError: Error | null = null;
+
+    for (let i = this.currentProviderIndex; i < this.fallbackChain.length; i++) {
+      const provider = this.fallbackChain[i];
+      const failures = this.failureCount.get(i) || 0;
+
+      // Skip providers that have failed too many times
+      if (failures >= this.maxFailures && i < this.fallbackChain.length - 1) {
+        continue;
+      }
+
+      try {
+        const result = await operation(provider);
+        // Reset failure count on success
+        this.failureCount.set(i, 0);
+        // Update current provider if we found a working one
+        this.currentProviderIndex = i;
+        this.provider = provider;
+        return result;
+      } catch (error) {
+        lastError = error as Error;
+        const newFailures = failures + 1;
+        this.failureCount.set(i, newFailures);
+
+        logger.warn(
+          `Provider ${i} failed (${newFailures}/${this.maxFailures}):`,
+          (error as Error).message
+        );
+
+        // Move to next provider
+        if (i < this.fallbackChain.length - 1) {
+          logger.info(`Falling back to provider ${i + 1}`);
+        }
+      }
+    }
+
+    throw lastError || new Error('All embedding providers failed');
   }
 
   /**
@@ -300,19 +470,14 @@ export class EmbeddingService {
       }
     }
 
-    try {
-      const embedding = await this.provider.embed(text);
+    const embedding = await this.tryWithFallback((provider) => provider.embed(text));
 
-      // Cache the result
-      if (this.cacheEnabled) {
-        this.addToCache(text, embedding);
-      }
-
-      return embedding;
-    } catch (error) {
-      logger.warn(' Provider failed, using fallback:', error);
-      return this.fallbackProvider.embed(text);
+    // Cache the result
+    if (this.cacheEnabled) {
+      this.addToCache(text, embedding);
     }
+
+    return embedding;
   }
 
   /**
@@ -345,26 +510,18 @@ export class EmbeddingService {
       return results;
     }
 
-    try {
-      // Batch embed uncached texts
-      const embeddings = await this.provider.embedBatch(uncachedTexts);
+    // Batch embed uncached texts with fallback
+    const embeddings = await this.tryWithFallback((provider) =>
+      provider.embedBatch(uncachedTexts)
+    );
 
-      // Update results and cache
-      for (let i = 0; i < uncachedIndices.length; i++) {
-        const originalIndex = uncachedIndices[i];
-        results[originalIndex] = embeddings[i];
+    // Update results and cache
+    for (let i = 0; i < uncachedIndices.length; i++) {
+      const originalIndex = uncachedIndices[i];
+      results[originalIndex] = embeddings[i];
 
-        if (this.cacheEnabled) {
-          this.addToCache(uncachedTexts[i], embeddings[i]);
-        }
-      }
-    } catch (error) {
-      logger.warn(' Provider batch failed, using fallback:', error);
-
-      // Fallback for uncached texts
-      const fallbackEmbeddings = await this.fallbackProvider.embedBatch(uncachedTexts);
-      for (let i = 0; i < uncachedIndices.length; i++) {
-        results[uncachedIndices[i]] = fallbackEmbeddings[i];
+      if (this.cacheEnabled) {
+        this.addToCache(uncachedTexts[i], embeddings[i]);
       }
     }
 
@@ -384,7 +541,45 @@ export class EmbeddingService {
   getProviderType(): string {
     if (this.provider instanceof DeepSeekEmbedding) return 'deepseek';
     if (this.provider instanceof OpenAIEmbedding) return 'openai';
+    if (this.provider instanceof GeminiEmbedding) return 'gemini';
     return 'local';
+  }
+
+  /**
+   * Get fallback chain status
+   */
+  getFallbackStatus(): {
+    currentProvider: string;
+    availableProviders: string[];
+    failureCounts: Record<string, number>;
+  } {
+    const providerNames = this.fallbackChain.map((p) => {
+      if (p instanceof DeepSeekEmbedding) return 'deepseek';
+      if (p instanceof OpenAIEmbedding) return 'openai';
+      if (p instanceof GeminiEmbedding) return 'gemini';
+      return 'local';
+    });
+
+    const failureCounts: Record<string, number> = {};
+    for (let i = 0; i < providerNames.length; i++) {
+      failureCounts[providerNames[i]] = this.failureCount.get(i) || 0;
+    }
+
+    return {
+      currentProvider: this.getProviderType(),
+      availableProviders: providerNames,
+      failureCounts,
+    };
+  }
+
+  /**
+   * Reset failure counts to retry failed providers
+   */
+  resetFailureCounts(): void {
+    this.failureCount.clear();
+    this.currentProviderIndex = 0;
+    this.provider = this.fallbackChain[0] || this.fallbackProvider;
+    logger.info('Embedding provider failure counts reset');
   }
 
   /**

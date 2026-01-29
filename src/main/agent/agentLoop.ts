@@ -154,7 +154,7 @@ export class AgentLoop {
     this.modelConfig = config.modelConfig;
     this.toolRegistry = config.toolRegistry;
     this.toolExecutor = config.toolExecutor;
-    this.messages = [...config.messages];
+    this.messages = config.messages;  // Use reference directly so orchestrator can access new messages
     this.onEvent = config.onEvent;
     this.modelRouter = new ModelRouter();
     this.maxIterations = getMaxIterations();

@@ -27,7 +27,8 @@ import { initDAGEventBridge } from '../scheduler';
 import { initCronService, getCronService, initHeartbeatService, getHeartbeatService } from '../cron';
 import { getSkillDiscoveryService, getSkillRepositoryService } from '../services/skills';
 import { getMainWindow } from './window';
-import { getChannelManager, initChannelManager } from '../channels';
+import { getChannelManager } from '../channels';
+import { initChannelAgentBridge, getChannelAgentBridge } from '../channels/channelAgentBridge';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { SYNC, UPDATE, CLOUD, TOOL_CACHE, getCloudApiUrl, DEFAULT_MODELS } from '../../shared/constants';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
@@ -299,19 +300,6 @@ async function initializeServices(): Promise<void> {
   } catch (error) {
     logger.warn('DAG event bridge initialization failed (non-blocking)', { error: String(error) });
   }
-
-  // Initialize Channel Manager (multi-channel access: HTTP API, Feishu, etc.)
-  initChannelManager()
-    .then(() => {
-      const channelManager = getChannelManager();
-      logger.info('Channel manager initialized', {
-        pluginCount: channelManager.getRegisteredPlugins().length,
-        accountCount: channelManager.getAllAccounts().length,
-      });
-    })
-    .catch((error) => {
-      logger.error('Channel manager failed to initialize (non-blocking)', error);
-    });
 
   // Initialize Cron Service (scheduled tasks)
   initCronService()
@@ -643,6 +631,25 @@ async function initializeServices(): Promise<void> {
     },
   });
   logger.info('TaskManager initialized');
+
+  // Initialize Channel Agent Bridge (multi-channel access: HTTP API, Feishu, etc.)
+  // Must be after agentOrchestrator and generationManager are created
+  const channelBridge = initChannelAgentBridge({
+    getOrchestrator: () => agentOrchestrator,
+    generationManager: generationManager,
+    configService: configService!,
+  });
+  channelBridge.initialize()
+    .then(() => {
+      const channelManager = getChannelManager();
+      logger.info('Channel Agent Bridge initialized', {
+        pluginCount: channelManager.getRegisteredPlugins().length,
+        accountCount: channelManager.getAllAccounts().length,
+      });
+    })
+    .catch((error) => {
+      logger.error('Channel Agent Bridge failed to initialize (non-blocking)', error);
+    });
 
   // Auto-restore or create session
   logger.info('Initializing session...');

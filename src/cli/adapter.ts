@@ -2,10 +2,10 @@
 // CLI Adapter - 适配 AgentLoop 到 CLI
 // ============================================================================
 
-import { createAgentLoop, buildCLIConfig, initializeCLIServices, cleanup } from './bootstrap';
+import { createAgentLoop, buildCLIConfig, initializeCLIServices, cleanup, getSessionManager } from './bootstrap';
 import { terminalOutput, jsonOutput } from './output';
 import type { CLIConfig, CLIRunResult, CLIGlobalOptions } from './types';
-import type { Message, AgentEvent } from '../shared/types';
+import type { Message, AgentEvent, GenerationId } from '../shared/types';
 import { createLogger } from '../main/services/infra/logger';
 
 const logger = createLogger('CLI-Adapter');
@@ -22,9 +22,24 @@ export class CLIAgent {
   private startTime: number = 0;
   private toolsUsed: string[] = [];
   private lastContent: string = '';
+  private sessionId: string | null = null;
 
   constructor(options: Partial<CLIGlobalOptions> = {}) {
     this.config = buildCLIConfig(options);
+  }
+
+  /**
+   * 初始化会话
+   */
+  async initSession(): Promise<string> {
+    const sessionManager = getSessionManager();
+    const session = await sessionManager.getOrCreateCurrentSession({
+      generationId: this.config.generationId as GenerationId,
+      modelConfig: this.config.modelConfig,
+      workingDirectory: this.config.workingDirectory,
+    });
+    this.sessionId = session.id;
+    return session.id;
   }
 
   /**
@@ -50,6 +65,11 @@ export class CLIAgent {
     this.toolsUsed = [];
     this.lastContent = '';
 
+    // 确保有会话
+    if (!this.sessionId) {
+      await this.initSession();
+    }
+
     // 添加用户消息
     const userMessage: Message = {
       id: `msg-${Date.now()}`,
@@ -58,6 +78,14 @@ export class CLIAgent {
       timestamp: Date.now(),
     };
     this.messages.push(userMessage);
+
+    // 保存消息到会话
+    try {
+      const sessionManager = getSessionManager();
+      await sessionManager.addMessage(userMessage);
+    } catch (error) {
+      logger.warn('Failed to save user message to session', { error });
+    }
 
     // 创建 AgentLoop
     const agentLoop = createAgentLoop(
@@ -111,6 +139,16 @@ export class CLIAgent {
         toolCalls: event.data.toolCalls,
       };
       this.messages.push(assistantMessage);
+
+      // 保存消息到会话
+      try {
+        const sessionManager = getSessionManager();
+        sessionManager.addMessage(assistantMessage).catch((error) => {
+          logger.warn('Failed to save assistant message to session', { error });
+        });
+      } catch (error) {
+        logger.warn('Failed to get session manager', { error });
+      }
     }
 
     // Agent 完成
@@ -160,6 +198,7 @@ export class CLIAgent {
    */
   clearHistory(): void {
     this.messages = [];
+    this.sessionId = null;
   }
 
   /**
@@ -174,6 +213,31 @@ export class CLIAgent {
    */
   getIsRunning(): boolean {
     return this.isRunning;
+  }
+
+  /**
+   * 获取当前会话 ID
+   */
+  getSessionId(): string | null {
+    return this.sessionId;
+  }
+
+  /**
+   * 恢复会话
+   */
+  async restoreSession(sessionId: string): Promise<boolean> {
+    try {
+      const sessionManager = getSessionManager();
+      const session = await sessionManager.restoreSession(sessionId);
+      if (session) {
+        this.sessionId = session.id;
+        this.messages = session.messages;
+        return true;
+      }
+    } catch (error) {
+      logger.error('Failed to restore session', { error, sessionId });
+    }
+    return false;
   }
 }
 

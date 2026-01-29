@@ -20,6 +20,8 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { getCLIConfigService, type CLIConfigService } from './config';
+import { initCLIDatabase, getCLIDatabase, type CLIDatabaseService } from './database';
+import { getCLISessionManager, type CLISessionManager } from './session';
 import type { CLIConfig, CLIEventHandler } from './types';
 import type { Generation, ModelConfig, Message, AgentEvent } from '../shared/types';
 import { DEFAULT_MODELS } from '../shared/constants';
@@ -42,6 +44,8 @@ function getCLIDataDir(): string {
 
 // 全局状态
 let configService: CLIConfigService | null = null;
+let databaseService: CLIDatabaseService | null = null;
+let sessionManager: CLISessionManager | null = null;
 let generationManager: InstanceType<typeof GenerationManager> | null = null;
 let toolRegistry: InstanceType<typeof ToolRegistry> | null = null;
 let toolExecutor: InstanceType<typeof ToolExecutor> | null = null;
@@ -64,6 +68,19 @@ export async function initializeCLIServices(): Promise<void> {
   configService = getCLIConfigService();
   await configService.initialize();
   console.log('ConfigService initialized');
+
+  // 初始化数据库
+  try {
+    databaseService = await initCLIDatabase();
+    console.log('Database initialized');
+  } catch (error) {
+    console.error('Failed to initialize database:', error);
+    // 数据库失败不阻止 CLI 运行，只是缓存和会话持久化不可用
+  }
+
+  // 初始化会话管理器
+  sessionManager = getCLISessionManager();
+  console.log('SessionManager initialized');
 
   // 动态导入核心模块
   try {
@@ -110,6 +127,23 @@ export function getConfigService(): CLIConfigService {
     throw new Error('CLI services not initialized. Call initializeCLIServices() first.');
   }
   return configService;
+}
+
+/**
+ * 获取数据库服务
+ */
+export function getDatabaseService(): CLIDatabaseService | null {
+  return databaseService;
+}
+
+/**
+ * 获取会话管理器
+ */
+export function getSessionManager(): CLISessionManager {
+  if (!sessionManager) {
+    throw new Error('CLI services not initialized. Call initializeCLIServices() first.');
+  }
+  return sessionManager;
 }
 
 /**
@@ -210,6 +244,13 @@ export function createAgentLoop(
  */
 export async function cleanup(): Promise<void> {
   console.log('Cleaning up CLI services...');
+
+  // 关闭数据库连接
+  if (databaseService) {
+    databaseService.close();
+    databaseService = null;
+  }
+
   initialized = false;
   console.log('CLI services cleaned up');
 }

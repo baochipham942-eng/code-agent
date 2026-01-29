@@ -1628,6 +1628,11 @@ export class AgentLoop {
   private async addAndPersistMessage(message: Message): Promise<void> {
     this.messages.push(message);
 
+    // CLI 模式下跳过持久化（由 CLIAgent 自行处理）
+    if (process.env.CODE_AGENT_CLI_MODE === 'true') {
+      return;
+    }
+
     try {
       const sessionManager = getSessionManager();
       await sessionManager.addMessage(message);

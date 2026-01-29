@@ -262,6 +262,60 @@ export class DatabaseService {
         last_accessed_at INTEGER
       )
     `);
+
+    // Cron Jobs 表 (定时任务)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS cron_jobs (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        schedule_type TEXT NOT NULL,
+        schedule TEXT NOT NULL,
+        action TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        max_retries INTEGER DEFAULT 0,
+        retry_delay INTEGER DEFAULT 5000,
+        timeout INTEGER DEFAULT 60000,
+        tags TEXT,
+        metadata TEXT DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+
+    // Cron Executions 表 (任务执行记录)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS cron_executions (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        scheduled_at INTEGER NOT NULL,
+        started_at INTEGER,
+        completed_at INTEGER,
+        duration INTEGER,
+        result TEXT,
+        error TEXT,
+        retry_attempt INTEGER NOT NULL DEFAULT 0,
+        exit_code INTEGER,
+        FOREIGN KEY (job_id) REFERENCES cron_jobs(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Heartbeats 表 (心跳配置)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS heartbeats (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        interval INTEGER NOT NULL,
+        check_config TEXT NOT NULL,
+        expectation TEXT,
+        alert TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        failure_threshold INTEGER DEFAULT 3,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
   }
 
   private createIndexes(): void {
@@ -290,6 +344,13 @@ export class DatabaseService {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_status_updated ON sessions(status, updated_at DESC)`);
     // 消息懒加载：按会话 + 时间戳排序（覆盖索引，避免回表）
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session_timestamp ON messages(session_id, timestamp DESC)`);
+
+    // Cron 相关索引
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_jobs_enabled ON cron_jobs(enabled)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_executions_job ON cron_executions(job_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_executions_status ON cron_executions(status)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_executions_scheduled ON cron_executions(scheduled_at DESC)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_heartbeats_enabled ON heartbeats(enabled)`);
   }
 
   // --------------------------------------------------------------------------

@@ -21,6 +21,25 @@ export interface SkillFrontmatter {
   context?: 'fork' | 'inline';
   agent?: string;
   'argument-hint'?: string;
+
+  // 依赖检查字段
+  bins?: string[];           // 需要的命令行工具
+  'env-vars'?: string[];     // 需要的环境变量
+  references?: string[];     // 引用的参考文件（相对路径）
+}
+
+/**
+ * 依赖检查结果
+ */
+export interface SkillDependencyStatus {
+  /** 是否所有依赖都满足 */
+  satisfied: boolean;
+  /** 缺失的命令行工具 */
+  missingBins: string[];
+  /** 缺失的环境变量 */
+  missingEnvVars: string[];
+  /** 缺失的引用文件 */
+  missingReferences: string[];
 }
 
 /**
@@ -49,6 +68,13 @@ export interface ParsedSkill {
 
   // === 来源追踪 ===
   source: SkillSource;
+
+  // === 依赖信息 ===
+  bins?: string[];
+  envVars?: string[];
+  references?: string[];
+  referenceContents?: Map<string, string>;
+  dependencyStatus?: SkillDependencyStatus;
 }
 
 export type SkillSource = 'user' | 'project' | 'plugin' | 'builtin' | 'library';

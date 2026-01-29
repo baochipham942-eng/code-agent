@@ -6,7 +6,7 @@
 
 | 代际 | 工具集 |
 |------|--------|
-| Gen1 | bash, read_file, write_file, edit_file |
+| Gen1 | bash (PTY支持), read_file, write_file, edit_file, process_list, process_poll, process_log, process_write, process_submit, process_kill |
 | Gen2 | + glob, grep, list_directory |
 | Gen3 | + task, todo_write, ask_user_question, confirm_action, read_clipboard, plan_read, plan_update, enter_plan_mode, exit_plan_mode, findings_write |
 | Gen4 | + skill, web_fetch, web_search, read_pdf, mcp, mcp_list_tools, mcp_list_resources, mcp_read_resource, mcp_get_status |

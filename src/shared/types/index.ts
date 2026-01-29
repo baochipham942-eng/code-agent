@@ -48,3 +48,6 @@ export * from './lab';
 
 // Channel types (多通道接入)
 export * from './channel';
+
+// Cron types (定时任务)
+export * from './cron';

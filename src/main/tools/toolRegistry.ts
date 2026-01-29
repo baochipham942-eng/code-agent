@@ -10,7 +10,18 @@ import type {
 import { getCloudConfigService } from '../services/cloud';
 
 // Import tool definitions - organized by function
-import { bashTool, grepTool, killShellTool, taskOutputTool } from './shell';
+import {
+  bashTool,
+  grepTool,
+  killShellTool,
+  taskOutputTool,
+  processListTool,
+  processPollTool,
+  processLogTool,
+  processWriteTool,
+  processSubmitTool,
+  processKillTool,
+} from './shell';
 import { readFileTool, writeFileTool, editFileTool, globTool, listDirectoryTool, readClipboardTool, notebookEditTool } from './file';
 import {
   taskTool,
@@ -165,6 +176,14 @@ export class ToolRegistry {
     this.register(killShellTool);
     this.register(taskOutputTool);
     this.register(notebookEditTool);
+
+    // Process management tools (PTY support)
+    this.register(processListTool);
+    this.register(processPollTool);
+    this.register(processLogTool);
+    this.register(processWriteTool);
+    this.register(processSubmitTool);
+    this.register(processKillTool);
 
     // Gen 2 tools
     this.register(globTool);

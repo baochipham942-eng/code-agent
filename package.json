@@ -4,6 +4,9 @@
   "description": "AI Coding Assistant with Generation Comparison",
   "type": "module",
   "main": "dist/main/index.cjs",
+  "bin": {
+    "code-agent": "./dist/cli/index.cjs"
+  },
   "author": "Lin Chen",
   "license": "MIT",
   "scripts": {
@@ -31,6 +34,9 @@
     "test:native": "vitest run --config vitest.native.config.ts || echo 'Note: Exit code may be non-zero due to Kuzu native module cleanup'",
     "test:all": "npm run test && npm run test:native",
     "build:mcp-server": "esbuild src/main/mcp/mcp-server-entry.ts --bundle --platform=node --format=esm --external:@modelcontextprotocol/sdk --outfile=dist/mcp-server.js",
+    "build:cli": "esbuild src/cli/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:keytar --external:isolated-vm --external:tree-sitter --external:tree-sitter-typescript --external:playwright --external:playwright-core --external:pptxgenjs --external:mammoth --external:exceljs --external:qrcode --external:pdfkit --external:sharp --external:docx --outfile=dist/cli/index.cjs --minify && echo '#!/usr/bin/env node' | cat - dist/cli/index.cjs > dist/cli/tmp.cjs && mv dist/cli/tmp.cjs dist/cli/index.cjs",
+    "dev:cli": "esbuild src/cli/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:keytar --external:isolated-vm --external:tree-sitter --external:tree-sitter-typescript --external:playwright --external:playwright-core --external:pptxgenjs --external:mammoth --external:exceljs --external:qrcode --external:pdfkit --external:sharp --external:docx --outfile=dist/cli/index.cjs --sourcemap",
+    "cli": "node dist/cli/index.cjs",
     "mcp-server": "node dist/mcp-server.js",
     "docs": "typedoc"
   },
@@ -43,7 +49,9 @@
     "@xyflow/react": "^12.10.0",
     "axios": "^1.13.2",
     "better-sqlite3": "^11.6.0",
+    "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
+    "commander": "^12.1.0",
     "croner": "^9.1.0",
     "dagre": "^0.8.5",
     "diff": "^7.0.0",
@@ -66,6 +74,7 @@
     "node-fetch": "^3.3.2",
     "node-pty": "^1.1.0",
     "openai": "^4.70.0",
+    "ora": "^8.2.0",
     "pdfkit": "^0.17.2",
     "playwright": "^1.57.0",
     "pptxgenjs": "^4.0.1",

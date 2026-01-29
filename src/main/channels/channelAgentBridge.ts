@@ -10,6 +10,7 @@ import type { ChannelMessage, ChannelAttachment } from '../../shared/types/chann
 import type { MessageAttachment, Message, AgentEvent } from '../../shared/types';
 import { ApiChannel } from './api/apiChannel';
 import { createLogger } from '../services/infra/logger';
+import { logCollector } from '../mcp/logCollector';
 import { v4 as uuidv4 } from 'uuid';
 
 const logger = createLogger('ChannelAgentBridge');
@@ -76,12 +77,19 @@ export class ChannelAgentBridge {
     accountId: string,
     message: ChannelMessage
   ): Promise<void> {
+    logger.info('handleChannelMessage called', {
+      accountId,
+      messageId: message.id,
+      content: message.content.substring(0, 50),
+    });
+
     const orchestrator = this.config.getOrchestrator();
     if (!orchestrator) {
       logger.error('Orchestrator not available');
       await this.sendErrorResponse(accountId, message, 'Agent not available');
       return;
     }
+    logger.info('Orchestrator available, processing message...');
 
     const messageKey = `${accountId}:${message.id}`;
 
@@ -159,25 +167,43 @@ export class ChannelAgentBridge {
     // 这里使用一个简化的方案：直接调用 sendMessage 并等待完成
 
     try {
-      // 直接调用 sendMessage
-      await orchestrator.sendMessage(message.content, attachments);
+      // 记录发送前的消息数量，用于识别新的回复
+      const messagesBefore = orchestrator.getMessages();
+      const messageCountBefore = messagesBefore.length;
+      logCollector.log('agent', 'INFO', `[Channel] Processing message, count before: ${messageCountBefore}`);
 
-      // 获取最后一条 assistant 消息作为响应
-      const messages = orchestrator.getMessages();
-      const lastAssistantMessage = messages.filter(m => m.role === 'assistant').pop();
+      await orchestrator.sendMessage(message.content, attachments);
+      logCollector.log('agent', 'INFO', '[Channel] orchestrator.sendMessage completed');
+
+      // 获取新增的 assistant 消息作为响应
+      const messagesAfter = orchestrator.getMessages();
+      const countAfter = messagesAfter.length;
+      logCollector.log('agent', 'INFO', `[Channel] Messages after: ${countAfter}, new: ${countAfter - messageCountBefore}`);
+
+      // 只查找新增的消息中的 assistant 回复（找最后一条有内容的，跳过工具调用消息）
+      const newMessages = messagesAfter.slice(messageCountBefore);
+      const assistantMessages = newMessages.filter(m => m.role === 'assistant' && m.content && m.content.trim());
+      const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
 
       if (lastAssistantMessage) {
         fullResponse = lastAssistantMessage.content;
+        logCollector.log('agent', 'INFO', `[Channel] Found response: ${fullResponse.substring(0, 100)}...`);
+      } else {
+        logCollector.log('agent', 'WARN', `[Channel] No assistant message with content found in ${newMessages.length} new messages`);
       }
 
       // 发送响应
+      logCollector.log('agent', 'INFO', `[Channel] Sending response (length: ${fullResponse.length})`);
       if (fullResponse) {
-        await responseCallback.sendText(fullResponse);
+        const result = await responseCallback.sendText(fullResponse);
+        logCollector.log('agent', 'INFO', `[Channel] Response sent: success=${result.success}, error=${result.error || 'none'}`);
       } else {
-        await responseCallback.sendText('处理完成，但没有生成响应。');
+        const result = await responseCallback.sendText('处理完成，但没有生成响应。');
+        logCollector.log('agent', 'INFO', `[Channel] Default response sent: success=${result.success}`);
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      logCollector.log('agent', 'ERROR', `[Channel] Error: ${errorMsg}`);
       await responseCallback.sendText(`处理失败: ${errorMsg}`);
     }
   }

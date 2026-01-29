@@ -173,13 +173,21 @@ export class FeishuChannel extends BaseChannelPlugin {
   }
 
   async sendMessage(options: SendMessageOptions): Promise<SendMessageResult> {
+    logger.info('FeishuChannel.sendMessage called', {
+      chatId: options.chatId,
+      contentLength: options.content?.length || 0,
+      contentPreview: options.content?.substring(0, 100),
+    });
+
     if (!this.client) {
+      logger.error('Channel not connected');
       return { success: false, error: 'Channel not connected' };
     }
 
     try {
       // 确定接收方类型
       const receiveIdType = this.getReceiveIdType(options.chatId);
+      logger.info('Sending to Feishu API', { receiveIdType, chatId: options.chatId });
 
       // 构建消息内容
       const content = this.buildMessageContent(options.content);
@@ -195,6 +203,8 @@ export class FeishuChannel extends BaseChannelPlugin {
           content: JSON.stringify(content),
         },
       });
+
+      logger.info('Feishu API response', { code: response.code, msg: response.msg, messageId: response.data?.message_id });
 
       if (response.code === 0 && response.data?.message_id) {
         const messageId = response.data.message_id;
@@ -342,11 +352,28 @@ export class FeishuChannel extends BaseChannelPlugin {
           return;
         }
 
-        // 处理事件
-        if (this.eventDispatcher && body) {
-          // 使用飞书 SDK 的事件分发器处理
-          const eventData = body.encrypt ? body : body;
-          await this.eventDispatcher.invoke(eventData);
+        // 处理事件 (schema 2.0 格式)
+        if (body?.header?.event_type === 'im.message.receive_v1' && body?.event) {
+          logger.info('Received Feishu message event', {
+            eventId: body.header.event_id,
+            messageId: body.event.message?.message_id,
+            content: body.event.message?.content,
+          });
+
+          // 直接调用消息处理器
+          const event: FeishuMessageEvent = {
+            message: body.event.message,
+            sender: body.event.sender,
+          };
+          logger.info('Calling handleMessageEvent...');
+          await this.handleMessageEvent(event);
+          logger.info('handleMessageEvent completed');
+        } else {
+          logger.warn('Unhandled webhook event', {
+            type: body?.type,
+            eventType: body?.header?.event_type,
+            hasEvent: !!body?.event,
+          });
         }
 
         res.json({ code: 0, msg: 'success' });
@@ -419,9 +446,21 @@ export class FeishuChannel extends BaseChannelPlugin {
   }
 
   private async handleMessageEvent(event: FeishuMessageEvent): Promise<void> {
+    logger.info('handleMessageEvent called', {
+      messageId: event.message?.message_id,
+      messageType: event.message?.message_type,
+      senderType: event.sender?.sender_type,
+    });
+
     try {
       const msg = event.message;
       const sender = event.sender;
+
+      // 忽略机器人自己发送的消息，避免无限循环
+      if (sender.sender_type === 'bot') {
+        logger.info('Ignoring bot message to prevent loop');
+        return;
+      }
 
       // 解析消息内容
       let content = '';
@@ -469,7 +508,13 @@ export class FeishuChannel extends BaseChannelPlugin {
       };
 
       // 发出消息事件
+      logger.info('Emitting message event', {
+        messageId: channelMessage.id,
+        content: channelMessage.content.substring(0, 50),
+        chatId: channelMessage.context.chatId,
+      });
       this.emit('message', channelMessage);
+      logger.info('Message event emitted');
     } catch (error) {
       logger.error('Error handling Feishu message event', { error });
       this.emit('error', error instanceof Error ? error : new Error('Unknown error'));

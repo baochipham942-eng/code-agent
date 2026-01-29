@@ -160,6 +160,16 @@ app.on('window-all-closed', () => {
 app.on('before-quit', async () => {
   logger.info('Cleaning up before quit...');
 
+  // Shutdown Channel Manager (disconnect all channels)
+  try {
+    const { getChannelManager } = await import('./channels');
+    const channelManager = getChannelManager();
+    await channelManager.shutdown();
+    logger.info('Channel manager shut down');
+  } catch (error) {
+    logger.error('Error shutting down Channel manager', error);
+  }
+
   // Shutdown TaskManager first (cancel all running tasks)
   try {
     const { getTaskManager } = await import('./task');

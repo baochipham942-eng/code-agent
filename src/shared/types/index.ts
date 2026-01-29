@@ -45,3 +45,6 @@ export * from './gen7';
 
 // Lab types (实验室)
 export * from './lab';
+
+// Channel types (多通道接入)
+export * from './channel';

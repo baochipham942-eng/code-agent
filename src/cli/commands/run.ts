@@ -71,8 +71,9 @@ export const runCommand = new Command('run')
         jsonOutput.result(result);
       }
 
-      // 设置退出码
-      process.exitCode = result.success ? 0 : 1;
+      // 设置退出码并退出
+      await cleanup();
+      process.exit(result.success ? 0 : 1);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
 
@@ -82,8 +83,7 @@ export const runCommand = new Command('run')
         terminalOutput.error(message);
       }
 
-      process.exitCode = 1;
-    } finally {
       await cleanup();
+      process.exit(1);
     }
   });

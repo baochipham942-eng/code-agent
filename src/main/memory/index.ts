@@ -2,7 +2,7 @@
 // Memory Module - Gen5 Memory System Exports
 // ============================================================================
 
-// Vector Store
+// Vector Store (Cloud)
 export {
   VectorStore,
   getVectorStore,
@@ -16,7 +16,71 @@ export {
   type VectorStoreConfig,
 } from './vectorStore';
 
-// Embedding Service
+// Local Vector Store (sqlite-vec)
+export {
+  LocalVectorStore,
+  getLocalVectorStore,
+  initLocalVectorStore,
+  type LocalVectorDocument,
+  type LocalVectorMetadata,
+  type LocalSearchResult,
+  type FTSSearchResult,
+  type LocalVectorStoreConfig,
+} from './localVectorStore';
+
+// Unified Vector Store (local + cloud + hybrid)
+export {
+  UnifiedVectorStore,
+  getUnifiedVectorStore,
+  initUnifiedVectorStore,
+  type StorageMode,
+  type UnifiedSearchResult,
+  type UnifiedDocument,
+  type UnifiedSearchOptions,
+  type UnifiedVectorStoreConfig,
+} from './unifiedVectorStore';
+
+// Hybrid Search (vector + FTS + RRF)
+export {
+  HybridSearchService,
+  getHybridSearchService,
+  createHybridSearchService,
+  type HybridSearchResult,
+  type HybridSearchOptions as HybridSearchServiceOptions,
+  type SearchStats,
+} from './hybridSearch';
+
+// File Tracker (hash-based change detection)
+export {
+  FileTracker,
+  getFileTracker,
+  initFileTracker,
+  type TrackedFile,
+  type FileChange,
+  type FileTrackerConfig,
+} from './fileTracker';
+
+// File Watcher (chokidar-based)
+export {
+  FileWatcher,
+  getFileWatcher,
+  createFileWatcher,
+  type FileWatchEvent,
+  type FileWatcherConfig,
+  type FileChangeHandler,
+} from './fileWatcher';
+
+// Incremental Sync Service
+export {
+  IncrementalSyncService,
+  getIncrementalSyncService,
+  initIncrementalSyncService,
+  type SyncResult,
+  type SyncProgress,
+  type IncrementalSyncConfig,
+} from './incrementalSync';
+
+// Embedding Service (with fallback chain)
 export {
   EmbeddingService,
   getEmbeddingService,
@@ -24,6 +88,7 @@ export {
   LocalEmbedding,
   DeepSeekEmbedding,
   OpenAIEmbedding,
+  GeminiEmbedding,
   type EmbeddingConfig,
   type EmbeddingProvider,
 } from './embeddingService';

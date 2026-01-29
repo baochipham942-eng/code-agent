@@ -26,6 +26,7 @@ import { initPluginSystem, shutdownPluginSystem } from '../plugins';
 import { initDAGEventBridge } from '../scheduler';
 import { getSkillDiscoveryService, getSkillRepositoryService } from '../services/skills';
 import { getMainWindow } from './window';
+import { getChannelManager, initChannelManager } from '../channels';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { SYNC, UPDATE, CLOUD, TOOL_CACHE, getCloudApiUrl, DEFAULT_MODELS } from '../../shared/constants';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
@@ -297,6 +298,19 @@ async function initializeServices(): Promise<void> {
   } catch (error) {
     logger.warn('DAG event bridge initialization failed (non-blocking)', { error: String(error) });
   }
+
+  // Initialize Channel Manager (multi-channel access: HTTP API, Feishu, etc.)
+  initChannelManager()
+    .then(() => {
+      const channelManager = getChannelManager();
+      logger.info('Channel manager initialized', {
+        pluginCount: channelManager.getRegisteredPlugins().length,
+        accountCount: channelManager.getAllAccounts().length,
+      });
+    })
+    .catch((error) => {
+      logger.error('Channel manager failed to initialize (non-blocking)', error);
+    });
 
   // Setup LogBridge command handler
   await setupLogBridge();

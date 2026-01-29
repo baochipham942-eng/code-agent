@@ -123,3 +123,37 @@ export const LAB_CHANNELS = {
  * Lab 通道名称类型
  */
 export type LABChannel = (typeof LAB_CHANNELS)[keyof typeof LAB_CHANNELS];
+
+// ============================================================================
+// Channel 多通道接入系统 IPC 通道
+// ============================================================================
+
+/**
+ * Channel 多通道接入 IPC 通道
+ * 用于前端与主进程之间的多通道管理通信
+ */
+export const CHANNEL_CHANNELS = {
+  /** 获取所有账号 */
+  LIST_ACCOUNTS: 'channel:list-accounts',
+  /** 添加账号 */
+  ADD_ACCOUNT: 'channel:add-account',
+  /** 更新账号 */
+  UPDATE_ACCOUNT: 'channel:update-account',
+  /** 删除账号 */
+  DELETE_ACCOUNT: 'channel:delete-account',
+  /** 连接账号 */
+  CONNECT_ACCOUNT: 'channel:connect-account',
+  /** 断开账号 */
+  DISCONNECT_ACCOUNT: 'channel:disconnect-account',
+  /** 获取可用通道类型 */
+  GET_CHANNEL_TYPES: 'channel:get-types',
+  /** 账号状态变化事件 */
+  ACCOUNT_STATUS_CHANGED: 'channel:account-status-changed',
+  /** 账号列表变化事件 */
+  ACCOUNTS_CHANGED: 'channel:accounts-changed',
+} as const;
+
+/**
+ * Channel 通道名称类型
+ */
+export type ChannelChannel = (typeof CHANNEL_CHANNELS)[keyof typeof CHANNEL_CHANNELS];

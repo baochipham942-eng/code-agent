@@ -59,7 +59,15 @@ import type {
 } from './types/contextHealth';
 
 import type { DAGVisualizationEvent } from './types/dagVisualization';
-import { DAG_CHANNELS, LAB_CHANNELS } from './ipc/channels';
+import { DAG_CHANNELS, LAB_CHANNELS, CHANNEL_CHANNELS } from './ipc/channels';
+
+import type {
+  ChannelAccount,
+  ChannelType,
+  ChannelAccountConfig,
+  AddChannelAccountRequest,
+  UpdateChannelAccountRequest,
+} from './types/channel';
 
 import type {
   LabProjectType,
@@ -485,6 +493,17 @@ export const IPC_CHANNELS = {
   LAB_TRAINING_PROGRESS: LAB_CHANNELS.TRAINING_PROGRESS,
   LAB_GET_PROJECT_STATUS: LAB_CHANNELS.GET_PROJECT_STATUS,
   LAB_CHECK_PYTHON_ENV: LAB_CHANNELS.CHECK_PYTHON_ENV,
+
+  // Channel channels (多通道接入)
+  CHANNEL_LIST_ACCOUNTS: CHANNEL_CHANNELS.LIST_ACCOUNTS,
+  CHANNEL_ADD_ACCOUNT: CHANNEL_CHANNELS.ADD_ACCOUNT,
+  CHANNEL_UPDATE_ACCOUNT: CHANNEL_CHANNELS.UPDATE_ACCOUNT,
+  CHANNEL_DELETE_ACCOUNT: CHANNEL_CHANNELS.DELETE_ACCOUNT,
+  CHANNEL_CONNECT_ACCOUNT: CHANNEL_CHANNELS.CONNECT_ACCOUNT,
+  CHANNEL_DISCONNECT_ACCOUNT: CHANNEL_CHANNELS.DISCONNECT_ACCOUNT,
+  CHANNEL_GET_TYPES: CHANNEL_CHANNELS.GET_CHANNEL_TYPES,
+  CHANNEL_ACCOUNT_STATUS_CHANGED: CHANNEL_CHANNELS.ACCOUNT_STATUS_CHANGED,
+  CHANNEL_ACCOUNTS_CHANGED: CHANNEL_CHANNELS.ACCOUNTS_CHANGED,
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -723,6 +742,15 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.LAB_INFERENCE]: (request: InferenceRequest) => Promise<InferenceResult>;
   [IPC_CHANNELS.LAB_GET_PROJECT_STATUS]: (projectType: LabProjectType) => Promise<LabProjectStatus>;
   [IPC_CHANNELS.LAB_CHECK_PYTHON_ENV]: () => Promise<PythonEnvStatus>;
+
+  // Channel (多通道接入)
+  [IPC_CHANNELS.CHANNEL_LIST_ACCOUNTS]: () => Promise<ChannelAccount[]>;
+  [IPC_CHANNELS.CHANNEL_GET_TYPES]: () => Promise<Array<{ type: ChannelType; name: string; description?: string }>>;
+  [IPC_CHANNELS.CHANNEL_ADD_ACCOUNT]: (request: AddChannelAccountRequest) => Promise<ChannelAccount>;
+  [IPC_CHANNELS.CHANNEL_UPDATE_ACCOUNT]: (request: UpdateChannelAccountRequest) => Promise<ChannelAccount | null>;
+  [IPC_CHANNELS.CHANNEL_DELETE_ACCOUNT]: (accountId: string) => Promise<boolean>;
+  [IPC_CHANNELS.CHANNEL_CONNECT_ACCOUNT]: (accountId: string) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.CHANNEL_DISCONNECT_ACCOUNT]: (accountId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 // ----------------------------------------------------------------------------
@@ -810,6 +838,9 @@ export interface IpcEventHandlers {
   [DAG_CHANNELS.EVENT]: (event: DAGVisualizationEvent) => void;
   // Lab training progress events
   [IPC_CHANNELS.LAB_TRAINING_PROGRESS]: (event: TrainingProgressEvent) => void;
+  // Channel events
+  [IPC_CHANNELS.CHANNEL_ACCOUNTS_CHANGED]: (accounts: ChannelAccount[]) => void;
+  [IPC_CHANNELS.CHANNEL_ACCOUNT_STATUS_CHANGED]: (event: { accountId: string; status: string; error?: string }) => void;
 }
 
 // ----------------------------------------------------------------------------

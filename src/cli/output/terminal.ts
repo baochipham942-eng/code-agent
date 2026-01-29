@@ -144,6 +144,13 @@ export class TerminalOutput {
   }
 
   /**
+   * 显示警告（别名）
+   */
+  warning(message: string): void {
+    this.warn(message);
+  }
+
+  /**
    * 显示信息
    */
   info(message: string): void {

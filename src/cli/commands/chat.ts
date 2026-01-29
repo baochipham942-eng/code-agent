@@ -6,13 +6,15 @@ import { Command } from 'commander';
 import * as readline from 'readline';
 import { createCLIAgent, CLIAgent } from '../adapter';
 import { terminalOutput } from '../output';
-import { cleanup, initializeCLIServices } from '../bootstrap';
+import { cleanup, initializeCLIServices, getSessionManager, getDatabaseService } from '../bootstrap';
 import type { CLIGlobalOptions } from '../types';
 import { version } from '../../../package.json';
 
 export const chatCommand = new Command('chat')
   .description('进入交互式对话模式')
-  .action(async (options: unknown, command: Command) => {
+  .option('-s, --session <id>', '恢复指定会话')
+  .option('-r, --resume', '恢复最近的会话')
+  .action(async (options: { session?: string; resume?: boolean }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
 
     try {
@@ -23,6 +25,14 @@ export const chatCommand = new Command('chat')
       terminalOutput.welcome(version);
       terminalOutput.info(`项目目录: ${globalOpts?.project || process.cwd()}`);
       terminalOutput.info(`代际: ${globalOpts?.gen || 'gen3'}`);
+
+      // 显示数据库状态
+      const db = getDatabaseService();
+      if (db) {
+        const stats = db.getStats();
+        terminalOutput.info(`数据库: ${stats.sessionCount} 会话, ${stats.messageCount} 消息`);
+      }
+
       console.log('输入 /help 查看命令，/exit 退出\n');
 
       // 创建 Agent
@@ -34,6 +44,34 @@ export const chatCommand = new Command('chat')
         json: false,
         debug: globalOpts?.debug,
       });
+
+      // 恢复会话
+      if (options.session) {
+        const restored = await agent.restoreSession(options.session);
+        if (restored) {
+          terminalOutput.success(`已恢复会话: ${options.session}`);
+          const history = agent.getHistory();
+          terminalOutput.info(`历史消息: ${history.length} 条`);
+        } else {
+          terminalOutput.warning(`无法恢复会话: ${options.session}，创建新会话`);
+        }
+      } else if (options.resume) {
+        // 恢复最近会话
+        try {
+          const sessionManager = getSessionManager();
+          const recent = await sessionManager.getMostRecentSession();
+          if (recent) {
+            const restored = await agent.restoreSession(recent.id);
+            if (restored) {
+              terminalOutput.success(`已恢复最近会话: ${recent.title}`);
+              const history = agent.getHistory();
+              terminalOutput.info(`历史消息: ${history.length} 条`);
+            }
+          }
+        } catch (error) {
+          terminalOutput.warning('无法恢复最近会话');
+        }
+      }
 
       // 创建 readline 接口
       const rl = readline.createInterface({
@@ -107,8 +145,11 @@ async function handleCommand(
       console.log(`
 可用命令:
   /help, /h       显示帮助
-  /clear, /c      清空对话历史
+  /clear, /c      清空对话历史（创建新会话）
   /history        显示对话历史
+  /sessions       列出所有会话
+  /session        显示当前会话信息
+  /restore <id>   恢复指定会话
   /config         显示当前配置
   /exit, /quit    退出程序
 `);
@@ -117,7 +158,7 @@ async function handleCommand(
     case 'clear':
     case 'c':
       agent.clearHistory();
-      terminalOutput.success('对话历史已清空');
+      terminalOutput.success('对话历史已清空，将创建新会话');
       return false;
 
     case 'history':
@@ -137,6 +178,65 @@ async function handleCommand(
       }
       return false;
 
+    case 'sessions':
+      try {
+        const sessionManager = getSessionManager();
+        const sessions = await sessionManager.listSessions(10);
+        if (sessions.length === 0) {
+          terminalOutput.info('暂无会话');
+        } else {
+          console.log('\n最近会话:');
+          for (const s of sessions) {
+            const current = s.id === agent.getSessionId() ? ' (当前)' : '';
+            const date = new Date(s.updatedAt).toLocaleString();
+            console.log(`  ${s.id}: ${s.title} - ${s.messageCount} 条消息 - ${date}${current}`);
+          }
+          console.log('');
+        }
+      } catch (error) {
+        terminalOutput.error('无法获取会话列表');
+      }
+      return false;
+
+    case 'session':
+      const sessionId = agent.getSessionId();
+      if (sessionId) {
+        try {
+          const sessionManager = getSessionManager();
+          const session = await sessionManager.getSession(sessionId);
+          if (session) {
+            console.log(`
+当前会话:
+  ID: ${session.id}
+  标题: ${session.title}
+  消息数: ${session.messageCount}
+  创建时间: ${new Date(session.createdAt).toLocaleString()}
+  更新时间: ${new Date(session.updatedAt).toLocaleString()}
+`);
+          }
+        } catch (error) {
+          terminalOutput.info(`会话 ID: ${sessionId}`);
+        }
+      } else {
+        terminalOutput.info('尚未创建会话');
+      }
+      return false;
+
+    case 'restore':
+      if (args.length === 0) {
+        terminalOutput.warn('请指定会话 ID: /restore <session_id>');
+      } else {
+        const restored = await agent.restoreSession(args[0]);
+        if (restored) {
+          terminalOutput.success(`已恢复会话: ${args[0]}`);
+          const h = agent.getHistory();
+          terminalOutput.info(`历史消息: ${h.length} 条`);
+        } else {
+          terminalOutput.error(`无法恢复会话: ${args[0]}`);
+        }
+      }
+      return false;
+
     case 'config':
       const config = agent.getConfig();
       console.log(`
@@ -146,6 +246,7 @@ async function handleCommand(
   模型: ${config.modelConfig.model}
   提供商: ${config.modelConfig.provider}
   调试模式: ${config.debug}
+  会话 ID: ${agent.getSessionId() || '未创建'}
 `);
       return false;
 

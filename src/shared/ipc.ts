@@ -504,6 +504,13 @@ export const IPC_CHANNELS = {
   CHANNEL_GET_TYPES: CHANNEL_CHANNELS.GET_CHANNEL_TYPES,
   CHANNEL_ACCOUNT_STATUS_CHANGED: CHANNEL_CHANNELS.ACCOUNT_STATUS_CHANGED,
   CHANNEL_ACCOUNTS_CHANGED: CHANNEL_CHANNELS.ACCOUNTS_CHANGED,
+
+  // Agent Routing channels
+  AGENT_ROUTING_LIST: 'agent-routing:list',
+  AGENT_ROUTING_UPSERT: 'agent-routing:upsert',
+  AGENT_ROUTING_DELETE: 'agent-routing:delete',
+  AGENT_ROUTING_SET_ENABLED: 'agent-routing:set-enabled',
+  AGENT_ROUTING_SET_DEFAULT: 'agent-routing:set-default',
 } as const;
 
 // ----------------------------------------------------------------------------

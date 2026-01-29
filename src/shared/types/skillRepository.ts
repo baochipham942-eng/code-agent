@@ -44,6 +44,20 @@ export interface SkillRepository {
 // ----------------------------------------------------------------------------
 
 /**
+ * Skill 依赖状态
+ */
+export interface SkillDependencyInfo {
+  /** 是否所有依赖都满足 */
+  satisfied: boolean;
+  /** 缺失的命令行工具 */
+  missingBins?: string[];
+  /** 缺失的环境变量 */
+  missingEnvVars?: string[];
+  /** 缺失的引用文件 */
+  missingReferences?: string[];
+}
+
+/**
  * 本地 Skill 信息
  * 描述本地存储的单个 Skill
  */
@@ -58,6 +72,12 @@ export interface LocalSkillInfo {
   localPath: string;
   /** 是否全局启用 */
   enabled: boolean;
+  /** 依赖状态（如果有依赖的话）*/
+  dependencyStatus?: SkillDependencyInfo;
+  /** 需要的命令行工具 */
+  bins?: string[];
+  /** 需要的环境变量 */
+  envVars?: string[];
 }
 
 /**

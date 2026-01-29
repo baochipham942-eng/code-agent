@@ -120,6 +120,10 @@ export async function parseSkillMd(
     agent: frontmatter.agent,
     argumentHint: frontmatter['argument-hint'],
     source,
+    // 依赖字段
+    bins: frontmatter.bins,
+    envVars: frontmatter['env-vars'],
+    references: frontmatter.references,
   };
 }
 

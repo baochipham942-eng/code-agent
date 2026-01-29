@@ -90,6 +90,9 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
   const [verificationToken, setVerificationToken] = useState(
     (account?.config as FeishuChannelConfig)?.verificationToken || ''
   );
+  const [webhookPort, setWebhookPort] = useState(
+    (account?.config as FeishuChannelConfig)?.webhookPort?.toString() || '3200'
+  );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,6 +113,8 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
         appSecret,
         encryptKey: encryptKey || undefined,
         verificationToken: verificationToken || undefined,
+        useWebSocket: false, // 默认使用 Webhook 模式
+        webhookPort: parseInt(webhookPort) || 3200,
       };
     } else {
       return;
@@ -257,6 +262,28 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   onChange={(e) => setVerificationToken(e.target.value)}
                   className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 text-sm focus:outline-none focus:border-indigo-500"
                 />
+              </div>
+              <div>
+                <label className="block text-sm text-zinc-400 mb-1">Webhook 端口</label>
+                <input
+                  type="number"
+                  value={webhookPort}
+                  onChange={(e) => setWebhookPort(e.target.value)}
+                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="3200"
+                  min={1}
+                  max={65535}
+                />
+              </div>
+              <div className="p-3 bg-zinc-800/50 rounded-lg border border-zinc-700">
+                <p className="text-xs text-zinc-400">
+                  <strong className="text-zinc-300">配置提示：</strong>
+                </p>
+                <ol className="text-xs text-zinc-500 mt-1 space-y-1 list-decimal list-inside">
+                  <li>连接后本地 Webhook 地址：<code className="text-indigo-400">http://localhost:{webhookPort}/webhook/feishu</code></li>
+                  <li>使用 ngrok 暴露公网：<code className="text-indigo-400">ngrok http {webhookPort}</code></li>
+                  <li>将 ngrok URL 填入飞书开放平台「事件与回调」→「请求地址配置」</li>
+                </ol>
               </div>
             </>
           )}

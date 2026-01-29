@@ -1,9 +1,11 @@
 // ============================================================================
-// Feishu Channel - 飞书通道实现
+// Feishu Channel - 飞书通道实现 (支持 WebSocket 长连接和 Webhook 模式)
 // ============================================================================
 
 import * as lark from '@larksuiteoapi/node-sdk';
 import { v4 as uuidv4 } from 'uuid';
+import express, { type Express, type Request, type Response } from 'express';
+import type { Server } from 'http';
 import {
   BaseChannelPlugin,
   type ChannelResponseCallback,
@@ -83,6 +85,11 @@ export class FeishuChannel extends BaseChannelPlugin {
   private client: lark.Client | null = null;
   private wsClient: lark.WSClient | null = null;
 
+  // Webhook 服务器
+  private webhookApp: Express | null = null;
+  private webhookServer: Server | null = null;
+  private eventDispatcher: lark.EventDispatcher | null = null;
+
   // 消息 ID 映射 (用于编辑消息)
   private messageIdMap: Map<string, string> = new Map();
 
@@ -122,12 +129,12 @@ export class FeishuChannel extends BaseChannelPlugin {
     this.setStatus('connecting');
 
     try {
-      if (this.feishuConfig.useWebSocket !== false) {
-        // 使用 WebSocket 长连接 (推荐)
+      if (this.feishuConfig.useWebSocket === true) {
+        // 使用 WebSocket 长连接 (需要飞书后台配置)
         await this.connectWebSocket();
       } else {
-        // HTTP 回调模式 (需要公网 URL)
-        logger.warn('HTTP callback mode requires external webhook configuration');
+        // 默认使用 Webhook 模式
+        await this.startWebhookServer();
       }
 
       this.setStatus('connected');
@@ -140,10 +147,21 @@ export class FeishuChannel extends BaseChannelPlugin {
   }
 
   async disconnect(): Promise<void> {
+    // 关闭 WebSocket 连接
     if (this.wsClient) {
-      // WSClient 没有直接的 close 方法，设置为 null 即可
       this.wsClient = null;
     }
+
+    // 关闭 Webhook 服务器
+    if (this.webhookServer) {
+      await new Promise<void>((resolve) => {
+        this.webhookServer!.close(() => resolve());
+      });
+      this.webhookServer = null;
+      this.webhookApp = null;
+      logger.info('Feishu webhook server stopped');
+    }
+
     this.setStatus('disconnected');
     logger.info('FeishuChannel disconnected');
   }
@@ -284,6 +302,95 @@ export class FeishuChannel extends BaseChannelPlugin {
   }
 
   // ========== Private Methods ==========
+
+  /**
+   * 启动 Webhook 服务器
+   */
+  private async startWebhookServer(): Promise<void> {
+    if (!this.feishuConfig) {
+      throw new Error('Config not initialized');
+    }
+
+    const port = this.feishuConfig.webhookPort || 3200;
+    const host = this.feishuConfig.webhookHost || '0.0.0.0';
+
+    // 创建事件分发器
+    this.eventDispatcher = new lark.EventDispatcher({
+      encryptKey: this.feishuConfig.encryptKey,
+      verificationToken: this.feishuConfig.verificationToken,
+    }).register({
+      'im.message.receive_v1': async (data) => {
+        await this.handleMessageEvent(data as unknown as FeishuMessageEvent);
+      },
+    });
+
+    // 创建 Express 应用
+    this.webhookApp = express();
+    this.webhookApp.use(express.json());
+    this.webhookApp.use(express.urlencoded({ extended: true }));
+
+    // Webhook 端点
+    this.webhookApp.post('/webhook/feishu', async (req: Request, res: Response) => {
+      try {
+        const body = req.body;
+        logger.debug('Received Feishu webhook', { type: body?.type, challenge: !!body?.challenge });
+
+        // 处理 URL 验证请求
+        if (body?.type === 'url_verification' || body?.challenge) {
+          logger.info('Feishu URL verification', { challenge: body.challenge });
+          res.json({ challenge: body.challenge });
+          return;
+        }
+
+        // 处理事件
+        if (this.eventDispatcher && body) {
+          // 使用飞书 SDK 的事件分发器处理
+          const eventData = body.encrypt ? body : body;
+          await this.eventDispatcher.invoke(eventData);
+        }
+
+        res.json({ code: 0, msg: 'success' });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        logger.error('Error handling Feishu webhook', { error: message });
+        res.status(500).json({ code: -1, msg: message });
+      }
+    });
+
+    // 健康检查端点
+    this.webhookApp.get('/webhook/feishu', (_req: Request, res: Response) => {
+      res.json({
+        status: 'ok',
+        channel: 'feishu',
+        appId: this.feishuConfig?.appId,
+        timestamp: Date.now(),
+      });
+    });
+
+    // 启动服务器
+    return new Promise((resolve, reject) => {
+      try {
+        this.webhookServer = this.webhookApp!.listen(port, host, () => {
+          logger.info('Feishu webhook server started', {
+            host,
+            port,
+            endpoint: `http://${host}:${port}/webhook/feishu`,
+          });
+          logger.info('Configure this URL in Feishu developer console (use ngrok for public access):');
+          logger.info(`  Local: http://localhost:${port}/webhook/feishu`);
+          logger.info(`  Example with ngrok: ngrok http ${port}`);
+          resolve();
+        });
+
+        this.webhookServer.on('error', (error) => {
+          logger.error('Webhook server error', { error: String(error) });
+          reject(error);
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
 
   private async connectWebSocket(): Promise<void> {
     if (!this.client || !this.feishuConfig) {

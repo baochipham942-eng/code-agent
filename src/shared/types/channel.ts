@@ -210,9 +210,13 @@ export interface FeishuChannelConfig {
   encryptKey?: string;
   /** Verification Token */
   verificationToken?: string;
-  /** 是否使用 WebSocket (默认 true) */
+  /** 是否使用 WebSocket (默认 false，改用 Webhook) */
   useWebSocket?: boolean;
-  /** Webhook URL (如果使用 HTTP 推送) */
+  /** Webhook 监听端口 (默认 3200) */
+  webhookPort?: number;
+  /** Webhook 监听地址 (默认 0.0.0.0) */
+  webhookHost?: string;
+  /** 外部 Webhook URL (用于显示配置提示) */
   webhookUrl?: string;
 }
 

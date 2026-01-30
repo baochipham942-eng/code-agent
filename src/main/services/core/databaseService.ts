@@ -316,6 +316,20 @@ export class DatabaseService {
         updated_at INTEGER NOT NULL
       )
     `);
+
+    // File Checkpoints 表 (文件回滚检查点)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS file_checkpoints (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        original_content TEXT,
+        file_existed INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      )
+    `);
   }
 
   private createIndexes(): void {
@@ -351,6 +365,11 @@ export class DatabaseService {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_executions_status ON cron_executions(status)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_executions_scheduled ON cron_executions(scheduled_at DESC)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_heartbeats_enabled ON heartbeats(enabled)`);
+
+    // File Checkpoints indexes
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_file_checkpoints_session ON file_checkpoints(session_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_file_checkpoints_message ON file_checkpoints(message_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_file_checkpoints_created ON file_checkpoints(created_at)`);
   }
 
   // --------------------------------------------------------------------------

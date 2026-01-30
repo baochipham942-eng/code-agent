@@ -118,11 +118,15 @@ export const todoWriteTool: Tool = {
 
     // Validate each todo item
     for (const todo of todos) {
-      if (!todo.content || !todo.status || !todo.activeForm) {
+      if (!todo.content || !todo.status) {
         return {
           success: false,
-          error: 'Each todo must have content, status, and activeForm',
+          error: 'Each todo must have content and status',
         };
+      }
+      // activeForm 可选，如果未提供则从 content 生成
+      if (!todo.activeForm) {
+        todo.activeForm = todo.content.slice(0, 30) + (todo.content.length > 30 ? '...' : '');
       }
 
       if (!['pending', 'in_progress', 'completed'].includes(todo.status)) {
@@ -275,10 +279,16 @@ export const todoWriteTool: Tool = {
     const formatted = formatTodoOutput(todoItems);
     const completed = todoItems.filter((t) => t.status === 'completed').length;
     const total = todoItems.length;
+    const pending = todoItems.filter((t) => t.status === 'pending' || t.status === 'in_progress').length;
+
+    // 引导模型继续执行，而非停在规划阶段
+    const guidance = pending > 0
+      ? `\n\n⚠️ 计划已记录，请立即执行 ${pending} 个待完成的任务。不要再次调用 todo_write。`
+      : '';
 
     return {
       success: true,
-      output: `Todo list updated (${completed}/${total} completed):\n${formatted}`,
+      output: `Todo list updated (${completed}/${total} completed):\n${formatted}${guidance}`,
     };
   },
 };

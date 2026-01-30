@@ -35,9 +35,9 @@ const CODE_AGENT_PATH =
   process.env.CODE_AGENT_PATH ||
   `${process.env.HOME}/Downloads/ai/code-agent/dist/cli/index.cjs`;
 
-// 默认使用智谱 GLM 模型
+// 默认使用智谱 GLM-4.7 (Coding 套餐/开发模式)
 const CODE_AGENT_PROVIDER = process.env.CODE_AGENT_PROVIDER || 'zhipu';
-const CODE_AGENT_MODEL = process.env.CODE_AGENT_MODEL || 'glm-4-plus';
+const CODE_AGENT_MODEL = process.env.CODE_AGENT_MODEL || 'glm-4.7';
 const CODE_AGENT_GEN = process.env.CODE_AGENT_GEN || 'gen3';
 
 const CLAUDE_PATH =

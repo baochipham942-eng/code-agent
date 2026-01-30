@@ -158,6 +158,9 @@ export class AgentLoop {
   private structuredOutputRetryCount: number = 0;
   private maxStructuredOutputRetries: number = 2;
 
+  // Step-by-step execution mode (for models like DeepSeek that struggle with multi-step tasks)
+  private stepByStepMode: boolean = false;
+
   constructor(config: AgentLoopConfig) {
     this.generation = config.generation;
     this.modelConfig = config.modelConfig;
@@ -183,6 +186,9 @@ export class AgentLoop {
 
     // Structured output
     this.structuredOutput = config.structuredOutput;
+
+    // Step-by-step mode (auto-enable for models that need it)
+    this.stepByStepMode = config.stepByStepMode ?? this.shouldAutoEnableStepByStep();
 
     // Initialize refactored modules
     this.circuitBreaker = new CircuitBreaker();
@@ -296,6 +302,69 @@ export class AgentLoop {
   }
 
   // --------------------------------------------------------------------------
+  // Step-by-Step Execution Methods (for DeepSeek etc.)
+  // --------------------------------------------------------------------------
+
+  private shouldAutoEnableStepByStep(): boolean {
+    const model = this.modelConfig.model?.toLowerCase() || '';
+    const provider = this.modelConfig.provider?.toLowerCase() || '';
+    if (provider === 'deepseek' || model.includes('deepseek')) return true;
+    if (provider === 'zhipu' && model.includes('glm')) return true;
+    return false;
+  }
+
+  private parseMultiStepTask(prompt: string): { steps: string[]; isMultiStep: boolean } {
+    const stepRegex = /^\s*(\d+)[.\)]\s*(.+?)(?=\n\s*\d+[.\)]|\n*$)/gms;
+    const steps: string[] = [];
+    let match;
+    while ((match = stepRegex.exec(prompt)) !== null) {
+      const instruction = match[2].trim();
+      if (instruction.length > 10) steps.push(instruction);
+    }
+    return { steps, isMultiStep: steps.length >= 2 };
+  }
+
+  private async runStepByStep(userMessage: string, steps: string[]): Promise<boolean> {
+    logger.info(`[AgentLoop] Step-by-step mode: ${steps.length} steps`);
+    this.onEvent({ type: 'notification', data: { message: `分步执行: ${steps.length} 步` } });
+
+    for (let i = 0; i < steps.length; i++) {
+      const stepNum = i + 1;
+      const step = steps[i];
+      const stepPrompt = `执行第 ${stepNum}/${steps.length} 步: ${step}\n\n背景: ${userMessage}`;
+
+      const stepMessage: Message = {
+        id: generateMessageId(),
+        role: 'user',
+        content: stepPrompt,
+        timestamp: Date.now(),
+      };
+      this.messages.push(stepMessage);
+      this.onEvent({ type: 'message', data: stepMessage });
+      this.onEvent({ type: 'notification', data: { message: `[${stepNum}/${steps.length}] ${step.substring(0, 30)}...` } });
+
+      let stepIterations = 0;
+      while (!this.isCancelled && stepIterations < 5) {
+        stepIterations++;
+        const response = await this.inference();
+        if (response.type === 'text') {
+          const msg: Message = { id: generateMessageId(), role: 'assistant', content: response.content || '', timestamp: Date.now() };
+          this.messages.push(msg);
+          this.onEvent({ type: 'message', data: msg });
+          break;
+        }
+        if (response.type === 'tool_use' && response.toolCalls) {
+          const results = await this.executeToolsWithHooks(response.toolCalls);
+          const toolMsg: Message = { id: generateMessageId(), role: 'assistant', content: '', timestamp: Date.now(), toolCalls: response.toolCalls, toolResults: results };
+          this.messages.push(toolMsg);
+        }
+      }
+    }
+    this.onEvent({ type: 'notification', data: { message: `分步执行完成` } });
+    return true;
+  }
+
+  // --------------------------------------------------------------------------
   // Public Methods
   // --------------------------------------------------------------------------
 
@@ -334,6 +403,16 @@ export class AgentLoop {
     if (!isSimpleTask) {
       const complexityHint = taskComplexityAnalyzer.generateComplexityHint(complexityAnalysis);
       this.injectSystemMessage(complexityHint);
+    }
+
+    // Step-by-step execution for models that need it (DeepSeek, etc.)
+    if (this.stepByStepMode && !isSimpleTask) {
+      const { steps, isMultiStep } = this.parseMultiStepTask(userMessage);
+      if (isMultiStep) {
+        logger.info(`[AgentLoop] Multi-step task detected (${steps.length} steps), using step-by-step mode`);
+        await this.runStepByStep(userMessage, steps);
+        return; // Step-by-step mode handles the entire execution
+      }
     }
 
     // User-configurable hooks: UserPromptSubmit

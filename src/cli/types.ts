@@ -13,6 +13,7 @@ export interface CLIGlobalOptions {
   gen: string;
   model?: string;
   provider?: string;
+  plan?: boolean;
   debug: boolean;
 }
 
@@ -24,6 +25,7 @@ export interface CLIConfig {
   generationId: string;
   modelConfig: ModelConfig;
   outputFormat: 'text' | 'json';
+  enablePlanning: boolean;
   debug: boolean;
 }
 

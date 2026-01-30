@@ -165,6 +165,7 @@ export function buildCLIConfig(options: {
   model?: string;
   provider?: string;
   json?: boolean;
+  plan?: boolean;
   debug?: boolean;
 }): CLIConfig {
   const config = getConfigService();
@@ -195,6 +196,7 @@ export function buildCLIConfig(options: {
     generationId,
     modelConfig,
     outputFormat: options.json ? 'json' : 'text',
+    enablePlanning: options.plan || false,
     debug: options.debug || false,
   };
 }
@@ -217,6 +219,20 @@ export function createAgentLoop(
     throw new Error(`Generation ${config.generationId} not found`);
   }
 
+  // 创建 PlanningService（如果启用规划模式）
+  let planningService = undefined;
+  if (config.enablePlanning) {
+    const { createPlanningService } = require('../main/planning/planningService');
+    const sessionId = `cli-${Date.now()}`;
+    planningService = createPlanningService(config.workingDirectory, sessionId);
+    planningService.initialize().catch((err: Error) => {
+      console.error('Failed to initialize planning service:', err);
+    });
+    if (config.debug) {
+      console.log('[Planning] Planning mode enabled');
+    }
+  }
+
   // 创建 AgentLoop
   const agentLoop = new AgentLoop({
     generation,
@@ -230,7 +246,8 @@ export function createAgentLoop(
       }
       onEvent(event);
     },
-    enableHooks: false, // CLI 模式暂不启用 hooks
+    enableHooks: config.enablePlanning, // 规划模式启用 hooks
+    planningService,
     sessionId: `cli-${Date.now()}`,
     workingDirectory: config.workingDirectory,
     isDefaultWorkingDirectory: false,

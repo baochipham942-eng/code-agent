@@ -1,0 +1,42 @@
+{
+  "name": "claude-agent-e2e-tests",
+  "version": "1.0.0",
+  "description": "End-to-end testing framework for Claude Code Agent",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "claude-e2e": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "test": "tsx src/index.ts run",
+    "test:quick": "tsx src/index.ts run -l L1 L2",
+    "test:full": "tsx src/index.ts run -f all",
+    "test:category": "tsx src/index.ts run -c",
+    "list": "tsx src/index.ts list",
+    "init": "tsx src/index.ts init",
+    "report": "tsx src/index.ts report",
+    "lint": "eslint src/**/*.ts",
+    "clean": "rm -rf dist results"
+  },
+  "dependencies": {
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0",
+    "tsx": "^4.7.0",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "files": [
+    "dist",
+    "fixtures",
+    "test-cases"
+  ]
+}

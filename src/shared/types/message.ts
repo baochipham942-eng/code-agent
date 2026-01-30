@@ -62,4 +62,6 @@ export interface Message {
   isMeta?: boolean;
   // 消息来源追踪
   source?: MessageSource;
+  // 推理模型的思考过程 (glm-4.7 等)
+  reasoning?: string;
 }

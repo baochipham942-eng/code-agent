@@ -178,6 +178,15 @@ function callZhipuStream(
               }
 
               if (delta) {
+                // 处理推理内容 (glm-4.7 等推理模型)
+                if (delta.reasoning_content) {
+                  // 推理内容作为思考过程展示，但不计入最终 content
+                  logger.debug(`[智谱] 收到推理块: "${delta.reasoning_content.substring(0, 30)}..."`);
+                  if (onStream) {
+                    onStream({ type: 'reasoning', content: delta.reasoning_content });
+                  }
+                }
+
                 // 处理文本内容
                 if (delta.content) {
                   content += delta.content;

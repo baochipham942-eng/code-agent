@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, Check, AlertTriangle, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Check, AlertTriangle, Loader2, Brain } from 'lucide-react';
 import type { AssistantMessageProps } from './types';
 import { MessageContent } from './MessageContent';
 import { ToolCallDisplay } from './ToolCallDisplay/index';
@@ -58,7 +58,10 @@ const getToolActionWord = (toolName: string): string => {
 export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) => {
   const isCoworkMode = useIsCoworkMode();
   const contentRef = useRef<HTMLDivElement>(null);
+  const reasoningRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState<number | null>(null);
+  const [showReasoning, setShowReasoning] = useState(false);
+  const [reasoningHeight, setReasoningHeight] = useState<number | null>(null);
 
   const toolStats = useMemo(() => {
     return message.toolCalls?.reduce(
@@ -90,6 +93,12 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
     }
   }, [showToolDetails, message.toolCalls]);
 
+  useEffect(() => {
+    if (reasoningRef.current) {
+      setReasoningHeight(reasoningRef.current.scrollHeight);
+    }
+  }, [showReasoning, message.reasoning]);
+
   const flowText = useMemo(() => {
     if (!message.toolCalls || message.toolCalls.length === 0) return '';
     const actions: string[] = [];
@@ -117,6 +126,38 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
 
   return (
     <div className="py-3 px-4">
+      {/* Reasoning content - 推理模型的思考过程 (glm-4.7 等) */}
+      {message.reasoning && (
+        <div className="mb-3">
+          <button
+            onClick={() => setShowReasoning(!showReasoning)}
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-violet-500/10 border border-violet-500/20 hover:bg-violet-500/15 transition-colors"
+          >
+            <Brain className="w-3.5 h-3.5 text-violet-400" />
+            <span className="text-xs font-medium text-violet-300">思考过程</span>
+            {showReasoning ? (
+              <ChevronDown className="w-3.5 h-3.5 text-violet-400" />
+            ) : (
+              <ChevronRight className="w-3.5 h-3.5 text-violet-400" />
+            )}
+          </button>
+          <div
+            ref={reasoningRef}
+            className="overflow-hidden transition-all duration-300 ease-out"
+            style={{
+              maxHeight: showReasoning ? (reasoningHeight ? `${reasoningHeight}px` : '500px') : '0px',
+              opacity: showReasoning ? 1 : 0,
+            }}
+          >
+            <div className="mt-2 px-3 py-2 rounded-md bg-violet-500/5 border border-violet-500/10">
+              <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">
+                {message.reasoning}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Text content - AI 消息无背景，左对齐 */}
       {message.content && (
         <div className="text-zinc-200 leading-relaxed select-text">

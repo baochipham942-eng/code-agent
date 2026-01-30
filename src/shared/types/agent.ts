@@ -123,6 +123,7 @@ export type AgentEvent =
   | { type: 'permission_request'; data: PermissionRequest }
   | { type: 'error'; data: { message: string; code?: string; suggestion?: string; details?: Record<string, unknown> } }
   | { type: 'stream_chunk'; data: { content: string | undefined; turnId?: string } }
+  | { type: 'stream_reasoning'; data: { content: string | undefined; turnId?: string } }
   | { type: 'stream_tool_call_start'; data: { index?: number; id?: string; name?: string; turnId?: string } }
   | { type: 'stream_tool_call_delta'; data: { index?: number; name?: string; argumentsDelta?: string; turnId?: string } }
   | { type: 'todo_update'; data: TodoItem[] }

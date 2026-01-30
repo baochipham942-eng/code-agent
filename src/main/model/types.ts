@@ -40,7 +40,7 @@ export interface ModelResponse {
 // ----------------------------------------------------------------------------
 
 export interface StreamChunk {
-  type: 'text' | 'tool_call_start' | 'tool_call_delta';
+  type: 'text' | 'reasoning' | 'tool_call_start' | 'tool_call_delta';
   content?: string;
   toolCall?: {
     index: number;

@@ -98,6 +98,10 @@ export class AgentLoop {
   private stopHookRetryCount: number = 0;
   private maxStopHookRetries: number = 3;
 
+  // P1 Nudge: Read-only stop pattern detection
+  private readOnlyNudgeCount: number = 0;
+  private maxReadOnlyNudges: number = 2;
+
   // User-configurable hooks (Claude Code v2.0 style)
   private hookManager?: HookManager;
   private userHooksInitialized: boolean = false;
@@ -391,6 +395,7 @@ export class AgentLoop {
 
       this.turnStartTime = Date.now();
       this.toolsUsedInTurn = [];
+      this.readOnlyNudgeCount = 0; // Reset nudge counter for new turn
       this.emitTaskProgress('thinking', '分析请求中...');
 
       // 1. Call model
@@ -486,6 +491,23 @@ export class AgentLoop {
               type: 'notification',
               data: { message: stopResult.notification },
             });
+          }
+        }
+
+        // P1 Nudge: Detect read-only stop pattern
+        // If agent read files but didn't write, nudge it to continue with actual modifications
+        if (this.toolsUsedInTurn.length > 0 && this.readOnlyNudgeCount < this.maxReadOnlyNudges) {
+          const nudgeMessage = this.antiPatternDetector.detectReadOnlyStopPattern(this.toolsUsedInTurn);
+          if (nudgeMessage) {
+            this.readOnlyNudgeCount++;
+            logger.debug(`[AgentLoop] Read-only stop pattern detected, nudge ${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges}`);
+            logCollector.agent('INFO', `Read-only stop pattern detected, nudge ${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges}`);
+            this.injectSystemMessage(nudgeMessage);
+            this.onEvent({
+              type: 'notification',
+              data: { message: `检测到只读模式，提示继续执行修改 (${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges})...` },
+            });
+            continue; // Skip stop, continue execution
           }
         }
 

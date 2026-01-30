@@ -462,6 +462,51 @@ export class AntiPatternDetector {
   hasWritten(): boolean {
     return this.state.hasWrittenFile;
   }
+
+  // --------------------------------------------------------------------------
+  // Read-Only Stop Pattern Detection (P1 Nudge)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Detect if agent is about to stop after only reading files (no writes)
+   * This is a common anti-pattern where agent reads files but doesn't execute modifications
+   *
+   * @param toolsUsedInTurn - List of tools used in the current turn
+   * @returns Nudge message if pattern detected, null otherwise
+   */
+  detectReadOnlyStopPattern(toolsUsedInTurn: string[]): string | null {
+    // Check if any read tools were used
+    const hasReadTools = toolsUsedInTurn.some(tool => READ_ONLY_TOOLS.includes(tool));
+
+    // Check if any write tools were used
+    const hasWriteTools = toolsUsedInTurn.some(tool => WRITE_TOOLS.includes(tool));
+
+    // Pattern: has reads but no writes
+    if (hasReadTools && !hasWriteTools) {
+      const readCount = toolsUsedInTurn.filter(tool => READ_ONLY_TOOLS.includes(tool)).length;
+      logger.debug(`[ReadOnlyStop] Detected read-only pattern: ${readCount} reads, no writes`);
+
+      return this.generateReadOnlyStopNudge(readCount);
+    }
+
+    return null;
+  }
+
+  /**
+   * Generate nudge message for read-only stop pattern
+   */
+  private generateReadOnlyStopNudge(readCount: number): string {
+    return (
+      `<execution-nudge>\n` +
+      `⚠️ 检测到只读模式：你执行了 ${readCount} 次文件读取操作，但没有进行任何修改。\n\n` +
+      `如果这是一个代码修改任务：\n` +
+      `1. 你已经读取了相关文件，现在请使用 edit_file 工具执行修改\n` +
+      `2. 不要只是描述需要做什么，要实际执行修改\n` +
+      `3. 任务完成的标志是产出实际的文件变更，不是理解代码\n\n` +
+      `如果这是一个纯阅读/分析任务，请明确说明分析结果并完成任务。\n` +
+      `</execution-nudge>`
+    );
+  }
 }
 
 /**

@@ -1427,6 +1427,9 @@ export class AgentLoop {
             this.onEvent({ type: 'stream_chunk', data: { content: chunk, turnId: this.currentTurnId } });
           } else if (chunk.type === 'text') {
             this.onEvent({ type: 'stream_chunk', data: { content: chunk.content, turnId: this.currentTurnId } });
+          } else if (chunk.type === 'reasoning') {
+            // 推理模型的思考过程 (glm-4.7 等)
+            this.onEvent({ type: 'stream_reasoning', data: { content: chunk.content, turnId: this.currentTurnId } });
           } else if (chunk.type === 'tool_call_start') {
             this.onEvent({
               type: 'stream_tool_call_start',

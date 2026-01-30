@@ -70,12 +70,17 @@ export const useAgent = () => {
   const handleBatchUpdate = useCallback((updates: MessageUpdate[]) => {
     const currentMessages = messagesRef.current;
     for (const update of updates) {
-      if (update.type === 'append' && update.content) {
+      if (update.type === 'append' && (update.content || update.reasoning)) {
         const targetMessage = currentMessages.find(m => m.id === update.messageId);
         if (targetMessage?.role === 'assistant') {
-          updateMessage(update.messageId, {
-            content: (targetMessage.content || '') + update.content,
-          });
+          const changes: Partial<Message> = {};
+          if (update.content) {
+            changes.content = (targetMessage.content || '') + update.content;
+          }
+          if (update.reasoning) {
+            changes.reasoning = (targetMessage.reasoning || '') + update.reasoning;
+          }
+          updateMessage(update.messageId, changes);
         }
       }
     }
@@ -97,7 +102,7 @@ export const useAgent = () => {
       'agent:event',
       (event: { type: string; data: any; sessionId?: string }) => {
         // 只对非流式事件打印日志，避免控制台刷屏
-        const silentEvents = ['stream_chunk', 'stream_tool_call_delta'];
+        const silentEvents = ['stream_chunk', 'stream_reasoning', 'stream_tool_call_delta'];
         if (!silentEvents.includes(event.type)) {
           logger.debug('Received event', { type: event.type, sessionId: event.sessionId });
         }
@@ -228,6 +233,24 @@ export const useAgent = () => {
             // 刷新所有待处理的流式更新，确保内容完整显示
             flushRef.current();
             logger.debug('turn_end', { turnId: event.data?.turnId });
+            break;
+
+          case 'stream_reasoning':
+            // 推理模型的思考过程 (glm-4.7 等) - 存储到单独的 reasoning 字段
+            if (event.data?.content) {
+              const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
+              const targetMessage = targetMessageId
+                ? currentMessages.find(m => m.id === targetMessageId)
+                : currentMessages[currentMessages.length - 1];
+
+              if (targetMessage?.role === 'assistant') {
+                queueUpdate({
+                  type: 'append',
+                  messageId: targetMessage.id,
+                  reasoning: event.data.content,
+                });
+              }
+            }
             break;
 
           case 'stream_tool_call_start':

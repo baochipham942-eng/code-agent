@@ -21,6 +21,7 @@ export type MessageUpdate = {
   type: 'append' | 'replace' | 'complete';
   messageId: string;
   content?: string;
+  reasoning?: string;  // 推理模型的思考过程
   toolCalls?: ToolCall[];
 };
 
@@ -215,6 +216,7 @@ function mergeUpdates(updates: MessageUpdate[]): MessageUpdate[] {
     } else if (update.type === 'append') {
       // 合并 append 类型的更新
       existing.content = (existing.content || '') + (update.content || '');
+      existing.reasoning = (existing.reasoning || '') + (update.reasoning || '');
       if (update.toolCalls) {
         existing.toolCalls = [...(existing.toolCalls || []), ...update.toolCalls];
       }

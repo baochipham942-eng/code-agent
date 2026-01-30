@@ -167,8 +167,15 @@ export interface TestCase {
   timeout?: number;
   /** 失败后重试次数（用于处理模型行为的随机性） */
   retries?: number;
-  /** 启用 nudge 机制：文件未创建时提示模型完成 */
+  /** 启用 nudge 机制：检测未创建的文件和未完成的修改，提示模型完成 */
   nudgeOnMissingFile?: boolean;
+  /** 启用步骤分解执行：将多步骤任务拆成独立调用，逐步验证 */
+  stepByStepExecution?: boolean;
+  /** 分解后的步骤定义（可选，不提供则自动从 prompt 解析） */
+  steps?: {
+    instruction: string;
+    validation?: Validation;
+  }[];
 }
 
 /** 测试执行上下文 */

@@ -22,6 +22,7 @@ program
   .option('--gen <id>', '使用的代际 (gen1-gen8)', 'gen3')
   .option('--model <name>', '模型名称')
   .option('--provider <name>', '模型提供商 (deepseek, openai, zhipu)')
+  .option('--plan', '启用规划模式（复杂任务自动分解）')
   .option('--debug', '调试模式');
 
 // Register commands

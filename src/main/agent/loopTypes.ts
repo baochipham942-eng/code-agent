@@ -39,6 +39,18 @@ export interface AgentLoopConfig {
   workingDirectory: string;
   isDefaultWorkingDirectory?: boolean;
   structuredOutput?: StructuredOutputConfig;
+  /** 启用步骤分解执行模式（针对 DeepSeek 等在多步骤任务中容易遗漏步骤的模型） */
+  stepByStepMode?: boolean;
+}
+
+/**
+ * 从 prompt 解析出的步骤
+ */
+export interface ParsedStep {
+  index: number;
+  instruction: string;
+  targetFile?: string;
+  operation?: 'read' | 'edit' | 'write' | 'other';
 }
 
 // ----------------------------------------------------------------------------

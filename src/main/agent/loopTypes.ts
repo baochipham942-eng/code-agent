@@ -207,6 +207,20 @@ export const READ_ONLY_TOOLS = ['read_file', 'glob', 'grep', 'list_directory', '
 export const WRITE_TOOLS = ['write_file', 'edit_file'];
 
 /**
+ * Verification tools for checkpoint tracking
+ */
+export const VERIFY_TOOLS = ['bash', 'test', 'compile'];
+
+/**
+ * Task progress state for P2 checkpoint validation
+ * - exploring: Agent is reading/analyzing files
+ * - modifying: Agent is making changes
+ * - verifying: Agent is running tests/checks
+ * - completed: Task is done
+ */
+export type TaskProgressState = 'exploring' | 'modifying' | 'verifying' | 'completed';
+
+/**
  * Large binary data fields to filter from tool results
  */
 export const LARGE_DATA_FIELDS = [

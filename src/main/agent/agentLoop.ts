@@ -54,7 +54,7 @@ import {
 } from './messageHandling/contextBuilder';
 import { getPromptForTask } from '../generation/prompts/builder';
 import { AntiPatternDetector } from './antiPattern/detector';
-import { MAX_PARALLEL_TOOLS } from './loopTypes';
+import { MAX_PARALLEL_TOOLS, READ_ONLY_TOOLS, WRITE_TOOLS, VERIFY_TOOLS, TaskProgressState } from './loopTypes';
 import {
   compressToolResult,
   HookMessageBuffer,
@@ -101,6 +101,11 @@ export class AgentLoop {
   // P1 Nudge: Read-only stop pattern detection
   private readOnlyNudgeCount: number = 0;
   private maxReadOnlyNudges: number = 2;
+
+  // P2 Checkpoint: Task progress state tracking
+  private consecutiveExploringCount: number = 0;
+  private maxConsecutiveExploring: number = 3;
+  private lastProgressState: TaskProgressState = 'exploring';
 
   // User-configurable hooks (Claude Code v2.0 style)
   private hookManager?: HookManager;
@@ -630,6 +635,21 @@ export class AgentLoop {
         });
 
         this.updateContextHealth();
+
+        // P2 Checkpoint: Evaluate task progress state and nudge if stuck in exploring
+        const currentState = this.evaluateProgressState(this.toolsUsedInTurn);
+        if (currentState === 'exploring') {
+          this.consecutiveExploringCount++;
+          if (this.consecutiveExploringCount >= this.maxConsecutiveExploring) {
+            logger.debug(`[AgentLoop] P2 Checkpoint: ${this.consecutiveExploringCount} consecutive exploring iterations, injecting nudge`);
+            logCollector.agent('INFO', `P2 Checkpoint nudge: ${this.consecutiveExploringCount} exploring iterations`);
+            this.injectSystemMessage(this.generateExploringNudge());
+            this.consecutiveExploringCount = 0; // Reset after nudge
+          }
+        } else {
+          this.consecutiveExploringCount = 0; // Reset on progress
+        }
+        this.lastProgressState = currentState;
 
         logger.debug(` >>>>>> Iteration ${iterations} END (continuing) <<<<<<`);
         continue;
@@ -1584,6 +1604,53 @@ export class AgentLoop {
    * @param category Optional category for hook message buffering (e.g., 'pre-tool', 'post-tool')
    *                 If provided, message will be buffered and merged with other messages of same category
    */
+  // --------------------------------------------------------------------------
+  // P2 Checkpoint: Task Progress Evaluation
+  // --------------------------------------------------------------------------
+
+  /**
+   * Evaluate the current task progress state based on tools used in this iteration
+   */
+  private evaluateProgressState(toolsUsed: string[]): TaskProgressState {
+    const hasReadTools = toolsUsed.some(t => READ_ONLY_TOOLS.includes(t));
+    const hasWriteTools = toolsUsed.some(t => WRITE_TOOLS.includes(t));
+    const hasVerifyTools = toolsUsed.some(t => VERIFY_TOOLS.includes(t) || t === 'bash');
+
+    // Check for verification first (test/compile commands)
+    if (hasVerifyTools && !hasWriteTools) {
+      return 'verifying';
+    }
+
+    // Modifying if any write tools were used
+    if (hasWriteTools) {
+      return 'modifying';
+    }
+
+    // Exploring if only read tools were used
+    if (hasReadTools) {
+      return 'exploring';
+    }
+
+    // Default to exploring if no tools were used
+    return 'exploring';
+  }
+
+  /**
+   * Generate nudge message when stuck in exploring state
+   */
+  private generateExploringNudge(): string {
+    return (
+      `<checkpoint-nudge>\n` +
+      `⚠️ 检测到连续 ${this.maxConsecutiveExploring} 次迭代都在探索/读取阶段。\n\n` +
+      `任务执行提醒：\n` +
+      `1. 如果这是一个修改任务，你已经读取了足够的信息，请立即使用 edit_file 或 write_file 执行修改\n` +
+      `2. 不要继续无目的地读取更多文件\n` +
+      `3. 如果不确定如何修改，做一个最佳猜测并执行\n` +
+      `4. 任务完成的标志是产出实际的文件变更\n` +
+      `</checkpoint-nudge>`
+    );
+  }
+
   private injectSystemMessage(content: string, category?: string): void {
     if (category) {
       // Buffer hook messages for later merging

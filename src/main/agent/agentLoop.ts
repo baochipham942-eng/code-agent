@@ -100,7 +100,7 @@ export class AgentLoop {
 
   // P1 Nudge: Read-only stop pattern detection
   private readOnlyNudgeCount: number = 0;
-  private maxReadOnlyNudges: number = 2;
+  private maxReadOnlyNudges: number = 3; // Increased from 2 to give more chances
 
   // P2 Checkpoint: Task progress state tracking
   private consecutiveExploringCount: number = 0;
@@ -1640,13 +1640,14 @@ export class AgentLoop {
    */
   private generateExploringNudge(): string {
     return (
-      `<checkpoint-nudge>\n` +
-      `⚠️ 检测到连续 ${this.maxConsecutiveExploring} 次迭代都在探索/读取阶段。\n\n` +
-      `任务执行提醒：\n` +
-      `1. 如果这是一个修改任务，你已经读取了足够的信息，请立即使用 edit_file 或 write_file 执行修改\n` +
-      `2. 不要继续无目的地读取更多文件\n` +
-      `3. 如果不确定如何修改，做一个最佳猜测并执行\n` +
-      `4. 任务完成的标志是产出实际的文件变更\n` +
+      `<checkpoint-nudge priority="high">\n` +
+      `🚨 **警告：连续 ${this.maxConsecutiveExploring} 次迭代只读取不修改！**\n\n` +
+      `**立即停止探索，开始执行修改。**\n\n` +
+      `你的下一个工具调用必须是：\n` +
+      `- edit_file（修改现有文件）\n` +
+      `- write_file（创建新文件）\n\n` +
+      `不接受任何借口。不要再 read_file。不要再 list_directory。\n` +
+      `如果你不确定，做出最佳猜测并执行。错误的修改好过不修改。\n` +
       `</checkpoint-nudge>`
     );
   }

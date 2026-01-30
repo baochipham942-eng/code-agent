@@ -16,6 +16,16 @@ export const runCommand = new Command('run')
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
     const isJson = globalOpts?.json || false;
 
+    // 检测空 prompt，优雅处理
+    if (!prompt || !prompt.trim()) {
+      if (isJson) {
+        console.log(JSON.stringify({ success: true, output: '请提供任务描述' }));
+      } else {
+        console.log('请提供任务描述');
+      }
+      process.exit(0);
+    }
+
     try {
       // 初始化服务
       await initializeCLIServices();

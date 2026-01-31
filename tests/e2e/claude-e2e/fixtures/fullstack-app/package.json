@@ -6,6 +6,10 @@
     "build": "tsc",
     "test": "vitest run"
   },
+  "dependencies": {
+    "react": "^18.0.0",
+    "zustand": "^4.0.0"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/react": "^18.0.0",

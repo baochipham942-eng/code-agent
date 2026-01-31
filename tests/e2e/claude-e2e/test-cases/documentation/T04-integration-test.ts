@@ -6,23 +6,25 @@ export const T04: TestCase = {
   category: 'documentation',
   complexity: 'L2',
 
-  prompt: `**任务：创建 src/api/services/user.service.test.ts**
+  prompt: `**任务：创建测试文件 src/api/services/user.service.test.ts**
 
 步骤：
-1. 读取 src/api/services/user.service.ts 了解接口
-2. **使用 write_file 创建测试文件**
+1. 读取 src/api/services/user.service.ts 了解 UserService 类
+2. 使用 write_file 创建测试文件
 
-UserService 接口：
-- findAll(): Promise<User[]>
-- findById(id: number): Promise<User | undefined>
-- create(data: { email: string; name?: string }): Promise<User>
+测试文件必须包含：
+\`\`\`typescript
+import { describe, it, expect } from 'vitest';
+import { UserService } from './user.service';
 
-测试文件要求（vitest）：
-- 导入 { describe, it, expect } from 'vitest'
-- 导入 { UserService } from './user.service'
-- 测试 create、findAll、findById 方法
+describe('UserService', () => {
+  // 测试 create 方法
+  // 测试 findAll 方法
+  // 测试 findById 方法
+});
+\`\`\`
 
-⚠️ 重要：读取服务文件后必须使用 write_file 创建测试文件！`,
+⚠️ 必须执行 write_file 创建文件，文件路径：src/api/services/user.service.test.ts`,
 
   fixture: 'fullstack-app',
 

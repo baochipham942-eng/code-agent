@@ -31,8 +31,8 @@ export function parseExecutionTrace(streamOutput: string): ExecutionTrace {
         const toolCall = parseCodeAgentToolCall(event.data);
         toolCallMap.set(event.data.id, toolCall);
 
-        // 检查是否是 spawn_agent 工具 (agent dispatch)
-        if (event.data.name === 'spawn_agent') {
+        // 检查是否是 agent dispatch 工具 (spawn_agent 或 task)
+        if (event.data.name === 'spawn_agent' || event.data.name === 'task') {
           const dispatch = parseCodeAgentDispatch(event.data);
           if (currentAgentStack.length > 0) {
             dispatch.parentAgentId =
@@ -75,7 +75,7 @@ export function parseExecutionTrace(streamOutput: string): ExecutionTrace {
             const toolCall = parseClaudeToolCall(content);
             toolCallMap.set(content.id, toolCall);
 
-            if (content.name === 'Task') {
+            if (content.name === 'Task' || content.name === 'task') {
               const dispatch = parseClaudeAgentDispatch(content);
               if (currentAgentStack.length > 0) {
                 dispatch.parentAgentId =
@@ -149,7 +149,8 @@ function parseCodeAgentDispatch(data: any): AgentDispatch {
   const args = data.arguments || {};
   return {
     id: data.id || `agent-${Date.now()}`,
-    agentType: args.agent_type || args.role || 'unknown',
+    // 支持多种参数名：subagent_type (task), agent_type (spawn_agent), role (legacy)
+    agentType: args.subagent_type || args.agent_type || args.role || 'unknown',
     prompt: args.task || args.prompt || '',
     toolCalls: [],
     duration: 0,

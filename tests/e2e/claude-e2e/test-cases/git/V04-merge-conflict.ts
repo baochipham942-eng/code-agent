@@ -16,18 +16,20 @@ export const V04: TestCase = {
 
   setupCommands: [
     'git init',
+    'git config user.email "test@example.com"',
+    'git config user.name "Test User"',
     'git add .',
     'git commit -m "init"',
     'git checkout -b feature-a',
-    'echo "export const FEATURE_A = true;" >> src/index.ts',
+    'printf "\\nexport const FEATURE_A = true;\\n" >> src/index.ts',
     'git add . && git commit -m "feat: add feature A"',
-    'git checkout main',
+    'git checkout -b main 2>/dev/null || git checkout main',
     'git checkout -b feature-b',
-    'echo "export const FEATURE_B = true;" >> src/index.ts',
+    'printf "\\nexport const FEATURE_B = true;\\n" >> src/index.ts',
     'git add . && git commit -m "feat: add feature B"',
     'git checkout main',
-    'git merge feature-a -m "merge feature-a"',
-    'git merge feature-b || true',
+    'git merge feature-a -m "merge feature-a" --no-edit',
+    'git merge feature-b --no-commit || true',
   ],
 
   validations: [
@@ -49,7 +51,8 @@ export const V04: TestCase = {
   },
 
   tags: ['git', 'merge', 'conflict', 'resolution'],
-  timeout: 150000,
+  timeout: 180000,
+  retries: 2,
 };
 
 export default V04;

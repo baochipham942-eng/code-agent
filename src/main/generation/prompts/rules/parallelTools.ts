@@ -33,4 +33,20 @@ Tool 3: bash - git log --oneline -5
 **关键原则：**
 - 独立操作 → 并行
 - 依赖操作 → 顺序（用 && 链接或分步）
+
+### 子代理并行派发
+
+除了基础工具，**task 工具也支持并行**：
+
+**可并行的 task 调用**:
+- 审计不同维度（安全/性能/质量）
+- 分析不同模块（auth/payment/user）
+- 不同类型检查（类型安全/错误处理/日志规范）
+
+**示例**（单个响应中同时派发）:
+\`\`\`
+task(subagent_type="code-review", prompt="安全审计")
+task(subagent_type="explore", prompt="性能分析")
+task(subagent_type="code-review", prompt="代码质量检查")
+\`\`\`
 `;

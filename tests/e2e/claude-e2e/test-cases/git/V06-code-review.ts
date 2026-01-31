@@ -39,12 +39,10 @@ export const V06: TestCase = {
   fixture: 'typescript-basic',
 
   setupCommands: [
-    'git init',
-    'git add .',
-    'git commit -m "init"',
+    // createTempProject 已完成 git init 和初始提交
     'git checkout -b feature/complex-change',
     'mkdir -p src/utils',
-    'echo "export function processData(data: any) { return data.map((x: any) => x * 2); }" > src/utils/process.ts',
+    'printf "export function processData(data: any) { return data.map((x: any) => x * 2); }\\n" > src/utils/process.ts',
     'git add .',
     'git commit -m "feat: add data processing"',
   ],
@@ -63,7 +61,7 @@ export const V06: TestCase = {
 
   expectedBehavior: {
     directExecution: false,
-    expectedAgents: ['Explore'],
+    expectedAgents: ['explore', 'code-review'],
     requiredTools: ['Bash', 'Read', 'Write'],
     toolCallRange: { min: 5, max: 30 },
   },

@@ -23,3 +23,6 @@ export { CODE_SNIPPET_RULES } from './codeSnippet';
 
 // 附件处理规则
 export { ATTACHMENT_HANDLING_RULES } from './attachmentHandling';
+
+// 工具使用策略（强制规则）
+export { TOOL_USAGE_POLICY } from './toolUsagePolicy';

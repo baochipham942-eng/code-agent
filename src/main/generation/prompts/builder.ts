@@ -23,6 +23,7 @@ import {
   ERROR_HANDLING_RULES,
   CODE_SNIPPET_RULES,
   ATTACHMENT_HANDLING_RULES,
+  TOOL_USAGE_POLICY,
 } from './rules';
 import {
   BASH_TOOL_DESCRIPTION,
@@ -61,12 +62,13 @@ const RULE_TIERS = {
   ],
 
   /**
-   * Standard tier (Gen3+): Adds planning and git safety
+   * Standard tier (Gen3+): Adds planning, git safety, and tool usage policy
    */
   standard: [
     PLAN_MODE_RULES,
     GIT_SAFETY_RULES,
     INJECTION_DEFENSE_RULES,
+    TOOL_USAGE_POLICY,
   ],
 
   /**

@@ -82,7 +82,23 @@ Provide specific feedback with file and line references when possible.`,
 
 export const taskTool: Tool = {
   name: 'task',
-  description: 'Launch a specialized subagent to handle complex tasks. Types: explore, bash, plan, code-review',
+  description: `Launch a specialized subagent to handle complex, multi-step tasks autonomously.
+
+**IMPORTANT**: For tasks requiring deep codebase exploration, security audits, or code reviews,
+ALWAYS use this tool to delegate to a subagent instead of doing it directly.
+
+Available subagent types:
+- explore: Fast codebase exploration agent. Use for searching files, understanding code structure,
+  finding implementations. The explore agent can perform multiple searches efficiently.
+- bash: Command execution specialist. Use for running builds, tests, installations.
+- plan: Software architect. Use for designing implementation plans before coding.
+- code-review: Code reviewer. Use for reviewing code quality, security, and best practices.
+
+When to use task tool:
+- Exploring unfamiliar codebases (use explore)
+- Security audits or code reviews (use code-review)
+- Planning complex implementations (use plan)
+- Running multiple related commands (use bash)`,
   generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',

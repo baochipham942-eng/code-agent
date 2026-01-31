@@ -48,6 +48,9 @@ export interface MessageAttachment {
 // 消息来源类型
 export type MessageSource = 'user' | 'skill' | 'system';
 
+// Subagent 消息子类型
+export type MessageSubtype = 'init' | 'result' | 'thinking' | 'tool_use';
+
 export interface Message {
   id: string;
   role: MessageRole;
@@ -64,4 +67,9 @@ export interface Message {
   source?: MessageSource;
   // 推理模型的思考过程 (glm-4.7 等)
   reasoning?: string;
+  // Subagent 追踪（Gen7+）
+  /** 父工具调用 ID，用于标识消息来自哪个 subagent */
+  parentToolUseId?: string;
+  /** Subagent 消息子类型 */
+  subtype?: MessageSubtype;
 }

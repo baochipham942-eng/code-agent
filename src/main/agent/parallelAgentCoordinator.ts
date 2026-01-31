@@ -259,6 +259,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
           modelConfig: this.modelConfig!,
           toolRegistry: this.toolRegistry!,
           toolContext: this.toolContext!,
+          // 传递父工具调用 ID，用于 subagent 消息追踪
+          parentToolUseId: this.toolContext!.currentToolCallId,
         }
       );
 

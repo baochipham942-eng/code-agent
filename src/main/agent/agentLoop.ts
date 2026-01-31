@@ -1104,6 +1104,8 @@ export class AgentLoop {
           sessionId: this.sessionId,
           preApprovedTools: this.preApprovedTools,
           currentAttachments,
+          // 传递当前工具调用 ID（用于 subagent 追踪）
+          currentToolCallId: toolCall.id,
         }
       );
       logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);

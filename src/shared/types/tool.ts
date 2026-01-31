@@ -42,6 +42,8 @@ export interface ToolContext {
   modelConfig: ModelConfig;
   requestPermission: (request: PermissionRequest) => Promise<boolean>;
   emit: (event: string, data: unknown) => void;
+  /** 当前工具调用的 ID（用于 subagent 追踪） */
+  currentToolCallId?: string;
 }
 
 export interface ToolCall {

@@ -54,6 +54,7 @@ import {
 } from './messageHandling/contextBuilder';
 import { getPromptForTask } from '../generation/prompts/builder';
 import { AntiPatternDetector } from './antiPattern/detector';
+import { getCurrentTodos } from '../tools/planning/todoWrite';
 import { MAX_PARALLEL_TOOLS, READ_ONLY_TOOLS, WRITE_TOOLS, VERIFY_TOOLS, TaskProgressState } from './loopTypes';
 import {
   compressToolResult,
@@ -101,6 +102,8 @@ export class AgentLoop {
   // P1 Nudge: Read-only stop pattern detection
   private readOnlyNudgeCount: number = 0;
   private maxReadOnlyNudges: number = 3; // Increased from 2 to give more chances
+  private todoNudgeCount: number = 0;
+  private maxTodoNudges: number = 2; // Nudge to complete todos
 
   // P2 Checkpoint: Task progress state tracking
   private consecutiveExploringCount: number = 0;
@@ -480,6 +483,7 @@ export class AgentLoop {
       this.turnStartTime = Date.now();
       this.toolsUsedInTurn = [];
       this.readOnlyNudgeCount = 0; // Reset nudge counter for new turn
+      this.todoNudgeCount = 0; // Reset todo nudge counter
       this.emitTaskProgress('thinking', '分析请求中...');
 
       // 1. Call model
@@ -590,6 +594,34 @@ export class AgentLoop {
             this.onEvent({
               type: 'notification',
               data: { message: `检测到只读模式，提示继续执行修改 (${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges})...` },
+            });
+            continue; // Skip stop, continue execution
+          }
+        }
+
+        // P2 Nudge: Check for incomplete todos in complex tasks
+        // If agent wants to stop but has incomplete todos, nudge it to complete them
+        if (!this.isSimpleTaskMode && this.todoNudgeCount < this.maxTodoNudges) {
+          const todos = getCurrentTodos(this.sessionId);
+          const incompleteTodos = todos.filter(t => t.status !== 'completed');
+          if (incompleteTodos.length > 0) {
+            this.todoNudgeCount++;
+            const todoList = incompleteTodos.map(t => `- ${t.content}`).join('\n');
+            logger.debug(`[AgentLoop] Incomplete todos detected, nudge ${this.todoNudgeCount}/${this.maxTodoNudges}`);
+            logCollector.agent('INFO', `Incomplete todos detected: ${incompleteTodos.length} items`, {
+              nudgeCount: this.todoNudgeCount,
+              incompleteTodos: incompleteTodos.map(t => t.content),
+            });
+            this.injectSystemMessage(
+              `<todo-completion-check>\n` +
+              `STOP! You have ${incompleteTodos.length} incomplete todo item(s):\n${todoList}\n\n` +
+              `You MUST complete these tasks before finishing. Do NOT provide a final summary until all todos are marked as completed.\n` +
+              `Continue working on the remaining items NOW.\n` +
+              `</todo-completion-check>`
+            );
+            this.onEvent({
+              type: 'notification',
+              data: { message: `检测到 ${incompleteTodos.length} 个未完成的任务，提示继续执行 (${this.todoNudgeCount}/${this.maxTodoNudges})...` },
             });
             continue; // Skip stop, continue execution
           }
@@ -780,6 +812,26 @@ export class AgentLoop {
       } catch (error) {
         logger.error('[AgentLoop] Session end hook error:', error);
       }
+    }
+
+    // Pre-completion Hook: Check for incomplete todos
+    const finalTodos = getCurrentTodos(this.sessionId);
+    const incompleteFinalTodos = finalTodos.filter(t => t.status !== 'completed');
+    if (incompleteFinalTodos.length > 0) {
+      const incompleteList = incompleteFinalTodos.map(t => t.content).join(', ');
+      logger.warn(`[AgentLoop] Agent completing with ${incompleteFinalTodos.length} incomplete todo(s): ${incompleteList}`);
+      logCollector.agent('WARN', `Agent completing with incomplete todos`, {
+        incompleteCount: incompleteFinalTodos.length,
+        incompleteTodos: incompleteFinalTodos.map(t => ({ content: t.content, status: t.status })),
+      });
+      this.onEvent({
+        type: 'notification',
+        data: {
+          message: `⚠️ 任务可能未完成：${incompleteFinalTodos.length} 个待办项未完成`,
+          level: 'warning',
+          details: incompleteFinalTodos.map(t => t.content),
+        },
+      });
     }
 
     logger.debug('[AgentLoop] ========== run() END, emitting agent_complete ==========');

@@ -19,9 +19,12 @@ import {
   listBuiltInWorkflows,
 } from '../../../shared/types/workflow';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
-import { getAvailableRoles } from './spawnAgent';
-import { getPredefinedAgent, type AgentDefinition } from '../../agent/agentDefinition';
-import { getBuiltInAgent } from '../../../shared/types/builtInAgents';
+import {
+  getPredefinedAgent,
+  getAgentPrompt,
+  getAgentTools,
+  type FullAgentConfig,
+} from '../../agent/agentDefinition';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('WorkflowOrchestrate');
@@ -208,7 +211,8 @@ ${listBuiltInWorkflows().map(w => `- ${w.id}: ${w.description}`).join('\n')}
       workflow = builtInWorkflow;
     }
 
-    const roles = getAvailableRoles();
+    // Legacy roles support - empty since all agents are now unified in PREDEFINED_AGENTS
+    const legacyRoles: Record<string, { name: string; systemPrompt: string; tools: string[] }> = {};
     const results: StageResult[] = [];
     // 使用结构化上下文替代纯文本输出
     const stageContexts: Map<string, StageContext> = new Map();
@@ -233,7 +237,7 @@ ${listBuiltInWorkflows().map(w => `- ${w.id}: ${w.description}`).join('\n')}
         if (parallel && group.length > 1) {
           // Execute stages in parallel
           const groupResults = await Promise.all(
-            group.map((stage) => executeStage(stage, task, stageContexts, roles, context))
+            group.map((stage) => executeStage(stage, task, stageContexts, legacyRoles, context))
           );
 
           for (let i = 0; i < group.length; i++) {
@@ -245,7 +249,7 @@ ${listBuiltInWorkflows().map(w => `- ${w.id}: ${w.description}`).join('\n')}
         } else {
           // Execute stages sequentially
           for (const stage of group) {
-            const result = await executeStage(stage, task, stageContexts, roles, context);
+            const result = await executeStage(stage, task, stageContexts, legacyRoles, context);
             results.push(result);
             if (result.success && result.context) {
               stageContexts.set(stage.name, result.context);
@@ -323,30 +327,19 @@ function buildExecutionGroups(stages: WorkflowStage[]): WorkflowStage[][] {
   return groups;
 }
 
-// Resolve agent configuration from built-in agents, predefined agents, or legacy roles
+// Resolve agent configuration from predefined agents or legacy roles
 function resolveAgentConfig(
   roleOrId: string,
   legacyRoles: Record<string, { name: string; systemPrompt: string; tools: string[] }>
-): { name: string; systemPrompt: string; tools: string[]; modelOverride?: AgentDefinition['modelOverride'] } | undefined {
-  // First check built-in agents (type-safe, 6 core roles)
-  const builtIn = getBuiltInAgent(roleOrId);
-  if (builtIn) {
-    return {
-      name: builtIn.name,
-      systemPrompt: builtIn.systemPrompt,
-      tools: builtIn.tools,
-      modelOverride: builtIn.modelOverride,
-    };
-  }
-
-  // Then check predefined agents (extended agents)
+): { name: string; systemPrompt: string; tools: string[]; model?: FullAgentConfig['model'] } | undefined {
+  // Check predefined agents (all agents are now unified here)
   const predefined = getPredefinedAgent(roleOrId);
   if (predefined) {
     return {
       name: predefined.name,
-      systemPrompt: predefined.systemPrompt,
-      tools: predefined.tools,
-      modelOverride: predefined.modelOverride,
+      systemPrompt: getAgentPrompt(predefined),
+      tools: getAgentTools(predefined),
+      model: predefined.model,
     };
   }
 
@@ -392,7 +385,7 @@ async function executeStage(
     stage: stage.name,
     agentName: agentConfig.name,
     tools: agentConfig.tools,
-    hasModelOverride: !!agentConfig.modelOverride,
+    modelTier: agentConfig.model,
   });
 
   // Build context from previous stages - 使用结构化上下文
@@ -445,20 +438,27 @@ async function executeStage(
   try {
     const executor = getSubagentExecutor();
 
-    // Apply model override if specified
+    // Apply model tier if specified (uses ModelTier: 'fast' | 'balanced' | 'powerful')
     let effectiveModelConfig = context.modelConfig as ModelConfig;
-    if (agentConfig.modelOverride) {
-      effectiveModelConfig = {
-        ...effectiveModelConfig,
-        provider: (agentConfig.modelOverride.provider as ModelProvider) || effectiveModelConfig.provider,
-        model: agentConfig.modelOverride.model || effectiveModelConfig.model,
-        temperature: agentConfig.modelOverride.temperature ?? effectiveModelConfig.temperature,
+    if (agentConfig.model && agentConfig.model !== 'inherit') {
+      // ModelTier to model name mapping
+      const tierToModel: Record<string, string> = {
+        fast: 'haiku',
+        balanced: 'sonnet',
+        powerful: 'opus',
       };
-      logger.info('Using model override for stage', {
-        stage: stage.name,
-        provider: effectiveModelConfig.provider,
-        model: effectiveModelConfig.model,
-      });
+      const modelName = tierToModel[agentConfig.model];
+      if (modelName) {
+        effectiveModelConfig = {
+          ...effectiveModelConfig,
+          model: modelName,
+        };
+        logger.info('Using model tier for stage', {
+          stage: stage.name,
+          tier: agentConfig.model,
+          model: modelName,
+        });
+      }
     }
 
     // Pass attachments to subagent for multimodal processing (e.g., images for vision models)

@@ -150,14 +150,14 @@ export class SubagentPipeline {
       agentName = config.name || 'Dynamic Agent';
     }
 
-    // Resolve permission preset
+    // Resolve permission preset (from layered structure or backward-compatible fields)
     let preset: PermissionPreset;
     if ('id' in config) {
-      // AgentDefinition always has permissionPreset
-      preset = config.permissionPreset;
+      // FullAgentConfig has security.permissionPreset
+      preset = config.security?.permissionPreset ?? 'development';
     } else {
-      // DynamicAgentConfig may not have permissionPreset
-      preset = config.permissionPreset || 'development';
+      // DynamicAgentConfig supports both security.permissionPreset and flat permissionPreset
+      preset = config.security?.permissionPreset ?? config.permissionPreset ?? 'development';
     }
 
     let permissionConfig = getPresetConfig(preset, workingDirectory);
@@ -167,8 +167,16 @@ export class SubagentPipeline {
       permissionConfig = this.mergePermissionConfigs(permissionConfig, options.parentPermissionConfig);
     }
 
-    // 解析子 Agent 自己的预算
-    let maxBudget = 'maxBudget' in config ? config.maxBudget : (config as DynamicAgentConfig).maxBudget;
+    // 解析子 Agent 自己的预算 (from layered structure or backward-compatible fields)
+    let maxBudget: number | undefined;
+    if ('id' in config) {
+      // FullAgentConfig has runtime.maxBudget
+      maxBudget = config.runtime?.maxBudget;
+    } else {
+      // DynamicAgentConfig supports both runtime.maxBudget and flat maxBudget
+      const dynamicConfig = config as DynamicAgentConfig;
+      maxBudget = dynamicConfig.runtime?.maxBudget ?? dynamicConfig.maxBudget;
+    }
 
     // 预算继承：子 Agent 预算不能超过父 Agent 剩余预算
     let inheritedMaxBudget: number | undefined;

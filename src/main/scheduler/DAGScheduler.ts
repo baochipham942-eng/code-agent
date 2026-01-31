@@ -20,8 +20,13 @@ import { isTaskTerminal } from '../../shared/types/taskDAG';
 import { TaskDAG } from './TaskDAG';
 import type { Tool, ToolContext } from '../tools/toolRegistry';
 import { getSubagentExecutor } from '../agent/subagentExecutor';
-import { getBuiltInAgent } from '../../shared/types/builtInAgents';
-import { getPredefinedAgent } from '../agent/agentDefinition';
+import {
+  getPredefinedAgent,
+  getAgentPrompt,
+  getAgentTools,
+  getAgentMaxIterations,
+  getAgentPermissionPreset,
+} from '../agent/agentDefinition';
 import { createLogger } from '../services/infra/logger';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -388,9 +393,7 @@ export class DAGScheduler extends EventEmitter {
     const schedContext = this.context!;
 
     // 解析 Agent 配置
-    const builtInAgent = getBuiltInAgent(config.role);
-    const predefinedAgent = builtInAgent ? null : getPredefinedAgent(config.role);
-    const agentConfig = builtInAgent || predefinedAgent;
+    const agentConfig = getPredefinedAgent(config.role);
 
     if (!agentConfig) {
       throw new Error(`Unknown agent role: ${config.role}`);
@@ -414,14 +417,16 @@ export class DAGScheduler extends EventEmitter {
       enhancedPrompt,
       {
         name: task.name,
-        systemPrompt: config.systemPrompt || agentConfig.systemPrompt,
-        availableTools: config.tools || agentConfig.tools,
-        maxIterations: config.maxIterations || agentConfig.maxIterations || 20,
+        systemPrompt: config.systemPrompt || getAgentPrompt(agentConfig),
+        availableTools: config.tools || getAgentTools(agentConfig),
+        maxIterations: config.maxIterations || getAgentMaxIterations(agentConfig),
       },
       {
         modelConfig: schedContext.modelConfig,
         toolRegistry: schedContext.toolRegistry,
         toolContext: schedContext.toolContext,
+        // 传递父工具调用 ID，用于 subagent 消息追踪
+        parentToolUseId: schedContext.toolContext.currentToolCallId,
       }
     );
 

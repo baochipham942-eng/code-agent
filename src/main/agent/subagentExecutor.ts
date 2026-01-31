@@ -13,6 +13,13 @@ import {
   type ToolExecutionRequest,
 } from './subagentPipeline';
 import type { AgentDefinition, DynamicAgentConfig } from './agentDefinition';
+import {
+  getAgentPrompt,
+  getAgentTools,
+  getAgentMaxIterations,
+  getAgentPermissionPreset,
+  getAgentMaxBudget,
+} from './agentDefinition';
 import type { PermissionPreset } from '../services/core/permissionPresets';
 import { PROVIDER_REGISTRY } from '../model/modelRouter';
 import {
@@ -63,6 +70,8 @@ interface SubagentContext {
     data?: string;
     mimeType?: string;
   }>;
+  /** 父工具调用 ID，用于标识消息来自哪个 subagent */
+  parentToolUseId?: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -208,6 +217,16 @@ export class SubagentExecutor {
 
     logger.info(`[${config.name}] Starting with ${toolDefinitions.length} tools (agentId: ${pipelineContext.agentId}, supportsTool: ${supportsTool})`);
 
+    // 发射 subagent 初始化事件
+    const parentToolUseId = context.parentToolUseId;
+    if (parentToolUseId && context.toolContext.emit) {
+      context.toolContext.emit('agent_thinking', {
+        message: `Subagent [${config.name}] starting...`,
+        agentId: pipelineContext.agentId,
+        parentToolUseId,
+      });
+    }
+
     try {
       // Initial budget check
       const budgetCheck = pipeline.checkBudget(pipelineContext);
@@ -290,15 +309,52 @@ export class SubagentExecutor {
             pipeline.recordToolUsage(pipelineContext, toolCall.name);
             logger.info(`[${config.name}] Executing tool: ${toolCall.name}`);
 
+            // 发射 subagent 工具调用开始事件
+            if (parentToolUseId && context.toolContext.emit) {
+              context.toolContext.emit('tool_call_start', {
+                id: toolCall.id,
+                name: toolCall.name,
+                arguments: toolCall.arguments,
+                parentToolUseId,
+              });
+            }
+
+            const toolStartTime = Date.now();
             try {
               const result = await tool.execute(toolCall.arguments, context.toolContext);
+              const toolDuration = Date.now() - toolStartTime;
               toolResults.push(
                 `Tool ${toolCall.name}: ${result.success ? 'Success' : 'Failed'}\n${result.output || result.error || ''}`
               );
+
+              // 发射 subagent 工具调用结束事件
+              if (parentToolUseId && context.toolContext.emit) {
+                context.toolContext.emit('tool_call_end', {
+                  toolCallId: toolCall.id,
+                  success: result.success,
+                  output: result.output,
+                  error: result.error,
+                  duration: toolDuration,
+                  parentToolUseId,
+                });
+              }
             } catch (error) {
+              const toolDuration = Date.now() - toolStartTime;
+              const errorMessage = error instanceof Error ? error.message : 'Unknown error';
               toolResults.push(
-                `Tool ${toolCall.name}: Error - ${error instanceof Error ? error.message : 'Unknown error'}`
+                `Tool ${toolCall.name}: Error - ${errorMessage}`
               );
+
+              // 发射 subagent 工具调用错误事件
+              if (parentToolUseId && context.toolContext.emit) {
+                context.toolContext.emit('tool_call_end', {
+                  toolCallId: toolCall.id,
+                  success: false,
+                  error: errorMessage,
+                  duration: toolDuration,
+                  parentToolUseId,
+                });
+              }
             }
           }
 
@@ -359,14 +415,14 @@ export class SubagentExecutor {
     agentDef: AgentDefinition,
     context: SubagentContext
   ): Promise<SubagentResult> {
-    // Convert AgentDefinition to SubagentConfig
+    // Convert AgentDefinition to SubagentConfig using helper functions
     const config: SubagentConfig = {
       name: agentDef.name,
-      systemPrompt: agentDef.systemPrompt,
-      availableTools: agentDef.tools,
-      maxIterations: agentDef.maxIterations || 20,
-      permissionPreset: agentDef.permissionPreset,
-      maxBudget: agentDef.maxBudget,
+      systemPrompt: getAgentPrompt(agentDef),
+      availableTools: getAgentTools(agentDef),
+      maxIterations: getAgentMaxIterations(agentDef),
+      permissionPreset: getAgentPermissionPreset(agentDef),
+      maxBudget: getAgentMaxBudget(agentDef),
     };
 
     return this.execute(prompt, config, context);

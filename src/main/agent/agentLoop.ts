@@ -23,6 +23,7 @@ import { getConfigService, getAuthService, getLangfuseService, getBudgetService,
 import { logCollector } from '../mcp/logCollector.js';
 import { generateMessageId } from '../../shared/utils/id';
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
+import { getTaskOrchestrator } from '../orchestrator/taskOrchestrator';
 import { getMaxIterations } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';
 import { HookManager, createHookManager } from '../hooks';
@@ -421,6 +422,30 @@ export class AgentLoop {
     if (!isSimpleTask) {
       const complexityHint = taskComplexityAnalyzer.generateComplexityHint(complexityAnalysis);
       this.injectSystemMessage(complexityHint);
+
+      // Parallel Judgment via small model (Groq)
+      try {
+        const orchestrator = getTaskOrchestrator();
+        const judgment = await orchestrator.judge(userMessage);
+
+        if (judgment.shouldParallel && judgment.confidence >= 0.7) {
+          const parallelHint = orchestrator.generateParallelHint(judgment);
+          this.injectSystemMessage(parallelHint);
+
+          logger.info('[AgentLoop] Parallel execution suggested', {
+            dimensions: judgment.parallelDimensions,
+            criticalPath: judgment.criticalPathLength,
+            speedup: judgment.estimatedSpeedup,
+          });
+          logCollector.agent('INFO', 'Parallel execution suggested', {
+            dimensions: judgment.suggestedDimensions,
+            confidence: judgment.confidence,
+          });
+        }
+      } catch (error) {
+        // 并行判断失败不影响主流程
+        logger.warn('[AgentLoop] Parallel judgment failed, continuing without hint', error);
+      }
     }
 
     // Step-by-step execution for models that need it (DeepSeek, etc.)

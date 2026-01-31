@@ -72,7 +72,15 @@ import {
 } from './mcp';
 import { memoryStoreTool, memorySearchTool, codeIndexTool, autoLearnTool, forkSessionTool } from './memory';
 import { screenshotTool, computerUseTool, browserNavigateTool, browserActionTool } from './vision';
-import { spawnAgentTool, agentMessageTool, workflowOrchestrateTool } from './multiagent';
+import {
+  sdkTaskTool,
+  agentSpawnTool,
+  AgentMessageTool,
+  WorkflowOrchestrateTool,
+  spawnAgentTool,
+  agentMessageTool,
+  workflowOrchestrateTool,
+} from './multiagent';
 import { strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternTool } from './evolution';
 import { lspTool } from './lsp';
 
@@ -130,6 +138,16 @@ export interface ToolExecutionResult {
 }
 
 // ----------------------------------------------------------------------------
+// Tool Aliases - Maps legacy snake_case names to PascalCase
+// ----------------------------------------------------------------------------
+
+const TOOL_ALIASES: Record<string, string> = {
+  spawn_agent: 'AgentSpawn',
+  agent_message: 'AgentMessage',
+  workflow_orchestrate: 'WorkflowOrchestrate',
+};
+
+// ----------------------------------------------------------------------------
 // Tool Registry
 // ----------------------------------------------------------------------------
 
@@ -144,6 +162,7 @@ export interface ToolExecutionResult {
  * - 按代际过滤工具
  * - 云端工具元数据合并
  * - 工具定义导出（供模型调用）
+ * - 工具别名支持（legacy snake_case → PascalCase）
  *
  * @example
  * ```typescript
@@ -259,6 +278,13 @@ export class ToolRegistry {
     this.register(browserActionTool);
 
     // Gen 7 tools - Multi-Agent
+    // SDK-compatible Task tool (simplified interface)
+    this.register(sdkTaskTool);
+    // PascalCase tools (recommended for new code)
+    this.register(agentSpawnTool);
+    this.register(AgentMessageTool);
+    this.register(WorkflowOrchestrateTool);
+    // Legacy snake_case tools (backward compatibility)
     this.register(spawnAgentTool);
     this.register(agentMessageTool);
     this.register(workflowOrchestrateTool);
@@ -290,13 +316,21 @@ export class ToolRegistry {
   }
 
   /**
-   * 获取指定名称的工具
+   * 获取指定名称的工具（支持别名）
    *
-   * @param name - 工具名称
+   * @param name - 工具名称（支持 snake_case 别名自动映射到 PascalCase）
    * @returns Tool 实例，如果不存在则返回 undefined
    */
   get(name: string): Tool | undefined {
-    return this.tools.get(name);
+    // 直接查找
+    const tool = this.tools.get(name);
+    if (tool) return tool;
+
+    // 别名查找（legacy snake_case → PascalCase）
+    const aliasedName = TOOL_ALIASES[name];
+    if (aliasedName) return this.tools.get(aliasedName);
+
+    return undefined;
   }
 
   /**

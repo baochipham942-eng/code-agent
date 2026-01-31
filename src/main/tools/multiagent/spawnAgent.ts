@@ -338,6 +338,23 @@ export function getAvailableAgents(): Array<{ id: string; name: string; descript
   return listPredefinedAgents();
 }
 
+// PascalCase alias for SDK compatibility
+export const agentSpawnTool: Tool = {
+  ...spawnAgentTool,
+  name: 'AgentSpawn',
+  description: `Advanced agent creation with full control over execution.
+
+Use this tool when you need:
+- Parallel execution (multiple agents at once)
+- Background mode (fire and forget)
+- Custom prompts or tools
+- Budget control
+
+For simple synchronous task delegation, use Task instead.
+
+${spawnAgentTool.description}`,
+};
+
 // Execute multiple agents in parallel using the ParallelAgentCoordinator
 async function executeParallelAgents(
   agents: Array<{ role: string; task: string; maxBudget?: number; dependsOn?: string[] }>,

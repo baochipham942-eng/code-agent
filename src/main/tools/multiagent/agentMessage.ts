@@ -8,6 +8,8 @@ import { getSpawnedAgent, listSpawnedAgents } from './spawnAgent';
 
 type MessageAction = 'status' | 'list' | 'result' | 'cancel';
 
+// Forward declaration for the alias (defined after agentMessageTool)
+
 export const agentMessageTool: Tool = {
   name: 'agent_message',
   description: `Communicate with and manage spawned agents.
@@ -164,4 +166,10 @@ ${agent.result || '(no output)'}`,
         return { success: false, error: `Unknown action: ${action}` };
     }
   },
+};
+
+// PascalCase alias for SDK compatibility
+export const AgentMessageTool: Tool = {
+  ...agentMessageTool,
+  name: 'AgentMessage',
 };

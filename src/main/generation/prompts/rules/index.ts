@@ -26,3 +26,9 @@ export { ATTACHMENT_HANDLING_RULES } from './attachmentHandling';
 
 // 工具使用策略（强制规则）
 export { TOOL_USAGE_POLICY } from './toolUsagePolicy';
+
+// 工具选择决策树
+export { TOOL_DECISION_TREE } from './toolDecisionTree';
+
+// 任务动态管理规则
+export { TASK_MANAGEMENT_RULES } from './taskManagement';

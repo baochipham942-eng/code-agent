@@ -33,6 +33,11 @@ import {
   findingsWriteTool,
   enterPlanModeTool,
   exitPlanModeTool,
+  // Task API (Claude Code 2.x compatible)
+  taskCreateTool,
+  taskGetTool,
+  taskListTool,
+  taskUpdateTool,
 } from './planning';
 import {
   webFetchTool,
@@ -222,6 +227,11 @@ export class ToolRegistry {
     this.register(findingsWriteTool);
     this.register(enterPlanModeTool);
     this.register(exitPlanModeTool);
+    // Task API (Claude Code 2.x compatible)
+    this.register(taskCreateTool);
+    this.register(taskGetTool);
+    this.register(taskListTool);
+    this.register(taskUpdateTool);
 
     // Gen 4 tools - Skill Meta Tool (Agent Skills Standard)
     this.register(skillMetaTool);

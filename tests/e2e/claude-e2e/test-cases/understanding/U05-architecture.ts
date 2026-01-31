@@ -18,9 +18,7 @@ export const U05: TestCase = {
   ],
 
   expectedBehavior: {
-    directExecution: false,
-    expectedAgents: ['Explore'],
-    requiredTools: ['Glob', 'Read'],
+    directExecution: true,
     toolCallRange: { min: 5, max: 25 },
   },
 

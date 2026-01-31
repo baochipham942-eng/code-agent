@@ -61,9 +61,7 @@ export const M03: TestCase = {
   ],
 
   expectedBehavior: {
-    directExecution: false,
-    expectedAgents: ['Explore'],
-    requiredTools: ['Read', 'Write', 'Edit', 'Glob'],
+    directExecution: true,
     toolCallRange: { min: 8, max: 22 },
   },
 

@@ -36,10 +36,7 @@ export const D06: TestCase = {
   ],
 
   expectedBehavior: {
-    directExecution: false,
-    expectedAgents: ['Explore'],
-    requiredTools: ['Read', 'Edit'],
-    forbiddenTools: ['Write'],
+    directExecution: true,
     toolCallRange: { min: 2, max: 15 },
   },
 

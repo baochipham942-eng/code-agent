@@ -25,6 +25,7 @@ import { logBridge } from '../mcp/logBridge.js';
 import { initPluginSystem, shutdownPluginSystem } from '../plugins';
 import { initDAGEventBridge } from '../scheduler';
 import { initCronService, getCronService, initHeartbeatService, getHeartbeatService } from '../cron';
+import { initFileCheckpointService, getFileCheckpointService } from '../services/checkpoint';
 import { getSkillDiscoveryService, getSkillRepositoryService } from '../services/skills';
 import { getMainWindow } from './window';
 import { getChannelManager } from '../channels';
@@ -131,6 +132,10 @@ export async function initializeCoreServices(): Promise<ConfigService> {
     ragTokenLimit: 2000,
   });
   logger.info('Memory service initialized');
+
+  // 初始化文件检查点服务
+  initFileCheckpointService();
+  logger.info('File checkpoint service initialized');
 
   // NOTE: Supabase 延迟到 initializeBackgroundServices() 中初始化
   // authService.initialize() 支持 Supabase 未就绪时从本地缓存读取用户
@@ -320,6 +325,15 @@ async function initializeServices(): Promise<void> {
     .catch((error) => {
       logger.warn('HeartbeatService initialization failed (non-blocking)', { error: String(error) });
     });
+
+  // 清理过期检查点（启动时执行一次）
+  getFileCheckpointService().cleanup().then(count => {
+    if (count > 0) {
+      logger.info('Cleaned up expired file checkpoints', { count });
+    }
+  }).catch(err => {
+    logger.warn('Failed to cleanup file checkpoints', { error: err });
+  });
 
   // Setup LogBridge command handler
   await setupLogBridge();

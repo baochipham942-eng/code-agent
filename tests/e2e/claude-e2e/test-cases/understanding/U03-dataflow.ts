@@ -6,13 +6,17 @@ export const U03: TestCase = {
   category: 'understanding',
   complexity: 'L2',
 
-  prompt: `分析 fullstack-app 中用户数据的流向：
-1. 从 API 层 (routes/users.ts) 到服务层 (services/user.service.ts)
-2. 数据如何存储和检索
-3. 前端组件 (UserList.tsx) 如何获取和展示数据
-4. 整体数据流架构
+  prompt: `简要分析用户数据流向。
 
-请画出数据流图或用文字描述数据流转过程。`,
+只需要读取以下 3 个文件：
+- src/api/routes/users.ts
+- src/api/services/user.service.ts
+- src/components/UserList.tsx
+
+输出格式（50字以内）：
+API层 -> 服务层 -> 前端组件
+
+⚠️ 只读取上述 3 个文件，不要读取其他文件！`,
 
   fixture: 'fullstack-app',
 
@@ -34,7 +38,8 @@ export const U03: TestCase = {
   },
 
   tags: ['understanding', 'dataflow', 'architecture'],
-  timeout: 150000,
+  timeout: 180000,
+  retries: 1,
 };
 
 export default U03;

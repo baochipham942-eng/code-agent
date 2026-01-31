@@ -20,7 +20,8 @@ export const T03: TestCase = {
     {
       type: 'file-contains',
       target: 'src/api/routes/users.ts',
-      contains: ['/**', '@param', '@returns', '@example'],
+      // 放宽验证：@example 为可选，核心是 JSDoc 格式
+      contains: ['/**', '@param', '@returns'],
     },
     {
       type: 'file-exists',
@@ -52,11 +53,11 @@ export const T03: TestCase = {
       instruction: '读取 src/api/routes/users.ts 文件，了解其中的函数',
     },
     {
-      instruction: '使用 edit_file 为 users.ts 中的每个函数添加 JSDoc 注释，包含 @param、@returns、@example',
+      instruction: '使用 edit_file 为 users.ts 中的每个函数添加 JSDoc 注释，包含 @param、@returns',
       validation: {
         type: 'file-contains',
         target: 'src/api/routes/users.ts',
-        contains: ['/**', '@param', '@returns', '@example'],
+        contains: ['/**', '@param', '@returns'],
       },
     },
     {

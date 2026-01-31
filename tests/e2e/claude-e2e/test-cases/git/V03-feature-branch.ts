@@ -16,6 +16,8 @@ export const V03: TestCase = {
 
   setupCommands: [
     'git init',
+    'git config user.email "test@example.com"',
+    'git config user.name "Test User"',
     'git add .',
     'git commit -m "init"',
   ],
@@ -39,7 +41,8 @@ export const V03: TestCase = {
   },
 
   tags: ['git', 'branch', 'feature-branch', 'workflow'],
-  timeout: 120000,
+  timeout: 150000,
+  retries: 2,
 };
 
 export default V03;

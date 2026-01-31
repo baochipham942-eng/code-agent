@@ -6,8 +6,19 @@ export const G01: TestCase = {
   category: 'generation',
   complexity: 'L1',
 
-  prompt:
-    '生成一个 debounce 函数，支持 leading 和 trailing 选项，写入 src/utils/debounce.ts',
+  prompt: `生成 src/utils/debounce.ts，实现以下函数签名：
+
+export function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number,
+  options?: { leading?: boolean; trailing?: boolean }
+): (...args: Parameters<T>) => void;
+
+要求：
+- leading: true 时在 wait 开始时立即执行
+- trailing: true 时在 wait 结束后执行（默认行为）
+- 必须使用 write_file 创建文件
+- 必须导出 debounce 函数`,
 
   fixture: 'typescript-basic',
 

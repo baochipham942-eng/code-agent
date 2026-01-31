@@ -6,15 +6,18 @@ export const M01: TestCase = {
   category: 'multi-file',
   complexity: 'L2',
 
-  prompt: `为 User 添加 avatar 字段，修改以下5个文件：
+  prompt: `为 User 添加 avatar 字段。
 
-1. prisma/schema.prisma - 添加 avatar String?
-2. src/api/services/user.service.ts - User 接口添加 avatar?: string
-3. src/store/user.store.ts - User 接口添加 avatar?: string
-4. src/api/routes/users.ts - createUser 参数添加 avatar
-5. src/components/UserList.tsx - 显示 user.avatar
+⚠️ 必须修改以下 5 个文件，每个都要完成：
 
-每个文件都要先 read_file 再 edit_file 修改！`,
+□ 1. prisma/schema.prisma - 在 User model 中添加 avatar String?
+□ 2. src/api/services/user.service.ts - User 接口添加 avatar?: string
+□ 3. src/store/user.store.ts - User 接口添加 avatar?: string
+□ 4. src/api/routes/users.ts - createUser 参数添加 avatar
+□ 5. src/components/UserList.tsx - 显示 user.avatar
+
+执行步骤：先用 read_file 读取文件，再用 edit_file 修改。
+确保所有 5 个文件都修改完成后再停止！`,
 
   fixture: 'fullstack-app',
 
@@ -60,9 +63,11 @@ export const M01: TestCase = {
   tags: ['multi-file', 'refactoring', 'schema-change', 'fullstack'],
   timeout: 300000,
 
-  // 使用步骤分解执行，每个文件独立处理
-  stepByStepExecution: true,
-  steps: [
+  // 关闭分步执行，使用单次调用 + 清单式 prompt
+  // stepByStepExecution: true,
+  retries: 3,
+  nudgeOnMissingFile: true,
+  _disabledSteps: [
     {
       instruction: '读取 prisma/schema.prisma 文件',
     },

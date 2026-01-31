@@ -42,13 +42,14 @@ export const U06: TestCase = {
     },
     {
       type: 'output-contains',
-      contains: ['security', 'recommend'],
+      // 中文输出使用"建议"而非英文 recommend
+      contains: ['security', '建议'],
     },
   ],
 
   expectedBehavior: {
     directExecution: false,
-    expectedAgents: ['Explore'],
+    expectedAgents: ['explore', 'code-review'],
     requiredTools: ['Glob', 'Read', 'Grep'],
     toolCallRange: { min: 10, max: 30 },
   },

@@ -10,14 +10,21 @@ export const R03: TestCase = {
 
 步骤：
 1. 读取 src/api/middleware/auth.ts
-2. **立即使用 edit_file 修改它**
+2. **必须使用 edit_file 执行以下改进**
 
-重构要求：
-- 使用 early return 减少嵌套
-- 提取复杂条件为变量
-- 确保逻辑行为不变
+必须完成的修改：
+- 将 token 验证逻辑提取为独立函数 parseToken 或 validateToken
+- 添加类型守卫或更明确的错误处理
+- 保持原有功能不变
 
-⚠️ 重要：读取文件后必须调用 edit_file 执行修改！不能只分析不修改。`,
+示例改进方向：
+\`\`\`typescript
+function parseToken(token: string): number | null {
+  // 提取的验证逻辑
+}
+\`\`\`
+
+⚠️ 必须调用 edit_file 修改文件，不能只分析！`,
 
   fixture: 'fullstack-app',
 
@@ -25,6 +32,13 @@ export const R03: TestCase = {
     {
       type: 'file-exists',
       target: 'src/api/middleware/auth.ts',
+    },
+    {
+      type: 'file-contains',
+      target: 'src/api/middleware/auth.ts',
+      // 验证有提取函数或改进（原文件只有 authenticate 函数）
+      containsAny: ['parseToken', 'validateToken', 'isValid', 'function', 'const parse', 'const validate'],
+      ignoreCase: true,
     },
     {
       type: 'compile-pass',

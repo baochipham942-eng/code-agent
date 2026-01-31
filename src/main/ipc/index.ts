@@ -35,6 +35,7 @@ import { registerMarketplaceHandlers } from './marketplace.ipc';
 import { registerLabHandlers } from './lab.ipc';
 import { registerChannelHandlers } from './channel.ipc';
 import { registerAgentRoutingHandlers } from './agentRouting.ipc';
+import { registerCheckpointHandlers } from './checkpoint.ipc';
 
 export * from './types';
 
@@ -141,6 +142,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Agent Routing handlers (Agent 路由)
   registerAgentRoutingHandlers(ipcMain);
+
+  // Checkpoint handlers
+  registerCheckpointHandlers(ipcMain);
 
   logger.info('All handlers registered');
 }

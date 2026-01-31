@@ -132,7 +132,8 @@ Best practices:
     }
 
     // Resolve path (handles ~, relative paths)
-    const filePath = resolvePath(inputPath, context.workingDirectory);
+    // Use path.resolve() to normalize the path (same as read.ts) for consistent tracker lookup
+    const filePath = path.resolve(resolvePath(inputPath, context.workingDirectory));
 
     // Note: Security is handled by the permission system (requiresPermission: true)
     // User will see the full path and confirm before editing

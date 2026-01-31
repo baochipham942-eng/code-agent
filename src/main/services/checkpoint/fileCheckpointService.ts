@@ -118,11 +118,11 @@ export class FileCheckpointService {
         return { success: false, restoredFiles: [], deletedFiles: [], errors: [{ filePath: '', error: 'No checkpoint found for message' }] };
       }
 
-      // 获取该消息及之后的所有检查点（按时间倒序，最新的先处理）
+      // 获取该消息及之后的所有检查点（按时间升序，最早的先处理）
       const checkpoints = db.prepare(`
         SELECT * FROM file_checkpoints
         WHERE session_id = ? AND created_at >= ?
-        ORDER BY created_at DESC
+        ORDER BY created_at ASC
       `).all(sessionId, targetCheckpoint.created_at) as Array<{
         id: string;
         file_path: string;

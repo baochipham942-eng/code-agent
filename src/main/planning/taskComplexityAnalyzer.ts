@@ -9,6 +9,7 @@ export interface ComplexityAnalysis {
   confidence: number; // 0-1
   reasons: string[];
   suggestedApproach: string;
+  targetFiles: string[]; // Files mentioned in the prompt that need to be modified
 }
 
 // ----------------------------------------------------------------------------
@@ -59,6 +60,12 @@ const MODERATE_KEYWORDS = [
   '添加功能', '实现', '修复', '更新',
   'component', 'module', 'api endpoint',
   '组件', '模块', 'API 端点',
+  // 调试任务
+  'debug', 'fix', 'race condition', 'async', 'error handling',
+  '调试', '竞态', '异步', '错误处理',
+  // 编辑任务
+  'edit_file', 'modify', 'change',
+  '修改', '改',
 ];
 
 // ----------------------------------------------------------------------------
@@ -66,6 +73,35 @@ const MODERATE_KEYWORDS = [
 // ----------------------------------------------------------------------------
 
 export class TaskComplexityAnalyzer {
+  /**
+   * 从用户消息中提取目标文件路径
+   * 用于后续验证是否所有文件都被修改
+   */
+  extractTargetFiles(userMessage: string): string[] {
+    const files: string[] = [];
+
+    // 匹配常见文件路径模式: src/xxx/yyy.ts 格式
+    const pathPattern = /(?:^|\s|["'`])((?:src|lib|app|pages|components|api|store|hooks|utils|services|prisma)\/[\w\-./]+\.(?:ts|tsx|js|jsx|json|prisma|md))/gi;
+    let match;
+    while ((match = pathPattern.exec(userMessage)) !== null) {
+      const filePath = match[1].trim();
+      if (!files.includes(filePath)) {
+        files.push(filePath);
+      }
+    }
+
+    // 匹配带引号的文件名
+    const quotedPattern = /["'`]([\w\-./]+\.(?:ts|tsx|js|jsx|json|prisma|md))["'`]/gi;
+    while ((match = quotedPattern.exec(userMessage)) !== null) {
+      const filePath = match[1].trim();
+      if (!files.includes(filePath)) {
+        files.push(filePath);
+      }
+    }
+
+    return files;
+  }
+
   /**
    * 分析用户输入的任务复杂度
    */
@@ -75,6 +111,32 @@ export class TaskComplexityAnalyzer {
     let simpleScore = 0;
     let complexScore = 0;
     let moderateScore = 0;
+
+    // 提取目标文件
+    const targetFiles = this.extractTargetFiles(userMessage);
+
+    // 多文件任务自动提升复杂度
+    if (targetFiles.length >= 3) {
+      complexScore += 3;
+      reasons.push(`涉及 ${targetFiles.length} 个目标文件`);
+    } else if (targetFiles.length >= 2) {
+      moderateScore += 2;
+      reasons.push(`涉及 ${targetFiles.length} 个目标文件`);
+    }
+
+    // 检查数字+文件的模式，如 "5个文件"、"修改以下5个文件"
+    const numFilesPattern = /(\d+)\s*(?:个|files?|份)/i;
+    const numMatch = lowerMessage.match(numFilesPattern);
+    if (numMatch) {
+      const numFiles = parseInt(numMatch[1], 10);
+      if (numFiles >= 3) {
+        complexScore += 3;
+        reasons.push(`明确提到 ${numFiles} 个文件`);
+      } else if (numFiles >= 2) {
+        moderateScore += 2;
+        reasons.push(`明确提到 ${numFiles} 个文件`);
+      }
+    }
 
     // 检查简单任务关键词
     for (const keyword of SIMPLE_KEYWORDS) {
@@ -154,7 +216,7 @@ export class TaskComplexityAnalyzer {
       suggestedApproach = this.getSimpleApproach();
     }
 
-    return { complexity, confidence, reasons, suggestedApproach };
+    return { complexity, confidence, reasons, suggestedApproach, targetFiles };
   }
 
   /**

@@ -105,6 +105,12 @@ export class AgentLoop {
   private todoNudgeCount: number = 0;
   private maxTodoNudges: number = 2; // Nudge to complete todos
 
+  // P3 Nudge: File completion tracking
+  private fileNudgeCount: number = 0;
+  private maxFileNudges: number = 2;
+  private targetFiles: string[] = []; // Files mentioned in prompt that should be modified
+  private modifiedFiles: Set<string> = new Set(); // Files actually modified
+
   // P2 Checkpoint: Task progress state tracking
   private consecutiveExploringCount: number = 0;
   private maxConsecutiveExploring: number = 3;
@@ -396,11 +402,20 @@ export class AgentLoop {
     const isSimpleTask = complexityAnalysis.complexity === 'simple';
     this.isSimpleTaskMode = isSimpleTask;
 
+    // Store target files for P3 Nudge
+    this.targetFiles = complexityAnalysis.targetFiles || [];
+    this.modifiedFiles.clear();
+    this.fileNudgeCount = 0;
+
     logger.debug(` Task complexity: ${complexityAnalysis.complexity} (${Math.round(complexityAnalysis.confidence * 100)}%)`);
+    if (this.targetFiles.length > 0) {
+      logger.debug(` Target files: ${this.targetFiles.join(', ')}`);
+    }
     logCollector.agent('INFO', `Task complexity: ${complexityAnalysis.complexity}`, {
       confidence: complexityAnalysis.confidence,
       reasons: complexityAnalysis.reasons,
       fastPath: isSimpleTask,
+      targetFiles: this.targetFiles,
     });
 
     if (!isSimpleTask) {
@@ -627,6 +642,48 @@ export class AgentLoop {
           }
         }
 
+        // P3 Nudge: Check if all target files have been modified
+        if (this.targetFiles.length > 0 && this.fileNudgeCount < this.maxFileNudges) {
+          const missingFiles: string[] = [];
+          for (const targetFile of this.targetFiles) {
+            // Normalize target file path for comparison
+            const normalizedTarget = targetFile.replace(/^\.\//, '').replace(/^\//, '');
+            // Check if any modified file matches or contains the target
+            const found = Array.from(this.modifiedFiles).some(modFile =>
+              modFile === normalizedTarget ||
+              modFile.endsWith(normalizedTarget) ||
+              normalizedTarget.endsWith(modFile)
+            );
+            if (!found) {
+              missingFiles.push(targetFile);
+            }
+          }
+
+          if (missingFiles.length > 0) {
+            this.fileNudgeCount++;
+            const fileList = missingFiles.map(f => `- ${f}`).join('\n');
+            logger.debug(`[AgentLoop] P3 Nudge: Missing files detected, nudge ${this.fileNudgeCount}/${this.maxFileNudges}`);
+            logCollector.agent('INFO', `P3 Nudge: Missing file modifications`, {
+              nudgeCount: this.fileNudgeCount,
+              missingFiles,
+              modifiedFiles: Array.from(this.modifiedFiles),
+              targetFiles: this.targetFiles,
+            });
+            this.injectSystemMessage(
+              `<file-completion-check>\n` +
+              `STOP! The following files were mentioned in the task but have not been modified:\n${fileList}\n\n` +
+              `Modified files so far: ${Array.from(this.modifiedFiles).join(', ') || 'none'}\n\n` +
+              `You MUST modify ALL required files before finishing. Continue working on the missing files NOW.\n` +
+              `</file-completion-check>`
+            );
+            this.onEvent({
+              type: 'notification',
+              data: { message: `检测到 ${missingFiles.length} 个文件未修改，提示继续执行 (${this.fileNudgeCount}/${this.maxFileNudges})...` },
+            });
+            continue; // Skip stop, continue execution
+          }
+        }
+
         const assistantMessage: Message = {
           id: this.generateId(),
           role: 'assistant',
@@ -824,12 +881,11 @@ export class AgentLoop {
         incompleteCount: incompleteFinalTodos.length,
         incompleteTodos: incompleteFinalTodos.map(t => ({ content: t.content, status: t.status })),
       });
+      const todoDetails = incompleteFinalTodos.map(t => t.content).join(', ');
       this.onEvent({
         type: 'notification',
         data: {
-          message: `⚠️ 任务可能未完成：${incompleteFinalTodos.length} 个待办项未完成`,
-          level: 'warning',
-          details: incompleteFinalTodos.map(t => t.content),
+          message: `⚠️ 任务可能未完成：${incompleteFinalTodos.length} 个待办项未完成 (${todoDetails})`,
         },
       });
     }
@@ -1211,6 +1267,17 @@ export class AgentLoop {
         if (outputStr.includes('⚠️ **代码完整性警告**') || outputStr.includes('代码完整性警告')) {
           logger.debug('[AgentLoop] ⚠️ Detected truncated file! Injecting auto-continuation prompt');
           this.injectSystemMessage(this.generateAutoContinuationPrompt());
+        }
+      }
+
+      // P3 Nudge: Track modified files for completion checking
+      if ((toolCall.name === 'edit_file' || toolCall.name === 'write_file') && result.success) {
+        const filePath = toolCall.arguments?.path as string;
+        if (filePath) {
+          // Normalize path for comparison
+          const normalizedPath = filePath.replace(/^\.\//, '').replace(/^\//, '');
+          this.modifiedFiles.add(normalizedPath);
+          logger.debug(`[AgentLoop] P3 Nudge: Tracked modified file: ${normalizedPath}`);
         }
       }
 

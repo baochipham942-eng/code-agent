@@ -56,6 +56,7 @@ import {
 import { getPromptForTask } from '../generation/prompts/builder';
 import { AntiPatternDetector } from './antiPattern/detector';
 import { getCurrentTodos } from '../tools/planning/todoWrite';
+import { getIncompleteTasks } from '../tools/planning';
 import { MAX_PARALLEL_TOOLS, READ_ONLY_TOOLS, WRITE_TOOLS, VERIFY_TOOLS, TaskProgressState } from './loopTypes';
 import {
   compressToolResult,
@@ -639,29 +640,46 @@ export class AgentLoop {
           }
         }
 
-        // P2 Nudge: Check for incomplete todos in complex tasks
-        // If agent wants to stop but has incomplete todos, nudge it to complete them
+        // P2 Nudge: Check for incomplete todos AND tasks in complex tasks
+        // If agent wants to stop but has incomplete items, nudge it to complete them
         if (!this.isSimpleTaskMode && this.todoNudgeCount < this.maxTodoNudges) {
           const todos = getCurrentTodos(this.sessionId);
           const incompleteTodos = todos.filter(t => t.status !== 'completed');
-          if (incompleteTodos.length > 0) {
+          const incompleteTasks = getIncompleteTasks(this.sessionId);
+
+          const totalIncomplete = incompleteTodos.length + incompleteTasks.length;
+
+          if (totalIncomplete > 0) {
             this.todoNudgeCount++;
-            const todoList = incompleteTodos.map(t => `- ${t.content}`).join('\n');
-            logger.debug(`[AgentLoop] Incomplete todos detected, nudge ${this.todoNudgeCount}/${this.maxTodoNudges}`);
-            logCollector.agent('INFO', `Incomplete todos detected: ${incompleteTodos.length} items`, {
+
+            // Build combined list
+            const itemList: string[] = [];
+            if (incompleteTodos.length > 0) {
+              itemList.push(...incompleteTodos.map(t => `- [Todo] ${t.content}`));
+            }
+            if (incompleteTasks.length > 0) {
+              itemList.push(...incompleteTasks.map(t => `- [Task #${t.id}] ${t.subject}`));
+            }
+            const combinedList = itemList.join('\n');
+
+            logger.debug(`[AgentLoop] Incomplete items detected, nudge ${this.todoNudgeCount}/${this.maxTodoNudges}`);
+            logCollector.agent('INFO', `Incomplete items detected: ${totalIncomplete} items`, {
               nudgeCount: this.todoNudgeCount,
               incompleteTodos: incompleteTodos.map(t => t.content),
+              incompleteTasks: incompleteTasks.map(t => ({ id: t.id, subject: t.subject })),
             });
             this.injectSystemMessage(
-              `<todo-completion-check>\n` +
-              `STOP! You have ${incompleteTodos.length} incomplete todo item(s):\n${todoList}\n\n` +
-              `You MUST complete these tasks before finishing. Do NOT provide a final summary until all todos are marked as completed.\n` +
+              `<task-completion-check>\n` +
+              `STOP! You have ${totalIncomplete} incomplete item(s):\n${combinedList}\n\n` +
+              `You MUST complete these tasks before finishing. Do NOT provide a final summary until all items are marked as completed.\n` +
+              `- For Todos: use todo_write to update status to "completed"\n` +
+              `- For Tasks: use task_update with status="completed" (or status="deleted" if no longer needed)\n` +
               `Continue working on the remaining items NOW.\n` +
-              `</todo-completion-check>`
+              `</task-completion-check>`
             );
             this.onEvent({
               type: 'notification',
-              data: { message: `检测到 ${incompleteTodos.length} 个未完成的任务，提示继续执行 (${this.todoNudgeCount}/${this.maxTodoNudges})...` },
+              data: { message: `检测到 ${totalIncomplete} 个未完成的任务，提示继续执行 (${this.todoNudgeCount}/${this.maxTodoNudges})...` },
             });
             continue; // Skip stop, continue execution
           }
@@ -896,21 +914,28 @@ export class AgentLoop {
       }
     }
 
-    // Pre-completion Hook: Check for incomplete todos
+    // Pre-completion Hook: Check for incomplete todos AND tasks
     const finalTodos = getCurrentTodos(this.sessionId);
     const incompleteFinalTodos = finalTodos.filter(t => t.status !== 'completed');
-    if (incompleteFinalTodos.length > 0) {
-      const incompleteList = incompleteFinalTodos.map(t => t.content).join(', ');
-      logger.warn(`[AgentLoop] Agent completing with ${incompleteFinalTodos.length} incomplete todo(s): ${incompleteList}`);
-      logCollector.agent('WARN', `Agent completing with incomplete todos`, {
-        incompleteCount: incompleteFinalTodos.length,
+    const incompleteFinalTasks = getIncompleteTasks(this.sessionId);
+    const totalIncomplete = incompleteFinalTodos.length + incompleteFinalTasks.length;
+
+    if (totalIncomplete > 0) {
+      const todoDetails = incompleteFinalTodos.map(t => t.content);
+      const taskDetails = incompleteFinalTasks.map(t => `#${t.id}: ${t.subject}`);
+      const allDetails = [...todoDetails, ...taskDetails].join(', ');
+
+      logger.warn(`[AgentLoop] Agent completing with ${totalIncomplete} incomplete item(s): ${allDetails}`);
+      logCollector.agent('WARN', `Agent completing with incomplete items`, {
+        incompleteCount: totalIncomplete,
         incompleteTodos: incompleteFinalTodos.map(t => ({ content: t.content, status: t.status })),
+        incompleteTasks: incompleteFinalTasks.map(t => ({ id: t.id, subject: t.subject, status: t.status })),
       });
-      const todoDetails = incompleteFinalTodos.map(t => t.content).join(', ');
+
       this.onEvent({
         type: 'notification',
         data: {
-          message: `⚠️ 任务可能未完成：${incompleteFinalTodos.length} 个待办项未完成 (${todoDetails})`,
+          message: `⚠️ 任务可能未完成：${totalIncomplete} 个待办项未完成 (${allDetails})`,
         },
       });
     }

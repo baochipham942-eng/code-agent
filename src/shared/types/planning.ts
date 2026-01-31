@@ -11,6 +11,52 @@ export interface TodoItem {
   activeForm: string;
 }
 
+// ============================================================================
+// Session Task Types (Claude Code 2.x compatible Task API)
+// ============================================================================
+
+// 使用前缀避免与其他模块的 TaskStatus/TaskPriority 冲突
+export type SessionTaskStatus = 'pending' | 'in_progress' | 'completed';
+export type SessionTaskPriority = 'low' | 'normal' | 'high';
+
+export interface SessionTask {
+  id: string;              // 自动生成 "task-{timestamp}-{random}"
+  subject: string;         // 祈使句 "Implement login"
+  description: string;     // 详细描述
+  activeForm: string;      // 进行时 "Implementing login"
+  status: SessionTaskStatus;      // pending | in_progress | completed
+  priority: SessionTaskPriority;  // low | normal | high
+
+  // 依赖关系
+  blocks: string[];        // 此任务阻塞的任务 ID
+  blockedBy: string[];     // 阻塞此任务的任务 ID
+
+  // 元数据
+  owner?: string;          // Agent 名称（多 Agent 场景）
+  metadata: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CreateTaskInput {
+  subject: string;
+  description: string;
+  activeForm?: string;
+  priority?: SessionTaskPriority;
+  metadata?: Record<string, unknown>;
+}
+
+export interface UpdateTaskInput {
+  status?: SessionTaskStatus | 'deleted';
+  subject?: string;
+  description?: string;
+  activeForm?: string;
+  owner?: string;
+  addBlockedBy?: string[];
+  addBlocks?: string[];
+  metadata?: Record<string, unknown>;
+}
+
 // Task Plan Types
 export type TaskStepStatus = 'pending' | 'in_progress' | 'completed' | 'skipped';
 export type TaskPhaseStatus = 'pending' | 'in_progress' | 'completed' | 'blocked';

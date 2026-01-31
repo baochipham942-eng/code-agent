@@ -24,6 +24,8 @@ import {
   CODE_SNIPPET_RULES,
   ATTACHMENT_HANDLING_RULES,
   TOOL_USAGE_POLICY,
+  TOOL_DECISION_TREE,
+  TASK_MANAGEMENT_RULES,
 } from './rules';
 import {
   BASH_TOOL_DESCRIPTION,
@@ -55,20 +57,22 @@ const RULE_TIERS = {
   ],
 
   /**
-   * Collaboration tier (Gen2+): Adds parallel execution
+   * Collaboration tier (Gen2+): Adds parallel execution and decision tree
    */
   collaboration: [
     PARALLEL_TOOLS_RULES,
+    TOOL_DECISION_TREE,
   ],
 
   /**
-   * Standard tier (Gen3+): Adds planning, git safety, and tool usage policy
+   * Standard tier (Gen3+): Adds planning, git safety, tool usage policy, and task management
    */
   standard: [
     PLAN_MODE_RULES,
     GIT_SAFETY_RULES,
     INJECTION_DEFENSE_RULES,
     TOOL_USAGE_POLICY,
+    TASK_MANAGEMENT_RULES,
   ],
 
   /**

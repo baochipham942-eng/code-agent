@@ -19,3 +19,6 @@ export * from './infra';
 
 // Lab Services - 实验室服务
 export * from './lab';
+
+// Checkpoint Services - 检查点服务
+export * from './checkpoint';

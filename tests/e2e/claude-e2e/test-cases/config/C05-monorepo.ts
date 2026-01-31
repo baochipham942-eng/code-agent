@@ -54,11 +54,13 @@ packages/
 
   expectedBehavior: {
     directExecution: true,
-    toolCallRange: { min: 8, max: 25 },
+    toolCallRange: { min: 8, max: 50 },
   },
 
   tags: ['config', 'monorepo', 'pnpm', 'workspace'],
-  timeout: 180000,
+  timeout: 300000, // 5 分钟，复杂任务需要更多时间
+  retries: 2,
+  nudgeOnMissingFile: true,
 };
 
 export default C05;

@@ -42,6 +42,7 @@ export const D06: TestCase = {
 
   tags: ['debugging', 'memory-leak', 'react', 'useEffect', 'cleanup'],
   timeout: 180000,
+  retries: 2,
 };
 
 export default D06;

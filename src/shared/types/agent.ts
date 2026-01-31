@@ -118,29 +118,29 @@ export interface ResearchErrorData {
 
 export type AgentEvent =
   | { type: 'message'; data: Message }
-  | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string } }
-  | { type: 'tool_call_end'; data: ToolResult }
+  | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string } }
+  | { type: 'tool_call_end'; data: ToolResult & { parentToolUseId?: string } }
   | { type: 'permission_request'; data: PermissionRequest }
-  | { type: 'error'; data: { message: string; code?: string; suggestion?: string; details?: Record<string, unknown> } }
-  | { type: 'stream_chunk'; data: { content: string | undefined; turnId?: string } }
-  | { type: 'stream_reasoning'; data: { content: string | undefined; turnId?: string } }
-  | { type: 'stream_tool_call_start'; data: { index?: number; id?: string; name?: string; turnId?: string } }
-  | { type: 'stream_tool_call_delta'; data: { index?: number; name?: string; argumentsDelta?: string; turnId?: string } }
+  | { type: 'error'; data: { message: string; code?: string; suggestion?: string; details?: Record<string, unknown>; parentToolUseId?: string } }
+  | { type: 'stream_chunk'; data: { content: string | undefined; turnId?: string; parentToolUseId?: string } }
+  | { type: 'stream_reasoning'; data: { content: string | undefined; turnId?: string; parentToolUseId?: string } }
+  | { type: 'stream_tool_call_start'; data: { index?: number; id?: string; name?: string; turnId?: string; parentToolUseId?: string } }
+  | { type: 'stream_tool_call_delta'; data: { index?: number; name?: string; argumentsDelta?: string; turnId?: string; parentToolUseId?: string } }
   | { type: 'todo_update'; data: TodoItem[] }
-  | { type: 'notification'; data: { message: string } }
+  | { type: 'notification'; data: { message: string; parentToolUseId?: string } }
   | { type: 'agent_complete'; data: null }
   // Auto Agent 思考/规划事件
-  | { type: 'agent_thinking'; data: { message: string; agentId?: string; progress?: number } }
+  | { type: 'agent_thinking'; data: { message: string; agentId?: string; progress?: number; parentToolUseId?: string } }
   // Turn-based message events (行业最佳实践: Vercel AI SDK / LangGraph 模式)
-  | { type: 'turn_start'; data: { turnId: string; iteration?: number } }
-  | { type: 'turn_end'; data: { turnId: string } }
+  | { type: 'turn_start'; data: { turnId: string; iteration?: number; parentToolUseId?: string } }
+  | { type: 'turn_end'; data: { turnId: string; parentToolUseId?: string } }
   // Model capability fallback event (能力补充)
   | { type: 'model_fallback'; data: { reason: string; from: string; to: string } }
   // API Key 缺失提示
   | { type: 'api_key_required'; data: { provider: string; capability: string; message: string } }
   // 长时任务进度追踪（P0 新增）
-  | { type: 'task_progress'; data: TaskProgressData }
-  | { type: 'task_complete'; data: TaskCompleteData }
+  | { type: 'task_progress'; data: TaskProgressData & { parentToolUseId?: string } }
+  | { type: 'task_complete'; data: TaskCompleteData & { parentToolUseId?: string } }
   // Gen5+ Memory 学习事件
   | { type: 'memory_learned'; data: MemoryLearnedData }
   // Deep Research 事件

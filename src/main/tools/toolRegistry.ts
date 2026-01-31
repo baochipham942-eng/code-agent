@@ -109,6 +109,8 @@ export interface ToolContext {
     data?: string;
     mimeType?: string;
   }>;
+  // 当前工具调用 ID（用于 subagent 追踪）
+  currentToolCallId?: string;
 }
 
 export interface PermissionRequestData {

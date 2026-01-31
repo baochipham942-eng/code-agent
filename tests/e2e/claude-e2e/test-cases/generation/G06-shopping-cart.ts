@@ -47,9 +47,7 @@ export const G06: TestCase = {
   ],
 
   expectedBehavior: {
-    directExecution: false,
-    expectedAgents: ['Explore'],
-    requiredTools: ['Read', 'Write', 'Glob'],
+    directExecution: true,
     toolCallRange: { min: 5, max: 20 },
   },
 

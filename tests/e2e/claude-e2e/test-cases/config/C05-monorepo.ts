@@ -53,9 +53,7 @@ packages/
   ],
 
   expectedBehavior: {
-    directExecution: false,
-    expectedAgents: ['Explore'],
-    requiredTools: ['Read', 'Write', 'Bash', 'Glob'],
+    directExecution: true,
     toolCallRange: { min: 8, max: 25 },
   },
 

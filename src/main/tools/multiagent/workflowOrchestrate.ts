@@ -539,3 +539,9 @@ async function executeStage(
 export function getAvailableWorkflows(): Record<string, WorkflowTemplate> {
   return { ...BUILT_IN_WORKFLOWS };
 }
+
+// PascalCase alias for SDK compatibility
+export const WorkflowOrchestrateTool: Tool = {
+  ...workflowOrchestrateTool,
+  name: 'WorkflowOrchestrate',
+};

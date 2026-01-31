@@ -56,7 +56,7 @@ export const T03: TestCase = {
       validation: {
         type: 'file-contains',
         target: 'src/api/routes/users.ts',
-        contains: ['/**', '@param', '@returns'],
+        contains: ['/**', '@param', '@returns', '@example'],
       },
     },
     {

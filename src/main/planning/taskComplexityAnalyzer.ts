@@ -256,7 +256,11 @@ export class TaskComplexityAnalyzer {
       `2. Start executing immediately after planning\n` +
       `3. Focus on the core requirement first\n` +
       `4. Maximum 5 read operations before writing\n` +
-      `5. Complete in 5-10 tool calls total`
+      `5. Complete in 5-10 tool calls total\n\n` +
+      `TypeScript CRITICAL:\n` +
+      `- When modifying interfaces/types, update ALL files that use them\n` +
+      `- Check existing type definitions before adding new fields\n` +
+      `- Ensure exports match imports (named vs default)`
     );
   }
 
@@ -268,7 +272,11 @@ export class TaskComplexityAnalyzer {
       `3. Read necessary files to understand the system first\n` +
       `4. Execute one phase at a time, updating todo status as you go\n` +
       `5. Ask user for clarification if requirements are ambiguous\n` +
-      `6. Expected: 10-30+ tool calls`
+      `6. Expected: 10-30+ tool calls\n\n` +
+      `TypeScript CRITICAL:\n` +
+      `- Maintain type consistency across all modified files\n` +
+      `- Check existing interfaces before adding properties\n` +
+      `- Use proper import paths (check existing imports for reference)`
     );
   }
 }

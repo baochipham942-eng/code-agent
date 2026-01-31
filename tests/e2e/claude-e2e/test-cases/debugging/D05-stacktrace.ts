@@ -27,6 +27,7 @@ TypeError: Cannot read properties of undefined (reading 'id')
       type: 'file-contains',
       target: 'src/api/routes/users.ts',
       contains: ['throw', 'not found'],
+      ignoreCase: true,
     },
   ],
 

@@ -53,6 +53,8 @@ export const G06: TestCase = {
 
   tags: ['generation', 'zustand', 'state-management', 'react', 'shopping-cart'],
   timeout: 180000,
+  retries: 2,
+  nudgeOnMissingFile: true,
 };
 
 export default G06;

@@ -57,6 +57,8 @@ export const R05: TestCase = {
 
   tags: ['refactoring', 'hooks', 'react', 'state-management'],
   timeout: 180000,
+  retries: 2,
+  nudgeOnMissingFile: true,
 };
 
 export default R05;

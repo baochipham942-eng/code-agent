@@ -34,3 +34,6 @@ export * from './types/gui';
 
 // Memory types
 export * from './types/memory';
+
+// Checkpoint types (文件检查点)
+export * from './types/checkpoint';

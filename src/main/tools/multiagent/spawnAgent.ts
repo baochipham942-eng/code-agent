@@ -1,20 +1,13 @@
 // ============================================================================
 // Spawn Agent Tool - Create specialized sub-agents
 // Gen 7: Multi-Agent capability
-// Enhanced with parallel execution support (Enhancement 3)
-// T4: Dual mode support (declarative + dynamic)
-// Refactored: Uses type-safe BuiltInAgentConfig from shared/types
+// Enhanced with parallel execution support
+// Refactored: Uses unified 4-layer agent types
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import type { ModelConfig } from '../../../shared/types';
-import type { BuiltInAgentConfig } from '../../../shared/types/builtInAgents';
-import {
-  BUILT_IN_AGENTS,
-  getBuiltInAgent,
-  isBuiltInAgentRole,
-  listBuiltInAgents,
-} from '../../../shared/types/builtInAgents';
+import type { FullAgentConfig } from '../../../shared/types/agentTypes';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
 import {
   getParallelAgentCoordinator,
@@ -23,47 +16,12 @@ import {
 import {
   getPredefinedAgent,
   listPredefinedAgents,
-  type AgentDefinition,
+  getAgentPrompt,
+  getAgentTools,
+  getAgentMaxIterations,
+  getAgentPermissionPreset,
+  getAgentMaxBudget,
 } from '../../agent/agentDefinition';
-
-/**
- * Unified agent configuration type
- * Supports both BuiltInAgentConfig and AgentDefinition
- */
-type ResolvedAgentConfig = BuiltInAgentConfig | AgentDefinition;
-
-/**
- * Alias mappings for backward compatibility
- * Maps old agent IDs to built-in agent roles
- */
-const AGENT_ALIASES: Record<string, string> = {
-  'code-reviewer': 'reviewer',
-  'test-writer': 'tester',
-};
-
-/**
- * Get agent configuration from built-in agents or predefined agents
- * Priority: Built-in agents > Aliases > Predefined agents (from agentDefinition.ts)
- */
-function resolveAgentConfig(roleOrId: string): ResolvedAgentConfig | undefined {
-  // First, check built-in agents (type-safe, 6 core roles)
-  const builtIn = getBuiltInAgent(roleOrId);
-  if (builtIn) {
-    return builtIn;
-  }
-
-  // Check aliases for backward compatibility
-  const aliasTarget = AGENT_ALIASES[roleOrId];
-  if (aliasTarget) {
-    const aliasedAgent = getBuiltInAgent(aliasTarget);
-    if (aliasedAgent) {
-      return aliasedAgent;
-    }
-  }
-
-  // Fall back to predefined agents (extended agents from agentDefinition.ts)
-  return getPredefinedAgent(roleOrId);
-}
 
 interface SpawnedAgent {
   id: string;
@@ -82,13 +40,10 @@ export const spawnAgentTool: Tool = {
   description: `Create a specialized sub-agent to handle a specific task.
 
 DUAL MODE SUPPORT:
-1. Declarative Mode - Use built-in or predefined agent IDs (recommended):
+1. Declarative Mode - Use predefined agent IDs (recommended):
 
-   Built-in Agents (6 core roles):
-${listBuiltInAgents().map(a => `   - ${a.role}: ${a.description}`).join('\n')}
-
-   Extended Agents:
-${listPredefinedAgents().filter(a => !isBuiltInAgentRole(a.id)).map(a => `   - ${a.id}: ${a.description}`).join('\n')}
+   Available Agents:
+${listPredefinedAgents().map(a => `   - ${a.id}: ${a.description}`).join('\n')}
 
 2. Dynamic Mode - Create custom agents at runtime with customPrompt and tools
 
@@ -206,9 +161,9 @@ Parameters:
       };
     }
 
-    // Determine agent mode: declarative (built-in/predefined) or dynamic
+    // Determine agent mode: declarative (predefined) or dynamic
     const isDynamicMode = customPrompt && !role;
-    let agentConfig: ResolvedAgentConfig | undefined;
+    let agentConfig: FullAgentConfig | undefined;
     let agentName: string;
     let systemPrompt: string;
     let tools: string[];
@@ -219,29 +174,26 @@ Parameters:
       systemPrompt = customPrompt!;
       tools = customTools || ['read_file', 'glob', 'grep']; // Default read-only tools for safety
     } else {
-      // Declarative mode: resolve from built-in or predefined agents
+      // Declarative mode: resolve from predefined agents
       if (!role) {
         return {
           success: false,
-          error: 'Either provide role (for built-in/predefined agent) or customPrompt (for dynamic agent)',
+          error: 'Either provide role (for predefined agent) or customPrompt (for dynamic agent)',
         };
       }
 
-      agentConfig = resolveAgentConfig(role);
+      agentConfig = getPredefinedAgent(role);
       if (!agentConfig) {
-        const builtInRoles = listBuiltInAgents().map(a => a.role);
-        const predefinedIds = listPredefinedAgents()
-          .filter(a => !isBuiltInAgentRole(a.id))
-          .map(a => a.id);
+        const availableIds = listPredefinedAgents().map(a => a.id);
         return {
           success: false,
-          error: `Unknown agent: ${role}. Built-in roles: ${builtInRoles.join(', ')}. Extended agents: ${predefinedIds.join(', ')}`,
+          error: `Unknown agent: ${role}. Available agents: ${availableIds.join(', ')}`,
         };
       }
 
       agentName = agentConfig.name;
-      systemPrompt = customPrompt || agentConfig.systemPrompt;
-      tools = customTools || agentConfig.tools;
+      systemPrompt = customPrompt || getAgentPrompt(agentConfig);
+      tools = customTools || getAgentTools(agentConfig);
     }
 
     // Generate agent ID
@@ -261,13 +213,12 @@ Parameters:
       // Pipeline is integrated in executor, we just use it for configuration
 
       // Determine permission preset based on agent config
-      const permissionPreset = agentConfig && 'permissionPreset' in agentConfig
-        ? (agentConfig as AgentDefinition).permissionPreset
+      const permissionPreset = agentConfig
+        ? getAgentPermissionPreset(agentConfig)
         : 'development';
 
       // Determine max budget (use agent-specific or inherited)
-      const effectiveMaxBudget = maxBudget
-        || (agentConfig && 'maxBudget' in agentConfig ? (agentConfig as AgentDefinition).maxBudget : undefined);
+      const effectiveMaxBudget = maxBudget || (agentConfig ? getAgentMaxBudget(agentConfig) : undefined);
 
       if (waitForCompletion) {
         // Execute and wait for result
@@ -287,6 +238,8 @@ Parameters:
               context.toolRegistry.getAllTools().map((t) => [t.name, t])
             ),
             toolContext: context,
+            // 传递父工具调用 ID，用于 subagent 消息追踪
+            parentToolUseId: context.currentToolCallId,
           }
         );
 
@@ -335,6 +288,8 @@ Stats:
               context.toolRegistry.getAllTools().map((t) => [t.name, t])
             ),
             toolContext: context,
+            // 传递父工具调用 ID，用于 subagent 消息追踪
+            parentToolUseId: context.currentToolCallId,
           }
         ).then((result) => {
           agent.status = result.success ? 'completed' : 'failed';
@@ -378,9 +333,9 @@ export function listSpawnedAgents(): SpawnedAgent[] {
   return Array.from(spawnedAgents.values());
 }
 
-// Export available roles (returns built-in agents)
-export function getAvailableRoles(): Record<string, BuiltInAgentConfig> {
-  return { ...BUILT_IN_AGENTS };
+// Export available agents
+export function getAvailableAgents(): Array<{ id: string; name: string; description: string }> {
+  return listPredefinedAgents();
 }
 
 // Execute multiple agents in parallel using the ParallelAgentCoordinator
@@ -399,17 +354,13 @@ async function executeParallelAgents(
     toolContext: context,
   });
 
-  // Convert to AgentTask format (supports both built-in and predefined agents)
+  // Convert to AgentTask format
   const tasks: AgentTask[] = agents.map((agent, index) => {
-    // Try built-in agents first, then predefined agents
-    const agentConfig = resolveAgentConfig(agent.role);
+    const agentConfig = getPredefinedAgent(agent.role);
     if (!agentConfig) {
-      const builtInRoles = listBuiltInAgents().map(a => a.role);
-      const predefinedIds = listPredefinedAgents()
-        .filter(a => !isBuiltInAgentRole(a.id))
-        .map(a => a.id);
+      const availableIds = listPredefinedAgents().map(a => a.id);
       throw new Error(
-        `Unknown agent: ${agent.role}. Built-in roles: ${builtInRoles.join(', ')}. Extended agents: ${predefinedIds.join(', ')}`
+        `Unknown agent: ${agent.role}. Available agents: ${availableIds.join(', ')}`
       );
     }
 
@@ -417,9 +368,9 @@ async function executeParallelAgents(
       id: `agent_${agent.role}_${index}_${Date.now()}`,
       role: agent.role,
       task: agent.task,
-      systemPrompt: agentConfig.systemPrompt,
-      tools: agentConfig.tools,
-      maxIterations: agentConfig.maxIterations || 20,
+      systemPrompt: getAgentPrompt(agentConfig),
+      tools: getAgentTools(agentConfig),
+      maxIterations: getAgentMaxIterations(agentConfig),
       dependsOn: agent.dependsOn,
     };
   });

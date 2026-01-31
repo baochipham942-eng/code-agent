@@ -18,6 +18,7 @@ import {
   maskSensitiveData,
   type ValidationResult,
 } from '../security';
+import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
 
 const logger = createLogger('ToolExecutor');
 
@@ -60,6 +61,8 @@ export interface ExecuteOptions {
     data?: string;
     mimeType?: string;
   }>;
+  // 当前工具调用 ID（用于 subagent 追踪）
+  currentToolCallId?: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -161,6 +164,14 @@ export class ToolExecutor {
       };
     }
 
+    // 文件检查点：在写入工具执行前保存原文件
+    await createFileCheckpointIfNeeded(toolName, params, () => {
+      if (!options.sessionId) return null;
+      // messageId 从 context 中获取，如果没有则使用工具调用 ID
+      const messageId = options.currentToolCallId || `msg_${Date.now()}`;
+      return { sessionId: options.sessionId, messageId };
+    });
+
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       workingDirectory: this.workingDirectory,
@@ -180,6 +191,8 @@ export class ToolExecutor {
       sessionId: options.sessionId,
       // Current message attachments for multi-agent workflows
       currentAttachments: options.currentAttachments,
+      // 当前工具调用 ID（用于 subagent 追踪）
+      currentToolCallId: options.currentToolCallId,
     };
 
     // Security: Pre-execution validation for bash commands

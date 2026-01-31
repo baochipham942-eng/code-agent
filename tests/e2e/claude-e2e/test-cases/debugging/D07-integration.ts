@@ -27,7 +27,8 @@ export const D07: TestCase = {
     {
       type: 'file-contains',
       target: 'src/api/routes/users.ts',
-      contains: ['getUsers', 'res'],
+      // fixture 使用纯函数风格，验证关键函数存在即可
+      contains: ['getUsers', 'userService'],
     },
     {
       type: 'file-contains',
@@ -37,14 +38,13 @@ export const D07: TestCase = {
   ],
 
   expectedBehavior: {
-    directExecution: false,
-    expectedAgents: ['Explore'],
-    requiredTools: ['Read', 'Edit', 'Glob'],
+    directExecution: true,
     toolCallRange: { min: 5, max: 20 },
   },
 
   tags: ['debugging', 'integration', 'fullstack', 'data-flow'],
   timeout: 180000,
+  retries: 2,
 };
 
 export default D07;

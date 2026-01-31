@@ -429,11 +429,11 @@ ${testCase.prompt}`;
     try {
       project = await createTempProject(testCase.fixture);
 
+      // setupCommands 是预定义的测试配置，需要 shell 支持重定向等操作
       if (testCase.setupCommands?.length) {
-        const { execFileSync } = await import('child_process');
+        const { execSync } = await import('child_process');
         for (const cmd of testCase.setupCommands) {
-          const [command, ...args] = cmd.split(' ');
-          execFileSync(command, args, { cwd: project.path, stdio: 'pipe' });
+          execSync(cmd, { cwd: project.path, stdio: 'pipe', shell: '/bin/bash' });
         }
       }
 

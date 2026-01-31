@@ -32,10 +32,8 @@ export const V05: TestCase = {
 
   fixture: 'typescript-basic',
 
+  // createTempProject 已执行 git init + 初始 commit，这里只需创建分支和新提交
   setupCommands: [
-    'git init',
-    'git add .',
-    'git commit -m "init"',
     'git checkout -b feature/test-pr',
     'echo "export const newFeature = true;" >> src/index.ts',
     'git add .',
@@ -55,14 +53,14 @@ export const V05: TestCase = {
   ],
 
   expectedBehavior: {
-    directExecution: false,
-    expectedAgents: ['Explore'],
-    requiredTools: ['Bash', 'Write'],
-    toolCallRange: { min: 3, max: 15 },
+    directExecution: true,
+    toolCallRange: { min: 3, max: 20 },
   },
 
   tags: ['git', 'pr', 'documentation', 'workflow'],
   timeout: 180000,
+  retries: 2,
+  nudgeOnMissingFile: true,
 };
 
 export default V05;

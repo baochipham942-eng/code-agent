@@ -1,11 +1,14 @@
 // ============================================================================
 // Meta Learning Loop - Automatic pattern extraction and strategy optimization
 // Gen 8: Self-Evolution capability
+// Enhanced with trace-based learning
 // ============================================================================
 
 import { getEvolutionPersistence, type LearnedPattern, type Strategy } from '../../services';
 import { createLogger } from '../../services/infra/logger';
 import type { Message } from '../../../shared/types';
+import type { ExecutionTrace } from '../../evolution/traceRecorder';
+import type { OutcomeResult } from '../../evolution/outcomeDetector';
 
 const logger = createLogger('MetaLearningLoop');
 
@@ -156,6 +159,128 @@ class MetaLearningLoopService {
       lastRunTime: this.lastRunTime,
       isRunning: this.isRunning,
     };
+  }
+
+  // --------------------------------------------------------------------------
+  // Gen8 Trace-Based Learning
+  // --------------------------------------------------------------------------
+
+  /**
+   * 从执行轨迹学习（Gen8 增强版）
+   * 使用 LLM 进行更智能的洞察提取
+   */
+  async learnFromTrace(
+    trace: ExecutionTrace,
+    outcomeResult: OutcomeResult
+  ): Promise<LearningResult> {
+    logger.info('Learning from trace', {
+      traceId: trace.id,
+      outcome: outcomeResult.outcome,
+      confidence: outcomeResult.confidence,
+    });
+
+    const result: LearningResult = {
+      patternsLearned: 0,
+      strategiesUpdated: 0,
+      insights: [],
+      recommendations: [],
+    };
+
+    // 只从成功案例学习
+    if (outcomeResult.outcome !== 'success' || outcomeResult.confidence < 0.7) {
+      result.insights.push('Not a confident success, skipping learning');
+      return result;
+    }
+
+    try {
+      // 动态导入避免循环依赖
+      const { getLLMInsightExtractor } = await import('../../evolution/llmInsightExtractor');
+      const { getSafeInjector } = await import('../../evolution/safeInjector');
+
+      const extractor = getLLMInsightExtractor();
+      const injector = getSafeInjector();
+
+      // 使用 LLM 提取洞察
+      const insights = await extractor.extractFromSuccessfulTraces([trace]);
+
+      for (const insight of insights) {
+        // 验证安全性
+        const savedInsight = await extractor.saveInsight(insight, trace.projectPath);
+        const safety = injector.validateSafety(savedInsight);
+
+        if (safety.safe) {
+          result.patternsLearned++;
+          result.insights.push(`Learned: ${insight.name} (confidence: ${insight.confidence.toFixed(2)})`);
+        } else {
+          result.insights.push(`Skipped unsafe insight: ${insight.name} - ${safety.reasons.join(', ')}`);
+        }
+      }
+
+      // 推断用户偏好
+      const preferences = await extractor.inferPreferences([trace]);
+      for (const pref of preferences) {
+        result.insights.push(`Inferred preference: ${pref.key} = ${pref.value}`);
+      }
+
+      logger.info('Trace learning completed', {
+        traceId: trace.id,
+        patternsLearned: result.patternsLearned,
+        insightsCount: result.insights.length,
+      });
+    } catch (error) {
+      logger.error('Trace learning failed:', error);
+      result.insights.push(`Learning error: ${error instanceof Error ? error.message : 'Unknown'}`);
+    }
+
+    return result;
+  }
+
+  /**
+   * 批量从历史轨迹学习
+   */
+  async learnFromHistoricalTraces(limit: number = 50): Promise<LearningResult> {
+    const result: LearningResult = {
+      patternsLearned: 0,
+      strategiesUpdated: 0,
+      insights: [],
+      recommendations: [],
+    };
+
+    try {
+      const { TraceRecorder } = await import('../../evolution/traceRecorder');
+      const { getLLMInsightExtractor } = await import('../../evolution/llmInsightExtractor');
+
+      // 获取成功的历史轨迹
+      const traces = TraceRecorder.getSuccessfulTraces({
+        minConfidence: 0.7,
+        limit,
+        since: Date.now() - 7 * 24 * 60 * 60 * 1000, // 最近 7 天
+      });
+
+      if (traces.length === 0) {
+        result.insights.push('No successful traces found for learning');
+        return result;
+      }
+
+      const extractor = getLLMInsightExtractor();
+      const insights = await extractor.extractFromSuccessfulTraces(traces);
+
+      for (const insight of insights) {
+        await extractor.saveInsight(insight);
+        result.patternsLearned++;
+        result.insights.push(`Learned from ${traces.length} traces: ${insight.name}`);
+      }
+
+      logger.info('Historical trace learning completed', {
+        tracesAnalyzed: traces.length,
+        patternsLearned: result.patternsLearned,
+      });
+    } catch (error) {
+      logger.error('Historical trace learning failed:', error);
+      result.insights.push(`Error: ${error instanceof Error ? error.message : 'Unknown'}`);
+    }
+
+    return result;
   }
 
   // --------------------------------------------------------------------------

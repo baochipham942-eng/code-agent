@@ -330,6 +330,106 @@ export class DatabaseService {
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       )
     `);
+
+    // Session Events 表 (完整 SSE 事件日志，用于评测分析)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS session_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        event_data TEXT,
+        timestamp INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      )
+    `);
+
+    // ========================================================================
+    // Gen8 Self-Evolution Tables
+    // ========================================================================
+
+    // Execution Traces 表 (执行轨迹)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS execution_traces (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        task_description TEXT,
+        planning_steps TEXT,
+        tool_calls TEXT NOT NULL,
+        outcome TEXT NOT NULL,
+        outcome_reason TEXT,
+        outcome_confidence REAL,
+        user_feedback TEXT,
+        metrics TEXT,
+        project_path TEXT,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Outcome Signals 表 (成功判定信号)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS outcome_signals (
+        id TEXT PRIMARY KEY,
+        trace_id TEXT NOT NULL,
+        signal_type TEXT NOT NULL,
+        signal_value TEXT NOT NULL,
+        weight REAL NOT NULL,
+        created_at INTEGER NOT NULL,
+        FOREIGN KEY (trace_id) REFERENCES execution_traces(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Insights 表 (提炼的洞察)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS insights (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        source_traces TEXT NOT NULL,
+        confidence REAL NOT NULL,
+        validation_status TEXT DEFAULT 'pending',
+        usage_count INTEGER DEFAULT 0,
+        success_rate REAL DEFAULT 0,
+        injection_layer INTEGER DEFAULT 4,
+        decay_factor REAL DEFAULT 1.0,
+        last_used INTEGER,
+        project_path TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+
+    // Success Patterns 表 (成功模式)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS success_patterns (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        task_type TEXT,
+        tool_sequence TEXT NOT NULL,
+        context_indicators TEXT,
+        occurrences INTEGER DEFAULT 1,
+        effectiveness REAL DEFAULT 0.5,
+        last_matched INTEGER,
+        project_path TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+
+    // Skill Proposals 表 (技能提案)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS skill_proposals (
+        id TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        skill_content TEXT NOT NULL,
+        source_traces TEXT,
+        confidence REAL,
+        requires_approval INTEGER DEFAULT 1,
+        reason TEXT,
+        created_at INTEGER NOT NULL
+      )
+    `);
   }
 
   private createIndexes(): void {
@@ -366,10 +466,33 @@ export class DatabaseService {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_executions_scheduled ON cron_executions(scheduled_at DESC)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_heartbeats_enabled ON heartbeats(enabled)`);
 
+    // Session Events indexes
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_session_events_type ON session_events(event_type)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_session_events_timestamp ON session_events(session_id, timestamp)`);
+
     // File Checkpoints indexes
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_file_checkpoints_session ON file_checkpoints(session_id)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_file_checkpoints_message ON file_checkpoints(message_id)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_file_checkpoints_created ON file_checkpoints(created_at)`);
+
+    // Gen8 Self-Evolution indexes
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_traces_session ON execution_traces(session_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_traces_outcome ON execution_traces(outcome)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_traces_project ON execution_traces(project_path)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_traces_created ON execution_traces(created_at DESC)`);
+
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_signals_trace ON outcome_signals(trace_id)`);
+
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_insights_type ON insights(type)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_insights_confidence ON insights(confidence DESC)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_insights_layer ON insights(injection_layer)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_insights_project ON insights(project_path)`);
+
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_patterns_task_type ON success_patterns(task_type)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_patterns_effectiveness ON success_patterns(effectiveness DESC)`);
+
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_skill_proposals_status ON skill_proposals(status)`);
   }
 
   // --------------------------------------------------------------------------

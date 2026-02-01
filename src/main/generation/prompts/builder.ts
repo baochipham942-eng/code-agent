@@ -26,6 +26,7 @@ import {
   TOOL_USAGE_POLICY,
   TOOL_DECISION_TREE,
   TASK_MANAGEMENT_RULES,
+  TASK_CLASSIFICATION_RULES,
 } from './rules';
 import {
   BASH_TOOL_DESCRIPTION,
@@ -56,12 +57,14 @@ import {
 const RULE_TIERS = {
   /**
    * Basic tier (Gen1-2): Essential rules only
+   * - Task classification (fast routing)
    * - Output formatting
    * - Professional objectivity
    * - Code references
    * - Error handling
    */
   basic: [
+    TASK_CLASSIFICATION_RULES,  // 首轮任务分类，避免额外 LLM 调用
     OUTPUT_FORMAT_RULES,
     PROFESSIONAL_OBJECTIVITY_RULES,
     CODE_REFERENCE_RULES,

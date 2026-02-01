@@ -32,3 +32,6 @@ export { TOOL_DECISION_TREE } from './toolDecisionTree';
 
 // 任务动态管理规则
 export { TASK_MANAGEMENT_RULES } from './taskManagement';
+
+// 任务分类规则（首轮判断）
+export { TASK_CLASSIFICATION_RULES } from './taskClassification';

@@ -25,3 +25,6 @@ export {
   type GapAnalysisResult,
   type GapStatistics,
 } from './capabilityGapDetector';
+
+// Gen8 Self-Evolution Module
+export * from '../../evolution';

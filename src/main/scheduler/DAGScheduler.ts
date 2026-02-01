@@ -31,6 +31,7 @@ import { createLogger } from '../services/infra/logger';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { DAG_SCHEDULER } from '../../shared/constants';
+import { sendDAGInitEvent } from './dagEventBridge';
 
 const execAsync = promisify(exec);
 const logger = createLogger('DAGScheduler');
@@ -200,6 +201,9 @@ export class DAGScheduler extends EventEmitter {
 
     // 转发 DAG 事件
     this.forwardDAGEvents(dag);
+
+    // 发送 DAG 初始化事件到渲染进程（用于可视化）
+    sendDAGInitEvent(dag);
 
     logger.info(`Starting DAG execution: ${dag.getName()} (${dag.getAllTasks().length} tasks)`);
 

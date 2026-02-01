@@ -25,6 +25,7 @@ import {
   SecurityEvaluator,
 } from './metrics';
 import { getAIEvaluator } from './aiEvaluator';
+import { getSwissCheeseEvaluator } from './swissCheeseEvaluator';
 
 const logger = createLogger('EvaluationService');
 
@@ -84,7 +85,7 @@ export class EvaluationService {
 
   /**
    * 评测会话
-   * 优先使用 AI 深度评测，失败时回退到规则评测
+   * 优先使用瑞士奶酪多层评测，失败时回退到简单 AI 评测，再失败回退到规则评测
    */
   async evaluateSession(
     sessionId: string,
@@ -104,29 +105,51 @@ export class EvaluationService {
     const useAI = options.useAI !== false;
 
     if (useAI) {
-      // 尝试 AI 深度评测
+      // 优先尝试瑞士奶酪多层评测
       try {
-        logger.info('Attempting AI-powered evaluation...');
-        const aiEvaluator = getAIEvaluator();
-        const aiResult = await aiEvaluator.evaluate(snapshot);
+        logger.info('Attempting Swiss Cheese multi-agent evaluation...');
+        const swissCheeseEvaluator = getSwissCheeseEvaluator();
+        const scResult = await swissCheeseEvaluator.evaluate(snapshot);
 
-        if (aiResult) {
-          // AI 评测成功
-          metrics = aiEvaluator.convertToMetrics(aiResult);
-          overallScore = aiResult.overallScore;
-          allSuggestions = aiResult.suggestions || [];
-          aiSummary = aiResult.summary;
-          logger.info('AI evaluation succeeded', { overallScore });
+        if (scResult) {
+          // 瑞士奶酪评测成功
+          metrics = swissCheeseEvaluator.convertToMetrics(scResult);
+          overallScore = scResult.overallScore;
+          allSuggestions = scResult.suggestions || [];
+          aiSummary = scResult.summary;
+          logger.info('Swiss Cheese evaluation succeeded', {
+            overallScore,
+            consensus: scResult.consensus,
+            reviewerCount: scResult.reviewerResults.length
+          });
         } else {
-          throw new Error('AI evaluation returned null');
+          throw new Error('Swiss Cheese evaluation returned null');
         }
-      } catch (aiError) {
-        // AI 评测失败，回退到规则评测
-        logger.warn('AI evaluation failed, falling back to rule-based', { error: aiError });
-        const ruleResult = await this.runRuleBasedEvaluation(snapshot);
-        metrics = ruleResult.metrics;
-        overallScore = ruleResult.overallScore;
-        allSuggestions = ruleResult.suggestions;
+      } catch (scError) {
+        // 瑞士奶酪评测失败，回退到简单 AI 评测
+        logger.warn('Swiss Cheese evaluation failed, trying simple AI evaluation', { error: scError });
+
+        try {
+          const aiEvaluator = getAIEvaluator();
+          const aiResult = await aiEvaluator.evaluate(snapshot);
+
+          if (aiResult) {
+            metrics = aiEvaluator.convertToMetrics(aiResult);
+            overallScore = aiResult.overallScore;
+            allSuggestions = aiResult.suggestions || [];
+            aiSummary = aiResult.summary;
+            logger.info('AI evaluation succeeded', { overallScore });
+          } else {
+            throw new Error('AI evaluation returned null');
+          }
+        } catch (aiError) {
+          // AI 评测也失败，回退到规则评测
+          logger.warn('AI evaluation failed, falling back to rule-based', { error: aiError });
+          const ruleResult = await this.runRuleBasedEvaluation(snapshot);
+          metrics = ruleResult.metrics;
+          overallScore = ruleResult.overallScore;
+          allSuggestions = ruleResult.suggestions;
+        }
       }
     } else {
       // 使用规则评测

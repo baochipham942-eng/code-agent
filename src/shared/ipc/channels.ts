@@ -177,6 +177,17 @@ export const EVALUATION_CHANNELS = {
   EXPORT: 'evaluation:export',
   /** 删除评测记录 */
   DELETE: 'evaluation:delete',
+
+  // ------------------------------------------------------------------------
+  // 会话分析（v2 - 分离客观指标和主观评测）
+  // ------------------------------------------------------------------------
+
+  /** 获取会话客观指标（不需要 LLM，立即返回） */
+  GET_OBJECTIVE_METRICS: 'evaluation:get-objective-metrics',
+  /** 获取完整会话分析（客观指标 + 历史评测） */
+  GET_SESSION_ANALYSIS: 'evaluation:get-session-analysis',
+  /** 执行 LLM 主观评测（按需调用） */
+  RUN_SUBJECTIVE_EVALUATION: 'evaluation:run-subjective',
 } as const;
 
 /**

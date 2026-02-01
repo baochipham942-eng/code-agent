@@ -38,6 +38,8 @@ export interface HookMatcher {
   matcher?: string;
   /** Array of hooks to execute when matched */
   hooks: HookDefinition[];
+  /** Phase 2: Execute hooks in parallel (default: false) */
+  parallel?: boolean;
 }
 
 /**
@@ -50,6 +52,8 @@ export interface HooksConfig {
   UserPromptSubmit?: HookMatcher[];
   Stop?: HookMatcher[];
   SubagentStop?: HookMatcher[];
+  SubagentStart?: HookMatcher[];       // Phase 2
+  PermissionRequest?: HookMatcher[];   // Phase 2
   PreCompact?: HookMatcher[];
   Setup?: HookMatcher[];
   SessionStart?: HookMatcher[];
@@ -72,6 +76,8 @@ export interface ParsedHookConfig {
   matcher: RegExp | null;
   hooks: HookDefinition[];
   source: 'global' | 'project';
+  /** Phase 2: Execute hooks in parallel */
+  parallel: boolean;
 }
 
 // ----------------------------------------------------------------------------
@@ -115,6 +121,8 @@ function parseHooksObject(
     'UserPromptSubmit',
     'Stop',
     'SubagentStop',
+    'SubagentStart',      // Phase 2
+    'PermissionRequest',  // Phase 2
     'PreCompact',
     'Setup',
     'SessionStart',
@@ -139,6 +147,7 @@ function parseHooksObject(
         matcher: matcherConfig.matcher ? new RegExp(matcherConfig.matcher) : null,
         hooks: validatedHooks,
         source,
+        parallel: matcherConfig.parallel ?? false,  // Phase 2: 并行执行支持
       });
     }
   }

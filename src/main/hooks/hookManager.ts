@@ -10,6 +10,8 @@ import type {
   ToolHookContext,
   UserPromptContext,
   StopContext,
+  SubagentStartContext,
+  PermissionRequestContext,
   SessionContext,
   CompactContext,
 } from './events';
@@ -206,6 +208,58 @@ export class HookManager {
     return this.triggerEventHooks('Stop', context);
   }
 
+  // ==========================================================================
+  // Phase 2: New hook trigger methods
+  // ==========================================================================
+
+  /**
+   * Trigger hooks when a subagent starts (Phase 2)
+   */
+  async triggerSubagentStart(
+    subagentType: string,
+    subagentId: string,
+    taskPrompt: string,
+    sessionId: string,
+    parentToolUseId?: string
+  ): Promise<HookTriggerResult> {
+    const context: SubagentStartContext = {
+      event: 'SubagentStart',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      subagentType,
+      subagentId,
+      taskPrompt,
+      parentToolUseId,
+    };
+
+    return this.triggerEventHooks('SubagentStart', context);
+  }
+
+  /**
+   * Trigger hooks when a permission is requested (Phase 2)
+   */
+  async triggerPermissionRequest(
+    permissionType: 'read' | 'write' | 'execute' | 'network' | 'dangerous',
+    resource: string,
+    toolName: string,
+    sessionId: string,
+    reason?: string
+  ): Promise<HookTriggerResult> {
+    const context: PermissionRequestContext = {
+      event: 'PermissionRequest',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      permissionType,
+      resource,
+      toolName,
+      reason,
+    };
+
+    return this.triggerEventHooks('PermissionRequest', context);
+  }
+
   /**
    * Trigger hooks for session start
    */
@@ -372,6 +426,8 @@ export class HookManager {
 
   /**
    * Execute a list of merged hook configs
+   *
+   * Phase 2: Supports parallel execution when config.parallel is true
    */
   private async executeHooks(
     hookConfigs: MergedHookConfig[],
@@ -383,7 +439,40 @@ export class HookManager {
     let modifiedInput: string | undefined;
     const startTime = Date.now();
 
-    for (const config of hookConfigs) {
+    // Phase 2: 分离并行和串行 hook 配置
+    const parallelConfigs = hookConfigs.filter(c => c.parallel);
+    const sequentialConfigs = hookConfigs.filter(c => !c.parallel);
+
+    // 先执行并行 hooks
+    if (parallelConfigs.length > 0) {
+      const parallelResult = await this.executeHooksParallel(parallelConfigs, context);
+      results.push(...parallelResult.results);
+
+      if (!parallelResult.shouldProceed) {
+        shouldProceed = false;
+        message = parallelResult.message;
+      }
+      if (parallelResult.modifiedInput) {
+        modifiedInput = parallelResult.modifiedInput;
+      }
+      if (parallelResult.message) {
+        message = message ? `${message}\n${parallelResult.message}` : parallelResult.message;
+      }
+    }
+
+    // 如果被阻止，不再执行串行 hooks
+    if (!shouldProceed) {
+      return {
+        shouldProceed,
+        message,
+        modifiedInput,
+        results,
+        totalDuration: Date.now() - startTime,
+      };
+    }
+
+    // 串行执行剩余 hooks
+    for (const config of sequentialConfigs) {
       for (const hook of config.hooks) {
         const result = await this.executeHook(hook, context);
         results.push(result);
@@ -412,6 +501,66 @@ export class HookManager {
 
       // Stop processing more hooks if blocked
       if (!shouldProceed) break;
+    }
+
+    return {
+      shouldProceed,
+      message,
+      modifiedInput,
+      results,
+      totalDuration: Date.now() - startTime,
+    };
+  }
+
+  /**
+   * Execute hooks in parallel (Phase 2)
+   */
+  private async executeHooksParallel(
+    hookConfigs: MergedHookConfig[],
+    context: AnyHookContext
+  ): Promise<HookTriggerResult> {
+    const startTime = Date.now();
+
+    // 收集所有需要并行执行的 hooks
+    const allHooks: Array<{ config: MergedHookConfig; hook: HookDefinition }> = [];
+    for (const config of hookConfigs) {
+      for (const hook of config.hooks) {
+        allHooks.push({ config, hook });
+      }
+    }
+
+    // 并行执行所有 hooks
+    const resultPromises = allHooks.map(({ hook }) =>
+      this.executeHook(hook, context)
+    );
+
+    const results = await Promise.all(resultPromises);
+
+    // 聚合结果
+    let shouldProceed = true;
+    let message: string | undefined;
+    let modifiedInput: string | undefined;
+
+    for (const result of results) {
+      if (result.action === 'block') {
+        shouldProceed = false;
+        message = result.message || message;
+      }
+
+      if (result.action === 'continue' || result.action === 'allow') {
+        if (result.message) {
+          message = message ? `${message}\n${result.message}` : result.message;
+        }
+        // 注意：并行执行时，modifiedInput 可能被多个 hook 修改
+        // 这里采用最后一个非空值
+        if (result.modifiedInput) {
+          modifiedInput = result.modifiedInput;
+        }
+      }
+
+      if (result.action === 'error') {
+        logger.warn('Parallel hook execution error', { error: result.error });
+      }
     }
 
     return {

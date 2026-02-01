@@ -20,6 +20,10 @@ import {
   AGENT_ALIASES,
 } from '../../agent/agentDefinition';
 import { taskDeduplication } from '../../agent/taskDeduplication';
+import {
+  SubagentContextBuilder,
+  getAgentContextLevel,
+} from '../../agent/subagentContextBuilder';
 
 // ============================================================================
 // P0: 参数验证与结构化输出
@@ -248,12 +252,43 @@ Parameters:
     }
 
     const agentName = agentConfig.name;
-    const systemPrompt = getAgentPrompt(agentConfig);
+    let systemPrompt = getAgentPrompt(agentConfig);
     const tools = getAgentTools(agentConfig);
     // P2: 使用动态迭代次数计算
     const maxIterations = getAgentDynamicMaxIterations(agentConfig, prompt);
     const permissionPreset = getAgentPermissionPreset(agentConfig);
     const maxBudget = getAgentMaxBudget(agentConfig);
+
+    // ========================================================================
+    // Phase 0: Subagent 上下文注入
+    // ========================================================================
+    // 借鉴 Claude Code: "Agents with access to current context can see the
+    // full conversation history before the tool call"
+    try {
+      // 确定上下文级别：优先使用 context 中的覆盖，否则使用 Agent 类型默认值
+      const contextLevel = context.contextLevel || getAgentContextLevel(subagentType);
+
+      // 只有在有足够上下文信息时才注入
+      if (context.messages && context.messages.length > 0) {
+        const contextBuilder = new SubagentContextBuilder({
+          sessionId: context.sessionId || 'unknown',
+          messages: context.messages,
+          contextLevel,
+          todos: context.todos,
+          modifiedFiles: context.modifiedFiles,
+        });
+
+        const subagentContext = await contextBuilder.build(prompt);
+        const contextPrompt = contextBuilder.formatForSystemPrompt(subagentContext);
+
+        if (contextPrompt) {
+          systemPrompt = systemPrompt + contextPrompt;
+        }
+      }
+    } catch (err) {
+      // 上下文注入失败不应阻止任务执行
+      console.warn('[Task] Failed to inject subagent context:', err);
+    }
 
     // P4: 获取子代理专用模型配置
     const subagentModelConfig = getSubagentModelConfig(subagentType);

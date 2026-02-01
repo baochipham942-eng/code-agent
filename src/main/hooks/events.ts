@@ -6,7 +6,8 @@
 /**
  * All supported hook event types
  *
- * 11 event types covering the full lifecycle of agent interactions
+ * 13 event types covering the full lifecycle of agent interactions
+ * Phase 2: Added PermissionRequest and SubagentStart events
  */
 export type HookEvent =
   | 'PreToolUse'
@@ -15,6 +16,8 @@ export type HookEvent =
   | 'UserPromptSubmit'
   | 'Stop'
   | 'SubagentStop'
+  | 'SubagentStart'      // Phase 2: 子 Agent 启动时触发
+  | 'PermissionRequest'  // Phase 2: 权限请求时触发
   | 'PreCompact'
   | 'Setup'
   | 'SessionStart'
@@ -31,6 +34,8 @@ export const HOOK_EVENT_DESCRIPTIONS: Record<HookEvent, string> = {
   UserPromptSubmit: 'Triggered when user submits a prompt, before processing.',
   Stop: 'Triggered when the agent is about to stop responding.',
   SubagentStop: 'Triggered when a subagent completes its task.',
+  SubagentStart: 'Triggered when a subagent is about to start.',
+  PermissionRequest: 'Triggered when a permission is requested.',
   PreCompact: 'Triggered before context compaction/summarization.',
   Setup: 'Triggered once during initial setup of the session.',
   SessionStart: 'Triggered when a new session begins.',
@@ -93,6 +98,36 @@ export interface StopContext extends HookEventContext {
 }
 
 /**
+ * Context for subagent start events (Phase 2)
+ */
+export interface SubagentStartContext extends HookEventContext {
+  event: 'SubagentStart';
+  /** The subagent type/role */
+  subagentType: string;
+  /** Unique subagent ID */
+  subagentId: string;
+  /** The task prompt */
+  taskPrompt: string;
+  /** Parent tool use ID (if any) */
+  parentToolUseId?: string;
+}
+
+/**
+ * Context for permission request events (Phase 2)
+ */
+export interface PermissionRequestContext extends HookEventContext {
+  event: 'PermissionRequest';
+  /** Type of permission being requested */
+  permissionType: 'read' | 'write' | 'execute' | 'network' | 'dangerous';
+  /** The resource being accessed */
+  resource: string;
+  /** Reason for the request */
+  reason?: string;
+  /** Tool requesting the permission */
+  toolName: string;
+}
+
+/**
  * Context for session events
  */
 export interface SessionContext extends HookEventContext {
@@ -130,6 +165,8 @@ export type AnyHookContext =
   | ToolHookContext
   | UserPromptContext
   | StopContext
+  | SubagentStartContext
+  | PermissionRequestContext
   | SessionContext
   | CompactContext
   | NotificationContext;
@@ -173,6 +210,22 @@ export const HOOK_ENV_VARS = {
 } as const;
 
 /**
+ * Type guard for ToolHookContext
+ */
+function isToolHookContext(context: AnyHookContext): context is ToolHookContext {
+  return context.event === 'PreToolUse' ||
+    context.event === 'PostToolUse' ||
+    context.event === 'PostToolUseFailure';
+}
+
+/**
+ * Type guard for PermissionRequestContext
+ */
+function isPermissionRequestContext(context: AnyHookContext): context is PermissionRequestContext {
+  return context.event === 'PermissionRequest';
+}
+
+/**
  * Create environment variables object from hook context
  */
 export function createHookEnvVars(context: AnyHookContext): Record<string, string> {
@@ -182,7 +235,8 @@ export function createHookEnvVars(context: AnyHookContext): Record<string, strin
     [HOOK_ENV_VARS.WORKING_DIR]: context.workingDirectory,
   };
 
-  if ('toolName' in context) {
+  // Tool hook contexts (PreToolUse, PostToolUse, PostToolUseFailure)
+  if (isToolHookContext(context)) {
     env[HOOK_ENV_VARS.TOOL_NAME] = context.toolName;
     env[HOOK_ENV_VARS.TOOL_INPUT] = context.toolInput;
     if (context.toolOutput) {
@@ -190,6 +244,16 @@ export function createHookEnvVars(context: AnyHookContext): Record<string, strin
     }
     if (context.errorMessage) {
       env[HOOK_ENV_VARS.ERROR_MESSAGE] = context.errorMessage;
+    }
+  }
+
+  // Permission request context
+  if (isPermissionRequestContext(context)) {
+    env[HOOK_ENV_VARS.TOOL_NAME] = context.toolName;
+    env['HOOK_PERMISSION_TYPE'] = context.permissionType;
+    env['HOOK_RESOURCE'] = context.resource;
+    if (context.reason) {
+      env['HOOK_REASON'] = context.reason;
     }
   }
 

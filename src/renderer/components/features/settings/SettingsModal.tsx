@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { X, Cpu, Palette, Info, Layers, Globe, Database, Download, Cloud, Plug, Settings, Brain, Sparkles, Radio, Bot } from 'lucide-react';
+import { X, Cpu, Palette, Info, Layers, Database, Download, Cloud, Plug, Settings, Brain, Sparkles, Radio, Bot } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
@@ -20,7 +20,6 @@ import { GeneralSettings } from './tabs/GeneralSettings';
 import { ModelSettings } from './tabs/ModelSettings';
 import { DisclosureSettings } from './tabs/DisclosureSettings';
 import { AppearanceSettings } from './tabs/AppearanceSettings';
-import { LanguageSettings } from './tabs/LanguageSettings';
 import { DataSettings } from './tabs/DataSettings';
 import { CloudSettings } from './tabs/CloudSettings';
 import { UpdateSettings } from './tabs/UpdateSettings';
@@ -35,7 +34,7 @@ import { AboutSettings } from './tabs/AboutSettings';
 // Types
 // ============================================================================
 
-type SettingsTab = 'general' | 'model' | 'disclosure' | 'appearance' | 'language' | 'cache' | 'cloud' | 'mcp' | 'skills' | 'channels' | 'agents' | 'memory' | 'update' | 'about';
+type SettingsTab = 'general' | 'model' | 'disclosure' | 'appearance' | 'cache' | 'cloud' | 'mcp' | 'skills' | 'channels' | 'agents' | 'memory' | 'update' | 'about';
 
 // ============================================================================
 // Component
@@ -71,7 +70,6 @@ export const SettingsModal: React.FC = () => {
     { id: 'model', label: t.settings.tabs.model, icon: <Cpu className="w-4 h-4" /> },
     { id: 'disclosure', label: t.settings.tabs.disclosure, icon: <Layers className="w-4 h-4" /> },
     { id: 'appearance', label: t.settings.tabs.appearance, icon: <Palette className="w-4 h-4" /> },
-    { id: 'language', label: t.settings.tabs.language, icon: <Globe className="w-4 h-4" /> },
     { id: 'cache', label: t.settings.tabs.data || '数据', icon: <Database className="w-4 h-4" /> },
     { id: 'cloud', label: t.settings.tabs.cloud || '云端', icon: <Cloud className="w-4 h-4" /> },
     { id: 'mcp', label: 'MCP', icon: <Plug className="w-4 h-4" /> },
@@ -138,7 +136,6 @@ export const SettingsModal: React.FC = () => {
               <DisclosureSettings level={disclosureLevel} onChange={setDisclosureLevel} />
             )}
             {activeTab === 'appearance' && <AppearanceSettings />}
-            {activeTab === 'language' && <LanguageSettings />}
             {activeTab === 'cache' && <DataSettings />}
             {activeTab === 'cloud' && <CloudSettings />}
             {activeTab === 'mcp' && <MCPSettings />}

@@ -11,10 +11,9 @@ import { persist } from 'zustand/middleware';
 
 /**
  * Application mode types
- * - developer: Full detail mode for developers (default)
- * - cowork: Simplified mode for collaboration with other AI agents
+ * - cowork: Simplified mode for collaboration with other AI agents (default)
  */
-export type AppMode = 'developer' | 'cowork';
+export type AppMode = 'cowork';
 
 interface ModeState {
   // Current mode
@@ -36,25 +35,22 @@ interface ModeState {
 export const useModeStore = create<ModeState>()(
   persist(
     (set, get) => ({
-      // Default to developer mode
-      mode: 'developer',
+      // Default to cowork mode (only mode)
+      mode: 'cowork',
 
-      // Set mode
+      // Set mode (kept for compatibility)
       setMode: (mode) => set({ mode }),
 
-      // Toggle between modes
-      toggleMode: () =>
-        set((state) => ({
-          mode: state.mode === 'developer' ? 'cowork' : 'developer',
-        })),
+      // Toggle (no-op, only cowork mode now)
+      toggleMode: () => {},
 
       // Helpers
-      isDeveloperMode: () => get().mode === 'developer',
-      isCoworkMode: () => get().mode === 'cowork',
+      isDeveloperMode: () => false,
+      isCoworkMode: () => true,
     }),
     {
       name: 'code-agent-mode',
-      version: 1,
+      version: 2, // Bump version to force migration
     }
   )
 );
@@ -65,9 +61,10 @@ export const useModeStore = create<ModeState>()(
 
 /**
  * Hook to check if currently in developer mode
+ * @deprecated Always returns false, only cowork mode is supported now
  */
 export function useIsDeveloperMode(): boolean {
-  return useModeStore((state) => state.mode === 'developer');
+  return false;
 }
 
 /**

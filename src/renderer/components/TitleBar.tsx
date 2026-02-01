@@ -2,11 +2,24 @@
 // TitleBar - Right side title bar with workspace path and task panel toggle
 // ============================================================================
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppStore } from '../stores/appStore';
+import { useSessionStore } from '../stores/sessionStore';
 import { useDisclosure } from '../hooks/useDisclosure';
 import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, GitBranch, FlaskConical } from 'lucide-react';
 import { IconButton } from './primitives';
+import { EvaluationPanel } from './features/evaluation/EvaluationPanel';
+
+// 奶酪图标组件
+const CheeseIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 12l10-9 10 9" />
+    <path d="M2 12h20v9H2z" />
+    <circle cx="7" cy="16" r="1.5" fill="currentColor" />
+    <circle cx="12" cy="14" r="1" fill="currentColor" />
+    <circle cx="16" cy="17" r="1.5" fill="currentColor" />
+  </svg>
+);
 
 export const TitleBar: React.FC = () => {
   const {
@@ -19,6 +32,12 @@ export const TitleBar: React.FC = () => {
     setShowLab,
     workingDirectory,
   } = useAppStore();
+
+  // 获取当前会话 ID
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+
+  // 评测面板状态
+  const [showEvaluation, setShowEvaluation] = useState(false);
 
   // DAG 面板权限检查
   const { dagPanelEnabled } = useDisclosure();
@@ -54,8 +73,21 @@ export const TitleBar: React.FC = () => {
         )}
       </div>
 
-      {/* Right: Lab + DAG Panel Toggle + Task Panel Toggle */}
+      {/* Right: Evaluation + Lab + DAG Panel Toggle + Task Panel Toggle */}
       <div className="flex items-center gap-1">
+        {/* Evaluation Button (奶酪图标) */}
+        {currentSessionId && (
+          <IconButton
+            icon={<CheeseIcon className="w-4 h-4" />}
+            aria-label="会话评测"
+            onClick={() => setShowEvaluation(true)}
+            variant="ghost"
+            size="md"
+            windowNoDrag
+            className="text-amber-400/70 hover:text-amber-400"
+          />
+        )}
+
         {/* Lab Button */}
         <IconButton
           icon={<FlaskConical className="w-4 h-4" />}
@@ -90,6 +122,14 @@ export const TitleBar: React.FC = () => {
           windowNoDrag
         />
       </div>
+
+      {/* Evaluation Panel */}
+      {showEvaluation && currentSessionId && (
+        <EvaluationPanel
+          sessionId={currentSessionId}
+          onClose={() => setShowEvaluation(false)}
+        />
+      )}
     </div>
   );
 };

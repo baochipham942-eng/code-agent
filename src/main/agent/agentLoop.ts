@@ -53,7 +53,7 @@ import {
   buildEnhancedSystemPromptWithProactiveContext,
   buildEnhancedSystemPromptAsync,
 } from './messageHandling/contextBuilder';
-import { getPromptForTask } from '../generation/prompts/builder';
+import { getPromptForTask, buildDynamicPrompt, type AgentMode } from '../generation/prompts/builder';
 import { AntiPatternDetector } from './antiPattern/detector';
 import { getCurrentTodos } from '../tools/planning/todoWrite';
 import { getIncompleteTasks } from '../tools/planning';
@@ -136,6 +136,9 @@ export class AgentLoop {
 
   // Plan Mode support
   private planModeActive: boolean = false;
+
+  // Dynamic Agent Mode (借鉴 Claude Code 模式系统)
+  private currentAgentMode: AgentMode = 'normal';
 
   // Langfuse tracing
   private sessionId: string;
@@ -446,6 +449,36 @@ export class AgentLoop {
       } catch (error) {
         // 并行判断失败不影响主流程
         logger.warn('[AgentLoop] Parallel judgment failed, continuing without hint', error);
+      }
+
+      // Dynamic Agent Mode Detection (借鉴 Claude Code 动态系统提醒)
+      const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+      logger.info(`[AgentLoop] Checking dynamic mode for gen${genNum}`);
+      if (genNum >= 3) {
+        try {
+          const dynamicResult = buildDynamicPrompt(this.generation.id, userMessage);
+          this.currentAgentMode = dynamicResult.mode;
+
+          logger.info(`[AgentLoop] Dynamic mode detected: ${dynamicResult.mode}`, {
+            features: dynamicResult.features,
+            parallelByDefault: dynamicResult.modeConfig.parallelByDefault,
+          });
+          logCollector.agent('INFO', `Dynamic mode: ${dynamicResult.mode}`, {
+            suggestedAgents: dynamicResult.modeConfig.suggestedAgents,
+            isMultiDimension: dynamicResult.features.isMultiDimension,
+          });
+
+          // 注入模式系统提醒（如果有）
+          if (dynamicResult.userMessage !== userMessage) {
+            const reminder = dynamicResult.userMessage.substring(userMessage.length).trim();
+            if (reminder) {
+              logger.info(`[AgentLoop] Injecting mode reminder (${reminder.length} chars)`);
+              this.injectSystemMessage(reminder);
+            }
+          }
+        } catch (error) {
+          logger.error('[AgentLoop] Dynamic mode detection failed:', error);
+        }
       }
     }
 

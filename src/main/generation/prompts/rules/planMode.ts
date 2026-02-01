@@ -21,36 +21,60 @@ export const PLAN_MODE_RULES = `
 - 用户给出了详细具体的指令
 - 纯研究/探索任务
 
-**进入 Plan Mode 后的流程：**
-1. **探索阶段**（只读）
-   - 使用 glob/grep/read_file 了解代码结构
-   - 识别相关文件和依赖
-   - 理解现有模式和约定
+### 5-阶段规划流程
 
-2. **设计阶段**
-   - 考虑多种实现方案
-   - 权衡利弊
-   - 选择最佳方案
+**⚠️ 重要约束：Plan Mode 是只读模式，禁止所有写入操作**
 
-3. **呈现计划**
-   - 使用 \`exit_plan_mode\` 提交计划
-   - 计划应包含：
-     - 修改的文件清单
-     - 每个文件的修改内容概述
-     - 实现步骤
-     - 潜在风险
+| 阶段 | 目标 | 动作 |
+|------|------|------|
+| Phase 1 | 并行探索 | 派发多个 explore 子代理同时探索 |
+| Phase 2 | 并行设计 | 派发 plan 子代理设计方案 |
+| Phase 3 | 审查整合 | 整合结果 + ask_user_question 澄清 |
+| Phase 4 | 写计划 | 生成最终计划文档 |
+| Phase 5 | 请求批准 | **必须**调用 exit_plan_mode |
 
-4. **等待确认**
-   - 用户确认后才开始执行
-   - 如果用户有疑问，继续讨论
-   - 如果用户不同意，修改计划
+**Phase 1: 并行探索（重要）**
+
+根据任务复杂度，同时派发多个 explore 子代理：
+\`\`\`
+task(subagent_type="explore", prompt="分析前端架构和组件结构")
+task(subagent_type="explore", prompt="分析后端 API 和数据流")
+task(subagent_type="explore", prompt="分析数据库模型和关系")
+\`\`\`
+
+**Phase 2: 并行设计**
+
+基于探索结果，派发 plan 子代理设计方案：
+\`\`\`
+task(subagent_type="plan", prompt="设计用户认证方案，考虑 JWT vs Session")
+\`\`\`
+
+**Phase 3: 审查整合**
+- 整合所有子代理的探索结果
+- 如有不确定点，使用 ask_user_question 澄清
+- 确保方案与现有架构一致
+
+**Phase 4: 写计划**
+
+计划应包含：
+- 修改的文件清单
+- 每个文件的修改内容概述
+- 实现步骤
+- 潜在风险
+
+**Phase 5: 请求批准**
+
+**必须**使用 \`exit_plan_mode\` 工具调用（不是文字描述）来请求用户批准。
 
 **示例对话：**
 用户："帮我实现用户认证功能"
 
 助手：[调用 enter_plan_mode]
-助手：[探索代码库，了解现有架构]
-助手：[调用 exit_plan_mode，提交计划]
+助手：[Phase 1 - 并行派发 explore 子代理探索代码库]
+助手：[Phase 2 - 派发 plan 子代理设计方案]
+助手：[Phase 3 - 整合结果]
+助手：[Phase 4 - 生成计划]
+助手：[Phase 5 - 调用 exit_plan_mode 提交计划]
 
 "## 实现计划
 

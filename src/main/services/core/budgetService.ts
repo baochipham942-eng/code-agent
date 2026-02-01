@@ -85,6 +85,12 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'glm-4v': { input: 0.1, output: 0.1 },
   'glm-4v-plus': { input: 0.1, output: 0.1 },
 
+  // Moonshot/Kimi - 包月套餐不计费
+  'kimi-k2.5': { input: 0, output: 0 },
+  'moonshot-v1-8k': { input: 0.12, output: 0.12 },
+  'moonshot-v1-32k': { input: 0.24, output: 0.24 },
+  'moonshot-v1-128k': { input: 0.6, output: 0.6 },
+
   // Default fallback
   'default': { input: 1, output: 3 },
 };

@@ -145,6 +145,11 @@ Output architectural decisions with clear reasoning.`,
     maxIterations: 15,
     canSpawnSubagents: false,
     tags: ['architecture', 'design', 'planning'],
+    // 使用 Kimi K2.5 - 128K 长上下文适合分析大型代码库架构
+    modelOverride: {
+      provider: 'moonshot',
+      model: 'kimi-k2.5',
+    },
   },
 
   debugger: {
@@ -167,6 +172,11 @@ Use print/log statements if needed to trace execution.`,
     maxIterations: 30,
     canSpawnSubagents: false,
     tags: ['debugging', 'analysis'],
+    // 使用 Kimi K2.5 - 128K 长上下文适合分析复杂调用链和日志
+    modelOverride: {
+      provider: 'moonshot',
+      model: 'kimi-k2.5',
+    },
   },
 
   documenter: {

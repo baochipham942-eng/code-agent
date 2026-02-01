@@ -19,7 +19,9 @@ export type ModelProvider =
 // 模型能力标签
 // - compact: 上下文压缩、摘要生成（便宜快速的模型）
 // - quick: 简单操作、格式化、快速判断（最便宜的模型）
-export type ModelCapability = 'code' | 'vision' | 'fast' | 'reasoning' | 'gui' | 'general' | 'search' | 'compact' | 'quick';
+// - longContext: 超长上下文支持（128K+）
+// - unlimited: 包月/无限制使用（不计入预算）
+export type ModelCapability = 'code' | 'vision' | 'fast' | 'reasoning' | 'gui' | 'general' | 'search' | 'compact' | 'quick' | 'longContext' | 'unlimited';
 
 /**
  * Response format configuration for structured output

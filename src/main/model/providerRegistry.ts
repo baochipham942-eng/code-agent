@@ -330,6 +330,15 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     baseUrl: 'https://api.moonshot.cn/v1',
     models: [
       {
+        id: 'kimi-k2.5',
+        name: 'Kimi K2.5 (包月套餐)',
+        capabilities: ['general', 'code', 'reasoning', 'longContext', 'unlimited'],
+        maxTokens: 131072,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+      },
+      {
         id: 'moonshot-v1-8k',
         name: 'Moonshot V1 8K',
         capabilities: ['general', 'code'],

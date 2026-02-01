@@ -77,17 +77,31 @@ export class ModelRouter {
 
   /**
    * 能力补充配置 - 当主模型缺少某能力时，使用哪个备用模型
+   * 优先使用包年/包月模型，节省按量付费成本
    */
   private fallbackModels: Record<ModelCapability, { provider: string; model: string }> = {
-    vision: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' },
-    reasoning: { provider: 'openrouter', model: 'deepseek/deepseek-r1-0528:free' },
-    code: { provider: 'deepseek', model: 'deepseek-chat' },
-    fast: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' },
-    general: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' },
-    gui: { provider: 'claude', model: 'claude-sonnet-4-20250514' },
+    // 视觉 - 智谱包年
+    vision: { provider: 'zhipu', model: 'glm-4v-plus' },
+    // 推理 - DeepSeek R1 (按需)
+    reasoning: { provider: 'deepseek', model: 'deepseek-reasoner' },
+    // 代码 - Kimi K2.5 包月
+    code: { provider: 'moonshot', model: 'kimi-k2.5' },
+    // 快速 - 智谱 Flash 包年
+    fast: { provider: 'zhipu', model: 'glm-4-flash' },
+    // 通用 - Kimi K2.5 包月
+    general: { provider: 'moonshot', model: 'kimi-k2.5' },
+    // GUI - 智谱视觉包年
+    gui: { provider: 'zhipu', model: 'glm-4v-plus' },
+    // 搜索 - Perplexity (按需)
     search: { provider: 'perplexity', model: 'sonar-pro' },
-    compact: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' },
-    quick: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' },
+    // 压缩 - Kimi K2.5 包月无成本
+    compact: { provider: 'moonshot', model: 'kimi-k2.5' },
+    // 快速判断 - 智谱 Flash 包年
+    quick: { provider: 'zhipu', model: 'glm-4-flash' },
+    // 长上下文 - Kimi K2.5 包月
+    longContext: { provider: 'moonshot', model: 'kimi-k2.5' },
+    // 无限制 - Kimi K2.5 包月
+    unlimited: { provider: 'moonshot', model: 'kimi-k2.5' },
   };
 
   /**

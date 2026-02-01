@@ -208,6 +208,7 @@ export async function callQwen(
 
 /**
  * Call Moonshot (Kimi) API
+ * 支持 Kimi K2.5 包月套餐（第三方代理）
  */
 export async function callMoonshot(
   messages: ModelMessage[],
@@ -215,7 +216,14 @@ export async function callMoonshot(
   config: ModelConfig,
   onStream?: StreamCallback
 ): Promise<ModelResponse> {
-  const baseUrl = config.baseUrl || 'https://api.moonshot.cn/v1';
+  // Kimi K2.5 使用单独的 API key 和 URL（包月套餐）
+  const isKimiK25 = config.model === 'kimi-k2.5';
+  const baseUrl = isKimiK25
+    ? (process.env.KIMI_K25_API_URL || 'https://cn.haioi.net/v1')
+    : (config.baseUrl || 'https://api.moonshot.cn/v1');
+  const apiKey = isKimiK25
+    ? (process.env.KIMI_K25_API_KEY || config.apiKey)
+    : config.apiKey;
 
   const moonshotTools = convertToolsToOpenAI(tools);
 
@@ -236,7 +244,7 @@ export async function callMoonshot(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(requestBody),
   });

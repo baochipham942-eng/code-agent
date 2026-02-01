@@ -18,6 +18,8 @@ export interface MergedHookConfig {
   hooks: HookDefinition[];
   /** Sources that contributed to this config */
   sources: Array<'global' | 'project'>;
+  /** Phase 2: Execute hooks in parallel */
+  parallel: boolean;
 }
 
 /**
@@ -112,11 +114,15 @@ function mergeGroup(
   // Deduplicate hooks (by command/prompt string)
   hooks = deduplicateHooks(hooks);
 
+  // Phase 2: 如果任何配置标记为并行，则整个组并行执行
+  const parallel = sorted.some(config => config.parallel);
+
   return {
     event: first.event,
     matcher: first.matcher,
     hooks,
     sources: Array.from(sources),
+    parallel,
   };
 }
 

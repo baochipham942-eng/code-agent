@@ -22,6 +22,10 @@ import {
   getAgentPermissionPreset,
   getAgentMaxBudget,
 } from '../../agent/agentDefinition';
+import {
+  SubagentContextBuilder,
+  getAgentContextLevel,
+} from '../../agent/subagentContextBuilder';
 
 interface SpawnedAgent {
   id: string;
@@ -194,6 +198,37 @@ Parameters:
       agentName = agentConfig.name;
       systemPrompt = customPrompt || getAgentPrompt(agentConfig);
       tools = customTools || getAgentTools(agentConfig);
+    }
+
+    // ========================================================================
+    // Phase 0: Subagent 上下文注入
+    // ========================================================================
+    // 借鉴 Claude Code: "Agents with access to current context can see the
+    // full conversation history before the tool call"
+    try {
+      // 确定上下文级别
+      const contextLevel = context.contextLevel || (role ? getAgentContextLevel(role) : 'relevant');
+
+      // 只有在有足够上下文信息时才注入
+      if (context.messages && context.messages.length > 0) {
+        const contextBuilder = new SubagentContextBuilder({
+          sessionId: context.sessionId || 'unknown',
+          messages: context.messages,
+          contextLevel,
+          todos: context.todos,
+          modifiedFiles: context.modifiedFiles,
+        });
+
+        const subagentContext = await contextBuilder.build(task);
+        const contextPrompt = contextBuilder.formatForSystemPrompt(subagentContext);
+
+        if (contextPrompt) {
+          systemPrompt = systemPrompt + contextPrompt;
+        }
+      }
+    } catch (err) {
+      // 上下文注入失败不应阻止任务执行
+      console.warn('[SpawnAgent] Failed to inject subagent context:', err);
     }
 
     // Generate agent ID

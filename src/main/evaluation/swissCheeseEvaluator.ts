@@ -252,22 +252,23 @@ export class SwissCheeseEvaluator {
         passed: parsed.passed ?? true,
       };
     } catch (error) {
-      logger.warn(`Reviewer ${config.name} failed`, { error });
-      // 返回默认中等评分
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      logger.warn(`Reviewer ${config.name} failed`, { error: errorMsg });
+      // 返回失败状态（不给默认分，标记为失败）
       return {
         reviewerId: config.id,
         reviewerName: config.name,
         perspective: config.perspective,
         scores: {
-          taskCompletion: 70,
-          responseQuality: 70,
-          codeQuality: 70,
-          efficiency: 70,
-          safety: 70,
+          taskCompletion: 0,
+          responseQuality: 0,
+          codeQuality: 0,
+          efficiency: 0,
+          safety: 0,
         },
-        findings: ['评审员执行失败'],
-        concerns: [],
-        passed: true,
+        findings: [`评审员执行失败: ${errorMsg}`],
+        concerns: ['无法完成评测，请检查 API 配置'],
+        passed: false,
       };
     }
   }
@@ -381,13 +382,22 @@ export class SwissCheeseEvaluator {
       allReasons.codeQuality.push('[代码验证] 检测到语法错误');
     }
 
+    // 检查是否所有评审员都失败了
+    const allFailed = reviewerResults.every(r => !r.passed && r.scores.taskCompletion === 0);
+    if (allFailed) {
+      logger.error('All reviewers failed - evaluation cannot complete');
+    }
+
     // 瑞士奶酪模型：取最保守的分数（最低分），但要求多数通过
     // 这样任何一层发现问题都会体现出来
     const aggregateScore = (scores: number[]): number => {
-      if (scores.length === 0) return 70;
+      if (scores.length === 0) return 0; // 没有数据返回 0，不是默认 70
+      // 过滤掉失败的评审员（分数为 0）
+      const validScores = scores.filter(s => s > 0);
+      if (validScores.length === 0) return 0; // 全部失败
       // 使用加权平均，但给最低分更高权重（体现瑞士奶酪的保守性）
-      const min = Math.min(...scores);
-      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      const min = Math.min(...validScores);
+      const avg = validScores.reduce((a, b) => a + b, 0) / validScores.length;
       return Math.round(min * 0.4 + avg * 0.6);
     };
 
@@ -538,23 +548,39 @@ export class SwissCheeseEvaluator {
    */
   private async callLLM(systemPrompt: string, userPrompt: string): Promise<string | null> {
     const configService = getConfigService();
+
+    // 从配置获取智谱 API key
+    const settings = configService.getSettings();
+    const zhipuConfig = settings?.models?.providers?.zhipu;
+
+    if (!zhipuConfig?.apiKey) {
+      throw new Error('智谱 API Key 未配置，请在设置中添加');
+    }
+
     // 默认使用 GLM（智谱）主力模型
     const provider = 'zhipu';
     const model = 'glm-4';
 
-    logger.debug('Calling LLM for review', { provider, model });
+    logger.debug('Calling LLM for review', { provider, model, hasApiKey: !!zhipuConfig.apiKey });
 
-    const result = await this.modelRouter.chat({
-      provider: provider as 'deepseek' | 'openai' | 'claude' | 'zhipu',
-      model,
-      messages: [
+    // 直接调用 inference 而不是 chat，确保传入 apiKey
+    const response = await this.modelRouter.inference(
+      [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      maxTokens: 1500,
-    });
+      [],
+      {
+        provider,
+        model,
+        apiKey: zhipuConfig.apiKey,
+        baseUrl: zhipuConfig.baseUrl,
+        maxTokens: 1500,
+        temperature: 0.3,
+      }
+    );
 
-    return result.content;
+    return response.content ?? null;
   }
 
   /**

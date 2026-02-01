@@ -235,29 +235,15 @@ export class AgentOrchestrator {
       }
     };
 
-    // Check if deep research mode is requested or should be auto-detected
+    // Check if deep research mode is explicitly requested
     const mode = options?.mode ?? 'normal';
 
     if (mode === 'deep-research') {
-      // Manual deep research mode
+      // Manual deep research mode (user explicitly requested)
       await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig, generation);
-    } else if (this.researchUserSettings.autoDetect && mode === 'normal') {
-      // Semantic auto-detection: check if research is needed
-      const shouldResearch = await this.checkAndRunSemanticResearch(
-        content,
-        options?.reportStyle,
-        sessionAwareOnEvent,
-        modelConfig,
-        generation,
-        sessionId
-      );
-
-      if (!shouldResearch) {
-        // Research not triggered, run normal mode
-        await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, generation, sessionId);
-      }
     } else {
-      // Normal Mode: Create and run agent loop
+      // Normal Mode: 指挥家统一处理任务分类和执行
+      // 不再前置 LLM 调用做意图分析，由 AgentLoop 在第一轮直接判断
       await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, generation, sessionId);
     }
   }

@@ -38,7 +38,8 @@
     "dev:cli": "esbuild src/cli/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:keytar --external:isolated-vm --external:tree-sitter --external:tree-sitter-typescript --external:playwright --external:playwright-core --external:pptxgenjs --external:mammoth --external:exceljs --external:qrcode --external:pdfkit --external:sharp --external:docx --external:node-pty --outfile=dist/cli/index.cjs --sourcemap",
     "cli": "node dist/cli/index.cjs",
     "mcp-server": "node dist/mcp-server.js",
-    "docs": "typedoc"
+    "docs": "typedoc",
+    "rebuild-native": "bash scripts/rebuild-native.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",

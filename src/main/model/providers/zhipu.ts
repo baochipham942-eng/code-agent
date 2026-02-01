@@ -92,6 +92,7 @@ function callZhipuStream(
         Accept: 'text/event-stream',
       },
       agent: httpsAgent,
+      timeout: 300000, // 5 分钟超时
     };
 
     logger.debug(`[智谱] 发起请求到: ${url.hostname}${url.pathname}`);
@@ -276,6 +277,11 @@ function callZhipuStream(
     req.on('error', (err) => {
       logger.error('[智谱] 请求错误:', err);
       reject(err);
+    });
+
+    req.on('timeout', () => {
+      logger.error('[智谱] 请求超时 (5分钟)');
+      req.destroy(new Error('智谱 API 请求超时 (5分钟)'));
     });
 
     req.write(JSON.stringify(requestBody));

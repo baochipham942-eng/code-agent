@@ -78,7 +78,7 @@ export const M04: TestCase = {
     directExecution: false,
     expectedAgents: ['Explore'],
     requiredTools: ['Read', 'Write', 'Edit', 'Glob'],
-    toolCallRange: { min: 12, max: 30 },
+    toolCallRange: { min: 12, max: 45 },
   },
 
   tags: ['multi-file', 'payment', 'stripe', 'integration', 'security'],

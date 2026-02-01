@@ -58,6 +58,15 @@ interface ExtendedSubjectiveAssessment extends SubjectiveAssessment {
   };
 }
 
+// SSE 事件摘要类型
+interface EventSummary {
+  eventStats: Record<string, number>;
+  toolCalls: Array<{ name: string; success: boolean; duration?: number }>;
+  thinkingContent: string[];
+  errorEvents: Array<{ type: string; message: string }>;
+  timeline: Array<{ time: number; type: string; summary: string }>;
+}
+
 export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props) {
   const [status, setStatus] = useState<PanelStatus>('loading_stats');
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +77,8 @@ export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props
   const [previousEvaluations, setPreviousEvaluations] = useState<HistoricalEvaluation[]>([]);
   // 主观评测结果
   const [subjective, setSubjective] = useState<ExtendedSubjectiveAssessment | null>(null);
+  // SSE 事件摘要
+  const [eventSummary, setEventSummary] = useState<EventSummary | null>(null);
 
   // 加载客观指标和历史评测
   const loadSessionAnalysis = useCallback(async () => {
@@ -86,6 +97,7 @@ export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props
 
       setObjective(analysis.objective);
       setPreviousEvaluations(analysis.previousEvaluations || []);
+      setEventSummary(analysis.eventSummary || null);
 
       // 如果有历史评测，尝试加载最新的主观评测
       if (analysis.latestEvaluation?.subjective) {
@@ -192,6 +204,72 @@ export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props
                     {name}: {count}
                   </span>
                 ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // 渲染 SSE 事件摘要
+  const renderEventSummary = () => {
+    if (!eventSummary) return null;
+
+    const totalEvents = Object.values(eventSummary.eventStats).reduce((a, b) => a + b, 0);
+
+    return (
+      <div className="space-y-3">
+        {/* 事件统计 */}
+        <div className="bg-zinc-800/30 rounded-lg p-3">
+          <div className="text-xs text-gray-400 mb-2">SSE 事件流 ({totalEvents} 个事件)</div>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(eventSummary.eventStats)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 8)
+              .map(([type, count]) => (
+                <span
+                  key={type}
+                  className="text-xs px-2 py-1 rounded bg-indigo-500/20 text-indigo-300"
+                >
+                  {type}: {count}
+                </span>
+              ))}
+          </div>
+        </div>
+
+        {/* 错误事件 */}
+        {eventSummary.errorEvents.length > 0 && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+            <div className="text-xs text-red-400 mb-2">错误事件 ({eventSummary.errorEvents.length})</div>
+            <div className="space-y-1">
+              {eventSummary.errorEvents.slice(0, 3).map((err, i) => (
+                <div key={i} className="text-xs text-red-300">• {err.message}</div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 思考内容预览 */}
+        {eventSummary.thinkingContent.length > 0 && (
+          <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3">
+            <div className="text-xs text-purple-400 mb-2">AI 思考过程 ({eventSummary.thinkingContent.length} 段)</div>
+            <div className="text-xs text-purple-300/80 max-h-20 overflow-y-auto">
+              {eventSummary.thinkingContent[0]?.slice(0, 200)}...
+            </div>
+          </div>
+        )}
+
+        {/* 时间线预览 */}
+        {eventSummary.timeline.length > 0 && (
+          <div className="bg-zinc-800/30 rounded-lg p-3">
+            <div className="text-xs text-gray-400 mb-2">执行时间线 (最近 {Math.min(5, eventSummary.timeline.length)} 步)</div>
+            <div className="space-y-1">
+              {eventSummary.timeline.slice(-5).map((item, i) => (
+                <div key={i} className="text-xs text-gray-400 flex items-center gap-2">
+                  <span className="text-gray-600">{new Date(item.time).toLocaleTimeString()}</span>
+                  <span className="text-gray-300">{item.summary}</span>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -430,6 +508,17 @@ export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props
             </div>
             {renderObjectiveMetrics()}
           </div>
+
+          {/* SSE 事件流（如果有） */}
+          {eventSummary && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-medium text-gray-400">📡 SSE 事件流</h3>
+                <span className="text-xs text-gray-600">完整执行日志</span>
+              </div>
+              {renderEventSummary()}
+            </div>
+          )}
 
           {/* 历史评测 */}
           {previousEvaluations.length > 0 && (

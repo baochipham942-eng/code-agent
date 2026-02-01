@@ -12,6 +12,7 @@ import type {
   MessageRecord,
   SessionAnalysis,
 } from '../../shared/types/sessionAnalytics';
+import { getSessionEventService } from './sessionEventService';
 
 const logger = createLogger('SessionAnalyticsService');
 
@@ -348,12 +349,19 @@ export class SessionAnalyticsService {
   }
 
   /**
-   * 获取会话的完整分析数据（客观指标 + 历史评测）
+   * 获取会话的完整分析数据（客观指标 + 历史评测 + SSE事件摘要）
    */
   async getSessionAnalysis(sessionId: string): Promise<{
     objective: ObjectiveMetrics;
     previousEvaluations: { id: string; timestamp: number; overallScore: number; grade: string }[];
     latestEvaluation: SessionAnalysis | null;
+    eventSummary: {
+      eventStats: Record<string, number>;
+      toolCalls: Array<{ name: string; success: boolean; duration?: number }>;
+      thinkingContent: string[];
+      errorEvents: Array<{ type: string; message: string }>;
+      timeline: Array<{ time: number; type: string; summary: string }>;
+    } | null;
   }> {
     const [objective, previousEvaluations, latestEvaluation] = await Promise.all([
       this.calculateObjectiveMetrics(sessionId),
@@ -361,10 +369,20 @@ export class SessionAnalyticsService {
       this.getLatestEvaluation(sessionId),
     ]);
 
+    // 获取 SSE 事件摘要
+    let eventSummary = null;
+    try {
+      const eventService = getSessionEventService();
+      eventSummary = eventService.buildEventSummaryForEvaluation(sessionId);
+    } catch {
+      // 事件服务可能未初始化，静默失败
+    }
+
     return {
       objective,
       previousEvaluations,
       latestEvaluation,
+      eventSummary,
     };
   }
 }

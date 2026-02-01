@@ -69,6 +69,7 @@ export const GEN7_TOOLS = `
 | "分析认证流程" | task(explore) | 直接 read_file |
 | 安全审计 | task(code-review) | 直接读文件分析 |
 | 代码审查 | task(code-review) | 直接读文件审查 |
+| **多维度审计** | **并行派发 3 个 task** | 串行逐个执行 |
 
 **例外**（可直接使用基础工具）：
 - 精确查找：已知文件路径、类名、函数名
@@ -87,6 +88,13 @@ export const GEN7_TOOLS = `
 \`\`\`
 task(subagent_type="explore", prompt="搜索所有认证相关的中间件文件，分析认证流程")
 task(subagent_type="code-review", prompt="审查 src/auth 目录的安全性，找出漏洞")
+\`\`\`
+
+**并行派发示例**（多维度任务时在单个响应中同时调用）：
+\`\`\`
+task(subagent_type="code-review", prompt="安全审计：扫描 API 端点的认证问题")
+task(subagent_type="explore", prompt="性能分析：找出 N+1 查询和慢查询")
+task(subagent_type="code-review", prompt="代码质量：检查 any 类型使用")
 \`\`\`
 
 ### 能力边界

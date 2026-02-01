@@ -96,7 +96,10 @@ const REVIEWER_CONFIGS = [
 4. 是否有潜在的 bug 或边界情况未处理？
 5. 代码可读性如何？
 
-如果对话中没有代码，给予中等分数（70）并说明原因。`,
+重要：如果对话中没有代码（如简单问候、闲聊），则：
+- 给予 codeQuality 分数 80（不适用）
+- passed 设为 true（没有代码可审查不算失败）
+- findings 说明"对话中无代码，不适用代码审查"`,
   },
   {
     id: 'security_auditor',
@@ -547,23 +550,18 @@ export class SwissCheeseEvaluator {
    * 调用 LLM
    */
   private async callLLM(systemPrompt: string, userPrompt: string): Promise<string | null> {
-    const configService = getConfigService();
+    // 使用 Kimi K2.5（包月套餐，支持并发）
+    const provider = 'moonshot';
+    const model = 'kimi-k2.5';
+    const baseUrl = process.env.KIMI_K25_API_URL || 'https://cn.haioi.net/v1';
+    const apiKey = process.env.KIMI_K25_API_KEY;
 
-    // 从配置获取智谱 API key
-    const settings = configService.getSettings();
-    const zhipuConfig = settings?.models?.providers?.zhipu;
-
-    if (!zhipuConfig?.apiKey) {
-      throw new Error('智谱 API Key 未配置，请在设置中添加');
+    if (!apiKey) {
+      throw new Error('Kimi K2.5 API Key 未配置，请设置 KIMI_K25_API_KEY 环境变量');
     }
 
-    // 默认使用 GLM（智谱）主力模型
-    const provider = 'zhipu';
-    const model = 'glm-4';
+    logger.info(`Evaluation using model: ${provider}/${model}`, { baseUrl });
 
-    logger.debug('Calling LLM for review', { provider, model, hasApiKey: !!zhipuConfig.apiKey });
-
-    // 直接调用 inference 而不是 chat，确保传入 apiKey
     const response = await this.modelRouter.inference(
       [
         { role: 'system', content: systemPrompt },
@@ -573,8 +571,8 @@ export class SwissCheeseEvaluator {
       {
         provider,
         model,
-        apiKey: zhipuConfig.apiKey,
-        baseUrl: zhipuConfig.baseUrl,
+        apiKey,
+        baseUrl,
         maxTokens: 1500,
         temperature: 0.3,
       }

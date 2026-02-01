@@ -16,6 +16,7 @@ import { createLogger } from '../services/infra/logger';
 import { getCloudConfigService, type MCPServerCloudConfig } from '../services/cloud/cloudConfigService';
 import { getConfigService } from '../services/core/configService';
 import { MCP_TIMEOUTS } from '../../shared/constants';
+import { getToolSearchService } from '../tools/search';
 
 // Import types from the new types module
 import type {
@@ -598,6 +599,35 @@ export class MCPClient {
     } catch {
       logger.debug(`Server ${serverName} does not support prompts`);
     }
+
+    // 注册 MCP 工具到 ToolSearchService
+    this.registerMCPToolsToSearch(serverName);
+  }
+
+  /**
+   * 将 MCP 工具注册到 ToolSearchService
+   * 使模型可以通过 tool_search 发现 MCP 工具
+   */
+  private registerMCPToolsToSearch(serverName: string): void {
+    try {
+      const toolSearchService = getToolSearchService();
+      const serverTools = this.tools.filter(t => t.serverName === serverName);
+
+      const mcpMetas = serverTools.map(tool => ({
+        name: `mcp__${serverName}__${tool.name}`,
+        shortDescription: tool.description || `MCP tool from ${serverName}`,
+        tags: ['mcp', 'network'] as ('mcp' | 'network')[],
+        aliases: [tool.name, serverName],
+        source: 'mcp' as const,
+        mcpServer: serverName,
+        generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
+      }));
+
+      toolSearchService.registerMCPTools(mcpMetas);
+      logger.debug(`Registered ${mcpMetas.length} MCP tools from ${serverName} to ToolSearchService`);
+    } catch (error) {
+      logger.warn(`Failed to register MCP tools to ToolSearchService`, { serverName, error });
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -613,10 +643,11 @@ export class MCPClient {
 
   /**
    * 将 MCP 工具转换为内部工具定义格式
+   * 命名格式：mcp__serverName__toolName（双下划线，与 Claude Code 一致）
    */
   getToolDefinitions(): ToolDefinition[] {
     return this.tools.map((tool) => ({
-      name: `mcp_${tool.serverName}_${tool.name}`,
+      name: `mcp__${tool.serverName}__${tool.name}`,
       description: `[MCP:${tool.serverName}] ${tool.description}`,
       inputSchema: tool.inputSchema as ToolDefinition['inputSchema'],
       generations: ['gen4'] as const,

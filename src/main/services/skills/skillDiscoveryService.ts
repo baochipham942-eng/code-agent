@@ -10,6 +10,7 @@ import { parseSkillMd, hasSkillMd } from './skillParser';
 import { bridgeCloudSkill } from './skillBridge';
 import { getCloudConfigService } from '../cloud';
 import { createLogger } from '../infra/logger';
+import { getToolSearchService } from '../../tools/search';
 
 const logger = createLogger('SkillDiscoveryService');
 
@@ -68,6 +69,32 @@ class SkillDiscoveryService {
       total: this.skills.size,
       skills: Array.from(this.skills.keys()),
     });
+
+    // 注册 Skills 到 ToolSearchService，支持通过 tool_search 发现
+    this.registerSkillsToToolSearch();
+  }
+
+  /**
+   * 将发现的 Skills 注册到 ToolSearchService
+   * 使模型可以通过 tool_search 发现可用的 skills
+   */
+  private registerSkillsToToolSearch(): void {
+    try {
+      const toolSearchService = getToolSearchService();
+      toolSearchService.clearSkills(); // 清除旧的 skills
+
+      const skillsToRegister = Array.from(this.skills.values()).map(skill => ({
+        name: skill.name,
+        description: skill.description,
+      }));
+
+      toolSearchService.registerSkills(skillsToRegister);
+      logger.debug('Registered skills to ToolSearchService', {
+        count: skillsToRegister.length,
+      });
+    } catch (error) {
+      logger.warn('Failed to register skills to ToolSearchService', { error });
+    }
   }
 
   /**

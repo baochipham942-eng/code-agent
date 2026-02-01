@@ -40,3 +40,6 @@ export * from './multiagent';
 
 // Evolution tools
 export * from './evolution';
+
+// Tool Search (延迟加载)
+export * from './search';

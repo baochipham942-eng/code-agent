@@ -41,6 +41,10 @@ export interface AgentLoopConfig {
   structuredOutput?: StructuredOutputConfig;
   /** 启用步骤分解执行模式（针对 DeepSeek 等在多步骤任务中容易遗漏步骤的模型） */
   stepByStepMode?: boolean;
+  /** 自动批准 plan mode 计划（用于 CLI/测试场景） */
+  autoApprovePlan?: boolean;
+  /** 启用工具延迟加载（减少 token 使用） */
+  enableToolDeferredLoading?: boolean;
 }
 
 /**

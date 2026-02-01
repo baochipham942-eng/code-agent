@@ -175,6 +175,12 @@ export class AgentLoop {
   // Step-by-step execution mode (for models like DeepSeek that struggle with multi-step tasks)
   private stepByStepMode: boolean = false;
 
+  // Auto-approve plan mode (for CLI/testing)
+  private autoApprovePlan: boolean = false;
+
+  // Tool deferred loading (reduce token usage)
+  private enableToolDeferredLoading: boolean = false;
+
   constructor(config: AgentLoopConfig) {
     this.generation = config.generation;
     this.modelConfig = config.modelConfig;
@@ -203,6 +209,12 @@ export class AgentLoop {
 
     // Step-by-step mode (auto-enable for models that need it)
     this.stepByStepMode = config.stepByStepMode ?? this.shouldAutoEnableStepByStep();
+
+    // Auto-approve plan mode (for CLI/testing)
+    this.autoApprovePlan = config.autoApprovePlan ?? false;
+
+    // Tool deferred loading (reduce token usage)
+    this.enableToolDeferredLoading = config.enableToolDeferredLoading ?? false;
 
     // Initialize refactored modules
     this.circuitBreaker = new CircuitBreaker();
@@ -1409,6 +1421,22 @@ export class AgentLoop {
         );
       }
 
+      // Auto-approve plan mode (for CLI/testing)
+      if (
+        this.autoApprovePlan &&
+        toolCall.name === 'exit_plan_mode' &&
+        result.success &&
+        result.metadata?.requiresUserConfirmation
+      ) {
+        logger.info('[AgentLoop] Auto-approving plan (autoApprovePlan enabled)');
+        this.messages.push({
+          id: `auto-approve-${Date.now()}`,
+          role: 'user',
+          content: '确认执行，请按计划开始实现。',
+          timestamp: Date.now(),
+        });
+      }
+
       // Planning Post-Tool Hook
       if (this.enableHooks && this.planningService) {
         try {
@@ -1514,8 +1542,19 @@ export class AgentLoop {
   // --------------------------------------------------------------------------
 
   private async inference(): Promise<ModelResponse> {
-    const tools = this.toolRegistry.getToolDefinitions(this.generation.id);
-    logger.debug(` Tools for ${this.generation.id}:`, tools.map(t => t.name));
+    // 根据配置决定使用全量工具还是核心+延迟工具
+    let tools;
+    if (this.enableToolDeferredLoading) {
+      // 使用核心工具 + 已加载的延迟工具
+      const coreTools = this.toolRegistry.getCoreToolDefinitions(this.generation.id);
+      const loadedDeferredTools = this.toolRegistry.getLoadedDeferredToolDefinitions(this.generation.id);
+      tools = [...coreTools, ...loadedDeferredTools];
+      logger.debug(`Tools for ${this.generation.id} (deferred loading): ${coreTools.length} core + ${loadedDeferredTools.length} deferred = ${tools.length} total`);
+    } else {
+      // 传统模式：发送所有工具
+      tools = this.toolRegistry.getToolDefinitions(this.generation.id);
+      logger.debug(`Tools for ${this.generation.id}:`, tools.map(t => t.name));
+    }
 
     let modelMessages = this.buildModelMessages();
     logger.debug('[AgentLoop] Model messages count:', modelMessages.length);
@@ -1816,6 +1855,24 @@ export class AgentLoop {
     }
 
     systemPrompt = injectWorkingDirectoryContext(systemPrompt, this.workingDirectory, this.isDefaultWorkingDirectory);
+
+    // 注入延迟工具提示
+    if (this.enableToolDeferredLoading) {
+      const deferredToolsSummary = this.toolRegistry.getDeferredToolsSummary(this.generation.id);
+      if (deferredToolsSummary) {
+        systemPrompt += `
+
+<deferred-tools>
+以下工具可通过 tool_search 发现和加载：
+${deferredToolsSummary}
+
+使用方法：
+- 关键字搜索：tool_search("pdf") → 搜索 PDF 相关工具
+- 直接选择：tool_search("select:web_fetch") → 加载指定工具
+- 必须前缀：tool_search("+mcp search") → 只搜索 MCP 相关工具
+</deferred-tools>`;
+      }
+    }
 
     modelMessages.push({
       role: 'system',

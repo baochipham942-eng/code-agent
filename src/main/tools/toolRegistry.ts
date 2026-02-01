@@ -8,6 +8,7 @@ import type {
   JSONSchema,
 } from '../../shared/types';
 import { getCloudConfigService } from '../services/cloud';
+import { toolSearchTool, CORE_TOOLS, getToolSearchService } from './search';
 
 // Import tool definitions - organized by function
 import {
@@ -319,6 +320,9 @@ export class ToolRegistry {
     this.register(toolCreateTool);
     this.register(selfEvaluateTool);
     this.register(learnPatternTool);
+
+    // Tool Search (核心工具，始终可用)
+    this.register(toolSearchTool);
   }
 
   /**
@@ -422,6 +426,113 @@ export class ToolRegistry {
       requiresPermission: tool.requiresPermission,
       permissionLevel: tool.permissionLevel,
     };
+  }
+
+  // ============================================================================
+  // ToolSearch 延迟加载支持 (v0.17+)
+  // ============================================================================
+
+  /**
+   * 获取核心工具定义（始终发送给模型）
+   *
+   * 核心工具是最常用的基础工具，始终包含在模型请求中。
+   * 其他工具需要通过 tool_search 发现和加载。
+   *
+   * @param generationId - 代际 ID
+   * @returns 核心工具定义数组
+   */
+  getCoreToolDefinitions(generationId: GenerationId): ToolDefinition[] {
+    const cloudToolMeta = getCloudConfigService().getAllToolMeta();
+
+    return this.getForGeneration(generationId)
+      .filter(tool => CORE_TOOLS.includes(tool.name) || tool.isCore === true)
+      .map(tool => {
+        const cloudMeta = cloudToolMeta[tool.name];
+        const description = cloudMeta?.description || tool.description;
+
+        return {
+          name: tool.name,
+          description,
+          inputSchema: tool.inputSchema,
+          generations: tool.generations,
+          requiresPermission: tool.requiresPermission,
+          permissionLevel: tool.permissionLevel,
+        };
+      });
+  }
+
+  /**
+   * 获取延迟工具定义
+   *
+   * 延迟工具不会默认发送给模型，需要通过 tool_search 加载后才可用。
+   *
+   * @param generationId - 代际 ID
+   * @returns 延迟工具定义数组
+   */
+  getDeferredToolDefinitions(generationId: GenerationId): ToolDefinition[] {
+    const cloudToolMeta = getCloudConfigService().getAllToolMeta();
+
+    return this.getForGeneration(generationId)
+      .filter(tool => !CORE_TOOLS.includes(tool.name) && tool.isCore !== true)
+      .map(tool => {
+        const cloudMeta = cloudToolMeta[tool.name];
+        const description = cloudMeta?.description || tool.description;
+
+        return {
+          name: tool.name,
+          description,
+          inputSchema: tool.inputSchema,
+          generations: tool.generations,
+          requiresPermission: tool.requiresPermission,
+          permissionLevel: tool.permissionLevel,
+        };
+      });
+  }
+
+  /**
+   * 获取已加载的延迟工具定义
+   *
+   * 只返回已通过 tool_search 加载的延迟工具。
+   *
+   * @param generationId - 代际 ID
+   * @returns 已加载的延迟工具定义数组
+   */
+  getLoadedDeferredToolDefinitions(generationId: GenerationId): ToolDefinition[] {
+    const toolSearchService = getToolSearchService();
+    const loadedNames = toolSearchService.getLoadedDeferredTools();
+    const cloudToolMeta = getCloudConfigService().getAllToolMeta();
+
+    return loadedNames
+      .map(name => this.get(name))
+      .filter((tool): tool is Tool =>
+        tool !== undefined && tool.generations.includes(generationId)
+      )
+      .map(tool => {
+        const cloudMeta = cloudToolMeta[tool.name];
+        const description = cloudMeta?.description || tool.description;
+
+        return {
+          name: tool.name,
+          description,
+          inputSchema: tool.inputSchema,
+          generations: tool.generations,
+          requiresPermission: tool.requiresPermission,
+          permissionLevel: tool.permissionLevel,
+        };
+      });
+  }
+
+  /**
+   * 获取延迟工具摘要（用于 system prompt 提示）
+   *
+   * 返回延迟工具名称列表，提示模型可通过 tool_search 发现这些工具。
+   *
+   * @param generationId - 代际 ID
+   * @returns 延迟工具名称列表字符串
+   */
+  getDeferredToolsSummary(generationId: GenerationId): string {
+    const deferred = this.getDeferredToolDefinitions(generationId);
+    return deferred.map(t => t.name).join('\n');
   }
 }
 

@@ -29,58 +29,22 @@ function escapeXml(text: string): string {
 }
 
 /**
- * 动态生成工具描述，包含可用 Skills 列表
+ * 生成 skill 工具的简化描述
+ * 不再嵌入完整 skill 列表，通过 tool_search 发现具体 skills
  */
 function generateDescription(): string {
-  const discoveryService = getSkillDiscoveryService();
+  return `执行已注册的 skill。
 
-  // 如果服务未初始化，返回基础描述
-  if (!discoveryService.isInitialized()) {
-    return `Execute a skill within the main conversation.
+Skills 是专业化的任务能力，如 commit、review-pr、test 等。
 
-Use this tool to invoke skills. Skills are loaded from:
-- ~/.claude/skills/ (user skills)
-- .claude/skills/ (project skills)
-- Built-in skills
+**发现 skills**：使用 tool_search("+skill") 或 tool_search("commit") 搜索可用 skills。
 
-Note: Skills not yet loaded. They will be available after initialization.`;
-  }
+**使用方式**：skill({ command: "skill_name", args: "可选参数" })
 
-  const skills = discoveryService.getSkillsForContext();
-
-  if (skills.length === 0) {
-    return `Execute a skill within the main conversation.
-
-No skills currently available. Add skills to:
-- ~/.claude/skills/ (user skills)
-- .claude/skills/ (project skills)`;
-  }
-
-  // 构建 XML 格式的 skills 列表
-  const skillsXml = skills
-    .map(
-      (s) =>
-        `  <skill>
-    <name>${escapeXml(s.name)}</name>
-    <description>${escapeXml(s.description)}</description>
-  </skill>`
-    )
-    .join('\n');
-
-  return `Execute a skill within the main conversation.
-
-When users ask you to perform tasks, check if any of the available skills below can help complete the task more effectively. Skills provide specialized capabilities and domain knowledge.
-
-When users ask you to run a "slash command" or reference "/<something>" (e.g., "/commit", "/review-pr"), they are referring to a skill. Use this tool to invoke the corresponding skill.
-
-<available_skills>
-${skillsXml}
-</available_skills>
-
-Important:
-- When a skill is relevant, invoke it immediately as your first action
-- Only use skills listed above
-- Do not use this tool for built-in CLI commands`;
+Skills 来源：
+- ~/.claude/skills/ (用户 skills)
+- .claude/skills/ (项目 skills)
+- 内置 skills`;
 }
 
 /**

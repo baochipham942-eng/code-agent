@@ -37,6 +37,32 @@
 **问题**: 修改代码后直接打包，忘记更新版本号
 **正确做法**: 每次修改客户端代码必须递增 package.json 版本号
 
+### 原生模块 NODE_MODULE_VERSION 不匹配
+**问题**: 打包后启动报错 `was compiled against a different Node.js version using NODE_MODULE_VERSION 127. This version of Node.js requires NODE_MODULE_VERSION 130`
+**原因**: 原生模块（isolated-vm, better-sqlite3, keytar）是用系统 Node.js 编译的，而非 Electron 的 Node.js
+**错误做法**:
+- `electron-rebuild` 不可靠，会说 "Rebuild Complete" 但实际没重编译
+- `npm rebuild` 也不行，用的是系统 Node.js
+
+**正确做法**:
+```bash
+npm cache clean --force
+rm -rf node_modules/isolated-vm node_modules/better-sqlite3 node_modules/keytar
+npm install isolated-vm better-sqlite3 keytar \
+  --build-from-source \
+  --runtime=electron \
+  --target=33.4.11 \
+  --disturl=https://electronjs.org/headers
+```
+
+**验证方法**:
+```bash
+# 检查模块时间戳，应该是今天的日期
+ls -la node_modules/isolated-vm/out/isolated_vm.node
+ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node
+ls -la node_modules/keytar/build/Release/keytar.node
+```
+
 ---
 
 ## 客户端启动问题

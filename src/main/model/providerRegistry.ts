@@ -19,6 +19,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'deepseek-coder',
@@ -28,6 +29,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'deepseek-reasoner',
@@ -37,6 +39,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: false,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
       },
     ],
   },
@@ -54,6 +57,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
         visionCapabilities: {
           supportsBase64: true,
           supportsUrl: true,
@@ -68,6 +72,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
         visionCapabilities: {
           supportsBase64: true,
           supportsUrl: true,
@@ -82,6 +87,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
         visionCapabilities: {
           supportsBase64: true,
           supportsUrl: true,
@@ -104,6 +110,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
         visionCapabilities: {
           supportsBase64: true,
           supportsUrl: true,
@@ -118,6 +125,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
       },
     ],
   },
@@ -136,6 +144,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'quota',
       },
       {
         id: 'meta-llama/llama-4-scout-17b-16e-instruct',
@@ -145,6 +154,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'quota',
       },
       // === Llama 3.3 (稳定版) ===
       {
@@ -155,6 +165,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'quota',
       },
       {
         id: 'llama-3.1-8b-instant',
@@ -164,6 +175,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'quota',
       },
       // === Kimi K2 (Groq 托管) ===
       {
@@ -174,6 +186,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'quota',
       },
       // === 复合模型 ===
       {
@@ -184,6 +197,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'quota',
       },
     ],
   },
@@ -201,6 +215,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'free',
       },
     ],
   },
@@ -211,7 +226,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     codingBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
     models: [
-      // === 旗舰模型 ===
+      // === 旗舰模型 (Coding 套餐) ===
       {
         id: 'glm-4.7',
         name: 'GLM-4.7 (旗舰语言)',
@@ -221,6 +236,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsVision: false,
         supportsStreaming: true,
         useCodingEndpoint: true,
+        costType: 'yearly',
       },
       {
         id: 'glm-4.6v',
@@ -230,6 +246,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: false,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'yearly',
         visionCapabilities: {
           supportsBase64: true,
           supportsUrl: true,
@@ -247,6 +264,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'free',
       },
       {
         id: 'glm-4.6v-flash',
@@ -256,6 +274,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: false,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'free',
         visionCapabilities: {
           supportsBase64: true,
           supportsUrl: true,
@@ -273,6 +292,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'free',
       },
       // === 图像生成 (免费) ===
       {
@@ -285,6 +305,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsStreaming: false,
         isGenerationModel: true,
         generationType: 'image',
+        costType: 'free',
       },
       // === 视频生成 (免费，异步) ===
       {
@@ -298,6 +319,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         isGenerationModel: true,
         generationType: 'video',
         isAsync: true,
+        costType: 'free',
       },
     ],
   },
@@ -308,6 +330,17 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     // 注意：国内用 dashscope.aliyuncs.com，新加坡用 dashscope-intl.aliyuncs.com
     baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
     models: [
+      // === 旗舰语言模型 ===
+      {
+        id: 'qwen3-max',
+        name: 'Qwen3 Max (旗舰)',
+        capabilities: ['general', 'code', 'reasoning'],
+        maxTokens: 32768,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        costType: 'payg',
+      },
       {
         id: 'qwen-max',
         name: 'Qwen Max',
@@ -316,30 +349,101 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
+      },
+      {
+        id: 'qwen-plus',
+        name: 'Qwen Plus',
+        capabilities: ['general', 'code'],
+        maxTokens: 8192,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'qwen-turbo',
-        name: 'Qwen Turbo',
+        name: 'Qwen Turbo (快速)',
         capabilities: ['fast', 'general'],
         maxTokens: 8192,
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
+      },
+      // === 推理模型 ===
+      {
+        id: 'qwq-plus',
+        name: 'QwQ Plus (深度推理)',
+        capabilities: ['reasoning', 'code'],
+        maxTokens: 32768,
+        supportsTool: false,
+        supportsVision: false,
+        supportsStreaming: true,
+        costType: 'payg',
+      },
+      {
+        id: 'qvq-max',
+        name: 'QVQ Max (视觉推理)',
+        capabilities: ['vision', 'reasoning'],
+        maxTokens: 8192,
+        supportsTool: false,
+        supportsVision: true,
+        supportsStreaming: true,
+        costType: 'payg',
+        visionCapabilities: {
+          supportsBase64: true,
+          supportsUrl: true,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
+          note: '视觉推理模型',
+        },
+      },
+      // === 代码模型 ===
+      {
+        id: 'qwen3-coder-plus',
+        name: 'Qwen3 Coder Plus (代码旗舰)',
+        capabilities: ['code', 'reasoning'],
+        maxTokens: 131072,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        costType: 'payg',
+      },
+      {
+        id: 'qwen3-coder-flash',
+        name: 'Qwen3 Coder Flash (快速代码)',
+        capabilities: ['code', 'fast'],
+        maxTokens: 32768,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        costType: 'payg',
+      },
+      {
+        id: 'qwen-coder-plus',
+        name: 'Qwen Coder Plus (代码专用)',
+        capabilities: ['code'],
+        maxTokens: 16384,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        costType: 'payg',
       },
       // === 视觉模型 ===
       {
-        id: 'qwen3-vl-max',
-        name: 'Qwen3 VL Max (视觉旗舰)',
+        id: 'qwen-vl-max',
+        name: 'Qwen VL Max (视觉旗舰)',
         capabilities: ['vision', 'gui'],
         maxTokens: 8192,
         supportsTool: false,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
         visionCapabilities: {
           supportsBase64: true,
           supportsUrl: true,
           supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
-          note: '最强视觉理解',
+          note: '视觉理解旗舰',
         },
       },
       {
@@ -351,6 +455,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsVision: true,
         supportsStreaming: true,
         supportsVideo: true,
+        costType: 'payg',
         visionCapabilities: {
           supportsBase64: true,
           supportsUrl: true,
@@ -366,6 +471,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: false,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
         visionCapabilities: {
           supportsBase64: true,
           supportsUrl: true,
@@ -373,10 +479,26 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
           note: '快速视觉识别',
         },
       },
+      {
+        id: 'qwen-vl-ocr',
+        name: 'Qwen VL OCR (文字识别)',
+        capabilities: ['vision'],
+        maxTokens: 4096,
+        supportsTool: false,
+        supportsVision: true,
+        supportsStreaming: true,
+        costType: 'payg',
+        visionCapabilities: {
+          supportsBase64: true,
+          supportsUrl: true,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
+          note: '专业OCR识别',
+        },
+      },
       // === 全模态 ===
       {
         id: 'qwen-omni-turbo',
-        name: 'Qwen Omni (全模态)',
+        name: 'Qwen Omni Turbo (全模态)',
         capabilities: ['vision', 'general'],
         maxTokens: 8192,
         supportsTool: false,
@@ -384,6 +506,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsStreaming: true,
         supportsVideo: true,
         supportsAudio: true,
+        costType: 'payg',
         visionCapabilities: {
           supportsBase64: true,
           supportsUrl: true,
@@ -391,15 +514,104 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
           note: '文本+图片+音频+视频全模态输入',
         },
       },
-      // === 代码模型 ===
       {
-        id: 'qwen-coder-plus',
-        name: 'Qwen Coder Plus (代码专用)',
-        capabilities: ['code'],
-        maxTokens: 16384,
+        id: 'qwen3-omni-flash',
+        name: 'Qwen3 Omni Flash (快速全模态)',
+        capabilities: ['vision', 'fast'],
+        maxTokens: 4096,
+        supportsTool: false,
+        supportsVision: true,
+        supportsStreaming: true,
+        supportsVideo: true,
+        supportsAudio: true,
+        costType: 'payg',
+        visionCapabilities: {
+          supportsBase64: true,
+          supportsUrl: true,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp', 'mp4', 'mp3', 'wav'],
+          note: '快速全模态',
+        },
+      },
+      // === 图像生成 ===
+      {
+        id: 'qwen-image-max',
+        name: 'Qwen Image Max (文生图)',
+        capabilities: ['general'],
+        maxTokens: 1024,
+        supportsTool: false,
+        supportsVision: false,
+        supportsStreaming: false,
+        isGenerationModel: true,
+        generationType: 'image',
+        costType: 'payg',
+      },
+      {
+        id: 'qwen-image-edit-max',
+        name: 'Qwen Image Edit (图像编辑)',
+        capabilities: ['general'],
+        maxTokens: 1024,
+        supportsTool: false,
+        supportsVision: true,
+        supportsStreaming: false,
+        isGenerationModel: true,
+        generationType: 'image',
+        costType: 'payg',
+      },
+      // === 语音模型 ===
+      {
+        id: 'qwen3-tts-flash',
+        name: 'Qwen3 TTS Flash (语音合成)',
+        capabilities: ['general'],
+        maxTokens: 4096,
+        supportsTool: false,
+        supportsVision: false,
+        supportsStreaming: true,
+        supportsAudio: true,
+        costType: 'payg',
+      },
+      {
+        id: 'qwen3-asr-flash-realtime',
+        name: 'Qwen3 ASR Flash (语音识别)',
+        capabilities: ['general'],
+        maxTokens: 4096,
+        supportsTool: false,
+        supportsVision: false,
+        supportsStreaming: true,
+        supportsAudio: true,
+        costType: 'payg',
+      },
+      // === 长上下文 ===
+      {
+        id: 'qwen2.5-7b-instruct-1m',
+        name: 'Qwen 2.5 7B 1M (超长上下文)',
+        capabilities: ['general', 'longContext'],
+        maxTokens: 1000000,
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
+      },
+      // === 翻译 ===
+      {
+        id: 'qwen-mt-turbo',
+        name: 'Qwen MT Turbo (机器翻译)',
+        capabilities: ['general'],
+        maxTokens: 8192,
+        supportsTool: false,
+        supportsVision: false,
+        supportsStreaming: true,
+        costType: 'payg',
+      },
+      // === 向量 ===
+      {
+        id: 'text-embedding-v4',
+        name: 'Text Embedding V4 (向量)',
+        capabilities: ['general'],
+        maxTokens: 8192,
+        supportsTool: false,
+        supportsVision: false,
+        supportsStreaming: false,
+        costType: 'payg',
       },
     ],
   },
@@ -417,6 +629,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'monthly',
       },
       {
         id: 'moonshot-v1-8k',
@@ -426,6 +639,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'moonshot-v1-32k',
@@ -435,6 +649,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'moonshot-v1-128k',
@@ -444,6 +659,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
       },
     ],
   },
@@ -461,6 +677,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'abab6.5-chat',
@@ -470,6 +687,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'abab5.5s-chat',
@@ -479,6 +697,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'abab5.5-chat',
@@ -488,6 +707,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
       },
     ],
   },
@@ -506,6 +726,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'gemini-3-flash',
@@ -515,6 +736,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
       },
       // === Gemini 2.5 (稳定版) ===
       {
@@ -525,6 +747,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'gemini-2.5-flash-lite',
@@ -534,6 +757,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
       },
     ],
   },
@@ -551,6 +775,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: false,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'sonar',
@@ -560,6 +785,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: false,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
       },
     ],
   },
@@ -578,6 +804,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'google/gemini-3-pro-preview',
@@ -587,6 +814,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'google/gemma-3n-e2b-it:free',
@@ -596,6 +824,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: false,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'free',
       },
       // === Anthropic Claude 4.5 (2026最新) ===
       {
@@ -606,6 +835,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'anthropic/claude-sonnet-4.5',
@@ -615,6 +845,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'anthropic/claude-haiku-4.5',
@@ -624,6 +855,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
       },
       // === OpenAI GPT-5.2 (2026最新) ===
       {
@@ -634,6 +866,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'openai/gpt-5.2-codex',
@@ -643,6 +876,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
       },
       // === Meta Llama 4 (2026最新) ===
       {
@@ -653,6 +887,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'free',
       },
       {
         id: 'meta-llama/llama-4-maverick',
@@ -662,6 +897,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: true,
         supportsStreaming: true,
+        costType: 'payg',
       },
       // === DeepSeek V3.2 (2026最新) ===
       {
@@ -672,6 +908,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: true,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'payg',
       },
       {
         id: 'deepseek/deepseek-r1-0528:free',
@@ -681,6 +918,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
         supportsTool: false,
         supportsVision: false,
         supportsStreaming: true,
+        costType: 'free',
       },
     ],
   },

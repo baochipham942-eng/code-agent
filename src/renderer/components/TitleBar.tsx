@@ -2,13 +2,12 @@
 // TitleBar - Right side title bar with workspace path and task panel toggle
 // ============================================================================
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useDisclosure } from '../hooks/useDisclosure';
 import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, GitBranch, FlaskConical } from 'lucide-react';
 import { IconButton } from './primitives';
-import { EvaluationPanel } from './features/evaluation/EvaluationPanel';
 
 // 奶酪图标组件
 const CheeseIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -30,14 +29,12 @@ export const TitleBar: React.FC = () => {
     showDAGPanel,
     setShowDAGPanel,
     setShowLab,
+    setShowEvaluation,
     workingDirectory,
   } = useAppStore();
 
   // 获取当前会话 ID
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
-
-  // 评测面板状态
-  const [showEvaluation, setShowEvaluation] = useState(false);
 
   // DAG 面板权限检查
   const { dagPanelEnabled } = useDisclosure();
@@ -80,7 +77,7 @@ export const TitleBar: React.FC = () => {
           <IconButton
             icon={<CheeseIcon className="w-4 h-4" />}
             aria-label="会话评测"
-            onClick={() => setShowEvaluation(true)}
+            onClick={() => setShowEvaluation?.(true)}
             variant="ghost"
             size="md"
             windowNoDrag
@@ -122,14 +119,6 @@ export const TitleBar: React.FC = () => {
           windowNoDrag
         />
       </div>
-
-      {/* Evaluation Panel */}
-      {showEvaluation && currentSessionId && (
-        <EvaluationPanel
-          sessionId={currentSessionId}
-          onClose={() => setShowEvaluation(false)}
-        />
-      )}
     </div>
   );
 };

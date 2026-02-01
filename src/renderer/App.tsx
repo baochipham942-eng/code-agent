@@ -21,6 +21,7 @@ import { TaskPanel } from './components/TaskPanel';
 import { SkillsPanel } from './components/SkillsPanel';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
 import { LabPage } from './components/features/lab/LabPage';
+import { EvaluationPanel } from './components/features/evaluation/EvaluationPanel';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
@@ -34,6 +35,23 @@ import { createLogger } from './utils/logger';
 
 const logger = createLogger('App');
 
+// Evaluation Panel Wrapper - 订阅 currentSessionId
+const EvaluationPanelWrapper: React.FC<{
+  showEvaluation: boolean;
+  onClose: () => void;
+}> = ({ showEvaluation, onClose }) => {
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
+
+  if (!showEvaluation || !currentSessionId) return null;
+
+  return (
+    <EvaluationPanel
+      sessionId={currentSessionId}
+      onClose={onClose}
+    />
+  );
+};
+
 export const App: React.FC = () => {
   const {
     showSettings,
@@ -42,6 +60,8 @@ export const App: React.FC = () => {
     showSkillsPanel,
     setShowSkillsPanel,
     showLab,
+    showEvaluation,
+    setShowEvaluation,
     setShowSettings,
     setLanguage,
   } = useAppStore();
@@ -443,6 +463,12 @@ export const App: React.FC = () => {
 
       {/* Lab Page */}
       {showLab && <LabPage />}
+
+      {/* Evaluation Panel */}
+      <EvaluationPanelWrapper
+        showEvaluation={showEvaluation}
+        onClose={() => setShowEvaluation(false)}
+      />
 
       {/* User Question Modal (Gen 3+) */}
       {userQuestion && (

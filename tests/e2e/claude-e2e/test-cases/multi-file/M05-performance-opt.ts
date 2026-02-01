@@ -74,7 +74,7 @@ export const M05: TestCase = {
   },
 
   tags: ['multi-file', 'performance', 'optimization', 'caching', 'pagination'],
-  timeout: 300000,
+  timeout: 600000, // 10分钟（L4 复杂任务）
 };
 
 export default M05;

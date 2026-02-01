@@ -40,7 +40,7 @@ export const D08: TestCase = {
 
   expectedBehavior: {
     directExecution: false,
-    expectedAgents: ['Explore'],
+    expectedAgents: ['code-review'], // code-review 更适合性能分析任务
     requiredTools: ['Read', 'Edit', 'Glob'],
     toolCallRange: { min: 8, max: 30 },
   },

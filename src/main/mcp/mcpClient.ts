@@ -818,8 +818,8 @@ export class MCPClient {
       if (isConnectionError) {
         logger.warn(`MCP server ${serverName} connection issue, attempting reconnect and retry...`);
 
-        const reconnected = await this.reconnect(serverName);
-        if (reconnected) {
+        const reconnectResult = await this.reconnect(serverName);
+        if (reconnectResult.success) {
           // 重连成功，重试一次工具调用（使用较短超时）
           logger.info(`Reconnected to ${serverName}, retrying tool call...`);
           const retryClient = this.clients.get(serverName);
@@ -899,12 +899,20 @@ export class MCPClient {
 
   /**
    * 重连指定服务器（用于超时后恢复）
+   * 返回 { success: boolean; error?: string }
    */
-  async reconnect(serverName: string): Promise<boolean> {
+  async reconnect(serverName: string): Promise<{ success: boolean; error?: string }> {
     const config = this.serverConfigs.get(serverName);
     if (!config) {
-      logger.error(`Cannot reconnect: server config not found for ${serverName}`);
-      return false;
+      const errorMsg = `Server config not found for ${serverName}`;
+      logger.error(`Cannot reconnect: ${errorMsg}`);
+      return { success: false, error: errorMsg };
+    }
+
+    if (!config.enabled) {
+      const errorMsg = `Server ${serverName} is disabled`;
+      logger.warn(`Cannot reconnect: ${errorMsg}`);
+      return { success: false, error: errorMsg };
     }
 
     logger.info(`Attempting to reconnect to MCP server: ${serverName}`);
@@ -912,10 +920,11 @@ export class MCPClient {
       await this.disconnect(serverName);
       await this.connect(config);
       logger.info(`Successfully reconnected to MCP server: ${serverName}`);
-      return true;
+      return { success: true };
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error(`Failed to reconnect to MCP server ${serverName}:`, error);
-      return false;
+      return { success: false, error: errorMsg };
     }
   }
 

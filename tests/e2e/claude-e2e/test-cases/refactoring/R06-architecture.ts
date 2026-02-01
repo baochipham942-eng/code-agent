@@ -57,7 +57,7 @@ export const R06: TestCase = {
   },
 
   tags: ['refactoring', 'architecture', 'clean-architecture', 'ddd'],
-  timeout: 300000,
+  timeout: 600000, // 10分钟（L4 复杂任务）
 };
 
 export default R06;

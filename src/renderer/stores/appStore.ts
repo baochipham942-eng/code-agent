@@ -65,6 +65,9 @@ interface AppState {
   // Lab State (实验室)
   showLab: boolean;
 
+  // Evaluation State (会话评测)
+  showEvaluation: boolean;
+
   // HTML Preview State
   previewFilePath: string | null;
   showPreviewPanel: boolean;
@@ -106,6 +109,7 @@ interface AppState {
   setShowDAGPanel: (show: boolean) => void;
   toggleDAGPanel: () => void;
   setShowLab: (show: boolean) => void;
+  setShowEvaluation: (show: boolean) => void;
   setPreviewFilePath: (path: string | null) => void;
   setShowPreviewPanel: (show: boolean) => void;
   openPreview: (filePath: string) => void;
@@ -180,6 +184,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Initial Lab State
   showLab: false,
 
+  // Initial Evaluation State
+  showEvaluation: false,
+
   // Initial HTML Preview State
   previewFilePath: null,
   showPreviewPanel: false,
@@ -241,6 +248,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowDAGPanel: (show) => set({ showDAGPanel: show }),
   toggleDAGPanel: () => set((state) => ({ showDAGPanel: !state.showDAGPanel })),
   setShowLab: (show) => set({ showLab: show }),
+  setShowEvaluation: (show) => set({ showEvaluation: show }),
 
   setPreviewFilePath: (path) => set({ previewFilePath: path }),
   setShowPreviewPanel: (show) => set({ showPreviewPanel: show }),

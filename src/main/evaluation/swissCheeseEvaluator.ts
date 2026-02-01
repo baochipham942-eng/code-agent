@@ -538,9 +538,9 @@ export class SwissCheeseEvaluator {
    */
   private async callLLM(systemPrompt: string, userPrompt: string): Promise<string | null> {
     const configService = getConfigService();
-    // 默认使用 GLM（智谱）
+    // 默认使用 GLM（智谱）主力模型
     const provider = 'zhipu';
-    const model = 'glm-4-flash';
+    const model = 'glm-4';
 
     logger.debug('Calling LLM for review', { provider, model });
 

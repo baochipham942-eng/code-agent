@@ -286,9 +286,10 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
   },
   qwen: {
     id: 'qwen',
-    name: '通义千问',
+    name: '通义千问 (百炼)',
     requiresApiKey: true,
-    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    // 注意：国内用 dashscope.aliyuncs.com，新加坡用 dashscope-intl.aliyuncs.com
+    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
     models: [
       {
         id: 'qwen-max',

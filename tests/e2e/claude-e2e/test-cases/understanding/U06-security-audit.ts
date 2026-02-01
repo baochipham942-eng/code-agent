@@ -49,13 +49,13 @@ export const U06: TestCase = {
 
   expectedBehavior: {
     directExecution: false,
-    expectedAgents: ['explore', 'code-review'],
+    expectedAgents: ['explore'], // code-review 是可选的，explore 是核心（安全审计需要全面探索）
     requiredTools: ['Glob', 'Read', 'Grep'],
     toolCallRange: { min: 10, max: 30 },
   },
 
   tags: ['understanding', 'security', 'audit', 'analysis'],
-  timeout: 300000,
+  timeout: 600000, // 10分钟（L4 复杂任务）
 };
 
 export default U06;

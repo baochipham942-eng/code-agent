@@ -64,6 +64,14 @@ export function parseExecutionTrace(streamOutput: string): ExecutionTrace {
         const dispatch = agentDispatchMap.get(event.data.toolCallId);
         if (dispatch) {
           dispatch.result = event.data.output;
+          dispatch.duration = event.data.duration || 0;
+
+          // 从 subagent 输出中提取工具调用
+          if (event.data.output) {
+            const extractedTools = extractToolCallsFromAgentResult(event.data.output);
+            dispatch.toolCalls.push(...extractedTools);
+          }
+
           currentAgentStack.pop();
         }
       }
@@ -156,6 +164,37 @@ function parseCodeAgentDispatch(data: any): AgentDispatch {
     duration: 0,
     timestamp: Date.now(),
   };
+}
+
+/**
+ * 从 subagent 结果输出中提取工具调用
+ * 解析格式: "Tools used: list_directory, glob, read_file, grep"
+ */
+function extractToolCallsFromAgentResult(output: string): ToolCall[] {
+  const toolCalls: ToolCall[] = [];
+
+  // 匹配 "Tools used: tool1, tool2, tool3" 格式
+  // 使用 [a-z_]+ 而不是 [a-z_,\s]+ 来避免匹配到后续内容
+  const match = output.match(/Tools used:\s*([^\n]+)/i);
+  if (match) {
+    // 提取工具名（只保留有效的工具名格式：字母、下划线）
+    const toolNames = match[1]
+      .split(',')
+      .map(t => t.trim().match(/^[a-z_]+/i)?.[0])
+      .filter((name): name is string => !!name && name.length > 0);
+
+    for (const name of toolNames) {
+      toolCalls.push({
+        id: `subagent-tool-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name,
+        input: {},
+        duration: 0,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  return toolCalls;
 }
 
 // ===== Claude CLI 格式解析 =====

@@ -10,14 +10,139 @@ import type {
   DAGStatusEventData,
   TaskStatusEventData,
   StatisticsUpdateEventData,
+  DAGVisualizationState,
+  TaskNode,
+  DependencyEdge,
+  TaskNodeData,
+  DAGInitEventData,
 } from '../../shared/types/dagVisualization';
-import type { DAGEvent, DAGEventType, DAGStatistics } from '../../shared/types/taskDAG';
+import type { DAGEvent, DAGEventType, DAGStatistics, DAGTask } from '../../shared/types/taskDAG';
 import { getDAGScheduler } from './DAGScheduler';
+import { TaskDAG } from './TaskDAG';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('DAGEventBridge');
 
 let bridgeInitialized = false;
+
+// ============================================================================
+// DAG → Visualization State Conversion
+// ============================================================================
+
+/**
+ * 从 TaskDAG 构建可视化状态
+ * 将内部 DAG 数据结构转换为 React Flow 可用的节点和边
+ */
+export function buildDAGVisualizationState(dag: TaskDAG): DAGVisualizationState {
+  const tasks = dag.getAllTasks();
+  const levels = dag.getExecutionLevels();
+
+  // 构建层级位置映射
+  const taskLevelMap = new Map<string, { level: number; index: number }>();
+  levels.forEach((level, levelIndex) => {
+    level.forEach((taskId, taskIndex) => {
+      taskLevelMap.set(taskId, { level: levelIndex, index: taskIndex });
+    });
+  });
+
+  // 布局参数
+  const NODE_WIDTH = 200;
+  const NODE_HEIGHT = 80;
+  const HORIZONTAL_GAP = 100;
+  const VERTICAL_GAP = 120;
+
+  // 构建节点
+  const nodes: TaskNode[] = tasks.map((task) => {
+    const position = taskLevelMap.get(task.id) || { level: 0, index: 0 };
+    const levelTasks = levels[position.level] || [];
+    const levelWidth = levelTasks.length * (NODE_WIDTH + HORIZONTAL_GAP) - HORIZONTAL_GAP;
+
+    // 居中布局
+    const startX = -levelWidth / 2;
+    const x = startX + position.index * (NODE_WIDTH + HORIZONTAL_GAP);
+    const y = position.level * (NODE_HEIGHT + VERTICAL_GAP);
+
+    const nodeData: TaskNodeData = {
+      taskId: task.id,
+      name: task.name,
+      description: task.description,
+      type: task.type,
+      status: task.status,
+      priority: task.priority,
+      role: task.type === 'agent' ? (task.config as { role?: string }).role : undefined,
+      startedAt: task.metadata.startedAt,
+      completedAt: task.metadata.completedAt,
+      duration: task.metadata.duration,
+      estimatedDuration: task.metadata.estimatedDuration,
+      retryCount: task.metadata.retryCount,
+      cost: task.metadata.cost,
+      toolsUsed: task.output?.toolsUsed,
+      iterations: task.output?.iterations,
+      output: task.output,
+      failure: task.failure,
+      isSelected: false,
+      isHighlighted: false,
+    };
+
+    return {
+      id: task.id,
+      type: 'task',
+      position: { x, y },
+      data: nodeData,
+    };
+  });
+
+  // 构建边（依赖关系）
+  const edges: DependencyEdge[] = [];
+  let edgeId = 0;
+
+  for (const task of tasks) {
+    for (const depId of task.dependencies) {
+      edges.push({
+        id: `edge-${edgeId++}`,
+        source: depId,
+        target: task.id,
+        type: 'smoothstep',
+        animated: false,
+        data: {
+          isCriticalPath: false,
+          isActive: false,
+          dependencyType: task.type === 'checkpoint' ? 'checkpoint' : 'data',
+        },
+      });
+    }
+  }
+
+  // 标记关键路径
+  try {
+    const criticalPath = dag.getCriticalPath();
+    for (let i = 0; i < criticalPath.length - 1; i++) {
+      const sourceId = criticalPath[i];
+      const targetId = criticalPath[i + 1];
+      const edge = edges.find(e => e.source === sourceId && e.target === targetId);
+      if (edge && edge.data) {
+        edge.data.isCriticalPath = true;
+      }
+    }
+  } catch {
+    // 忽略关键路径计算错误
+  }
+
+  const state = dag.getState();
+
+  return {
+    dagId: dag.getId(),
+    name: dag.getName(),
+    description: state.definition.description,
+    status: state.status,
+    statistics: state.statistics,
+    nodes,
+    edges,
+    criticalPath: dag.getCriticalPath(),
+    startedAt: state.startedAt,
+    completedAt: state.completedAt,
+  };
+}
 
 /**
  * 将内部 DAGEventType 映射到可视化 DAGVisualizationEventType
@@ -178,38 +303,28 @@ export function initDAGEventBridge(): void {
 }
 
 /**
- * 手动发送 DAG 初始化事件
- * 用于在 DAG 创建后立即通知渲染进程
+ * 发送 DAG 初始化事件
+ * 在 DAG 开始执行时调用，将完整的可视化状态发送到渲染进程
  */
-export function sendDAGInitEvent(
-  dagId: string,
-  _dagName: string,
-  tasks: Array<{ id: string; name: string; type: string; status: string; dependencies: string[] }>
-): void {
-  const statistics: DAGStatistics = {
-    totalTasks: tasks.length,
-    completedTasks: 0,
-    failedTasks: 0,
-    pendingTasks: tasks.length,
-    runningTasks: 0,
-    skippedTasks: 0,
-    readyTasks: 0,
-    totalDuration: 0,
-    totalCost: 0,
-    maxParallelism: 0,
+export function sendDAGInitEvent(dag: TaskDAG): void {
+  const visualizationState = buildDAGVisualizationState(dag);
+
+  const initData: DAGInitEventData = {
+    type: 'dag:init',
+    state: visualizationState,
   };
 
   const event: DAGVisualizationEvent = {
-    type: 'dag:start',
-    dagId,
+    type: 'dag:init',
+    dagId: dag.getId(),
     timestamp: Date.now(),
-    data: {
-      type: 'dag:start',
-      status: 'running',
-      statistics,
-    },
+    data: initData,
   };
 
   sendToRenderer(event);
-  logger.debug('DAG init event sent', { dagId, taskCount: tasks.length });
+  logger.info('DAG init event sent', {
+    dagId: dag.getId(),
+    taskCount: visualizationState.nodes.length,
+    edgeCount: visualizationState.edges.length,
+  });
 }

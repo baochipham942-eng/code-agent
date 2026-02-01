@@ -35,6 +35,14 @@ import { DEFAULT_MODELS } from '../../shared/constants';
 // Agent Routing
 import { getRoutingService } from '../routing';
 import type { RoutingContext, RoutingResolution } from '../../shared/types/agentRouting';
+// Session Event Service (for evaluation)
+import { getSessionEventService } from '../evaluation/sessionEventService';
+// DAG Visualization for normal conversations
+import { TaskDAG } from '../scheduler/TaskDAG';
+import { sendDAGInitEvent, buildDAGVisualizationState } from '../scheduler/dagEventBridge';
+import { BrowserWindow } from 'electron';
+import { DAG_CHANNELS } from '../../shared/ipc/channels';
+import type { DAGVisualizationEvent, TaskStatusEventData } from '../../shared/types/dagVisualization';
 
 const logger = createLogger('AgentOrchestrator');
 
@@ -217,34 +225,25 @@ export class AgentOrchestrator {
 
     // Create agent loop with session-aware event handler
     // Wrap onEvent to inject sessionId, ensuring events are associated with the correct session
+    const eventService = getSessionEventService();
     const sessionAwareOnEvent = (event: AgentEvent) => {
       // Inject sessionId into all events for proper session isolation
       this.onEvent({ ...event, sessionId } as AgentEvent & { sessionId?: string });
+      // Save event to database for evaluation analysis
+      if (sessionId) {
+        eventService.saveEvent(sessionId, event);
+      }
     };
 
-    // Check if deep research mode is requested or should be auto-detected
+    // Check if deep research mode is explicitly requested
     const mode = options?.mode ?? 'normal';
 
     if (mode === 'deep-research') {
-      // Manual deep research mode
+      // Manual deep research mode (user explicitly requested)
       await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig, generation);
-    } else if (this.researchUserSettings.autoDetect && mode === 'normal') {
-      // Semantic auto-detection: check if research is needed
-      const shouldResearch = await this.checkAndRunSemanticResearch(
-        content,
-        options?.reportStyle,
-        sessionAwareOnEvent,
-        modelConfig,
-        generation,
-        sessionId
-      );
-
-      if (!shouldResearch) {
-        // Research not triggered, run normal mode
-        await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, generation, sessionId);
-      }
     } else {
-      // Normal Mode: Create and run agent loop
+      // Normal Mode: 指挥家统一处理任务分类和执行
+      // 不再前置 LLM 调用做意图分析，由 AgentLoop 在第一轮直接判断
       await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, generation, sessionId);
     }
   }
@@ -457,6 +456,29 @@ export class AgentOrchestrator {
     generation: ReturnType<GenerationManager['getCurrentGeneration']>,
     sessionId?: string
   ): Promise<void> {
+    // Create simple DAG for visualization (single task for normal conversation)
+    const dagId = `conv-${sessionId || Date.now()}`;
+    const dag = new TaskDAG(dagId, content.substring(0, 50) + (content.length > 50 ? '...' : ''));
+    dag.addAgentTask('main', {
+      role: 'general-purpose',
+      prompt: content,
+    }, {
+      name: '对话处理',
+      description: content.substring(0, 100),
+    });
+
+    // Send DAG init event for visualization
+    sendDAGInitEvent(dag);
+
+    // Wrap onEvent to sync DAG status updates
+    const dagAwareOnEvent = (event: AgentEvent) => {
+      // Forward original event
+      onEvent(event);
+
+      // Sync DAG task status based on event type
+      this.syncDAGStatus(dagId, event);
+    };
+
     // Resolve agent routing
     const routingResolution = await this.resolveAgentRouting(content, sessionId);
     let effectiveModelConfig = modelConfig;
@@ -512,7 +534,7 @@ export class AgentOrchestrator {
       toolRegistry: this.toolRegistry,
       toolExecutor: this.toolExecutor,
       messages: this.messages,
-      onEvent,
+      onEvent: dagAwareOnEvent, // Use DAG-aware event handler
       planningService: this.planningService,
       sessionId, // Pass sessionId for tracing
       workingDirectory: this.workingDirectory,
@@ -596,6 +618,27 @@ export class AgentOrchestrator {
       return;
     }
 
+    // Create DAG for multi-agent visualization
+    const dagId = `auto-${sessionId || Date.now()}`;
+    const dag = new TaskDAG(dagId, `自动 Agent: ${requirements.taskType}`);
+
+    // Add task for each agent
+    const agentDependencies: string[] = [];
+    for (const agent of agents) {
+      dag.addAgentTask(agent.id, {
+        role: agent.name,
+        prompt: agent.systemPrompt.substring(0, 200),
+      }, {
+        name: agent.name,
+        description: `工具: ${agent.tools.slice(0, 3).join(', ')}${agent.tools.length > 3 ? '...' : ''}`,
+        dependencies: requirements.executionStrategy === 'sequential' ? agentDependencies.slice(-1) : [],
+      });
+      agentDependencies.push(agent.id);
+    }
+
+    // Send DAG init event for visualization
+    sendDAGInitEvent(dag);
+
     // Notify UI about auto agent planning
     onEvent({
       type: 'agent_thinking',
@@ -621,6 +664,9 @@ export class AgentOrchestrator {
         requestPermission: async () => true, // Auto-approve for auto agents
       },
       onProgress: (agentId, status, progress) => {
+        // Sync DAG task status
+        this.syncAutoAgentDAGStatus(dagId, agentId, status);
+
         onEvent({
           type: 'agent_thinking',
           data: {
@@ -1021,5 +1067,122 @@ export class AgentOrchestrator {
       gemini: 'gemini-1.5-pro',
     };
     return defaultModels[provider] || DEFAULT_MODELS.chat;
+  }
+
+  /**
+   * 同步 DAG 任务状态到前端可视化
+   * 根据 AgentEvent 类型更新对应的 DAG 任务状态
+   */
+  private syncDAGStatus(dagId: string, event: AgentEvent): void {
+    let statusUpdate: TaskStatusEventData | null = null;
+
+    switch (event.type) {
+      case 'turn_start':
+        // 任务开始执行
+        statusUpdate = {
+          type: 'task:status',
+          taskId: 'main',
+          status: 'running',
+          startedAt: Date.now(),
+        };
+        break;
+
+      case 'agent_complete':
+        // 任务完成
+        statusUpdate = {
+          type: 'task:status',
+          taskId: 'main',
+          status: 'completed',
+          completedAt: Date.now(),
+        };
+        break;
+
+      case 'error':
+        // 任务失败
+        statusUpdate = {
+          type: 'task:status',
+          taskId: 'main',
+          status: 'failed',
+          completedAt: Date.now(),
+        };
+        break;
+    }
+
+    if (statusUpdate) {
+      this.sendDAGStatusEvent(dagId, statusUpdate);
+    }
+  }
+
+  /**
+   * 同步自动 Agent 模式的 DAG 任务状态
+   * 根据 onProgress 回调的状态更新对应 Agent 任务的状态
+   */
+  private syncAutoAgentDAGStatus(dagId: string, agentId: string, status: string): void {
+    // Map onProgress status to DAG task status
+    let taskStatus: 'pending' | 'ready' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped';
+
+    switch (status) {
+      case 'pending':
+      case 'queued':
+        taskStatus = 'pending';
+        break;
+      case 'running':
+      case 'executing':
+        taskStatus = 'running';
+        break;
+      case 'completed':
+      case 'done':
+      case 'success':
+        taskStatus = 'completed';
+        break;
+      case 'failed':
+      case 'error':
+        taskStatus = 'failed';
+        break;
+      case 'cancelled':
+      case 'stopped':
+        taskStatus = 'cancelled';
+        break;
+      case 'skipped':
+        taskStatus = 'skipped';
+        break;
+      default:
+        // Unknown status, treat as running
+        taskStatus = 'running';
+    }
+
+    const statusUpdate: TaskStatusEventData = {
+      type: 'task:status',
+      taskId: agentId,
+      status: taskStatus,
+      ...(taskStatus === 'running' ? { startedAt: Date.now() } : {}),
+      ...(taskStatus === 'completed' || taskStatus === 'failed' ? { completedAt: Date.now() } : {}),
+    };
+
+    this.sendDAGStatusEvent(dagId, statusUpdate);
+  }
+
+  /**
+   * 发送 DAG 状态更新事件到渲染进程
+   */
+  private sendDAGStatusEvent(dagId: string, statusUpdate: TaskStatusEventData): void {
+    const vizEvent: DAGVisualizationEvent = {
+      type: 'task:status',
+      dagId,
+      timestamp: Date.now(),
+      data: statusUpdate,
+    };
+
+    // Send to all renderer windows
+    const windows = BrowserWindow.getAllWindows();
+    for (const win of windows) {
+      if (!win.isDestroyed() && win.webContents) {
+        try {
+          win.webContents.send(DAG_CHANNELS.EVENT, vizEvent);
+        } catch {
+          // Ignore send errors
+        }
+      }
+    }
   }
 }

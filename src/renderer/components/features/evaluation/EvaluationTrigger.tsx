@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useState } from 'react';
-import { EvaluationPanel } from './EvaluationPanel';
+import { EvaluationPanelV2 } from './EvaluationPanelV2';
 
 interface EvaluationTriggerProps {
   sessionId: string | null;
@@ -45,7 +45,7 @@ export function EvaluationTrigger({ sessionId }: EvaluationTriggerProps) {
       </button>
 
       {showPanel && (
-        <EvaluationPanel
+        <EvaluationPanelV2
           sessionId={sessionId}
           onClose={() => setShowPanel(false)}
         />

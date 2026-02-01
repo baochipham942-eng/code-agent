@@ -530,7 +530,9 @@ export const VISION_MODEL_CAPABILITIES: Record<string, {
 
 export const PORTS = {
   /** Log Bridge 默认端口 */
-  logBridge: parseInt(process.env.LOG_BRIDGE_PORT || '51820', 10),
+  logBridge: typeof process !== 'undefined' && process.env?.LOG_BRIDGE_PORT
+    ? parseInt(process.env.LOG_BRIDGE_PORT, 10)
+    : 51820,
 } as const;
 
 // ============================================================================

@@ -64,6 +64,8 @@ import {
   estimateModelMessageTokens,
   MessageHistoryCompressor,
 } from '../context/tokenOptimizer';
+import { getTraceRecorder, type ToolCallWithResult } from '../evolution/traceRecorder';
+import { getOutcomeDetector } from '../evolution/outcomeDetector';
 
 const logger = createLogger('AgentLoop');
 
@@ -411,6 +413,10 @@ export class AgentLoop {
       modelProvider: this.modelConfig.provider,
       modelName: this.modelConfig.model,
     }, userMessage);
+
+    // Gen8: Start trace recording for self-evolution
+    const evolutionTraceRecorder = getTraceRecorder();
+    evolutionTraceRecorder.startTrace(this.sessionId, userMessage, this.workingDirectory);
 
     await this.initializeUserHooks();
 
@@ -985,6 +991,34 @@ export class AgentLoop {
       });
     }
 
+    // Gen8: End trace recording and determine outcome
+    if (evolutionTraceRecorder.hasActiveTrace()) {
+      try {
+        // 确定执行结果
+        const outcomeDetector = getOutcomeDetector();
+        const traceOutcome = this.determineTraceOutcome(iterations);
+
+        const trace = await evolutionTraceRecorder.endTrace(
+          traceOutcome.outcome,
+          traceOutcome.reason,
+          traceOutcome.confidence
+        );
+
+        // 如果有轨迹，持久化信号并触发学习
+        if (trace) {
+          const outcomeResult = await outcomeDetector.detectOutcome(trace);
+          await outcomeDetector.persistSignals(trace.id, outcomeResult.signals);
+
+          // 触发元学习（异步，不阻塞主流程）
+          this.triggerEvolutionLearning(trace, outcomeResult).catch((err) => {
+            logger.error('[AgentLoop] Evolution learning error:', err);
+          });
+        }
+      } catch (error) {
+        logger.error('[AgentLoop] Trace recording error:', error);
+      }
+    }
+
     logger.debug('[AgentLoop] ========== run() END, emitting agent_complete ==========');
     logCollector.agent('INFO', `Agent run completed, ${iterations} iterations`);
     this.onEvent({ type: 'agent_complete', data: null });
@@ -1460,6 +1494,23 @@ export class AgentLoop {
         duration: toolResult.duration,
       });
 
+      // Gen8: Record tool call for self-evolution
+      const traceRecorder = getTraceRecorder();
+      if (traceRecorder.hasActiveTrace()) {
+        traceRecorder.recordToolCall({
+          id: toolCall.id,
+          name: toolCall.name,
+          args: toolCall.arguments as Record<string, unknown>,
+          result: {
+            success: result.success,
+            output: result.output?.substring(0, 1000), // 限制输出长度
+            error: result.error,
+          },
+          durationMs: toolResult.duration || 0,
+          timestamp: Date.now(),
+        });
+      }
+
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (success)`);
       this.onEvent({ type: 'tool_call_end', data: toolResult });
 
@@ -1529,6 +1580,22 @@ export class AgentLoop {
         error: toolResult.error,
         duration: toolResult.duration,
       }, 'ERROR', toolResult.error);
+
+      // Gen8: Record failed tool call for self-evolution
+      const traceRecorder = getTraceRecorder();
+      if (traceRecorder.hasActiveTrace()) {
+        traceRecorder.recordToolCall({
+          id: toolCall.id,
+          name: toolCall.name,
+          args: toolCall.arguments as Record<string, unknown>,
+          result: {
+            success: false,
+            error: toolResult.error,
+          },
+          durationMs: toolResult.duration || 0,
+          timestamp: Date.now(),
+        });
+      }
 
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (error)`);
       this.onEvent({ type: 'tool_call_end', data: toolResult });
@@ -2167,6 +2234,130 @@ ${deferredToolsSummary}
         this.skillModelOverride = skillResult.contextModifier.modelOverride;
         logger.debug(`[AgentLoop] Model override set to: ${this.skillModelOverride}`);
       }
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Gen8 Self-Evolution Methods
+  // --------------------------------------------------------------------------
+
+  /**
+   * 根据执行状态确定轨迹结果
+   */
+  private determineTraceOutcome(iterations: number): {
+    outcome: 'success' | 'failure' | 'partial';
+    reason: string;
+    confidence: number;
+  } {
+    // 检查是否被取消
+    if (this.isCancelled) {
+      return {
+        outcome: 'partial',
+        reason: '用户取消执行',
+        confidence: 0.9,
+      };
+    }
+
+    // 检查是否达到最大迭代次数
+    if (iterations >= this.maxIterations) {
+      return {
+        outcome: 'partial',
+        reason: '达到最大迭代次数',
+        confidence: 0.7,
+      };
+    }
+
+    // 检查 circuit breaker 是否触发
+    if (this.circuitBreaker.isTripped()) {
+      return {
+        outcome: 'failure',
+        reason: '连续工具调用失败',
+        confidence: 0.85,
+      };
+    }
+
+    // 检查未完成的任务
+    const incompleteTodos = getCurrentTodos(this.sessionId).filter(t => t.status !== 'completed');
+    const incompleteTasks = getIncompleteTasks(this.sessionId);
+
+    if (incompleteTodos.length > 0 || incompleteTasks.length > 0) {
+      return {
+        outcome: 'partial',
+        reason: `${incompleteTodos.length + incompleteTasks.length} 个待办项未完成`,
+        confidence: 0.75,
+      };
+    }
+
+    // 检查工具使用情况
+    const hasWriteTools = this.toolsUsedInTurn.some(t =>
+      ['write_file', 'edit_file', 'bash'].includes(t)
+    );
+
+    if (!hasWriteTools && this.toolsUsedInTurn.length > 0) {
+      // 只有读取操作，可能是信息收集任务
+      return {
+        outcome: 'success',
+        reason: '信息收集任务完成',
+        confidence: 0.7,
+      };
+    }
+
+    // 正常完成
+    return {
+      outcome: 'success',
+      reason: '任务正常完成',
+      confidence: 0.8,
+    };
+  }
+
+  /**
+   * 触发进化学习（异步）
+   */
+  private async triggerEvolutionLearning(
+    trace: import('../evolution/traceRecorder').ExecutionTrace,
+    outcomeResult: import('../evolution/outcomeDetector').OutcomeResult
+  ): Promise<void> {
+    // 只从成功案例学习
+    if (outcomeResult.outcome !== 'success' || outcomeResult.confidence < 0.7) {
+      logger.debug('[AgentLoop] Skipping evolution learning: not a confident success');
+      return;
+    }
+
+    const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+    if (genNum < 8) {
+      logger.debug('[AgentLoop] Skipping evolution learning: requires Gen8+');
+      return;
+    }
+
+    try {
+      // 动态导入以避免循环依赖
+      const { getLLMInsightExtractor } = await import('../evolution/llmInsightExtractor');
+      const { getSafeInjector } = await import('../evolution/safeInjector');
+      const { getSkillEvolutionService } = await import('../evolution/skillEvolutionService');
+
+      const extractor = getLLMInsightExtractor();
+      extractor.setModelRouter(this.modelRouter);
+
+      // 提取洞察
+      const insights = await extractor.extractFromSuccessfulTraces([trace]);
+
+      logger.info('[AgentLoop] Evolution learning completed', {
+        traceId: trace.id,
+        insightsExtracted: insights.length,
+      });
+
+      // 保存洞察
+      for (const insight of insights) {
+        const saved = await extractor.saveInsight(insight, trace.projectPath);
+
+        // 如果是 Skill 类型，创建提案
+        if (insight.type === 'skill') {
+          const skillService = getSkillEvolutionService();
+          await skillService.proposeSkill(insight);
+        }
+      }
+    } catch (error) {
+      logger.error('[AgentLoop] Evolution learning failed:', error);
     }
   }
 

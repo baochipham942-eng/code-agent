@@ -2,7 +2,7 @@
 // EvaluationPanel - 评测面板主组件
 // ============================================================================
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { RadarChart } from './RadarChart';
 import { MetricCard } from './MetricCard';
 import type {
@@ -25,12 +25,14 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [started, setStarted] = useState(false);
 
   const runEvaluation = useCallback(async () => {
     if (!window.electronAPI) {
       setError('Electron API 不可用');
       return;
     }
+    setStarted(true);
     setLoading(true);
     setError(null);
     try {
@@ -46,9 +48,7 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
     }
   }, [sessionId]);
 
-  useEffect(() => {
-    runEvaluation();
-  }, [runEvaluation]);
+  // 不再自动触发评测，改为用户点击按钮后触发
 
   const handleExport = async (format: EvaluationExportFormat) => {
     if (!result || !window.electronAPI) return;
@@ -86,13 +86,49 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
     return `${seconds}s`;
   };
 
+  // 未开始评测时显示启动界面
+  if (!started) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-8 text-center max-w-md">
+          <div className="text-6xl mb-4">🧀</div>
+          <h2 className="text-xl font-semibold text-gray-200 mb-2">瑞士奶酪评测</h2>
+          <p className="text-sm text-gray-400 mb-6">
+            使用多评审员 AI 进行深度会话评测。每位评审员关注不同维度，确保全面覆盖。
+          </p>
+          <div className="text-xs text-gray-500 mb-6 space-y-1">
+            <div>📋 任务分析师 - 评估任务完成度</div>
+            <div>💻 代码审查员 - 评估代码质量</div>
+            <div>🔒 安全审计员 - 检测安全风险</div>
+            <div>👤 用户体验专家 - 评估沟通质量</div>
+          </div>
+          <div className="flex gap-2 justify-center">
+            <button
+              onClick={runEvaluation}
+              className="px-6 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition flex items-center gap-2"
+            >
+              <span>🧀</span>
+              开始评测
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-zinc-700 text-gray-300 rounded-lg hover:bg-zinc-600 transition"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
         <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-8 text-center">
-          <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
-          <div className="text-gray-300">正在评测会话...</div>
-          <div className="text-xs text-gray-500 mt-2">分析 6 个维度</div>
+          <div className="animate-spin w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full mx-auto mb-4" />
+          <div className="text-gray-300">正在进行瑞士奶酪评测...</div>
+          <div className="text-xs text-gray-500 mt-2">4 位 AI 评审员正在分析</div>
         </div>
       </div>
     );

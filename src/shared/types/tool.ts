@@ -8,6 +8,29 @@ import type { PermissionRequest } from './permission';
 
 export type PermissionLevel = 'read' | 'write' | 'execute' | 'network';
 
+/**
+ * 工具分类标签
+ * 用于 ToolSearch 工具发现和搜索匹配
+ */
+export type ToolTag =
+  | 'file'       // 文件操作
+  | 'search'     // 搜索相关
+  | 'shell'      // Shell/命令执行
+  | 'network'    // 网络请求
+  | 'mcp'        // MCP 协议
+  | 'planning'   // 规划和任务管理
+  | 'memory'     // 记忆系统
+  | 'vision'     // 视觉/截图
+  | 'multiagent' // 多代理
+  | 'evolution'  // 自我进化
+  | 'document'   // 文档处理
+  | 'media';     // 媒体生成
+
+/**
+ * 工具来源类型
+ */
+export type ToolSource = 'builtin' | 'mcp' | 'dynamic';
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -15,6 +38,25 @@ export interface ToolDefinition {
   generations: GenerationId[];
   requiresPermission: boolean;
   permissionLevel: PermissionLevel;
+
+  // ============================================================================
+  // ToolSearch 延迟加载支持 (v0.17+)
+  // ============================================================================
+
+  /** 是否为核心工具（默认发送给模型） */
+  isCore?: boolean;
+
+  /** 工具分类标签（用于搜索匹配） */
+  tags?: ToolTag[];
+
+  /** 工具别名（用于搜索匹配，如 'pdf' 匹配 'read_pdf'） */
+  aliases?: string[];
+
+  /** 来源类型 */
+  source?: ToolSource;
+
+  /** MCP 服务器名称（仅 MCP 工具） */
+  mcpServer?: string;
 }
 
 export interface JSONSchema {

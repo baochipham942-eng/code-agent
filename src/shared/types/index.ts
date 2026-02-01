@@ -54,3 +54,6 @@ export * from './cron';
 
 // Checkpoint types (文件检查点)
 export * from './checkpoint';
+
+// ToolSearch types (工具延迟加载)
+export * from './toolSearch';

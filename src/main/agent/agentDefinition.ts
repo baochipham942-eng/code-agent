@@ -698,10 +698,34 @@ export function getAgentPrompt(agent: FullAgentConfig): string {
 }
 
 /**
- * 获取 Agent 的工具列表
+ * 需要 tool_search 的 Agent 列表
+ * 这些 Agent 可能需要发现和使用延迟加载的工具
  */
-export function getAgentTools(agent: FullAgentConfig): string[] {
-  return agent.tools || [];
+const AGENTS_NEED_TOOL_SEARCH = [
+  'coder',
+  'general-purpose',
+  'debugger',
+  'architect',
+  'documenter',
+  'refactorer',
+  'devops',
+];
+
+/**
+ * 获取 Agent 的工具列表
+ * 对于需要扩展能力的 Agent，自动添加 tool_search
+ */
+export function getAgentTools(agent: FullAgentConfig, includeToolSearch = true): string[] {
+  const tools = agent.tools || [];
+
+  // 如果启用了 tool_search 且该 Agent 需要扩展能力
+  if (includeToolSearch && AGENTS_NEED_TOOL_SEARCH.includes(agent.id)) {
+    if (!tools.includes('tool_search')) {
+      return [...tools, 'tool_search'];
+    }
+  }
+
+  return tools;
 }
 
 /**

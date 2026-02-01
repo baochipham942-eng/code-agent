@@ -67,9 +67,9 @@ const labCards: LabCard[] = [
   },
   {
     id: 'llamafactory',
-    title: '让 AI 更聪明',
-    subtitle: '用专业工具微调大模型',
-    description: '学会使用 LLaMA Factory 工具，掌握 SFT、DPO 等主流微调技术，让 AI 在特定任务上表现更好。',
+    title: '让 AI 更专业',
+    subtitle: '训练一个领域专家 AI',
+    description: '微调就像培养专才：牺牲一点通用能力，换取在特定领域的专业表现。学习 SFT、DPO 等主流技术。',
     level: '高级',
     levelStars: 3,
     params: '概念演示模式',
@@ -154,7 +154,7 @@ export const LabPage: React.FC = () => {
                   ? '让 AI 读更多书'
                   : currentLab === 'alignment'
                     ? '让 AI 学会听话'
-                    : '让 AI 更聪明'}
+                    : '让 AI 更专业'}
           </h1>
         </div>
         {/* 关闭按钮 - 增大热区 */}

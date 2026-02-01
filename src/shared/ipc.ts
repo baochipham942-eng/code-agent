@@ -59,7 +59,7 @@ import type {
 } from './types/contextHealth';
 
 import type { DAGVisualizationEvent } from './types/dagVisualization';
-import { DAG_CHANNELS, LAB_CHANNELS, CHANNEL_CHANNELS } from './ipc/channels';
+import { DAG_CHANNELS, LAB_CHANNELS, CHANNEL_CHANNELS, EVALUATION_CHANNELS } from './ipc/channels';
 
 import type {
   ChannelAccount,
@@ -91,6 +91,11 @@ import type {
   MarketplaceResult,
   PluginInstallResult,
 } from '../main/skills/marketplace/types';
+
+import type {
+  EvaluationResult,
+  EvaluationExportFormat,
+} from './types/evaluation';
 
 // Re-export context health types for consumer convenience
 export type { ContextHealthState, ContextHealthUpdateEvent } from './types/contextHealth';
@@ -511,6 +516,13 @@ export const IPC_CHANNELS = {
   AGENT_ROUTING_DELETE: 'agent-routing:delete',
   AGENT_ROUTING_SET_ENABLED: 'agent-routing:set-enabled',
   AGENT_ROUTING_SET_DEFAULT: 'agent-routing:set-default',
+
+  // Evaluation channels (会话评测)
+  EVALUATION_RUN: EVALUATION_CHANNELS.RUN,
+  EVALUATION_GET_RESULT: EVALUATION_CHANNELS.GET_RESULT,
+  EVALUATION_LIST_HISTORY: EVALUATION_CHANNELS.LIST_HISTORY,
+  EVALUATION_EXPORT: EVALUATION_CHANNELS.EXPORT,
+  EVALUATION_DELETE: EVALUATION_CHANNELS.DELETE,
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -758,6 +770,13 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CHANNEL_DELETE_ACCOUNT]: (accountId: string) => Promise<boolean>;
   [IPC_CHANNELS.CHANNEL_CONNECT_ACCOUNT]: (accountId: string) => Promise<{ success: boolean; error?: string }>;
   [IPC_CHANNELS.CHANNEL_DISCONNECT_ACCOUNT]: (accountId: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Evaluation (会话评测)
+  [IPC_CHANNELS.EVALUATION_RUN]: (payload: { sessionId: string; save?: boolean }) => Promise<EvaluationResult>;
+  [IPC_CHANNELS.EVALUATION_GET_RESULT]: (evaluationId: string) => Promise<EvaluationResult | null>;
+  [IPC_CHANNELS.EVALUATION_LIST_HISTORY]: (payload?: { sessionId?: string; limit?: number }) => Promise<EvaluationResult[]>;
+  [IPC_CHANNELS.EVALUATION_EXPORT]: (payload: { result: EvaluationResult; format: 'json' | 'markdown' }) => Promise<string>;
+  [IPC_CHANNELS.EVALUATION_DELETE]: (evaluationId: string) => Promise<boolean>;
 }
 
 // ----------------------------------------------------------------------------

@@ -157,3 +157,29 @@ export const CHANNEL_CHANNELS = {
  * Channel 通道名称类型
  */
 export type ChannelChannel = (typeof CHANNEL_CHANNELS)[keyof typeof CHANNEL_CHANNELS];
+
+// ============================================================================
+// Evaluation 评测系统 IPC 通道
+// ============================================================================
+
+/**
+ * Evaluation 评测系统 IPC 通道
+ * 用于前端与主进程之间的会话评测通信
+ */
+export const EVALUATION_CHANNELS = {
+  /** 执行评测 */
+  RUN: 'evaluation:run',
+  /** 获取评测结果 */
+  GET_RESULT: 'evaluation:get-result',
+  /** 获取评测历史列表 */
+  LIST_HISTORY: 'evaluation:list-history',
+  /** 导出评测报告 */
+  EXPORT: 'evaluation:export',
+  /** 删除评测记录 */
+  DELETE: 'evaluation:delete',
+} as const;
+
+/**
+ * Evaluation 通道名称类型
+ */
+export type EvaluationChannel = (typeof EVALUATION_CHANNELS)[keyof typeof EVALUATION_CHANNELS];

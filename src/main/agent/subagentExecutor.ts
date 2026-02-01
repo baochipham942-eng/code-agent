@@ -43,7 +43,45 @@ export interface SubagentConfig {
   permissionPreset?: PermissionPreset;
   /** Maximum budget for this subagent */
   maxBudget?: number;
+  /** P3: Maximum execution time in milliseconds */
+  maxExecutionTimeMs?: number;
 }
+
+// ============================================================================
+// P3: 默认执行超时配置（按 Agent 类型）
+// ============================================================================
+
+const DEFAULT_EXECUTION_TIMEOUT: Record<string, number> = {
+  // 探索类（快速返回）
+  'Code Explore Agent': 30_000,       // 30 秒
+  'Web Search Agent': 30_000,
+  'Document Reader Agent': 30_000,
+
+  // 审查类（适中）
+  'Code Reviewer': 60_000,            // 60 秒
+  '视觉理解 Agent': 45_000,
+
+  // 执行类（可能需要更多时间）
+  'Coder': 90_000,                    // 90 秒
+  'Debugger': 90_000,
+  'Test Engineer': 90_000,
+  'Code Refactorer': 60_000,
+  'DevOps Engineer': 60_000,
+  'Technical Writer': 45_000,
+
+  // 规划类
+  'Plan Agent': 60_000,
+  'Software Architect': 60_000,
+
+  // 其他
+  'General Purpose Agent': 90_000,
+  'Bash Executor Agent': 45_000,
+  'MCP Connector Agent': 60_000,
+  '视觉处理 Agent': 60_000,
+
+  // 默认值
+  'default': 60_000,                  // 60 秒
+};
 
 export interface SubagentResult {
   success: boolean;
@@ -98,6 +136,12 @@ export class SubagentExecutor {
     const toolsUsed: string[] = [];
     let iterations = 0;
     let finalOutput = '';
+
+    // P3: 计算执行超时时间
+    const timeout = config.maxExecutionTimeMs
+      || DEFAULT_EXECUTION_TIMEOUT[config.name]
+      || DEFAULT_EXECUTION_TIMEOUT['default'];
+    const startTime = Date.now();
 
     // Create pipeline context
     const pipeline = getSubagentPipeline();
@@ -245,6 +289,24 @@ export class SubagentExecutor {
       while (iterations < maxIterations) {
         iterations++;
         logger.info(`[${config.name}] Iteration ${iterations}`);
+
+        // P3: 超时检查
+        const elapsed = Date.now() - startTime;
+        if (elapsed > timeout) {
+          logger.warn(`[${config.name}] Execution timeout after ${elapsed}ms (limit: ${timeout}ms)`, {
+            iterations,
+            toolsUsed: [...new Set(toolsUsed)],
+          });
+          pipeline.completeContext(pipelineContext.agentId, false, 'Execution timeout');
+          return {
+            success: false,
+            output: finalOutput || '',
+            error: `执行超时 (${Math.round(timeout / 1000)}秒)，已完成 ${iterations} 次迭代`,
+            toolsUsed: [...new Set(toolsUsed)],
+            iterations,
+            agentId: pipelineContext.agentId,
+          };
+        }
 
         // Check budget before each iteration
         const iterBudgetCheck = pipeline.checkBudget(pipelineContext);

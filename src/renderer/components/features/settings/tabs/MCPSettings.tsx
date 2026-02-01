@@ -115,7 +115,8 @@ export const MCPSettings: React.FC = () => {
     setReconnectingServer(serverName);
     try {
       const result = await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'reconnectServer', { serverName });
-      if (result?.success) {
+      // result.success 是 IPC 调用成功，result.data 是实际重连结果
+      if (result?.success && result?.data === true) {
         setMessage({ type: 'success', text: `${serverName} 重连成功` });
       } else {
         setMessage({ type: 'error', text: `${serverName} 重连失败` });

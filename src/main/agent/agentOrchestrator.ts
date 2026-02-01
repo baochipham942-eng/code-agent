@@ -37,6 +37,12 @@ import { getRoutingService } from '../routing';
 import type { RoutingContext, RoutingResolution } from '../../shared/types/agentRouting';
 // Session Event Service (for evaluation)
 import { getSessionEventService } from '../evaluation/sessionEventService';
+// DAG Visualization for normal conversations
+import { TaskDAG } from '../scheduler/TaskDAG';
+import { sendDAGInitEvent, buildDAGVisualizationState } from '../scheduler/dagEventBridge';
+import { BrowserWindow } from 'electron';
+import { DAG_CHANNELS } from '../../shared/ipc/channels';
+import type { DAGVisualizationEvent, TaskStatusEventData } from '../../shared/types/dagVisualization';
 
 const logger = createLogger('AgentOrchestrator');
 
@@ -464,6 +470,29 @@ export class AgentOrchestrator {
     generation: ReturnType<GenerationManager['getCurrentGeneration']>,
     sessionId?: string
   ): Promise<void> {
+    // Create simple DAG for visualization (single task for normal conversation)
+    const dagId = `conv-${sessionId || Date.now()}`;
+    const dag = new TaskDAG(dagId, content.substring(0, 50) + (content.length > 50 ? '...' : ''));
+    dag.addAgentTask('main', {
+      role: 'general-purpose',
+      prompt: content,
+    }, {
+      name: '对话处理',
+      description: content.substring(0, 100),
+    });
+
+    // Send DAG init event for visualization
+    sendDAGInitEvent(dag);
+
+    // Wrap onEvent to sync DAG status updates
+    const dagAwareOnEvent = (event: AgentEvent) => {
+      // Forward original event
+      onEvent(event);
+
+      // Sync DAG task status based on event type
+      this.syncDAGStatus(dagId, event);
+    };
+
     // Resolve agent routing
     const routingResolution = await this.resolveAgentRouting(content, sessionId);
     let effectiveModelConfig = modelConfig;
@@ -519,7 +548,7 @@ export class AgentOrchestrator {
       toolRegistry: this.toolRegistry,
       toolExecutor: this.toolExecutor,
       messages: this.messages,
-      onEvent,
+      onEvent: dagAwareOnEvent, // Use DAG-aware event handler
       planningService: this.planningService,
       sessionId, // Pass sessionId for tracing
       workingDirectory: this.workingDirectory,
@@ -1028,5 +1057,66 @@ export class AgentOrchestrator {
       gemini: 'gemini-1.5-pro',
     };
     return defaultModels[provider] || DEFAULT_MODELS.chat;
+  }
+
+  /**
+   * 同步 DAG 任务状态到前端可视化
+   * 根据 AgentEvent 类型更新对应的 DAG 任务状态
+   */
+  private syncDAGStatus(dagId: string, event: AgentEvent): void {
+    let statusUpdate: TaskStatusEventData | null = null;
+
+    switch (event.type) {
+      case 'turn_start':
+        // 任务开始执行
+        statusUpdate = {
+          type: 'task:status',
+          taskId: 'main',
+          status: 'running',
+          startedAt: Date.now(),
+        };
+        break;
+
+      case 'agent_complete':
+        // 任务完成
+        statusUpdate = {
+          type: 'task:status',
+          taskId: 'main',
+          status: 'completed',
+          completedAt: Date.now(),
+        };
+        break;
+
+      case 'error':
+        // 任务失败
+        statusUpdate = {
+          type: 'task:status',
+          taskId: 'main',
+          status: 'failed',
+          completedAt: Date.now(),
+        };
+        break;
+    }
+
+    if (statusUpdate) {
+      const vizEvent: DAGVisualizationEvent = {
+        type: 'task:status',
+        dagId,
+        timestamp: Date.now(),
+        data: statusUpdate,
+      };
+
+      // Send to all renderer windows
+      const windows = BrowserWindow.getAllWindows();
+      for (const win of windows) {
+        if (!win.isDestroyed() && win.webContents) {
+          try {
+            win.webContents.send(DAG_CHANNELS.EVENT, vizEvent);
+          } catch {
+            // Ignore send errors
+          }
+        }
+      }
+    }
   }
 }

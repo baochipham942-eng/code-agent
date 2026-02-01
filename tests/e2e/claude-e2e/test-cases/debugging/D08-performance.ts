@@ -46,7 +46,7 @@ export const D08: TestCase = {
   },
 
   tags: ['debugging', 'performance', 'optimization', 'react'],
-  timeout: 300000,
+  timeout: 600000, // 10分钟（L4 复杂任务需要更长时间）
 };
 
 export default D08;

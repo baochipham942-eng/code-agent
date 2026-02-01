@@ -198,6 +198,7 @@ export function buildCLIConfig(options: {
     outputFormat: options.json ? 'json' : 'text',
     enablePlanning: options.plan || false,
     debug: options.debug || false,
+    autoApprovePlan: true, // CLI 模式默认自动批准 plan mode
   };
 }
 
@@ -251,6 +252,7 @@ export function createAgentLoop(
     sessionId: `cli-${Date.now()}`,
     workingDirectory: config.workingDirectory,
     isDefaultWorkingDirectory: false,
+    autoApprovePlan: config.autoApprovePlan, // CLI 模式自动批准 plan mode
   });
 
   return agentLoop;

@@ -573,8 +573,9 @@ function validateAgentType(
   const expectedTypes = Array.isArray(v.agentType)
     ? v.agentType
     : [v.agentType!];
-  const actualTypes = trace.agentDispatches.map((a) => a.agentType);
-  const missing = expectedTypes.filter((t) => !actualTypes.includes(t));
+  // 使用大小写不敏感比较，因为测试用例可能用 'Explore' 而 code-agent 用 'explore'
+  const actualTypesLower = trace.agentDispatches.map((a) => a.agentType.toLowerCase());
+  const missing = expectedTypes.filter((t) => !actualTypesLower.includes(t.toLowerCase()));
 
   return {
     passed: missing.length === 0,

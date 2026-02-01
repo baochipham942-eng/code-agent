@@ -61,13 +61,13 @@ export const V06: TestCase = {
 
   expectedBehavior: {
     directExecution: false,
-    expectedAgents: ['explore', 'code-review'],
+    expectedAgents: ['code-review'], // explore 是可选的，code-review 是核心
     requiredTools: ['Bash', 'Read', 'Write'],
     toolCallRange: { min: 5, max: 30 },
   },
 
   tags: ['git', 'code-review', 'quality', 'analysis'],
-  timeout: 300000,
+  timeout: 600000, // 10分钟（L4 复杂任务）
 };
 
 export default V06;

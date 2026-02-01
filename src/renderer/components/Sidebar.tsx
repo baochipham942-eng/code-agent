@@ -15,6 +15,7 @@ import {
   User,
   Settings,
   LogIn,
+  LogOut,
   ChevronDown,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
@@ -54,10 +55,11 @@ export const Sidebar: React.FC = () => {
     setFilter,
   } = useSessionStore();
 
-  const { user, isAuthenticated, setShowAuthModal } = useAuthStore();
+  const { user, isAuthenticated, setShowAuthModal, signOut } = useAuthStore();
 
   const [hoveredSession, setHoveredSession] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState<string>('');
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
   // 初始化：加载会话列表
@@ -223,28 +225,54 @@ export const Sidebar: React.FC = () => {
         )}
       </div>
 
-      {/* Bottom: Settings or Login - no border */}
-      <div className="p-2" ref={accountMenuRef}>
+      {/* Bottom: User Menu or Login */}
+      <div className="p-2 relative" ref={accountMenuRef}>
         {isAuthenticated && user ? (
-          <button
-            onClick={() => setShowSettings(true)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.04] transition-colors"
-          >
-            {user.avatarUrl ? (
-              <img
-                src={user.avatarUrl}
-                alt=""
-                className="w-7 h-7 rounded-full object-cover"
-              />
-            ) : (
-              /* Simple user icon - no background */
-              <User className="w-5 h-5 text-zinc-500" />
+          <>
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.04] transition-colors"
+            >
+              {user.avatarUrl ? (
+                <img
+                  src={user.avatarUrl}
+                  alt=""
+                  className="w-7 h-7 rounded-full object-cover"
+                />
+              ) : (
+                <User className="w-5 h-5 text-zinc-500" />
+              )}
+              <span className="flex-1 text-left text-sm font-medium text-zinc-400 truncate">
+                {user.nickname || user.email?.split('@')[0]}
+              </span>
+              <ChevronDown className={`w-4 h-4 text-zinc-600 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+            </button>
+            {/* User Dropdown Menu */}
+            {showUserMenu && (
+              <div className="absolute bottom-full left-2 right-2 mb-2 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl overflow-hidden">
+                <button
+                  onClick={() => {
+                    setShowSettings(true);
+                    setShowUserMenu(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+                >
+                  <Settings className="w-4 h-4" />
+                  设置
+                </button>
+                <button
+                  onClick={() => {
+                    signOut();
+                    setShowUserMenu(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+                >
+                  <LogOut className="w-4 h-4" />
+                  退出登录
+                </button>
+              </div>
             )}
-            <span className="flex-1 text-left text-sm font-medium text-zinc-400 truncate">
-              {user.nickname || user.email?.split('@')[0]}
-            </span>
-            <Settings className="w-4 h-4 text-zinc-600" />
-          </button>
+          </>
         ) : (
           <button
             onClick={() => setShowAuthModal(true)}

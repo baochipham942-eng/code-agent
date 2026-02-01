@@ -27,6 +27,8 @@ export interface CLIConfig {
   outputFormat: 'text' | 'json';
   enablePlanning: boolean;
   debug: boolean;
+  /** 自动批准 plan mode 计划（用于 CLI/测试场景） */
+  autoApprovePlan?: boolean;
 }
 
 /**

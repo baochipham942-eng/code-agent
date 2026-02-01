@@ -67,9 +67,9 @@ const labCards: LabCard[] = [
   },
   {
     id: 'llamafactory',
-    title: 'LLaMA Factory 微调',
-    subtitle: '掌握大模型微调的关键技术',
-    description: '从 SFT 到 RLHF/DPO，完整学习大模型微调流程。理解 LoRA、QLoRA 等参数高效方法，掌握实战技巧。',
+    title: '让 AI 更聪明',
+    subtitle: '用专业工具微调大模型',
+    description: '学会使用 LLaMA Factory 工具，掌握 SFT、DPO 等主流微调技术，让 AI 在特定任务上表现更好。',
     level: '高级',
     levelStars: 3,
     params: '概念演示模式',
@@ -97,8 +97,8 @@ export const LabPage: React.FC = () => {
         </p>
       </div>
 
-      {/* Lab Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+      {/* Lab Cards - 4 列布局 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-6xl mx-auto">
         {labCards.map((card, index) => (
           <LabCardComponent
             key={`${card.id}-${index}`}
@@ -142,34 +142,25 @@ export const LabPage: React.FC = () => {
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#0d0d0f]">
       {/* Header - pl-20 为 macOS 窗口控制按钮留出空间 */}
-      <div className="flex items-center justify-between pl-20 pr-6 py-4 border-b border-zinc-800/50">
-        <div className="flex items-center gap-3">
-          {currentLab !== 'home' && (
-            <button
-              onClick={() => setCurrentLab('home')}
-              className="text-zinc-400 hover:text-zinc-200 transition-colors mr-2"
-            >
-              ←
-            </button>
-          )}
-          <div className="flex items-center gap-2">
-            <FlaskConical className="w-5 h-5 text-emerald-400" />
-            <h1 className="text-lg font-semibold text-zinc-100">
-              {currentLab === 'home'
-                ? '实验室'
-                : currentLab === 'gpt1'
-                  ? '教 AI 学说话'
-                  : currentLab === 'nanogpt'
-                    ? '让 AI 读更多书'
-                    : currentLab === 'alignment'
-                      ? '让 AI 学会听话'
-                      : 'LLaMA Factory 微调'}
-            </h1>
-          </div>
+      <div className="flex items-center justify-between pl-20 pr-4 py-4 border-b border-zinc-800/50">
+        <div className="flex items-center gap-2">
+          <FlaskConical className="w-5 h-5 text-emerald-400" />
+          <h1 className="text-lg font-semibold text-zinc-100">
+            {currentLab === 'home'
+              ? '实验室'
+              : currentLab === 'gpt1'
+                ? '教 AI 学说话'
+                : currentLab === 'nanogpt'
+                  ? '让 AI 读更多书'
+                  : currentLab === 'alignment'
+                    ? '让 AI 学会听话'
+                    : '让 AI 更聪明'}
+          </h1>
         </div>
+        {/* 关闭按钮 - 增大热区 */}
         <button
           onClick={() => setShowLab(false)}
-          className="p-2 rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+          className="w-10 h-10 flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
         >
           <X className="w-5 h-5" />
         </button>

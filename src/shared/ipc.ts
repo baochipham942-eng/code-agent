@@ -62,6 +62,29 @@ import type { DAGVisualizationEvent } from './types/dagVisualization';
 import { DAG_CHANNELS, LAB_CHANNELS, CHANNEL_CHANNELS, EVALUATION_CHANNELS, LSP_CHANNELS, BACKGROUND_CHANNELS } from './ipc/channels';
 
 import type {
+  ObjectiveMetrics,
+  SubjectiveAssessment,
+} from './types/sessionAnalytics';
+
+// 会话分析结果（客观指标 + 历史评测）
+export interface SessionAnalysisResult {
+  objective: ObjectiveMetrics;
+  previousEvaluations: {
+    id: string;
+    timestamp: number;
+    overallScore: number;
+    grade: string;
+  }[];
+  latestEvaluation: {
+    id: string;
+    sessionId: string;
+    timestamp: number;
+    objective: ObjectiveMetrics;
+    subjective: SubjectiveAssessment | null;
+  } | null;
+}
+
+import type {
   ChannelAccount,
   ChannelType,
   ChannelAccountConfig,
@@ -525,6 +548,10 @@ export const IPC_CHANNELS = {
   EVALUATION_LIST_HISTORY: EVALUATION_CHANNELS.LIST_HISTORY,
   EVALUATION_EXPORT: EVALUATION_CHANNELS.EXPORT,
   EVALUATION_DELETE: EVALUATION_CHANNELS.DELETE,
+  // Session Analytics (v2)
+  EVALUATION_GET_OBJECTIVE_METRICS: EVALUATION_CHANNELS.GET_OBJECTIVE_METRICS,
+  EVALUATION_GET_SESSION_ANALYSIS: EVALUATION_CHANNELS.GET_SESSION_ANALYSIS,
+  EVALUATION_RUN_SUBJECTIVE: EVALUATION_CHANNELS.RUN_SUBJECTIVE_EVALUATION,
 
   // LSP channels (语言服务器)
   LSP_GET_STATUS: LSP_CHANNELS.GET_STATUS,
@@ -791,6 +818,10 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.EVALUATION_LIST_HISTORY]: (payload?: { sessionId?: string; limit?: number }) => Promise<EvaluationResult[]>;
   [IPC_CHANNELS.EVALUATION_EXPORT]: (payload: { result: EvaluationResult; format: 'json' | 'markdown' }) => Promise<string>;
   [IPC_CHANNELS.EVALUATION_DELETE]: (evaluationId: string) => Promise<boolean>;
+  // Session Analytics (v2 - 分离客观指标和主观评测)
+  [IPC_CHANNELS.EVALUATION_GET_OBJECTIVE_METRICS]: (sessionId: string) => Promise<ObjectiveMetrics>;
+  [IPC_CHANNELS.EVALUATION_GET_SESSION_ANALYSIS]: (sessionId: string) => Promise<SessionAnalysisResult>;
+  [IPC_CHANNELS.EVALUATION_RUN_SUBJECTIVE]: (payload: { sessionId: string; save?: boolean }) => Promise<SubjectiveAssessment>;
 
   // Background (后台任务)
   [IPC_CHANNELS.BACKGROUND_MOVE_TO_BACKGROUND]: (sessionId: string) => Promise<boolean>;

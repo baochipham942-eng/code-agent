@@ -21,7 +21,7 @@ import { TaskPanel } from './components/TaskPanel';
 import { SkillsPanel } from './components/SkillsPanel';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
 import { LabPage } from './components/features/lab/LabPage';
-import { EvaluationPanel } from './components/features/evaluation/EvaluationPanel';
+import { EvaluationPanelV2 } from './components/features/evaluation/EvaluationPanelV2';
 import { BackgroundTaskPanel } from './components/features/background';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
@@ -47,7 +47,7 @@ const EvaluationPanelWrapper: React.FC<{
   if (!showEvaluation || !currentSessionId) return null;
 
   return (
-    <EvaluationPanel
+    <EvaluationPanelV2
       sessionId={currentSessionId}
       onClose={onClose}
     />

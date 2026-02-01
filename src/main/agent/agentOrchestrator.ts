@@ -35,6 +35,8 @@ import { DEFAULT_MODELS } from '../../shared/constants';
 // Agent Routing
 import { getRoutingService } from '../routing';
 import type { RoutingContext, RoutingResolution } from '../../shared/types/agentRouting';
+// Session Event Service (for evaluation)
+import { getSessionEventService } from '../evaluation/sessionEventService';
 
 const logger = createLogger('AgentOrchestrator');
 
@@ -217,9 +219,14 @@ export class AgentOrchestrator {
 
     // Create agent loop with session-aware event handler
     // Wrap onEvent to inject sessionId, ensuring events are associated with the correct session
+    const eventService = getSessionEventService();
     const sessionAwareOnEvent = (event: AgentEvent) => {
       // Inject sessionId into all events for proper session isolation
       this.onEvent({ ...event, sessionId } as AgentEvent & { sessionId?: string });
+      // Save event to database for evaluation analysis
+      if (sessionId) {
+        eventService.saveEvent(sessionId, event);
+      }
     };
 
     // Check if deep research mode is requested or should be auto-detected

@@ -96,92 +96,80 @@ export function registerEvaluationHandlers(): void {
     async (_event, payload: { sessionId: string; save?: boolean }) => {
       logger.info(`Running subjective evaluation for session: ${payload.sessionId}`);
 
-      try {
-        // 先获取会话数据
-        logger.info('Step 1: Getting objective metrics...');
-        const objective = await analyticsService.calculateObjectiveMetrics(payload.sessionId);
-        logger.info('Step 1 completed', { turnsCount: objective.turnsCount });
+      // 先获取会话数据
+      const objective = await analyticsService.calculateObjectiveMetrics(payload.sessionId);
 
-        // 构建快照用于评测
-        logger.info('Step 2: Collecting session data...');
-        const snapshot = await service['collectSessionData'](payload.sessionId);
-        logger.info('Step 2 completed', { messageCount: snapshot.messages.length });
+      // 构建快照用于评测
+      const snapshot = await service['collectSessionData'](payload.sessionId);
 
-        // 使用瑞士奶酪评测器
-        logger.info('Step 3: Running Swiss Cheese evaluation...');
-        const evaluator = getSwissCheeseEvaluator();
-        const result = await evaluator.evaluate(snapshot);
-        logger.info('Step 3 completed', { hasResult: !!result });
+      // 使用瑞士奶酪评测器
+      const evaluator = getSwissCheeseEvaluator();
+      const result = await evaluator.evaluate(snapshot);
 
-        if (!result) {
-          throw new Error('Subjective evaluation failed');
-        }
+      if (!result) {
+        throw new Error('Subjective evaluation failed');
+      }
 
-        // 如果需要保存
-        if (payload.save) {
-          const grade = scoreToGrade(result.overallScore);
-          const fullResult = {
-            id: `eval_${Date.now()}`,
-            sessionId: payload.sessionId,
-            timestamp: Date.now(),
-            objective,
-            subjective: {
-              evaluatedAt: Date.now(),
-              model: 'kimi-k2.5',
-              provider: 'moonshot',
-              dimensions: {},
-              overallScore: result.overallScore,
-              grade,
-              summary: result.summary,
-              suggestions: result.suggestions,
-              consensus: result.consensus,
-              reviewerCount: result.reviewerResults.length,
-              passedReviewers: result.reviewerResults.filter(r => r.passed).length,
-            },
-          };
-
-          // 保存到数据库
-          await service['saveResult']({
-            id: fullResult.id,
-            sessionId: payload.sessionId,
-            timestamp: fullResult.timestamp,
+      // 如果需要保存
+      if (payload.save) {
+        const grade = scoreToGrade(result.overallScore);
+        const fullResult = {
+          id: `eval_${Date.now()}`,
+          sessionId: payload.sessionId,
+          timestamp: Date.now(),
+          objective,
+          subjective: {
+            evaluatedAt: Date.now(),
+            model: 'glm-4',
+            provider: 'zhipu',
+            dimensions: {},
             overallScore: result.overallScore,
             grade,
-            metrics: evaluator.convertToMetrics(result),
-            statistics: {
-              duration: objective.duration,
-              turnCount: objective.turnsCount,
-              toolCallCount: objective.totalToolCalls,
-              inputTokens: objective.totalInputTokens,
-              outputTokens: objective.totalOutputTokens,
-              totalCost: objective.estimatedCost,
-            },
-            topSuggestions: result.suggestions,
-            aiSummary: result.summary,
-          });
-        }
-
-        return {
-          evaluatedAt: Date.now(),
-          model: 'kimi-k2.5',
-          provider: 'moonshot',
-          dimensions: {},
-          overallScore: result.overallScore,
-          grade: scoreToGrade(result.overallScore),
-          summary: result.summary,
-          suggestions: result.suggestions,
-          consensus: result.consensus,
-          reviewerCount: result.reviewerResults.length,
-          passedReviewers: result.reviewerResults.filter(r => r.passed).length,
-          reviewerResults: result.reviewerResults,
-          codeVerification: result.codeVerification,
-          aggregatedMetrics: result.aggregatedMetrics,
+            summary: result.summary,
+            suggestions: result.suggestions,
+            consensus: result.consensus,
+            reviewerCount: result.reviewerResults.length,
+            passedReviewers: result.reviewerResults.filter(r => r.passed).length,
+          },
         };
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        logger.error('Subjective evaluation failed', { error: errorMsg, sessionId: payload.sessionId });
-        throw error;
+
+        // 保存到数据库
+        await service['saveResult']({
+          id: fullResult.id,
+          sessionId: payload.sessionId,
+          timestamp: fullResult.timestamp,
+          overallScore: result.overallScore,
+          grade,
+          metrics: evaluator.convertToMetrics(result),
+          statistics: {
+            duration: objective.duration,
+            turnCount: objective.turnsCount,
+            toolCallCount: objective.totalToolCalls,
+            inputTokens: objective.totalInputTokens,
+            outputTokens: objective.totalOutputTokens,
+            totalCost: objective.estimatedCost,
+          },
+          topSuggestions: result.suggestions,
+          aiSummary: result.summary,
+        });
       }
+
+      return {
+        evaluatedAt: Date.now(),
+        model: 'glm-4',
+        provider: 'zhipu',
+        dimensions: {},
+        overallScore: result.overallScore,
+        grade: scoreToGrade(result.overallScore),
+        summary: result.summary,
+        suggestions: result.suggestions,
+        consensus: result.consensus,
+        reviewerCount: result.reviewerResults.length,
+        passedReviewers: result.reviewerResults.filter(r => r.passed).length,
+        reviewerResults: result.reviewerResults,
+        codeVerification: result.codeVerification,
+        aggregatedMetrics: result.aggregatedMetrics,
+      };
     }
   );
 

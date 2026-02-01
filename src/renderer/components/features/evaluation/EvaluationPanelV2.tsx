@@ -58,15 +58,6 @@ interface ExtendedSubjectiveAssessment extends SubjectiveAssessment {
   };
 }
 
-// SSE 事件摘要类型
-interface EventSummary {
-  eventStats: Record<string, number>;
-  toolCalls: Array<{ name: string; success: boolean; duration?: number }>;
-  thinkingContent: string[];
-  errorEvents: Array<{ type: string; message: string }>;
-  timeline: Array<{ time: number; type: string; summary: string }>;
-}
-
 export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props) {
   const [status, setStatus] = useState<PanelStatus>('loading_stats');
   const [error, setError] = useState<string | null>(null);
@@ -77,8 +68,6 @@ export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props
   const [previousEvaluations, setPreviousEvaluations] = useState<HistoricalEvaluation[]>([]);
   // 主观评测结果
   const [subjective, setSubjective] = useState<ExtendedSubjectiveAssessment | null>(null);
-  // SSE 事件摘要
-  const [eventSummary, setEventSummary] = useState<EventSummary | null>(null);
 
   // 加载客观指标和历史评测
   const loadSessionAnalysis = useCallback(async () => {
@@ -97,7 +86,6 @@ export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props
 
       setObjective(analysis.objective);
       setPreviousEvaluations(analysis.previousEvaluations || []);
-      setEventSummary(analysis.eventSummary || null);
 
       // 如果有历史评测，尝试加载最新的主观评测
       if (analysis.latestEvaluation?.subjective) {
@@ -165,50 +153,18 @@ export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props
   const renderObjectiveMetrics = () => {
     if (!objective) return null;
 
-    // 如果没有数据，显示提示
-    if (objective.totalMessages === 0) {
-      return (
-        <div className="bg-zinc-800/30 rounded-lg p-4 text-center">
-          <div className="text-gray-500 text-sm">
-            📭 该会话暂无对话数据
-          </div>
-          <div className="text-gray-600 text-xs mt-1">
-            开始新对话后，这里将显示详细的客观指标
-          </div>
-        </div>
-      );
-    }
-
-    // 性能警告检测
-    const avgResponseSec = objective.avgResponseTime / 1000;
-    const hasSlowResponse = avgResponseSec > 10; // 超过 10 秒算慢
-    const hasVerySlowResponse = avgResponseSec > 20; // 超过 20 秒算很慢
-
     return (
       <div className="space-y-4">
-        {/* 性能警告 */}
-        {hasSlowResponse && (
-          <div className={`rounded-lg p-3 ${hasVerySlowResponse ? 'bg-red-500/20 border border-red-500/50' : 'bg-yellow-500/20 border border-yellow-500/50'}`}>
-            <div className={`text-sm font-medium ${hasVerySlowResponse ? 'text-red-400' : 'text-yellow-400'}`}>
-              ⚠️ 性能问题检测
-            </div>
-            <div className={`text-xs mt-1 ${hasVerySlowResponse ? 'text-red-300' : 'text-yellow-300'}`}>
-              平均响应时间 {avgResponseSec.toFixed(1)} 秒
-              {hasVerySlowResponse ? '，严重影响用户体验' : '，建议排查延迟原因'}
-            </div>
-          </div>
-        )}
-
         {/* 基础统计 */}
         <div className="grid grid-cols-4 gap-3">
           <StatCard label="会话时长" value={formatDuration(objective.duration)} icon="⏱️" />
           <StatCard label="交互轮次" value={objective.turnsCount.toString()} icon="💬" />
           <StatCard label="工具调用" value={objective.totalToolCalls.toString()} icon="🔧" />
           <StatCard
-            label="平均响应"
-            value={`${avgResponseSec.toFixed(1)}s`}
-            icon="⚡"
-            color={avgResponseSec <= 5 ? 'green' : avgResponseSec <= 15 ? 'yellow' : 'red'}
+            label="成功率"
+            value={`${objective.toolSuccessRate}%`}
+            icon="✅"
+            color={objective.toolSuccessRate >= 80 ? 'green' : objective.toolSuccessRate >= 60 ? 'yellow' : 'red'}
           />
         </div>
 
@@ -236,72 +192,6 @@ export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props
                     {name}: {count}
                   </span>
                 ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // 渲染 SSE 事件摘要
-  const renderEventSummary = () => {
-    if (!eventSummary) return null;
-
-    const totalEvents = Object.values(eventSummary.eventStats).reduce((a, b) => a + b, 0);
-
-    return (
-      <div className="space-y-3">
-        {/* 事件统计 */}
-        <div className="bg-zinc-800/30 rounded-lg p-3">
-          <div className="text-xs text-gray-400 mb-2">SSE 事件流 ({totalEvents} 个事件)</div>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(eventSummary.eventStats)
-              .sort((a, b) => b[1] - a[1])
-              .slice(0, 8)
-              .map(([type, count]) => (
-                <span
-                  key={type}
-                  className="text-xs px-2 py-1 rounded bg-indigo-500/20 text-indigo-300"
-                >
-                  {type}: {count}
-                </span>
-              ))}
-          </div>
-        </div>
-
-        {/* 错误事件 */}
-        {eventSummary.errorEvents.length > 0 && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
-            <div className="text-xs text-red-400 mb-2">错误事件 ({eventSummary.errorEvents.length})</div>
-            <div className="space-y-1">
-              {eventSummary.errorEvents.slice(0, 3).map((err, i) => (
-                <div key={i} className="text-xs text-red-300">• {err.message}</div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* 思考内容预览 */}
-        {eventSummary.thinkingContent.length > 0 && (
-          <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3">
-            <div className="text-xs text-purple-400 mb-2">AI 思考过程 ({eventSummary.thinkingContent.length} 段)</div>
-            <div className="text-xs text-purple-300/80 max-h-20 overflow-y-auto">
-              {eventSummary.thinkingContent[0]?.slice(0, 200)}...
-            </div>
-          </div>
-        )}
-
-        {/* 时间线预览 */}
-        {eventSummary.timeline.length > 0 && (
-          <div className="bg-zinc-800/30 rounded-lg p-3">
-            <div className="text-xs text-gray-400 mb-2">执行时间线 (最近 {Math.min(5, eventSummary.timeline.length)} 步)</div>
-            <div className="space-y-1">
-              {eventSummary.timeline.slice(-5).map((item, i) => (
-                <div key={i} className="text-xs text-gray-400 flex items-center gap-2">
-                  <span className="text-gray-600">{new Date(item.time).toLocaleTimeString()}</span>
-                  <span className="text-gray-300">{item.summary}</span>
-                </div>
-              ))}
             </div>
           </div>
         )}
@@ -541,17 +431,6 @@ export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props
             {renderObjectiveMetrics()}
           </div>
 
-          {/* SSE 事件流（如果有） */}
-          {eventSummary && (
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium text-gray-400">📡 SSE 事件流</h3>
-                <span className="text-xs text-gray-600">完整执行日志</span>
-              </div>
-              {renderEventSummary()}
-            </div>
-          )}
-
           {/* 历史评测 */}
           {previousEvaluations.length > 0 && (
             <div>
@@ -581,19 +460,13 @@ export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props
                 <div className="text-xs text-gray-500 mb-4 space-y-1">
                   <div>📋 任务分析师 · 💻 代码审查员 · 🔒 安全审计员 · 👤 用户体验专家</div>
                 </div>
-                {objective && objective.totalMessages > 0 ? (
-                  <button
-                    onClick={runSubjectiveEvaluation}
-                    className="px-6 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition flex items-center gap-2 mx-auto"
-                  >
-                    <span>🧀</span>
-                    开始深度评测
-                  </button>
-                ) : (
-                  <div className="text-yellow-500/80 text-sm">
-                    ⚠️ 该会话没有对话记录，无法进行 AI 评测
-                  </div>
-                )}
+                <button
+                  onClick={runSubjectiveEvaluation}
+                  className="px-6 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition flex items-center gap-2 mx-auto"
+                >
+                  <span>🧀</span>
+                  开始深度评测
+                </button>
               </div>
             )}
 

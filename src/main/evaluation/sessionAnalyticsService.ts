@@ -12,7 +12,6 @@ import type {
   MessageRecord,
   SessionAnalysis,
 } from '../../shared/types/sessionAnalytics';
-import { getSessionEventService } from './sessionEventService';
 
 const logger = createLogger('SessionAnalyticsService');
 
@@ -93,43 +92,13 @@ export class SessionAnalyticsService {
       ? Math.round(toolCalls.reduce((acc, t) => acc + t.duration, 0) / toolCalls.length)
       : 0;
 
-    // Token 统计 - 优先从 SSE 事件获取，否则从 tool_uses 获取
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-
-    // 尝试从 session_events 获取 token 使用（更准确）
-    try {
-      const tokenEvents = db
-        .prepare(`
-          SELECT event_data FROM session_events
-          WHERE session_id = ? AND event_type IN ('usage', 'token_usage', 'stream_end')
-          ORDER BY timestamp DESC LIMIT 10
-        `)
-        .all(sessionId) as { event_data: string | null }[];
-
-      for (const evt of tokenEvents) {
-        if (evt.event_data) {
-          try {
-            const data = JSON.parse(evt.event_data);
-            if (data.input_tokens) totalInputTokens += data.input_tokens;
-            if (data.output_tokens) totalOutputTokens += data.output_tokens;
-            if (data.usage?.input_tokens) totalInputTokens += data.usage.input_tokens;
-            if (data.usage?.output_tokens) totalOutputTokens += data.usage.output_tokens;
-          } catch { /* ignore parse errors */ }
-        }
-      }
-    } catch { /* table might not exist */ }
-
-    // 如果 SSE 没有 token 数据，从 tool_uses 获取
-    if (totalInputTokens === 0 && totalOutputTokens === 0) {
-      totalInputTokens = toolCalls.reduce((acc, t) => acc + (t.inputTokens || 0), 0);
-      totalOutputTokens = toolCalls.reduce((acc, t) => acc + (t.outputTokens || 0), 0);
-    }
-
+    // Token 统计
+    const totalInputTokens = toolCalls.reduce((acc, t) => acc + (t.inputTokens || 0), 0);
+    const totalOutputTokens = toolCalls.reduce((acc, t) => acc + (t.outputTokens || 0), 0);
     const totalTokens = totalInputTokens + totalOutputTokens;
 
-    // 估算成本 (按 DeepSeek 价格估算)
-    const estimatedCost = (totalInputTokens * 0.000001 + totalOutputTokens * 0.000002);
+    // 估算成本 (按 GPT-4 价格粗略估算)
+    const estimatedCost = (totalInputTokens * 0.00003 + totalOutputTokens * 0.00006);
 
     // 代码统计
     const messagesWithCode = messages.filter(m => m.hasCode).length;
@@ -379,19 +348,12 @@ export class SessionAnalyticsService {
   }
 
   /**
-   * 获取会话的完整分析数据（客观指标 + 历史评测 + SSE事件摘要）
+   * 获取会话的完整分析数据（客观指标 + 历史评测）
    */
   async getSessionAnalysis(sessionId: string): Promise<{
     objective: ObjectiveMetrics;
     previousEvaluations: { id: string; timestamp: number; overallScore: number; grade: string }[];
     latestEvaluation: SessionAnalysis | null;
-    eventSummary: {
-      eventStats: Record<string, number>;
-      toolCalls: Array<{ name: string; success: boolean; duration?: number }>;
-      thinkingContent: string[];
-      errorEvents: Array<{ type: string; message: string }>;
-      timeline: Array<{ time: number; type: string; summary: string }>;
-    } | null;
   }> {
     const [objective, previousEvaluations, latestEvaluation] = await Promise.all([
       this.calculateObjectiveMetrics(sessionId),
@@ -399,20 +361,10 @@ export class SessionAnalyticsService {
       this.getLatestEvaluation(sessionId),
     ]);
 
-    // 获取 SSE 事件摘要
-    let eventSummary = null;
-    try {
-      const eventService = getSessionEventService();
-      eventSummary = eventService.buildEventSummaryForEvaluation(sessionId);
-    } catch {
-      // 事件服务可能未初始化，静默失败
-    }
-
     return {
       objective,
       previousEvaluations,
       latestEvaluation,
-      eventSummary,
     };
   }
 }

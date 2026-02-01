@@ -66,7 +66,7 @@ import type {
   SubjectiveAssessment,
 } from './types/sessionAnalytics';
 
-// 会话分析结果（客观指标 + 历史评测 + SSE事件摘要）
+// 会话分析结果（客观指标 + 历史评测）
 export interface SessionAnalysisResult {
   objective: ObjectiveMetrics;
   previousEvaluations: {
@@ -81,13 +81,6 @@ export interface SessionAnalysisResult {
     timestamp: number;
     objective: ObjectiveMetrics;
     subjective: SubjectiveAssessment | null;
-  } | null;
-  eventSummary: {
-    eventStats: Record<string, number>;
-    toolCalls: Array<{ name: string; success: boolean; duration?: number }>;
-    thinkingContent: string[];
-    errorEvents: Array<{ type: string; message: string }>;
-    timeline: Array<{ time: number; type: string; summary: string }>;
   } | null;
 }
 

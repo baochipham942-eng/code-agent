@@ -34,9 +34,25 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
   const { t } = useI18n();
   const [isChecking, setIsChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [localVersion, setLocalVersion] = useState<string | null>(null);
 
-  // Get current version from updateInfo, or show placeholder
-  const currentVersion = updateInfo?.currentVersion || '...';
+  // Load local version immediately on mount
+  React.useEffect(() => {
+    const loadLocalVersion = async () => {
+      try {
+        const version = await window.electronAPI?.invoke(IPC_CHANNELS.APP_GET_VERSION);
+        if (version) {
+          setLocalVersion(version);
+        }
+      } catch (err) {
+        logger.error('Failed to load local version', err);
+      }
+    };
+    loadLocalVersion();
+  }, []);
+
+  // Get current version: prefer updateInfo, then local version, then placeholder
+  const currentVersion = updateInfo?.currentVersion || localVersion || '...';
 
   const checkForUpdates = async () => {
     setIsChecking(true);

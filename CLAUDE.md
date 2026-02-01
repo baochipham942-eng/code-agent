@@ -178,11 +178,14 @@ pending → ready → running → completed/failed/cancelled/skipped
 ```
 □ 切换到主仓库: cd /Users/linchen/Downloads/ai/code-agent
 □ 合并功能分支: git merge <branch>
-□ npm run typecheck && npm run build
-□ 更新 package.json 版本号
-□ git push
+□ npm run typecheck
+□ npm version patch --no-git-tag-version  # 更新版本号
+□ git add package.json && git commit -m "chore: bump version" && git push
+□ npm run build
+□ npx electron-rebuild -o isolated-vm     # 重编译原生模块（必须！）
+□ rm -rf release/                          # 清除打包缓存
 □ npm run dist:mac
-□ 同步 .env: cp .env "/Applications/Code Agent.app/Contents/Resources/.env"
+□ 安装 DMG 后同步 .env: cp .env "/Applications/Code Agent.app/Contents/Resources/.env"
 ```
 
 ### 本地数据库

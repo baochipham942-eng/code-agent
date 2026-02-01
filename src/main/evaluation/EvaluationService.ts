@@ -237,10 +237,10 @@ export class EvaluationService {
     // 获取消息
     const messageRows = dbInstance
       .prepare(
-        `SELECT id, role, content, created_at as timestamp
+        `SELECT id, role, content, timestamp
          FROM messages
          WHERE session_id = ?
-         ORDER BY created_at ASC`
+         ORDER BY timestamp ASC`
       )
       .all(sessionId) as {
       id: string;
@@ -256,48 +256,67 @@ export class EvaluationService {
       timestamp: row.timestamp,
     }));
 
-    // 获取工具调用（从 tool_uses 表或 message content 中解析）
-    const toolUseRows = dbInstance
-      .prepare(
-        `SELECT id, tool_name as name, input as args, output as result,
-                success, duration_ms as duration, created_at as timestamp
-         FROM tool_uses
-         WHERE session_id = ?
-         ORDER BY created_at ASC`
-      )
-      .all(sessionId) as {
+    // 获取工具调用（从 tool_uses 表，如果存在）
+    let toolCalls: {
       id: string;
       name: string;
-      args: string;
-      result: string | null;
-      success: number;
+      args: Record<string, unknown>;
+      result?: string;
+      success: boolean;
       duration: number;
       timestamp: number;
-    }[];
+    }[] = [];
 
-    const toolCalls = toolUseRows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      args: JSON.parse(row.args || '{}'),
-      result: row.result || undefined,
-      success: row.success === 1,
-      duration: row.duration || 0,
-      timestamp: row.timestamp,
-    }));
+    try {
+      // 检查 tool_uses 表是否存在
+      const tableExists = dbInstance
+        .prepare(
+          `SELECT name FROM sqlite_master WHERE type='table' AND name='tool_uses'`
+        )
+        .get();
+
+      if (tableExists) {
+        const toolUseRows = dbInstance
+          .prepare(
+            `SELECT id, tool_name as name, input as args, output as result,
+                    success, duration_ms as duration, timestamp
+             FROM tool_uses
+             WHERE session_id = ?
+             ORDER BY timestamp ASC`
+          )
+          .all(sessionId) as {
+          id: string;
+          name: string;
+          args: string;
+          result: string | null;
+          success: number;
+          duration: number;
+          timestamp: number;
+        }[];
+
+        toolCalls = toolUseRows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          args: JSON.parse(row.args || '{}'),
+          result: row.result || undefined,
+          success: row.success === 1,
+          duration: row.duration || 0,
+          timestamp: row.timestamp,
+        }));
+      }
+    } catch {
+      // 表不存在或查询失败，使用空数组
+    }
 
     // 获取会话统计
     const sessionRow = dbInstance
       .prepare(
-        `SELECT created_at, updated_at,
-                input_tokens, output_tokens, total_cost
+        `SELECT created_at, updated_at
          FROM sessions WHERE id = ?`
       )
       .get(sessionId) as {
       created_at: number;
       updated_at: number;
-      input_tokens: number | null;
-      output_tokens: number | null;
-      total_cost: number | null;
     } | undefined;
 
     const startTime = messages[0]?.timestamp || sessionRow?.created_at || Date.now();
@@ -312,9 +331,9 @@ export class EvaluationService {
       toolCalls,
       startTime,
       endTime,
-      inputTokens: sessionRow?.input_tokens || 0,
-      outputTokens: sessionRow?.output_tokens || 0,
-      totalCost: sessionRow?.total_cost || 0,
+      inputTokens: 0,  // Token 统计在当前数据库 schema 中不可用
+      outputTokens: 0,
+      totalCost: 0,
     };
   }
 

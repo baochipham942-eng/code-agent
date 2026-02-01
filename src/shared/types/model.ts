@@ -61,6 +61,9 @@ export interface ProviderConfig {
   codingBaseUrl?: string;
 }
 
+/** 模型成本类型 */
+export type ModelCostType = 'free' | 'monthly' | 'yearly' | 'payg' | 'quota';
+
 export interface ModelInfo {
   id: string;
   name: string;
@@ -69,6 +72,8 @@ export interface ModelInfo {
   supportsTool: boolean;
   supportsVision: boolean;
   supportsStreaming: boolean;
+  /** 成本类型: free=免费, monthly=包月, yearly=包年, payg=按量, quota=额度 */
+  costType?: ModelCostType;
   /** 是否使用 coding 端点 (智谱 GLM-4.7) */
   useCodingEndpoint?: boolean;
   /** 支持视频输入 (Qwen-VL-Plus, Qwen-Omni) */

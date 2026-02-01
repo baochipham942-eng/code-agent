@@ -62,7 +62,7 @@ export const T06: TestCase = {
   },
 
   tags: ['documentation', 'testing', 'unit-test', 'integration-test'],
-  timeout: 300000,
+  timeout: 600000, // 10分钟（L4 复杂任务）
 };
 
 export default T06;

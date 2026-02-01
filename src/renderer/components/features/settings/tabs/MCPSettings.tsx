@@ -114,16 +114,20 @@ export const MCPSettings: React.FC = () => {
   const handleReconnect = async (serverName: string) => {
     setReconnectingServer(serverName);
     try {
-      const result = await window.domainAPI?.invoke(IPC_DOMAINS.MCP, 'reconnectServer', { serverName });
+      const result = await window.domainAPI?.invoke<{ success: boolean; error?: string }>(
+        IPC_DOMAINS.MCP, 'reconnectServer', { serverName }
+      );
       // result.success 是 IPC 调用成功，result.data 是实际重连结果
-      if (result?.success && result?.data === true) {
+      if (result?.success && result?.data?.success) {
         setMessage({ type: 'success', text: `${serverName} 重连成功` });
       } else {
-        setMessage({ type: 'error', text: `${serverName} 重连失败` });
+        const errorMsg = result?.data?.error || '未知错误';
+        setMessage({ type: 'error', text: `${serverName} 重连失败: ${errorMsg}` });
       }
       await loadMCPStatus();
     } catch (error) {
-      setMessage({ type: 'error', text: `${serverName} 重连失败` });
+      const errorMsg = error instanceof Error ? error.message : '未知错误';
+      setMessage({ type: 'error', text: `${serverName} 重连失败: ${errorMsg}` });
     } finally {
       setReconnectingServer(null);
     }

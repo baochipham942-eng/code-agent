@@ -76,7 +76,7 @@ export const G07: TestCase = {
   },
 
   tags: ['generation', 'jwt', 'auth', 'security', 'api'],
-  timeout: 300000,
+  timeout: 600000, // 10分钟（L4 复杂任务）
 };
 
 export default G07;

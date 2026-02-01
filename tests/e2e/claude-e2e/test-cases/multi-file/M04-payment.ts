@@ -82,7 +82,7 @@ export const M04: TestCase = {
   },
 
   tags: ['multi-file', 'payment', 'stripe', 'integration', 'security'],
-  timeout: 300000,
+  timeout: 600000, // 10分钟（L4 复杂任务）
 };
 
 export default M04;

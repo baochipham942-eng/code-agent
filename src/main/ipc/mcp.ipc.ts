@@ -30,7 +30,7 @@ async function handleSetServerEnabled(serverName: string, enabled: boolean): Pro
   await getMCPClient().setServerEnabled(serverName, enabled);
 }
 
-async function handleReconnectServer(serverName: string): Promise<boolean> {
+async function handleReconnectServer(serverName: string): Promise<{ success: boolean; error?: string }> {
   return getMCPClient().reconnect(serverName);
 }
 

@@ -164,19 +164,31 @@ Your response:`;
  * Build context-specific details
  */
 function buildContextDetails(context: AnyHookContext): string {
-  if ('toolName' in context) {
-    let details = `- Tool: ${context.toolName}\n- Input: ${context.toolInput}`;
-    if (context.toolOutput) {
-      details += `\n- Output: ${context.toolOutput}`;
+  // Tool hook contexts (PreToolUse, PostToolUse, PostToolUseFailure)
+  if (context.event === 'PreToolUse' || context.event === 'PostToolUse' || context.event === 'PostToolUseFailure') {
+    const toolContext = context as { toolName: string; toolInput: string; toolOutput?: string; errorMessage?: string };
+    let details = `- Tool: ${toolContext.toolName}\n- Input: ${toolContext.toolInput}`;
+    if (toolContext.toolOutput) {
+      details += `\n- Output: ${toolContext.toolOutput}`;
     }
-    if (context.errorMessage) {
-      details += `\n- Error: ${context.errorMessage}`;
+    if (toolContext.errorMessage) {
+      details += `\n- Error: ${toolContext.errorMessage}`;
+    }
+    return details;
+  }
+
+  // Permission request context
+  if (context.event === 'PermissionRequest') {
+    const permContext = context as { toolName: string; permissionType: string; resource: string; reason?: string };
+    let details = `- Tool: ${permContext.toolName}\n- Permission: ${permContext.permissionType}\n- Resource: ${permContext.resource}`;
+    if (permContext.reason) {
+      details += `\n- Reason: ${permContext.reason}`;
     }
     return details;
   }
 
   if ('prompt' in context) {
-    return `- User Prompt: ${context.prompt}`;
+    return `- User Prompt: ${(context as { prompt: string }).prompt}`;
   }
 
   return '';

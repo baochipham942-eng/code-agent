@@ -32,6 +32,18 @@ import {
   EDIT_TOOL_DESCRIPTION,
   TASK_TOOL_DESCRIPTION,
 } from './tools';
+import {
+  detectTaskFeatures,
+  getSystemReminders,
+  type TaskFeatures,
+} from './systemReminders';
+import {
+  selectMode,
+  getModeReminder,
+  getModeConfig,
+  type AgentMode,
+  type ModeConfig,
+} from './agentModes';
 
 // ----------------------------------------------------------------------------
 // Rule Tiers - Token-optimized rule groupings
@@ -251,3 +263,72 @@ export function getPromptForTask(
 
   return SYSTEM_PROMPTS[generationId];
 }
+
+// ----------------------------------------------------------------------------
+// Dynamic Prompt Building (借鉴 Claude Code 动态系统提醒)
+// ----------------------------------------------------------------------------
+
+/**
+ * 动态 Prompt 构建结果
+ */
+export interface DynamicPromptResult {
+  systemPrompt: string;
+  userMessage: string;
+  features: TaskFeatures;
+  mode: AgentMode;
+  modeConfig: ModeConfig;
+}
+
+/**
+ * 动态构建 prompt，根据任务特征注入系统提醒和模式
+ *
+ * 借鉴 Claude Code 的设计：
+ * 1. 40 个动态系统提醒，按需注入
+ * 2. 模式系统：normal/plan/review/audit
+ * 3. 避免所有规则同时竞争模型注意力
+ */
+export function buildDynamicPrompt(
+  generationId: GenerationId,
+  taskPrompt: string
+): DynamicPromptResult {
+  const basePrompt = SYSTEM_PROMPTS[generationId];
+  const features = detectTaskFeatures(taskPrompt);
+  const mode = selectMode(taskPrompt);
+  const modeConfig = getModeConfig(mode);
+  const modeReminder = getModeReminder(mode);
+  const generalReminders = getSystemReminders(taskPrompt);
+
+  // 组合所有提醒：模式提醒 + 通用提醒
+  const allReminders: string[] = [];
+  if (modeReminder) {
+    allReminders.push(modeReminder);
+  }
+  // 如果已有模式提醒，减少通用提醒的重复
+  if (mode === 'normal') {
+    allReminders.push(...generalReminders);
+  }
+
+  // 将系统提醒附加到用户消息末尾
+  const userMessage =
+    allReminders.length > 0
+      ? taskPrompt + '\n\n' + allReminders.join('\n')
+      : taskPrompt;
+
+  return {
+    systemPrompt: basePrompt,
+    userMessage,
+    features,
+    mode,
+    modeConfig,
+  };
+}
+
+/**
+ * 检测任务特征（导出供外部使用）
+ */
+export { detectTaskFeatures, getSystemReminders, type TaskFeatures };
+
+/**
+ * 模式相关导出
+ */
+export { selectMode, getModeReminder, getModeConfig, type AgentMode, type ModeConfig };

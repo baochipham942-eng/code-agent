@@ -55,31 +55,47 @@ export class TaskComplexityAnalyzer {
   analyze(userMessage: string): ComplexityAnalysis {
     const reasons: string[] = [];
     const targetFiles = this.extractTargetFiles(userMessage);
+    const lowerMsg = userMessage.toLowerCase();
 
     // 简单规则1: 文件数量
     const fileCount = targetFiles.length;
 
-    // 简单规则2: 消息长度（词数）
-    const wordCount = userMessage.split(/\s+/).length;
+    // 简单规则2: 消息长度（字符数，对中英文都适用）
+    const charCount = userMessage.length;
 
     // 简单规则3: 是否有多步骤指示词
     const stepIndicators = ['first', 'then', 'after', 'finally', 'next', '首先', '然后', '接着', '最后', '之后'];
-    const stepCount = stepIndicators.filter(s => userMessage.toLowerCase().includes(s)).length;
+    const stepCount = stepIndicators.filter(s => lowerMsg.includes(s)).length;
+
+    // 简单规则4: 是否是审计/审查/分析类任务（这类任务通常需要委派子代理）
+    const auditKeywords = ['审计', '审查', 'audit', 'review', '安全', 'security', '全面分析', '代码质量', 'code review'];
+    const isAuditTask = auditKeywords.some(k => lowerMsg.includes(k));
+
+    // 简单规则5: 是否有多维度描述（1. 2. 3. 或者 - - - 列表）
+    const listPattern = /(?:^|\n)\s*(?:\d+[.、）)]|[-•*])\s+/g;
+    const listMatches = userMessage.match(listPattern) || [];
+    const hasList = listMatches.length >= 2;
 
     // 计算复杂度
     let complexity: TaskComplexity = 'simple';
     let confidence = 0.6;
 
-    if (fileCount >= 3 || stepCount >= 2 || wordCount > 100) {
+    // 优先检测审计/审查类任务
+    if (isAuditTask) {
+      complexity = 'complex';
+      reasons.push('审计/审查类任务');
+      confidence = 0.85;
+    } else if (fileCount >= 3 || stepCount >= 2 || charCount > 200 || hasList) {
       complexity = 'complex';
       if (fileCount >= 3) reasons.push(`涉及 ${fileCount} 个文件`);
       if (stepCount >= 2) reasons.push(`包含多步骤描述`);
-      if (wordCount > 100) reasons.push(`详细描述 (${wordCount} 词)`);
+      if (charCount > 200) reasons.push(`详细描述 (${charCount} 字符)`);
+      if (hasList) reasons.push(`包含多项清单 (${listMatches.length} 项)`);
       confidence = 0.7;
-    } else if (fileCount >= 2 || stepCount >= 1 || wordCount > 30) {
+    } else if (fileCount >= 2 || stepCount >= 1 || charCount > 50) {
       complexity = 'moderate';
       if (fileCount >= 2) reasons.push(`涉及 ${fileCount} 个文件`);
-      if (wordCount > 30) reasons.push(`中等描述 (${wordCount} 词)`);
+      if (charCount > 50) reasons.push(`中等描述 (${charCount} 字符)`);
       confidence = 0.6;
     } else {
       reasons.push('简短任务描述');

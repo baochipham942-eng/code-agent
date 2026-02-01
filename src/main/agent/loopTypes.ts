@@ -187,6 +187,9 @@ export const PARALLEL_SAFE_TOOLS = new Set([
   'mcp_list_resources',
   'mcp_read_resource',
   'mcp_get_status',
+  // P5: 子代理任务可并行（只读子代理如 explore, code-review, plan）
+  'task',
+  'Task',  // SDK 版本
 ]);
 
 /**
@@ -199,7 +202,8 @@ export const SEQUENTIAL_TOOLS = new Set([
   'memory_store',
   'ask_user_question',
   'todo_write',
-  'task',
+  // P5: task 已移到并行安全（只读子代理可并行）
+  // 注意：spawn_agent 仍需串行，因为可能创建有写权限的代理
   'spawn_agent',
 ]);
 

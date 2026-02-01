@@ -1138,10 +1138,11 @@ export function getDefaultMCPServers(): MCPServerConfig[] {
 
     // DeepWiki - 解读 GitHub 项目文档 (官方免费服务)
     // 工具: read_wiki_structure, read_wiki_contents, ask_question
+    // 注意: /sse 端点已废弃，使用 /mcp (Streamable HTTP)
     {
       name: 'deepwiki',
-      type: 'sse',
-      serverUrl: 'https://mcp.deepwiki.com/sse',
+      type: 'http-streamable',
+      serverUrl: 'https://mcp.deepwiki.com/mcp',
       enabled: true,
     },
 

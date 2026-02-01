@@ -120,8 +120,8 @@ export function registerEvaluationHandlers(): void {
           objective,
           subjective: {
             evaluatedAt: Date.now(),
-            model: 'glm-4',
-            provider: 'zhipu',
+            model: 'kimi-k2.5',
+            provider: 'moonshot',
             dimensions: {},
             overallScore: result.overallScore,
             grade,
@@ -156,8 +156,8 @@ export function registerEvaluationHandlers(): void {
 
       return {
         evaluatedAt: Date.now(),
-        model: 'glm-4',
-        provider: 'zhipu',
+        model: 'kimi-k2.5',
+        provider: 'moonshot',
         dimensions: {},
         overallScore: result.overallScore,
         grade: scoreToGrade(result.overallScore),

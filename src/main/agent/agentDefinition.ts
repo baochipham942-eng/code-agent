@@ -32,6 +32,7 @@ export {
 
 import type { FullAgentConfig } from '../../shared/types/agentTypes';
 import type { PermissionPreset } from '../services/core/permissionPresets';
+import type { ModelProvider } from '../../shared/types/model';
 
 // ============================================================================
 // Agent ID 别名
@@ -652,4 +653,216 @@ export function getAgentPermissionPreset(agent: FullAgentConfig): PermissionPres
  */
 export function getAgentMaxBudget(agent: FullAgentConfig): number | undefined {
   return agent.runtime?.maxBudget;
+}
+
+// ============================================================================
+// P2: 迭代次数分级控制
+// 借鉴 Anthropic: "embedded scaling rules in prompts"
+// ============================================================================
+
+/**
+ * 任务复杂度类型
+ */
+export type TaskComplexity = 'simple' | 'moderate' | 'complex';
+
+/**
+ * 迭代次数上限配置（按 Agent 类型）
+ */
+const ITERATION_LIMITS: Record<string, number> = {
+  // 信息搜集类（快速返回）
+  'code-explore': 8,     // 原 25 → 8
+  'explore': 8,
+  'doc-reader': 6,
+  'web-search': 8,
+
+  // 分析审查类（适中）
+  'reviewer': 12,        // 原 20 → 12
+  'visual-understanding': 8,
+
+  // 执行类（可能需要更多）
+  'coder': 15,           // 原 25 → 15
+  'debugger': 15,        // 原 30 → 15
+  'tester': 15,
+  'refactorer': 12,
+  'devops': 12,
+  'documenter': 10,
+
+  // 规划类（限制思考时间）
+  'plan': 10,            // 原 20 → 10
+  'architect': 10,       // 原 15 → 10
+
+  // 通用类
+  'general-purpose': 20, // 原 30 → 20
+  'bash-executor': 10,
+  'mcp-connector': 12,
+  'visual-processing': 10,
+};
+
+/**
+ * 估算任务复杂度
+ *
+ * 基于 prompt 内容关键词判断任务复杂度
+ */
+export function estimateTaskComplexity(prompt: string): TaskComplexity {
+  const lowerPrompt = prompt.toLowerCase();
+
+  // 简单任务指标
+  const simpleIndicators = [
+    '查找', '读取', '列出', '获取',
+    'find', 'list', 'read', 'get', 'show', 'what is',
+  ];
+
+  // 复杂任务指标
+  const complexIndicators = [
+    '分析', '审计', '重构', '设计', '全面', '详细', '完整',
+    'analyze', 'audit', 'refactor', 'design', 'comprehensive',
+    'detailed', 'complete', 'thorough', 'in-depth',
+  ];
+
+  // 检查复杂指标
+  const hasComplexIndicator = complexIndicators.some(i => lowerPrompt.includes(i));
+  const hasMultipleTasks = (prompt.match(/\d+\./g) || []).length >= 3;
+  const isLongPrompt = prompt.length > 500;
+
+  if (hasComplexIndicator || hasMultipleTasks || isLongPrompt) {
+    return 'complex';
+  }
+
+  // 检查简单指标
+  const hasSimpleIndicator = simpleIndicators.some(i => lowerPrompt.includes(i));
+  const isShortPrompt = prompt.length < 100;
+
+  if (hasSimpleIndicator && isShortPrompt) {
+    return 'simple';
+  }
+
+  return 'moderate';
+}
+
+/**
+ * 动态迭代次数计算
+ *
+ * 根据 Agent 类型和任务复杂度动态计算最大迭代次数
+ *
+ * @param agentType - Agent 类型 ID
+ * @param prompt - 任务提示词
+ * @returns 计算后的最大迭代次数（范围：3-30）
+ */
+export function calculateMaxIterations(
+  agentType: string,
+  prompt: string
+): number {
+  // 获取 Agent 配置的基础迭代次数
+  const agent = getPredefinedAgent(agentType);
+  const configuredIterations = agent?.runtime?.maxIterations ?? 20;
+
+  // 使用优化后的迭代上限（如果存在）
+  const baseIterations = ITERATION_LIMITS[agentType] ?? configuredIterations;
+
+  // 估算任务复杂度
+  const complexity = estimateTaskComplexity(prompt);
+
+  // 复杂度调整因子
+  const complexityFactor = {
+    simple: 0.6,     // 简单任务减少 40%
+    moderate: 1.0,   // 中等任务不变
+    complex: 1.3,    // 复杂任务增加 30%
+  }[complexity];
+
+  // Prompt 长度调整（长 prompt 可能需要更多迭代，但限制增幅）
+  const lengthFactor = Math.min(1.2, 1 + (prompt.length - 200) / 2000);
+
+  // 计算最终值
+  const calculated = Math.round(baseIterations * complexityFactor * lengthFactor);
+
+  // 设置上下限：3-30
+  return Math.max(3, Math.min(calculated, 30));
+}
+
+/**
+ * 获取 Agent 的动态最大迭代次数
+ *
+ * 优先使用动态计算值，如果没有 prompt 则回退到配置值
+ */
+export function getAgentDynamicMaxIterations(
+  agent: FullAgentConfig,
+  prompt?: string
+): number {
+  if (prompt) {
+    return calculateMaxIterations(agent.id, prompt);
+  }
+  return getAgentMaxIterations(agent);
+}
+
+// ============================================================================
+// P4: 子代理模型路由
+// 基于 GLM 包年套餐优化：GLM-4-Flash（简单任务）+ GLM-4.7（其他）+ DeepSeek（降级）
+// ============================================================================
+
+/**
+ * 子代理模型配置
+ *
+ * 策略：
+ * - 简单任务（探索、文档读取）使用 GLM-4-Flash（免费且快）
+ * - 其他任务使用 GLM-4.7（包年套餐，边际成本为零）
+ * - 降级时使用 DeepSeek V3
+ */
+const SUBAGENT_MODEL_CONFIG: Record<string, { provider: ModelProvider; model: string }> = {
+  // 简单任务：使用 Flash（免费且更快）
+  'code-explore': { provider: 'zhipu', model: 'glm-4-flash' },
+  'doc-reader': { provider: 'zhipu', model: 'glm-4-flash' },
+  'bash-executor': { provider: 'zhipu', model: 'glm-4-flash' },
+  'web-search': { provider: 'zhipu', model: 'glm-4-flash' },
+
+  // 其他任务：全部使用 GLM-4.7（包年套餐）
+  'coder': { provider: 'zhipu', model: 'glm-4.7' },
+  'reviewer': { provider: 'zhipu', model: 'glm-4.7' },
+  'refactorer': { provider: 'zhipu', model: 'glm-4.7' },
+  'architect': { provider: 'zhipu', model: 'glm-4.7' },
+  'plan': { provider: 'zhipu', model: 'glm-4.7' },
+  'debugger': { provider: 'zhipu', model: 'glm-4.7' },
+  'tester': { provider: 'zhipu', model: 'glm-4.7' },
+  'documenter': { provider: 'zhipu', model: 'glm-4.7' },
+  'devops': { provider: 'zhipu', model: 'glm-4.7' },
+  'general-purpose': { provider: 'zhipu', model: 'glm-4.7' },
+  'mcp-connector': { provider: 'zhipu', model: 'glm-4.7' },
+  'visual-understanding': { provider: 'zhipu', model: 'glm-4.7' },
+  'visual-processing': { provider: 'zhipu', model: 'glm-4.7' },
+};
+
+/**
+ * 降级模型配置（GLM 不可用时）
+ */
+const FALLBACK_MODEL: { provider: ModelProvider; model: string } = {
+  provider: 'deepseek',
+  model: 'deepseek-chat',
+};
+
+/**
+ * 获取子代理应使用的模型配置
+ *
+ * @param agentType - Agent 类型 ID
+ * @returns { provider, model } 配置
+ */
+export function getSubagentModelConfig(agentType: string): { provider: ModelProvider; model: string } {
+  return SUBAGENT_MODEL_CONFIG[agentType] || FALLBACK_MODEL;
+}
+
+/**
+ * 获取子代理的完整模型配置（用于直接传递给 ModelRouter）
+ *
+ * @param agentType - Agent 类型 ID
+ * @param baseConfig - 基础模型配置（继承 API key 等）
+ * @returns 完整的 ModelConfig
+ */
+export function getSubagentFullModelConfig(
+  agentType: string,
+  baseConfig: { apiKey?: string; baseUrl?: string }
+): { provider: ModelProvider; model: string; apiKey?: string; baseUrl?: string } {
+  const modelConfig = getSubagentModelConfig(agentType);
+  return {
+    ...modelConfig,
+    apiKey: baseConfig.apiKey,
+    baseUrl: baseConfig.baseUrl,
+  };
 }

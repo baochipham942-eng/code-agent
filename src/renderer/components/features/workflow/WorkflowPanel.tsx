@@ -1,31 +1,26 @@
 // ============================================================================
-// WorkflowPanel - 工作流面板（集成 DAGViewer）
+// WorkflowPanel - 工作流全屏页面（集成 DAGViewer）
 // Session 5: React Flow 可视化
 // ============================================================================
 
 import React, { memo, useCallback, useEffect } from 'react';
+import { X, Workflow } from 'lucide-react';
 import { DAGViewer } from './DAGViewer';
-import { useDAGStore, useCurrentDAG, useDAGList, useDAGVisible } from '../../../stores/dagStore';
+import { useDAGStore, useCurrentDAG, useDAGList } from '../../../stores/dagStore';
 import { DAG_CHANNELS } from '@shared/ipc/channels';
 import type { DAGVisualizationEvent } from '@shared/types/dagVisualization';
 
 interface WorkflowPanelProps {
-  /** 面板高度 */
-  height?: string | number;
-  /** 是否可关闭 */
-  closable?: boolean;
   /** 关闭回调 */
   onClose?: () => void;
 }
 
 /**
- * 工作流面板
+ * 工作流全屏页面
  */
-export const WorkflowPanel = memo(({ height = 400, closable = true, onClose }: WorkflowPanelProps) => {
+export const WorkflowPanel = memo(({ onClose }: WorkflowPanelProps) => {
   const currentDAG = useCurrentDAG();
   const dagList = useDAGList();
-  // 注意：可见性由父组件 App.tsx 通过 showDAGPanel 控制，
-  // 这里不再使用 dagStore.isVisible 判断
   const { selectDAG, handleEvent } = useDAGStore();
 
   // 订阅 DAG 事件
@@ -59,29 +54,48 @@ export const WorkflowPanel = memo(({ height = 400, closable = true, onClose }: W
     [selectDAG]
   );
 
+  // ESC 键关闭
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleClose]);
+
   return (
-    <div
-      className="flex flex-col bg-gray-900 border-t border-gray-700"
-      style={{ height }}
-    >
-      {/* 头部 */}
-      <div className="flex items-center justify-between px-4 py-2 border-b border-gray-700 bg-gray-800/50">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#0d0d0f]">
+      {/* macOS 标题栏区域 */}
+      <div
+        className="h-12 flex items-center justify-between px-4 border-b border-gray-800 bg-[#1a1a1f]"
+        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+      >
+        {/* 左侧：macOS 红绿灯占位 + 标题 */}
         <div className="flex items-center gap-4">
-          <h2 className="text-sm font-semibold text-gray-200">Workflow</h2>
+          <div className="w-[68px]" /> {/* macOS traffic lights space */}
+          <div className="flex items-center gap-2">
+            <Workflow className="w-5 h-5 text-blue-400" />
+            <h1 className="text-lg font-semibold text-gray-200">Workflow</h1>
+          </div>
 
           {/* DAG 选择器（多个 DAG 时显示） */}
           {dagList.length > 1 && (
-            <div className="flex items-center gap-1">
+            <div
+              className="flex items-center gap-1 ml-4"
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            >
               {dagList.map((dag) => (
                 <button
                   key={dag.dagId}
                   onClick={() => handleSelectDAG(dag.dagId)}
                   className={`
-                    px-2 py-1 text-xs rounded transition-colors
+                    px-3 py-1.5 text-sm rounded-lg transition-colors
                     ${
                       currentDAG?.dagId === dag.dagId
                         ? 'bg-blue-600 text-white'
-                        : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                     }
                   `}
                 >
@@ -92,46 +106,35 @@ export const WorkflowPanel = memo(({ height = 400, closable = true, onClose }: W
           )}
         </div>
 
-        {/* 控制按钮 */}
-        <div className="flex items-center gap-2">
+        {/* 右侧：状态 + 关闭按钮 */}
+        <div
+          className="flex items-center gap-3"
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+        >
           {/* 状态指示器 */}
           {currentDAG && (
             <DAGStatusBadge status={currentDAG.status} />
           )}
 
           {/* 关闭按钮 */}
-          {closable && (
-            <button
-              onClick={handleClose}
-              className="p-1 rounded hover:bg-gray-700 transition-colors"
-              title="Close workflow panel"
-            >
-              <svg
-                className="w-4 h-4 text-gray-400"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              </svg>
-            </button>
-          )}
+          <button
+            onClick={handleClose}
+            className="p-2 rounded-lg hover:bg-gray-800 transition-colors"
+            title="关闭 (ESC)"
+          >
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
         </div>
       </div>
 
-      {/* DAG 视图 */}
+      {/* DAG 视图 - 占据剩余空间 */}
       <div className="flex-1 min-h-0">
         <DAGViewer
           dagState={currentDAG}
           height="100%"
           showMiniMap={true}
           showControls={true}
-          emptyMessage="No active workflow. Run a parallel agent task or workflow to see it here."
+          emptyMessage="暂无工作流。发送消息或执行任务后，这里会显示执行流程图。"
         />
       </div>
     </div>

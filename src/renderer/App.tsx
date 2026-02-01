@@ -450,15 +450,6 @@ export const App: React.FC = () => {
               {showSkillsPanel && (
                 <SkillsPanel onClose={() => setShowSkillsPanel(false)} />
               )}
-
-              {/* DAG Visualization Panel - 任务执行图 */}
-              {dagPanelEnabled && showDAGPanel && (
-                <WorkflowPanel
-                  height={400}
-                  closable={true}
-                  onClose={() => setShowDAGPanel(false)}
-                />
-              )}
             </div>
           </div>
         </div>
@@ -468,6 +459,11 @@ export const App: React.FC = () => {
 
       {/* Lab Page */}
       {showLab && <LabPage />}
+
+      {/* Workflow Page - 全屏工作流可视化 */}
+      {dagPanelEnabled && showDAGPanel && (
+        <WorkflowPanel onClose={() => setShowDAGPanel(false)} />
+      )}
 
       {/* Evaluation Panel */}
       <EvaluationPanelWrapper

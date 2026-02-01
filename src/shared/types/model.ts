@@ -71,6 +71,16 @@ export interface ModelInfo {
   supportsStreaming: boolean;
   /** 是否使用 coding 端点 (智谱 GLM-4.7) */
   useCodingEndpoint?: boolean;
+  /** 支持视频输入 (Qwen-VL-Plus, Qwen-Omni) */
+  supportsVideo?: boolean;
+  /** 支持音频输入 (Qwen-Omni) */
+  supportsAudio?: boolean;
+  /** 是否为生成模型 (图像/视频生成) */
+  isGenerationModel?: boolean;
+  /** 生成类型 */
+  generationType?: 'image' | 'video';
+  /** 是否为异步模型 (视频生成) */
+  isAsync?: boolean;
   /** 视觉模型能力详情 (仅当 supportsVision=true 时有效) */
   visionCapabilities?: {
     /** 支持 base64 编码图片输入 */
@@ -79,8 +89,8 @@ export interface ModelInfo {
     supportsUrl: boolean;
     /** 视觉请求最大 token 限制 (可能低于 maxTokens) */
     maxVisionTokens?: number;
-    /** 支持的图片格式 */
-    supportedFormats?: ('png' | 'jpeg' | 'gif' | 'webp' | 'pdf')[];
+    /** 支持的媒体格式 */
+    supportedFormats?: ('png' | 'jpeg' | 'gif' | 'webp' | 'pdf' | 'mp4' | 'mp3' | 'wav')[];
     /** 备注说明 */
     note?: string;
   };

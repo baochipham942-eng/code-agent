@@ -9,9 +9,10 @@ import { useAppStore } from '../../../stores/appStore';
 import { GPT1Lab } from './gpt1/GPT1Lab';
 import { NanoGPTLab } from './nanogpt/NanoGPTLab';
 import { AlignmentLab } from './alignment/AlignmentLab';
+import { LLaMAFactoryLab } from './llamafactory/LLaMAFactoryLab';
 
 // 实验类型
-type LabType = 'home' | 'gpt1' | 'nanogpt' | 'alignment';
+type LabType = 'home' | 'gpt1' | 'nanogpt' | 'alignment' | 'llamafactory';
 
 // 实验卡片配置
 interface LabCard {
@@ -64,6 +65,18 @@ const labCards: LabCard[] = [
     gradient: 'from-purple-500/20 to-pink-500/20',
     iconBg: 'bg-purple-500/20',
   },
+  {
+    id: 'llamafactory',
+    title: 'LLaMA Factory 微调',
+    subtitle: '掌握大模型微调的关键技术',
+    description: '从 SFT 到 RLHF/DPO，完整学习大模型微调流程。理解 LoRA、QLoRA 等参数高效方法，掌握实战技巧。',
+    level: '高级',
+    levelStars: 3,
+    params: '概念演示模式',
+    status: 'available',
+    gradient: 'from-orange-500/20 to-amber-500/20',
+    iconBg: 'bg-orange-500/20',
+  },
 ];
 
 export const LabPage: React.FC = () => {
@@ -114,6 +127,10 @@ export const LabPage: React.FC = () => {
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
             <span className="text-zinc-500 text-sm">③ 学会听话</span>
           </div>
+          <ChevronRight className="w-4 h-4 text-zinc-600" />
+          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
+            <span className="text-zinc-500 text-sm">④ 微调进阶</span>
+          </div>
         </div>
         <p className="text-xs text-zinc-500 mt-3 text-center">
           建议从第一个实验开始，每个实验大约需要 15-30 分钟
@@ -144,7 +161,9 @@ export const LabPage: React.FC = () => {
                   ? '教 AI 学说话'
                   : currentLab === 'nanogpt'
                     ? '让 AI 读更多书'
-                    : '让 AI 学会听话'}
+                    : currentLab === 'alignment'
+                      ? '让 AI 学会听话'
+                      : 'LLaMA Factory 微调'}
             </h1>
           </div>
         </div>
@@ -161,6 +180,7 @@ export const LabPage: React.FC = () => {
       {currentLab === 'gpt1' && <GPT1Lab />}
       {currentLab === 'nanogpt' && <NanoGPTLab />}
       {currentLab === 'alignment' && <AlignmentLab />}
+      {currentLab === 'llamafactory' && <LLaMAFactoryLab />}
     </div>
   );
 };

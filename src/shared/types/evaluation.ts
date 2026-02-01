@@ -66,7 +66,8 @@ export interface EvaluationMetric {
   dimension: EvaluationDimension;
   score: number; // 0-100
   weight: number;
-  subMetrics: SubMetric[];
+  subMetrics?: SubMetric[];
+  details?: { reason?: string; [key: string]: unknown }; // AI 评测详情
   suggestions?: string[];
 }
 
@@ -120,6 +121,7 @@ export interface EvaluationResult {
   metrics: EvaluationMetric[];
   statistics: EvaluationStatistics;
   topSuggestions: string[];
+  aiSummary?: string; // AI 评测总结
 }
 
 /**

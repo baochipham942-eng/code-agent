@@ -69,3 +69,10 @@ export {
   resetSessionSkillService,
   SessionSkillService,
 } from './sessionSkillService';
+
+export {
+  getSkillWatcher,
+  initSkillWatcher,
+  resetSkillWatcher,
+  SkillWatcher,
+} from './skillWatcher';

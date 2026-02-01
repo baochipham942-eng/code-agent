@@ -24,6 +24,7 @@ import {
   PerformanceEvaluator,
   SecurityEvaluator,
 } from './metrics';
+import { getAIEvaluator } from './aiEvaluator';
 
 const logger = createLogger('EvaluationService');
 
@@ -83,32 +84,57 @@ export class EvaluationService {
 
   /**
    * 评测会话
+   * 优先使用 AI 深度评测，失败时回退到规则评测
    */
   async evaluateSession(
     sessionId: string,
-    options: { save?: boolean } = {}
+    options: { save?: boolean; useAI?: boolean } = {}
   ): Promise<EvaluationResult> {
     logger.info(`Evaluating session: ${sessionId}`);
 
     // 收集会话数据
     const snapshot = await this.collectSessionData(sessionId);
 
-    // 运行所有评测器
-    const metrics: EvaluationMetric[] = [];
-    for (const evaluator of this.evaluators.values()) {
-      const metric = await evaluator.evaluate(snapshot);
-      metrics.push(metric);
+    let metrics: EvaluationMetric[] = [];
+    let overallScore: number;
+    let allSuggestions: string[] = [];
+    let aiSummary: string | undefined;
+
+    // 默认使用 AI 评测
+    const useAI = options.useAI !== false;
+
+    if (useAI) {
+      // 尝试 AI 深度评测
+      try {
+        logger.info('Attempting AI-powered evaluation...');
+        const aiEvaluator = getAIEvaluator();
+        const aiResult = await aiEvaluator.evaluate(snapshot);
+
+        if (aiResult) {
+          // AI 评测成功
+          metrics = aiEvaluator.convertToMetrics(aiResult);
+          overallScore = aiResult.overallScore;
+          allSuggestions = aiResult.suggestions || [];
+          aiSummary = aiResult.summary;
+          logger.info('AI evaluation succeeded', { overallScore });
+        } else {
+          throw new Error('AI evaluation returned null');
+        }
+      } catch (aiError) {
+        // AI 评测失败，回退到规则评测
+        logger.warn('AI evaluation failed, falling back to rule-based', { error: aiError });
+        const ruleResult = await this.runRuleBasedEvaluation(snapshot);
+        metrics = ruleResult.metrics;
+        overallScore = ruleResult.overallScore;
+        allSuggestions = ruleResult.suggestions;
+      }
+    } else {
+      // 使用规则评测
+      const ruleResult = await this.runRuleBasedEvaluation(snapshot);
+      metrics = ruleResult.metrics;
+      overallScore = ruleResult.overallScore;
+      allSuggestions = ruleResult.suggestions;
     }
-
-    // 计算加权总分
-    const overallScore = Math.round(
-      metrics.reduce((acc, m) => acc + m.score * m.weight, 0)
-    );
-
-    // 收集改进建议
-    const allSuggestions = metrics
-      .flatMap((m) => m.suggestions || [])
-      .slice(0, 5);
 
     const result: EvaluationResult = {
       id: uuidv4(),
@@ -125,7 +151,8 @@ export class EvaluationService {
         outputTokens: snapshot.outputTokens,
         totalCost: snapshot.totalCost,
       },
-      topSuggestions: allSuggestions,
+      topSuggestions: allSuggestions.slice(0, 5),
+      aiSummary,
     };
 
     // 可选保存结果
@@ -135,6 +162,31 @@ export class EvaluationService {
 
     logger.info(`Evaluation complete: score=${overallScore}, grade=${result.grade}`);
     return result;
+  }
+
+  /**
+   * 运行规则评测（回退方案）
+   */
+  private async runRuleBasedEvaluation(snapshot: SessionSnapshot): Promise<{
+    metrics: EvaluationMetric[];
+    overallScore: number;
+    suggestions: string[];
+  }> {
+    const metrics: EvaluationMetric[] = [];
+    for (const evaluator of this.evaluators.values()) {
+      const metric = await evaluator.evaluate(snapshot);
+      metrics.push(metric);
+    }
+
+    const overallScore = Math.round(
+      metrics.reduce((acc, m) => acc + m.score * m.weight, 0)
+    );
+
+    const suggestions = metrics
+      .flatMap((m) => m.suggestions || [])
+      .slice(0, 5);
+
+    return { metrics, overallScore, suggestions };
   }
 
   /**

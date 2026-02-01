@@ -26,7 +26,7 @@ import { initPluginSystem, shutdownPluginSystem } from '../plugins';
 import { initDAGEventBridge } from '../scheduler';
 import { initCronService, getCronService, initHeartbeatService, getHeartbeatService } from '../cron';
 import { initFileCheckpointService, getFileCheckpointService } from '../services/checkpoint';
-import { getSkillDiscoveryService, getSkillRepositoryService } from '../services/skills';
+import { getSkillDiscoveryService, getSkillRepositoryService, initSkillWatcher, getSkillWatcher } from '../services/skills';
 import { getMainWindow } from './window';
 import { getChannelManager } from '../channels';
 import { initChannelAgentBridge, getChannelAgentBridge } from '../channels/channelAgentBridge';
@@ -246,6 +246,26 @@ async function initializeServices(): Promise<void> {
           project: stats.bySource.project,
           library: stats.bySource.library,
         });
+
+        // Initialize SkillWatcher for hot-reload
+        initSkillWatcher(process.cwd())
+          .then((watcher) => {
+            // 监听 reload 事件，通知前端刷新
+            watcher.on('reloaded', (reloadStats) => {
+              logger.info('Skills hot-reloaded', { total: reloadStats.total });
+              // 通知前端刷新（如果需要）
+              if (mainWindow) {
+                mainWindow.webContents.send(IPC_CHANNELS.MCP_EVENT, {
+                  type: 'server_connected',
+                  data: [{ server: 'skills', error: undefined }],
+                });
+              }
+            });
+            logger.info('SkillWatcher initialized', { watchCount: watcher.getWatchCount() });
+          })
+          .catch((watchError) => {
+            logger.warn('SkillWatcher initialization failed (non-blocking)', { error: String(watchError) });
+          });
       } catch (skillError) {
         logger.warn('SkillDiscovery initialization failed (non-blocking)', { error: String(skillError) });
       }

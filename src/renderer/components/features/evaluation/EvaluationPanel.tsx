@@ -190,9 +190,14 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
                 <div className="mb-2">
                   评测时间: {new Date(result.timestamp).toLocaleString()}
                 </div>
-                <div>
+                <div className="mb-2">
                   会话 ID: <span className="font-mono text-xs">{result.sessionId}</span>
                 </div>
+                {result.aiSummary && (
+                  <div className="mt-3 p-2 bg-indigo-500/10 border border-indigo-500/30 rounded text-indigo-300 text-xs">
+                    <span className="font-medium">AI 总结:</span> {result.aiSummary}
+                  </div>
+                )}
               </div>
             </div>
 

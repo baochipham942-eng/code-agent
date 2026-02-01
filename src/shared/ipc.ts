@@ -59,7 +59,7 @@ import type {
 } from './types/contextHealth';
 
 import type { DAGVisualizationEvent } from './types/dagVisualization';
-import { DAG_CHANNELS, LAB_CHANNELS, CHANNEL_CHANNELS, EVALUATION_CHANNELS } from './ipc/channels';
+import { DAG_CHANNELS, LAB_CHANNELS, CHANNEL_CHANNELS, EVALUATION_CHANNELS, LSP_CHANNELS, BACKGROUND_CHANNELS } from './ipc/channels';
 
 import type {
   ChannelAccount,
@@ -104,6 +104,8 @@ import type {
   SessionStatus,
   SessionStatusUpdateEvent,
   SessionRuntimeSummary,
+  BackgroundTaskInfo,
+  BackgroundTaskUpdateEvent,
 } from './types/sessionState';
 
 // Re-export session state types for consumer convenience
@@ -523,6 +525,18 @@ export const IPC_CHANNELS = {
   EVALUATION_LIST_HISTORY: EVALUATION_CHANNELS.LIST_HISTORY,
   EVALUATION_EXPORT: EVALUATION_CHANNELS.EXPORT,
   EVALUATION_DELETE: EVALUATION_CHANNELS.DELETE,
+
+  // LSP channels (语言服务器)
+  LSP_GET_STATUS: LSP_CHANNELS.GET_STATUS,
+  LSP_CHECK_SERVERS: LSP_CHANNELS.CHECK_SERVERS,
+  LSP_INITIALIZE: LSP_CHANNELS.INITIALIZE,
+
+  // Background channels (后台任务)
+  BACKGROUND_MOVE_TO_BACKGROUND: BACKGROUND_CHANNELS.MOVE_TO_BACKGROUND,
+  BACKGROUND_MOVE_TO_FOREGROUND: BACKGROUND_CHANNELS.MOVE_TO_FOREGROUND,
+  BACKGROUND_GET_TASKS: BACKGROUND_CHANNELS.GET_TASKS,
+  BACKGROUND_GET_COUNT: BACKGROUND_CHANNELS.GET_COUNT,
+  BACKGROUND_TASK_UPDATE: BACKGROUND_CHANNELS.TASK_UPDATE,
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -777,6 +791,12 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.EVALUATION_LIST_HISTORY]: (payload?: { sessionId?: string; limit?: number }) => Promise<EvaluationResult[]>;
   [IPC_CHANNELS.EVALUATION_EXPORT]: (payload: { result: EvaluationResult; format: 'json' | 'markdown' }) => Promise<string>;
   [IPC_CHANNELS.EVALUATION_DELETE]: (evaluationId: string) => Promise<boolean>;
+
+  // Background (后台任务)
+  [IPC_CHANNELS.BACKGROUND_MOVE_TO_BACKGROUND]: (sessionId: string) => Promise<boolean>;
+  [IPC_CHANNELS.BACKGROUND_MOVE_TO_FOREGROUND]: (sessionId: string) => Promise<BackgroundTaskInfo | null>;
+  [IPC_CHANNELS.BACKGROUND_GET_TASKS]: () => Promise<BackgroundTaskInfo[]>;
+  [IPC_CHANNELS.BACKGROUND_GET_COUNT]: () => Promise<number>;
 }
 
 // ----------------------------------------------------------------------------
@@ -860,6 +880,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.CLOUD_TASK_FAILED]: (task: CloudTask) => void;
   [IPC_CHANNELS.CONTEXT_HEALTH_EVENT]: (event: ContextHealthUpdateEvent) => void;
   [IPC_CHANNELS.SESSION_STATUS_UPDATE]: (event: SessionStatusUpdateEvent) => void;
+  // Background task events
+  [IPC_CHANNELS.BACKGROUND_TASK_UPDATE]: (event: BackgroundTaskUpdateEvent) => void;
   // DAG Visualization events
   [DAG_CHANNELS.EVENT]: (event: DAGVisualizationEvent) => void;
   // Lab training progress events

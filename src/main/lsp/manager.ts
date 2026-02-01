@@ -512,6 +512,24 @@ export const defaultLSPConfigs: LSPServerConfig[] = [
     restartOnCrash: true,
     maxRestarts: 3,
   },
+  {
+    name: 'gopls',
+    command: 'gopls',
+    args: ['serve'],
+    fileExtensions: ['.go'],
+    extensionToLanguage: { '.go': 'go' },
+    restartOnCrash: true,
+    maxRestarts: 3,
+  },
+  {
+    name: 'rust-analyzer',
+    command: 'rust-analyzer',
+    args: [],
+    fileExtensions: ['.rs'],
+    extensionToLanguage: { '.rs': 'rust' },
+    restartOnCrash: true,
+    maxRestarts: 3,
+  },
 ];
 
 // ============================================================================

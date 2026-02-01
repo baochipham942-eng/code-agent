@@ -183,3 +183,51 @@ export const EVALUATION_CHANNELS = {
  * Evaluation 通道名称类型
  */
 export type EvaluationChannel = (typeof EVALUATION_CHANNELS)[keyof typeof EVALUATION_CHANNELS];
+
+// ============================================================================
+// LSP 语言服务器 IPC 通道
+// ============================================================================
+
+/**
+ * LSP 语言服务器 IPC 通道
+ * 用于前端与主进程之间的 LSP 状态查询
+ */
+export const LSP_CHANNELS = {
+  /** 获取 LSP 状态 */
+  GET_STATUS: 'lsp:get-status',
+  /** 检查语言服务器安装状态 */
+  CHECK_SERVERS: 'lsp:check-servers',
+  /** 手动初始化 LSP */
+  INITIALIZE: 'lsp:initialize',
+} as const;
+
+/**
+ * LSP 通道名称类型
+ */
+export type LSPChannel = (typeof LSP_CHANNELS)[keyof typeof LSP_CHANNELS];
+
+// ============================================================================
+// Background 后台任务 IPC 通道
+// ============================================================================
+
+/**
+ * Background 后台任务 IPC 通道
+ * 用于前端与主进程之间的后台任务管理
+ */
+export const BACKGROUND_CHANNELS = {
+  /** 将会话移至后台 */
+  MOVE_TO_BACKGROUND: 'background:move-to-background',
+  /** 将会话恢复到前台 */
+  MOVE_TO_FOREGROUND: 'background:move-to-foreground',
+  /** 获取所有后台任务 */
+  GET_TASKS: 'background:get-tasks',
+  /** 获取后台任务数量 */
+  GET_COUNT: 'background:get-count',
+  /** 后台任务更新事件 */
+  TASK_UPDATE: 'background:task:update',
+} as const;
+
+/**
+ * Background 通道名称类型
+ */
+export type BackgroundChannel = (typeof BACKGROUND_CHANNELS)[keyof typeof BACKGROUND_CHANNELS];

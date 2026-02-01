@@ -18,6 +18,7 @@ AI 编程助手桌面应用，复刻 Claude Code 的 8 个架构代际来研究 
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 架构索引（入口）|
 | [docs/PRD.md](docs/PRD.md) | 产品需求文档 |
 | [docs/guides/tools-reference.md](docs/guides/tools-reference.md) | 工具完整参考手册 |
+| [docs/guides/model-config.md](docs/guides/model-config.md) | 模型配置矩阵 |
 | [docs/guides/deployment.md](docs/guides/deployment.md) | 部署配置指南 |
 | [docs/guides/git-workflow.md](docs/guides/git-workflow.md) | Git 分支工作流 |
 | [docs/guides/troubleshooting.md](docs/guides/troubleshooting.md) | 问题排查（错题本）|

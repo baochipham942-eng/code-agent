@@ -632,6 +632,27 @@ export class AgentOrchestrator {
       return;
     }
 
+    // Create DAG for multi-agent visualization
+    const dagId = `auto-${sessionId || Date.now()}`;
+    const dag = new TaskDAG(dagId, `自动 Agent: ${requirements.taskType}`);
+
+    // Add task for each agent
+    const agentDependencies: string[] = [];
+    for (const agent of agents) {
+      dag.addAgentTask(agent.id, {
+        role: agent.name,
+        prompt: agent.systemPrompt.substring(0, 200),
+      }, {
+        name: agent.name,
+        description: `工具: ${agent.tools.slice(0, 3).join(', ')}${agent.tools.length > 3 ? '...' : ''}`,
+        dependencies: requirements.executionStrategy === 'sequential' ? agentDependencies.slice(-1) : [],
+      });
+      agentDependencies.push(agent.id);
+    }
+
+    // Send DAG init event for visualization
+    sendDAGInitEvent(dag);
+
     // Notify UI about auto agent planning
     onEvent({
       type: 'agent_thinking',
@@ -657,6 +678,9 @@ export class AgentOrchestrator {
         requestPermission: async () => true, // Auto-approve for auto agents
       },
       onProgress: (agentId, status, progress) => {
+        // Sync DAG task status
+        this.syncAutoAgentDAGStatus(dagId, agentId, status);
+
         onEvent({
           type: 'agent_thinking',
           data: {
@@ -1099,22 +1123,78 @@ export class AgentOrchestrator {
     }
 
     if (statusUpdate) {
-      const vizEvent: DAGVisualizationEvent = {
-        type: 'task:status',
-        dagId,
-        timestamp: Date.now(),
-        data: statusUpdate,
-      };
+      this.sendDAGStatusEvent(dagId, statusUpdate);
+    }
+  }
 
-      // Send to all renderer windows
-      const windows = BrowserWindow.getAllWindows();
-      for (const win of windows) {
-        if (!win.isDestroyed() && win.webContents) {
-          try {
-            win.webContents.send(DAG_CHANNELS.EVENT, vizEvent);
-          } catch {
-            // Ignore send errors
-          }
+  /**
+   * 同步自动 Agent 模式的 DAG 任务状态
+   * 根据 onProgress 回调的状态更新对应 Agent 任务的状态
+   */
+  private syncAutoAgentDAGStatus(dagId: string, agentId: string, status: string): void {
+    // Map onProgress status to DAG task status
+    let taskStatus: 'pending' | 'ready' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped';
+
+    switch (status) {
+      case 'pending':
+      case 'queued':
+        taskStatus = 'pending';
+        break;
+      case 'running':
+      case 'executing':
+        taskStatus = 'running';
+        break;
+      case 'completed':
+      case 'done':
+      case 'success':
+        taskStatus = 'completed';
+        break;
+      case 'failed':
+      case 'error':
+        taskStatus = 'failed';
+        break;
+      case 'cancelled':
+      case 'stopped':
+        taskStatus = 'cancelled';
+        break;
+      case 'skipped':
+        taskStatus = 'skipped';
+        break;
+      default:
+        // Unknown status, treat as running
+        taskStatus = 'running';
+    }
+
+    const statusUpdate: TaskStatusEventData = {
+      type: 'task:status',
+      taskId: agentId,
+      status: taskStatus,
+      ...(taskStatus === 'running' ? { startedAt: Date.now() } : {}),
+      ...(taskStatus === 'completed' || taskStatus === 'failed' ? { completedAt: Date.now() } : {}),
+    };
+
+    this.sendDAGStatusEvent(dagId, statusUpdate);
+  }
+
+  /**
+   * 发送 DAG 状态更新事件到渲染进程
+   */
+  private sendDAGStatusEvent(dagId: string, statusUpdate: TaskStatusEventData): void {
+    const vizEvent: DAGVisualizationEvent = {
+      type: 'task:status',
+      dagId,
+      timestamp: Date.now(),
+      data: statusUpdate,
+    };
+
+    // Send to all renderer windows
+    const windows = BrowserWindow.getAllWindows();
+    for (const win of windows) {
+      if (!win.isDestroyed() && win.webContents) {
+        try {
+          win.webContents.send(DAG_CHANNELS.EVENT, vizEvent);
+        } catch {
+          // Ignore send errors
         }
       }
     }

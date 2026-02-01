@@ -80,24 +80,24 @@ export class ModelRouter {
    * 优先使用包年/包月模型，节省按量付费成本
    */
   private fallbackModels: Record<ModelCapability, { provider: string; model: string }> = {
-    // 视觉 - 智谱包年
-    vision: { provider: 'zhipu', model: 'glm-4v-plus' },
-    // 推理 - DeepSeek R1 (按需)
-    reasoning: { provider: 'deepseek', model: 'deepseek-reasoner' },
+    // 视觉 - 智谱 GLM-4.6V (旗舰视觉)
+    vision: { provider: 'zhipu', model: 'glm-4.6v' },
+    // 推理 - 智谱 GLM-4.6V (带推理能力)
+    reasoning: { provider: 'zhipu', model: 'glm-4.6v' },
     // 代码 - Kimi K2.5 包月
     code: { provider: 'moonshot', model: 'kimi-k2.5' },
-    // 快速 - 智谱 Flash 包年
-    fast: { provider: 'zhipu', model: 'glm-4-flash' },
+    // 快速 - 智谱 GLM-4.7 Flash (免费)
+    fast: { provider: 'zhipu', model: 'glm-4.7-flash' },
     // 通用 - Kimi K2.5 包月
     general: { provider: 'moonshot', model: 'kimi-k2.5' },
-    // GUI - 智谱视觉包年
-    gui: { provider: 'zhipu', model: 'glm-4v-plus' },
+    // GUI - 智谱 GLM-4.6V Flash (免费视觉)
+    gui: { provider: 'zhipu', model: 'glm-4.6v-flash' },
     // 搜索 - Perplexity (按需)
     search: { provider: 'perplexity', model: 'sonar-pro' },
     // 压缩 - Kimi K2.5 包月无成本
     compact: { provider: 'moonshot', model: 'kimi-k2.5' },
-    // 快速判断 - 智谱 Flash 包年
-    quick: { provider: 'zhipu', model: 'glm-4-flash' },
+    // 快速判断 - 智谱 GLM-4.7 Flash (免费)
+    quick: { provider: 'zhipu', model: 'glm-4.7-flash' },
     // 长上下文 - Kimi K2.5 包月
     longContext: { provider: 'moonshot', model: 'kimi-k2.5' },
     // 无限制 - Kimi K2.5 包月

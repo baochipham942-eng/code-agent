@@ -129,12 +129,12 @@ const DEFAULT_SETTINGS: AppSettings = {
       perplexity: { enabled: false },
       openrouter: { enabled: false },
     },
-    // 按用途路由模型
+    // 按用途路由模型 (2026-02 最新)
     routing: {
       code: { provider: 'moonshot', model: 'kimi-k2.5' },             // Kimi K2.5 包月
-      vision: { provider: 'zhipu', model: 'glm-4v-plus' },            // 智谱视觉 (包年)
-      fast: { provider: 'zhipu', model: 'glm-4-flash' },              // 智谱 Flash (包年，免费)
-      gui: { provider: 'zhipu', model: 'glm-4v-plus' },               // GUI Agent 用智谱视觉
+      vision: { provider: 'zhipu', model: 'glm-4.6v' },               // GLM-4.6V 旗舰视觉
+      fast: { provider: 'zhipu', model: 'glm-4.7-flash' },            // GLM-4.7 Flash (免费)
+      gui: { provider: 'zhipu', model: 'glm-4.6v-flash' },            // GLM-4.6V Flash (免费视觉)
     },
   },
   generation: {

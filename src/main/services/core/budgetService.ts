@@ -80,10 +80,12 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   'claude-3-haiku': { input: 0.25, output: 1.25 },
   'claude-3.5-sonnet': { input: 3, output: 15 },
 
-  // Zhipu
-  'glm-4': { input: 0.1, output: 0.1 },
-  'glm-4v': { input: 0.1, output: 0.1 },
-  'glm-4v-plus': { input: 0.1, output: 0.1 },
+  // Zhipu - 旗舰模型
+  'glm-4.7': { input: 0.05, output: 0.05 },
+  'glm-4.6v': { input: 0.05, output: 0.05 },
+  // Zhipu - 免费模型
+  'glm-4.7-flash': { input: 0, output: 0 },
+  'glm-4.6v-flash': { input: 0, output: 0 },
 
   // Moonshot/Kimi - 包月套餐不计费
   'kimi-k2.5': { input: 0, output: 0 },

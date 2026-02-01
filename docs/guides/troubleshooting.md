@@ -185,3 +185,52 @@ sqlite3 "~/Library/Application Support/code-agent/code-agent.db" \
 | `project_knowledge` | 项目知识库 |
 | `user_preferences` | 用户设置 |
 | `audit_log` | 审计日志 |
+| `file_checkpoints` | 文件检查点 (v0.16.11+) |
+
+---
+
+## v0.16.11+ 新增问题
+
+### MCP 重连 UI 状态不同步
+**问题**: MCP 服务器重连后，UI 状态未更新
+**原因**: 重连事件未正确传播到前端
+**解决**: 确保 `mcp:reconnected` 事件触发 UI 刷新
+
+### DAG 面板无限循环
+**问题**: DAG 可视化组件导致页面卡死
+**原因**: `useDAGLayout` 中默认参数触发无限重渲染
+**解决**: 使用 `useMemo` 缓存默认参数对象
+
+### 评测数据库列名不匹配
+**问题**: 会话评测功能查询失败
+**原因**: 代码中的列名与数据库 schema 不一致
+**解决**: 统一使用 snake_case 列名
+
+### 智谱推理模型响应格式
+**问题**: `glm-4.7` 推理模型返回 `reasoning_content` 字段未处理
+**解决**: 在响应解析中添加对 `reasoning_content` 的支持
+
+---
+
+## 性能优化经验
+
+### 首次响应延迟优化 (~500ms)
+**问题**: 启动后首次对话响应慢
+**优化**:
+1. 异步初始化非关键服务 (MCP, LogBridge)
+2. 使用 Vite 代码分割减少初始加载
+3. 结构化日志替代 `console.log`
+
+### Token 消耗优化
+**问题**: 长会话 token 消耗过快
+**优化**:
+1. 消息摘要压缩历史
+2. 工具结果截断
+3. 系统提示精简
+
+### 异步 I/O 优化
+**问题**: 同步 I/O 阻塞主进程
+**优化**:
+1. `sessionPersistence` 改为异步写入
+2. `auditLogger` 使用批量写入
+3. 文件操作使用 `fs/promises`

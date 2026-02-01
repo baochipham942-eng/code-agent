@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 4.0 (对应 v0.16.8)
-> 日期: 2026-01-26
+> 版本: 5.0 (对应 v0.16.15)
+> 日期: 2026-02-01
 > 作者: Lin Chen
 
 本文档已拆分为模块化的架构文档，便于维护和查阅。
@@ -15,7 +15,7 @@
 | 文档 | 描述 |
 |------|------|
 | [系统概览](./architecture/overview.md) | 整体架构图、技术栈、分层设计 |
-| [Agent 核心](./architecture/agent-core.md) | AgentLoop、消息流、规划系统、Anti-pattern Detection |
+| [Agent 核心](./architecture/agent-core.md) | AgentLoop、消息流、规划系统、Nudge 机制、Checkpoint |
 | [工具系统](./architecture/tool-system.md) | ToolRegistry、ToolExecutor、8 代工具演进 |
 | [前端架构](./architecture/frontend.md) | React 组件、Zustand 状态、useAgent Hook |
 | [数据存储](./architecture/data-storage.md) | SQLite、Supabase、pgvector、SecureStorage |
@@ -29,7 +29,12 @@
 | **DI 容器** | `src/main/core/container.ts` | 依赖注入容器 |
 | **生命周期管理** | `src/main/core/lifecycle.ts` | 服务生命周期管理 |
 | **DAG 可视化** | `src/renderer/components/features/workflow/` | React Flow DAG 展示 |
-| **内置 Agent** | `src/shared/types/builtInAgents.ts` | 6 个预定义 Agent 角色 |
+| **内置 Agent** | `src/shared/types/builtInAgents.ts` | 6+11 个预定义 Agent 角色 |
+| **Checkpoint 系统** | `src/main/services/FileCheckpointService.ts` | 文件版本快照与回滚 |
+| **ToolSearch** | `src/main/tools/gen4/toolSearch.ts` | 延迟加载工具发现机制 |
+| **CLI 接口** | `src/main/cli/` | 命令行交互模式 |
+| **多渠道接入** | `src/main/channels/` | 飞书 Webhook 等渠道支持 |
+| **Skills 系统** | `src/main/skills/` | 用户可定义技能 |
 
 ### 架构决策记录 (ADR)
 

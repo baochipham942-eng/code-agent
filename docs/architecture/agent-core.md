@@ -402,6 +402,135 @@ Plan Mode 从 **Gen3** 开始可用，覆盖 Gen3-Gen8。
 
 ---
 
+## Nudge 机制 (v0.16.11+)
+
+**位置**: `src/main/agent/AgentLoop.ts`
+
+Nudge 是一种非侵入式的提示机制，用于引导 AI 完成任务而不是过早停止。
+
+### P1 Nudge - 只读停止检测
+
+**触发条件**: AI 在没有执行任何写操作的情况下准备停止
+
+```typescript
+// 检测逻辑
+if (hasOnlyReadOperations && isAboutToStop) {
+  injectNudge("你似乎只进行了探索，还没有实际修改。请继续完成任务。");
+}
+```
+
+### P2 Checkpoint 验证
+
+**触发条件**: 任务完成时验证文件修改是否与任务目标一致
+
+```typescript
+// 验证逻辑
+const modifiedFiles = getModifiedFilesSinceCheckpoint();
+if (!modifiedFiles.includes(expectedFile)) {
+  injectNudge("你修改的文件似乎与任务目标不符，请检查。");
+}
+```
+
+### P3 文件完成追踪
+
+**触发条件**: 追踪每个文件的完成状态
+
+| 状态 | 含义 |
+|------|------|
+| `created` | 文件已创建 |
+| `modified` | 文件已修改 |
+| `verified` | 文件已验证 |
+| `completed` | 任务完成 |
+
+---
+
+## Checkpoint 系统 (v0.16.11+)
+
+**位置**: `src/main/services/FileCheckpointService.ts`
+
+文件版本快照系统，支持任务级别的回滚。
+
+### 核心功能
+
+| 功能 | 描述 |
+|------|------|
+| `createCheckpoint()` | 创建当前文件状态快照 |
+| `rewindFiles()` | 回滚到指定检查点 |
+| `getModifiedFiles()` | 获取检查点后修改的文件列表 |
+| `cleanup()` | 清理过期检查点 |
+
+### 数据库表结构
+
+```sql
+CREATE TABLE file_checkpoints (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+```
+
+### 使用场景
+
+1. **任务开始前**: 自动创建检查点
+2. **任务失败时**: 回滚到检查点
+3. **用户请求撤销**: 恢复到指定检查点
+
+---
+
+## Subagent 系统优化 (v0.16.12+)
+
+**位置**: `src/main/agent/subagent/`
+
+### 4 层架构
+
+```
+┌─────────────────────────────────────────────┐
+│ Layer 1: 核心定义 (builtInAgents.ts)        │
+│   - 角色名称、描述、能力                    │
+└─────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────┐
+│ Layer 2: 上下文注入 (contextInjector.ts)    │
+│   - System Prompt 模板                      │
+│   - 工具权限配置                           │
+└─────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────┐
+│ Layer 3: 生命周期 (subagentPipeline.ts)     │
+│   - 创建、执行、销毁                       │
+└─────────────────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────────────────┐
+│ Layer 4: 消息追踪 (parentToolUseId)         │
+│   - 父子关系追踪                           │
+│   - 结果聚合                               │
+└─────────────────────────────────────────────┘
+```
+
+### 复杂度分析与动态模式检测
+
+```typescript
+// 任务复杂度自动检测
+const complexity = analyzeComplexity(userMessage);
+// SIMPLE → 直接执行
+// MODERATE → 简单规划
+// COMPLEX → 完整规划 + 子代理分工
+```
+
+### Cowork 框架
+
+子代理间协作框架，支持：
+- **串行协作**: A → B → C
+- **并行协作**: A, B, C 同时执行
+- **混合协作**: A → (B, C 并行) → D
+
+---
+
 ## 依赖注入容器 (v0.16+)
 
 **位置**: `src/main/core/container.ts`

@@ -36,6 +36,7 @@ import { registerLabHandlers } from './lab.ipc';
 import { registerChannelHandlers } from './channel.ipc';
 import { registerAgentRoutingHandlers } from './agentRouting.ipc';
 import { registerCheckpointHandlers } from './checkpoint.ipc';
+import { registerEvaluationHandlers } from './evaluation.ipc';
 
 export * from './types';
 
@@ -145,6 +146,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Checkpoint handlers
   registerCheckpointHandlers(ipcMain);
+
+  // Evaluation handlers (会话评测)
+  registerEvaluationHandlers();
 
   logger.info('All handlers registered');
 }

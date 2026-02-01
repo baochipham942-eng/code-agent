@@ -34,20 +34,38 @@ import type { FullAgentConfig } from '../../shared/types/agentTypes';
 import type { PermissionPreset } from '../services/core/permissionPresets';
 import type { ModelProvider } from '../../shared/types/model';
 
+// 重新导出上下文级别配置（Phase 0）
+export {
+  type ContextLevel,
+  AGENT_CONTEXT_LEVELS,
+  getAgentContextLevel,
+} from './subagentContextBuilder';
+
 // ============================================================================
 // Agent ID 别名
 // ============================================================================
 
 /**
  * Agent ID 别名映射
+ *
+ * Phase 1.1: 角色精简映射
+ * - 旧角色名 → 新角色名
+ * - 保留向后兼容性
  */
 export const AGENT_ALIASES: Record<string, string> = {
+  // 原有别名
   'code-reviewer': 'reviewer',
   'test-writer': 'tester',
   'explore': 'code-explore',
   'explorer': 'code-explore',
   'web-researcher': 'web-search',
   'doc-retriever': 'doc-reader',
+
+  // Phase 1.1: 角色统一别名
+  // 研究类统一为 researcher
+  'researcher': 'web-search',  // researcher 映射到 web-search
+  // 代码探索统一为 explorer
+  'code-explorer': 'code-explore',
 };
 
 /**
@@ -71,6 +89,58 @@ export function resolveAgentAlias(idOrAlias: string): string {
  * - 协调层：coordination.layer, coordination.canDelegate, coordination.canParallelWith
  */
 export const PREDEFINED_AGENTS: Record<string, FullAgentConfig> = {
+  // =========================================================================
+  // T0: 协调层 Agent（Phase 1.1 新增）
+  // =========================================================================
+
+  'orchestrator': {
+    id: 'orchestrator',
+    name: 'Orchestrator',
+    description: 'Coordinates multiple agents to complete complex tasks',
+    prompt: `You are a task orchestrator. Your responsibilities:
+
+1. **Task Analysis**: Break down complex requests into subtasks
+2. **Agent Selection**: Choose the right agent for each subtask
+3. **Coordination**: Manage dependencies and execution order
+4. **Aggregation**: Combine results from multiple agents
+5. **Quality Control**: Verify outputs meet requirements
+
+Available agent types for delegation:
+- explorer/code-explore: Search and understand codebase (read-only)
+- researcher/web-search: Search internet for information
+- planner/plan: Design implementation plans
+- architect: System design and technical decisions
+- coder: Write and modify code
+- tester: Write and run tests
+- reviewer: Code review and quality checks
+- debugger: Investigate and fix bugs
+- documenter: Write documentation
+
+Guidelines:
+- Prefer parallel execution when tasks are independent
+- Use read-only agents for exploration before execution
+- Verify results before proceeding to next step
+- Keep users informed of progress`,
+    tools: [
+      'Task', 'spawn_agent', 'workflow_orchestrate',
+      'read_file', 'glob', 'grep', 'list_directory',
+      'todo_write', 'ask_user_question',
+    ],
+    model: 'powerful',
+    runtime: { maxIterations: 30 },
+    security: { permissionPreset: 'development' },
+    coordination: {
+      layer: 'planning',
+      canDelegate: true,
+      allowedSubagents: [
+        'coder', 'reviewer', 'tester', 'architect', 'debugger', 'documenter',
+        'code-explore', 'plan', 'web-search', 'doc-reader',
+      ],
+      canParallelWith: 'all',
+    },
+    tags: ['meta', 'coordination', 'orchestration'],
+  },
+
   // =========================================================================
   // 核心代码 Agents（6 个内置角色）
   // =========================================================================

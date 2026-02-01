@@ -124,6 +124,21 @@ export interface ToolContext {
   }>;
   // 当前工具调用 ID（用于 subagent 追踪）
   currentToolCallId?: string;
+
+  // ============================================================================
+  // Phase 0: Subagent 上下文传递支持
+  // ============================================================================
+
+  /** 会话 ID（用于上下文追踪） */
+  sessionId?: string;
+  /** 对话历史（用于 Subagent 上下文注入） */
+  messages?: import('../../shared/types').Message[];
+  /** 已修改的文件集合（用于 Subagent 上下文注入） */
+  modifiedFiles?: Set<string>;
+  /** TODO 列表（用于 Subagent 上下文注入） */
+  todos?: Array<{ id: string; content: string; status: 'pending' | 'in_progress' | 'completed' | 'cancelled' }>;
+  /** 上下文级别覆盖（可选） */
+  contextLevel?: 'minimal' | 'relevant' | 'full';
 }
 
 export interface PermissionRequestData {

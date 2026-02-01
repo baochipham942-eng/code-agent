@@ -56,6 +56,34 @@ export interface SessionStatusUpdateEvent {
   contextHealth: ContextHealthState | null;
 }
 
+/**
+ * 后台任务信息
+ */
+export interface BackgroundTaskInfo {
+  /** 会话 ID */
+  sessionId: string;
+  /** 会话标题 */
+  title: string;
+  /** 任务开始时间 */
+  startedAt: number;
+  /** 移入后台时间 */
+  backgroundedAt: number;
+  /** 任务状态 */
+  status: 'running' | 'completed' | 'failed';
+  /** 进度 (0-100) */
+  progress?: number;
+  /** 完成信息 */
+  completionMessage?: string;
+}
+
+/**
+ * 后台任务状态更新事件
+ */
+export interface BackgroundTaskUpdateEvent {
+  type: 'added' | 'removed' | 'updated' | 'completed' | 'failed';
+  task: BackgroundTaskInfo;
+}
+
 // ----------------------------------------------------------------------------
 // Helper Functions
 // ----------------------------------------------------------------------------

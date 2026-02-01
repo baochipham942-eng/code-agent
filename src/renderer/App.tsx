@@ -22,11 +22,13 @@ import { SkillsPanel } from './components/SkillsPanel';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
 import { LabPage } from './components/features/lab/LabPage';
 import { EvaluationPanel } from './components/features/evaluation/EvaluationPanel';
+import { BackgroundTaskPanel } from './components/features/background';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
 import { useMemoryEvents } from './hooks/useMemoryEvents';
 import { useTheme } from './hooks/useTheme';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { Activity, Cloud, Zap, Sparkles, GitBranch } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
@@ -101,6 +103,9 @@ export const App: React.FC = () => {
 
   // Theme Hook - 初始化主题系统
   useTheme();
+
+  // 全局快捷键
+  useKeyboardShortcuts();
 
   // Gen5+ Memory 事件监听
   useMemoryEvents({
@@ -531,6 +536,9 @@ export const App: React.FC = () => {
           onClose={() => setConfirmActionRequest(null)}
         />
       )}
+
+      {/* Background Task Panel - 后台任务浮动面板 */}
+      <BackgroundTaskPanel />
       </div>
     </ErrorBoundary>
   );

@@ -22,3 +22,5 @@ export type {
 } from './useMessageBatcher';
 export { useTaskSync, useSessionTaskState, useHasRunningTasks, useTaskConcurrency } from './useTaskSync';
 export type { UseTaskSyncOptions, UseTaskSyncReturn } from './useTaskSync';
+export { useKeyboardShortcuts } from './useKeyboardShortcuts';
+export type { KeyboardShortcutsConfig } from './useKeyboardShortcuts';

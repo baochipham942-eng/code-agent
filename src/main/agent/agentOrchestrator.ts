@@ -744,6 +744,57 @@ export class AgentOrchestrator {
     this.isDefaultWorkingDirectory = false; // User explicitly set a directory
     this.toolExecutor.setWorkingDirectory(path);
     logger.info('Working directory changed to:', path);
+
+    // 自动初始化 LSP 语言服务器（异步，不阻塞）
+    this.initializeLSP(path);
+
+    // 更新 SkillWatcher 监听的项目目录（异步，不阻塞）
+    this.updateSkillWatcher(path);
+  }
+
+  /**
+   * 初始化 LSP 语言服务器
+   * 异步执行，不阻塞主流程
+   */
+  private initializeLSP(workspaceRoot: string): void {
+    import('../lsp').then(async ({ initializeLSPManager, getLSPManager }) => {
+      try {
+        // 如果已有 manager 且工作目录相同，跳过
+        const existingManager = getLSPManager();
+        if (existingManager) {
+          logger.debug('LSP manager already exists, reinitializing for new workspace');
+        }
+
+        await initializeLSPManager(workspaceRoot);
+        logger.info('LSP initialized for workspace:', workspaceRoot);
+      } catch (error) {
+        // LSP 初始化失败不影响主功能
+        logger.warn('LSP initialization failed (non-blocking)', { error });
+      }
+    }).catch((error) => {
+      logger.warn('Failed to import LSP module', { error });
+    });
+  }
+
+  /**
+   * 更新 SkillWatcher 监听的项目目录
+   * 异步执行，不阻塞主流程
+   */
+  private updateSkillWatcher(workingDirectory: string): void {
+    import('../services/skills').then(async ({ getSkillWatcher }) => {
+      try {
+        const watcher = getSkillWatcher();
+        if (watcher.isInitialized()) {
+          await watcher.updateProjectDirectory(workingDirectory);
+          logger.debug('SkillWatcher updated for workspace:', workingDirectory);
+        }
+      } catch (error) {
+        // SkillWatcher 更新失败不影响主功能
+        logger.warn('SkillWatcher update failed (non-blocking)', { error });
+      }
+    }).catch((error) => {
+      logger.warn('Failed to import skills module', { error });
+    });
   }
 
   /**

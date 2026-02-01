@@ -67,7 +67,16 @@ export function MetricCard({ metric }: MetricCardProps) {
 
       {expanded && (
         <div className="mt-3 pt-3 border-t border-zinc-700/50 space-y-2">
-          {metric.subMetrics.map((sub, i) => (
+          {/* AI 评测理由 */}
+          {metric.details?.reason && (
+            <div className="text-xs text-gray-300 bg-zinc-800/50 p-2 rounded">
+              <span className="text-indigo-400 mr-1">AI 分析:</span>
+              {metric.details.reason}
+            </div>
+          )}
+
+          {/* 子指标 */}
+          {metric.subMetrics && metric.subMetrics.map((sub, i) => (
             <div key={i} className="flex items-center justify-between text-xs">
               <span className="text-gray-400">{sub.name}</span>
               <span className="text-gray-200">

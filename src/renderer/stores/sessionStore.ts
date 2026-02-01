@@ -6,6 +6,7 @@
 import { create } from 'zustand';
 import type { Session, Message, TodoItem } from '@shared/types';
 import { IPC_CHANNELS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
+import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '@shared/types/sessionState';
 import { createLogger } from '../utils/logger';
 
 const logger = createLogger('SessionStore');
@@ -42,6 +43,8 @@ interface SessionState {
   runningSessionIds: Set<string>;
   // 会话运行时状态（多会话并行支持）
   sessionRuntimes: Map<string, SessionRuntimeSummary>;
+  // 后台任务列表
+  backgroundTasks: BackgroundTaskInfo[];
 }
 
 interface SessionActions {
@@ -83,6 +86,11 @@ interface SessionActions {
   isSessionRunning: (sessionId: string) => boolean;
   // 获取运行中的会话数量
   getRunningSessionCount: () => number;
+  // 后台任务管理
+  moveToBackground: (sessionId: string) => Promise<boolean>;
+  moveToForeground: (sessionId: string) => Promise<void>;
+  updateBackgroundTask: (event: BackgroundTaskUpdateEvent) => void;
+  getBackgroundTaskCount: () => number;
 }
 
 type SessionStore = SessionState & SessionActions;
@@ -103,6 +111,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     filter: 'active' as SessionFilter,
     runningSessionIds: new Set<string>(),
     sessionRuntimes: new Map<string, SessionRuntimeSummary>(),
+    backgroundTasks: [],
 
     // 加载会话列表
     loadSessions: async () => {
@@ -426,6 +435,72 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     getRunningSessionCount: () => {
       return get().runningSessionIds.size;
     },
+
+    // 将当前会话移至后台
+    moveToBackground: async (sessionId: string) => {
+      try {
+        const result = await window.electronAPI?.invoke(
+          IPC_CHANNELS.BACKGROUND_MOVE_TO_BACKGROUND,
+          sessionId
+        );
+        if (result) {
+          logger.info('Session moved to background', { sessionId });
+        }
+        return result ?? false;
+      } catch (error) {
+        logger.error('Failed to move session to background', error);
+        return false;
+      }
+    },
+
+    // 将后台会话恢复到前台
+    moveToForeground: async (sessionId: string) => {
+      try {
+        const task = await window.electronAPI?.invoke(
+          IPC_CHANNELS.BACKGROUND_MOVE_TO_FOREGROUND,
+          sessionId
+        );
+        if (task) {
+          // 切换到该会话
+          await get().switchSession(sessionId);
+          logger.info('Session moved to foreground', { sessionId });
+        }
+      } catch (error) {
+        logger.error('Failed to move session to foreground', error);
+      }
+    },
+
+    // 更新后台任务状态
+    updateBackgroundTask: (event: BackgroundTaskUpdateEvent) => {
+      const { backgroundTasks } = get();
+
+      switch (event.type) {
+        case 'added':
+          set({ backgroundTasks: [...backgroundTasks, event.task] });
+          break;
+        case 'removed':
+          set({
+            backgroundTasks: backgroundTasks.filter(
+              (t) => t.sessionId !== event.task.sessionId
+            ),
+          });
+          break;
+        case 'updated':
+        case 'completed':
+        case 'failed':
+          set({
+            backgroundTasks: backgroundTasks.map((t) =>
+              t.sessionId === event.task.sessionId ? event.task : t
+            ),
+          });
+          break;
+      }
+    },
+
+    // 获取后台任务数量
+    getBackgroundTaskCount: () => {
+      return get().backgroundTasks.length;
+    },
   }));
 
 // ----------------------------------------------------------------------------
@@ -458,4 +533,19 @@ export async function initializeSessionStore(): Promise<void> {
   window.electronAPI?.on(IPC_CHANNELS.SESSION_STATUS_UPDATE, (event: SessionStatusUpdateEvent) => {
     useSessionStore.getState().updateSessionRuntime(event);
   });
+
+  // 监听后台任务更新事件
+  window.electronAPI?.on(IPC_CHANNELS.BACKGROUND_TASK_UPDATE, (event: BackgroundTaskUpdateEvent) => {
+    useSessionStore.getState().updateBackgroundTask(event);
+  });
+
+  // 加载初始后台任务列表
+  try {
+    const tasks = await window.electronAPI?.invoke(IPC_CHANNELS.BACKGROUND_GET_TASKS);
+    if (tasks && tasks.length > 0) {
+      useSessionStore.setState({ backgroundTasks: tasks });
+    }
+  } catch {
+    // 忽略错误
+  }
 }

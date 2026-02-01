@@ -37,6 +37,8 @@ import { registerChannelHandlers } from './channel.ipc';
 import { registerAgentRoutingHandlers } from './agentRouting.ipc';
 import { registerCheckpointHandlers } from './checkpoint.ipc';
 import { registerEvaluationHandlers } from './evaluation.ipc';
+import { registerLSPHandlers } from './lsp.ipc';
+import { registerBackgroundHandlers } from './background.ipc';
 
 export * from './types';
 
@@ -149,6 +151,12 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Evaluation handlers (会话评测)
   registerEvaluationHandlers();
+
+  // LSP handlers (语言服务器)
+  registerLSPHandlers();
+
+  // Background task handlers (后台任务)
+  registerBackgroundHandlers(getMainWindow);
 
   logger.info('All handlers registered');
 }

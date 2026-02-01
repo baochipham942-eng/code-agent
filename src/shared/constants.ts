@@ -435,6 +435,8 @@ export const MODEL_API_ENDPOINTS = {
   qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   /** Moonshot/Kimi */
   moonshot: 'https://api.moonshot.cn/v1',
+  /** Kimi K2.5 (包月套餐 - 第三方代理) */
+  kimiK25: 'https://cn.haioi.net/v1',
   /** MiniMax */
   minimax: 'https://api.minimax.chat/v1',
   /** Perplexity */
@@ -465,20 +467,24 @@ export const SEARCH_API_ENDPOINTS = {
 // ============================================================================
 
 export const DEFAULT_MODELS = {
-  /** 主要对话模型 */
-  chat: 'deepseek-chat',
-  /** 推理模型 */
+  /** 主要对话模型 - Kimi K2.5 包月 */
+  chat: 'kimi-k2.5',
+  /** 推理模型 - DeepSeek R1 (按需付费) */
   reasoning: 'deepseek-reasoner',
-  /** 视觉理解模型 */
+  /** 视觉理解模型 - 智谱包年 */
   vision: 'glm-4v-plus',
   /** 视觉快速模型（不支持 base64） */
   visionFast: 'glm-4v-flash',
-  /** 代码模型 */
-  code: 'deepseek-chat',
-  /** 压缩/摘要模型（便宜） */
-  compact: 'deepseek-chat',
-  /** 快速判断模型（最便宜） */
+  /** 代码模型 - Kimi K2.5 包月 */
+  code: 'kimi-k2.5',
+  /** 压缩/摘要模型 - Kimi K2.5 包月无成本 */
+  compact: 'kimi-k2.5',
+  /** 快速判断模型 - 智谱 Flash 包年免费 */
   quick: 'glm-4-flash',
+  /** 超长上下文模型（128K+） */
+  longContext: 'kimi-k2.5',
+  /** 包月无限制模型 */
+  unlimited: 'kimi-k2.5',
 } as const;
 
 // ============================================================================

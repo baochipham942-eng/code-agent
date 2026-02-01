@@ -114,7 +114,7 @@ logger.info('DEEPSEEK_API_KEY from env:', process.env.DEEPSEEK_API_KEY ? `${proc
 // Default settings
 const DEFAULT_SETTINGS: AppSettings = {
   models: {
-    default: 'deepseek',
+    default: 'moonshot',  // Kimi K2.5 包月作为默认主力
     providers: {
       deepseek: { enabled: true },
       claude: { enabled: false },
@@ -124,16 +124,16 @@ const DEFAULT_SETTINGS: AppSettings = {
       local: { enabled: false },
       zhipu: { enabled: true },     // 智谱默认启用 (视觉 + 备用语言)
       qwen: { enabled: false },
-      moonshot: { enabled: false },
+      moonshot: { enabled: true },  // Kimi K2.5 包月套餐
       minimax: { enabled: false },
       perplexity: { enabled: false },
       openrouter: { enabled: false },
     },
     // 按用途路由模型
     routing: {
-      code: { provider: 'deepseek', model: 'deepseek-coder' },        // 代码专用
-      vision: { provider: 'zhipu', model: 'glm-4v-plus' },            // 智谱视觉
-      fast: { provider: 'groq', model: 'llama-3.3-70b-versatile' },   // 快速推理
+      code: { provider: 'moonshot', model: 'kimi-k2.5' },             // Kimi K2.5 包月
+      vision: { provider: 'zhipu', model: 'glm-4v-plus' },            // 智谱视觉 (包年)
+      fast: { provider: 'zhipu', model: 'glm-4-flash' },              // 智谱 Flash (包年，免费)
       gui: { provider: 'zhipu', model: 'glm-4v-plus' },               // GUI Agent 用智谱视觉
     },
   },

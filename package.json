@@ -1,6 +1,6 @@
 {
   "name": "code-agent",
-  "version": "0.16.10",
+  "version": "0.16.11",
   "description": "AI Coding Assistant with Generation Comparison",
   "type": "module",
   "main": "dist/main/index.cjs",
@@ -48,7 +48,7 @@
     "@types/dagre": "^0.7.53",
     "@xyflow/react": "^12.10.0",
     "axios": "^1.13.2",
-    "better-sqlite3": "^11.6.0",
+    "better-sqlite3": "^11.10.0",
     "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
     "commander": "^12.1.0",

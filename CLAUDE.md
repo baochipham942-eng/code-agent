@@ -175,17 +175,22 @@ pending → ready → running → completed/failed/cancelled/skipped
 ## 快速参考
 
 ### 打包发布清单
-```
-□ 切换到主仓库: cd /Users/linchen/Downloads/ai/code-agent
-□ 合并功能分支: git merge <branch>
-□ npm run typecheck
-□ npm version patch --no-git-tag-version  # 更新版本号
-□ git add package.json && git commit -m "chore: bump version" && git push
-□ npm run build
-□ npx electron-rebuild -o isolated-vm     # 重编译原生模块（必须！）
-□ rm -rf release/                          # 清除打包缓存
-□ npm run dist:mac
-□ 安装 DMG 后同步 .env: cp .env "/Applications/Code Agent.app/Contents/Resources/.env"
+```bash
+cd /Users/linchen/Downloads/ai/code-agent
+# 1. 合并代码
+git merge <branch>
+# 2. 检查 + 更新版本
+npm run typecheck
+npm version patch --no-git-tag-version
+git add package.json && git commit -m "chore: bump version" && git push
+# 3. 构建
+npm run build
+# 4. 重编译原生模块（必须删除后重装，否则可能用缓存）
+rm -rf node_modules/isolated-vm && npm install isolated-vm && npx electron-rebuild -o isolated-vm -f
+# 5. 打包
+rm -rf release/ && npm run dist:mac
+# 6. 安装后同步 .env
+cp .env "/Applications/Code Agent.app/Contents/Resources/.env"
 ```
 
 ### 本地数据库

@@ -256,3 +256,48 @@ cp .env "/Applications/Code Agent.app/Contents/Resources/.env"
 
 ### 问题排查
 详见 [docs/guides/troubleshooting.md](docs/guides/troubleshooting.md)
+
+---
+
+## 错题本
+
+### 2026-02-02: E2E 测试超时分析错误
+
+**错误做法**：
+- 看到测试超时 10 分钟，武断判断"模型思考太久"
+- 建议增加催促机制或缩短思考时间
+
+**正确分析方法**：
+1. 先检查日志看这 10 分钟**实际产出了什么**（plan 文档？工具调用？还是 0 输出？）
+2. 区分是"模型在生成内容但慢"还是"API 调用完全卡住无响应"
+3. 检查 API 超时配置是否合理
+
+**本案实际原因**：
+- G07/R06 超时：zhipu provider 没有配置 timeout，API 调用卡死无响应
+- M05 失败：子 agent 返回后，模型幻觉了错误路径 `/Users/codeagent/demo/...`
+
+**经验教训**：
+- 分析问题要看**具体日志和数据**，不能只看表面现象
+- "超时"可能是多种原因：网络问题、API 限流、模型推理慢、配置错误
+
+### 2026-02-02: 模型路径幻觉问题
+
+**问题**：子 agent 返回结果后，主 agent 用错误路径读取文件
+
+**不完整的解决方案**：只在 prompt 里声明工作目录
+
+**更健壮的方案**（参考 [LangChain Context Engineering](https://docs.langchain.com/oss/python/langchain/context-engineering)）：
+1. 子 agent 返回**绝对路径**，不依赖主 agent 拼接
+2. 工具层做**路径验证**：文件存在性检查、路径前缀校验
+3. 把 LLM 输出当作**不可信输入**，验证后再执行
+
+### 2026-02-02: API 超时配置
+
+**大厂参考**（[Claude Code Router](https://lgallardo.com/2025/08/20/claude-code-router-openrouter-beyond-anthropic/)）：
+- Claude Code Router: `API_TIMEOUT_MS: 600000` (10 分钟)
+- Anthropic 默认: 1 分钟（大 payload 会 504）
+
+**建议**：
+- 超时时间应**可配置**，不同任务复杂度需要不同超时
+- 流式响应场景：设置首 token 超时 + 总超时
+- 添加**心跳检测**：长时间无 token 返回时主动超时

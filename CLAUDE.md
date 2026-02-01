@@ -185,8 +185,10 @@ npm version patch --no-git-tag-version
 git add package.json && git commit -m "chore: bump version" && git push
 # 3. 构建
 npm run build
-# 4. 重编译原生模块（必须删除后重装，否则可能用缓存）
-rm -rf node_modules/isolated-vm && npm install isolated-vm && npx electron-rebuild -o isolated-vm -f
+# 4. 重编译原生模块（必须用 Electron headers，electron-rebuild 不可靠）
+npm cache clean --force
+rm -rf node_modules/isolated-vm node_modules/better-sqlite3 node_modules/keytar
+npm install isolated-vm better-sqlite3 keytar --build-from-source --runtime=electron --target=33.4.11 --disturl=https://electronjs.org/headers
 # 5. 打包
 rm -rf release/ && npm run dist:mac
 # 6. 安装后同步 .env

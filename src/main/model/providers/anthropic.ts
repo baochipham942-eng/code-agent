@@ -13,12 +13,14 @@ import {
 
 /**
  * Call Claude API
+ * @param signal - AbortSignal for cancellation support
  */
 export async function callClaude(
   messages: ModelMessage[],
   tools: ToolDefinition[],
   config: ModelConfig,
-  _onStream?: StreamCallback
+  _onStream?: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = 'https://api.anthropic.com/v1';
 
@@ -84,10 +86,16 @@ export async function callClaude(
     headers['anthropic-beta'] = 'computer-use-2024-10-22';
   }
 
+  // Check for cancellation before starting
+  if (signal?.aborted) {
+    throw new Error('Request was cancelled before starting');
+  }
+
   const response = await electronFetch(`${baseUrl}/messages`, {
     method: 'POST',
     headers,
     body: JSON.stringify(requestBody),
+    signal,
   });
 
   if (!response.ok) {

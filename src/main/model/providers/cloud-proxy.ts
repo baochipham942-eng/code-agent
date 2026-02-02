@@ -25,13 +25,15 @@ function getCloudApiUrl(): string {
 
 /**
  * Call via Cloud Proxy (admin-only, server-side API key injection)
+ * @param signal - AbortSignal for cancellation support
  */
 export async function callViaCloudProxy(
   messages: ModelMessage[],
   tools: ToolDefinition[],
   config: ModelConfig,
   modelInfo: ModelInfo | null,
-  onStream?: StreamCallback
+  onStream?: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   const cloudUrl = getCloudApiUrl();
   const providerName = config.provider;
@@ -71,9 +73,14 @@ export async function callViaCloudProxy(
 
   logger.info(`通过云端代理调用 ${providerName}/${config.model}...`, { streaming: useStream });
 
+  // Check for cancellation before starting
+  if (signal?.aborted) {
+    throw new Error('Request was cancelled before starting');
+  }
+
   try {
     if (useStream) {
-      return await callViaCloudProxyStreaming(cloudUrl, providerName, requestBody, onStream);
+      return await callViaCloudProxyStreaming(cloudUrl, providerName, requestBody, onStream, signal);
     }
 
     const response = await axios.post(`${cloudUrl}/api/model-proxy`, {
@@ -88,6 +95,7 @@ export async function callViaCloudProxy(
       httpsAgent,
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
+      signal,
     });
 
     logger.info(' 云端代理响应状态:', response.status);
@@ -103,6 +111,9 @@ export async function callViaCloudProxy(
       throw new Error(`云端代理错误: ${response.status} - ${errorMessage}`);
     }
   } catch (error: any) {
+    if (axios.isCancel(error) || error.name === 'AbortError' || error.name === 'CanceledError') {
+      throw new Error('Request was cancelled');
+    }
     if (error instanceof ContextLengthExceededError) {
       throw error;
     }
@@ -121,13 +132,20 @@ export async function callViaCloudProxy(
 
 /**
  * 通过云端代理进行流式调用
+ * @param signal - AbortSignal for cancellation support
  */
 async function callViaCloudProxyStreaming(
   cloudUrl: string,
   providerName: string,
   requestBody: Record<string, unknown>,
-  onStream: StreamCallback
+  onStream: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
+  // Check for cancellation before starting
+  if (signal?.aborted) {
+    throw new Error('Request was cancelled before starting');
+  }
+
   const response = await fetch(`${cloudUrl}/api/model-proxy`, {
     method: 'POST',
     headers: {
@@ -138,6 +156,7 @@ async function callViaCloudProxyStreaming(
       endpoint: '/chat/completions',
       body: requestBody,
     }),
+    signal,
   });
 
   if (!response.ok) {

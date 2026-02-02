@@ -16,6 +16,7 @@ import {
 
 /**
  * Call 智谱 GLM API
+ * @param signal - AbortSignal for cancellation support
  */
 export async function callZhipu(
   messages: ModelMessage[],
@@ -23,7 +24,8 @@ export async function callZhipu(
   config: ModelConfig,
   modelInfo: ModelInfo | null,
   providerConfig: ProviderConfig,
-  onStream?: StreamCallback
+  onStream?: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   logger.debug(`进入智谱调用, model=${config.model}, hasApiKey=${!!config.apiKey}, useCloudProxy=${config.useCloudProxy}`);
 
@@ -58,20 +60,33 @@ export async function callZhipu(
   logger.info(`[智谱] 请求: model=${requestBody.model}, max_tokens=${requestBody.max_tokens}, stream=true`);
   logger.debug(`[智谱] 完整请求体:`, JSON.stringify(requestBody).substring(0, 500));
 
+  // Check for cancellation before starting
+  if (signal?.aborted) {
+    throw new Error('Request was cancelled before starting');
+  }
+
   // 使用原生 https 模块处理流式响应
-  return callZhipuStream(baseUrl, requestBody, config.apiKey!, onStream);
+  return callZhipuStream(baseUrl, requestBody, config.apiKey!, onStream, signal);
 }
 
 /**
  * 智谱流式 API 调用（使用原生 https 模块）
+ * @param signal - AbortSignal for cancellation support
  */
 function callZhipuStream(
   baseUrl: string,
   requestBody: Record<string, unknown>,
   apiKey: string,
-  onStream?: StreamCallback
+  onStream?: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   return new Promise((resolve, reject) => {
+    // Check for cancellation before starting
+    if (signal?.aborted) {
+      reject(new Error('Request was cancelled before starting'));
+      return;
+    }
+
     const url = new URL(`${baseUrl}/chat/completions`);
     const isHttps = url.protocol === 'https:';
     const httpModule = isHttps ? https : http;
@@ -283,6 +298,14 @@ function callZhipuStream(
       logger.error('[智谱] 请求超时 (5分钟)');
       req.destroy(new Error('智谱 API 请求超时 (5分钟)'));
     });
+
+    // Set up abort listener for cancellation
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        req.destroy();
+        reject(new Error('Request was cancelled'));
+      }, { once: true });
+    }
 
     req.write(JSON.stringify(requestBody));
     req.end();

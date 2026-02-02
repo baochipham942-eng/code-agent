@@ -27,11 +27,13 @@ logger.info(' Proxy:', USE_PROXY ? PROXY_URL : 'disabled (no proxy env var set)'
 
 /**
  * Helper function to wrap axios in a fetch-like interface for consistency
+ * @param signal - AbortSignal for cancellation support
  */
 export async function electronFetch(url: string, options: {
   method?: string;
   headers?: Record<string, string>;
   body?: string;
+  signal?: AbortSignal;
 }): Promise<{ ok: boolean; status: number; text: () => Promise<string>; json: () => Promise<any>; body?: ReadableStream<Uint8Array> }> {
   try {
     const response: AxiosResponse = await axios({
@@ -44,6 +46,7 @@ export async function electronFetch(url: string, options: {
       validateStatus: () => true,
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
+      signal: options.signal,
     });
 
     return {
@@ -53,6 +56,9 @@ export async function electronFetch(url: string, options: {
       json: async () => response.data,
     };
   } catch (error: any) {
+    if (axios.isCancel(error) || error.name === 'AbortError' || error.name === 'CanceledError') {
+      throw new Error('Request was cancelled');
+    }
     throw new Error(`Network request failed: ${error.message}`);
   }
 }
@@ -677,10 +683,12 @@ export function parseGeminiResponse(data: any): ModelResponse {
 
 /**
  * Handle generic OpenAI-compatible stream
+ * @param signal - AbortSignal for cancellation support
  */
 export async function handleStream(
   body: ReadableStream<Uint8Array>,
-  onStream: StreamCallback
+  onStream: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -688,8 +696,17 @@ export async function handleStream(
   let toolCalls: ToolCall[] = [];
   let buffer = '';
 
+  if (signal) {
+    signal.addEventListener('abort', () => {
+      reader.cancel('Request cancelled').catch(() => {});
+    }, { once: true });
+  }
+
   try {
     while (true) {
+      if (signal?.aborted) {
+        throw new Error('Request was cancelled');
+      }
       const { done, value } = await reader.read();
       if (done) break;
 
@@ -776,18 +793,29 @@ export async function handleStream(
 
 /**
  * Handle Gemini stream
+ * @param signal - AbortSignal for cancellation support
  */
 export async function handleGeminiStream(
   body: ReadableStream<Uint8Array>,
-  onStream: StreamCallback
+  onStream: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let fullContent = '';
   let buffer = '';
 
+  if (signal) {
+    signal.addEventListener('abort', () => {
+      reader.cancel('Request cancelled').catch(() => {});
+    }, { once: true });
+  }
+
   try {
     while (true) {
+      if (signal?.aborted) {
+        throw new Error('Request was cancelled');
+      }
       const { done, value } = await reader.read();
       if (done) break;
 

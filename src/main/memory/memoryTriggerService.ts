@@ -7,6 +7,7 @@ import { getMemoryService } from './memoryService';
 import { getProactiveContextService, type ProactiveContextResult } from './proactiveContext';
 import { getVectorStore } from './vectorStore';
 import { createLogger } from '../services/infra/logger';
+import { withTimeout } from '../services/infra/timeoutController';
 
 const logger = createLogger('MemoryTrigger');
 
@@ -134,15 +135,16 @@ export class MemoryTriggerService {
 
       // 并行执行所有检索操作（带超时）
       const [projectKnowledge, relevantCode, recentConversations, userPreferences] =
-        await Promise.race([
+        await withTimeout(
           Promise.all([
             this.retrieveProjectKnowledge(workingDirectory),
             this.retrieveRelevantCode(workingDirectory, initialQuery),
             this.retrieveRecentConversations(sessionId, initialQuery),
             this.retrieveUserPreferences(),
           ]),
-          this.createTimeoutPromise(),
-        ]);
+          this.config.timeoutMs,
+          `Memory retrieval timeout (${this.config.timeoutMs}ms)`
+        );
 
       const retrievalTimeMs = Date.now() - startTime;
 
@@ -326,17 +328,6 @@ export class MemoryTriggerService {
         retrievalTimeMs,
       },
     };
-  }
-
-  /**
-   * 创建超时 Promise
-   */
-  private createTimeoutPromise(): Promise<never> {
-    return new Promise((_, reject) => {
-      setTimeout(() => {
-        reject(new Error(`Memory retrieval timeout (${this.config.timeoutMs}ms)`));
-      }, this.config.timeoutMs);
-    });
   }
 
   /**

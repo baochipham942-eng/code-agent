@@ -9,6 +9,7 @@ import type { ModelConfig } from '../../shared/types';
 import type { Tool, ToolContext } from '../tools/toolRegistry';
 import { getSubagentExecutor, type SubagentResult } from './subagentExecutor';
 import { createLogger } from '../services/infra/logger';
+import { withTimeout } from '../services/infra/timeoutController';
 import { TaskDAG, getDAGScheduler, type SchedulerResult } from '../scheduler';
 import { AGENT_TIMEOUTS } from '../../shared/constants';
 
@@ -233,11 +234,6 @@ export class ParallelAgentCoordinator extends EventEmitter {
     this.emit('task:start', { taskId: task.id, role: task.role });
 
     try {
-      // Create timeout promise
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Task timeout')), this.config.taskTimeout);
-      });
-
       // Execute task
       const executor = getSubagentExecutor();
 
@@ -264,8 +260,12 @@ export class ParallelAgentCoordinator extends EventEmitter {
         }
       );
 
-      // Race execution against timeout
-      const result = await Promise.race([executionPromise, timeoutPromise]);
+      // Execute with timeout (auto-cleanup of timer)
+      const result = await withTimeout(
+        executionPromise,
+        this.config.taskTimeout,
+        'Task timeout'
+      );
 
       const endTime = Date.now();
 

@@ -65,6 +65,7 @@ import {
   MessageHistoryCompressor,
   estimateTokens,
 } from '../context/tokenOptimizer';
+import { AutoContextCompressor, getAutoCompressor } from '../context/autoCompressor';
 import { getTraceRecorder, type ToolCallWithResult } from '../evolution/traceRecorder';
 import { getOutcomeDetector } from '../evolution/outcomeDetector';
 
@@ -136,6 +137,7 @@ export class AgentLoop {
   // Token optimization
   private hookMessageBuffer: HookMessageBuffer;
   private messageHistoryCompressor: MessageHistoryCompressor;
+  private autoCompressor: AutoContextCompressor;
 
   // Plan Mode support
   private planModeActive: boolean = false;
@@ -231,6 +233,7 @@ export class AgentLoop {
       preserveRecentCount: 6,
       preserveUserMessages: true,
     });
+    this.autoCompressor = getAutoCompressor();
   }
 
   // --------------------------------------------------------------------------
@@ -912,6 +915,9 @@ export class AgentLoop {
         });
 
         this.updateContextHealth();
+
+        // 检查并执行自动压缩（在每轮工具调用后）
+        await this.checkAndAutoCompress();
 
         // P2 Checkpoint: Evaluate task progress state and nudge if stuck in exploring
         const currentState = this.evaluateProgressState(this.toolsUsedInTurn);
@@ -2208,14 +2214,64 @@ ${deferredToolsSummary}
         })),
       }));
 
-      contextHealthService.update(
+      const health = contextHealthService.update(
         this.sessionId,
         messagesForEstimation,
         this.generation.systemPrompt,
         model
       );
+
+      // 更新压缩统计到健康状态
+      const compressionStats = this.autoCompressor.getStats();
+      if (compressionStats.compressionCount > 0 && health.compression) {
+        health.compression.compressionCount = compressionStats.compressionCount;
+        health.compression.totalSavedTokens = compressionStats.totalSavedTokens;
+        health.compression.lastCompressionAt = compressionStats.lastCompressionAt;
+      }
     } catch (error) {
       logger.error('[AgentLoop] Failed to update context health:', error);
+    }
+  }
+
+  /**
+   * 检查并执行自动上下文压缩
+   */
+  private async checkAndAutoCompress(): Promise<void> {
+    try {
+      const messagesForCompression = this.messages.map(msg => ({
+        role: msg.role,
+        content: msg.content,
+        id: msg.id,
+        timestamp: msg.timestamp,
+      }));
+
+      const result = await this.autoCompressor.checkAndCompress(
+        this.sessionId,
+        messagesForCompression,
+        this.generation.systemPrompt,
+        this.modelConfig.model || DEFAULT_MODELS.chat
+      );
+
+      if (result.compressed) {
+        logger.info(`[AgentLoop] Auto compression: saved ${result.savedTokens} tokens using ${result.strategy}`);
+        logCollector.agent('INFO', 'Auto context compression', {
+          savedTokens: result.savedTokens,
+          strategy: result.strategy,
+          messageCount: result.messages.length,
+        });
+
+        // 发送压缩事件
+        this.onEvent({
+          type: 'context_compressed',
+          data: {
+            savedTokens: result.savedTokens,
+            strategy: result.strategy,
+            newMessageCount: result.messages.length,
+          },
+        } as AgentEvent);
+      }
+    } catch (error) {
+      logger.error('[AgentLoop] Auto compression failed:', error);
     }
   }
 

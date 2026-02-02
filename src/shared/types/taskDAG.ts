@@ -141,7 +141,8 @@ export type DAGTaskType =
   | 'shell'       // Shell 命令
   | 'parallel'    // 并行任务组
   | 'conditional' // 条件分支
-  | 'checkpoint'; // 检查点（用于同步/等待）
+  | 'checkpoint'  // 检查点（用于同步/等待）
+  | 'evaluate';   // 评估任务（从候选中选择最优）
 
 /**
  * 任务配置联合类型
@@ -153,7 +154,8 @@ export type TaskConfig =
   | ShellTaskConfig
   | ParallelTaskConfig
   | ConditionalTaskConfig
-  | CheckpointTaskConfig;
+  | CheckpointTaskConfig
+  | EvaluateTaskConfig;
 
 /**
  * Agent 任务配置
@@ -252,6 +254,62 @@ export interface CheckpointTaskConfig {
   requireAllSuccess?: boolean;
   /** 收集前置任务的输出 */
   collectOutputs?: boolean;
+}
+
+/**
+ * 评估任务配置
+ * 用于从多个候选方案中选择最优
+ */
+export interface EvaluateTaskConfig {
+  type: 'evaluate';
+  /** 候选任务 ID 列表（这些任务的输出将被评估） */
+  candidateTaskIds: string[];
+  /** 评估维度 */
+  dimensions: EvaluationDimension[];
+  /** 选择策略 */
+  selectionStrategy: EvaluateSelectionStrategy;
+  /** 是否自动应用最优方案 */
+  autoApply?: boolean;
+  /** 自定义评估提示词 */
+  customPrompt?: string;
+}
+
+/**
+ * 评估维度
+ */
+export type EvaluationDimension =
+  | 'correctness'     // 正确性
+  | 'efficiency'      // 效率
+  | 'readability'     // 可读性
+  | 'maintainability' // 可维护性
+  | 'security'        // 安全性
+  | 'performance'     // 性能
+  | 'coverage'        // 覆盖度
+  | 'simplicity';     // 简洁性
+
+/**
+ * 评估选择策略
+ */
+export type EvaluateSelectionStrategy =
+  | 'best'     // 单评审员选择最优
+  | 'vote'     // 多评审员投票
+  | 'weighted'; // 加权评分
+
+/**
+ * 评估结果
+ */
+export interface EvaluationResult {
+  /** 获胜的候选任务 ID */
+  winnerId: string;
+  /** 各候选的得分 */
+  scores: Array<{
+    taskId: string;
+    score: number;
+    breakdown: Record<EvaluationDimension, number>;
+    reasoning: string;
+  }>;
+  /** 评估耗时 */
+  duration: number;
 }
 
 // ============================================================================

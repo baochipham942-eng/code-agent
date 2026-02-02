@@ -9,12 +9,14 @@ import { terminalOutput } from '../output';
 import { cleanup, initializeCLIServices, getSessionManager, getDatabaseService } from '../bootstrap';
 import type { CLIGlobalOptions } from '../types';
 import { version } from '../../../package.json';
+import { getPRLinkService } from '../../main/services/github/prLinkService';
 
 export const chatCommand = new Command('chat')
   .description('进入交互式对话模式')
   .option('-s, --session <id>', '恢复指定会话')
   .option('-r, --resume', '恢复最近的会话')
-  .action(async (options: { session?: string; resume?: boolean }, command: Command) => {
+  .option('--from-pr <pr>', '关联 GitHub PR (URL 或 #123)')
+  .action(async (options: { session?: string; resume?: boolean; fromPr?: string }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
 
     try {
@@ -55,6 +57,9 @@ export const chatCommand = new Command('chat')
         } else {
           terminalOutput.warning(`无法恢复会话: ${options.session}，创建新会话`);
         }
+      } else if (options.fromPr) {
+        // 从 PR 关联
+        await handlePRLink(options.fromPr, agent);
       } else if (options.resume) {
         // 恢复最近会话
         try {
@@ -260,4 +265,56 @@ async function handleCommand(
       terminalOutput.warn(`未知命令: /${cmd}`);
       return false;
   }
+}
+
+/**
+ * 处理 PR 关联
+ */
+async function handlePRLink(prInput: string, agent: CLIAgent): Promise<void> {
+  const prLinkService = getPRLinkService();
+
+  // 尝试获取当前仓库上下文
+  const currentRepo = await prLinkService.getCurrentRepo();
+
+  // 解析 PR URL
+  const parsed = prLinkService.parsePRUrl(prInput, currentRepo || undefined);
+  if (!parsed) {
+    terminalOutput.error(`无法解析 PR: ${prInput}`);
+    terminalOutput.info('支持的格式: https://github.com/owner/repo/pull/123, owner/repo#123, #123');
+    return;
+  }
+
+  terminalOutput.startThinking(`获取 PR #${parsed.number} 信息...`);
+
+  // 获取 PR 上下文
+  const context = await prLinkService.fetchPRContext(parsed.owner, parsed.repo, parsed.number);
+  if (!context) {
+    terminalOutput.stopThinking();
+    terminalOutput.error(`无法获取 PR 信息，请确保已安装 gh CLI 并登录`);
+    return;
+  }
+
+  // 获取变更文件列表
+  const files = await prLinkService.fetchPRFiles(parsed.owner, parsed.repo, parsed.number);
+
+  terminalOutput.stopThinking();
+
+  // 显示 PR 信息
+  terminalOutput.success(`已关联 PR #${context.number}: ${context.title}`);
+  terminalOutput.info(`分支: ${context.headBranch} → ${context.baseBranch}`);
+  terminalOutput.info(`变更: +${context.additions} / -${context.deletions} in ${context.changedFiles} files`);
+
+  // 构建 PR 上下文 Prompt
+  const prPrompt = prLinkService.buildPRPrompt(context, files);
+
+  // 注入到 Agent 上下文（作为初始系统消息）
+  agent.injectContext(`\n${prPrompt}\n`);
+
+  // 创建 PRLink 对象
+  const prLink = prLinkService.createPRLink(context);
+
+  // 存储 PR 关联信息到会话
+  agent.setPRLink(prLink);
+
+  terminalOutput.info('PR 上下文已注入，可以开始讨论该 PR');
 }

@@ -283,6 +283,7 @@ export const TASK_TYPE_ICONS: Record<DAGTaskType, string> = {
   parallel: '⚡⚡',
   conditional: '❓',
   checkpoint: '🏁',
+  evaluate: '⚖️',
 };
 
 /**

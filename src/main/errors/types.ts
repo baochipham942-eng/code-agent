@@ -289,3 +289,6 @@ export class ConfigError extends CodeAgentError {
     this.name = 'ConfigError';
   }
 }
+
+// Re-export detailed error types for convenience
+export { DetailedErrorType, type ErrorClassification } from './errorClassifier';

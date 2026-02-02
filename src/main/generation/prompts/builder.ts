@@ -45,6 +45,13 @@ import {
   type AgentMode,
   type ModeConfig,
 } from './agentModes';
+import {
+  selectReminders,
+  createReminderContext,
+  appendRemindersToMessage as appendDynamicReminders,
+  type ReminderSelectionResult,
+} from './dynamicReminders';
+import type { ReminderContext } from './reminderRegistry';
 
 // ----------------------------------------------------------------------------
 // Rule Tiers - Token-optimized rule groupings
@@ -335,3 +342,96 @@ export { detectTaskFeatures, getSystemReminders, type TaskFeatures };
  * 模式相关导出
  */
 export { selectMode, getModeReminder, getModeConfig, type AgentMode, type ModeConfig };
+
+// ----------------------------------------------------------------------------
+// Dynamic Prompt Building V2 (基于优先级和预算的动态提醒)
+// ----------------------------------------------------------------------------
+
+/**
+ * 动态 Prompt V2 构建结果
+ */
+export interface DynamicPromptResultV2 extends DynamicPromptResult {
+  reminderStats: ReminderSelectionResult['stats'];
+  tokensUsed: number;
+  tokenBudget: number;
+}
+
+/**
+ * 动态构建 prompt V2 - 增强版
+ *
+ * 改进点：
+ * 1. 基于优先级的提醒选择
+ * 2. Token 预算管理
+ * 3. 上下文感知规则
+ * 4. 去重机制
+ * 5. 可选 few-shot 示例
+ */
+export function buildDynamicPromptV2(
+  generationId: GenerationId,
+  taskPrompt: string,
+  options: {
+    toolsUsedInTurn?: string[];
+    iterationCount?: number;
+    hasError?: boolean;
+    lastToolResult?: string;
+    maxReminderTokens?: number;
+    includeFewShot?: boolean;
+  } = {}
+): DynamicPromptResultV2 {
+  const basePrompt = SYSTEM_PROMPTS[generationId];
+  const features = detectTaskFeatures(taskPrompt);
+  const mode = selectMode(taskPrompt);
+  const modeConfig = getModeConfig(mode);
+
+  // 创建提醒上下文
+  const reminderContext = createReminderContext(taskPrompt, {
+    toolsUsedInTurn: options.toolsUsedInTurn || [],
+    iterationCount: options.iterationCount || 0,
+    currentMode: mode,
+    hasError: options.hasError || false,
+    lastToolResult: options.lastToolResult,
+    tokenBudget: options.maxReminderTokens || 800,
+  });
+
+  // 选择动态提醒
+  const reminderResult = selectReminders(reminderContext, {
+    maxTokens: options.maxReminderTokens || 800,
+    includeFewShot: options.includeFewShot ?? true,
+  });
+
+  // 组合用户消息
+  const userMessage = appendDynamicReminders(taskPrompt, reminderResult.reminders);
+
+  return {
+    systemPrompt: basePrompt,
+    userMessage,
+    features,
+    mode,
+    modeConfig,
+    reminderStats: reminderResult.stats,
+    tokensUsed: reminderResult.tokensUsed,
+    tokenBudget: reminderResult.tokenBudget,
+  };
+}
+
+/**
+ * 获取增强版动态提醒（不构建完整 prompt）
+ */
+export function getEnhancedReminders(
+  taskPrompt: string,
+  options: {
+    toolsUsedInTurn?: string[];
+    iterationCount?: number;
+    currentMode?: string;
+    hasError?: boolean;
+    maxTokens?: number;
+  } = {}
+): ReminderSelectionResult {
+  const context = createReminderContext(taskPrompt, options);
+  return selectReminders(context, { maxTokens: options.maxTokens });
+}
+
+/**
+ * 导出动态提醒相关类型和函数
+ */
+export { createReminderContext, selectReminders, type ReminderSelectionResult, type ReminderContext };

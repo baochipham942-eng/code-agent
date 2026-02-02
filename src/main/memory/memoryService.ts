@@ -15,6 +15,8 @@ import {
 } from './vectorStore';
 import type { Message, TodoItem, ToolResult } from '../../shared/types';
 import { MEMORY_TIMEOUTS } from '../../shared/constants';
+import { getMemoryDecayManager, type MemoryRecord as DecayMemoryRecord } from './memoryDecay';
+import { getErrorLearningService } from './errorLearning';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -911,6 +913,225 @@ export class MemoryService {
   recordMemoryAccess(id: string): void {
     const db = getDatabase();
     db.recordMemoryAccess(id);
+  }
+
+  // --------------------------------------------------------------------------
+  // Memory Decay Integration
+  // --------------------------------------------------------------------------
+
+  /**
+   * 获取记忆的衰减后置信度
+   */
+  getDecayedConfidence(memory: import('../services').MemoryRecord): number {
+    const decayManager = getMemoryDecayManager();
+
+    // 将 DB MemoryRecord 转换为 DecayMemoryRecord
+    const decayRecord: DecayMemoryRecord = {
+      id: memory.id,
+      content: memory.content,
+      createdAt: memory.createdAt,
+      lastAccessedAt: memory.lastAccessedAt ?? memory.updatedAt,
+      accessCount: memory.accessCount,
+      confidence: memory.confidence,
+      category: memory.category,
+      metadata: memory.metadata,
+    };
+
+    return decayManager.calculateDecayedConfidence(decayRecord);
+  }
+
+  /**
+   * 列出记忆（带衰减置信度）
+   */
+  listMemoriesWithDecay(options: {
+    type?: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage';
+    category?: string;
+    source?: 'auto_learned' | 'user_defined' | 'session_extracted';
+    currentProjectOnly?: boolean;
+    currentSessionOnly?: boolean;
+    limit?: number;
+    offset?: number;
+    orderBy?: 'created_at' | 'updated_at' | 'access_count' | 'confidence';
+    orderDir?: 'ASC' | 'DESC';
+    minConfidence?: number;
+  } = {}): Array<import('../services').MemoryRecord & { decayedConfidence: number }> {
+    const memories = this.listMemories(options);
+    const decayManager = getMemoryDecayManager();
+
+    // 计算衰减后的置信度并过滤
+    const result = memories.map((memory) => {
+      const decayRecord: DecayMemoryRecord = {
+        id: memory.id,
+        content: memory.content,
+        createdAt: memory.createdAt,
+        lastAccessedAt: memory.lastAccessedAt ?? memory.updatedAt,
+        accessCount: memory.accessCount,
+        confidence: memory.confidence,
+        category: memory.category,
+        metadata: memory.metadata,
+      };
+
+      return {
+        ...memory,
+        decayedConfidence: decayManager.calculateDecayedConfidence(decayRecord),
+      };
+    });
+
+    // 如果指定了最小置信度，则过滤
+    if (options.minConfidence !== undefined) {
+      return result.filter((m) => m.decayedConfidence >= options.minConfidence!);
+    }
+
+    return result;
+  }
+
+  /**
+   * 获取需要清理的记忆（置信度过低）
+   */
+  getMemoriesToCleanup(): import('../services').MemoryRecord[] {
+    const memories = this.listMemories({ limit: 1000 });
+    const decayManager = getMemoryDecayManager();
+
+    return memories.filter((memory) => {
+      const decayRecord: DecayMemoryRecord = {
+        id: memory.id,
+        content: memory.content,
+        createdAt: memory.createdAt,
+        lastAccessedAt: memory.lastAccessedAt ?? memory.updatedAt,
+        accessCount: memory.accessCount,
+        confidence: memory.confidence,
+        category: memory.category,
+        metadata: memory.metadata,
+      };
+
+      return decayManager.shouldCleanup(decayRecord);
+    });
+  }
+
+  /**
+   * 清理低置信度记忆
+   */
+  cleanupDecayedMemories(): number {
+    const toCleanup = this.getMemoriesToCleanup();
+    let deleted = 0;
+
+    for (const memory of toCleanup) {
+      if (this.deleteMemory(memory.id)) {
+        deleted++;
+      }
+    }
+
+    return deleted;
+  }
+
+  /**
+   * 强化记忆（记录访问并更新置信度）
+   */
+  reinforceMemory(id: string): import('../services').MemoryRecord | null {
+    const memory = this.getMemoryById(id);
+    if (!memory) return null;
+
+    const decayManager = getMemoryDecayManager();
+    const decayRecord: DecayMemoryRecord = {
+      id: memory.id,
+      content: memory.content,
+      createdAt: memory.createdAt,
+      lastAccessedAt: memory.lastAccessedAt ?? memory.updatedAt,
+      accessCount: memory.accessCount,
+      confidence: memory.confidence,
+      category: memory.category,
+      metadata: memory.metadata,
+    };
+
+    // 计算强化后的记录
+    const reinforced = decayManager.recordAccess(decayRecord);
+
+    // 更新数据库中的记忆
+    return this.updateMemory(id, {
+      confidence: reinforced.confidence,
+    });
+  }
+
+  /**
+   * 获取记忆衰减统计
+   */
+  getMemoryDecayStats(): {
+    total: number;
+    valid: number;
+    needsCleanup: number;
+    avgConfidence: number;
+    avgAccessCount: number;
+    byCategory: Record<string, { count: number; avgConfidence: number }>;
+  } {
+    const memories = this.listMemories({ limit: 1000 });
+    const decayManager = getMemoryDecayManager();
+
+    const decayRecords: DecayMemoryRecord[] = memories.map((memory) => ({
+      id: memory.id,
+      content: memory.content,
+      createdAt: memory.createdAt,
+      lastAccessedAt: memory.lastAccessedAt ?? memory.updatedAt,
+      accessCount: memory.accessCount,
+      confidence: memory.confidence,
+      category: memory.category,
+      metadata: memory.metadata,
+    }));
+
+    return decayManager.getStats(decayRecords);
+  }
+
+  // --------------------------------------------------------------------------
+  // Error Learning Integration
+  // --------------------------------------------------------------------------
+
+  /**
+   * 记录错误到学习服务
+   */
+  recordError(message: string, context: Record<string, unknown> = {}, toolName?: string): void {
+    const errorLearning = getErrorLearningService();
+    errorLearning.recordError(message, context, toolName);
+  }
+
+  /**
+   * 记录错误解决方案
+   */
+  recordErrorResolution(errorSignature: string, action: string, success: boolean): void {
+    const errorLearning = getErrorLearningService();
+    errorLearning.recordResolution(errorSignature, action, success);
+  }
+
+  /**
+   * 获取错误的建议修复方案
+   */
+  getSuggestedErrorFixes(message: string, toolName?: string): string[] {
+    const errorLearning = getErrorLearningService();
+    return errorLearning.getSuggestedFixes(message, toolName);
+  }
+
+  /**
+   * 获取错误学习统计
+   */
+  getErrorLearningStats(): {
+    totalPatterns: number;
+    totalErrors: number;
+    byCategory: Record<string, number>;
+    topPatterns: Array<{
+      signature: string;
+      frequency: number;
+      category: string;
+      resolutionRate: number;
+    }>;
+  } {
+    const errorLearning = getErrorLearningService();
+    return errorLearning.getPatternStats();
+  }
+
+  /**
+   * 获取特定工具的错误模式
+   */
+  getErrorPatternsForTool(toolName: string): import('./errorLearning').ErrorPattern[] {
+    const errorLearning = getErrorLearningService();
+    return errorLearning.getPatternsForTool(toolName);
   }
 
   // --------------------------------------------------------------------------

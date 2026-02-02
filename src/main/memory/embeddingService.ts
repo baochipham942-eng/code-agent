@@ -5,6 +5,12 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
+import {
+  EMBEDDING_DIMENSIONS,
+  DEFAULT_EMBEDDING_DIMENSION,
+  validateTextForEmbedding,
+  validateDimension,
+} from './embeddingConfig';
 
 const logger = createLogger('EmbeddingService');
 
@@ -34,11 +40,17 @@ export interface EmbeddingProvider {
 export class LocalEmbedding implements EmbeddingProvider {
   private dimension: number;
 
-  constructor(dimension: number = 384) {
+  constructor(dimension: number = EMBEDDING_DIMENSIONS.local) {
     this.dimension = dimension;
   }
 
   async embed(text: string): Promise<number[]> {
+    // 验证输入
+    const validation = validateTextForEmbedding(text);
+    if (!validation.valid) {
+      throw new Error(`Cannot embed text: ${validation.reason}`);
+    }
+
     const vector = new Array(this.dimension).fill(0);
     const tokens = text.toLowerCase().split(/\s+/);
 
@@ -84,7 +96,7 @@ export class DeepSeekEmbedding implements EmbeddingProvider {
   private apiKey: string;
   private baseUrl: string;
   private model: string;
-  private dimension: number = 1024; // DeepSeek embedding dimension
+  private dimension: number = EMBEDDING_DIMENSIONS.deepseek;
 
   constructor(apiKey: string, baseUrl?: string, model?: string) {
     this.apiKey = apiKey;
@@ -93,6 +105,12 @@ export class DeepSeekEmbedding implements EmbeddingProvider {
   }
 
   async embed(text: string): Promise<number[]> {
+    // 验证输入
+    const validation = validateTextForEmbedding(text);
+    if (!validation.valid) {
+      throw new Error(`Cannot embed text: ${validation.reason}`);
+    }
+
     const response = await fetch(`${this.baseUrl}/v1/embeddings`, {
       method: 'POST',
       headers: {
@@ -118,11 +136,27 @@ export class DeepSeekEmbedding implements EmbeddingProvider {
       throw new Error('Invalid response from DeepSeek embedding API');
     }
 
-    this.dimension = data.data[0].embedding.length;
+    // 验证返回维度
+    const actualDimension = data.data[0].embedding.length;
+    const dimValidation = validateDimension(data.data[0].embedding, this.dimension);
+    if (!dimValidation.valid) {
+      logger.warn(
+        `DeepSeek embedding dimension mismatch: expected ${dimValidation.expected}, got ${dimValidation.actual}`
+      );
+    }
+    this.dimension = actualDimension;
     return data.data[0].embedding;
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
+    // 验证输入
+    for (const text of texts) {
+      const validation = validateTextForEmbedding(text);
+      if (!validation.valid) {
+        throw new Error(`Cannot embed text in batch: ${validation.reason}`);
+      }
+    }
+
     // DeepSeek supports batch embedding
     const response = await fetch(`${this.baseUrl}/v1/embeddings`, {
       method: 'POST',
@@ -163,7 +197,7 @@ export class OpenAIEmbedding implements EmbeddingProvider {
   private apiKey: string;
   private baseUrl: string;
   private model: string;
-  private dimension: number = 1536; // text-embedding-ada-002
+  private dimension: number = EMBEDDING_DIMENSIONS.openai;
 
   constructor(apiKey: string, baseUrl?: string, model?: string) {
     this.apiKey = apiKey;
@@ -172,6 +206,12 @@ export class OpenAIEmbedding implements EmbeddingProvider {
   }
 
   async embed(text: string): Promise<number[]> {
+    // 验证输入
+    const validation = validateTextForEmbedding(text);
+    if (!validation.valid) {
+      throw new Error(`Cannot embed text: ${validation.reason}`);
+    }
+
     const response = await fetch(`${this.baseUrl}/v1/embeddings`, {
       method: 'POST',
       headers: {
@@ -197,11 +237,27 @@ export class OpenAIEmbedding implements EmbeddingProvider {
       throw new Error('Invalid response from OpenAI embedding API');
     }
 
-    this.dimension = data.data[0].embedding.length;
+    // 验证返回维度
+    const actualDimension = data.data[0].embedding.length;
+    const dimValidation = validateDimension(data.data[0].embedding, this.dimension);
+    if (!dimValidation.valid) {
+      logger.warn(
+        `OpenAI embedding dimension mismatch: expected ${dimValidation.expected}, got ${dimValidation.actual}`
+      );
+    }
+    this.dimension = actualDimension;
     return data.data[0].embedding;
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
+    // 验证输入
+    for (const text of texts) {
+      const validation = validateTextForEmbedding(text);
+      if (!validation.valid) {
+        throw new Error(`Cannot embed text in batch: ${validation.reason}`);
+      }
+    }
+
     const response = await fetch(`${this.baseUrl}/v1/embeddings`, {
       method: 'POST',
       headers: {
@@ -239,7 +295,7 @@ export class OpenAIEmbedding implements EmbeddingProvider {
 export class GeminiEmbedding implements EmbeddingProvider {
   private apiKey: string;
   private model: string;
-  private dimension: number = 768; // text-embedding-004
+  private dimension: number = EMBEDDING_DIMENSIONS.gemini;
 
   constructor(apiKey: string, model?: string) {
     this.apiKey = apiKey;
@@ -247,6 +303,12 @@ export class GeminiEmbedding implements EmbeddingProvider {
   }
 
   async embed(text: string): Promise<number[]> {
+    // 验证输入
+    const validation = validateTextForEmbedding(text);
+    if (!validation.valid) {
+      throw new Error(`Cannot embed text: ${validation.reason}`);
+    }
+
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:embedContent?key=${this.apiKey}`;
 
     const response = await fetch(url, {
@@ -275,11 +337,27 @@ export class GeminiEmbedding implements EmbeddingProvider {
       throw new Error('Invalid response from Gemini embedding API');
     }
 
-    this.dimension = data.embedding.values.length;
+    // 验证返回维度
+    const actualDimension = data.embedding.values.length;
+    const dimValidation = validateDimension(data.embedding.values, this.dimension);
+    if (!dimValidation.valid) {
+      logger.warn(
+        `Gemini embedding dimension mismatch: expected ${dimValidation.expected}, got ${dimValidation.actual}`
+      );
+    }
+    this.dimension = actualDimension;
     return data.embedding.values;
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
+    // 验证输入
+    for (const text of texts) {
+      const validation = validateTextForEmbedding(text);
+      if (!validation.valid) {
+        throw new Error(`Cannot embed text in batch: ${validation.reason}`);
+      }
+    }
+
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:batchEmbedContents?key=${this.apiKey}`;
 
     const requests = texts.map((text) => ({
@@ -336,7 +414,7 @@ export class EmbeddingService {
   constructor(config?: Partial<EmbeddingConfig>) {
     const defaultConfig: EmbeddingConfig = {
       provider: 'local',
-      dimension: 384,
+      dimension: DEFAULT_EMBEDDING_DIMENSION, // 统一为 1024
       batchSize: 100,
       cacheEnabled: true,
       fallbackChain: ['deepseek', 'openai', 'gemini', 'local'],
@@ -461,6 +539,12 @@ export class EmbeddingService {
    * Generate embedding for a single text
    */
   async embed(text: string): Promise<number[]> {
+    // 验证输入
+    const validation = validateTextForEmbedding(text);
+    if (!validation.valid) {
+      throw new Error(`Cannot embed text: ${validation.reason}`);
+    }
+
     // Check cache first
     if (this.cacheEnabled) {
       const cacheKey = this.getCacheKey(text);
@@ -484,6 +568,14 @@ export class EmbeddingService {
    * Generate embeddings for multiple texts
    */
   async embedBatch(texts: string[]): Promise<number[][]> {
+    // 验证所有输入
+    for (let i = 0; i < texts.length; i++) {
+      const validation = validateTextForEmbedding(texts[i]);
+      if (!validation.valid) {
+        throw new Error(`Cannot embed text at index ${i}: ${validation.reason}`);
+      }
+    }
+
     const results: number[][] = new Array(texts.length);
     const uncachedIndices: number[] = [];
     const uncachedTexts: string[] = [];

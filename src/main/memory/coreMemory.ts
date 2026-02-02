@@ -131,23 +131,47 @@ const STYLE_PATTERNS = {
   trailingComma: /,\s*[\}\]]\s*$/m,
 };
 
-// 显式偏好关键词
+// 显式偏好关键词（扩展版）
 const PREFERENCE_KEYWORDS = {
   languages: [
-    { pattern: /我.*(?:喜欢|偏好|常用|主要用)\s*(TypeScript|JavaScript|Python|Go|Rust|Java)/gi, group: 1 },
-    { pattern: /(?:prefer|use|like)\s*(TypeScript|JavaScript|Python|Go|Rust|Java)/gi, group: 1 },
+    { pattern: /我.*(?:喜欢|偏好|常用|主要用|擅长)\s*(TypeScript|JavaScript|Python|Go|Rust|Java|C\+\+|C#|Ruby|PHP|Kotlin|Swift)/gi, group: 1 },
+    { pattern: /(?:prefer|use|like|work with|specialize in)\s*(TypeScript|JavaScript|Python|Go|Rust|Java|C\+\+|C#|Ruby|PHP|Kotlin|Swift)/gi, group: 1 },
   ],
   frameworks: [
-    { pattern: /我.*(?:喜欢|偏好|常用)\s*(React|Vue|Angular|Next\.js|Nuxt|Svelte|Express|Nest\.js|FastAPI|Django)/gi, group: 1 },
-    { pattern: /(?:prefer|use|like)\s*(React|Vue|Angular|Next\.js|Nuxt|Svelte|Express|Nest\.js|FastAPI|Django)/gi, group: 1 },
+    { pattern: /我.*(?:喜欢|偏好|常用|使用)\s*(React|Vue|Angular|Next\.js|Nuxt|Svelte|Express|Nest\.js|FastAPI|Django|Spring|Flask|Rails|Laravel|Gin)/gi, group: 1 },
+    { pattern: /(?:prefer|use|like|work with)\s*(React|Vue|Angular|Next\.js|Nuxt|Svelte|Express|Nest\.js|FastAPI|Django|Spring|Flask|Rails|Laravel|Gin)/gi, group: 1 },
   ],
   commentLanguage: [
-    { pattern: /请?用中文.*注释|中文注释/i, value: 'zh' as const },
-    { pattern: /(?:use |write |prefer )?english comments/i, value: 'en' as const },
+    { pattern: /请?用中文.*注释|中文注释|注释.*中文/i, value: 'zh' as const },
+    { pattern: /(?:use |write |prefer )?english comments|comments? in english/i, value: 'en' as const },
   ],
   detailed: [
-    { pattern: /详细.*解释|多解释一些/i, value: true },
-    { pattern: /简洁.*回复|不要.*解释/i, value: false },
+    { pattern: /详细.*解释|多解释一些|详细一点|请详细说明/i, value: true },
+    { pattern: /简洁.*回复|不要.*解释|简短.*回答|直接给.*答案/i, value: false },
+  ],
+  // 新增：测试框架偏好
+  testFramework: [
+    { pattern: /(?:使用|用|prefer|use)\s*(jest|vitest|mocha|pytest|junit|rspec)/gi, group: 1 },
+  ],
+  // 新增：commit 风格偏好
+  commitStyle: [
+    { pattern: /(?:conventional|angular)\s*commit|commit.*(?:conventional|angular)/i, value: 'conventional' as const },
+    { pattern: /简单.*commit|simple.*commit/i, value: 'simple' as const },
+  ],
+  // 新增：CLI 偏好
+  cliPreference: [
+    { pattern: /(?:喜欢|偏好|prefer)\s*(?:命令行|CLI|terminal)/i, value: true },
+    { pattern: /(?:喜欢|偏好|prefer)\s*(?:GUI|图形界面|可视化)/i, value: false },
+  ],
+  // 新增：错误处理风格
+  errorHandling: [
+    { pattern: /(?:详细|verbose)\s*(?:错误|error)|(?:错误|error).*(?:详细|verbose)/i, value: 'verbose' as const },
+    { pattern: /(?:简洁|concise)\s*(?:错误|error)|(?:错误|error).*(?:简洁|concise)/i, value: 'concise' as const },
+  ],
+  // 新增：代码组织偏好
+  codeOrganization: [
+    { pattern: /(?:单文件|single file|一个文件)/i, value: 'single-file' as const },
+    { pattern: /(?:模块化|modular|分文件)/i, value: 'modular' as const },
   ],
 };
 
@@ -335,6 +359,45 @@ export class CoreMemoryService {
       };
     }
 
+    // 新增：测试框架偏好
+    if (explicitPrefs.testFramework) {
+      learned.workflow = {
+        ...learned.workflow,
+        preferredTestFramework: explicitPrefs.testFramework,
+      };
+    }
+
+    // 新增：commit 风格偏好
+    if (explicitPrefs.commitStyle) {
+      learned.workflow = {
+        ...learned.workflow,
+        commitMessageStyle: explicitPrefs.commitStyle,
+      };
+    }
+
+    // 新增：CLI 偏好
+    if (explicitPrefs.prefersCLI !== undefined) {
+      learned.workflow = {
+        ...learned.workflow,
+        prefersCLI: explicitPrefs.prefersCLI,
+      };
+    }
+
+    // 新增：错误处理和代码组织偏好存入 custom
+    if (explicitPrefs.errorHandling) {
+      learned.custom = {
+        ...learned.custom,
+        errorHandling: explicitPrefs.errorHandling,
+      };
+    }
+
+    if (explicitPrefs.codeOrganization) {
+      learned.custom = {
+        ...learned.custom,
+        codeOrganization: explicitPrefs.codeOrganization,
+      };
+    }
+
     // 3. 合并学习到的偏好
     if (Object.keys(learned).length > 0) {
       this.mergeLearnedPreferences(learned);
@@ -406,19 +469,29 @@ export class CoreMemoryService {
   }
 
   /**
-   * 从用户消息中提取显式偏好
+   * 从用户消息中提取显式偏好（扩展版）
    */
   private extractExplicitPreferences(messages: Message[]): {
     languages: string[];
     frameworks: string[];
     commentLanguage?: 'zh' | 'en';
     detailed?: boolean;
+    testFramework?: string;
+    commitStyle?: 'conventional' | 'simple';
+    prefersCLI?: boolean;
+    errorHandling?: 'verbose' | 'concise';
+    codeOrganization?: 'single-file' | 'modular';
   } {
     const result = {
       languages: new Set<string>(),
       frameworks: new Set<string>(),
       commentLanguage: undefined as 'zh' | 'en' | undefined,
       detailed: undefined as boolean | undefined,
+      testFramework: undefined as string | undefined,
+      commitStyle: undefined as 'conventional' | 'simple' | undefined,
+      prefersCLI: undefined as boolean | undefined,
+      errorHandling: undefined as 'verbose' | 'concise' | undefined,
+      codeOrganization: undefined as 'single-file' | 'modular' | undefined,
     };
 
     const allText = messages.map((m) => m.content).join('\n');
@@ -455,11 +528,57 @@ export class CoreMemoryService {
       }
     }
 
+    // 提取测试框架偏好
+    for (const rule of PREFERENCE_KEYWORDS.testFramework) {
+      let match;
+      while ((match = rule.pattern.exec(allText)) !== null) {
+        result.testFramework = match[rule.group].toLowerCase();
+        break;
+      }
+    }
+
+    // 提取 commit 风格偏好
+    for (const rule of PREFERENCE_KEYWORDS.commitStyle) {
+      if (rule.pattern.test(allText)) {
+        result.commitStyle = rule.value;
+        break;
+      }
+    }
+
+    // 提取 CLI 偏好
+    for (const rule of PREFERENCE_KEYWORDS.cliPreference) {
+      if (rule.pattern.test(allText)) {
+        result.prefersCLI = rule.value;
+        break;
+      }
+    }
+
+    // 提取错误处理风格
+    for (const rule of PREFERENCE_KEYWORDS.errorHandling) {
+      if (rule.pattern.test(allText)) {
+        result.errorHandling = rule.value;
+        break;
+      }
+    }
+
+    // 提取代码组织偏好
+    for (const rule of PREFERENCE_KEYWORDS.codeOrganization) {
+      if (rule.pattern.test(allText)) {
+        result.codeOrganization = rule.value;
+        break;
+      }
+    }
+
     return {
       languages: Array.from(result.languages),
       frameworks: Array.from(result.frameworks),
       commentLanguage: result.commentLanguage,
       detailed: result.detailed,
+      testFramework: result.testFramework,
+      commitStyle: result.commitStyle,
+      prefersCLI: result.prefersCLI,
+      errorHandling: result.errorHandling,
+      codeOrganization: result.codeOrganization,
     };
   }
 

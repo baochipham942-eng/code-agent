@@ -53,7 +53,7 @@ import {
   buildEnhancedSystemPromptWithProactiveContext,
   buildEnhancedSystemPromptAsync,
 } from './messageHandling/contextBuilder';
-import { getPromptForTask, buildDynamicPrompt, type AgentMode } from '../generation/prompts/builder';
+import { getPromptForTask, buildDynamicPrompt, buildDynamicPromptV2, type AgentMode } from '../generation/prompts/builder';
 import { AntiPatternDetector } from './antiPattern/detector';
 import { getCurrentTodos } from '../tools/planning/todoWrite';
 import { getIncompleteTasks } from '../tools/planning';
@@ -474,28 +474,38 @@ export class AgentLoop {
         logger.warn('[AgentLoop] Parallel judgment failed, continuing without hint', error);
       }
 
-      // Dynamic Agent Mode Detection (借鉴 Claude Code 动态系统提醒)
+      // Dynamic Agent Mode Detection V2 (基于优先级和预算的动态提醒)
       const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
       logger.info(`[AgentLoop] Checking dynamic mode for gen${genNum}`);
       if (genNum >= 3) {
         try {
-          const dynamicResult = buildDynamicPrompt(this.generation.id, userMessage);
+          // 使用 V2 版本，支持 toolsUsedInTurn 上下文
+          const dynamicResult = buildDynamicPromptV2(this.generation.id, userMessage, {
+            toolsUsedInTurn: this.toolsUsedInTurn,
+            iterationCount: this.toolsUsedInTurn.length, // 使用工具调用数量作为迭代近似
+            hasError: false,
+            maxReminderTokens: 800,
+            includeFewShot: genNum >= 4, // Gen4+ 启用 few-shot 示例
+          });
           this.currentAgentMode = dynamicResult.mode;
 
           logger.info(`[AgentLoop] Dynamic mode detected: ${dynamicResult.mode}`, {
             features: dynamicResult.features,
             parallelByDefault: dynamicResult.modeConfig.parallelByDefault,
+            remindersSelected: dynamicResult.reminderStats.deduplication.selected,
+            tokensUsed: dynamicResult.tokensUsed,
           });
           logCollector.agent('INFO', `Dynamic mode: ${dynamicResult.mode}`, {
             suggestedAgents: dynamicResult.modeConfig.suggestedAgents,
             isMultiDimension: dynamicResult.features.isMultiDimension,
+            reminderStats: dynamicResult.reminderStats,
           });
 
           // 注入模式系统提醒（如果有）
           if (dynamicResult.userMessage !== userMessage) {
             const reminder = dynamicResult.userMessage.substring(userMessage.length).trim();
             if (reminder) {
-              logger.info(`[AgentLoop] Injecting mode reminder (${reminder.length} chars)`);
+              logger.info(`[AgentLoop] Injecting mode reminder (${reminder.length} chars, ${dynamicResult.tokensUsed} tokens)`);
               this.injectSystemMessage(reminder);
             }
           }
@@ -2238,8 +2248,109 @@ ${deferredToolsSummary}
           },
         } as AgentEvent);
       }
+
+      // 从会话中提取错误模式并学习
+      await this.runErrorPatternLearning();
+
+      // 清理低置信度的记忆
+      const cleanedCount = memoryService.cleanupDecayedMemories();
+      if (cleanedCount > 0) {
+        logger.info(`[AgentLoop] Cleaned up ${cleanedCount} decayed memories`);
+      }
+
+      // 记录记忆衰减统计
+      const decayStats = memoryService.getMemoryDecayStats();
+      logger.debug('[AgentLoop] Memory decay stats', {
+        total: decayStats.total,
+        valid: decayStats.valid,
+        needsCleanup: decayStats.needsCleanup,
+        avgConfidence: decayStats.avgConfidence.toFixed(2),
+      });
+
     } catch (error) {
       logger.error('[AgentLoop] Session end learning failed:', error);
+    }
+  }
+
+  /**
+   * 从会话中提取错误模式并学习
+   */
+  private async runErrorPatternLearning(): Promise<void> {
+    try {
+      const memoryService = getMemoryService();
+
+      // 从消息历史中提取错误
+      for (const message of this.messages) {
+        if (message.toolResults && message.toolCalls) {
+          // 创建 toolCallId -> toolName 映射
+          const toolCallMap = new Map<string, string>();
+          for (const tc of message.toolCalls) {
+            toolCallMap.set(tc.id, tc.name);
+          }
+
+          for (const result of message.toolResults) {
+            if (!result.success && result.error) {
+              // 通过 toolCallId 获取工具名称
+              const toolName = toolCallMap.get(result.toolCallId) || 'unknown';
+
+              // 记录错误到学习服务
+              memoryService.recordError(
+                result.error,
+                {
+                  toolName,
+                  sessionId: this.sessionId,
+                  timestamp: message.timestamp,
+                },
+                toolName
+              );
+
+              // 检查后续是否有成功的重试（简单启发式）
+              const errorTime = message.timestamp;
+              const laterSuccess = this.messages.some((m) => {
+                if (m.timestamp <= errorTime) return false;
+                if (!m.toolResults || !m.toolCalls) return false;
+                // 检查是否有同一工具的成功调用
+                const laterToolMap = new Map<string, string>();
+                for (const tc of m.toolCalls) {
+                  laterToolMap.set(tc.id, tc.name);
+                }
+                return m.toolResults.some((r) => {
+                  const laterToolName = laterToolMap.get(r.toolCallId);
+                  return laterToolName === toolName && r.success;
+                });
+              });
+
+              if (laterSuccess) {
+                // 如果后来同一工具成功了，记录为已解决
+                const pattern = memoryService.getSuggestedErrorFixes(result.error, toolName);
+                if (pattern.length > 0) {
+                  memoryService.recordErrorResolution(
+                    `${toolName}:${result.error.slice(0, 50)}`,
+                    'retry_with_modification',
+                    true
+                  );
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // 记录错误学习统计
+      const errorStats = memoryService.getErrorLearningStats();
+      if (errorStats.totalErrors > 0) {
+        logger.info('[AgentLoop] Error learning stats', {
+          totalPatterns: errorStats.totalPatterns,
+          totalErrors: errorStats.totalErrors,
+          topCategories: Object.entries(errorStats.byCategory)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 3)
+            .map(([cat, count]) => `${cat}:${count}`)
+            .join(', '),
+        });
+      }
+    } catch (error) {
+      logger.error('[AgentLoop] Error pattern learning failed:', error);
     }
   }
 

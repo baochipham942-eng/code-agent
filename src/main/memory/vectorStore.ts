@@ -8,6 +8,11 @@ import fs from 'fs';
 import { app } from 'electron';
 import { getEmbeddingService, type EmbeddingService } from './embeddingService';
 import {
+  DEFAULT_EMBEDDING_DIMENSION,
+  CLOUD_EMBEDDING_DIMENSION,
+  validateTextForEmbedding,
+} from './embeddingConfig';
+import {
   getSupabase,
   isSupabaseInitialized,
   type VectorMatchResult,
@@ -92,7 +97,7 @@ export class VectorStore {
     const userDataPath = app?.getPath?.('userData') || process.cwd();
 
     this.config = {
-      embeddingDimension: 384,
+      embeddingDimension: DEFAULT_EMBEDDING_DIMENSION, // 统一为 1024
       maxDocuments: 10000,
       persistPath: path.join(userDataPath, 'vector-store.json'),
       useApiEmbedding: true, // Default to using API embedding
@@ -129,6 +134,12 @@ export class VectorStore {
     content: string,
     metadata: VectorDocumentMetadata
   ): Promise<string> {
+    // 验证输入
+    const validation = validateTextForEmbedding(content);
+    if (!validation.valid) {
+      throw new Error(`Cannot add document: ${validation.reason}`);
+    }
+
     const id = `doc_${Date.now()}_${crypto.randomUUID().split('-')[0]}`;
     const embedding = await this.getEmbedding().embed(content);
 
@@ -230,7 +241,12 @@ export class VectorStore {
       filter?: Partial<VectorDocument['metadata']>;
     } = {}
   ): Promise<SearchResult[]> {
-    const { topK = 5, threshold = 0.0, filter } = options;
+    // 验证输入
+    const validation = validateTextForEmbedding(query);
+    if (!validation.valid) {
+      logger.warn(`Search query validation failed: ${validation.reason}`);
+      return []; // 空查询返回空结果
+    }
 
     const queryEmbedding = await this.getEmbedding().embed(query);
     return this.searchWithEmbedding(queryEmbedding, options);
@@ -248,7 +264,12 @@ export class VectorStore {
       filter?: Partial<VectorDocument['metadata']>;
     } = {}
   ): SearchResult[] {
-    const { topK = 5, threshold = 0.0, filter } = options;
+    // 验证输入
+    const validation = validateTextForEmbedding(query);
+    if (!validation.valid) {
+      logger.warn(`Search query validation failed: ${validation.reason}`);
+      return []; // 空查询返回空结果
+    }
 
     // Use synchronous local embedding for immediate search
     const queryEmbedding = this.localEmbed(query);
@@ -402,8 +423,11 @@ export class VectorStore {
       // Generate embedding for query
       const queryEmbedding = await this.getEmbedding().embed(query);
 
-      // Ensure embedding dimension matches Supabase (1024 for DeepSeek)
-      const normalizedEmbedding = this.normalizeEmbeddingDimension(queryEmbedding, 1024);
+      // Ensure embedding dimension matches Supabase (使用配置常量)
+      const normalizedEmbedding = this.normalizeEmbeddingDimension(
+        queryEmbedding,
+        CLOUD_EMBEDDING_DIMENSION
+      );
 
       // Call Supabase RPC function
       // TODO: Supabase RPC 类型系统需要 as any 绕过泛型约束
@@ -579,7 +603,7 @@ export class VectorStore {
    * 使用 TF-IDF 风格的哈希
    */
   private localEmbed(text: string): number[] {
-    const dimension = 384;
+    const dimension = DEFAULT_EMBEDDING_DIMENSION; // 统一为 1024
     const vector = new Array(dimension).fill(0);
     const tokens = text.toLowerCase().split(/\s+/);
 

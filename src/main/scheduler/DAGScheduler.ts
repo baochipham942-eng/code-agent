@@ -15,7 +15,9 @@ import type {
   AgentTaskConfig,
   ShellTaskConfig,
   CheckpointTaskConfig,
+  EvaluateTaskConfig,
 } from '../../shared/types/taskDAG';
+import { getParallelEvaluator } from '../evaluation/parallelEvaluator';
 import { isTaskTerminal } from '../../shared/types/taskDAG';
 import { TaskDAG } from './TaskDAG';
 import type { Tool, ToolContext } from '../tools/toolRegistry';
@@ -465,6 +467,8 @@ export class DAGScheduler extends EventEmitter {
         return this.executeShellTask(task, context, signal);
       case 'checkpoint':
         return this.executeCheckpointTask(task, context);
+      case 'evaluate':
+        return this.executeEvaluateTask(task, context);
       default:
         throw new Error(`Unsupported task type: ${task.type}`);
     }
@@ -637,6 +641,48 @@ export class DAGScheduler extends EventEmitter {
     return {
       text: `Checkpoint "${config.name}" passed.\nDependency statuses:\n${depStatuses.join('\n')}`,
       data: collectedData,
+    };
+  }
+
+  /**
+   * 执行评估任务
+   * 从候选方案中选择最优
+   */
+  private async executeEvaluateTask(
+    task: DAGTask,
+    context: TaskExecutionContext
+  ): Promise<TaskOutput> {
+    const config = task.config as EvaluateTaskConfig;
+
+    // 收集候选任务的输出
+    const candidates = config.candidateTaskIds.map(taskId => {
+      const output = context.dependencyOutputs.get(taskId);
+      if (!output) {
+        throw new Error(`Candidate task ${taskId} has no output`);
+      }
+      return { taskId, output };
+    });
+
+    if (candidates.length === 0) {
+      throw new Error('No candidates to evaluate');
+    }
+
+    logger.info(`[Evaluate] Evaluating ${candidates.length} candidates: ${config.candidateTaskIds.join(', ')}`);
+
+    // 执行评估
+    const evaluator = getParallelEvaluator();
+    const result = await evaluator.evaluate(candidates, config);
+
+    logger.info(`[Evaluate] Winner: ${result.winnerId}, duration: ${result.duration}ms`);
+
+    return {
+      text: `Evaluation complete.\nWinner: ${result.winnerId}\nStrategy: ${config.selectionStrategy}`,
+      data: {
+        winnerId: result.winnerId,
+        scores: result.scores,
+        duration: result.duration,
+        autoApply: config.autoApply,
+      },
     };
   }
 

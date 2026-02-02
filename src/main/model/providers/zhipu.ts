@@ -4,6 +4,7 @@
 
 import https from 'https';
 import http from 'http';
+import { StringDecoder } from 'string_decoder';
 import type { ModelConfig, ToolDefinition, ModelInfo, ProviderConfig } from '../../../shared/types';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import {
@@ -227,9 +228,13 @@ function callZhipuStream(
       }
 
       let buffer = '';
+      // 使用 StringDecoder 正确处理 UTF-8 多字节字符边界
+      const decoder = new StringDecoder('utf8');
 
       res.on('data', (chunk: Buffer) => {
-        buffer += chunk.toString();
+        // 使用 decoder.write() 而不是 chunk.toString()
+        // 这样可以正确处理被分割到多个 chunk 的 UTF-8 字符
+        buffer += decoder.write(chunk);
 
         // 处理 SSE 数据行
         const lines = buffer.split('\n');

@@ -371,39 +371,50 @@ export class SwissCheeseEvaluator {
       complex_reasoning: 0,
     };
 
-    // 检测代码场景
-    const codeIndicators = [
-      /```[\w]*\n[\s\S]*?```/g,           // 代码块
-      /function\s+\w+/g,                   // 函数定义
-      /const\s+\w+\s*=/g,                  // 变量声明
-      /import\s+.*from/g,                  // 导入语句
-      /class\s+\w+/g,                      // 类定义
-      /<\w+[^>]*>/g,                       // HTML/JSX 标签
-    ];
-    let codeMatches = 0;
-    for (const pattern of codeIndicators) {
-      codeMatches += (conversationText.match(pattern) || []).length;
-    }
-    if (codeMatches > 0) {
-      confidence.code = Math.min(codeMatches * 0.2, 1);
-      if (confidence.code > 0.3) scenes.push('code');
+    // 简单对话过滤（提前计算，用于过滤代码和数学检测）
+    const turnCount = snapshot.messages.length;
+    const totalContentLength = conversationText.length;
+    const isSimpleConversation = turnCount <= 2 && totalContentLength < 500;
+
+    // 检测代码场景（简单对话不触发）
+    if (!isSimpleConversation) {
+      const codeIndicators = [
+        /```[\w]*\n[\s\S]*?```/g,           // 代码块（最可靠的信号）
+        /function\s+\w+\s*\(/g,             // 函数定义（需要括号）
+        /const\s+\w+\s*=\s*(?:async\s*)?\(/g, // 箭头函数
+        /import\s+\{?[\w,\s]+\}?\s+from\s+['"][^'"]+['"]/g, // 完整导入语句
+        /class\s+\w+\s*(?:extends|implements|\{)/g,  // 类定义（需要后续）
+        /export\s+(?:default\s+)?(?:function|class|const)/g, // 导出语句
+      ];
+      let codeMatches = 0;
+      for (const pattern of codeIndicators) {
+        codeMatches += (conversationText.match(pattern) || []).length;
+      }
+      if (codeMatches > 0) {
+        // 提高阈值：需要 4 次匹配才能达到 0.6
+        confidence.code = Math.min(codeMatches * 0.15, 1);
+        if (confidence.code > 0.5) scenes.push('code');  // 阈值从 0.3 提高到 0.5
+      }
     }
 
-    // 检测数学场景
-    const mathIndicators = [
-      /\$[^$]+\$/g,                        // LaTeX 公式
-      /\\\[[\s\S]*?\\\]/g,                 // 块级 LaTeX
-      /\d+\s*[\+\-\*\/\^]\s*\d+/g,         // 算术表达式
-      /∑|∫|∏|√|π|∞/g,                      // 数学符号
-      /计算|求解|证明|推导/g,              // 数学关键词
-    ];
-    let mathMatches = 0;
-    for (const pattern of mathIndicators) {
-      mathMatches += (conversationText.match(pattern) || []).length;
-    }
-    if (mathMatches > 0) {
-      confidence.math = Math.min(mathMatches * 0.3, 1);
-      if (confidence.math > 0.3) scenes.push('math');
+    // 检测数学场景（简单对话不触发）
+    if (!isSimpleConversation) {
+      const mathIndicators = [
+        /\$[^$]+\$/g,                        // LaTeX 公式
+        /\\\[[\s\S]*?\\\]/g,                 // 块级 LaTeX
+        /∑|∫|∏|√|π|∞/g,                      // 数学符号
+        /计算|求解|证明|推导/g,              // 数学关键词
+        // 移除了 /\d+\s*[\+\-\*\/\^]\s*\d+/g - 会误匹配版本号、路径等
+      ];
+      let mathMatches = 0;
+      for (const pattern of mathIndicators) {
+        mathMatches += (conversationText.match(pattern) || []).length;
+      }
+      if (mathMatches > 0) {
+        // 提高阈值：需要 3 次匹配才能达到 0.6
+        confidence.math = Math.min(mathMatches * 0.2, 1);
+        if (confidence.math > 0.5) scenes.push('math');  // 阈值从 0.3 提高到 0.5
+      }
     }
 
     // 检测多模态场景
@@ -448,12 +459,7 @@ export class SwissCheeseEvaluator {
     }
 
     // 检测复杂推理场景（需要多个信号才触发）
-    const turnCount = snapshot.messages.length;
-    const totalContentLength = conversationText.length;
-
-    // 简单对话过滤：轮次少且内容短，不触发复杂推理
-    const isSimpleConversation = turnCount <= 2 && totalContentLength < 500;
-
+    // 注：turnCount, totalContentLength, isSimpleConversation 已在前面计算
     if (!isSimpleConversation) {
       const reasoningIndicators = [
         /分析|推理|推导|论证|比较|权衡/g,           // 推理关键词

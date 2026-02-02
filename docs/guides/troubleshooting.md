@@ -234,3 +234,70 @@ sqlite3 "~/Library/Application Support/code-agent/code-agent.db" \
 1. `sessionPersistence` 改为异步写入
 2. `auditLogger` 使用批量写入
 3. 文件操作使用 `fs/promises`
+
+---
+
+## v0.16.16+ 新增问题
+
+### CLI vs Electron 原生模块编译
+**问题**: CLI 和 Electron 需要不同版本的原生模块
+
+| 运行环境 | Node ABI 版本 | 编译方式 |
+|----------|---------------|----------|
+| CLI (`node dist/cli/index.cjs`) | NODE_MODULE_VERSION 127 | `npm rebuild --build-from-source` |
+| Electron App | NODE_MODULE_VERSION 130 | `npm run rebuild-native` |
+
+**解决方案**: CLI 使用延迟加载，运行时检测并动态加载正确版本的原生模块。
+
+### 第三方代理的 SSE 格式问题
+**问题**: Kimi K2.5 第三方代理返回非标准 SSE 格式
+```
+: OPENROUTER PROCESSING
+
+data: {"id":"gen-xxx","choices":[...]}
+```
+**解决方案**: 使用原生 `https` 模块处理 SSE：
+1. 按 `\n` 分割 buffer
+2. 忽略以 `:` 开头的注释行
+3. 只处理 `data:` 开头的行
+4. 处理 `[DONE]` 结束标记
+
+相关代码：`src/main/model/providers/moonshot.ts`
+
+### Gen8 模型不调用工具
+**问题**: L4 测试大部分在 6-10 秒内失败，`tool-used: 0/7`
+**原因**:
+- Gen8 的 prompt 只列出了工具，没有强调必须使用工具
+- 缺少工具选择决策树
+- 模型倾向于直接给文本建议而不调用工具
+
+**解决方案**:
+1. 在 Gen8 Prompt 添加工具选择决策树表格
+2. 明确"禁止盲编辑、先探索后执行"等原则
+3. 添加正确/错误做法示例
+4. 关键语句："你必须使用工具来执行任务，不能只输出文本建议！"
+
+相关代码：`src/main/generation/prompts/base/gen8.ts`
+
+### DAG 调度器竞态条件
+**问题**: 并行任务执行时出现状态不一致
+**原因**: 任务状态更新和依赖检查之间存在竞态窗口
+**解决方案**:
+1. 添加互斥锁保护关键状态更新
+2. 使用原子操作更新任务状态
+3. 添加资源泄漏检测
+
+相关代码：`src/main/scheduler/DAGScheduler.ts`
+
+### AgentLoop 消息转换 Bug
+**问题**: 消息历史中出现空内容或格式错误
+**原因**: 消息转换器未正确处理边界条件
+**解决方案**: 增加空值检查和格式验证
+
+相关代码：`src/main/agent/messageHandling/converter.ts`
+
+### Token 优化器边界条件
+**问题**: 在特定输入下 token 优化器抛出异常
+**解决方案**: 添加输入验证和边界条件处理
+
+相关代码：`src/main/context/tokenOptimizer.ts`

@@ -901,22 +901,53 @@ export function getAgentDynamicMaxIterations(
  * - 其他任务使用 GLM-4.7（包年套餐，边际成本为零）
  * - 降级时使用 DeepSeek V3
  */
+/**
+ * 子代理模型配置
+ *
+ * 策略（GLM 调度 + DeepSeek 执行）：
+ * - 简单任务（探索、搜索）：GLM-4-Flash（免费且快）
+ * - 规划任务：GLM-4.7（擅长中文理解和规划）
+ * - 复杂执行任务（编码、重构）：DeepSeek V3（代码能力强）
+ * - 其他任务：GLM-4.7（包年套餐）
+ *
+ * 可通过环境变量覆盖：
+ * - SUBAGENT_CODER_PROVIDER / SUBAGENT_CODER_MODEL
+ */
 const SUBAGENT_MODEL_CONFIG: Record<string, { provider: ModelProvider; model: string }> = {
-  // 简单任务：使用 Flash（免费且更快）
+  // === 简单任务：GLM-4-Flash（免费且快）===
   'code-explore': { provider: 'zhipu', model: 'glm-4-flash' },
   'doc-reader': { provider: 'zhipu', model: 'glm-4-flash' },
   'bash-executor': { provider: 'zhipu', model: 'glm-4-flash' },
   'web-search': { provider: 'zhipu', model: 'glm-4-flash' },
 
-  // 其他任务：全部使用 GLM-4.7（包年套餐）
-  'coder': { provider: 'zhipu', model: 'glm-4.7' },
-  'reviewer': { provider: 'zhipu', model: 'glm-4.7' },
-  'refactorer': { provider: 'zhipu', model: 'glm-4.7' },
-  'architect': { provider: 'zhipu', model: 'glm-4.7' },
+  // === 规划任务：GLM-4.7（擅长中文理解）===
   'plan': { provider: 'zhipu', model: 'glm-4.7' },
-  'debugger': { provider: 'zhipu', model: 'glm-4.7' },
-  'tester': { provider: 'zhipu', model: 'glm-4.7' },
+  'reviewer': { provider: 'zhipu', model: 'glm-4.7' },
   'documenter': { provider: 'zhipu', model: 'glm-4.7' },
+
+  // === 复杂执行任务：DeepSeek V3（代码能力强）===
+  'coder': {
+    provider: (process.env.SUBAGENT_CODER_PROVIDER as ModelProvider) || 'deepseek',
+    model: process.env.SUBAGENT_CODER_MODEL || 'deepseek-chat',
+  },
+  'refactorer': {
+    provider: (process.env.SUBAGENT_REFACTORER_PROVIDER as ModelProvider) || 'deepseek',
+    model: process.env.SUBAGENT_REFACTORER_MODEL || 'deepseek-chat',
+  },
+  'architect': {
+    provider: (process.env.SUBAGENT_ARCHITECT_PROVIDER as ModelProvider) || 'deepseek',
+    model: process.env.SUBAGENT_ARCHITECT_MODEL || 'deepseek-chat',
+  },
+  'debugger': {
+    provider: (process.env.SUBAGENT_DEBUGGER_PROVIDER as ModelProvider) || 'deepseek',
+    model: process.env.SUBAGENT_DEBUGGER_MODEL || 'deepseek-chat',
+  },
+  'tester': {
+    provider: (process.env.SUBAGENT_TESTER_PROVIDER as ModelProvider) || 'deepseek',
+    model: process.env.SUBAGENT_TESTER_MODEL || 'deepseek-chat',
+  },
+
+  // === 其他任务：GLM-4.7（包年套餐）===
   'devops': { provider: 'zhipu', model: 'glm-4.7' },
   'general-purpose': { provider: 'zhipu', model: 'glm-4.7' },
   'mcp-connector': { provider: 'zhipu', model: 'glm-4.7' },

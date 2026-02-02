@@ -26,6 +26,19 @@ export interface AppSettings {
       gui: { provider: ModelProvider; model: string };
     };
   };
+  // API 超时配置
+  timeouts?: {
+    /** 任务复杂度（用户设置） */
+    complexity: 'simple' | 'medium' | 'complex';
+    /** 简单任务超时（毫秒），默认 30000 */
+    simple: number;
+    /** 中等任务超时（毫秒），默认 120000 */
+    medium: number;
+    /** 复杂任务超时（毫秒），默认 600000 */
+    complex: number;
+    /** 自定义超时（毫秒），用户可手动设置 */
+    custom?: number;
+  };
   generation: {
     default: GenerationId;
   };

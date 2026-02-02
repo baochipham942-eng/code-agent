@@ -14,6 +14,7 @@ import { AttachmentBar } from './AttachmentBar';
 import { SendButton } from './SendButton';
 import { VoiceInputButton } from './VoiceInputButton';
 import { useFileUpload } from './useFileUpload';
+import { useSessionStore } from '../../../../stores/sessionStore';
 
 // ============================================================================
 // 类型定义
@@ -51,11 +52,23 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const inputAreaRef = useRef<InputAreaRef>(null);
   const { processFile, processFolderEntry } = useFileUpload();
 
+  // 历史命令功能
+  const {
+    addToInputHistory,
+    getPreviousInput,
+    getNextInput,
+    resetInputHistoryIndex,
+  } = useSessionStore();
+
   // 处理提交
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     const trimmedValue = value.trim();
     if ((trimmedValue || attachments.length > 0) && !disabled) {
+      // 添加到输入历史
+      if (trimmedValue) {
+        addToInputHistory(trimmedValue);
+      }
       onSend(
         trimmedValue,
         attachments.length > 0 ? attachments : undefined
@@ -207,6 +220,9 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             isFocused={isFocused}
             onFocusChange={setIsFocused}
             placeholder="描述你想解决的问题..."
+            onHistoryPrev={getPreviousInput}
+            onHistoryNext={getNextInput}
+            onHistoryReset={resetInputHistoryIndex}
             actionButtons={
               <>
                 {/* 语音输入按钮 */}

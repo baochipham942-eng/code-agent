@@ -7,6 +7,8 @@ import path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { createLogger } from '../../services/infra/logger';
 import { resolvePath } from './pathUtils';
+import { atomicWriteFile } from '../utils/atomicWrite';
+import { getResourceLockManager } from '../../agent/resourceLockManager';
 
 const logger = createLogger('WriteFile');
 
@@ -210,6 +212,25 @@ NEVER create documentation files (*.md, README) unless explicitly requested.`,
     // Note: Security is handled by the permission system (requiresPermission: true)
     // User will see the full path and confirm before writing
 
+    // 获取资源锁管理器
+    const lockManager = getResourceLockManager();
+    const holderId = context.sessionId || `write_${Date.now()}`;
+
+    // 尝试获取独占锁
+    const lockResult = await lockManager.acquire(holderId, resolvedPath, 'exclusive', {
+      type: 'file',
+      timeout: 60000, // 锁最多持有 60 秒
+      wait: true,
+      waitTimeout: 10000, // 等待锁最多 10 秒
+    });
+
+    if (!lockResult.acquired) {
+      return {
+        success: false,
+        error: `Cannot acquire lock for ${filePath}: ${lockResult.reason}. File may be in use by another operation.`,
+      };
+    }
+
     try {
       // Create directory if it doesn't exist
       const dir = path.dirname(filePath);
@@ -224,8 +245,8 @@ NEVER create documentation files (*.md, README) unless explicitly requested.`,
         // File doesn't exist, that's fine
       }
 
-      // Write file
-      await fs.writeFile(filePath, content, 'utf-8');
+      // 使用原子写入（temp + rename 模式）
+      await atomicWriteFile(filePath, content, 'utf-8');
 
       const action = existed ? 'Updated' : 'Created';
 
@@ -256,6 +277,9 @@ NEVER create documentation files (*.md, README) unless explicitly requested.`,
         success: false,
         error: error.message || 'Failed to write file',
       };
+    } finally {
+      // 释放锁
+      lockManager.release(holderId, resolvedPath);
     }
   },
 };

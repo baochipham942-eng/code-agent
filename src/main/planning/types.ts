@@ -120,3 +120,24 @@ export interface PlanningRulesConfig {
   actionThreshold: number;  // 2-Action Rule
   errorStrikeLimit: number; // 3-Strike Rule
 }
+
+// ----------------------------------------------------------------------------
+// Enhanced Plan Types (from feasibilityChecker)
+// ----------------------------------------------------------------------------
+
+export type {
+  Precondition,
+  Postcondition,
+  FeasibilityCheckResult,
+  EnhancedTaskStep,
+  EnhancedTaskPlan,
+  PlanConstraints,
+  Checkpoint,
+  PlanSnapshot,
+} from './feasibilityChecker';
+
+export type {
+  DeviationType,
+  DeviationEvent,
+  ExecutionProgress,
+} from './executionMonitor';

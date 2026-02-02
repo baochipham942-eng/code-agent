@@ -3,6 +3,27 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
+import {
+  ErrorClassifier,
+  getErrorClassifier,
+  type ErrorClassification,
+  DetailedErrorType,
+} from '../errors/errorClassifier';
+import {
+  DegradationStrategy,
+  getDegradationStrategy,
+  type DegradationResult,
+} from './recovery/degradationStrategy';
+import {
+  DecompositionStrategy,
+  getDecompositionStrategy,
+  type DecompositionResult,
+} from './recovery/decompositionStrategy';
+import {
+  LearningStrategy,
+  getLearningStrategy,
+  type ErrorSolution,
+} from './recovery/learningStrategy';
 
 const logger = createLogger('ParallelErrorHandler');
 
@@ -111,9 +132,15 @@ export interface ErrorStats {
  * - 恢复策略推荐
  * - 错误聚合和报告
  * - 跨 Agent 错误传播控制
+ * - 智能降级和分解策略
+ * - 错误学习和解决方案缓存
  */
 export class ParallelErrorHandler {
   private errors: AgentError[] = [];
+  private errorClassifier: ErrorClassifier;
+  private degradationStrategy: DegradationStrategy;
+  private decompositionStrategy: DecompositionStrategy;
+  private learningStrategy: LearningStrategy;
   private stats: ErrorStats = {
     totalErrors: 0,
     byType: {
@@ -135,6 +162,13 @@ export class ParallelErrorHandler {
     recoveredCount: 0,
     failedAgents: new Set(),
   };
+
+  constructor() {
+    this.errorClassifier = getErrorClassifier();
+    this.degradationStrategy = getDegradationStrategy();
+    this.decompositionStrategy = getDecompositionStrategy();
+    this.learningStrategy = getLearningStrategy();
+  }
 
   /**
    * 处理错误
@@ -383,6 +417,198 @@ export class ParallelErrorHandler {
       recoveredCount: 0,
       failedAgents: new Set(),
     };
+  }
+
+  // --------------------------------------------------------------------------
+  // 增强的错误恢复方法
+  // --------------------------------------------------------------------------
+
+  /**
+   * 智能错误恢复（集成降级、分解、学习策略）
+   */
+  async smartRecover(
+    error: AgentError,
+    toolParams?: Record<string, unknown>,
+    retryFn?: () => Promise<void>
+  ): Promise<RecoveryResult & {
+    classification?: ErrorClassification;
+    degradation?: DegradationResult;
+    decomposition?: DecompositionResult;
+    suggestedSolution?: ErrorSolution['solution'] | null;
+  }> {
+    // 1. 细化分类错误
+    const classification = this.errorClassifier.classify(
+      error.message,
+      { toolName: error.relatedTool }
+    );
+
+    logger.info(`智能恢复: 错误分类为 ${classification.type}`, {
+      category: classification.category,
+      isTransient: classification.isTransient,
+      retryable: classification.retryable,
+    });
+
+    // 2. 查找已学习的解决方案
+    const suggestedSolution = error.relatedTool
+      ? this.learningStrategy.suggestSolution(
+          error.relatedTool,
+          error.message,
+          classification
+        )
+      : { solution: null, confidence: 0, source: 'none' as const };
+
+    if (suggestedSolution.solution && suggestedSolution.confidence > 0.6) {
+      logger.info(`找到高置信度解决方案: ${suggestedSolution.solution.type}`, {
+        confidence: suggestedSolution.confidence,
+        source: suggestedSolution.source,
+      });
+    }
+
+    // 3. 尝试降级
+    let degradation: DegradationResult | undefined;
+    if (error.relatedTool && toolParams) {
+      if (this.degradationStrategy.canDegrade(error.relatedTool, classification)) {
+        degradation = this.degradationStrategy.getDegradation(
+          error.relatedTool,
+          toolParams,
+          classification
+        );
+
+        if (degradation.degraded) {
+          logger.info(`执行降级: ${degradation.originalTool} -> ${degradation.alternativeTool}`, {
+            reason: degradation.reason,
+          });
+
+          return {
+            recovered: true,
+            strategy: 'fallback',
+            message: `降级到 ${degradation.alternativeTool}: ${degradation.reason}`,
+            shouldContinue: true,
+            notifyUser: true,
+            classification,
+            degradation,
+            suggestedSolution: suggestedSolution.solution,
+          };
+        }
+      }
+    }
+
+    // 4. 尝试分解
+    let decomposition: DecompositionResult | undefined;
+    if (error.relatedTool && toolParams) {
+      if (this.decompositionStrategy.canDecompose(error.relatedTool, classification)) {
+        decomposition = this.decompositionStrategy.decompose(
+          error.relatedTool,
+          toolParams,
+          classification
+        );
+
+        if (decomposition.decomposed) {
+          logger.info(`执行任务分解: ${decomposition.subtasks.length} 个子任务`, {
+            reason: decomposition.reason,
+          });
+
+          return {
+            recovered: true,
+            strategy: 'retry',
+            message: `分解为 ${decomposition.subtasks.length} 个子任务: ${decomposition.reason}`,
+            shouldContinue: true,
+            notifyUser: false,
+            classification,
+            decomposition,
+            suggestedSolution: suggestedSolution.solution,
+          };
+        }
+      }
+    }
+
+    // 5. 尝试重试
+    if (classification.retryable && retryFn) {
+      const shouldRetry = this.errorClassifier.shouldRetry(classification, 0);
+      if (shouldRetry) {
+        const delay = this.errorClassifier.getRetryDelay(classification, 0);
+
+        logger.info(`等待 ${delay}ms 后重试`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+
+        try {
+          await retryFn();
+          this.stats.recoveredCount++;
+
+          // 学习成功的恢复
+          if (error.relatedTool) {
+            this.learningStrategy.learn(
+              error.relatedTool,
+              error.message,
+              { type: 'retry_with_delay', action: '延迟重试' },
+              true,
+              classification
+            );
+          }
+
+          return {
+            recovered: true,
+            strategy: 'retry',
+            message: `延迟 ${delay}ms 后重试成功`,
+            shouldContinue: true,
+            notifyUser: false,
+            classification,
+            suggestedSolution: suggestedSolution.solution,
+          };
+        } catch (retryError) {
+          // 学习失败的恢复
+          if (error.relatedTool) {
+            this.learningStrategy.learn(
+              error.relatedTool,
+              error.message,
+              { type: 'retry_with_delay', action: '延迟重试' },
+              false,
+              classification
+            );
+          }
+
+          return {
+            recovered: false,
+            strategy: 'retry',
+            message: `重试失败: ${retryError instanceof Error ? retryError.message : '未知错误'}`,
+            shouldContinue: false,
+            notifyUser: true,
+            classification,
+            suggestedSolution: suggestedSolution.solution,
+          };
+        }
+      }
+    }
+
+    // 6. 使用原有的恢复逻辑作为后备
+    return {
+      ...(await this.tryRecover(error, retryFn)),
+      classification,
+      degradation,
+      decomposition,
+      suggestedSolution: suggestedSolution.solution,
+    };
+  }
+
+  /**
+   * 获取学习策略统计
+   */
+  getLearningStats() {
+    return this.learningStrategy.getStats();
+  }
+
+  /**
+   * 获取降级策略统计
+   */
+  getDegradationStats() {
+    return this.degradationStrategy.getStats();
+  }
+
+  /**
+   * 获取分解策略统计
+   */
+  getDecompositionStats() {
+    return this.decompositionStrategy.getStats();
   }
 
   // --------------------------------------------------------------------------

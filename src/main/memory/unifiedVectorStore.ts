@@ -26,6 +26,11 @@ import {
   type HybridSearchOptions,
 } from './hybridSearch';
 import { EmbeddingService, getEmbeddingService } from './embeddingService';
+import {
+  DEFAULT_EMBEDDING_DIMENSION,
+  validateTextForEmbedding,
+  validateDimension,
+} from './embeddingConfig';
 
 const logger = createLogger('UnifiedVectorStore');
 
@@ -104,6 +109,18 @@ export class UnifiedVectorStore {
     if (this.initialized) return;
 
     try {
+      // 验证 embedding service 维度
+      const embeddingDimension = this.embeddingService.getDimension();
+      logger.info(`Embedding service dimension: ${embeddingDimension}`);
+
+      // 如果维度不匹配默认值，记录警告
+      if (embeddingDimension !== DEFAULT_EMBEDDING_DIMENSION) {
+        logger.warn(
+          `Embedding dimension (${embeddingDimension}) differs from default (${DEFAULT_EMBEDDING_DIMENSION}). ` +
+          'This may cause issues with existing vectors.'
+        );
+      }
+
       // Initialize local store
       if (this.config.mode === 'local' || this.config.mode === 'hybrid') {
         this.localStore = await initLocalVectorStore(this.config.localConfig);
@@ -137,10 +154,25 @@ export class UnifiedVectorStore {
    * Add or update a document
    */
   async upsert(doc: UnifiedDocument): Promise<void> {
+    // 验证输入
+    const validation = validateTextForEmbedding(doc.content);
+    if (!validation.valid) {
+      throw new Error(`Cannot upsert document: ${validation.reason}`);
+    }
+
     // Generate embedding if not provided
     let embedding = doc.embedding;
     if (!embedding) {
       embedding = await this.embeddingService.embed(doc.content);
+    }
+
+    // 验证 embedding 维度
+    const embeddingArray = embedding instanceof Float32Array ? Array.from(embedding) : embedding;
+    const dimValidation = validateDimension(embeddingArray, DEFAULT_EMBEDDING_DIMENSION);
+    if (!dimValidation.valid) {
+      logger.warn(
+        `Document embedding dimension mismatch: expected ${dimValidation.expected}, got ${dimValidation.actual}`
+      );
     }
 
     const localDoc: LocalVectorDocument = {
@@ -284,6 +316,13 @@ export class UnifiedVectorStore {
     query: string,
     options: UnifiedSearchOptions = {}
   ): Promise<UnifiedSearchResult[]> {
+    // 验证输入
+    const validation = validateTextForEmbedding(query);
+    if (!validation.valid) {
+      logger.warn(`Search query validation failed: ${validation.reason}`);
+      return []; // 空查询返回空结果
+    }
+
     const {
       topK = 10,
       threshold = 0.0,

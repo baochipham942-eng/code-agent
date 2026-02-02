@@ -34,13 +34,27 @@ const DEFAULT_COMPRESSION_CONFIG: Required<ToolResultCompressionConfig> = {
   preserveCode: true,
 };
 
+export interface ToolResultCompressionOutput {
+  content: string;
+  compressed: boolean;
+  savedTokens: number;
+  /** Compression metadata (separate from content to avoid breaking JSON) */
+  compressionInfo?: {
+    originalTokens: number;
+    compressedTokens: number;
+  };
+}
+
 /**
  * Compress tool result if it exceeds token threshold
+ *
+ * IMPORTANT: Does NOT modify content format (no headers prepended).
+ * Compression info is returned separately to preserve JSON validity.
  */
 export function compressToolResult(
   content: string,
   config: ToolResultCompressionConfig = {}
-): { content: string; compressed: boolean; savedTokens: number } {
+): ToolResultCompressionOutput {
   const cfg = { ...DEFAULT_COMPRESSION_CONFIG, ...config };
   const originalTokens = estimateTokens(content);
 
@@ -61,12 +75,15 @@ export function compressToolResult(
   const result = compressor.compressText(content);
 
   if (result.wasCompressed) {
-    const header = `[Compressed: ${originalTokens}→${result.compressedTokens} tokens]\n`;
-    logger.debug(`Tool result compressed: saved ${result.savedTokens} tokens`);
+    logger.debug(`Tool result compressed: ${originalTokens}→${result.compressedTokens} tokens (saved ${result.savedTokens})`);
     return {
-      content: header + result.content,
+      content: result.content, // Keep original format, no header prepended
       compressed: true,
       savedTokens: result.savedTokens,
+      compressionInfo: {
+        originalTokens,
+        compressedTokens: result.compressedTokens,
+      },
     };
   }
 
@@ -406,6 +423,8 @@ export interface CompressedMessage {
   content: string;
   timestamp?: number;
   compressed?: boolean;
+  /** Original message ID for index-safe compression */
+  id?: string;
 }
 
 export interface MessageHistoryCompressionConfig {
@@ -476,6 +495,7 @@ export function compressMessageHistory(
       const compressed = compressToolMessage(msg.content);
       compressedOlder.push({
         ...msg,
+        id: msg.id, // Preserve original ID for index-safe mapping
         content: compressed,
         compressed: true,
       });
@@ -487,6 +507,7 @@ export function compressMessageHistory(
       const compressed = compressAssistantMessage(msg.content);
       compressedOlder.push({
         ...msg,
+        id: msg.id, // Preserve original ID for index-safe mapping
         content: compressed,
         compressed: true,
       });
@@ -580,8 +601,32 @@ export class MessageHistoryCompressor {
   private compressionCount: number = 0;
   private totalSavedTokens: number = 0;
 
+  /** Threshold ratio for proactive compression (default: 75%) */
+  private proactiveCompressionThreshold = 0.75;
+
   constructor(config: MessageHistoryCompressionConfig = {}) {
     this.config = { ...DEFAULT_HISTORY_COMPRESSION_CONFIG, ...config };
+  }
+
+  /**
+   * Check if proactive compression should be triggered
+   * Triggers at 75% capacity to prevent hitting hard limits
+   *
+   * @param currentTokens - Current token usage
+   * @param maxTokens - Maximum allowed tokens (context length)
+   * @returns Whether proactive compression should be triggered
+   */
+  shouldProactivelyCompress(currentTokens: number, maxTokens: number): boolean {
+    const usageRatio = currentTokens / maxTokens;
+    return usageRatio > this.proactiveCompressionThreshold;
+  }
+
+  /**
+   * Set proactive compression threshold
+   * @param threshold - Value between 0 and 1 (default: 0.75)
+   */
+  setProactiveThreshold(threshold: number): void {
+    this.proactiveCompressionThreshold = Math.max(0.5, Math.min(0.95, threshold));
   }
 
   /**

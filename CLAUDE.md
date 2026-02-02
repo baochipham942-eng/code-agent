@@ -204,8 +204,36 @@ pending → ready → running → completed/failed/cancelled/skipped
 ### CLI 接口
 命令行交互模式，支持数据库和会话持久化。
 
-### 会话评测
-内置评测功能，用于测试 Agent 表现。
+### 会话评测系统 v2 (v0.16.15+)
+
+基于瑞士奶酪多层评测模型，分通用维度和垂直维度：
+
+**通用维度（6 个，始终评测）**：
+
+| 评审员 | 维度 | 权重 |
+|--------|------|------|
+| 任务分析师 | 任务完成度 | 25% |
+| 事实核查员 | 事实准确性 | 20% |
+| 沟通专家 | 回答质量 | 15% |
+| 沟通专家 | 效率 | 10% |
+| 经济使用分析师 | 经济使用 | 15% |
+| 安全审计员 | 安全性 | 15% |
+
+**垂直维度（4 个，按需触发，各 +15%）**：
+
+| 评审员 | 维度 | 触发条件 |
+|--------|------|----------|
+| 代码审查员 | 代码质量 | 检测到代码块 |
+| 数学验证员 | 数学准确性 | 检测到公式/计算 |
+| 多模态分析师 | 多模态理解 | 检测到图片 |
+| 复杂推理专家 | 复杂推理 | ≥3 个推理指标且非简单对话 |
+
+**评测模型**：使用 Kimi K2.5（支持并发），通过 `KIMI_K25_API_KEY` 环境变量配置。
+
+**参考来源**：
+- OpenAI GDPval 真实任务评测
+- Anthropic Economic Index 多维度分析
+- GPQA / BIG-Bench Hard 复杂推理基准
 
 ### 实验室模块
 - LLaMA Factory 微调教学
@@ -301,3 +329,55 @@ cp .env "/Applications/Code Agent.app/Contents/Resources/.env"
 - 超时时间应**可配置**，不同任务复杂度需要不同超时
 - 流式响应场景：设置首 token 超时 + 总超时
 - 添加**心跳检测**：长时间无 token 返回时主动超时
+
+### 2026-02-02: 模型名称不要乱猜
+
+**错误做法**：
+- 不查文档，凭印象猜测模型名称：`codegeex-4`、`glm-4.7-flash`、`glm-4.7`
+- 结果：API 报错，浪费时间
+
+**正确做法**：
+1. 查阅 [docs/guides/model-config.md](docs/guides/model-config.md) 获取正确的模型名称
+2. 查看 provider 的官方文档确认模型 ID
+3. 如需切换模型，确保环境变量也同步更新
+
+**本次正确配置**：
+- 评测模型：`kimi-k2.5` (provider: `moonshot`)
+- API 地址：`https://cn.haioi.net/v1`
+- 环境变量：`KIMI_K25_API_KEY`
+
+### 2026-02-02: 原生模块必须用 Electron headers 重编译
+
+**症状**：
+```
+Error: The module was compiled against a different Node.js version
+NODE_MODULE_VERSION 127. This version of Node.js requires NODE_MODULE_VERSION 130.
+```
+
+**原因**：原生模块（isolated-vm, better-sqlite3, keytar）使用系统 Node.js 编译，与 Electron 内置的 Node.js 版本不匹配。
+
+**解决方案**：
+```bash
+npm cache clean --force
+rm -rf node_modules/isolated-vm node_modules/better-sqlite3 node_modules/keytar
+npm install isolated-vm better-sqlite3 keytar --build-from-source --runtime=electron --target=33.4.11 --disturl=https://electronjs.org/headers
+```
+
+**关键点**：
+- 每次 `npm install` 后都需要重编译
+- `electron-rebuild` 不可靠，手动指定 Electron headers 更稳定
+- 打包前**必须**执行此步骤
+
+### 2026-02-02: 评测维度显示问题
+
+**问题**：
+1. 维度名称显示英文（`factualAccuracy`、`economicUsage`）
+2. 简单问候"你好"触发了"复杂推理"维度
+
+**原因**：
+1. `DIMENSION_NAMES` 映射缺少新增维度
+2. 复杂推理检测阈值太低（任何推理关键词都触发）
+
+**修复**：
+1. 在 `sessionAnalytics.ts` 添加完整的维度枚举和映射
+2. 提高复杂推理触发阈值：需要 ≥3 个匹配，且排除简单对话（≤2轮且<500字符）

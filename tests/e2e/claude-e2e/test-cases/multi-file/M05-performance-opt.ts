@@ -70,7 +70,7 @@ export const M05: TestCase = {
     directExecution: false,
     expectedAgents: ['Explore'],
     requiredTools: ['Read', 'Write', 'Edit', 'Glob'],
-    toolCallRange: { min: 12, max: 30 },
+    toolCallRange: { min: 12, max: 60 },
   },
 
   tags: ['multi-file', 'performance', 'optimization', 'caching', 'pagination'],

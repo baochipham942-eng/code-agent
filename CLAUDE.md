@@ -267,15 +267,15 @@ npm version patch --no-git-tag-version
 git add package.json && git commit -m "chore: bump version" && git push
 # 3. 构建
 npm run build
-# 4. 重编译原生模块（必须用 Electron headers，electron-rebuild 不可靠）
-npm cache clean --force
-rm -rf node_modules/isolated-vm node_modules/better-sqlite3 node_modules/keytar
-npm install isolated-vm better-sqlite3 keytar --build-from-source --runtime=electron --target=33.4.11 --disturl=https://electronjs.org/headers
-# 5. 打包
+# 4. 打包（原生模块已通过 postinstall 自动重编译）
 rm -rf release/ && npm run dist:mac
-# 6. 安装后同步 .env
+# 5. 安装后同步 .env
 cp .env "/Applications/Code Agent.app/Contents/Resources/.env"
 ```
+
+**原生模块自动化**：`postinstall` 钩子会在每次 `npm install` 后自动执行 `rebuild-native.sh`，确保原生模块使用正确的 Electron headers 编译。
+
+如需手动重编译：`npm run rebuild-native`
 
 ### 本地数据库
 ```
@@ -346,7 +346,7 @@ cp .env "/Applications/Code Agent.app/Contents/Resources/.env"
 - API 地址：`https://cn.haioi.net/v1`
 - 环境变量：`KIMI_K25_API_KEY`
 
-### 2026-02-02: 原生模块必须用 Electron headers 重编译
+### 2026-02-02: 原生模块必须用 Electron headers 重编译 ✅ 已自动化
 
 **症状**：
 ```
@@ -356,17 +356,10 @@ NODE_MODULE_VERSION 127. This version of Node.js requires NODE_MODULE_VERSION 13
 
 **原因**：原生模块（isolated-vm, better-sqlite3, keytar）使用系统 Node.js 编译，与 Electron 内置的 Node.js 版本不匹配。
 
-**解决方案**：
-```bash
-npm cache clean --force
-rm -rf node_modules/isolated-vm node_modules/better-sqlite3 node_modules/keytar
-npm install isolated-vm better-sqlite3 keytar --build-from-source --runtime=electron --target=33.4.11 --disturl=https://electronjs.org/headers
-```
-
-**关键点**：
-- 每次 `npm install` 后都需要重编译
-- `electron-rebuild` 不可靠，手动指定 Electron headers 更稳定
-- 打包前**必须**执行此步骤
+**已实施的自动化方案**：
+- `postinstall` 钩子：每次 `npm install` 后自动执行 `rebuild-native.sh`
+- 脚本自动读取当前 Electron 版本，无需手动指定 `--target`
+- 手动触发：`npm run rebuild-native`
 
 ### 2026-02-02: 评测维度显示问题
 

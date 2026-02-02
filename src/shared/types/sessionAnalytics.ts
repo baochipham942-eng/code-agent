@@ -74,12 +74,20 @@ export interface ObjectiveMetrics {
  * 主观评测维度
  */
 export enum SubjectiveDimension {
+  // 通用维度
   TASK_COMPLETION = 'task_completion',
+  FACTUAL_ACCURACY = 'factual_accuracy',
   RESPONSE_QUALITY = 'response_quality',
-  CODE_QUALITY = 'code_quality',
-  COMMUNICATION = 'communication',
   EFFICIENCY = 'efficiency',
+  ECONOMIC_USAGE = 'economic_usage',
   SAFETY = 'safety',
+  // 垂直维度
+  CODE_QUALITY = 'code_quality',
+  MATH_ACCURACY = 'math_accuracy',
+  MULTIMODAL_UNDERSTANDING = 'multimodal_understanding',
+  COMPLEX_REASONING = 'complex_reasoning',
+  // 兼容旧版本
+  COMMUNICATION = 'communication',
 }
 
 /**
@@ -164,25 +172,41 @@ export type EvaluationStatus =
 /**
  * 维度名称映射
  */
-export const DIMENSION_NAMES: Record<SubjectiveDimension, string> = {
+export const DIMENSION_NAMES: Record<string, string> = {
+  // 通用维度
   [SubjectiveDimension.TASK_COMPLETION]: '任务完成度',
+  [SubjectiveDimension.FACTUAL_ACCURACY]: '事实准确性',
   [SubjectiveDimension.RESPONSE_QUALITY]: '响应质量',
-  [SubjectiveDimension.CODE_QUALITY]: '代码质量',
-  [SubjectiveDimension.COMMUNICATION]: '沟通能力',
   [SubjectiveDimension.EFFICIENCY]: '执行效率',
+  [SubjectiveDimension.ECONOMIC_USAGE]: '经济使用',
   [SubjectiveDimension.SAFETY]: '安全性',
+  // 垂直维度
+  [SubjectiveDimension.CODE_QUALITY]: '代码质量',
+  [SubjectiveDimension.MATH_ACCURACY]: '数学准确性',
+  [SubjectiveDimension.MULTIMODAL_UNDERSTANDING]: '多模态理解',
+  [SubjectiveDimension.COMPLEX_REASONING]: '复杂推理',
+  // 兼容旧版本
+  [SubjectiveDimension.COMMUNICATION]: '沟通能力',
 };
 
 /**
  * 维度图标映射
  */
-export const DIMENSION_ICONS: Record<SubjectiveDimension, string> = {
+export const DIMENSION_ICONS: Record<string, string> = {
+  // 通用维度
   [SubjectiveDimension.TASK_COMPLETION]: '🎯',
+  [SubjectiveDimension.FACTUAL_ACCURACY]: '📚',
   [SubjectiveDimension.RESPONSE_QUALITY]: '💬',
-  [SubjectiveDimension.CODE_QUALITY]: '💻',
-  [SubjectiveDimension.COMMUNICATION]: '🤝',
   [SubjectiveDimension.EFFICIENCY]: '⚡',
+  [SubjectiveDimension.ECONOMIC_USAGE]: '💰',
   [SubjectiveDimension.SAFETY]: '🔒',
+  // 垂直维度
+  [SubjectiveDimension.CODE_QUALITY]: '💻',
+  [SubjectiveDimension.MATH_ACCURACY]: '🔢',
+  [SubjectiveDimension.MULTIMODAL_UNDERSTANDING]: '🖼️',
+  [SubjectiveDimension.COMPLEX_REASONING]: '🧠',
+  // 兼容旧版本
+  [SubjectiveDimension.COMMUNICATION]: '🤝',
 };
 
 /**

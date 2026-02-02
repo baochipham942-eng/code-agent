@@ -173,7 +173,13 @@ const UNIVERSAL_REVIEWERS: ReviewerConfig[] = [
 4. 是否一次性解决问题，避免多轮无效交互？
 5. 输出长度是否与任务复杂度匹配？
 
-理想的 AI 应该用最少的 token 完成任务，避免"话痨"行为。`,
+评分指南：
+- 简单问候/闲聊：如果 AI 回复简短友好，给 80-90 分
+- 简单问候但 AI 回复冗长：给 50-70 分（过度展开）
+- 复杂任务：根据信息密度和必要性评分
+- 工具滥用或无效多轮交互：扣分
+
+注意：不要因为"回答内容丰富"就扣分，关键是内容是否与用户需求匹配。`,
   },
 ];
 
@@ -441,25 +447,33 @@ export class SwissCheeseEvaluator {
       if (confidence.data_analysis > 0.3) scenes.push('data_analysis');
     }
 
-    // 检测复杂推理场景
-    const reasoningIndicators = [
-      /分析|推理|推导|论证|比较|权衡/g,           // 推理关键词
-      /首先|其次|然后|最后|因此|所以|综上/g,      // 逻辑连接词
-      /如果.*那么|假设.*则/g,                      // 条件推理
-      /一方面.*另一方面|优点.*缺点/g,              // 多角度分析
-      /为什么|如何|怎样.*实现/g,                   // 复杂问题
-      /步骤|方案|策略|计划/g,                      // 多步任务
-    ];
-    let reasoningMatches = 0;
-    for (const pattern of reasoningIndicators) {
-      reasoningMatches += (conversationText.match(pattern) || []).length;
-    }
-    // 对话轮次多也是复杂推理的信号
+    // 检测复杂推理场景（需要多个信号才触发）
     const turnCount = snapshot.messages.length;
-    if (turnCount > 4) reasoningMatches += 2;
-    if (reasoningMatches > 0) {
-      confidence.complex_reasoning = Math.min(reasoningMatches * 0.15, 1);
-      if (confidence.complex_reasoning > 0.3) scenes.push('complex_reasoning');
+    const totalContentLength = conversationText.length;
+
+    // 简单对话过滤：轮次少且内容短，不触发复杂推理
+    const isSimpleConversation = turnCount <= 2 && totalContentLength < 500;
+
+    if (!isSimpleConversation) {
+      const reasoningIndicators = [
+        /分析|推理|推导|论证|比较|权衡/g,           // 推理关键词
+        /首先|其次|然后|最后|因此|所以|综上/g,      // 逻辑连接词
+        /如果.*那么|假设.*则/g,                      // 条件推理
+        /一方面.*另一方面|优点.*缺点/g,              // 多角度分析
+        /为什么|如何|怎样.*实现/g,                   // 复杂问题
+        /步骤|方案|策略|计划/g,                      // 多步任务
+      ];
+      let reasoningMatches = 0;
+      for (const pattern of reasoningIndicators) {
+        reasoningMatches += (conversationText.match(pattern) || []).length;
+      }
+      // 对话轮次多也是复杂推理的信号
+      if (turnCount > 6) reasoningMatches += 2;
+      // 需要至少 3 个匹配才触发复杂推理（提高阈值）
+      if (reasoningMatches >= 3) {
+        confidence.complex_reasoning = Math.min(reasoningMatches * 0.1, 1);
+        if (confidence.complex_reasoning > 0.3) scenes.push('complex_reasoning');
+      }
     }
 
     const reasoning = scenes.length > 0

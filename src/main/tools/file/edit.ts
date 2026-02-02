@@ -19,6 +19,8 @@ import {
   replaceWithNormalization,
   containsSmartChars,
 } from '../utils/quoteNormalizer';
+import { atomicWriteFile } from '../utils/atomicWrite';
+import { getResourceLockManager } from '../../agent/resourceLockManager';
 
 export const editFileTool: Tool = {
   name: 'edit_file',
@@ -149,21 +151,41 @@ Best practices:
       };
     }
 
-    // Safety check 2: Check for external modifications (unless force is true)
-    if (!force && fileReadTracker.hasBeenRead(filePath)) {
-      const modCheck = await checkExternalModification(filePath);
-      if (modCheck.modified) {
-        return {
-          success: false,
-          error:
-            `${modCheck.message}. ` +
-            'Re-read the file to see the current content before editing. ' +
-            '(Use force: true to bypass this check)',
-        };
-      }
+    // 获取资源锁管理器
+    const lockManager = getResourceLockManager();
+    const holderId = context.sessionId || `edit_${Date.now()}`;
+
+    // 尝试获取独占锁
+    const lockResult = await lockManager.acquire(holderId, filePath, 'exclusive', {
+      type: 'file',
+      timeout: 60000, // 锁最多持有 60 秒
+      wait: true,
+      waitTimeout: 10000, // 等待锁最多 10 秒
+    });
+
+    if (!lockResult.acquired) {
+      return {
+        success: false,
+        error: `Cannot acquire lock for ${filePath}: ${lockResult.reason}. File may be in use by another operation.`,
+      };
     }
 
     try {
+      // Safety check 2: Check for external modifications (unless force is true)
+      // 在锁内执行，消除时间窗口
+      if (!force && fileReadTracker.hasBeenRead(filePath)) {
+        const modCheck = await checkExternalModification(filePath);
+        if (modCheck.modified) {
+          return {
+            success: false,
+            error:
+              `${modCheck.message}. ` +
+              'Re-read the file to see the current content before editing. ' +
+              '(Use force: true to bypass this check)',
+          };
+        }
+      }
+
       // Read current content
       const content = await fs.readFile(filePath, 'utf-8');
 
@@ -245,8 +267,8 @@ Best practices:
         };
       }
 
-      // Write back
-      await fs.writeFile(filePath, newContent, 'utf-8');
+      // 使用原子写入（temp + rename 模式）
+      await atomicWriteFile(filePath, newContent, 'utf-8');
 
       // Update the file read tracker with new mtime
       const stats = await fs.stat(filePath);
@@ -273,6 +295,9 @@ Best practices:
         success: false,
         error: error.message || 'Failed to edit file',
       };
+    } finally {
+      // 释放锁
+      lockManager.release(holderId, filePath);
     }
   },
 };

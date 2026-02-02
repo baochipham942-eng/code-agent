@@ -21,6 +21,7 @@ import type {
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
 import { runAssertions } from './assertionEngine';
 import { createLogger } from '../services/infra/logger';
+import { getTestDirs } from '../config';
 
 const execAsync = promisify(exec);
 const logger = createLogger('TestRunner');
@@ -372,14 +373,16 @@ export class TestRunner {
 
 /**
  * Create default test runner configuration
+ * Note: Uses new .code-agent/ paths by default. Callers can override with legacy paths if needed.
  */
 export function createDefaultConfig(
   workingDirectory: string,
   overrides: Partial<TestRunnerConfig> = {}
 ): TestRunnerConfig {
+  const testDirs = getTestDirs(workingDirectory);
   return {
-    testCaseDir: path.join(workingDirectory, '.claude', 'test-cases'),
-    resultsDir: path.join(workingDirectory, '.claude', 'test-results'),
+    testCaseDir: testDirs.testCases.new, // Default to new path
+    resultsDir: testDirs.results.new,
     workingDirectory,
     defaultTimeout: 60000,
     stopOnFailure: false,

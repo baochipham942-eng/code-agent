@@ -4,7 +4,6 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import * as os from 'os';
 import { minimatch } from 'minimatch';
 import type {
   AgentRoutingConfig,
@@ -14,6 +13,7 @@ import type {
   AgentsConfigFile,
 } from '../../shared/types/agentRouting';
 import { createLogger } from '../services/infra/logger';
+import { getAgentsConfigPath, resolvePathWithFallback } from '../config';
 
 const logger = createLogger('RoutingService');
 
@@ -57,18 +57,24 @@ class RoutingService {
     this.agents.clear();
     this.agents.set(DEFAULT_AGENT.id, DEFAULT_AGENT);
 
-    // 1. 加载项目级配置 (.claude/agents.json)
-    const projectConfigPath = path.join(workingDirectory, '.claude', 'agents.json');
-    await this.loadConfigFile(projectConfigPath, 'project');
+    const agentsPaths = getAgentsConfigPath(workingDirectory);
 
-    // 2. 加载用户级配置 (~/.claude/agents.json)
-    const userConfigPath = path.join(os.homedir(), '.claude', 'agents.json');
-    await this.loadConfigFile(userConfigPath, 'user');
+    // 1. 加载用户级配置（支持新旧路径）
+    const userResolved = await resolvePathWithFallback(
+      agentsPaths.user.new,
+      agentsPaths.user.legacy
+    );
+    await this.loadConfigFile(userResolved.resolved, 'user');
+    this.configPath = agentsPaths.user.new; // 默认写入新路径
 
-    // 3. 加载全局配置 (~/.code-agent/agents.json)
-    const globalConfigPath = path.join(os.homedir(), '.code-agent', 'agents.json');
-    this.configPath = globalConfigPath;
-    await this.loadConfigFile(globalConfigPath, 'global');
+    // 2. 加载项目级配置（支持新旧路径，优先级更高）
+    if (agentsPaths.project) {
+      const projectResolved = await resolvePathWithFallback(
+        agentsPaths.project.new,
+        agentsPaths.project.legacy
+      );
+      await this.loadConfigFile(projectResolved.resolved, 'project');
+    }
 
     this.initialized = true;
     logger.info('Routing service initialized', {

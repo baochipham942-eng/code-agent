@@ -4,10 +4,10 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { EventEmitter } from 'events';
 import { createLogger } from '../infra/logger';
 import { getSkillDiscoveryService } from './skillDiscoveryService';
+import { getSkillsDir, getUserConfigDir } from '../../config';
 
 const logger = createLogger('SkillWatcher');
 
@@ -30,10 +30,11 @@ export interface SkillWatcherConfig {
 /**
  * Skill 文件监听服务
  *
- * 监听以下目录的变化：
- * - ~/.claude/skills/ (用户级)
- * - .claude/skills/ (项目级)
- * - ~/.code-agent/skills/ (库级)
+ * 监听以下目录的变化（支持新旧路径）：
+ * - ~/.code-agent/skills/ (用户级，新格式)
+ * - ~/.claude/skills/ (用户级，旧格式)
+ * - .code-agent/skills/ (项目级，新格式)
+ * - .claude/skills/ (项目级，旧格式)
  *
  * 变化后自动调用 SkillDiscoveryService.reload()
  */
@@ -58,17 +59,21 @@ class SkillWatcher extends EventEmitter {
 
     this.workingDirectory = workingDirectory;
 
-    // 用户级 Skills 目录
-    const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
-    this.watchDirectory(userSkillsDir, 'user');
+    const skillsDirs = getSkillsDir(workingDirectory);
+
+    // 用户级 Skills 目录（监听新旧两个路径）
+    this.watchDirectory(skillsDirs.user.new, 'user');
+    this.watchDirectory(skillsDirs.user.legacy, 'user');
 
     // 库级 Skills 目录
-    const librarySkillsDir = path.join(os.homedir(), '.code-agent', 'skills');
+    const librarySkillsDir = path.join(getUserConfigDir(), 'libraries');
     this.watchDirectory(librarySkillsDir, 'library');
 
-    // 项目级 Skills 目录
-    const projectSkillsDir = path.join(workingDirectory, '.claude', 'skills');
-    this.watchDirectory(projectSkillsDir, 'project');
+    // 项目级 Skills 目录（监听新旧两个路径）
+    if (skillsDirs.project) {
+      this.watchDirectory(skillsDirs.project.new, 'project');
+      this.watchDirectory(skillsDirs.project.legacy, 'project');
+    }
 
     this.initialized = true;
     logger.info('SkillWatcher initialized', {

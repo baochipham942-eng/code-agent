@@ -12,7 +12,7 @@ import {
 } from '../../mcp/mcpClient';
 import { createLogger } from '../../services/infra/logger';
 import fs from 'fs/promises';
-import path from 'path';
+import { getMcpConfigPath, ensureConfigDir, pathExists } from '../../config';
 
 const logger = createLogger('MCPAddServer');
 
@@ -69,34 +69,63 @@ function validateSSEUrl(url: string): { valid: boolean; error?: string } {
 }
 
 /**
- * Persist MCP server configuration to settings file
+ * Persist MCP server configuration to config file
+ * Supports both new (.code-agent/mcp.json) and legacy (.claude/settings.json) formats
  */
 async function persistMCPConfig(
   workingDirectory: string,
   serverConfig: MCPServerConfig
 ): Promise<{ success: boolean; error?: string; filePath?: string }> {
-  const claudeDir = path.join(workingDirectory, '.claude');
-  const settingsPath = path.join(claudeDir, 'settings.json');
+  const mcpPaths = getMcpConfigPath(workingDirectory);
 
   try {
-    // Ensure .claude directory exists
-    await fs.mkdir(claudeDir, { recursive: true });
+    // Check if legacy config exists (for migration awareness)
+    const legacyExists = await pathExists(mcpPaths.legacy);
+    const newExists = await pathExists(mcpPaths.new);
 
-    // Read existing settings or create new
-    let settings: Record<string, unknown> = {};
+    // Decide which file to use: prefer new, but use legacy if it exists and new doesn't
+    let configPath: string;
+    let isNewFormat: boolean;
+
+    if (newExists) {
+      configPath = mcpPaths.new;
+      isNewFormat = true;
+    } else if (legacyExists) {
+      // Warn about legacy format
+      logger.info('Using legacy MCP config. Consider migrating to .code-agent/mcp.json');
+      configPath = mcpPaths.legacy;
+      isNewFormat = false;
+    } else {
+      // New installation: use new format
+      await ensureConfigDir(workingDirectory);
+      configPath = mcpPaths.new;
+      isNewFormat = true;
+    }
+
+    // Read existing config or create new
+    let config: Record<string, unknown> = {};
     try {
-      const content = await fs.readFile(settingsPath, 'utf-8');
-      settings = JSON.parse(content);
+      const content = await fs.readFile(configPath, 'utf-8');
+      config = JSON.parse(content);
     } catch {
-      // File doesn't exist or invalid JSON, use empty settings
+      // File doesn't exist or invalid JSON, use empty config
     }
 
-    // Initialize mcpServers array if not exists
-    if (!settings.mcpServers || !Array.isArray(settings.mcpServers)) {
-      settings.mcpServers = [];
+    // Handle different formats
+    let mcpServers: MCPServerConfig[];
+    if (isNewFormat) {
+      // New format: mcp.json has { servers: [...] }
+      if (!config.servers || !Array.isArray(config.servers)) {
+        config.servers = [];
+      }
+      mcpServers = config.servers as MCPServerConfig[];
+    } else {
+      // Legacy format: settings.json has { mcpServers: [...] }
+      if (!config.mcpServers || !Array.isArray(config.mcpServers)) {
+        config.mcpServers = [];
+      }
+      mcpServers = config.mcpServers as MCPServerConfig[];
     }
-
-    const mcpServers = settings.mcpServers as MCPServerConfig[];
 
     // Check if server with same name already exists
     const existingIndex = mcpServers.findIndex((s) => s.name === serverConfig.name);
@@ -108,12 +137,17 @@ async function persistMCPConfig(
       mcpServers.push(serverConfig);
     }
 
-    settings.mcpServers = mcpServers;
+    // Update config
+    if (isNewFormat) {
+      config.servers = mcpServers;
+    } else {
+      config.mcpServers = mcpServers;
+    }
 
     // Write back with pretty formatting
-    await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
+    await fs.writeFile(configPath, JSON.stringify(config, null, 2));
 
-    return { success: true, filePath: settingsPath };
+    return { success: true, filePath: configPath };
   } catch (error) {
     return {
       success: false,
@@ -130,7 +164,7 @@ Supports two server types:
 1. SSE (Server-Sent Events): Remote HTTP servers
 2. Stdio: Local command-line servers
 
-The configuration is persisted to .claude/settings.json and the server is optionally connected immediately.
+The configuration is persisted to .code-agent/mcp.json (or .claude/settings.json for legacy projects) and the server is optionally connected immediately.
 
 Parameters:
 - name (required): Unique server name identifier

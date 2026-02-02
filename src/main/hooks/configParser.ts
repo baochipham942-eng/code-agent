@@ -85,21 +85,36 @@ export interface ParsedHookConfig {
 // ----------------------------------------------------------------------------
 
 /**
- * Parse hooks configuration from a settings file
+ * Parse hooks configuration from a file
+ * Supports both formats:
+ * - hooks.json: Direct HooksConfig object
+ * - settings.json: { hooks: HooksConfig }
  */
 export async function parseHooksConfig(
   filePath: string,
-  source: 'global' | 'project'
+  source: 'global' | 'project',
+  fileType: 'hooks-json' | 'settings-json' = 'settings-json'
 ): Promise<ParsedHookConfig[]> {
   try {
     const content = await fs.readFile(filePath, 'utf-8');
-    const settings: SettingsFile = JSON.parse(content);
+    const parsed = JSON.parse(content);
 
-    if (!settings.hooks) {
+    let hooksConfig: HooksConfig | undefined;
+
+    if (fileType === 'hooks-json') {
+      // New format: hooks.json is directly the HooksConfig
+      hooksConfig = parsed as HooksConfig;
+    } else {
+      // Legacy format: settings.json contains { hooks: ... }
+      const settings = parsed as SettingsFile;
+      hooksConfig = settings.hooks;
+    }
+
+    if (!hooksConfig) {
       return [];
     }
 
-    return parseHooksObject(settings.hooks, source);
+    return parseHooksObject(hooksConfig, source);
   } catch (error) {
     // File doesn't exist or is invalid - return empty config
     return [];
@@ -205,9 +220,66 @@ export function hookMatchesTool(
 }
 
 /**
- * Get hooks configuration file paths
+ * Configuration path with priority and type info
+ */
+interface ConfigPath {
+  path: string;
+  type: 'hooks-json' | 'settings-json';
+  priority: number; // Lower = higher priority
+}
+
+/**
+ * Get hooks configuration file paths (supports both new and legacy formats)
+ *
+ * Priority order (highest first):
+ * 1. Project: .code-agent/hooks/hooks.json (new format)
+ * 2. Project: .claude/settings.json (legacy)
+ * 3. Global: ~/.code-agent/hooks/hooks.json (new format)
+ * 4. Global: ~/.claude/settings.json (legacy)
  */
 export function getHooksConfigPaths(workingDirectory: string): {
+  global: ConfigPath[];
+  project: ConfigPath[];
+} {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+
+  return {
+    global: [
+      // New format (higher priority)
+      {
+        path: path.join(homeDir, '.code-agent', 'hooks', 'hooks.json'),
+        type: 'hooks-json',
+        priority: 0,
+      },
+      // Legacy format (lower priority)
+      {
+        path: path.join(homeDir, '.claude', 'settings.json'),
+        type: 'settings-json',
+        priority: 1,
+      },
+    ],
+    project: [
+      // New format (higher priority)
+      {
+        path: path.join(workingDirectory, '.code-agent', 'hooks', 'hooks.json'),
+        type: 'hooks-json',
+        priority: 0,
+      },
+      // Legacy format (lower priority)
+      {
+        path: path.join(workingDirectory, '.claude', 'settings.json'),
+        type: 'settings-json',
+        priority: 1,
+      },
+    ],
+  };
+}
+
+/**
+ * @deprecated Use getHooksConfigPaths instead
+ * Legacy function for backward compatibility
+ */
+export function getLegacyHooksConfigPaths(workingDirectory: string): {
   global: string;
   project: string;
 } {
@@ -220,18 +292,93 @@ export function getHooksConfigPaths(workingDirectory: string): {
 }
 
 /**
+ * Check if a file exists
+ */
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Load hooks from a source (global or project), respecting priority
+ * Returns hooks from the highest priority file that exists
+ */
+async function loadHooksFromSource(
+  configPaths: ConfigPath[],
+  source: 'global' | 'project'
+): Promise<{ hooks: ParsedHookConfig[]; usedPath?: string; hasLegacy?: boolean }> {
+  // Sort by priority (lower = higher priority)
+  const sortedPaths = [...configPaths].sort((a, b) => a.priority - b.priority);
+
+  let usedPath: string | undefined;
+  let hooks: ParsedHookConfig[] = [];
+  let hasLegacy = false;
+
+  // Check which files exist
+  const existenceChecks = await Promise.all(
+    sortedPaths.map(async (cp) => ({
+      ...cp,
+      exists: await fileExists(cp.path),
+    }))
+  );
+
+  const existingPaths = existenceChecks.filter((cp) => cp.exists);
+
+  // Warn if both new and legacy configs exist
+  const hasNewFormat = existingPaths.some((cp) => cp.type === 'hooks-json');
+  const hasLegacyFormat = existingPaths.some((cp) => cp.type === 'settings-json');
+
+  if (hasNewFormat && hasLegacyFormat) {
+    const newPath = existingPaths.find((cp) => cp.type === 'hooks-json')?.path;
+    const legacyPath = existingPaths.find((cp) => cp.type === 'settings-json')?.path;
+    console.warn(
+      `[Hooks] Warning: Both new and legacy ${source} hook configs found.\n` +
+        `  Using: ${newPath}\n` +
+        `  Ignoring: ${legacyPath}\n` +
+        `  Consider migrating to the new format and removing the legacy config.`
+    );
+    hasLegacy = true;
+  }
+
+  // Use the highest priority existing file
+  if (existingPaths.length > 0) {
+    const highestPriority = existingPaths[0];
+    hooks = await parseHooksConfig(highestPriority.path, source, highestPriority.type);
+    usedPath = highestPriority.path;
+  }
+
+  return { hooks, usedPath, hasLegacy };
+}
+
+/**
  * Load hooks from both global and project settings
+ * Supports both new (.code-agent/hooks/hooks.json) and legacy (.claude/settings.json) formats
  */
 export async function loadAllHooksConfig(
   workingDirectory: string
 ): Promise<ParsedHookConfig[]> {
   const paths = getHooksConfigPaths(workingDirectory);
 
-  const [globalHooks, projectHooks] = await Promise.all([
-    parseHooksConfig(paths.global, 'global'),
-    parseHooksConfig(paths.project, 'project'),
+  const [globalResult, projectResult] = await Promise.all([
+    loadHooksFromSource(paths.global, 'global'),
+    loadHooksFromSource(paths.project, 'project'),
   ]);
 
+  // Log which config files are being used (for debugging)
+  if (globalResult.usedPath || projectResult.usedPath) {
+    const sources: string[] = [];
+    if (globalResult.usedPath) sources.push(`global: ${globalResult.usedPath}`);
+    if (projectResult.usedPath) sources.push(`project: ${projectResult.usedPath}`);
+    // Debug log - can be enabled via environment variable
+    if (process.env.DEBUG_HOOKS) {
+      console.log(`[Hooks] Loaded configs from: ${sources.join(', ')}`);
+    }
+  }
+
   // Project hooks come after global (will be merged with priority)
-  return [...globalHooks, ...projectHooks];
+  return [...globalResult.hooks, ...projectResult.hooks];
 }

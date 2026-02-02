@@ -491,12 +491,12 @@ export class AgentLoop {
 
           logger.info(`[AgentLoop] Dynamic mode detected: ${dynamicResult.mode}`, {
             features: dynamicResult.features,
-            parallelByDefault: dynamicResult.modeConfig.parallelByDefault,
+            readOnly: dynamicResult.modeConfig.readOnly,
             remindersSelected: dynamicResult.reminderStats.deduplication.selected,
             tokensUsed: dynamicResult.tokensUsed,
           });
           logCollector.agent('INFO', `Dynamic mode: ${dynamicResult.mode}`, {
-            suggestedAgents: dynamicResult.modeConfig.suggestedAgents,
+            readOnly: dynamicResult.modeConfig.readOnly,
             isMultiDimension: dynamicResult.features.isMultiDimension,
             reminderStats: dynamicResult.reminderStats,
           });

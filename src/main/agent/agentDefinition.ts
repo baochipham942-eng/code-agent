@@ -904,10 +904,10 @@ export function getAgentDynamicMaxIterations(
 /**
  * 子代理模型配置
  *
- * 策略（GLM 调度 + DeepSeek 执行）：
+ * 策略（GLM + Kimi 分工）：
  * - 简单任务（探索、搜索）：GLM-4-Flash（免费且快）
- * - 规划任务：GLM-4.7（擅长中文理解和规划）
- * - 复杂执行任务（编码、重构）：DeepSeek V3（代码能力强）
+ * - 规划/审查任务：GLM-4.7（擅长中文理解和规划）
+ * - 编码/重构任务：Kimi K2.5（代码能力强，包月套餐）
  * - 其他任务：GLM-4.7（包年套餐）
  *
  * 可通过环境变量覆盖：
@@ -920,31 +920,28 @@ const SUBAGENT_MODEL_CONFIG: Record<string, { provider: ModelProvider; model: st
   'bash-executor': { provider: 'zhipu', model: 'glm-4-flash' },
   'web-search': { provider: 'zhipu', model: 'glm-4-flash' },
 
-  // === 规划任务：GLM-4.7（擅长中文理解）===
+  // === 规划/审查任务：GLM-4.7（擅长中文理解）===
   'plan': { provider: 'zhipu', model: 'glm-4.7' },
   'reviewer': { provider: 'zhipu', model: 'glm-4.7' },
   'documenter': { provider: 'zhipu', model: 'glm-4.7' },
+  'architect': { provider: 'zhipu', model: 'glm-4.7' },
 
-  // === 复杂执行任务：DeepSeek V3（代码能力强）===
+  // === 编码/重构任务：Kimi K2.5（代码能力强）===
   'coder': {
-    provider: (process.env.SUBAGENT_CODER_PROVIDER as ModelProvider) || 'deepseek',
-    model: process.env.SUBAGENT_CODER_MODEL || 'deepseek-chat',
+    provider: (process.env.SUBAGENT_CODER_PROVIDER as ModelProvider) || 'moonshot',
+    model: process.env.SUBAGENT_CODER_MODEL || 'kimi-k2.5',
   },
   'refactorer': {
-    provider: (process.env.SUBAGENT_REFACTORER_PROVIDER as ModelProvider) || 'deepseek',
-    model: process.env.SUBAGENT_REFACTORER_MODEL || 'deepseek-chat',
-  },
-  'architect': {
-    provider: (process.env.SUBAGENT_ARCHITECT_PROVIDER as ModelProvider) || 'deepseek',
-    model: process.env.SUBAGENT_ARCHITECT_MODEL || 'deepseek-chat',
+    provider: (process.env.SUBAGENT_REFACTORER_PROVIDER as ModelProvider) || 'moonshot',
+    model: process.env.SUBAGENT_REFACTORER_MODEL || 'kimi-k2.5',
   },
   'debugger': {
-    provider: (process.env.SUBAGENT_DEBUGGER_PROVIDER as ModelProvider) || 'deepseek',
-    model: process.env.SUBAGENT_DEBUGGER_MODEL || 'deepseek-chat',
+    provider: (process.env.SUBAGENT_DEBUGGER_PROVIDER as ModelProvider) || 'moonshot',
+    model: process.env.SUBAGENT_DEBUGGER_MODEL || 'kimi-k2.5',
   },
   'tester': {
-    provider: (process.env.SUBAGENT_TESTER_PROVIDER as ModelProvider) || 'deepseek',
-    model: process.env.SUBAGENT_TESTER_MODEL || 'deepseek-chat',
+    provider: (process.env.SUBAGENT_TESTER_PROVIDER as ModelProvider) || 'moonshot',
+    model: process.env.SUBAGENT_TESTER_MODEL || 'kimi-k2.5',
   },
 
   // === 其他任务：GLM-4.7（包年套餐）===

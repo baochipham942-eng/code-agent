@@ -17,12 +17,14 @@ import {
 
 /**
  * Call OpenAI API
+ * @param signal - AbortSignal for cancellation support
  */
 export async function callOpenAI(
   messages: ModelMessage[],
   tools: ToolDefinition[],
   config: ModelConfig,
-  _onStream?: StreamCallback
+  _onStream?: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || 'https://api.openai.com/v1';
 
@@ -51,6 +53,7 @@ export async function callOpenAI(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify(requestBody),
+    signal,
   });
 
   if (!response.ok) {
@@ -64,13 +67,15 @@ export async function callOpenAI(
 
 /**
  * Call Groq API
+ * @param signal - AbortSignal for cancellation support
  */
 export async function callGroq(
   messages: ModelMessage[],
   tools: ToolDefinition[],
   config: ModelConfig,
   modelInfo: ModelInfo | null,
-  onStream?: StreamCallback
+  onStream?: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || 'https://api.groq.com/openai/v1';
 
@@ -97,6 +102,7 @@ export async function callGroq(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify(requestBody),
+    signal,
   });
 
   if (!response.ok) {
@@ -105,7 +111,7 @@ export async function callGroq(
   }
 
   if (onStream && response.body) {
-    return handleStream(response.body, onStream);
+    return handleStream(response.body, onStream, signal);
   }
 
   const data = await response.json();
@@ -114,12 +120,14 @@ export async function callGroq(
 
 /**
  * Call Local (Ollama) API
+ * @param signal - AbortSignal for cancellation support
  */
 export async function callLocal(
   messages: ModelMessage[],
   tools: ToolDefinition[],
   config: ModelConfig,
-  onStream?: StreamCallback
+  onStream?: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || 'http://localhost:11434/v1';
 
@@ -142,6 +150,7 @@ export async function callLocal(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(requestBody),
+    signal,
   });
 
   if (!response.ok) {
@@ -150,7 +159,7 @@ export async function callLocal(
   }
 
   if (onStream && response.body) {
-    return handleStream(response.body, onStream);
+    return handleStream(response.body, onStream, signal);
   }
 
   const data = await response.json();
@@ -159,13 +168,15 @@ export async function callLocal(
 
 /**
  * Call Qwen (通义千问) API
+ * @param signal - AbortSignal for cancellation support
  */
 export async function callQwen(
   messages: ModelMessage[],
   tools: ToolDefinition[],
   config: ModelConfig,
   modelInfo: ModelInfo | null,
-  onStream?: StreamCallback
+  onStream?: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
 
@@ -191,6 +202,7 @@ export async function callQwen(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify(requestBody),
+    signal,
   });
 
   if (!response.ok) {
@@ -199,7 +211,7 @@ export async function callQwen(
   }
 
   if (onStream && response.body) {
-    return handleStream(response.body, onStream);
+    return handleStream(response.body, onStream, signal);
   }
 
   const data = await response.json();
@@ -209,12 +221,14 @@ export async function callQwen(
 /**
  * Call Moonshot (Kimi) API
  * 支持 Kimi K2.5 包月套餐（第三方代理）
+ * @param signal - AbortSignal for cancellation support
  */
 export async function callMoonshot(
   messages: ModelMessage[],
   tools: ToolDefinition[],
   config: ModelConfig,
-  onStream?: StreamCallback
+  onStream?: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   // Kimi K2.5 使用单独的 API key 和 URL（包月套餐）
   const isKimiK25 = config.model === 'kimi-k2.5';
@@ -247,6 +261,7 @@ export async function callMoonshot(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(requestBody),
+    signal,
   });
 
   if (!response.ok) {
@@ -255,7 +270,7 @@ export async function callMoonshot(
   }
 
   if (onStream && response.body) {
-    return handleStream(response.body, onStream);
+    return handleStream(response.body, onStream, signal);
   }
 
   const data = await response.json();
@@ -264,13 +279,15 @@ export async function callMoonshot(
 
 /**
  * Call MiniMax API
+ * @param signal - AbortSignal for cancellation support
  */
 export async function callMinimax(
   messages: ModelMessage[],
   tools: ToolDefinition[],
   config: ModelConfig,
   modelInfo: ModelInfo | null,
-  onStream?: StreamCallback
+  onStream?: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || 'https://api.minimax.chat/v1';
 
@@ -296,6 +313,7 @@ export async function callMinimax(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify(requestBody),
+    signal,
   });
 
   if (!response.ok) {
@@ -304,7 +322,7 @@ export async function callMinimax(
   }
 
   if (onStream && response.body) {
-    return handleStream(response.body, onStream);
+    return handleStream(response.body, onStream, signal);
   }
 
   const data = await response.json();
@@ -313,12 +331,14 @@ export async function callMinimax(
 
 /**
  * Call Perplexity API (联网搜索)
+ * @param signal - AbortSignal for cancellation support
  */
 export async function callPerplexity(
   messages: ModelMessage[],
   _tools: ToolDefinition[],
   config: ModelConfig,
-  onStream?: StreamCallback
+  onStream?: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || 'https://api.perplexity.ai';
 
@@ -338,6 +358,7 @@ export async function callPerplexity(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify(requestBody),
+    signal,
   });
 
   if (!response.ok) {
@@ -346,7 +367,7 @@ export async function callPerplexity(
   }
 
   if (onStream && response.body) {
-    return handleStream(response.body, onStream);
+    return handleStream(response.body, onStream, signal);
   }
 
   const data = await response.json();

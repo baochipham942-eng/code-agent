@@ -13,12 +13,14 @@ import {
 
 /**
  * Call Google Gemini API
+ * @param signal - AbortSignal for cancellation support
  */
 export async function callGemini(
   messages: ModelMessage[],
   tools: ToolDefinition[],
   config: ModelConfig,
-  onStream?: StreamCallback
+  onStream?: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
   const model = config.model || 'gemini-2.5-flash';
@@ -47,6 +49,11 @@ export async function callGemini(
     requestBody.tools = geminiTools;
   }
 
+  // Check for cancellation before starting
+  if (signal?.aborted) {
+    throw new Error('Request was cancelled before starting');
+  }
+
   const endpoint = onStream ? 'streamGenerateContent' : 'generateContent';
   const url = `${baseUrl}/models/${model}:${endpoint}?key=${config.apiKey}`;
 
@@ -56,6 +63,7 @@ export async function callGemini(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(requestBody),
+    signal,
   });
 
   if (!response.ok) {
@@ -64,7 +72,7 @@ export async function callGemini(
   }
 
   if (onStream && response.body) {
-    return handleGeminiStream(response.body, onStream);
+    return handleGeminiStream(response.body, onStream, signal);
   }
 
   const data = await response.json();

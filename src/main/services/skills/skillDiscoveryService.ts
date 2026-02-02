@@ -11,6 +11,7 @@ import { bridgeCloudSkill } from './skillBridge';
 import { getCloudConfigService } from '../cloud';
 import { createLogger } from '../infra/logger';
 import { getToolSearchService } from '../../tools/search';
+import { getSkillsDir, resolvePathWithFallback } from '../../config';
 
 const logger = createLogger('SkillDiscoveryService');
 
@@ -53,16 +54,25 @@ class SkillDiscoveryService {
     // 1. 加载内置 Skills（最低优先级）
     await this.loadBuiltinSkills();
 
-    // 2. 加载用户级 Skills
-    const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
-    await this.scanDirectory(userSkillsDir, 'user');
+    // 2. 加载用户级 Skills（支持新旧路径）
+    const skillsDirs = getSkillsDir(workingDirectory);
+    const userSkillsResolved = await resolvePathWithFallback(
+      skillsDirs.user.new,
+      skillsDirs.user.legacy
+    );
+    await this.scanDirectory(userSkillsResolved.resolved, 'user');
 
     // 3. 加载远程库 Skills
     await this.loadFromLibraries();
 
-    // 4. 加载项目级 Skills（最高优先级）
-    const projectSkillsDir = path.join(workingDirectory, '.claude', 'skills');
-    await this.scanDirectory(projectSkillsDir, 'project');
+    // 4. 加载项目级 Skills（最高优先级，支持新旧路径）
+    if (skillsDirs.project) {
+      const projectSkillsResolved = await resolvePathWithFallback(
+        skillsDirs.project.new,
+        skillsDirs.project.legacy
+      );
+      await this.scanDirectory(projectSkillsResolved.resolved, 'project');
+    }
 
     this.initialized = true;
     logger.info('Skill discovery completed', {

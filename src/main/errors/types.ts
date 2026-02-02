@@ -200,7 +200,7 @@ export class CodeAgentError extends Error {
       [ErrorCode.HOOK_EXECUTION_FAILED]: '请检查 Hook 脚本是否有语法错误',
       [ErrorCode.HOOK_TIMEOUT]: '请优化 Hook 脚本执行效率',
       [ErrorCode.HOOK_BLOCKED]: '此操作被安全策略阻止，请调整 Hook 配置',
-      [ErrorCode.HOOK_CONFIG_INVALID]: '请检查 .claude/settings.json 中的 Hook 配置',
+      [ErrorCode.HOOK_CONFIG_INVALID]: '请检查 .code-agent/hooks/hooks.json 或 .claude/settings.json 中的 Hook 配置',
 
       // Session errors
       [ErrorCode.SESSION_NOT_FOUND]: '请刷新会话列表或创建新会话',

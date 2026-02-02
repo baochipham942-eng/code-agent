@@ -10,6 +10,7 @@ import { TestRunner, createDefaultConfig } from './testRunner';
 import { MockAgentAdapter, StandaloneAgentAdapter } from './agentAdapter';
 import { generateMarkdownReport, generateConsoleReport, saveReport } from './reportGenerator';
 import { createLogger } from '../services/infra/logger';
+import { getTestDirs, resolvePathWithFallback } from '../config';
 
 const logger = createLogger('AutoTestHook');
 
@@ -66,10 +67,21 @@ export async function runAutoTests(
 
   const workingDirectory = context.workingDirectory;
 
+  // Resolve test directories (supports new and legacy paths)
+  const testDirs = getTestDirs(workingDirectory);
+  const testCasesResolved = await resolvePathWithFallback(
+    testDirs.testCases.new,
+    testDirs.testCases.legacy
+  );
+  const resultsResolved = await resolvePathWithFallback(
+    testDirs.results.new,
+    testDirs.results.legacy
+  );
+
   // Create test runner configuration
   const runnerConfig = createDefaultConfig(workingDirectory, {
-    testCaseDir: config.testCaseDir || path.join(workingDirectory, '.claude', 'test-cases'),
-    resultsDir: config.resultsDir || path.join(workingDirectory, '.claude', 'test-results'),
+    testCaseDir: config.testCaseDir || testCasesResolved.resolved,
+    resultsDir: config.resultsDir || resultsResolved.resolved,
     filterTags: config.filterTags,
     filterIds: config.filterIds,
     stopOnFailure: config.stopOnFailure,

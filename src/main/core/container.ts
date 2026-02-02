@@ -17,6 +17,7 @@
 // ```
 
 import { createLogger } from '../services/infra/logger';
+import { withTimeout } from '../services/infra/timeoutController';
 
 const logger = createLogger('Container');
 
@@ -364,14 +365,12 @@ export class Container {
   private async initializeWithTimeout(instance: Initializable, name: string): Promise<void> {
     const timeout = this.config.initializeTimeout;
 
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error(`Service initialization timeout: ${name} (${timeout}ms)`));
-      }, timeout);
-    });
-
     try {
-      await Promise.race([instance.initialize(), timeoutPromise]);
+      await withTimeout(
+        instance.initialize(),
+        timeout,
+        `Service initialization timeout: ${name} (${timeout}ms)`
+      );
     } catch (error) {
       logger.error(`Failed to initialize service: ${name}`, error);
       throw error;

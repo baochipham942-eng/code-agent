@@ -35,7 +35,10 @@ export interface TaskState {
   command: string;
   exitCode?: number;
   lastReadPosition: number;
+  /** 主超时定时器 */
   timeout?: NodeJS.Timeout;
+  /** 内部 SIGKILL 定时器 */
+  killTimeout?: NodeJS.Timeout;
   cwd: string;
 }
 
@@ -137,7 +140,8 @@ export function startBackgroundTask(
       console.warn(`[BackgroundTasks] Task ${taskId} exceeded max runtime, terminating...`);
       try {
         proc.kill('SIGTERM');
-        setTimeout(() => {
+        // 追踪内部 SIGKILL 定时器
+        taskState.killTimeout = setTimeout(() => {
           if (taskState.status === 'running') {
             proc.kill('SIGKILL');
           }
@@ -187,8 +191,12 @@ export function startBackgroundTask(
     taskState.exitCode = code ?? undefined;
     taskState.endTime = Date.now();
 
+    // 清理所有定时器
     if (taskState.timeout) {
       clearTimeout(taskState.timeout);
+    }
+    if (taskState.killTimeout) {
+      clearTimeout(taskState.killTimeout);
     }
 
     // Close output stream
@@ -203,8 +211,12 @@ export function startBackgroundTask(
     taskState.outputStream?.write(errorMsg + '\n');
     taskState.outputStream?.end();
 
+    // 清理所有定时器
     if (taskState.timeout) {
       clearTimeout(taskState.timeout);
+    }
+    if (taskState.killTimeout) {
+      clearTimeout(taskState.killTimeout);
     }
   });
 
@@ -227,12 +239,21 @@ export function killBackgroundTask(taskId: string): { success: boolean; error?: 
   }
 
   try {
+    // 清理现有定时器
+    if (task.timeout) {
+      clearTimeout(task.timeout);
+    }
+    if (task.killTimeout) {
+      clearTimeout(task.killTimeout);
+    }
+
     // Send SIGTERM first
     task.process.kill('SIGTERM');
     task.outputStream?.end();
 
     // Wait 1 second, then force kill if still running
-    setTimeout(() => {
+    // 追踪这个内部定时器
+    task.killTimeout = setTimeout(() => {
       if (task.status === 'running') {
         task.process.kill('SIGKILL');
       }
@@ -330,22 +351,33 @@ export function isTaskId(taskId: string): boolean {
 
 /**
  * Cleanup completed tasks (remove from memory, keep files)
+ * 注意：先收集要删除的 ID，再统一删除，避免迭代中修改 Map
  */
 export function cleanupCompletedTasks(): number {
-  let cleaned = 0;
-
+  // 第一步：收集要清理的任务 ID
+  const toCleanup: string[] = [];
   for (const [taskId, task] of backgroundTasks) {
     if (task.status !== 'running') {
-      if (task.timeout) {
-        clearTimeout(task.timeout);
-      }
-      task.outputStream?.end();
-      backgroundTasks.delete(taskId);
-      cleaned++;
+      toCleanup.push(taskId);
     }
   }
 
-  return cleaned;
+  // 第二步：统一清理
+  for (const taskId of toCleanup) {
+    const task = backgroundTasks.get(taskId);
+    if (task) {
+      if (task.timeout) {
+        clearTimeout(task.timeout);
+      }
+      if (task.killTimeout) {
+        clearTimeout(task.killTimeout);
+      }
+      task.outputStream?.end();
+      backgroundTasks.delete(taskId);
+    }
+  }
+
+  return toCleanup.length;
 }
 
 /**
@@ -445,12 +477,28 @@ export function clearPersistedTasks(): void {
 }
 
 // Persist tasks on process exit
+// 注意：beforeExit 可能被多次调用，persistRunningTasks 是同步的所以安全
 process.on('beforeExit', persistRunningTasks);
+
+// SIGINT/SIGTERM 处理：Electron 主进程会通过 gracefulShutdown 统一处理
+// 这里只是备用，确保独立运行时也能正确保存状态
+// 注意：persistRunningTasks 是同步函数，可以直接调用
 process.on('SIGINT', () => {
   persistRunningTasks();
-  process.exit();
+  // 清理所有运行中任务的定时器
+  for (const task of backgroundTasks.values()) {
+    if (task.timeout) clearTimeout(task.timeout);
+    if (task.killTimeout) clearTimeout(task.killTimeout);
+  }
+  process.exit(0);
 });
+
 process.on('SIGTERM', () => {
   persistRunningTasks();
-  process.exit();
+  // 清理所有运行中任务的定时器
+  for (const task of backgroundTasks.values()) {
+    if (task.timeout) clearTimeout(task.timeout);
+    if (task.killTimeout) clearTimeout(task.killTimeout);
+  }
+  process.exit(0);
 });

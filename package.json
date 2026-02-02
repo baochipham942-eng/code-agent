@@ -39,7 +39,8 @@
     "cli": "node dist/cli/index.cjs",
     "mcp-server": "node dist/mcp-server.js",
     "docs": "typedoc",
-    "rebuild-native": "bash scripts/rebuild-native.sh"
+    "rebuild-native": "bash scripts/rebuild-native.sh",
+    "postinstall": "npm run rebuild-native"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",

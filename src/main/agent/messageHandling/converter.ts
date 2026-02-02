@@ -27,8 +27,14 @@ export function formatToolCallForHistory(tc: ToolCall): string {
 
     case 'bash': {
       const cmd = (args.command as string) || '';
-      const shortCmd = cmd.length > 100 ? cmd.slice(0, 97) + '...' : cmd;
-      return `Ran: ${shortCmd}`;
+      if (cmd.length <= 200) {
+        return `Ran: ${cmd}`;
+      }
+      // Long commands: preserve head + tail for better context
+      const head = cmd.slice(0, 120);
+      const tail = cmd.slice(-50);
+      const omitted = cmd.length - 170;
+      return `Ran: ${head}...[${omitted} chars]...${tail}`;
     }
 
     case 'read_file':
@@ -63,8 +69,13 @@ export function formatToolCallForHistory(tc: ToolCall): string {
 
     default: {
       const argsStr = JSON.stringify(args);
-      const shortArgs = argsStr.length > 80 ? argsStr.slice(0, 77) + '...' : argsStr;
-      return `Called ${name}(${shortArgs})`;
+      if (argsStr.length <= 150) {
+        return `Called ${name}(${argsStr})`;
+      }
+      // Preserve more context for long arguments
+      const head = argsStr.slice(0, 100);
+      const tail = argsStr.slice(-30);
+      return `Called ${name}(${head}...[${argsStr.length - 130} chars]...${tail})`;
     }
   }
 }

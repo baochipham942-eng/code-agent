@@ -63,6 +63,7 @@ import {
   HookMessageBuffer,
   estimateModelMessageTokens,
   MessageHistoryCompressor,
+  estimateTokens,
 } from '../context/tokenOptimizer';
 import { getTraceRecorder, type ToolCallWithResult } from '../evolution/traceRecorder';
 import { getOutcomeDetector } from '../evolution/outcomeDetector';
@@ -1945,25 +1946,51 @@ ${deferredToolsSummary}
       }
     }
 
+    // Check system prompt length and warn if too long
+    const systemPromptTokens = estimateTokens(systemPrompt);
+    const MAX_SYSTEM_PROMPT_TOKENS = 4000;
+    if (systemPromptTokens > MAX_SYSTEM_PROMPT_TOKENS) {
+      logger.warn(`[AgentLoop] System prompt too long: ${systemPromptTokens} tokens (limit: ${MAX_SYSTEM_PROMPT_TOKENS})`);
+      logCollector.agent('WARN', 'System prompt exceeds recommended limit', {
+        tokens: systemPromptTokens,
+        limit: MAX_SYSTEM_PROMPT_TOKENS,
+      });
+    }
+
     modelMessages.push({
       role: 'system',
       content: systemPrompt,
     });
 
     // Apply message history compression for long conversations
+    // Include message ID for index-safe mapping after compression
     const messagesToProcess = this.messages.map(m => ({
+      id: m.id,
       role: m.role,
       content: m.content,
       timestamp: m.timestamp,
     }));
 
     const compressionResult = this.messageHistoryCompressor.compress(messagesToProcess);
-    const processedMessages = compressionResult.wasCompressed
-      ? compressionResult.messages.map((m, i) => ({
-          ...this.messages[i] || { id: '', role: m.role, content: m.content, timestamp: m.timestamp || Date.now() },
+    let processedMessages: Message[];
+
+    if (compressionResult.wasCompressed) {
+      // Use ID-based mapping to avoid index mismatch after compression
+      const messageById = new Map(this.messages.map(m => [m.id, m]));
+      processedMessages = compressionResult.messages.map(m => {
+        const original = m.id ? messageById.get(m.id) : undefined;
+        return {
+          id: m.id || this.generateId(),
+          role: m.role as Message['role'],
           content: m.content,
-        }))
-      : this.messages;
+          timestamp: original?.timestamp || m.timestamp || Date.now(),
+          attachments: original?.attachments,
+          toolCalls: original?.toolCalls,
+        };
+      });
+    } else {
+      processedMessages = this.messages;
+    }
 
     if (compressionResult.wasCompressed) {
       logger.debug(`[AgentLoop] Message history compressed, saved ${compressionResult.stats.savedTokens} tokens`);
@@ -2003,6 +2030,18 @@ ${deferredToolsSummary}
           content: message.content,
         });
       }
+    }
+
+    // Proactive compression check: trigger at 75% capacity to prevent hitting hard limits
+    const currentTokens = estimateModelMessageTokens(modelMessages);
+    const maxTokens = this.modelConfig.maxTokens || 128000;
+    if (this.messageHistoryCompressor.shouldProactivelyCompress(currentTokens, maxTokens)) {
+      logger.info(`[AgentLoop] Proactive compression triggered: ${currentTokens}/${maxTokens} tokens (${Math.round(currentTokens / maxTokens * 100)}%)`);
+      logCollector.agent('INFO', 'Proactive compression triggered', {
+        currentTokens,
+        maxTokens,
+        usagePercent: Math.round(currentTokens / maxTokens * 100),
+      });
     }
 
     return modelMessages;

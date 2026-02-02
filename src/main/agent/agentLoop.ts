@@ -430,6 +430,10 @@ export class AgentLoop {
     this.modifiedFiles.clear();
     this.fileNudgeCount = 0;
 
+    // Reset nudge counters at task start (not per-turn, to allow cumulative effect)
+    this.readOnlyNudgeCount = 0;
+    this.todoNudgeCount = 0;
+
     logger.debug(` Task complexity: ${complexityAnalysis.complexity} (${Math.round(complexityAnalysis.confidence * 100)}%)`);
     if (this.targetFiles.length > 0) {
       logger.debug(` Target files: ${this.targetFiles.join(', ')}`);
@@ -574,8 +578,8 @@ export class AgentLoop {
 
       this.turnStartTime = Date.now();
       this.toolsUsedInTurn = [];
-      this.readOnlyNudgeCount = 0; // Reset nudge counter for new turn
-      this.todoNudgeCount = 0; // Reset todo nudge counter
+      // Note: readOnlyNudgeCount and todoNudgeCount are NOT reset here
+      // They accumulate across turns to allow escalating nudges
       this.emitTaskProgress('thinking', '分析请求中...');
 
       // 1. Call model

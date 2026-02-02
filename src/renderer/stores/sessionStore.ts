@@ -45,6 +45,12 @@ interface SessionState {
   sessionRuntimes: Map<string, SessionRuntimeSummary>;
   // 后台任务列表
   backgroundTasks: BackgroundTaskInfo[];
+  // 输入历史（用户命令历史）
+  inputHistory: string[];
+  // 输入历史索引（-1 表示当前输入）
+  inputHistoryIndex: number;
+  // 临时保存的当前输入（浏览历史时保存）
+  inputHistoryDraft: string;
 }
 
 interface SessionActions {
@@ -91,6 +97,11 @@ interface SessionActions {
   moveToForeground: (sessionId: string) => Promise<void>;
   updateBackgroundTask: (event: BackgroundTaskUpdateEvent) => void;
   getBackgroundTaskCount: () => number;
+  // 输入历史管理
+  addToInputHistory: (input: string) => void;
+  getPreviousInput: (currentInput: string) => string | null;
+  getNextInput: () => string | null;
+  resetInputHistoryIndex: () => void;
 }
 
 type SessionStore = SessionState & SessionActions;
@@ -112,6 +123,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     runningSessionIds: new Set<string>(),
     sessionRuntimes: new Map<string, SessionRuntimeSummary>(),
     backgroundTasks: [],
+    inputHistory: [],
+    inputHistoryIndex: -1,
+    inputHistoryDraft: '',
 
     // 加载会话列表
     loadSessions: async () => {
@@ -500,6 +514,69 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     // 获取后台任务数量
     getBackgroundTaskCount: () => {
       return get().backgroundTasks.length;
+    },
+
+    // 添加到输入历史
+    addToInputHistory: (input: string) => {
+      const trimmed = input.trim();
+      if (!trimmed) return;
+
+      const { inputHistory } = get();
+      // 避免重复添加相同的最近输入
+      if (inputHistory.length > 0 && inputHistory[0] === trimmed) {
+        return;
+      }
+
+      // 限制历史记录数量为 100 条
+      const newHistory = [trimmed, ...inputHistory].slice(0, 100);
+      set({
+        inputHistory: newHistory,
+        inputHistoryIndex: -1,
+        inputHistoryDraft: '',
+      });
+    },
+
+    // 获取上一条历史输入（向上箭头）
+    getPreviousInput: (currentInput: string) => {
+      const { inputHistory, inputHistoryIndex, inputHistoryDraft } = get();
+
+      if (inputHistory.length === 0) return null;
+
+      // 第一次按上箭头，保存当前输入
+      if (inputHistoryIndex === -1) {
+        set({ inputHistoryDraft: currentInput });
+      }
+
+      const newIndex = Math.min(inputHistoryIndex + 1, inputHistory.length - 1);
+      if (newIndex === inputHistoryIndex) return null; // 已经是最早的记录
+
+      set({ inputHistoryIndex: newIndex });
+      return inputHistory[newIndex];
+    },
+
+    // 获取下一条历史输入（向下箭头）
+    getNextInput: () => {
+      const { inputHistory, inputHistoryIndex, inputHistoryDraft } = get();
+
+      if (inputHistoryIndex === -1) return null; // 已经是当前输入
+
+      const newIndex = inputHistoryIndex - 1;
+      set({ inputHistoryIndex: newIndex });
+
+      // 如果回到当前输入，返回之前保存的草稿
+      if (newIndex === -1) {
+        return inputHistoryDraft;
+      }
+
+      return inputHistory[newIndex];
+    },
+
+    // 重置历史索引（当用户开始新输入时）
+    resetInputHistoryIndex: () => {
+      set({
+        inputHistoryIndex: -1,
+        inputHistoryDraft: '',
+      });
     },
   }));
 

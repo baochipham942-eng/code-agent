@@ -107,20 +107,113 @@ export class CodeAgentError extends Error {
    */
   private getDefaultUserMessage(): string {
     const messages: Partial<Record<ErrorCode, string>> = {
-      [ErrorCode.TIMEOUT]: '操作超时，请稍后重试',
+      // General errors
+      [ErrorCode.UNKNOWN]: '发生了未知错误',
+      [ErrorCode.INTERNAL]: '内部错误',
+      [ErrorCode.TIMEOUT]: '操作超时',
+      [ErrorCode.CANCELLED]: '操作已取消',
+
+      // Configuration errors
+      [ErrorCode.CONFIG_INVALID]: '配置无效',
+      [ErrorCode.CONFIG_MISSING]: '配置缺失',
+      [ErrorCode.CONFIG_PARSE]: '配置解析失败',
+
+      // Tool errors
       [ErrorCode.TOOL_NOT_FOUND]: '找不到指定的工具',
+      [ErrorCode.TOOL_EXECUTION_FAILED]: '工具执行失败',
       [ErrorCode.TOOL_PERMISSION_DENIED]: '没有执行此操作的权限',
+      [ErrorCode.TOOL_INVALID_PARAMS]: '工具参数无效',
+      [ErrorCode.TOOL_TIMEOUT]: '工具执行超时',
+
+      // File system errors
       [ErrorCode.FILE_NOT_FOUND]: '找不到指定的文件',
+      [ErrorCode.FILE_READ_ERROR]: '文件读取失败',
+      [ErrorCode.FILE_WRITE_ERROR]: '文件写入失败',
       [ErrorCode.FILE_PERMISSION_DENIED]: '没有访问此文件的权限',
       [ErrorCode.PATH_OUTSIDE_WORKSPACE]: '不能访问工作目录外的文件',
-      [ErrorCode.CONTEXT_LENGTH_EXCEEDED]: '对话内容过长，请开始新会话',
-      [ErrorCode.RATE_LIMIT_EXCEEDED]: 'API 请求过于频繁，请稍后重试',
-      [ErrorCode.API_KEY_INVALID]: 'API 密钥无效，请检查配置',
+
+      // Model/API errors
+      [ErrorCode.MODEL_ERROR]: '模型调用失败',
+      [ErrorCode.CONTEXT_LENGTH_EXCEEDED]: '对话内容过长',
+      [ErrorCode.RATE_LIMIT_EXCEEDED]: 'API 请求过于频繁',
+      [ErrorCode.API_KEY_INVALID]: 'API 密钥无效',
       [ErrorCode.API_CONNECTION_FAILED]: '无法连接到 API 服务',
+      [ErrorCode.MODEL_NOT_AVAILABLE]: '模型不可用',
+
+      // Hook errors
+      [ErrorCode.HOOK_EXECUTION_FAILED]: 'Hook 执行失败',
+      [ErrorCode.HOOK_TIMEOUT]: 'Hook 执行超时',
       [ErrorCode.HOOK_BLOCKED]: '操作被 Hook 拦截',
+      [ErrorCode.HOOK_CONFIG_INVALID]: 'Hook 配置无效',
+
+      // Session errors
+      [ErrorCode.SESSION_NOT_FOUND]: '会话不存在',
+      [ErrorCode.SESSION_EXPIRED]: '会话已过期',
+      [ErrorCode.SESSION_INVALID]: '会话无效',
+
+      // Agent errors
+      [ErrorCode.AGENT_ERROR]: 'Agent 执行错误',
+      [ErrorCode.AGENT_LOOP_LIMIT]: 'Agent 循环次数超限',
+      [ErrorCode.AGENT_SUBAGENT_FAILED]: '子 Agent 执行失败',
     };
 
-    return messages[this.code] ?? '发生了一个错误，请稍后重试';
+    return messages[this.code] ?? '发生了一个错误';
+  }
+
+  /**
+   * Get recovery suggestion based on error code
+   */
+  getRecoverySuggestion(): string {
+    const suggestions: Partial<Record<ErrorCode, string>> = {
+      // General errors
+      [ErrorCode.TIMEOUT]: '请检查网络连接，或稍后重试',
+      [ErrorCode.CANCELLED]: '操作已取消，可以重新开始',
+
+      // Configuration errors
+      [ErrorCode.CONFIG_INVALID]: '请检查配置文件格式是否正确',
+      [ErrorCode.CONFIG_MISSING]: '请在设置中完成必要的配置',
+      [ErrorCode.CONFIG_PARSE]: '请检查配置文件的 JSON 格式',
+
+      // Tool errors
+      [ErrorCode.TOOL_NOT_FOUND]: '请确认工具名称是否正确，或检查 MCP 服务器状态',
+      [ErrorCode.TOOL_EXECUTION_FAILED]: '请检查命令参数或目标文件状态',
+      [ErrorCode.TOOL_PERMISSION_DENIED]: '请检查文件权限或安全模式设置',
+      [ErrorCode.TOOL_INVALID_PARAMS]: '请检查工具参数格式',
+      [ErrorCode.TOOL_TIMEOUT]: '命令执行时间过长，考虑拆分任务或增加超时时间',
+
+      // File system errors
+      [ErrorCode.FILE_NOT_FOUND]: '请确认文件路径是否正确',
+      [ErrorCode.FILE_READ_ERROR]: '请检查文件是否被占用或损坏',
+      [ErrorCode.FILE_WRITE_ERROR]: '请检查磁盘空间和写入权限',
+      [ErrorCode.FILE_PERMISSION_DENIED]: '请检查文件权限，或使用管理员权限运行',
+      [ErrorCode.PATH_OUTSIDE_WORKSPACE]: '请将文件移至工作目录内，或更改工作目录',
+
+      // Model/API errors
+      [ErrorCode.MODEL_ERROR]: '请稍后重试，或尝试切换模型',
+      [ErrorCode.CONTEXT_LENGTH_EXCEEDED]: '请开始新会话，或删除部分历史消息',
+      [ErrorCode.RATE_LIMIT_EXCEEDED]: '请等待 1 分钟后重试',
+      [ErrorCode.API_KEY_INVALID]: '请在设置中检查并更新 API 密钥',
+      [ErrorCode.API_CONNECTION_FAILED]: '请检查网络连接和 API 地址配置',
+      [ErrorCode.MODEL_NOT_AVAILABLE]: '请切换到其他可用模型',
+
+      // Hook errors
+      [ErrorCode.HOOK_EXECUTION_FAILED]: '请检查 Hook 脚本是否有语法错误',
+      [ErrorCode.HOOK_TIMEOUT]: '请优化 Hook 脚本执行效率',
+      [ErrorCode.HOOK_BLOCKED]: '此操作被安全策略阻止，请调整 Hook 配置',
+      [ErrorCode.HOOK_CONFIG_INVALID]: '请检查 .claude/settings.json 中的 Hook 配置',
+
+      // Session errors
+      [ErrorCode.SESSION_NOT_FOUND]: '请刷新会话列表或创建新会话',
+      [ErrorCode.SESSION_EXPIRED]: '请重新开始一个新会话',
+      [ErrorCode.SESSION_INVALID]: '请刷新页面或重启应用',
+
+      // Agent errors
+      [ErrorCode.AGENT_ERROR]: '请简化任务描述后重试',
+      [ErrorCode.AGENT_LOOP_LIMIT]: '任务过于复杂，请拆分为多个小任务',
+      [ErrorCode.AGENT_SUBAGENT_FAILED]: '子任务执行失败，请检查具体错误信息',
+    };
+
+    return suggestions[this.code] ?? '请稍后重试，如果问题持续，请联系支持';
   }
 
   /**
@@ -136,6 +229,7 @@ export class CodeAgentError extends Error {
       context: this.context,
       recoverable: this.recoverable,
       userMessage: this.userMessage,
+      recoverySuggestion: this.getRecoverySuggestion(),
       stack: this.stack,
     };
   }
@@ -168,6 +262,7 @@ export interface SerializedError {
   context?: Record<string, unknown>;
   recoverable: boolean;
   userMessage: string;
+  recoverySuggestion?: string;
   stack?: string;
 }
 

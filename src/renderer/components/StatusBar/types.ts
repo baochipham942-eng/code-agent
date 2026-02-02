@@ -32,3 +32,11 @@ export interface SessionDurationProps {
 export interface NetworkStatusProps {
   status: NetworkStatusType;
 }
+
+// 扩展的网络状态（带重连信息）
+export interface NetworkStateExtended {
+  status: 'online' | 'offline' | 'reconnecting';
+  reconnectAttempts: number;
+  nextReconnectAt: number | null;
+  lastOnlineAt: number | null;
+}

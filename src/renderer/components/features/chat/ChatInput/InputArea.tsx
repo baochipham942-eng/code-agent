@@ -53,6 +53,12 @@ export interface InputAreaProps {
   placeholder?: string;
   /** @deprecated 使用 actionButtons 代替 */
   sendButton?: React.ReactNode;
+  /** 获取上一条历史输入 */
+  onHistoryPrev?: (currentInput: string) => string | null;
+  /** 获取下一条历史输入 */
+  onHistoryNext?: () => string | null;
+  /** 重置历史浏览状态 */
+  onHistoryReset?: () => void;
 }
 
 export interface InputAreaRef {
@@ -80,6 +86,9 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       actionButtons,
       placeholder,
       sendButton,
+      onHistoryPrev,
+      onHistoryNext,
+      onHistoryReset,
     },
     ref
   ) => {
@@ -108,7 +117,58 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
       if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         onSubmit();
+        return;
       }
+
+      // 历史命令浏览（上下箭头）
+      // 仅在光标在第一行时响应上箭头，在最后一行时响应下箭头
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+
+      const cursorPosition = textarea.selectionStart;
+      const textBeforeCursor = value.substring(0, cursorPosition);
+      const textAfterCursor = value.substring(cursorPosition);
+
+      // 上箭头 - 获取上一条历史
+      if (e.key === 'ArrowUp' && onHistoryPrev) {
+        // 仅在光标在第一行时触发
+        if (!textBeforeCursor.includes('\n')) {
+          const prevInput = onHistoryPrev(value);
+          if (prevInput !== null) {
+            e.preventDefault();
+            onChange(prevInput);
+            // 将光标移到末尾
+            setTimeout(() => {
+              textarea.selectionStart = prevInput.length;
+              textarea.selectionEnd = prevInput.length;
+            }, 0);
+          }
+        }
+      }
+
+      // 下箭头 - 获取下一条历史
+      if (e.key === 'ArrowDown' && onHistoryNext) {
+        // 仅在光标在最后一行时触发
+        if (!textAfterCursor.includes('\n')) {
+          const nextInput = onHistoryNext();
+          if (nextInput !== null) {
+            e.preventDefault();
+            onChange(nextInput);
+            // 将光标移到末尾
+            setTimeout(() => {
+              textarea.selectionStart = nextInput.length;
+              textarea.selectionEnd = nextInput.length;
+            }, 0);
+          }
+        }
+      }
+    };
+
+    // 当用户输入时重置历史浏览状态
+    const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      onChange(e.target.value);
+      // 用户开始输入新内容时，重置历史索引
+      onHistoryReset?.();
     };
 
     // 处理粘贴事件 - 支持从剪贴板粘贴图片（如微信截图）
@@ -184,8 +244,9 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
         {/* 文本输入框 */}
         <textarea
           ref={textareaRef}
+          data-chat-input
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={handleChange}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           onFocus={() => onFocusChange(true)}

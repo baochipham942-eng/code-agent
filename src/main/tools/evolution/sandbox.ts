@@ -3,8 +3,18 @@
 // Gen 8: Security boundary for dynamically created tools
 // ============================================================================
 
-import ivm from 'isolated-vm';
 import { createLogger } from '../../services/infra/logger';
+
+// 延迟加载 isolated-vm，处理 native 模块版本不匹配的情况
+// CLI 模式或 native 模块编译版本不对时，自动降级
+let ivm: typeof import('isolated-vm') | null = null;
+try {
+  ivm = require('isolated-vm');
+} catch (error) {
+  // native 模块加载失败（版本不匹配、CLI 模式等）
+  // sandbox 功能将不可用，但不影响其他功能
+  console.warn('[Sandbox] isolated-vm not available:', (error as Error).message?.split('\n')[0]);
+}
 
 const logger = createLogger('Sandbox');
 
@@ -36,11 +46,15 @@ export interface SandboxResult {
  * Note: This sandbox is specifically designed for Gen8 tool_create feature
  * which allows AI to dynamically create tools at runtime. The isolated-vm
  * library provides true V8 isolate-level sandboxing, not just eval().
+ *
+ * CLI Mode: When running in CLI mode without isolated-vm, sandbox features
+ * are disabled and execute() will return an error.
  */
 export class CodeSandbox {
-  private isolate: ivm.Isolate | null = null;
-  private context: ivm.Context | null = null;
+  private isolate: import('isolated-vm').Isolate | null = null;
+  private context: import('isolated-vm').Context | null = null;
   private options: Required<SandboxOptions>;
+  private readonly sandboxAvailable: boolean;
 
   constructor(options: SandboxOptions = {}) {
     this.options = {
@@ -48,12 +62,18 @@ export class CodeSandbox {
       timeout: options.timeout ?? 5000,
       allowedGlobals: options.allowedGlobals ?? {},
     };
+    this.sandboxAvailable = ivm !== null;
   }
 
   /**
    * Initialize the sandbox environment
    */
   async initialize(): Promise<void> {
+    if (!this.sandboxAvailable || !ivm) {
+      logger.warn('Sandbox not available (CLI mode or isolated-vm missing)');
+      return;
+    }
+
     if (this.isolate) {
       return; // Already initialized
     }
@@ -89,6 +109,14 @@ export class CodeSandbox {
    * isolated V8 context with no access to Node.js APIs
    */
   async execute(code: string): Promise<SandboxResult> {
+    // CLI 模式下沙箱不可用
+    if (!this.sandboxAvailable) {
+      return {
+        success: false,
+        error: 'Sandbox not available in CLI mode (isolated-vm not loaded)',
+      };
+    }
+
     if (!this.isolate || !this.context) {
       await this.initialize();
     }

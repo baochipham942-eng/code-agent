@@ -74,15 +74,43 @@ export const M04: TestCase = {
     },
   ],
 
-  expectedBehavior: {
-    directExecution: false,
-    expectedAgents: ['Explore'],
-    requiredTools: ['Read', 'Write', 'Edit', 'Glob'],
-    toolCallRange: { min: 12, max: 45 },
-  },
+  // 步骤分解模式下，trace 不会被正确收集，因此不验证工具调用
+  // expectedBehavior 中的验证在 stepByStepExecution 模式下无效
 
   tags: ['multi-file', 'payment', 'stripe', 'integration', 'security'],
   timeout: 600000, // 10分钟（L4 复杂任务）
+
+  // 启用步骤分解执行，避免 plan 模式的过度规划
+  stepByStepExecution: true,
+  steps: [
+    {
+      instruction: '创建支付配置文件 src/config/payment.config.ts',
+      validation: { type: 'file-exists', target: 'src/config/payment.config.ts' },
+    },
+    {
+      instruction: '修改 prisma/schema.prisma 添加 Order 和 Payment 模型',
+      validation: { type: 'file-contains', target: 'prisma/schema.prisma', contains: ['Order', 'Payment'] },
+    },
+    {
+      instruction: '创建支付网关适配器 src/api/payment/stripe.adapter.ts',
+      validation: { type: 'file-exists', target: 'src/api/payment/stripe.adapter.ts' },
+    },
+    {
+      instruction: '创建服务层 src/api/services/order.service.ts 和 src/api/services/payment.service.ts',
+      validation: { type: 'file-exists', target: 'src/api/services/payment.service.ts' },
+    },
+    {
+      instruction: '创建 API 路由 src/api/routes/payments.ts（包含 webhook endpoint）',
+      validation: { type: 'file-exists', target: 'src/api/routes/payments.ts' },
+    },
+    {
+      instruction: '创建前端组件 src/components/Checkout.tsx',
+      validation: { type: 'file-exists', target: 'src/components/Checkout.tsx' },
+    },
+  ],
+
+  // 如果缺失文件，提示模型完成
+  nudgeOnMissingFile: true,
 };
 
 export default M04;

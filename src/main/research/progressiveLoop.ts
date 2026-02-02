@@ -270,13 +270,17 @@ ${[...state.objectivesCovered.keys()].map((o, i) => `${i + 1}. ${o}`).join('\n')
 
       const jsonMatch = response.content?.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
-        const queries = JSON.parse(jsonMatch[0]) as string[];
-        return {
-          queries: queries.slice(0, researchConfig.parallelSearches),
-          targetSources: researchConfig.enabledSources,
-          focusGaps: state.gaps.slice(0, 3),
-          reasoning: '初始研究，覆盖主要研究目标',
-        };
+        try {
+          const queries = JSON.parse(jsonMatch[0]) as string[];
+          return {
+            queries: queries.slice(0, researchConfig.parallelSearches),
+            targetSources: researchConfig.enabledSources,
+            focusGaps: state.gaps.slice(0, 3),
+            reasoning: '初始研究，覆盖主要研究目标',
+          };
+        } catch (parseError) {
+          logger.warn('Failed to parse initial plan JSON:', { error: parseError, raw: jsonMatch[0].slice(0, 200) });
+        }
       }
     } catch (error) {
       logger.warn('Failed to generate initial plan via LLM:', error);
@@ -500,22 +504,26 @@ ${sourceSummaries}
 
       const jsonMatch = response.content?.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        const analysis = JSON.parse(jsonMatch[0]) as {
-          facts: ExtractedFact[];
-          gaps: IdentifiedGap[];
-          objectiveCoverage: Record<string, number>;
-        };
+        try {
+          const analysis = JSON.parse(jsonMatch[0]) as {
+            facts: ExtractedFact[];
+            gaps: IdentifiedGap[];
+            objectiveCoverage: Record<string, number>;
+          };
 
-        // 更新目标覆盖度
-        for (const [obj, coverage] of Object.entries(analysis.objectiveCoverage)) {
-          const current = state.objectivesCovered.get(obj) ?? 0;
-          state.objectivesCovered.set(obj, Math.max(current, coverage));
+          // 更新目标覆盖度
+          for (const [obj, coverage] of Object.entries(analysis.objectiveCoverage)) {
+            const current = state.objectivesCovered.get(obj) ?? 0;
+            state.objectivesCovered.set(obj, Math.max(current, coverage));
+          }
+
+          return {
+            newFacts: analysis.facts ?? [],
+            newGaps: analysis.gaps ?? [],
+          };
+        } catch (parseError) {
+          logger.warn('Failed to parse analysis JSON:', { error: parseError, raw: jsonMatch[0].slice(0, 200) });
         }
-
-        return {
-          newFacts: analysis.facts,
-          newGaps: analysis.gaps,
-        };
       }
     } catch (error) {
       logger.warn('Failed to analyze results via LLM:', error);

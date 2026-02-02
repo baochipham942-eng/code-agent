@@ -218,6 +218,17 @@ app.on('before-quit', async () => {
   }
 });
 
+// Handle SIGTERM/SIGINT for graceful shutdown (container/Linux environments)
+process.on('SIGTERM', () => {
+  logger.info('Received SIGTERM, initiating graceful shutdown...');
+  app.quit();
+});
+
+process.on('SIGINT', () => {
+  logger.info('Received SIGINT, initiating graceful shutdown...');
+  app.quit();
+});
+
 // Handle uncaught errors
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception', error);

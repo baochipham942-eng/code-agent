@@ -110,6 +110,8 @@ interface SubagentContext {
   }>;
   /** 父工具调用 ID，用于标识消息来自哪个 subagent */
   parentToolUseId?: string;
+  /** AbortSignal 用于取消任务执行 */
+  abortSignal?: AbortSignal;
 }
 
 // ----------------------------------------------------------------------------
@@ -289,6 +291,20 @@ export class SubagentExecutor {
       while (iterations < maxIterations) {
         iterations++;
         logger.info(`[${config.name}] Iteration ${iterations}`);
+
+        // 检查 AbortSignal 取消状态
+        if (context.abortSignal?.aborted) {
+          logger.info(`[${config.name}] Execution cancelled by AbortSignal`);
+          pipeline.completeContext(pipelineContext.agentId, false, 'Cancelled');
+          return {
+            success: false,
+            output: finalOutput || '',
+            error: '任务已取消',
+            toolsUsed: [...new Set(toolsUsed)],
+            iterations,
+            agentId: pipelineContext.agentId,
+          };
+        }
 
         // P3: 超时检查
         const elapsed = Date.now() - startTime;

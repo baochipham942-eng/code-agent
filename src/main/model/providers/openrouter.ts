@@ -18,13 +18,15 @@ import {
 
 /**
  * Call OpenRouter API
+ * @param signal - AbortSignal for cancellation support
  */
 export async function callOpenRouter(
   messages: ModelMessage[],
   tools: ToolDefinition[],
   config: ModelConfig,
   modelInfo: ModelInfo | null,
-  onStream?: StreamCallback
+  onStream?: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || 'https://openrouter.ai/api/v1';
 
@@ -72,9 +74,14 @@ export async function callOpenRouter(
     'X-Title': 'Code Agent',
   };
 
+  // Check for cancellation before starting
+  if (signal?.aborted) {
+    throw new Error('Request was cancelled before starting');
+  }
+
   // 如果启用流式输出，使用 SSE 处理
   if (useStream) {
-    return callOpenRouterStream(baseUrl, requestBody, config.apiKey!, headers, onStream!);
+    return callOpenRouterStream(baseUrl, requestBody, config.apiKey!, headers, onStream!, signal);
   }
 
   // 非流式输出
@@ -86,11 +93,15 @@ export async function callOpenRouter(
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
       responseType: 'json',
+      signal,
     });
 
     logger.info(' OpenRouter raw response:', JSON.stringify(response.data, null, 2).substring(0, 2000));
     return parseOpenAIResponse(response.data);
   } catch (error: any) {
+    if (axios.isCancel(error) || error.name === 'AbortError' || error.name === 'CanceledError') {
+      throw new Error('Request was cancelled');
+    }
     if (error.response) {
       throw new Error(`OpenRouter API error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
     }
@@ -100,15 +111,23 @@ export async function callOpenRouter(
 
 /**
  * 流式调用 OpenRouter API
+ * @param signal - AbortSignal for cancellation support
  */
 function callOpenRouterStream(
   baseUrl: string,
   requestBody: Record<string, unknown>,
   apiKey: string,
   extraHeaders: Record<string, string>,
-  onStream: StreamCallback
+  onStream: StreamCallback,
+  signal?: AbortSignal
 ): Promise<ModelResponse> {
   return new Promise((resolve, reject) => {
+    // Check for cancellation before starting
+    if (signal?.aborted) {
+      reject(new Error('Request was cancelled before starting'));
+      return;
+    }
+
     const url = new URL(`${baseUrl}/chat/completions`);
     const isHttps = url.protocol === 'https:';
     const httpModule = isHttps ? https : http;
@@ -285,6 +304,14 @@ function callOpenRouterStream(
     req.on('error', (error) => {
       reject(new Error(`OpenRouter request error: ${error.message}`));
     });
+
+    // Set up abort listener for cancellation
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        req.destroy();
+        reject(new Error('Request was cancelled'));
+      }, { once: true });
+    }
 
     req.write(JSON.stringify(requestBody));
     req.end();

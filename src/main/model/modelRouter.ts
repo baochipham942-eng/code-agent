@@ -245,46 +245,53 @@ export class ModelRouter {
 
   /**
    * 主推理入口
+   * @param signal - AbortSignal for cancellation support (allows interrupting API calls)
    */
   async inference(
     messages: ModelMessage[],
     tools: ToolDefinition[],
     config: ModelConfig,
-    onStream?: StreamCallback
+    onStream?: StreamCallback,
+    signal?: AbortSignal
   ): Promise<ModelResponse> {
+    // Check for cancellation before starting
+    if (signal?.aborted) {
+      throw new Error('Request was cancelled before starting');
+    }
+
     // 如果启用云端代理，走云端 model-proxy
     if (config.useCloudProxy) {
       const modelInfo = this.getModelInfo(config.provider, config.model);
-      return callViaCloudProxy(messages, tools, config, modelInfo, onStream);
+      return callViaCloudProxy(messages, tools, config, modelInfo, onStream, signal);
     }
 
     const modelInfo = this.getModelInfo(config.provider, config.model);
 
     switch (config.provider) {
       case 'deepseek':
-        return callDeepSeek(messages, tools, config, modelInfo, onStream);
+        return callDeepSeek(messages, tools, config, modelInfo, onStream, signal);
       case 'claude':
-        return callClaude(messages, tools, config, onStream);
+        return callClaude(messages, tools, config, onStream, signal);
       case 'openai':
-        return callOpenAI(messages, tools, config, onStream);
+        return callOpenAI(messages, tools, config, onStream, signal);
       case 'gemini':
-        return callGemini(messages, tools, config, onStream);
+        return callGemini(messages, tools, config, onStream, signal);
       case 'groq':
-        return callGroq(messages, tools, config, modelInfo, onStream);
+        return callGroq(messages, tools, config, modelInfo, onStream, signal);
       case 'local':
-        return callLocal(messages, tools, config, onStream);
+        return callLocal(messages, tools, config, onStream, signal);
       case 'zhipu':
-        return callZhipu(messages, tools, config, modelInfo, PROVIDER_REGISTRY.zhipu, onStream);
+        return callZhipu(messages, tools, config, modelInfo, PROVIDER_REGISTRY.zhipu, onStream, signal);
       case 'qwen':
-        return callQwen(messages, tools, config, modelInfo, onStream);
+        return callQwen(messages, tools, config, modelInfo, onStream, signal);
       case 'moonshot':
-        return callMoonshot(messages, tools, config, onStream);
+        return callMoonshot(messages, tools, config, onStream, signal);
       case 'minimax':
-        return callMinimax(messages, tools, config, modelInfo, onStream);
+        return callMinimax(messages, tools, config, modelInfo, onStream, signal);
       case 'perplexity':
-        return callPerplexity(messages, tools, config, onStream);
+        return callPerplexity(messages, tools, config, onStream, signal);
       case 'openrouter':
-        return callOpenRouter(messages, tools, config, modelInfo, onStream);
+        return callOpenRouter(messages, tools, config, modelInfo, onStream, signal);
       default:
         throw new Error(`Unsupported provider: ${config.provider}`);
     }

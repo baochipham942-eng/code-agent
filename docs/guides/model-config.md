@@ -131,10 +131,25 @@
     "vision": {"provider": "zhipu", "model": "glm-4.6v"},
     "fast": {"provider": "zhipu", "model": "glm-4.7-flash"},
     "gui": {"provider": "zhipu", "model": "glm-4.6v-flash"},
-    "video": {"provider": "qwen", "model": "qwen3-vl-plus"}
+    "video": {"provider": "qwen", "model": "qwen3-vl-plus"},
+    "evaluation": {"provider": "moonshot", "model": "kimi-k2.5"}
   }
 }
 ```
+
+### 评测系统专用配置
+
+评测系统使用 **Kimi K2.5** 作为评审模型（支持并发 4 个评审员同时调用）：
+
+| 配置项 | 值 | 说明 |
+|--------|------|------|
+| Provider | `moonshot` | Kimi/Moonshot |
+| Model | `kimi-k2.5` | K2.5 旗舰版 |
+| Base URL | `https://cn.haioi.net/v1` | haioi.net 代理 |
+| 环境变量 | `KIMI_K25_API_KEY` | API Key |
+| 环境变量 | `KIMI_K25_API_URL` | 可选，覆盖默认 URL |
+
+> **注意**: GLM 不支持高并发，评测需要 4 个并行请求，因此使用 Kimi K2.5 包月套餐。
 
 ---
 

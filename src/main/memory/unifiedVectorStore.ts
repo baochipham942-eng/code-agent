@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
+import { withTimeout } from '../services/infra/timeoutController';
 import {
   LocalVectorStore,
   initLocalVectorStore,
@@ -371,15 +372,11 @@ export class UnifiedVectorStore {
     if (!this.hybridSearch) return [];
 
     try {
-      const timeoutPromise = new Promise<{ results: HybridSearchResult[] }>((_, reject) => {
-        setTimeout(
-          () => reject(new Error('Local search timeout')),
-          this.config.localSearchTimeoutMs
-        );
-      });
-
-      const searchPromise = this.hybridSearch.search(query, options);
-      const result = await Promise.race([searchPromise, timeoutPromise]);
+      const result = await withTimeout(
+        this.hybridSearch.search(query, options),
+        this.config.localSearchTimeoutMs!,
+        'Local search timeout'
+      );
       return result.results;
     } catch (error) {
       logger.warn('Local search failed:', error);
@@ -394,15 +391,11 @@ export class UnifiedVectorStore {
     if (!this.cloudStore) return [];
 
     try {
-      const timeoutPromise = new Promise<CloudSearchResult[]>((_, reject) => {
-        setTimeout(
-          () => reject(new Error('Cloud search timeout')),
-          this.config.cloudSearchTimeoutMs
-        );
-      });
-
-      const searchPromise = this.cloudStore.searchCloud(query, options);
-      return await Promise.race([searchPromise, timeoutPromise]);
+      return await withTimeout(
+        this.cloudStore.searchCloud(query, options),
+        this.config.cloudSearchTimeoutMs!,
+        'Cloud search timeout'
+      );
     } catch (error) {
       logger.warn('Cloud search failed:', error);
       return [];

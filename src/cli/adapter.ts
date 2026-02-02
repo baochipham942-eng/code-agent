@@ -5,7 +5,7 @@
 import { createAgentLoop, buildCLIConfig, initializeCLIServices, cleanup, getSessionManager } from './bootstrap';
 import { terminalOutput, jsonOutput } from './output';
 import type { CLIConfig, CLIRunResult, CLIGlobalOptions } from './types';
-import type { Message, AgentEvent, GenerationId } from '../shared/types';
+import type { Message, AgentEvent, GenerationId, PRLink } from '../shared/types';
 import { createLogger } from '../main/services/infra/logger';
 
 const logger = createLogger('CLI-Adapter');
@@ -23,6 +23,8 @@ export class CLIAgent {
   private toolsUsed: string[] = [];
   private lastContent: string = '';
   private sessionId: string | null = null;
+  private injectedContext: string = '';
+  private prLink: PRLink | null = null;
 
   constructor(options: Partial<CLIGlobalOptions> = {}) {
     this.config = buildCLIConfig(options);
@@ -232,12 +234,58 @@ export class CLIAgent {
       if (session) {
         this.sessionId = session.id;
         this.messages = session.messages;
+        // 恢复 PR 关联信息
+        if (session.prLink) {
+          this.prLink = session.prLink;
+        }
         return true;
       }
     } catch (error) {
       logger.error('Failed to restore session', { error, sessionId });
     }
     return false;
+  }
+
+  /**
+   * 注入上下文（会被添加到系统提示中）
+   */
+  injectContext(context: string): void {
+    this.injectedContext = context;
+    // 将上下文作为系统消息添加到历史
+    if (context) {
+      const systemMessage: Message = {
+        id: `msg-ctx-${Date.now()}`,
+        role: 'system',
+        content: context,
+        timestamp: Date.now(),
+      };
+      this.messages.push(systemMessage);
+    }
+  }
+
+  /**
+   * 设置 PR 关联信息
+   */
+  setPRLink(link: PRLink): void {
+    this.prLink = link;
+    // 更新会话的 PR 关联
+    if (this.sessionId) {
+      try {
+        const sessionManager = getSessionManager();
+        sessionManager.updateSession(this.sessionId, { prLink: link }).catch((error) => {
+          logger.warn('Failed to update session with PR link', { error });
+        });
+      } catch (error) {
+        logger.warn('Failed to get session manager for PR link update', { error });
+      }
+    }
+  }
+
+  /**
+   * 获取 PR 关联信息
+   */
+  getPRLink(): PRLink | null {
+    return this.prLink;
   }
 }
 

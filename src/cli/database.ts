@@ -14,6 +14,7 @@ import type {
   ModelProvider,
   TodoItem,
   TokenUsage,
+  PRLink,
 } from '../shared/types';
 
 // ----------------------------------------------------------------------------
@@ -137,6 +138,13 @@ export class CLIDatabaseService {
       // 列已存在
     }
 
+    // 添加 pr_link 列（如果不存在）
+    try {
+      this.db.exec(`ALTER TABLE sessions ADD COLUMN pr_link TEXT`);
+    } catch {
+      // 列已存在
+    }
+
     // Tool Executions 表 (缓存)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS tool_executions (
@@ -255,13 +263,18 @@ export class CLIDatabaseService {
     const stmt = this.db.prepare(`
       UPDATE sessions
       SET title = ?, generation_id = ?, model_provider = ?, model_name = ?,
-          working_directory = ?, updated_at = ?, workspace = ?, status = ?, last_token_usage = ?
+          working_directory = ?, updated_at = ?, workspace = ?, status = ?, last_token_usage = ?,
+          pr_link = ?
       WHERE id = ?
     `);
 
     const lastTokenUsage = updates.lastTokenUsage !== undefined
       ? JSON.stringify(updates.lastTokenUsage)
       : (session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null);
+
+    const prLink = updates.prLink !== undefined
+      ? JSON.stringify(updates.prLink)
+      : (session.prLink ? JSON.stringify(session.prLink) : null);
 
     stmt.run(
       updates.title ?? session.title,
@@ -273,6 +286,7 @@ export class CLIDatabaseService {
       updates.workspace !== undefined ? updates.workspace : session.workspace,
       updates.status ?? session.status ?? 'idle',
       lastTokenUsage,
+      prLink,
       sessionId
     );
   }
@@ -287,6 +301,15 @@ export class CLIDatabaseService {
     if (row.last_token_usage) {
       try {
         lastTokenUsage = JSON.parse(row.last_token_usage as string);
+      } catch {
+        // 忽略解析错误
+      }
+    }
+
+    let prLink: PRLink | undefined;
+    if (row.pr_link) {
+      try {
+        prLink = JSON.parse(row.pr_link as string);
       } catch {
         // 忽略解析错误
       }
@@ -307,6 +330,7 @@ export class CLIDatabaseService {
       workspace: row.workspace as string | undefined,
       status: (row.status as SessionStatus) || 'idle',
       lastTokenUsage,
+      prLink,
     };
   }
 

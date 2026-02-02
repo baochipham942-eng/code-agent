@@ -5,7 +5,6 @@
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import Database from 'better-sqlite3';
 import type {
   Session,
   SessionStatus,
@@ -31,8 +30,11 @@ type SQLiteRow = Record<string, unknown>;
 // CLI Database Service
 // ----------------------------------------------------------------------------
 
+// 延迟加载 better-sqlite3，避免 native 模块版本冲突
+let Database: typeof import('better-sqlite3') | null = null;
+
 export class CLIDatabaseService {
-  private db: Database.Database | null = null;
+  private db: import('better-sqlite3').Database | null = null;
   private dbPath: string;
 
   constructor() {
@@ -56,6 +58,15 @@ export class CLIDatabaseService {
   // --------------------------------------------------------------------------
 
   async initialize(): Promise<void> {
+    // 延迟加载 better-sqlite3
+    if (!Database) {
+      try {
+        Database = require('better-sqlite3');
+      } catch (error) {
+        throw new Error(`Failed to load better-sqlite3: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+
     const dir = path.dirname(this.dbPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });

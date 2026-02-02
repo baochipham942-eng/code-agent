@@ -5,7 +5,6 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import Database from 'better-sqlite3';
 import type {
   Session,
   SessionStatus,
@@ -79,17 +78,35 @@ export interface MemoryRecord {
 // 使用 Record<string, unknown> 代替 any，但具体字段访问仍需类型断言
 type SQLiteRow = Record<string, unknown>;
 
+// 延迟加载 better-sqlite3，处理 native 模块版本不匹配
+let Database: typeof import('better-sqlite3') | null = null;
+
 // ----------------------------------------------------------------------------
 // Database Service
 // ----------------------------------------------------------------------------
 
 export class DatabaseService {
-  private db: Database.Database | null = null;
+  private db: import('better-sqlite3').Database | null = null;
   private dbPath: string;
+  private initializationError: Error | null = null;
 
   constructor() {
     const userDataPath = app?.getPath?.('userData') || process.cwd();
     this.dbPath = path.join(userDataPath, 'code-agent.db');
+  }
+
+  /**
+   * 检查数据库是否可用（用于功能降级判断）
+   */
+  isAvailable(): boolean {
+    return this.db !== null && this.initializationError === null;
+  }
+
+  /**
+   * 获取初始化错误（如果有）
+   */
+  getInitializationError(): Error | null {
+    return this.initializationError;
   }
 
   // --------------------------------------------------------------------------
@@ -97,6 +114,17 @@ export class DatabaseService {
   // --------------------------------------------------------------------------
 
   async initialize(): Promise<void> {
+    // 延迟加载 better-sqlite3
+    if (!Database) {
+      try {
+        Database = require('better-sqlite3');
+      } catch (error) {
+        this.initializationError = error as Error;
+        console.warn('[DatabaseService] better-sqlite3 not available:', (error as Error).message?.split('\n')[0]);
+        return; // 不抛出错误，允许应用继续运行（功能降级）
+      }
+    }
+
     // 确保目录存在（异步，性能优化）
     const dir = path.dirname(this.dbPath);
     await fs.promises.mkdir(dir, { recursive: true }).catch((err) => {
@@ -106,15 +134,20 @@ export class DatabaseService {
       }
     });
 
-    this.db = new Database(this.dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('foreign_keys = ON');
-    this.db.pragma('busy_timeout = 5000'); // 等待锁最多 5 秒
+    try {
+      this.db = new Database(this.dbPath);
+      this.db.pragma('journal_mode = WAL');
+      this.db.pragma('foreign_keys = ON');
+      this.db.pragma('busy_timeout = 5000'); // 等待锁最多 5 秒
 
-    this.createTables();
-    this.createSchemaVersionTable();
-    this.migrateSessionsTable();
-    this.createIndexes();
+      this.createTables();
+      this.createSchemaVersionTable();
+      this.migrateSessionsTable();
+      this.createIndexes();
+    } catch (error) {
+      this.initializationError = error as Error;
+      console.warn('[DatabaseService] Failed to initialize database:', (error as Error).message);
+    }
   }
 
   /**

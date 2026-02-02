@@ -109,8 +109,10 @@ export class DatabaseService {
     this.db = new Database(this.dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
+    this.db.pragma('busy_timeout = 5000'); // 等待锁最多 5 秒
 
     this.createTables();
+    this.createSchemaVersionTable();
     this.migrateSessionsTable();
     this.createIndexes();
   }
@@ -430,6 +432,46 @@ export class DatabaseService {
         created_at INTEGER NOT NULL
       )
     `);
+  }
+
+  /**
+   * 创建 schema_version 表用于版本追踪
+   */
+  private createSchemaVersionTable(): void {
+    if (!this.db) return;
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS schema_version (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        version INTEGER NOT NULL DEFAULT 1,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+
+    // 初始化版本记录
+    const row = this.db.prepare('SELECT version FROM schema_version WHERE id = 1').get();
+    if (!row) {
+      this.db.prepare('INSERT INTO schema_version (id, version, updated_at) VALUES (1, 1, ?)').run(Date.now());
+    }
+  }
+
+  /**
+   * 获取当前 schema 版本
+   */
+  getSchemaVersion(): number {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const row = this.db.prepare('SELECT version FROM schema_version WHERE id = 1').get() as SQLiteRow | undefined;
+    return (row?.version as number) || 1;
+  }
+
+  /**
+   * 更新 schema 版本
+   */
+  private setSchemaVersion(version: number): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.prepare('UPDATE schema_version SET version = ?, updated_at = ? WHERE id = 1').run(version, Date.now());
   }
 
   private createIndexes(): void {
@@ -1120,18 +1162,21 @@ export class DatabaseService {
 
     const now = Date.now();
 
-    // 删除旧的 todos
-    this.db.prepare('DELETE FROM todos WHERE session_id = ?').run(sessionId);
+    // 使用事务确保删除+插入的原子性
+    this.runInTransaction(() => {
+      // 删除旧的 todos
+      this.db!.prepare('DELETE FROM todos WHERE session_id = ?').run(sessionId);
 
-    // 插入新的 todos
-    const stmt = this.db.prepare(`
-      INSERT INTO todos (session_id, content, status, active_form, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
+      // 插入新的 todos
+      const stmt = this.db!.prepare(`
+        INSERT INTO todos (session_id, content, status, active_form, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
 
-    for (const todo of todos) {
-      stmt.run(sessionId, todo.content, todo.status, todo.activeForm, now, now);
-    }
+      for (const todo of todos) {
+        stmt.run(sessionId, todo.content, todo.status, todo.activeForm, now, now);
+      }
+    });
   }
 
   getTodos(sessionId: string): TodoItem[] {
@@ -1215,6 +1260,64 @@ export class DatabaseService {
       eventData: JSON.parse(row.event_data as string),
       createdAt: row.created_at as number,
     }));
+  }
+
+  // --------------------------------------------------------------------------
+  // Transaction Support
+  // --------------------------------------------------------------------------
+
+  /**
+   * 在事务中执行操作
+   *
+   * 保证操作的原子性：要么全部成功，要么全部回滚。
+   * better-sqlite3 的 transaction 是同步的，但包装函数可以是异步的。
+   *
+   * @param fn - 要在事务中执行的函数
+   * @returns 函数的返回值
+   *
+   * @example
+   * db.runInTransaction(() => {
+   *   db.deleteAllTodos(sessionId);
+   *   for (const todo of todos) {
+   *     db.insertTodo(sessionId, todo);
+   *   }
+   * });
+   */
+  runInTransaction<T>(fn: () => T): T {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const transaction = this.db.transaction(fn);
+    return transaction();
+  }
+
+  /**
+   * 备份数据库到指定路径
+   *
+   * @param backupPath - 备份文件路径
+   */
+  async backup(backupPath: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    // better-sqlite3 的 backup 是同步的
+    await this.db.backup(backupPath);
+  }
+
+  /**
+   * 从备份恢复数据库
+   *
+   * 注意：这会关闭当前连接，用备份文件替换数据库，然后重新打开。
+   *
+   * @param backupPath - 备份文件路径
+   */
+  async restoreFromBackup(backupPath: string): Promise<void> {
+    // 关闭当前连接
+    this.close();
+
+    // 复制备份文件到数据库路径
+    await fs.promises.copyFile(backupPath, this.dbPath);
+
+    // 重新初始化
+    await this.initialize();
   }
 
   // --------------------------------------------------------------------------

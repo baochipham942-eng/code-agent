@@ -152,7 +152,16 @@ export type AgentEvent =
   | { type: 'research_detected'; data: ResearchDetectedData }
   // Budget 预警事件
   | { type: 'budget_warning'; data: BudgetEventData }
-  | { type: 'budget_exceeded'; data: BudgetEventData };
+  | { type: 'budget_exceeded'; data: BudgetEventData }
+  // 上下文压缩事件
+  | { type: 'context_compressed'; data: ContextCompressedData };
+
+// 上下文压缩事件数据
+export interface ContextCompressedData {
+  savedTokens: number;
+  strategy?: string;
+  newMessageCount: number;
+}
 
 // Budget 事件数据
 export interface BudgetEventData {

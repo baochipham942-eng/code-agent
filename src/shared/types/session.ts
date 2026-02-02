@@ -20,6 +20,24 @@ export interface TokenUsage {
   timestamp: number;
 }
 
+/**
+ * GitHub PR 关联信息
+ */
+export interface PRLink {
+  /** 仓库所有者 */
+  owner: string;
+  /** 仓库名称 */
+  repo: string;
+  /** PR 编号 */
+  number: number;
+  /** PR 标题 */
+  title?: string;
+  /** PR 分支 */
+  branch?: string;
+  /** 关联时间 */
+  linkedAt: number;
+}
+
 export interface Session {
   id: string;
   title: string;
@@ -35,4 +53,6 @@ export interface Session {
   // 归档状态
   isArchived?: boolean;            // 是否已归档
   archivedAt?: number;             // 归档时间
+  // PR 关联
+  prLink?: PRLink;                 // GitHub PR 关联信息
 }

@@ -10,6 +10,7 @@ import { Command } from 'commander';
 import { chatCommand } from './commands/chat';
 import { runCommand } from './commands/run';
 import { serveCommand } from './commands/serve';
+import { exportCommand } from './commands/export';
 import { version } from '../../package.json';
 
 const program = new Command();
@@ -33,6 +34,7 @@ program
 program.addCommand(chatCommand);
 program.addCommand(runCommand);
 program.addCommand(serveCommand);
+program.addCommand(exportCommand);
 
 // Parse and run
 program.parse();

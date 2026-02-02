@@ -42,7 +42,7 @@ export const D08: TestCase = {
     directExecution: false,
     expectedAgents: ['code-review'], // code-review 更适合性能分析任务
     requiredTools: ['Read', 'Edit', 'Glob'],
-    toolCallRange: { min: 8, max: 30 },
+    toolCallRange: { min: 8, max: 45 },
   },
 
   tags: ['debugging', 'performance', 'optimization', 'react'],

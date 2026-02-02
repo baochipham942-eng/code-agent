@@ -14,10 +14,12 @@ export {
   callGroq,
   callLocal,
   callQwen,
-  callMoonshot,
   callMinimax,
   callPerplexity,
 } from './openai-compatible';
+
+// Moonshot (Kimi) - 使用原生 SSE 处理
+export { callMoonshot } from './moonshot';
 
 // Gemini
 export { callGemini } from './gemini';

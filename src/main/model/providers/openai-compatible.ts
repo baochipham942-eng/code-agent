@@ -217,65 +217,7 @@ export async function callQwen(
   const data = await response.json();
   return parseOpenAIResponse(data);
 }
-
-/**
- * Call Moonshot (Kimi) API
- * 支持 Kimi K2.5 包月套餐（第三方代理）
- * @param signal - AbortSignal for cancellation support
- */
-export async function callMoonshot(
-  messages: ModelMessage[],
-  tools: ToolDefinition[],
-  config: ModelConfig,
-  onStream?: StreamCallback,
-  signal?: AbortSignal
-): Promise<ModelResponse> {
-  // Kimi K2.5 使用单独的 API key 和 URL（包月套餐）
-  const isKimiK25 = config.model === 'kimi-k2.5';
-  const baseUrl = isKimiK25
-    ? (process.env.KIMI_K25_API_URL || 'https://cn.haioi.net/v1')
-    : (config.baseUrl || 'https://api.moonshot.cn/v1');
-  const apiKey = isKimiK25
-    ? (process.env.KIMI_K25_API_KEY || config.apiKey)
-    : config.apiKey;
-
-  const moonshotTools = convertToolsToOpenAI(tools);
-
-  const requestBody: Record<string, unknown> = {
-    model: config.model || 'moonshot-v1-8k',
-    messages: convertToOpenAIMessages(messages),
-    temperature: config.temperature ?? 0.7,
-    max_tokens: config.maxTokens ?? 8192,
-    stream: !!onStream,
-  };
-
-  if (moonshotTools.length > 0) {
-    requestBody.tools = moonshotTools;
-    requestBody.tool_choice = 'auto';
-  }
-
-  const response = await electronFetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(requestBody),
-    signal,
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Moonshot API error: ${response.status} - ${error}`);
-  }
-
-  if (onStream && response.body) {
-    return handleStream(response.body, onStream, signal);
-  }
-
-  const data = await response.json();
-  return parseOpenAIResponse(data);
-}
+// callMoonshot 已移至 moonshot.ts（使用原生 SSE 处理）
 
 /**
  * Call MiniMax API

@@ -14,6 +14,87 @@ import {
   safeJsonParse,
 } from './shared';
 
+// ============================================================================
+// 智谱 API 限流器 - 防止并发过高触发限流
+// ============================================================================
+
+class ZhipuRateLimiter {
+  private queue: Array<{
+    resolve: () => void;
+    reject: (error: Error) => void;
+  }> = [];
+  private activeRequests = 0;
+  private readonly maxConcurrent: number;
+  private readonly minInterval: number; // 最小请求间隔（毫秒）
+  private lastRequestTime = 0;
+
+  constructor(maxConcurrent = 3, minIntervalMs = 200) {
+    this.maxConcurrent = maxConcurrent;
+    this.minInterval = minIntervalMs;
+  }
+
+  async acquire(signal?: AbortSignal): Promise<void> {
+    // 检查是否已取消
+    if (signal?.aborted) {
+      throw new Error('Request was cancelled');
+    }
+
+    return new Promise((resolve, reject) => {
+      // 设置取消监听
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          const idx = this.queue.findIndex(item => item.resolve === resolve);
+          if (idx >= 0) {
+            this.queue.splice(idx, 1);
+            reject(new Error('Request was cancelled while waiting'));
+          }
+        }, { once: true });
+      }
+
+      this.queue.push({ resolve, reject });
+      this.tryNext();
+    });
+  }
+
+  release(): void {
+    this.activeRequests = Math.max(0, this.activeRequests - 1);
+    this.tryNext();
+  }
+
+  private tryNext(): void {
+    if (this.activeRequests >= this.maxConcurrent || this.queue.length === 0) {
+      return;
+    }
+
+    const now = Date.now();
+    const timeSinceLastRequest = now - this.lastRequestTime;
+
+    if (timeSinceLastRequest < this.minInterval) {
+      // 等待最小间隔后重试
+      setTimeout(() => this.tryNext(), this.minInterval - timeSinceLastRequest);
+      return;
+    }
+
+    const next = this.queue.shift();
+    if (next) {
+      this.activeRequests++;
+      this.lastRequestTime = Date.now();
+      logger.debug(`[智谱限流] 请求开始, 当前并发: ${this.activeRequests}/${this.maxConcurrent}, 队列: ${this.queue.length}`);
+      next.resolve();
+    }
+  }
+
+  getStatus(): { active: number; queued: number } {
+    return { active: this.activeRequests, queued: this.queue.length };
+  }
+}
+
+// 全局限流器实例
+const zhipuLimiter = new ZhipuRateLimiter(
+  parseInt(process.env.ZHIPU_MAX_CONCURRENT || '3'),
+  parseInt(process.env.ZHIPU_MIN_INTERVAL_MS || '200')
+);
+
 /**
  * Call 智谱 GLM API
  * @param signal - AbortSignal for cancellation support
@@ -65,8 +146,16 @@ export async function callZhipu(
     throw new Error('Request was cancelled before starting');
   }
 
-  // 使用原生 https 模块处理流式响应
-  return callZhipuStream(baseUrl, requestBody, config.apiKey!, onStream, signal);
+  // 限流：等待获取请求许可
+  await zhipuLimiter.acquire(signal);
+
+  try {
+    // 使用原生 https 模块处理流式响应
+    return await callZhipuStream(baseUrl, requestBody, config.apiKey!, onStream, signal);
+  } finally {
+    // 释放请求许可
+    zhipuLimiter.release();
+  }
 }
 
 /**

@@ -15,7 +15,7 @@ import {
   HTML_GENERATION_RULES,
   PROFESSIONAL_OBJECTIVITY_RULES,
   CODE_REFERENCE_RULES,
-  PARALLEL_TOOLS_RULES,
+  // PARALLEL_TOOLS_RULES,      // 已合并到 Gen8 prompt
   PLAN_MODE_RULES,
   GIT_SAFETY_RULES,
   INJECTION_DEFENSE_RULES,
@@ -23,9 +23,9 @@ import {
   ERROR_HANDLING_RULES,
   CODE_SNIPPET_RULES,
   ATTACHMENT_HANDLING_RULES,
-  TOOL_USAGE_POLICY,
-  TOOL_DECISION_TREE,
-  TASK_MANAGEMENT_RULES,
+  // TOOL_USAGE_POLICY,         // 已合并到 Gen8 prompt
+  // TOOL_DECISION_TREE,        // 已合并到 Gen8 prompt
+  // TASK_MANAGEMENT_RULES,     // 已合并到 Gen8 prompt (todo_write)
   TASK_CLASSIFICATION_RULES,
 } from './rules';
 import {
@@ -79,22 +79,21 @@ const RULE_TIERS = {
   ],
 
   /**
-   * Collaboration tier (Gen2+): Adds parallel execution and decision tree
+   * Collaboration tier (Gen2+): 已合并到 Gen8 prompt
+   * - PARALLEL_TOOLS_RULES → Gen8 "并行派发" 部分
+   * - TOOL_DECISION_TREE → Gen8 "核心工具" 表格
    */
-  collaboration: [
-    PARALLEL_TOOLS_RULES,
-    TOOL_DECISION_TREE,
-  ],
+  collaboration: [],  // 已合并到 Gen8 prompt
 
   /**
-   * Standard tier (Gen3+): Adds planning, git safety, tool usage policy, and task management
+   * Standard tier (Gen3+): Adds planning, git safety
+   * - TOOL_USAGE_POLICY → 已合并到 Gen8 "强制规则"
+   * - TASK_MANAGEMENT_RULES → 已合并到 Gen8 "todo_write"
    */
   standard: [
     PLAN_MODE_RULES,
     GIT_SAFETY_RULES,
     INJECTION_DEFENSE_RULES,
-    TOOL_USAGE_POLICY,
-    TASK_MANAGEMENT_RULES,
   ],
 
   /**

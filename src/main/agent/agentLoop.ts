@@ -2049,14 +2049,16 @@ ${deferredToolsSummary}
     }
 
     // Proactive compression check: trigger at 75% capacity to prevent hitting hard limits
+    // 注意：maxTokens 是模型的最大输出限制，不是上下文窗口大小
+    // 上下文窗口大小应该更大（如 64K-128K），这里使用保守估计 64000
     const currentTokens = estimateModelMessageTokens(modelMessages);
-    const maxTokens = this.modelConfig.maxTokens || 128000;
-    if (this.messageHistoryCompressor.shouldProactivelyCompress(currentTokens, maxTokens)) {
-      logger.info(`[AgentLoop] Proactive compression triggered: ${currentTokens}/${maxTokens} tokens (${Math.round(currentTokens / maxTokens * 100)}%)`);
+    const contextWindowSize = 64000; // 上下文窗口大小（保守估计）
+    if (this.messageHistoryCompressor.shouldProactivelyCompress(currentTokens, contextWindowSize)) {
+      logger.info(`[AgentLoop] Proactive compression triggered: ${currentTokens}/${contextWindowSize} tokens (${Math.round(currentTokens / contextWindowSize * 100)}%)`);
       logCollector.agent('INFO', 'Proactive compression triggered', {
         currentTokens,
-        maxTokens,
-        usagePercent: Math.round(currentTokens / maxTokens * 100),
+        maxTokens: contextWindowSize,
+        usagePercent: Math.round(currentTokens / contextWindowSize * 100),
       });
     }
 

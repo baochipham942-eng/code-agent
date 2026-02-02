@@ -65,3 +65,39 @@ export {
 // Re-export ToolCache function
 import { getToolCache as _getToolCache } from './toolCache';
 export const getToolCache = _getToolCache;
+
+// ============================================================================
+// 资源管理模块（v0.17+）
+// ============================================================================
+
+export {
+  TimeoutController,
+  withTimeout,
+  createCancellableTimeout,
+} from './timeoutController';
+
+export {
+  checkDiskSpace,
+  assertDiskSpaceAvailable,
+  formatBytes,
+  DISK_THRESHOLDS,
+  type DiskSpaceCheckResult,
+} from './diskSpace';
+
+export {
+  onShutdown,
+  removeShutdownHandler,
+  gracefulShutdown,
+  isInShutdown,
+  getShutdownManager,
+  setupDefaultSignalHandlers,
+} from './gracefulShutdown';
+
+export {
+  FileLogger,
+  getFileLogger,
+  initFileLogger,
+  closeFileLogger,
+  LOG_CONFIG,
+  type FileLoggerConfig,
+} from './fileLogger';

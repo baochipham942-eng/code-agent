@@ -68,7 +68,9 @@ export class TaskComplexityAnalyzer {
     const stepCount = stepIndicators.filter(s => lowerMsg.includes(s)).length;
 
     // 简单规则4: 是否是审计/审查/分析类任务（这类任务通常需要委派子代理）
-    const auditKeywords = ['审计', '审查', 'audit', 'review', '安全', 'security', '全面分析', '代码质量', 'code review'];
+    // 注意：避免过宽泛的匹配（如"安全"可能只是描述安全要求，不是审计任务）
+    // 只匹配明确的审计动作词，不匹配一般性安全描述
+    const auditKeywords = ['审计', '审查', '安全检查', '漏洞扫描', '安全分析', '代码质量检查', 'audit', 'code review', 'security audit'];
     const isAuditTask = auditKeywords.some(k => lowerMsg.includes(k));
 
     // 简单规则5: 是否有多维度描述（1. 2. 3. 或者 - - - 列表）

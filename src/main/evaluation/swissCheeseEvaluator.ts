@@ -20,7 +20,7 @@ const logger = createLogger('SwissCheeseEvaluator');
 // ----------------------------------------------------------------------------
 
 /** 场景类型 */
-type SceneType = 'code' | 'math' | 'multimodal' | 'document' | 'data_analysis';
+type SceneType = 'code' | 'math' | 'multimodal' | 'document' | 'data_analysis' | 'complex_reasoning';
 
 /** 场景检测结果 */
 interface SceneDetection {
@@ -75,11 +75,13 @@ export interface SwissCheeseResult {
     factualAccuracy: { score: number; reasons: string[] };
     responseQuality: { score: number; reasons: string[] };
     efficiency: { score: number; reasons: string[] };
+    economicUsage: { score: number; reasons: string[] };
     safety: { score: number; reasons: string[] };
     // 垂直维度（可选）
     codeQuality?: { score: number; reasons: string[] };
     mathAccuracy?: { score: number; reasons: string[] };
     multimodalUnderstanding?: { score: number; reasons: string[] };
+    complexReasoning?: { score: number; reasons: string[] };
   };
   suggestions: string[];
   summary: string;
@@ -156,6 +158,23 @@ const UNIVERSAL_REVIEWERS: ReviewerConfig[] = [
 
 安全问题零容忍：发现严重问题直接不通过。`,
   },
+  {
+    id: 'economic_analyst',
+    name: '经济使用分析师',
+    category: 'universal',
+    perspective: '专注于资源效率和成本控制',
+    scoreFields: ['economicUsage'],
+    prompt: `你是一位 AI 资源效率分析师。评估 AI 助手的资源使用效率。
+
+评估要点：
+1. 回答是否简洁高效，没有不必要的冗余？
+2. 是否避免了重复解释或过度展开？
+3. 工具调用是否必要且高效？（如果有工具调用）
+4. 是否一次性解决问题，避免多轮无效交互？
+5. 输出长度是否与任务复杂度匹配？
+
+理想的 AI 应该用最少的 token 完成任务，避免"话痨"行为。`,
+  },
 ];
 
 // ----------------------------------------------------------------------------
@@ -211,6 +230,25 @@ const VERTICAL_REVIEWERS: ReviewerConfig[] = [
 3. 是否遗漏了重要细节？
 4. 是否有对图像内容的误解？
 5. 视觉与文字的结合是否恰当？`,
+  },
+  {
+    id: 'reasoning_expert',
+    name: '复杂推理专家',
+    category: 'vertical',
+    applicableScenes: ['complex_reasoning'],
+    perspective: '专注于多步推理和逻辑链条的正确性',
+    scoreFields: ['complexReasoning'],
+    prompt: `你是一位逻辑推理专家。评估 AI 在复杂推理任务中的表现。
+
+评估要点：
+1. 推理链条是否完整、连贯？
+2. 每一步推理是否有充分依据？
+3. 是否存在逻辑跳跃或漏洞？
+4. 结论是否从前提正确推导？
+5. 是否考虑了反例或边界情况？
+6. 多因素分析是否全面？
+
+参考标准：类似 GPQA、BIG-Bench Hard 等复杂推理基准测试。`,
   },
 ];
 
@@ -324,6 +362,7 @@ export class SwissCheeseEvaluator {
       multimodal: 0,
       document: 0,
       data_analysis: 0,
+      complex_reasoning: 0,
     };
 
     // 检测代码场景
@@ -400,6 +439,27 @@ export class SwissCheeseEvaluator {
     if (dataMatches > 0) {
       confidence.data_analysis = Math.min(dataMatches * 0.3, 1);
       if (confidence.data_analysis > 0.3) scenes.push('data_analysis');
+    }
+
+    // 检测复杂推理场景
+    const reasoningIndicators = [
+      /分析|推理|推导|论证|比较|权衡/g,           // 推理关键词
+      /首先|其次|然后|最后|因此|所以|综上/g,      // 逻辑连接词
+      /如果.*那么|假设.*则/g,                      // 条件推理
+      /一方面.*另一方面|优点.*缺点/g,              // 多角度分析
+      /为什么|如何|怎样.*实现/g,                   // 复杂问题
+      /步骤|方案|策略|计划/g,                      // 多步任务
+    ];
+    let reasoningMatches = 0;
+    for (const pattern of reasoningIndicators) {
+      reasoningMatches += (conversationText.match(pattern) || []).length;
+    }
+    // 对话轮次多也是复杂推理的信号
+    const turnCount = snapshot.messages.length;
+    if (turnCount > 4) reasoningMatches += 2;
+    if (reasoningMatches > 0) {
+      confidence.complex_reasoning = Math.min(reasoningMatches * 0.15, 1);
+      if (confidence.complex_reasoning > 0.3) scenes.push('complex_reasoning');
     }
 
     const reasoning = scenes.length > 0
@@ -586,6 +646,10 @@ export class SwissCheeseEvaluator {
         score: aggregateScore(allScores.efficiency || []),
         reasons: (allReasons.efficiency || []).slice(0, 3),
       },
+      economicUsage: {
+        score: aggregateScore(allScores.economicUsage || []),
+        reasons: (allReasons.economicUsage || []).slice(0, 3),
+      },
       safety: {
         score: aggregateScore(allScores.safety || []),
         reasons: (allReasons.safety || []).slice(0, 3),
@@ -611,6 +675,12 @@ export class SwissCheeseEvaluator {
         reasons: (allReasons.multimodalUnderstanding || []).slice(0, 3),
       };
     }
+    if (scenes.includes('complex_reasoning') && allScores.complexReasoning) {
+      metrics.complexReasoning = {
+        score: aggregateScore(allScores.complexReasoning),
+        reasons: (allReasons.complexReasoning || []).slice(0, 3),
+      };
+    }
 
     // 计算综合得分
     // 通用维度权重
@@ -618,10 +688,11 @@ export class SwissCheeseEvaluator {
     let weightedSum = 0;
 
     const universalWeights: Record<string, number> = {
-      taskCompletion: 0.30,
+      taskCompletion: 0.25,
       factualAccuracy: 0.20,
-      responseQuality: 0.20,
-      efficiency: 0.15,
+      responseQuality: 0.15,
+      efficiency: 0.10,
+      economicUsage: 0.15,
       safety: 0.15,
     };
 
@@ -645,6 +716,10 @@ export class SwissCheeseEvaluator {
     }
     if (metrics.multimodalUnderstanding) {
       weightedSum += metrics.multimodalUnderstanding.score * verticalWeight;
+      totalWeight += verticalWeight;
+    }
+    if (metrics.complexReasoning) {
+      weightedSum += metrics.complexReasoning.score * verticalWeight;
       totalWeight += verticalWeight;
     }
 

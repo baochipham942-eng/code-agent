@@ -374,3 +374,52 @@ NODE_MODULE_VERSION 127. This version of Node.js requires NODE_MODULE_VERSION 13
 **修复**：
 1. 在 `sessionAnalytics.ts` 添加完整的维度枚举和映射
 2. 提高复杂推理触发阈值：需要 ≥3 个匹配，且排除简单对话（≤2轮且<500字符）
+
+### 2026-02-02: 第三方代理的 SSE 格式问题
+
+**问题**：Kimi K2.5 第三方代理返回非标准 SSE 格式
+
+```
+: OPENROUTER PROCESSING
+
+data: {"id":"gen-xxx","choices":[...]}
+```
+
+**错误做法**：使用 axios/electronFetch 处理流式响应（axios 不支持真正的 SSE 流式处理）
+
+**正确做法**：使用原生 `https` 模块处理 SSE：
+1. 按 `\n` 分割 buffer
+2. 忽略以 `:` 开头的注释行
+3. 只处理 `data:` 开头的行
+4. 处理 `[DONE]` 结束标记
+
+**相关代码**：`src/main/model/providers/moonshot.ts`
+
+### 2026-02-02: CLI vs Electron 原生模块编译
+
+**问题**：CLI 和 Electron 需要不同版本的原生模块
+
+| 运行环境 | Node ABI 版本 | 编译方式 |
+|----------|---------------|----------|
+| CLI (node dist/cli/index.cjs) | NODE_MODULE_VERSION 127 | `npm rebuild --build-from-source` |
+| Electron App | NODE_MODULE_VERSION 130 | `npm run rebuild-native` (使用 Electron headers) |
+
+**注意**：
+- `npm run rebuild-native` 是为 Electron 编译
+- 如果要测试 CLI，需要先用 `npm rebuild` 为 Node.js 重编译
+- 打包前必须运行 `npm run rebuild-native`
+
+### 2026-02-02: L4 复杂任务 + Kimi K2.5 的工具调用问题
+
+**现象**：L4 测试大部分在 6-10 秒内失败，`tool-used: 0/7`
+
+**原因分析**：
+- Kimi K2.5 在复杂任务时可能倾向于直接给文本建议
+- 没有调用任何工具，导致 `agent-dispatched` 和 `tool-used` 验证失败
+
+**后续调查方向**：
+1. 检查 gen8 的 system prompt 是否足够强调工具使用
+2. 验证 Kimi K2.5 的 function calling 能力（尤其是工具数量多时）
+3. 考虑添加"必须使用工具"的强制提示
+
+**临时解决方案**：对于需要实际执行的任务，可能需要更强的模型或更明确的提示

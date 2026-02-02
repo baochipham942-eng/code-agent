@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 5.0 (对应 v0.16.15)
-> 日期: 2026-02-01
+> 版本: 5.1 (对应 v0.16.17)
+> 日期: 2026-02-02
 > 作者: Lin Chen
 
 本文档已拆分为模块化的架构文档，便于维护和查阅。
@@ -35,6 +35,22 @@
 | **CLI 接口** | `src/main/cli/` | 命令行交互模式 |
 | **多渠道接入** | `src/main/channels/` | 飞书 Webhook 等渠道支持 |
 | **Skills 系统** | `src/main/skills/` | 用户可定义技能 |
+
+### v0.16.16+ 新增模块
+
+| 模块 | 位置 | 描述 |
+|------|------|------|
+| **统一配置目录** | `src/main/config/configPaths.ts` | `.code-agent/` 配置目录结构 |
+| **基础设施服务** | `src/main/services/infra/` | 磁盘监控、文件日志、优雅关闭 |
+| **错误学习系统** | `src/main/memory/errorLearning.ts` | 错误模式学习与避免 |
+| **记忆衰减** | `src/main/memory/memoryDecay.ts` | 基于时间的记忆权重衰减 |
+| **动态提醒** | `src/main/generation/prompts/dynamicReminders.ts` | 上下文感知的动态提示 |
+| **Few-shot 示例** | `src/main/generation/prompts/fewShotExamples.ts` | 任务类型示例管理 |
+| **执行监控** | `src/main/planning/executionMonitor.ts` | 计划执行进度监控 |
+| **可行性检查** | `src/main/planning/feasibilityChecker.ts` | 任务可行性评估 |
+| **恢复策略** | `src/main/agent/recovery/` | 任务分解、降级、学习策略 |
+| **原子写入** | `src/main/tools/utils/atomicWrite.ts` | 文件写入原子性保证 |
+| **Moonshot Provider** | `src/main/model/providers/moonshot.ts` | Kimi K2.5 SSE 流式支持 |
 
 ### 架构决策记录 (ADR)
 

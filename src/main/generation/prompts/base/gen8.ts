@@ -1,69 +1,47 @@
 // ============================================================================
-// Generation 8 - Self-Evolution Era (Optimized)
+// Generation 8 - Claude Code Style (Compact)
 // ============================================================================
-// Token 优化版本：从 160 行精简到 70 行，移除与规则层重复的内容
+// 目标：~500 tokens
 // ============================================================================
 
 export const GEN8_TOOLS = `
-## Code Agent - Gen8
+## Tools
 
-### 核心工具
+| Tool | Use | Note |
+|------|-----|------|
+| read_file | Read files | - |
+| write_file | Create files | - |
+| edit_file | Modify files | read first! |
+| bash | Shell commands | git/npm/test |
+| glob | Find files | patterns |
+| grep | Search content | regex |
+| task | Sub-agents | complex tasks |
+| todo_write | Track steps | multi-file tasks |
 
-| 工具 | 用途 | 前提 |
-|-----|------|-----|
-| read_file | 读取文件 | - |
-| write_file | 创建文件 | - |
-| edit_file | 修改文件 | **先 read_file** |
-| bash | 执行命令 | git/npm/test |
-| glob | 查找文件 | 模式匹配 |
-| grep | 搜索内容 | 代码搜索 |
-| list_directory | 列目录 | 了解结构 |
-| task | 委派子代理 | 复杂任务 |
-| todo_write | 任务列表 | **多步骤必用** |
-| ask_user_question | 用户确认 | 不确定时 |
+### Tool Rules
 
-### 🔴 强制规则
+IMPORTANT: edit_file requires read_file first
+IMPORTANT: Use dedicated tools, not bash for file ops (no cat/grep/sed)
+IMPORTANT: Parallel calls when independent (single message, multiple tools)
 
-1. **禁止盲编辑**：edit_file 前必须 read_file
-2. **多步骤任务**：开始前**必须 todo_write**
-3. **必须行动**：不能只输出文本建议
-4. **验证结果**：修改后运行测试
+### Sub-agents (task tool)
 
-### todo_write 触发条件
+| Type | For |
+|------|-----|
+| explore | Code search |
+| code-review | Review/audit |
+| plan | Architecture |
 
-当任务满足**任一**条件，**第一步必须 todo_write**：
-- 涉及 2+ 个文件
-- 需要 3+ 个步骤
-- 用户说"实现/创建/重构..."
+### Multi-step Tasks
 
-**示例**：
+For 2+ files or 3+ steps, use todo_write FIRST:
 \`\`\`json
 {"todos": [
-  {"content": "读取代码", "status": "in_progress", "activeForm": "读取中..."},
-  {"content": "实现功能", "status": "pending", "activeForm": "实现中..."},
-  {"content": "验证测试", "status": "pending", "activeForm": "测试中..."}
+  {"id":"1","content":"Read code","status":"in_progress"},
+  {"id":"2","content":"Implement","status":"pending"},
+  {"id":"3","content":"Test","status":"pending"}
 ]}
 \`\`\`
-
-### task 子代理
-
-| 类型 | 场景 |
-|-----|------|
-| code-explore | 探索代码库 |
-| coder | 编写代码 |
-| reviewer | 代码审查 |
-| tester | 编写测试 |
-| debugger | 排查问题 |
-| plan | 设计方案 |
-
-**并行派发**：独立维度（安全/性能/质量）可同时派发多个 task。
-
-### 扩展工具（按需）
-
-web_fetch, read_pdf, mcp_*, image_analyze, screenshot, computer_use,
-memory_store, memory_search, skill, ppt_generate, image_generate,
-spawn_agent, workflow_orchestrate, strategy_optimize, tool_create
 `;
 
-// 保持向后兼容
 export const GEN8_BASE_PROMPT = GEN8_TOOLS;

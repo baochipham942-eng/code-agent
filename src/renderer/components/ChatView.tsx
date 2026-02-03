@@ -35,7 +35,7 @@ import {
 export const ChatView: React.FC = () => {
   const { currentGeneration, showPreviewPanel } = useAppStore();
   const { todos, currentSessionId } = useSessionStore();
-  const { messages, isProcessing, sendMessage, cancel, taskProgress, researchDetected, dismissResearchDetected } = useAgent();
+  const { messages, isProcessing, sendMessage, cancel, taskProgress, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
 
   // Plan 状态
   const [plan, setPlan] = useState<TaskPlan | null>(null);
@@ -187,6 +187,7 @@ export const ChatView: React.FC = () => {
           onSend={handleSendMessage}
           disabled={effectiveIsProcessing}
           isProcessing={effectiveIsProcessing}
+          isInterrupting={isInterrupting}
           onStop={cancel}
           hasPlan={!!plan}
           onPlanClick={() => setShowPlanPanel(true)}
@@ -224,6 +225,34 @@ const ThinkingIndicator: React.FC = () => {
 
 // Enhanced thinking indicator with task progress - Claude/ChatGPT style
 const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ progress }) => {
+  // 工具名称友好化映射
+  const toolDisplayNames: Record<string, string> = {
+    bash: '执行命令',
+    read_file: '读取文件',
+    write_file: '创建文件',
+    edit_file: '编辑文件',
+    glob: '搜索文件',
+    grep: '搜索内容',
+    list_directory: '浏览目录',
+    task: '委托子任务',
+    web_search: '搜索网络',
+    web_fetch: '获取网页',
+    ppt_generate: '生成 PPT',
+    image_generate: '生成图片',
+  };
+
+  // 从 step 中提取工具名称并友好化
+  const getDisplayStep = (step: string | undefined): string => {
+    if (!step) return '';
+    // 匹配 "执行 xxx" 或 "xxx" 格式
+    const match = step.match(/^执行\s+(\w+)|^(\w+)/);
+    if (match) {
+      const toolName = match[1] || match[2];
+      return toolDisplayNames[toolName] || step;
+    }
+    return step;
+  };
+
   // 阶段配置
   const phaseConfig: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
     thinking: {
@@ -233,7 +262,7 @@ const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ p
     },
     tool_pending: {
       icon: <Wrench className="w-3.5 h-3.5" />,
-      label: '准备执行',
+      label: '准备中',
       color: 'text-amber-400',
     },
     tool_running: {
@@ -250,6 +279,7 @@ const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ p
 
   const config = phaseConfig[progress.phase] || phaseConfig.thinking;
   const hasToolProgress = progress.phase === 'tool_running' && progress.toolTotal;
+  const displayStep = getDisplayStep(progress.step) || config.label;
 
   return (
     <div className="animate-slideUp">
@@ -259,11 +289,11 @@ const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ p
         <div className="flex items-center gap-2">
           <span className={config.color}>{config.icon}</span>
           <span className={`text-sm ${config.color}`}>
-            {progress.step || config.label}
+            {displayStep}
           </span>
         </div>
 
-        {/* Tool progress bar */}
+        {/* Tool progress - 显示 "第X步/共Y步" 格式 */}
         {hasToolProgress && (
           <div className="flex items-center gap-2">
             <div className="w-20 h-1.5 bg-zinc-700/50 rounded-full overflow-hidden">
@@ -274,7 +304,7 @@ const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ p
             </div>
             <span className="text-xs text-zinc-500">
               {progress.toolIndex !== undefined && progress.toolTotal
-                ? `${progress.toolIndex}/${progress.toolTotal}`
+                ? `第${progress.toolIndex + 1}步 / 共${progress.toolTotal}步`
                 : `${Math.round(progress.progress || 0)}%`}
             </span>
           </div>

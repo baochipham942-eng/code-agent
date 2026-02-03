@@ -42,6 +42,20 @@ async function handlePermissionResponse(
   orchestrator.handlePermissionResponse(payload.requestId, payload.response);
 }
 
+interface InterruptPayload {
+  content: string;
+  attachments?: unknown[];
+}
+
+async function handleInterrupt(
+  getOrchestrator: () => AgentOrchestrator | null,
+  payload: InterruptPayload
+): Promise<void> {
+  const orchestrator = getOrchestrator();
+  if (!orchestrator) throw new Error('Agent not initialized');
+  await orchestrator.interruptAndContinue(payload.content, payload.attachments);
+}
+
 // ----------------------------------------------------------------------------
 // Public Registration
 // ----------------------------------------------------------------------------
@@ -67,6 +81,9 @@ export function registerAgentHandlers(
           return { success: true, data: null };
         case 'permissionResponse':
           await handlePermissionResponse(getOrchestrator, payload as { requestId: string; response: PermissionResponse });
+          return { success: true, data: null };
+        case 'interrupt':
+          await handleInterrupt(getOrchestrator, payload as InterruptPayload);
           return { success: true, data: null };
         default:
           return {

@@ -97,6 +97,8 @@ export class AgentLoop {
   private onEvent: (event: AgentEvent) => void;
   private modelRouter: ModelRouter;
   private isCancelled: boolean = false;
+  private isInterrupted: boolean = false;
+  private interruptMessage: string | null = null;
   private maxIterations: number;
 
   // Planning integration
@@ -559,9 +561,19 @@ export class AgentLoop {
 
     let iterations = 0;
 
-    while (!this.isCancelled && !this.circuitBreaker.isTripped() && iterations < this.maxIterations) {
+    while (!this.isCancelled && !this.isInterrupted && !this.circuitBreaker.isTripped() && iterations < this.maxIterations) {
       iterations++;
       logger.debug(` >>>>>> Iteration ${iterations} START <<<<<<`);
+
+      // Check for interrupt at the start of each iteration
+      if (this.isInterrupted && this.interruptMessage) {
+        logger.info('[AgentLoop] Interrupt detected, breaking loop');
+        this.onEvent({
+          type: 'interrupt_acknowledged',
+          data: { message: '已收到新指令，正在调整方向...' },
+        });
+        break;
+      }
 
       // Budget check
       const budgetBlocked = this.checkAndEmitBudgetStatus();
@@ -1049,6 +1061,37 @@ export class AgentLoop {
 
   cancel(): void {
     this.isCancelled = true;
+  }
+
+  /**
+   * 中断当前执行并设置新的用户消息
+   * 用于 Claude Code 风格的中断功能：用户输入新指令时中断当前任务
+   */
+  interrupt(newMessage: string): void {
+    this.isInterrupted = true;
+    this.interruptMessage = newMessage;
+    logger.info('[AgentLoop] Interrupt requested with new message');
+  }
+
+  /**
+   * 检查是否被中断
+   */
+  wasInterrupted(): boolean {
+    return this.isInterrupted;
+  }
+
+  /**
+   * 获取中断时的新消息
+   */
+  getInterruptMessage(): string | null {
+    return this.interruptMessage;
+  }
+
+  /**
+   * 检查是否正在运行（用于外部检查状态）
+   */
+  isRunning(): boolean {
+    return !this.isCancelled && !this.isInterrupted;
   }
 
   getPlanningService(): PlanningService | undefined {

@@ -437,6 +437,86 @@ pending → ready → running → completed/failed/cancelled/skipped
 
 ---
 
+## v0.16.18 新功能 (2026-02-03)
+
+### Prompt 重构 - Token 减少 81%
+
+对 prompt 系统进行 Claude Code 风格重构，大幅减少 token 消耗：
+
+| 代际 | 优化前 | 优化后 | 减少 |
+|------|--------|--------|------|
+| Gen8 | 7992 tokens | 1485 tokens | **-81%** |
+| Gen3 | ~5000 tokens | 1421 tokens | **-72%** |
+| Gen1 | ~3000 tokens | 990 tokens | **-67%** |
+
+**主要变更**：
+- 新增 `identity.ts` 替代 `constitution/` 目录（6 文件 → 1 文件）
+- 精简 `gen8.ts`，内联关键规则
+- 精简 `bash.ts`，嵌入 Git 工作流
+- 精简 `edit.ts`，移除冗余说明
+- 移除静态规则加载，改为内联 IMPORTANT
+- 删除各 genX.ts 中的向后兼容别名（`GENx_BASE_PROMPT`）
+
+相关代码：`src/main/generation/prompts/`
+
+### 3 层混合 Agent 架构
+
+重构 Agent 系统为 3 层混合架构（详见 CLAUDE.md 的"混合式多 Agent 架构"章节）：
+
+**核心变更**：
+- 新增 `hybrid/` 模块实现 3 层架构
+- `agentDefinition.ts` 重构为适配层
+- 移除 17 个旧 Agent 定义，简化为 4 个核心角色
+- `subagentPipeline` 支持扁平化字段向后兼容
+
+**模型层级配置**：
+| 模型层级 | 模型 | 适用角色 |
+|----------|------|----------|
+| fast | GLM-4-Flash | explore, bash |
+| balanced | GLM-4.7 | plan, reviewer |
+| powerful | Kimi K2.5 | coder, refactorer |
+
+相关代码：`src/main/agent/hybrid/`
+
+### 工具纪律增强
+
+**问题**：
+- 模型把参数写进 file_path（如 `"file.ts offset=10"`）
+- 同一文件重复读取多次
+- edit_file 失败后无限重试相同参数
+
+**解决方案**：
+- P0: 工具描述增加 ✅/❌ 示例，明确参数格式
+- P0: edit_file 增加重试策略指导（失败 2 次换 write_file）
+- P1: AntiPatternDetector 增加策略切换建议
+- P2: 重复调用时返回缓存提示
+
+**测试结果**：M06 从第 5 步卡住 → 完成全部 10 步
+
+相关代码：
+- `src/main/generation/prompts/tools/bash.ts`
+- `src/main/generation/prompts/tools/edit.ts`
+- `src/main/agent/antiPattern/detector.ts`
+
+### 动态工具调用上限
+
+新增 `calculateToolCallMax` 函数，根据任务复杂度自动计算工具调用上限：
+
+| 复杂度 | 基础上限 | 每步额外 |
+|--------|----------|----------|
+| L1 | 20 | +8 |
+| L2 | 35 | +8 |
+| L3 | 50 | +8 |
+| L4 | 70 | +8 |
+| L5 | 100 | +8 |
+| L6 | 150 | +8 |
+
+**示例**：M06（L5，10 步）= 100 + (10 × 8) = 180 次（原硬编码 80 次导致失败）
+
+相关代码：`src/cli/commands/chat.ts`
+
+---
+
 ## 快速参考
 
 ### 打包发布清单
@@ -625,3 +705,50 @@ data: {"id":"gen-xxx","choices":[...]}
 | tool-count-min | ❌ | ✅ |
 
 **结论**：过程验证 6/6 全通过，证明修复有效。结果验证部分失败是因为任务复杂需要更多时间。
+
+### 2026-02-03: 模型参数格式混淆
+
+**问题**：模型把多个参数写进单个字段
+```typescript
+// 错误示例
+read_file({ file_path: "src/app.ts offset=10 limit=50" })
+
+// 正确格式
+read_file({ file_path: "src/app.ts", offset: 10, limit: 50 })
+```
+
+**原因**：工具描述缺少明确的参数格式示例
+
+**解决方案**：
+1. 工具描述增加 ✅ 正确 / ❌ 错误示例
+2. 明确参数是独立字段，不能合并到路径中
+
+**相关代码**：`src/main/generation/prompts/tools/*.ts`
+
+### 2026-02-03: edit_file 失败后的重试策略
+
+**问题**：edit_file 失败后无限重试相同参数
+
+**错误做法**：模型反复用相同的 old_string 尝试 edit_file
+
+**正确策略**：
+1. 第 1 次失败：调整 old_string（增加上下文、检查空格/换行）
+2. 第 2 次失败：改用 write_file 重写整个文件
+3. 切换策略时通知用户原因
+
+**相关代码**：
+- `src/main/generation/prompts/tools/edit.ts`
+- `src/main/agent/antiPattern/detector.ts`
+
+### 2026-02-03: 硬编码工具调用上限导致复杂任务失败
+
+**问题**：M06（L5 复杂度，10 步）需要 85 次工具调用，硬编码上限 80 次导致失败
+
+**错误做法**：所有任务使用相同的工具调用上限
+
+**正确做法**：
+- 根据任务复杂度动态计算上限
+- 公式：`基础上限(复杂度) + 步骤数 × 8`
+- L1=20, L2=35, L3=50, L4=70, L5=100, L6=150
+
+**相关代码**：`src/cli/commands/chat.ts` - `calculateToolCallMax()`

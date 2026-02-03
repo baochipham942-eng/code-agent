@@ -750,6 +750,98 @@ export class AgentOrchestrator {
   }
 
   /**
+   * 中断当前执行并继续新的用户消息
+   * Claude Code 风格：用户在 Agent 执行过程中输入新指令，系统中断当前操作并根据新输入调整方向
+   *
+   * @param newMessage - 用户的新消息内容
+   * @param attachments - 可选的附件
+   */
+  async interruptAndContinue(
+    newMessage: string,
+    attachments?: unknown[]
+  ): Promise<void> {
+    logger.info('Interrupt and continue requested');
+    const sessionManager = getSessionManager();
+    const sessionId = sessionManager.getCurrentSessionId();
+
+    // 发送中断开始事件
+    this.onEvent({
+      type: 'interrupt_start',
+      data: { message: '正在中断当前任务...', newUserMessage: newMessage },
+      sessionId,
+    } as AgentEvent & { sessionId?: string });
+
+    // 1. 设置当前 AgentLoop 的中断标志
+    if (this.agentLoop) {
+      this.agentLoop.interrupt(newMessage);
+
+      // 2. 等待当前 loop 完成（最多等待 30 秒）
+      const timeout = 30000;
+      const startTime = Date.now();
+
+      while (this.agentLoop && !this.agentLoop.wasInterrupted() && (Date.now() - startTime) < timeout) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // 超时处理：强制取消
+      if (Date.now() - startTime >= timeout) {
+        logger.warn('[AgentOrchestrator] Interrupt timeout, forcing cancel');
+        if (this.agentLoop) {
+          this.agentLoop.cancel();
+        }
+      }
+
+      this.agentLoop = null;
+    }
+
+    // 同样处理 deep research 和 semantic research
+    if (this.deepResearchMode) {
+      this.deepResearchMode.cancel();
+      this.deepResearchMode = null;
+    }
+    if (this.semanticResearchOrchestrator) {
+      this.semanticResearchOrchestrator.cancel();
+      this.semanticResearchOrchestrator = null;
+    }
+
+    // 3. 注入方向调整上下文提示
+    const directionChangeContext = `<direction-change>
+用户在执行过程中输入了新的指令。请根据以下新指令调整你的行动方向。
+你可以参考之前的执行结果和上下文，但主要应该遵循新的指令。
+
+新指令: ${newMessage}
+</direction-change>`;
+
+    // 添加系统消息提示方向调整
+    const systemMessage: Message = {
+      id: generateMessageId(),
+      role: 'user',
+      content: directionChangeContext,
+      timestamp: Date.now(),
+    };
+    this.addMessage(systemMessage);
+
+    // 4. 发送中断完成事件
+    this.onEvent({
+      type: 'interrupt_complete',
+      data: { message: '已切换到新任务', newUserMessage: newMessage },
+      sessionId,
+    } as AgentEvent & { sessionId?: string });
+
+    // 5. 使用 sendMessage 继续执行新消息
+    await this.sendMessage(newMessage, attachments);
+  }
+
+  /**
+   * 检查是否正在处理中
+   */
+  isProcessing(): boolean {
+    return this.agentLoop !== null ||
+           this.deepResearchMode !== null ||
+           this.semanticResearchOrchestrator !== null;
+  }
+
+  /**
    * 设置研究用户设置
    *
    * @param settings - 研究设置

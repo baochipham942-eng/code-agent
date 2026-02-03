@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 5.1 (对应 v0.16.17)
-> 日期: 2026-02-02
+> 版本: 5.2 (对应 v0.16.18)
+> 日期: 2026-02-03
 > 作者: Lin Chen
 
 本文档已拆分为模块化的架构文档，便于维护和查阅。
@@ -35,6 +35,15 @@
 | **CLI 接口** | `src/main/cli/` | 命令行交互模式 |
 | **多渠道接入** | `src/main/channels/` | 飞书 Webhook 等渠道支持 |
 | **Skills 系统** | `src/main/skills/` | 用户可定义技能 |
+
+### v0.16.18+ 新增模块
+
+| 模块 | 位置 | 描述 |
+|------|------|------|
+| **混合 Agent 架构** | `src/main/agent/hybrid/` | 3 层混合架构：核心角色 + 动态扩展 + Swarm |
+| **统一 Identity** | `src/main/generation/prompts/identity.ts` | 替代 constitution/ 的 6 文件，token -81% |
+| **上下文压缩** | `src/main/context/autoCompressor.ts` | 自动上下文压缩 |
+| **并行评估** | `src/main/evaluation/parallelEvaluator.ts` | 并行会话评估 |
 
 ### v0.16.16+ 新增模块
 

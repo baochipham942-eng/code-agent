@@ -146,7 +146,7 @@ export const M06: TestCase = {
     agentDispatched: true,
     agentTypes: ['coder', 'code-explore'],
     toolsUsed: ['Read', 'Write', 'Edit', 'Glob'],
-    toolCallRange: { min: 15, max: 80 },
+    toolCallRange: { min: 15 }, // max 由复杂度自动计算: L5(100) + 10步(80) = 180
     noBlindEdit: true,
   },
 

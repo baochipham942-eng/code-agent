@@ -154,13 +154,23 @@ export type AgentEvent =
   | { type: 'budget_warning'; data: BudgetEventData }
   | { type: 'budget_exceeded'; data: BudgetEventData }
   // 上下文压缩事件
-  | { type: 'context_compressed'; data: ContextCompressedData };
+  | { type: 'context_compressed'; data: ContextCompressedData }
+  // 中断事件（Claude Code 风格）
+  | { type: 'interrupt_start'; data: InterruptEventData }
+  | { type: 'interrupt_acknowledged'; data: InterruptEventData }
+  | { type: 'interrupt_complete'; data: InterruptEventData };
 
 // 上下文压缩事件数据
 export interface ContextCompressedData {
   savedTokens: number;
   strategy?: string;
   newMessageCount: number;
+}
+
+// 中断事件数据
+export interface InterruptEventData {
+  message: string;
+  newUserMessage?: string;
 }
 
 // Budget 事件数据

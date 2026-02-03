@@ -25,6 +25,8 @@ export interface ChatInputProps {
   disabled?: boolean;
   /** 是否正在处理（用于显示停止按钮） */
   isProcessing?: boolean;
+  /** 是否正在中断（Claude Code 风格：中断当前任务切换到新指令） */
+  isInterrupting?: boolean;
   /** 停止处理回调 */
   onStop?: () => void;
   /** 是否有 Plan */
@@ -41,6 +43,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onSend,
   disabled,
   isProcessing,
+  isInterrupting,
   onStop,
   hasPlan,
   onPlanClick,
@@ -61,10 +64,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   } = useSessionStore();
 
   // 处理提交
+  // Claude Code 风格：即使正在处理也允许提交（触发中断）
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     const trimmedValue = value.trim();
-    if ((trimmedValue || attachments.length > 0) && !disabled) {
+    // 允许在 isProcessing 时提交以触发中断功能
+    const canSubmit = (trimmedValue || attachments.length > 0) && (!disabled || isProcessing);
+    if (canSubmit) {
       // 添加到输入历史
       if (trimmedValue) {
         addToInputHistory(trimmedValue);
@@ -215,7 +221,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             onSubmit={handleSubmit}
             onFileSelect={handleFileSelect}
             onImagePaste={handleImagePaste}
-            disabled={disabled}
+            disabled={disabled && !isProcessing}
             hasAttachments={attachments.length > 0}
             isFocused={isFocused}
             onFocusChange={setIsFocused}
@@ -232,10 +238,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                     disabled={disabled}
                   />
                 )}
-                {/* 发送/停止按钮 */}
+                {/* 发送/停止/中断按钮 */}
                 <SendButton
-                  disabled={disabled}
+                  disabled={disabled && !isProcessing}
                   isProcessing={isProcessing}
+                  isInterrupting={isInterrupting}
                   hasContent={hasContent}
                   type="submit"
                   onStop={onStop}

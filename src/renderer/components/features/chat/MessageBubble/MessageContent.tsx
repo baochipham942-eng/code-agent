@@ -229,6 +229,14 @@ const SYSTEM_TAG_PATTERNS = [
   /<anti-pattern-warning>[\s\S]*?<\/anti-pattern-warning>/g,
   /<system-reminder>[\s\S]*?<\/system-reminder>/g,
   /<loop-prevention>[\s\S]*?<\/loop-prevention>/g,
+  // 工具调用 XML 格式泄漏 - 过滤完整的工具调用块
+  /<tool_call>[\s\S]*?<\/tool_call>/g,
+  // 过滤残留的闭合标签（模型可能只输出部分 XML）
+  /<\/arg_value>/g,
+  /<\/tool_call>/g,
+  /<arg_name>[^<]*<\/arg_name>/g,
+  /<arg_value>/g,
+  /<tool_call>/g,
 ];
 
 /**

@@ -16,6 +16,24 @@ import type { ToolCall } from '@shared/types';
 import { DiffView } from '../../../../DiffView';
 import { useAppStore } from '../../../../../stores/appStore';
 
+// ============================================================================
+// ANSI 转义码过滤 - 清理终端输出中的颜色和格式代码
+// ============================================================================
+
+/**
+ * 移除字符串中的 ANSI 转义序列
+ * 支持：颜色代码、光标控制、清屏等所有常见 ANSI 序列
+ */
+function stripAnsiCodes(str: string): string {
+  if (typeof str !== 'string') return str;
+  // 匹配所有 ANSI 转义序列：
+  // - \x1b[...m - 颜色和样式
+  // - \x1b[...H - 光标位置
+  // - \x1b[...J/K - 清屏/清行
+  // - \x1b[?...h/l - 模式设置
+  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[[\?]?[0-9;]*[a-zA-Z]/g, '');
+}
+
 interface Props {
   toolCall: ToolCall;
   compact?: boolean;
@@ -150,9 +168,9 @@ export function ToolDetails({ toolCall, compact }: Props) {
               }`}
             >
               {result.error
-                ? result.error
+                ? stripAnsiCodes(result.error)
                 : typeof result.output === 'string'
-                  ? result.output
+                  ? stripAnsiCodes(result.output)
                   : JSON.stringify(result.output, null, 2)}
             </pre>
           )}

@@ -35,7 +35,7 @@ export interface IPCResponse<T = unknown> {
 /**
  * Agent 通道 actions
  */
-export type AgentAction = 'send' | 'cancel' | 'retry';
+export type AgentAction = 'send' | 'cancel' | 'retry' | 'interrupt';
 
 /**
  * Session 通道 actions

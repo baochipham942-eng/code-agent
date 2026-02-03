@@ -1,15 +1,18 @@
 // ============================================================================
-// SendButton - 发送按钮组件（含加载状态和停止功能）
+// SendButton - 发送按钮组件（含加载状态、停止功能和中断功能）
+// Claude Code 风格：处理中时可以继续输入，发送会中断当前任务
 // ============================================================================
 
 import React from 'react';
-import { Send, Square } from 'lucide-react';
+import { Send, Square, Loader2 } from 'lucide-react';
 
 export interface SendButtonProps {
   /** 是否禁用 */
   disabled?: boolean;
-  /** 是否正在处理（显示停止按钮） */
+  /** 是否正在处理（显示停止按钮或中断发送按钮） */
   isProcessing?: boolean;
+  /** 是否正在中断（显示旋转加载图标） */
+  isInterrupting?: boolean;
   /** 是否有内容可发送 */
   hasContent?: boolean;
   /** 表单提交类型 */
@@ -23,18 +26,52 @@ export interface SendButtonProps {
 }
 
 /**
- * 发送按钮 - 处理中变为停止按钮
+ * 发送按钮 - 支持三种状态：
+ * 1. 空闲时：显示发送按钮
+ * 2. 处理中 + 无内容：显示停止按钮
+ * 3. 处理中 + 有内容：显示中断发送按钮（橙色，表示会中断当前任务）
+ * 4. 中断中：显示旋转加载图标
  */
 export const SendButton: React.FC<SendButtonProps> = ({
   disabled = false,
   isProcessing = false,
+  isInterrupting = false,
   hasContent = false,
   type = 'submit',
   onClick,
   onStop,
   label,
 }) => {
-  // 处理中时显示停止按钮（柔和样式，白色图标 + 浅灰背景）
+  // 中断中：显示旋转加载图标
+  if (isInterrupting) {
+    return (
+      <button
+        type="button"
+        disabled
+        className="flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-amber-400 transition-all duration-200 bg-amber-500/20 cursor-wait"
+        aria-label="正在中断..."
+      >
+        <Loader2 className="w-4 h-4 animate-spin" />
+      </button>
+    );
+  }
+
+  // 处理中 + 有内容：显示中断发送按钮（橙色警告色，表示会中断当前任务）
+  if (isProcessing && hasContent) {
+    return (
+      <button
+        type={type}
+        onClick={onClick}
+        className="flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-white transition-all duration-300 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 scale-100 hover:scale-105"
+        aria-label="中断并发送新指令"
+        title="中断当前任务并发送新指令"
+      >
+        <Send className="w-4 h-4 -rotate-45" />
+      </button>
+    );
+  }
+
+  // 处理中 + 无内容：显示停止按钮（柔和样式，白色图标 + 浅灰背景）
   if (isProcessing) {
     return (
       <button

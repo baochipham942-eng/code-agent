@@ -17,6 +17,39 @@ interface AgentTaskProgressProps {
 }
 
 // ============================================================================
+// 工具名称友好化映射
+// ============================================================================
+
+const toolDisplayNames: Record<string, string> = {
+  bash: '执行命令',
+  read_file: '读取文件',
+  write_file: '创建文件',
+  edit_file: '编辑文件',
+  glob: '搜索文件',
+  grep: '搜索内容',
+  list_directory: '浏览目录',
+  task: '委托子任务',
+  web_search: '搜索网络',
+  web_fetch: '获取网页',
+  ppt_generate: '生成 PPT',
+  image_generate: '生成图片',
+  memory_store: '存储记忆',
+  memory_search: '搜索记忆',
+};
+
+// 从 step 中提取工具名称并友好化
+function getDisplayStep(step: string | undefined): string {
+  if (!step) return '';
+  // 匹配 "执行 xxx" 或 "xxx" 格式
+  const match = step.match(/^执行\s+(\w+)|^(\w+)/);
+  if (match) {
+    const toolName = match[1] || match[2];
+    return toolDisplayNames[toolName] || step;
+  }
+  return step;
+}
+
+// ============================================================================
 // 阶段配置
 // ============================================================================
 
@@ -74,6 +107,7 @@ export const AgentTaskProgress: React.FC<AgentTaskProgressProps> = ({
 }) => {
   const config = phaseConfig[progress.phase];
   const hasProgress = progress.progress !== undefined && progress.phase === 'tool_running';
+  const displayStep = getDisplayStep(progress.step) || config.label;
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
@@ -81,7 +115,7 @@ export const AgentTaskProgress: React.FC<AgentTaskProgressProps> = ({
       <div className={`flex items-center gap-1.5 px-2 py-1 rounded-full ${config.bgColor}`}>
         <span className={config.color}>{config.icon}</span>
         <span className={`text-xs font-medium ${config.color}`}>
-          {progress.step || config.label}
+          {displayStep}
         </span>
       </div>
 
@@ -96,7 +130,7 @@ export const AgentTaskProgress: React.FC<AgentTaskProgressProps> = ({
           </div>
           <span className="text-xs text-zinc-500">
             {progress.toolIndex !== undefined && progress.toolTotal
-              ? `${progress.toolIndex + 1}/${progress.toolTotal}`
+              ? `第${progress.toolIndex + 1}步 / 共${progress.toolTotal}步`
               : `${Math.round(progress.progress || 0)}%`}
           </span>
         </div>
@@ -115,6 +149,7 @@ interface CompactProgressProps {
 
 export const CompactTaskProgress: React.FC<CompactProgressProps> = ({ progress }) => {
   const config = phaseConfig[progress.phase];
+  const displayStep = getDisplayStep(progress.step) || config.label;
 
   // 完成状态不显示
   if (progress.phase === 'completed') {
@@ -125,7 +160,7 @@ export const CompactTaskProgress: React.FC<CompactProgressProps> = ({ progress }
     <div className="inline-flex items-center gap-1 text-xs">
       <span className={`${config.color} animate-pulse`}>{config.icon}</span>
       <span className="text-zinc-500">
-        {progress.step || config.label}
+        {displayStep}
         {progress.progress !== undefined && ` (${Math.round(progress.progress)}%)`}
       </span>
     </div>

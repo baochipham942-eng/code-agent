@@ -26,7 +26,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { generateMessageId } from '@shared/utils/id';
-import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData, ResearchDetectedData } from '@shared/types';
+import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData, ResearchDetectedData, InterruptEventData } from '@shared/types';
 import { createLogger } from '../utils/logger';
 import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 
@@ -65,6 +65,9 @@ export const useAgent = () => {
 
   // 语义研究检测状态
   const [researchDetected, setResearchDetected] = useState<ResearchDetectedData | null>(null);
+
+  // 中断状态（Claude Code 风格）
+  const [isInterrupting, setIsInterrupting] = useState(false);
 
   // Message batcher for reducing re-renders during streaming
   const handleBatchUpdate = useCallback((updates: MessageUpdate[]) => {
@@ -522,6 +525,27 @@ export const useAgent = () => {
             // 研究模式开始，清除检测状态
             setResearchDetected(null);
             break;
+
+          // ================================================================
+          // 中断事件（Claude Code 风格）
+          // ================================================================
+
+          case 'interrupt_start':
+            // 中断开始
+            logger.debug('interrupt_start', { data: event.data });
+            setIsInterrupting(true);
+            break;
+
+          case 'interrupt_acknowledged':
+            // 中断已确认，当前任务正在停止
+            logger.debug('interrupt_acknowledged', { data: event.data });
+            break;
+
+          case 'interrupt_complete':
+            // 中断完成，新任务即将开始
+            logger.debug('interrupt_complete', { data: event.data });
+            setIsInterrupting(false);
+            break;
         }
       }
     );
@@ -533,23 +557,59 @@ export const useAgent = () => {
 
   // Send a message to the agent
   // Turn-based model: 不再预创建 placeholder，等待后端 turn_start 事件
+  // Claude Code 风格：如果正在处理中，自动触发中断
   const sendMessage = useCallback(
     async (content: string, attachments?: MessageAttachment[]) => {
       logger.debug('sendMessage called', { contentPreview: content.substring(0, 50), sessionId: currentSessionId });
 
-      // 检查当前会话是否正在处理（允许其他会话并发发送）
-      const isCurrentSessionProcessing = currentSessionId
-        ? useAppStore.getState().isSessionProcessing(currentSessionId)
-        : isProcessing;
-
-      if ((!content.trim() && !attachments?.length) || isCurrentSessionProcessing) {
-        logger.debug('sendMessage blocked - empty or current session processing', { isCurrentSessionProcessing });
+      // 空消息检查
+      if (!content.trim() && !attachments?.length) {
+        logger.debug('sendMessage blocked - empty content');
         return;
       }
 
       // 没有会话时无法发送
       if (!currentSessionId) {
         logger.warn('sendMessage blocked - no current session');
+        return;
+      }
+
+      // 检查当前会话是否正在处理（允许其他会话并发发送）
+      const isCurrentSessionProcessing = currentSessionId
+        ? useAppStore.getState().isSessionProcessing(currentSessionId)
+        : isProcessing;
+
+      // Claude Code 风格：如果正在处理中，触发中断并继续新消息
+      if (isCurrentSessionProcessing) {
+        logger.info('sendMessage - session processing, triggering interrupt', { isCurrentSessionProcessing });
+
+        // 添加用户消息到界面
+        const userMessage: Message = {
+          id: generateMessageId(),
+          role: 'user',
+          content,
+          timestamp: Date.now(),
+          attachments,
+        };
+        addMessage(userMessage);
+
+        setIsInterrupting(true);
+        try {
+          // 调用 interrupt action，后端会中断当前任务并继续新消息
+          await window.domainAPI?.invoke('agent', 'interrupt', { content, attachments });
+          logger.debug('interrupt invoke returned');
+        } catch (error) {
+          logger.error('Interrupt error', error);
+          setIsInterrupting(false);
+          // 错误时创建一条错误消息
+          const errorMessage: Message = {
+            id: generateMessageId(),
+            role: 'assistant',
+            content: `中断失败: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            timestamp: Date.now(),
+          };
+          addMessage(errorMessage);
+        }
         return;
       }
 
@@ -637,5 +697,7 @@ export const useAgent = () => {
     // 语义研究检测
     researchDetected,
     dismissResearchDetected,
+    // 中断状态（Claude Code 风格）
+    isInterrupting,
   };
 };

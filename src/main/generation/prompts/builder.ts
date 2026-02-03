@@ -1,33 +1,15 @@
 // ============================================================================
 // Prompt Builder - Assembles system prompts for each generation
 // ============================================================================
-// Token Optimization: Uses tiered rule loading to reduce prompt size
-// - Gen1-2: Basic rules (~4k tokens)
-// - Gen3-4: Standard rules (~6k tokens)
-// - Gen5+:  Full rules (~8k tokens)
+// Claude Code Style: 极简身份 + 内联规则 + 工具描述
+// 目标：<2000 tokens（对标 Claude Code 269 tokens 核心 + 工具描述）
 // ============================================================================
 
 import type { GenerationId } from '../../../shared/types';
-import { CONSTITUTION } from './constitution';
+import { IDENTITY_PROMPT } from './identity';
 import { BASE_PROMPTS } from './base';
-import {
-  OUTPUT_FORMAT_RULES,
-  HTML_GENERATION_RULES,
-  PROFESSIONAL_OBJECTIVITY_RULES,
-  CODE_REFERENCE_RULES,
-  // PARALLEL_TOOLS_RULES,      // 已合并到 Gen8 prompt
-  PLAN_MODE_RULES,
-  GIT_SAFETY_RULES,
-  INJECTION_DEFENSE_RULES,
-  GITHUB_ROUTING_RULES,
-  ERROR_HANDLING_RULES,
-  CODE_SNIPPET_RULES,
-  ATTACHMENT_HANDLING_RULES,
-  // TOOL_USAGE_POLICY,         // 已合并到 Gen8 prompt
-  // TOOL_DECISION_TREE,        // 已合并到 Gen8 prompt
-  // TASK_MANAGEMENT_RULES,     // 已合并到 Gen8 prompt (todo_write)
-  TASK_CLASSIFICATION_RULES,
-} from './rules';
+// 规则已内联到 identity.ts，无需静态导入
+// 动态提醒系统可按需加载特定规则
 import {
   BASH_TOOL_DESCRIPTION,
   EDIT_TOOL_DESCRIPTION,
@@ -58,59 +40,15 @@ import type { ReminderContext } from './reminderRegistry';
 // ----------------------------------------------------------------------------
 
 /**
- * Rule tiers for progressive loading based on generation capabilities.
- * This reduces token consumption for simpler generations.
+ * Rule tiers - Claude Code 风格：所有规则内联到 identity.ts 和 gen8.ts
+ * 无静态加载的规则（安全规则已内联到 identity.ts）
  */
 const RULE_TIERS = {
-  /**
-   * Basic tier (Gen1-2): Essential rules only
-   * - Task classification (fast routing)
-   * - Output formatting
-   * - Professional objectivity
-   * - Code references
-   * - Error handling
-   */
-  basic: [
-    TASK_CLASSIFICATION_RULES,  // 首轮任务分类，避免额外 LLM 调用
-    OUTPUT_FORMAT_RULES,
-    PROFESSIONAL_OBJECTIVITY_RULES,
-    CODE_REFERENCE_RULES,
-    ERROR_HANDLING_RULES,
-  ],
-
-  /**
-   * Collaboration tier (Gen2+): 已合并到 Gen8 prompt
-   * - PARALLEL_TOOLS_RULES → Gen8 "并行派发" 部分
-   * - TOOL_DECISION_TREE → Gen8 "核心工具" 表格
-   */
-  collaboration: [],  // 已合并到 Gen8 prompt
-
-  /**
-   * Standard tier (Gen3+): Adds planning, git safety
-   * - TOOL_USAGE_POLICY → 已合并到 Gen8 "强制规则"
-   * - TASK_MANAGEMENT_RULES → 已合并到 Gen8 "todo_write"
-   */
-  standard: [
-    PLAN_MODE_RULES,
-    GIT_SAFETY_RULES,
-    INJECTION_DEFENSE_RULES,
-  ],
-
-  /**
-   * Network tier (Gen4+): Adds GitHub integration
-   */
-  network: [
-    GITHUB_ROUTING_RULES,
-  ],
-
-  /**
-   * Content tier (all): Content generation rules
-   */
-  content: [
-    CODE_SNIPPET_RULES,
-    HTML_GENERATION_RULES,
-    ATTACHMENT_HANDLING_RULES,
-  ],
+  basic: [],
+  collaboration: [],
+  standard: [],  // 注入防护已内联到 identity.ts
+  network: [],
+  content: [],
 };
 
 /**
@@ -173,11 +111,11 @@ function getToolDescriptionsForGeneration(generationId: GenerationId): string[] 
 /**
  * Builds the complete system prompt for a generation.
  *
- * Prompt 组装顺序：
- * 1. 宪法层 - 所有代际共享的身份、价值观和行为准则
- * 2. 代际工具层 - 各代际的工具定义和使用说明
- * 3. 工具详细描述层 - 关键工具的详细使用指南
- * 4. 规则层 - 输出格式、安全规则等（分层加载）
+ * Claude Code 风格组装顺序：
+ * 1. Identity - 极简身份声明 + 简洁要求 + 任务指南
+ * 2. Generation Tools - 代际工具定义（包含内联规则）
+ * 3. Tool Descriptions - 工具详细描述（包含工作流）
+ * 4. Rules - 仅保留安全关键规则（注入防护）
  */
 export function buildPrompt(generationId: GenerationId): string {
   const basePrompt = BASE_PROMPTS[generationId];
@@ -188,9 +126,8 @@ export function buildPrompt(generationId: GenerationId): string {
     throw new Error(`Unknown generation: ${generationId}`);
   }
 
-  // 组装完整的 System Prompt
-  // 顺序：宪法 → 代际工具 → 工具详细描述 → 规则
-  return [CONSTITUTION, basePrompt, ...toolDescriptions, ...rules].join('\n\n');
+  // Claude Code 风格组装：Identity → 代际工具 → 工具描述 → 规则
+  return [IDENTITY_PROMPT, basePrompt, ...toolDescriptions, ...rules].join('\n\n');
 }
 
 /**

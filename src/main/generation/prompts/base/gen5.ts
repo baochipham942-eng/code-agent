@@ -62,5 +62,3 @@ export const GEN5_TOOLS = `
 - 自我优化策略
 `;
 
-// 保持向后兼容
-export const GEN5_BASE_PROMPT = GEN5_TOOLS;

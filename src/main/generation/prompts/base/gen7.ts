@@ -113,5 +113,3 @@ task(subagent_type="code-review", prompt="代码质量：检查 any 类型使用
 - 从经验中学习模式
 `;
 
-// 保持向后兼容
-export const GEN7_BASE_PROMPT = GEN7_TOOLS;

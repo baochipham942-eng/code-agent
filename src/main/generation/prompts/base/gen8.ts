@@ -44,4 +44,3 @@ For 2+ files or 3+ steps, use todo_write FIRST:
 \`\`\`
 `;
 
-export const GEN8_BASE_PROMPT = GEN8_TOOLS;

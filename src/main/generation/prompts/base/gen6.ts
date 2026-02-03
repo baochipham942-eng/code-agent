@@ -67,5 +67,3 @@ export const GEN6_TOOLS = `
 - 动态创建新工具
 `;
 
-// 保持向后兼容
-export const GEN6_BASE_PROMPT = GEN6_TOOLS;

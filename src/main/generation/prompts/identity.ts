@@ -52,6 +52,27 @@ IMPORTANT: Follow existing code style.
 `.trim();
 
 /**
+ * 工具参数纪律 - 防止参数混淆和无限重试
+ */
+export const TOOL_DISCIPLINE = `
+## Tool Parameter Rules
+- Parameters MUST be separate fields (never combine into path/string)
+- read_file: file_path is ONLY the path, use offset/limit as separate params
+- edit_file: file_path, old_string, new_string are SEPARATE fields
+
+## Retry Rules
+- Max 2 retries per tool with same parameters
+- If tool fails twice: SWITCH STRATEGY
+  - edit_file fails → use write_file to replace entire content
+  - read_file fails → use bash cat/head instead
+- Do NOT keep retrying the same failing operation
+
+## Deduplication
+- Before calling a tool, check if result is already in conversation context
+- Do NOT call read_file on a file you just read (result is above)
+`.trim();
+
+/**
  * 完整的精简版 System Prompt 基础
  */
 export const IDENTITY_PROMPT = `
@@ -60,4 +81,6 @@ ${IDENTITY}
 ${CONCISENESS_RULES}
 
 ${TASK_GUIDELINES}
+
+${TOOL_DISCIPLINE}
 `.trim();

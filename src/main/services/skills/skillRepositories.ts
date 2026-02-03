@@ -15,7 +15,7 @@ export const RECOMMENDED_REPOSITORIES: SkillRepository[] = [
   {
     id: 'anthropic-skills',
     name: 'Anthropic Official Skills',
-    url: 'https://github.com/anthropics/skills',
+    url: 'https://github.com/baochipham942-eng/skills',
     branch: 'main',
     skillsPath: 'skills',
     category: 'core',

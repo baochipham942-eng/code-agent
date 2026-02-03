@@ -24,6 +24,20 @@ Usage:
 - Lines longer than 2000 characters will be truncated
 - Results are returned with line numbers (1-indexed) for easy reference
 
+CRITICAL - Parameter format rules:
+- file_path is ONLY the path string, nothing else
+- offset and limit are SEPARATE integer parameters
+- Do NOT combine parameters into file_path
+
+✅ CORRECT examples:
+  read_file(file_path="/src/index.ts", offset=10, limit=50)
+  read_file(file_path="~/Documents/config.json")
+
+❌ WRONG - These will fail:
+  read_file(file_path="/src/index.ts offset=10 limit=50")  // NO! params in path
+  read_file(file_path="/src/index.ts with offset 10")      // NO! text in path
+  read_file(file_path="/src/index.ts lines 7-9")           // NO! use offset/limit
+
 Best practices:
 - ALWAYS read a file before editing it with edit_file
 - If a file is too large, use offset/limit to read specific sections

@@ -2150,9 +2150,50 @@ ${deferredToolsSummary}
   }
 
   /**
+   * 检测任务是否为分析型（不需要修改文件）
+   * 分析用户原始提示词中的关键词来判断
+   */
+  private isAnalysisTask(): boolean {
+    const analysisKeywords = [
+      // 中文关键词
+      '分析', '解读', '查看', '了解', '研究', '比较', '介绍',
+      '解释', '说明', '总结', '概述', '评估', '检查', '审查',
+      '理解', '学习', '探索', '浏览', '调研',
+      // 英文关键词
+      'analyze', 'explain', 'describe', 'summarize', 'review',
+      'understand', 'look at', 'check', 'examine', 'explore',
+      'investigate', 'study', 'compare', 'overview', 'inspect'
+    ];
+
+    // 获取用户原始提示词（第一条 user 消息）
+    const userMessage = this.messages.find(m => m.role === 'user');
+    if (!userMessage) return false;
+
+    const content = typeof userMessage.content === 'string'
+      ? userMessage.content
+      : JSON.stringify(userMessage.content);
+    const lowerContent = content.toLowerCase();
+
+    return analysisKeywords.some(keyword => lowerContent.includes(keyword));
+  }
+
+  /**
    * Generate nudge message when stuck in exploring state
+   * 根据任务类型生成不同的 nudge 消息
    */
   private generateExploringNudge(): string {
+    // 分析型任务：提示生成总结，不强制修改文件
+    if (this.isAnalysisTask()) {
+      return (
+        `<checkpoint-nudge priority="high">\n` +
+        `📊 **提示：你已收集了足够的信息**\n\n` +
+        `请基于已获取的信息，直接生成文本回复给用户。\n\n` +
+        `不需要再调用工具，直接输出你的分析结果。\n` +
+        `</checkpoint-nudge>`
+      );
+    }
+
+    // 修改型任务：保持原有行为，要求开始修改文件
     return (
       `<checkpoint-nudge priority="high">\n` +
       `🚨 **警告：连续 ${this.maxConsecutiveExploring} 次迭代只读取不修改！**\n\n` +

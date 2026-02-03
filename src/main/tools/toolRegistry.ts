@@ -84,9 +84,11 @@ import {
   agentSpawnTool,
   AgentMessageTool,
   WorkflowOrchestrateTool,
+  TeammateTool,
   spawnAgentTool,
   agentMessageTool,
   workflowOrchestrateTool,
+  teammateTool,
 } from './multiagent';
 import { strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternTool } from './evolution';
 import { lspTool } from './lsp';
@@ -141,6 +143,17 @@ export interface ToolContext {
   todos?: Array<{ id: string; content: string; status: 'pending' | 'in_progress' | 'completed' | 'cancelled' }>;
   /** 上下文级别覆盖（可选） */
   contextLevel?: 'minimal' | 'relevant' | 'full';
+
+  // ============================================================================
+  // Teammate 通信支持
+  // ============================================================================
+
+  /** 当前 Agent ID（用于 teammate 工具识别身份） */
+  agentId?: string;
+  /** 当前 Agent 名称 */
+  agentName?: string;
+  /** 当前 Agent 角色 */
+  agentRole?: string;
 }
 
 export interface PermissionRequestData {
@@ -312,10 +325,12 @@ export class ToolRegistry {
     this.register(agentSpawnTool);
     this.register(AgentMessageTool);
     this.register(WorkflowOrchestrateTool);
+    this.register(TeammateTool);
     // Legacy snake_case tools (backward compatibility)
     this.register(spawnAgentTool);
     this.register(agentMessageTool);
     this.register(workflowOrchestrateTool);
+    this.register(teammateTool);
 
     // Gen 8 tools - Self-Evolution
     this.register(strategyOptimizeTool);

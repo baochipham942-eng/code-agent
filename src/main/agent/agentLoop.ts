@@ -706,7 +706,8 @@ export class AgentLoop {
 
         // P1 Nudge: Detect read-only stop pattern
         // If agent read files but didn't write, nudge it to continue with actual modifications
-        if (this.toolsUsedInTurn.length > 0 && this.readOnlyNudgeCount < this.maxReadOnlyNudges) {
+        // Skip for analysis tasks - they don't need to modify files
+        if (this.toolsUsedInTurn.length > 0 && this.readOnlyNudgeCount < this.maxReadOnlyNudges && !this.isAnalysisTask()) {
           const nudgeMessage = this.antiPatternDetector.detectReadOnlyStopPattern(this.toolsUsedInTurn);
           if (nudgeMessage) {
             this.readOnlyNudgeCount++;
@@ -767,7 +768,8 @@ export class AgentLoop {
         }
 
         // P3 Nudge: Check if all target files have been modified
-        if (this.targetFiles.length > 0 && this.fileNudgeCount < this.maxFileNudges) {
+        // Skip for analysis tasks - they don't need to modify files
+        if (this.targetFiles.length > 0 && this.fileNudgeCount < this.maxFileNudges && !this.isAnalysisTask()) {
           const missingFiles: string[] = [];
           for (const targetFile of this.targetFiles) {
             // Normalize target file path for comparison

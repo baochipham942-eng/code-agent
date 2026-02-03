@@ -73,7 +73,7 @@ export class CLIDatabaseService {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    this.db = new Database(this.dbPath);
+    this.db = new Database!(this.dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
 

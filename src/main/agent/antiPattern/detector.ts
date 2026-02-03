@@ -25,7 +25,35 @@ export interface AntiPatternConfig {
   maxSameToolFailures: number;
   /** Max duplicate successful calls with same args */
   maxDuplicateCalls: number;
+  /** Max times same tool can fail before suggesting alternative */
+  maxFailuresBeforeAlternative: number;
 }
+
+/**
+ * Tool alternative strategies - what to try when a tool fails repeatedly
+ */
+export const TOOL_ALTERNATIVES: Record<string, { alternative: string; reason: string }> = {
+  edit_file: {
+    alternative: 'write_file',
+    reason: 'If edit_file fails repeatedly (old_string not found), re-read the file and use write_file to replace the entire content',
+  },
+  read_file: {
+    alternative: 'bash',
+    reason: 'If read_file fails, try: bash(command="cat <file>" or "head -n <lines> <file>")',
+  },
+  glob: {
+    alternative: 'bash',
+    reason: 'If glob fails, try: bash(command="find . -name \\"<pattern>\\"")',
+  },
+  grep: {
+    alternative: 'bash',
+    reason: 'If grep fails, try: bash(command="grep -r \\"<pattern>\\" .")',
+  },
+  web_fetch: {
+    alternative: 'bash',
+    reason: 'If web_fetch fails, try: bash(command="curl -s <url>")',
+  },
+};
 
 export const DEFAULT_ANTI_PATTERN_CONFIG: AntiPatternConfig = {
   maxConsecutiveReadsBeforeWrite: 5,
@@ -33,6 +61,7 @@ export const DEFAULT_ANTI_PATTERN_CONFIG: AntiPatternConfig = {
   maxConsecutiveReadsHardLimit: 15,
   maxSameToolFailures: 3,
   maxDuplicateCalls: 3,
+  maxFailuresBeforeAlternative: 2,
 };
 
 // ----------------------------------------------------------------------------
@@ -150,6 +179,28 @@ export class AntiPatternDetector {
     const toolKey = `${toolCall.name}:${JSON.stringify(toolCall.arguments)}`;
     const tracker = this.state.toolFailureTracker.get(toolKey);
 
+    // Also track by tool name only (for early alternative suggestions)
+    const toolNameKey = `__toolname__:${toolCall.name}`;
+    const toolNameTracker = this.state.toolFailureTracker.get(toolNameKey);
+
+    // Track by tool name for alternative suggestions
+    if (toolNameTracker) {
+      toolNameTracker.count++;
+    } else {
+      this.state.toolFailureTracker.set(toolNameKey, { count: 1, lastError: error });
+    }
+
+    // Check if we should suggest alternative (based on tool name failures)
+    const currentToolNameCount = this.state.toolFailureTracker.get(toolNameKey)?.count || 0;
+    if (currentToolNameCount === this.config.maxFailuresBeforeAlternative) {
+      const alternative = TOOL_ALTERNATIVES[toolCall.name];
+      if (alternative) {
+        logger.info(`Tool ${toolCall.name} failed ${currentToolNameCount} times, suggesting alternative: ${alternative.alternative}`);
+        return this.generateAlternativeSuggestion(toolCall.name, currentToolNameCount, error);
+      }
+    }
+
+    // Track by exact args for repeated failure detection
     if (tracker && tracker.lastError === error) {
       tracker.count++;
       if (tracker.count >= this.config.maxSameToolFailures) {
@@ -166,26 +217,57 @@ export class AntiPatternDetector {
   }
 
   /**
+   * Generate early alternative suggestion (before max retries reached)
+   */
+  private generateAlternativeSuggestion(toolName: string, count: number, error: string): string {
+    const alternative = TOOL_ALTERNATIVES[toolName];
+    if (!alternative) return '';
+
+    return (
+      `<strategy-switch-suggestion>\n` +
+      `⚠️ Tool "${toolName}" has failed ${count} times. Consider switching strategy:\n\n` +
+      `**Alternative:** Use "${alternative.alternative}"\n` +
+      `**Why:** ${alternative.reason}\n\n` +
+      `Last error: ${error.substring(0, 200)}${error.length > 200 ? '...' : ''}\n` +
+      `</strategy-switch-suggestion>`
+    );
+  }
+
+  /**
    * Clear failure tracker on success
    */
   clearToolFailure(toolCall: ToolCall): void {
     const toolKey = `${toolCall.name}:${JSON.stringify(toolCall.arguments)}`;
     this.state.toolFailureTracker.delete(toolKey);
+    // Also clear tool name tracker on success
+    const toolNameKey = `__toolname__:${toolCall.name}`;
+    this.state.toolFailureTracker.delete(toolNameKey);
   }
 
   /**
-   * Generate warning for repeated failures
+   * Generate warning for repeated failures with alternative strategy suggestion
    */
   private generateRepeatedFailureWarning(toolName: string, count: number, error: string): string {
+    const alternative = TOOL_ALTERNATIVES[toolName];
+
+    let alternativeSection = '';
+    if (alternative) {
+      alternativeSection = (
+        `\n**SWITCH STRATEGY NOW:**\n` +
+        `→ Use "${alternative.alternative}" instead\n` +
+        `→ Reason: ${alternative.reason}\n`
+      );
+    }
+
     return (
       `<repeated-failure-warning>\n` +
-      `CRITICAL: The tool "${toolName}" has failed ${count} times with the SAME error:\n` +
-      `Error: ${error}\n\n` +
-      `You MUST:\n` +
-      `1. STOP retrying this exact operation - it will NOT work\n` +
-      `2. Analyze WHY it's failing (network issue? invalid parameters? missing config?)\n` +
-      `3. Either try a DIFFERENT approach or inform the user that you cannot complete this task\n` +
-      `4. If this is a network error, tell the user to check their network connection\n` +
+      `🚨 CRITICAL: Tool "${toolName}" failed ${count} times with SAME error:\n` +
+      `Error: ${error}\n` +
+      alternativeSection +
+      `\nYou MUST:\n` +
+      `1. STOP retrying "${toolName}" with same parameters - it will NOT work\n` +
+      `2. ${alternative ? `Switch to "${alternative.alternative}" as suggested above` : 'Try a completely different approach'}\n` +
+      `3. If still failing, inform the user that you need their help\n` +
       `</repeated-failure-warning>`
     );
   }
@@ -204,6 +286,12 @@ export class AntiPatternDetector {
     const duplicateCount = (this.state.duplicateCallTracker.get(toolKey) || 0) + 1;
     this.state.duplicateCallTracker.set(toolKey, duplicateCount);
 
+    // Early hint on 2nd duplicate for read-only tools
+    if (duplicateCount === 2 && READ_ONLY_TOOLS.includes(toolCall.name)) {
+      logger.debug(`Second call to ${toolCall.name} with same args - hinting to use cached result`);
+      return this.generateCacheHintMessage(toolCall.name);
+    }
+
     if (duplicateCount >= this.config.maxDuplicateCalls) {
       logger.warn(`Detected ${duplicateCount} duplicate calls to ${toolCall.name} with same arguments`);
       // Clear tracker to avoid spamming
@@ -212,6 +300,19 @@ export class AntiPatternDetector {
     }
 
     return null;
+  }
+
+  /**
+   * Generate a hint that result is already available (from cache or context)
+   */
+  private generateCacheHintMessage(toolName: string): string {
+    return (
+      `<cache-hint>\n` +
+      `ℹ️ You just called "${toolName}" with the same parameters as before.\n` +
+      `The result is already available in the conversation context above.\n` +
+      `Please use the existing result instead of calling again.\n` +
+      `</cache-hint>`
+    );
   }
 
   /**

@@ -34,6 +34,17 @@ Usage:
 - new_string: The replacement text (must be different from old_string)
 - replace_all: Set to true to replace all occurrences of old_string
 
+CRITICAL - Parameter format rules:
+- Each parameter is a SEPARATE field
+- file_path is ONLY the path string
+- old_string and new_string are the exact text strings
+
+✅ CORRECT:
+  edit_file(file_path="/src/index.ts", old_string="foo", new_string="bar")
+
+❌ WRONG - These will fail:
+  edit_file(file_path="/src/index.ts old_string=foo")  // NO! params in path
+
 When editing text from read_file output:
 - Preserve the EXACT indentation (tabs/spaces) as shown in the file content
 - The line number prefix from read_file is NOT part of the file content
@@ -42,6 +53,10 @@ When editing text from read_file output:
 Common errors and solutions:
 - "text not found": Your old_string doesn't match exactly - check whitespace and indentation
 - "multiple occurrences": Provide more surrounding context to make old_string unique, or use replace_all: true
+
+Retry strategy - If edit_file fails twice with "text not found":
+1. Re-read the file to see current content
+2. If still failing, use write_file to replace the entire file content instead
 
 Best practices:
 - Include 2-3 lines of surrounding context in old_string for uniqueness

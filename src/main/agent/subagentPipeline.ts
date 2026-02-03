@@ -154,7 +154,9 @@ export class SubagentPipeline {
     let preset: PermissionPreset;
     if ('id' in config) {
       // FullAgentConfig has security.permissionPreset
-      preset = config.security?.permissionPreset ?? 'development';
+      // Also check flat permissionPreset for backward compatibility with tests
+      const flatPreset = (config as unknown as { permissionPreset?: PermissionPreset }).permissionPreset;
+      preset = config.security?.permissionPreset ?? flatPreset ?? 'development';
     } else {
       // DynamicAgentConfig supports both security.permissionPreset and flat permissionPreset
       preset = config.security?.permissionPreset ?? config.permissionPreset ?? 'development';
@@ -171,7 +173,9 @@ export class SubagentPipeline {
     let maxBudget: number | undefined;
     if ('id' in config) {
       // FullAgentConfig has runtime.maxBudget
-      maxBudget = config.runtime?.maxBudget;
+      // Also check flat maxBudget for backward compatibility with tests
+      const flatMaxBudget = (config as unknown as { maxBudget?: number }).maxBudget;
+      maxBudget = config.runtime?.maxBudget ?? flatMaxBudget;
     } else {
       // DynamicAgentConfig supports both runtime.maxBudget and flat maxBudget
       const dynamicConfig = config as DynamicAgentConfig;

@@ -135,7 +135,7 @@ export class DatabaseService {
     });
 
     try {
-      this.db = new Database(this.dbPath);
+      this.db = new Database!(this.dbPath);
       this.db.pragma('journal_mode = WAL');
       this.db.pragma('foreign_keys = ON');
       this.db.pragma('busy_timeout = 5000'); // 等待锁最多 5 秒
@@ -578,7 +578,7 @@ export class DatabaseService {
    * 获取原始的 better-sqlite3 数据库实例
    * 仅用于需要直接执行 SQL 的特殊场景
    */
-  getDb(): Database.Database | null {
+  getDb(): import('better-sqlite3').Database | null {
     return this.db;
   }
 

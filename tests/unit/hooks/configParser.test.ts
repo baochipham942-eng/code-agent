@@ -276,22 +276,48 @@ describe('Hook Config Parser', () => {
   // getHooksConfigPaths
   // --------------------------------------------------------------------------
   describe('getHooksConfigPaths', () => {
-    it('should return global and project paths', () => {
+    it('should return global and project paths as ConfigPath arrays', () => {
       const paths = getHooksConfigPaths('/test/project');
 
-      expect(paths.global).toContain('.claude');
-      expect(paths.global).toContain('settings.json');
-      expect(paths.project).toBe('/test/project/.claude/settings.json');
+      // Global paths should be an array with hooks-json (new format) and settings-json (legacy)
+      expect(Array.isArray(paths.global)).toBe(true);
+      expect(paths.global.length).toBe(2);
+
+      // New format (higher priority)
+      const globalHooksJson = paths.global.find(p => p.type === 'hooks-json');
+      expect(globalHooksJson).toBeDefined();
+      expect(globalHooksJson?.path).toContain('.code-agent/hooks/hooks.json');
+      expect(globalHooksJson?.priority).toBe(0);
+
+      // Legacy format (lower priority)
+      const globalSettingsJson = paths.global.find(p => p.type === 'settings-json');
+      expect(globalSettingsJson).toBeDefined();
+      expect(globalSettingsJson?.path).toContain('.claude/settings.json');
+      expect(globalSettingsJson?.priority).toBe(1);
+
+      // Project paths should also be an array
+      expect(Array.isArray(paths.project)).toBe(true);
+      expect(paths.project.length).toBe(2);
+
+      const projectHooksJson = paths.project.find(p => p.type === 'hooks-json');
+      expect(projectHooksJson?.path).toBe('/test/project/.code-agent/hooks/hooks.json');
+
+      const projectSettingsJson = paths.project.find(p => p.type === 'settings-json');
+      expect(projectSettingsJson?.path).toBe('/test/project/.claude/settings.json');
     });
 
     it('should handle different working directories', () => {
       const paths1 = getHooksConfigPaths('/project1');
       const paths2 = getHooksConfigPaths('/project2');
 
-      expect(paths1.project).toBe('/project1/.claude/settings.json');
-      expect(paths2.project).toBe('/project2/.claude/settings.json');
-      // Global path should be the same
-      expect(paths1.global).toBe(paths2.global);
+      // Project paths should differ
+      const project1Legacy = paths1.project.find(p => p.type === 'settings-json');
+      const project2Legacy = paths2.project.find(p => p.type === 'settings-json');
+      expect(project1Legacy?.path).toBe('/project1/.claude/settings.json');
+      expect(project2Legacy?.path).toBe('/project2/.claude/settings.json');
+
+      // Global paths should be the same
+      expect(paths1.global).toEqual(paths2.global);
     });
   });
 

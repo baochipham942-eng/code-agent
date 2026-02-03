@@ -1,0 +1,556 @@
+// ============================================================================
+// Task Router - 智能路由器（混合架构 Layer 3）
+// ============================================================================
+//
+// 路由决策：
+// 1. 简单任务 → 核心角色（直接执行）
+// 2. 中等任务 → 核心角色 + 条件扩展
+// 3. 复杂任务 → 动态生成 Agent Swarm
+//
+// 参考：
+// - LangGraph 的条件路由
+// - Bloomreach 的混合架构（静态骨架 + 动态执行）
+// ============================================================================
+
+import { createLogger } from '../../services/infra/logger';
+import {
+  type CoreAgentId,
+  type CoreAgentConfig,
+  CORE_AGENTS,
+  recommendCoreAgent,
+  isCoreAgent,
+} from './coreAgents';
+import {
+  type DynamicAgentConfig,
+  type DynamicAgentSpec,
+  type GenerationContext,
+  getDynamicAgentFactory,
+  generateAnalysisPrompt,
+} from './dynamicFactory';
+
+const logger = createLogger('TaskRouter');
+
+// ============================================================================
+// Types
+// ============================================================================
+
+/**
+ * 任务复杂度
+ */
+export type TaskComplexity = 'simple' | 'moderate' | 'complex';
+
+/**
+ * 路由决策类型
+ */
+export type RoutingDecisionType = 'core' | 'dynamic' | 'swarm';
+
+/**
+ * 核心角色路由决策
+ */
+export interface CoreRoutingDecision {
+  type: 'core';
+  agent: CoreAgentConfig;
+  reason: string;
+}
+
+/**
+ * 动态 Agent 路由决策
+ */
+export interface DynamicRoutingDecision {
+  type: 'dynamic';
+  agents: DynamicAgentConfig[];
+  executionOrder: 'parallel' | 'sequential' | 'mixed';
+  reason: string;
+}
+
+/**
+ * Agent Swarm 路由决策
+ */
+export interface SwarmRoutingDecision {
+  type: 'swarm';
+  agents: DynamicAgentConfig[];
+  config: SwarmConfig;
+  reason: string;
+}
+
+export type RoutingDecision = CoreRoutingDecision | DynamicRoutingDecision | SwarmRoutingDecision;
+
+/**
+ * Swarm 配置
+ */
+export interface SwarmConfig {
+  maxAgents: number;
+  reportingMode: 'sparse' | 'full';
+  conflictResolution: 'coordinator' | 'vote';
+  timeout: number;
+}
+
+/**
+ * 任务分析结果
+ */
+export interface TaskAnalysis {
+  /** 任务复杂度 */
+  complexity: TaskComplexity;
+  /** 推荐的任务类型 */
+  taskType: string;
+  /** 涉及的文件操作 */
+  involvesFiles: boolean;
+  /** 涉及网络操作 */
+  involvesNetwork: boolean;
+  /** 涉及命令执行 */
+  involvesExecution: boolean;
+  /** 预估步骤数 */
+  estimatedSteps: number;
+  /** 可并行子任务数 */
+  parallelism: number;
+  /** 需要的专业能力 */
+  specializations: string[];
+  /** 分析置信度 */
+  confidence: number;
+}
+
+/**
+ * 路由上下文
+ */
+export interface RoutingContext {
+  /** 用户任务 */
+  task: string;
+  /** 工作目录 */
+  workingDirectory?: string;
+  /** 项目结构 */
+  projectStructure?: string;
+  /** 相关文件 */
+  relevantFiles?: string[];
+  /** 会话 ID */
+  sessionId?: string;
+  /** 强制使用的 Agent ID */
+  forcedAgentId?: string;
+}
+
+// ============================================================================
+// Task Analysis
+// ============================================================================
+
+/**
+ * 复杂度指标
+ */
+const COMPLEXITY_INDICATORS = {
+  simple: [
+    /\b(find|search|list|show|get|what is|读取|查找|列出|显示)\b/i,
+  ],
+  complex: [
+    /\b(refactor|redesign|architect|comprehensive|detailed|complete|全面|重构|设计|详细|完整)\b/i,
+    /\b(analyze.*and.*implement|分析.*并.*实现)\b/i,
+    /\b(multiple files|多个文件)\b/i,
+  ],
+};
+
+/**
+ * 专业化指标
+ */
+const SPECIALIZATION_INDICATORS: Record<string, RegExp[]> = {
+  'database': [/\b(database|sql|schema|migration|postgresql|mysql|sqlite)\b/i],
+  'frontend': [/\b(react|vue|css|ui|component|frontend|前端)\b/i],
+  'backend': [/\b(api|server|backend|service|后端|接口)\b/i],
+  'devops': [/\b(deploy|ci|cd|docker|kubernetes|部署|容器)\b/i],
+  'security': [/\b(security|auth|permission|vulnerability|安全|权限)\b/i],
+  'performance': [/\b(performance|optimize|speed|latency|性能|优化)\b/i],
+};
+
+/**
+ * 分析任务
+ */
+export function analyzeTask(task: string): TaskAnalysis {
+  const lower = task.toLowerCase();
+
+  // 检测复杂度
+  let complexity: TaskComplexity = 'moderate';
+
+  for (const pattern of COMPLEXITY_INDICATORS.simple) {
+    if (pattern.test(task) && task.length < 100) {
+      complexity = 'simple';
+      break;
+    }
+  }
+
+  for (const pattern of COMPLEXITY_INDICATORS.complex) {
+    if (pattern.test(task)) {
+      complexity = 'complex';
+      break;
+    }
+  }
+
+  // 长任务描述通常更复杂
+  if (task.length > 500) {
+    complexity = 'complex';
+  }
+
+  // 多个编号列表
+  const numberedItems = (task.match(/\d+\./g) || []).length;
+  if (numberedItems >= 3) {
+    complexity = 'complex';
+  }
+
+  // 检测涉及的操作
+  const involvesFiles = /\b(file|read|write|edit|create|modify|文件|读取|写入|修改)\b/i.test(task);
+  const involvesNetwork = /\b(http|api|fetch|url|web|network|网络|接口)\b/i.test(task);
+  const involvesExecution = /\b(run|execute|test|build|命令|执行|测试|构建)\b/i.test(task);
+
+  // 检测专业化需求
+  const specializations: string[] = [];
+  for (const [spec, patterns] of Object.entries(SPECIALIZATION_INDICATORS)) {
+    for (const pattern of patterns) {
+      if (pattern.test(task)) {
+        specializations.push(spec);
+        break;
+      }
+    }
+  }
+
+  // 估算步骤数
+  let estimatedSteps = 5;
+  if (complexity === 'simple') estimatedSteps = 3;
+  if (complexity === 'complex') estimatedSteps = 15;
+  if (numberedItems > 0) estimatedSteps = Math.max(estimatedSteps, numberedItems * 3);
+
+  // 估算并行度
+  let parallelism = 1;
+  if (specializations.length > 1) parallelism = specializations.length;
+  if (/\b(parallel|concurrent|同时|并行)\b/i.test(task)) parallelism = Math.max(parallelism, 3);
+  if (/(\d+)\s*(个|份|批)/.test(task)) {
+    const match = task.match(/(\d+)\s*(个|份|批)/);
+    if (match && parseInt(match[1]) > 5) {
+      parallelism = Math.min(Math.ceil(parseInt(match[1]) / 10), 10);
+    }
+  }
+
+  // 推断任务类型
+  let taskType = 'code';
+  if (/\b(review|审查|检查)\b/i.test(task)) taskType = 'review';
+  if (/\b(search|find|explore|查找|搜索|探索)\b/i.test(task)) taskType = 'search';
+  if (/\b(plan|design|规划|设计)\b/i.test(task)) taskType = 'plan';
+  if (/\b(test|测试)\b/i.test(task)) taskType = 'test';
+
+  // 计算置信度
+  let confidence = 0.5;
+  if (complexity !== 'moderate') confidence += 0.1;
+  if (specializations.length > 0) confidence += 0.1;
+  if (task.length > 50) confidence += 0.1;
+
+  return {
+    complexity,
+    taskType,
+    involvesFiles,
+    involvesNetwork,
+    involvesExecution,
+    estimatedSteps,
+    parallelism,
+    specializations,
+    confidence: Math.min(confidence, 1),
+  };
+}
+
+// ============================================================================
+// Task Router
+// ============================================================================
+
+/**
+ * 任务路由器
+ *
+ * 根据任务复杂度和特征，决定使用核心角色、动态 Agent 还是 Agent Swarm。
+ */
+export class TaskRouter {
+  private factory = getDynamicAgentFactory();
+
+  /**
+   * 路由任务
+   *
+   * @param context - 路由上下文
+   * @returns 路由决策
+   */
+  async route(context: RoutingContext): Promise<RoutingDecision> {
+    const startTime = Date.now();
+    const analysis = analyzeTask(context.task);
+
+    logger.info('Routing task', {
+      complexity: analysis.complexity,
+      taskType: analysis.taskType,
+      parallelism: analysis.parallelism,
+      specializations: analysis.specializations,
+    });
+
+    // 强制指定 Agent
+    if (context.forcedAgentId && isCoreAgent(context.forcedAgentId)) {
+      return {
+        type: 'core',
+        agent: CORE_AGENTS[context.forcedAgentId],
+        reason: `Forced agent: ${context.forcedAgentId}`,
+      };
+    }
+
+    // 路由决策
+    let decision: RoutingDecision;
+
+    if (this.shouldUseCoreAgent(analysis)) {
+      decision = this.routeToCoreAgent(analysis, context);
+    } else if (this.shouldUseSwarm(analysis)) {
+      decision = await this.routeToSwarm(analysis, context);
+    } else {
+      decision = await this.routeToDynamic(analysis, context);
+    }
+
+    logger.info('Routing decision', {
+      type: decision.type,
+      reason: decision.reason,
+      routingTime: Date.now() - startTime,
+    });
+
+    return decision;
+  }
+
+  /**
+   * 判断是否应该使用核心角色
+   */
+  private shouldUseCoreAgent(analysis: TaskAnalysis): boolean {
+    // 简单任务直接用核心角色
+    if (analysis.complexity === 'simple') {
+      return true;
+    }
+
+    // 中等任务且无特殊需求
+    if (analysis.complexity === 'moderate' && analysis.specializations.length <= 1) {
+      return true;
+    }
+
+    // 低并行度
+    if (analysis.parallelism <= 1) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * 判断是否应该使用 Swarm
+   */
+  private shouldUseSwarm(analysis: TaskAnalysis): boolean {
+    // 高并行度
+    if (analysis.parallelism >= 3) {
+      return true;
+    }
+
+    // 复杂任务 + 多专业化
+    if (analysis.complexity === 'complex' && analysis.specializations.length >= 2) {
+      return true;
+    }
+
+    // 大量步骤
+    if (analysis.estimatedSteps >= 15) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * 路由到核心角色
+   */
+  private routeToCoreAgent(
+    analysis: TaskAnalysis,
+    _context: RoutingContext
+  ): CoreRoutingDecision {
+    const agentId = recommendCoreAgent(analysis.taskType);
+    const agent = CORE_AGENTS[agentId];
+
+    return {
+      type: 'core',
+      agent,
+      reason: `Simple/moderate task → core agent: ${agentId}`,
+    };
+  }
+
+  /**
+   * 路由到动态 Agent
+   */
+  private async routeToDynamic(
+    analysis: TaskAnalysis,
+    context: RoutingContext
+  ): Promise<DynamicRoutingDecision> {
+    // 生成动态 Agent 规格
+    const specs = this.generateDynamicSpecs(analysis, context);
+
+    // 创建 Agent
+    const generationContext: GenerationContext = {
+      task: context.task,
+      workingDirectory: context.workingDirectory,
+      projectStructure: context.projectStructure,
+      relevantFiles: context.relevantFiles,
+      parentTaskId: context.sessionId || `task-${Date.now()}`,
+    };
+
+    const result = this.factory.createFromSpecs(specs, generationContext);
+
+    return {
+      type: 'dynamic',
+      agents: result.agents,
+      executionOrder: result.executionOrder,
+      reason: `Moderate task with specializations → ${specs.length} dynamic agents`,
+    };
+  }
+
+  /**
+   * 路由到 Swarm
+   */
+  private async routeToSwarm(
+    analysis: TaskAnalysis,
+    context: RoutingContext
+  ): Promise<SwarmRoutingDecision> {
+    // 生成更多的动态 Agent
+    const specs = this.generateSwarmSpecs(analysis, context);
+
+    // 创建 Agent
+    const generationContext: GenerationContext = {
+      task: context.task,
+      workingDirectory: context.workingDirectory,
+      projectStructure: context.projectStructure,
+      relevantFiles: context.relevantFiles,
+      parentTaskId: context.sessionId || `task-${Date.now()}`,
+    };
+
+    const result = this.factory.createFromSpecs(specs, generationContext);
+
+    // Swarm 配置
+    const config: SwarmConfig = {
+      maxAgents: Math.min(analysis.parallelism * 2, 50),
+      reportingMode: 'sparse',  // 稀疏汇报
+      conflictResolution: 'coordinator',
+      timeout: analysis.estimatedSteps * 60000,  // 每步 1 分钟
+    };
+
+    return {
+      type: 'swarm',
+      agents: result.agents,
+      config,
+      reason: `Complex task with high parallelism → swarm with ${result.agents.length} agents`,
+    };
+  }
+
+  /**
+   * 生成动态 Agent 规格
+   */
+  private generateDynamicSpecs(
+    analysis: TaskAnalysis,
+    context: RoutingContext
+  ): DynamicAgentSpec[] {
+    const specs: DynamicAgentSpec[] = [];
+
+    // 根据专业化生成
+    for (const spec of analysis.specializations) {
+      specs.push({
+        name: `${spec}-specialist`,
+        responsibility: `Handle ${spec}-related aspects of the task`,
+        tools: this.getToolsForSpecialization(spec),
+        parallelizable: true,
+        dependencies: [],
+      });
+    }
+
+    // 如果没有专业化，生成通用的
+    if (specs.length === 0) {
+      const coreId = recommendCoreAgent(analysis.taskType);
+      specs.push({
+        name: `${analysis.taskType}-executor`,
+        responsibility: `Execute the ${analysis.taskType} task`,
+        tools: CORE_AGENTS[coreId].tools,
+        parallelizable: false,
+        dependencies: [],
+      });
+    }
+
+    return specs;
+  }
+
+  /**
+   * 生成 Swarm Agent 规格
+   */
+  private generateSwarmSpecs(
+    analysis: TaskAnalysis,
+    context: RoutingContext
+  ): DynamicAgentSpec[] {
+    const specs: DynamicAgentSpec[] = [];
+
+    // 1. 规划 Agent（总是第一个）
+    specs.push({
+      name: 'task-planner',
+      responsibility: 'Analyze the task and create a detailed execution plan',
+      tools: ['read_file', 'glob', 'grep', 'list_directory'],
+      parallelizable: false,
+      dependencies: [],
+    });
+
+    // 2. 专业化 Agent
+    for (const spec of analysis.specializations) {
+      specs.push({
+        name: `${spec}-worker`,
+        responsibility: `Implement ${spec}-related changes`,
+        tools: this.getToolsForSpecialization(spec),
+        parallelizable: true,
+        dependencies: ['task-planner'],
+      });
+    }
+
+    // 3. 如果并行度高，添加更多工作 Agent
+    if (analysis.parallelism > analysis.specializations.length) {
+      const additionalWorkers = analysis.parallelism - analysis.specializations.length;
+      for (let i = 0; i < Math.min(additionalWorkers, 5); i++) {
+        specs.push({
+          name: `worker-${i + 1}`,
+          responsibility: `Execute assigned subtasks from the plan`,
+          tools: ['read_file', 'write_file', 'edit_file', 'glob', 'grep', 'bash'],
+          parallelizable: true,
+          dependencies: ['task-planner'],
+        });
+      }
+    }
+
+    // 4. 验证 Agent（总是最后一个）
+    specs.push({
+      name: 'task-verifier',
+      responsibility: 'Verify all changes and run tests',
+      tools: ['read_file', 'glob', 'grep', 'bash'],
+      parallelizable: false,
+      dependencies: specs.slice(1).map(s => s.name),  // 依赖所有工作 Agent
+    });
+
+    return specs;
+  }
+
+  /**
+   * 获取专业化对应的工具
+   */
+  private getToolsForSpecialization(spec: string): string[] {
+    const toolMap: Record<string, string[]> = {
+      'database': ['read_file', 'write_file', 'edit_file', 'bash', 'glob', 'grep'],
+      'frontend': ['read_file', 'write_file', 'edit_file', 'glob', 'grep'],
+      'backend': ['read_file', 'write_file', 'edit_file', 'bash', 'glob', 'grep'],
+      'devops': ['read_file', 'write_file', 'bash', 'glob'],
+      'security': ['read_file', 'glob', 'grep', 'bash'],
+      'performance': ['read_file', 'glob', 'grep', 'bash'],
+    };
+
+    return toolMap[spec] || ['read_file', 'glob', 'grep'];
+  }
+}
+
+// ============================================================================
+// Singleton
+// ============================================================================
+
+let routerInstance: TaskRouter | null = null;
+
+export function getTaskRouter(): TaskRouter {
+  if (!routerInstance) {
+    routerInstance = new TaskRouter();
+  }
+  return routerInstance;
+}

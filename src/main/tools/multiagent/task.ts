@@ -17,7 +17,8 @@ import {
   getAgentMaxBudget,
   getAgentDynamicMaxIterations,
   getSubagentModelConfig,
-  AGENT_ALIASES,
+  CORE_AGENT_IDS,
+  isCoreAgent,
 } from '../../agent/agentDefinition';
 import { taskDeduplication } from '../../agent/taskDeduplication';
 import {
@@ -66,24 +67,20 @@ function parseAndValidateTaskParams(params: Record<string, unknown>): TaskParams
 
   // 3. 验证 subagent_type
   if (!subagentType || typeof subagentType !== 'string') {
-    const validTypes = getValidAgentTypes();
     return {
       success: false,
-      error: `Missing subagent_type parameter. Valid types: ${validTypes.join(', ')}`,
+      error: `Missing subagent_type parameter. Valid types: ${CORE_AGENT_IDS.join(', ')}`,
     };
   }
 
-  // 4. 检查是否为有效类型（包括别名）
-  const validTypes = getValidAgentTypes();
-  const allValidTypes = [...validTypes, ...Object.keys(AGENT_ALIASES)];
-
-  if (!allValidTypes.includes(subagentType)) {
+  // 4. 检查是否为有效类型
+  if (!isCoreAgent(subagentType)) {
     // 尝试模糊匹配，提供建议
-    const suggestion = findSimilarAgentType(subagentType, allValidTypes);
+    const suggestion = findSimilarAgentType(subagentType, [...CORE_AGENT_IDS]);
     const suggestionText = suggestion ? ` Did you mean "${suggestion}"?` : '';
     return {
       success: false,
-      error: `Invalid subagent_type: "${subagentType}".${suggestionText} Valid types: ${validTypes.join(', ')}`,
+      error: `Invalid subagent_type: "${subagentType}".${suggestionText} Valid types: ${CORE_AGENT_IDS.join(', ')}`,
     };
   }
 
@@ -127,13 +124,6 @@ function extractSubagentType(params: Record<string, unknown>): string | undefine
   }
 
   return undefined;
-}
-
-/**
- * 获取所有有效的 agent 类型
- */
-function getValidAgentTypes(): string[] {
-  return listPredefinedAgentIds();
 }
 
 /**

@@ -84,7 +84,7 @@ describe('SubagentPipeline', () => {
         id: 'test-agent',
         name: 'Test Agent',
         description: 'A test agent',
-        systemPrompt: 'You are a test agent',
+        prompt: 'You are a test agent',
         tools: ['read_file', 'glob'],
         permissionPreset: 'development',
       };
@@ -102,7 +102,7 @@ describe('SubagentPipeline', () => {
     it('should create context with DynamicAgentConfig', () => {
       const dynamicConfig: DynamicAgentConfig = {
         name: 'Dynamic Agent',
-        systemPrompt: 'You are dynamic',
+        prompt: 'You are dynamic',
         tools: ['bash'],
         permissionPreset: 'development',
       };
@@ -114,7 +114,7 @@ describe('SubagentPipeline', () => {
 
     it('should default to "Dynamic Agent" name when not provided', () => {
       const dynamicConfig: DynamicAgentConfig = {
-        systemPrompt: 'No name provided',
+        prompt: 'No name provided',
         tools: ['bash'],
       };
 
@@ -125,7 +125,7 @@ describe('SubagentPipeline', () => {
 
     it('should default to development preset when not provided', () => {
       const dynamicConfig: DynamicAgentConfig = {
-        systemPrompt: 'No preset',
+        prompt: 'No preset',
         tools: [],
       };
 
@@ -144,7 +144,7 @@ describe('SubagentPipeline', () => {
         id: 'child-agent',
         name: 'Child Agent',
         description: 'A child agent',
-        systemPrompt: 'Child',
+        prompt: 'Child',
         tools: ['read_file', 'write_file'],
         permissionPreset: 'development', // write: true
       };
@@ -179,7 +179,7 @@ describe('SubagentPipeline', () => {
         id: 'child-agent',
         name: 'Child',
         description: 'Child',
-        systemPrompt: 'Child',
+        prompt: 'Child',
         tools: [],
         permissionPreset: 'development',
       };
@@ -208,7 +208,7 @@ describe('SubagentPipeline', () => {
         id: 'child-agent',
         name: 'Child',
         description: 'Child',
-        systemPrompt: 'Child',
+        prompt: 'Child',
         tools: [],
         permissionPreset: 'development',
       };
@@ -243,7 +243,7 @@ describe('SubagentPipeline', () => {
         id: 'expensive-agent',
         name: 'Expensive Agent',
         description: 'Expensive',
-        systemPrompt: 'Expensive',
+        prompt: 'Expensive',
         tools: [],
         permissionPreset: 'development',
         maxBudget: 100, // Child wants $100
@@ -259,15 +259,16 @@ describe('SubagentPipeline', () => {
     });
 
     it('should use child budget if less than parent remaining', () => {
-      const agentDef: AgentDefinition = {
+      // Using extended type to include backward-compatible flat fields
+      const agentDef = {
         id: 'cheap-agent',
         name: 'Cheap Agent',
         description: 'Cheap',
-        systemPrompt: 'Cheap',
+        prompt: 'Cheap',
         tools: [],
         permissionPreset: 'development',
-        maxBudget: 2, // Child only wants $2
-      };
+        maxBudget: 2, // Child only wants $2 (flat field for backward compatibility)
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test', undefined, {
         parentRemainingBudget: 10, // Parent has $10
@@ -282,7 +283,7 @@ describe('SubagentPipeline', () => {
         id: 'no-budget-agent',
         name: 'No Budget Agent',
         description: 'No budget set',
-        systemPrompt: 'No budget',
+        prompt: 'No budget',
         tools: [],
         permissionPreset: 'development',
         // No maxBudget set
@@ -306,7 +307,7 @@ describe('SubagentPipeline', () => {
         id: 'tool-agent',
         name: 'Tool Agent',
         description: 'Tool agent',
-        systemPrompt: 'Tools',
+        prompt: 'Tools',
         tools: ['read_file', 'write_file', 'bash', 'glob'], // Child wants these
         permissionPreset: 'development',
       };
@@ -328,7 +329,7 @@ describe('SubagentPipeline', () => {
         id: 'tool-agent',
         name: 'Tool Agent',
         description: 'Tool agent',
-        systemPrompt: 'Tools',
+        prompt: 'Tools',
         tools: ['read_file', 'write_file', 'bash'],
         permissionPreset: 'development',
       };
@@ -344,14 +345,15 @@ describe('SubagentPipeline', () => {
   // --------------------------------------------------------------------------
   describe('Tool Execution Checking', () => {
     it('should block blocked commands', () => {
-      const agentDef: AgentDefinition = {
+      // Using extended type to include backward-compatible flat fields
+      const agentDef = {
         id: 'test-agent',
         name: 'Test',
         description: 'Test',
-        systemPrompt: 'Test',
+        prompt: 'Test',
         tools: ['bash'],
-        permissionPreset: 'readonly', // Has 'rm -rf' blocked
-      };
+        permissionPreset: 'readonly', // Has 'rm -rf' blocked (flat field for backward compatibility)
+      } as AgentDefinition;
 
       const context = pipeline.createContext(agentDef, '/test');
 
@@ -372,7 +374,7 @@ describe('SubagentPipeline', () => {
         id: 'readonly-agent',
         name: 'Readonly',
         description: 'Readonly',
-        systemPrompt: 'Readonly',
+        prompt: 'Readonly',
         tools: ['read_file'],
         permissionPreset: 'readonly',
       };
@@ -395,7 +397,7 @@ describe('SubagentPipeline', () => {
         id: 'dev-agent',
         name: 'Dev',
         description: 'Dev',
-        systemPrompt: 'Dev',
+        prompt: 'Dev',
         tools: ['bash'],
         permissionPreset: 'development',
       };
@@ -424,7 +426,7 @@ describe('SubagentPipeline', () => {
         id: 'budget-agent',
         name: 'Budget Agent',
         description: 'Budget',
-        systemPrompt: 'Budget',
+        prompt: 'Budget',
         tools: [],
         permissionPreset: 'development',
         maxBudget: 10,
@@ -442,7 +444,7 @@ describe('SubagentPipeline', () => {
         id: 'cost-agent',
         name: 'Cost Agent',
         description: 'Cost',
-        systemPrompt: 'Cost',
+        prompt: 'Cost',
         tools: [],
         permissionPreset: 'development',
         maxBudget: 1,
@@ -473,7 +475,7 @@ describe('SubagentPipeline', () => {
         id: 'audit-agent',
         name: 'Audit Agent',
         description: 'Audit',
-        systemPrompt: 'Audit',
+        prompt: 'Audit',
         tools: [],
         permissionPreset: 'development',
       };
@@ -492,7 +494,7 @@ describe('SubagentPipeline', () => {
         id: 'tool-audit',
         name: 'Tool Audit',
         description: 'Audit',
-        systemPrompt: 'Audit',
+        prompt: 'Audit',
         tools: ['read_file'],
         permissionPreset: 'development',
       };
@@ -512,7 +514,7 @@ describe('SubagentPipeline', () => {
         id: 'complete-agent',
         name: 'Complete Agent',
         description: 'Complete',
-        systemPrompt: 'Complete',
+        prompt: 'Complete',
         tools: [],
         permissionPreset: 'development',
       };
@@ -531,7 +533,7 @@ describe('SubagentPipeline', () => {
         id: 'error-agent',
         name: 'Error Agent',
         description: 'Error',
-        systemPrompt: 'Error',
+        prompt: 'Error',
         tools: [],
         permissionPreset: 'development',
       };
@@ -553,7 +555,7 @@ describe('SubagentPipeline', () => {
           id: `agent-${i}`,
           name: `Agent ${i}`,
           description: 'Test',
-          systemPrompt: 'Test',
+          prompt: 'Test',
           tools: [],
           permissionPreset: 'development',
         };
@@ -570,7 +572,7 @@ describe('SubagentPipeline', () => {
         id: 'clear-agent',
         name: 'Clear Agent',
         description: 'Clear',
-        systemPrompt: 'Clear',
+        prompt: 'Clear',
         tools: [],
         permissionPreset: 'development',
       };
@@ -592,7 +594,7 @@ describe('SubagentPipeline', () => {
         id: 'precheck-agent',
         name: 'Precheck Agent',
         description: 'Precheck',
-        systemPrompt: 'Precheck',
+        prompt: 'Precheck',
         tools: ['read_file'],
         permissionPreset: 'development',
         maxBudget: 10,
@@ -621,7 +623,7 @@ describe('SubagentPipeline', () => {
         id: 'stats-agent',
         name: 'Stats Agent',
         description: 'Stats',
-        systemPrompt: 'Stats',
+        prompt: 'Stats',
         tools: [],
         permissionPreset: 'development',
       };
@@ -639,7 +641,7 @@ describe('SubagentPipeline', () => {
         id: 'tool-stats',
         name: 'Tool Stats',
         description: 'Stats',
-        systemPrompt: 'Stats',
+        prompt: 'Stats',
         tools: ['read_file', 'glob'],
         permissionPreset: 'development',
       };
@@ -660,7 +662,7 @@ describe('SubagentPipeline', () => {
         id: 'error-stats',
         name: 'Error Stats',
         description: 'Stats',
-        systemPrompt: 'Stats',
+        prompt: 'Stats',
         tools: [],
         permissionPreset: 'development',
       };

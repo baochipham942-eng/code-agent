@@ -10,7 +10,7 @@ import React, { useState, useEffect } from 'react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { Check, ChevronDown, ChevronRight, ListChecks, Loader2 } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
-import type { TaskProgressData } from '@shared/types';
+import type { TaskProgressData, AgentEvent } from '@shared/types';
 
 // Phase 到中文的映射
 const PHASE_LABELS: Record<string, string> = {
@@ -30,19 +30,19 @@ export const Progress: React.FC = () => {
 
   // 订阅 IPC 事件获取实时进度
   useEffect(() => {
-    const handleAgentEvent = (_event: unknown, data: { type: string; data?: unknown }) => {
-      if (data.type === 'task_progress' && data.data) {
-        setTaskProgress(data.data as TaskProgressData);
-      } else if (data.type === 'task_complete') {
+    const handleAgentEvent = (event: AgentEvent) => {
+      if (event.type === 'task_progress' && event.data) {
+        setTaskProgress(event.data as TaskProgressData);
+      } else if (event.type === 'task_complete') {
         setTaskProgress(null);
       }
     };
 
     // 订阅事件
-    window.electronAPI?.on?.('agent:event', handleAgentEvent);
+    const unsubscribe = window.electronAPI?.on?.('agent:event', handleAgentEvent);
 
     return () => {
-      window.electronAPI?.off?.('agent:event', handleAgentEvent);
+      unsubscribe?.();
     };
   }, []);
 

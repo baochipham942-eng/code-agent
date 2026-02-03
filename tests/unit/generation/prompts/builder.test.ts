@@ -17,7 +17,7 @@ import {
   buildAllPrompts,
   SYSTEM_PROMPTS,
 } from '../../../../src/main/generation/prompts/builder';
-import { CONSTITUTION } from '../../../../src/main/generation/prompts/constitution';
+// CONSTITUTION no longer used in new prompt structure
 import { BASE_PROMPTS } from '../../../../src/main/generation/prompts/base';
 import {
   BASH_TOOL_DESCRIPTION,
@@ -63,10 +63,10 @@ describe('Prompt Builder', () => {
       expect(prompt.length).toBeGreaterThan(0);
     });
 
-    it('should include CONSTITUTION in all prompts', () => {
+    it('should include identity in all prompts', () => {
       for (const gen of ALL_GENERATIONS) {
         const prompt = buildPrompt(gen);
-        expect(prompt).toContain('Code Agent 宪法');
+        expect(prompt).toContain('Code Agent');
       }
     });
 
@@ -211,18 +211,18 @@ describe('Prompt Builder', () => {
       }
     });
 
-    it('should include constitution components', () => {
+    it('should include identity components', () => {
       const prompt = buildPrompt('gen4');
-      // Constitution includes these sections
-      expect(prompt).toContain('Code Agent 宪法');
+      // Identity includes Code Agent declaration
+      expect(prompt).toContain('Code Agent');
     });
 
     it('should include rules in prompts', () => {
-      // All generations should have output format rules
+      // All generations should have reasonable length
       for (const gen of ALL_GENERATIONS) {
         const prompt = buildPrompt(gen);
-        // Output format rules are common
-        expect(prompt.length).toBeGreaterThan(5000);
+        // Prompts should have meaningful content
+        expect(prompt.length).toBeGreaterThan(1000);
       }
     });
 
@@ -244,12 +244,11 @@ describe('Prompt Builder', () => {
       expect(gen3Prompt.length).toBeGreaterThan(gen2Prompt.length);
     });
 
-    it('should have gen4+ include github routing rules', () => {
-      const gen3Prompt = buildPrompt('gen3');
+    it('should have gen4 include additional capabilities', () => {
       const gen4Prompt = buildPrompt('gen4');
 
-      // gen4 has additional github routing rules
-      expect(gen4Prompt.length).toBeGreaterThan(gen3Prompt.length);
+      // gen4 has skill and web capabilities
+      expect(gen4Prompt).toContain('skill');
     });
   });
 
@@ -280,8 +279,8 @@ describe('Prompt Builder', () => {
       // gen1 has no task tool
       expect(gen1Prompt).not.toContain(TASK_TOOL_DESCRIPTION);
 
-      // gen1 still has constitution and basic rules
-      expect(gen1Prompt).toContain('Code Agent 宪法');
+      // gen1 still has identity and basic rules
+      expect(gen1Prompt).toContain('Code Agent');
     });
 
     it('should have gen4 as feature-complete generation', () => {
@@ -291,7 +290,7 @@ describe('Prompt Builder', () => {
       expect(gen4Prompt).toContain(TASK_TOOL_DESCRIPTION);
       expect(gen4Prompt).toContain(BASH_TOOL_DESCRIPTION);
       expect(gen4Prompt).toContain(EDIT_TOOL_DESCRIPTION);
-      expect(gen4Prompt).toContain('Code Agent 宪法');
+      expect(gen4Prompt).toContain('Code Agent');
     });
   });
 

@@ -197,10 +197,12 @@ function callMoonshotStream(
 
             if (delta) {
               // 处理文本内容
-              if (delta.content) {
-                content += delta.content;
+              // 注意：Kimi K2.5 第三方代理可能将内容放在 reasoning 字段
+              const textContent = delta.content || delta.reasoning;
+              if (textContent) {
+                content += textContent;
                 if (onStream) {
-                  onStream({ type: 'text', content: delta.content });
+                  onStream({ type: 'text', content: textContent });
                 }
               }
 

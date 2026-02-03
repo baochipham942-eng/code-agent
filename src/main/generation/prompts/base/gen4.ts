@@ -51,5 +51,3 @@ export const GEN4_TOOLS = `
 - 控制桌面或浏览器
 `;
 
-// 保持向后兼容
-export const GEN4_BASE_PROMPT = GEN4_TOOLS;

@@ -27,5 +27,3 @@ export const GEN1_TOOLS = `
 - 访问网络或外部服务
 `;
 
-// 保持向后兼容
-export const GEN1_BASE_PROMPT = GEN1_TOOLS;

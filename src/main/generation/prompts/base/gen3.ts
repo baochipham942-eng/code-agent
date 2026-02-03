@@ -58,5 +58,3 @@ export const GEN3_TOOLS = `
    - 宁可做一个不完美的修改，也不要什么都不做
 `;
 
-// 保持向后兼容
-export const GEN3_BASE_PROMPT = GEN3_TOOLS;

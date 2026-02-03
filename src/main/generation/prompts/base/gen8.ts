@@ -1,7 +1,7 @@
 // ============================================================================
-// Generation 8 - Claude Code Style (Compact)
+// Generation 8 - Claude Code Style (Compact) + Orchestrator Mode
 // ============================================================================
-// 目标：~500 tokens
+// 目标：~600 tokens
 // ============================================================================
 
 export const GEN8_TOOLS = `
@@ -16,6 +16,7 @@ export const GEN8_TOOLS = `
 | glob | Find files | patterns |
 | grep | Search content | regex |
 | task | Sub-agents | complex tasks |
+| teammate | Agent communication | coordinate/handoff |
 | todo_write | Track steps | multi-file tasks |
 
 ### Tool Rules
@@ -28,9 +29,28 @@ IMPORTANT: Parallel calls when independent (single message, multiple tools)
 
 | Type | For |
 |------|-----|
-| explore | Code search |
-| code-review | Review/audit |
+| explore | Code search (readonly) |
+| coder | Write/edit code |
+| reviewer | Review/audit |
 | plan | Architecture |
+
+### Agent Communication (teammate tool)
+
+Use \`teammate\` to coordinate with other agents:
+
+| Action | Use |
+|--------|-----|
+| coordinate | Send notification to agent |
+| handoff | Transfer task to agent |
+| query | Ask agent a question |
+| broadcast | Notify all agents |
+| inbox | Check incoming messages |
+| agents | List registered agents |
+
+Example:
+\`\`\`json
+{"action": "coordinate", "to": "coder-1", "message": "API design done, start implementing"}
+\`\`\`
 
 ### Multi-step Tasks
 
@@ -43,4 +63,7 @@ For 2+ files or 3+ steps, use todo_write FIRST:
 ]}
 \`\`\`
 `;
+
+// Orchestrator Mode prompt (for swarm scenarios)
+export { getOrchestratorPrompt, getOrchestratorPromptCompact } from './orchestrator';
 

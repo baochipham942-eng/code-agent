@@ -138,6 +138,8 @@ import type {
   BackgroundTaskUpdateEvent,
 } from './types/sessionState';
 
+import type { SwarmEvent } from './types/swarm';
+
 // Re-export session state types for consumer convenience
 export type {
   SessionStatus,
@@ -571,6 +573,9 @@ export const IPC_CHANNELS = {
   BACKGROUND_GET_TASKS: BACKGROUND_CHANNELS.GET_TASKS,
   BACKGROUND_GET_COUNT: BACKGROUND_CHANNELS.GET_COUNT,
   BACKGROUND_TASK_UPDATE: BACKGROUND_CHANNELS.TASK_UPDATE,
+
+  // Swarm channels (Agent Swarm 监控)
+  SWARM_EVENT: 'swarm:event',
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -927,6 +932,8 @@ export interface IpcEventHandlers {
   // Channel events
   [IPC_CHANNELS.CHANNEL_ACCOUNTS_CHANGED]: (accounts: ChannelAccount[]) => void;
   [IPC_CHANNELS.CHANNEL_ACCOUNT_STATUS_CHANGED]: (event: { accountId: string; status: string; error?: string }) => void;
+  // Swarm events
+  [IPC_CHANNELS.SWARM_EVENT]: (event: SwarmEvent) => void;
 }
 
 // ----------------------------------------------------------------------------

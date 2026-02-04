@@ -17,6 +17,8 @@ import {
 } from '../../shared/types/contextHealth';
 import { getContextHealthService } from './contextHealthService';
 import { compactModelSummarize } from './compactModel';
+import type { HookManager } from '../hooks/hookManager';
+import type { Message } from '../../shared/types';
 
 const logger = createLogger('AutoCompressor');
 
@@ -91,13 +93,15 @@ export class AutoContextCompressor {
    * @param messages - 当前消息历史
    * @param systemPrompt - 系统提示词
    * @param model - 模型名称
+   * @param hookManager - 可选的 HookManager 实例，用于触发 PreCompact Hook
    * @returns 压缩结果
    */
   async checkAndCompress(
     sessionId: string,
     messages: CompressedMessage[],
     systemPrompt: string,
-    model: string
+    model: string,
+    hookManager?: HookManager
   ): Promise<CompressionResult> {
     if (!this.config.enabled) {
       return { compressed: false, messages, savedTokens: 0 };
@@ -121,7 +125,7 @@ export class AutoContextCompressor {
     const strategy = this.selectStrategy(usageRatio);
 
     // 执行压缩
-    const result = await this.applyStrategy(strategy, messages, systemPrompt);
+    const result = await this.applyStrategy(sessionId, strategy, messages, systemPrompt, health, hookManager);
 
     if (result.compressed) {
       // 记录压缩历史
@@ -164,26 +168,71 @@ export class AutoContextCompressor {
    * 应用压缩策略
    */
   private async applyStrategy(
+    sessionId: string,
     strategy: CompressionStrategy,
     messages: CompressedMessage[],
-    systemPrompt: string
+    systemPrompt: string,
+    health: ContextHealthState,
+    hookManager?: HookManager
   ): Promise<CompressionResult> {
+    // 计算目标 token 数
+    const targetTokens = Math.floor(health.maxTokens * this.config.targetUsage);
+
+    // 调用 PreCompact Hook，提取关键信息
+    let preservedContext: string | undefined;
+    if (hookManager) {
+      try {
+        const hookResult = await hookManager.triggerPreCompact(
+          sessionId,
+          messages as unknown as Message[],
+          health.currentTokens,
+          targetTokens
+        );
+        preservedContext = hookResult.preservedContext;
+
+        if (preservedContext) {
+          logger.info(`[AutoCompressor] PreCompact hook extracted ${estimateTokens(preservedContext)} tokens of preserved context`);
+        }
+      } catch (error) {
+        logger.warn('[AutoCompressor] PreCompact hook failed, continuing without preserved context:', error);
+      }
+    }
+
     switch (strategy) {
       case 'ai_summary':
-        return this.applyAISummary(messages, systemPrompt);
+        return this.applyAISummary(messages, systemPrompt, preservedContext);
       case 'code_extract':
-        return this.applyCodeExtract(messages);
+        return this.applyCodeExtract(messages, preservedContext);
       case 'truncate':
       default:
-        return this.applyTruncate(messages);
+        return this.applyTruncate(messages, preservedContext);
     }
   }
 
   /**
    * 截断压缩策略
    */
-  private applyTruncate(messages: CompressedMessage[]): CompressionResult {
+  private applyTruncate(
+    messages: CompressedMessage[],
+    preservedContext?: string
+  ): CompressionResult {
     const result = this.historyCompressor.compress(messages);
+
+    // 如果有保留的上下文，注入到消息列表开头
+    if (preservedContext && result.wasCompressed) {
+      const contextMessage: CompressedMessage = {
+        role: 'system',
+        content: preservedContext,
+        compressed: true,
+      };
+      return {
+        compressed: true,
+        messages: [contextMessage, ...result.messages],
+        savedTokens: result.stats.savedTokens - estimateTokens(preservedContext),
+        strategy: 'truncate',
+      };
+    }
+
     return {
       compressed: result.wasCompressed,
       messages: result.messages,
@@ -196,7 +245,10 @@ export class AutoContextCompressor {
    * 代码提取压缩策略
    * 保留代码块，压缩叙述文本
    */
-  private applyCodeExtract(messages: CompressedMessage[]): CompressionResult {
+  private applyCodeExtract(
+    messages: CompressedMessage[],
+    preservedContext?: string
+  ): CompressionResult {
     const preserveCount = this.config.preserveRecentCount;
     const recentMessages = messages.slice(-preserveCount);
     const olderMessages = messages.slice(0, -preserveCount);
@@ -207,6 +259,15 @@ export class AutoContextCompressor {
 
     let savedTokens = 0;
     const compressedOlder: CompressedMessage[] = [];
+
+    // 如果有保留的上下文，作为第一条消息
+    if (preservedContext) {
+      compressedOlder.push({
+        role: 'system',
+        content: preservedContext,
+        compressed: true,
+      });
+    }
 
     for (const msg of olderMessages) {
       if (msg.role === 'user') {
@@ -230,10 +291,15 @@ export class AutoContextCompressor {
       }
     }
 
+    // 扣除保留上下文的 token 数
+    if (preservedContext) {
+      savedTokens -= estimateTokens(preservedContext);
+    }
+
     return {
-      compressed: savedTokens > 0,
+      compressed: savedTokens > 0 || !!preservedContext,
       messages: [...compressedOlder, ...recentMessages],
-      savedTokens,
+      savedTokens: Math.max(0, savedTokens),
       strategy: 'code_extract',
     };
   }
@@ -270,7 +336,8 @@ export class AutoContextCompressor {
    */
   private async applyAISummary(
     messages: CompressedMessage[],
-    systemPrompt: string
+    systemPrompt: string,
+    preservedContext?: string
   ): Promise<CompressionResult> {
     const preserveCount = this.config.preserveRecentCount;
     const recentMessages = messages.slice(-preserveCount);
@@ -278,7 +345,7 @@ export class AutoContextCompressor {
 
     if (olderMessages.length < 4) {
       // 消息太少，使用截断策略
-      return this.applyTruncate(messages);
+      return this.applyTruncate(messages, preservedContext);
     }
 
     try {
@@ -307,25 +374,33 @@ ${contentToSummarize}
       if (summaryTokens >= originalTokens) {
         // 摘要没有节省空间，回退到截断
         logger.warn('[AutoCompressor] AI summary did not reduce tokens, falling back to truncate');
-        return this.applyTruncate(messages);
+        return this.applyTruncate(messages, preservedContext);
       }
 
-      // 创建摘要消息
+      // 创建摘要消息，包含保留的上下文
+      const summaryContent = preservedContext
+        ? `${preservedContext}\n\n[对话历史摘要]\n${summary}`
+        : `[对话历史摘要]\n${summary}`;
+
       const summaryMessage: CompressedMessage = {
         role: 'system',
-        content: `[对话历史摘要]\n${summary}`,
+        content: summaryContent,
         compressed: true,
       };
+
+      // 计算实际节省的 token 数（扣除保留上下文的开销）
+      const preservedTokens = preservedContext ? estimateTokens(preservedContext) : 0;
+      const actualSavedTokens = originalTokens - summaryTokens - preservedTokens;
 
       return {
         compressed: true,
         messages: [summaryMessage, ...recentMessages],
-        savedTokens: originalTokens - summaryTokens,
+        savedTokens: Math.max(0, actualSavedTokens),
         strategy: 'ai_summary',
       };
     } catch (error) {
       logger.error('[AutoCompressor] AI summary failed, falling back to truncate:', error);
-      return this.applyTruncate(messages);
+      return this.applyTruncate(messages, preservedContext);
     }
   }
 

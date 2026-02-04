@@ -13,7 +13,8 @@ export type ReminderType =
   | 'MUST_DELEGATE'
   | 'PLAN_MODE_ACTIVE'
   | 'AUDIT_MODE'
-  | 'REVIEW_MODE';
+  | 'REVIEW_MODE'
+  | 'PPT_FORMAT_SELECTION';
 
 /**
  * 系统提醒内容
@@ -103,6 +104,43 @@ task(subagent_type="code-review", prompt="维度3: ...")
 审查维度示例：代码质量、潜在问题、性能考量、安全性、可维护性
 </system-reminder>
 `,
+
+  /**
+   * PPT 格式选择提醒
+   */
+  PPT_FORMAT_SELECTION: `
+<system-reminder>
+**演示文稿格式选择**：检测到 PPT/演示文稿生成任务。
+
+⚠️ 在生成前，你**必须**先询问用户选择格式！
+
+系统支持 2 种格式：
+
+| 格式 | 优点 | 适用场景 |
+|------|------|----------|
+| **PPTX** | 兼容 Office/WPS，可直接编辑 | 商务演示、通用场景 |
+| **Slidev** | Markdown 编写，代码高亮强，动画丰富 | 技术分享、开发者演示 |
+
+**必须执行**：使用 ask_user_question 工具询问用户：
+\`\`\`
+ask_user_question({
+  questions: [{
+    question: "您希望生成哪种格式的演示文稿？",
+    header: "PPT格式",
+    options: [
+      { label: "PPTX（推荐）", description: "Office 格式，兼容性好，可直接用 PowerPoint/WPS 编辑" },
+      { label: "Slidev", description: "Markdown 格式，适合技术演示，代码高亮优秀，需 Node.js 预览" }
+    ],
+    multiSelect: false
+  }]
+})
+\`\`\`
+
+根据用户选择：
+- 用户选 PPTX → 使用 ppt_generate 工具
+- 用户选 Slidev → 生成 slides.md 文件（Markdown 格式）
+</system-reminder>
+`,
 };
 
 /**
@@ -114,6 +152,7 @@ export interface TaskFeatures {
   isAuditTask: boolean;
   isReviewTask: boolean;
   isPlanningTask: boolean;
+  isPPTTask: boolean;
   dimensions: string[];
 }
 
@@ -150,12 +189,20 @@ export function detectTaskFeatures(prompt: string): TaskFeatures {
   // 规划任务关键词
   const planningKeywords = ['设计', '实现', '规划', '方案', '架构'];
 
+  // PPT 任务关键词
+  const pptKeywords = [
+    'ppt', 'powerpoint', 'slidev', '演示文稿', '幻灯片',
+    '演示', 'presentation', 'slide', '做个ppt', '生成ppt',
+    '制作ppt', '写个ppt', 'slides',
+  ];
+
   return {
     isMultiDimension: matchedDimensions.length >= 2,
     isComplexTask: complexKeywords.some((k) => normalizedPrompt.includes(k)),
     isAuditTask: auditKeywords.some((k) => normalizedPrompt.includes(k)),
     isReviewTask: reviewKeywords.some((k) => normalizedPrompt.includes(k)),
     isPlanningTask: planningKeywords.some((k) => normalizedPrompt.includes(k)),
+    isPPTTask: pptKeywords.some((k) => normalizedPrompt.includes(k)),
     dimensions: matchedDimensions,
   };
 }
@@ -166,6 +213,11 @@ export function detectTaskFeatures(prompt: string): TaskFeatures {
 export function getSystemReminders(prompt: string): string[] {
   const features = detectTaskFeatures(prompt);
   const reminders: string[] = [];
+
+  // PPT 任务 → 格式选择提醒（优先级最高，放在最前面）
+  if (features.isPPTTask) {
+    reminders.push(REMINDERS.PPT_FORMAT_SELECTION);
+  }
 
   // 多维度任务 → 并行派发提醒
   if (features.isMultiDimension) {

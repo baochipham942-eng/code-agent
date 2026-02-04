@@ -535,8 +535,8 @@ class SkillRepositoryService {
           (r) => r.id === entry.name || `${meta.owner}-${meta.repo}`.toLowerCase() === entry.name
         );
 
-        // 扫描 skills
-        const skillsPath = repo?.skillsPath || 'skills';
+        // 扫描 skills（优先使用 meta.skillsPath，其次是 repo.skillsPath，最后默认 'skills'）
+        const skillsPath = meta.skillsPath || repo?.skillsPath || 'skills';
         const skills = await this.scanSkillsInLibrary(libraryPath, skillsPath);
 
         // 创建库对象

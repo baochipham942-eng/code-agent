@@ -213,7 +213,7 @@ export const Connectors: React.FC = () => {
 
           {/* View all link */}
           <button
-            onClick={() => openSettingsTab('service')}
+            onClick={() => openSettingsTab('mcp')}
             className="text-xs text-zinc-500 hover:text-zinc-300 mt-2 transition-colors"
           >
             {t.taskPanel.viewAllConnectors}

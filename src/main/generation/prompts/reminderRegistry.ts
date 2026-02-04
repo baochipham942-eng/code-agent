@@ -334,24 +334,26 @@ edit_file 更安全，只修改指定部分，减少意外覆盖。
     id: 'PPT_FORMAT_SELECTION',
     priority: 1,
     content: `<system-reminder>
-**PPT 生成必须遵循的流程**：
+**演示文稿格式选择**：检测到 PPT/演示文稿生成任务。
 
-**第一步：收集信息（必须）**
-- 如果是介绍本地项目/产品 → 先用 read_file 读取 package.json、README.md、CLAUDE.md
-- 如果是通用主题 → 先用 web_search 搜索最新数据
+系统支持 2 种格式，请询问用户选择：
 
-**第二步：内容规范**
-- 每页 4-5 个要点，每个要点 20-40 字
-- 内容要具体：包含真实数据、功能名称、技术细节
-- 禁止编造虚假数据
+| 格式 | 优点 | 缺点 | 适用场景 |
+|------|------|------|----------|
+| **PPTX** | 兼容 Office/WPS，可直接编辑 | 样式固定，代码高亮弱 | 商务演示、通用场景 |
+| **Slidev** | Markdown 编写，代码高亮强，动画丰富 | 需要 Node.js 环境预览 | 技术分享、开发者演示 |
 
-**第三步：图表控制**
-- 包含数字/百分比的数据内容会自动生成原生可编辑图表（chart_mode: auto）
-- 复杂流程图可用 mermaid_export 生成透明 PNG，传入 images 参数
-- 10 页 PPT 最多 1-2 张流程图，大部分页面用文字列表即可
+请使用 ask_user_question 工具询问用户：
+- 标题："演示文稿格式"
+- 选项 1：PPTX（Office 格式）- 兼容性好，可直接编辑
+- 选项 2：Slidev（Markdown 格式）- 适合技术演示，代码高亮优秀
+
+根据用户选择：
+- PPTX → 使用 ppt_generate 工具生成
+- Slidev → 挂载 slidev skill，生成 Markdown slides.md
 </system-reminder>`,
-    tokens: 250,
-    shouldInclude: (ctx) => ctx.taskFeatures.isPPTTask ? 1.0 : 0,
+    tokens: 200,
+    shouldInclude: (ctx) => ctx.taskFeatures.isPPTTask ? 1 : 0,
     exclusiveGroup: 'task-type-selection',
     category: 'tool',
   },

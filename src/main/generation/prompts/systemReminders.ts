@@ -106,39 +106,39 @@ task(subagent_type="code-review", prompt="维度3: ...")
 `,
 
   /**
-   * PPT 生成工作流（简化版，不强制询问）
+   * PPT 格式选择提醒
    */
   PPT_FORMAT_SELECTION: `
 <system-reminder>
-**PPT 生成任务**：检测到演示文稿生成需求。
+**演示文稿格式选择**：检测到 PPT/演示文稿生成任务。
 
-**输出格式**：PPTX 文件（可用 PowerPoint/WPS/Keynote 打开编辑）
+⚠️ 在生成前，你**必须**先询问用户选择格式！
 
-**工作流程**：
-1. 如有本地文档素材 → 使用 read_pdf/read_file 读取
-2. 如需图表 → 使用 mermaid_export 生成 PNG 图片
-3. 如需配图 → 使用 image_generate 生成
-4. 最后调用 ppt_generate 生成 PPTX，通过 images 参数嵌入图片
+系统支持 2 种格式：
 
-**ppt_generate 调用示例**：
+| 格式 | 优点 | 适用场景 |
+|------|------|----------|
+| **PPTX** | 兼容 Office/WPS，可直接编辑 | 商务演示、通用场景 |
+| **Slidev** | Markdown 编写，代码高亮强，动画丰富 | 技术分享、开发者演示 |
+
+**必须执行**：使用 ask_user_question 工具询问用户：
 \`\`\`
-ppt_generate({
-  topic: "标题",
-  content: "# 封面\\n## 副标题\\n# 第一章\\n- 要点1\\n- 要点2",
-  theme: "dracula",  // 或 tech/professional/corporate
-  images: [{ slide_index: 1, image_path: "/path/chart.png", position: "center" }]
+ask_user_question({
+  questions: [{
+    question: "您希望生成哪种格式的演示文稿？",
+    header: "PPT格式",
+    options: [
+      { label: "PPTX（推荐）", description: "Office 格式，兼容性好，可直接用 PowerPoint/WPS 编辑" },
+      { label: "Slidev", description: "Markdown 格式，适合技术演示，代码高亮优秀，需 Node.js 预览" }
+    ],
+    multiSelect: false
+  }]
 })
 \`\`\`
 
-**主题选择**：
-- 技术分享 → dracula（暗色科技风）
-- 产品介绍 → professional（商务蓝白）
-- 企业汇报 → corporate（企业正式）
-- 其他 → tech（深蓝科技风）
-
-**禁止**：
-- ❌ 不要用 write_file 生成 slides.md（用户要的是 PPTX）
-- ❌ 不要把 Mermaid 代码直接放到 content 里（必须先用 mermaid_export 转 PNG）
+根据用户选择：
+- 用户选 PPTX → 使用 ppt_generate 工具
+- 用户选 Slidev → 生成 slides.md 文件（Markdown 格式）
 </system-reminder>
 `,
 };

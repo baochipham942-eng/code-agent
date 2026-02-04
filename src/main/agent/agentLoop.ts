@@ -478,45 +478,46 @@ export class AgentLoop {
         // 并行判断失败不影响主流程
         logger.warn('[AgentLoop] Parallel judgment failed, continuing without hint', error);
       }
+    }
 
-      // Dynamic Agent Mode Detection V2 (基于优先级和预算的动态提醒)
-      const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
-      logger.info(`[AgentLoop] Checking dynamic mode for gen${genNum}`);
-      if (genNum >= 3) {
-        try {
-          // 使用 V2 版本，支持 toolsUsedInTurn 上下文
-          const dynamicResult = buildDynamicPromptV2(this.generation.id, userMessage, {
-            toolsUsedInTurn: this.toolsUsedInTurn,
-            iterationCount: this.toolsUsedInTurn.length, // 使用工具调用数量作为迭代近似
-            hasError: false,
-            maxReminderTokens: 800,
-            includeFewShot: genNum >= 4, // Gen4+ 启用 few-shot 示例
-          });
-          this.currentAgentMode = dynamicResult.mode;
+    // Dynamic Agent Mode Detection V2 (基于优先级和预算的动态提醒)
+    // 注意：这里移出了 !isSimpleTask 条件，因为即使简单任务也可能需要动态提醒（如 PPT 格式选择）
+    const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+    logger.info(`[AgentLoop] Checking dynamic mode for gen${genNum}`);
+    if (genNum >= 3) {
+      try {
+        // 使用 V2 版本，支持 toolsUsedInTurn 上下文
+        const dynamicResult = buildDynamicPromptV2(this.generation.id, userMessage, {
+          toolsUsedInTurn: this.toolsUsedInTurn,
+          iterationCount: this.toolsUsedInTurn.length, // 使用工具调用数量作为迭代近似
+          hasError: false,
+          maxReminderTokens: 800,
+          includeFewShot: genNum >= 4, // Gen4+ 启用 few-shot 示例
+        });
+        this.currentAgentMode = dynamicResult.mode;
 
-          logger.info(`[AgentLoop] Dynamic mode detected: ${dynamicResult.mode}`, {
-            features: dynamicResult.features,
-            readOnly: dynamicResult.modeConfig.readOnly,
-            remindersSelected: dynamicResult.reminderStats.deduplication.selected,
-            tokensUsed: dynamicResult.tokensUsed,
-          });
-          logCollector.agent('INFO', `Dynamic mode: ${dynamicResult.mode}`, {
-            readOnly: dynamicResult.modeConfig.readOnly,
-            isMultiDimension: dynamicResult.features.isMultiDimension,
-            reminderStats: dynamicResult.reminderStats,
-          });
+        logger.info(`[AgentLoop] Dynamic mode detected: ${dynamicResult.mode}`, {
+          features: dynamicResult.features,
+          readOnly: dynamicResult.modeConfig.readOnly,
+          remindersSelected: dynamicResult.reminderStats.deduplication.selected,
+          tokensUsed: dynamicResult.tokensUsed,
+        });
+        logCollector.agent('INFO', `Dynamic mode: ${dynamicResult.mode}`, {
+          readOnly: dynamicResult.modeConfig.readOnly,
+          isMultiDimension: dynamicResult.features.isMultiDimension,
+          reminderStats: dynamicResult.reminderStats,
+        });
 
-          // 注入模式系统提醒（如果有）
-          if (dynamicResult.userMessage !== userMessage) {
-            const reminder = dynamicResult.userMessage.substring(userMessage.length).trim();
-            if (reminder) {
-              logger.info(`[AgentLoop] Injecting mode reminder (${reminder.length} chars, ${dynamicResult.tokensUsed} tokens)`);
-              this.injectSystemMessage(reminder);
-            }
+        // 注入模式系统提醒（如果有）
+        if (dynamicResult.userMessage !== userMessage) {
+          const reminder = dynamicResult.userMessage.substring(userMessage.length).trim();
+          if (reminder) {
+            logger.info(`[AgentLoop] Injecting mode reminder (${reminder.length} chars, ${dynamicResult.tokensUsed} tokens)`);
+            this.injectSystemMessage(reminder);
           }
-        } catch (error) {
-          logger.error('[AgentLoop] Dynamic mode detection failed:', error);
         }
+      } catch (error) {
+        logger.error('[AgentLoop] Dynamic mode detection failed:', error);
       }
     }
 
@@ -984,7 +985,7 @@ export class AgentLoop {
     }
 
     // Session end learning (Gen5+)
-    const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+    // genNum already declared above in dynamic mode detection
     if (genNum >= 5 && this.messages.length > 0) {
       this.runSessionEndLearning().catch((err) => {
         logger.error('[AgentLoop] Session end learning error:', err);
@@ -2337,7 +2338,8 @@ ${deferredToolsSummary}
         this.sessionId,
         messagesForCompression,
         this.generation.systemPrompt,
-        this.modelConfig.model || DEFAULT_MODELS.chat
+        this.modelConfig.model || DEFAULT_MODELS.chat,
+        this.hookManager
       );
 
       if (result.compressed) {

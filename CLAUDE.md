@@ -587,6 +587,68 @@ pending → ready → running → completed/failed/cancelled/skipped
 
 ---
 
+## v0.16.20 对标 Claude Code 2026 (2026-02-06)
+
+### Phase 1: 增强型 Compaction 系统
+
+模拟 Claude 的 `context_management.edits` 行为：
+
+| 能力 | 说明 |
+|------|------|
+| `CompactionBlock` | 可审计摘要块，保留在消息历史中 |
+| `triggerTokens` | 绝对 token 阈值触发（默认 100000），取代百分比 |
+| `pauseAfterCompaction` | 压缩后暂停，通过 PreCompact Hook 注入保留内容 |
+| `shouldWrapUp()` | 基于 compaction 次数 × 阈值判断是否超出总预算 |
+| `instructions` | 自定义摘要指令，默认 Claude 风格（状态/下一步/关键决策） |
+| UI | 折叠式摘要卡片，显示压缩消息数和节省 token 数 |
+
+相关代码：
+- `src/main/context/autoCompressor.ts` — compactToBlock/shouldWrapUp/getCompactionCount
+- `src/main/context/compactModel.ts` — 增强摘要 + instructions 参数
+- `src/main/agent/agentLoop.ts` — 主循环集成 compaction 检查
+- `src/shared/types/message.ts` — CompactionBlock 类型
+
+### Phase 2: Agent Teams 集成
+
+将 TeammateService P2P 通信集成到 Swarm 执行流：
+
+| 能力 | 说明 |
+|------|------|
+| P2P 通信 | Agent 间可辩论、挑战、分享发现（broadcast/query/respond） |
+| 用户交互 | 通过 AgentTeamPanel 直接与任意 agent 对话 |
+| Delegate 模式 | Orchestrator 只分配不执行，强制 auto-agent |
+| Plan 审批 | teammate 先出 plan，lead 审批后才执行 |
+| 任务分配概览 | 展示各 agent 状态、lastReport、toolCalls |
+
+相关代码：
+- `src/main/agent/teammate/teammateService.ts` — subscribeToAgent/onUserMessage/getConversation
+- `src/main/agent/agentOrchestrator.ts` — delegateMode/requirePlanApproval
+- `src/main/agent/hybrid/agentSwarm.ts` — enablePeerCommunication + broadcast
+- `src/renderer/components/features/agentTeam/` — AgentTeamPanel UI
+- `src/main/ipc/swarm.ipc.ts` — 3 个新 IPC 通道
+- `src/shared/types/swarm.ts` — 4 个新事件类型
+
+### Phase 3: 客户端 Adaptive Thinking 模拟
+
+通过 prompt 级思考引导模拟 Claude 的 adaptive thinking：
+
+| 能力 | 说明 |
+|------|------|
+| `InterleavedThinkingManager` | shouldThink + generateThinkingPrompt |
+| Effort 级别 | low（仅初始规划）/ medium（错误恢复时）/ high（每次 tool call 后）/ max |
+| 自动映射 | taskComplexityAnalyzer → effort（simple→low, moderate→medium, complex→high） |
+| DeepSeek 映射 | reasoning_content → thinking block |
+| UI | 可折叠思考卡片 + effort 级别徽章（Zap 图标，颜色编码） |
+
+相关代码：
+- `src/main/agent/agentLoop.ts` — InterleavedThinkingManager + effortLevel
+- `src/main/agent/loopTypes.ts` — ModelResponse.thinking
+- `src/main/model/providers/deepseek.ts` — reasoning → thinking 映射
+- `src/shared/types/agent.ts` — EffortLevel 类型
+- `src/renderer/components/features/chat/MessageBubble/AssistantMessage.tsx` — 思考 UI
+
+---
+
 ## v0.16.18 新功能 (2026-02-03)
 
 ### Prompt 重构 - Token 减少 81%

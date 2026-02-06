@@ -18,6 +18,16 @@ export const GEN8_TOOLS = `
 | task | Sub-agents | complex tasks |
 | teammate | Agent communication | coordinate/handoff |
 | todo_write | Track steps | multi-file tasks |
+| skill | Execute skills | /ppt, /commit, etc |
+
+### Slash Commands (Skills)
+
+When user types \`/xxx\` (e.g., \`/ppt\`, \`/commit\`), call skill tool:
+\`\`\`json
+skill({ "command": "ppt", "args": "Code Agent 介绍，5页" })
+\`\`\`
+
+IMPORTANT: Always use skill tool for slash commands, not direct tool calls!
 
 ### Tool Rules
 

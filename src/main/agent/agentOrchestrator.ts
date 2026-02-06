@@ -32,11 +32,15 @@ import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
 import { getDynamicAgentFactory } from './dynamicAgentFactory';
 import { getAutoAgentCoordinator } from './autoAgentCoordinator';
 import { DEFAULT_MODELS } from '../../shared/constants';
+import { getModelSessionState } from '../session/modelSessionState';
 // Agent Routing
 import { getRoutingService } from '../routing';
 import type { RoutingContext, RoutingResolution } from '../../shared/types/agentRouting';
 // Session Event Service (for evaluation)
 import { getSessionEventService } from '../evaluation/sessionEventService';
+// Task Complexity → Effort Level mapping
+import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
+import type { EffortLevel } from '../../shared/types/agent';
 // DAG Visualization for normal conversations
 import { TaskDAG } from '../scheduler/TaskDAG';
 import { sendDAGInitEvent, buildDAGVisualizationState } from '../scheduler/dagEventBridge';
@@ -115,6 +119,10 @@ export class AgentOrchestrator {
     autoDetect: true,
     confirmBeforeStart: false,
   };
+
+  // Agent Teams: Delegate 模式和 Plan 审批
+  private delegateMode: boolean = false;
+  private requirePlanApproval: boolean = false;
 
   constructor(config: AgentOrchestratorConfig) {
     this.generationManager = config.generationManager;
@@ -220,8 +228,24 @@ export class AgentOrchestrator {
       logger.error('Failed to save user message:', error);
     }
 
-    // Get model config
-    const modelConfig = this.getModelConfig(settings);
+    // Get model config (with E4 session override support)
+    let modelConfig = this.getModelConfig(settings);
+    if (sessionId) {
+      const modelState = getModelSessionState();
+      const override = modelState.getOverride(sessionId);
+      if (override) {
+        const apiKey = this.configService.getApiKey(override.provider);
+        modelConfig = {
+          ...modelConfig,
+          provider: override.provider,
+          model: override.model,
+          apiKey: apiKey || modelConfig.apiKey,
+          temperature: override.temperature ?? modelConfig.temperature,
+          maxTokens: override.maxTokens ?? modelConfig.maxTokens,
+        };
+        logger.info(`[模型选择] 使用 session override: provider=${override.provider}, model=${override.model}`);
+      }
+    }
 
     // Create agent loop with session-aware event handler
     // Wrap onEvent to inject sessionId, ensuring events are associated with the correct session
@@ -422,6 +446,19 @@ export class AgentOrchestrator {
       const requirementsAnalyzer = getAgentRequirementsAnalyzer();
       const requirements = await requirementsAnalyzer.analyze(content, this.workingDirectory);
 
+      // Delegate 模式：强制使用 auto agent 模式，orchestrator 不直接执行工具
+      if (this.delegateMode && !requirements.needsAutoAgent) {
+        logger.info('[DelegateMode] Forcing auto agent mode — orchestrator will not execute tools directly');
+        // 覆盖分析结果，强制走多 agent 路径
+        requirements.needsAutoAgent = true;
+        requirements.executionStrategy = requirements.executionStrategy || 'parallel';
+        requirements.confidence = Math.max(requirements.confidence, 0.8);
+        onEvent({
+          type: 'notification',
+          data: { message: 'Delegate 模式：任务将委派给子 Agent 执行' },
+        });
+      }
+
       if (requirements.needsAutoAgent) {
         // Use auto agent mode
         await this.runAutoAgentMode(
@@ -554,6 +591,17 @@ export class AgentOrchestrator {
       workingDirectory: this.workingDirectory,
       isDefaultWorkingDirectory: this.isDefaultWorkingDirectory,
     });
+
+    // Auto-map task complexity → effort level
+    const complexityAnalysis = taskComplexityAnalyzer.analyze(content);
+    const effortMap: Record<string, EffortLevel> = {
+      simple: 'low',
+      moderate: 'medium',
+      complex: 'high',
+    };
+    const effort = effortMap[complexityAnalysis.complexity] || 'high';
+    this.agentLoop.setEffortLevel(effort);
+    logger.info(`[EffortLevel] complexity=${complexityAnalysis.complexity} → effort=${effort}`);
 
     try {
       // Run agent loop
@@ -868,6 +916,36 @@ export class AgentOrchestrator {
 
   isUsingDefaultWorkingDirectory(): boolean {
     return this.isDefaultWorkingDirectory;
+  }
+
+  // ========================================================================
+  // Agent Teams: Delegate 模式和 Plan 审批
+  // ========================================================================
+
+  /**
+   * 启用/禁用 Delegate 模式
+   * 启用后 orchestrator 不直接执行工具，只做任务分配和消息转发
+   */
+  setDelegateMode(enabled: boolean): void {
+    this.delegateMode = enabled;
+    logger.info(`[AgentOrchestrator] Delegate mode ${enabled ? 'enabled' : 'disabled'}`);
+  }
+
+  isDelegateMode(): boolean {
+    return this.delegateMode;
+  }
+
+  /**
+   * 启用/禁用 Plan 审批
+   * 启用后 teammate 需先生成 plan，由 lead 审批后才执行
+   */
+  setRequirePlanApproval(enabled: boolean): void {
+    this.requirePlanApproval = enabled;
+    logger.info(`[AgentOrchestrator] Plan approval ${enabled ? 'required' : 'not required'}`);
+  }
+
+  isRequirePlanApproval(): boolean {
+    return this.requirePlanApproval;
   }
 
   /**

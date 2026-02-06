@@ -298,6 +298,7 @@ export const IPC_DOMAINS = {
   DATA: 'domain:data',
   DEVICE: 'domain:device',
   TASK: 'domain:task', // Wave 5: 多任务并行
+  DIFF: 'domain:diff', // E3: 变更追踪
 } as const;
 
 export type IPCDomain = typeof IPC_DOMAINS[keyof typeof IPC_DOMAINS];
@@ -576,6 +577,9 @@ export const IPC_CHANNELS = {
 
   // Swarm channels (Agent Swarm 监控)
   SWARM_EVENT: 'swarm:event',
+  SWARM_SEND_USER_MESSAGE: 'swarm:send-user-message',
+  SWARM_GET_AGENT_MESSAGES: 'swarm:get-agent-messages',
+  SWARM_SET_DELEGATE_MODE: 'swarm:set-delegate-mode',
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -840,6 +844,11 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.BACKGROUND_MOVE_TO_FOREGROUND]: (sessionId: string) => Promise<BackgroundTaskInfo | null>;
   [IPC_CHANNELS.BACKGROUND_GET_TASKS]: () => Promise<BackgroundTaskInfo[]>;
   [IPC_CHANNELS.BACKGROUND_GET_COUNT]: () => Promise<number>;
+
+  // Swarm (Agent Teams)
+  [IPC_CHANNELS.SWARM_SEND_USER_MESSAGE]: (payload: { agentId: string; message: string }) => Promise<void>;
+  [IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES]: (agentId: string) => Promise<Array<{ from: string; to: string; content: string; timestamp: number }>>;
+  [IPC_CHANNELS.SWARM_SET_DELEGATE_MODE]: (enabled: boolean) => Promise<void>;
 }
 
 // ----------------------------------------------------------------------------

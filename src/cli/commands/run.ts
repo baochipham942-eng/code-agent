@@ -41,7 +41,7 @@ export const runCommand = new Command('run')
 
       if (!isJson) {
         terminalOutput.info(`项目目录: ${globalOpts?.project || process.cwd()}`);
-        terminalOutput.info(`代际: ${globalOpts?.gen || 'gen3'}`);
+        terminalOutput.info(`代际: ${globalOpts?.gen || 'gen8'}`);
         terminalOutput.startThinking('初始化中...');
       } else {
         jsonOutput.start();

@@ -9,13 +9,17 @@ import type { ToolCall } from '../../shared/types';
 // ----------------------------------------------------------------------------
 
 export interface MessageContent {
-  type: 'text' | 'image';
+  type: 'text' | 'image' | 'thinking' | 'compaction';
   text?: string;
   source?: {
     type: 'base64';
     media_type: string;
     data: string;
   };
+  // Adaptive Thinking: 思考内容
+  thinking?: string;
+  // Compaction: 压缩摘要
+  compaction?: string;
 }
 
 export interface ModelMessage {
@@ -28,11 +32,13 @@ export interface ModelMessage {
 // ----------------------------------------------------------------------------
 
 export interface ModelResponse {
-  type: 'text' | 'tool_use';
+  type: 'text' | 'tool_use' | 'thinking';
   content?: string;
   toolCalls?: ToolCall[];
   truncated?: boolean;
   finishReason?: string;
+  // Adaptive Thinking: 思考过程
+  thinking?: string;
 }
 
 // ----------------------------------------------------------------------------

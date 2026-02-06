@@ -130,6 +130,7 @@ function callDeepSeekStream(
 
     // 累积响应数据
     let content = '';
+    let reasoning = '';  // Adaptive Thinking: 累积推理内容
     let finishReason: string | undefined;
     const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
 
@@ -179,6 +180,8 @@ function callDeepSeekStream(
                 content: content || undefined,
                 truncated,
                 finishReason,
+                // Adaptive Thinking: 映射推理内容
+                thinking: reasoning || undefined,
               };
 
               if (toolCalls.size > 0) {
@@ -215,6 +218,12 @@ function callDeepSeekStream(
               }
 
               if (delta) {
+                // Adaptive Thinking: 处理推理内容（DeepSeek R1 的 reasoning_content）
+                if (delta.reasoning_content) {
+                  reasoning += delta.reasoning_content;
+                  onStream({ type: 'reasoning', content: delta.reasoning_content });
+                }
+
                 // 处理文本内容
                 if (delta.content) {
                   content += delta.content;

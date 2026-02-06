@@ -467,6 +467,76 @@ export class TeammateService {
     };
   }
 
+  // ========================================================================
+  // Agent Teams P2 增强方法
+  // ========================================================================
+
+  /**
+   * 订阅特定 Agent 的所有消息（让 UI 可以订阅）
+   */
+  subscribeToAgent(agentId: string, callback: TeammateEventCallback): () => void {
+    return this.subscribe(agentId, callback);
+  }
+
+  /**
+   * 用户直接给 Agent 发消息
+   */
+  onUserMessage(agentId: string, message: string): TeammateMessage {
+    const userAgentId = 'user';
+
+    // 确保用户已注册
+    if (!this.agents.has(userAgentId)) {
+      this.register(userAgentId, 'User', 'human');
+    }
+
+    return this.send({
+      from: userAgentId,
+      to: agentId,
+      type: 'coordination',
+      content: message,
+      priority: 'high',
+    });
+  }
+
+  /**
+   * 发送 plan review 请求（teammate → lead）
+   */
+  sendPlanReview(fromAgentId: string, toAgentId: string, planContent: string, taskId?: string): TeammateMessage {
+    return this.send({
+      from: fromAgentId,
+      to: toAgentId,
+      type: 'query',
+      content: `[Plan Review]\n${planContent}`,
+      taskId,
+      priority: 'high',
+      requiresResponse: true,
+    });
+  }
+
+  /**
+   * 审批 plan（lead → teammate）
+   */
+  approvePlan(fromAgentId: string, toAgentId: string, responseTo: string, feedback?: string): TeammateMessage {
+    return this.respond(
+      fromAgentId,
+      toAgentId,
+      `[Plan Approved]${feedback ? `\n${feedback}` : ''}`,
+      responseTo
+    );
+  }
+
+  /**
+   * 驳回 plan（lead → teammate）
+   */
+  rejectPlan(fromAgentId: string, toAgentId: string, responseTo: string, reason: string): TeammateMessage {
+    return this.respond(
+      fromAgentId,
+      toAgentId,
+      `[Plan Rejected]\n${reason}`,
+      responseTo
+    );
+  }
+
   /**
    * 重置服务
    */

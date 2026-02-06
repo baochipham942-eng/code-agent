@@ -39,6 +39,8 @@ import { registerCheckpointHandlers } from './checkpoint.ipc';
 import { registerEvaluationHandlers } from './evaluation.ipc';
 import { registerLSPHandlers } from './lsp.ipc';
 import { registerBackgroundHandlers } from './background.ipc';
+import { registerDiffHandlers } from './diff.ipc';
+import { registerSwarmHandlers } from './swarm.ipc';
 
 export * from './types';
 
@@ -157,6 +159,12 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Background task handlers (后台任务)
   registerBackgroundHandlers(getMainWindow);
+
+  // Diff handlers (变更追踪)
+  registerDiffHandlers();
+
+  // Swarm handlers (Agent Teams P2P 通信)
+  registerSwarmHandlers(getOrchestrator);
 
   logger.info('All handlers registered');
 }

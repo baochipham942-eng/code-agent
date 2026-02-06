@@ -16,7 +16,7 @@ import {
   spawnAgentTool,
   getSpawnedAgent,
   listSpawnedAgents,
-  getAvailableRoles,
+  getAvailableAgents,
 } from '../../src/main/tools/multiagent/spawnAgent';
 import { agentMessageTool } from '../../src/main/tools/multiagent/agentMessage';
 import {

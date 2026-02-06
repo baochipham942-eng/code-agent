@@ -37,6 +37,14 @@ export interface PermissionRequestDetails {
   server?: string;
   toolName?: string;
   path?: string; // 兼容旧版 API
+  // E2: 确认门控预览
+  preview?: {
+    type: 'diff' | 'command' | 'network' | 'generic';
+    before?: string;
+    after?: string;
+    diff?: string;
+    summary: string;
+  };
 }
 
 // 权限请求

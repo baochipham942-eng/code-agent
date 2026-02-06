@@ -2,9 +2,10 @@
 // RequestDetails - 权限请求详情组件
 // ============================================================================
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { PermissionRequest } from './types';
 import { formatFilePath } from './utils';
+import { DiffView } from '../DiffView';
 
 interface RequestDetailsProps {
   request: PermissionRequest;
@@ -39,8 +40,30 @@ export function RequestDetails({ request }: RequestDetailsProps) {
         <DetailItem label="MCP 工具" value={`${details.server} / ${details.toolName}`} />
       )}
 
-      {/* 编辑预览（简化版，显示变更内容） */}
-      {type === 'file_edit' && details.changes && (
+      {/* 确认门控 Diff 预览（E2） */}
+      {details.preview?.type === 'diff' && details.preview.before != null && details.preview.after != null && (
+        <ConfirmationDiffPreview
+          before={details.preview.before}
+          after={details.preview.after}
+          summary={details.preview.summary}
+          filePath={filePath}
+        />
+      )}
+
+      {/* 确认门控 非 diff 预览（命令/网络/通用） */}
+      {details.preview && details.preview.type !== 'diff' && (
+        <div className="mt-4">
+          <div className="text-xs text-zinc-500 mb-2">{details.preview.summary}</div>
+          {details.preview.diff && (
+            <pre className="text-xs p-2 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
+              {details.preview.diff}
+            </pre>
+          )}
+        </div>
+      )}
+
+      {/* 编辑预览（简化版，显示变更内容） - 仅在无 diff 预览时显示 */}
+      {type === 'file_edit' && details.changes && !details.preview && (
         <div className="mt-4">
           <div className="text-xs text-zinc-500 mb-2">变更内容</div>
           <pre
@@ -70,6 +93,44 @@ interface DetailItemProps {
   isCode?: boolean;
   isUrl?: boolean;
   isDangerous?: boolean;
+}
+
+// ----------------------------------------------------------------------------
+// ConfirmationDiffPreview - E2 确认门控 Diff 预览
+// ----------------------------------------------------------------------------
+
+interface ConfirmationDiffPreviewProps {
+  before: string;
+  after: string;
+  summary: string;
+  filePath?: string;
+}
+
+function ConfirmationDiffPreview({ before, after, summary, filePath }: ConfirmationDiffPreviewProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs text-zinc-500">{summary}</div>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="text-[10px] text-blue-400 hover:text-blue-300"
+        >
+          {expanded ? '收起' : '展开 Diff'}
+        </button>
+      </div>
+      {expanded && (
+        <div className="max-h-48 overflow-y-auto rounded border border-zinc-700/50">
+          <DiffView
+            oldText={before}
+            newText={after}
+            fileName={filePath?.split('/').pop()}
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
 function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: DetailItemProps) {

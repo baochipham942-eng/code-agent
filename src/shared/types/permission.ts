@@ -36,6 +36,14 @@ export interface PermissionRequest {
     newContent?: string;
     server?: string;
     toolName?: string;
+    /** E2: 确认门控预览信息 */
+    preview?: {
+      type: 'diff' | 'command' | 'network' | 'generic';
+      before?: string;
+      after?: string;
+      diff?: string;
+      summary: string;
+    };
   };
   reason?: string;
   timestamp: number;

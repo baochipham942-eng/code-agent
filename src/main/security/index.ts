@@ -44,3 +44,14 @@ export {
   type MaskingOptions,
   type MaskingResult,
 } from './logMasker';
+
+// Input Sanitizer
+export {
+  InputSanitizer,
+  getInputSanitizer,
+  resetInputSanitizer,
+  type SanitizationResult,
+  type SanitizationWarning,
+  type SanitizationConfig,
+  type SanitizationMode,
+} from './inputSanitizer';

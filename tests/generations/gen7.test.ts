@@ -88,16 +88,16 @@ describe('Gen7 - Multi-Agent Era', () => {
     });
 
     it('should reject unknown role', async () => {
-      const result = await spawnAgentTool.execute(
-        {
-          role: 'unknown_role',
-          task: 'Do something',
-        },
-        context
-      );
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Unknown agent');
+      // getPredefinedAgent throws for invalid IDs
+      await expect(
+        spawnAgentTool.execute(
+          {
+            role: 'unknown_role',
+            task: 'Do something',
+          },
+          context
+        )
+      ).rejects.toThrow('Invalid agent ID');
     });
 
     it('should spawn coder agent', async () => {
@@ -125,11 +125,11 @@ describe('Gen7 - Multi-Agent Era', () => {
       expect(result.success).toBe(true);
     });
 
-    it('should spawn tester agent', async () => {
+    it('should spawn explore agent', async () => {
       const result = await spawnAgentTool.execute(
         {
-          role: 'tester',
-          task: 'Write unit tests for utils.ts',
+          role: 'explore',
+          task: 'Search codebase for auth patterns',
         },
         context
       );
@@ -137,35 +137,11 @@ describe('Gen7 - Multi-Agent Era', () => {
       expect(result.success).toBe(true);
     });
 
-    it('should spawn architect agent', async () => {
+    it('should spawn plan agent', async () => {
       const result = await spawnAgentTool.execute(
         {
-          role: 'architect',
+          role: 'plan',
           task: 'Design the API architecture',
-        },
-        context
-      );
-
-      expect(result.success).toBe(true);
-    });
-
-    it('should spawn debugger agent', async () => {
-      const result = await spawnAgentTool.execute(
-        {
-          role: 'debugger',
-          task: 'Find the cause of the memory leak',
-        },
-        context
-      );
-
-      expect(result.success).toBe(true);
-    });
-
-    it('should spawn documenter agent', async () => {
-      const result = await spawnAgentTool.execute(
-        {
-          role: 'documenter',
-          task: 'Write API documentation',
         },
         context
       );
@@ -218,15 +194,16 @@ describe('Gen7 - Multi-Agent Era', () => {
   // Agent Functions Tests
   // --------------------------------------------------------------------------
   describe('Agent Functions', () => {
-    it('should get available roles', () => {
-      const roles = getAvailableRoles();
+    it('should get available agents (4 core roles)', () => {
+      const agents = getAvailableAgents();
 
-      expect(roles).toHaveProperty('coder');
-      expect(roles).toHaveProperty('reviewer');
-      expect(roles).toHaveProperty('tester');
-      expect(roles).toHaveProperty('architect');
-      expect(roles).toHaveProperty('debugger');
-      expect(roles).toHaveProperty('documenter');
+      // v0.16.18 混合架构：4 个核心角色
+      const ids = agents.map(a => a.id);
+      expect(ids).toContain('coder');
+      expect(ids).toContain('reviewer');
+      expect(ids).toContain('explore');
+      expect(ids).toContain('plan');
+      expect(agents.length).toBe(4);
     });
 
     it('should list spawned agents', () => {

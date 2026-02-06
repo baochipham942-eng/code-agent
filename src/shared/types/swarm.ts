@@ -62,7 +62,13 @@ export type SwarmEventType =
   | 'swarm:agent:completed'
   | 'swarm:agent:failed'
   | 'swarm:completed'
-  | 'swarm:cancelled';
+  | 'swarm:cancelled'
+  // Agent Teams P2P 通信事件
+  | 'swarm:agent:message'         // agent 间消息
+  | 'swarm:agent:plan_review'     // plan 审批请求
+  | 'swarm:agent:plan_approved'   // plan 通过
+  | 'swarm:agent:plan_rejected'   // plan 驳回
+  | 'swarm:user:message';         // 用户直接消息
 
 /**
  * Swarm 事件载荷
@@ -78,6 +84,19 @@ export interface SwarmEvent {
       success: boolean;
       totalTime: number;
       aggregatedOutput?: string;
+    };
+    // Agent Teams 扩展数据
+    message?: {
+      from: string;
+      to: string;
+      content: string;
+      messageType?: string;
+    };
+    plan?: {
+      agentId: string;
+      content: string;
+      status?: 'pending' | 'approved' | 'rejected';
+      feedback?: string;
     };
   };
 }

@@ -9,6 +9,7 @@ export default defineConfig({
     exclude: [
       '**/node_modules/**',
       '**/graphStore.test.ts', // Kuzu 原生模块需要单独运行
+      '**/e2e/claude-e2e/fixtures/**', // 故意含 bug 的 E2E 夹具，不参与单元测试
     ],
     coverage: {
       provider: 'v8',

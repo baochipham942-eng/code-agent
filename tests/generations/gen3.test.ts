@@ -126,7 +126,7 @@ describe('Gen3 - Smart Planning Era', () => {
       expect(result.success).toBe(true);
     });
 
-    it('should fail without activeForm', async () => {
+    it('should auto-generate activeForm when not provided', async () => {
       const todos = [
         { content: 'Task without activeForm', status: 'pending' },
       ];
@@ -136,8 +136,8 @@ describe('Gen3 - Smart Planning Era', () => {
         context
       );
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('activeForm');
+      // activeForm 未提供时自动从 content 生成
+      expect(result.success).toBe(true);
     });
   });
 

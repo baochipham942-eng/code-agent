@@ -109,6 +109,15 @@ export interface AppSettings {
     baseUrl?: string;
     enabled?: boolean;
   };
+  // 安全校验配置
+  sanitization?: {
+    mode: 'strict' | 'moderate' | 'permissive';
+  };
+  // 确认门控配置
+  confirmationGate?: {
+    policy: 'always_ask' | 'always_approve' | 'ask_if_dangerous' | 'session_approve';
+    overrides?: Record<string, 'always_ask' | 'always_approve' | 'ask_if_dangerous' | 'session_approve'>;
+  };
   // Budget 配置 (成本控制)
   budget?: {
     enabled: boolean;

@@ -51,6 +51,15 @@ export type MessageSource = 'user' | 'skill' | 'system';
 // Subagent 消息子类型
 export type MessageSubtype = 'init' | 'result' | 'thinking' | 'tool_use';
 
+// Compaction 摘要块（Claude Code 风格上下文压缩）
+export interface CompactionBlock {
+  type: 'compaction';
+  content: string;                // 摘要内容
+  timestamp: number;
+  compactedMessageCount: number;  // 被压缩的消息数量
+  compactedTokenCount: number;    // 被压缩的 token 数量
+}
+
 export interface Message {
   id: string;
   role: MessageRole;
@@ -72,4 +81,10 @@ export interface Message {
   parentToolUseId?: string;
   /** Subagent 消息子类型 */
   subtype?: MessageSubtype;
+  // Compaction 系统（上下文压缩摘要）
+  compaction?: CompactionBlock;
+  // Adaptive Thinking（交错思考）
+  thinking?: string;
+  // Effort 级别（Adaptive Thinking 思考深度）
+  effortLevel?: 'low' | 'medium' | 'high' | 'max';
 }

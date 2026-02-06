@@ -18,6 +18,7 @@ import { createLogger } from '../../services/infra/logger';
 import type { DynamicAgentConfig } from './dynamicFactory';
 import type { SwarmConfig } from './taskRouter';
 import { getSwarmEventEmitter, type SwarmEventEmitter } from '../../ipc/swarm.ipc';
+import { getTeammateService } from '../teammate/teammateService';
 
 const logger = createLogger('AgentSwarm');
 
@@ -293,6 +294,16 @@ export class AgentSwarm {
     // 初始化运行时状态
     this.initializeRuntimes(agents);
 
+    // Agent Teams: 注册到 TeammateService（如果启用 P2P 通信）
+    if (config.enablePeerCommunication) {
+      const teammateService = getTeammateService();
+      for (const agent of agents) {
+        teammateService.register(agent.id, agent.name, 'swarm-agent');
+        teammateService.updateStatus(agent.id, 'waiting');
+      }
+      logger.info('[AgentSwarm] Peer communication enabled, agents registered to TeammateService');
+    }
+
     // 通知每个 agent 被添加
     for (const agent of agents) {
       this.eventEmitter.agentAdded({
@@ -440,6 +451,22 @@ export class AgentSwarm {
       // 发送 agent 完成/失败事件
       if (result.success) {
         this.eventEmitter.agentCompleted(runtime.agent.id, result.output);
+
+        // Agent Teams: 广播完成通知给其他 agent
+        if (this.config?.enablePeerCommunication) {
+          try {
+            const teammateService = getTeammateService();
+            teammateService.updateStatus(runtime.agent.id, 'idle');
+            teammateService.send({
+              from: runtime.agent.id,
+              to: 'all',
+              type: 'broadcast',
+              content: `[完成] ${runtime.agent.name} 已完成任务。输出摘要: ${(result.output || '').slice(0, 200)}`,
+            });
+          } catch (err) {
+            logger.warn('[AgentSwarm] Failed to broadcast completion via TeammateService:', err);
+          }
+        }
       } else {
         this.eventEmitter.agentFailed(runtime.agent.id, result.error || 'Unknown error');
       }
@@ -604,6 +631,18 @@ export class AgentSwarm {
    * 清理
    */
   private cleanup(): void {
+    // Agent Teams: 注销 agents
+    if (this.config?.enablePeerCommunication) {
+      try {
+        const teammateService = getTeammateService();
+        for (const runtime of this.runtimes.values()) {
+          teammateService.unregister(runtime.agent.id);
+        }
+      } catch (err) {
+        logger.warn('[AgentSwarm] Failed to unregister agents from TeammateService:', err);
+      }
+    }
+
     this.runtimes.clear();
     this.lockManager.reset();
   }

@@ -22,6 +22,7 @@ AI 编程助手桌面应用，复刻 Claude Code 的 8 个架构代际来研究 
 | [docs/guides/deployment.md](docs/guides/deployment.md) | 部署配置指南 |
 | [docs/guides/git-workflow.md](docs/guides/git-workflow.md) | Git 分支工作流 |
 | [docs/guides/troubleshooting.md](docs/guides/troubleshooting.md) | 问题排查（错题本）|
+| [docs/guides/ppt-capability.md](docs/guides/ppt-capability.md) | PPT 生成系统能力文档 |
 
 ## 目录结构
 
@@ -37,19 +38,27 @@ src/
 │   ├── scheduler/       # DAG 调度器 (v0.16+)
 │   ├── core/            # DI 容器、生命周期管理
 │   ├── config/          # 🆕 统一配置管理 (v0.16.16+)
-│   ├── security/        # 安全模块 (v0.9+)
+│   ├── security/        # 安全模块 (v0.9+) + InputSanitizer (v0.16.19+)
 │   ├── hooks/           # Hooks 系统 (v0.9+)
 │   ├── context/         # 上下文管理 (v0.9+)
+│   │   └── documentContext/ # 🆕 文档上下文抽象层 (v0.16.19+)
 │   ├── planning/        # 🆕 计划执行系统 (v0.16.16+)
+│   ├── session/         # 🆕 模型热切换 (v0.16.19+)
 │   ├── services/        # Auth, Sync, Database, FileCheckpoint
-│   │   └── infra/       # 🆕 基础设施服务 (v0.16.16+)
+│   │   ├── infra/       # 🆕 基础设施服务 (v0.16.16+)
+│   │   ├── citation/    # 🆕 引用溯源 (v0.16.19+)
+│   │   └── diff/        # 🆕 变更追踪 (v0.16.19+)
 │   ├── channels/        # 多渠道接入 (v0.16.11+)
 │   ├── skills/          # 用户可定义技能 (v0.16.11+)
 │   ├── cli/             # CLI 接口 (v0.16.11+)
 │   └── memory/          # 向量存储和记忆系统
 ├── renderer/            # React 前端
 │   ├── components/      # UI 组件
+│   │   ├── DiffPanel/          # 🆕 变更追踪面板 (v0.16.19+)
+│   │   ├── citations/          # 🆕 引用列表组件 (v0.16.19+)
 │   │   ├── features/workflow/  # DAG 可视化
+│   │   ├── features/agentTeam/ # 🆕 Agent 团队面板 (v0.16.19+)
+│   │   ├── features/swarm/     # 🆕 Swarm 监控 (v0.16.19+)
 │   │   └── features/lab/       # 实验室模块
 │   ├── stores/          # Zustand 状态
 │   │   └── dagStore.ts  # DAG 状态管理
@@ -58,7 +67,10 @@ src/
     └── types/
         ├── taskDAG.ts       # DAG 类型定义
         ├── builtInAgents.ts # 内置 Agent 定义
-        └── workflow.ts      # 工作流类型
+        ├── workflow.ts      # 工作流类型
+        ├── citation.ts      # 🆕 引用类型 (v0.16.19+)
+        ├── confirmation.ts  # 🆕 确认门控类型 (v0.16.19+)
+        └── diff.ts          # 🆕 Diff 类型 (v0.16.19+)
 ```
 
 ## 常用命令
@@ -434,6 +446,144 @@ pending → ready → running → completed/failed/cancelled/skipped
 新增 L5/L6 高难度测试用例：
 - `M06-auth-rbac.ts` - RBAC 权限系统实现
 - `M07-realtime-collab.ts` - 实时协作功能
+
+---
+
+## v0.16.19 新功能 (2026-02-06)
+
+### E1-E6 六大工程层改进
+
+横跨所有场景的基础能力提升，各自独立可用。
+
+#### E1: 引用溯源框架 (Citation)
+
+工具执行后自动提取引用源（文件行号、URL、单元格等），附加到消息中，renderer 展示可点击引用标签。
+
+| 引用类型 | 提取源 | 样式 |
+|----------|--------|------|
+| `file` | read_file, grep, glob | 蓝色 📄 |
+| `url` | web_fetch, web_search | 青色 🔗 |
+| `cell` | read_xlsx | 绿色 📊 |
+| `query` | web_search | 琥珀色 🔍 |
+| `memory` | memory_search | 紫色 🧠 |
+
+相关代码：
+- `src/main/services/citation/citationExtractor.ts` - 从工具结果按类型提取引用
+- `src/main/services/citation/citationService.ts` - 会话级引用收集器
+- `src/renderer/components/citations/CitationList.tsx` - 可点击引用列表 + CitationSummary
+- `src/shared/types/citation.ts` - 共享类型定义
+
+#### E2: 细粒度确认门控 (ConfirmationGate)
+
+写操作前展示 before/after 预览 + 确认对话框，策略可配置。
+
+| 策略 | 行为 |
+|------|------|
+| `always_ask` | 每次都弹确认 |
+| `always_approve` | 自动批准 |
+| `ask_if_dangerous` | 仅高风险操作确认 |
+| `session_approve` | 同类操作只确认一次 |
+
+相关代码：
+- `src/main/agent/confirmationGate.ts` - 策略判定 + 预览构建
+- `src/renderer/components/PermissionDialog/RequestDetails.tsx` - 扩展 diff 预览
+- `src/shared/types/confirmation.ts` - 确认类型定义
+
+#### E3: 变更追踪 & Visual Diff (DiffTracker)
+
+每次文件修改产生结构化 unified diff，会话级持久化存储，可按 session/message/file 查询。
+
+相关代码：
+- `src/main/services/diff/diffTracker.ts` - diff 计算 + 存储（复用 `diff` 库）
+- `src/main/ipc/diff.ipc.ts` - IPC handlers
+- `src/renderer/components/DiffPanel/index.tsx` - 会话级变更追踪面板
+- `src/shared/types/diff.ts` - FileDiff, DiffSummary 类型
+
+#### E4: 运行时模型热切换 (ModelSessionState)
+
+用户在对话中途通过 UI 切换模型，下一轮生效，不中断当前轮。
+
+相关代码：
+- `src/main/session/modelSessionState.ts` - Session override 管理
+- `src/renderer/components/StatusBar/ModelSwitcher.tsx` - 模型选择下拉框
+- `src/main/ipc/session.ipc.ts` - switchModel/getModelOverride IPC
+
+#### E5: 文档上下文抽象层 (DocumentContext)
+
+统一的结构化文档理解接口，5 种解析器，与压缩器集成。每个 section 带 `importance` 权重（0-1），压缩时优先保留高权重内容。
+
+| 解析器 | 格式 | 分段策略 |
+|--------|------|----------|
+| CodeParser | .ts/.js/.py/.go 等 | 函数/类/import 分段，export 权重高 |
+| MarkdownParser | .md | 按 heading 层级分段，h1 权重高 |
+| ExcelParser | .csv/.xlsx | header 权重 0.9，数据 50 行一块 |
+| DocxParser | .docx | 段落分段，标题权重高 |
+| PdfParser | .pdf | 空行分段，等权重 |
+
+相关代码：
+- `src/main/context/documentContext/` - 类型 + 解析器注册表 + ParsedDocumentImpl
+- `src/main/context/autoCompressor.ts` - 集成 importance-aware 压缩
+
+#### E6: 外部数据安全校验 (InputSanitizer)
+
+外部数据（web_fetch/MCP/read_xlsx 等）进入 agent 上下文前，检测 prompt injection。20+ 正则模式，4 种检测类别。
+
+| 检测类别 | 示例 |
+|----------|------|
+| `instruction_override` | "ignore previous instructions", "[SYSTEM]" |
+| `jailbreak_attempt` | "act as DAN", "developer mode enabled" |
+| `data_exfiltration` | "send data to URL", "reveal system prompt" |
+| `prompt_injection` | "IMPORTANT: ignore", XML tag role switching |
+
+三种模式：`strict`（低阈值阻断）、`moderate`（默认）、`permissive`（仅警告）
+
+相关代码：
+- `src/main/security/inputSanitizer.ts` - 核心检测器
+- `src/main/security/patterns/injectionPatterns.ts` - 20+ 检测正则
+- `src/main/agent/agentLoop.ts` - 外部工具结果过滤集成
+
+### PPT 生成系统模块化重构
+
+将 `pptGenerate.ts`（1841 行）拆分为 9 个模块，借鉴 Claude in PowerPoint 的声明式设计。
+
+详见 [docs/guides/ppt-capability.md](docs/guides/ppt-capability.md)
+
+| 指标 | 重构前 | 重构后 |
+|------|--------|--------|
+| 文件数 | 1 | 9 + 2 tests |
+| 主题数 | 8 | 9（+apple-dark） |
+| 图表 | mermaid PNG（不可编辑） | 原生 addChart（可编辑） |
+| 布局方式 | 命令式坐标 | Slide Master 声明式 |
+| 测试 | 无 | 137 个用例 |
+
+相关代码：`src/main/tools/network/ppt/`
+
+### Agent 协作增强
+
+- **TeammateService** - Agent 间通信（coordinate/handoff/query/broadcast）
+- **SwarmMonitor** - 实时监控面板（Agent 状态/统计/Token 用量）
+- **AgentTeamPanel** - Agent 团队协作视图
+- **Orchestrator Prompt** - 协调者身份和工作流定义
+
+相关代码：
+- `src/main/agent/teammate/` - TeammateService 通信服务
+- `src/renderer/components/features/swarm/` - SwarmMonitor 监控
+- `src/renderer/components/features/agentTeam/` - 团队面板
+- `src/main/generation/prompts/base/orchestrator.ts` - 协调者 prompt
+
+### 测试覆盖
+
+| 测试文件 | 测试数 | 覆盖模块 |
+|----------|--------|---------|
+| `inputSanitizer.test.ts` | 22 | E6 安全校验 |
+| `documentParser.test.ts` | 19 | E5 文档上下文 |
+| `confirmationGate.test.ts` | 15 | E2 确认门控 |
+| `diffTracker.test.ts` | 13 | E3 变更追踪 |
+| `citationExtractor.test.ts` | 9 | E1 引用溯源 |
+| `ppt.test.mjs` | 55 | PPT 基础 |
+| `ppt-extended.test.mjs` | 82 | PPT 扩展 |
+| `teammate.test.ts` | 12 | Agent 协作 |
+| **总计** | **227** | |
 
 ---
 

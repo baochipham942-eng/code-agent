@@ -1,6 +1,6 @@
 # Code Agent - 架构设计文档
 
-> 版本: 5.3 (对应 v0.16.19)
+> 版本: 5.4 (对应 v0.16.20)
 > 日期: 2026-02-06
 > 作者: Lin Chen
 
@@ -35,6 +35,20 @@
 | **CLI 接口** | `src/main/cli/` | 命令行交互模式 |
 | **多渠道接入** | `src/main/channels/` | 飞书 Webhook 等渠道支持 |
 | **Skills 系统** | `src/main/skills/` | 用户可定义技能 |
+
+### v0.16.20+ 对标 Claude Code 2026（Compaction + Agent Teams + Adaptive Thinking）
+
+| 模块 | 位置 | 描述 |
+|------|------|------|
+| **增强型 Compaction** | `src/main/context/autoCompressor.ts` | `CompactionBlock` 可审计摘要、`triggerTokens` 绝对阈值、`pauseAfterCompaction` 暂停注入、`shouldWrapUp()` 预算收尾 |
+| **Agent Teams** | `src/main/agent/teammate/teammateService.ts` | P2P 通信集成到 Swarm、`subscribeToAgent()`/`onUserMessage()`/`getConversation()` |
+| **Delegate 模式** | `src/main/agent/agentOrchestrator.ts` | Orchestrator 只分配不执行、Plan 审批流程（review→approved/rejected） |
+| **AgentTeamPanel** | `src/renderer/components/features/agentTeam/` | Agent 列表 + 消息流 + 用户输入 + 任务分配概览 |
+| **Swarm IPC** | `src/main/ipc/swarm.ipc.ts` | 3 个新 IPC 通道：send-user-message / get-agent-messages / set-delegate-mode |
+| **Adaptive Thinking** | `src/main/agent/agentLoop.ts` | `InterleavedThinkingManager`（shouldThink + generateThinkingPrompt）、effort 级别控制 |
+| **Effort 映射** | `src/main/agent/agentOrchestrator.ts` | `taskComplexityAnalyzer` → effort 自动映射（simple→low, moderate→medium, complex→high） |
+| **DeepSeek Thinking** | `src/main/model/providers/deepseek.ts` | `reasoning_content` → thinking block 映射 |
+| **Thinking UI** | `src/renderer/components/features/chat/MessageBubble/AssistantMessage.tsx` | 可折叠思考卡片 + effort 级别徽章（Zap 图标） |
 
 ### v0.16.19+ 新增模块（E1-E6 工程能力 + PPT 重构 + Agent 协作）
 

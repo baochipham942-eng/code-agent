@@ -10,7 +10,7 @@
 | Gen2 | + glob, grep, list_directory |
 | Gen3 | + task, todo_write, ask_user_question, confirm_action, read_clipboard, plan_read, plan_update, enter_plan_mode, exit_plan_mode, findings_write |
 | Gen4 | + skill, web_fetch, web_search, read_pdf, mcp, mcp_list_tools, mcp_list_resources, mcp_read_resource, mcp_get_status |
-| Gen5 | + memory_store, memory_search, code_index, auto_learn, ppt_generate, image_generate, image_analyze, docx_generate, excel_generate |
+| Gen5 | + memory_store, memory_search, code_index, auto_learn, ppt_generate, image_generate, image_analyze, docx_generate, excel_generate, **read_xlsx** |
 | Gen6 | + screenshot, computer_use, browser_navigate, browser_action |
 | Gen7 | + spawn_agent, agent_message, workflow_orchestrate |
 | Gen8 | + strategy_optimize, tool_create, self_evaluate, learn_pattern |
@@ -199,6 +199,53 @@ read_pdf { "file_path": "/path/to/doc.pdf" }
 read_pdf { "file_path": "/path/to/diagram.pdf", "force_vision": true, "prompt": "分析图表数据" }
 ```
 
+### read_xlsx - Excel 表格读取
+
+读取 Excel 表格（.xlsx/.xls），支持多工作表、多输出格式。
+
+```bash
+# 默认读取（Markdown 表格）
+read_xlsx { "file_path": "data.xlsx" }
+
+# 指定工作表
+read_xlsx { "file_path": "data.xlsx", "sheet": "Sheet2" }
+
+# JSON 格式输出
+read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
+
+# CSV 格式输出
+read_xlsx { "file_path": "data.xlsx", "format": "csv" }
+```
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `file_path` | string | Excel 文件路径（必填）|
+| `sheet` | string \| number | 工作表名称或索引（默认: 第一个）|
+| `format` | `table` \| `json` \| `csv` | 输出格式（默认: table）|
+| `max_rows` | number | 最大行数（默认: 1000）|
+
+**输出格式说明：**
+- `table`：Markdown 表格，适合模型阅读和分析
+- `json`：JSON 数组，适合结构化处理
+- `csv`：CSV 格式，适合后续数据处理
+
+**智能上下文压缩（v0.16.19+）：**
+
+read_xlsx 的输出进入 agent 上下文后，由 `ExcelParser`（E5 文档上下文层）进行 importance-aware 压缩：
+
+| 段落 | Importance | 说明 |
+|------|-----------|------|
+| 表头行 | 0.9 | 最后被压缩，确保模型始终理解数据结构 |
+| 首块数据（前 50 行） | 0.7 | 高优先保留，包含最有代表性的样本 |
+| 后续数据块（每 50 行） | 0.4 | 上下文紧张时优先丢弃 |
+| XLSX 首 sheet | 0.8 | 优先于其他 sheet |
+| XLSX 其他 sheet | 0.5 | 上下文紧张时优先丢弃 |
+
+相关代码：
+- `src/main/tools/network/readXlsx.ts` — 工具实现（ExcelJS 读取 + 格式化输出）
+- `src/main/context/documentContext/parsers/excelParser.ts` — 上下文压缩解析器（CSV/XLSX 双格式）
+- `src/main/context/autoCompressor.ts` — 集成 importance-aware 压缩
+
 ### skill - 内置技能
 
 | 技能 | 描述 |
@@ -243,12 +290,29 @@ MCP (Model Context Protocol) 允许 Agent 调用外部服务：
 
 ### ppt_generate - PPT 生成
 
+> 详细文档见 [PPT 能力文档](ppt-capability.md)
+
 ```bash
-ppt_generate { "topic": "产品介绍", "slides_count": 5 }
-ppt_generate { "topic": "技术分享", "theme": "tech", "slides_count": 8 }
+# 基础用法
+ppt_generate { "topic": "产品介绍", "slides_count": 10 }
+
+# 指定主题 + 图表模式
+ppt_generate { "topic": "技术分享", "theme": "apple-dark", "chart_mode": "auto" }
+
+# 提供 Markdown 内容
+ppt_generate { "topic": "市场分析", "content": "# 标题\n## 副标题\n# 数据\n- 收入 380 亿\n- 增长 28%\n# 谢谢", "theme": "neon-blue" }
+
+# Legacy 降级模式
+ppt_generate { "topic": "演示", "use_masters": false, "chart_mode": "none" }
 ```
 
-主题选项：`professional`、`tech`、`minimal`、`vibrant`
+**主题**（9 种）：`neon-green`（默认）、`neon-blue`、`neon-purple`、`neon-orange`、`glass-light`、`glass-dark`、`minimal-mono`、`corporate`、`apple-dark`
+
+**核心能力**：
+- Slide Master 声明式布局（6 种 Master）
+- 智能布局选择（stats/cards-2/cards-3/timeline/list/highlight/chart）
+- 原生可编辑图表（BAR/DOUGHNUT/LINE/PIE）
+- SCQA 大纲自动生成（配合 web_search）
 
 ### image_generate - 图片生成
 

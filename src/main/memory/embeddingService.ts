@@ -446,6 +446,15 @@ export class EmbeddingService {
       chain.push(this.fallbackProvider);
     }
 
+    // 检查是否缺少所有云端 provider
+    const hasCloudProvider = chain.some(p => !(p instanceof LocalEmbedding));
+    if (!hasCloudProvider) {
+      logger.warn(
+        'No cloud embedding API keys found (DEEPSEEK_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY). ' +
+        'Using local TF-IDF fallback — search quality may be reduced.'
+      );
+    }
+
     logger.info(`Embedding fallback chain initialized with ${chain.length} providers`);
     return chain;
   }

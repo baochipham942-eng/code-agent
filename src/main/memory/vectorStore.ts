@@ -5,6 +5,7 @@
 
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { app } from 'electron';
 import { getEmbeddingService, type EmbeddingService } from './embeddingService';
 import {
@@ -94,7 +95,9 @@ export class VectorStore {
   private dirty: boolean = false;
 
   constructor(config?: Partial<VectorStoreConfig>) {
-    const userDataPath = app?.getPath?.('userData') || process.cwd();
+    const userDataPath = app?.getPath?.('userData')
+      || process.env.CODE_AGENT_DATA_DIR
+      || path.join(os.homedir(), '.code-agent');
 
     this.config = {
       embeddingDimension: DEFAULT_EMBEDDING_DIMENSION, // 统一为 1024
@@ -1068,10 +1071,18 @@ export class VectorStore {
 // ----------------------------------------------------------------------------
 
 let vectorStoreInstance: VectorStore | null = null;
+let vectorStoreLoaded = false;
 
 export function getVectorStore(): VectorStore {
   if (!vectorStoreInstance) {
     vectorStoreInstance = new VectorStore();
+    // 防御性加载：确保即使 bootstrap 未调用 initialize()，首次访问也会触发 load
+    if (!vectorStoreLoaded) {
+      vectorStoreLoaded = true;
+      vectorStoreInstance.load().catch(err => {
+        logger.error('Failed to auto-load vector store:', err);
+      });
+    }
   }
   return vectorStoreInstance;
 }

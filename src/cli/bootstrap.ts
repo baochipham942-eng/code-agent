@@ -115,6 +115,32 @@ export async function initializeCLIServices(): Promise<void> {
   });
   console.log('ToolRegistry & ToolExecutor initialized');
 
+  // 初始化记忆服务
+  try {
+    const { initMemoryService } = await import('../main/memory/memoryService');
+    const { getVectorStore } = await import('../main/memory/vectorStore');
+
+    const memoryService = initMemoryService({
+      maxRecentMessages: 10,
+      toolCacheTTL: 5 * 60 * 1000,
+      maxSessionMessages: 100,
+      maxRAGResults: 5,
+      ragTokenLimit: 2000,
+    });
+
+    // 加载持久化的向量数据
+    const vectorStore = getVectorStore();
+    await vectorStore.initialize();
+
+    // 设置上下文（使用工作目录作为 projectPath）
+    memoryService.setContext(`cli-${Date.now()}`, process.cwd());
+
+    console.log('Memory service initialized');
+  } catch (error) {
+    console.error('Failed to initialize memory service:', error);
+    // 不阻止 CLI 运行，记忆功能降级
+  }
+
   initialized = true;
   console.log('CLI services initialized');
 }

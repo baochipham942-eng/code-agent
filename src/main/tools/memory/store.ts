@@ -89,6 +89,7 @@ Parameters:
 
       // Store in vector store for semantic search
       await vectorStore.addKnowledge(content, category, context.workingDirectory);
+      await vectorStore.save(); // 确保数据持久化
 
       // If key provided, also store as project knowledge for direct retrieval
       if (key) {

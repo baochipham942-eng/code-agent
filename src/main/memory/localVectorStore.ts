@@ -5,6 +5,7 @@
 
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { app } from 'electron';
 import Database from 'better-sqlite3';
 import { load as loadSqliteVec } from 'sqlite-vec';
@@ -69,7 +70,9 @@ export class LocalVectorStore {
   private initialized = false;
 
   constructor(config?: Partial<LocalVectorStoreConfig>) {
-    const userDataPath = app?.getPath?.('userData') || process.cwd();
+    const userDataPath = app?.getPath?.('userData')
+      || process.env.CODE_AGENT_DATA_DIR
+      || path.join(os.homedir(), '.code-agent');
 
     this.config = {
       dbPath: path.join(userDataPath, 'local-vectors.db'),

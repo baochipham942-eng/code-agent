@@ -15,9 +15,9 @@ export function summarizeGrep(toolCall: ToolCall): string | null {
 
     const firstFile = shortenPath(files[0]);
     if (files.length === 1) {
-      return `1 file: ${firstFile}`;
+      return `Found 1 result in ${firstFile}`;
     }
-    return `${files.length} files, first: ${firstFile}`;
+    return `Found ${files.length} results`;
   }
 
   // Handle text output
@@ -36,16 +36,16 @@ export function summarizeGrep(toolCall: ToolCall): string | null {
     const lineNum = extractLineNumber(firstMatch.slice(colonIndex + 1));
 
     if (lines.length === 1) {
-      return `${shortenPath(filePath)}${lineNum ? `:${lineNum}` : ''}`;
+      return `Found 1 result in ${shortenPath(filePath)}${lineNum ? `:${lineNum}` : ''}`;
     }
-    return `${lines.length} matches, first: ${shortenPath(filePath)}${lineNum ? `:${lineNum}` : ''}`;
+    return `Found ${lines.length} results`;
   }
 
   // If no file path pattern, just count matches
   if (lines.length === 1) {
-    return lines[0].slice(0, 50);
+    return `Found 1 result`;
   }
-  return `${lines.length} matches`;
+  return `Found ${lines.length} results`;
 }
 
 function shortenPath(path: string): string {

@@ -189,6 +189,7 @@ function callZhipuStream(
     // Real-time token estimation
     let charCount = 0;
     let lastEstimateTime = 0;
+    let usageData: { inputTokens: number; outputTokens: number } | undefined;
 
     const options: https.RequestOptions = {
       hostname: url.hostname,
@@ -266,6 +267,8 @@ function callZhipuStream(
                 }));
               }
 
+              result.usage = usageData || { inputTokens: 0, outputTokens: Math.ceil(charCount / 4) };
+
               logger.info('[智谱] stream complete:', {
                 contentLength: content.length,
                 toolCallCount: toolCalls.size,
@@ -285,6 +288,14 @@ function callZhipuStream(
               const parsed = JSON.parse(data);
               const choice = parsed.choices?.[0];
               const delta = choice?.delta;
+
+              // 捕获 usage 数据
+              if (parsed.usage) {
+                usageData = {
+                  inputTokens: parsed.usage.prompt_tokens || 0,
+                  outputTokens: parsed.usage.completion_tokens || 0,
+                };
+              }
 
               // 捕获 finish_reason
               if (choice?.finish_reason) {
@@ -385,6 +396,8 @@ function callZhipuStream(
               arguments: safeJsonParse(tc.arguments),
             }));
           }
+
+          result.usage = usageData || { inputTokens: 0, outputTokens: Math.ceil(charCount / 4) };
 
           resolve(result);
         } else {

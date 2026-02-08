@@ -668,8 +668,8 @@ export class AgentLoop {
           model: this.modelConfig.model,
           temperature: this.modelConfig.temperature,
           maxTokens: this.modelConfig.maxTokens,
-          inputTokens: 0, // will be estimated from token usage tracking
-          outputTokens: 0,
+          inputTokens: response.usage?.inputTokens ?? 0,
+          outputTokens: response.usage?.outputTokens ?? 0,
           latencyMs: inferenceDuration,
           responseType: response.type as 'text' | 'tool_use' | 'thinking',
           toolCallCount: response.toolCalls?.length ?? 0,

@@ -75,6 +75,8 @@ export interface ModelResponse {
   finishReason?: string;
   // Adaptive Thinking: 思考过程
   thinking?: string;
+  // Token usage from API response
+  usage?: { inputTokens: number; outputTokens: number };
 }
 
 /**

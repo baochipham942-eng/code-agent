@@ -128,7 +128,7 @@ export const WorkingFolder: React.FC = () => {
               title={workingDirectory}
               onClick={() => handleOpenInFinder(workingDirectory)}
             >
-              {workingDirectory}
+              {workingDirectory.split('/').slice(-3).join('/')}
             </div>
           ) : (
             <button

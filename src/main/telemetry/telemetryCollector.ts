@@ -148,6 +148,13 @@ export class TelemetryCollector {
     this.activeSession = null;
   }
 
+  updateSessionTitle(sessionId: string, title: string): void {
+    if (this.activeSession?.id === sessionId) {
+      this.activeSession.title = title;
+    }
+    getTelemetryStorage().updateSession(sessionId, { title });
+  }
+
   // --------------------------------------------------------------------------
   // Turn Lifecycle
   // --------------------------------------------------------------------------

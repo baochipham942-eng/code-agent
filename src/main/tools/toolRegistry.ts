@@ -66,6 +66,7 @@ import {
   speechToTextTool,
   textToSpeechTool,
   imageAnnotateTool,
+  xlwingsExecuteTool,
 } from './network';
 import { skillMetaTool } from './skill';
 import {
@@ -278,6 +279,7 @@ export class ToolRegistry {
     this.register(speechToTextTool);
     this.register(textToSpeechTool);
     this.register(imageAnnotateTool);
+    this.register(xlwingsExecuteTool);
 
     // Gen 4 tools - HTTP API
     this.register(httpRequestTool);

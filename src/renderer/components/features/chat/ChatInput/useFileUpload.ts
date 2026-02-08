@@ -12,22 +12,26 @@ import {
   extractPdfText,
   generateAttachmentId,
 } from './utils';
+import { useUIStore } from '../../../../stores/uiStore';
 import { createLogger } from '../../../../utils/logger';
 
 const logger = createLogger('useFileUpload');
+
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(0)}KB`;
+  return `${bytes}B`;
+}
 
 /**
  * 文件上传处理 Hook
  * 处理单个文件和文件夹的上传逻辑
  */
 export function useFileUpload() {
+  const showToast = useUIStore((state) => state.showToast);
+
   // 处理单个文件
   const processFile = useCallback(async (file: File): Promise<MessageAttachment | null> => {
-    if (file.size > MAX_FILE_SIZE) {
-      logger.warn('File is too large (max 10MB)', { fileName: file.name, size: file.size });
-      return null;
-    }
-
     const { category, language } = getFileCategory(file);
     const id = generateAttachmentId();
     const relativePath = (file as File & { relativePath?: string }).relativePath;
@@ -38,6 +42,22 @@ export function useFileUpload() {
       filePath = window.electronAPI?.getPathForFile(file);
     } catch (e) {
       logger.warn('processFile - failed to get path', { error: e });
+    }
+
+    // PDF 大文件只传路径，不受 MAX_FILE_SIZE 限制
+    if (category === 'pdf' && filePath) {
+      const { text, pageCount } = await extractPdfText(filePath);
+      return {
+        id, type: 'file', category: 'pdf', name: displayName, size: file.size,
+        mimeType: 'application/pdf', data: text, pageCount, path: filePath,
+      };
+    }
+
+    // 非 PDF 文件超限时 toast 提示
+    if (file.size > MAX_FILE_SIZE) {
+      logger.warn('File is too large (max 10MB)', { fileName: file.name, size: file.size });
+      showToast('warning', `文件 "${file.name}" 太大（${formatFileSize(file.size)}），最大支持 10MB`);
+      return null;
     }
 
     if (category === 'document') {
@@ -74,14 +94,6 @@ export function useFileUpload() {
       });
     }
 
-    if (category === 'pdf' && filePath) {
-      const { text, pageCount } = await extractPdfText(filePath);
-      return {
-        id, type: 'file', category: 'pdf', name: displayName, size: file.size,
-        mimeType: 'application/pdf', data: text, pageCount, path: filePath,
-      };
-    }
-
     return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -94,7 +106,7 @@ export function useFileUpload() {
       reader.onerror = () => resolve(null);
       reader.readAsText(file);
     });
-  }, []);
+  }, [showToast]);
 
   // 处理文件夹
   const processFolderEntry = useCallback(async (

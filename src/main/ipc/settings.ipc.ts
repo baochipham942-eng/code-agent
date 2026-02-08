@@ -297,10 +297,48 @@ export function registerSettingsHandlers(
 
   ipcMain.handle(IPC_CHANNELS.APP_GET_VERSION, async (): Promise<string> => app.getVersion());
 
-  ipcMain.handle('extract-pdf-text', async (_, filePath: string) => ({
-    text: `[PDF 文件将由 AI 模型解析: ${filePath}]`,
-    pageCount: 0,
-  }));
+  ipcMain.handle('extract-pdf-text', async (_, filePath: string) => {
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+
+    // 尝试 pdftotext（poppler，brew install poppler）
+    for (const bin of ['/opt/homebrew/bin/pdftotext', '/usr/local/bin/pdftotext']) {
+      try {
+        const { stdout } = await execFileAsync(bin, [filePath, '-'], { maxBuffer: 50 * 1024 * 1024 });
+        const pageCount = (stdout.match(/\f/g) || []).length + 1;
+        return { text: stdout, pageCount };
+      } catch { /* 未安装，继续尝试 */ }
+    }
+
+    // 尝试 python3 + PyPDF2
+    try {
+      const script = [
+        'import sys',
+        'try:',
+        '    from PyPDF2 import PdfReader',
+        '    r = PdfReader(sys.argv[1])',
+        '    print(f"PAGES:{len(r.pages)}")',
+        '    for p in r.pages:',
+        '        t = p.extract_text()',
+        '        if t: print(t)',
+        'except Exception as e:',
+        '    print(f"PAGES:0")',
+        '    print(f"[PyPDF2 error: {e}]")',
+      ].join('\n');
+      const { stdout } = await execFileAsync('python3', ['-c', script, filePath], { maxBuffer: 50 * 1024 * 1024 });
+      const m = stdout.match(/^PAGES:(\d+)/);
+      const pageCount = m ? parseInt(m[1]) : 0;
+      const text = stdout.replace(/^PAGES:\d+\n/, '');
+      return { text, pageCount };
+    } catch { /* python3 或 PyPDF2 不可用 */ }
+
+    // 兜底：返回文件路径，由 AI 模型通过工具读取
+    return {
+      text: `[PDF 文件: ${filePath}]\n请使用 read_pdf 工具读取此文件内容。`,
+      pageCount: 0,
+    };
+  });
 
   // Excel 文件解析
   ipcMain.handle('extract-excel-text', async (_, filePath: string): Promise<{ text: string; sheetCount: number; rowCount: number }> => {

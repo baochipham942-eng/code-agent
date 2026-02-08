@@ -24,7 +24,7 @@ type CloudUIStrings = {
 };
 
 // 设置页 Tab 类型
-export type SettingsTab = 'general' | 'model' | 'service' | 'skills' | 'data' | 'about';
+export type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'cloud' | 'mcp' | 'skills' | 'channels' | 'agents' | 'memory' | 'update' | 'about';
 
 interface AppState {
   // UI State

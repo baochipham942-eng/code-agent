@@ -138,6 +138,8 @@ import type {
   BackgroundTaskUpdateEvent,
 } from './types/sessionState';
 
+import type { SwarmEvent } from './types/swarm';
+
 // Re-export session state types for consumer convenience
 export type {
   SessionStatus,
@@ -296,6 +298,7 @@ export const IPC_DOMAINS = {
   DATA: 'domain:data',
   DEVICE: 'domain:device',
   TASK: 'domain:task', // Wave 5: 多任务并行
+  DIFF: 'domain:diff', // E3: 变更追踪
 } as const;
 
 export type IPCDomain = typeof IPC_DOMAINS[keyof typeof IPC_DOMAINS];
@@ -571,6 +574,12 @@ export const IPC_CHANNELS = {
   BACKGROUND_GET_TASKS: BACKGROUND_CHANNELS.GET_TASKS,
   BACKGROUND_GET_COUNT: BACKGROUND_CHANNELS.GET_COUNT,
   BACKGROUND_TASK_UPDATE: BACKGROUND_CHANNELS.TASK_UPDATE,
+
+  // Swarm channels (Agent Swarm 监控)
+  SWARM_EVENT: 'swarm:event',
+  SWARM_SEND_USER_MESSAGE: 'swarm:send-user-message',
+  SWARM_GET_AGENT_MESSAGES: 'swarm:get-agent-messages',
+  SWARM_SET_DELEGATE_MODE: 'swarm:set-delegate-mode',
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -835,6 +844,11 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.BACKGROUND_MOVE_TO_FOREGROUND]: (sessionId: string) => Promise<BackgroundTaskInfo | null>;
   [IPC_CHANNELS.BACKGROUND_GET_TASKS]: () => Promise<BackgroundTaskInfo[]>;
   [IPC_CHANNELS.BACKGROUND_GET_COUNT]: () => Promise<number>;
+
+  // Swarm (Agent Teams)
+  [IPC_CHANNELS.SWARM_SEND_USER_MESSAGE]: (payload: { agentId: string; message: string }) => Promise<void>;
+  [IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES]: (agentId: string) => Promise<Array<{ from: string; to: string; content: string; timestamp: number }>>;
+  [IPC_CHANNELS.SWARM_SET_DELEGATE_MODE]: (enabled: boolean) => Promise<void>;
 }
 
 // ----------------------------------------------------------------------------
@@ -927,6 +941,8 @@ export interface IpcEventHandlers {
   // Channel events
   [IPC_CHANNELS.CHANNEL_ACCOUNTS_CHANGED]: (accounts: ChannelAccount[]) => void;
   [IPC_CHANNELS.CHANNEL_ACCOUNT_STATUS_CHANGED]: (event: { accountId: string; status: string; error?: string }) => void;
+  // Swarm events
+  [IPC_CHANNELS.SWARM_EVENT]: (event: SwarmEvent) => void;
 }
 
 // ----------------------------------------------------------------------------

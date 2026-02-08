@@ -83,6 +83,8 @@ export interface SwarmConfig {
   reportingMode: 'sparse' | 'full';
   conflictResolution: 'coordinator' | 'vote';
   timeout: number;
+  // Agent Teams: 启用 P2P 通信
+  enablePeerCommunication?: boolean;
 }
 
 /**

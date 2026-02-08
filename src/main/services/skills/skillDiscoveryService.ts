@@ -8,6 +8,7 @@ import * as os from 'os';
 import type { ParsedSkill, SkillSource } from '../../../shared/types/agentSkill';
 import { parseSkillMd, hasSkillMd } from './skillParser';
 import { bridgeCloudSkill } from './skillBridge';
+import { getBuiltinSkills } from './builtinSkills';
 import { getCloudConfigService } from '../cloud';
 import { createLogger } from '../infra/logger';
 import { getToolSearchService } from '../../tools/search';
@@ -108,18 +109,30 @@ class SkillDiscoveryService {
   }
 
   /**
-   * 从云端配置加载内置 Skills
+   * 加载内置 Skills（从 builtinSkills.ts 和云端配置）
    */
   private async loadBuiltinSkills(): Promise<void> {
+    // 1. 先加载 builtinSkills.ts 中的 skills（优先级较低）
+    try {
+      const localBuiltins = getBuiltinSkills();
+      for (const skill of localBuiltins) {
+        this.skills.set(skill.name, skill);
+      }
+      logger.debug('Loaded local builtin skills', { count: localBuiltins.length });
+    } catch (error) {
+      logger.warn('Failed to load local builtin skills', { error });
+    }
+
+    // 2. 再加载云端配置的 skills（优先级较高，会覆盖同名 skill）
     try {
       const cloudSkills = getCloudConfigService().getSkills();
       for (const skill of cloudSkills) {
         const parsed = bridgeCloudSkill(skill);
         this.skills.set(parsed.name, parsed);
       }
-      logger.debug('Loaded builtin skills', { count: cloudSkills.length });
+      logger.debug('Loaded cloud builtin skills', { count: cloudSkills.length });
     } catch (error) {
-      logger.warn('Failed to load builtin skills', { error });
+      logger.warn('Failed to load cloud builtin skills', { error });
     }
   }
 

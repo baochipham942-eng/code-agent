@@ -8,11 +8,17 @@ import type { Message } from './message';
 import type { ToolCall, ToolResult } from './tool';
 import type { PermissionRequest } from './permission';
 import type { TodoItem } from './planning';
+import type { FileDiff } from './diff';
+
+// Adaptive Thinking: 思考深度级别
+export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
 
 export interface AgentConfig {
   generation: Generation;
   model: ModelConfig;
   workingDirectory: string;
+  // Adaptive Thinking: 思考深度级别
+  effort?: EffortLevel;
 }
 
 export interface AgentState {
@@ -158,7 +164,13 @@ export type AgentEvent =
   // 中断事件（Claude Code 风格）
   | { type: 'interrupt_start'; data: InterruptEventData }
   | { type: 'interrupt_acknowledged'; data: InterruptEventData }
-  | { type: 'interrupt_complete'; data: InterruptEventData };
+  | { type: 'interrupt_complete'; data: InterruptEventData }
+  // E3: 变更追踪
+  | { type: 'diff_computed'; data: FileDiff }
+  // E1: 引用溯源
+  | { type: 'citations_updated'; data: { citations: import('./citation').Citation[] } }
+  // E4: 模型切换
+  | { type: 'model_switched'; data: { from: string; to: string; provider?: string } };
 
 // 上下文压缩事件数据
 export interface ContextCompressedData {

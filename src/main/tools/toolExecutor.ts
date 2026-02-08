@@ -19,6 +19,7 @@ import {
   type ValidationResult,
 } from '../security';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
+import { getConfirmationGate } from '../agent/confirmationGate';
 
 const logger = createLogger('ToolExecutor');
 
@@ -248,6 +249,18 @@ export class ToolExecutor {
 
     if (tool.requiresPermission && !isPreApproved) {
       const permissionRequest = this.buildPermissionRequest(tool, params);
+
+      // E2: 确认门控 - 为写操作附加预览信息
+      try {
+        const gate = getConfirmationGate();
+        const preview = gate.buildPreview(toolName, params);
+        if (preview) {
+          permissionRequest.details.preview = preview;
+        }
+      } catch (error) {
+        logger.debug('ConfirmationGate preview error:', error);
+      }
+
       const approved = await this.requestPermission(permissionRequest);
 
       if (!approved) {

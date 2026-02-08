@@ -31,6 +31,7 @@ let AgentLoop: typeof import('../main/agent/agentLoop').AgentLoop;
 let ToolRegistry: typeof import('../main/tools/toolRegistry').ToolRegistry;
 let ToolExecutor: typeof import('../main/tools/toolExecutor').ToolExecutor;
 let GenerationManager: typeof import('../main/generation/generationManager').GenerationManager;
+let getSkillDiscoveryService: typeof import('../main/services/skills').getSkillDiscoveryService;
 
 // CLI 数据目录
 function getCLIDataDir(): string {
@@ -95,6 +96,9 @@ export async function initializeCLIServices(): Promise<void> {
 
     const generationManagerModule = await import('../main/generation/generationManager');
     GenerationManager = generationManagerModule.GenerationManager;
+
+    const skillsModule = await import('../main/services/skills');
+    getSkillDiscoveryService = skillsModule.getSkillDiscoveryService;
   } catch (error) {
     console.error('Failed to import core modules:', error);
     throw error;
@@ -115,30 +119,14 @@ export async function initializeCLIServices(): Promise<void> {
   });
   console.log('ToolRegistry & ToolExecutor initialized');
 
-  // 初始化记忆服务
+  // 初始化 Skill 发现服务
   try {
-    const { initMemoryService } = await import('../main/memory/memoryService');
-    const { getVectorStore } = await import('../main/memory/vectorStore');
-
-    const memoryService = initMemoryService({
-      maxRecentMessages: 10,
-      toolCacheTTL: 5 * 60 * 1000,
-      maxSessionMessages: 100,
-      maxRAGResults: 5,
-      ragTokenLimit: 2000,
-    });
-
-    // 加载持久化的向量数据
-    const vectorStore = getVectorStore();
-    await vectorStore.initialize();
-
-    // 设置上下文（使用工作目录作为 projectPath）
-    memoryService.setContext(`cli-${Date.now()}`, process.cwd());
-
-    console.log('Memory service initialized');
+    const skillDiscoveryService = getSkillDiscoveryService();
+    await skillDiscoveryService.initialize(process.cwd());
+    console.log('SkillDiscoveryService initialized');
   } catch (error) {
-    console.error('Failed to initialize memory service:', error);
-    // 不阻止 CLI 运行，记忆功能降级
+    console.error('Failed to initialize SkillDiscoveryService:', error);
+    // 不抛出错误，允许 CLI 继续运行（skills 功能降级）
   }
 
   initialized = true;
@@ -203,10 +191,10 @@ export function buildCLIConfig(options: {
     : process.cwd();
 
   // 代际
-  const generationId = options.gen || settings.generation?.default || 'gen3';
+  const generationId = options.gen || settings.generation?.default || 'gen8';
 
   // 模型配置
-  const provider = options.provider || settings.model?.provider || 'deepseek';
+  const provider = options.provider || settings.model?.provider || 'moonshot';
   const model = options.model || settings.model?.model || DEFAULT_MODELS.chat;
 
   const modelConfig: ModelConfig = {

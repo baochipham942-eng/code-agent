@@ -13,7 +13,8 @@ export type ReminderType =
   | 'MUST_DELEGATE'
   | 'PLAN_MODE_ACTIVE'
   | 'AUDIT_MODE'
-  | 'REVIEW_MODE';
+  | 'REVIEW_MODE'
+  | 'PPT_FORMAT_SELECTION';
 
 /**
  * 系统提醒内容
@@ -103,6 +104,43 @@ task(subagent_type="code-review", prompt="维度3: ...")
 审查维度示例：代码质量、潜在问题、性能考量、安全性、可维护性
 </system-reminder>
 `,
+
+  /**
+   * PPT 生成工作流（简化版，不强制询问）
+   */
+  PPT_FORMAT_SELECTION: `
+<system-reminder>
+**PPT 生成任务**：检测到演示文稿生成需求。
+
+**输出格式**：PPTX 文件（可用 PowerPoint/WPS/Keynote 打开编辑）
+
+**工作流程**：
+1. 如有本地文档素材 → 使用 read_pdf/read_file 读取
+2. 如需图表 → 使用 mermaid_export 生成 PNG 图片
+3. 如需配图 → 使用 image_generate 生成
+4. 最后调用 ppt_generate 生成 PPTX，通过 images 参数嵌入图片
+
+**ppt_generate 调用示例**：
+\`\`\`
+ppt_generate({
+  topic: "标题",
+  content: "# 封面\\n## 副标题\\n# 第一章\\n- 要点1\\n- 要点2",
+  theme: "dracula",  // 或 tech/professional/corporate
+  images: [{ slide_index: 1, image_path: "/path/chart.png", position: "center" }]
+})
+\`\`\`
+
+**主题选择**：
+- 技术分享 → dracula（暗色科技风）
+- 产品介绍 → professional（商务蓝白）
+- 企业汇报 → corporate（企业正式）
+- 其他 → tech（深蓝科技风）
+
+**禁止**：
+- ❌ 不要用 write_file 生成 slides.md（用户要的是 PPTX）
+- ❌ 不要把 Mermaid 代码直接放到 content 里（必须先用 mermaid_export 转 PNG）
+</system-reminder>
+`,
 };
 
 /**
@@ -114,6 +152,7 @@ export interface TaskFeatures {
   isAuditTask: boolean;
   isReviewTask: boolean;
   isPlanningTask: boolean;
+  isPPTTask: boolean;
   dimensions: string[];
 }
 
@@ -150,12 +189,20 @@ export function detectTaskFeatures(prompt: string): TaskFeatures {
   // 规划任务关键词
   const planningKeywords = ['设计', '实现', '规划', '方案', '架构'];
 
+  // PPT 任务关键词
+  const pptKeywords = [
+    'ppt', 'powerpoint', 'slidev', '演示文稿', '幻灯片',
+    '演示', 'presentation', 'slide', '做个ppt', '生成ppt',
+    '制作ppt', '写个ppt', 'slides',
+  ];
+
   return {
     isMultiDimension: matchedDimensions.length >= 2,
     isComplexTask: complexKeywords.some((k) => normalizedPrompt.includes(k)),
     isAuditTask: auditKeywords.some((k) => normalizedPrompt.includes(k)),
     isReviewTask: reviewKeywords.some((k) => normalizedPrompt.includes(k)),
     isPlanningTask: planningKeywords.some((k) => normalizedPrompt.includes(k)),
+    isPPTTask: pptKeywords.some((k) => normalizedPrompt.includes(k)),
     dimensions: matchedDimensions,
   };
 }
@@ -166,6 +213,11 @@ export function detectTaskFeatures(prompt: string): TaskFeatures {
 export function getSystemReminders(prompt: string): string[] {
   const features = detectTaskFeatures(prompt);
   const reminders: string[] = [];
+
+  // PPT 任务 → 格式选择提醒（优先级最高，放在最前面）
+  if (features.isPPTTask) {
+    reminders.push(REMINDERS.PPT_FORMAT_SELECTION);
+  }
 
   // 多维度任务 → 并行派发提醒
   if (features.isMultiDimension) {

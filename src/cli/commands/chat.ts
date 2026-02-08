@@ -26,7 +26,7 @@ export const chatCommand = new Command('chat')
       // 显示欢迎信息
       terminalOutput.welcome(version);
       terminalOutput.info(`项目目录: ${globalOpts?.project || process.cwd()}`);
-      terminalOutput.info(`代际: ${globalOpts?.gen || 'gen3'}`);
+      terminalOutput.info(`代际: ${globalOpts?.gen || 'gen8'}`);
 
       // 显示数据库状态
       const db = getDatabaseService();

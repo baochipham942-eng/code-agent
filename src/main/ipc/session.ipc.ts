@@ -12,6 +12,8 @@ import type { GenerationManager } from '../generation/generationManager';
 import type { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { Session, Message } from '../../shared/types';
 import { DEFAULT_MODELS } from '../../shared/constants';
+import { getModelSessionState } from '../session/modelSessionState';
+import type { ModelProvider } from '../../shared/types';
 
 interface SessionHandlerDeps {
   getConfigService: () => ConfigService | null;
@@ -252,6 +254,33 @@ export function registerSessionHandlers(ipcMain: IpcMain, deps: SessionHandlerDe
         case 'unarchive':
           data = await handleUnarchive(payload as { sessionId: string });
           break;
+        case 'switchModel': {
+          // E4: 运行时模型热切换
+          const { sessionId: sid, provider, model, temperature, maxTokens } =
+            payload as { sessionId: string; provider: string; model: string; temperature?: number; maxTokens?: number };
+          const modelState = getModelSessionState();
+          modelState.setOverride(sid, {
+            provider: provider as ModelProvider,
+            model,
+            temperature,
+            maxTokens,
+          });
+          data = { provider, model };
+          break;
+        }
+        case 'getModelOverride': {
+          const { sessionId: sid2 } = payload as { sessionId: string };
+          const modelState2 = getModelSessionState();
+          data = modelState2.getOverride(sid2);
+          break;
+        }
+        case 'clearModelOverride': {
+          const { sessionId: sid3 } = payload as { sessionId: string };
+          const modelState3 = getModelSessionState();
+          modelState3.clearOverride(sid3);
+          data = null;
+          break;
+        }
         default:
           return {
             success: false,

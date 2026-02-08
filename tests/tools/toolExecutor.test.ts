@@ -149,14 +149,14 @@ describe('ToolExecutor', () => {
   // Working Directory Tests
   // --------------------------------------------------------------------------
   describe('工作目录', () => {
-    it('setWorkingDirectory 应该更新工作目录', () => {
+    it('setWorkingDirectory 应该更新工作目录', async () => {
       const newDir = '/new/directory';
       executor.setWorkingDirectory(newDir);
       // 通过执行工具验证 context 中的 workingDirectory
       const tool = createMockTool();
       (mockToolRegistry.get as ReturnType<typeof vi.fn>).mockReturnValue(tool);
 
-      executor.execute('test_tool', {}, {
+      await executor.execute('test_tool', {}, {
         generation: { id: 'gen4', name: 'Gen 4' } as never,
       });
 

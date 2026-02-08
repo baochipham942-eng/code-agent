@@ -16,6 +16,13 @@ import {
   safeJsonParse,
 } from './shared';
 
+// 专用 HTTPS Agent: 禁用 keepAlive 避免 SSE 流结束后连接复用导致 "socket hang up"
+// Node.js 19+ 的 globalAgent 默认 keepAlive=true，会导致并发子代理请求复用已关闭的连接
+const moonshotAgent = httpsAgent || new https.Agent({
+  keepAlive: false,
+  maxSockets: 10,
+});
+
 /**
  * Call Moonshot (Kimi) API
  * 支持 Kimi K2.5 包月套餐（第三方代理）
@@ -58,8 +65,24 @@ export async function callMoonshot(
 
   logger.info(`[Moonshot] 请求: model=${requestBody.model}, baseUrl=${baseUrl}, stream=true`);
 
-  // 使用原生 https 模块处理 SSE 流式响应
-  return callMoonshotStream(baseUrl, requestBody, apiKey, onStream, signal);
+  // 带重试的流式请求（处理 socket hang up 等瞬态错误）
+  const MAX_RETRIES = 2;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await callMoonshotStream(baseUrl, requestBody, apiKey, onStream, signal);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isTransient = msg.includes('socket hang up') || msg.includes('ECONNRESET') || msg.includes('ECONNREFUSED');
+      if (isTransient && attempt < MAX_RETRIES && !signal?.aborted) {
+        const delay = (attempt + 1) * 1000;
+        logger.warn(`[Moonshot] 瞬态错误 "${msg}", ${delay}ms 后重试 (${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error('[Moonshot] 不应到达此处');
 }
 
 /**
@@ -98,7 +121,7 @@ function callMoonshotStream(
         Authorization: `Bearer ${apiKey}`,
         Accept: 'text/event-stream',
       },
-      agent: httpsAgent,
+      agent: moonshotAgent,
       timeout: 300000, // 5 分钟超时
     };
 
@@ -284,7 +307,8 @@ function callMoonshotStream(
     });
 
     req.on('error', (err) => {
-      logger.error('[Moonshot] 请求错误:', err);
+      const errCode = (err as NodeJS.ErrnoException).code;
+      logger.error(`[Moonshot] 请求错误: ${err.message} (code=${errCode})`);
       reject(err);
     });
 

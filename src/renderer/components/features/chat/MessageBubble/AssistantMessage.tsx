@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, ChevronRight, Check, AlertTriangle, Loader2, Brain } from 'lucide-react';
+import { ChevronDown, ChevronRight, Check, AlertTriangle, Loader2, Brain, Zap } from 'lucide-react';
 import type { AssistantMessageProps } from './types';
 import { MessageContent } from './MessageContent';
 import { ToolCallDisplay } from './ToolCallDisplay/index';
@@ -126,21 +126,44 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
 
   return (
     <div className="py-3 px-4">
-      {/* Reasoning content - 推理模型的思考过程 (glm-4.7 等) */}
-      {message.reasoning && (
+      {/* Thinking content - Adaptive Thinking 交错思考（优先显示 thinking，回退到 reasoning） */}
+      {(message.thinking || message.reasoning) && (
         <div className="mb-3">
-          <button
-            onClick={() => setShowReasoning(!showReasoning)}
-            className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-violet-500/10 border border-violet-500/20 hover:bg-violet-500/15 transition-colors"
-          >
-            <Brain className="w-3.5 h-3.5 text-violet-400" />
-            <span className="text-xs font-medium text-violet-300">思考过程</span>
-            {showReasoning ? (
-              <ChevronDown className="w-3.5 h-3.5 text-violet-400" />
-            ) : (
-              <ChevronRight className="w-3.5 h-3.5 text-violet-400" />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowReasoning(!showReasoning)}
+              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md transition-colors ${
+                message.thinking
+                  ? 'bg-cyan-500/10 border border-cyan-500/20 hover:bg-cyan-500/15'
+                  : 'bg-violet-500/10 border border-violet-500/20 hover:bg-violet-500/15'
+              }`}
+            >
+              <Brain className={`w-3.5 h-3.5 ${message.thinking ? 'text-cyan-400' : 'text-violet-400'}`} />
+              <span className={`text-xs font-medium ${message.thinking ? 'text-cyan-300' : 'text-violet-300'}`}>
+                {message.thinking ? '思考过程 (Adaptive)' : '思考过程'}
+              </span>
+              {showReasoning ? (
+                <ChevronDown className={`w-3.5 h-3.5 ${message.thinking ? 'text-cyan-400' : 'text-violet-400'}`} />
+              ) : (
+                <ChevronRight className={`w-3.5 h-3.5 ${message.thinking ? 'text-cyan-400' : 'text-violet-400'}`} />
+              )}
+            </button>
+            {/* Effort 级别指示器 */}
+            {message.effortLevel && (
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${
+                message.effortLevel === 'max'
+                  ? 'bg-red-500/15 text-red-300 border border-red-500/20'
+                  : message.effortLevel === 'high'
+                  ? 'bg-amber-500/15 text-amber-300 border border-amber-500/20'
+                  : message.effortLevel === 'medium'
+                  ? 'bg-blue-500/15 text-blue-300 border border-blue-500/20'
+                  : 'bg-zinc-500/15 text-zinc-400 border border-zinc-500/20'
+              }`}>
+                <Zap className="w-3 h-3" />
+                {message.effortLevel}
+              </span>
             )}
-          </button>
+          </div>
           <div
             ref={reasoningRef}
             className="overflow-hidden transition-all duration-300 ease-out"
@@ -149,9 +172,13 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
               opacity: showReasoning ? 1 : 0,
             }}
           >
-            <div className="mt-2 px-3 py-2 rounded-md bg-violet-500/5 border border-violet-500/10">
+            <div className={`mt-2 px-3 py-2 rounded-md ${
+              message.thinking
+                ? 'bg-cyan-500/5 border border-cyan-500/10'
+                : 'bg-violet-500/5 border border-violet-500/10'
+            }`}>
               <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">
-                {message.reasoning}
+                {message.thinking || message.reasoning}
               </p>
             </div>
           </div>

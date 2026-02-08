@@ -176,22 +176,24 @@ describe('GenerationManager', () => {
       expect(prompt).toContain('记忆');
     });
 
-    it('gen8 prompt should contain self-evolution description', () => {
+    it('gen8 prompt should contain advanced tool descriptions', () => {
       const prompt = manager.getPrompt('gen8');
-      expect(prompt).toContain('strategy_optimize');
-      expect(prompt).toContain('自我进化');
+      // v0.16.18 prompt 重构后，gen8 使用精简 prompt
+      expect(prompt).toContain('task');
+      expect(prompt).toContain('edit_file');
     });
 
     it('should throw for invalid generation prompt', () => {
       expect(() => manager.getPrompt('gen99' as any)).toThrow('Unknown generation');
     });
 
-    it('all prompts should contain HTML generation rules', () => {
+    it('all prompts should contain identity and tool descriptions', () => {
       const genIds = ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'] as const;
 
       for (const id of genIds) {
         const prompt = manager.getPrompt(id);
-        expect(prompt).toContain('HTML');
+        // v0.16.18 prompt 重构后，所有 prompt 包含 identity + bash 工具描述
+        expect(prompt).toContain('bash');
       }
     });
   });

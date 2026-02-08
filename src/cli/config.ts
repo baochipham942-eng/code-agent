@@ -77,9 +77,9 @@ export class CLIConfigService {
     return {
       models: {
         default: DEFAULT_MODELS.chat,
-        defaultProvider: 'deepseek' as ModelProvider,
+        defaultProvider: 'moonshot' as ModelProvider,  // Kimi K2.5 使用 moonshot provider
         providers: {
-          deepseek: { enabled: true, model: DEFAULT_MODELS.chat },
+          deepseek: { enabled: true, model: 'deepseek-chat' },
           openai: { enabled: false },
           claude: { enabled: false },
           zhipu: { enabled: false },
@@ -87,20 +87,20 @@ export class CLIConfigService {
           gemini: { enabled: false },
           local: { enabled: false },
           qwen: { enabled: false },
-          moonshot: { enabled: false },
+          moonshot: { enabled: true, model: DEFAULT_MODELS.chat },  // 启用 moonshot
           minimax: { enabled: false },
           perplexity: { enabled: false },
           openrouter: { enabled: false },
         },
         routing: {
-          code: { provider: 'deepseek' as ModelProvider, model: DEFAULT_MODELS.chat },
+          code: { provider: 'moonshot' as ModelProvider, model: DEFAULT_MODELS.chat },
           vision: { provider: 'openai' as ModelProvider, model: 'gpt-4o' },
-          fast: { provider: 'deepseek' as ModelProvider, model: DEFAULT_MODELS.chat },
+          fast: { provider: 'zhipu' as ModelProvider, model: 'glm-4-flash' },
           gui: { provider: 'claude' as ModelProvider, model: 'claude-sonnet-4-20250514' },
         },
       },
       generation: {
-        default: 'gen3' as GenerationId,
+        default: 'gen8' as GenerationId,  // 使用最新代际，支持所有工具
       },
       workspace: {
         recentDirectories: [],
@@ -135,7 +135,7 @@ export class CLIConfigService {
         maxHistory: 100,
       },
       model: {
-        provider: 'deepseek' as ModelProvider,
+        provider: 'moonshot' as ModelProvider,  // Kimi K2.5
         model: DEFAULT_MODELS.chat,
         temperature: 0.7,
         maxTokens: 4096,
@@ -168,6 +168,7 @@ export class CLIConfigService {
       anthropic: 'ANTHROPIC_API_KEY',
       groq: 'GROQ_API_KEY',
       google: 'GOOGLE_API_KEY',
+      moonshot: 'KIMI_K25_API_KEY',  // Kimi K2.5
     };
 
     const envKey = envKeys[provider.toLowerCase()];

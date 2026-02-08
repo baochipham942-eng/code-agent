@@ -12,6 +12,9 @@ export type { ThoughtDisplayProps, CompactThoughtDisplayProps } from './chat/Tho
 export { TaskStatusBar } from './chat/TaskStatusBar';
 export type { TaskStatusBarProps } from './chat/TaskStatusBar';
 
+// Agent Team Components
+export { AgentTeamPanel } from './agentTeam';
+
 // Settings Components
 export {
   SettingsModal,

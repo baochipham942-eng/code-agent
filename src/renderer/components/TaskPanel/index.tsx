@@ -1,14 +1,14 @@
 // ============================================================================
 // TaskPanel - Right-side task panel with Linear-style design
-// Displays: Gen selector, Progress, Working Folder, Context, Skills, Connectors
+// Displays: Gen selector, Progress, Working Folder, Connectors, Agents, Skills
 // ============================================================================
 
 import React from 'react';
 import { Progress } from './Progress';
 import { WorkingFolder } from './WorkingFolder';
-import { Context } from './Context';
-import { Skills } from './Skills';
 import { Connectors } from './Connectors';
+import { Agents } from './Agents';
+import { Skills } from './Skills';
 import { GenerationBadge } from '../GenerationBadge';
 import { useI18n } from '../../hooks/useI18n';
 
@@ -27,9 +27,9 @@ export const TaskPanel: React.FC = () => {
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         <Progress />
         <WorkingFolder />
-        <Context />
-        <Skills />
         <Connectors />
+        <Agents />
+        <Skills />
       </div>
     </div>
   );

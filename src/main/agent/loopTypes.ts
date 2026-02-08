@@ -65,11 +65,13 @@ export interface ParsedStep {
  * Model inference response
  */
 export interface ModelResponse {
-  type: 'text' | 'tool_use';
+  type: 'text' | 'tool_use' | 'thinking';
   content?: string;
   toolCalls?: ToolCall[];
   truncated?: boolean;
   finishReason?: string;
+  // Adaptive Thinking: 思考过程
+  thinking?: string;
 }
 
 /**

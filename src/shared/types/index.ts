@@ -57,3 +57,15 @@ export * from './checkpoint';
 
 // ToolSearch types (工具延迟加载)
 export * from './toolSearch';
+
+// Swarm types (Agent Swarm 监控)
+export * from './swarm';
+
+// Diff types (E3: 变更追踪)
+export * from './diff';
+
+// Citation types (E1: 引用溯源)
+export * from './citation';
+
+// Confirmation types (E2: 确认门控)
+export * from './confirmation';

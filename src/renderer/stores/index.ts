@@ -51,6 +51,7 @@ export {
   type SessionState as TaskSessionState,
   type TaskStats,
 } from './taskStore';
+export { useSwarmStore } from './swarmStore';
 
 // -----------------------------------------------------------------------------
 // Selectors - 优化渲染性能

@@ -17,6 +17,8 @@
 import { createLogger } from '../../services/infra/logger';
 import type { DynamicAgentConfig } from './dynamicFactory';
 import type { SwarmConfig } from './taskRouter';
+import { getSwarmEventEmitter, type SwarmEventEmitter } from '../../ipc/swarm.ipc';
+import { getTeammateService } from '../teammate/teammateService';
 
 const logger = createLogger('AgentSwarm');
 
@@ -24,16 +26,9 @@ const logger = createLogger('AgentSwarm');
 // Types
 // ============================================================================
 
-/**
- * Agent 执行状态
- */
-export type AgentStatus =
-  | 'pending'     // 等待依赖
-  | 'ready'       // 可执行
-  | 'running'     // 执行中
-  | 'completed'   // 已完成
-  | 'failed'      // 失败
-  | 'cancelled';  // 已取消
+// Import and re-export AgentStatus from shared types
+import type { AgentStatus } from '../../../shared/types/swarm';
+export type { AgentStatus };
 
 /**
  * 汇报类型
@@ -264,6 +259,11 @@ export class AgentSwarm {
   private runtimes: Map<string, AgentRuntime> = new Map();
   private config: SwarmConfig | null = null;
   private cancelled = false;
+  private eventEmitter: SwarmEventEmitter;
+
+  constructor() {
+    this.eventEmitter = getSwarmEventEmitter();
+  }
 
   /**
    * 执行 Agent Swarm
@@ -288,8 +288,30 @@ export class AgentSwarm {
       reportingMode: config.reportingMode,
     });
 
+    // 发送 swarm 开始事件
+    this.eventEmitter.started(agents.length);
+
     // 初始化运行时状态
     this.initializeRuntimes(agents);
+
+    // Agent Teams: 注册到 TeammateService（如果启用 P2P 通信）
+    if (config.enablePeerCommunication) {
+      const teammateService = getTeammateService();
+      for (const agent of agents) {
+        teammateService.register(agent.id, agent.name, 'swarm-agent');
+        teammateService.updateStatus(agent.id, 'waiting');
+      }
+      logger.info('[AgentSwarm] Peer communication enabled, agents registered to TeammateService');
+    }
+
+    // 通知每个 agent 被添加
+    for (const agent of agents) {
+      this.eventEmitter.agentAdded({
+        id: agent.id,
+        name: agent.name,
+        role: 'dynamic',  // DynamicAgentConfig 没有 role 字段
+      });
+    }
 
     // 执行调度循环
     let parallelPeak = 0;
@@ -349,6 +371,15 @@ export class AgentSwarm {
       statistics,
     });
 
+    // 发送 swarm 完成事件
+    this.eventEmitter.completed({
+      total: statistics.total,
+      completed: statistics.completed,
+      failed: statistics.failed,
+      parallelPeak: statistics.parallelPeak,
+      totalTime: result.totalTime,
+    });
+
     return result;
   }
 
@@ -358,6 +389,7 @@ export class AgentSwarm {
   cancel(): void {
     this.cancelled = true;
     this.cancelRemaining();
+    this.eventEmitter.cancelled();
   }
 
   /**
@@ -392,6 +424,13 @@ export class AgentSwarm {
     // 汇报开始
     this.report(runtime, 'started', { status: 'running' });
 
+    // 发送 agent 更新事件 (running)
+    this.eventEmitter.agentUpdated(runtime.agent.id, {
+      status: 'running',
+      startTime: runtime.startTime,
+      iterations: runtime.iterations,
+    });
+
     try {
       const result = await executor.execute(
         runtime.agent,
@@ -409,6 +448,29 @@ export class AgentSwarm {
         error: result.error,
       });
 
+      // 发送 agent 完成/失败事件
+      if (result.success) {
+        this.eventEmitter.agentCompleted(runtime.agent.id, result.output);
+
+        // Agent Teams: 广播完成通知给其他 agent
+        if (this.config?.enablePeerCommunication) {
+          try {
+            const teammateService = getTeammateService();
+            teammateService.updateStatus(runtime.agent.id, 'idle');
+            teammateService.send({
+              from: runtime.agent.id,
+              to: 'all',
+              type: 'broadcast',
+              content: `[完成] ${runtime.agent.name} 已完成任务。输出摘要: ${(result.output || '').slice(0, 200)}`,
+            });
+          } catch (err) {
+            logger.warn('[AgentSwarm] Failed to broadcast completion via TeammateService:', err);
+          }
+        }
+      } else {
+        this.eventEmitter.agentFailed(runtime.agent.id, result.error || 'Unknown error');
+      }
+
     } catch (error) {
       runtime.status = 'failed';
       runtime.error = error instanceof Error ? error.message : String(error);
@@ -417,6 +479,9 @@ export class AgentSwarm {
         status: 'failed',
         error: runtime.error,
       });
+
+      // 发送 agent 失败事件
+      this.eventEmitter.agentFailed(runtime.agent.id, runtime.error);
     }
 
     runtime.endTime = Date.now();
@@ -566,6 +631,18 @@ export class AgentSwarm {
    * 清理
    */
   private cleanup(): void {
+    // Agent Teams: 注销 agents
+    if (this.config?.enablePeerCommunication) {
+      try {
+        const teammateService = getTeammateService();
+        for (const runtime of this.runtimes.values()) {
+          teammateService.unregister(runtime.agent.id);
+        }
+      } catch (err) {
+        logger.warn('[AgentSwarm] Failed to unregister agents from TeammateService:', err);
+      }
+    }
+
     this.runtimes.clear();
     this.lockManager.reset();
   }

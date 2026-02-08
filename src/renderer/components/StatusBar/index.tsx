@@ -9,6 +9,7 @@ import { useStatusStore } from '../../stores/statusStore';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { ModelIndicator } from './ModelIndicator';
+import { ModelSwitcher } from './ModelSwitcher';
 import { MessageCounter } from './MessageCounter';
 import { TokenUsage } from './TokenUsage';
 import { CostDisplay } from './CostDisplay';
@@ -56,7 +57,7 @@ export function StatusBar() {
     >
       {/* 左侧区域：模型、消息数、Token */}
       <div className="flex items-center gap-3">
-        <ModelIndicator model={modelConfig.model} />
+        <ModelSwitcher currentModel={modelConfig.model} />
         <Separator />
         <MessageCounter count={messages.length} />
         <Separator />
@@ -84,6 +85,7 @@ export function StatusBar() {
 
 // 导出所有子组件，方便单独使用
 export { ModelIndicator } from './ModelIndicator';
+export { ModelSwitcher } from './ModelSwitcher';
 export { MessageCounter } from './MessageCounter';
 export { TokenUsage } from './TokenUsage';
 export { CostDisplay } from './CostDisplay';

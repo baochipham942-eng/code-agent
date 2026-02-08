@@ -30,6 +30,7 @@ function normalizeRequest(
       url: request.details.url,
       changes: request.details.changes,
       path: request.details.path,
+      preview: request.details.preview,
     },
     timestamp: request.timestamp,
   };

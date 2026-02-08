@@ -62,11 +62,11 @@ interface SecureStorageData {
 
 /**
  * Generate encryption key using Electron safeStorage
- * Falls back to hostname-based key if safeStorage unavailable
+ * Falls back to hostname-based key if safeStorage unavailable (e.g., CLI mode)
  */
 function generateEncryptionKey(): string {
-  // Try to use safeStorage for secure key derivation
-  if (safeStorage.isEncryptionAvailable()) {
+  // Try to use safeStorage for secure key derivation (only in Electron environment)
+  if (safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()) {
     try {
       // Use a fixed seed encrypted by OS keychain
       const seed = 'code-agent-encryption-key-v2';
@@ -78,9 +78,16 @@ function generateEncryptionKey(): string {
     }
   }
 
-  // Fallback: hostname-based key (less secure but works everywhere)
-  logger.warn(' Using hostname-based encryption key (less secure)');
-  const machineId = `${os.hostname()}-${os.userInfo().username}-${app.getPath('userData')}`;
+  // Fallback: hostname-based key (less secure but works in CLI mode)
+  logger.debug(' Using hostname-based encryption key (CLI mode or safeStorage unavailable)');
+  // In CLI mode, app.getPath may not be available
+  let userDataPath = '';
+  try {
+    userDataPath = app?.getPath?.('userData') || '';
+  } catch {
+    userDataPath = os.homedir();
+  }
+  const machineId = `${os.hostname()}-${os.userInfo().username}-${userDataPath}`;
   return crypto.createHash('sha256').update(machineId).digest('hex').slice(0, 32);
 }
 
@@ -274,8 +281,8 @@ class SecureStorageService {
 
       if (Object.keys(apiKeys).length > 0) {
         const json = JSON.stringify(apiKeys);
-        // Encrypt with safeStorage if available
-        if (safeStorage.isEncryptionAvailable()) {
+        // Encrypt with safeStorage if available (not in CLI mode)
+        if (safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()) {
           const encrypted = safeStorage.encryptString(json);
           await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_APIKEYS, encrypted.toString('base64'));
         } else {
@@ -297,8 +304,8 @@ class SecureStorageService {
       if (!stored) return;
 
       let json: string;
-      // Try to decrypt with safeStorage
-      if (safeStorage.isEncryptionAvailable()) {
+      // Try to decrypt with safeStorage (not available in CLI mode)
+      if (safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()) {
         try {
           const buffer = Buffer.from(stored, 'base64');
           json = safeStorage.decryptString(buffer);

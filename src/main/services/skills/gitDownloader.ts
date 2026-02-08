@@ -54,6 +54,7 @@ export interface RepoMeta {
   commitHash: string;
   downloadedAt: number;
   lastUpdated: number;
+  skillsPath?: string;
 }
 
 // ============================================================================

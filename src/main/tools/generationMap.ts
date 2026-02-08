@@ -315,6 +315,7 @@ export const GENERATION_TOOLS: Record<GenerationId, string[]> = {
     'spawn_agent',
     'agent_message',
     'workflow_orchestrate',
+    'teammate',
   ],
 
   // Gen 8: 自我进化
@@ -392,6 +393,7 @@ export const GENERATION_TOOLS: Record<GenerationId, string[]> = {
     'spawn_agent',
     'agent_message',
     'workflow_orchestrate',
+    'teammate',
     // Self-Evolution
     'strategy_optimize',
     'tool_create',

@@ -82,6 +82,11 @@ export const ChatView: React.FC = () => {
   // Filter empty assistant placeholder messages and isMeta messages (Skill system)
   const filteredMessages = useMemo(() => {
     return messages.filter((message) => {
+      // Compaction 消息始终显示（折叠摘要卡片）
+      if (message.compaction) {
+        return true;
+      }
+
       // Skill 系统：isMeta 消息不渲染到 UI（仅发送给模型）
       if (message.isMeta) {
         return false;

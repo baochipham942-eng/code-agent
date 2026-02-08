@@ -104,13 +104,33 @@ function initializeCompactModel(): ModelConfig | null {
  *
  * @param prompt - The summarization prompt
  * @param maxTokens - Maximum tokens for the response
+ * @param options - Optional: useMainModel forces main model, instructions overrides default prompt
  * @returns The generated summary text
  */
 export async function compactModelSummarize(
   prompt: string,
-  maxTokens: number
+  maxTokens: number,
+  options?: {
+    /** 使用主模型做摘要（而非 cheap model），理解上下文更好 */
+    useMainModel?: boolean;
+    /** 自定义摘要指令，覆盖默认 prompt */
+    instructions?: string;
+  }
 ): Promise<string> {
-  const config = initializeCompactModel();
+  // 如果提供了自定义指令，替换 prompt 中的默认指令部分
+  const finalPrompt = options?.instructions
+    ? prompt.replace(/^.*?(?=\n\n对话历史：)/s, options.instructions)
+    : prompt;
+
+  let config: ModelConfig | null;
+
+  if (options?.useMainModel) {
+    // 使用主模型：理解上下文更好，适合高质量摘要
+    config = initializeMainModel();
+  } else {
+    config = initializeCompactModel();
+  }
+
   if (!config) {
     throw new Error('Compact model not configured');
   }
@@ -120,17 +140,18 @@ export async function compactModelSummarize(
   }
 
   try {
-    logger.debug('Generating summary with compact model', {
+    logger.debug('Generating summary', {
       provider: config.provider,
       model: config.model,
-      promptLength: prompt.length,
+      promptLength: finalPrompt.length,
       maxTokens,
+      useMainModel: !!options?.useMainModel,
     });
 
     const response = await modelRouter.chat({
       provider: config.provider,
       model: config.model,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content: finalPrompt }],
       maxTokens: Math.min(maxTokens, config.maxTokens || 2048),
     });
 
@@ -145,6 +166,36 @@ export async function compactModelSummarize(
   } catch (error) {
     logger.error('Failed to generate summary', { error });
     throw error;
+  }
+}
+
+/**
+ * Initialize main model for high-quality summarization
+ */
+function initializeMainModel(): ModelConfig | null {
+  try {
+    const configService = getConfigService();
+    const settings = configService.getSettings();
+
+    const provider = (settings.model?.provider || 'deepseek') as ModelProvider;
+    const apiKey = configService.getApiKey(provider);
+
+    if (!apiKey) {
+      logger.warn('No API key available for main model summarization');
+      return null;
+    }
+
+    return {
+      provider,
+      model: settings.model?.model || DEFAULT_MODELS.chat,
+      apiKey,
+      baseUrl: settings.models?.providers?.[provider]?.baseUrl,
+      temperature: 0.3,
+      maxTokens: 2048,
+    };
+  } catch (error) {
+    logger.error('Failed to initialize main model for summarization', { error });
+    return null;
   }
 }
 

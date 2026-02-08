@@ -161,13 +161,19 @@ function validateSkillName(name: string): void {
 
 /**
  * 解析 allowed-tools 字段
- * 支持空格分隔的工具名列表
+ * 支持数组格式或空格分隔的字符串格式
  */
-function parseAllowedTools(allowedTools: string | undefined): string[] {
+function parseAllowedTools(allowedTools: string | string[] | undefined): string[] {
   if (!allowedTools) {
     return [];
   }
 
+  // 如果是数组，直接返回（过滤空值）
+  if (Array.isArray(allowedTools)) {
+    return allowedTools.filter((tool) => typeof tool === 'string' && tool.length > 0);
+  }
+
+  // 如果是字符串，按空格分隔
   return allowedTools
     .split(/\s+/)
     .map((tool) => tool.trim())

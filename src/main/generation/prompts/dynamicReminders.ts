@@ -91,6 +91,9 @@ export function selectReminders(
     score: reminder.shouldInclude(context),
   })).filter((s) => s.score > 0);
 
+  // Debug: Log scored reminders
+  
+
   // 2. 应用上下文规则
   const withRules = applyContextRules(scored, context);
   const activeRules = getActiveRules(context);
@@ -131,6 +134,7 @@ export function selectReminders(
 
   // 8. 组合提醒内容
   const reminderContents = selectedReminders.map((r) => r.content);
+
 
   // 如果有 few-shot 示例，添加到末尾
   if (examples.length > 0) {
@@ -194,6 +198,11 @@ export function createReminderContext(
   } = {}
 ): ReminderContext {
   const features = detectTaskFeatures(taskPrompt);
+
+  // Debug: Log PPT task detection
+  if (features.isPPTTask) {
+    
+  }
 
   return {
     taskFeatures: features,

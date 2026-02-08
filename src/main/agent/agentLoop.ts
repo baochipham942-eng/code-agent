@@ -57,6 +57,7 @@ import { getPromptForTask, buildDynamicPrompt, buildDynamicPromptV2, type AgentM
 import { AntiPatternDetector } from './antiPattern/detector';
 import { getCurrentTodos } from '../tools/planning/todoWrite';
 import { getIncompleteTasks } from '../tools/planning';
+import { fileReadTracker } from '../tools/fileReadTracker';
 import { MAX_PARALLEL_TOOLS, READ_ONLY_TOOLS, WRITE_TOOLS, VERIFY_TOOLS, TaskProgressState } from './loopTypes';
 import {
   compressToolResult,
@@ -196,6 +197,9 @@ export class AgentLoop {
   // Adaptive Thinking: 交错思考管理
   private effortLevel: import('../../shared/types/agent').EffortLevel = 'high';
   private thinkingStepCount: number = 0;
+
+  // Context overflow auto-recovery
+  private _contextOverflowRetried: boolean = false;
 
   constructor(config: AgentLoopConfig) {
     this.generation = config.generation;
@@ -2140,14 +2144,46 @@ export class AgentLoop {
 
       if (error instanceof ContextLengthExceededError) {
         logger.warn(`[AgentLoop] Context length exceeded: ${error.requestedTokens} > ${error.maxTokens}`);
-        logCollector.agent('ERROR', `Context length exceeded: requested ${error.requestedTokens}, max ${error.maxTokens}`);
+        logCollector.agent('WARN', `Context overflow, attempting auto-recovery`);
 
+        // 通知用户正在恢复
+        this.onEvent({
+          type: 'context_compressed',
+          data: {
+            savedTokens: 0,
+            strategy: 'overflow_recovery',
+            newMessageCount: this.messages.length,
+          },
+        } as AgentEvent);
+
+        // 尝试自动压缩 + 重试
+        try {
+          await this.checkAndAutoCompress();
+
+          if (!this._contextOverflowRetried) {
+            this._contextOverflowRetried = true;
+            const originalMaxTokens = this.modelConfig.maxTokens;
+            this.modelConfig.maxTokens = Math.floor((originalMaxTokens || error.maxTokens) * 0.7);
+            logger.info(`[AgentLoop] Auto-recovery: maxTokens reduced from ${originalMaxTokens} to ${this.modelConfig.maxTokens}`);
+
+            try {
+              return await this.inference();
+            } finally {
+              this._contextOverflowRetried = false;
+              this.modelConfig.maxTokens = originalMaxTokens;
+            }
+          }
+        } catch (recoveryError) {
+          logger.error('[AgentLoop] Auto-recovery failed:', recoveryError);
+        }
+
+        // 恢复失败，回退到原行为
         this.onEvent({
           type: 'error',
           data: {
             code: 'CONTEXT_LENGTH_EXCEEDED',
-            message: '对话内容过长，已超出模型上下文限制。',
-            suggestion: '建议新开一个会话继续对话，或清理当前会话的历史消息。',
+            message: '上下文压缩后仍超限，建议新开会话。',
+            suggestion: '建议新开一个会话继续对话。',
             details: {
               requested: error.requestedTokens,
               max: error.maxTokens,
@@ -2515,6 +2551,37 @@ ${deferredToolsSummary}
 
         if (compactionResult) {
           const { block } = compactionResult;
+
+          // === 注入文件状态 + TODO 恢复上下文 ===
+          let recoveryContext = '';
+
+          const recentFiles = fileReadTracker.getRecentFiles(10);
+          if (recentFiles.length > 0) {
+            recoveryContext += '\n\n## 最近读取的文件\n';
+            recoveryContext += recentFiles.map(f => `- ${f.path}`).join('\n');
+          }
+
+          const todos = getCurrentTodos(this.sessionId);
+          const pendingTodos = todos.filter(t => t.status !== 'completed');
+          if (pendingTodos.length > 0) {
+            recoveryContext += '\n\n## 未完成的任务\n';
+            recoveryContext += pendingTodos.map(t =>
+              `- [${t.status === 'in_progress' ? '进行中' : '待处理'}] ${t.content}`
+            ).join('\n');
+          }
+
+          const incompleteTasks = getIncompleteTasks(this.sessionId);
+          if (incompleteTasks.length > 0) {
+            recoveryContext += '\n\n## 未完成的子任务\n';
+            recoveryContext += incompleteTasks.map(t =>
+              `- [${t.status}] ${t.subject}`
+            ).join('\n');
+          }
+
+          if (recoveryContext) {
+            block.content += recoveryContext;
+          }
+          // === 恢复上下文注入完毕 ===
 
           // 将 compaction block 作为消息保留在历史中
           const compactionMessage: Message = {

@@ -8,6 +8,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { BASH } from '../../../shared/constants';
 import { startBackgroundTask } from './backgroundTasks';
 import { createPtySession, getPtySessionOutput } from './ptyExecutor';
+import { generateBashDescription } from './dynamicDescription';
 
 const execAsync = promisify(exec);
 
@@ -215,6 +216,9 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
 
     // Foreground execution
     try {
+      // 并行：生成动态描述（不阻塞命令执行）
+      const descriptionPromise = generateBashDescription(command).catch(() => null);
+
       const { stdout, stderr } = await execAsync(command, {
         timeout,
         cwd: workingDirectory,
@@ -235,9 +239,12 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
         output = output.substring(0, BASH.MAX_OUTPUT_LENGTH) + '\n... (output truncated)';
       }
 
+      const dynamicDesc = await descriptionPromise;
+
       return {
         success: true,
         output,
+        metadata: dynamicDesc ? { description: dynamicDesc } : undefined,
       };
     } catch (error: any) {
       // Handle timeout

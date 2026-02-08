@@ -19,6 +19,11 @@ import type { DynamicAgentConfig } from './dynamicFactory';
 import type { SwarmConfig } from './taskRouter';
 import { getSwarmEventEmitter, type SwarmEventEmitter } from '../../ipc/swarm.ipc';
 import { getTeammateService } from '../teammate/teammateService';
+import { getTaskListManager } from '../taskList';
+import { getAgentWorkerManager, type AgentWorkerManager } from '../worker/agentWorkerManager';
+import { getPermissionProxy } from '../worker/permissionProxy';
+import { TeammateProxy } from '../worker/teammateProxy';
+import { WorkerMonitor } from '../worker/workerMonitor';
 
 const logger = createLogger('AgentSwarm');
 
@@ -253,13 +258,30 @@ class ResourceLockManager {
  *
  * 管理多个 Agent 的并行执行，支持依赖管理和冲突检测。
  */
+/**
+ * 扩展 Swarm 配置：进程隔离选项
+ */
+export interface ExtendedSwarmConfig extends SwarmConfig {
+  /** 是否启用进程隔离（默认 true） */
+  processIsolation?: boolean;
+  /** 最大 worker 进程数（默认 4） */
+  maxWorkers?: number;
+  /** 单个 worker 超时（ms，默认 300000） */
+  workerTimeout?: number;
+}
+
 export class AgentSwarm {
   private coordinator = new SwarmCoordinator();
   private lockManager = new ResourceLockManager();
   private runtimes: Map<string, AgentRuntime> = new Map();
-  private config: SwarmConfig | null = null;
+  private config: ExtendedSwarmConfig | null = null;
   private cancelled = false;
   private eventEmitter: SwarmEventEmitter;
+
+  // Phase 2: 进程隔离组件
+  private workerManager: AgentWorkerManager | null = null;
+  private teammateProxy: TeammateProxy | null = null;
+  private workerMonitor: WorkerMonitor | null = null;
 
   constructor() {
     this.eventEmitter = getSwarmEventEmitter();
@@ -275,17 +297,20 @@ export class AgentSwarm {
    */
   async execute(
     agents: DynamicAgentConfig[],
-    config: SwarmConfig,
+    config: SwarmConfig | ExtendedSwarmConfig,
     executor: AgentExecutor
   ): Promise<SwarmResult> {
     const startTime = Date.now();
-    this.config = config;
+    this.config = config as ExtendedSwarmConfig;
     this.cancelled = false;
+
+    const useProcessIsolation = (config as ExtendedSwarmConfig).processIsolation ?? false;
 
     logger.info('Starting Agent Swarm', {
       agentCount: agents.length,
       maxAgents: config.maxAgents,
       reportingMode: config.reportingMode,
+      processIsolation: useProcessIsolation,
     });
 
     // 发送 swarm 开始事件
@@ -293,6 +318,46 @@ export class AgentSwarm {
 
     // 初始化运行时状态
     this.initializeRuntimes(agents);
+
+    // === TaskList Integration: 写入任务列表 ===
+    const taskListManager = getTaskListManager();
+    for (const agent of agents) {
+      taskListManager.createTask({
+        subject: agent.name,
+        description: agent.prompt || `Execute ${agent.name}`,
+        assignee: agent.name,
+        priority: agent.dependencies.length === 0 ? 1 : 3,
+        dependencies: agent.dependencies,
+      });
+    }
+
+    // === Phase 2: 进程隔离初始化 ===
+    if (useProcessIsolation) {
+      this.workerManager = getAgentWorkerManager({
+        processIsolation: true,
+        maxWorkers: (config as ExtendedSwarmConfig).maxWorkers ?? 4,
+        workerTimeout: (config as ExtendedSwarmConfig).workerTimeout ?? 300000,
+      });
+      this.teammateProxy = new TeammateProxy(this.workerManager);
+      this.workerMonitor = new WorkerMonitor(this.workerManager);
+
+      // 设置工具调用代理和权限代理
+      const permissionProxy = getPermissionProxy();
+      this.workerManager.setToolCallHandler(async (workerId: string, tool: string, args: unknown) => {
+        const approved = await permissionProxy.checkPermission(workerId, tool, args);
+        if (!approved) throw new Error(`Permission denied: ${tool}`);
+        // 在主进程中执行工具（通过 executor）
+        return executor.execute(
+          agents[0], // 使用第一个 agent 配置作为代理
+          (report) => this.coordinator.receive(report)
+        );
+      });
+      this.workerManager.setPermissionHandler(async (workerId: string, tool: string, args: unknown) => {
+        return permissionProxy.checkPermission(workerId, tool, args);
+      });
+
+      logger.info('[AgentSwarm] Process isolation enabled, worker manager initialized');
+    }
 
     // Agent Teams: 注册到 TeammateService（如果启用 P2P 通信）
     if (config.enablePeerCommunication) {
@@ -431,11 +496,68 @@ export class AgentSwarm {
       iterations: runtime.iterations,
     });
 
+    // === TaskList Integration: 标记开始执行 ===
+    const taskListManager = getTaskListManager();
+    const tasks = taskListManager.getTasks();
+    const matchingTask = tasks.find(t => t.subject === runtime.agent.name);
+    if (matchingTask) {
+      taskListManager.startExecution(matchingTask.id);
+    }
+
     try {
-      const result = await executor.execute(
-        runtime.agent,
-        (report) => this.handleAgentReport(runtime, report)
-      );
+      let result: { success: boolean; output: string; error?: string };
+
+      // === Phase 2: 进程隔离执行 ===
+      if (this.workerManager && (this.config as ExtendedSwarmConfig)?.processIsolation) {
+        // 通过 worker 子进程执行
+        const workerId = await this.workerManager.spawn({
+          role: runtime.agent.name,
+          taskId: runtime.agent.id,
+          modelConfig: {} as any, // 从 agent config 获取
+          systemPrompt: runtime.agent.prompt || '',
+          task: runtime.agent.prompt || 'Execute task',
+          allowedTools: runtime.agent.tools || [],
+          workingDirectory: process.cwd(),
+          timeout: (this.config as ExtendedSwarmConfig)?.workerTimeout ?? 300000,
+          maxIterations: runtime.agent.maxIterations || 20,
+        });
+
+        // 监控 worker
+        if (this.workerMonitor) {
+          this.workerMonitor.startMonitoring(workerId);
+        }
+
+        // 投递排队消息
+        if (this.teammateProxy) {
+          this.teammateProxy.flushQueue(workerId);
+        }
+
+        // 等待 worker 完成
+        result = await new Promise<{ success: boolean; output: string; error?: string }>((resolve) => {
+          const onEvent = (event: any) => {
+            if (event.workerId !== workerId) return;
+            if (event.type === 'worker_completed') {
+              this.workerManager!.removeListener('event', onEvent);
+              resolve({ success: true, output: event.result || '' });
+            } else if (event.type === 'worker_failed') {
+              this.workerManager!.removeListener('event', onEvent);
+              resolve({ success: false, output: '', error: event.error });
+            }
+          };
+          this.workerManager!.on('event', onEvent);
+        });
+
+        // 停止监控
+        if (this.workerMonitor) {
+          this.workerMonitor.stopMonitoring(workerId);
+        }
+      } else {
+        // 原有同进程执行方式
+        result = await executor.execute(
+          runtime.agent,
+          (report) => this.handleAgentReport(runtime, report)
+        );
+      }
 
       runtime.status = result.success ? 'completed' : 'failed';
       runtime.output = result.output;
@@ -447,6 +569,15 @@ export class AgentSwarm {
         output: result.output,
         error: result.error,
       });
+
+      // === TaskList Integration: 同步完成/失败状态 ===
+      if (matchingTask) {
+        if (result.success) {
+          taskListManager.completeExecution(matchingTask.id, result.output || 'Completed');
+        } else {
+          taskListManager.failExecution(matchingTask.id, result.error || 'Unknown error');
+        }
+      }
 
       // 发送 agent 完成/失败事件
       if (result.success) {
@@ -641,6 +772,22 @@ export class AgentSwarm {
       } catch (err) {
         logger.warn('[AgentSwarm] Failed to unregister agents from TeammateService:', err);
       }
+    }
+
+    // Phase 2: 清理 worker 资源
+    if (this.workerMonitor) {
+      this.workerMonitor.stopAll();
+      this.workerMonitor = null;
+    }
+    if (this.workerManager) {
+      this.workerManager.terminateAll('Swarm cleanup').catch((err: unknown) => {
+        logger.warn('[AgentSwarm] Failed to terminate workers:', err);
+      });
+      this.workerManager = null;
+    }
+    if (this.teammateProxy) {
+      this.teammateProxy.reset();
+      this.teammateProxy = null;
     }
 
     this.runtimes.clear();

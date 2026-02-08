@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 5.4 (对应 v0.16.20)
-> 日期: 2026-02-06
+> 版本: 5.5 (对应 v0.16.21)
+> 日期: 2026-02-08
 > 作者: Lin Chen
 
 本文档已拆分为模块化的架构文档，便于维护和查阅。
@@ -35,6 +35,20 @@
 | **CLI 接口** | `src/main/cli/` | 命令行交互模式 |
 | **多渠道接入** | `src/main/channels/` | 飞书 Webhook 等渠道支持 |
 | **Skills 系统** | `src/main/skills/` | 用户可定义技能 |
+
+### v0.16.21+ 健壮性增强（h2A 转向 + Compaction 恢复 + 溢出自动重试）
+
+| 模块 | 位置 | 描述 |
+|------|------|------|
+| **h2A 实时转向** | `src/main/agent/agentLoop.ts` | `steer()` 方法注入用户消息，不销毁 loop，保留所有中间状态 |
+| **消息排队** | `src/main/agent/agentOrchestrator.ts` | 快速连续输入不互相覆盖，重写 interruptAndContinue() |
+| **TaskListManager** | `src/main/agent/taskList/` | 可视化任务列表管理 + IPC handlers |
+| **Compaction 恢复** | `src/main/agent/agentLoop.ts` | 压缩后注入最近读取文件和待处理 TODO |
+| **FileReadTracker** | `src/main/tools/fileReadTracker.ts` | 跟踪文件读取记录，支持编辑验证和恢复上下文 |
+| **Edit 代码片段** | `src/main/tools/file/edit.ts` | 编辑成功后返回 4 行上下文代码 |
+| **溢出自动恢复** | `src/main/agent/agentLoop.ts` | ContextLengthExceededError → 自动压缩 + 0.7x maxTokens 重试 |
+| **动态 Bash 描述** | `src/main/tools/shell/dynamicDescription.ts` | GLM-4-Flash 生成命令描述，LRU 缓存 |
+| **Moonshot 连接修复** | `src/main/model/providers/moonshot.ts` | 专用 Agent（keepAlive=false）+ 瞬态错误重试 |
 
 ### v0.16.20+ 对标 Claude Code 2026（Compaction + Agent Teams + Adaptive Thinking）
 

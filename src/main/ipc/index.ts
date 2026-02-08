@@ -41,6 +41,7 @@ import { registerLSPHandlers } from './lsp.ipc';
 import { registerBackgroundHandlers } from './background.ipc';
 import { registerDiffHandlers } from './diff.ipc';
 import { registerSwarmHandlers } from './swarm.ipc';
+import { registerTaskListHandlers } from '../agent/taskList/taskList.ipc';
 
 export * from './types';
 
@@ -165,6 +166,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Swarm handlers (Agent Teams P2P 通信)
   registerSwarmHandlers(getOrchestrator);
+
+  // TaskList handlers (任务列表可视化与管理)
+  registerTaskListHandlers();
 
   logger.info('All handlers registered');
 }

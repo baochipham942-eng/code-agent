@@ -149,6 +149,44 @@ export type {
 } from './types/sessionState';
 
 // ----------------------------------------------------------------------------
+// TaskList IPC Types
+// ----------------------------------------------------------------------------
+
+export type TaskItemStatusIpc = 'pending' | 'in_progress' | 'completed' | 'failed';
+
+export interface TaskItemIpc {
+  id: string;
+  subject: string;
+  description: string;
+  status: TaskItemStatusIpc;
+  assignee?: string;
+  priority: number;
+  dependencies: string[];
+  createdAt: number;
+  updatedAt: number;
+  result?: string;
+  error?: string;
+}
+
+export interface TaskListStateIpc {
+  tasks: TaskItemIpc[];
+  autoAssign: boolean;
+  requireApproval: boolean;
+}
+
+export interface TaskListEventIpc {
+  type: string;
+  task?: TaskItemIpc;
+  taskId?: string;
+  changes?: Partial<TaskItemIpc>;
+  assignee?: string;
+  reason?: string;
+  result?: string;
+  error?: string;
+  state?: TaskListStateIpc;
+}
+
+// ----------------------------------------------------------------------------
 // Additional Types for IPC
 // ----------------------------------------------------------------------------
 
@@ -580,6 +618,18 @@ export const IPC_CHANNELS = {
   SWARM_SEND_USER_MESSAGE: 'swarm:send-user-message',
   SWARM_GET_AGENT_MESSAGES: 'swarm:get-agent-messages',
   SWARM_SET_DELEGATE_MODE: 'swarm:set-delegate-mode',
+
+  // TaskList channels (任务列表可视化)
+  TASKLIST_EVENT: 'taskList:event',
+  TASKLIST_GET_STATE: 'taskList:getState',
+  TASKLIST_GET_TASKS: 'taskList:getTasks',
+  TASKLIST_UPDATE_TASK: 'taskList:updateTask',
+  TASKLIST_REASSIGN: 'taskList:reassign',
+  TASKLIST_APPROVE: 'taskList:approve',
+  TASKLIST_APPROVE_ALL: 'taskList:approveAll',
+  TASKLIST_DELETE_TASK: 'taskList:deleteTask',
+  TASKLIST_SET_AUTO_ASSIGN: 'taskList:setAutoAssign',
+  TASKLIST_SET_REQUIRE_APPROVAL: 'taskList:setRequireApproval',
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -849,6 +899,17 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SWARM_SEND_USER_MESSAGE]: (payload: { agentId: string; message: string }) => Promise<void>;
   [IPC_CHANNELS.SWARM_GET_AGENT_MESSAGES]: (agentId: string) => Promise<Array<{ from: string; to: string; content: string; timestamp: number }>>;
   [IPC_CHANNELS.SWARM_SET_DELEGATE_MODE]: (enabled: boolean) => Promise<void>;
+
+  // TaskList (任务列表可视化)
+  [IPC_CHANNELS.TASKLIST_GET_STATE]: () => Promise<TaskListStateIpc>;
+  [IPC_CHANNELS.TASKLIST_GET_TASKS]: () => Promise<TaskItemIpc[]>;
+  [IPC_CHANNELS.TASKLIST_UPDATE_TASK]: (taskId: string, changes: Partial<TaskItemIpc>) => Promise<TaskItemIpc | null>;
+  [IPC_CHANNELS.TASKLIST_REASSIGN]: (taskId: string, assignee: string) => Promise<TaskItemIpc | null>;
+  [IPC_CHANNELS.TASKLIST_APPROVE]: (taskId: string) => Promise<void>;
+  [IPC_CHANNELS.TASKLIST_APPROVE_ALL]: () => Promise<void>;
+  [IPC_CHANNELS.TASKLIST_DELETE_TASK]: (taskId: string) => Promise<boolean>;
+  [IPC_CHANNELS.TASKLIST_SET_AUTO_ASSIGN]: (enabled: boolean) => Promise<void>;
+  [IPC_CHANNELS.TASKLIST_SET_REQUIRE_APPROVAL]: (enabled: boolean) => Promise<void>;
 }
 
 // ----------------------------------------------------------------------------
@@ -943,6 +1004,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.CHANNEL_ACCOUNT_STATUS_CHANGED]: (event: { accountId: string; status: string; error?: string }) => void;
   // Swarm events
   [IPC_CHANNELS.SWARM_EVENT]: (event: SwarmEvent) => void;
+  // TaskList events
+  [IPC_CHANNELS.TASKLIST_EVENT]: (event: TaskListEventIpc) => void;
 }
 
 // ----------------------------------------------------------------------------

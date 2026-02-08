@@ -29,8 +29,8 @@ export interface ToolResultCompressionConfig {
 }
 
 const DEFAULT_COMPRESSION_CONFIG: Required<ToolResultCompressionConfig> = {
-  threshold: 500,
-  targetTokens: 300,
+  threshold: 300,
+  targetTokens: 200,
   preserveCode: true,
 };
 

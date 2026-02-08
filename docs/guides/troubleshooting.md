@@ -46,12 +46,16 @@
 
 **正确做法**:
 ```bash
+# 使用 rebuild-native.sh 自动检测 Electron 版本
+npm run rebuild-native
+
+# 或手动指定版本
 npm cache clean --force
 rm -rf node_modules/isolated-vm node_modules/better-sqlite3 node_modules/keytar
 npm install isolated-vm better-sqlite3 keytar \
   --build-from-source \
   --runtime=electron \
-  --target=33.4.11 \
+  --target=38.8.0 \
   --disturl=https://electronjs.org/headers
 ```
 
@@ -311,3 +315,41 @@ data: {"id":"gen-xxx","choices":[...]}
 3. 增强错误日志记录 error code
 
 相关代码：`src/main/model/providers/moonshot.ts`
+
+---
+
+## v0.16.22 新增问题 (2026-02-08)
+
+### Electron 升级天花板 = 38（isolated-vm V8 API 不兼容）
+**问题**: Electron 39+ 编译 `isolated-vm` 失败
+**原因**: V8 14.2（Electron 39）移除了 `v8::Object::GetIsolate()`，V8 14.4（Electron 40）还改名了 `GetPrototype()` → `GetPrototypeV2()`
+**影响**: `isolated-vm` 的 `src/isolate/class_handle.h:231-233` 使用了这两个 API
+**结论**:
+
+| Electron | V8 | 编译 |
+|----------|----|------|
+| 38 | 14.0 | ✅ 最高兼容 |
+| 39 | 14.2 | ❌ |
+| 40 | 14.4 | ❌ |
+
+**最终决策**: 升级到 Electron 38（V8 14.0, Node 22.16, Chromium 140）
+
+### gen5.test.ts VectorStore mock 缺少 save()
+**问题**: 4 个 `memory_store` 测试失败
+**原因**: `store.ts:92` 调用 `await vectorStore.save()`，但测试 mock 缺少 `save` 方法，导致 TypeError 被 catch 捕获返回 `success: false`
+**修复**: 在 `tests/generations/gen5.test.ts` 的 VectorStore mock 中添加 `save: vi.fn().mockResolvedValue(undefined)`
+
+### 错误自动恢复引擎 (v0.16.22+)
+**背景**: 之前错误处理只有分类（ErrorClassifier），没有自动恢复
+**新增**: `RecoveryEngine` 支持 6 种错误的自动恢复
+
+| 错误 | 恢复动作 | 说明 |
+|------|---------|------|
+| 429 Rate Limit | AUTO_RETRY | 指数退避重试 |
+| 401 Permission | OPEN_SETTINGS | 引导用户检查 API Key |
+| Context Length | AUTO_COMPACT | 自动压缩上下文 |
+| Timeout | AUTO_SWITCH_PROVIDER | 切换到其他 provider |
+| Connection | AUTO_RETRY | 网络错误重试 |
+| Model Unavailable | AUTO_SWITCH_PROVIDER | 切换到 fallback 模型 |
+
+相关代码：`src/main/errors/recoveryEngine.ts`

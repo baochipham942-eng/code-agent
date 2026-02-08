@@ -22,10 +22,10 @@ function formatCost(cost: number): string {
   return `$${cost.toFixed(2)}`;
 }
 
-export function CostDisplay({ cost }: CostDisplayProps) {
+export function CostDisplay({ cost, isStreaming }: CostDisplayProps) {
   return (
     <span
-      className="flex items-center gap-0.5 text-emerald-400"
+      className={`flex items-center gap-0.5 text-emerald-400 ${isStreaming ? 'animate-pulse' : ''}`}
       title={`Session cost: $${cost.toFixed(4)}`}
     >
       <DollarSign size={12} />

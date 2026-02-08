@@ -15,10 +15,12 @@ export interface MessageCounterProps {
 export interface TokenUsageProps {
   input: number;
   output: number;
+  isStreaming?: boolean;
 }
 
 export interface CostDisplayProps {
   cost: number;
+  isStreaming?: boolean;
 }
 
 export interface ContextUsageProps {

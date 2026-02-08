@@ -116,7 +116,7 @@
     "autoprefixer": "^10.4.0",
     "clsx": "^2.1.0",
     "concurrently": "^9.0.0",
-    "electron": "^33.0.0",
+    "electron": "^38.8.0",
     "electron-builder": "^25.0.0",
     "esbuild": "^0.24.0",
     "eslint": "^9.0.0",

@@ -37,6 +37,7 @@ vi.mock('../../src/main/memory/VectorStore', () => ({
     addKnowledge: vi.fn().mockResolvedValue(undefined),
     search: vi.fn().mockResolvedValue([]),
     indexCode: vi.fn().mockResolvedValue(undefined),
+    save: vi.fn().mockResolvedValue(undefined),
   }),
 }));
 

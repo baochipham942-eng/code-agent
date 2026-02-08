@@ -22,11 +22,11 @@ AI 编程助手桌面应用，复刻 Claude Code 的 8 个架构代际来研究 
 
 ## 技术栈
 
-- **框架**: Electron 33 + React 18 + TypeScript
+- **框架**: Electron 38 + React 18 + TypeScript
 - **构建**: esbuild (main/preload) + Vite (renderer)
 - **样式**: Tailwind CSS
 - **状态**: Zustand
-- **AI**: DeepSeek API（主）, 智谱/OpenAI（备）
+- **AI**: Moonshot Kimi K2.5（主）, 智谱/DeepSeek/OpenAI（备）
 - **后端**: Supabase + pgvector
 
 ## 文档导航
@@ -595,6 +595,7 @@ pending → ready → running → completed/failed/cancelled/skipped
 | 测试文件 | 测试数 | 覆盖模块 |
 |----------|--------|---------|
 | `inputSanitizer.test.ts` | 22 | E6 安全校验 |
+| `gen5.test.ts` | 21 | Gen5 记忆系统（v0.16.22 修复 4 个 mock 缺陷） |
 | `documentParser.test.ts` | 19 | E5 文档上下文 |
 | `confirmationGate.test.ts` | 15 | E2 确认门控 |
 | `diffTracker.test.ts` | 13 | E3 变更追踪 |
@@ -602,7 +603,131 @@ pending → ready → running → completed/failed/cancelled/skipped
 | `ppt.test.mjs` | 55 | PPT 基础 |
 | `ppt-extended.test.mjs` | 82 | PPT 扩展 |
 | `teammate.test.ts` | 12 | Agent 协作 |
-| **总计** | **227** | |
+| **总计** | **248** | |
+
+---
+
+## v0.16.22 成本优化与健壮性增强 (2026-02-08)
+
+### Electron 33 → 38 升级
+
+| 组件 | v0.16.21 | v0.16.22 |
+|------|----------|----------|
+| Electron | 33 (Chromium 130, V8 13.0, Node 20.18) | **38** (Chromium 140, V8 14.0, Node 22.16) |
+
+**升级天花板**：Electron 39+ 的 V8 14.2 移除了 `Object::GetIsolate()` API，`isolated-vm` 无法编译。38 是当前最高兼容版本。
+
+### 7 项 CodePilot 对标改进
+
+#### 1. System Prompt 精简（再降 ~20%）
+
+精简 gen8.ts tool table 和 identity.ts TOOL_DISCIPLINE。
+
+相关代码：
+- `src/main/generation/prompts/base/gen8.ts` — 合并为 2 列 tool table
+- `src/main/generation/prompts/identity.ts` — TOOL_DISCIPLINE 压缩为 3 行
+
+#### 2. 激进消息历史裁剪
+
+更早触发压缩，更激进地截断旧消息和工具结果。
+
+相关代码：
+- `src/main/context/autoCompressor.ts` — `warningThreshold` 0.7→0.6，新增 `aggressiveTruncate()`
+- `src/main/context/tokenOptimizer.ts` — 压缩阈值 500→300，目标 300→200 tokens
+
+#### 3. 推理请求去重缓存
+
+非流式请求的 LRU 缓存，key = md5(last 3 messages + provider + model)，只缓存 text 响应。
+
+相关代码：`src/main/model/inferenceCache.ts`（新文件）
+
+#### 4. 自适应模型路由
+
+简单任务（score < 30）自动路由到免费模型 zhipu/glm-4.7-flash，失败自动 fallback。
+
+| 复杂度 | 分数 | 路由 |
+|--------|------|------|
+| simple | < 30 | zhipu/glm-4.7-flash（免费）|
+| moderate | 30-60 | 保持默认 |
+| complex | 60+ | 保持默认 |
+
+相关代码：`src/main/model/adaptiveRouter.ts`（新文件）
+
+#### 5. 错误分类与自动恢复
+
+6 种错误模式的自动恢复引擎。
+
+| 错误类型 | 恢复动作 |
+|---------|---------|
+| RATE_LIMIT (429) | 指数退避自动重试 |
+| PERMISSION (401) | 引导打开设置 |
+| CONTEXT_LENGTH | 自动压缩 |
+| TIMEOUT | 切换 provider |
+| CONNECTION | 自动重试 |
+| MODEL_UNAVAILABLE | 切换 provider |
+
+相关代码：
+- `src/main/errors/recoveryEngine.ts`（新文件）
+- `src/main/ipc/error.ipc.ts`（新文件）
+- `src/renderer/hooks/useErrorRecovery.ts`（新文件）
+
+#### 6. 工具 DAG 调度
+
+基于文件依赖的 DAG 调度器，Kahn 算法拓扑排序，分层并行执行。
+
+| 依赖类型 | 规则 |
+|---------|------|
+| WAR | `edit_file(X)` 依赖前序 `read_file(X)` |
+| WAW | 并发 `write_file(X)` 串行化 |
+| Bash | 提取 `>` / `>>` 重定向写路径 |
+
+快速路径：无依赖时直接走现有 parallelStrategy，零开销。
+
+相关代码：`src/main/agent/toolExecution/dagScheduler.ts`（新文件）
+
+#### 7. 实时成本流
+
+SSE 流式响应期间每 500ms 估算 token 数，StatusBar 实时更新（脉冲动画 + ▲ 指示器）。
+
+相关代码：
+- `src/main/model/providers/moonshot.ts` — 流式 token 估算
+- `src/main/model/providers/zhipu.ts` — 流式 token 估算
+- `src/renderer/stores/statusStore.ts` — `isStreaming` 状态
+- `src/renderer/components/StatusBar/TokenUsage.tsx` — 脉冲动画
+- `src/renderer/components/StatusBar/CostDisplay.tsx` — 脉冲动画
+
+### 新增文件清单
+
+| 文件 | 行数 | 功能 |
+|------|------|------|
+| `src/main/model/inferenceCache.ts` | ~115 | 请求去重 LRU 缓存 |
+| `src/main/model/adaptiveRouter.ts` | ~122 | 自适应模型路由 |
+| `src/main/errors/recoveryEngine.ts` | ~250 | 错误自动恢复引擎 |
+| `src/main/ipc/error.ipc.ts` | ~40 | 错误恢复 IPC |
+| `src/main/agent/toolExecution/dagScheduler.ts` | ~218 | 工具 DAG 调度器 |
+| `src/renderer/hooks/useErrorRecovery.ts` | ~60 | 错误恢复 React Hook |
+
+### 修改文件清单
+
+| 文件 | 改动 |
+|------|------|
+| `src/main/generation/prompts/base/gen8.ts` | 精简 tool table (~20%) |
+| `src/main/generation/prompts/identity.ts` | 压缩 TOOL_DISCIPLINE |
+| `src/main/context/autoCompressor.ts` | 更激进裁剪阈值 (0.7→0.6) |
+| `src/main/context/tokenOptimizer.ts` | 降低压缩阈值 (500→300) |
+| `src/main/model/modelRouter.ts` | 集成缓存 + 自适应路由 |
+| `src/main/model/types.ts` | StreamChunk 扩展 `token_estimate` 类型 |
+| `src/main/model/providers/moonshot.ts` | 流式 token 估算 |
+| `src/main/model/providers/zhipu.ts` | 流式 token 估算 |
+| `src/shared/ipc.ts` | 新增 ERROR domain |
+| `src/main/agent/toolExecution/index.ts` | 导出 DAG 调度器 |
+| `src/renderer/stores/statusStore.ts` | 新增 `isStreaming` 状态 |
+| `src/renderer/components/StatusBar/TokenUsage.tsx` | 流式脉冲动画 |
+| `src/renderer/components/StatusBar/CostDisplay.tsx` | 流式脉冲动画 |
+| `src/renderer/components/StatusBar/index.tsx` | 传递 `isStreaming` prop |
+| `src/renderer/components/StatusBar/types.ts` | 新增 `isStreaming` prop |
+| `tests/generations/gen5.test.ts` | 修复 VectorStore mock 缺少 `save()` |
+| `package.json` | Electron ^33.0.0 → ^38.8.0 |
 
 ---
 
@@ -1086,3 +1211,31 @@ read_file({ file_path: "src/app.ts", offset: 10, limit: 50 })
 - L1=20, L2=35, L3=50, L4=70, L5=100, L6=150
 
 **相关代码**：`src/cli/commands/chat.ts` - `calculateToolCallMax()`
+
+### 2026-02-08: Electron 40 升级失败 — isolated-vm V8 API 不兼容
+
+**症状**: `npm install` 后 `rebuild-native` 编译 `isolated-vm` 失败
+
+**根因**: Electron 40 使用 V8 14.4，两个 C++ API 被移除/改名：
+- `v8::Object::GetIsolate()` → 已移除，替代：`v8::Isolate::GetCurrent()`
+- `v8::Object::GetPrototype()` → 改名为 `GetPrototypeV2()`
+
+**影响范围**: `isolated-vm` 的 `src/isolate/class_handle.h:231-233` 使用了这两个 API
+
+**测试结论**:
+| Electron | V8 | isolated-vm 编译 |
+|----------|----|------------------|
+| 33 | 13.0 | ✅ |
+| 38 | 14.0 | ✅ ← 最高兼容 |
+| 39 | 14.2 | ❌ GetIsolate 移除 |
+| 40 | 14.4 | ❌ 同上 + GetPrototype 改名 |
+
+**最终决策**: 升级到 Electron 38（V8 14.0, Node 22.16, Chromium 140），获得 12 个月安全补丁 + Node LTS 跳代
+
+### 2026-02-08: gen5.test.ts VectorStore mock 缺少 save()
+
+**症状**: 4 个 `memory_store` 测试失败，`result.success` 为 false
+
+**根因**: `store.ts:92` 调用 `await vectorStore.save()`，但测试 mock 只有 `addKnowledge`、`search`、`indexCode`，缺少 `save` 方法
+
+**修复**: 添加 `save: vi.fn().mockResolvedValue(undefined)` 到 VectorStore mock

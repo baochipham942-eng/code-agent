@@ -186,6 +186,10 @@ function callZhipuStream(
     let finishReason: string | undefined;
     const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
 
+    // Real-time token estimation
+    let charCount = 0;
+    let lastEstimateTime = 0;
+
     const options: https.RequestOptions = {
       hostname: url.hostname,
       port: url.port || (isHttps ? 443 : 80),
@@ -300,9 +304,20 @@ function callZhipuStream(
                 // 处理文本内容
                 if (delta.content) {
                   content += delta.content;
+                  charCount += delta.content.length;
                   logger.debug(`[智谱] 收到文本块: "${delta.content.substring(0, 30)}..."`);
                   if (onStream) {
                     onStream({ type: 'text', content: delta.content });
+                    // Periodic token estimation (~every 500ms)
+                    const now = Date.now();
+                    if (now - lastEstimateTime > 500) {
+                      lastEstimateTime = now;
+                      onStream({
+                        type: 'token_estimate',
+                        inputTokens: 0,
+                        outputTokens: Math.ceil(charCount / 4),
+                      });
+                    }
                   }
                 }
 

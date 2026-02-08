@@ -35,6 +35,7 @@ export function StatusBar() {
     contextUsagePercent,
     sessionStartTime,
     networkStatus,
+    isStreaming,
   } = useStatusStore();
 
   // 渐进披露：simple 模式不显示状态栏
@@ -61,12 +62,12 @@ export function StatusBar() {
         <Separator />
         <MessageCounter count={messages.length} />
         <Separator />
-        <TokenUsage input={inputTokens} output={outputTokens} />
+        <TokenUsage input={inputTokens} output={outputTokens} isStreaming={isStreaming} />
       </div>
 
       {/* 中间区域：费用、上下文使用 */}
       <div className="flex items-center gap-3">
-        <CostDisplay cost={sessionCost} />
+        <CostDisplay cost={sessionCost} isStreaming={isStreaming} />
         <Separator />
         <ContextUsage percent={contextUsagePercent} />
       </div>

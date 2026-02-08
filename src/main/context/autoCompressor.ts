@@ -55,7 +55,7 @@ export interface AutoCompressionConfig {
 
 const DEFAULT_CONFIG: AutoCompressionConfig = {
   enabled: true,
-  warningThreshold: 0.7,
+  warningThreshold: 0.6,
   criticalThreshold: 0.85,
   targetUsage: 0.5,
   preserveRecentCount: 6,
@@ -505,6 +505,64 @@ ${contentToSummarize}
     this.historyCompressor = new MessageHistoryCompressor({
       preserveRecentCount: this.config.preserveRecentCount,
     });
+  }
+
+  /**
+   * 激进截断：保留最近 20 条完整，20-50 条只保留摘要，tool_result 超 500 tokens 截断到 300
+   */
+  aggressiveTruncate(messages: CompressedMessage[]): CompressedMessage[] {
+    const len = messages.length;
+    if (len <= 20) return messages;
+
+    const result: CompressedMessage[] = [];
+
+    for (let i = 0; i < len; i++) {
+      const distFromEnd = len - 1 - i;
+      const msg = messages[i];
+
+      if (distFromEnd < 20) {
+        // Last 20: keep uncompressed
+        result.push(msg);
+      } else if (distFromEnd < 50) {
+        // Positions 20-50 from end: keep role + first 200 chars
+        result.push({
+          ...msg,
+          content: msg.content.substring(0, 200) + (msg.content.length > 200 ? '...[truncated]' : ''),
+          compressed: true,
+        });
+      } else {
+        // Older than 50 from end: check tool_result token budget
+        const tokens = estimateTokens(msg.content);
+        if (msg.role === 'tool' && tokens > 500) {
+          // Truncate to ~300 tokens (roughly 1200 chars)
+          const lines = msg.content.split('\n');
+          let accumulated = 0;
+          const kept: string[] = [];
+          for (const line of lines) {
+            const lineTokens = estimateTokens(line);
+            if (accumulated + lineTokens > 300) {
+              kept.push('...[truncated]');
+              break;
+            }
+            kept.push(line);
+            accumulated += lineTokens;
+          }
+          result.push({
+            ...msg,
+            content: kept.join('\n'),
+            compressed: true,
+          });
+        } else {
+          result.push({
+            ...msg,
+            content: msg.content.substring(0, 200) + (msg.content.length > 200 ? '...[truncated]' : ''),
+            compressed: true,
+          });
+        }
+      }
+    }
+
+    return result;
   }
 
   // ========================================================================

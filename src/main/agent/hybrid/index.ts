@@ -68,6 +68,7 @@ export {
   type AgentRuntime,
   type SwarmResult,
   type AgentExecutor,
+  type ExtendedSwarmConfig,
   AgentSwarm,
   getAgentSwarm,
 } from './agentSwarm';

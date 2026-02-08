@@ -85,6 +85,10 @@ export interface SwarmConfig {
   timeout: number;
   // Agent Teams: 启用 P2P 通信
   enablePeerCommunication?: boolean;
+  // Phase 2: 进程隔离选项
+  processIsolation?: boolean;
+  maxWorkers?: number;
+  workerTimeout?: number;
 }
 
 /**

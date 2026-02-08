@@ -165,50 +165,18 @@ export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props
   const renderObjectiveMetrics = () => {
     if (!objective) return null;
 
-    // 如果没有数据，显示提示
-    if (objective.totalMessages === 0) {
-      return (
-        <div className="bg-zinc-800/30 rounded-lg p-4 text-center">
-          <div className="text-gray-500 text-sm">
-            📭 该会话暂无对话数据
-          </div>
-          <div className="text-gray-600 text-xs mt-1">
-            开始新对话后，这里将显示详细的客观指标
-          </div>
-        </div>
-      );
-    }
-
-    // 性能警告检测
-    const avgResponseSec = objective.avgResponseTime / 1000;
-    const hasSlowResponse = avgResponseSec > 10; // 超过 10 秒算慢
-    const hasVerySlowResponse = avgResponseSec > 20; // 超过 20 秒算很慢
-
     return (
       <div className="space-y-4">
-        {/* 性能警告 */}
-        {hasSlowResponse && (
-          <div className={`rounded-lg p-3 ${hasVerySlowResponse ? 'bg-red-500/20 border border-red-500/50' : 'bg-yellow-500/20 border border-yellow-500/50'}`}>
-            <div className={`text-sm font-medium ${hasVerySlowResponse ? 'text-red-400' : 'text-yellow-400'}`}>
-              ⚠️ 性能问题检测
-            </div>
-            <div className={`text-xs mt-1 ${hasVerySlowResponse ? 'text-red-300' : 'text-yellow-300'}`}>
-              平均响应时间 {avgResponseSec.toFixed(1)} 秒
-              {hasVerySlowResponse ? '，严重影响用户体验' : '，建议排查延迟原因'}
-            </div>
-          </div>
-        )}
-
         {/* 基础统计 */}
         <div className="grid grid-cols-4 gap-3">
           <StatCard label="会话时长" value={formatDuration(objective.duration)} icon="⏱️" />
           <StatCard label="交互轮次" value={objective.turnsCount.toString()} icon="💬" />
           <StatCard label="工具调用" value={objective.totalToolCalls.toString()} icon="🔧" />
           <StatCard
-            label="平均响应"
-            value={`${avgResponseSec.toFixed(1)}s`}
-            icon="⚡"
-            color={avgResponseSec <= 5 ? 'green' : avgResponseSec <= 15 ? 'yellow' : 'red'}
+            label="成功率"
+            value={`${objective.toolSuccessRate}%`}
+            icon="✅"
+            color={objective.toolSuccessRate >= 80 ? 'green' : objective.toolSuccessRate >= 60 ? 'yellow' : 'red'}
           />
         </div>
 
@@ -581,19 +549,13 @@ export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props
                 <div className="text-xs text-gray-500 mb-4 space-y-1">
                   <div>📋 任务分析师 · 💻 代码审查员 · 🔒 安全审计员 · 👤 用户体验专家</div>
                 </div>
-                {objective && objective.totalMessages > 0 ? (
-                  <button
-                    onClick={runSubjectiveEvaluation}
-                    className="px-6 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition flex items-center gap-2 mx-auto"
-                  >
-                    <span>🧀</span>
-                    开始深度评测
-                  </button>
-                ) : (
-                  <div className="text-yellow-500/80 text-sm">
-                    ⚠️ 该会话没有对话记录，无法进行 AI 评测
-                  </div>
-                )}
+                <button
+                  onClick={runSubjectiveEvaluation}
+                  className="px-6 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition flex items-center gap-2 mx-auto"
+                >
+                  <span>🧀</span>
+                  开始深度评测
+                </button>
               </div>
             )}
 

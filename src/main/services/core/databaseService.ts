@@ -5,6 +5,7 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
+import Database from 'better-sqlite3';
 import type {
   Session,
   SessionStatus,
@@ -78,35 +79,17 @@ export interface MemoryRecord {
 // 使用 Record<string, unknown> 代替 any，但具体字段访问仍需类型断言
 type SQLiteRow = Record<string, unknown>;
 
-// 延迟加载 better-sqlite3，处理 native 模块版本不匹配
-let Database: typeof import('better-sqlite3') | null = null;
-
 // ----------------------------------------------------------------------------
 // Database Service
 // ----------------------------------------------------------------------------
 
 export class DatabaseService {
-  private db: import('better-sqlite3').Database | null = null;
+  private db: Database.Database | null = null;
   private dbPath: string;
-  private initializationError: Error | null = null;
 
   constructor() {
     const userDataPath = app?.getPath?.('userData') || process.cwd();
     this.dbPath = path.join(userDataPath, 'code-agent.db');
-  }
-
-  /**
-   * 检查数据库是否可用（用于功能降级判断）
-   */
-  isAvailable(): boolean {
-    return this.db !== null && this.initializationError === null;
-  }
-
-  /**
-   * 获取初始化错误（如果有）
-   */
-  getInitializationError(): Error | null {
-    return this.initializationError;
   }
 
   // --------------------------------------------------------------------------
@@ -114,17 +97,6 @@ export class DatabaseService {
   // --------------------------------------------------------------------------
 
   async initialize(): Promise<void> {
-    // 延迟加载 better-sqlite3
-    if (!Database) {
-      try {
-        Database = require('better-sqlite3');
-      } catch (error) {
-        this.initializationError = error as Error;
-        console.warn('[DatabaseService] better-sqlite3 not available:', (error as Error).message?.split('\n')[0]);
-        return; // 不抛出错误，允许应用继续运行（功能降级）
-      }
-    }
-
     // 确保目录存在（异步，性能优化）
     const dir = path.dirname(this.dbPath);
     await fs.promises.mkdir(dir, { recursive: true }).catch((err) => {
@@ -134,20 +106,13 @@ export class DatabaseService {
       }
     });
 
-    try {
-      this.db = new Database!(this.dbPath);
-      this.db.pragma('journal_mode = WAL');
-      this.db.pragma('foreign_keys = ON');
-      this.db.pragma('busy_timeout = 5000'); // 等待锁最多 5 秒
+    this.db = new Database(this.dbPath);
+    this.db.pragma('journal_mode = WAL');
+    this.db.pragma('foreign_keys = ON');
 
-      this.createTables();
-      this.createSchemaVersionTable();
-      this.migrateSessionsTable();
-      this.createIndexes();
-    } catch (error) {
-      this.initializationError = error as Error;
-      console.warn('[DatabaseService] Failed to initialize database:', (error as Error).message);
-    }
+    this.createTables();
+    this.migrateSessionsTable();
+    this.createIndexes();
   }
 
   /**
@@ -377,134 +342,6 @@ export class DatabaseService {
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       )
     `);
-
-    // ========================================================================
-    // Gen8 Self-Evolution Tables
-    // ========================================================================
-
-    // Execution Traces 表 (执行轨迹)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS execution_traces (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        task_description TEXT,
-        planning_steps TEXT,
-        tool_calls TEXT NOT NULL,
-        outcome TEXT NOT NULL,
-        outcome_reason TEXT,
-        outcome_confidence REAL,
-        user_feedback TEXT,
-        metrics TEXT,
-        project_path TEXT,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Outcome Signals 表 (成功判定信号)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS outcome_signals (
-        id TEXT PRIMARY KEY,
-        trace_id TEXT NOT NULL,
-        signal_type TEXT NOT NULL,
-        signal_value TEXT NOT NULL,
-        weight REAL NOT NULL,
-        created_at INTEGER NOT NULL,
-        FOREIGN KEY (trace_id) REFERENCES execution_traces(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Insights 表 (提炼的洞察)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS insights (
-        id TEXT PRIMARY KEY,
-        type TEXT NOT NULL,
-        name TEXT NOT NULL,
-        content TEXT NOT NULL,
-        source_traces TEXT NOT NULL,
-        confidence REAL NOT NULL,
-        validation_status TEXT DEFAULT 'pending',
-        usage_count INTEGER DEFAULT 0,
-        success_rate REAL DEFAULT 0,
-        injection_layer INTEGER DEFAULT 4,
-        decay_factor REAL DEFAULT 1.0,
-        last_used INTEGER,
-        project_path TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      )
-    `);
-
-    // Success Patterns 表 (成功模式)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS success_patterns (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        task_type TEXT,
-        tool_sequence TEXT NOT NULL,
-        context_indicators TEXT,
-        occurrences INTEGER DEFAULT 1,
-        effectiveness REAL DEFAULT 0.5,
-        last_matched INTEGER,
-        project_path TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      )
-    `);
-
-    // Skill Proposals 表 (技能提案)
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS skill_proposals (
-        id TEXT PRIMARY KEY,
-        status TEXT NOT NULL,
-        skill_content TEXT NOT NULL,
-        source_traces TEXT,
-        confidence REAL,
-        requires_approval INTEGER DEFAULT 1,
-        reason TEXT,
-        created_at INTEGER NOT NULL
-      )
-    `);
-  }
-
-  /**
-   * 创建 schema_version 表用于版本追踪
-   */
-  private createSchemaVersionTable(): void {
-    if (!this.db) return;
-
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS schema_version (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        version INTEGER NOT NULL DEFAULT 1,
-        updated_at INTEGER NOT NULL
-      )
-    `);
-
-    // 初始化版本记录
-    const row = this.db.prepare('SELECT version FROM schema_version WHERE id = 1').get();
-    if (!row) {
-      this.db.prepare('INSERT INTO schema_version (id, version, updated_at) VALUES (1, 1, ?)').run(Date.now());
-    }
-  }
-
-  /**
-   * 获取当前 schema 版本
-   */
-  getSchemaVersion(): number {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const row = this.db.prepare('SELECT version FROM schema_version WHERE id = 1').get() as SQLiteRow | undefined;
-    return (row?.version as number) || 1;
-  }
-
-  /**
-   * 更新 schema 版本
-   */
-  private setSchemaVersion(version: number): void {
-    if (!this.db) throw new Error('Database not initialized');
-
-    this.db.prepare('UPDATE schema_version SET version = ?, updated_at = ? WHERE id = 1').run(version, Date.now());
   }
 
   private createIndexes(): void {
@@ -550,24 +387,6 @@ export class DatabaseService {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_file_checkpoints_session ON file_checkpoints(session_id)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_file_checkpoints_message ON file_checkpoints(message_id)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_file_checkpoints_created ON file_checkpoints(created_at)`);
-
-    // Gen8 Self-Evolution indexes
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_traces_session ON execution_traces(session_id)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_traces_outcome ON execution_traces(outcome)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_traces_project ON execution_traces(project_path)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_traces_created ON execution_traces(created_at DESC)`);
-
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_signals_trace ON outcome_signals(trace_id)`);
-
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_insights_type ON insights(type)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_insights_confidence ON insights(confidence DESC)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_insights_layer ON insights(injection_layer)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_insights_project ON insights(project_path)`);
-
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_patterns_task_type ON success_patterns(task_type)`);
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_patterns_effectiveness ON success_patterns(effectiveness DESC)`);
-
-    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_skill_proposals_status ON skill_proposals(status)`);
   }
 
   // --------------------------------------------------------------------------
@@ -578,7 +397,7 @@ export class DatabaseService {
    * 获取原始的 better-sqlite3 数据库实例
    * 仅用于需要直接执行 SQL 的特殊场景
    */
-  getDb(): import('better-sqlite3').Database | null {
+  getDb(): Database.Database | null {
     return this.db;
   }
 
@@ -1195,21 +1014,18 @@ export class DatabaseService {
 
     const now = Date.now();
 
-    // 使用事务确保删除+插入的原子性
-    this.runInTransaction(() => {
-      // 删除旧的 todos
-      this.db!.prepare('DELETE FROM todos WHERE session_id = ?').run(sessionId);
+    // 删除旧的 todos
+    this.db.prepare('DELETE FROM todos WHERE session_id = ?').run(sessionId);
 
-      // 插入新的 todos
-      const stmt = this.db!.prepare(`
-        INSERT INTO todos (session_id, content, status, active_form, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `);
+    // 插入新的 todos
+    const stmt = this.db.prepare(`
+      INSERT INTO todos (session_id, content, status, active_form, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
 
-      for (const todo of todos) {
-        stmt.run(sessionId, todo.content, todo.status, todo.activeForm, now, now);
-      }
-    });
+    for (const todo of todos) {
+      stmt.run(sessionId, todo.content, todo.status, todo.activeForm, now, now);
+    }
   }
 
   getTodos(sessionId: string): TodoItem[] {
@@ -1293,64 +1109,6 @@ export class DatabaseService {
       eventData: JSON.parse(row.event_data as string),
       createdAt: row.created_at as number,
     }));
-  }
-
-  // --------------------------------------------------------------------------
-  // Transaction Support
-  // --------------------------------------------------------------------------
-
-  /**
-   * 在事务中执行操作
-   *
-   * 保证操作的原子性：要么全部成功，要么全部回滚。
-   * better-sqlite3 的 transaction 是同步的，但包装函数可以是异步的。
-   *
-   * @param fn - 要在事务中执行的函数
-   * @returns 函数的返回值
-   *
-   * @example
-   * db.runInTransaction(() => {
-   *   db.deleteAllTodos(sessionId);
-   *   for (const todo of todos) {
-   *     db.insertTodo(sessionId, todo);
-   *   }
-   * });
-   */
-  runInTransaction<T>(fn: () => T): T {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const transaction = this.db.transaction(fn);
-    return transaction();
-  }
-
-  /**
-   * 备份数据库到指定路径
-   *
-   * @param backupPath - 备份文件路径
-   */
-  async backup(backupPath: string): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    // better-sqlite3 的 backup 是同步的
-    await this.db.backup(backupPath);
-  }
-
-  /**
-   * 从备份恢复数据库
-   *
-   * 注意：这会关闭当前连接，用备份文件替换数据库，然后重新打开。
-   *
-   * @param backupPath - 备份文件路径
-   */
-  async restoreFromBackup(backupPath: string): Promise<void> {
-    // 关闭当前连接
-    this.close();
-
-    // 复制备份文件到数据库路径
-    await fs.promises.copyFile(backupPath, this.dbPath);
-
-    // 重新初始化
-    await this.initialize();
   }
 
   // --------------------------------------------------------------------------

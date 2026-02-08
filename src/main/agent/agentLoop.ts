@@ -102,6 +102,8 @@ export class AgentLoop {
   private isCancelled: boolean = false;
   private isInterrupted: boolean = false;
   private interruptMessage: string | null = null;
+  private needsReinference: boolean = false;
+  private abortController: AbortController | null = null;
   private maxIterations: number;
 
   // Planning integration
@@ -626,6 +628,17 @@ export class AgentLoop {
       const inferenceDuration = Date.now() - inferenceStartTime;
       logger.debug('[AgentLoop] Inference response type:', response.type);
 
+      // h2A 实时转向：如果在 inference 期间收到了 steer()，跳过当前结果，重新推理
+      if (this.needsReinference) {
+        this.needsReinference = false;
+        logger.info('[AgentLoop] Steer detected after inference — re-inferring with new user message');
+        this.onEvent({
+          type: 'interrupt_acknowledged',
+          data: { message: '已收到新指令，正在调整方向...' },
+        });
+        continue;
+      }
+
       langfuse.logEvent(this.traceId, 'inference_complete', {
         iteration: iterations,
         responseType: response.type,
@@ -899,6 +912,29 @@ export class AgentLoop {
         const toolResults = await this.executeToolsWithHooks(response.toolCalls);
         logger.debug(` executeToolsWithHooks completed, ${toolResults.length} results`);
 
+        // h2A 实时转向：工具执行期间收到 steer()，保存已有结果后跳到下一轮推理
+        if (this.needsReinference) {
+          this.needsReinference = false;
+          logger.info('[AgentLoop] Steer detected during tool execution — saving results and re-inferring');
+          // 保存已完成的 tool results（不浪费已执行的工作）
+          if (toolResults.length > 0) {
+            const partialResults = sanitizeToolResultsForHistory(toolResults);
+            const partialToolMessage: Message = {
+              id: this.generateId(),
+              role: 'tool',
+              content: JSON.stringify(partialResults),
+              timestamp: Date.now(),
+              toolResults: partialResults,
+            };
+            await this.addAndPersistMessage(partialToolMessage);
+          }
+          this.onEvent({
+            type: 'interrupt_acknowledged',
+            data: { message: '已收到新指令，正在调整方向...' },
+          });
+          continue;
+        }
+
         toolResults.forEach((r, i) => {
           logger.debug(`   Result ${i + 1}: success=${r.success}, error=${r.error || 'none'}`);
           if (r.success) {
@@ -1087,16 +1123,49 @@ export class AgentLoop {
 
   cancel(): void {
     this.isCancelled = true;
+    this.abortController?.abort();
   }
 
   /**
-   * 中断当前执行并设置新的用户消息
-   * 用于 Claude Code 风格的中断功能：用户输入新指令时中断当前任务
+   * 中断当前执行并设置新的用户消息（旧版，保留向后兼容）
+   * 会停止当前 Loop，由 Orchestrator 创建新 Loop
    */
   interrupt(newMessage: string): void {
     this.isInterrupted = true;
     this.interruptMessage = newMessage;
+    this.abortController?.abort();
     logger.info('[AgentLoop] Interrupt requested with new message');
+  }
+
+  /**
+   * 实时转向：将用户新消息注入当前 Loop，不销毁 Loop
+   * Claude Code h2A 风格 — 保留所有中间状态，模型在下一次推理时自然看到新消息
+   */
+  steer(newMessage: string): void {
+    // 1. 中止当前正在进行的 API 调用
+    this.abortController?.abort();
+
+    // 2. 将用户消息注入消息历史（直接作为 user message，模型自然理解上下文切换）
+    const steerMessage: Message = {
+      id: generateMessageId(),
+      role: 'user',
+      content: newMessage,
+      timestamp: Date.now(),
+    };
+    this.messages.push(steerMessage);
+
+    // 3. 持久化到数据库（异步，不阻塞转向）
+    if (process.env.CODE_AGENT_CLI_MODE !== 'true') {
+      const sessionManager = getSessionManager();
+      sessionManager.addMessage(steerMessage).catch((err) => {
+        logger.error('[AgentLoop] Failed to persist steer message:', err);
+      });
+    }
+
+    // 4. 设置标志让主循环跳过当前结果，重新推理
+    this.needsReinference = true;
+
+    logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');
   }
 
   /**
@@ -1284,8 +1353,8 @@ export class AgentLoop {
 
     // Execute sequential tools one by one
     for (const { index, toolCall } of sequentialGroup) {
-      if (this.isCancelled) {
-        logger.debug('[AgentLoop] Cancelled, breaking out of sequential tool execution');
+      if (this.isCancelled || this.needsReinference) {
+        logger.debug('[AgentLoop] Cancelled/steered, breaking out of sequential tool execution');
         break;
       }
 
@@ -1986,6 +2055,9 @@ export class AgentLoop {
       logger.debug('[AgentLoop] Effective model:', effectiveConfig.model);
       logger.debug('[AgentLoop] Effective tools count:', effectiveTools.length);
 
+      // 创建 AbortController，支持中断/转向时立即终止 API 流
+      this.abortController = new AbortController();
+
       const response = await this.modelRouter.inference(
         modelMessages,
         effectiveTools,
@@ -2019,9 +2091,11 @@ export class AgentLoop {
               },
             });
           }
-        }
+        },
+        this.abortController.signal
       );
 
+      this.abortController = null;
       logger.debug('[AgentLoop] Model response received:', response.type);
 
       // Record token usage with precise estimation
@@ -2046,6 +2120,14 @@ export class AgentLoop {
 
       return response;
     } catch (error) {
+      this.abortController = null;
+
+      // steer/interrupt 导致的 abort 不是错误，返回空文本让主循环处理
+      if (this.needsReinference || this.isInterrupted || this.isCancelled) {
+        logger.info('[AgentLoop] Inference aborted due to steer/interrupt/cancel');
+        return { type: 'text', content: '' };
+      }
+
       logger.error('[AgentLoop] Model inference error:', error);
 
       langfuse.endGeneration(

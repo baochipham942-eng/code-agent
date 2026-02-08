@@ -114,6 +114,7 @@ function callMoonshotStream(
     // Real-time token estimation
     let charCount = 0;
     let lastEstimateTime = 0;
+    let usageData: { inputTokens: number; outputTokens: number } | undefined;
 
     const options: https.RequestOptions = {
       hostname: url.hostname,
@@ -202,6 +203,8 @@ function callMoonshotStream(
               }));
             }
 
+            result.usage = usageData || { inputTokens: 0, outputTokens: Math.ceil(charCount / 4) };
+
             logger.info('[Moonshot] stream complete:', {
               contentLength: content.length,
               toolCallCount: toolCalls.size,
@@ -216,6 +219,14 @@ function callMoonshotStream(
             const parsed = JSON.parse(data);
             const choice = parsed.choices?.[0];
             const delta = choice?.delta;
+
+            // 捕获 usage 数据
+            if (parsed.usage) {
+              usageData = {
+                inputTokens: parsed.usage.prompt_tokens || 0,
+                outputTokens: parsed.usage.completion_tokens || 0,
+              };
+            }
 
             // 捕获 finish_reason
             if (choice?.finish_reason) {
@@ -308,6 +319,8 @@ function callMoonshotStream(
               arguments: safeJsonParse(tc.arguments),
             }));
           }
+
+          result.usage = usageData || { inputTokens: 0, outputTokens: Math.ceil(charCount / 4) };
 
           resolve(result);
         } else {

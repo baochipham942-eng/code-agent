@@ -237,6 +237,10 @@ const SYSTEM_TAG_PATTERNS = [
   /<arg_name>[^<]*<\/arg_name>/g,
   /<arg_value>/g,
   /<tool_call>/g,
+  // 过滤 think 标签（模型推理过程不应显示给用户）
+  /<think>[\s\S]*?<\/think>/g,
+  /<\/think>/g,
+  /<think>/g,
 ];
 
 /**

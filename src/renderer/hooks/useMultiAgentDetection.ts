@@ -81,9 +81,12 @@ function extractAgentName(toolCall: ToolCall): string | null {
     }
   }
 
-  // For task tool, check if it has an agent assignment
-  if (toolCall.name === 'task' && args['assigned_to']) {
-    return args['assigned_to'] as string;
+  // For task tool, check subagent_type (hybrid agent architecture) or assigned_to
+  if (toolCall.name === 'task') {
+    const subagentType = args['subagent_type'] as string | undefined;
+    if (subagentType) return subagentType;
+    const assignedTo = args['assigned_to'] as string | undefined;
+    if (assignedTo) return assignedTo;
   }
 
   return null;

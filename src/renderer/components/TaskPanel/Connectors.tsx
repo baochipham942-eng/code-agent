@@ -90,7 +90,7 @@ export const Connectors: React.FC = () => {
           setServers(status.connectedServers.map((name: string) => ({
             name,
             status: 'connected' as const,
-            toolCount: Math.floor(status.toolCount / status.connectedServers.length) || 0,
+            toolCount: undefined,
           })));
         }
       } catch (error) {

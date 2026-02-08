@@ -216,7 +216,7 @@ export const GenerationBadge: React.FC = () => {
 
       {/* Dropdown */}
       {showDropdown && (
-        <div className="absolute top-full right-0 mt-1 w-[520px] bg-zinc-900 rounded-lg shadow-2xl border border-zinc-700 z-[100] overflow-hidden animate-fadeIn">
+        <div className="absolute top-full right-0 mt-1 w-[320px] max-w-[calc(100vw-2rem)] bg-zinc-900 rounded-lg shadow-2xl border border-zinc-700 z-[100] overflow-hidden animate-fadeIn">
             {/* Header */}
             <div className="px-3 py-2 border-b border-zinc-700 bg-zinc-800">
               <span className="text-xs font-medium text-zinc-400">{t.generation.selectTitle}</span>

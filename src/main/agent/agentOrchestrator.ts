@@ -504,6 +504,14 @@ export class AgentOrchestrator {
       // Update session state to idle
       if (sessionId) {
         sessionStateManager.updateStatus(sessionId, 'idle');
+        // Sync smart title from sessions table to telemetry
+        try {
+          const sm = getSessionManager();
+          const session = await sm.getSession(sessionId);
+          if (session?.title && session.title !== 'New Chat' && session.title !== '新对话' && !session.title.startsWith('Session ')) {
+            getTelemetryCollector().updateSessionTitle(sessionId, session.title);
+          }
+        } catch { /* ignore - title sync is best effort */ }
         // Telemetry: end session tracking
         getTelemetryCollector().endSession(sessionId);
       }

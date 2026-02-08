@@ -42,6 +42,7 @@ import { registerBackgroundHandlers } from './background.ipc';
 import { registerDiffHandlers } from './diff.ipc';
 import { registerSwarmHandlers } from './swarm.ipc';
 import { registerTaskListHandlers } from '../agent/taskList/taskList.ipc';
+import { registerTelemetryHandlers } from './telemetry.ipc';
 
 export * from './types';
 
@@ -169,6 +170,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // TaskList handlers (任务列表可视化与管理)
   registerTaskListHandlers();
+
+  // Telemetry handlers (会话遥测)
+  registerTelemetryHandlers(getMainWindow);
 
   logger.info('All handlers registered');
 }

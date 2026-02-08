@@ -22,6 +22,7 @@ import { SkillsPanel } from './components/SkillsPanel';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
 import { LabPage } from './components/features/lab/LabPage';
 import { EvaluationPanelV2 } from './components/features/evaluation/EvaluationPanelV2';
+import { TelemetryPanel } from './components/features/telemetry';
 import { BackgroundTaskPanel } from './components/features/background';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
@@ -64,6 +65,8 @@ export const App: React.FC = () => {
     showLab,
     showEvaluation,
     setShowEvaluation,
+    showTelemetry,
+    setShowTelemetry,
     setShowSettings,
     setLanguage,
   } = useAppStore();
@@ -470,6 +473,26 @@ export const App: React.FC = () => {
         showEvaluation={showEvaluation}
         onClose={() => setShowEvaluation(false)}
       />
+
+      {/* Telemetry Panel */}
+      {showTelemetry && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-[800px] max-h-[85vh] bg-zinc-900 rounded-xl border border-zinc-700/50 shadow-2xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-700/50">
+              <h2 className="text-sm font-medium text-zinc-300">会话遥测</h2>
+              <button
+                onClick={() => setShowTelemetry(false)}
+                className="text-zinc-500 hover:text-zinc-300 text-lg leading-none"
+              >
+                &times;
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <TelemetryPanel />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* User Question Modal (Gen 3+) */}
       {userQuestion && (

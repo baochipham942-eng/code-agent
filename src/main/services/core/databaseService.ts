@@ -342,6 +342,128 @@ export class DatabaseService {
         FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
       )
     `);
+
+    // ========================================================================
+    // Telemetry Tables (会话遥测系统)
+    // ========================================================================
+
+    // Telemetry Sessions - 一行/会话，聚合指标
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS telemetry_sessions (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        generation_id TEXT NOT NULL,
+        model_provider TEXT NOT NULL,
+        model_name TEXT NOT NULL,
+        working_directory TEXT NOT NULL,
+        start_time INTEGER NOT NULL,
+        end_time INTEGER,
+        duration_ms INTEGER,
+        turn_count INTEGER DEFAULT 0,
+        total_input_tokens INTEGER DEFAULT 0,
+        total_output_tokens INTEGER DEFAULT 0,
+        total_tokens INTEGER DEFAULT 0,
+        estimated_cost REAL DEFAULT 0,
+        total_tool_calls INTEGER DEFAULT 0,
+        tool_success_rate REAL DEFAULT 0,
+        total_errors INTEGER DEFAULT 0,
+        session_type TEXT,
+        status TEXT DEFAULT 'recording'
+      )
+    `);
+
+    // Telemetry Turns - 一行/轮次
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS telemetry_turns (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        turn_number INTEGER NOT NULL,
+        start_time INTEGER NOT NULL,
+        end_time INTEGER NOT NULL,
+        duration_ms INTEGER NOT NULL,
+        user_prompt TEXT,
+        user_prompt_tokens INTEGER DEFAULT 0,
+        has_attachments INTEGER DEFAULT 0,
+        attachment_count INTEGER DEFAULT 0,
+        system_prompt_hash TEXT,
+        agent_mode TEXT DEFAULT 'normal',
+        active_skills TEXT,
+        active_mcp_servers TEXT,
+        effort_level TEXT DEFAULT 'high',
+        assistant_response TEXT,
+        assistant_response_tokens INTEGER DEFAULT 0,
+        thinking_content TEXT,
+        total_input_tokens INTEGER DEFAULT 0,
+        total_output_tokens INTEGER DEFAULT 0,
+        intent_primary TEXT DEFAULT 'unknown',
+        intent_secondary TEXT,
+        intent_confidence REAL DEFAULT 0,
+        intent_method TEXT DEFAULT 'rule',
+        intent_keywords TEXT,
+        outcome_status TEXT DEFAULT 'unknown',
+        outcome_confidence REAL DEFAULT 0,
+        outcome_method TEXT DEFAULT 'rule',
+        quality_signals TEXT,
+        compaction_occurred INTEGER DEFAULT 0,
+        compaction_saved_tokens INTEGER,
+        iteration_count INTEGER DEFAULT 1
+      )
+    `);
+
+    // Telemetry Model Calls - 一行/模型调用
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS telemetry_model_calls (
+        id TEXT PRIMARY KEY,
+        turn_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        temperature REAL,
+        max_tokens INTEGER,
+        input_tokens INTEGER DEFAULT 0,
+        output_tokens INTEGER DEFAULT 0,
+        latency_ms INTEGER DEFAULT 0,
+        response_type TEXT,
+        tool_call_count INTEGER DEFAULT 0,
+        truncated INTEGER DEFAULT 0,
+        error TEXT,
+        fallback_info TEXT
+      )
+    `);
+
+    // Telemetry Tool Calls - 一行/工具调用
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS telemetry_tool_calls (
+        id TEXT PRIMARY KEY,
+        turn_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        tool_call_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        arguments TEXT,
+        result_summary TEXT,
+        success INTEGER DEFAULT 0,
+        error TEXT,
+        duration_ms INTEGER DEFAULT 0,
+        timestamp INTEGER NOT NULL,
+        idx INTEGER DEFAULT 0,
+        parallel INTEGER DEFAULT 0
+      )
+    `);
+
+    // Telemetry Events - 一行/时间线事件
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS telemetry_events (
+        id TEXT PRIMARY KEY,
+        turn_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        summary TEXT,
+        data TEXT,
+        duration_ms INTEGER
+      )
+    `);
   }
 
   private createIndexes(): void {
@@ -387,6 +509,18 @@ export class DatabaseService {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_file_checkpoints_session ON file_checkpoints(session_id)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_file_checkpoints_message ON file_checkpoints(message_id)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_file_checkpoints_created ON file_checkpoints(created_at)`);
+
+    // Telemetry indexes
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_sessions_start ON telemetry_sessions(start_time DESC)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_turns_session ON telemetry_turns(session_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_turns_session_num ON telemetry_turns(session_id, turn_number)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_model_calls_turn ON telemetry_model_calls(turn_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_model_calls_session ON telemetry_model_calls(session_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_tool_calls_turn ON telemetry_tool_calls(turn_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_tool_calls_session ON telemetry_tool_calls(session_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_tool_calls_name ON telemetry_tool_calls(name)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_events_turn ON telemetry_events(turn_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_events_session ON telemetry_events(session_id)`);
   }
 
   // --------------------------------------------------------------------------

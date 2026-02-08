@@ -68,6 +68,9 @@ interface AppState {
   // Evaluation State (会话评测)
   showEvaluation: boolean;
 
+  // Telemetry State (遥测面板)
+  showTelemetry: boolean;
+
   // HTML Preview State
   previewFilePath: string | null;
   showPreviewPanel: boolean;
@@ -110,6 +113,7 @@ interface AppState {
   toggleDAGPanel: () => void;
   setShowLab: (show: boolean) => void;
   setShowEvaluation: (show: boolean) => void;
+  setShowTelemetry: (show: boolean) => void;
   setPreviewFilePath: (path: string | null) => void;
   setShowPreviewPanel: (show: boolean) => void;
   openPreview: (filePath: string) => void;
@@ -186,6 +190,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Initial Evaluation State
   showEvaluation: false,
+  showTelemetry: false,
 
   // Initial HTML Preview State
   previewFilePath: null,
@@ -249,6 +254,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleDAGPanel: () => set((state) => ({ showDAGPanel: !state.showDAGPanel })),
   setShowLab: (show) => set({ showLab: show }),
   setShowEvaluation: (show) => set({ showEvaluation: show }),
+  setShowTelemetry: (show) => set({ showTelemetry: show }),
 
   setPreviewFilePath: (path) => set({ previewFilePath: path }),
   setShowPreviewPanel: (show) => set({ showPreviewPanel: show }),

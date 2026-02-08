@@ -11,6 +11,7 @@ import type {
   ToolResult,
   AgentEvent,
 } from '../../shared/types';
+import type { TelemetryAdapter } from '../../shared/types/telemetry';
 import type { StructuredOutputConfig } from './structuredOutput';
 import type { ToolRegistry } from '../tools/toolRegistry';
 import type { ToolExecutor } from '../tools/toolExecutor';
@@ -45,6 +46,8 @@ export interface AgentLoopConfig {
   autoApprovePlan?: boolean;
   /** 启用工具延迟加载（减少 token 使用） */
   enableToolDeferredLoading?: boolean;
+  /** 遥测适配器（可选，用于记录原始数据） */
+  telemetryAdapter?: TelemetryAdapter;
 }
 
 /**

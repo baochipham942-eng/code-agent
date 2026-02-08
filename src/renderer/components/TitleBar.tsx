@@ -6,7 +6,7 @@ import React from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useDisclosure } from '../hooks/useDisclosure';
-import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, GitBranch, FlaskConical } from 'lucide-react';
+import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, GitBranch, FlaskConical, Activity } from 'lucide-react';
 import { IconButton } from './primitives';
 
 // 奶酪图标组件
@@ -30,6 +30,8 @@ export const TitleBar: React.FC = () => {
     setShowDAGPanel,
     setShowLab,
     setShowEvaluation,
+    showTelemetry,
+    setShowTelemetry,
     workingDirectory,
   } = useAppStore();
 
@@ -82,6 +84,19 @@ export const TitleBar: React.FC = () => {
             size="md"
             windowNoDrag
             className="text-amber-400/70 hover:text-amber-400"
+          />
+        )}
+
+        {/* Telemetry Button */}
+        {currentSessionId && (
+          <IconButton
+            icon={<Activity className="w-4 h-4" />}
+            aria-label="会话遥测"
+            onClick={() => setShowTelemetry(!showTelemetry)}
+            variant="ghost"
+            size="md"
+            windowNoDrag
+            className={showTelemetry ? 'text-cyan-400' : 'text-cyan-400/70 hover:text-cyan-400'}
           />
         )}
 

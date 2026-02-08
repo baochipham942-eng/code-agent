@@ -242,3 +242,35 @@ export const BACKGROUND_CHANNELS = {
  * Background 通道名称类型
  */
 export type BackgroundChannel = (typeof BACKGROUND_CHANNELS)[keyof typeof BACKGROUND_CHANNELS];
+
+// ============================================================================
+// Telemetry 遥测系统 IPC 通道
+// ============================================================================
+
+/**
+ * Telemetry 遥测系统 IPC 通道
+ * 用于前端与主进程之间的会话遥测数据通信
+ */
+export const TELEMETRY_CHANNELS = {
+  /** 获取会话遥测详情 */
+  GET_SESSION: 'telemetry:get-session',
+  /** 获取会话遥测列表 */
+  LIST_SESSIONS: 'telemetry:list-sessions',
+  /** 获取轮次列表 */
+  GET_TURNS: 'telemetry:get-turns',
+  /** 获取轮次详情（含 model calls, tool calls, events） */
+  GET_TURN_DETAIL: 'telemetry:get-turn-detail',
+  /** 获取工具使用统计 */
+  GET_TOOL_STATS: 'telemetry:get-tool-stats',
+  /** 获取意图分布统计 */
+  GET_INTENT_DIST: 'telemetry:get-intent-dist',
+  /** 删除会话遥测数据 */
+  DELETE_SESSION: 'telemetry:delete-session',
+  /** 实时事件推送（主进程 -> 渲染进程） */
+  EVENT: 'telemetry:event',
+} as const;
+
+/**
+ * Telemetry 通道名称类型
+ */
+export type TelemetryChannel = (typeof TELEMETRY_CHANNELS)[keyof typeof TELEMETRY_CHANNELS];

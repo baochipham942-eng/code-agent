@@ -606,6 +606,44 @@ pending → ready → running → completed/failed/cancelled/skipped
 
 ---
 
+## v0.16.22 综合增强 (2026-02-08)
+
+本次版本一次性合并 9 个 PR（#39, #48, #49, #50, #51, #54, #55, #56, #57），涵盖工具、Agent 架构、健壮性、会话体验四大方面。
+
+### 新增工具
+
+| 工具 | PR | 说明 |
+|------|-----|------|
+| `pdf_compress` | #57 | PDF 压缩工具，支持质量/分辨率/灰度参数 |
+| `xlwings Excel` | #49 | Excel 自动化工具，读写 xlsx/csv |
+
+相关代码：
+- `src/main/tools/network/pdfCompress.ts`
+- `src/main/tools/network/xlwings/`
+
+### PPT 生成模块化重构 (PR #51)
+
+将 `pptGenerate.ts`（1841 行）拆分为 9 个模块。详见 [docs/guides/ppt-capability.md](docs/guides/ppt-capability.md)
+
+### Agent 架构增强 (PR #50)
+
+- **增强型 Compaction** — CompactionBlock 可审计摘要 + 自定义 instructions
+- **Agent Teams** — P2P 通信 + Delegate 模式 + Plan 审批
+- **Adaptive Thinking** — 客户端思考引导（effort: low/medium/high/max）
+
+### 会话体验 (PR #55)
+
+- **智能会话标题** — 基于首轮对话自动生成有意义的标题
+
+### Bug 修复
+
+| PR | 修复内容 |
+|-----|---------|
+| #39 | 流程可视化从未显示 + 评测系统优化 |
+| #48 | P2 Checkpoint nudge 区分分析型和修改型任务 |
+
+---
+
 ## v0.16.21 健壮性增强 (2026-02-08)
 
 ### h2A 实时转向机制

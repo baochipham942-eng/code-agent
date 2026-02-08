@@ -55,6 +55,7 @@ import {
 } from './messageHandling/contextBuilder';
 import { getPromptForTask, buildDynamicPrompt, buildDynamicPromptV2, type AgentMode } from '../generation/prompts/builder';
 import { AntiPatternDetector } from './antiPattern/detector';
+import { cleanXmlResidues } from './antiPattern/cleanXml';
 import { getCurrentTodos } from '../tools/planning/todoWrite';
 import { getIncompleteTasks } from '../tools/planning';
 import { fileReadTracker } from '../tools/fileReadTracker';
@@ -201,6 +202,9 @@ export class AgentLoop {
   // Context overflow auto-recovery
   private _contextOverflowRetried: boolean = false;
 
+  // Telemetry adapter
+  private telemetryAdapter?: import('../../shared/types/telemetry').TelemetryAdapter;
+
   constructor(config: AgentLoopConfig) {
     this.generation = config.generation;
     this.modelConfig = config.modelConfig;
@@ -235,6 +239,9 @@ export class AgentLoop {
 
     // Tool deferred loading (reduce token usage)
     this.enableToolDeferredLoading = config.enableToolDeferredLoading ?? false;
+
+    // Telemetry adapter (optional)
+    this.telemetryAdapter = config.telemetryAdapter;
 
     // Initialize refactored modules
     this.circuitBreaker = new CircuitBreaker();
@@ -619,6 +626,9 @@ export class AgentLoop {
         data: { turnId: this.currentTurnId, iteration: iterations },
       });
 
+      // Telemetry: record turn start
+      this.telemetryAdapter?.onTurnStart(this.currentTurnId, iterations, userMessage);
+
       this.turnStartTime = Date.now();
       this.toolsUsedInTurn = [];
       // Note: readOnlyNudgeCount and todoNudgeCount are NOT reset here
@@ -648,6 +658,24 @@ export class AgentLoop {
         responseType: response.type,
         duration: inferenceDuration,
       });
+
+      // Telemetry: record model call
+      if (this.telemetryAdapter) {
+        this.telemetryAdapter.onModelCall(this.currentTurnId, {
+          id: `mc-${this.currentTurnId}-${iterations}`,
+          timestamp: Date.now(),
+          provider: this.modelConfig.provider,
+          model: this.modelConfig.model,
+          temperature: this.modelConfig.temperature,
+          maxTokens: this.modelConfig.maxTokens,
+          inputTokens: 0, // will be estimated from token usage tracking
+          outputTokens: 0,
+          latencyMs: inferenceDuration,
+          responseType: response.type as 'text' | 'tool_use' | 'thinking',
+          toolCallCount: response.toolCalls?.length ?? 0,
+          truncated: !!response.truncated,
+        });
+      }
 
       // 2. Handle text response - check for text-described tool calls
       if (response.type === 'text' && response.content) {
@@ -851,6 +879,9 @@ export class AgentLoop {
         this.emitTaskProgress('completed', '回复完成');
         this.emitTaskComplete();
 
+        // Telemetry: record turn end (text response)
+        this.telemetryAdapter?.onTurnEnd(this.currentTurnId, response.content || '', response.thinking);
+
         this.onEvent({
           type: 'turn_end',
           data: { turnId: this.currentTurnId },
@@ -983,6 +1014,9 @@ export class AgentLoop {
           toolCount: response.toolCalls.length,
           successCount: toolResults.filter(r => r.success).length,
         });
+
+        // Telemetry: record turn end (tool execution)
+        this.telemetryAdapter?.onTurnEnd(this.currentTurnId, '', response.thinking);
 
         this.onEvent({
           type: 'turn_end',
@@ -1330,6 +1364,7 @@ export class AgentLoop {
             parallel: true,
           });
           this.onEvent({ type: 'tool_call_start', data: { ...toolCall, _index: index, turnId: this.currentTurnId } });
+          this.telemetryAdapter?.onToolCallStart(this.currentTurnId, toolCall.id, toolCall.name, toolCall.arguments, index, true);
         }
 
         const batchPromises = batch.map(async ({ index, toolCall }) => {
@@ -1352,6 +1387,7 @@ export class AgentLoop {
         toolTotal: toolCalls.length,
       });
       this.onEvent({ type: 'tool_call_start', data: { ...toolCall, _index: index, turnId: this.currentTurnId } });
+      this.telemetryAdapter?.onToolCallStart(this.currentTurnId, toolCall.id, toolCall.name, toolCall.arguments, index, false);
       results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length);
     }
 
@@ -1371,6 +1407,7 @@ export class AgentLoop {
         progress,
       });
       this.onEvent({ type: 'tool_call_start', data: { ...toolCall, _index: index, turnId: this.currentTurnId } });
+      this.telemetryAdapter?.onToolCallStart(this.currentTurnId, toolCall.id, toolCall.name, toolCall.arguments, index, false);
       results[index] = await this.executeSingleTool(toolCall, index, toolCalls.length);
     }
 
@@ -1415,6 +1452,7 @@ export class AgentLoop {
             `</tool-blocked-by-hook>`
           );
 
+          this.telemetryAdapter?.onToolCallEnd(this.currentTurnId, toolCall.id, false, blockedResult.error, blockedResult.duration || 0, undefined);
           this.onEvent({ type: 'tool_call_end', data: blockedResult });
           return blockedResult;
         }
@@ -1482,9 +1520,13 @@ export class AgentLoop {
         `</tool-arguments-parse-error>`
       );
 
+      this.telemetryAdapter?.onToolCallEnd(this.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined);
       this.onEvent({ type: 'tool_call_end', data: toolResult });
       return toolResult;
     }
+
+    // 清理工具参数中的 XML 标签残留（如 <arg_key>command</arg_key>）
+    toolCall.arguments = cleanXmlResidues(toolCall.arguments) as Record<string, unknown>;
 
     try {
       logger.debug(` Calling toolExecutor.execute for ${toolCall.name}...`);
@@ -1764,6 +1806,7 @@ export class AgentLoop {
       }
 
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (success)`);
+      this.telemetryAdapter?.onToolCallEnd(this.currentTurnId, toolCall.id, toolResult.success, toolResult.error, toolResult.duration || 0, toolResult.output?.substring(0, 500));
       this.onEvent({ type: 'tool_call_end', data: toolResult });
 
       return toolResult;
@@ -1850,6 +1893,7 @@ export class AgentLoop {
       }
 
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (error)`);
+      this.telemetryAdapter?.onToolCallEnd(this.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined);
       this.onEvent({ type: 'tool_call_end', data: toolResult });
 
       return toolResult;

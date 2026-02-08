@@ -67,6 +67,7 @@ import {
   textToSpeechTool,
   imageAnnotateTool,
   xlwingsExecuteTool,
+  pdfCompressTool,
 } from './network';
 import { skillMetaTool } from './skill';
 import {
@@ -286,6 +287,7 @@ export class ToolRegistry {
     this.register(twitterFetchTool);
     this.register(mermaidExportTool);
     this.register(pdfGenerateTool);
+    this.register(pdfCompressTool);
     this.register(imageProcessTool);
     this.register(screenshotPageTool);
     this.register(academicSearchTool);

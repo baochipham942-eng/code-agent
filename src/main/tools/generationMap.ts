@@ -149,6 +149,7 @@ export const GENERATION_TOOLS: Record<GenerationId, string[]> = {
     // Document Generation
     'ppt_generate',
     'pdf_generate',
+    'pdf_compress',
     'docx_generate',
     'excel_generate',
     'chart_generate',
@@ -217,6 +218,7 @@ export const GENERATION_TOOLS: Record<GenerationId, string[]> = {
     // Document Generation
     'ppt_generate',
     'pdf_generate',
+    'pdf_compress',
     'docx_generate',
     'excel_generate',
     'chart_generate',
@@ -290,6 +292,7 @@ export const GENERATION_TOOLS: Record<GenerationId, string[]> = {
     // Document Generation
     'ppt_generate',
     'pdf_generate',
+    'pdf_compress',
     'docx_generate',
     'excel_generate',
     'chart_generate',
@@ -368,6 +371,7 @@ export const GENERATION_TOOLS: Record<GenerationId, string[]> = {
     // Document Generation
     'ppt_generate',
     'pdf_generate',
+    'pdf_compress',
     'docx_generate',
     'excel_generate',
     'chart_generate',

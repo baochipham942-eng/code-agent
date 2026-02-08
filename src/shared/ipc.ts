@@ -59,7 +59,19 @@ import type {
 } from './types/contextHealth';
 
 import type { DAGVisualizationEvent } from './types/dagVisualization';
-import { DAG_CHANNELS, LAB_CHANNELS, CHANNEL_CHANNELS, EVALUATION_CHANNELS, LSP_CHANNELS, BACKGROUND_CHANNELS } from './ipc/channels';
+import { DAG_CHANNELS, LAB_CHANNELS, CHANNEL_CHANNELS, EVALUATION_CHANNELS, LSP_CHANNELS, BACKGROUND_CHANNELS, TELEMETRY_CHANNELS } from './ipc/channels';
+
+import type {
+  TelemetrySession,
+  TelemetryTurn,
+  TelemetryModelCall,
+  TelemetryToolCall,
+  TelemetryTimelineEvent,
+  TelemetrySessionListItem,
+  TelemetryToolStat,
+  TelemetryIntentStat,
+  TelemetryPushEvent,
+} from './types/telemetry';
 
 import type {
   ObjectiveMetrics,
@@ -630,6 +642,16 @@ export const IPC_CHANNELS = {
   TASKLIST_DELETE_TASK: 'taskList:deleteTask',
   TASKLIST_SET_AUTO_ASSIGN: 'taskList:setAutoAssign',
   TASKLIST_SET_REQUIRE_APPROVAL: 'taskList:setRequireApproval',
+
+  // Telemetry channels (遥测系统)
+  TELEMETRY_GET_SESSION: TELEMETRY_CHANNELS.GET_SESSION,
+  TELEMETRY_LIST_SESSIONS: TELEMETRY_CHANNELS.LIST_SESSIONS,
+  TELEMETRY_GET_TURNS: TELEMETRY_CHANNELS.GET_TURNS,
+  TELEMETRY_GET_TURN_DETAIL: TELEMETRY_CHANNELS.GET_TURN_DETAIL,
+  TELEMETRY_GET_TOOL_STATS: TELEMETRY_CHANNELS.GET_TOOL_STATS,
+  TELEMETRY_GET_INTENT_DIST: TELEMETRY_CHANNELS.GET_INTENT_DIST,
+  TELEMETRY_DELETE_SESSION: TELEMETRY_CHANNELS.DELETE_SESSION,
+  TELEMETRY_EVENT: TELEMETRY_CHANNELS.EVENT,
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -910,6 +932,15 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.TASKLIST_DELETE_TASK]: (taskId: string) => Promise<boolean>;
   [IPC_CHANNELS.TASKLIST_SET_AUTO_ASSIGN]: (enabled: boolean) => Promise<void>;
   [IPC_CHANNELS.TASKLIST_SET_REQUIRE_APPROVAL]: (enabled: boolean) => Promise<void>;
+
+  // Telemetry (遥测系统)
+  [IPC_CHANNELS.TELEMETRY_GET_SESSION]: (sessionId: string) => Promise<TelemetrySession | null>;
+  [IPC_CHANNELS.TELEMETRY_LIST_SESSIONS]: (options: { limit?: number; offset?: number }) => Promise<TelemetrySessionListItem[]>;
+  [IPC_CHANNELS.TELEMETRY_GET_TURNS]: (sessionId: string) => Promise<TelemetryTurn[]>;
+  [IPC_CHANNELS.TELEMETRY_GET_TURN_DETAIL]: (turnId: string) => Promise<{ turn: TelemetryTurn; modelCalls: TelemetryModelCall[]; toolCalls: TelemetryToolCall[]; events: TelemetryTimelineEvent[] } | null>;
+  [IPC_CHANNELS.TELEMETRY_GET_TOOL_STATS]: (sessionId: string) => Promise<TelemetryToolStat[]>;
+  [IPC_CHANNELS.TELEMETRY_GET_INTENT_DIST]: (sessionId: string) => Promise<TelemetryIntentStat[]>;
+  [IPC_CHANNELS.TELEMETRY_DELETE_SESSION]: (sessionId: string) => Promise<boolean>;
 }
 
 // ----------------------------------------------------------------------------
@@ -1006,6 +1037,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.SWARM_EVENT]: (event: SwarmEvent) => void;
   // TaskList events
   [IPC_CHANNELS.TASKLIST_EVENT]: (event: TaskListEventIpc) => void;
+  // Telemetry events
+  [IPC_CHANNELS.TELEMETRY_EVENT]: (event: TelemetryPushEvent) => void;
 }
 
 // ----------------------------------------------------------------------------

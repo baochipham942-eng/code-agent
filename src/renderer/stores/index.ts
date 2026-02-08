@@ -52,6 +52,7 @@ export {
   type TaskStats,
 } from './taskStore';
 export { useSwarmStore } from './swarmStore';
+export { useTelemetryStore } from './telemetryStore';
 
 // -----------------------------------------------------------------------------
 // Selectors - 优化渲染性能

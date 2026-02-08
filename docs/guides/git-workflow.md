@@ -167,6 +167,86 @@ cp /Users/linchen/Downloads/ai/code-agent/.env "/Applications/Code Agent.app/Con
 
 ---
 
+## 分支管理规范
+
+### 问题回顾 (2026-02-08)
+
+一次性积压 8 个 PR 未合并导致：
+- 本地 main 与远程 main 分叉（27 vs 4 commits）
+- 4 个 PR 产生冲突，需要逐个 rebase
+- 冲突解决用 `--theirs` 策略可能丢失代码
+- 整个合并过程耗时 ~15 分钟
+
+### 规则：及时合并，不积压
+
+| 规则 | 说明 |
+|------|------|
+| **单 PR 即合** | 每个 PR 完成后立即合并，不等攒批 |
+| **本地不合并** | 禁止在本地 `git merge` 功能分支到 main，统一走 GitHub PR |
+| **本地 main 只拉不推** | 本地 main 只做 `git pull --ff-only`，不直接 commit |
+| **PR ≤3 天** | PR 超过 3 天未合并需要清理或关闭 |
+| **合并后删分支** | PR 合并时勾选 delete branch，减少分支堆积 |
+
+### 正确流程
+
+```bash
+# 1. 功能开发 — 在功能分支上工作
+git checkout -b feat/xxx
+# ... 开发 + 提交 ...
+git push -u origin feat/xxx
+
+# 2. 创建 PR
+gh pr create --title "feat: xxx" --body "..."
+
+# 3. 合并 PR（功能完成后立即执行）
+gh pr merge --merge --delete-branch
+
+# 4. 同步本地 main
+git checkout main && git pull --ff-only origin main
+
+# 5. 如需部署
+npm run build && npm run dist:mac
+```
+
+### 禁止的操作
+
+```bash
+# ❌ 在本地合并功能分支到 main
+git checkout main && git merge feat/xxx
+
+# ❌ 本地 main 上直接开发
+git checkout main && echo "写代码" > file.ts
+
+# ❌ 积攒多个 PR 后批量合并
+# 容易产生交叉冲突，解决成本指数增长
+
+# ❌ 本地 main 有未推送的 commit
+# 导致 local/remote main 分叉
+```
+
+### 冲突处理规范
+
+如果 PR 有冲突，**不要盲目** `--theirs` / `--ours`，按以下步骤：
+
+```bash
+# 1. checkout PR 分支并 rebase
+gh pr checkout <number>
+git rebase origin/main
+
+# 2. 逐个文件检查冲突（不要自动解决）
+# 打开冲突文件，理解两边改动的意图
+
+# 3. 手动合并后验证
+npm run typecheck  # 类型检查
+npm run build      # 构建验证
+
+# 4. 推送并合并
+git push --force-with-lease origin <branch>
+gh pr merge <number> --merge --delete-branch
+```
+
+---
+
 ## 版本号规范
 
 - **PATCH**: Bug 修复、小改动 (0.3.0 → 0.3.1)

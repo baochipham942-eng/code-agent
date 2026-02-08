@@ -345,15 +345,48 @@ export class CLISessionManager {
       session.title === 'New Chat' ||
       session.title === '新对话';
 
-    if (isDefaultTitle && session.messageCount <= 1) {
-      // 从第一条消息提取标题
-      const firstLine = firstMessage.trim().split('\n')[0];
-      let title = firstLine.slice(0, 50);
-      if (firstLine.length > 50) {
-        title += '...';
-      }
+    if (!(isDefaultTitle && session.messageCount <= 1)) return;
 
-      await this.updateSession(this.currentSessionId, { title });
+    // 1. 尝试用小模型生成标题
+    let title = await this.generateSmartTitle(firstMessage);
+
+    // 2. 降级：截取前 50 字符
+    if (!title) {
+      const firstLine = firstMessage.trim().split('\n')[0];
+      title = firstLine.slice(0, 50);
+      if (firstLine.length > 50) title += '...';
+    }
+
+    await this.updateSession(this.currentSessionId, { title });
+  }
+
+  /**
+   * 使用小模型生成智能会话标题
+   * 模型不可用时返回 null，由调用方降级处理
+   */
+  private async generateSmartTitle(message: string): Promise<string | null> {
+    try {
+      const { quickTask, isQuickModelAvailable } = await import('../main/model/quickModel');
+      if (!isQuickModelAvailable()) return null;
+
+      // 截取前 500 字符避免 prompt 太长
+      const truncated = message.length > 500 ? message.slice(0, 500) + '...' : message;
+
+      const result = await quickTask(
+        `为以下用户消息生成一个简短的会话标题（10-25字，中文优先，不加引号不加标点）：\n\n${truncated}`
+      );
+
+      if (result.success && result.content) {
+        // 清理：去引号、去标点、限长
+        let title = result.content.trim()
+          .replace(/^["'「『]|["'」』]$/g, '')
+          .replace(/[。！？.!?]$/g, '');
+        if (title.length > 50) title = title.slice(0, 50) + '...';
+        if (title.length >= 2) return title;
+      }
+      return null;
+    } catch {
+      return null; // 静默降级
     }
   }
 

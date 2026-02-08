@@ -111,6 +111,10 @@ function callMoonshotStream(
     let finishReason: string | undefined;
     const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
 
+    // Real-time token estimation
+    let charCount = 0;
+    let lastEstimateTime = 0;
+
     const options: https.RequestOptions = {
       hostname: url.hostname,
       port: url.port || (isHttps ? 443 : 80),
@@ -224,8 +228,19 @@ function callMoonshotStream(
               const textContent = delta.content || delta.reasoning;
               if (textContent) {
                 content += textContent;
+                charCount += textContent.length;
                 if (onStream) {
                   onStream({ type: 'text', content: textContent });
+                  // Periodic token estimation (~every 500ms)
+                  const now = Date.now();
+                  if (now - lastEstimateTime > 500) {
+                    lastEstimateTime = now;
+                    onStream({
+                      type: 'token_estimate',
+                      inputTokens: 0,
+                      outputTokens: Math.ceil(charCount / 4),
+                    });
+                  }
                 }
               }
 

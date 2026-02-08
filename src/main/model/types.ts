@@ -46,7 +46,7 @@ export interface ModelResponse {
 // ----------------------------------------------------------------------------
 
 export interface StreamChunk {
-  type: 'text' | 'reasoning' | 'tool_call_start' | 'tool_call_delta';
+  type: 'text' | 'reasoning' | 'tool_call_start' | 'tool_call_delta' | 'token_estimate';
   content?: string;
   toolCall?: {
     index: number;
@@ -54,6 +54,9 @@ export interface StreamChunk {
     name?: string;
     argumentsDelta?: string;
   };
+  // Real-time token estimation (type: 'token_estimate')
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 export type StreamCallback = (chunk: string | StreamChunk) => void;

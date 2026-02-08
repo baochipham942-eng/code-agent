@@ -28,6 +28,9 @@ interface StatusState {
   gitBranch: string | null;
   workingDirectory: string | null;
 
+  // Streaming
+  isStreaming: boolean;
+
   // Actions
   updateTokens: (input: number, output: number) => void;
   addCost: (cost: number) => void;
@@ -35,6 +38,7 @@ interface StatusState {
   setContextUsage: (percent: number) => void;
   setNetworkStatus: (status: NetworkStatus) => void;
   setGitInfo: (branch: string | null, dir: string | null) => void;
+  setStreaming: (streaming: boolean) => void;
 }
 
 export const useStatusStore = create<StatusState>((set) => ({
@@ -46,6 +50,7 @@ export const useStatusStore = create<StatusState>((set) => ({
   networkStatus: 'online',
   gitBranch: null,
   workingDirectory: null,
+  isStreaming: false,
 
   updateTokens: (input, output) =>
     set((state) => ({
@@ -75,4 +80,7 @@ export const useStatusStore = create<StatusState>((set) => ({
 
   setGitInfo: (branch, dir) =>
     set({ gitBranch: branch, workingDirectory: dir }),
+
+  setStreaming: (streaming) =>
+    set({ isStreaming: streaming }),
 }));

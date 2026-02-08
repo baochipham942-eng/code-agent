@@ -1,6 +1,6 @@
 # Code Agent - 架构设计文档
 
-> 版本: 5.5 (对应 v0.16.21)
+> 版本: 5.6 (对应 v0.16.22)
 > 日期: 2026-02-08
 > 作者: Lin Chen
 
@@ -35,6 +35,21 @@
 | **CLI 接口** | `src/main/cli/` | 命令行交互模式 |
 | **多渠道接入** | `src/main/channels/` | 飞书 Webhook 等渠道支持 |
 | **Skills 系统** | `src/main/skills/` | 用户可定义技能 |
+
+### v0.16.22+ 成本优化与健壮性增强（Electron 38 + 7 项改进）
+
+| 模块 | 位置 | 描述 |
+|------|------|------|
+| **Electron 38 升级** | `package.json` | Chromium 140, V8 14.0, Node 22.16（最高兼容版本，39+ isolated-vm 不兼容） |
+| **推理缓存** | `src/main/model/inferenceCache.ts` | LRU 缓存（50 条，5min TTL），md5 key，只缓存 text 响应 |
+| **自适应路由** | `src/main/model/adaptiveRouter.ts` | 简单任务 → zhipu/glm-4.7-flash（免费），失败自动 fallback |
+| **错误恢复引擎** | `src/main/errors/recoveryEngine.ts` | 6 种错误模式自动恢复（429/401/context_length/timeout/connection/unavailable） |
+| **工具 DAG 调度** | `src/main/agent/toolExecution/dagScheduler.ts` | 文件依赖 DAG + Kahn 拓扑排序，WAR/WAW 检测 |
+| **实时成本流** | `src/renderer/stores/statusStore.ts` | SSE 流式 token 估算 + StatusBar 脉冲动画 |
+| **Prompt 精简** | `src/main/generation/prompts/base/gen8.ts` | tool table 再压缩 ~20% |
+| **激进裁剪** | `src/main/context/autoCompressor.ts` | 更早触发压缩（0.6），旧消息 200 字符摘要 |
+| **错误恢复 IPC** | `src/main/ipc/error.ipc.ts` | 错误恢复事件推送到渲染进程 |
+| **错误恢复 Hook** | `src/renderer/hooks/useErrorRecovery.ts` | React Hook + 自动 dismiss |
 
 ### v0.16.21+ 健壮性增强（h2A 转向 + Compaction 恢复 + 溢出自动重试）
 
@@ -123,13 +138,13 @@
 
 | 层级 | 技术选型 |
 |------|----------|
-| 桌面框架 | Electron 33+ |
+| 桌面框架 | Electron 38+ |
 | 前端框架 | React 18 + TypeScript 5.6 |
 | 状态管理 | Zustand 5 |
 | 样式 | Tailwind CSS 3.4 |
 | 本地存储 | SQLite (better-sqlite3) |
 | 云端存储 | Supabase + pgvector |
-| AI 模型 | DeepSeek API (主要) |
+| AI 模型 | Moonshot Kimi K2.5 (主要), 智谱/DeepSeek (备用) |
 
 ### 8 代工具演进
 

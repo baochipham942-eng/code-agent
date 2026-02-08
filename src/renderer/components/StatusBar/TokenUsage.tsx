@@ -17,15 +17,15 @@ function formatTokens(n: number): string {
   return n.toString();
 }
 
-export function TokenUsage({ input, output }: TokenUsageProps) {
+export function TokenUsage({ input, output, isStreaming }: TokenUsageProps) {
   return (
     <span
-      className="text-gray-400"
+      className={`text-gray-400 ${isStreaming ? 'animate-pulse' : ''}`}
       title={`Input: ${input.toLocaleString()} tokens, Output: ${output.toLocaleString()} tokens`}
     >
       <span className="text-blue-400">{formatTokens(input)}</span>
       <span className="text-gray-600">/</span>
-      <span className="text-green-400">{formatTokens(output)}</span>
+      <span className="text-green-400">{formatTokens(output)}{isStreaming ? ' \u25B2' : ''}</span>
     </span>
   );
 }

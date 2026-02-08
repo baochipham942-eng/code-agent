@@ -55,21 +55,10 @@ IMPORTANT: Follow existing code style.
  * 工具参数纪律 - 防止参数混淆和无限重试
  */
 export const TOOL_DISCIPLINE = `
-## Tool Parameter Rules
-- Parameters MUST be separate fields (never combine into path/string)
-- read_file: file_path is ONLY the path, use offset/limit as separate params
-- edit_file: file_path, old_string, new_string are SEPARATE fields
-
-## Retry Rules
-- Max 2 retries per tool with same parameters
-- If tool fails twice: SWITCH STRATEGY
-  - edit_file fails → use write_file to replace entire content
-  - read_file fails → use bash cat/head instead
-- Do NOT keep retrying the same failing operation
-
-## Deduplication
-- Before calling a tool, check if result is already in conversation context
-- Do NOT call read_file on a file you just read (result is above)
+## Tool Discipline
+- Parameters are SEPARATE fields (never combine path+offset into one string)
+- read_file first, then edit_file. Max 2 retries → switch strategy (edit→write, read→bash)
+- Before calling a tool, check if result already exists in conversation context
 `.trim();
 
 /**

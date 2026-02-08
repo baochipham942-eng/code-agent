@@ -11,6 +11,8 @@ import type {
 } from '../../shared/types';
 import { PROVIDER_REGISTRY } from './providerRegistry';
 import { createLogger } from '../services/infra/logger';
+import { getInferenceCache } from './inferenceCache';
+import { getAdaptiveRouter } from './adaptiveRouter';
 
 const logger = createLogger('ModelRouter');
 import type { ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
@@ -265,6 +267,63 @@ export class ModelRouter {
       return callViaCloudProxy(messages, tools, config, modelInfo, onStream, signal);
     }
 
+    // Inference cache (non-streaming only)
+    if (!onStream) {
+      const cache = getInferenceCache();
+      const cacheKey = cache.computeKey(messages, config);
+      const cached = cache.get(cacheKey);
+      if (cached) {
+        logger.info(`[Cache] Hit for ${config.provider}/${config.model}`);
+        return cached;
+      }
+    }
+
+    // Adaptive routing for simple tasks
+    const adaptiveRouter = getAdaptiveRouter();
+    const complexity = adaptiveRouter.estimateComplexity(messages);
+    if (complexity.level === 'simple' && !config.useCloudProxy) {
+      const adaptedConfig = adaptiveRouter.selectModel(complexity, config);
+      if (adaptedConfig.provider !== config.provider || adaptedConfig.model !== config.model) {
+        try {
+          const result = await this._callProvider(messages, tools, adaptedConfig, onStream, signal);
+          adaptiveRouter.recordOutcome(complexity, adaptedConfig.provider, true, 0);
+          // Cache non-streaming text responses
+          if (!onStream && result.type === 'text') {
+            const cache = getInferenceCache();
+            const cacheKey = cache.computeKey(messages, config);
+            cache.set(cacheKey, result);
+          }
+          return result;
+        } catch (err) {
+          logger.warn(`[AdaptiveRouter] Free model failed, falling back to default: ${err}`);
+          adaptiveRouter.recordOutcome(complexity, adaptedConfig.provider, false, 0);
+          // Fall through to default provider
+        }
+      }
+    }
+
+    const result = await this._callProvider(messages, tools, config, onStream, signal);
+
+    // Cache non-streaming text responses
+    if (!onStream && result.type === 'text') {
+      const cache = getInferenceCache();
+      const cacheKey = cache.computeKey(messages, config);
+      cache.set(cacheKey, result);
+    }
+
+    return result;
+  }
+
+  /**
+   * Call the appropriate provider based on config
+   */
+  private async _callProvider(
+    messages: ModelMessage[],
+    tools: ToolDefinition[],
+    config: ModelConfig,
+    onStream?: StreamCallback,
+    signal?: AbortSignal
+  ): Promise<ModelResponse> {
     const modelInfo = this.getModelInfo(config.provider, config.model);
 
     switch (config.provider) {

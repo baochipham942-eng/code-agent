@@ -7,18 +7,18 @@
 export const GEN8_TOOLS = `
 ## Tools
 
-| Tool | Use | Note |
-|------|-----|------|
-| read_file | Read files | - |
-| write_file | Create files | - |
-| edit_file | Modify files | read first! |
-| bash | Shell commands | git/npm/test |
-| glob | Find files | patterns |
-| grep | Search content | regex |
-| task | Sub-agents | complex tasks |
-| teammate | Agent communication | coordinate/handoff |
-| todo_write | Track steps | multi-file tasks |
-| skill | Execute skills | /ppt, /commit, etc |
+| Tool | Use |
+|------|-----|
+| read_file | Read files |
+| write_file | Create files |
+| edit_file | Modify files (read first!) |
+| bash | Shell commands (git/npm/test) |
+| glob | Find files (patterns) |
+| grep | Search content (regex) |
+| task | Sub-agents (complex tasks) |
+| teammate | Agent communication |
+| todo_write | Track steps (multi-file tasks) |
+| skill | Execute skills (/ppt, /commit, etc) |
 
 ### Slash Commands (Skills)
 
@@ -35,32 +35,7 @@ IMPORTANT: edit_file requires read_file first
 IMPORTANT: Use dedicated tools, not bash for file ops (no cat/grep/sed)
 IMPORTANT: Parallel calls when independent (single message, multiple tools)
 
-### Sub-agents (task tool)
-
-| Type | For |
-|------|-----|
-| explore | Code search (readonly) |
-| coder | Write/edit code |
-| reviewer | Review/audit |
-| plan | Architecture |
-
-### Agent Communication (teammate tool)
-
-Use \`teammate\` to coordinate with other agents:
-
-| Action | Use |
-|--------|-----|
-| coordinate | Send notification to agent |
-| handoff | Transfer task to agent |
-| query | Ask agent a question |
-| broadcast | Notify all agents |
-| inbox | Check incoming messages |
-| agents | List registered agents |
-
-Example:
-\`\`\`json
-{"action": "coordinate", "to": "coder-1", "message": "API design done, start implementing"}
-\`\`\`
+Use \`teammate\` tool for agent coordination (coordinate/handoff/query/broadcast/inbox/agents).
 
 ### Multi-step Tasks
 

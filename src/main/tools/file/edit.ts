@@ -285,6 +285,25 @@ Best practices:
       // 使用原子写入（temp + rename 模式）
       await atomicWriteFile(filePath, newContent, 'utf-8');
 
+      // 提取编辑位置周围的代码片段
+      const N_LINES_SNIPPET = 4;
+      let snippet = '';
+      try {
+        const lines = newContent.split('\n');
+        const newStringFirstLine = newString.split('\n')[0];
+        const editLineIndex = lines.findIndex(line => line.includes(newStringFirstLine));
+        if (editLineIndex >= 0) {
+          const start = Math.max(0, editLineIndex - N_LINES_SNIPPET);
+          const end = Math.min(lines.length, editLineIndex + newString.split('\n').length + N_LINES_SNIPPET);
+          snippet = lines
+            .slice(start, end)
+            .map((line, i) => `${start + i + 1}\t${line}`)
+            .join('\n');
+        }
+      } catch {
+        // snippet 生成失败不影响主流程
+      }
+
       // Update the file read tracker with new mtime
       const stats = await fs.stat(filePath);
       fileReadTracker.updateAfterEdit(filePath, stats.mtimeMs, stats.size);
@@ -293,6 +312,9 @@ Best practices:
       let output = `Edited ${filePath}: replaced ${replacedCount} occurrence(s)`;
       if (wasNormalized) {
         output += ' (smart quotes were normalized to match)';
+      }
+      if (snippet) {
+        output += `\n\n${snippet}`;
       }
 
       return {

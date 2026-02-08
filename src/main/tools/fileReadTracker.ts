@@ -193,6 +193,21 @@ class FileReadTracker {
         : null,
     };
   }
+
+  /**
+   * 获取最近读取的 N 个文件（按 readTime 降序）
+   */
+  getRecentFiles(n: number): Array<{ path: string; mtime: number; readTime: number; size: number }> {
+    return Array.from(this.readFiles.entries())
+      .sort((a, b) => b[1].readTime - a[1].readTime)
+      .slice(0, n)
+      .map(([path, record]) => ({
+        path,
+        mtime: record.mtime,
+        readTime: record.readTime,
+        size: record.size,
+      }));
+  }
 }
 
 // Export singleton instance

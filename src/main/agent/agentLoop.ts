@@ -409,7 +409,7 @@ export class AgentLoop {
         }
         if (response.type === 'tool_use' && response.toolCalls) {
           const results = await this.executeToolsWithHooks(response.toolCalls);
-          const toolMsg: Message = { id: generateMessageId(), role: 'assistant', content: '', timestamp: Date.now(), toolCalls: response.toolCalls, toolResults: results };
+          const toolMsg: Message = { id: generateMessageId(), role: 'assistant', content: response.content || '', timestamp: Date.now(), toolCalls: response.toolCalls, toolResults: results };
           this.messages.push(toolMsg);
         }
       }
@@ -922,7 +922,7 @@ export class AgentLoop {
         const assistantMessage: Message = {
           id: this.generateId(),
           role: 'assistant',
-          content: '',
+          content: response.content || '',
           timestamp: Date.now(),
           toolCalls: response.toolCalls,
           // Adaptive Thinking: 保留模型的原生思考过程

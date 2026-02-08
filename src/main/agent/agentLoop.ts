@@ -102,6 +102,8 @@ export class AgentLoop {
   private isCancelled: boolean = false;
   private isInterrupted: boolean = false;
   private interruptMessage: string | null = null;
+  private needsReinference: boolean = false;
+  private abortController: AbortController | null = null;
   private maxIterations: number;
 
   // Planning integration
@@ -626,6 +628,17 @@ export class AgentLoop {
       const inferenceDuration = Date.now() - inferenceStartTime;
       logger.debug('[AgentLoop] Inference response type:', response.type);
 
+      // h2A 实时转向：如果在 inference 期间收到了 steer()，跳过当前结果，重新推理
+      if (this.needsReinference) {
+        this.needsReinference = false;
+        logger.info('[AgentLoop] Steer detected after inference — re-inferring with new user message');
+        this.onEvent({
+          type: 'interrupt_acknowledged',
+          data: { message: '已收到新指令，正在调整方向...' },
+        });
+        continue;
+      }
+
       langfuse.logEvent(this.traceId, 'inference_complete', {
         iteration: iterations,
         responseType: response.type,
@@ -717,8 +730,7 @@ export class AgentLoop {
 
         // P1 Nudge: Detect read-only stop pattern
         // If agent read files but didn't write, nudge it to continue with actual modifications
-        // Skip for analysis tasks - they don't need to modify files
-        if (this.toolsUsedInTurn.length > 0 && this.readOnlyNudgeCount < this.maxReadOnlyNudges && !this.isAnalysisTask()) {
+        if (this.toolsUsedInTurn.length > 0 && this.readOnlyNudgeCount < this.maxReadOnlyNudges) {
           const nudgeMessage = this.antiPatternDetector.detectReadOnlyStopPattern(this.toolsUsedInTurn);
           if (nudgeMessage) {
             this.readOnlyNudgeCount++;
@@ -779,8 +791,7 @@ export class AgentLoop {
         }
 
         // P3 Nudge: Check if all target files have been modified
-        // Skip for analysis tasks - they don't need to modify files
-        if (this.targetFiles.length > 0 && this.fileNudgeCount < this.maxFileNudges && !this.isAnalysisTask()) {
+        if (this.targetFiles.length > 0 && this.fileNudgeCount < this.maxFileNudges) {
           const missingFiles: string[] = [];
           for (const targetFile of this.targetFiles) {
             // Normalize target file path for comparison
@@ -900,6 +911,29 @@ export class AgentLoop {
         logger.debug('[AgentLoop] Starting executeToolsWithHooks...');
         const toolResults = await this.executeToolsWithHooks(response.toolCalls);
         logger.debug(` executeToolsWithHooks completed, ${toolResults.length} results`);
+
+        // h2A 实时转向：工具执行期间收到 steer()，保存已有结果后跳到下一轮推理
+        if (this.needsReinference) {
+          this.needsReinference = false;
+          logger.info('[AgentLoop] Steer detected during tool execution — saving results and re-inferring');
+          // 保存已完成的 tool results（不浪费已执行的工作）
+          if (toolResults.length > 0) {
+            const partialResults = sanitizeToolResultsForHistory(toolResults);
+            const partialToolMessage: Message = {
+              id: this.generateId(),
+              role: 'tool',
+              content: JSON.stringify(partialResults),
+              timestamp: Date.now(),
+              toolResults: partialResults,
+            };
+            await this.addAndPersistMessage(partialToolMessage);
+          }
+          this.onEvent({
+            type: 'interrupt_acknowledged',
+            data: { message: '已收到新指令，正在调整方向...' },
+          });
+          continue;
+        }
 
         toolResults.forEach((r, i) => {
           logger.debug(`   Result ${i + 1}: success=${r.success}, error=${r.error || 'none'}`);
@@ -1089,16 +1123,49 @@ export class AgentLoop {
 
   cancel(): void {
     this.isCancelled = true;
+    this.abortController?.abort();
   }
 
   /**
-   * 中断当前执行并设置新的用户消息
-   * 用于 Claude Code 风格的中断功能：用户输入新指令时中断当前任务
+   * 中断当前执行并设置新的用户消息（旧版，保留向后兼容）
+   * 会停止当前 Loop，由 Orchestrator 创建新 Loop
    */
   interrupt(newMessage: string): void {
     this.isInterrupted = true;
     this.interruptMessage = newMessage;
+    this.abortController?.abort();
     logger.info('[AgentLoop] Interrupt requested with new message');
+  }
+
+  /**
+   * 实时转向：将用户新消息注入当前 Loop，不销毁 Loop
+   * Claude Code h2A 风格 — 保留所有中间状态，模型在下一次推理时自然看到新消息
+   */
+  steer(newMessage: string): void {
+    // 1. 中止当前正在进行的 API 调用
+    this.abortController?.abort();
+
+    // 2. 将用户消息注入消息历史（直接作为 user message，模型自然理解上下文切换）
+    const steerMessage: Message = {
+      id: generateMessageId(),
+      role: 'user',
+      content: newMessage,
+      timestamp: Date.now(),
+    };
+    this.messages.push(steerMessage);
+
+    // 3. 持久化到数据库（异步，不阻塞转向）
+    if (process.env.CODE_AGENT_CLI_MODE !== 'true') {
+      const sessionManager = getSessionManager();
+      sessionManager.addMessage(steerMessage).catch((err) => {
+        logger.error('[AgentLoop] Failed to persist steer message:', err);
+      });
+    }
+
+    // 4. 设置标志让主循环跳过当前结果，重新推理
+    this.needsReinference = true;
+
+    logger.info('[AgentLoop] Steer requested — message injected, will re-infer on next cycle');
   }
 
   /**
@@ -1286,8 +1353,8 @@ export class AgentLoop {
 
     // Execute sequential tools one by one
     for (const { index, toolCall } of sequentialGroup) {
-      if (this.isCancelled) {
-        logger.debug('[AgentLoop] Cancelled, breaking out of sequential tool execution');
+      if (this.isCancelled || this.needsReinference) {
+        logger.debug('[AgentLoop] Cancelled/steered, breaking out of sequential tool execution');
         break;
       }
 
@@ -1988,6 +2055,9 @@ export class AgentLoop {
       logger.debug('[AgentLoop] Effective model:', effectiveConfig.model);
       logger.debug('[AgentLoop] Effective tools count:', effectiveTools.length);
 
+      // 创建 AbortController，支持中断/转向时立即终止 API 流
+      this.abortController = new AbortController();
+
       const response = await this.modelRouter.inference(
         modelMessages,
         effectiveTools,
@@ -2021,9 +2091,11 @@ export class AgentLoop {
               },
             });
           }
-        }
+        },
+        this.abortController.signal
       );
 
+      this.abortController = null;
       logger.debug('[AgentLoop] Model response received:', response.type);
 
       // Record token usage with precise estimation
@@ -2048,6 +2120,14 @@ export class AgentLoop {
 
       return response;
     } catch (error) {
+      this.abortController = null;
+
+      // steer/interrupt 导致的 abort 不是错误，返回空文本让主循环处理
+      if (this.needsReinference || this.isInterrupted || this.isCancelled) {
+        logger.info('[AgentLoop] Inference aborted due to steer/interrupt/cancel');
+        return { type: 'text', content: '' };
+      }
+
       logger.error('[AgentLoop] Model inference error:', error);
 
       langfuse.endGeneration(
@@ -2267,50 +2347,9 @@ ${deferredToolsSummary}
   }
 
   /**
-   * 检测任务是否为分析型（不需要修改文件）
-   * 分析用户原始提示词中的关键词来判断
-   */
-  private isAnalysisTask(): boolean {
-    const analysisKeywords = [
-      // 中文关键词
-      '分析', '解读', '查看', '了解', '研究', '比较', '介绍',
-      '解释', '说明', '总结', '概述', '评估', '检查', '审查',
-      '理解', '学习', '探索', '浏览', '调研',
-      // 英文关键词
-      'analyze', 'explain', 'describe', 'summarize', 'review',
-      'understand', 'look at', 'check', 'examine', 'explore',
-      'investigate', 'study', 'compare', 'overview', 'inspect'
-    ];
-
-    // 获取用户原始提示词（第一条 user 消息）
-    const userMessage = this.messages.find(m => m.role === 'user');
-    if (!userMessage) return false;
-
-    const content = typeof userMessage.content === 'string'
-      ? userMessage.content
-      : JSON.stringify(userMessage.content);
-    const lowerContent = content.toLowerCase();
-
-    return analysisKeywords.some(keyword => lowerContent.includes(keyword));
-  }
-
-  /**
    * Generate nudge message when stuck in exploring state
-   * 根据任务类型生成不同的 nudge 消息
    */
   private generateExploringNudge(): string {
-    // 分析型任务：提示生成总结，不强制修改文件
-    if (this.isAnalysisTask()) {
-      return (
-        `<checkpoint-nudge priority="high">\n` +
-        `📊 **提示：你已收集了足够的信息**\n\n` +
-        `请基于已获取的信息，直接生成文本回复给用户。\n\n` +
-        `不需要再调用工具，直接输出你的分析结果。\n` +
-        `</checkpoint-nudge>`
-      );
-    }
-
-    // 修改型任务：保持原有行为，要求开始修改文件
     return (
       `<checkpoint-nudge priority="high">\n` +
       `🚨 **警告：连续 ${this.maxConsecutiveExploring} 次迭代只读取不修改！**\n\n` +

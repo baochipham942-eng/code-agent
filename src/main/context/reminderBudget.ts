@@ -21,11 +21,11 @@ export interface TokenBudgetConfig {
  * 默认配置
  */
 export const DEFAULT_BUDGET_CONFIG: TokenBudgetConfig = {
-  maxReminderTokens: 800,
+  maxReminderTokens: 1200,  // 增加以支持 PPT 等大型提醒 (700+ tokens)
   priorityBudgets: {
-    1: 0.5,  // 关键提醒占 50%
-    2: 0.35, // 重要提醒占 35%
-    3: 0.15, // 辅助提醒占 15%
+    1: 0.7,  // 关键提醒占 70%（支持 PPT 等重要任务提醒）
+    2: 0.2, // 重要提醒占 20%
+    3: 0.1, // 辅助提醒占 10%
   },
   reservedTokens: 200,
   contextWindowSize: 128000,

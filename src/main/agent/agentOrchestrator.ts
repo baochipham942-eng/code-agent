@@ -41,6 +41,8 @@ import { getSessionEventService } from '../evaluation/sessionEventService';
 // Task Complexity → Effort Level mapping
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
 import type { EffortLevel } from '../../shared/types/agent';
+// TaskList Manager (可视化任务列表)
+import { getTaskListManager, type TaskListManager } from './taskList';
 // DAG Visualization for normal conversations
 import { TaskDAG } from '../scheduler/TaskDAG';
 import { sendDAGInitEvent, buildDAGVisualizationState } from '../scheduler/dagEventBridge';
@@ -124,6 +126,13 @@ export class AgentOrchestrator {
   private delegateMode: boolean = false;
   private requirePlanApproval: boolean = false;
 
+  // Real-time steering: 中断排队
+  private isInterrupting: boolean = false;
+  private pendingSteerMessages: string[] = [];
+
+  // TaskList: 可视化任务管理
+  private taskListManager: TaskListManager;
+
   constructor(config: AgentOrchestratorConfig) {
     this.generationManager = config.generationManager;
     this.configService = config.configService;
@@ -142,6 +151,9 @@ export class AgentOrchestrator {
       requestPermission: this.requestPermission.bind(this),
       workingDirectory: this.workingDirectory,
     });
+
+    // Initialize TaskList manager
+    this.taskListManager = getTaskListManager();
   }
 
   /**
@@ -695,6 +707,36 @@ export class AgentOrchestrator {
       },
     });
 
+    // === TaskList Integration: 写入任务列表 ===
+    this.taskListManager.reset();
+    const taskItems = agents.map((agent, idx) => {
+      return this.taskListManager.createTask({
+        subject: agent.name,
+        description: agent.systemPrompt?.substring(0, 200) || `Execute ${agent.name}`,
+        assignee: agent.name,
+        priority: idx === 0 ? 1 : 3,
+        dependencies: requirements.executionStrategy === 'sequential' && idx > 0
+          ? [agents[idx - 1].id]
+          : [],
+      });
+    });
+
+    // 如果需要审批，等待用户确认
+    if (this.taskListManager.getState().requireApproval) {
+      logger.info('[TaskList] Waiting for user approval before execution...');
+      onEvent({
+        type: 'notification',
+        data: { message: '任务列表已生成，等待审批...' },
+      });
+      try {
+        await Promise.all(taskItems.map(t => this.taskListManager.waitForApproval(t.id)));
+      } catch (error) {
+        logger.info('[TaskList] Approval rejected or reset');
+        onEvent({ type: 'agent_complete', data: null });
+        return;
+      }
+    }
+
     // Execute agents through coordinator
     const coordinator = getAutoAgentCoordinator();
     const toolMap = new Map<string, import('../tools/toolRegistry').Tool>();
@@ -714,6 +756,18 @@ export class AgentOrchestrator {
       onProgress: (agentId, status, progress) => {
         // Sync DAG task status
         this.syncAutoAgentDAGStatus(dagId, agentId, status);
+
+        // === TaskList Integration: 同步任务状态 ===
+        const matchingTask = taskItems.find(t => t.subject === agentId || t.description?.includes(agentId));
+        if (matchingTask) {
+          if (status === 'running') {
+            this.taskListManager.startExecution(matchingTask.id);
+          } else if (status === 'completed') {
+            this.taskListManager.completeExecution(matchingTask.id, `Agent ${agentId} completed`);
+          } else if (status === 'failed') {
+            this.taskListManager.failExecution(matchingTask.id, `Agent ${agentId} failed`);
+          }
+        }
 
         onEvent({
           type: 'agent_thinking',
@@ -775,6 +829,10 @@ export class AgentOrchestrator {
     // 获取当前会话 ID 用于事件
     const sessionId = getSessionManager().getCurrentSessionId();
 
+    // 清除中断排队状态
+    this.isInterrupting = false;
+    this.pendingSteerMessages = [];
+
     if (this.agentLoop) {
       this.agentLoop.cancel();
       this.agentLoop = null;
@@ -798,11 +856,16 @@ export class AgentOrchestrator {
   }
 
   /**
-   * 中断当前执行并继续新的用户消息
-   * Claude Code 风格：用户在 Agent 执行过程中输入新指令，系统中断当前操作并根据新输入调整方向
+   * 实时转向：h2A 风格的中断与继续
+   *
+   * 核心改进（对比旧版）：
+   * 1. 不再销毁 AgentLoop + 新建 — 而是通过 steer() 注入消息，同一 Loop 继续运行
+   * 2. 不再注入 <direction-change> XML — 用户消息直接以 user role 追加
+   * 3. 通过 AbortController 立即终止正在进行的 API 流，而非轮询等待
+   * 4. 支持消息排队 — 用户连续快速输入不会互相覆盖
    *
    * @param newMessage - 用户的新消息内容
-   * @param attachments - 可选的附件
+   * @param attachments - 可选的附件（当前仅在 fallback 路径使用）
    */
   async interruptAndContinue(
     newMessage: string,
@@ -812,37 +875,44 @@ export class AgentOrchestrator {
     const sessionManager = getSessionManager();
     const sessionId = sessionManager.getCurrentSessionId();
 
+    // P3: 消息排队 — 如果正在处理另一个中断，排队等待
+    if (this.isInterrupting) {
+      logger.info('[AgentOrchestrator] Already interrupting, queuing message');
+      this.pendingSteerMessages.push(newMessage);
+      return;
+    }
+
+    this.isInterrupting = true;
+
     // 发送中断开始事件
     this.onEvent({
       type: 'interrupt_start',
-      data: { message: '正在中断当前任务...', newUserMessage: newMessage },
+      data: { message: '正在调整方向...', newUserMessage: newMessage },
       sessionId,
     } as AgentEvent & { sessionId?: string });
 
-    // 1. 设置当前 AgentLoop 的中断标志
+    // 优先路径：AgentLoop 正在运行 — 使用 steer() 消息注入（不销毁 Loop）
     if (this.agentLoop) {
-      this.agentLoop.interrupt(newMessage);
+      this.agentLoop.steer(newMessage);
 
-      // 2. 等待当前 loop 完成（最多等待 30 秒）
-      const timeout = 30000;
-      const startTime = Date.now();
-
-      while (this.agentLoop && !this.agentLoop.wasInterrupted() && (Date.now() - startTime) < timeout) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+      // 处理排队的消息（steer 会在下一个 inference 前生效，连续 steer 会累积）
+      while (this.pendingSteerMessages.length > 0) {
+        const queued = this.pendingSteerMessages.shift()!;
+        this.agentLoop.steer(queued);
+        logger.info('[AgentOrchestrator] Processed queued steer message');
       }
 
-      // 超时处理：强制取消
-      if (Date.now() - startTime >= timeout) {
-        logger.warn('[AgentOrchestrator] Interrupt timeout, forcing cancel');
-        if (this.agentLoop) {
-          this.agentLoop.cancel();
-        }
-      }
+      this.onEvent({
+        type: 'interrupt_complete',
+        data: { message: '已调整方向', newUserMessage: newMessage },
+        sessionId,
+      } as AgentEvent & { sessionId?: string });
 
-      this.agentLoop = null;
+      this.isInterrupting = false;
+      return;
     }
 
-    // 同样处理 deep research 和 semantic research
+    // Fallback 路径：深度研究/语义研究模式 — 仍需取消后重启
     if (this.deepResearchMode) {
       this.deepResearchMode.cancel();
       this.deepResearchMode = null;
@@ -852,32 +922,18 @@ export class AgentOrchestrator {
       this.semanticResearchOrchestrator = null;
     }
 
-    // 3. 注入方向调整上下文提示
-    const directionChangeContext = `<direction-change>
-用户在执行过程中输入了新的指令。请根据以下新指令调整你的行动方向。
-你可以参考之前的执行结果和上下文，但主要应该遵循新的指令。
-
-新指令: ${newMessage}
-</direction-change>`;
-
-    // 添加系统消息提示方向调整
-    const systemMessage: Message = {
-      id: generateMessageId(),
-      role: 'user',
-      content: directionChangeContext,
-      timestamp: Date.now(),
-    };
-    this.addMessage(systemMessage);
-
-    // 4. 发送中断完成事件
     this.onEvent({
       type: 'interrupt_complete',
       data: { message: '已切换到新任务', newUserMessage: newMessage },
       sessionId,
     } as AgentEvent & { sessionId?: string });
 
-    // 5. 使用 sendMessage 继续执行新消息
-    await this.sendMessage(newMessage, attachments);
+    this.isInterrupting = false;
+
+    // 处理排队的消息
+    const allMessages = [newMessage, ...this.pendingSteerMessages.splice(0)];
+    // 只发送最后一条（合并用户意图）
+    await this.sendMessage(allMessages[allMessages.length - 1], attachments);
   }
 
   /**

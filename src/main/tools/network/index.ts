@@ -23,6 +23,7 @@ export { twitterFetchTool } from './twitterFetch';
 export { mermaidExportTool } from './mermaidExport';
 export { pdfGenerateTool } from './pdfGenerate';
 export { imageProcessTool } from './imageProcess';
+export { pdfCompressTool } from './pdfCompress';
 export { screenshotPageTool } from './screenshotPage';
 export { academicSearchTool } from './academicSearch';
 export { httpRequestTool } from './httpRequest';

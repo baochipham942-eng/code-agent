@@ -301,3 +301,13 @@ data: {"id":"gen-xxx","choices":[...]}
 **解决方案**: 添加输入验证和边界条件处理
 
 相关代码：`src/main/context/tokenOptimizer.ts`
+
+### Moonshot 并发子代理 Socket Hang Up
+**问题**: 4 个子代理同时请求 Moonshot API 时报 `socket hang up` 错误
+**原因**: Node.js 19+ 的 `https.globalAgent` 默认 `keepAlive=true`，SSE 流结束后连接被放回连接池。并发请求复用了已被服务器关闭的连接
+**解决方案**:
+1. 创建专用 `moonshotAgent`（`keepAlive=false`）避免连接复用
+2. 添加瞬态错误自动重试（socket hang up / ECONNRESET / ECONNREFUSED）
+3. 增强错误日志记录 error code
+
+相关代码：`src/main/model/providers/moonshot.ts`

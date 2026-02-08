@@ -5,6 +5,7 @@
 import type { ToolCall } from '../../../shared/types';
 import type { AntiPatternState, FailedToolCallMatch, ToolFailureEntry } from '../loopTypes';
 import { READ_ONLY_TOOLS, WRITE_TOOLS } from '../loopTypes';
+import { cleanXmlResidues } from './cleanXml';
 import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector';
 
@@ -436,30 +437,7 @@ export class AntiPatternDetector {
     return null;
   }
 
-  /**
-   * Clean XML/HTML tag residues from tool arguments
-   * Fixes issue where model outputs include tags like </arg_value></tool_call>
-   */
-  private cleanXmlResidues(value: unknown): unknown {
-    if (typeof value === 'string') {
-      // Remove XML/HTML tag residues
-      return value
-        .replace(/<\/?\w+(?:_\w+)*\s*\/?>/g, '')  // <tag>, </tag>, <tag/>
-        .replace(/<\w+[^>]*>/g, '')               // <tag attr="...">
-        .trim();
-    }
-    if (Array.isArray(value)) {
-      return value.map(v => this.cleanXmlResidues(v));
-    }
-    if (value && typeof value === 'object') {
-      const cleaned: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(value)) {
-        cleaned[k] = this.cleanXmlResidues(v);
-      }
-      return cleaned;
-    }
-    return value;
-  }
+  // cleanXmlResidues 已提取为独立函数，见 ./cleanXml.ts
 
   /**
    * Try to parse tool arguments from text-described tool call and construct ToolCall
@@ -475,10 +453,10 @@ export class AntiPatternDetector {
     if (matchedArgs) {
       try {
         // Clean XML residues before parsing
-        const cleanedArgs = this.cleanXmlResidues(matchedArgs) as string;
+        const cleanedArgs = cleanXmlResidues(matchedArgs) as string;
         const parsedArgs = JSON.parse(cleanedArgs);
         // Clean parsed object recursively
-        const sanitizedArgs = this.cleanXmlResidues(parsedArgs);
+        const sanitizedArgs = cleanXmlResidues(parsedArgs);
         logger.debug(`Parsed tool args from regex match: ${JSON.stringify(sanitizedArgs)}`);
         return {
           id: `force_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
@@ -507,7 +485,7 @@ export class AntiPatternDetector {
         jsonStr = jsonStr.replace(/""(\w+)""/g, '"$1"');
 
         const parsedArgs = JSON.parse(jsonStr);
-        const sanitizedArgs = this.cleanXmlResidues(parsedArgs);
+        const sanitizedArgs = cleanXmlResidues(parsedArgs);
         logger.debug(`Parsed tool args from content: ${JSON.stringify(sanitizedArgs)}`);
         return {
           id: `force_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
@@ -528,7 +506,7 @@ export class AntiPatternDetector {
         const cleanedJson = codeBlockMatch[1].replace(/<\/?\w+(?:_\w+)*\s*\/?>/g, '').replace(/<\w+[^>]*>/g, '');
         const parsedArgs = JSON.parse(cleanedJson);
         if (parsedArgs.server || parsedArgs.tool || parsedArgs.arguments || parsedArgs.file_path || parsedArgs.command) {
-          const sanitizedArgs = this.cleanXmlResidues(parsedArgs);
+          const sanitizedArgs = cleanXmlResidues(parsedArgs);
           logger.debug(`Parsed tool args from code block: ${JSON.stringify(sanitizedArgs)}`);
           return {
             id: `force_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,

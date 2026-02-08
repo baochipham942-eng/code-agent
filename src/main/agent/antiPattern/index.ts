@@ -8,3 +8,5 @@ export {
   DEFAULT_ANTI_PATTERN_CONFIG,
   type AntiPatternConfig,
 } from './detector';
+
+export { cleanXmlResidues } from './cleanXml';

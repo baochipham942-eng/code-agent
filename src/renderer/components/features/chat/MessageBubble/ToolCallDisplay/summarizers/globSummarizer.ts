@@ -12,9 +12,9 @@ export function summarizeGlob(toolCall: ToolCall): string | null {
   if (Array.isArray(output)) {
     if (output.length === 0) return 'No matches';
     if (output.length === 1) {
-      return `1 file: ${shortenPath(output[0])}`;
+      return `Found 1 file: ${shortenPath(output[0])}`;
     }
-    return `${output.length} files`;
+    return `Found ${output.length} files`;
   }
 
   // Handle string output (newline separated)
@@ -25,9 +25,9 @@ export function summarizeGlob(toolCall: ToolCall): string | null {
   if (lines.length === 0) return 'No matches';
 
   if (lines.length === 1) {
-    return `1 file: ${shortenPath(lines[0])}`;
+    return `Found 1 file: ${shortenPath(lines[0])}`;
   }
-  return `${lines.length} files`;
+  return `Found ${lines.length} files`;
 }
 
 function shortenPath(path: string): string {

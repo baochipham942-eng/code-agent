@@ -1,8 +1,8 @@
 // ============================================================================
 // MessageBubble - Individual Chat Message Display
 // ============================================================================
-// This is the main entry point that routes messages to the appropriate
-// component based on the message role (user or assistant).
+// Routes messages to the appropriate component based on role.
+// Both developer and cowork modes now use the same terminal-style display.
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -10,9 +10,7 @@ import { ChevronDown, ChevronRight, Archive } from 'lucide-react';
 import type { MessageBubbleProps } from './types';
 import { UserMessage } from './UserMessage';
 import { AssistantMessage } from './AssistantMessage';
-import { CoworkMessageBubble } from './CoworkMessageBubble';
 import { SkillStatusMessage, isSkillStatusContent } from './SkillStatusMessage';
-import { useIsCoworkMode } from '../../../../stores/modeStore';
 
 // CompactionBlock 渲染组件（折叠摘要卡片）
 const CompactionBlockDisplay: React.FC<{ message: MessageBubbleProps['message'] }> = ({ message }) => {
@@ -50,8 +48,6 @@ const CompactionBlockDisplay: React.FC<{ message: MessageBubbleProps['message'] 
 
 // Main MessageBubble component - routes to appropriate display
 export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
-  const isCoworkMode = useIsCoworkMode();
-
   // CompactionBlock: 渲染压缩摘要卡片
   if (message.compaction) {
     return <CompactionBlockDisplay message={message} />;
@@ -66,18 +62,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
     return <UserMessage message={message} />;
   }
 
-  // Assistant message - choose component based on mode
-  if (isCoworkMode) {
-    return <CoworkMessageBubble message={message} />;
-  }
-
+  // All assistant messages use the same terminal-style display
   return <AssistantMessage message={message} />;
 };
 
 // Re-export sub-components for direct use if needed
 export { UserMessage } from './UserMessage';
 export { AssistantMessage } from './AssistantMessage';
-export { CoworkMessageBubble } from './CoworkMessageBubble';
 export { SkillStatusMessage, isSkillStatusContent } from './SkillStatusMessage';
 export { MessageContent, CodeBlock, InlineTextWithCode } from './MessageContent';
 export { ToolCallDisplay } from './ToolCallDisplay/index';

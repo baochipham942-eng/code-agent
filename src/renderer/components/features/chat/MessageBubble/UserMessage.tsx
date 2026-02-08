@@ -1,6 +1,6 @@
 // ============================================================================
-// UserMessage - Display user messages (Claude/ChatGPT style)
-// 右对齐，带背景色区分
+// UserMessage - Terminal style (Claude Code inspired)
+// Left-aligned with > prefix and subtle background band
 // ============================================================================
 
 import React from 'react';
@@ -10,22 +10,34 @@ import { AttachmentDisplay } from './AttachmentPreview';
 
 export const UserMessage: React.FC<UserMessageProps> = ({ message }) => {
   return (
-    <div className="py-3 px-4 flex justify-end">
-      <div className="max-w-[85%]">
-        {/* Attachments */}
-        {message.attachments && message.attachments.length > 0 && (
-          <div className="mb-2 flex justify-end">
-            <AttachmentDisplay attachments={message.attachments} />
-          </div>
-        )}
+    <div
+      className="py-3 px-4 border-t border-b select-text"
+      style={{
+        backgroundColor: 'var(--cc-user-bg)',
+        borderColor: 'rgba(255,255,255,0.04)',
+      }}
+    >
+      {/* Attachments above text, left-aligned */}
+      {message.attachments && message.attachments.length > 0 && (
+        <div className="mb-2">
+          <AttachmentDisplay attachments={message.attachments} />
+        </div>
+      )}
 
-        {/* Text content - 用户消息带深色背景 */}
-        {message.content && (
-          <div className="bg-zinc-800 text-zinc-100 rounded-2xl px-4 py-3 select-text border border-zinc-700/50">
+      {/* Text content with > prefix */}
+      {message.content && (
+        <div className="flex gap-2">
+          <span
+            className="flex-shrink-0 font-bold text-base select-none"
+            style={{ color: 'var(--cc-brand)' }}
+          >
+            &gt;
+          </span>
+          <div className="text-zinc-100 leading-relaxed min-w-0 flex-1">
             <MessageContent content={message.content} isUser={true} />
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

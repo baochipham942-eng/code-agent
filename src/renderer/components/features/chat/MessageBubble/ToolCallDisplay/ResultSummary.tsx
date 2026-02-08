@@ -1,5 +1,6 @@
 // ============================================================================
-// ResultSummary - Result summary line with arrow prefix
+// ResultSummary - Result summary line with ⎿ indent connector
+// Aligned with StatusIndicator width (w-4)
 // ============================================================================
 
 import React from 'react';
@@ -17,11 +18,17 @@ export function ResultSummary({ toolCall }: Props) {
   if (!summary) return null;
 
   return (
-    <div
-      className={`ml-8 pl-2 text-xs ${isError ? 'text-red-400' : 'text-gray-500'}`}
-    >
-      <span className="text-gray-600 mr-1">↳</span>
-      <span className="truncate">{summary}</span>
+    <div className="flex items-start gap-1.5 pl-1 text-xs">
+      {/* ⎿ connector - same width as StatusIndicator (w-4) */}
+      <span
+        className="w-4 flex-shrink-0 text-center"
+        style={{ color: isError ? 'var(--cc-error)' : 'var(--cc-gutter)' }}
+      >
+        ⎿
+      </span>
+      <span className={isError ? 'text-[var(--cc-error)]' : 'text-zinc-500'}>
+        {summary}
+      </span>
     </div>
   );
 }

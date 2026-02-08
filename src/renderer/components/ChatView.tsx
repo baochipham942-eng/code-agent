@@ -119,7 +119,7 @@ export const ChatView: React.FC = () => {
 
   // Render individual message item
   const renderMessageItem = useCallback((_index: number, message: Message) => (
-    <div className="px-4 py-3 max-w-3xl mx-auto w-full">
+    <div className="px-6 py-1 w-full">
       <MessageBubble message={message} />
     </div>
   ), []);
@@ -129,7 +129,7 @@ export const ChatView: React.FC = () => {
     if (!effectiveIsProcessing) return null;
 
     return (
-      <div className="px-4 py-3 max-w-3xl mx-auto w-full">
+      <div className="px-6 py-1 w-full">
         {taskProgress && taskProgress.phase !== 'completed'
           ? <EnhancedThinkingIndicator progress={taskProgress} />
           : <ThinkingIndicator />
@@ -168,7 +168,7 @@ export const ChatView: React.FC = () => {
 
         {/* Semantic Research Indicator - 检测到需要深度研究时显示 */}
         {researchDetected && (
-          <div className="px-4 max-w-3xl mx-auto w-full">
+          <div className="px-6 w-full">
             <SemanticResearchIndicator
               intent={researchDetected.intent}
               confidence={researchDetected.confidence}
@@ -182,7 +182,7 @@ export const ChatView: React.FC = () => {
 
         {/* Todo Bar - compact progress above input */}
         {showTodoBar && (
-          <div className="px-4 max-w-3xl mx-auto w-full">
+          <div className="px-6 w-full">
             <TodoBar />
           </div>
         )}

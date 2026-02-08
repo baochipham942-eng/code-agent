@@ -14,8 +14,8 @@ export function summarizeRead(toolCall: ToolCall): string | null {
   // Add file size estimate for context
   const charCount = content.length;
   if (charCount > 10000) {
-    return `${lines} lines (~${Math.round(charCount / 1024)}KB)`;
+    return `Read ${lines} lines (~${Math.round(charCount / 1024)}KB)`;
   }
 
-  return `${lines} lines`;
+  return `Read ${lines} lines`;
 }

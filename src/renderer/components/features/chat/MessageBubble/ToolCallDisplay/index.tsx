@@ -1,10 +1,10 @@
 // ============================================================================
-// ToolCallDisplay - Claude Code style tool execution display
-// Single line header + result summary, expandable for details
+// ToolCallDisplay - Claude Code terminal style tool execution display
+// StatusIndicator (braille spinner) + ToolName + params + ⎿ result summary
 // ============================================================================
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { ChevronRight, ChevronDown, FileText, ExternalLink, Folder } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { FileText, ExternalLink, Folder } from 'lucide-react';
 import type { ToolCall } from '@shared/types';
 import { useAppStore } from '../../../../../stores/appStore';
 import { useSessionStore } from '../../../../../stores/sessionStore';
@@ -13,19 +13,73 @@ import { ResultSummary } from './ResultSummary';
 import { ToolDetails } from './ToolDetails';
 import { getToolStatus, getStatusColor, type ToolStatus } from './styles';
 
+// ============================================================================
+// StatusIndicator - Braille spinner for pending, symbols for final states
+// ============================================================================
+
+const BRAILLE_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+function StatusIndicator({ status }: { status: ToolStatus }) {
+  const [frame, setFrame] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (status === 'pending') {
+      intervalRef.current = setInterval(() => {
+        setFrame((f) => (f + 1) % BRAILLE_FRAMES.length);
+      }, 80);
+      return () => {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+      };
+    }
+    // Clear interval when status changes away from pending
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, [status]);
+
+  const statusColor = getStatusColor(status);
+
+  switch (status) {
+    case 'pending':
+      return (
+        <span className={`w-4 flex-shrink-0 text-center font-mono ${statusColor.dot}`}>
+          {BRAILLE_FRAMES[frame]}
+        </span>
+      );
+    case 'success':
+      return (
+        <span className={`w-4 flex-shrink-0 text-center ${statusColor.dot}`}>
+          ●
+        </span>
+      );
+    case 'error':
+      return (
+        <span className={`w-4 flex-shrink-0 text-center font-bold ${statusColor.dot}`}>
+          ✗
+        </span>
+      );
+    case 'interrupted':
+      return (
+        <span className={`w-4 flex-shrink-0 text-center ${statusColor.dot}`}>
+          ○
+        </span>
+      );
+  }
+}
+
 // Extract file path from write_file tool call result
 function extractWriteFilePath(toolCall: ToolCall): string | null {
   if (toolCall.name !== 'write_file') return null;
   if (toolCall.result && !toolCall.result.success) return null;
 
-  // Try to extract from result output first (has absolute path)
   const output = toolCall.result?.output as string;
   if (output) {
     const match = output.match(/(?:Created|Updated) file: (.+?)(?:\s+\(|\n|$)/);
     if (match) return match[1].trim();
   }
 
-  // Fallback to arguments.file_path
   return (toolCall.arguments?.file_path as string) || null;
 }
 
@@ -57,7 +111,7 @@ export function ToolCallDisplay({
   const [expanded, setExpanded] = useState(
     status === 'error' || status === 'pending'
   );
-  // Track if user manually toggled - prevents auto-collapse from overriding user action
+  // Track if user manually toggled
   const [userToggled, setUserToggled] = useState(false);
 
   // Auto-collapse on success after 500ms (only if user hasn't manually toggled)
@@ -72,44 +126,30 @@ export function ToolCallDisplay({
   useEffect(() => {
     if (status === 'error' || status === 'pending') {
       setExpanded(true);
-      setUserToggled(false); // Reset user toggle on status change
+      setUserToggled(false);
     }
   }, [status]);
 
-  const statusColor = getStatusColor(status);
-
   return (
     <div
-      className={`my-1 font-mono text-sm ${
-        status === 'error' ? 'border-l-2 border-red-500 pl-2' : ''
+      className={`font-mono text-sm ${
+        status === 'error' ? 'border-l-2 border-[var(--cc-error)] pl-2' : ''
       }`}
       style={{ animationDelay: `${index * 30}ms` }}
     >
-      {/* Main row - clickable to expand/collapse */}
+      {/* Main row: [StatusIndicator] [ToolName bold] [params muted] [duration right] */}
       <div
-        className="flex items-center gap-2 cursor-pointer hover:bg-gray-800/50 rounded px-1 py-0.5 transition-colors"
+        className="flex items-center gap-1.5 cursor-pointer hover:bg-zinc-800/50 rounded px-1 py-0.5 transition-colors"
         onClick={() => {
           setExpanded(!expanded);
           setUserToggled(true);
         }}
       >
-        {/* Expand/collapse indicator */}
-        <span className="text-gray-500 w-4 flex-shrink-0">
-          {expanded ? (
-            <ChevronDown size={14} />
-          ) : (
-            <ChevronRight size={14} />
-          )}
-        </span>
-
-        {/* Status dot */}
-        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${statusColor.dot}`} />
-
-        {/* Tool header info */}
+        <StatusIndicator status={status} />
         <ToolHeader toolCall={toolCall} status={status} />
       </div>
 
-      {/* Result summary line - only when collapsed and has result */}
+      {/* Result summary line with ⎿ connector - only when collapsed and has result */}
       {toolCall.result && !expanded && <ResultSummary toolCall={toolCall} />}
 
       {/* Quick file actions for write_file - shown when collapsed */}
@@ -117,9 +157,9 @@ export function ToolCallDisplay({
         <QuickFileActions filePath={extractWriteFilePath(toolCall)} />
       )}
 
-      {/* Expanded details */}
+      {/* Expanded details - indented under tool name (ml-5 aligns with text after StatusIndicator) */}
       {expanded && (
-        <div className="animate-fadeIn">
+        <div className="ml-5 animate-fadeIn">
           <ToolDetails toolCall={toolCall} compact={compact} />
         </div>
       )}
@@ -159,7 +199,7 @@ function QuickFileActions({ filePath }: { filePath: string | null }) {
   };
 
   return (
-    <div className="ml-8 mt-1 flex items-center gap-2">
+    <div className="ml-5 mt-1 flex items-center gap-2">
       <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs">
         <FileText className="w-3 h-3" />
         <span className="truncate max-w-[200px]" title={filePath}>{fileName}</span>
@@ -194,7 +234,7 @@ function QuickFileActions({ filePath }: { filePath: string | null }) {
 }
 
 // ============================================================================
-// Compact Version for Cowork Mode
+// Compact Version for Cowork Mode (kept for backward compatibility)
 // ============================================================================
 
 export function ToolCallDisplayCompact({

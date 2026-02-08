@@ -65,7 +65,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
     createdFilePath?.toLowerCase().endsWith('.htm');
 
   return (
-    <div className="ml-8 mt-2 space-y-2 text-xs">
+    <div className="mt-1 space-y-1.5 text-xs">
       {/* Diff view for edit_file */}
       {isEditFile && editFileArgs && showDiff && (
         <div className="animate-fadeIn">

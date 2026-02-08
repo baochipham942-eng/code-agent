@@ -131,8 +131,8 @@ mermaid_export {
       },
       background: {
         type: 'string',
-        description: '背景颜色（默认: white）',
-        default: 'white',
+        description: '背景颜色（默认: transparent 透明）',
+        default: 'transparent',
       },
       scale: {
         type: 'number',
@@ -152,7 +152,7 @@ mermaid_export {
       format = 'png',
       output_path,
       theme = 'default',
-      background = 'white',
+      background = 'transparent',
       scale = 2,
     } = params as unknown as MermaidExportParams;
 
@@ -177,12 +177,22 @@ mermaid_export {
       const encodedConfig = base64UrlEncode(JSON.stringify(mermaidConfig));
 
       // 构建 URL
+      // 关键：必须加 type=png 才能获得真正的透明 PNG（默认返回 JPEG）
+      // 添加时间戳避免 CDN 缓存
+      const cacheBuster = `_t=${Date.now()}`;
       let renderUrl: string;
       if (format === 'svg') {
-        renderUrl = `${MERMAID_INK_API}/svg/${encodedConfig}`;
+        renderUrl = `${MERMAID_INK_API}/svg/${encodedConfig}?${cacheBuster}`;
       } else {
-        renderUrl = `${MERMAID_INK_API}/img/${encodedConfig}?bgColor=${encodeURIComponent(background)}&scale=${scale}`;
+        // type=png 确保返回 RGBA PNG（支持透明）
+        if (background === 'transparent') {
+          renderUrl = `${MERMAID_INK_API}/img/${encodedConfig}?type=png&${cacheBuster}`;
+        } else {
+          renderUrl = `${MERMAID_INK_API}/img/${encodedConfig}?type=png&bgColor=${background}&${cacheBuster}`;
+        }
       }
+
+      logger.info('Mermaid render URL', { renderUrl });
 
       // 获取图片
       const response = await fetch(renderUrl);

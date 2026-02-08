@@ -326,6 +326,35 @@ edit_file 更安全，只修改指定部分，减少意外覆盖。
     shouldInclude: (ctx) => ctx.iterationCount > 15 ? 0.8 : 0,
     category: 'efficiency',
   },
+
+  // ----------------------------------------------------------------------------
+  // 任务类型选择提醒（Priority 1）
+  // ----------------------------------------------------------------------------
+  {
+    id: 'PPT_FORMAT_SELECTION',
+    priority: 1,
+    content: `<system-reminder>
+**PPT 生成必须遵循的流程**：
+
+**第一步：收集信息（必须）**
+- 如果是介绍本地项目/产品 → 先用 read_file 读取 package.json、README.md、CLAUDE.md
+- 如果是通用主题 → 先用 web_search 搜索最新数据
+
+**第二步：内容规范**
+- 每页 4-5 个要点，每个要点 20-40 字
+- 内容要具体：包含真实数据、功能名称、技术细节
+- 禁止编造虚假数据
+
+**第三步：图表控制**
+- 包含数字/百分比的数据内容会自动生成原生可编辑图表（chart_mode: auto）
+- 复杂流程图可用 mermaid_export 生成透明 PNG，传入 images 参数
+- 10 页 PPT 最多 1-2 张流程图，大部分页面用文字列表即可
+</system-reminder>`,
+    tokens: 250,
+    shouldInclude: (ctx) => ctx.taskFeatures.isPPTTask ? 1.0 : 0,
+    exclusiveGroup: 'task-type-selection',
+    category: 'tool',
+  },
 ];
 
 /**

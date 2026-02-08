@@ -7,7 +7,7 @@ export { webSearchTool } from './webSearch';
 export { readPdfTool } from './readPdf';
 // Deprecated: skillTool moved to skill/skillMetaTool.ts
 // export { skillTool } from './skill';
-export { pptGenerateTool } from './pptGenerate';
+export { pptGenerateTool } from './ppt';
 export { imageGenerateTool } from './imageGenerate';
 export { videoGenerateTool } from './videoGenerate';
 export { imageAnalyzeTool } from './imageAnalyze';

@@ -33,6 +33,7 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ sessionId: propS
     sessions,
     currentSession,
     turns,
+    events,
     selectedTurnDetail,
     toolStats,
     intentDistribution,
@@ -40,6 +41,7 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ sessionId: propS
     loadSessions,
     loadSession,
     loadTurns,
+    loadEvents,
     loadTurnDetail,
     loadToolStats,
     loadIntentDistribution,
@@ -62,12 +64,13 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ sessionId: propS
     if (propSessionId) {
       loadSession(propSessionId);
       loadTurns(propSessionId);
+      loadEvents(propSessionId);
       loadToolStats(propSessionId);
       loadIntentDistribution(propSessionId);
     } else {
       loadSessions();
     }
-  }, [propSessionId, loadSession, loadTurns, loadToolStats, loadIntentDistribution, loadSessions]);
+  }, [propSessionId, loadSession, loadTurns, loadEvents, loadToolStats, loadIntentDistribution, loadSessions]);
 
   // Load turn detail when selected
   useEffect(() => {
@@ -125,8 +128,8 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ sessionId: propS
     );
   }
 
-  // Collect all events from turns for timeline view
-  const allEvents = turns.flatMap(t => t.events ?? []).sort((a, b) => a.timestamp - b.timestamp);
+  // Use events from store (loaded directly from telemetry_events table)
+  const allEvents = events;
 
   return (
     <div className="h-full flex flex-col">

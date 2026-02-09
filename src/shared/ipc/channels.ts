@@ -264,6 +264,10 @@ export const TELEMETRY_CHANNELS = {
   GET_TOOL_STATS: 'telemetry:get-tool-stats',
   /** 获取意图分布统计 */
   GET_INTENT_DIST: 'telemetry:get-intent-dist',
+  /** 获取会话所有事件（用于时间线） */
+  GET_EVENTS: 'telemetry:get-events',
+  /** 获取系统提示词（按 hash） */
+  GET_SYSTEM_PROMPT: 'telemetry:get-system-prompt',
   /** 删除会话遥测数据 */
   DELETE_SESSION: 'telemetry:delete-session',
   /** 实时事件推送（主进程 -> 渲染进程） */

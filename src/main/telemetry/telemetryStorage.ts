@@ -386,6 +386,24 @@ export class TelemetryStorage {
     }
   }
 
+  /**
+   * 获取会话的所有事件（用于时间线视图）
+   */
+  getEventsBySession(sessionId: string): TelemetryTimelineEvent[] {
+    try {
+      const rows = this.getStmt('get_events_by_session', `
+        SELECT * FROM telemetry_events
+        WHERE session_id = ?
+        ORDER BY timestamp ASC
+      `).all(sessionId) as Record<string, unknown>[];
+
+      return rows.map(row => this.rowToEvent(row));
+    } catch (error) {
+      logger.error('Failed to get events by session:', error);
+      return [];
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Row Mappers
   // --------------------------------------------------------------------------

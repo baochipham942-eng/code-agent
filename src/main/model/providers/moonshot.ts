@@ -50,6 +50,7 @@ export async function callMoonshot(
     temperature: config.temperature ?? 0.7,
     max_tokens: config.maxTokens ?? MODEL_MAX_TOKENS.DEFAULT,
     stream: true,
+    stream_options: { include_usage: true },
   };
 
   if (moonshotTools.length > 0) {

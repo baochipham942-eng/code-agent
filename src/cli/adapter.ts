@@ -89,11 +89,12 @@ export class CLIAgent {
       logger.debug('Failed to save user message to session', { error: (error as Error).message });
     }
 
-    // 创建 AgentLoop
+    // 创建 AgentLoop（传入真实 sessionId）
     const agentLoop = createAgentLoop(
       this.config,
       this.handleEvent.bind(this),
-      this.messages
+      this.messages,
+      this.sessionId || undefined
     );
 
     return new Promise<CLIRunResult>((resolve) => {
@@ -132,7 +133,7 @@ export class CLIAgent {
     }
 
     if (event.type === 'message' && event.data?.role === 'assistant') {
-      // 保存助手消息到历史
+      // 保存助手消息到本地历史（不再持久化到 DB，由 agentLoop 的 persistMessage 回调统一处理）
       const assistantMessage: Message = {
         id: event.data.id || `msg-${Date.now()}`,
         role: 'assistant',
@@ -141,16 +142,6 @@ export class CLIAgent {
         toolCalls: event.data.toolCalls,
       };
       this.messages.push(assistantMessage);
-
-      // 保存消息到会话
-      try {
-        const sessionManager = getSessionManager();
-        sessionManager.addMessage(assistantMessage).catch((error) => {
-          logger.warn('Failed to save assistant message to session', { error });
-        });
-      } catch (error) {
-        logger.warn('Failed to get session manager', { error });
-      }
     }
 
     // Agent 完成

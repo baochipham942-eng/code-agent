@@ -158,6 +158,19 @@ export class DatabaseService {
     } catch {
       // 列已存在，忽略
     }
+
+    // telemetry_model_calls 新增 prompt/completion 列（用于评测系统重放）
+    const modelCallMigrations = [
+      'ALTER TABLE telemetry_model_calls ADD COLUMN prompt TEXT',
+      'ALTER TABLE telemetry_model_calls ADD COLUMN completion TEXT',
+    ];
+    for (const sql of modelCallMigrations) {
+      try {
+        this.db.exec(sql);
+      } catch {
+        // 列已存在，忽略
+      }
+    }
   }
 
   private createTables(): void {

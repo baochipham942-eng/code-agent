@@ -513,6 +513,20 @@ export class AgentOrchestrator {
             getTelemetryCollector().updateSessionTitle(sessionId, session.title);
           }
         } catch { /* ignore - title sync is best effort */ }
+        // Sync token usage to sessions table before ending telemetry
+        try {
+          const sessionData = getTelemetryCollector().getSessionData(sessionId);
+          if (sessionData && (sessionData.totalInputTokens > 0 || sessionData.totalOutputTokens > 0)) {
+            const sm = getSessionManager();
+            await sm.updateSession(sessionId, {
+              lastTokenUsage: {
+                inputTokens: sessionData.totalInputTokens,
+                outputTokens: sessionData.totalOutputTokens,
+                totalTokens: sessionData.totalTokens,
+              },
+            } as any);
+          }
+        } catch { /* ignore - token sync is best effort */ }
         // Telemetry: end session tracking
         getTelemetryCollector().endSession(sessionId);
       }

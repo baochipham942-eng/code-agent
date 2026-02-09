@@ -39,6 +39,7 @@ export async function callDeepSeek(
     temperature: config.temperature ?? 0.7,
     max_tokens: config.maxTokens ?? recommendedMaxTokens,
     stream: useStream,
+    ...(useStream ? { stream_options: { include_usage: true } } : {}),
   };
 
   if (config.responseFormat) {

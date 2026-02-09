@@ -152,6 +152,16 @@ export class TelemetryCollector {
     this.activeSession = null;
   }
 
+  /**
+   * 获取活跃会话的累计数据（用于在 endSession 之前读取 token 统计）
+   */
+  getSessionData(sessionId: string): TelemetrySession | null {
+    if (this.activeSession?.id === sessionId) {
+      return { ...this.activeSession };
+    }
+    return null;
+  }
+
   updateSessionTitle(sessionId: string, title: string): void {
     if (this.activeSession?.id === sessionId) {
       this.activeSession.title = title;
@@ -204,7 +214,13 @@ export class TelemetryCollector {
   }
 
   endTurn(sessionId: string, turnId: string, assistantResponse: string, thinking?: string, systemPromptHash?: string): void {
-    if (!this.activeTurn || this.activeTurn.id !== turnId) return;
+    if (!this.activeTurn || this.activeTurn.id !== turnId) {
+      logger.warn('[TelemetryCollector] endTurn: turnId mismatch', {
+        expected: this.activeTurn?.id,
+        received: turnId,
+      });
+      return;
+    }
 
     const now = Date.now();
     const startTime = this.activeTurn.startTime!;
@@ -301,7 +317,14 @@ export class TelemetryCollector {
   // --------------------------------------------------------------------------
 
   recordModelCall(turnId: string, call: TelemetryModelCall): void {
-    if (!this.activeTurn || this.activeTurn.id !== turnId) return;
+    if (!this.activeTurn || this.activeTurn.id !== turnId) {
+      logger.warn('[TelemetryCollector] recordModelCall: turnId mismatch', {
+        expected: this.activeTurn?.id,
+        received: turnId,
+        hasActiveTurn: !!this.activeTurn,
+      });
+      return;
+    }
 
     const record = {
       ...call,

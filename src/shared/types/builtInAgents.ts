@@ -2,6 +2,8 @@
 // Built-in Agent Types - Type-safe definitions for Gen7 multi-agent system
 // ============================================================================
 
+import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../constants';
+
 /**
  * 6 个内置 Agent 角色
  * 这是 Gen7 多代理系统的核心角色集
@@ -145,10 +147,10 @@ Output architectural decisions with clear reasoning.`,
     maxIterations: 15,
     canSpawnSubagents: false,
     tags: ['architecture', 'design', 'planning'],
-    // 使用 Kimi K2.5 - 128K 长上下文适合分析大型代码库架构
+    // 使用默认主力模型 - 128K 长上下文适合分析大型代码库架构
     modelOverride: {
-      provider: 'moonshot',
-      model: 'kimi-k2.5',
+      provider: DEFAULT_PROVIDER,
+      model: DEFAULT_MODEL,
     },
   },
 
@@ -172,10 +174,10 @@ Use print/log statements if needed to trace execution.`,
     maxIterations: 30,
     canSpawnSubagents: false,
     tags: ['debugging', 'analysis'],
-    // 使用 Kimi K2.5 - 128K 长上下文适合分析复杂调用链和日志
+    // 使用默认主力模型 - 128K 长上下文适合分析复杂调用链和日志
     modelOverride: {
-      provider: 'moonshot',
-      model: 'kimi-k2.5',
+      provider: DEFAULT_PROVIDER,
+      model: DEFAULT_MODEL,
     },
   },
 

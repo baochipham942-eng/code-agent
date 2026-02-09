@@ -5,6 +5,7 @@
 import { createLogger } from '../services/infra/logger';
 import type { ModelMessage } from './types';
 import type { ModelConfig, ModelProvider } from '../../shared/types';
+import { DEFAULT_MODELS } from '../../shared/constants';
 
 const logger = createLogger('AdaptiveRouter');
 
@@ -19,7 +20,7 @@ export class AdaptiveRouter {
   private routingStats = { simple: 0, moderate: 0, complex: 0 };
   private freeModel: { provider: ModelProvider; model: string } = {
     provider: 'zhipu' as ModelProvider,
-    model: 'glm-4.7-flash',
+    model: DEFAULT_MODELS.quick,
   };
 
   estimateComplexity(messages: ModelMessage[]): TaskComplexity {

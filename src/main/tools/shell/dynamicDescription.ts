@@ -5,6 +5,7 @@
 import { ModelRouter } from '../../model/modelRouter';
 import { createLogger } from '../../services/infra/logger';
 import type { ModelProvider } from '../../../shared/types';
+import { DEFAULT_MODELS } from '../../../shared/constants';
 
 const logger = createLogger('DynamicDescription');
 
@@ -28,7 +29,7 @@ export async function generateBashDescription(command: string): Promise<string |
     if (!router) router = new ModelRouter();
     const response = await router.chat({
       provider: 'zhipu' as ModelProvider,
-      model: 'glm-4-flash',
+      model: DEFAULT_MODELS.quick,
       messages: [{ role: 'user', content: `Describe this command in 5-10 words: ${command.slice(0, 200)}` }],
       maxTokens: 30,
     });

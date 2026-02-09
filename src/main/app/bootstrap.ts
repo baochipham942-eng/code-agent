@@ -31,7 +31,7 @@ import { getMainWindow } from './window';
 import { getChannelManager } from '../channels';
 import { initChannelAgentBridge, getChannelAgentBridge } from '../channels/channelAgentBridge';
 import { IPC_CHANNELS } from '../../shared/ipc';
-import { SYNC, UPDATE, CLOUD, TOOL_CACHE, getCloudApiUrl, DEFAULT_MODELS } from '../../shared/constants';
+import { SYNC, UPDATE, CLOUD, TOOL_CACHE, getCloudApiUrl, DEFAULT_MODELS, DEFAULT_GENERATION, DEFAULT_PROVIDER, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../shared/constants';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import { GenerationManager } from '../generation/generationManager';
 import { createPlanningService, type PlanningService } from '../planning';
@@ -196,9 +196,6 @@ async function initializeServices(): Promise<void> {
 
   // Initialize Supabase (延迟初始化，从核心服务移到这里)
   // authService.initialize() 支持 Supabase 未初始化时从本地缓存读取用户
-  const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
-  const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcGJ1bmFoemJtZXhzbW1pcXlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODkyMTcsImV4cCI6MjA4NDA2NTIxN30.8swN1QdRX5vIjNyCLNhQTPAx-k2qxeS8EN4Ot2idY7w';
-
   const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url || DEFAULT_SUPABASE_URL;
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey || DEFAULT_SUPABASE_ANON_KEY;
 
@@ -509,6 +506,14 @@ async function initializeServices(): Promise<void> {
   // Initialize generation manager
   generationManager = new GenerationManager();
 
+  // 模型一致性校验（非阻塞，仅日志告警）
+  try {
+    const { validateModelConsistency } = await import('../model/modelValidator');
+    validateModelConsistency();
+  } catch (err) {
+    logger.debug('Model consistency check skipped', err);
+  }
+
   // Track current assistant message for aggregating multiple messages in a turn
   // This prevents creating multiple database records for a single agent turn
   // Use a Map to support multiple concurrent sessions
@@ -647,7 +652,7 @@ async function initializeServices(): Promise<void> {
   });
 
   // Set default generation
-  const defaultGenId = settings.generation.default || 'gen3';
+  const defaultGenId = settings.generation.default || DEFAULT_GENERATION;
   generationManager.switchGeneration(defaultGenId);
   logger.info('Generation set to', { genId: defaultGenId });
 
@@ -721,9 +726,9 @@ async function initializeSession(settings: any): Promise<void> {
   } else {
     const session = await sessionManager.createSession({
       title: 'New Session',
-      generationId: settings.generation.default || 'gen3',
+      generationId: settings.generation.default || DEFAULT_GENERATION,
       modelConfig: {
-        provider: settings.model?.provider || 'deepseek',
+        provider: settings.model?.provider || DEFAULT_PROVIDER,
         model: settings.model?.model || DEFAULT_MODELS.chat,
         temperature: settings.model?.temperature || 0.7,
         maxTokens: settings.model?.maxTokens || 4096,

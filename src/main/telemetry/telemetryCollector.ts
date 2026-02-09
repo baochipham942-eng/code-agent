@@ -5,6 +5,7 @@
 import { createLogger } from '../services/infra/logger';
 import { generateMessageId } from '../../shared/utils/id';
 import { getTelemetryStorage } from './telemetryStorage';
+import { getSystemPromptCache } from './systemPromptCache';
 import { classifyIntent, evaluateOutcome } from './intentClassifier';
 import type {
   TelemetrySession,
@@ -115,6 +116,9 @@ export class TelemetryCollector {
     this.activeSession = session;
     getTelemetryStorage().insertSession(session);
 
+    // Ensure system prompt cache table exists
+    try { getSystemPromptCache().ensureTable(); } catch { /* non-critical */ }
+
     this.pushEvent({ type: 'session_start', sessionId, data: session });
     logger.info(`Telemetry session started: ${sessionId}`);
   }
@@ -198,7 +202,7 @@ export class TelemetryCollector {
     this.pushEvent({ type: 'turn_start', sessionId, data: { turnId, turnNumber } });
   }
 
-  endTurn(sessionId: string, turnId: string, assistantResponse: string, thinking?: string): void {
+  endTurn(sessionId: string, turnId: string, assistantResponse: string, thinking?: string, systemPromptHash?: string): void {
     if (!this.activeTurn || this.activeTurn.id !== turnId) return;
 
     const now = Date.now();
@@ -233,6 +237,7 @@ export class TelemetryCollector {
       ...(this.activeTurn as TelemetryTurn),
       endTime: now,
       durationMs: now - startTime,
+      systemPromptHash: systemPromptHash || (this.activeTurn as TelemetryTurn).systemPromptHash,
       assistantResponse: assistantResponse.substring(0, 10000),
       assistantResponseTokens: Math.ceil(assistantResponse.length / 3.5),
       thinkingContent: thinking?.substring(0, 5000),
@@ -426,8 +431,8 @@ export class TelemetryCollector {
       onToolCallEnd(turnId: string, toolCallId: string, success: boolean, error: string | undefined, durationMs: number, output: string | undefined) {
         collector.recordToolCallEnd(turnId, toolCallId, success, error, durationMs, output);
       },
-      onTurnEnd(turnId: string, assistantResponse: string, thinking?: string) {
-        collector.endTurn(sessionId, turnId, assistantResponse, thinking);
+      onTurnEnd(turnId: string, assistantResponse: string, thinking?: string, systemPromptHash?: string) {
+        collector.endTurn(sessionId, turnId, assistantResponse, thinking, systemPromptHash);
       },
     };
   }

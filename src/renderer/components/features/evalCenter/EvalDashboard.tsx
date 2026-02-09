@@ -1,12 +1,11 @@
 // ============================================================================
 // EvalDashboard - 单页 Dashboard（对标 SpreadsheetBench Viewer）
 // ============================================================================
-// 替代 3-Tab 布局，将所有评测信息整合到一个滚动视图中
-// ============================================================================
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useEvalCenterStore } from '../../../stores/evalCenterStore';
 import type { EvaluationResult } from '../../../../shared/types/evaluation';
+import type { TelemetryTurn } from '../../../../shared/types/telemetry';
 import { ScoreSummary } from './ScoreSummary';
 import { GraderGrid } from './GraderGrid';
 import { ErrorTags } from './ErrorTags';
@@ -19,20 +18,84 @@ interface EvalDashboardProps {
 }
 
 export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId }) => {
-  const { sessionInfo, objective, latestEvaluation, eventSummary, loadSession } =
+  const { sessionInfo, objective, latestEvaluation, loadSession } =
     useEvalCenterStore();
 
   // Extract typed evaluation result
   const evaluation = extractEvaluation(latestEvaluation);
 
+  // Load TelemetryTurn[] — the single source of truth for turns, user prompt, system prompt
+  const [turns, setTurns] = useState<TelemetryTurn[]>([]);
+  const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
+  const [systemPromptLoading, setSystemPromptLoading] = useState(false);
+
+  useEffect(() => {
+    setTurns([]);
+    setSystemPrompt(null);
+    if (!sessionId || !window.electronAPI) return;
+    window.electronAPI.invoke(
+      'telemetry:get-turns' as 'telemetry:get-turns',
+      sessionId
+    ).then((result: TelemetryTurn[]) => {
+      if (result?.length) setTurns(result);
+    }).catch(() => { /* ignore */ });
+  }, [sessionId]);
+
+  const firstTurn = turns[0];
+  const systemPromptHash = firstTurn?.systemPromptHash;
+
+  const loadSystemPrompt = useCallback(async () => {
+    if (!systemPromptHash || systemPrompt !== null || !window.electronAPI) return;
+    setSystemPromptLoading(true);
+    try {
+      const result = await window.electronAPI.invoke(
+        'telemetry:get-system-prompt' as 'telemetry:get-system-prompt',
+        systemPromptHash
+      );
+      setSystemPrompt(result?.content || '系统提示词不可用');
+    } catch {
+      setSystemPrompt('加载失败');
+    } finally {
+      setSystemPromptLoading(false);
+    }
+  }, [systemPromptHash, systemPrompt]);
+
   const handleEvaluationComplete = useCallback(async () => {
-    // Reload session data to refresh everything
     await loadSession(sessionId);
   }, [loadSession, sessionId]);
 
   return (
     <div className="p-4 space-y-4 overflow-y-auto">
-      {/* Score Summary */}
+      {/* User Prompt — from first turn's actual userPrompt */}
+      {firstTurn?.userPrompt && (
+        <div className="bg-zinc-800/30 rounded-lg p-3 border border-zinc-700/20">
+          <div className="text-[10px] text-zinc-500 mb-1">USER PROMPT</div>
+          <div className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto">
+            {firstTurn.userPrompt}
+          </div>
+        </div>
+      )}
+
+      {/* System Prompt (on-demand loading) */}
+      <CollapsibleSection
+        title="系统提示词"
+        defaultOpen={false}
+        onToggle={systemPromptHash ? loadSystemPrompt : undefined}
+      >
+        {!systemPromptHash ? (
+          <div className="text-xs text-zinc-600 py-2">此会话录制时未记录系统提示词（仅新会话支持）</div>
+        ) : systemPromptLoading ? (
+          <div className="text-xs text-zinc-500 py-2">加载中...</div>
+        ) : systemPrompt ? (
+          <pre className="text-[11px] text-zinc-400 whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto font-mono leading-relaxed bg-zinc-900/50 rounded p-3">
+            {systemPrompt}
+          </pre>
+        ) : (
+          <div className="text-xs text-zinc-600 py-2">展开以加载系统提示词</div>
+        )}
+      </CollapsibleSection>
+
+      {/* Score Summary + Eval CTA */}
       <ScoreSummary
         evaluation={evaluation}
         sessionInfo={sessionInfo}
@@ -53,8 +116,8 @@ export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId }) => {
       {/* Token & Cost Strip */}
       <MetricStrip objective={objective} />
 
-      {/* Turn Timeline */}
-      <TurnTimeline eventSummary={eventSummary} sessionId={sessionId} />
+      {/* Turn Timeline — from real TelemetryTurn[] */}
+      <TurnTimeline turns={turns} sessionId={sessionId} />
 
       {/* Suggestions */}
       {evaluation && evaluation.topSuggestions.length > 0 && (
@@ -83,8 +146,6 @@ export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId }) => {
 
 /**
  * Extract EvaluationResult from the store's loosely-typed latestEvaluation.
- * The store stores it as `unknown`; we need to handle both the v2 format
- * (with `subjective` wrapper) and v3 format (direct EvaluationResult).
  */
 function extractEvaluation(raw: unknown): EvaluationResult | null {
   if (!raw) return null;
@@ -92,7 +153,7 @@ function extractEvaluation(raw: unknown): EvaluationResult | null {
   // v3 format: direct EvaluationResult with metrics[]
   if (isEvaluationResult(raw)) return raw;
 
-  // v2 format: { subjective: { overallScore, ... } } — convert
+  // v2 format: { subjective: { overallScore, ... } }
   const obj = raw as Record<string, unknown>;
   if (obj.subjective && typeof obj.subjective === 'object') {
     const sub = obj.subjective as Record<string, unknown>;

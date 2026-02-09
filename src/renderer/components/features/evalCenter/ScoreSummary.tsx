@@ -8,6 +8,7 @@ import type { EvaluationResult, EvaluationMetric } from '../../../../shared/type
 import { scoreToGrade, GRADE_COLORS, GRADE_BG_COLORS } from '../../../../shared/types/evaluation';
 
 interface SessionInfo {
+  title: string;
   modelProvider: string;
   modelName: string;
   turnCount: number;
@@ -70,6 +71,30 @@ export const ScoreSummary: React.FC<ScoreSummaryProps> = ({
     ? `${Math.round(sessionInfo.totalTokens / 1000)}K`
     : '—';
 
+  const evalButton = (
+    <button
+      onClick={runEvaluation}
+      disabled={isEvaluating}
+      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition shrink-0 ${
+        isEvaluating
+          ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
+          : 'bg-amber-600 hover:bg-amber-700 text-white'
+      }`}
+    >
+      {isEvaluating ? (
+        <>
+          <div className="animate-spin w-3 h-3 border-2 border-zinc-400 border-t-transparent rounded-full" />
+          评测中...
+        </>
+      ) : (
+        <>
+          <span>🧀</span>
+          {evaluation ? '重新评测' : '开始评测'}
+        </>
+      )}
+    </button>
+  );
+
   // No evaluation yet — show CTA
   if (!evaluation) {
     return (
@@ -84,25 +109,11 @@ export const ScoreSummary: React.FC<ScoreSummaryProps> = ({
                 {sessionInfo.modelProvider}/{sessionInfo.modelName} · {sessionInfo.turnCount}轮 · {durationStr} · {tokensStr} tokens
               </div>
             )}
-            {isEvaluating ? (
-              <div className="flex items-center gap-2">
-                <div className="animate-spin w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full" />
-                <span className="text-sm text-zinc-400">评测进行中...</span>
-              </div>
-            ) : (
-              <>
-                {error && (
-                  <div className="text-xs text-red-400 mb-1.5">{error}</div>
-                )}
-                <button
-                  onClick={runEvaluation}
-                  className="px-4 py-1.5 bg-amber-600 text-white text-xs rounded-lg hover:bg-amber-700 transition"
-                >
-                  开始评测
-                </button>
-              </>
+            {error && (
+              <div className="text-xs text-red-400 mb-1.5">{error}</div>
             )}
           </div>
+          {evalButton}
         </div>
       </div>
     );
@@ -153,18 +164,7 @@ export const ScoreSummary: React.FC<ScoreSummaryProps> = ({
         </div>
 
         {/* Re-evaluate button */}
-        <button
-          onClick={runEvaluation}
-          disabled={isEvaluating}
-          className="text-xs text-zinc-500 hover:text-zinc-300 transition disabled:opacity-50 shrink-0"
-          title="重新评测"
-        >
-          {isEvaluating ? (
-            <div className="animate-spin w-3.5 h-3.5 border border-zinc-500 border-t-transparent rounded-full" />
-          ) : (
-            '🔄'
-          )}
-        </button>
+        {evalButton}
       </div>
     </div>
   );

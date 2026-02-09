@@ -1,6 +1,12 @@
 export { EvalCenterPanel } from './EvalCenterPanel';
 export { EvalSessionHeader } from './EvalSessionHeader';
+export { EvalDashboard } from './EvalDashboard';
 export { SessionListView } from './SessionListView';
 export { SessionListItem } from './SessionListItem';
-export { OverviewSection } from './OverviewSection';
-export { DeepEvalSection } from './DeepEvalSection';
+export { ScoreSummary } from './ScoreSummary';
+export { GraderGrid } from './GraderGrid';
+export { GraderCard } from './GraderCard';
+export { ErrorTags } from './ErrorTags';
+export { MetricStrip } from './MetricStrip';
+export { TurnTimeline } from './TurnTimeline';
+export { CollapsibleSection } from './CollapsibleSection';

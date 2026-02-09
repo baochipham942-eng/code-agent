@@ -13,6 +13,7 @@ import type {
 } from '@shared/types';
 import type { ContextHealthState } from '@shared/types/contextHealth';
 import { defaultLanguage, type Language } from '../i18n';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL, MODEL_API_ENDPOINTS } from '@shared/constants';
 
 // 渐进披露级别
 export type DisclosureLevel = 'simple' | 'standard' | 'advanced' | 'expert';
@@ -129,23 +130,24 @@ interface AppState {
 
 // Default generation (Gen 1)
 // 代际版本号：Gen1=v1.0, Gen2=v2.0, ..., Gen8=v8.0
+// 注意: id 应与 shared/constants.ts 中的 DEFAULT_GENERATION ('gen8') 保持同步
 const defaultGeneration: Generation = {
-  id: 'gen1',
-  name: 'Generation 1',
-  version: 'v1.0',
-  description: 'Basic file operations and shell commands',
+  id: 'gen8',
+  name: 'Generation 8',
+  version: 'v8.0',
+  description: 'Full capabilities with self-evolution',
   tools: ['bash', 'read_file', 'write_file', 'edit_file'],
   systemPrompt: '',
   promptMetadata: { lineCount: 0, toolCount: 4, ruleCount: 0 },
 };
 
-// Default model config (DeepSeek)
+// Default model config — 引用 shared/constants.ts 常量
 // maxTokens 增加到 16384 以支持生成完整的代码文件和长篇回复
 const defaultModelConfig: ModelConfig = {
-  provider: 'deepseek',
-  model: 'deepseek-chat',
+  provider: DEFAULT_PROVIDER,
+  model: DEFAULT_MODEL,
   apiKey: '',
-  baseUrl: 'https://api.deepseek.com',
+  baseUrl: MODEL_API_ENDPOINTS.kimiK25,
   temperature: 0.7,
   maxTokens: 16384,
 };

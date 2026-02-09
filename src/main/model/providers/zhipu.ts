@@ -14,6 +14,7 @@ import {
   convertToOpenAIMessages,
   safeJsonParse,
 } from './shared';
+import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../shared/constants';
 
 // ============================================================================
 // 智谱 API 限流器 - 防止并发过高触发限流
@@ -117,7 +118,7 @@ export async function callZhipu(
     baseUrl = providerConfig.codingBaseUrl;
     logger.info(`[智谱] 使用 Coding 套餐端点: ${baseUrl}, 模型: ${config.model}`);
   } else {
-    baseUrl = config.baseUrl || providerConfig.baseUrl || 'https://open.bigmodel.cn/api/paas/v4';
+    baseUrl = config.baseUrl || providerConfig.baseUrl || MODEL_API_ENDPOINTS.zhipu;
     logger.info(`[智谱] 使用标准端点: ${baseUrl}, 模型: ${config.model}`);
   }
 
@@ -126,7 +127,7 @@ export async function callZhipu(
 
   // 智谱 API 总是使用流式响应
   const requestBody: Record<string, unknown> = {
-    model: config.model || 'glm-4.7',
+    model: config.model || DEFAULT_MODELS.quick,
     messages: convertToOpenAIMessages(messages),
     temperature: config.temperature ?? 0.7,
     max_tokens: config.maxTokens ?? 8192,

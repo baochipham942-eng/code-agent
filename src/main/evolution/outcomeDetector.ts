@@ -371,7 +371,7 @@ export class OutcomeDetector {
     const db = getDatabase();
     const dbInstance = db.getDb();
     if (!dbInstance) {
-      logger.error('[OutcomeDetector] Database not initialized');
+      logger.debug('[OutcomeDetector] Database not initialized');
       return;
     }
 

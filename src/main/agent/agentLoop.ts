@@ -872,9 +872,19 @@ export class AgentLoop {
           role: 'assistant',
           content: response.content,
           timestamp: Date.now(),
+          thinking: response.thinking,
           effortLevel: this.effortLevel,
         };
         await this.addAndPersistMessage(assistantMessage);
+
+        // Adaptive Thinking: 如果有思考过程，发送事件
+        if (response.thinking) {
+          this.onEvent({
+            type: 'stream_reasoning',
+            data: { content: response.thinking, turnId: this.currentTurnId },
+          });
+        }
+
         this.onEvent({ type: 'message', data: assistantMessage });
 
         langfuse.endSpan(this.currentIterationSpanId, { type: 'text_response' });
@@ -2888,7 +2898,7 @@ ${deferredToolsSummary}
       });
 
     } catch (error) {
-      logger.error('[AgentLoop] Session end learning failed:', error);
+      logger.debug('[AgentLoop] Session end learning failed:', { errorMessage: (error as Error).message });
     }
   }
 

@@ -5,7 +5,17 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
-import Database from 'better-sqlite3';
+// 延迟加载 better-sqlite3，CLI 模式下原生模块为 Electron 编译，ABI 不匹配
+// 降级后数据库功能不可用，CLI 使用自己的 CLIDatabaseService
+import type BetterSqlite3 from 'better-sqlite3';
+let Database: typeof BetterSqlite3 | null = null;
+if (!process.env.CODE_AGENT_CLI_MODE) {
+  try {
+    Database = require('better-sqlite3');
+  } catch (error) {
+    console.warn('[DatabaseService] better-sqlite3 not available:', (error as Error).message?.split('\n')[0]);
+  }
+}
 import type {
   Session,
   SessionStatus,
@@ -84,7 +94,7 @@ type SQLiteRow = Record<string, unknown>;
 // ----------------------------------------------------------------------------
 
 export class DatabaseService {
-  private db: Database.Database | null = null;
+  private db: BetterSqlite3.Database | null = null;
   private dbPath: string;
 
   constructor() {
@@ -106,6 +116,9 @@ export class DatabaseService {
       }
     });
 
+    if (!Database) {
+      throw new Error('better-sqlite3 not available (CLI mode or native module missing)');
+    }
     this.db = new Database(this.dbPath);
     this.db.pragma('journal_mode = WAL');
     this.db.pragma('foreign_keys = ON');
@@ -182,6 +195,18 @@ export class DatabaseService {
     // 迁移：为旧表添加 attachments 列（如果不存在）
     try {
       this.db.exec(`ALTER TABLE messages ADD COLUMN attachments TEXT`);
+    } catch {
+      // 列已存在，忽略
+    }
+
+    // 迁移：为旧表添加 thinking 和 effort_level 列（如果不存在）
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN thinking TEXT`);
+    } catch {
+      // 列已存在，忽略
+    }
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN effort_level TEXT`);
     } catch {
       // 列已存在，忽略
     }
@@ -541,7 +566,7 @@ export class DatabaseService {
    * 获取原始的 better-sqlite3 数据库实例
    * 仅用于需要直接执行 SQL 的特殊场景
    */
-  getDb(): Database.Database | null {
+  getDb(): BetterSqlite3.Database | null {
     return this.db;
   }
 
@@ -737,6 +762,8 @@ export class DatabaseService {
       }
     }
 
+    const isArchived = row.status === 'archived';
+
     return {
       id: row.id as string,
       title: row.title as string,
@@ -753,6 +780,9 @@ export class DatabaseService {
       workspace: row.workspace as string | undefined,
       status: (row.status as SessionStatus) || 'idle',
       lastTokenUsage,
+      // 归档状态：从 status 字段派生
+      isArchived,
+      archivedAt: isArchived ? (row.updated_at as number) : undefined,
     };
   }
 
@@ -764,8 +794,8 @@ export class DatabaseService {
     if (!this.db) throw new Error('Database not initialized');
 
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, thinking, effort_level)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     // 保存附件元信息（不含 data 和 thumbnail，节省空间）
@@ -781,6 +811,9 @@ export class DatabaseService {
       language: a.language,
     }));
 
+    // thinking 和 reasoning 合并存储到 thinking 列
+    const thinkingContent = message.thinking || message.reasoning || null;
+
     stmt.run(
       message.id,
       sessionId,
@@ -789,7 +822,9 @@ export class DatabaseService {
       message.timestamp,
       message.toolCalls ? JSON.stringify(message.toolCalls) : null,
       message.toolResults ? JSON.stringify(message.toolResults) : null,
-      attachmentsMeta ? JSON.stringify(attachmentsMeta) : null
+      attachmentsMeta ? JSON.stringify(attachmentsMeta) : null,
+      thinkingContent,
+      message.effortLevel || null
     );
 
     // 更新 session 的 updated_at
@@ -849,6 +884,8 @@ export class DatabaseService {
       toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
       toolResults: row.tool_results ? JSON.parse(row.tool_results as string) : undefined,
       attachments: row.attachments ? JSON.parse(row.attachments as string) : undefined,
+      thinking: (row.thinking as string) || undefined,
+      effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
     }));
   }
 

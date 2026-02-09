@@ -8,7 +8,19 @@ import Store from 'electron-store';
 import crypto from 'crypto';
 import { app, safeStorage } from 'electron';
 import os from 'os';
-import keytar from 'keytar';
+// 延迟加载 keytar，处理 native 模块版本不匹配的情况
+// CLI 模式下 keytar 为 Electron headers 编译，系统 Node.js 加载会 segfault（不是 JS 异常，try-catch 无法捕获）
+// 必须在 require 之前用环境变量判断，CLI 模式直接跳过
+// 降级后 Keychain 功能不可用，但 electron-store 备份仍可用
+let keytar: typeof import('keytar') | null = null;
+if (!process.env.CODE_AGENT_CLI_MODE) {
+  try {
+    keytar = require('keytar');
+  } catch (error) {
+    console.warn('[SecureStorage] keytar not available:', (error as Error).message?.split('\n')[0]);
+  }
+}
+
 import { createLogger } from '../infra/logger';
 
 const logger = createLogger('SecureStorage');
@@ -273,6 +285,7 @@ class SecureStorageService {
    * Keys are encrypted with safeStorage before storing
    */
   private async saveApiKeysToKeychain(): Promise<void> {
+    if (!keytar) return;
     try {
       const apiKeys: Record<string, string> = {};
       for (const [provider, key] of this.apiKeyCache) {
@@ -299,6 +312,7 @@ class SecureStorageService {
    * Load API keys from Keychain on startup
    */
   async loadApiKeysFromKeychain(): Promise<void> {
+    if (!keytar) return;
     try {
       const stored = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_APIKEYS);
       if (!stored) return;
@@ -369,6 +383,7 @@ class SecureStorageService {
 
   // Save session to Keychain (survives app reinstall)
   async saveSessionToKeychain(session: string): Promise<void> {
+    if (!keytar) return;
     try {
       await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SESSION, session);
     } catch (e) {
@@ -378,6 +393,7 @@ class SecureStorageService {
 
   // Get session from Keychain
   async getSessionFromKeychain(): Promise<string | null> {
+    if (!keytar) return null;
     try {
       return await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SESSION);
     } catch (e) {
@@ -388,6 +404,7 @@ class SecureStorageService {
 
   // Clear session from Keychain (called when clearing cache)
   async clearSessionFromKeychain(): Promise<void> {
+    if (!keytar) return;
     try {
       await keytar.deletePassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SESSION);
     } catch (e) {
@@ -399,6 +416,7 @@ class SecureStorageService {
 
   // Save user settings to Keychain
   async saveSettingsToKeychain(settings: Record<string, unknown>): Promise<void> {
+    if (!keytar) return;
     try {
       await keytar.setPassword(
         KEYCHAIN_SERVICE,
@@ -412,6 +430,7 @@ class SecureStorageService {
 
   // Get user settings from Keychain
   async getSettingsFromKeychain(): Promise<Record<string, unknown> | null> {
+    if (!keytar) return null;
     try {
       const settingsJson = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SETTINGS);
       if (settingsJson) {
@@ -426,6 +445,7 @@ class SecureStorageService {
 
   // Clear settings from Keychain (called when clearing cache)
   async clearSettingsFromKeychain(): Promise<void> {
+    if (!keytar) return;
     try {
       await keytar.deletePassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT_SETTINGS);
     } catch (e) {

@@ -24,6 +24,7 @@ export const CONCISENESS_RULES = `
 - No preamble ("Here's what I'll do...") or postamble ("Let me know if...")
 - One word/line answers when appropriate
 - After completing task, just stop - don't explain
+- <think> blocks are exempt from brevity rules
 
 <example>
 user: 2+2
@@ -40,6 +41,12 @@ assistant: src/auth/login.ts
  * 任务执行要点
  */
 export const TASK_GUIDELINES = `
+## Thinking
+Before calling tools, briefly plan inside <think> tags.
+<think> content is hidden from main display - be concise (2-3 lines).
+
+<think>需要先读取文件了解结构，再进行修改</think>
+
 ## Task Execution
 1. Use search tools (glob, grep, task) to understand codebase
 2. Implement solution with appropriate tools

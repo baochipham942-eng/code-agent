@@ -18,6 +18,7 @@ export interface TaskComplexity {
 export class AdaptiveRouter {
   private callCount = 0;
   private routingStats = { simple: 0, moderate: 0, complex: 0 };
+  private freeModelDisabled = false; // 持久性错误（401/403）后禁用
   private freeModel: { provider: ModelProvider; model: string } = {
     provider: 'zhipu' as ModelProvider,
     model: DEFAULT_MODELS.quick,
@@ -96,8 +97,8 @@ export class AdaptiveRouter {
       logger.info(`[AdaptiveRouter] Stats after ${this.callCount} calls:`, this.routingStats);
     }
 
-    // Only route simple tasks to free model
-    if (complexity.level === 'simple') {
+    // Only route simple tasks to free model (skip if disabled due to auth failure)
+    if (complexity.level === 'simple' && !this.freeModelDisabled) {
       logger.info(`[AdaptiveRouter] Simple task → ${this.freeModel.provider}/${this.freeModel.model} (score=${complexity.score}, signals=${complexity.signals.join(',')})`);
       return {
         ...defaultConfig,
@@ -107,6 +108,16 @@ export class AdaptiveRouter {
     }
 
     return defaultConfig;
+  }
+
+  /**
+   * 持久性错误（401/403）后禁用 free model 路由，避免重复失败
+   */
+  disableFreeModel(reason: string): void {
+    if (!this.freeModelDisabled) {
+      this.freeModelDisabled = true;
+      logger.info(`[AdaptiveRouter] Free model disabled: ${reason}`);
+    }
   }
 
   recordOutcome(complexity: TaskComplexity, provider: string, success: boolean, tokens: number): void {

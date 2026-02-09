@@ -485,3 +485,56 @@ export function getLearningStrategy(): LearningStrategy {
 export function createLearningStrategy(): LearningStrategy {
   return new LearningStrategy();
 }
+
+// ----------------------------------------------------------------------------
+// Persistence (saveToDisk / loadFromDisk)
+// ----------------------------------------------------------------------------
+
+import * as fs from 'fs';
+import * as path from 'path';
+
+const PERSISTENCE_DIR = path.join(
+  process.env.HOME || process.env.USERPROFILE || '/tmp',
+  '.code-agent',
+  'learning'
+);
+
+const SOLUTIONS_FILE = path.join(PERSISTENCE_DIR, 'solutions.json');
+
+/**
+ * 将学习策略持久化到磁盘
+ */
+export async function saveToDisk(strategy?: LearningStrategy): Promise<void> {
+  const s = strategy || getLearningStrategy();
+  const solutions = s.exportSolutions();
+
+  try {
+    await fs.promises.mkdir(PERSISTENCE_DIR, { recursive: true });
+    await fs.promises.writeFile(
+      SOLUTIONS_FILE,
+      JSON.stringify(solutions, null, 2),
+      'utf-8'
+    );
+    logger.info(`[LearningStrategy] Saved ${solutions.length} solutions to disk`);
+  } catch (err) {
+    logger.warn('[LearningStrategy] Failed to save to disk:', err);
+  }
+}
+
+/**
+ * 从磁盘加载学习策略
+ */
+export async function loadFromDisk(strategy?: LearningStrategy): Promise<void> {
+  const s = strategy || getLearningStrategy();
+
+  try {
+    const data = await fs.promises.readFile(SOLUTIONS_FILE, 'utf-8');
+    const solutions = JSON.parse(data) as ErrorSolution[];
+    s.importSolutions(solutions);
+    logger.info(`[LearningStrategy] Loaded ${solutions.length} solutions from disk`);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.warn('[LearningStrategy] Failed to load from disk:', err);
+    }
+  }
+}

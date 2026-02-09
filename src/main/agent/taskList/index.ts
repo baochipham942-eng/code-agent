@@ -148,6 +148,46 @@ export class TaskListManager {
   }
 
   // --------------------------------------------------------------------------
+  // Task Claiming (for optimistic concurrency in Swarm)
+  // --------------------------------------------------------------------------
+
+  /**
+   * 尝试认领一个任务（乐观锁）
+   * @returns 认领的任务，或 null 如果无可认领任务
+   */
+  claimTask(agentId: string, preferredTags?: string[]): TaskItemIpc | null {
+    // 找到第一个 pending 且无 assignee 的任务
+    for (const task of this.tasks.values()) {
+      if (task.status === 'pending' && !task.assignee) {
+        // 检查依赖是否已满足
+        const depsOk = (task.dependencies || []).every(depId => {
+          const dep = this.tasks.get(depId);
+          return dep && dep.status === 'completed';
+        });
+        if (!depsOk) continue;
+
+        // 认领
+        this.updateTask(task.id, { assignee: agentId, status: 'in_progress' });
+        this.emit({ type: 'task_started', taskId: task.id });
+        logger.debug(`[TaskList] Task ${task.id} claimed by ${agentId}`);
+        return this.tasks.get(task.id) || null;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 释放一个任务认领（恢复为 pending）
+   */
+  releaseTask(taskId: string, agentId: string): boolean {
+    const task = this.tasks.get(taskId);
+    if (!task || task.assignee !== agentId) return false;
+    this.updateTask(taskId, { assignee: undefined, status: 'pending' });
+    logger.debug(`[TaskList] Task ${taskId} released by ${agentId}`);
+    return true;
+  }
+
+  // --------------------------------------------------------------------------
   // State & Settings
   // --------------------------------------------------------------------------
 

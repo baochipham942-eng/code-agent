@@ -79,6 +79,15 @@ export function StatusBar() {
         <NetworkStatus status={networkStatus} />
         <Separator />
         <GitInfo />
+        {/* Autonomous mode indicator (when active) */}
+        {isStreaming && (
+          <>
+            <Separator />
+            <span className="text-amber-400 animate-pulse" title="自主迭代模式">
+              AUTO
+            </span>
+          </>
+        )}
       </div>
     </div>
   );

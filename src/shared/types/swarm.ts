@@ -71,6 +71,28 @@ export type SwarmEventType =
   | 'swarm:user:message';         // 用户直接消息
 
 /**
+ * 验证检查结果（用于 Swarm 验证步骤）
+ */
+export interface VerificationCheckResult {
+  name: string;
+  passed: boolean;
+  score: number;
+  message: string;
+}
+
+/**
+ * Swarm 验证结果（用于 UI 展示）
+ */
+export interface SwarmVerificationResult {
+  passed: boolean;
+  score: number;
+  checks: VerificationCheckResult[];
+  suggestions?: string[];
+  taskType: string;
+  durationMs: number;
+}
+
+/**
  * Swarm 事件载荷
  */
 export interface SwarmEvent {
@@ -84,6 +106,7 @@ export interface SwarmEvent {
       success: boolean;
       totalTime: number;
       aggregatedOutput?: string;
+      verification?: SwarmVerificationResult;
     };
     // Agent Teams 扩展数据
     message?: {

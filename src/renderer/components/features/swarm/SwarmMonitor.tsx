@@ -19,7 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
-import type { SwarmAgentState } from '@shared/types/swarm';
+import type { SwarmAgentState, SwarmVerificationResult } from '@shared/types/swarm';
 
 // Agent 状态颜色映射
 const statusColors: Record<string, { bg: string; text: string; border: string }> = {
@@ -156,12 +156,56 @@ const StatCard: React.FC<{
   </div>
 );
 
+// 验证结果徽章
+const VerificationBadge: React.FC<{ verification?: SwarmVerificationResult }> = ({ verification }) => {
+  if (!verification) return null;
+
+  const passed = verification.passed;
+  const score = verification.score;
+
+  return (
+    <div className={`mx-3 mb-3 px-3 py-2.5 rounded-lg border ${
+      passed
+        ? 'border-emerald-500/30 bg-emerald-500/10'
+        : 'border-red-500/30 bg-red-500/10'
+    }`}>
+      <div className="flex items-center gap-2 mb-1">
+        {passed
+          ? <CheckCircle className="w-4 h-4 text-emerald-400" />
+          : <XCircle className="w-4 h-4 text-red-400" />
+        }
+        <span className={`text-sm font-medium ${passed ? 'text-emerald-300' : 'text-red-300'}`}>
+          验证{passed ? '通过' : '未通过'}
+        </span>
+        <span className="text-xs text-zinc-500 ml-auto">
+          {(score * 100).toFixed(0)}%
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-1 mt-1.5">
+        {verification.checks.map((check, i) => (
+          <span
+            key={i}
+            className={`text-xs px-1.5 py-0.5 rounded ${
+              check.passed
+                ? 'bg-emerald-500/20 text-emerald-400'
+                : 'bg-red-500/20 text-red-400'
+            }`}
+            title={check.message}
+          >
+            {check.passed ? '✓' : '✗'} {check.name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 interface SwarmMonitorProps {
   onClose?: () => void;
 }
 
 export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
-  const { isRunning, startTime, agents, statistics } = useSwarmStore();
+  const { isRunning, startTime, agents, statistics, verification } = useSwarmStore();
 
   // 按状态分组 agents
   const groupedAgents = useMemo(() => {
@@ -271,6 +315,9 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
           />
         </div>
       </div>
+
+      {/* Verification Result */}
+      <VerificationBadge verification={verification} />
 
       {/* Agent List */}
       <div className="flex-1 overflow-y-auto">

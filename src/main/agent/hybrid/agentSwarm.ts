@@ -24,6 +24,10 @@ import { getAgentWorkerManager, type AgentWorkerManager } from '../worker/agentW
 import { getPermissionProxy } from '../worker/permissionProxy';
 import { TeammateProxy } from '../worker/teammateProxy';
 import { WorkerMonitor } from '../worker/workerMonitor';
+import { getVerifierRegistry, initializeVerifiers } from '../verifier';
+import type { VerificationResult } from '../verifier/verifierRegistry';
+import { analyzeTask } from './taskRouter';
+import type { SwarmVerificationResult } from '../../../shared/types/swarm';
 
 const logger = createLogger('AgentSwarm');
 
@@ -94,6 +98,8 @@ export interface SwarmResult {
     parallelPeak: number;
     totalIterations: number;
   };
+  /** Verification result (if verifier is available) */
+  verification?: SwarmVerificationResult;
 }
 
 /**
@@ -419,6 +425,44 @@ export class AgentSwarm {
     const statistics = this.calculateStatistics(runtimeList, parallelPeak);
     const aggregatedOutput = this.coordinator.aggregate(runtimeList);
 
+    // === 验证步骤：对聚合结果运行确定性检查 ===
+    let verification: SwarmVerificationResult | undefined;
+    try {
+      initializeVerifiers();
+      const verifierRegistry = getVerifierRegistry();
+      // 从第一个 agent 的 prompt 推断任务类型
+      const firstPrompt = agents[0]?.prompt || '';
+      const taskAnalysis = analyzeTask(firstPrompt);
+      const verificationResult = await verifierRegistry.verifyTask({
+        taskDescription: firstPrompt,
+        taskAnalysis,
+        agentOutput: aggregatedOutput,
+        workingDirectory: process.cwd(),
+        modifiedFiles: [],
+      }, taskAnalysis);
+
+      verification = {
+        passed: verificationResult.passed,
+        score: verificationResult.score,
+        checks: verificationResult.checks.map(c => ({
+          name: c.name,
+          passed: c.passed,
+          score: c.score,
+          message: c.message,
+        })),
+        suggestions: verificationResult.suggestions,
+        taskType: verificationResult.taskType,
+        durationMs: verificationResult.durationMs,
+      };
+
+      logger.info('Swarm verification result', {
+        passed: verification.passed,
+        score: verification.score.toFixed(2),
+      });
+    } catch (err) {
+      logger.warn('Swarm verification failed (non-blocking):', err);
+    }
+
     // 清理
     this.cleanup();
 
@@ -428,7 +472,30 @@ export class AgentSwarm {
       aggregatedOutput,
       totalTime: Date.now() - startTime,
       statistics,
+      verification,
     };
+
+    // === P2: 记录 agent 性能画像 ===
+    try {
+      const { getAgentProfiler } = await import('../profiling/agentProfiler');
+      const profiler = getAgentProfiler();
+      for (const runtime of runtimeList) {
+        if (runtime.status === 'completed' || runtime.status === 'failed') {
+          profiler.recordOutcome({
+            agentId: runtime.agent.id,
+            agentName: runtime.agent.name,
+            taskType: analyzeTask(runtime.agent.prompt || '').taskType,
+            success: runtime.status === 'completed',
+            verificationScore: verification?.score ?? (runtime.status === 'completed' ? 0.8 : 0),
+            durationMs: (runtime.endTime || Date.now()) - (runtime.startTime || Date.now()),
+            costUSD: 0, // TODO: actual cost tracking
+            timestamp: Date.now(),
+          });
+        }
+      }
+    } catch {
+      // Profiler not available
+    }
 
     logger.info('Agent Swarm completed', {
       success: result.success,
@@ -795,6 +862,157 @@ export class AgentSwarm {
 
     this.runtimes.clear();
     this.lockManager.reset();
+  }
+
+  // ==========================================================================
+  // Optimistic Execution Mode
+  // ==========================================================================
+
+  /**
+   * 乐观并发执行模式
+   *
+   * 工作 Agent 从任务池自选任务（而非 DAG 预排），锁过期自动释放。
+   * 适合松耦合任务场景。
+   *
+   * @param tasks - 任务列表（每个任务变成一个虚拟 agent）
+   * @param config - Swarm 配置
+   * @param executor - Agent 执行器
+   * @param workerCount - 并发 worker 数量（默认 config.maxAgents）
+   */
+  async executeOptimistic(
+    tasks: Array<{ id: string; name: string; prompt: string; tools: string[]; tags?: string[] }>,
+    config: SwarmConfig,
+    executor: AgentExecutor,
+    workerCount?: number
+  ): Promise<SwarmResult> {
+    const { getTaskClaimService } = await import('./taskClaimService');
+    const startTime = Date.now();
+    this.config = config as ExtendedSwarmConfig;
+    this.cancelled = false;
+
+    const claimService = getTaskClaimService();
+    claimService.reset();
+    claimService.addTasks(tasks.map(t => ({
+      id: t.id,
+      description: t.prompt,
+      tags: t.tags || [],
+      priority: 1,
+      createdAt: Date.now(),
+    })));
+
+    const workers = workerCount ?? config.maxAgents;
+    const results: AgentRuntime[] = [];
+    let parallelPeak = 0;
+
+    logger.info('[AgentSwarm] Starting optimistic execution', {
+      taskCount: tasks.length,
+      workerCount: workers,
+    });
+
+    this.eventEmitter.started(tasks.length);
+
+    // Worker loop: claim → execute → claim until no tasks left
+    const workerLoop = async (workerId: string) => {
+      while (!this.cancelled) {
+        const claimed = claimService.claimNext(workerId);
+        if (!claimed) break; // No more tasks
+
+        const taskDef = tasks.find(t => t.id === claimed.id);
+        if (!taskDef) {
+          claimService.complete(claimed.id, workerId, '');
+          continue;
+        }
+
+        const agent: DynamicAgentConfig = {
+          id: taskDef.id,
+          name: taskDef.name,
+          prompt: taskDef.prompt,
+          tools: taskDef.tools,
+          model: { provider: 'moonshot' as any, model: 'kimi-k2.5' },
+          maxIterations: 20,
+          timeout: 300000,
+          parentTaskId: `swarm-${Date.now()}`,
+          parallelizable: true,
+          dependencies: [],
+          ttl: 'task',
+          spec: { name: taskDef.name, responsibility: taskDef.prompt, tools: taskDef.tools, parallelizable: true },
+        };
+
+        const runtime: AgentRuntime = {
+          agent,
+          status: 'running',
+          startTime: Date.now(),
+          iterations: 0,
+          reports: [],
+        };
+
+        this.eventEmitter.agentAdded({ id: agent.id, name: agent.name, role: 'worker' });
+        this.eventEmitter.agentUpdated(agent.id, { status: 'running', startTime: runtime.startTime, iterations: 0 });
+
+        try {
+          const result = await executor.execute(agent, (report) => {
+            runtime.reports.push(report);
+            runtime.iterations++;
+          });
+          runtime.status = result.success ? 'completed' : 'failed';
+          runtime.output = result.output;
+          runtime.error = result.error;
+          runtime.endTime = Date.now();
+
+          if (result.success) {
+            claimService.complete(claimed.id, workerId, result.output || '');
+            this.eventEmitter.agentCompleted(agent.id, result.output);
+          } else {
+            claimService.fail(claimed.id, workerId, result.error || 'Unknown error');
+            this.eventEmitter.agentFailed(agent.id, result.error || 'Unknown error');
+          }
+        } catch (err) {
+          runtime.status = 'failed';
+          runtime.error = err instanceof Error ? err.message : String(err);
+          runtime.endTime = Date.now();
+          claimService.fail(claimed.id, workerId, runtime.error);
+          this.eventEmitter.agentFailed(agent.id, runtime.error);
+        }
+
+        results.push(runtime);
+      }
+    };
+
+    // Launch workers in parallel
+    const workerPromises = Array.from({ length: workers }, (_, i) =>
+      workerLoop(`worker-${i}`)
+    );
+
+    // Track parallel peak
+    const peakInterval = setInterval(() => {
+      const running = results.filter(r => r.status === 'running').length;
+      parallelPeak = Math.max(parallelPeak, running);
+    }, 100);
+
+    await Promise.all(workerPromises);
+    clearInterval(peakInterval);
+
+    const statistics = this.calculateStatistics(results, parallelPeak);
+    const aggregatedOutput = results
+      .filter(r => r.status === 'completed' && r.output)
+      .map(r => `## ${r.agent.name}\n\n${r.output}`)
+      .join('\n\n');
+
+    this.eventEmitter.completed({
+      total: statistics.total,
+      completed: statistics.completed,
+      failed: statistics.failed,
+      parallelPeak: statistics.parallelPeak,
+      totalTime: Date.now() - startTime,
+    });
+
+    return {
+      success: statistics.failed === 0,
+      agents: results,
+      aggregatedOutput,
+      totalTime: Date.now() - startTime,
+      statistics,
+    };
   }
 }
 

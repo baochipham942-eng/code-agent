@@ -82,6 +82,22 @@ export class RecoveryEngine {
   private retryCounts = new Map<string, number>();
 
   async handleError(error: Error, context?: RecoveryContext): Promise<ErrorRecoveryEvent> {
+    // 尝试使用学习策略推荐（confidence > 0.6 时优先使用）
+    try {
+      const { getRecoveryLearner } = await import('./recoveryLearner');
+      const learner = getRecoveryLearner();
+      const learnedEvent = await learner.handleError(error, context);
+      if (learnedEvent && learnedEvent.recoveryStatus === 'succeeded') {
+        logger.info('[RecoveryEngine] Used learned recovery strategy', {
+          errorCode: learnedEvent.errorCode,
+          action: learnedEvent.recoveryAction,
+        });
+        return learnedEvent;
+      }
+    } catch {
+      // Recovery learner not available or failed, fall through to static patterns
+    }
+
     const pattern = ERROR_PATTERNS.find(p => p.test(error));
 
     if (!pattern) {

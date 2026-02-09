@@ -29,6 +29,7 @@ import { createLogger } from '../services/infra/logger';
 import { HookManager, createHookManager } from '../hooks';
 import type { BudgetEventData } from '../../shared/types';
 import { getContextHealthService } from '../context/contextHealthService';
+import { getSystemPromptCache } from '../telemetry/systemPromptCache';
 import { DEFAULT_MODELS } from '../../shared/constants';
 
 // Import refactored modules
@@ -163,6 +164,7 @@ export class AgentLoop {
 
   // Turn-based message tracking
   private currentTurnId: string = '';
+  private currentSystemPromptHash?: string;
 
   // Skill system support
   private preApprovedTools: Set<string> = new Set();
@@ -627,8 +629,8 @@ export class AgentLoop {
         data: { turnId: this.currentTurnId, iteration: iterations },
       });
 
-      // Telemetry: record turn start
-      this.telemetryAdapter?.onTurnStart(this.currentTurnId, iterations, userMessage);
+      // Telemetry: record turn start (only first iteration has the real user prompt)
+      this.telemetryAdapter?.onTurnStart(this.currentTurnId, iterations, iterations === 1 ? userMessage : '');
 
       this.turnStartTime = Date.now();
       this.toolsUsedInTurn = [];
@@ -881,7 +883,7 @@ export class AgentLoop {
         this.emitTaskComplete();
 
         // Telemetry: record turn end (text response)
-        this.telemetryAdapter?.onTurnEnd(this.currentTurnId, response.content || '', response.thinking);
+        this.telemetryAdapter?.onTurnEnd(this.currentTurnId, response.content || '', response.thinking, this.currentSystemPromptHash);
 
         this.onEvent({
           type: 'turn_end',
@@ -1017,7 +1019,7 @@ export class AgentLoop {
         });
 
         // Telemetry: record turn end (tool execution)
-        this.telemetryAdapter?.onTurnEnd(this.currentTurnId, '', response.thinking);
+        this.telemetryAdapter?.onTurnEnd(this.currentTurnId, '', response.thinking, this.currentSystemPromptHash);
 
         this.onEvent({
           type: 'turn_end',
@@ -2294,11 +2296,10 @@ ${deferredToolsSummary}
       });
     }
 
-    // Cache system prompt for eval center review
+    // Cache system prompt for eval center review + telemetry
     try {
       const hash = createHash('sha256').update(systemPrompt).digest('hex');
-      const { getSystemPromptCache } = require('../telemetry/systemPromptCache');
-      getSystemPromptCache().ensureTable();
+      this.currentSystemPromptHash = hash;
       getSystemPromptCache().store(hash, systemPrompt, systemPromptTokens, this.generation.id);
     } catch {
       // Non-critical: don't break agent loop if cache fails

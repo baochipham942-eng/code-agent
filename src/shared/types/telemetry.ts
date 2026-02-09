@@ -197,7 +197,7 @@ export interface TelemetryAdapter {
   onModelCall(turnId: string, call: TelemetryModelCall): void;
   onToolCallStart(turnId: string, toolCallId: string, name: string, args: unknown, index: number, parallel: boolean): void;
   onToolCallEnd(turnId: string, toolCallId: string, success: boolean, error: string | undefined, durationMs: number, output: string | undefined): void;
-  onTurnEnd(turnId: string, assistantResponse: string, thinking?: string): void;
+  onTurnEnd(turnId: string, assistantResponse: string, thinking?: string, systemPromptHash?: string): void;
 }
 
 // ----------------------------------------------------------------------------

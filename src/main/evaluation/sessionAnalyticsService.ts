@@ -563,8 +563,23 @@ export class SessionAnalyticsService {
         .get(sessionId) as Record<string, unknown> | undefined;
 
       if (row) {
+        let title = (row.title as string) || '未命名会话';
+
+        // telemetry_sessions.title 通常存的是 workingDirectory，
+        // 尝试从 sessions 表获取 AI 生成的智能标题
+        if (title.startsWith('/') || title === '未命名会话') {
+          try {
+            const sessionRow = db
+              .prepare(`SELECT title FROM sessions WHERE id = ?`)
+              .get(sessionId) as { title?: string } | undefined;
+            if (sessionRow?.title && !sessionRow.title.startsWith('/')) {
+              title = sessionRow.title;
+            }
+          } catch { /* sessions table might not exist */ }
+        }
+
         return {
-          title: (row.title as string) || '未命名会话',
+          title,
           modelProvider: row.model_provider as string,
           modelName: row.model_name as string,
           startTime: row.start_time as number,

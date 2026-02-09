@@ -7,7 +7,16 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { app } from 'electron';
-import Database from 'better-sqlite3';
+// 延迟加载 better-sqlite3，CLI 模式下原生模块 ABI 不匹配
+import type BetterSqlite3 from 'better-sqlite3';
+let Database: typeof BetterSqlite3 | null = null;
+if (!process.env.CODE_AGENT_CLI_MODE) {
+  try {
+    Database = require('better-sqlite3');
+  } catch (error) {
+    console.warn('[FileTracker] better-sqlite3 not available:', (error as Error).message?.split('\n')[0]);
+  }
+}
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('FileTracker');
@@ -43,7 +52,7 @@ export interface FileTrackerConfig {
 // ----------------------------------------------------------------------------
 
 export class FileTracker {
-  private db: Database.Database | null = null;
+  private db: BetterSqlite3.Database | null = null;
   private config: FileTrackerConfig;
   private initialized = false;
 
@@ -70,6 +79,9 @@ export class FileTracker {
         fs.mkdirSync(dir, { recursive: true });
       }
 
+      if (!Database) {
+        throw new Error('better-sqlite3 not available (CLI mode or native module missing)');
+      }
       this.db = new Database(this.config.dbPath);
       this.createTables();
       this.initialized = true;

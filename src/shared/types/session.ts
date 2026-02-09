@@ -8,7 +8,7 @@ import type { ModelConfig } from './model';
 /**
  * 会话运行状态
  */
-export type SessionStatus = 'idle' | 'running' | 'completed' | 'error';
+export type SessionStatus = 'idle' | 'running' | 'completed' | 'error' | 'archived';
 
 /**
  * Token 使用统计

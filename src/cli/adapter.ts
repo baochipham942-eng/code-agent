@@ -86,7 +86,7 @@ export class CLIAgent {
       const sessionManager = getSessionManager();
       await sessionManager.addMessage(userMessage);
     } catch (error) {
-      logger.warn('Failed to save user message to session', { error });
+      logger.debug('Failed to save user message to session', { error: (error as Error).message });
     }
 
     // 创建 AgentLoop

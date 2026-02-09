@@ -238,7 +238,7 @@ export class TraceRecorder {
     const db = getDatabase();
     const dbInstance = db.getDb();
     if (!dbInstance) {
-      logger.error('[TraceRecorder] Database not initialized, trace not persisted');
+      logger.debug('[TraceRecorder] Database not initialized, trace not persisted');
       return;
     }
 

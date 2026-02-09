@@ -55,7 +55,7 @@ export class SystemPromptCache {
         VALUES (?, ?, ?, ?, ?)
       `).run(hash, content, tokens ?? null, generationId ?? null, Date.now());
     } catch (error) {
-      logger.error('Failed to store system prompt:', error);
+      logger.debug('Failed to store system prompt:', { errorMessage: (error as Error).message });
     }
   }
 

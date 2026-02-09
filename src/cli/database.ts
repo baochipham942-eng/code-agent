@@ -37,10 +37,15 @@ let Database: typeof import('better-sqlite3') | null = null;
 export class CLIDatabaseService {
   private db: import('better-sqlite3').Database | null = null;
   private dbPath: string;
+  private _initialized = false;
 
   constructor() {
     const dataDir = this.getDataDir();
     this.dbPath = path.join(dataDir, 'code-agent.db');
+  }
+
+  get isInitialized(): boolean {
+    return this._initialized;
   }
 
   /**
@@ -80,6 +85,7 @@ export class CLIDatabaseService {
     this.createTables();
     this.migrateSessionsTable();
     this.createIndexes();
+    this._initialized = true;
   }
 
   private migrateSessionsTable(): void {

@@ -91,7 +91,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           try {
             const parsed = JSON.parse(errorData);
             if (parsed.error?.message) {
-              errorMessage = `${providerName} API: ${parsed.error.message}`;
+              errorMessage = `${providerName} API (${res.statusCode}): ${parsed.error.message}`;
             }
           } catch {
             errorMessage = `${providerName} API error: ${res.statusCode} - ${errorData.substring(0, 200)}`;
@@ -119,6 +119,14 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           const data = line.slice(5).trim();
 
           if (data === '[DONE]') {
+            // 从 content 中提取 <think> 块，合并到 reasoning
+            const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
+            let thinkMatch;
+            while ((thinkMatch = thinkRegex.exec(content)) !== null) {
+              reasoning += (reasoning ? '\n' : '') + thinkMatch[1].trim();
+            }
+            content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+
             const truncated = finishReason === 'length';
             const result: ModelResponse = {
               type: toolCalls.size > 0 ? 'tool_use' : 'text',
@@ -178,8 +186,16 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
                 }
               }
 
-              // 文本内容（含 Kimi 的 delta.reasoning 映射）
-              const textContent = delta.content || delta.reasoning;
+              // Kimi K2.5 的推理内容（delta.reasoning 字段）
+              if (delta.reasoning) {
+                reasoning += delta.reasoning;
+                if (onStream) {
+                  onStream({ type: 'reasoning', content: delta.reasoning });
+                }
+              }
+
+              // 文本内容
+              const textContent = delta.content;
               if (textContent) {
                 content += textContent;
                 charCount += textContent.length;
@@ -251,6 +267,14 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
       });
 
       res.on('end', () => {
+        // 从 content 中提取 <think> 块，合并到 reasoning
+        const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
+        let thinkMatch;
+        while ((thinkMatch = thinkRegex.exec(content)) !== null) {
+          reasoning += (reasoning ? '\n' : '') + thinkMatch[1].trim();
+        }
+        content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+
         if (content || toolCalls.size > 0) {
           const result: ModelResponse = {
             type: toolCalls.size > 0 ? 'tool_use' : 'text',

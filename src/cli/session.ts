@@ -51,7 +51,7 @@ export class CLISessionManager {
    * 检查数据库是否可用
    */
   private isDatabaseAvailable(): boolean {
-    return this.db !== null;
+    return this.db !== null && this.db.isInitialized;
   }
 
   // --------------------------------------------------------------------------

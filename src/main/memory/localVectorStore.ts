@@ -7,7 +7,16 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { app } from 'electron';
-import Database from 'better-sqlite3';
+// 延迟加载 better-sqlite3，CLI 模式下原生模块 ABI 不匹配
+import type BetterSqlite3 from 'better-sqlite3';
+let Database: typeof BetterSqlite3 | null = null;
+if (!process.env.CODE_AGENT_CLI_MODE) {
+  try {
+    Database = require('better-sqlite3');
+  } catch (error) {
+    console.warn('[LocalVectorStore] better-sqlite3 not available:', (error as Error).message?.split('\n')[0]);
+  }
+}
 import { load as loadSqliteVec } from 'sqlite-vec';
 import { createLogger } from '../services/infra/logger';
 
@@ -65,7 +74,7 @@ export interface LocalVectorStoreConfig {
 // ----------------------------------------------------------------------------
 
 export class LocalVectorStore {
-  private db: Database.Database | null = null;
+  private db: BetterSqlite3.Database | null = null;
   private config: LocalVectorStoreConfig;
   private initialized = false;
 
@@ -98,6 +107,9 @@ export class LocalVectorStore {
       }
 
       // Open database
+      if (!Database) {
+        throw new Error('better-sqlite3 not available (CLI mode or native module missing)');
+      }
       this.db = new Database(this.config.dbPath);
 
       // Load sqlite-vec extension

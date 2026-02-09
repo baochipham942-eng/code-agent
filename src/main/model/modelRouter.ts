@@ -14,6 +14,7 @@ import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../shared/co
 import { createLogger } from '../services/infra/logger';
 import { getInferenceCache } from './inferenceCache';
 import { getAdaptiveRouter } from './adaptiveRouter';
+import { getConfigService } from '../services/core/configService';
 
 const logger = createLogger('ModelRouter');
 import type { ModelMessage, ModelResponse, StreamCallback, MessageContent } from './types';
@@ -231,10 +232,12 @@ export class ModelRouter {
     messages: Array<{ role: string; content: string }>;
     maxTokens?: number;
   }): Promise<{ content: string | null }> {
+    const apiKey = getConfigService().getApiKey(options.provider);
     const config: ModelConfig = {
       provider: options.provider,
       model: options.model,
       maxTokens: options.maxTokens ?? 2000,
+      apiKey,
     };
 
     const response = await this.inference(
@@ -285,20 +288,39 @@ export class ModelRouter {
     if (complexity.level === 'simple' && !config.useCloudProxy) {
       const adaptedConfig = adaptiveRouter.selectModel(complexity, config);
       if (adaptedConfig.provider !== config.provider || adaptedConfig.model !== config.model) {
-        try {
-          const result = await this._callProvider(messages, tools, adaptedConfig, onStream, signal);
-          adaptiveRouter.recordOutcome(complexity, adaptedConfig.provider, true, 0);
-          // Cache non-streaming text responses
-          if (!onStream && result.type === 'text') {
-            const cache = getInferenceCache();
-            const cacheKey = cache.computeKey(messages, config);
-            cache.set(cacheKey, result);
+        // 切换 provider 时需要获取对应的 apiKey
+        let canUseFreeModel = true;
+        if (adaptedConfig.provider !== config.provider) {
+          const adaptedApiKey = getConfigService().getApiKey(adaptedConfig.provider);
+          if (!adaptedApiKey) {
+            adaptiveRouter.disableFreeModel(`no API key for ${adaptedConfig.provider}`);
+            canUseFreeModel = false;
+          } else {
+            adaptedConfig.apiKey = adaptedApiKey;
           }
-          return result;
-        } catch (err) {
-          logger.warn(`[AdaptiveRouter] Free model failed, falling back to default: ${err}`);
-          adaptiveRouter.recordOutcome(complexity, adaptedConfig.provider, false, 0);
-          // Fall through to default provider
+        }
+        if (canUseFreeModel) {
+          try {
+            const result = await this._callProvider(messages, tools, adaptedConfig, onStream, signal);
+            adaptiveRouter.recordOutcome(complexity, adaptedConfig.provider, true, 0);
+            // Cache non-streaming text responses
+            if (!onStream && result.type === 'text') {
+              const cache = getInferenceCache();
+              const cacheKey = cache.computeKey(messages, config);
+              cache.set(cacheKey, result);
+            }
+            return result;
+          } catch (err) {
+            const errMsg = err instanceof Error ? err.message : String(err);
+            // 401/403 是持久性错误（key 过期/无效），禁用 free model 避免重复失败
+            if (/401|403|unauthorized|forbidden/i.test(errMsg)) {
+              adaptiveRouter.disableFreeModel(errMsg.split('\n')[0]);
+            } else {
+              logger.warn(`[AdaptiveRouter] Free model failed, falling back to default: ${errMsg.split('\n')[0]}`);
+            }
+            adaptiveRouter.recordOutcome(complexity, adaptedConfig.provider, false, 0);
+            // Fall through to default provider
+          }
         }
       }
     }

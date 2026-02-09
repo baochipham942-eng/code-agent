@@ -602,7 +602,7 @@ export class AgentOrchestrator {
 
     // Create telemetry adapter for this session
     const telemetryAdapter = sessionId
-      ? getTelemetryCollector().createAdapter(sessionId)
+      ? getTelemetryCollector().createAdapter(sessionId, 'main')
       : undefined;
 
     // Create agent loop with potentially overridden config

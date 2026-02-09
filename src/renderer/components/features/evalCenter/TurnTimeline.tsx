@@ -15,7 +15,7 @@ interface TurnTimelineProps {
 const MAX_VISIBLE = 8;
 
 export const TurnTimeline: React.FC<TurnTimelineProps> = ({ turns }) => {
-  const [expandedTurns, setExpandedTurns] = useState<Set<number>>(new Set());
+  const [expandedTurns, setExpandedTurns] = useState<Set<string>>(new Set());
   const [showAll, setShowAll] = useState(false);
   // Cache loaded tool calls per turn id
   const [turnDetails, setTurnDetails] = useState<Record<string, TelemetryToolCall[]>>({});
@@ -45,7 +45,7 @@ export const TurnTimeline: React.FC<TurnTimelineProps> = ({ turns }) => {
   const visible = showAll ? turns : turns.slice(0, MAX_VISIBLE);
 
   const toggleTurn = (turn: TelemetryTurn) => {
-    const key = turn.turnNumber;
+    const key = turn.id;
     setExpandedTurns(prev => {
       const next = new Set(prev);
       if (next.has(key)) {
@@ -62,8 +62,9 @@ export const TurnTimeline: React.FC<TurnTimelineProps> = ({ turns }) => {
   return (
     <CollapsibleSection title={`执行轨迹 (${turns.length} 轮)`} defaultOpen={false}>
       <div className="space-y-1">
-        {visible.map((turn) => {
-          const isExpanded = expandedTurns.has(turn.turnNumber);
+        {visible.map((turn, idx) => {
+          const displayTurnNumber = idx + 1;
+          const isExpanded = expandedTurns.has(turn.id);
           const time = turn.startTime
             ? new Date(turn.startTime).toLocaleTimeString('zh-CN', {
                 hour: '2-digit',
@@ -92,7 +93,7 @@ export const TurnTimeline: React.FC<TurnTimelineProps> = ({ turns }) => {
 
           return (
             <div
-              key={turn.turnNumber}
+              key={turn.id}
               className="bg-zinc-800/30 rounded-lg border border-zinc-700/20"
             >
               <button
@@ -100,7 +101,7 @@ export const TurnTimeline: React.FC<TurnTimelineProps> = ({ turns }) => {
                 className="w-full flex items-center gap-2 px-3 py-2 text-left"
               >
                 <span className="text-[10px] text-zinc-500 font-mono shrink-0 w-12">
-                  Turn {turn.turnNumber}
+                  Turn {displayTurnNumber}
                 </span>
                 {time && <span className="text-[10px] text-zinc-600 shrink-0">{time}</span>}
                 <span className="text-[11px] text-zinc-300 truncate flex-1">

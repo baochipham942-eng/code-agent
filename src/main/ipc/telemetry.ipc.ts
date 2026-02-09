@@ -34,11 +34,11 @@ export function registerTelemetryHandlers(
     }
   );
 
-  // 获取轮次列表
+  // 获取轮次列表（默认只返回主代理轮次）
   ipcMain.handle(
     TELEMETRY_CHANNELS.GET_TURNS,
     async (_event, sessionId: string) => {
-      return storage.getTurnsBySession(sessionId);
+      return storage.getTurnsBySession(sessionId, 'main');
     }
   );
 

@@ -119,6 +119,9 @@ export interface TelemetryTurn {
   endTime: number;
   durationMs: number;
 
+  // Agent identification
+  agentId?: string; // 'main' | 'subagent-{role}' | etc.
+
   // User input
   userPrompt: string;
   userPromptTokens: number;

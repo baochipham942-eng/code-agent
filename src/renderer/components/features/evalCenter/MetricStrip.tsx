@@ -16,12 +16,12 @@ export const MetricStrip: React.FC<MetricStripProps> = ({ objective }) => {
     {
       icon: '📥',
       label: '输入',
-      value: `${Math.round(objective.totalInputTokens / 1000)}K`,
+      value: objective.totalInputTokens > 0 ? `${Math.round(objective.totalInputTokens / 1000)}K` : '—',
     },
     {
       icon: '📤',
       label: '输出',
-      value: `${Math.round(objective.totalOutputTokens / 1000)}K`,
+      value: objective.totalOutputTokens > 0 ? `${Math.round(objective.totalOutputTokens / 1000)}K` : '—',
     },
     {
       icon: '⏱',
@@ -31,7 +31,7 @@ export const MetricStrip: React.FC<MetricStripProps> = ({ objective }) => {
     {
       icon: '💰',
       label: '成本',
-      value: `$${objective.estimatedCost.toFixed(2)}`,
+      value: objective.estimatedCost > 0 ? `$${objective.estimatedCost.toFixed(2)}` : '—',
     },
   ];
 

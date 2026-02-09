@@ -68,7 +68,7 @@ export const ScoreSummary: React.FC<ScoreSummaryProps> = ({
     ? `${Math.floor(duration / 60)}m ${Math.floor(duration % 60)}s`
     : `${Math.floor(duration)}s`;
   const tokensStr = sessionInfo
-    ? `${Math.round(sessionInfo.totalTokens / 1000)}K`
+    ? (sessionInfo.totalTokens > 0 ? `${Math.round(sessionInfo.totalTokens / 1000)}K` : '—')
     : '—';
 
   const evalButton = (
@@ -152,15 +152,19 @@ export const ScoreSummary: React.FC<ScoreSummaryProps> = ({
             {counts.info > 0 && <span className="text-blue-400">信息: {counts.info}</span>}
           </div>
 
-          {/* Progress bar */}
-          <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${
-                score >= 80 ? 'bg-green-500' : score >= 60 ? 'bg-yellow-500' : 'bg-red-500'
-              }`}
-              style={{ width: `${score}%` }}
-            />
-          </div>
+          {/* Progress bar — segmented by verdict */}
+          {(() => {
+            const total = counts.pass + counts.partial + counts.fail + counts.skip;
+            return total > 0 ? (
+              <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden flex">
+                {counts.pass > 0 && <div className="h-full bg-green-500" style={{ width: `${counts.pass / total * 100}%` }} />}
+                {counts.partial > 0 && <div className="h-full bg-yellow-500" style={{ width: `${counts.partial / total * 100}%` }} />}
+                {counts.fail > 0 && <div className="h-full bg-red-500" style={{ width: `${counts.fail / total * 100}%` }} />}
+              </div>
+            ) : (
+              <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden" />
+            );
+          })()}
         </div>
 
         {/* Re-evaluate button */}

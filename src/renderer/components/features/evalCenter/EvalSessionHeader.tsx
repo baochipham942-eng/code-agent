@@ -62,7 +62,7 @@ export const EvalSessionHeader: React.FC<EvalSessionHeaderProps> = ({ sessionInf
   return (
     <div className="px-4 py-3 border-b border-zinc-700/50 bg-zinc-800/20">
       <div className="flex items-center justify-between mb-1.5">
-        <h3 className="text-sm font-medium text-zinc-200 truncate max-w-[500px]">
+        <h3 className="text-sm font-medium text-zinc-200 truncate max-w-[500px]" title={sessionInfo.title}>
           {sessionInfo.title}
         </h3>
         <span className={`text-[10px] px-1.5 py-0.5 rounded ${st.cls}`}>

@@ -163,7 +163,7 @@ export class TelemetryCollector {
   // Turn Lifecycle
   // --------------------------------------------------------------------------
 
-  startTurn(sessionId: string, turnId: string, turnNumber: number, userPrompt: string): void {
+  startTurn(sessionId: string, turnId: string, turnNumber: number, userPrompt: string, agentId?: string): void {
     if (this.activeSession?.id !== sessionId) return;
 
     this.activeTurn = {
@@ -172,6 +172,7 @@ export class TelemetryCollector {
       turnNumber,
       startTime: Date.now(),
       userPrompt,
+      agentId: agentId || 'main',
       userPromptTokens: Math.ceil(userPrompt.length / 3.5), // rough estimate
       hasAttachments: false,
       attachmentCount: 0,
@@ -416,11 +417,11 @@ export class TelemetryCollector {
   // Adapter Factory
   // --------------------------------------------------------------------------
 
-  createAdapter(sessionId: string): TelemetryAdapter {
+  createAdapter(sessionId: string, agentId?: string): TelemetryAdapter {
     const collector = this;
     return {
       onTurnStart(turnId: string, turnNumber: number, userPrompt: string) {
-        collector.startTurn(sessionId, turnId, turnNumber, userPrompt);
+        collector.startTurn(sessionId, turnId, turnNumber, userPrompt, agentId);
       },
       onModelCall(turnId: string, call: TelemetryModelCall) {
         collector.recordModelCall(turnId, call);

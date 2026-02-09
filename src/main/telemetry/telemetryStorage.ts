@@ -176,8 +176,8 @@ export class TelemetryStorage {
           total_input_tokens, total_output_tokens,
           intent_primary, intent_secondary, intent_confidence, intent_method, intent_keywords,
           outcome_status, outcome_confidence, outcome_method, quality_signals,
-          compaction_occurred, compaction_saved_tokens, iteration_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          compaction_occurred, compaction_saved_tokens, iteration_count, agent_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       stmt.run(
         turn.id, turn.sessionId, turn.turnNumber,
@@ -197,17 +197,23 @@ export class TelemetryStorage {
         turn.outcome.status, turn.outcome.confidence, turn.outcome.method,
         JSON.stringify(turn.outcome.signals),
         turn.compactionOccurred ? 1 : 0, turn.compactionSavedTokens ?? null,
-        turn.iterationCount
+        turn.iterationCount, turn.agentId || 'main'
       );
     } catch (error) {
       logger.error('Failed to insert telemetry turn:', error);
     }
   }
 
-  getTurnsBySession(sessionId: string): TelemetryTurn[] {
+  getTurnsBySession(sessionId: string, agentId?: string): TelemetryTurn[] {
     try {
+      if (agentId) {
+        const rows = this.getDb().prepare(
+          'SELECT * FROM telemetry_turns WHERE session_id = ? AND agent_id = ? ORDER BY start_time ASC'
+        ).all(sessionId, agentId) as Record<string, unknown>[];
+        return rows.map(row => this.rowToTurn(row));
+      }
       const rows = this.getStmt('get_turns', `
-        SELECT * FROM telemetry_turns WHERE session_id = ? ORDER BY turn_number ASC
+        SELECT * FROM telemetry_turns WHERE session_id = ? ORDER BY start_time ASC
       `).all(sessionId) as Record<string, unknown>[];
 
       return rows.map(row => this.rowToTurn(row));
@@ -436,6 +442,7 @@ export class TelemetryStorage {
     return {
       id: row.id as string,
       sessionId: row.session_id as string,
+      agentId: (row.agent_id as string) || 'main',
       turnNumber: row.turn_number as number,
       startTime: row.start_time as number,
       endTime: row.end_time as number,

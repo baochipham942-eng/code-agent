@@ -2,7 +2,7 @@
 // GraderCard - 单个 Grader 卡片（对标 SpreadsheetBench Viewer）
 // ============================================================================
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { EvaluationMetric } from '../../../../shared/types/evaluation';
 import {
   DIMENSION_NAMES,
@@ -41,14 +41,16 @@ interface GraderCardProps {
 }
 
 export const GraderCard: React.FC<GraderCardProps> = ({ metric }) => {
+  const [expanded, setExpanded] = useState(false);
   const verdict = getVerdict(metric);
   const icon = DIMENSION_ICONS[metric.dimension] || '📊';
   const name = DIMENSION_NAMES[metric.dimension] || metric.dimension;
   const weight = DIMENSION_WEIGHTS[metric.dimension];
   const weightStr = weight ? `${Math.round(weight * 100)}%` : '';
   const reason = metric.details?.reason as string | undefined;
-  const truncatedReason = reason
-    ? reason.length > 80 ? reason.slice(0, 77) + '...' : reason
+  const needsTruncation = reason && reason.length > 80;
+  const displayReason = reason
+    ? (expanded || !needsTruncation ? reason : reason.slice(0, 77) + '...')
     : '';
 
   return (
@@ -68,9 +70,17 @@ export const GraderCard: React.FC<GraderCardProps> = ({ metric }) => {
         </div>
 
         {/* Description */}
-        {truncatedReason && (
+        {displayReason && (
           <p className="text-[11px] text-zinc-500 leading-relaxed mb-2">
-            {truncatedReason}
+            {displayReason}
+            {needsTruncation && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="ml-1 text-amber-500 hover:text-amber-400 text-[10px]"
+              >
+                {expanded ? '收起' : '更多'}
+              </button>
+            )}
           </p>
         )}
       </div>

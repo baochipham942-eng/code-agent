@@ -5,6 +5,7 @@
 // ============================================================================
 
 import React, { useEffect, useMemo } from 'react';
+import { formatDuration } from '../../../../shared/utils/format';
 import {
   Users,
   Activity,
@@ -49,12 +50,6 @@ const StatusIcon: React.FC<{ status: string }> = ({ status }) => {
   }
 };
 
-// 格式化时间
-const formatDuration = (ms: number): string => {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
-};
 
 // 格式化 Token 数量
 const formatTokens = (tokens: number): string => {

@@ -5,7 +5,7 @@
 import axios, { type AxiosResponse } from 'axios';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { ToolDefinition, ToolCall } from '../../../shared/types';
-import type { ModelMessage, ModelResponse, StreamCallback, ToolCallAccumulator } from '../types';
+import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { ContextLengthExceededError } from '../types';
 import { createLogger } from '../../services/infra/logger';
 
@@ -276,81 +276,46 @@ export function convertToGeminiMessages(messages: ModelMessage[]): any[] {
 // ----------------------------------------------------------------------------
 
 /**
- * Safely parse JSON with better error messages
+ * 修复未闭合的 JSON 括号/引号
  */
-export function safeParseJsonWithContext(jsonStr: string, context: string): any {
-  try {
-    return JSON.parse(jsonStr);
-  } catch (error: any) {
-    const position = error.message.match(/position (\d+)/)?.[1];
-    const preview = position
-      ? `...${jsonStr.substring(Math.max(0, parseInt(position) - 20), parseInt(position) + 20)}...`
-      : jsonStr.substring(0, 100);
-    throw new Error(`JSON parse error in ${context}: ${error.message}. Near: ${preview}`);
+function closeOpenBrackets(str: string): string {
+  let braceCount = 0;
+  let bracketCount = 0;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    if (escapeNext) { escapeNext = false; continue; }
+    if (char === '\\') { escapeNext = true; continue; }
+    if (char === '"') { inString = !inString; continue; }
+    if (!inString) {
+      if (char === '{') braceCount++;
+      else if (char === '}') braceCount--;
+      else if (char === '[') bracketCount++;
+      else if (char === ']') bracketCount--;
+    }
   }
+
+  let result = str;
+  if (inString) result += '"';
+  while (bracketCount > 0) { result += ']'; bracketCount--; }
+  while (braceCount > 0) { result += '}'; braceCount--; }
+  return result;
 }
 
 /**
  * Attempt to repair common JSON issues
  */
-export function repairJson(jsonStr: string): any | null {
+function repairJson(jsonStr: string): any | null {
   try {
     return JSON.parse(jsonStr);
   } catch {
-    let repaired = jsonStr;
-
-    const lastBrace = repaired.lastIndexOf('}');
-    const lastBracket = repaired.lastIndexOf(']');
-
-    if (lastBrace === -1 && lastBracket === -1) {
+    if (jsonStr.lastIndexOf('}') === -1 && jsonStr.lastIndexOf(']') === -1) {
       return null;
     }
 
-    let braceCount = 0;
-    let bracketCount = 0;
-    let inString = false;
-    let escapeNext = false;
-
-    for (let i = 0; i < repaired.length; i++) {
-      const char = repaired[i];
-
-      if (escapeNext) {
-        escapeNext = false;
-        continue;
-      }
-
-      if (char === '\\') {
-        escapeNext = true;
-        continue;
-      }
-
-      if (char === '"') {
-        inString = !inString;
-        continue;
-      }
-
-      if (!inString) {
-        if (char === '{') braceCount++;
-        else if (char === '}') braceCount--;
-        else if (char === '[') bracketCount++;
-        else if (char === ']') bracketCount--;
-      }
-    }
-
-    if (inString) {
-      repaired += '"';
-    }
-
-    while (bracketCount > 0) {
-      repaired += ']';
-      bracketCount--;
-    }
-
-    while (braceCount > 0) {
-      repaired += '}';
-      braceCount--;
-    }
-
+    const repaired = closeOpenBrackets(jsonStr);
     try {
       const result = JSON.parse(repaired);
       logger.info(' Successfully repaired JSON');
@@ -358,13 +323,8 @@ export function repairJson(jsonStr: string): any | null {
     } catch {
       try {
         const match = jsonStr.match(/^\s*\{[\s\S]*?\}(?=\s*$|\s*,|\s*\])/);
-        if (match) {
-          return JSON.parse(match[0]);
-        }
-      } catch {
-        // Ignore
-      }
-
+        if (match) return JSON.parse(match[0]);
+      } catch { /* Ignore */ }
       return null;
     }
   }
@@ -414,7 +374,6 @@ function repairJsonForArguments(str: string): Record<string, unknown> | null {
   if (!str || !str.trim()) return null;
 
   let repaired = str.trim();
-
   repaired = repaired.replace(/^[^{\[]*/, '');
   repaired = repaired.replace(/[^}\]]*$/, '');
 
@@ -422,64 +381,15 @@ function repairJsonForArguments(str: string): Record<string, unknown> | null {
     return null;
   }
 
-  let braceCount = 0;
-  let bracketCount = 0;
-  let inString = false;
-  let escapeNext = false;
-
-  for (let i = 0; i < repaired.length; i++) {
-    const char = repaired[i];
-
-    if (escapeNext) {
-      escapeNext = false;
-      continue;
-    }
-
-    if (char === '\\') {
-      escapeNext = true;
-      continue;
-    }
-
-    if (char === '"' && !escapeNext) {
-      inString = !inString;
-      continue;
-    }
-
-    if (!inString) {
-      if (char === '{') braceCount++;
-      else if (char === '}') braceCount--;
-      else if (char === '[') bracketCount++;
-      else if (char === ']') bracketCount--;
-    }
-  }
-
-  if (inString) {
-    repaired += '"';
-  }
-
-  while (bracketCount > 0) {
-    repaired += ']';
-    bracketCount--;
-  }
-
-  while (braceCount > 0) {
-    repaired += '}';
-    braceCount--;
-  }
+  repaired = closeOpenBrackets(repaired);
 
   try {
     return JSON.parse(repaired);
   } catch {
     const lastComma = repaired.lastIndexOf(',');
     if (lastComma > 0) {
-      const truncated = repaired.substring(0, lastComma) + '}';
-      try {
-        return JSON.parse(truncated);
-      } catch {
-        // Continue
-      }
+      try { return JSON.parse(repaired.substring(0, lastComma) + '}'); } catch { /* Continue */ }
     }
-
     return null;
   }
 }
@@ -682,116 +592,6 @@ export function parseGeminiResponse(data: any): ModelResponse {
 // ----------------------------------------------------------------------------
 
 /**
- * Handle generic OpenAI-compatible stream
- * @param signal - AbortSignal for cancellation support
- */
-export async function handleStream(
-  body: ReadableStream<Uint8Array>,
-  onStream: StreamCallback,
-  signal?: AbortSignal
-): Promise<ModelResponse> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let fullContent = '';
-  let toolCalls: ToolCall[] = [];
-  let buffer = '';
-
-  if (signal) {
-    signal.addEventListener('abort', () => {
-      reader.cancel('Request cancelled').catch(() => {});
-    }, { once: true });
-  }
-
-  try {
-    while (true) {
-      if (signal?.aborted) {
-        throw new Error('Request was cancelled');
-      }
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.trim().startsWith('data:')) continue;
-        const data = line.replace('data:', '').trim();
-        if (data === '[DONE]') continue;
-
-        try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta;
-
-          if (delta?.content) {
-            fullContent += delta.content;
-            onStream(delta.content);
-          }
-
-          if (delta?.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              if (tc.index !== undefined) {
-                if (!toolCalls[tc.index]) {
-                  toolCalls[tc.index] = {
-                    id: tc.id || '',
-                    name: tc.function?.name || '',
-                    arguments: {},
-                  };
-                }
-                if (tc.function?.arguments) {
-                  const existing = toolCalls[tc.index];
-                  const args = existing.arguments as Record<string, string>;
-                  args._raw = (args._raw || '') + tc.function.arguments;
-                }
-              }
-            }
-          }
-        } catch {
-          // Ignore parse errors
-        }
-      }
-    }
-
-    // Handle remaining buffer
-    if (buffer.trim().startsWith('data:')) {
-      const data = buffer.replace('data:', '').trim();
-      if (data && data !== '[DONE]') {
-        try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta;
-          if (delta?.content) {
-            fullContent += delta.content;
-            onStream(delta.content);
-          }
-        } catch {
-          // Ignore
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  toolCalls = toolCalls.filter(Boolean).map((tc) => {
-    const args = tc.arguments as Record<string, string>;
-    if (args._raw) {
-      try {
-        tc.arguments = JSON.parse(args._raw);
-      } catch {
-        tc.arguments = {};
-      }
-    }
-    return tc;
-  });
-
-  if (toolCalls.length > 0) {
-    return { type: 'tool_use', toolCalls };
-  }
-
-  return { type: 'text', content: fullContent };
-}
-
-/**
  * Handle Gemini stream
  * @param signal - AbortSignal for cancellation support
  */
@@ -849,64 +649,3 @@ export async function handleGeminiStream(
   return { type: 'text', content: fullContent, toolCalls: [] };
 }
 
-/**
- * Create an SSE stream result builder
- */
-export function createStreamResultBuilder() {
-  let content = '';
-  let finishReason: string | undefined;
-  const toolCalls: Map<number, ToolCallAccumulator> = new Map();
-
-  return {
-    addContent(text: string) {
-      content += text;
-    },
-    setFinishReason(reason: string) {
-      finishReason = reason;
-    },
-    addToolCall(index: number, tc: Partial<ToolCallAccumulator>) {
-      if (!toolCalls.has(index)) {
-        toolCalls.set(index, {
-          id: tc.id || `call_${index}`,
-          name: tc.name || '',
-          arguments: '',
-        });
-      }
-      const existing = toolCalls.get(index)!;
-      if (tc.id) existing.id = tc.id;
-      if (tc.name) existing.name = tc.name;
-      if (tc.arguments) existing.arguments += tc.arguments;
-    },
-    hasToolCalls() {
-      return toolCalls.size > 0;
-    },
-    getToolCalls() {
-      return toolCalls;
-    },
-    build(): ModelResponse {
-      const truncated = finishReason === 'length';
-      const result: ModelResponse = {
-        type: toolCalls.size > 0 ? 'tool_use' : 'text',
-        content: content || undefined,
-        truncated,
-        finishReason,
-      };
-
-      if (toolCalls.size > 0) {
-        result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
-          id: tc.id,
-          name: tc.name,
-          arguments: safeJsonParse(tc.arguments),
-        }));
-      }
-
-      return result;
-    },
-    getContent() {
-      return content;
-    },
-    getFinishReason() {
-      return finishReason;
-    },
-  };
-}

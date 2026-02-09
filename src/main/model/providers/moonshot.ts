@@ -4,18 +4,11 @@
 // ============================================================================
 
 import https from 'https';
-import http from 'http';
-import { StringDecoder } from 'string_decoder';
-import type { ModelConfig, ToolDefinition, ModelInfo } from '../../../shared/types';
+import type { ModelConfig, ToolDefinition } from '../../../shared/types';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
-import {
-  logger,
-  httpsAgent,
-  convertToolsToOpenAI,
-  convertToOpenAIMessages,
-  safeJsonParse,
-} from './shared';
+import { logger, httpsAgent, convertToolsToOpenAI, convertToOpenAIMessages } from './shared';
 import { MODEL_API_ENDPOINTS, MODEL_MAX_TOKENS, DEFAULT_MODEL } from '../../../shared/constants';
+import { openAISSEStream } from './sseStream';
 
 // 专用 HTTPS Agent: 禁用 keepAlive 避免 SSE 流结束后连接复用导致 "socket hang up"
 // Node.js 19+ 的 globalAgent 默认 keepAlive=true，会导致并发子代理请求复用已关闭的连接
@@ -56,7 +49,7 @@ export async function callMoonshot(
     messages: convertToOpenAIMessages(messages),
     temperature: config.temperature ?? 0.7,
     max_tokens: config.maxTokens ?? MODEL_MAX_TOKENS.DEFAULT,
-    stream: true, // 始终使用流式响应
+    stream: true,
   };
 
   if (moonshotTools.length > 0) {
@@ -70,7 +63,15 @@ export async function callMoonshot(
   const MAX_RETRIES = 2;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      return await callMoonshotStream(baseUrl, requestBody, apiKey, onStream, signal);
+      return await openAISSEStream({
+        providerName: 'Moonshot',
+        baseUrl,
+        apiKey,
+        requestBody,
+        onStream,
+        signal,
+        agent: moonshotAgent,
+      });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const isTransient = msg.includes('socket hang up') || msg.includes('ECONNRESET') || msg.includes('ECONNREFUSED');
@@ -84,277 +85,4 @@ export async function callMoonshot(
     }
   }
   throw new Error('[Moonshot] 不应到达此处');
-}
-
-/**
- * Moonshot 流式 API 调用（使用原生 https 模块）
- * 正确处理 SSE 格式，包括代理的注释行
- */
-function callMoonshotStream(
-  baseUrl: string,
-  requestBody: Record<string, unknown>,
-  apiKey: string,
-  onStream?: StreamCallback,
-  signal?: AbortSignal
-): Promise<ModelResponse> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new Error('Request was cancelled before starting'));
-      return;
-    }
-
-    const url = new URL(`${baseUrl}/chat/completions`);
-    const isHttps = url.protocol === 'https:';
-    const httpModule = isHttps ? https : http;
-
-    // 累积响应数据
-    let content = '';
-    let finishReason: string | undefined;
-    const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
-
-    // Real-time token estimation
-    let charCount = 0;
-    let lastEstimateTime = 0;
-    let usageData: { inputTokens: number; outputTokens: number } | undefined;
-
-    const options: https.RequestOptions = {
-      hostname: url.hostname,
-      port: url.port || (isHttps ? 443 : 80),
-      path: url.pathname,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-        Accept: 'text/event-stream',
-      },
-      agent: moonshotAgent,
-      timeout: 300000, // 5 分钟超时
-    };
-
-    logger.debug(`[Moonshot] 发起请求到: ${url.hostname}${url.pathname}`);
-
-    const req = httpModule.request(options, (res) => {
-      logger.debug(`[Moonshot] 响应状态码: ${res.statusCode}`);
-
-      if (res.statusCode !== 200) {
-        let errorData = '';
-        res.on('data', (chunk) => { errorData += chunk; });
-        res.on('end', () => {
-          logger.error(`[Moonshot] API 错误: ${res.statusCode}`, errorData);
-          let errorMessage = `Moonshot API 错误 (${res.statusCode})`;
-          try {
-            const parsed = JSON.parse(errorData);
-            if (parsed.error?.message) {
-              errorMessage = `Moonshot API: ${parsed.error.message}`;
-            }
-          } catch {
-            errorMessage = `Moonshot API error: ${res.statusCode} - ${errorData.substring(0, 200)}`;
-          }
-          reject(new Error(errorMessage));
-        });
-        return;
-      }
-
-      let buffer = '';
-      // 使用 StringDecoder 正确处理 UTF-8 多字节字符边界
-      const decoder = new StringDecoder('utf8');
-
-      res.on('data', (chunk: Buffer) => {
-        buffer += decoder.write(chunk);
-
-        // 处理 SSE 数据行
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          // 忽略 SSE 注释行（以冒号开头，如 ": OPENROUTER PROCESSING"）
-          if (line.startsWith(':')) {
-            logger.debug(`[Moonshot] 忽略注释行: ${line.substring(0, 50)}`);
-            continue;
-          }
-
-          // 忽略空行
-          if (!line.trim()) {
-            continue;
-          }
-
-          // 只处理 data: 开头的行
-          if (!line.startsWith('data:')) {
-            logger.debug(`[Moonshot] 忽略非 data 行: ${line.substring(0, 50)}`);
-            continue;
-          }
-
-          const data = line.slice(5).trim(); // 移除 "data:" 前缀
-
-          if (data === '[DONE]') {
-            // 流式输出完成
-            const truncated = finishReason === 'length';
-            const result: ModelResponse = {
-              type: toolCalls.size > 0 ? 'tool_use' : 'text',
-              content: content || undefined,
-              truncated,
-              finishReason,
-            };
-
-            if (toolCalls.size > 0) {
-              result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
-                id: tc.id,
-                name: tc.name,
-                arguments: safeJsonParse(tc.arguments),
-              }));
-            }
-
-            result.usage = usageData || { inputTokens: 0, outputTokens: Math.ceil(charCount / 4) };
-
-            logger.info('[Moonshot] stream complete:', {
-              contentLength: content.length,
-              toolCallCount: toolCalls.size,
-              finishReason,
-            });
-
-            resolve(result);
-            return;
-          }
-
-          try {
-            const parsed = JSON.parse(data);
-            const choice = parsed.choices?.[0];
-            const delta = choice?.delta;
-
-            // 捕获 usage 数据
-            if (parsed.usage) {
-              usageData = {
-                inputTokens: parsed.usage.prompt_tokens || 0,
-                outputTokens: parsed.usage.completion_tokens || 0,
-              };
-            }
-
-            // 捕获 finish_reason
-            if (choice?.finish_reason) {
-              finishReason = choice.finish_reason;
-            }
-
-            if (delta) {
-              // 处理文本内容
-              // 注意：Kimi K2.5 第三方代理可能将内容放在 reasoning 字段
-              const textContent = delta.content || delta.reasoning;
-              if (textContent) {
-                content += textContent;
-                charCount += textContent.length;
-                if (onStream) {
-                  onStream({ type: 'text', content: textContent });
-                  // Periodic token estimation (~every 500ms)
-                  const now = Date.now();
-                  if (now - lastEstimateTime > 500) {
-                    lastEstimateTime = now;
-                    onStream({
-                      type: 'token_estimate',
-                      inputTokens: 0,
-                      outputTokens: Math.ceil(charCount / 4),
-                    });
-                  }
-                }
-              }
-
-              // 处理工具调用
-              if (delta.tool_calls) {
-                for (const tc of delta.tool_calls) {
-                  const index = tc.index ?? 0;
-                  const isNewToolCall = !toolCalls.has(index);
-
-                  if (isNewToolCall) {
-                    toolCalls.set(index, {
-                      id: tc.id || `call_${index}`,
-                      name: tc.function?.name || '',
-                      arguments: '',
-                    });
-                    if (onStream) {
-                      onStream({
-                        type: 'tool_call_start',
-                        toolCall: {
-                          index,
-                          id: tc.id || `call_${index}`,
-                          name: tc.function?.name || '',
-                        },
-                      });
-                    }
-                  }
-
-                  // 累积参数
-                  if (tc.function?.arguments) {
-                    const existing = toolCalls.get(index)!;
-                    existing.arguments += tc.function.arguments;
-                    if (onStream) {
-                      onStream({
-                        type: 'tool_call_delta',
-                        toolCall: {
-                          index,
-                          argumentsDelta: tc.function.arguments,
-                        },
-                      });
-                    }
-                  }
-                }
-              }
-            }
-          } catch (parseError) {
-            // 忽略 JSON 解析错误，可能是不完整的数据
-            logger.debug(`[Moonshot] JSON 解析跳过: ${data.substring(0, 50)}`);
-          }
-        }
-      });
-
-      res.on('end', () => {
-        // 如果没有收到 [DONE]，也返回结果
-        if (content || toolCalls.size > 0) {
-          const result: ModelResponse = {
-            type: toolCalls.size > 0 ? 'tool_use' : 'text',
-            content: content || undefined,
-            finishReason,
-          };
-
-          if (toolCalls.size > 0) {
-            result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
-              id: tc.id,
-              name: tc.name,
-              arguments: safeJsonParse(tc.arguments),
-            }));
-          }
-
-          result.usage = usageData || { inputTokens: 0, outputTokens: Math.ceil(charCount / 4) };
-
-          resolve(result);
-        } else {
-          reject(new Error('[Moonshot] 流式响应无内容'));
-        }
-      });
-
-      res.on('error', (err) => {
-        logger.error('[Moonshot] 响应错误:', err);
-        reject(err);
-      });
-    });
-
-    req.on('error', (err) => {
-      const errCode = (err as NodeJS.ErrnoException).code;
-      logger.error(`[Moonshot] 请求错误: ${err.message} (code=${errCode})`);
-      reject(err);
-    });
-
-    req.on('timeout', () => {
-      logger.error('[Moonshot] 请求超时 (5分钟)');
-      req.destroy(new Error('Moonshot API 请求超时 (5分钟)'));
-    });
-
-    // 支持取消
-    if (signal) {
-      signal.addEventListener('abort', () => {
-        req.destroy();
-        reject(new Error('Request was cancelled'));
-      }, { once: true });
-    }
-
-    req.write(JSON.stringify(requestBody));
-    req.end();
-  });
 }

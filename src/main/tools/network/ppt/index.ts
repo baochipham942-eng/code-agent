@@ -11,19 +11,14 @@ import { getThemeConfig } from './themes';
 import { parseContentToSlides, generatePlaceholderSlides } from './parser';
 import { registerSlideMasters } from './slideMasters';
 import { selectMasterAndLayout, fillSlide, resetLayoutRotation } from './layouts';
-import { renderLegacySlides } from './legacy';
+import { formatFileSize } from '../utils';
+
 
 // Use require for pptxgenjs (CJS compatible with Electron)
 function getPptxGenJS() {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const PptxGenJS = require('pptxgenjs');
   return PptxGenJS;
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export const pptGenerateTool: Tool = {
@@ -139,7 +134,6 @@ export const pptGenerateTool: Tool = {
       theme = 'neon-green',
       output_path,
       images = [],
-      use_masters = true,
       chart_mode = 'auto',
     } = params as unknown as PPTGenerateParams;
 
@@ -170,42 +164,35 @@ export const pptGenerateTool: Tool = {
         ? parseContentToSlides(processedContent, slides_count)
         : generatePlaceholderSlides(topic, slides_count);
 
-      if (use_masters) {
-        // ===== 新路径：Slide Master + 声明式填充 =====
-        registerSlideMasters(pptx, themeConfig);
-        resetLayoutRotation();
+      // Slide Master + 声明式填充
+      registerSlideMasters(pptx, themeConfig);
+      resetLayoutRotation();
 
-        for (let i = 0; i < slides.length; i++) {
-          const slideData = slides[i];
+      for (let i = 0; i < slides.length; i++) {
+        const slideData = slides[i];
 
-          // 该页的图片
-          const currentSlideImages = slideImages?.filter(
-            img => img.slide_index === i && fs.existsSync(img.image_path)
-          ) || [];
+        const currentSlideImages = slideImages?.filter(
+          img => img.slide_index === i && fs.existsSync(img.image_path)
+        ) || [];
 
-          const { master, layout, chartData } = selectMasterAndLayout(
-            slideData,
-            currentSlideImages.length > 0,
-            chart_mode as ChartMode
-          );
+        const { master, layout, chartData } = selectMasterAndLayout(
+          slideData,
+          currentSlideImages.length > 0,
+          chart_mode as ChartMode
+        );
 
-          const slide = pptx.addSlide({ masterName: master });
-          fillSlide(pptx, slide, slideData, themeConfig, layout, i, chartData, currentSlideImages);
-        }
-      } else {
-        // ===== 降级路径：旧渲染函数 =====
-        renderLegacySlides(pptx, slides, themeConfig, slideImages);
+        const slide = pptx.addSlide({ masterName: master });
+        fillSlide(pptx, slide, slideData, themeConfig, layout, i, chartData, currentSlideImages);
       }
 
       await pptx.writeFile({ fileName: finalPath });
       const stats = fs.statSync(finalPath);
 
-      const renderMode = use_masters ? 'Slide Master' : 'Legacy';
       const chartInfo = chart_mode === 'auto' ? '，原生图表自动检测' : '';
 
       return {
         success: true,
-        output: `PPT 已生成（${renderMode} 模式${chartInfo}）
+        output: `PPT 已生成（Slide Master 模式${chartInfo}）
 
 文件: ${finalPath}
 主题: ${themeConfig.name} (${theme})
@@ -219,7 +206,6 @@ export const pptGenerateTool: Tool = {
           fileSize: stats.size,
           slidesCount: slides.length,
           theme,
-          useMasters: use_masters,
           chartMode: chart_mode,
           attachment: {
             id: `ppt-${timestamp}`,

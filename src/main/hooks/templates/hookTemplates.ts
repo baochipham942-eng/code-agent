@@ -330,52 +330,8 @@ export const BUILT_IN_TEMPLATES: HookTemplate[] = [
 // ----------------------------------------------------------------------------
 
 /**
- * 获取所有模板
- */
-export function getAllTemplates(): HookTemplate[] {
-  return [...BUILT_IN_TEMPLATES];
-}
-
-/**
- * 按类别获取模板
- */
-export function getTemplatesByCategory(category: HookTemplateCategory): HookTemplate[] {
-  return BUILT_IN_TEMPLATES.filter(t => t.category === category);
-}
-
-/**
- * 按事件获取模板
- */
-export function getTemplatesByEvent(event: HookEvent): HookTemplate[] {
-  return BUILT_IN_TEMPLATES.filter(t => t.event === event);
-}
-
-/**
- * 获取默认启用的模板
- */
-export function getEnabledTemplates(): HookTemplate[] {
-  return BUILT_IN_TEMPLATES.filter(t => t.enabled);
-}
-
-/**
  * 根据 ID 获取模板
  */
 export function getTemplateById(id: string): HookTemplate | undefined {
   return BUILT_IN_TEMPLATES.find(t => t.id === id);
-}
-
-/**
- * 获取模板的默认配置
- */
-export function getTemplateDefaultConfig(id: string): Record<string, unknown> {
-  const template = getTemplateById(id);
-  if (!template || !template.options) {
-    return {};
-  }
-
-  const config: Record<string, unknown> = {};
-  for (const option of template.options) {
-    config[option.id] = option.defaultValue;
-  }
-  return config;
 }

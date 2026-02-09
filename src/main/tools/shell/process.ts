@@ -9,6 +9,7 @@ import {
   killBackgroundTask,
   isTaskId,
 } from './backgroundTasks';
+import { formatDuration } from '../../../shared/utils/format';
 import {
   getAllPtySessions,
   getPtySessionOutput,
@@ -107,11 +108,6 @@ Each entry includes:
       };
     }
 
-    const formatDuration = (ms: number): string => {
-      if (ms < 1000) return `${ms}ms`;
-      if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-      return `${(ms / 60000).toFixed(1)}m`;
-    };
 
     const lines = filtered.map((p) => {
       const status = p.status === 'running' ? '🟢' : p.status === 'completed' ? '✅' : '❌';

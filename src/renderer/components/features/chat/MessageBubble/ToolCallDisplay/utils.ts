@@ -32,6 +32,7 @@ import {
   Presentation,
 } from 'lucide-react';
 import type { ToolCall } from '@shared/types';
+export { formatDuration } from '../../../../../../shared/utils/format';
 
 // ============================================================================
 // Tool Icon Mapping
@@ -198,14 +199,6 @@ function shortenUrl(url: string): string {
   }
 }
 
-// ============================================================================
-// Duration Formatting
-// ============================================================================
-
-export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
-}
 
 // ============================================================================
 // Tool Name Display

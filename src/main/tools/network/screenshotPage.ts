@@ -10,6 +10,7 @@ import * as path from 'path';
 import { createLogger } from '../../services/infra/logger';
 import { getConfigService } from '../../services';
 import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { formatFileSize } from './utils';
 
 const logger = createLogger('ScreenshotPage');
 
@@ -126,15 +127,6 @@ interface ScreenshotPageParams {
   delay?: number;
   analyze?: boolean;
   prompt?: string;
-}
-
-/**
- * 格式化文件大小
- */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /**

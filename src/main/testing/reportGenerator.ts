@@ -5,6 +5,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import type { TestRunSummary, TestResult } from './types';
+import { formatDuration } from '../../shared/utils/format';
 
 /**
  * Generate a Markdown test report
@@ -270,13 +271,6 @@ function formatDate(timestamp: number): string {
   });
 }
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  const mins = Math.floor(ms / 60000);
-  const secs = Math.round((ms % 60000) / 1000);
-  return `${mins}m ${secs}s`;
-}
 
 function getPassRate(summary: TestRunSummary): string {
   if (summary.total === 0) return '0';

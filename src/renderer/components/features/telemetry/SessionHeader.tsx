@@ -5,18 +5,13 @@
 import React from 'react';
 import type { TelemetrySession } from '@shared/types/telemetry';
 import { Activity, Clock, Cpu, AlertTriangle, CheckCircle } from 'lucide-react';
+import { formatDuration } from '../../../../shared/utils/format';
 
 interface SessionHeaderProps {
   session: TelemetrySession;
 }
 
 export const SessionHeader: React.FC<SessionHeaderProps> = ({ session }) => {
-  const formatDuration = (ms?: number) => {
-    if (!ms) return '--';
-    if (ms < 1000) return `${ms}ms`;
-    if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-    return `${(ms / 60000).toFixed(1)}m`;
-  };
 
   const formatTokens = (n: number) => {
     if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -55,7 +50,7 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({ session }) => {
         </div>
         <div className="flex items-center gap-1" title="时长">
           <Clock className="w-3.5 h-3.5" />
-          <span>{formatDuration(session.durationMs)}</span>
+          <span>{session.durationMs ? formatDuration(session.durationMs) : '--'}</span>
         </div>
         <div className="flex items-center gap-1" title="工具成功率">
           {session.toolSuccessRate >= 0.8 ? (

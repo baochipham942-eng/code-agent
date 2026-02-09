@@ -112,6 +112,7 @@ export class DatabaseService {
 
     this.createTables();
     this.migrateSessionsTable();
+    this.migrateTelemetryTurnsTable();
     this.createIndexes();
   }
 
@@ -134,6 +135,15 @@ export class DatabaseService {
       } catch {
         // 列已存在，忽略
       }
+    }
+  }
+
+  private migrateTelemetryTurnsTable(): void {
+    if (!this.db) return;
+    try {
+      this.db.exec("ALTER TABLE telemetry_turns ADD COLUMN agent_id TEXT DEFAULT 'main'");
+    } catch {
+      // 列已存在，忽略
     }
   }
 

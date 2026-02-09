@@ -32,6 +32,7 @@ let ToolRegistry: typeof import('../main/tools/toolRegistry').ToolRegistry;
 let ToolExecutor: typeof import('../main/tools/toolExecutor').ToolExecutor;
 let GenerationManager: typeof import('../main/generation/generationManager').GenerationManager;
 let getSkillDiscoveryService: typeof import('../main/services/skills').getSkillDiscoveryService;
+let getTelemetryCollector: typeof import('../main/telemetry').getTelemetryCollector;
 
 // CLI 数据目录
 function getCLIDataDir(): string {
@@ -51,6 +52,7 @@ let generationManager: InstanceType<typeof GenerationManager> | null = null;
 let toolRegistry: InstanceType<typeof ToolRegistry> | null = null;
 let toolExecutor: InstanceType<typeof ToolExecutor> | null = null;
 let initialized = false;
+let currentTelemetrySessionId: string | null = null;
 
 /**
  * 初始化 CLI 核心服务
@@ -101,6 +103,9 @@ export async function initializeCLIServices(): Promise<void> {
 
     const skillsModule = await import('../main/services/skills');
     getSkillDiscoveryService = skillsModule.getSkillDiscoveryService;
+
+    const telemetryModule = await import('../main/telemetry');
+    getTelemetryCollector = telemetryModule.getTelemetryCollector;
   } catch (error) {
     console.error('Failed to import core modules:', error);
     throw error;
@@ -250,7 +255,8 @@ export function buildCLIConfig(options: {
 export function createAgentLoop(
   config: CLIConfig,
   onEvent: CLIEventHandler,
-  messages: Message[] = []
+  messages: Message[] = [],
+  sessionId?: string
 ): InstanceType<typeof AgentLoop> {
   if (!toolRegistry || !toolExecutor || !generationManager || !AgentLoop) {
     throw new Error('CLI services not initialized');
@@ -262,17 +268,39 @@ export function createAgentLoop(
     throw new Error(`Generation ${config.generationId} not found`);
   }
 
+  // 统一使用传入的 sessionId，或生成一个临时 ID
+  const effectiveSessionId = sessionId || `cli-${Date.now()}`;
+
   // 创建 PlanningService（如果启用规划模式）
   let planningService = undefined;
   if (config.enablePlanning) {
     const { createPlanningService } = require('../main/planning/planningService');
-    const sessionId = `cli-${Date.now()}`;
-    planningService = createPlanningService(config.workingDirectory, sessionId);
+    planningService = createPlanningService(config.workingDirectory, effectiveSessionId);
     planningService.initialize().catch((err: Error) => {
       console.error('Failed to initialize planning service:', err);
     });
     if (config.debug) {
       console.log('[Planning] Planning mode enabled');
+    }
+  }
+
+  // Telemetry: 开始会话追踪
+  let telemetryAdapter = undefined;
+  if (getTelemetryCollector) {
+    try {
+      const collector = getTelemetryCollector();
+      collector.startSession(effectiveSessionId, {
+        title: 'CLI Session',
+        generationId: config.generationId,
+        modelProvider: config.modelConfig.provider,
+        modelName: config.modelConfig.model,
+        workingDirectory: config.workingDirectory,
+      });
+      telemetryAdapter = collector.createAdapter(effectiveSessionId, 'cli');
+      currentTelemetrySessionId = effectiveSessionId;
+    } catch (error) {
+      // Telemetry 失败不阻止运行
+      console.warn('[Telemetry] Failed to start session:', (error as Error).message);
     }
   }
 
@@ -291,10 +319,21 @@ export function createAgentLoop(
     },
     enableHooks: config.enablePlanning, // 规划模式启用 hooks
     planningService,
-    sessionId: `cli-${Date.now()}`,
+    sessionId: effectiveSessionId,
     workingDirectory: config.workingDirectory,
     isDefaultWorkingDirectory: false,
     autoApprovePlan: config.autoApprovePlan, // CLI 模式自动批准 plan mode
+    telemetryAdapter,
+    // CLI 消息持久化回调（包含 tool_results）
+    persistMessage: async (message: Message) => {
+      if (sessionManager) {
+        try {
+          await sessionManager.addMessage(message);
+        } catch (error) {
+          console.warn('[CLI] Failed to persist message:', (error as Error).message);
+        }
+      }
+    },
   });
 
   return agentLoop;
@@ -305,6 +344,29 @@ export function createAgentLoop(
  */
 export async function cleanup(): Promise<void> {
   console.log('Cleaning up CLI services...');
+
+  // Telemetry: 结束会话并同步 token 使用到 sessions 表
+  if (currentTelemetrySessionId && getTelemetryCollector) {
+    try {
+      const collector = getTelemetryCollector();
+      const sessionData = collector.getSessionData(currentTelemetrySessionId);
+      collector.endSession(currentTelemetrySessionId);
+
+      // 同步 token usage 到 CLI sessions 表
+      if (sessionData && sessionManager) {
+        await sessionManager.updateSession(currentTelemetrySessionId, {
+          lastTokenUsage: {
+            inputTokens: sessionData.totalInputTokens,
+            outputTokens: sessionData.totalOutputTokens,
+            totalTokens: sessionData.totalTokens,
+          },
+        } as any);
+      }
+    } catch (error) {
+      console.warn('[Telemetry] Failed to end session:', (error as Error).message);
+    }
+    currentTelemetrySessionId = null;
+  }
 
   // 关闭数据库连接
   if (databaseService) {

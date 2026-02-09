@@ -119,6 +119,7 @@ export async function callZhipu(
     temperature: config.temperature ?? 0.7,
     max_tokens: config.maxTokens ?? 8192,
     stream: true,
+    stream_options: { include_usage: true },
   };
 
   if (zhipuTools.length > 0 && modelInfo?.supportsTool) {

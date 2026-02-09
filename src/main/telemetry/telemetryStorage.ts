@@ -21,6 +21,7 @@ const logger = createLogger('TelemetryStorage');
 export class TelemetryStorage {
   private static instance: TelemetryStorage | null = null;
   private stmtCache = new Map<string, Database.Statement>();
+  private dbUnavailable = false; // 标记 DB 不可用，避免重复报错
 
   static getInstance(): TelemetryStorage {
     if (!this.instance) {
@@ -44,11 +45,30 @@ export class TelemetryStorage {
     return stmt;
   }
 
+  /** CLI 模式下 DB 可能不可用，静默跳过存储 */
+  private isDbAvailable(): boolean {
+    if (this.dbUnavailable) return false;
+    try {
+      const db = getDatabase().getDb();
+      if (!db) {
+        this.dbUnavailable = true;
+        logger.debug('TelemetryStorage: DB not available, telemetry will be in-memory only');
+        return false;
+      }
+      return true;
+    } catch {
+      this.dbUnavailable = true;
+      logger.debug('TelemetryStorage: DB not available, telemetry will be in-memory only');
+      return false;
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Session CRUD
   // --------------------------------------------------------------------------
 
   insertSession(session: TelemetrySession): void {
+    if (!this.isDbAvailable()) return;
     try {
       const stmt = this.getStmt('insert_session', `
         INSERT OR REPLACE INTO telemetry_sessions (
@@ -74,6 +94,7 @@ export class TelemetryStorage {
   }
 
   updateSession(sessionId: string, updates: Partial<TelemetrySession>): void {
+    if (!this.isDbAvailable()) return;
     try {
       const fields: string[] = [];
       const values: unknown[] = [];
@@ -105,6 +126,7 @@ export class TelemetryStorage {
   }
 
   getSession(sessionId: string): TelemetrySession | null {
+    if (!this.isDbAvailable()) return null;
     try {
       const row = this.getStmt('get_session', `
         SELECT * FROM telemetry_sessions WHERE id = ?
@@ -119,6 +141,7 @@ export class TelemetryStorage {
   }
 
   listSessions(limit = 50, offset = 0): TelemetrySessionListItem[] {
+    if (!this.isDbAvailable()) return [];
     try {
       const rows = this.getStmt('list_sessions', `
         SELECT id, title, model_provider, model_name, start_time, end_time,
@@ -147,6 +170,7 @@ export class TelemetryStorage {
   }
 
   deleteSession(sessionId: string): void {
+    if (!this.isDbAvailable()) return;
     try {
       const db = this.getDb();
       db.transaction(() => {
@@ -166,6 +190,7 @@ export class TelemetryStorage {
   // --------------------------------------------------------------------------
 
   insertTurn(turn: TelemetryTurn): void {
+    if (!this.isDbAvailable()) return;
     try {
       const stmt = this.getStmt('insert_turn', `
         INSERT OR REPLACE INTO telemetry_turns (
@@ -205,6 +230,7 @@ export class TelemetryStorage {
   }
 
   getTurnsBySession(sessionId: string, agentId?: string): TelemetryTurn[] {
+    if (!this.isDbAvailable()) return [];
     try {
       if (agentId) {
         const rows = this.getDb().prepare(
@@ -229,6 +255,7 @@ export class TelemetryStorage {
     toolCalls: TelemetryToolCall[];
     events: TelemetryTimelineEvent[];
   } | null {
+    if (!this.isDbAvailable()) return null;
     try {
       const turnRow = this.getStmt('get_turn', `
         SELECT * FROM telemetry_turns WHERE id = ?
@@ -269,6 +296,7 @@ export class TelemetryStorage {
     toolCalls?: Array<TelemetryToolCall & { turnId: string; sessionId: string }>;
     events?: Array<TelemetryTimelineEvent & { turnId: string; sessionId: string }>;
   }): void {
+    if (!this.isDbAvailable()) return;
     try {
       const db = this.getDb();
       db.transaction(() => {
@@ -278,8 +306,8 @@ export class TelemetryStorage {
               id, turn_id, session_id, timestamp, provider, model,
               temperature, max_tokens, input_tokens, output_tokens,
               latency_ms, response_type, tool_call_count, truncated,
-              error, fallback_info
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              error, fallback_info, prompt, completion
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
           for (const mc of data.modelCalls) {
             stmt.run(
@@ -287,7 +315,8 @@ export class TelemetryStorage {
               mc.provider, mc.model, mc.temperature ?? null, mc.maxTokens ?? null,
               mc.inputTokens, mc.outputTokens, mc.latencyMs,
               mc.responseType, mc.toolCallCount, mc.truncated ? 1 : 0,
-              mc.error ?? null, mc.fallbackUsed ? JSON.stringify(mc.fallbackUsed) : null
+              mc.error ?? null, mc.fallbackUsed ? JSON.stringify(mc.fallbackUsed) : null,
+              mc.prompt ?? null, mc.completion ?? null
             );
           }
         }
@@ -337,6 +366,7 @@ export class TelemetryStorage {
   // --------------------------------------------------------------------------
 
   getToolUsageStats(sessionId: string): TelemetryToolStat[] {
+    if (!this.isDbAvailable()) return [];
     try {
       const rows = this.getStmt('tool_stats', `
         SELECT
@@ -370,6 +400,7 @@ export class TelemetryStorage {
   }
 
   getIntentDistribution(sessionId: string): TelemetryIntentStat[] {
+    if (!this.isDbAvailable()) return [];
     try {
       const rows = this.getStmt('intent_dist', `
         SELECT intent_primary, COUNT(*) as count
@@ -396,6 +427,7 @@ export class TelemetryStorage {
    * 获取会话的所有事件（用于时间线视图）
    */
   getEventsBySession(sessionId: string): TelemetryTimelineEvent[] {
+    if (!this.isDbAvailable()) return [];
     try {
       const rows = this.getStmt('get_events_by_session', `
         SELECT * FROM telemetry_events
@@ -499,6 +531,8 @@ export class TelemetryStorage {
       truncated: !!(row.truncated as number),
       error: row.error as string | undefined,
       fallbackUsed: row.fallback_info ? JSON.parse(row.fallback_info as string) : undefined,
+      prompt: row.prompt as string | undefined,
+      completion: row.completion as string | undefined,
     };
   }
 

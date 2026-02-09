@@ -74,6 +74,10 @@ export interface TelemetryModelCall {
   truncated: boolean;
   error?: string;
   fallbackUsed?: { from: string; to: string; reason: string };
+  /** 截断后的输入 prompt（用于评测重放，最大 8000 字符） */
+  prompt?: string;
+  /** 截断后的模型输出（用于评测重放，最大 4000 字符） */
+  completion?: string;
 }
 
 // ----------------------------------------------------------------------------

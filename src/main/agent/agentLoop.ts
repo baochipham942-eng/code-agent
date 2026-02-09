@@ -208,6 +208,9 @@ export class AgentLoop {
   // Telemetry adapter
   private telemetryAdapter?: import('../../shared/types/telemetry').TelemetryAdapter;
 
+  // CLI message persistence callback
+  private persistMessage?: (message: Message) => Promise<void>;
+
   constructor(config: AgentLoopConfig) {
     this.generation = config.generation;
     this.modelConfig = config.modelConfig;
@@ -245,6 +248,9 @@ export class AgentLoop {
 
     // Telemetry adapter (optional)
     this.telemetryAdapter = config.telemetryAdapter;
+
+    // CLI message persistence callback
+    this.persistMessage = config.persistMessage;
 
     // Initialize refactored modules
     this.circuitBreaker = new CircuitBreaker();
@@ -662,8 +668,43 @@ export class AgentLoop {
         duration: inferenceDuration,
       });
 
-      // Telemetry: record model call
+      // Telemetry: record model call (with truncated prompt/completion for eval replay)
       if (this.telemetryAdapter) {
+        const MAX_PROMPT_LENGTH = 8000;
+        const MAX_COMPLETION_LENGTH = 4000;
+
+        // 提取最近 3 条消息作为 prompt 摘要
+        const recentMessages = this.messages.slice(-3);
+        const promptSummary = recentMessages.map(m =>
+          `[${m.role}] ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`
+        ).join('\n---\n');
+
+        // 提取 completion（response.content 或 tool_calls 摘要）
+        let completionText = '';
+        if (response.content) {
+          completionText = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
+        }
+        if (response.toolCalls?.length) {
+          const toolsSummary = response.toolCalls.map(tc => `${tc.name}(${JSON.stringify(tc.arguments).substring(0, 200)})`).join('; ');
+          completionText += (completionText ? '\n' : '') + `[tools: ${toolsSummary}]`;
+        }
+
+        // API 返回的 usage 优先，为 0 时使用本地估算值（某些 SSE 代理不返回 usage）
+        const apiInputTokens = response.usage?.inputTokens ?? 0;
+        const apiOutputTokens = response.usage?.outputTokens ?? 0;
+        let effectiveInputTokens = apiInputTokens;
+        let effectiveOutputTokens = apiOutputTokens;
+        if (apiInputTokens === 0 || apiOutputTokens === 0) {
+          const estInput = estimateModelMessageTokens(
+            this.messages.slice(-10).map(m => ({ role: m.role, content: m.content }))
+          );
+          const outContent = (response.content || '') +
+            (response.toolCalls?.map(tc => JSON.stringify(tc.arguments || {})).join('') || '');
+          const estOutput = estimateModelMessageTokens([{ role: 'assistant', content: outContent }]);
+          if (apiInputTokens === 0) effectiveInputTokens = estInput;
+          if (apiOutputTokens === 0) effectiveOutputTokens = estOutput;
+        }
+
         this.telemetryAdapter.onModelCall(this.currentTurnId, {
           id: `mc-${this.currentTurnId}-${iterations}`,
           timestamp: Date.now(),
@@ -671,12 +712,14 @@ export class AgentLoop {
           model: this.modelConfig.model,
           temperature: this.modelConfig.temperature,
           maxTokens: this.modelConfig.maxTokens,
-          inputTokens: response.usage?.inputTokens ?? 0,
-          outputTokens: response.usage?.outputTokens ?? 0,
+          inputTokens: effectiveInputTokens,
+          outputTokens: effectiveOutputTokens,
           latencyMs: inferenceDuration,
           responseType: response.type as 'text' | 'tool_use' | 'thinking',
           toolCallCount: response.toolCalls?.length ?? 0,
           truncated: !!response.truncated,
+          prompt: promptSummary.substring(0, MAX_PROMPT_LENGTH),
+          completion: completionText.substring(0, MAX_COMPLETION_LENGTH),
         });
       }
 
@@ -2531,8 +2574,15 @@ ${deferredToolsSummary}
   private async addAndPersistMessage(message: Message): Promise<void> {
     this.messages.push(message);
 
-    // CLI 模式下跳过持久化（由 CLIAgent 自行处理）
     if (process.env.CODE_AGENT_CLI_MODE === 'true') {
+      // CLI 模式：通过回调持久化（包含 tool_results）
+      if (this.persistMessage) {
+        try {
+          await this.persistMessage(message);
+        } catch (error) {
+          logger.error('Failed to persist message (CLI):', error);
+        }
+      }
       return;
     }
 

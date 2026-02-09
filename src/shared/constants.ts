@@ -467,7 +467,7 @@ const DEFAULT_CLOUD_API_URL = 'https://code-agent-beta.vercel.app';
 
 /** 获取云端 API URL（支持环境变量覆盖） */
 export function getCloudApiUrl(): string {
-  return process.env.CLOUD_API_URL || DEFAULT_CLOUD_API_URL;
+  return (typeof process !== 'undefined' && process.env?.CLOUD_API_URL) || DEFAULT_CLOUD_API_URL;
 }
 
 /** 云端 API 端点 */
@@ -930,7 +930,7 @@ export const SKILL_TIMEOUTS = {
 export const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
 
 /** 默认 Supabase Anonymous Key */
-export const DEFAULT_SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcGJ1bmFoemJtZXhzbW1pcXlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODkyMTcsImV4cCI6MjA4NDA2NTIxN30.8swN1QdRX5vIjNyCLNhQTPAx-k2qxeS8EN4Ot2idY7w';
+export const DEFAULT_SUPABASE_ANON_KEY = (typeof process !== 'undefined' && process.env?.SUPABASE_ANON_KEY) || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcGJ1bmFoemJtZXhzbW1pcXlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODkyMTcsImV4cCI6MjA4NDA2NTIxN30.8swN1QdRX5vIjNyCLNhQTPAx-k2qxeS8EN4Ot2idY7w';
 
 /** 资源管理常量 */
 export const RESOURCE_MANAGEMENT = {

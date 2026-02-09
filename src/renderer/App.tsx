@@ -21,8 +21,7 @@ import { TaskPanel } from './components/TaskPanel';
 import { SkillsPanel } from './components/SkillsPanel';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
 import { LabPage } from './components/features/lab/LabPage';
-import { EvaluationPanelV2 } from './components/features/evaluation/EvaluationPanelV2';
-import { TelemetryPanel } from './components/features/telemetry';
+import { EvalCenterPanel } from './components/features/evalCenter';
 import { BackgroundTaskPanel } from './components/features/background';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
@@ -33,27 +32,10 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { Activity, Cloud, Zap, Sparkles, GitBranch } from 'lucide-react';
 import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
-import { UI } from '@shared/constants';
+import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL } from '@shared/constants';
 import { createLogger } from './utils/logger';
 
 const logger = createLogger('App');
-
-// Evaluation Panel Wrapper - 订阅 currentSessionId
-const EvaluationPanelWrapper: React.FC<{
-  showEvaluation: boolean;
-  onClose: () => void;
-}> = ({ showEvaluation, onClose }) => {
-  const currentSessionId = useSessionStore((state) => state.currentSessionId);
-
-  if (!showEvaluation || !currentSessionId) return null;
-
-  return (
-    <EvaluationPanelV2
-      sessionId={currentSessionId}
-      onClose={onClose}
-    />
-  );
-};
 
 export const App: React.FC = () => {
   const {
@@ -63,10 +45,6 @@ export const App: React.FC = () => {
     showSkillsPanel,
     setShowSkillsPanel,
     showLab,
-    showEvaluation,
-    setShowEvaluation,
-    showTelemetry,
-    setShowTelemetry,
     setShowSettings,
     setLanguage,
   } = useAppStore();
@@ -171,15 +149,15 @@ export const App: React.FC = () => {
 
         // 加载模型配置
         if (settings?.models) {
-          const defaultProvider = (settings.models.default || 'deepseek') as import('@shared/types').ModelProvider;
+          const defaultProvider = (settings.models.default || DEFAULT_PROVIDER) as import('@shared/types').ModelProvider;
           const providerConfig = settings.models.providers?.[defaultProvider];
 
           if (providerConfig) {
             setModelConfig({
               provider: defaultProvider,
-              model: providerConfig.model || 'deepseek-chat',
+              model: providerConfig.model || DEFAULT_MODEL,
               apiKey: providerConfig.apiKey || '',
-              baseUrl: providerConfig.baseUrl || 'https://api.deepseek.com',
+              baseUrl: providerConfig.baseUrl || '',
               temperature: providerConfig.temperature ?? 0.7,
               maxTokens: providerConfig.maxTokens ?? 4096,
             });
@@ -468,31 +446,8 @@ export const App: React.FC = () => {
         <WorkflowPanel onClose={() => setShowDAGPanel(false)} />
       )}
 
-      {/* Evaluation Panel */}
-      <EvaluationPanelWrapper
-        showEvaluation={showEvaluation}
-        onClose={() => setShowEvaluation(false)}
-      />
-
-      {/* Telemetry Panel */}
-      {showTelemetry && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-[800px] max-h-[85vh] bg-zinc-900 rounded-xl border border-zinc-700/50 shadow-2xl overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-700/50">
-              <h2 className="text-sm font-medium text-zinc-300">会话遥测</h2>
-              <button
-                onClick={() => setShowTelemetry(false)}
-                className="text-zinc-500 hover:text-zinc-300 text-lg leading-none"
-              >
-                &times;
-              </button>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <TelemetryPanel />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* EvalCenter - 评测中心（合并评测 + 遥测） */}
+      <EvalCenterPanel />
 
       {/* User Question Modal (Gen 3+) */}
       {userQuestion && (

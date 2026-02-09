@@ -10,6 +10,7 @@ import {
   convertToClaudeMessages,
   parseClaudeResponse,
 } from './shared';
+import { MODEL_API_ENDPOINTS, API_VERSIONS } from '../../../shared/constants';
 
 /**
  * Call Claude API
@@ -22,7 +23,7 @@ export async function callClaude(
   _onStream?: StreamCallback,
   signal?: AbortSignal
 ): Promise<ModelResponse> {
-  const baseUrl = 'https://api.anthropic.com/v1';
+  const baseUrl = MODEL_API_ENDPOINTS.claude;
 
   // Convert messages for Claude format
   const systemMessage = messages.find((m) => m.role === 'system');
@@ -79,7 +80,7 @@ export async function callClaude(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'x-api-key': config.apiKey || '',
-    'anthropic-version': '2023-06-01',
+    'anthropic-version': API_VERSIONS.ANTHROPIC,
   };
 
   if (config.computerUse) {

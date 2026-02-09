@@ -8,15 +8,16 @@ import * as path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { getConfigService } from '../../services';
 import { createLogger } from '../../services/infra/logger';
+import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS } from '../../../shared/constants';
 
 const logger = createLogger('ImageAnnotate');
 
 // 配置
 const CONFIG = {
   // 智谱视觉模型配置（用于图片理解，不用于坐标定位）
-  ZHIPU_MODEL: 'glm-4v-plus',
+  ZHIPU_MODEL: ZHIPU_VISION_MODEL,
   ZHIPU_MODEL_MAX_TOKENS: 2048,
-  ZHIPU_API_URL: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+  ZHIPU_API_URL: `${MODEL_API_ENDPOINTS.zhipu}/chat/completions`,
   // 百度 OCR API 配置
   BAIDU_OCR_TOKEN_URL: 'https://aip.baidubce.com/oauth/2.0/token',
   BAIDU_OCR_API_URL: 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate',

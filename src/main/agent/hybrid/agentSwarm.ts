@@ -516,7 +516,10 @@ export class AgentSwarm {
           modelConfig: {} as any, // 从 agent config 获取
           systemPrompt: runtime.agent.prompt || '',
           task: runtime.agent.prompt || 'Execute task',
-          allowedTools: runtime.agent.tools || [],
+          allowedTools: runtime.agent.tools?.length ? runtime.agent.tools : (() => {
+            logger.warn(`[AgentSwarm] Agent "${runtime.agent.name}" has no tools defined, falling back to basic tools`);
+            return ['read_file', 'glob', 'grep', 'list_directory'];
+          })(),
           workingDirectory: process.cwd(),
           timeout: (this.config as ExtendedSwarmConfig)?.workerTimeout ?? 300000,
           maxIterations: runtime.agent.maxIterations || 20,

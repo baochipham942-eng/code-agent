@@ -7,6 +7,7 @@
 import { ModelRouter } from '../model/modelRouter';
 import { getConfigService } from '../services';
 import { createLogger } from '../services/infra/logger';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import type { EvaluationMetric } from '../../shared/types/evaluation';
 import { EvaluationDimension } from '../../shared/types/evaluation';
 import type { SessionSnapshot } from './types';
@@ -230,8 +231,8 @@ export class AIEvaluator {
     // 使用 code 模型进行评测（需要较强的分析能力）
     const codeModel = configService.getModelForCapability('code');
 
-    const provider = codeModel?.provider || 'deepseek';
-    const model = codeModel?.model || 'deepseek-chat';
+    const provider = codeModel?.provider || DEFAULT_PROVIDER;
+    const model = codeModel?.model || DEFAULT_MODEL;
 
     logger.debug('Calling LLM for AI evaluation', { provider, model });
 

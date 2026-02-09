@@ -6,7 +6,7 @@ import React from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useDisclosure } from '../hooks/useDisclosure';
-import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, GitBranch, FlaskConical, Activity } from 'lucide-react';
+import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, GitBranch, FlaskConical } from 'lucide-react';
 import { IconButton } from './primitives';
 
 // 奶酪图标组件
@@ -29,9 +29,7 @@ export const TitleBar: React.FC = () => {
     showDAGPanel,
     setShowDAGPanel,
     setShowLab,
-    setShowEvaluation,
-    showTelemetry,
-    setShowTelemetry,
+    setShowEvalCenter,
     workingDirectory,
   } = useAppStore();
 
@@ -72,31 +70,18 @@ export const TitleBar: React.FC = () => {
         )}
       </div>
 
-      {/* Right: Evaluation + Lab + DAG Panel Toggle + Task Panel Toggle */}
+      {/* Right: EvalCenter + Lab + DAG Panel Toggle + Task Panel Toggle */}
       <div className="flex items-center gap-1">
-        {/* Evaluation Button (奶酪图标) */}
+        {/* EvalCenter Button (奶酪图标) — 合并了评测 + 遥测 */}
         {currentSessionId && (
           <IconButton
             icon={<CheeseIcon className="w-4 h-4" />}
-            aria-label="会话评测"
-            onClick={() => setShowEvaluation?.(true)}
+            aria-label="评测中心"
+            onClick={() => setShowEvalCenter(true)}
             variant="ghost"
             size="md"
             windowNoDrag
             className="text-amber-400/70 hover:text-amber-400"
-          />
-        )}
-
-        {/* Telemetry Button */}
-        {currentSessionId && (
-          <IconButton
-            icon={<Activity className="w-4 h-4" />}
-            aria-label="会话遥测"
-            onClick={() => setShowTelemetry(!showTelemetry)}
-            variant="ghost"
-            size="md"
-            windowNoDrag
-            className={showTelemetry ? 'text-cyan-400' : 'text-cyan-400/70 hover:text-cyan-400'}
           />
         )}
 

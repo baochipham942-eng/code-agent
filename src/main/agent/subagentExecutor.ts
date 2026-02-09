@@ -511,11 +511,17 @@ export class SubagentExecutor {
     toolRegistry: Map<string, Tool>
   ): Tool[] {
     const tools: Tool[] = [];
+    const missing: string[] = [];
     for (const name of allowedToolNames) {
       const tool = toolRegistry.get(name);
       if (tool) {
         tools.push(tool);
+      } else {
+        missing.push(name);
       }
+    }
+    if (missing.length > 0) {
+      logger.warn(`filterTools: ${missing.length} tools not found in registry: ${missing.join(', ')} (registry size: ${toolRegistry.size})`);
     }
     return tools;
   }

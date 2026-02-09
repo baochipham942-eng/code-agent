@@ -10,6 +10,7 @@ import { cleanup, initializeCLIServices, buildCLIConfig } from '../bootstrap';
 import type { CLIGlobalOptions, APIRunRequest, APIStatusResponse, SSEEvent } from '../types';
 import type { AgentEvent } from '../../shared/types';
 import { createLogger } from '../../main/services/infra/logger';
+import { DEFAULT_GENERATION } from '../../shared/constants';
 
 const logger = createLogger('CLI-Serve');
 
@@ -35,7 +36,7 @@ export const serveCommand = new Command('serve')
       await initializeCLIServices();
 
       terminalOutput.info(`项目目录: ${globalOpts?.project || process.cwd()}`);
-      terminalOutput.info(`代际: ${globalOpts?.gen || 'gen8'}`);
+      terminalOutput.info(`代际: ${globalOpts?.gen || DEFAULT_GENERATION}`);
 
       // 创建 HTTP 服务器
       const server = http.createServer(async (req, res) => {

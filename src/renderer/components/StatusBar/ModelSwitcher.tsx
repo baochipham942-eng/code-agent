@@ -18,7 +18,7 @@ const MODEL_OPTIONS: ModelOption[] = [
   { provider: 'moonshot', model: 'kimi-k2.5', label: 'Kimi K2.5' },
   { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek V3' },
   { provider: 'zhipu', model: 'glm-4.7', label: 'GLM-4.7' },
-  { provider: 'zhipu', model: 'glm-4-flash', label: 'GLM-4 Flash' },
+  { provider: 'zhipu', model: 'glm-4.7-flash', label: 'GLM-4.7 Flash' },
   { provider: 'openai', model: 'gpt-4o', label: 'GPT-4o' },
   { provider: 'claude', model: 'claude-sonnet-4-20250514', label: 'Sonnet 4' },
 ];

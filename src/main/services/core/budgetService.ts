@@ -4,6 +4,7 @@
 // ============================================================================
 
 import { createLogger } from '../infra/logger';
+import { MODEL_PRICING_PER_1M } from '../../../shared/constants';
 
 const logger = createLogger('BudgetService');
 
@@ -62,40 +63,7 @@ export interface TokenUsage {
   timestamp: number;
 }
 
-// Default pricing per 1M tokens (USD)
-const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  // DeepSeek
-  'deepseek-chat': { input: 0.14, output: 0.28 },
-  'deepseek-coder': { input: 0.14, output: 0.28 },
-  'deepseek-reasoner': { input: 0.55, output: 2.19 },
-
-  // OpenAI
-  'gpt-4o': { input: 2.5, output: 10 },
-  'gpt-4o-mini': { input: 0.15, output: 0.6 },
-  'gpt-4-turbo': { input: 10, output: 30 },
-
-  // Claude
-  'claude-3-opus': { input: 15, output: 75 },
-  'claude-3-sonnet': { input: 3, output: 15 },
-  'claude-3-haiku': { input: 0.25, output: 1.25 },
-  'claude-3.5-sonnet': { input: 3, output: 15 },
-
-  // Zhipu - 旗舰模型
-  'glm-4.7': { input: 0.05, output: 0.05 },
-  'glm-4.6v': { input: 0.05, output: 0.05 },
-  // Zhipu - 免费模型
-  'glm-4.7-flash': { input: 0, output: 0 },
-  'glm-4.6v-flash': { input: 0, output: 0 },
-
-  // Moonshot/Kimi - 包月套餐不计费
-  'kimi-k2.5': { input: 0, output: 0 },
-  'moonshot-v1-8k': { input: 0.12, output: 0.12 },
-  'moonshot-v1-32k': { input: 0.24, output: 0.24 },
-  'moonshot-v1-128k': { input: 0.6, output: 0.6 },
-
-  // Default fallback
-  'default': { input: 1, output: 3 },
-};
+// Pricing sourced from shared constants (per 1M tokens, USD)
 
 // ----------------------------------------------------------------------------
 // BudgetService
@@ -222,19 +190,19 @@ export class BudgetService {
    */
   private getModelPricing(model: string): { input: number; output: number } {
     // Try exact match
-    if (MODEL_PRICING[model]) {
-      return MODEL_PRICING[model];
+    if (MODEL_PRICING_PER_1M[model]) {
+      return MODEL_PRICING_PER_1M[model];
     }
 
     // Try prefix match (e.g., 'gpt-4o-2024-08-06' -> 'gpt-4o')
-    for (const key of Object.keys(MODEL_PRICING)) {
+    for (const key of Object.keys(MODEL_PRICING_PER_1M)) {
       if (model.startsWith(key)) {
-        return MODEL_PRICING[key];
+        return MODEL_PRICING_PER_1M[key];
       }
     }
 
     // Fallback to default
-    return MODEL_PRICING['default'];
+    return MODEL_PRICING_PER_1M['default'];
   }
 
   /**

@@ -10,13 +10,14 @@ import { browserService } from '../../services/infra/browserService.js';
 import { getConfigService } from '../../services';
 import { createLogger } from '../../services/infra/logger';
 import * as fs from 'fs';
+import { ZHIPU_VISION_MODEL, MODEL_API_ENDPOINTS } from '../../../shared/constants';
 
 const logger = createLogger('BrowserAction');
 
 // 视觉分析配置
 const VISION_CONFIG = {
-  ZHIPU_MODEL: 'glm-4v-plus', // flash 不支持 base64，必须用 plus
-  ZHIPU_API_URL: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+  ZHIPU_MODEL: ZHIPU_VISION_MODEL, // flash 不支持 base64，必须用 plus
+  ZHIPU_API_URL: `${MODEL_API_ENDPOINTS.zhipu}/chat/completions`,
   TIMEOUT_MS: 30000,
 };
 

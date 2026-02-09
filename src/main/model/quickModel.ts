@@ -12,7 +12,7 @@ import { ModelRouter } from './modelRouter';
 import { getConfigService } from '../services';
 import type { ModelConfig, ModelProvider } from '../../shared/types';
 import { createLogger } from '../services/infra/logger';
-import { DEFAULT_MODELS } from '../../shared/constants';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
 
 const logger = createLogger('QuickModel');
 
@@ -51,7 +51,7 @@ function initializeQuickModel(): ModelConfig | null {
     const settings = configService.getSettings();
 
     // Get base config from user settings
-    const provider = (settings.model?.provider || 'deepseek') as ModelProvider;
+    const provider = (settings.model?.provider || DEFAULT_PROVIDER) as ModelProvider;
     const baseConfig: ModelConfig = {
       provider,
       model: settings.model?.model || DEFAULT_MODELS.chat,

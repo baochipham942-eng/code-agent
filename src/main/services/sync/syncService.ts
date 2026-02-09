@@ -19,6 +19,7 @@ import { getVectorStore, type VectorDocument } from '../../memory/vectorStore';
 import type { SyncStatus, SyncConflict, DeviceInfo, GenerationId, ModelProvider, Message } from '../../../shared/types';
 import type { StoredSession } from '../core';
 import { createLogger } from '../infra/logger';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../../shared/constants';
 
 const logger = createLogger('SyncService');
 
@@ -328,8 +329,8 @@ class SyncService {
             title: remote.title,
             generationId: remote.generation_id as GenerationId,
             modelConfig: {
-              provider: (remote.model_provider as ModelProvider) || 'deepseek',
-              model: remote.model_name || 'deepseek-chat',
+              provider: (remote.model_provider as ModelProvider) || DEFAULT_PROVIDER,
+              model: remote.model_name || DEFAULT_MODEL,
             },
             workingDirectory: remote.working_directory || undefined,
           });

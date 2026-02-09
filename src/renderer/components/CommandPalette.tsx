@@ -46,7 +46,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     showWorkspace,
     setSidebarCollapsed,
     sidebarCollapsed,
-    setShowEvaluation,
+    setShowEvalCenter,
   } = useAppStore();
 
   const {
@@ -119,12 +119,12 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       action: () => setShowWorkspace(!showWorkspace),
     },
     {
-      id: 'show-evaluation',
-      label: '打开会话评测',
-      description: '评测当前会话的质量',
+      id: 'show-eval-center',
+      label: '打开评测中心',
+      description: '评测和遥测分析',
       icon: <BarChart2 className="w-4 h-4" />,
       category: 'view',
-      action: () => setShowEvaluation(true),
+      action: () => setShowEvalCenter(true),
     },
 
     // Settings commands
@@ -172,7 +172,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
     showWorkspace,
     setSidebarCollapsed,
     sidebarCollapsed,
-    setShowEvaluation,
+    setShowEvalCenter,
   ]);
 
   // 过滤命令

@@ -4,6 +4,7 @@
 // Features auto-fallback mechanism for resilience
 // ============================================================================
 
+import { DEFAULT_PROVIDER, MODEL_API_ENDPOINTS } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import {
   EMBEDDING_DIMENSIONS,
@@ -100,8 +101,8 @@ export class DeepSeekEmbedding implements EmbeddingProvider {
 
   constructor(apiKey: string, baseUrl?: string, model?: string) {
     this.apiKey = apiKey;
-    this.baseUrl = baseUrl || 'https://api.deepseek.com';
-    this.model = model || 'deepseek-embed';
+    this.baseUrl = baseUrl || MODEL_API_ENDPOINTS.deepseek.replace(/\/v1$/, '');
+    this.model = model || 'deepseek-embed'; // DeepSeek 专用 embedding 模型，不在 PROVIDER_REGISTRY 中
   }
 
   async embed(text: string): Promise<number[]> {
@@ -201,7 +202,7 @@ export class OpenAIEmbedding implements EmbeddingProvider {
 
   constructor(apiKey: string, baseUrl?: string, model?: string) {
     this.apiKey = apiKey;
-    this.baseUrl = baseUrl || 'https://api.openai.com';
+    this.baseUrl = baseUrl || MODEL_API_ENDPOINTS.openai.replace(/\/v1$/, '');
     this.model = model || 'text-embedding-3-small';
   }
 
@@ -733,7 +734,7 @@ let embeddingServiceInstance: EmbeddingService | null = null;
 export function getEmbeddingService(): EmbeddingService {
   if (!embeddingServiceInstance) {
     embeddingServiceInstance = new EmbeddingService({
-      provider: 'deepseek', // Try DeepSeek first
+      provider: DEFAULT_PROVIDER as EmbeddingConfig['provider'], // Use centralized default
       cacheEnabled: true,
     });
   }

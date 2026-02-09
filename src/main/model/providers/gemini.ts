@@ -10,6 +10,7 @@ import {
   parseGeminiResponse,
   handleGeminiStream,
 } from './shared';
+import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 
 /**
  * Call Google Gemini API
@@ -22,7 +23,7 @@ export async function callGemini(
   onStream?: StreamCallback,
   signal?: AbortSignal
 ): Promise<ModelResponse> {
-  const baseUrl = config.baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
+  const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.gemini;
   const model = config.model || 'gemini-2.5-flash';
 
   // 转换消息为 Gemini 格式

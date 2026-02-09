@@ -9,6 +9,7 @@ import type {
   ReportStyle,
 } from './types';
 import type { ModelRouter } from '../model/modelRouter';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ReportGenerator');
@@ -122,8 +123,8 @@ export class ReportGenerator {
 
     try {
       const response = await this.modelRouter.chat({
-        provider: 'deepseek',
-        model: 'deepseek-chat',
+        provider: DEFAULT_PROVIDER,
+        model: DEFAULT_MODEL,
         messages: [{ role: 'user', content: reportPrompt }],
         maxTokens: 4000,
       });

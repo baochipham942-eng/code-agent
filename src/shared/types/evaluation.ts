@@ -3,51 +3,106 @@
 // ============================================================================
 
 /**
- * 评测维度
+ * 评测维度 (v3: 7 计分 + 3 信息)
  */
 export enum EvaluationDimension {
-  TASK_COMPLETION = 'task_completion',
-  TOOL_EFFICIENCY = 'tool_efficiency',
-  DIALOG_QUALITY = 'dialog_quality',
+  // 计分维度 (v3)
+  OUTCOME_VERIFICATION = 'outcome_verification',
   CODE_QUALITY = 'code_quality',
-  PERFORMANCE = 'performance',
   SECURITY = 'security',
+  TOOL_EFFICIENCY = 'tool_efficiency',
+  SELF_REPAIR = 'self_repair',
+  VERIFICATION_QUALITY = 'verification_quality',
+  FORBIDDEN_PATTERNS = 'forbidden_patterns',
+
+  // 信息维度 (不计分)
+  EFFICIENCY_METRICS = 'efficiency_metrics',
+  ERROR_TAXONOMY = 'error_taxonomy',
+  PLAN_QUALITY = 'plan_quality',
+
+  // v2 兼容 (旧数据)
+  TASK_COMPLETION = 'task_completion',
+  DIALOG_QUALITY = 'dialog_quality',
+  PERFORMANCE = 'performance',
 }
 
 /**
- * 维度权重配置
+ * v3 计分维度列表
  */
-export const DIMENSION_WEIGHTS: Record<EvaluationDimension, number> = {
+export const V3_SCORING_DIMENSIONS: EvaluationDimension[] = [
+  EvaluationDimension.OUTCOME_VERIFICATION,
+  EvaluationDimension.CODE_QUALITY,
+  EvaluationDimension.SECURITY,
+  EvaluationDimension.TOOL_EFFICIENCY,
+  EvaluationDimension.SELF_REPAIR,
+  EvaluationDimension.VERIFICATION_QUALITY,
+  EvaluationDimension.FORBIDDEN_PATTERNS,
+];
+
+/**
+ * v3 信息维度列表
+ */
+export const V3_INFO_DIMENSIONS: EvaluationDimension[] = [
+  EvaluationDimension.EFFICIENCY_METRICS,
+  EvaluationDimension.ERROR_TAXONOMY,
+  EvaluationDimension.PLAN_QUALITY,
+];
+
+/**
+ * 维度权重配置 (v3)
+ */
+export const DIMENSION_WEIGHTS: Partial<Record<EvaluationDimension, number>> = {
+  [EvaluationDimension.OUTCOME_VERIFICATION]: 0.35,
+  [EvaluationDimension.CODE_QUALITY]: 0.20,
+  [EvaluationDimension.SECURITY]: 0.15,
+  [EvaluationDimension.TOOL_EFFICIENCY]: 0.08,
+  [EvaluationDimension.SELF_REPAIR]: 0.05,
+  [EvaluationDimension.VERIFICATION_QUALITY]: 0.04,
+  [EvaluationDimension.FORBIDDEN_PATTERNS]: 0.03,
+  // v2 兼容权重
   [EvaluationDimension.TASK_COMPLETION]: 0.30,
-  [EvaluationDimension.TOOL_EFFICIENCY]: 0.20,
   [EvaluationDimension.DIALOG_QUALITY]: 0.15,
-  [EvaluationDimension.CODE_QUALITY]: 0.15,
   [EvaluationDimension.PERFORMANCE]: 0.10,
-  [EvaluationDimension.SECURITY]: 0.10,
 };
 
 /**
  * 维度中文名称
  */
 export const DIMENSION_NAMES: Record<EvaluationDimension, string> = {
-  [EvaluationDimension.TASK_COMPLETION]: '任务完成度',
-  [EvaluationDimension.TOOL_EFFICIENCY]: '工具效率',
-  [EvaluationDimension.DIALOG_QUALITY]: '对话质量',
+  [EvaluationDimension.OUTCOME_VERIFICATION]: '结果验证',
   [EvaluationDimension.CODE_QUALITY]: '代码质量',
-  [EvaluationDimension.PERFORMANCE]: '性能指标',
   [EvaluationDimension.SECURITY]: '安全性',
+  [EvaluationDimension.TOOL_EFFICIENCY]: '工具效率',
+  [EvaluationDimension.SELF_REPAIR]: '自我修复',
+  [EvaluationDimension.VERIFICATION_QUALITY]: '验证行为',
+  [EvaluationDimension.FORBIDDEN_PATTERNS]: '禁止模式',
+  [EvaluationDimension.EFFICIENCY_METRICS]: '效率指标',
+  [EvaluationDimension.ERROR_TAXONOMY]: '错误分类',
+  [EvaluationDimension.PLAN_QUALITY]: '规划质量',
+  // v2 兼容
+  [EvaluationDimension.TASK_COMPLETION]: '任务完成度',
+  [EvaluationDimension.DIALOG_QUALITY]: '对话质量',
+  [EvaluationDimension.PERFORMANCE]: '性能指标',
 };
 
 /**
  * 维度图标
  */
 export const DIMENSION_ICONS: Record<EvaluationDimension, string> = {
-  [EvaluationDimension.TASK_COMPLETION]: '✅',
-  [EvaluationDimension.TOOL_EFFICIENCY]: '🔧',
-  [EvaluationDimension.DIALOG_QUALITY]: '💬',
-  [EvaluationDimension.CODE_QUALITY]: '📝',
-  [EvaluationDimension.PERFORMANCE]: '⚡',
+  [EvaluationDimension.OUTCOME_VERIFICATION]: '🎯',
+  [EvaluationDimension.CODE_QUALITY]: '💻',
   [EvaluationDimension.SECURITY]: '🔒',
+  [EvaluationDimension.TOOL_EFFICIENCY]: '🔧',
+  [EvaluationDimension.SELF_REPAIR]: '🔄',
+  [EvaluationDimension.VERIFICATION_QUALITY]: '✅',
+  [EvaluationDimension.FORBIDDEN_PATTERNS]: '🚫',
+  [EvaluationDimension.EFFICIENCY_METRICS]: '⚡',
+  [EvaluationDimension.ERROR_TAXONOMY]: '📋',
+  [EvaluationDimension.PLAN_QUALITY]: '📐',
+  // v2 兼容
+  [EvaluationDimension.TASK_COMPLETION]: '✅',
+  [EvaluationDimension.DIALOG_QUALITY]: '💬',
+  [EvaluationDimension.PERFORMANCE]: '⚡',
 };
 
 /**
@@ -67,8 +122,9 @@ export interface EvaluationMetric {
   score: number; // 0-100
   weight: number;
   subMetrics?: SubMetric[];
-  details?: { reason?: string; [key: string]: unknown }; // AI 评测详情
+  details?: { reason?: string; [key: string]: unknown };
   suggestions?: string[];
+  informational?: boolean; // true = 不计入总分
 }
 
 /**
@@ -121,7 +177,8 @@ export interface EvaluationResult {
   metrics: EvaluationMetric[];
   statistics: EvaluationStatistics;
   topSuggestions: string[];
-  aiSummary?: string; // AI 评测总结
+  aiSummary?: string;
+  transcriptMetrics?: import('../../main/evaluation/types').TranscriptMetrics;
 }
 
 /**

@@ -6,6 +6,7 @@ import { ipcMain, type BrowserWindow } from 'electron';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { createLogger } from '../services/infra/logger';
+import { MODEL_PRICING_PER_1M, MODEL_API_ENDPOINTS, DEFAULT_PROVIDER } from '../../shared/constants';
 
 const logger = createLogger('StatusIPC');
 const execAsync = promisify(exec);
@@ -44,7 +45,8 @@ export function registerStatusHandlers(): void {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      await fetch('https://api.deepseek.com/health', {
+      const healthUrl = MODEL_API_ENDPOINTS[DEFAULT_PROVIDER === 'moonshot' ? 'kimiK25' : 'deepseek'];
+      await fetch(healthUrl, {
         method: 'HEAD',
         signal: controller.signal,
       });
@@ -96,15 +98,10 @@ export function sendContextUpdate(window: BrowserWindow | null, percent: number)
   }
 }
 
-// 模型定价表（每 1000 tokens 的价格，单位：美元）
-const MODEL_PRICING: Record<string, { input: number; output: number }> = {
-  'deepseek-chat': { input: 0.00014, output: 0.00028 },
-  'deepseek-reasoner': { input: 0.00055, output: 0.00219 },
-  'gpt-4o': { input: 0.005, output: 0.015 },
-  'gpt-4o-mini': { input: 0.00015, output: 0.0006 },
-  'claude-3-5-sonnet': { input: 0.003, output: 0.015 },
-  'claude-3-opus': { input: 0.015, output: 0.075 },
-};
+// Convert per-1M pricing to per-1K for this module
+const MODEL_PRICING_PER_1K = Object.fromEntries(
+  Object.entries(MODEL_PRICING_PER_1M).map(([k, v]) => [k, { input: v.input / 1000, output: v.output / 1000 }])
+);
 
 /**
  * 计算 API 调用费用
@@ -114,7 +111,7 @@ export function calculateCost(
   outputTokens: number,
   model: string
 ): number {
-  const pricing = MODEL_PRICING[model] || { input: 0, output: 0 };
+  const pricing = MODEL_PRICING_PER_1K[model] || { input: 0, output: 0 };
   return (
     (inputTokens / 1000) * pricing.input +
     (outputTokens / 1000) * pricing.output

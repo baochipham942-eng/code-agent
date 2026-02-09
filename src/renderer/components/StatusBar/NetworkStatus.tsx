@@ -67,7 +67,7 @@ export function NetworkStatusEnhanced({
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      await fetch('https://api.deepseek.com', {
+      await fetch('https://api.moonshot.cn', {
         method: 'HEAD',
         signal: controller.signal,
         mode: 'no-cors',

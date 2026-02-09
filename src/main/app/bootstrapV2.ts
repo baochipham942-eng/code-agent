@@ -48,7 +48,7 @@ import { initPluginSystem, shutdownPluginSystem } from '../plugins';
 import { getSkillDiscoveryService, getSkillRepositoryService } from '../services/skills';
 import { getMainWindow } from './window';
 import { IPC_CHANNELS } from '../../shared/ipc';
-import { SYNC, UPDATE, CLOUD, TOOL_CACHE, getCloudApiUrl, DEFAULT_MODELS } from '../../shared/constants';
+import { SYNC, UPDATE, CLOUD, TOOL_CACHE, getCloudApiUrl, DEFAULT_MODELS, DEFAULT_GENERATION, DEFAULT_PROVIDER, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../shared/constants';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import { GenerationManager } from '../generation/generationManager';
 import { createPlanningService, type PlanningService } from '../planning';
@@ -236,9 +236,6 @@ export async function initializeCoreServices(): Promise<ConfigService> {
   const configService = container.resolveSync(ConfigServiceToken);
 
   // 初始化 Supabase（需要在核心阶段完成，因为 auth IPC handlers 依赖它）
-  const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
-  const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcGJ1bmFoemJtZXhzbW1pcXlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODkyMTcsImV4cCI6MjA4NDA2NTIxN30.8swN1QdRX5vIjNyCLNhQTPAx-k2qxeS8EN4Ot2idY7w';
-
   const settings = configService.getSettings();
   const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url || DEFAULT_SUPABASE_URL;
   const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey || DEFAULT_SUPABASE_ANON_KEY;
@@ -660,7 +657,7 @@ async function setupAgentOrchestrator(
     },
   });
 
-  const defaultGenId = settings.generation.default || 'gen3';
+  const defaultGenId = settings.generation.default || DEFAULT_GENERATION;
   generationManager.switchGeneration(defaultGenId);
   logger.info('Generation set to', { genId: defaultGenId });
 
@@ -699,9 +696,9 @@ async function initializeSession(settings: ReturnType<ConfigService['getSettings
   } else {
     const session = await sessionManager.createSession({
       title: 'New Session',
-      generationId: settings.generation.default || 'gen3',
+      generationId: settings.generation.default || DEFAULT_GENERATION,
       modelConfig: {
-        provider: settings.model?.provider || 'deepseek',
+        provider: settings.model?.provider || DEFAULT_PROVIDER,
         model: settings.model?.model || DEFAULT_MODELS.chat,
         temperature: settings.model?.temperature || 0.7,
         maxTokens: settings.model?.maxTokens || 4096,

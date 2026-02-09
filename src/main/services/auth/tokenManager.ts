@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { Message } from '../../../shared/types';
+import { CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW } from '../../../shared/constants';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -28,26 +29,7 @@ export interface PruneResult {
   tokensSaved: number;
 }
 
-// 不同模型的上下文窗口大小
-const MODEL_CONTEXT_LIMITS: Record<string, number> = {
-  // DeepSeek
-  'deepseek-chat': 64000,
-  'deepseek-coder': 64000,
-  'deepseek-reasoner': 64000,
-  // Claude
-  'claude-sonnet-4-20250514': 200000,
-  'claude-3-5-sonnet-20241022': 200000,
-  'claude-3-5-haiku-20241022': 200000,
-  // OpenAI
-  'gpt-4o': 128000,
-  'gpt-4o-mini': 128000,
-  // Groq
-  'llama-3.3-70b-versatile': 128000,
-  'llama-3.1-8b-instant': 128000,
-  'mixtral-8x7b-32768': 32768,
-  // Default
-  'default': 8000,
-};
+// Context window sizes sourced from shared constants
 
 // ----------------------------------------------------------------------------
 // Token Counter (简化实现，生产环境应使用 tiktoken)
@@ -117,7 +99,7 @@ export class TokenManager {
 
   constructor(model: string = 'default', reservedOutputTokens: number = 4096) {
     this.model = model;
-    this.maxContextTokens = MODEL_CONTEXT_LIMITS[model] || MODEL_CONTEXT_LIMITS['default'];
+    this.maxContextTokens = CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW;
     this.reservedOutputTokens = reservedOutputTokens;
   }
 
@@ -127,7 +109,7 @@ export class TokenManager {
 
   setModel(model: string): void {
     this.model = model;
-    this.maxContextTokens = MODEL_CONTEXT_LIMITS[model] || MODEL_CONTEXT_LIMITS['default'];
+    this.maxContextTokens = CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW;
   }
 
   setReservedOutputTokens(tokens: number): void {

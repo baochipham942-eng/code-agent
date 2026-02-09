@@ -15,7 +15,7 @@ import {
   DIMENSION_NAMES,
   scoreToGrade,
 } from '../../shared/types/evaluation';
-import type { SessionSnapshot, DimensionEvaluator } from './types';
+import type { SessionSnapshot, DimensionEvaluator, TurnSnapshot, QualitySignals } from './types';
 import {
   TaskCompletionEvaluator,
   ToolEfficiencyEvaluator,
@@ -304,13 +304,203 @@ export class EvaluationService {
   }
 
   /**
-   * 收集会话数据
+   * 收集会话数据 — 优先从遥测表读取结构化数据，fallback 到旧 messages/tool_uses 表
    */
-  private async collectSessionData(sessionId: string): Promise<SessionSnapshot> {
+  async collectSessionData(sessionId: string): Promise<SessionSnapshot> {
     const dbInstance = this.getDbInstance();
 
+    // 尝试从遥测表获取结构化数据
+    const telemetryData = this.collectFromTelemetry(dbInstance, sessionId);
+    if (telemetryData) {
+      logger.info('Collected session data from telemetry tables', {
+        sessionId,
+        turns: telemetryData.turns.length,
+        inputTokens: telemetryData.inputTokens,
+      });
+      return telemetryData;
+    }
+
+    // Fallback: 从旧的 messages/tool_uses 表获取扁平数据
+    logger.info('Telemetry data not available, falling back to messages/tool_uses tables', { sessionId });
+    return this.collectFromLegacyTables(dbInstance, sessionId);
+  }
+
+  /**
+   * 从 telemetry 表收集结构化数据
+   */
+  private collectFromTelemetry(
+    db: ReturnType<typeof this.getDbInstance>,
+    sessionId: string
+  ): SessionSnapshot | null {
+    try {
+      // 检查 telemetry_turns 表是否存在且有数据
+      const tableExists = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='telemetry_turns'`)
+        .get();
+      if (!tableExists) return null;
+
+      const turnCount = db
+        .prepare(`SELECT COUNT(*) as cnt FROM telemetry_turns WHERE session_id = ?`)
+        .get(sessionId) as { cnt: number };
+      if (!turnCount || turnCount.cnt === 0) return null;
+
+      // 获取 telemetry_session 级聚合数据
+      const sessionRow = db
+        .prepare(`SELECT * FROM telemetry_sessions WHERE id = ?`)
+        .get(sessionId) as Record<string, unknown> | undefined;
+
+      // 获取所有 turns
+      const turnRows = db
+        .prepare(`SELECT * FROM telemetry_turns WHERE session_id = ? ORDER BY turn_number ASC`)
+        .all(sessionId) as Record<string, unknown>[];
+
+      // 获取所有 tool_calls
+      const toolCallRows = db
+        .prepare(`SELECT * FROM telemetry_tool_calls WHERE session_id = ? ORDER BY timestamp ASC`)
+        .all(sessionId) as Record<string, unknown>[];
+
+      // 构建 TurnSnapshot[]
+      const turns: TurnSnapshot[] = turnRows.map(row => {
+        const qualitySignalsStr = row.quality_signals as string | null;
+        let qualitySignals: Record<string, unknown> = {};
+        try {
+          if (qualitySignalsStr) qualitySignals = JSON.parse(qualitySignalsStr);
+        } catch { /* ignore */ }
+
+        const turnToolCalls = toolCallRows
+          .filter(tc => tc.turn_id === row.id)
+          .map(tc => ({
+            id: tc.id as string,
+            name: tc.name as string,
+            args: {},
+            result: (tc.result_summary as string) || undefined,
+            success: (tc.success as number) === 1,
+            duration: (tc.duration_ms as number) || 0,
+            timestamp: tc.timestamp as number,
+            turnId: tc.turn_id as string,
+            index: (tc.idx as number) || 0,
+            parallel: (tc.parallel as number) === 1,
+          }));
+
+        return {
+          turnNumber: row.turn_number as number,
+          userPrompt: (row.user_prompt as string) || '',
+          assistantResponse: (row.assistant_response as string) || '',
+          toolCalls: turnToolCalls,
+          intentPrimary: (row.intent_primary as string) || 'unknown',
+          outcomeStatus: (row.outcome_status as string) || 'unknown',
+          thinkingContent: (row.thinking_content as string) || undefined,
+          durationMs: (row.duration_ms as number) || 0,
+          inputTokens: (row.total_input_tokens as number) || 0,
+          outputTokens: (row.total_output_tokens as number) || 0,
+        };
+      });
+
+      // 构建 messages（从 turns 重建，保持兼容）
+      const messages = turns.flatMap(turn => {
+        const msgs = [];
+        if (turn.userPrompt) {
+          msgs.push({
+            id: `turn-${turn.turnNumber}-user`,
+            role: 'user' as const,
+            content: turn.userPrompt,
+            timestamp: 0,
+          });
+        }
+        if (turn.assistantResponse) {
+          msgs.push({
+            id: `turn-${turn.turnNumber}-assistant`,
+            role: 'assistant' as const,
+            content: turn.assistantResponse,
+            timestamp: 0,
+          });
+        }
+        return msgs;
+      });
+
+      // 构建 toolCalls（扁平列表，保持兼容）
+      const toolCalls = toolCallRows.map(tc => ({
+        id: tc.id as string,
+        name: tc.name as string,
+        args: {},
+        result: (tc.result_summary as string) || undefined,
+        success: (tc.success as number) === 1,
+        duration: (tc.duration_ms as number) || 0,
+        timestamp: tc.timestamp as number,
+        turnId: tc.turn_id as string,
+        index: (tc.idx as number) || 0,
+        parallel: (tc.parallel as number) === 1,
+      }));
+
+      // 聚合 quality signals
+      const qualitySignals = this.aggregateQualitySignals(turnRows);
+
+      const inputTokens = (sessionRow?.total_input_tokens as number) || turns.reduce((sum, t) => sum + t.inputTokens, 0);
+      const outputTokens = (sessionRow?.total_output_tokens as number) || turns.reduce((sum, t) => sum + t.outputTokens, 0);
+      const estimatedCost = (sessionRow?.estimated_cost as number) || 0;
+
+      const startTime = (sessionRow?.start_time as number) || (turnRows[0]?.start_time as number) || Date.now();
+      const endTime = (sessionRow?.end_time as number) || (turnRows[turnRows.length - 1]?.end_time as number) || Date.now();
+
+      return {
+        sessionId,
+        messages,
+        toolCalls,
+        turns,
+        startTime,
+        endTime,
+        inputTokens,
+        outputTokens,
+        totalCost: estimatedCost,
+        qualitySignals,
+      };
+    } catch (error) {
+      logger.warn('Failed to collect from telemetry tables', { error });
+      return null;
+    }
+  }
+
+  /**
+   * 从 turns 行聚合质量信号
+   */
+  private aggregateQualitySignals(turnRows: Record<string, unknown>[]): QualitySignals {
+    let totalRetries = 0;
+    let errorRecoveries = 0;
+    let compactionCount = 0;
+    let circuitBreakerTrips = 0;
+
+    for (const row of turnRows) {
+      const qsStr = row.quality_signals as string | null;
+      if (!qsStr) continue;
+      try {
+        const qs = JSON.parse(qsStr);
+        totalRetries += qs.retryCount || 0;
+        errorRecoveries += qs.errorRecovered || 0;
+        if (qs.compactionTriggered) compactionCount++;
+        if (qs.circuitBreakerTripped) circuitBreakerTrips++;
+      } catch { /* ignore */ }
+    }
+
+    return {
+      totalRetries,
+      errorRecoveries,
+      compactionCount,
+      circuitBreakerTrips,
+      selfRepairAttempts: 0, // 由 analyzeTranscript 计算
+      selfRepairSuccesses: 0,
+      verificationActions: 0,
+    };
+  }
+
+  /**
+   * Fallback: 从旧的 messages/tool_uses 表获取扁平数据
+   */
+  private collectFromLegacyTables(
+    db: ReturnType<typeof this.getDbInstance>,
+    sessionId: string
+  ): SessionSnapshot {
     // 获取消息
-    const messageRows = dbInstance
+    const messageRows = db
       .prepare(
         `SELECT id, role, content, timestamp
          FROM messages
@@ -331,27 +521,15 @@ export class EvaluationService {
       timestamp: row.timestamp,
     }));
 
-    // 获取工具调用（从 tool_uses 表，如果存在）
-    let toolCalls: {
-      id: string;
-      name: string;
-      args: Record<string, unknown>;
-      result?: string;
-      success: boolean;
-      duration: number;
-      timestamp: number;
-    }[] = [];
-
+    // 获取工具调用
+    let toolCalls: SessionSnapshot['toolCalls'] = [];
     try {
-      // 检查 tool_uses 表是否存在
-      const tableExists = dbInstance
-        .prepare(
-          `SELECT name FROM sqlite_master WHERE type='table' AND name='tool_uses'`
-        )
+      const tableExists = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='tool_uses'`)
         .get();
 
       if (tableExists) {
-        const toolUseRows = dbInstance
+        const toolUseRows = db
           .prepare(
             `SELECT id, tool_name as name, input as args, output as result,
                     success, duration_ms as duration, timestamp
@@ -380,42 +558,43 @@ export class EvaluationService {
         }));
       }
     } catch {
-      // 表不存在或查询失败，使用空数组
+      // 表不存在或查询失败
     }
 
     // 获取会话统计
-    const sessionRow = dbInstance
-      .prepare(
-        `SELECT created_at, updated_at
-         FROM sessions WHERE id = ?`
-      )
-      .get(sessionId) as {
-      created_at: number;
-      updated_at: number;
-    } | undefined;
+    const sessionRow = db
+      .prepare(`SELECT created_at, updated_at FROM sessions WHERE id = ?`)
+      .get(sessionId) as { created_at: number; updated_at: number } | undefined;
 
     const startTime = messages[0]?.timestamp || sessionRow?.created_at || Date.now();
-    const endTime =
-      messages[messages.length - 1]?.timestamp ||
-      sessionRow?.updated_at ||
-      Date.now();
+    const endTime = messages[messages.length - 1]?.timestamp || sessionRow?.updated_at || Date.now();
 
     return {
       sessionId,
       messages,
       toolCalls,
+      turns: [], // 旧数据无 turn 级结构
       startTime,
       endTime,
-      inputTokens: 0,  // Token 统计在当前数据库 schema 中不可用
+      inputTokens: 0,
       outputTokens: 0,
       totalCost: 0,
+      qualitySignals: {
+        totalRetries: 0,
+        errorRecoveries: 0,
+        compactionCount: 0,
+        circuitBreakerTrips: 0,
+        selfRepairAttempts: 0,
+        selfRepairSuccesses: 0,
+        verificationActions: 0,
+      },
     };
   }
 
   /**
    * 保存评测结果
    */
-  private async saveResult(result: EvaluationResult): Promise<void> {
+  async saveResult(result: EvaluationResult): Promise<void> {
     const dbInstance = this.getDbInstance();
 
     // 确保表存在

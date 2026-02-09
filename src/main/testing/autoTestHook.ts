@@ -11,6 +11,7 @@ import { MockAgentAdapter, StandaloneAgentAdapter } from './agentAdapter';
 import { generateMarkdownReport, generateConsoleReport, saveReport } from './reportGenerator';
 import { createLogger } from '../services/infra/logger';
 import { getTestDirs, resolvePathWithFallback } from '../config';
+import { DEFAULT_GENERATION, DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 
 const logger = createLogger('AutoTestHook');
 
@@ -45,9 +46,9 @@ export function getAutoTestConfig(): {
     filterIds: process.env.AUTO_TEST_IDS?.split(',').map(t => t.trim()),
     stopOnFailure: process.env.AUTO_TEST_STOP_ON_FAILURE === 'true',
     verbose: process.env.AUTO_TEST_VERBOSE === 'true',
-    generation: process.env.AUTO_TEST_GENERATION || 'gen4',
-    provider: process.env.AUTO_TEST_PROVIDER || 'deepseek',
-    model: process.env.AUTO_TEST_MODEL || 'deepseek-chat',
+    generation: process.env.AUTO_TEST_GENERATION || DEFAULT_GENERATION,
+    provider: process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER,
+    model: process.env.AUTO_TEST_MODEL || DEFAULT_MODEL,
   };
 }
 

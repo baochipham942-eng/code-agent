@@ -8,10 +8,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../../services/infra/logger';
 
-const logger = createLogger('MermaidExport');
+import { MERMAID_INK_API } from '../../../shared/constants';
 
-// Mermaid.ink 在线渲染服务
-const MERMAID_INK_API = 'https://mermaid.ink';
+const logger = createLogger('MermaidExport');
 
 interface MermaidExportParams {
   code: string;

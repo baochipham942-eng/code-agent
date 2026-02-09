@@ -7,8 +7,9 @@ import { IPC_CHANNELS } from '../../shared/ipc';
 import { EvaluationService } from '../evaluation';
 import { getSessionAnalyticsService } from '../evaluation/sessionAnalyticsService';
 import { getSwissCheeseEvaluator } from '../evaluation/swissCheeseEvaluator';
-import type { EvaluationExportFormat, EvaluationGrade } from '../../shared/types/evaluation';
+import type { EvaluationExportFormat } from '../../shared/types/evaluation';
 import { scoreToGrade } from '../../shared/types/evaluation';
+import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('EvaluationIPC');
@@ -67,7 +68,7 @@ export function registerEvaluationHandlers(): void {
   );
 
   // ------------------------------------------------------------------------
-  // Session Analytics v2 - 分离客观指标和主观评测
+  // Session Analytics v2/v3 - 分离客观指标和主观评测
   // ------------------------------------------------------------------------
 
   const analyticsService = getSessionAnalyticsService();
@@ -90,19 +91,19 @@ export function registerEvaluationHandlers(): void {
     }
   );
 
-  // 执行主观评测（按需调用，使用瑞士奶酪多层评测）
+  // 执行主观评测（v3: 瑞士奶酪 + Transcript 分析）
   ipcMain.handle(
     IPC_CHANNELS.EVALUATION_RUN_SUBJECTIVE,
     async (_event, payload: { sessionId: string; save?: boolean }) => {
       logger.info(`Running subjective evaluation for session: ${payload.sessionId}`);
 
-      // 先获取会话数据
+      // 获取客观指标
       const objective = await analyticsService.calculateObjectiveMetrics(payload.sessionId);
 
-      // 构建快照用于评测
-      const snapshot = await service['collectSessionData'](payload.sessionId);
+      // 构建快照（优先使用遥测数据）
+      const snapshot = await service.collectSessionData(payload.sessionId);
 
-      // 使用瑞士奶酪评测器
+      // 使用瑞士奶酪评测器 (v3)
       const evaluator = getSwissCheeseEvaluator();
       const result = await evaluator.evaluate(snapshot);
 
@@ -110,9 +111,10 @@ export function registerEvaluationHandlers(): void {
         throw new Error('Subjective evaluation failed');
       }
 
-      // 如果需要保存
+      // 构建返回结果
+      const grade = scoreToGrade(result.overallScore);
+
       if (payload.save) {
-        const grade = scoreToGrade(result.overallScore);
         const fullResult = {
           id: `eval_${Date.now()}`,
           sessionId: payload.sessionId,
@@ -120,8 +122,8 @@ export function registerEvaluationHandlers(): void {
           objective,
           subjective: {
             evaluatedAt: Date.now(),
-            model: 'glm-4',
-            provider: 'zhipu',
+            model: DEFAULT_MODEL,
+            provider: DEFAULT_PROVIDER,
             dimensions: {},
             overallScore: result.overallScore,
             grade,
@@ -130,11 +132,11 @@ export function registerEvaluationHandlers(): void {
             consensus: result.consensus,
             reviewerCount: result.reviewerResults.length,
             passedReviewers: result.reviewerResults.filter(r => r.passed).length,
+            transcriptMetrics: result.transcriptMetrics,
           },
         };
 
-        // 保存到数据库
-        await service['saveResult']({
+        await service.saveResult({
           id: fullResult.id,
           sessionId: payload.sessionId,
           timestamp: fullResult.timestamp,
@@ -151,16 +153,17 @@ export function registerEvaluationHandlers(): void {
           },
           topSuggestions: result.suggestions,
           aiSummary: result.summary,
+          transcriptMetrics: result.transcriptMetrics,
         });
       }
 
       return {
         evaluatedAt: Date.now(),
-        model: 'glm-4',
-        provider: 'zhipu',
+        model: DEFAULT_MODEL,
+        provider: DEFAULT_PROVIDER,
         dimensions: {},
         overallScore: result.overallScore,
-        grade: scoreToGrade(result.overallScore),
+        grade,
         summary: result.summary,
         suggestions: result.suggestions,
         consensus: result.consensus,
@@ -169,6 +172,7 @@ export function registerEvaluationHandlers(): void {
         reviewerResults: result.reviewerResults,
         codeVerification: result.codeVerification,
         aggregatedMetrics: result.aggregatedMetrics,
+        transcriptMetrics: result.transcriptMetrics,
       };
     }
   );

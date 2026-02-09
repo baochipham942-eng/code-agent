@@ -18,7 +18,7 @@ import type {
 import { getAgentRegistry, AgentRegistry } from './agentRegistry';
 import type { ModelConfig } from '../../../shared/types';
 import type { Tool, ToolContext } from '../../tools/toolRegistry';
-import { ORCHESTRATOR_TIMEOUTS } from '../../../shared/constants';
+import { ORCHESTRATOR_TIMEOUTS, MODEL_API_ENDPOINTS, API_VERSIONS } from '../../../shared/constants';
 
 // ============================================================================
 // 类型定义
@@ -381,12 +381,12 @@ export class AgentExecutor extends EventEmitter {
     }));
 
     // 调用 API
-    const response = await fetch(modelConfig.baseUrl || 'https://api.anthropic.com/v1/messages', {
+    const response = await fetch(modelConfig.baseUrl || `${MODEL_API_ENDPOINTS.claude}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': modelConfig.apiKey || '',
-        'anthropic-version': '2023-06-01',
+        'anthropic-version': API_VERSIONS.ANTHROPIC,
       },
       body: JSON.stringify({
         model: modelConfig.model || 'claude-sonnet-4-20250514',

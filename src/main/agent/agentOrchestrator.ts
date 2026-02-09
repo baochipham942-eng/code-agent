@@ -967,6 +967,100 @@ export class AgentOrchestrator {
   }
 
   /**
+   * 发送消息并以自主迭代模式执行
+   *
+   * Agent 根据目标自主循环执行+验证直到满足退出条件或耗尽预算。
+   * 类似 Carlini 的 `while true` harness。
+   *
+   * @param goal - 用户目标描述
+   * @param autonomousConfig - 自主迭代配置
+   */
+  async sendMessageAutonomous(
+    goal: string,
+    autonomousConfig?: import('./loopTypes').AutonomousConfig
+  ): Promise<void> {
+    const { AutonomousLoop } = await import('./autonomous/autonomousLoop');
+
+    const generation = this.generationManager.getCurrentGeneration();
+    const settings = this.configService.getSettings();
+    const modelConfig = this.getModelConfig(settings);
+    const sessionManager = getSessionManager();
+    const currentSession = await sessionManager.getCurrentSession();
+    const sessionId = currentSession?.id;
+
+    // Notify UI
+    this.onEvent({
+      type: 'notification',
+      data: { message: `自主迭代模式启动: ${goal.substring(0, 80)}` },
+    });
+
+    // Create executor function that wraps AgentLoop
+    const executor = async (prompt: string, _iteration: number) => {
+      let output = '';
+      const modifiedFiles: string[] = [];
+      const startCost = 0; // TODO: track actual cost from model router
+
+      // Create a temporary agent loop
+      const tempLoop = new AgentLoop({
+        generation,
+        modelConfig,
+        toolRegistry: this.toolRegistry,
+        toolExecutor: this.toolExecutor,
+        messages: [...this.messages],
+        onEvent: (event) => {
+          if (event.type === 'message' && event.data?.content) {
+            output += event.data.content;
+          }
+          this.onEvent(event);
+        },
+        planningService: this.planningService,
+        sessionId,
+        workingDirectory: this.workingDirectory,
+        isDefaultWorkingDirectory: this.isDefaultWorkingDirectory,
+      });
+
+      await tempLoop.run(prompt);
+
+      return {
+        output,
+        costUSD: startCost,
+        modifiedFiles,
+      };
+    };
+
+    // Run autonomous loop
+    const loop = new AutonomousLoop(autonomousConfig);
+    const result = await loop.run(goal, executor, this.workingDirectory, (iterResult, _total) => {
+      this.onEvent({
+        type: 'notification',
+        data: {
+          message: `自主迭代 #${iterResult.iteration + 1}: score=${(iterResult.verification.score * 100).toFixed(0)}% ${iterResult.verification.passed ? '✓' : '✗'}`,
+        },
+      });
+    });
+
+    // Add final result as assistant message
+    if (result.finalOutput) {
+      const resultMessage: Message = {
+        id: this.generateId(),
+        role: 'assistant',
+        content: result.finalOutput,
+        timestamp: Date.now(),
+      };
+      this.addMessage(resultMessage);
+      this.onEvent({ type: 'message', data: resultMessage });
+    }
+
+    logger.info('Autonomous loop completed', {
+      iterations: result.iterations,
+      bestScore: result.bestScore,
+      exitReason: result.exitReason,
+    });
+
+    this.onEvent({ type: 'agent_complete', data: null });
+  }
+
+  /**
    * 检查是否正在处理中
    */
   isProcessing(): boolean {

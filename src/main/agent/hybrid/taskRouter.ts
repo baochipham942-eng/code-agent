@@ -360,11 +360,33 @@ export class TaskRouter {
 
   /**
    * 路由到核心角色
+   * 先查 profiler 推荐，如果有历史表现数据则优先使用
    */
   private routeToCoreAgent(
     analysis: TaskAnalysis,
     _context: RoutingContext
   ): CoreRoutingDecision {
+    // 尝试使用 profiler 推荐
+    try {
+      const { getAgentProfiler } = require('../profiling/agentProfiler');
+      const profiler = getAgentProfiler();
+      const recommendation = profiler.recommendAgent(analysis.taskType);
+      if (recommendation && isCoreAgent(recommendation.agentId)) {
+        logger.info('Using profiler recommendation', {
+          agentId: recommendation.agentId,
+          wilsonScore: recommendation.wilsonScore.toFixed(3),
+          totalExecutions: recommendation.totalExecutions,
+        });
+        return {
+          type: 'core',
+          agent: CORE_AGENTS[recommendation.agentId as CoreAgentId],
+          reason: `Profiler recommended: ${recommendation.agentId} (wilson=${recommendation.wilsonScore.toFixed(3)})`,
+        };
+      }
+    } catch {
+      // Profiler not available, fall through to default
+    }
+
     const agentId = recommendCoreAgent(analysis.taskType);
     const agent = CORE_AGENTS[agentId];
 
@@ -426,6 +448,12 @@ export class TaskRouter {
     const result = this.factory.createFromSpecs(specs, generationContext);
 
     // Swarm 配置
+    // 根据任务依赖密度选择执行模式：
+    // - 松耦合（无 dependencies）→ 乐观并发（optimistic）
+    // - 紧耦合（有 dependencies 链）→ DAG 调度（dag）
+    const hasDependencies = specs.some(s => (s.dependencies?.length ?? 0) > 0);
+    const executionMode = hasDependencies ? 'dag' : 'optimistic';
+
     const config: SwarmConfig = {
       maxAgents: Math.min(analysis.parallelism * 2, 50),
       reportingMode: 'sparse',  // 稀疏汇报
@@ -437,7 +465,7 @@ export class TaskRouter {
       type: 'swarm',
       agents: result.agents,
       config,
-      reason: `Complex task with high parallelism → swarm with ${result.agents.length} agents`,
+      reason: `Complex task → swarm (${executionMode}) with ${result.agents.length} agents`,
     };
   }
 
@@ -519,14 +547,9 @@ export class TaskRouter {
       }
     }
 
-    // 4. 验证 Agent（总是最后一个）
-    specs.push({
-      name: 'task-verifier',
-      responsibility: 'Verify all changes and run tests',
-      tools: ['read_file', 'glob', 'grep', 'bash'],
-      parallelizable: false,
-      dependencies: specs.slice(1).map(s => s.name),  // 依赖所有工作 Agent
-    });
+    // 4. 验证步骤：不再生成 task-verifier agent，
+    //    改由 agentSwarm.execute() 结束时运行确定性 VerifierRegistry
+    //    （见 agentSwarm.ts 中 coordinator.aggregate() 之后的验证步骤）
 
     return specs;
   }

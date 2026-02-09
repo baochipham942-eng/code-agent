@@ -51,6 +51,23 @@ export interface AgentLoopConfig {
 }
 
 /**
+ * 自主迭代模式配置
+ * Agent 根据目标自主循环执行+验证直到满足退出条件或耗尽预算
+ */
+export interface AutonomousConfig {
+  /** 最大外层迭代次数（默认 5） */
+  maxOuterIterations?: number;
+  /** 最大预算 USD（默认 2.0） */
+  maxBudgetUSD?: number;
+  /** 最大总时间 ms（默认 600000 = 10 分钟） */
+  maxTotalTimeMs?: number;
+  /** 验证分数阈值（默认 0.7） */
+  scoreThreshold?: number;
+  /** 连续无改善轮数阈值（默认 2） */
+  maxNoImprovement?: number;
+}
+
+/**
  * 从 prompt 解析出的步骤
  */
 export interface ParsedStep {

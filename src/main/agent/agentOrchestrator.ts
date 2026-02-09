@@ -31,7 +31,8 @@ import { createLogger } from '../services/infra/logger';
 import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
 import { getDynamicAgentFactory } from './dynamicAgentFactory';
 import { getAutoAgentCoordinator } from './autoAgentCoordinator';
-import { DEFAULT_MODELS } from '../../shared/constants';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
+import { PROVIDER_REGISTRY } from '../model/providerRegistry';
 import { getModelSessionState } from '../session/modelSessionState';
 // Agent Routing
 import { getRoutingService } from '../routing';
@@ -1247,7 +1248,7 @@ export class AgentOrchestrator {
     const isAdmin = currentUser?.isAdmin === true;
 
     // 从用户配置获取选择的 provider 和 model
-    const userProviderStr = settings.models?.default || settings.models?.defaultProvider || 'deepseek';
+    const userProviderStr = settings.models?.default || settings.models?.defaultProvider || DEFAULT_PROVIDER;
     const providerConfig = settings.models?.providers?.[userProviderStr as keyof typeof settings.models.providers];
     const userModel = providerConfig?.model || this.getDefaultModel(userProviderStr);
 
@@ -1280,7 +1281,7 @@ export class AgentOrchestrator {
       if (!cloudSupportedProviders.includes(selectedProvider)) {
         // 不支持的 provider，回退到 deepseek
         logger.warn(`[模型选择] 云端代理不支持 ${selectedProvider}，回退到 deepseek`);
-        selectedProvider = 'deepseek' as ModelProvider;
+        selectedProvider = DEFAULT_PROVIDER as ModelProvider;
         selectedModel = DEFAULT_MODELS.chat;
       }
       logger.info(`[模型选择] 管理员使用云端代理: ${selectedProvider}`);
@@ -1310,18 +1311,12 @@ export class AgentOrchestrator {
   }
 
   private getDefaultModel(provider: string): string {
-    const defaultModels: Record<string, string> = {
-      zhipu: 'glm-4.7',
-      deepseek: DEFAULT_MODELS.chat,
-      openai: 'gpt-4o',
-      anthropic: 'claude-sonnet-4-20250514',
-      openrouter: 'google/gemini-2.0-flash-exp:free',
-      groq: 'llama-3.3-70b-versatile',
-      qwen: 'qwen-max',
-      moonshot: 'moonshot-v1-8k',
-      gemini: 'gemini-1.5-pro',
-    };
-    return defaultModels[provider] || DEFAULT_MODELS.chat;
+    // 从 PROVIDER_REGISTRY 获取每个 provider 的第一个模型作为默认
+    const reg = PROVIDER_REGISTRY[provider];
+    if (reg && reg.models.length > 0) {
+      return reg.models[0].id;
+    }
+    return DEFAULT_MODELS.chat;
   }
 
   /**

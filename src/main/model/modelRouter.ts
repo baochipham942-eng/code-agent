@@ -10,6 +10,7 @@ import type {
   ModelProvider
 } from '../../shared/types';
 import { PROVIDER_REGISTRY } from './providerRegistry';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import { getInferenceCache } from './inferenceCache';
 import { getAdaptiveRouter } from './adaptiveRouter';
@@ -83,27 +84,27 @@ export class ModelRouter {
    */
   private fallbackModels: Record<ModelCapability, { provider: string; model: string }> = {
     // 视觉 - 智谱 GLM-4.6V (旗舰视觉)
-    vision: { provider: 'zhipu', model: 'glm-4.6v' },
+    vision: { provider: 'zhipu', model: DEFAULT_MODELS.vision },
     // 推理 - 智谱 GLM-4.6V (带推理能力)
-    reasoning: { provider: 'zhipu', model: 'glm-4.6v' },
-    // 代码 - Kimi K2.5 包月
-    code: { provider: 'moonshot', model: 'kimi-k2.5' },
+    reasoning: { provider: 'zhipu', model: DEFAULT_MODELS.vision },
+    // 代码 - 默认主力包月
+    code: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.code },
     // 快速 - 智谱 GLM-4.7 Flash (免费)
-    fast: { provider: 'zhipu', model: 'glm-4.7-flash' },
-    // 通用 - Kimi K2.5 包月
-    general: { provider: 'moonshot', model: 'kimi-k2.5' },
+    fast: { provider: 'zhipu', model: DEFAULT_MODELS.quick },
+    // 通用 - 默认主力包月
+    general: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.chat },
     // GUI - 智谱 GLM-4.6V Flash (免费视觉)
-    gui: { provider: 'zhipu', model: 'glm-4.6v-flash' },
+    gui: { provider: 'zhipu', model: DEFAULT_MODELS.visionFast },
     // 搜索 - Perplexity (按需)
     search: { provider: 'perplexity', model: 'sonar-pro' },
-    // 压缩 - Kimi K2.5 包月无成本
-    compact: { provider: 'moonshot', model: 'kimi-k2.5' },
+    // 压缩 - 默认主力包月无成本
+    compact: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.compact },
     // 快速判断 - 智谱 GLM-4.7 Flash (免费)
-    quick: { provider: 'zhipu', model: 'glm-4.7-flash' },
-    // 长上下文 - Kimi K2.5 包月
-    longContext: { provider: 'moonshot', model: 'kimi-k2.5' },
-    // 无限制 - Kimi K2.5 包月
-    unlimited: { provider: 'moonshot', model: 'kimi-k2.5' },
+    quick: { provider: 'zhipu', model: DEFAULT_MODELS.quick },
+    // 长上下文 - 默认主力包月
+    longContext: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.longContext },
+    // 无限制 - 默认主力包月
+    unlimited: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.unlimited },
   };
 
   /**
@@ -167,9 +168,9 @@ export class ModelRouter {
     const flag = capabilityToFlag[capability];
     if (!flag) return null;
 
-    // 排除不支持 base64 的模型（如 glm-4v-flash）
+    // 排除不支持 base64 的模型（如 glm-4.6v-flash）
     const supportingModels = providerConfig.models.filter(
-      (m) => m[flag] === true && m.id !== 'glm-4v-flash'
+      (m) => m[flag] === true && m.id !== DEFAULT_MODELS.visionFast
     );
 
     if (supportingModels.length === 0) return null;

@@ -7,6 +7,7 @@
 
 import { ModelRouter } from '../model/modelRouter';
 import { getConfigService } from '../services';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import type { Message } from '../../shared/types';
 import type { SessionSummary } from './sessionSummarizer';
@@ -19,7 +20,7 @@ const logger = createLogger('LLMSummarizer');
 
 export interface LLMSummarizerConfig {
   /** 使用的模型提供商 */
-  provider?: 'deepseek' | 'openai' | 'claude' | 'zhipu' | 'qwen';
+  provider?: 'deepseek' | 'openai' | 'claude' | 'zhipu' | 'qwen' | 'moonshot';
   /** 使用的模型名称 */
   model?: string;
   /** 最大 token 数 */
@@ -33,8 +34,8 @@ export interface LLMSummarizerConfig {
 // ----------------------------------------------------------------------------
 
 const DEFAULT_CONFIG: Required<LLMSummarizerConfig> = {
-  provider: 'deepseek',
-  model: 'deepseek-chat',
+  provider: DEFAULT_PROVIDER,
+  model: DEFAULT_MODEL,
   maxTokens: 1000,
   timeout: 30000,
 };
@@ -169,20 +170,16 @@ export class LLMSummarizer {
    * 获取提供商对应的模型
    */
   private getModelForProvider(provider: string): string {
-    switch (provider) {
-      case 'deepseek':
-        return 'deepseek-chat';
-      case 'openai':
-        return 'gpt-4o-mini';
-      case 'claude':
-        return 'claude-3-haiku-20240307';
-      case 'zhipu':
-        return 'glm-4-flash';
-      case 'qwen':
-        return 'qwen-turbo';
-      default:
-        return this.config.model;
-    }
+    // 使用 PROVIDER_REGISTRY 中各 provider 的第一个模型作为默认
+    const providerDefaults: Record<string, string> = {
+      deepseek: 'deepseek-chat',
+      openai: 'gpt-4o-mini',
+      claude: 'claude-3-5-haiku-20241022',
+      zhipu: DEFAULT_MODELS.quick,
+      qwen: 'qwen-turbo',
+      moonshot: DEFAULT_MODEL,
+    };
+    return providerDefaults[provider] || this.config.model;
   }
 
   /**

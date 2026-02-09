@@ -10,6 +10,7 @@ import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { getSecureStorage } from './secureStorage';
 import { createLogger } from '../infra/logger';
+import { DEFAULT_GENERATION, DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../../shared/constants';
 
 const logger = createLogger('ConfigService');
 
@@ -114,7 +115,7 @@ logger.info('DEEPSEEK_API_KEY from env:', process.env.DEEPSEEK_API_KEY ? `${proc
 // Default settings
 const DEFAULT_SETTINGS: AppSettings = {
   models: {
-    default: 'moonshot',  // Kimi K2.5 包月作为默认主力
+    default: DEFAULT_PROVIDER,  // 默认主力 provider
     providers: {
       deepseek: { enabled: true },
       claude: { enabled: false },
@@ -129,16 +130,16 @@ const DEFAULT_SETTINGS: AppSettings = {
       perplexity: { enabled: false },
       openrouter: { enabled: false },
     },
-    // 按用途路由模型 (2026-02 最新)
+    // 按用途路由模型 — 引用 DEFAULT_MODELS 常量
     routing: {
-      code: { provider: 'moonshot', model: 'kimi-k2.5' },             // Kimi K2.5 包月
-      vision: { provider: 'zhipu', model: 'glm-4.6v' },               // GLM-4.6V 旗舰视觉
-      fast: { provider: 'zhipu', model: 'glm-4.7-flash' },            // GLM-4.7 Flash (免费)
-      gui: { provider: 'zhipu', model: 'glm-4.6v-flash' },            // GLM-4.6V Flash (免费视觉)
+      code: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.code },
+      vision: { provider: 'zhipu', model: DEFAULT_MODELS.vision },
+      fast: { provider: 'zhipu', model: DEFAULT_MODELS.quick },
+      gui: { provider: 'zhipu', model: DEFAULT_MODELS.visionFast },
     },
   },
   generation: {
-    default: 'gen3' as GenerationId,
+    default: DEFAULT_GENERATION,
   },
   workspace: {
     recentDirectories: [],

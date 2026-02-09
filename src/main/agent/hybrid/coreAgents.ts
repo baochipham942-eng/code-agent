@@ -14,6 +14,7 @@
 // ============================================================================
 
 import type { ModelProvider } from '../../../shared/types/model';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../../shared/constants';
 
 // ============================================================================
 // Types
@@ -58,15 +59,15 @@ export interface CoreAgentConfig {
 export const MODEL_CONFIG: Record<ModelTier, { provider: ModelProvider; model: string }> = {
   fast: {
     provider: (process.env.FAST_MODEL_PROVIDER as ModelProvider) || 'zhipu',
-    model: process.env.FAST_MODEL || 'glm-4-flash',
+    model: process.env.FAST_MODEL || DEFAULT_MODELS.quick,
   },
   balanced: {
     provider: (process.env.BALANCED_MODEL_PROVIDER as ModelProvider) || 'zhipu',
     model: process.env.BALANCED_MODEL || 'glm-4.7',
   },
   powerful: {
-    provider: (process.env.POWERFUL_MODEL_PROVIDER as ModelProvider) || 'moonshot',
-    model: process.env.POWERFUL_MODEL || 'kimi-k2.5',
+    provider: (process.env.POWERFUL_MODEL_PROVIDER as ModelProvider) || (DEFAULT_PROVIDER as ModelProvider),
+    model: process.env.POWERFUL_MODEL || DEFAULT_MODEL,
   },
 };
 

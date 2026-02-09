@@ -1,5 +1,5 @@
 // ============================================================================
-// EvalCenterPanel - 评测中心（3-Tab 重构：概览 + 深度评测 + 轮次详情）
+// EvalCenterPanel - 评测中心（单页 Dashboard 重构）
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
@@ -7,31 +7,19 @@ import { useAppStore } from '../../../stores/appStore';
 import { useSessionStore } from '../../../stores/sessionStore';
 import { useEvalCenterStore } from '../../../stores/evalCenterStore';
 import { EvalSessionHeader } from './EvalSessionHeader';
-import { OverviewSection } from './OverviewSection';
-import { DeepEvalSection } from './DeepEvalSection';
+import { EvalDashboard } from './EvalDashboard';
 import { SessionListView } from './SessionListView';
-import { TelemetryPanel } from '../telemetry';
 import { ChevronLeft } from 'lucide-react';
-
-type EvalTab = 'overview' | 'deepeval' | 'turns';
-
-const TABS: Array<{ id: EvalTab; label: string; icon: string }> = [
-  { id: 'overview', label: '概览', icon: '📊' },
-  { id: 'deepeval', label: '深度评测', icon: '🧀' },
-  { id: 'turns', label: '轮次详情', icon: '📡' },
-];
 
 export const EvalCenterPanel: React.FC = () => {
   const { showEvalCenter, evalCenterSessionId, setShowEvalCenter } = useAppStore();
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
-  const { sessionInfo, objective, previousEvaluations, latestEvaluation, eventSummary, isLoading, loadSession } = useEvalCenterStore();
+  const { sessionInfo, isLoading, loadSession } = useEvalCenterStore();
 
-  // mode: 'list' (session list) or 'detail' (3-tab detail view)
+  // mode: 'list' (session list) or 'detail' (dashboard)
   const [mode, setMode] = useState<'list' | 'detail'>('list');
-  const [activeTab, setActiveTab] = useState<EvalTab>('overview');
   const [detailSessionId, setDetailSessionId] = useState<string | null>(null);
 
-  // Determine which session to show
   const effectiveSessionId = detailSessionId || evalCenterSessionId || currentSessionId;
 
   // Auto-enter detail mode if we have a session
@@ -61,7 +49,6 @@ export const EvalCenterPanel: React.FC = () => {
   const handleSelectSession = (sessionId: string) => {
     setDetailSessionId(sessionId);
     setMode('detail');
-    setActiveTab('overview');
   };
 
   const handleBackToList = () => {
@@ -98,69 +85,22 @@ export const EvalCenterPanel: React.FC = () => {
         </div>
 
         {mode === 'list' ? (
-          /* Session List Mode */
           <div className="flex-1 overflow-hidden min-h-0">
             <SessionListView onSelectSession={handleSelectSession} />
           </div>
         ) : (
-          /* Detail Mode with 3 Tabs */
-          <>
-            {/* Session Header (shared across tabs) */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            {/* Session Header */}
             <EvalSessionHeader sessionInfo={sessionInfo} isLoading={isLoading} />
 
-            {/* Tab Bar */}
-            <div className="flex border-b border-zinc-700/50">
-              {TABS.map((tab) => {
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center gap-1.5 px-4 py-2.5 text-xs transition-colors border-b-2 ${
-                      isActive
-                        ? 'border-amber-500 text-amber-400'
-                        : 'border-transparent text-zinc-500 hover:text-zinc-300'
-                    }`}
-                  >
-                    <span>{tab.icon}</span>
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Tab Content */}
-            <div className="flex-1 overflow-y-auto min-h-0">
-              {!effectiveSessionId && (
-                <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">
-                  请先选择一个会话
-                </div>
-              )}
-
-              {effectiveSessionId && activeTab === 'overview' && (
-                <div className="p-4">
-                  <OverviewSection
-                    objective={objective}
-                    eventSummary={eventSummary}
-                  />
-                </div>
-              )}
-
-              {effectiveSessionId && activeTab === 'deepeval' && (
-                <div className="p-4">
-                  <DeepEvalSection
-                    sessionId={effectiveSessionId}
-                    previousEvaluations={previousEvaluations}
-                    latestEvaluation={latestEvaluation as Parameters<typeof DeepEvalSection>[0]['latestEvaluation']}
-                  />
-                </div>
-              )}
-
-              {effectiveSessionId && activeTab === 'turns' && (
-                <TelemetryPanel sessionId={effectiveSessionId} />
-              )}
-            </div>
-          </>
+            {!effectiveSessionId ? (
+              <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">
+                请先选择一个会话
+              </div>
+            ) : (
+              <EvalDashboard sessionId={effectiveSessionId} />
+            )}
+          </div>
         )}
       </div>
     </div>

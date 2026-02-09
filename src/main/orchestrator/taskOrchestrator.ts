@@ -5,6 +5,7 @@
 // 借鉴 KIMI K2.5 的 Critical Steps（关键路径）概念
 
 import { createLogger } from '../services/infra/logger';
+import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../shared/constants';
 
 const logger = createLogger('TaskOrchestrator');
 
@@ -171,15 +172,15 @@ export class TaskOrchestrator {
     const { provider, model, apiKey } = this.config;
 
     const endpoints: Record<string, string> = {
-      groq: 'https://api.groq.com/openai/v1/chat/completions',
-      openai: 'https://api.openai.com/v1/chat/completions',
-      zhipu: 'https://open.bigmodel.cn/api/paas/v4/chat/completions',
+      groq: `${MODEL_API_ENDPOINTS.groq}/chat/completions`,
+      openai: `${MODEL_API_ENDPOINTS.openai}/chat/completions`,
+      zhipu: `${MODEL_API_ENDPOINTS.zhipu}/chat/completions`,
     };
 
     const defaultModels: Record<string, string> = {
       groq: 'llama-3.3-70b-versatile',
       openai: 'gpt-4o-mini',
-      zhipu: 'glm-4-flash',
+      zhipu: DEFAULT_MODELS.quick,
     };
 
     const envKeys: Record<string, string> = {

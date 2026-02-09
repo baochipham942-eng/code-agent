@@ -3,6 +3,111 @@
  * 消除魔法数字，集中管理配置值
  */
 
+import type { GenerationId } from './types/generation';
+
+// ============================================================================
+// 核心默认值 — 所有模块的 fallback 必须引用这里
+// ============================================================================
+
+/** 默认代际（CLI 和 Electron 统一） */
+export const DEFAULT_GENERATION: GenerationId = 'gen8';
+
+/** 默认 Provider */
+export const DEFAULT_PROVIDER = 'moonshot' as const;
+
+/** 默认模型（主力对话） */
+export const DEFAULT_MODEL = 'kimi-k2.5' as const;
+
+// ============================================================================
+// 模型输出 Token 上限 — providerRegistry / compactModel 等引用
+// ============================================================================
+
+/** 模型 maxTokens 默认值（按能力分层） */
+export const MODEL_MAX_TOKENS = {
+  /** 大多数模型的默认 maxTokens */
+  DEFAULT: 8192,
+  /** Mini/Compact 模型 */
+  COMPACT: 4096,
+  /** 视觉模型（智谱等） */
+  VISION: 2048,
+} as const;
+
+// ============================================================================
+// 上下文窗口大小 — contextHealthService / tokenManager 引用
+// ============================================================================
+
+/** 模型上下文窗口大小（tokens） — 仅包含 PROVIDER_REGISTRY 中注册的模型 */
+export const CONTEXT_WINDOWS: Record<string, number> = {
+  // DeepSeek
+  'deepseek-chat': 64_000,
+  'deepseek-coder': 64_000,
+  'deepseek-reasoner': 64_000,
+  // Anthropic
+  'claude-sonnet-4-20250514': 200_000,
+  'claude-3-5-sonnet-20241022': 200_000,
+  'claude-3-5-haiku-20241022': 200_000,
+  // OpenAI
+  'gpt-4o': 128_000,
+  'gpt-4o-mini': 128_000,
+  // Zhipu
+  'glm-4.7': 128_000,
+  'glm-4.7-flash': 128_000,
+  // Moonshot
+  'kimi-k2.5': 128_000,
+};
+
+/** 默认上下文窗口（未知模型 fallback） */
+export const DEFAULT_CONTEXT_WINDOW = 128_000;
+
+// ============================================================================
+// 统一价格表 — 每 1M tokens (USD)
+// ============================================================================
+
+/** 模型定价（每 1M tokens，美元）— 仅包含 PROVIDER_REGISTRY 中注册的模型 */
+export const MODEL_PRICING_PER_1M: Record<string, { input: number; output: number }> = {
+  // DeepSeek
+  'deepseek-chat': { input: 0.14, output: 0.28 },
+  'deepseek-coder': { input: 0.14, output: 0.28 },
+  'deepseek-reasoner': { input: 0.55, output: 2.19 },
+  // OpenAI
+  'gpt-4o': { input: 2.5, output: 10 },
+  'gpt-4o-mini': { input: 0.15, output: 0.6 },
+  // Anthropic
+  'claude-sonnet-4-20250514': { input: 3, output: 15 },
+  'claude-3-5-sonnet-20241022': { input: 3, output: 15 },
+  'claude-3-5-haiku-20241022': { input: 0.25, output: 1.25 },
+  // Zhipu
+  'glm-4.7': { input: 0.05, output: 0.05 },
+  'glm-4.6v': { input: 0.05, output: 0.05 },
+  'glm-4.7-flash': { input: 0, output: 0 },
+  'glm-4.6v-flash': { input: 0, output: 0 },
+  // Moonshot
+  'kimi-k2.5': { input: 0, output: 0 },
+  'moonshot-v1-8k': { input: 0.12, output: 0.12 },
+  'moonshot-v1-32k': { input: 0.24, output: 0.24 },
+  'moonshot-v1-128k': { input: 0.6, output: 0.6 },
+  // Fallback
+  'default': { input: 1, output: 3 },
+};
+
+// ============================================================================
+// API 版本号 — 避免多处硬编码
+// ============================================================================
+
+export const API_VERSIONS = {
+  ANTHROPIC: '2023-06-01',
+} as const;
+
+// ============================================================================
+// 视觉模型常量
+// ============================================================================
+
+/** 智谱视觉模型（支持 base64） */
+export const ZHIPU_VISION_MODEL = 'glm-4.6v' as const;
+
+/** Mermaid 在线渲染 API */
+export const MERMAID_INK_API = 'https://mermaid.ink';
+
 /** Agent 配置 */
 export const AGENT = {
   /** 最大迭代次数 */
@@ -472,15 +577,15 @@ export const DEFAULT_MODELS = {
   /** 推理模型 - DeepSeek R1 (按需付费) */
   reasoning: 'deepseek-reasoner',
   /** 视觉理解模型 - 智谱包年 */
-  vision: 'glm-4v-plus',
+  vision: 'glm-4.6v',
   /** 视觉快速模型（不支持 base64） */
-  visionFast: 'glm-4v-flash',
+  visionFast: 'glm-4.6v-flash',
   /** 代码模型 - Kimi K2.5 包月 */
   code: 'kimi-k2.5',
   /** 压缩/摘要模型 - Kimi K2.5 包月无成本 */
   compact: 'kimi-k2.5',
   /** 快速判断模型 - 智谱 Flash 包年免费 */
-  quick: 'glm-4-flash',
+  quick: 'glm-4.7-flash',
   /** 超长上下文模型（128K+） */
   longContext: 'kimi-k2.5',
   /** 包月无限制模型 */
@@ -498,13 +603,13 @@ export const VISION_MODEL_CAPABILITIES: Record<string, {
   maxTokens: number;
   note: string;
 }> = {
-  'glm-4v-plus': {
+  'glm-4.6v': {
     supportsBase64: true,
     supportsUrl: true,
     maxTokens: 2048, // 实测限制
     note: '智谱视觉模型，支持 base64 和 URL',
   },
-  'glm-4v-flash': {
+  'glm-4.6v-flash': {
     supportsBase64: false,
     supportsUrl: true,
     maxTokens: 1024, // 文档限制
@@ -816,6 +921,16 @@ export const SKILL_TIMEOUTS = {
 // ============================================================================
 // 资源管理配置
 // ============================================================================
+
+// ============================================================================
+// Supabase 配置
+// ============================================================================
+
+/** 默认 Supabase URL */
+export const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
+
+/** 默认 Supabase Anonymous Key */
+export const DEFAULT_SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcGJ1bmFoemJtZXhzbW1pcXlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODkyMTcsImV4cCI6MjA4NDA2NTIxN30.8swN1QdRX5vIjNyCLNhQTPAx-k2qxeS8EN4Ot2idY7w';
 
 /** 资源管理常量 */
 export const RESOURCE_MANAGEMENT = {

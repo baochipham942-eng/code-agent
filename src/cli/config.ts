@@ -7,7 +7,7 @@ import fs from 'fs';
 import os from 'os';
 import * as dotenv from 'dotenv';
 import type { AppSettings, GenerationId, ModelProvider, PermissionLevel } from '../shared/types';
-import { DEFAULT_MODELS } from '../shared/constants';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_GENERATION } from '../shared/constants';
 
 // 加载 .env 文件
 function loadEnvFile(): void {
@@ -77,9 +77,9 @@ export class CLIConfigService {
     return {
       models: {
         default: DEFAULT_MODELS.chat,
-        defaultProvider: 'moonshot' as ModelProvider,  // Kimi K2.5 使用 moonshot provider
+        defaultProvider: DEFAULT_PROVIDER as ModelProvider,  // Kimi K2.5 使用 moonshot provider
         providers: {
-          deepseek: { enabled: true, model: 'deepseek-chat' },
+          deepseek: { enabled: true, model: 'deepseek-chat' }, // deepseek provider 自身的默认模型
           openai: { enabled: false },
           claude: { enabled: false },
           zhipu: { enabled: false },
@@ -93,14 +93,14 @@ export class CLIConfigService {
           openrouter: { enabled: false },
         },
         routing: {
-          code: { provider: 'moonshot' as ModelProvider, model: DEFAULT_MODELS.chat },
-          vision: { provider: 'openai' as ModelProvider, model: 'gpt-4o' },
-          fast: { provider: 'zhipu' as ModelProvider, model: 'glm-4-flash' },
-          gui: { provider: 'claude' as ModelProvider, model: 'claude-sonnet-4-20250514' },
+          code: { provider: DEFAULT_PROVIDER as ModelProvider, model: DEFAULT_MODELS.chat },
+          vision: { provider: 'zhipu' as ModelProvider, model: DEFAULT_MODELS.vision },
+          fast: { provider: 'zhipu' as ModelProvider, model: DEFAULT_MODELS.quick },
+          gui: { provider: 'zhipu' as ModelProvider, model: DEFAULT_MODELS.visionFast },
         },
       },
       generation: {
-        default: 'gen8' as GenerationId,  // 使用最新代际，支持所有工具
+        default: DEFAULT_GENERATION,  // 使用最新代际，支持所有工具
       },
       workspace: {
         recentDirectories: [],
@@ -135,7 +135,7 @@ export class CLIConfigService {
         maxHistory: 100,
       },
       model: {
-        provider: 'moonshot' as ModelProvider,  // Kimi K2.5
+        provider: DEFAULT_PROVIDER as ModelProvider,  // Kimi K2.5
         model: DEFAULT_MODELS.chat,
         temperature: 0.7,
         maxTokens: 4096,

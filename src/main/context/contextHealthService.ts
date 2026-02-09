@@ -4,6 +4,7 @@
 
 import { BrowserWindow } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, DEFAULT_MODEL } from '../../shared/constants';
 import {
   ContextHealthState,
   ContextHealthUpdateEvent,
@@ -32,36 +33,7 @@ export interface ContextMessage {
 
 const logger = createLogger('ContextHealthService');
 
-// ----------------------------------------------------------------------------
-// Model Token Limits
-// ----------------------------------------------------------------------------
-
-/**
- * 模型的上下文窗口大小
- * 这些是单次请求的最大 token 数
- */
-const MODEL_CONTEXT_LIMITS: Record<string, number> = {
-  // DeepSeek
-  'deepseek-chat': 64000,
-  'deepseek-coder': 64000,
-  'deepseek-reasoner': 64000,
-
-  // OpenAI
-  'gpt-4o': 128000,
-  'gpt-4o-mini': 128000,
-  'gpt-4-turbo': 128000,
-  'gpt-4': 8192,
-  'gpt-3.5-turbo': 16385,
-
-  // Anthropic
-  'claude-3-5-sonnet-20241022': 200000,
-  'claude-3-opus-20240229': 200000,
-  'claude-3-sonnet-20240229': 200000,
-  'claude-3-haiku-20240307': 200000,
-
-  // Default
-  default: 128000,
-};
+// Context window sizes sourced from shared constants
 
 // ----------------------------------------------------------------------------
 // Context Health Service
@@ -89,7 +61,7 @@ export class ContextHealthService {
    * 获取指定模型的上下文限制
    */
   getModelContextLimit(model: string): number {
-    return MODEL_CONTEXT_LIMITS[model] || MODEL_CONTEXT_LIMITS.default;
+    return CONTEXT_WINDOWS[model] || DEFAULT_CONTEXT_WINDOW;
   }
 
   /**
@@ -104,7 +76,7 @@ export class ContextHealthService {
     sessionId: string,
     messages: ContextMessage[],
     systemPrompt: string,
-    model: string = 'deepseek-chat'
+    model: string = DEFAULT_MODEL
   ): ContextHealthState {
     const maxTokens = this.getModelContextLimit(model);
 

@@ -17,6 +17,7 @@ import {
   parseContextLengthError,
   safeJsonParse,
 } from './shared';
+import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../shared/constants';
 
 /**
  * Call DeepSeek API
@@ -30,7 +31,7 @@ export async function callDeepSeek(
   onStream?: StreamCallback,
   signal?: AbortSignal
 ): Promise<ModelResponse> {
-  const baseUrl = config.baseUrl || 'https://api.deepseek.com/v1';
+  const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.deepseek;
 
   // Convert tools to OpenAI format with strict schema
   const openaiTools = convertToolsToOpenAI(tools, true);
@@ -42,7 +43,7 @@ export async function callDeepSeek(
   const useStream = !!onStream;
 
   const requestBody: Record<string, unknown> = {
-    model: config.model || 'deepseek-chat',
+    model: config.model || DEFAULT_MODELS.chat,
     messages: convertToOpenAIMessages(messages),
     temperature: config.temperature ?? 0.7,
     max_tokens: config.maxTokens ?? recommendedMaxTokens,

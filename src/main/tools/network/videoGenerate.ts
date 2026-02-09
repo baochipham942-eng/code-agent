@@ -8,6 +8,7 @@ import * as path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { getConfigService } from '../../services';
 import { createLogger } from '../../services/infra/logger';
+import { DEFAULT_MODELS } from '../../../shared/constants';
 
 const logger = createLogger('VideoGenerate');
 
@@ -243,7 +244,7 @@ async function expandVideoPrompt(
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: 'glm-4-flash',
+          model: DEFAULT_MODELS.quick,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: shortPrompt },

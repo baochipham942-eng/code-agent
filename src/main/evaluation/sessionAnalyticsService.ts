@@ -292,7 +292,7 @@ export class SessionAnalyticsService {
   ): ObjectiveMetrics {
     const messages = this.getMessages(db, sessionId);
     const toolCalls = this.getToolCalls(db, sessionId);
-    const session = this.getSessionInfo(db, sessionId);
+    const session = this.getSessionTimestamps(db, sessionId);
 
     const startTime = messages[0]?.timestamp || session?.created_at || Date.now();
     const endTime = messages[messages.length - 1]?.timestamp || session?.updated_at || Date.now();
@@ -452,9 +452,9 @@ export class SessionAnalyticsService {
   }
 
   /**
-   * 获取会话信息
+   * 获取会话时间信息（用于客观指标计算）
    */
-  private getSessionInfo(
+  private getSessionTimestamps(
     db: ReturnType<typeof this.getDb>,
     sessionId: string
   ): { created_at: number; updated_at: number } | null {
@@ -539,9 +539,81 @@ export class SessionAnalyticsService {
   }
 
   /**
-   * 获取会话的完整分析数据（客观指标 + 历史评测 + SSE事件摘要）
+   * 获取会话基本信息（用于评测中心头部展示）
+   */
+  getSessionInfo(sessionId: string): {
+    title: string;
+    modelProvider: string;
+    modelName: string;
+    startTime: number;
+    endTime?: number;
+    generationId: string;
+    workingDirectory: string;
+    status: string;
+    turnCount: number;
+    totalTokens: number;
+    estimatedCost: number;
+  } | null {
+    const db = this.getDb();
+
+    // 优先从 telemetry_sessions 获取
+    try {
+      const row = db
+        .prepare(`SELECT * FROM telemetry_sessions WHERE id = ?`)
+        .get(sessionId) as Record<string, unknown> | undefined;
+
+      if (row) {
+        return {
+          title: (row.title as string) || '未命名会话',
+          modelProvider: row.model_provider as string,
+          modelName: row.model_name as string,
+          startTime: row.start_time as number,
+          endTime: row.end_time as number | undefined,
+          generationId: (row.generation_id as string) || '',
+          workingDirectory: (row.working_directory as string) || '',
+          status: (row.status as string) || 'completed',
+          turnCount: (row.turn_count as number) || 0,
+          totalTokens: (row.total_tokens as number) || 0,
+          estimatedCost: (row.estimated_cost as number) || 0,
+        };
+      }
+    } catch {
+      // telemetry table might not exist
+    }
+
+    // Fallback to sessions table
+    try {
+      const row = db
+        .prepare(`SELECT * FROM sessions WHERE id = ?`)
+        .get(sessionId) as Record<string, unknown> | undefined;
+
+      if (row) {
+        return {
+          title: (row.title as string) || '未命名会话',
+          modelProvider: (row.model_provider as string) || '',
+          modelName: (row.model_name as string) || '',
+          startTime: (row.created_at as number) || Date.now(),
+          endTime: row.updated_at as number | undefined,
+          generationId: (row.generation_id as string) || '',
+          workingDirectory: (row.working_directory as string) || '',
+          status: 'completed',
+          turnCount: 0,
+          totalTokens: 0,
+          estimatedCost: 0,
+        };
+      }
+    } catch {
+      // sessions table might not exist
+    }
+
+    return null;
+  }
+
+  /**
+   * 获取会话的完整分析数据（客观指标 + 历史评测 + SSE事件摘要 + 会话信息）
    */
   async getSessionAnalysis(sessionId: string): Promise<{
+    sessionInfo: ReturnType<SessionAnalyticsService['getSessionInfo']>;
     objective: ObjectiveMetrics;
     previousEvaluations: { id: string; timestamp: number; overallScore: number; grade: string }[];
     latestEvaluation: SessionAnalysis | null;
@@ -553,6 +625,7 @@ export class SessionAnalyticsService {
       timeline: Array<{ time: number; type: string; summary: string }>;
     } | null;
   }> {
+    const sessionInfo = this.getSessionInfo(sessionId);
     const [objective, previousEvaluations, latestEvaluation] = await Promise.all([
       this.calculateObjectiveMetrics(sessionId),
       this.getHistoricalEvaluations(sessionId),
@@ -569,6 +642,7 @@ export class SessionAnalyticsService {
     }
 
     return {
+      sessionInfo,
       objective,
       previousEvaluations,
       latestEvaluation,

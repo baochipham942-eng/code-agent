@@ -69,6 +69,7 @@ interface AppState {
   // EvalCenter State (评测中心：合并会话评测 + 遥测)
   showEvalCenter: boolean;
   evalCenterTab: 'analysis' | 'telemetry';
+  evalCenterSessionId: string | null;
 
   // HTML Preview State
   previewFilePath: string | null;
@@ -111,7 +112,7 @@ interface AppState {
   setShowDAGPanel: (show: boolean) => void;
   toggleDAGPanel: () => void;
   setShowLab: (show: boolean) => void;
-  setShowEvalCenter: (show: boolean, tab?: 'analysis' | 'telemetry') => void;
+  setShowEvalCenter: (show: boolean, tab?: 'analysis' | 'telemetry', sessionId?: string) => void;
   setPreviewFilePath: (path: string | null) => void;
   setShowPreviewPanel: (show: boolean) => void;
   openPreview: (filePath: string) => void;
@@ -190,6 +191,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   // Initial EvalCenter State
   showEvalCenter: false,
   evalCenterTab: 'analysis' as const,
+  evalCenterSessionId: null,
 
   // Initial HTML Preview State
   previewFilePath: null,
@@ -252,7 +254,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowDAGPanel: (show) => set({ showDAGPanel: show }),
   toggleDAGPanel: () => set((state) => ({ showDAGPanel: !state.showDAGPanel })),
   setShowLab: (show) => set({ showLab: show }),
-  setShowEvalCenter: (show, tab) => set({ showEvalCenter: show, ...(tab ? { evalCenterTab: tab } : {}) }),
+  setShowEvalCenter: (show, tab, sessionId) => set({
+    showEvalCenter: show,
+    ...(tab ? { evalCenterTab: tab } : {}),
+    ...(sessionId !== undefined ? { evalCenterSessionId: sessionId } : {}),
+    ...(!show ? { evalCenterSessionId: null } : {}),
+  }),
 
   setPreviewFilePath: (path) => set({ previewFilePath: path }),
   setShowPreviewPanel: (show) => set({ showPreviewPanel: show }),

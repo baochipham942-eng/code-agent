@@ -2,7 +2,7 @@
 // Turn Detail - 轮次详情面板
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import type {
   TelemetryTurn,
   TelemetryModelCall,
@@ -22,13 +22,19 @@ const CollapsibleSection: React.FC<{
   title: string;
   badge?: string;
   defaultOpen?: boolean;
+  onToggle?: () => void;
   children: React.ReactNode;
-}> = ({ title, badge, defaultOpen = false, children }) => {
+}> = ({ title, badge, defaultOpen = false, onToggle, children }) => {
   const [open, setOpen] = useState(defaultOpen);
+  const handleToggle = () => {
+    const next = !open;
+    setOpen(next);
+    if (next && onToggle) onToggle();
+  };
   return (
     <div className="border border-zinc-700/50 rounded-lg overflow-hidden">
       <button
-        onClick={() => setOpen(!open)}
+        onClick={handleToggle}
         className="w-full flex items-center justify-between p-2.5 bg-zinc-800/50 hover:bg-zinc-800 transition-colors"
       >
         <div className="flex items-center gap-2">
@@ -43,8 +49,50 @@ const CollapsibleSection: React.FC<{
 };
 
 export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCalls, events }) => {
+  const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
+  const [systemPromptLoading, setSystemPromptLoading] = useState(false);
+
+  const loadSystemPrompt = useCallback(async () => {
+    if (!turn.systemPromptHash || systemPrompt !== null) return;
+    setSystemPromptLoading(true);
+    try {
+      const result = await window.electronAPI?.invoke(
+        'telemetry:get-system-prompt' as 'telemetry:get-system-prompt',
+        turn.systemPromptHash
+      );
+      if (result) {
+        setSystemPrompt(result.content);
+      } else {
+        setSystemPrompt(`系统提示词不可用 (hash: ${turn.systemPromptHash.substring(0, 16)}...)`);
+      }
+    } catch {
+      setSystemPrompt('加载失败');
+    } finally {
+      setSystemPromptLoading(false);
+    }
+  }, [turn.systemPromptHash, systemPrompt]);
+
   return (
     <div className="space-y-2">
+      {/* System Prompt */}
+      {turn.systemPromptHash && (
+        <CollapsibleSection
+          title="系统提示词"
+          badge={systemPromptLoading ? '加载中...' : `hash: ${turn.systemPromptHash.substring(0, 8)}...`}
+          onToggle={loadSystemPrompt}
+        >
+          {systemPrompt ? (
+            <pre className="text-xs text-zinc-400 whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+              {systemPrompt}
+            </pre>
+          ) : (
+            <div className="text-xs text-zinc-500 text-center py-2">
+              {systemPromptLoading ? '加载中...' : '点击展开加载系统提示词'}
+            </div>
+          )}
+        </CollapsibleSection>
+      )}
+
       {/* User Prompt */}
       <CollapsibleSection title="用户输入" badge={`${turn.userPromptTokens} tokens`} defaultOpen>
         <pre className="text-xs text-zinc-300 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">

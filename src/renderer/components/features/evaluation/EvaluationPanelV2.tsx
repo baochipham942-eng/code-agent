@@ -441,7 +441,7 @@ export function EvaluationPanelV2({ sessionId, onClose, embedded = false }: Eval
 
   // 内容渲染函数（embedded 和 modal 共用）
   const renderContent = () => (
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div className="p-4 space-y-4">
           {/* 客观指标（总是显示） */}
           <div>
             <div className="flex items-center justify-between mb-3">

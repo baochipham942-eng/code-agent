@@ -27,6 +27,7 @@ interface TelemetryStore {
   sessions: TelemetrySessionListItem[];
   currentSession: TelemetrySession | null;
   turns: TelemetryTurn[];
+  events: TelemetryTimelineEvent[];
   selectedTurnDetail: TurnDetailData | null;
   toolStats: TelemetryToolStat[];
   intentDistribution: TelemetryIntentStat[];
@@ -37,6 +38,7 @@ interface TelemetryStore {
   loadSessions: () => Promise<void>;
   loadSession: (sessionId: string) => Promise<void>;
   loadTurns: (sessionId: string) => Promise<void>;
+  loadEvents: (sessionId: string) => Promise<void>;
   loadTurnDetail: (turnId: string) => Promise<void>;
   loadToolStats: (sessionId: string) => Promise<void>;
   loadIntentDistribution: (sessionId: string) => Promise<void>;
@@ -50,6 +52,7 @@ const initialState = {
   sessions: [] as TelemetrySessionListItem[],
   currentSession: null as TelemetrySession | null,
   turns: [] as TelemetryTurn[],
+  events: [] as TelemetryTimelineEvent[],
   selectedTurnDetail: null as TurnDetailData | null,
   toolStats: [] as TelemetryToolStat[],
   intentDistribution: [] as TelemetryIntentStat[],
@@ -90,6 +93,15 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
       if (turns) set({ turns });
     } catch (error) {
       console.error('Failed to load telemetry turns:', error);
+    }
+  },
+
+  loadEvents: async (sessionId: string) => {
+    try {
+      const events = await window.electronAPI?.invoke('telemetry:get-events' as 'telemetry:get-events', sessionId);
+      if (events) set({ events });
+    } catch (error) {
+      console.error('Failed to load telemetry events:', error);
     }
   },
 
@@ -153,6 +165,7 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
         // Refresh turns if watching this session
         if (get().currentSession?.id === event.sessionId) {
           get().loadTurns(event.sessionId);
+          get().loadEvents(event.sessionId);
           get().loadToolStats(event.sessionId);
           get().loadIntentDistribution(event.sessionId);
         }

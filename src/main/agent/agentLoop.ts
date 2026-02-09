@@ -73,6 +73,7 @@ import { getOutcomeDetector } from '../evolution/outcomeDetector';
 import { getInputSanitizer } from '../security/inputSanitizer';
 import { getDiffTracker } from '../services/diff/diffTracker';
 import { getCitationService } from '../services/citation/citationService';
+import { createHash } from 'crypto';
 
 const logger = createLogger('AgentLoop');
 
@@ -2291,6 +2292,16 @@ ${deferredToolsSummary}
         tokens: systemPromptTokens,
         limit: MAX_SYSTEM_PROMPT_TOKENS,
       });
+    }
+
+    // Cache system prompt for eval center review
+    try {
+      const hash = createHash('sha256').update(systemPrompt).digest('hex');
+      const { getSystemPromptCache } = require('../telemetry/systemPromptCache');
+      getSystemPromptCache().ensureTable();
+      getSystemPromptCache().store(hash, systemPrompt, systemPromptTokens, this.generation.id);
+    } catch {
+      // Non-critical: don't break agent loop if cache fails
     }
 
     modelMessages.push({

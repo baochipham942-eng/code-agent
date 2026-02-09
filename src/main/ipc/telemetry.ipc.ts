@@ -66,6 +66,27 @@ export function registerTelemetryHandlers(
     }
   );
 
+  // 获取会话所有事件（用于时间线视图）
+  ipcMain.handle(
+    TELEMETRY_CHANNELS.GET_EVENTS,
+    async (_event, sessionId: string) => {
+      return storage.getEventsBySession(sessionId);
+    }
+  );
+
+  // 获取系统提示词（按 hash）
+  ipcMain.handle(
+    TELEMETRY_CHANNELS.GET_SYSTEM_PROMPT,
+    async (_event, hash: string) => {
+      try {
+        const { getSystemPromptCache } = await import('../telemetry/systemPromptCache');
+        return getSystemPromptCache().get(hash);
+      } catch {
+        return null;
+      }
+    }
+  );
+
   // 删除会话遥测数据
   ipcMain.handle(
     TELEMETRY_CHANNELS.DELETE_SESSION,

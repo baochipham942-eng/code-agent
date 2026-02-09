@@ -80,6 +80,19 @@ import type {
 
 // 会话分析结果（客观指标 + 历史评测 + SSE事件摘要）
 export interface SessionAnalysisResult {
+  sessionInfo: {
+    title: string;
+    modelProvider: string;
+    modelName: string;
+    startTime: number;
+    endTime?: number;
+    generationId: string;
+    workingDirectory: string;
+    status: string;
+    turnCount: number;
+    totalTokens: number;
+    estimatedCost: number;
+  } | null;
   objective: ObjectiveMetrics;
   previousEvaluations: {
     id: string;
@@ -651,6 +664,8 @@ export const IPC_CHANNELS = {
   TELEMETRY_GET_TURN_DETAIL: TELEMETRY_CHANNELS.GET_TURN_DETAIL,
   TELEMETRY_GET_TOOL_STATS: TELEMETRY_CHANNELS.GET_TOOL_STATS,
   TELEMETRY_GET_INTENT_DIST: TELEMETRY_CHANNELS.GET_INTENT_DIST,
+  TELEMETRY_GET_EVENTS: TELEMETRY_CHANNELS.GET_EVENTS,
+  TELEMETRY_GET_SYSTEM_PROMPT: TELEMETRY_CHANNELS.GET_SYSTEM_PROMPT,
   TELEMETRY_DELETE_SESSION: TELEMETRY_CHANNELS.DELETE_SESSION,
   TELEMETRY_EVENT: TELEMETRY_CHANNELS.EVENT,
 } as const;
@@ -941,6 +956,8 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.TELEMETRY_GET_TURN_DETAIL]: (turnId: string) => Promise<{ turn: TelemetryTurn; modelCalls: TelemetryModelCall[]; toolCalls: TelemetryToolCall[]; events: TelemetryTimelineEvent[] } | null>;
   [IPC_CHANNELS.TELEMETRY_GET_TOOL_STATS]: (sessionId: string) => Promise<TelemetryToolStat[]>;
   [IPC_CHANNELS.TELEMETRY_GET_INTENT_DIST]: (sessionId: string) => Promise<TelemetryIntentStat[]>;
+  [IPC_CHANNELS.TELEMETRY_GET_EVENTS]: (sessionId: string) => Promise<TelemetryTimelineEvent[]>;
+  [IPC_CHANNELS.TELEMETRY_GET_SYSTEM_PROMPT]: (hash: string) => Promise<{ content: string; tokens: number | null; generationId: string | null } | null>;
   [IPC_CHANNELS.TELEMETRY_DELETE_SESSION]: (sessionId: string) => Promise<boolean>;
 }
 

@@ -9,6 +9,7 @@ import * as path from 'path';
 import { createLogger } from '../../services/infra/logger';
 
 import { MERMAID_INK_API } from '../../../shared/constants';
+import { formatFileSize } from './utils';
 
 const logger = createLogger('MermaidExport');
 
@@ -27,15 +28,6 @@ interface MermaidExportParams {
 function base64UrlEncode(str: string): string {
   const base64 = Buffer.from(str).toString('base64');
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-/**
- * 格式化文件大小
- */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /**

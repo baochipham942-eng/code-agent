@@ -1,6 +1,6 @@
 // ============================================================================
 // OpenAI-Compatible Provider Implementations
-// Including: OpenAI, Groq, Qwen, Moonshot, MiniMax, Perplexity, Local (Ollama)
+// Including: OpenAI, Groq, Qwen, MiniMax, Perplexity, Local (Ollama)
 // ============================================================================
 
 import type { ModelConfig, ToolDefinition, ModelInfo } from '../../../shared/types';
@@ -11,13 +11,12 @@ import {
   convertToolsToOpenAI,
   convertToOpenAIMessages,
   parseOpenAIResponse,
-  handleStream,
-  normalizeJsonSchema,
 } from './shared';
 import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { openAISSEStream } from './sseStream';
 
 /**
- * Call OpenAI API
+ * Call OpenAI API (non-streaming only)
  * @param signal - AbortSignal for cancellation support
  */
 export async function callOpenAI(
@@ -28,8 +27,6 @@ export async function callOpenAI(
   signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.openai;
-
-  const openaiTools = convertToolsToOpenAI(tools);
 
   const requestBody: Record<string, unknown> = {
     model: config.model || 'gpt-4o',
@@ -43,6 +40,7 @@ export async function callOpenAI(
     logger.debug(' OpenAI: Using response_format:', config.responseFormat.type);
   }
 
+  const openaiTools = convertToolsToOpenAI(tools);
   if (openaiTools.length > 0) {
     requestBody.tools = openaiTools;
   }
@@ -79,7 +77,6 @@ export async function callGroq(
   signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.groq;
-
   const groqTools = convertToolsToOpenAI(tools);
 
   const requestBody: Record<string, unknown> = {
@@ -90,10 +87,20 @@ export async function callGroq(
     stream: !!onStream,
   };
 
-  // Groq 部分模型不支持 tools
   if (groqTools.length > 0 && modelInfo?.supportsTool) {
     requestBody.tools = groqTools;
     requestBody.tool_choice = 'auto';
+  }
+
+  if (onStream) {
+    return openAISSEStream({
+      providerName: 'Groq',
+      baseUrl,
+      apiKey: config.apiKey!,
+      requestBody,
+      onStream,
+      signal,
+    });
   }
 
   const response = await electronFetch(`${baseUrl}/chat/completions`, {
@@ -109,10 +116,6 @@ export async function callGroq(
   if (!response.ok) {
     const error = await response.text();
     throw new Error(`Groq API error: ${response.status} - ${error}`);
-  }
-
-  if (onStream && response.body) {
-    return handleStream(response.body, onStream, signal);
   }
 
   const data = await response.json();
@@ -131,7 +134,6 @@ export async function callLocal(
   signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || 'http://localhost:11434/v1';
-
   const openaiTools = convertToolsToOpenAI(tools);
 
   const requestBody: Record<string, unknown> = {
@@ -143,6 +145,17 @@ export async function callLocal(
 
   if (openaiTools.length > 0) {
     requestBody.tools = openaiTools;
+  }
+
+  if (onStream) {
+    return openAISSEStream({
+      providerName: 'Local',
+      baseUrl,
+      apiKey: '',
+      requestBody,
+      onStream,
+      signal,
+    });
   }
 
   const response = await electronFetch(`${baseUrl}/chat/completions`, {
@@ -157,10 +170,6 @@ export async function callLocal(
   if (!response.ok) {
     const error = await response.text();
     throw new Error(`Local model error: ${response.status} - ${error}`);
-  }
-
-  if (onStream && response.body) {
-    return handleStream(response.body, onStream, signal);
   }
 
   const data = await response.json();
@@ -180,7 +189,6 @@ export async function callQwen(
   signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.qwen;
-
   const qwenTools = convertToolsToOpenAI(tools);
 
   const requestBody: Record<string, unknown> = {
@@ -194,6 +202,17 @@ export async function callQwen(
   if (qwenTools.length > 0 && modelInfo?.supportsTool) {
     requestBody.tools = qwenTools;
     requestBody.tool_choice = 'auto';
+  }
+
+  if (onStream) {
+    return openAISSEStream({
+      providerName: 'Qwen',
+      baseUrl,
+      apiKey: config.apiKey!,
+      requestBody,
+      onStream,
+      signal,
+    });
   }
 
   const response = await electronFetch(`${baseUrl}/chat/completions`, {
@@ -211,14 +230,9 @@ export async function callQwen(
     throw new Error(`千问 API error: ${response.status} - ${error}`);
   }
 
-  if (onStream && response.body) {
-    return handleStream(response.body, onStream, signal);
-  }
-
   const data = await response.json();
   return parseOpenAIResponse(data);
 }
-// callMoonshot 已移至 moonshot.ts（使用原生 SSE 处理）
 
 /**
  * Call MiniMax API
@@ -233,7 +247,6 @@ export async function callMinimax(
   signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.minimax;
-
   const minimaxTools = convertToolsToOpenAI(tools);
 
   const requestBody: Record<string, unknown> = {
@@ -249,6 +262,18 @@ export async function callMinimax(
     requestBody.tool_choice = 'auto';
   }
 
+  if (onStream) {
+    return openAISSEStream({
+      providerName: 'MiniMax',
+      baseUrl,
+      apiKey: config.apiKey!,
+      requestBody,
+      onStream,
+      signal,
+      endpoint: '/text/chatcompletion_v2',
+    });
+  }
+
   const response = await electronFetch(`${baseUrl}/text/chatcompletion_v2`, {
     method: 'POST',
     headers: {
@@ -262,10 +287,6 @@ export async function callMinimax(
   if (!response.ok) {
     const error = await response.text();
     throw new Error(`MiniMax API error: ${response.status} - ${error}`);
-  }
-
-  if (onStream && response.body) {
-    return handleStream(response.body, onStream, signal);
   }
 
   const data = await response.json();
@@ -285,7 +306,6 @@ export async function callPerplexity(
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.perplexity;
 
-  // Perplexity 不支持工具调用
   const requestBody: Record<string, unknown> = {
     model: config.model || 'sonar-pro',
     messages: convertToOpenAIMessages(messages),
@@ -293,6 +313,17 @@ export async function callPerplexity(
     max_tokens: config.maxTokens ?? 4096,
     stream: !!onStream,
   };
+
+  if (onStream) {
+    return openAISSEStream({
+      providerName: 'Perplexity',
+      baseUrl,
+      apiKey: config.apiKey!,
+      requestBody,
+      onStream,
+      signal,
+    });
+  }
 
   const response = await electronFetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
@@ -307,10 +338,6 @@ export async function callPerplexity(
   if (!response.ok) {
     const error = await response.text();
     throw new Error(`Perplexity API error: ${response.status} - ${error}`);
-  }
-
-  if (onStream && response.body) {
-    return handleStream(response.body, onStream, signal);
   }
 
   const data = await response.json();

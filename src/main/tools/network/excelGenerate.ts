@@ -6,6 +6,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import * as fs from 'fs';
 import * as path from 'path';
 import ExcelJS from 'exceljs';
+import { formatFileSize } from './utils';
 
 // Excel 样式主题
 type ExcelTheme = 'professional' | 'colorful' | 'minimal' | 'dark';
@@ -226,15 +227,6 @@ function parseValue(value: string): unknown {
   if (value.toLowerCase() === 'false') return false;
 
   return value;
-}
-
-/**
- * 格式化文件大小
- */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export const excelGenerateTool: Tool = {

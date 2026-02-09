@@ -4,6 +4,7 @@
 
 import React from 'react';
 import type { ObjectiveMetrics } from '@shared/types/sessionAnalytics';
+import { formatDuration } from '../../../../shared/utils/format';
 
 interface MetricStripProps {
   objective: ObjectiveMetrics | null;
@@ -56,9 +57,3 @@ export const MetricStrip: React.FC<MetricStripProps> = ({ objective }) => {
   );
 };
 
-function formatDuration(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  if (m > 0) return `${m}m ${s % 60}s`;
-  return `${s}s`;
-}

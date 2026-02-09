@@ -14,6 +14,7 @@ import {
   GRADE_BG_COLORS,
 } from '../../../../shared/types/evaluation';
 import { IPC_CHANNELS } from '../../../../shared/ipc';
+import { formatDuration } from '../../../../shared/utils/format';
 
 interface EvaluationPanelProps {
   sessionId: string;
@@ -77,14 +78,6 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
     }
   };
 
-  const formatDuration = (ms: number): string => {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    if (minutes > 0) {
-      return `${minutes}m ${seconds % 60}s`;
-    }
-    return `${seconds}s`;
-  };
 
   // 未开始评测时显示启动界面
   if (!started) {

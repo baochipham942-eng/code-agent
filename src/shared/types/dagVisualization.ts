@@ -301,15 +301,9 @@ export const PRIORITY_BADGE_COLORS: Record<TaskPriority, string> = {
 // ============================================================================
 
 /**
- * 格式化持续时间
+ * 格式化持续时间（从共享工具导入）
  */
-export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  const minutes = Math.floor(ms / 60000);
-  const seconds = Math.round((ms % 60000) / 1000);
-  return `${minutes}m ${seconds}s`;
-}
+export { formatDuration } from '../utils/format';
 
 /**
  * 格式化成本

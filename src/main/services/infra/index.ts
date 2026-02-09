@@ -79,7 +79,6 @@ export {
 export {
   checkDiskSpace,
   assertDiskSpaceAvailable,
-  formatBytes,
   DISK_THRESHOLDS,
   type DiskSpaceCheckResult,
 } from './diskSpace';

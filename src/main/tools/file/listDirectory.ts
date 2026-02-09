@@ -6,6 +6,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { resolvePath } from './pathUtils';
+import { formatFileSize } from '../network/utils';
 
 export const listDirectoryTool: Tool = {
   name: 'list_directory',
@@ -153,7 +154,7 @@ function formatEntries(entries: DirEntry[], indent: string = ''): string {
 
   for (const entry of entries) {
     const icon = entry.isDirectory ? '📁' : '📄';
-    const size = entry.size ? ` (${formatSize(entry.size)})` : '';
+    const size = entry.size ? ` (${formatFileSize(entry.size)})` : '';
     lines.push(`${indent}${icon} ${entry.name}${size}`);
 
     if (entry.children && entry.children.length > 0) {
@@ -164,8 +165,3 @@ function formatEntries(entries: DirEntry[], indent: string = ''): string {
   return lines.join('\n');
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}

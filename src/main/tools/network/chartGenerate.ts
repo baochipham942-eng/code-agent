@@ -7,6 +7,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../../services/infra/logger';
+import { formatFileSize } from './utils';
 
 const logger = createLogger('ChartGenerate');
 
@@ -52,15 +53,6 @@ const DEFAULT_BORDER_COLORS = [
   'rgba(46, 204, 113, 1)',
   'rgba(142, 68, 173, 1)',
 ];
-
-/**
- * 格式化文件大小
- */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 export const chartGenerateTool: Tool = {
   name: 'chart_generate',

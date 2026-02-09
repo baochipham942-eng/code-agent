@@ -56,9 +56,6 @@ export {
   type PromptHookOptions,
   type AICompletionFn,
   executePromptHook,
-  createPromptHookExecutor,
-  substitutePromptVariables,
-  createMockAICompletion,
 } from './promptHook';
 
 // Hook Manager (main API)

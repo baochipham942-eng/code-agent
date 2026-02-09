@@ -46,11 +46,8 @@ export {
   convertToClaudeMessages,
   convertToGeminiMessages,
   safeJsonParse,
-  repairJson,
   parseOpenAIResponse,
   parseClaudeResponse,
   parseGeminiResponse,
-  handleStream,
   handleGeminiStream,
-  createStreamResultBuilder,
 } from './shared';

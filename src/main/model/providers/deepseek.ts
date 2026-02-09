@@ -3,9 +3,6 @@
 // ============================================================================
 
 import axios from 'axios';
-import https from 'https';
-import http from 'http';
-import { StringDecoder } from 'string_decoder';
 import type { ModelConfig, ToolDefinition, ModelInfo } from '../../../shared/types';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import {
@@ -15,9 +12,9 @@ import {
   convertToOpenAIMessages,
   parseOpenAIResponse,
   parseContextLengthError,
-  safeJsonParse,
 } from './shared';
 import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../shared/constants';
+import { openAISSEStream } from './sseStream';
 
 /**
  * Call DeepSeek API
@@ -32,14 +29,8 @@ export async function callDeepSeek(
   signal?: AbortSignal
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.deepseek;
-
-  // Convert tools to OpenAI format with strict schema
   const openaiTools = convertToolsToOpenAI(tools, true);
-
-  // 根据模型能力获取推荐的 maxTokens
   const recommendedMaxTokens = modelInfo?.maxTokens || 8192;
-
-  // 启用流式输出
   const useStream = !!onStream;
 
   const requestBody: Record<string, unknown> = {
@@ -50,21 +41,25 @@ export async function callDeepSeek(
     stream: useStream,
   };
 
-  // T6: Add response_format for structured output
   if (config.responseFormat) {
     requestBody.response_format = config.responseFormat;
     logger.debug(' DeepSeek: Using response_format:', config.responseFormat.type);
   }
 
-  // Only add tools if we have any
   if (openaiTools.length > 0) {
     requestBody.tools = openaiTools;
     requestBody.tool_choice = 'auto';
   }
 
-  // 如果启用流式输出，使用 SSE 处理
   if (useStream) {
-    return callDeepSeekStream(baseUrl, requestBody, config.apiKey!, onStream!, signal);
+    return openAISSEStream({
+      providerName: 'DeepSeek',
+      baseUrl,
+      apiKey: config.apiKey!,
+      requestBody,
+      onStream,
+      signal,
+    });
   }
 
   // 非流式输出（fallback）
@@ -94,7 +89,6 @@ export async function callDeepSeek(
         ? errorData
         : JSON.stringify(errorData);
 
-      // 检测上下文超限错误
       const contextError = parseContextLengthError(errorMessage, 'deepseek');
       if (contextError) {
         throw contextError;
@@ -104,233 +98,4 @@ export async function callDeepSeek(
     }
     throw new Error(`DeepSeek request failed: ${error.message}`);
   }
-}
-
-/**
- * 流式调用 DeepSeek API
- * 使用 SSE (Server-Sent Events) 处理流式响应
- * @param signal - AbortSignal for cancellation support
- */
-function callDeepSeekStream(
-  baseUrl: string,
-  requestBody: Record<string, unknown>,
-  apiKey: string,
-  onStream: StreamCallback,
-  signal?: AbortSignal
-): Promise<ModelResponse> {
-  return new Promise((resolve, reject) => {
-    // Check for cancellation before starting
-    if (signal?.aborted) {
-      reject(new Error('Request was cancelled before starting'));
-      return;
-    }
-
-    const url = new URL(`${baseUrl}/chat/completions`);
-    const isHttps = url.protocol === 'https:';
-    const httpModule = isHttps ? https : http;
-
-    // 累积响应数据
-    let content = '';
-    let reasoning = '';  // Adaptive Thinking: 累积推理内容
-    let finishReason: string | undefined;
-    const toolCalls: Map<number, { id: string; name: string; arguments: string }> = new Map();
-
-    const options: https.RequestOptions = {
-      hostname: url.hostname,
-      port: url.port || (isHttps ? 443 : 80),
-      path: url.pathname,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-        Accept: 'text/event-stream',
-      },
-      agent: httpsAgent,
-    };
-
-    const req = httpModule.request(options, (res) => {
-      if (res.statusCode !== 200) {
-        let errorData = '';
-        res.on('data', (chunk) => { errorData += chunk; });
-        res.on('end', () => {
-          reject(new Error(`DeepSeek API error: ${res.statusCode} - ${errorData}`));
-        });
-        return;
-      }
-
-      let buffer = '';
-      // 使用 StringDecoder 正确处理 UTF-8 多字节字符边界
-      const decoder = new StringDecoder('utf8');
-
-      res.on('data', (chunk: Buffer) => {
-        buffer += decoder.write(chunk);
-
-        // 处理 SSE 数据行
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // 保留不完整的行
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim();
-
-            if (data === '[DONE]') {
-              // 流式输出完成
-              const truncated = finishReason === 'length';
-              const result: ModelResponse = {
-                type: toolCalls.size > 0 ? 'tool_use' : 'text',
-                content: content || undefined,
-                truncated,
-                finishReason,
-                // Adaptive Thinking: 映射推理内容
-                thinking: reasoning || undefined,
-              };
-
-              if (toolCalls.size > 0) {
-                result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
-                  id: tc.id,
-                  name: tc.name,
-                  arguments: safeJsonParse(tc.arguments),
-                }));
-              }
-
-              logger.info(' DeepSeek stream complete:', {
-                contentLength: content.length,
-                toolCallCount: toolCalls.size,
-                finishReason,
-                truncated,
-              });
-
-              if (truncated) {
-                logger.warn(' ⚠️ Output was truncated due to max_tokens limit!');
-              }
-
-              resolve(result);
-              return;
-            }
-
-            try {
-              const parsed = JSON.parse(data);
-              const choice = parsed.choices?.[0];
-              const delta = choice?.delta;
-
-              // 捕获 finish_reason
-              if (choice?.finish_reason) {
-                finishReason = choice.finish_reason;
-              }
-
-              if (delta) {
-                // Adaptive Thinking: 处理推理内容（DeepSeek R1 的 reasoning_content）
-                if (delta.reasoning_content) {
-                  reasoning += delta.reasoning_content;
-                  onStream({ type: 'reasoning', content: delta.reasoning_content });
-                }
-
-                // 处理文本内容
-                if (delta.content) {
-                  content += delta.content;
-                  // 发送文本流式更新
-                  onStream({ type: 'text', content: delta.content });
-                }
-
-                // 处理工具调用
-                if (delta.tool_calls) {
-                  for (const tc of delta.tool_calls) {
-                    const index = tc.index ?? 0;
-                    const isNewToolCall = !toolCalls.has(index);
-
-                    if (isNewToolCall) {
-                      toolCalls.set(index, {
-                        id: tc.id || `call_${index}`,
-                        name: tc.function?.name || '',
-                        arguments: '',
-                      });
-                      // 发送新工具调用开始事件
-                      onStream({
-                        type: 'tool_call_start',
-                        toolCall: {
-                          index,
-                          id: tc.id,
-                          name: tc.function?.name,
-                        },
-                      });
-                    }
-
-                    const existing = toolCalls.get(index)!;
-
-                    if (tc.id && !existing.id.startsWith('call_')) {
-                      existing.id = tc.id;
-                    }
-                    if (tc.function?.name && !existing.name) {
-                      existing.name = tc.function.name;
-                      // 工具名称更新
-                      onStream({
-                        type: 'tool_call_delta',
-                        toolCall: {
-                          index,
-                          name: tc.function.name,
-                        },
-                      });
-                    }
-                    if (tc.function?.arguments) {
-                      existing.arguments += tc.function.arguments;
-                      // 发送参数增量更新
-                      onStream({
-                        type: 'tool_call_delta',
-                        toolCall: {
-                          index,
-                          argumentsDelta: tc.function.arguments,
-                        },
-                      });
-                    }
-                  }
-                }
-              }
-            } catch {
-              // 忽略解析错误（可能是不完整的 JSON）
-              logger.warn(' Failed to parse SSE data:', data.substring(0, 100));
-            }
-          }
-        }
-      });
-
-      res.on('end', () => {
-        // 如果没有通过 [DONE] 结束，在这里处理
-        if (content || toolCalls.size > 0) {
-          const result: ModelResponse = {
-            type: toolCalls.size > 0 ? 'tool_use' : 'text',
-            content: content || undefined,
-          };
-
-          if (toolCalls.size > 0) {
-            result.toolCalls = Array.from(toolCalls.values()).map((tc) => ({
-              id: tc.id,
-              name: tc.name,
-              arguments: safeJsonParse(tc.arguments),
-            }));
-          }
-
-          resolve(result);
-        }
-      });
-
-      res.on('error', (error) => {
-        reject(new Error(`DeepSeek stream error: ${error.message}`));
-      });
-    });
-
-    req.on('error', (error) => {
-      reject(new Error(`DeepSeek request error: ${error.message}`));
-    });
-
-    // Set up abort listener for cancellation
-    if (signal) {
-      signal.addEventListener('abort', () => {
-        req.destroy();
-        reject(new Error('Request was cancelled'));
-      }, { once: true });
-    }
-
-    req.write(JSON.stringify(requestBody));
-    req.end();
-  });
 }

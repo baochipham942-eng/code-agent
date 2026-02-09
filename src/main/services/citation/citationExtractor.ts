@@ -4,6 +4,7 @@
 //
 // 按工具类型分发提取逻辑，不修改工具本身，只从 ToolResult 中提取。
 
+import path from 'path';
 import type { Citation, CitationType } from '../../../shared/types/citation';
 
 let citationCounter = 0;
@@ -62,7 +63,7 @@ function extractFileReadCitations(
     type: 'file',
     source: filePath,
     location: lineCount > 1 ? `lines:${offset}-${offset + lineCount - 1}` : `line:${offset}`,
-    label: `${basename(filePath)}:${offset}`,
+    label: `${path.basename(filePath)}:${offset}`,
     toolCallId,
     timestamp: Date.now(),
   }];
@@ -87,7 +88,7 @@ function extractGrepCitations(toolCallId: string, output: string): Citation[] {
       type: 'file',
       source: filePath,
       location: `line:${lineNum}`,
-      label: `${basename(filePath)}:${lineNum}`,
+      label: `${path.basename(filePath)}:${lineNum}`,
       toolCallId,
       timestamp: Date.now(),
     });
@@ -103,7 +104,7 @@ function extractGlobCitations(toolCallId: string, output: string): Citation[] {
     id: nextCitationId(),
     type: 'file' as CitationType,
     source: filePath.trim(),
-    label: basename(filePath.trim()),
+    label: path.basename(filePath.trim()),
     toolCallId,
     timestamp: Date.now(),
   }));
@@ -172,7 +173,7 @@ function extractDocumentCitations(
     id: nextCitationId(),
     type: typeMap[toolName] || 'file',
     source: filePath,
-    label: basename(filePath),
+    label: path.basename(filePath),
     toolCallId,
     timestamp: Date.now(),
   }];
@@ -191,11 +192,6 @@ function extractMemoryCitations(toolCallId: string, output: string): Citation[] 
   }];
 }
 
-// Utility: 从路径中提取文件名
-function basename(filePath: string): string {
-  const parts = filePath.split('/');
-  return parts[parts.length - 1] || filePath;
-}
 
 // Utility: 截断 URL 用于展示
 function truncateUrl(url: string, maxLen = 50): string {

@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import sharp from 'sharp';
 import { createLogger } from '../../services/infra/logger';
+import { formatFileSize } from './utils';
 
 const logger = createLogger('ImageProcess');
 
@@ -20,15 +21,6 @@ interface ImageProcessParams {
   width?: number;
   height?: number;
   scale?: number;
-}
-
-/**
- * 格式化文件大小
- */
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /**

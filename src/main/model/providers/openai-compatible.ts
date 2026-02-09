@@ -14,6 +14,7 @@ import {
   handleStream,
   normalizeJsonSchema,
 } from './shared';
+import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 
 /**
  * Call OpenAI API
@@ -26,7 +27,7 @@ export async function callOpenAI(
   _onStream?: StreamCallback,
   signal?: AbortSignal
 ): Promise<ModelResponse> {
-  const baseUrl = config.baseUrl || 'https://api.openai.com/v1';
+  const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.openai;
 
   const openaiTools = convertToolsToOpenAI(tools);
 
@@ -77,7 +78,7 @@ export async function callGroq(
   onStream?: StreamCallback,
   signal?: AbortSignal
 ): Promise<ModelResponse> {
-  const baseUrl = config.baseUrl || 'https://api.groq.com/openai/v1';
+  const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.groq;
 
   const groqTools = convertToolsToOpenAI(tools);
 
@@ -178,7 +179,7 @@ export async function callQwen(
   onStream?: StreamCallback,
   signal?: AbortSignal
 ): Promise<ModelResponse> {
-  const baseUrl = config.baseUrl || 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+  const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.qwen;
 
   const qwenTools = convertToolsToOpenAI(tools);
 
@@ -231,7 +232,7 @@ export async function callMinimax(
   onStream?: StreamCallback,
   signal?: AbortSignal
 ): Promise<ModelResponse> {
-  const baseUrl = config.baseUrl || 'https://api.minimax.chat/v1';
+  const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.minimax;
 
   const minimaxTools = convertToolsToOpenAI(tools);
 
@@ -282,7 +283,7 @@ export async function callPerplexity(
   onStream?: StreamCallback,
   signal?: AbortSignal
 ): Promise<ModelResponse> {
-  const baseUrl = config.baseUrl || 'https://api.perplexity.ai';
+  const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.perplexity;
 
   // Perplexity 不支持工具调用
   const requestBody: Record<string, unknown> = {

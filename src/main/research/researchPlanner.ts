@@ -10,6 +10,7 @@ import type {
   DeepResearchConfig,
 } from './types';
 import type { ModelRouter } from '../model/modelRouter';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ResearchPlanner');
@@ -120,8 +121,8 @@ export class ResearchPlanner {
 
     try {
       const response = await this.modelRouter.chat({
-        provider: (config.modelProvider as 'deepseek' | 'openai' | 'claude' | 'openrouter') ?? 'deepseek',
-        model: config.model ?? 'deepseek-chat',
+        provider: (config.modelProvider as 'deepseek' | 'openai' | 'claude' | 'openrouter') ?? DEFAULT_PROVIDER,
+        model: config.model ?? DEFAULT_MODEL,
         messages: [{ role: 'user', content: planPrompt }],
         maxTokens: 2000,
       });

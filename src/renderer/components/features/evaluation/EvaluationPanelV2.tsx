@@ -20,6 +20,8 @@ import {
 interface EvaluationPanelV2Props {
   sessionId: string;
   onClose: () => void;
+  /** embedded 模式下不渲染模态框外壳，只返回内容区 */
+  embedded?: boolean;
 }
 
 type PanelStatus = 'loading_stats' | 'stats_loaded' | 'evaluating' | 'completed' | 'error';
@@ -67,7 +69,7 @@ interface EventSummary {
   timeline: Array<{ time: number; type: string; summary: string }>;
 }
 
-export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props) {
+export function EvaluationPanelV2({ sessionId, onClose, embedded = false }: EvaluationPanelV2Props) {
   const [status, setStatus] = useState<PanelStatus>('loading_stats');
   const [error, setError] = useState<string | null>(null);
 
@@ -437,69 +439,9 @@ export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props
     );
   };
 
-  // 初始加载状态
-  if (status === 'loading_stats' && !objective) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-        <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-6 text-center">
-          <div className="animate-spin w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full mx-auto mb-3" />
-          <div className="text-gray-300 text-sm">加载会话数据...</div>
-        </div>
-      </div>
-    );
-  }
-
-  // 错误状态
-  if (status === 'error' && !objective) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-        <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-6 text-center max-w-md">
-          <div className="text-red-400 text-3xl mb-3">⚠️</div>
-          <div className="text-gray-300 mb-2">加载失败</div>
-          <div className="text-xs text-gray-500 mb-4">{error}</div>
-          <div className="flex gap-2 justify-center">
-            <button
-              onClick={loadSessionAnalysis}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
-            >
-              重试
-            </button>
-            <button
-              onClick={onClose}
-              className="px-4 py-2 bg-zinc-700 text-gray-300 rounded-lg hover:bg-zinc-600 transition text-sm"
-            >
-              关闭
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-zinc-900 rounded-xl border border-zinc-700 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-        {/* 头部 */}
-        <div className="flex items-center justify-between p-4 border-b border-zinc-700">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🧀</span>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-200">会话分析</h2>
-              <p className="text-xs text-gray-500">瑞士奶酪多层评测模型</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-gray-400 hover:text-gray-200 hover:bg-zinc-800 rounded-lg transition"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        {/* 内容区域 */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+  // 内容渲染函数（embedded 和 modal 共用）
+  const renderContent = () => (
+    <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* 客观指标（总是显示） */}
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -597,7 +539,99 @@ export function EvaluationPanelV2({ sessionId, onClose }: EvaluationPanelV2Props
               </div>
             )}
           </div>
+    </div>
+  );
+
+  // 初始加载状态
+  if (status === 'loading_stats' && !objective) {
+    if (embedded) {
+      return (
+        <div className="flex items-center justify-center p-12">
+          <div className="animate-spin w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full mr-3" />
+          <span className="text-gray-300 text-sm">加载会话数据...</span>
         </div>
+      );
+    }
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-6 text-center">
+          <div className="animate-spin w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full mx-auto mb-3" />
+          <div className="text-gray-300 text-sm">加载会话数据...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // 错误状态
+  if (status === 'error' && !objective) {
+    if (embedded) {
+      return (
+        <div className="p-6 text-center">
+          <div className="text-red-400 text-3xl mb-3">⚠️</div>
+          <div className="text-gray-300 mb-2">加载失败</div>
+          <div className="text-xs text-gray-500 mb-4">{error}</div>
+          <button
+            onClick={loadSessionAnalysis}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
+          >
+            重试
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-6 text-center max-w-md">
+          <div className="text-red-400 text-3xl mb-3">⚠️</div>
+          <div className="text-gray-300 mb-2">加载失败</div>
+          <div className="text-xs text-gray-500 mb-4">{error}</div>
+          <div className="flex gap-2 justify-center">
+            <button
+              onClick={loadSessionAnalysis}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm"
+            >
+              重试
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-zinc-700 text-gray-300 rounded-lg hover:bg-zinc-600 transition text-sm"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // embedded 模式：直接返回内容区
+  if (embedded) {
+    return renderContent();
+  }
+
+  // modal 模式：包裹在模态框中
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+      <div className="bg-zinc-900 rounded-xl border border-zinc-700 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        {/* 头部 */}
+        <div className="flex items-center justify-between p-4 border-b border-zinc-700">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🧀</span>
+            <div>
+              <h2 className="text-lg font-semibold text-gray-200">会话分析</h2>
+              <p className="text-xs text-gray-500">瑞士奶酪多层评测模型</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 text-gray-400 hover:text-gray-200 hover:bg-zinc-800 rounded-lg transition"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        {renderContent()}
       </div>
     </div>
   );

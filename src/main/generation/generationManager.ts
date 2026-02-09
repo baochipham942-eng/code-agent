@@ -8,6 +8,7 @@ import { GENERATION_DEFINITIONS } from './metadata';
 import { getSystemPrompt } from '../services/cloud/promptService';
 import { isGen8Enabled } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';
+import { DEFAULT_GENERATION } from '../../shared/constants';
 
 const logger = createLogger('GenerationManager');
 
@@ -21,7 +22,7 @@ export class GenerationManager {
 
   constructor() {
     this.loadGenerations();
-    this.currentGeneration = this.generations.get('gen3')!;
+    this.currentGeneration = this.generations.get(DEFAULT_GENERATION)!;
   }
 
   private loadGenerations(): void {

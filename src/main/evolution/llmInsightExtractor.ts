@@ -6,6 +6,7 @@
 import { ModelRouter } from '../model/modelRouter';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import type { ExecutionTrace, ToolCallWithResult } from './traceRecorder';
 
 const logger = createLogger('LLMInsightExtractor');
@@ -280,8 +281,8 @@ export class LLMInsightExtractor {
     try {
       const prompt = this.buildStrategyPrompt(cluster);
       const response = await this.modelRouter.chat({
-        provider: 'deepseek',
-        model: 'deepseek-chat',
+        provider: DEFAULT_PROVIDER,
+        model: DEFAULT_MODEL,
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 1000,
       });

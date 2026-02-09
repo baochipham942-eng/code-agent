@@ -66,17 +66,37 @@ export interface ObjectiveMetrics {
   messagesWithCode: number;
 
   // 交互模式
-  turnsCount: number; // 用户-助手轮次
-  avgResponseTime: number; // 助手平均响应时间
+  turnsCount: number;
+  avgResponseTime: number;
+
+  // v3 新增：遥测增强指标
+  intentDistribution?: Record<string, number>;
+  errorTaxonomy?: Record<string, number>;
+  selfRepairRate?: number;
+  tokenPerTurn?: number[];
 }
 
 /**
- * 主观评测维度
+ * 主观评测维度 (v3)
  */
 export enum SubjectiveDimension {
+  // v3 计分维度
+  OUTCOME_VERIFICATION = 'outcome_verification',
+  CODE_QUALITY = 'code_quality',
+  SECURITY = 'security',
+  TOOL_EFFICIENCY = 'tool_efficiency',
+  SELF_REPAIR = 'self_repair',
+  VERIFICATION_QUALITY = 'verification_quality',
+  FORBIDDEN_PATTERNS = 'forbidden_patterns',
+
+  // v3 信息维度
+  EFFICIENCY_METRICS = 'efficiency_metrics',
+  ERROR_TAXONOMY = 'error_taxonomy',
+  PLAN_QUALITY = 'plan_quality',
+
+  // v2 兼容
   TASK_COMPLETION = 'task_completion',
   RESPONSE_QUALITY = 'response_quality',
-  CODE_QUALITY = 'code_quality',
   COMMUNICATION = 'communication',
   EFFICIENCY = 'efficiency',
   SAFETY = 'safety',
@@ -125,6 +145,14 @@ export interface SubjectiveAssessment {
   consensus: boolean;
   reviewerCount: number;
   passedReviewers: number;
+
+  // v3 新增：Transcript 分析结果
+  transcriptMetrics?: {
+    selfRepair: { attempts: number; successes: number; rate: number };
+    verificationQuality: { editCount: number; verifiedCount: number; rate: number };
+    forbiddenPatterns: { detected: string[]; count: number };
+    errorTaxonomy: Record<string, number>;
+  };
 }
 
 /**
@@ -165,9 +193,21 @@ export type EvaluationStatus =
  * 维度名称映射
  */
 export const DIMENSION_NAMES: Record<SubjectiveDimension, string> = {
+  // v3 计分
+  [SubjectiveDimension.OUTCOME_VERIFICATION]: '结果验证',
+  [SubjectiveDimension.CODE_QUALITY]: '代码质量',
+  [SubjectiveDimension.SECURITY]: '安全性',
+  [SubjectiveDimension.TOOL_EFFICIENCY]: '工具效率',
+  [SubjectiveDimension.SELF_REPAIR]: '自我修复',
+  [SubjectiveDimension.VERIFICATION_QUALITY]: '验证行为',
+  [SubjectiveDimension.FORBIDDEN_PATTERNS]: '禁止模式',
+  // v3 信息
+  [SubjectiveDimension.EFFICIENCY_METRICS]: '效率指标',
+  [SubjectiveDimension.ERROR_TAXONOMY]: '错误分类',
+  [SubjectiveDimension.PLAN_QUALITY]: '规划质量',
+  // v2 兼容
   [SubjectiveDimension.TASK_COMPLETION]: '任务完成度',
   [SubjectiveDimension.RESPONSE_QUALITY]: '响应质量',
-  [SubjectiveDimension.CODE_QUALITY]: '代码质量',
   [SubjectiveDimension.COMMUNICATION]: '沟通能力',
   [SubjectiveDimension.EFFICIENCY]: '执行效率',
   [SubjectiveDimension.SAFETY]: '安全性',
@@ -177,9 +217,18 @@ export const DIMENSION_NAMES: Record<SubjectiveDimension, string> = {
  * 维度图标映射
  */
 export const DIMENSION_ICONS: Record<SubjectiveDimension, string> = {
+  [SubjectiveDimension.OUTCOME_VERIFICATION]: '🎯',
+  [SubjectiveDimension.CODE_QUALITY]: '💻',
+  [SubjectiveDimension.SECURITY]: '🔒',
+  [SubjectiveDimension.TOOL_EFFICIENCY]: '🔧',
+  [SubjectiveDimension.SELF_REPAIR]: '🔄',
+  [SubjectiveDimension.VERIFICATION_QUALITY]: '✅',
+  [SubjectiveDimension.FORBIDDEN_PATTERNS]: '🚫',
+  [SubjectiveDimension.EFFICIENCY_METRICS]: '⚡',
+  [SubjectiveDimension.ERROR_TAXONOMY]: '📋',
+  [SubjectiveDimension.PLAN_QUALITY]: '📐',
   [SubjectiveDimension.TASK_COMPLETION]: '🎯',
   [SubjectiveDimension.RESPONSE_QUALITY]: '💬',
-  [SubjectiveDimension.CODE_QUALITY]: '💻',
   [SubjectiveDimension.COMMUNICATION]: '🤝',
   [SubjectiveDimension.EFFICIENCY]: '⚡',
   [SubjectiveDimension.SAFETY]: '🔒',

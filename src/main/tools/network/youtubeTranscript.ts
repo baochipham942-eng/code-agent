@@ -9,7 +9,7 @@ import { createLogger } from '../../services/infra/logger';
 const logger = createLogger('YouTubeTranscript');
 
 // Supadata API 配置
-const SUPADATA_API_KEY = 'sd_6d67f18e6ab981827c75e754cad993ca';
+const SUPADATA_API_KEY = process.env.SUPADATA_API_KEY || '';
 const SUPADATA_API_URL = 'https://api.supadata.ai/v1/youtube/transcript';
 
 interface YouTubeTranscriptParams {

@@ -7,6 +7,7 @@ import { app } from 'electron';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { AppSettings } from '../../shared/types';
 import type { ConfigService } from '../services';
+import { MODEL_API_ENDPOINTS, API_VERSIONS } from '../../shared/constants';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -29,14 +30,14 @@ async function handleSet(
 
 async function handleTestApiKey(payload: { provider: string; apiKey: string }): Promise<{ success: boolean; error?: string }> {
   const testEndpoints: Record<string, { url: string; headers: Record<string, string>; body: unknown }> = {
-    deepseek: { url: 'https://api.deepseek.com/v1/models', headers: { Authorization: `Bearer ${payload.apiKey}` }, body: null },
-    openai: { url: 'https://api.openai.com/v1/models', headers: { Authorization: `Bearer ${payload.apiKey}` }, body: null },
+    deepseek: { url: `${MODEL_API_ENDPOINTS.deepseek}/models`, headers: { Authorization: `Bearer ${payload.apiKey}` }, body: null },
+    openai: { url: `${MODEL_API_ENDPOINTS.openai}/models`, headers: { Authorization: `Bearer ${payload.apiKey}` }, body: null },
     claude: {
-      url: 'https://api.anthropic.com/v1/messages',
-      headers: { 'x-api-key': payload.apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      url: `${MODEL_API_ENDPOINTS.claude}/messages`,
+      headers: { 'x-api-key': payload.apiKey, 'anthropic-version': API_VERSIONS.ANTHROPIC, 'content-type': 'application/json' },
       body: { model: 'claude-3-haiku-20240307', max_tokens: 1, messages: [{ role: 'user', content: 'Hi' }] },
     },
-    groq: { url: 'https://api.groq.com/openai/v1/models', headers: { Authorization: `Bearer ${payload.apiKey}` }, body: null },
+    groq: { url: `${MODEL_API_ENDPOINTS.groq}/models`, headers: { Authorization: `Bearer ${payload.apiKey}` }, body: null },
   };
 
   const config = testEndpoints[payload.provider];

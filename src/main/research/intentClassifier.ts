@@ -10,6 +10,7 @@ import type {
   ResearchDepth,
   DataSourceType,
 } from './types';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('IntentClassifier');
@@ -600,8 +601,8 @@ export class IntentClassifier {
 {"intent": "意图类型", "confidence": 0.8, "needs_research": true, "depth": "quick|standard|deep", "reasoning": "简短理由"}`;
 
     const response = await this.modelRouter.chat({
-      provider: 'deepseek',
-      model: 'deepseek-chat',
+      provider: DEFAULT_PROVIDER,
+      model: DEFAULT_MODEL,
       messages: [{ role: 'user', content: prompt }],
       maxTokens: this.maxLLMTokens,
     });

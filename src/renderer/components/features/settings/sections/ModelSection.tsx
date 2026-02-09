@@ -274,7 +274,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
               <option value="glm-4.6">GLM-4.6</option>
               <option value="glm-4-plus">GLM-4 Plus</option>
               <option value="glm-4-air">GLM-4 Air</option>
-              <option value="glm-4-flash">GLM-4 Flash (快速)</option>
+              <option value="glm-4.7-flash">GLM-4.7 Flash (快速)</option>
               <option value="glm-4.6v">GLM-4.6V (视觉)</option>
             </>
           )}

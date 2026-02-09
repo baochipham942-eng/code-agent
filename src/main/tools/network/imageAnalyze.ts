@@ -9,15 +9,15 @@ import { glob } from 'glob';
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { getConfigService } from '../../services';
 import { createLogger } from '../../services/infra/logger';
-import { CLOUD_ENDPOINTS, MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { CLOUD_ENDPOINTS, MODEL_API_ENDPOINTS, ZHIPU_VISION_MODEL, MODEL_MAX_TOKENS } from '../../../shared/constants';
 
 const logger = createLogger('ImageAnalyze');
 
 // 配置
 const CONFIG = {
   OPENROUTER_MODEL: 'google/gemini-2.0-flash-001',
-  ZHIPU_MODEL: 'glm-4v-plus', // 必须用 plus 版本，flash 不支持 base64
-  ZHIPU_MAX_TOKENS: 2048, // glm-4v-plus 最大 8192
+  ZHIPU_MODEL: ZHIPU_VISION_MODEL, // 必须用 plus 版本，flash 不支持 base64
+  ZHIPU_MAX_TOKENS: MODEL_MAX_TOKENS.VISION, // glm-4.6v 最大 8192
   MAX_PARALLEL: 10,
   TIMEOUT_MS: 30000,
   SUPPORTED_FORMATS: ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'],
@@ -179,11 +179,11 @@ async function analyzeImage(
 
   const configService = getConfigService();
 
-  // 1. 优先尝试智谱视觉 API（glm-4v-plus 支持 base64）
+  // 1. 优先尝试智谱视觉 API（glm-4.6v 支持 base64）
   const zhipuApiKey = configService.getApiKey('zhipu');
   if (zhipuApiKey) {
     try {
-      logger.info('[图片分析] 使用智谱视觉模型 glm-4v-plus');
+      logger.info('[图片分析] 使用智谱视觉模型 glm-4.6v');
       return await callZhipuVision(zhipuApiKey, base64Image, mimeType, prompt);
     } catch (error: any) {
       logger.warn('[图片分析] 智谱视觉 API 失败，尝试回退', { error: error.message });

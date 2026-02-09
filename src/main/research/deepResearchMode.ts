@@ -27,9 +27,9 @@ const logger = createLogger('DeepResearchMode');
 // ----------------------------------------------------------------------------
 
 /**
- * 默认 Generation 配置（用于深度研究模式）
+ * 研究模式所需的最小 Generation（需要 web_search / web_fetch）
  */
-const DEFAULT_GENERATION: Generation = {
+const RESEARCH_GENERATION: Generation = {
   id: 'gen4',
   name: 'Gen 4',
   version: '4.0.0',
@@ -87,7 +87,7 @@ export class DeepResearchMode {
     this.modelRouter = config.modelRouter;
     this.toolExecutor = config.toolExecutor;
     this.onEvent = config.onEvent;
-    this.generation = config.generation ?? DEFAULT_GENERATION;
+    this.generation = config.generation ?? RESEARCH_GENERATION;
   }
 
   /**

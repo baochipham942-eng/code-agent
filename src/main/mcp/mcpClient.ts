@@ -650,7 +650,7 @@ export class MCPClient {
       name: `mcp__${tool.serverName}__${tool.name}`,
       description: `[MCP:${tool.serverName}] ${tool.description}`,
       inputSchema: tool.inputSchema as ToolDefinition['inputSchema'],
-      generations: ['gen4'] as const,
+      generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'] as const,
       requiresPermission: true,
       permissionLevel: 'network' as const,
     }));

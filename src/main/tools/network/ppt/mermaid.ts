@@ -5,8 +5,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { SlideImage } from './types';
-
-const MERMAID_INK_API = 'https://mermaid.ink';
+import { MERMAID_INK_API } from '../../../../shared/constants';
 
 function base64UrlEncode(str: string): string {
   const base64 = Buffer.from(str).toString('base64');

@@ -7,6 +7,7 @@ import { createCLIAgent } from '../adapter';
 import { terminalOutput, jsonOutput } from '../output';
 import { cleanup, initializeCLIServices, getDatabaseService } from '../bootstrap';
 import type { CLIGlobalOptions } from '../types';
+import { DEFAULT_GENERATION } from '../../shared/constants';
 
 export const runCommand = new Command('run')
   .description('执行单次任务')
@@ -41,7 +42,7 @@ export const runCommand = new Command('run')
 
       if (!isJson) {
         terminalOutput.info(`项目目录: ${globalOpts?.project || process.cwd()}`);
-        terminalOutput.info(`代际: ${globalOpts?.gen || 'gen8'}`);
+        terminalOutput.info(`代际: ${globalOpts?.gen || DEFAULT_GENERATION}`);
         terminalOutput.startThinking('初始化中...');
       } else {
         jsonOutput.start();

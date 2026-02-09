@@ -24,7 +24,7 @@ import { initCLIDatabase, getCLIDatabase, type CLIDatabaseService } from './data
 import { getCLISessionManager, type CLISessionManager } from './session';
 import type { CLIConfig, CLIEventHandler } from './types';
 import type { Generation, ModelConfig, Message, AgentEvent } from '../shared/types';
-import { DEFAULT_MODELS } from '../shared/constants';
+import { DEFAULT_MODELS, DEFAULT_GENERATION, DEFAULT_PROVIDER } from '../shared/constants';
 
 // 延迟导入的模块
 let AgentLoop: typeof import('../main/agent/agentLoop').AgentLoop;
@@ -217,10 +217,10 @@ export function buildCLIConfig(options: {
     : process.cwd();
 
   // 代际
-  const generationId = options.gen || settings.generation?.default || 'gen8';
+  const generationId = options.gen || settings.generation?.default || DEFAULT_GENERATION;
 
   // 模型配置
-  const provider = options.provider || settings.model?.provider || 'moonshot';
+  const provider = options.provider || settings.model?.provider || DEFAULT_PROVIDER;
   const model = options.model || settings.model?.model || DEFAULT_MODELS.chat;
 
   const modelConfig: ModelConfig = {

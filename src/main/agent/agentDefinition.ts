@@ -178,6 +178,9 @@ export function getAgentPrompt(agent: FullAgentConfig): string {
  * 获取 Agent 的工具列表
  */
 export function getAgentTools(agent: FullAgentConfig, _includeToolSearch = true): string[] {
+  if (!agent.tools || agent.tools.length === 0) {
+    console.warn(`[AgentDefinition] Agent "${agent.name || agent.id}" has no tools defined`);
+  }
   return agent.tools || [];
 }
 

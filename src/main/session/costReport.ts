@@ -9,6 +9,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
+import { MODEL_PRICING_PER_1M, DEFAULT_MODEL } from '../../shared/constants';
 import {
   SessionLocalCache,
   CachedSession,
@@ -34,19 +35,16 @@ export interface ModelPricing {
 }
 
 /**
- * Default pricing for common models
+ * Default pricing for common models (derived from shared constants)
  */
-export const DEFAULT_PRICING: ModelPricing[] = [
-  { model: 'gpt-4', inputCostPer1K: 0.03, outputCostPer1K: 0.06, currency: 'USD' },
-  { model: 'gpt-4-turbo', inputCostPer1K: 0.01, outputCostPer1K: 0.03, currency: 'USD' },
-  { model: 'gpt-4o', inputCostPer1K: 0.005, outputCostPer1K: 0.015, currency: 'USD' },
-  { model: 'gpt-3.5-turbo', inputCostPer1K: 0.0005, outputCostPer1K: 0.0015, currency: 'USD' },
-  { model: 'claude-3-opus', inputCostPer1K: 0.015, outputCostPer1K: 0.075, currency: 'USD' },
-  { model: 'claude-3-sonnet', inputCostPer1K: 0.003, outputCostPer1K: 0.015, currency: 'USD' },
-  { model: 'claude-3-haiku', inputCostPer1K: 0.00025, outputCostPer1K: 0.00125, currency: 'USD' },
-  { model: 'deepseek-chat', inputCostPer1K: 0.00014, outputCostPer1K: 0.00028, currency: 'USD' },
-  { model: 'deepseek-coder', inputCostPer1K: 0.00014, outputCostPer1K: 0.00028, currency: 'USD' },
-];
+export const DEFAULT_PRICING: ModelPricing[] = Object.entries(MODEL_PRICING_PER_1M)
+  .filter(([k]) => k !== 'default')
+  .map(([model, p]) => ({
+    model,
+    inputCostPer1K: p.input / 1000,
+    outputCostPer1K: p.output / 1000,
+    currency: 'USD' as const,
+  }));
 
 /**
  * Token usage breakdown
@@ -229,7 +227,7 @@ export function calculateCost(
  */
 export function generateSessionReport(
   session: CachedSession,
-  model: string = 'deepseek-chat',
+  model: string = DEFAULT_MODEL,
   customPricing?: ModelPricing[]
 ): SessionReport {
   const tokenUsage = calculateTokenUsage(session.messages);
@@ -263,7 +261,7 @@ export function generateAggregateReport(
   sessions: CachedSession[],
   periodStart: Date,
   periodEnd: Date,
-  model: string = 'deepseek-chat',
+  model: string = DEFAULT_MODEL,
   options: {
     includeDailyBreakdown?: boolean;
     customPricing?: ModelPricing[];
@@ -402,7 +400,7 @@ export class CostReportManager {
     customPricing?: ModelPricing[];
   } = {}) {
     this.cache = options.cache || getDefaultCache();
-    this.defaultModel = options.defaultModel || 'deepseek-chat';
+    this.defaultModel = options.defaultModel || DEFAULT_MODEL;
     this.customPricing = options.customPricing;
   }
 

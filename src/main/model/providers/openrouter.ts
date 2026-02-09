@@ -16,6 +16,7 @@ import {
   normalizeJsonSchema,
   safeJsonParse,
 } from './shared';
+import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
 
 /**
  * Call OpenRouter API
@@ -29,7 +30,7 @@ export async function callOpenRouter(
   onStream?: StreamCallback,
   signal?: AbortSignal
 ): Promise<ModelResponse> {
-  const baseUrl = config.baseUrl || 'https://openrouter.ai/api/v1';
+  const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.openrouter;
 
   // OpenRouter 使用 OpenAI 兼容格式
   const openrouterTools = tools.map((tool) => ({

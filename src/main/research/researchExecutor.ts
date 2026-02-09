@@ -11,6 +11,7 @@ import type {
 import type { ModelRouter } from '../model/modelRouter';
 import type { ToolExecutor } from '../tools/toolExecutor';
 import type { Generation } from '../../shared/types';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ResearchExecutor');
@@ -48,9 +49,9 @@ export interface ResearchExecutorConfig {
 }
 
 /**
- * 默认 Generation 配置（用于深度研究模式）
+ * 研究模式所需的最小 Generation（需要 web_search / web_fetch）
  */
-const DEFAULT_GENERATION: Generation = {
+const RESEARCH_GENERATION: Generation = {
   id: 'gen4',
   name: 'Gen 4',
   version: '4.0.0',
@@ -91,7 +92,7 @@ export class ResearchExecutor {
       maxSearchPerStep: config.maxSearchPerStep ?? 3,
       maxFetchPerSearch: config.maxFetchPerSearch ?? 3,
       maxFetchContentLength: config.maxFetchContentLength ?? 3000,
-      generation: config.generation ?? DEFAULT_GENERATION,
+      generation: config.generation ?? RESEARCH_GENERATION,
       maxConcurrentSearches: config.maxConcurrentSearches ?? 3,
       maxConcurrentFetches: config.maxConcurrentFetches ?? 5,
       enableStepParallelism: config.enableStepParallelism ?? true,
@@ -424,8 +425,8 @@ ${previousResults}
 
     try {
       const response = await this.modelRouter.chat({
-        provider: 'deepseek',
-        model: 'deepseek-chat',
+        provider: DEFAULT_PROVIDER,
+        model: DEFAULT_MODEL,
         messages: [{ role: 'user', content: analysisPrompt }],
         maxTokens: 2000,
       });

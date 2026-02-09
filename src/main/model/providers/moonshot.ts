@@ -15,6 +15,7 @@ import {
   convertToOpenAIMessages,
   safeJsonParse,
 } from './shared';
+import { MODEL_API_ENDPOINTS, MODEL_MAX_TOKENS, DEFAULT_MODEL } from '../../../shared/constants';
 
 // 专用 HTTPS Agent: 禁用 keepAlive 避免 SSE 流结束后连接复用导致 "socket hang up"
 // Node.js 19+ 的 globalAgent 默认 keepAlive=true，会导致并发子代理请求复用已关闭的连接
@@ -38,8 +39,8 @@ export async function callMoonshot(
   // Kimi K2.5 使用单独的 API key 和 URL（包月套餐）
   const isKimiK25 = config.model === 'kimi-k2.5';
   const baseUrl = isKimiK25
-    ? (process.env.KIMI_K25_API_URL || 'https://cn.haioi.net/v1')
-    : (config.baseUrl || 'https://api.moonshot.cn/v1');
+    ? (process.env.KIMI_K25_API_URL || MODEL_API_ENDPOINTS.kimiK25)
+    : (config.baseUrl || MODEL_API_ENDPOINTS.moonshot);
   const apiKey = isKimiK25
     ? (process.env.KIMI_K25_API_KEY || config.apiKey)
     : config.apiKey;
@@ -51,10 +52,10 @@ export async function callMoonshot(
   const moonshotTools = convertToolsToOpenAI(tools);
 
   const requestBody: Record<string, unknown> = {
-    model: config.model || 'moonshot-v1-8k',
+    model: config.model || DEFAULT_MODEL,
     messages: convertToOpenAIMessages(messages),
     temperature: config.temperature ?? 0.7,
-    max_tokens: config.maxTokens ?? 8192,
+    max_tokens: config.maxTokens ?? MODEL_MAX_TOKENS.DEFAULT,
     stream: true, // 始终使用流式响应
   };
 

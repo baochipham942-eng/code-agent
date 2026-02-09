@@ -17,6 +17,7 @@ import type {
 import type { ModelRouter } from '../model/modelRouter';
 import type { ToolExecutor } from '../tools/toolExecutor';
 import type { Generation } from '../../shared/types';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ProgressiveLoop');
@@ -57,9 +58,9 @@ export interface ProgressiveLoopConfig {
 }
 
 /**
- * 默认 Generation
+ * 研究模式所需的最小 Generation（需要 web_search / web_fetch）
  */
-const DEFAULT_GENERATION: Generation = {
+const RESEARCH_GENERATION: Generation = {
   id: 'gen4',
   name: 'Gen 4',
   version: '4.0.0',
@@ -99,7 +100,7 @@ export class ProgressiveResearchLoop {
     this.toolExecutor = toolExecutor;
     this.modelRouter = modelRouter;
     this.config = config;
-    this.generation = config.generation ?? DEFAULT_GENERATION;
+    this.generation = config.generation ?? RESEARCH_GENERATION;
     this.onProgress = onProgress;
   }
 
@@ -262,8 +263,8 @@ ${[...state.objectivesCovered.keys()].map((o, i) => `${i + 1}. ${o}`).join('\n')
 
     try {
       const response = await this.modelRouter.chat({
-        provider: 'deepseek',
-        model: 'deepseek-chat',
+        provider: DEFAULT_PROVIDER,
+        model: DEFAULT_MODEL,
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 300,
       });
@@ -496,8 +497,8 @@ ${sourceSummaries}
 
     try {
       const response = await this.modelRouter.chat({
-        provider: 'deepseek',
-        model: 'deepseek-chat',
+        provider: DEFAULT_PROVIDER,
+        model: DEFAULT_MODEL,
         messages: [{ role: 'user', content: prompt }],
         maxTokens: 1000,
       });

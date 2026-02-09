@@ -12,7 +12,8 @@ import type {
   ExecutionProgressEvent,
 } from './types';
 import { getSubagentExecutor } from '../agent/subagentExecutor';
-import { ORCHESTRATOR_TIMEOUTS } from '../../shared/constants';
+import { ORCHESTRATOR_TIMEOUTS, DEFAULT_GENERATION } from '../../shared/constants';
+import { getToolRegistry } from '../tools/toolRegistry';
 
 // ============================================================================
 // 配置
@@ -79,8 +80,8 @@ export class LocalExecutor extends EventEmitter {
       this.emitProgress(requestId, 10, '初始化 Agent');
 
       // 执行
-      // TODO: SubagentContext 类型定义需要完整的 toolRegistry 和 toolContext
-      // 但 SubagentExecutor 内部会自行管理这些，这里使用简化版本
+      const registry = getToolRegistry();
+      const toolMap = new Map(registry.getAllTools().map(t => [t.name, t]));
       const result = await executor.execute(
         prompt,
         {
@@ -91,10 +92,10 @@ export class LocalExecutor extends EventEmitter {
         },
         {
           modelConfig: request.modelConfig || this.modelConfig!,
-          toolRegistry: new Map(), // SubagentExecutor manages its own tools
+          toolRegistry: toolMap,
           toolContext: {
             workingDirectory: context?.projectPath || process.cwd(),
-            generation: { id: 'gen4' },
+            generation: { id: DEFAULT_GENERATION },
             requestPermission: async () => true,
           },
         }
@@ -138,7 +139,7 @@ export class LocalExecutor extends EventEmitter {
     // 简单查询直接调用模型，不需要工具
     const executor = getSubagentExecutor();
 
-    // TODO: SubagentContext 类型需要完整结构，这里使用最小化上下文
+    // 简单查询不需要工具，availableTools 为空是合理的
     const result = await executor.execute(
       prompt,
       {
@@ -152,7 +153,7 @@ export class LocalExecutor extends EventEmitter {
         toolRegistry: new Map(),
         toolContext: {
           workingDirectory: process.cwd(),
-          generation: { id: 'gen4' },
+          generation: { id: DEFAULT_GENERATION },
           requestPermission: async () => true,
         },
       }

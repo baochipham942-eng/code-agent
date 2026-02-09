@@ -90,7 +90,7 @@ export class PerformanceEvaluator implements DimensionEvaluator {
     return {
       dimension: this.dimension,
       score: Math.min(100, Math.max(0, score)),
-      weight: DIMENSION_WEIGHTS[this.dimension],
+      weight: DIMENSION_WEIGHTS[this.dimension] ?? 0,
       subMetrics,
       suggestions: suggestions.length > 0 ? suggestions : undefined,
     };

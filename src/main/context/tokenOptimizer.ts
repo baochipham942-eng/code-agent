@@ -46,6 +46,78 @@ export interface ToolResultCompressionOutput {
 }
 
 /**
+ * Detect and compress read_xlsx output preserving schema + sample rows + hint.
+ * Returns null if content is not xlsx output.
+ */
+function compressXlsxResult(content: string, targetTokens: number): string | null {
+  // Detect xlsx output by its signature header
+  if (!content.startsWith('📊 Excel 内容')) return null;
+
+  const lines = content.split('\n');
+  const preserved: string[] = [];
+  let dataStartIdx = -1;
+
+  // Preserve metadata header (first 4 lines: title, sheet info, available sheets, separator)
+  for (let i = 0; i < lines.length && i < 6; i++) {
+    preserved.push(lines[i]);
+    if (lines[i].startsWith('─')) {
+      dataStartIdx = i + 1;
+      break;
+    }
+  }
+
+  if (dataStartIdx === -1) return null;
+
+  // Skip empty line after separator
+  if (dataStartIdx < lines.length && lines[dataStartIdx].trim() === '') {
+    preserved.push('');
+    dataStartIdx++;
+  }
+
+  // Preserve column headers + separator (for markdown table) or first header line (json/csv)
+  const sampleRows: string[] = [];
+  let headerLines = 0;
+
+  // Detect format: markdown table starts with "| "
+  if (dataStartIdx < lines.length && lines[dataStartIdx].startsWith('|')) {
+    // Markdown: header row + separator row
+    sampleRows.push(lines[dataStartIdx]); // header
+    if (dataStartIdx + 1 < lines.length && lines[dataStartIdx + 1].startsWith('|')) {
+      sampleRows.push(lines[dataStartIdx + 1]); // separator
+      headerLines = 2;
+    }
+  } else if (dataStartIdx < lines.length && lines[dataStartIdx].startsWith('[')) {
+    // JSON array: just take first few entries
+    headerLines = 0;
+  } else {
+    // CSV: first line is header
+    sampleRows.push(lines[dataStartIdx]);
+    headerLines = 1;
+  }
+
+  // Add 3 sample data rows after headers
+  const dataRowStart = dataStartIdx + headerLines;
+  for (let i = dataRowStart; i < Math.min(dataRowStart + 3, lines.length); i++) {
+    if (lines[i].trim() === '') continue;
+    sampleRows.push(lines[i]);
+  }
+
+  preserved.push(...sampleRows);
+  preserved.push('');
+  preserved.push('... [数据已省略，请用 bash + Python 从源文件读取完整数据]');
+
+  // Preserve the hint line at the end if present
+  for (let i = lines.length - 1; i >= Math.max(lines.length - 3, 0); i--) {
+    if (lines[i].startsWith('💡 提示')) {
+      preserved.push(lines[i]);
+      break;
+    }
+  }
+
+  return preserved.join('\n');
+}
+
+/**
  * Compress tool result if it exceeds token threshold
  *
  * IMPORTANT: Does NOT modify content format (no headers prepended).
@@ -60,6 +132,20 @@ export function compressToolResult(
 
   if (originalTokens <= cfg.threshold) {
     return { content, compressed: false, savedTokens: 0 };
+  }
+
+  // Special handling for read_xlsx results: preserve schema + sample rows + hint
+  const xlsxCompressed = compressXlsxResult(content, cfg.targetTokens);
+  if (xlsxCompressed) {
+    const compressedTokens = estimateTokens(xlsxCompressed);
+    const savedTokens = originalTokens - compressedTokens;
+    logger.debug(`XLSX result compressed (schema-aware): ${originalTokens}→${compressedTokens} tokens (saved ${savedTokens})`);
+    return {
+      content: xlsxCompressed,
+      compressed: true,
+      savedTokens,
+      compressionInfo: { originalTokens, compressedTokens },
+    };
   }
 
   const compressor = new ContextCompressor({

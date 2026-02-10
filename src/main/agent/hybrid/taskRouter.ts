@@ -240,6 +240,7 @@ export function analyzeTask(task: string): TaskAnalysis {
   if (/\b(ppt|pptx|幻灯片|演示|slide|presentation)\b/i.test(task)) taskType = 'ppt';
   if (/\b(文章|报告|文档|撰写|write.*article|write.*report|write.*document)\b/i.test(task)) taskType = 'document';
   if (/\b(生成.*图|画.*图|image|draw|generate.*image|生图|插图)\b/i.test(task)) taskType = 'image';
+  if (/\b(生成.*视频|做.*视频|制作.*视频|视频生成|video|generate.*video|短视频|动画)\b/i.test(task)) taskType = 'video';
 
   // 计算置信度
   let confidence = 0.5;

@@ -17,6 +17,7 @@ export { SearchVerifier } from './searchVerifier';
 export { DataVerifier } from './dataVerifier';
 export { DocumentVerifier } from './documentVerifier';
 export { ImageVerifier } from './imageVerifier';
+export { VideoVerifier } from './videoVerifier';
 export { GenericVerifier } from './genericVerifier';
 
 // ============================================================================
@@ -30,6 +31,7 @@ import { SearchVerifier } from './searchVerifier';
 import { DataVerifier } from './dataVerifier';
 import { DocumentVerifier } from './documentVerifier';
 import { ImageVerifier } from './imageVerifier';
+import { VideoVerifier } from './videoVerifier';
 import { GenericVerifier } from './genericVerifier';
 
 let initialized = false;
@@ -44,6 +46,7 @@ export function initializeVerifiers(): void {
   registry.register(new DataVerifier());
   registry.register(new DocumentVerifier());
   registry.register(new ImageVerifier());
+  registry.register(new VideoVerifier());
   registry.register(new GenericVerifier()); // 通用兜底始终最后
 
   initialized = true;

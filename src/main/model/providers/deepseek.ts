@@ -15,6 +15,7 @@ import {
 } from './shared';
 import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../shared/constants';
 import { openAISSEStream } from './sseStream';
+import { withTransientRetry } from './retryStrategy';
 
 /**
  * Call DeepSeek API
@@ -53,14 +54,17 @@ export async function callDeepSeek(
   }
 
   if (useStream) {
-    return openAISSEStream({
-      providerName: 'DeepSeek',
-      baseUrl,
-      apiKey: config.apiKey!,
-      requestBody,
-      onStream,
-      signal,
-    });
+    return withTransientRetry(
+      () => openAISSEStream({
+        providerName: 'DeepSeek',
+        baseUrl,
+        apiKey: config.apiKey!,
+        requestBody,
+        onStream,
+        signal,
+      }),
+      { providerName: 'DeepSeek', signal }
+    );
   }
 
   // 非流式输出（fallback）

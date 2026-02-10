@@ -7,6 +7,7 @@ import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { logger, httpsAgent, convertToolsToOpenAI, convertToOpenAIMessages } from './shared';
 import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../shared/constants';
 import { openAISSEStream } from './sseStream';
+import { withTransientRetry } from './retryStrategy';
 
 // ============================================================================
 // 智谱 API 限流器 - 防止并发过高触发限流
@@ -137,14 +138,17 @@ export async function callZhipu(
   await zhipuLimiter.acquire(signal);
 
   try {
-    return await openAISSEStream({
-      providerName: '智谱',
-      baseUrl,
-      apiKey: config.apiKey!,
-      requestBody,
-      onStream,
-      signal,
-    });
+    return await withTransientRetry(
+      () => openAISSEStream({
+        providerName: '智谱',
+        baseUrl,
+        apiKey: config.apiKey!,
+        requestBody,
+        onStream,
+        signal,
+      }),
+      { providerName: '智谱', signal }
+    );
   } finally {
     zhipuLimiter.release();
   }

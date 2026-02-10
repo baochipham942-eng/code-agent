@@ -17,7 +17,10 @@ export type ReminderType =
   | 'PPT_FORMAT_SELECTION'
   | 'DATA_PROCESSING'
   | 'DOCUMENT_GENERATION'
-  | 'IMAGE_GENERATION';
+  | 'IMAGE_GENERATION'
+  | 'VIDEO_GENERATION'
+  | 'CODE_REVIEW_DIAGNOSIS'
+  | 'SYSTEM_TROUBLESHOOTING';
 
 /**
  * 系统提醒内容
@@ -228,6 +231,71 @@ ppt_generate({
 - ❌ 不要生成空文件或损坏的图片
 </system-reminder>
 `,
+
+  VIDEO_GENERATION: `
+<system-reminder>
+**视频生成任务**：检测到视频生成需求。
+
+**工作流程**：
+1. 理解用户的视频描述需求（主题、风格、时长）
+2. 调用 video_generate 工具生成视频
+3. 等待生成完成（异步任务，最长约 5 分钟）
+4. 告知用户生成结果和文件位置
+
+**video_generate 参数**：
+- prompt: 视频描述（中英文均可，越详细越好）
+- aspect_ratio: 16:9（横屏）/ 9:16（竖屏）/ 1:1（方形）/ 4:3 / 3:4
+- duration: 5 或 10 秒
+- fps: 30 或 60
+- quality: "quality"（高质量）或 "speed"（快速）
+- image_url: 可选起始图片 URL（图生视频模式）
+
+**提示词优化**：
+- 描述场景、运镜、光照、色调，如"航拍城市天际线，金色日落，镜头缓慢右移"
+- 工具会自动用 GLM-4-Flash 扩展提示词，但用户描述越具体效果越好
+
+**禁止**：
+- ❌ 不要用 bash 调用 ffmpeg 生成视频（应使用 video_generate AI 生成）
+- ❌ 不要在视频生成完成前就告诉用户"已完成"
+</system-reminder>
+`,
+
+  CODE_REVIEW_DIAGNOSIS: `
+<system-reminder>
+**代码审查诊断模式**：检测到模糊的代码检查指令。
+
+**诊断先行流程**（不要直接修改，先分析）：
+1. 读取全部相关代码文件
+2. 分类检查：
+   - 语法错误 / 类型错误
+   - 逻辑错误（边界条件、空值、竞态）
+   - 安全漏洞（注入、XSS、硬编码密钥）
+   - 性能问题（N+1 查询、内存泄漏、不必要的重渲染）
+   - 代码风格（命名、重复代码、过深嵌套）
+3. 输出问题清单（按严重程度：🔴 严重 → 🟡 警告 → 🔵 建议 排序）
+4. 每个问题标注文件路径:行号 + 修复建议
+5. 如果用户要求修复，一次性修复所有问题
+</system-reminder>
+`,
+
+  SYSTEM_TROUBLESHOOTING: `
+<system-reminder>
+**系统排查诊断模式**：检测到故障排查指令。
+
+**诊断先行流程**（不要直接猜测修改，先收集证据）：
+1. 收集症状信息：
+   - 错误日志（用 bash 查看相关日志文件）
+   - 状态码和错误消息
+   - 问题发生的时间线和频率
+2. 列出可能原因（按概率从高到低排序）
+3. 逐一验证假设（用工具检查，而非猜测）
+4. 输出根因分析报告：
+   - 确认的根因
+   - 排除的假设及理由
+   - 影响范围
+5. 提供修复方案（附具体操作步骤）
+</system-reminder>
+`,
 };
 
 /**
@@ -243,6 +311,9 @@ export interface TaskFeatures {
   isDataTask: boolean;
   isDocumentTask: boolean;
   isImageTask: boolean;
+  isVideoTask: boolean;
+  isFuzzyCodeReview: boolean;
+  isFuzzyTroubleshooting: boolean;
   dimensions: string[];
 }
 
@@ -250,7 +321,7 @@ export interface TaskFeatures {
  * 从文本中提取文件扩展名（匹配 .xxx 格式的路径片段）
  */
 function extractFileExtensions(text: string): string[] {
-  const extPattern = /\.(xlsx|xls|csv|tsv|parquet|json|pdf|docx|doc|pptx|ppt|png|jpg|jpeg|svg|gif|md|txt|py|ts|js)\b/gi;
+  const extPattern = /\.(xlsx|xls|csv|tsv|parquet|json|pdf|docx|doc|pptx|ppt|png|jpg|jpeg|svg|gif|mp4|avi|mov|mkv|webm|md|txt|py|ts|js)\b/gi;
   const exts = new Set<string>();
   let match;
   while ((match = extPattern.exec(text)) !== null) {
@@ -259,8 +330,12 @@ function extractFileExtensions(text: string): string[] {
   return Array.from(exts);
 }
 
-/** 数据文件扩展名 */
+/** 按类型分组的文件扩展名 */
 const DATA_FILE_EXTENSIONS = ['.xlsx', '.xls', '.csv', '.tsv', '.parquet'];
+const PPT_FILE_EXTENSIONS = ['.pptx', '.ppt'];
+const DOC_FILE_EXTENSIONS = ['.docx', '.doc', '.pdf'];
+const IMAGE_FILE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.svg', '.gif'];
+const VIDEO_FILE_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv', '.webm'];
 
 /**
  * 检测任务特征
@@ -275,6 +350,10 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     ...extractFileExtensions(prompt),
   ];
   const hasDataFile = allExtensions.some(ext => DATA_FILE_EXTENSIONS.includes(ext));
+  const hasPPTFile = allExtensions.some(ext => PPT_FILE_EXTENSIONS.includes(ext));
+  const hasDocFile = allExtensions.some(ext => DOC_FILE_EXTENSIONS.includes(ext));
+  const hasImageFile = allExtensions.some(ext => IMAGE_FILE_EXTENSIONS.includes(ext));
+  const hasVideoFile = allExtensions.some(ext => VIDEO_FILE_EXTENSIONS.includes(ext));
 
   // 维度关键词
   const dimensionKeywords = [
@@ -332,16 +411,41 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     '流程图', '架构图', '示意图', '思维导图',
   ];
 
+  // 视频生成任务关键词
+  const videoKeywords = [
+    '生成视频', '做个视频', '制作视频', '视频生成',
+    'video', 'generate video', '短视频',
+    '动画', '视频片段',
+  ];
+
+  // 模糊指令词（用于行为引导，不用于路由）
+  const fuzzyWords = ['看看', '检查', '有啥问题', '有什么问题', '排查', '整理'];
+  const hasFuzzyIntent = fuzzyWords.some(w => normalizedPrompt.includes(w));
+
+  // 代码审查模糊指令：含模糊词 + 代码相关上下文
+  const codeContextWords = ['代码', '代码库', '函数', '组件', '模块', 'code', '实现', '逻辑'];
+  const hasCodeContext = codeContextWords.some(w => normalizedPrompt.includes(w));
+
+  // 系统排查模糊指令：含模糊词 + 系统/故障上下文
+  const troubleContextWords = [
+    '服务器', '接口', '报错', '故障', '异常', '崩溃', '超时',
+    '不工作', '挂了', '出错', 'error', 'bug', '日志',
+  ];
+  const hasTroubleContext = troubleContextWords.some(w => normalizedPrompt.includes(w));
+
   return {
     isMultiDimension: matchedDimensions.length >= 2,
     isComplexTask: complexKeywords.some((k) => normalizedPrompt.includes(k)),
     isAuditTask: auditKeywords.some((k) => normalizedPrompt.includes(k)),
     isReviewTask: reviewKeywords.some((k) => normalizedPrompt.includes(k)),
     isPlanningTask: planningKeywords.some((k) => normalizedPrompt.includes(k)),
-    isPPTTask: pptKeywords.some((k) => normalizedPrompt.includes(k)),
+    isPPTTask: hasPPTFile || pptKeywords.some((k) => normalizedPrompt.includes(k)),
     isDataTask: hasDataFile || dataKeywords.some((k) => normalizedPrompt.includes(k)),
-    isDocumentTask: documentKeywords.some((k) => normalizedPrompt.includes(k)),
-    isImageTask: imageKeywords.some((k) => normalizedPrompt.includes(k)),
+    isDocumentTask: hasDocFile || documentKeywords.some((k) => normalizedPrompt.includes(k)),
+    isImageTask: hasImageFile || imageKeywords.some((k) => normalizedPrompt.includes(k)),
+    isVideoTask: hasVideoFile || videoKeywords.some((k) => normalizedPrompt.includes(k)),
+    isFuzzyCodeReview: hasFuzzyIntent && hasCodeContext,
+    isFuzzyTroubleshooting: hasFuzzyIntent && hasTroubleContext,
     dimensions: matchedDimensions,
   };
 }
@@ -358,6 +462,8 @@ export function getSystemReminders(prompt: string, fileExtensions?: string[]): s
     reminders.push(REMINDERS.PPT_FORMAT_SELECTION);
   } else if (features.isDataTask) {
     reminders.push(REMINDERS.DATA_PROCESSING);
+  } else if (features.isVideoTask) {
+    reminders.push(REMINDERS.VIDEO_GENERATION);
   } else if (features.isDocumentTask) {
     reminders.push(REMINDERS.DOCUMENT_GENERATION);
   } else if (features.isImageTask) {
@@ -382,6 +488,14 @@ export function getSystemReminders(prompt: string, fileExtensions?: string[]): s
   // 审查任务 → 审查模式提醒
   if (features.isReviewTask && !features.isAuditTask) {
     reminders.push(REMINDERS.REVIEW_MODE);
+  }
+
+  // 模糊指令诊断提示（与内容生成任务不互斥，可叠加）
+  if (features.isFuzzyCodeReview) {
+    reminders.push(REMINDERS.CODE_REVIEW_DIAGNOSIS);
+  }
+  if (features.isFuzzyTroubleshooting) {
+    reminders.push(REMINDERS.SYSTEM_TROUBLESHOOTING);
   }
 
   return reminders;

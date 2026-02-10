@@ -38,6 +38,7 @@ import { createPlanningService, type PlanningService } from '../planning';
 import { getSessionManager, notificationService } from '../services';
 import { getTaskManager, type TaskManager } from '../task';
 import type { PlanningState, ToolCall } from '../../shared/types';
+import { initEventBridge, shutdownEventBus } from '../events';
 
 const logger = createLogger('Bootstrap');
 
@@ -314,6 +315,14 @@ async function initializeServices(): Promise<void> {
     .catch((error) => {
       logger.error('Plugin system failed to initialize (non-blocking)', error);
     });
+
+  // Initialize EventBus + EventBridge (global event system)
+  try {
+    initEventBridge(() => getMainWindow()).start();
+    logger.info('EventBus + EventBridge initialized');
+  } catch (error) {
+    logger.warn('EventBus initialization failed (non-blocking)', { error: String(error) });
+  }
 
   // Initialize DAG Event Bridge (forwards DAG events to renderer for visualization)
   try {

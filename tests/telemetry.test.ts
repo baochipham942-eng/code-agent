@@ -496,4 +496,20 @@ describe('Intent Classifier Integration', () => {
       ],
     });
 
-    expect([IntentType.REFACTOR, IntentType.CODE_SEARCH]
+    expect([IntentType.REFACTOR, IntentType.CODE_SEARCH]).toContain(classification.intent);
+
+    const outcome = evaluateOutcome({
+      intent: classification.intent,
+      toolCalls: [
+        { name: 'grep', arguments: { pattern: 'var ' } },
+        { name: 'edit_file', arguments: { file_path: 'old.js' } },
+      ],
+      toolResults: [
+        { success: true, output: 'Found 10 matches' },
+        { success: true },
+      ],
+    });
+
+    expect(outcome.success).toBe(true);
+  });
+});

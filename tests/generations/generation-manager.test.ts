@@ -17,9 +17,9 @@ describe('GenerationManager', () => {
   // Basic Functionality Tests
   // --------------------------------------------------------------------------
   describe('Basic Functionality', () => {
-    it('should initialize with default generation (gen3)', () => {
+    it('should initialize with default generation (gen8)', () => {
       const current = manager.getCurrentGeneration();
-      expect(current.id).toBe('gen3');
+      expect(current.id).toBe('gen8');
     });
 
     it('should get all generations', () => {

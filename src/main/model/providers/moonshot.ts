@@ -75,7 +75,7 @@ export async function callMoonshot(
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      const isTransient = msg.includes('socket hang up') || msg.includes('ECONNRESET') || msg.includes('ECONNREFUSED');
+      const isTransient = msg.includes('socket hang up') || msg.includes('ECONNRESET') || msg.includes('ECONNREFUSED') || msg.includes('流式响应无内容') || msg.includes('503');
       if (isTransient && attempt < MAX_RETRIES && !signal?.aborted) {
         const delay = (attempt + 1) * 1000;
         logger.warn(`[Moonshot] 瞬态错误 "${msg}", ${delay}ms 后重试 (${attempt + 1}/${MAX_RETRIES})`);

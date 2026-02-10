@@ -166,6 +166,23 @@ ppt_generate({
 - ❌ 不要在未读取数据的情况下编写处理脚本
 - ❌ 不要忽略空值处理（NaN/None 必须显式处理）
 - ❌ 不要假设日期格式，必须从数据中推断
+
+**数据清洗检查清单**（当任务涉及"清洗/整理/去重"时）：
+1. 读取全量数据，检查行数和列名
+2. 检测重复：逐列分析哪些列应参与去重判断（不能只用默认 drop_duplicates）
+3. 去重后打印行数差异，验证去重数量合理（如"200→188，删除12行"）
+4. 缺失值处理：按列类型选择策略（数值→中位数，文本→'未知'，日期→推断）
+5. 格式标准化：日期统一 YYYY-MM-DD，货币统一数值，电话号码统一格式
+6. 异常值检查：数值列检查极端值（负数、超大值）
+7. 输出前做最终验证：行数、列数、空值计数
+
+**模糊指令处理**（当指令含"整理/看看/检查"等模糊词时）：
+不要直接开始修改，先做系统诊断：
+1. 读取全量数据
+2. 逐列分析数据质量：重复值数量、空值数量、异常值、格式不一致
+3. 输出诊断报告（哪些列有问题、每种问题的数量）
+4. 基于诊断结果，一次性编写清洗脚本处理所有发现的问题
+5. 输出清洗前后的对比（行数变化、每种修复的数量）
 </system-reminder>
 `,
 
@@ -230,10 +247,34 @@ export interface TaskFeatures {
 }
 
 /**
- * 检测任务特征
+ * 从文本中提取文件扩展名（匹配 .xxx 格式的路径片段）
  */
-export function detectTaskFeatures(prompt: string): TaskFeatures {
+function extractFileExtensions(text: string): string[] {
+  const extPattern = /\.(xlsx|xls|csv|tsv|parquet|json|pdf|docx|doc|pptx|ppt|png|jpg|jpeg|svg|gif|md|txt|py|ts|js)\b/gi;
+  const exts = new Set<string>();
+  let match;
+  while ((match = extPattern.exec(text)) !== null) {
+    exts.add('.' + match[1].toLowerCase());
+  }
+  return Array.from(exts);
+}
+
+/** 数据文件扩展名 */
+const DATA_FILE_EXTENSIONS = ['.xlsx', '.xls', '.csv', '.tsv', '.parquet'];
+
+/**
+ * 检测任务特征
+ * @param fileExtensions 调用方传入的附件文件扩展名（可选，用于 Electron 附件场景）
+ */
+export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): TaskFeatures {
   const normalizedPrompt = prompt.toLowerCase();
+
+  // 合并：调用方传入的扩展名 + 从 prompt 文本提取的扩展名
+  const allExtensions = [
+    ...(fileExtensions || []).map(e => e.toLowerCase()),
+    ...extractFileExtensions(prompt),
+  ];
+  const hasDataFile = allExtensions.some(ext => DATA_FILE_EXTENSIONS.includes(ext));
 
   // 维度关键词
   const dimensionKeywords = [
@@ -298,7 +339,7 @@ export function detectTaskFeatures(prompt: string): TaskFeatures {
     isReviewTask: reviewKeywords.some((k) => normalizedPrompt.includes(k)),
     isPlanningTask: planningKeywords.some((k) => normalizedPrompt.includes(k)),
     isPPTTask: pptKeywords.some((k) => normalizedPrompt.includes(k)),
-    isDataTask: dataKeywords.some((k) => normalizedPrompt.includes(k)),
+    isDataTask: hasDataFile || dataKeywords.some((k) => normalizedPrompt.includes(k)),
     isDocumentTask: documentKeywords.some((k) => normalizedPrompt.includes(k)),
     isImageTask: imageKeywords.some((k) => normalizedPrompt.includes(k)),
     dimensions: matchedDimensions,
@@ -308,8 +349,8 @@ export function detectTaskFeatures(prompt: string): TaskFeatures {
 /**
  * 根据任务特征获取需要注入的系统提醒
  */
-export function getSystemReminders(prompt: string): string[] {
-  const features = detectTaskFeatures(prompt);
+export function getSystemReminders(prompt: string, fileExtensions?: string[]): string[] {
+  const features = detectTaskFeatures(prompt, fileExtensions);
   const reminders: string[] = [];
 
   // 内容生成任务（互斥，按优先级排列）

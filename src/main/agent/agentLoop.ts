@@ -57,6 +57,8 @@ import {
 import { getPromptForTask, buildDynamicPrompt, buildDynamicPromptV2, type AgentMode } from '../generation/prompts/builder';
 import { AntiPatternDetector } from './antiPattern/detector';
 import { cleanXmlResidues } from './antiPattern/cleanXml';
+import { GoalTracker } from './goalTracker';
+import { getSessionRecoveryService } from './sessionRecovery';
 import { getCurrentTodos } from '../tools/planning/todoWrite';
 import { getIncompleteTasks } from '../tools/planning';
 import { fileReadTracker } from '../tools/fileReadTracker';
@@ -147,6 +149,14 @@ export class AgentLoop {
   // Refactored modules
   private circuitBreaker: CircuitBreaker;
   private antiPatternDetector: AntiPatternDetector;
+  private goalTracker: GoalTracker;
+
+  // F3: External data summary nudge
+  private externalDataCallCount: number = 0;
+
+  // F4: Goal-based completion verification
+  private goalVerificationCount: number = 0;
+  private maxGoalVerifications: number = 2;
 
   // Token optimization
   private hookMessageBuffer: HookMessageBuffer;
@@ -261,6 +271,7 @@ export class AgentLoop {
     // Initialize refactored modules
     this.circuitBreaker = new CircuitBreaker();
     this.antiPatternDetector = new AntiPatternDetector();
+    this.goalTracker = new GoalTracker();
 
     // Initialize token optimization
     this.hookMessageBuffer = new HookMessageBuffer();
@@ -475,6 +486,11 @@ export class AgentLoop {
     // Reset nudge counters at task start (not per-turn, to allow cumulative effect)
     this.readOnlyNudgeCount = 0;
     this.todoNudgeCount = 0;
+    this.goalVerificationCount = 0;
+    this.externalDataCallCount = 0;
+
+    // F1: Goal Re-Injection — 从用户消息提取目标
+    this.goalTracker.initialize(userMessage);
 
     logger.debug(` Task complexity: ${complexityAnalysis.complexity} (${Math.round(complexityAnalysis.confidence * 100)}%)`);
     if (this.targetFiles.length > 0) {
@@ -598,6 +614,22 @@ export class AgentLoop {
       }
     }
 
+    // F5: 跨会话任务恢复 — 查询同目录的上一个会话，注入恢复摘要
+    if (!isSimpleTask) {
+      try {
+        const recovery = await getSessionRecoveryService().checkPreviousSession(
+          this.sessionId,
+          this.workingDirectory
+        );
+        if (recovery) {
+          this.injectSystemMessage(recovery);
+          logger.info('[AgentLoop] Session recovery summary injected');
+        }
+      } catch {
+        // Graceful: recovery failure doesn't block execution
+      }
+    }
+
     let iterations = 0;
 
     while (!this.isCancelled && !this.isInterrupted && !this.circuitBreaker.isTripped() && iterations < this.maxIterations) {
@@ -649,6 +681,13 @@ export class AgentLoop {
       // Note: readOnlyNudgeCount and todoNudgeCount are NOT reset here
       // They accumulate across turns to allow escalating nudges
       this.emitTaskProgress('thinking', '分析请求中...');
+
+      // F1: Goal Re-Injection — 每 N 轮注入目标检查点
+      const goalCheckpoint = this.goalTracker.getGoalCheckpoint(iterations);
+      if (goalCheckpoint) {
+        this.injectSystemMessage(goalCheckpoint);
+        logger.debug(`[AgentLoop] Goal checkpoint injected at iteration ${iterations}`);
+      }
 
       // 1. Call model
       logger.debug('[AgentLoop] Calling inference...');
@@ -913,6 +952,33 @@ export class AgentLoop {
               data: { message: `检测到 ${missingFiles.length} 个文件未修改，提示继续执行 (${this.fileNudgeCount}/${this.maxFileNudges})...` },
             });
             continue; // Skip stop, continue execution
+          }
+        }
+
+        // F4 Nudge: Goal-based completion verification
+        // 非简单任务模式下，如果没有任何写操作就要停止，提醒原始目标
+        if (this.goalTracker.isInitialized()
+          && !this.isSimpleTaskMode
+          && this.goalVerificationCount < this.maxGoalVerifications) {
+          const summary = this.goalTracker.getGoalSummary();
+          const hasWriteAction = summary.completed.some(a =>
+            a === 'edit_file' || a === 'write_file' || a === 'bash'
+          );
+          if (!hasWriteAction && iterations > 1) {
+            this.goalVerificationCount++;
+            this.injectSystemMessage(
+              `<goal-completion-check>\n` +
+              `STOP! 任务尚未完成。\n` +
+              `原始目标: ${summary.goal}\n` +
+              `已执行工具: ${summary.completed.join(', ') || '无'}\n` +
+              `尚未进行任何文件修改。请继续完成任务，或明确说明为什么要提前停止。\n` +
+              `</goal-completion-check>`
+            );
+            this.onEvent({
+              type: 'notification',
+              data: { message: `目标完成度检查：尚无写操作 (${this.goalVerificationCount}/${this.maxGoalVerifications})` },
+            });
+            continue;
           }
         }
 
@@ -1654,6 +1720,20 @@ export class AgentLoop {
         }
       }
 
+      // F3: 外部数据摘要提醒 — 每 2 次外部数据查询后提示总结关键发现
+      if (EXTERNAL_DATA_TOOLS.some(t => toolCall.name.startsWith(t)) && result.success) {
+        this.externalDataCallCount++;
+        if (this.externalDataCallCount % 2 === 0) {
+          this.injectSystemMessage(
+            `<data-persistence-nudge>\n` +
+            `你已执行了 ${this.externalDataCallCount} 次外部数据查询。\n` +
+            `在继续下一步之前，请先用 1-3 句话总结到目前为止的关键发现。\n` +
+            `这可以防止重要信息在上下文压缩时丢失。\n` +
+            `</data-persistence-nudge>`
+          );
+        }
+      }
+
       // E1: 引用溯源 - 从工具结果中提取引用
       if (this.sessionId && result.success && toolResult.output) {
         try {
@@ -1731,10 +1811,19 @@ export class AgentLoop {
         this.circuitBreaker.recordSuccess();
       }
 
-      // Anti-pattern tracking for tool failures
+      // F1: Goal Tracker — 记录工具执行动作
+      this.goalTracker.recordAction(toolCall.name, result.success);
+
+      // Anti-pattern tracking for tool failures (F2: 4-level escalation)
       if (!result.success && result.error) {
         const failureWarning = this.antiPatternDetector.trackToolFailure(toolCall, result.error);
-        if (failureWarning) {
+        if (failureWarning === 'ESCALATE_TO_USER') {
+          this.injectSystemMessage(
+            `<escalation>\n` +
+            `已尝试多次无法完成此操作。请立即向用户说明遇到的问题，不要再重试。\n` +
+            `</escalation>`
+          );
+        } else if (failureWarning) {
           this.injectSystemMessage(failureWarning);
         }
       } else if (result.success) {

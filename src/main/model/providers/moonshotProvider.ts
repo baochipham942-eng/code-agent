@@ -34,4 +34,8 @@ export class MoonshotProvider extends BaseOpenAIProvider {
   protected getAgent(): https.Agent {
     return moonshotAgent;
   }
+
+  protected getExtraHeaders(): Record<string, string> {
+    return { 'User-Agent': 'claude-code/1.0' };
+  }
 }

@@ -17,6 +17,7 @@ import {
   LogIn,
   LogOut,
   ChevronDown,
+  BookOpen,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { IconButton } from './primitives';
@@ -41,7 +42,7 @@ function getRelativeTime(timestamp: number): string {
 }
 
 export const Sidebar: React.FC = () => {
-  const { clearPlanningState, setShowSettings } = useAppStore();
+  const { clearPlanningState, setShowSettings, setShowCapturePanel } = useAppStore();
   const {
     sessions,
     currentSessionId,
@@ -146,8 +147,16 @@ export const Sidebar: React.FC = () => {
           <span className="text-sm font-normal">新会话</span>
         </button>
 
-        {/* Filter Dropdown */}
-        <div className="relative">
+        <div className="flex items-center gap-2">
+          {/* Knowledge Base */}
+          <button
+            onClick={() => setShowCapturePanel(true)}
+            className="p-1.5 text-zinc-500 hover:text-cyan-400 transition-colors rounded-md hover:bg-zinc-800/50"
+            title="知识库"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+          </button>
+          {/* Filter Dropdown */}
           <button
             onClick={cycleFilter}
             className="flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"

@@ -1181,18 +1181,47 @@ data: {"id":"gen-xxx","choices":[...]}
 
 **结论**：过程验证 6/6 全通过，证明修复有效。结果验证部分失败是因为任务复杂需要更多时间。
 
-### 2026-02-08: Moonshot 并发子代理 Socket Hang Up ✅ 已修复
+### 2026-02-10: cn.haioi.net 代理并发上限 = 2 ✅ 已修复
 
-**现象**：4 个子代理同时发起 Moonshot API 请求时报 `socket hang up` 错误
+**现象**：v4 评测全部 10 个 case 出现 TLS 断开，得分从 v3 的 71% 跌至 61%
 
-**根因**：Node.js 19+ 的 `https.globalAgent` 默认 `keepAlive=true`，SSE 流结束后连接被放回连接池。并发请求复用了已被服务器关闭的连接。
+**错误消息**：`Client network socket disconnected before secure TLS connection was established` (code=ECONNRESET)
 
-**修复**：
-1. 创建专用 `moonshotAgent`（`keepAlive=false`）避免连接复用
-2. 添加瞬态错误自动重试（socket hang up / ECONNRESET / ECONNREFUSED）
-3. 增强错误日志记录 error code
+**根因链**：
+1. cn.haioi.net（Moonshot 第三方代理）在 ≥4 并发 SSE 连接时主动断开 TLS
+2. `retryStrategy.ts` 只检查 `err.message` 不检查 `err.code`，TLS 错误不被识别为瞬态错误
+3. Moonshot provider 无并发限流器（智谱有 `ZhipuRateLimiter` 限 3 并发）
+4. `agentLoop.ts` 网络错误直接 throw 不重试
 
-**相关代码**：`src/main/model/providers/moonshot.ts`
+**并发安全阈值**：
+
+| 并发数 | 表现 |
+|--------|------|
+| 1-2 | ✅ 稳定 |
+| 3 | ⚠️ 偶发 TLS 断开 |
+| 4+ | ❌ 频繁断开 |
+
+**修复 (4 项)**：
+1. `retryStrategy.ts`: 新增 `TRANSIENT_CODES` 数组 + `isTransientError` 接受 `errCode` 参数
+2. `agentLoop.ts`: 网络错误在 loop 层兜底重试 1 次（2s 延迟）
+3. `moonshot.ts`: 新增 `MoonshotRateLimiter`（默认 maxConcurrent=2）
+4. `detector.ts`: 修复 `Ran:` 正则 `s` flag 导致 markdown 混入 bash 命令
+
+**环境变量**：`MOONSHOT_MAX_CONCURRENT`（默认 2，可覆盖）
+
+**Provider 并发限制汇总**：
+
+| Provider | 限流器 | 默认并发 | 环境变量 |
+|----------|--------|---------|----------|
+| Moonshot (cn.haioi.net) | `MoonshotRateLimiter` | 2 | `MOONSHOT_MAX_CONCURRENT` |
+| 智谱 | `ZhipuRateLimiter` | 3 | `ZHIPU_MAX_CONCURRENT` |
+| DeepSeek | 无（官方 API 较稳定）| - | - |
+
+**相关代码**：
+- `src/main/model/providers/moonshot.ts` — 限流器 + keepAlive=false Agent
+- `src/main/model/providers/retryStrategy.ts` — 瞬态错误检测 + 重试
+- `src/main/agent/agentLoop.ts` — 网络错误兜底重试
+- `src/main/agent/antiPattern/detector.ts` — force tool call 正则修复
 
 ### 2026-02-03: 模型参数格式混淆
 

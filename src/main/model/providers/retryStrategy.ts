@@ -5,13 +5,15 @@
 
 import { logger } from './shared';
 
-/** 瞬态错误匹配模式 */
+/** 瞬态错误匹配模式（检查 message + code） */
 const TRANSIENT_PATTERNS = [
   'socket hang up',
   'ECONNRESET',
   'ECONNREFUSED',
   'ETIMEDOUT',
   'EPIPE',
+  'TLS connection was established',
+  'network socket disconnected',
   '流式响应无内容',
   '502',
   '503',
@@ -19,11 +21,24 @@ const TRANSIENT_PATTERNS = [
   '429',
 ];
 
+/** 瞬态错误 code（Node.js ErrnoException.code） */
+const TRANSIENT_CODES = [
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'EPIPE',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+];
+
 /**
  * 判断错误是否为瞬态错误（网络抖动、服务暂时不可用等）
+ * 同时检查 message 文本和 error.code
  */
-export function isTransientError(msg: string): boolean {
-  return TRANSIENT_PATTERNS.some(p => msg.includes(p));
+export function isTransientError(msg: string, errCode?: string): boolean {
+  if (TRANSIENT_PATTERNS.some(p => msg.includes(p))) return true;
+  if (errCode && TRANSIENT_CODES.includes(errCode)) return true;
+  return false;
 }
 
 export interface RetryOptions {
@@ -59,9 +74,10 @@ export async function withTransientRetry<T>(
       return await fn();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (isTransientError(msg) && attempt < maxRetries && !signal?.aborted) {
+      const errCode = (err as NodeJS.ErrnoException).code;
+      if (isTransientError(msg, errCode) && attempt < maxRetries && !signal?.aborted) {
         const delay = baseDelay * (attempt + 1);
-        logger.warn(`[${providerName}] 瞬态错误 "${msg}", ${delay}ms 后重试 (${attempt + 1}/${maxRetries})`);
+        logger.warn(`[${providerName}] 瞬态错误 "${msg}" (code=${errCode}), ${delay}ms 后重试 (${attempt + 1}/${maxRetries})`);
         await new Promise(r => setTimeout(r, delay));
         continue;
       }

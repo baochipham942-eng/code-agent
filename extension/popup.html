@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 320px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a1f;
+      color: #e4e4e7;
+      padding: 16px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .header h1 {
+      font-size: 14px;
+      font-weight: 600;
+      flex: 1;
+    }
+    .badge {
+      font-size: 11px;
+      background: #06b6d4;
+      color: #fff;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #27272a;
+      margin-bottom: 12px;
+      font-size: 12px;
+    }
+    .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+    }
+    .status-dot.connected { background: #22c55e; }
+    .status-dot.disconnected { background: #ef4444; }
+    .page-info {
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #27272a;
+      margin-bottom: 12px;
+      font-size: 12px;
+    }
+    .page-title {
+      font-weight: 500;
+      margin-bottom: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .page-url {
+      color: #71717a;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #27272a;
+      margin-bottom: 12px;
+      font-size: 12px;
+    }
+    .toggle-row label { cursor: pointer; }
+    .toggle {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      cursor: pointer;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle .slider {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #3f3f46;
+      border-radius: 10px;
+      transition: 0.2s;
+    }
+    .toggle .slider::before {
+      content: '';
+      position: absolute;
+      width: 16px; height: 16px;
+      left: 2px; bottom: 2px;
+      background: #fff;
+      border-radius: 50%;
+      transition: 0.2s;
+    }
+    .toggle input:checked + .slider { background: #06b6d4; }
+    .toggle input:checked + .slider::before { transform: translateX(16px); }
+    .btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-primary {
+      background: #06b6d4;
+      color: #fff;
+    }
+    .btn-primary:hover { background: #0891b2; }
+    .btn-primary:disabled {
+      background: #27272a;
+      color: #71717a;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background: #27272a;
+      color: #a1a1aa;
+      margin-top: 8px;
+    }
+    .btn-secondary:hover { background: #3f3f46; }
+    .result {
+      margin-top: 12px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+    }
+    .result.success { background: #052e16; color: #4ade80; }
+    .result.error { background: #450a0a; color: #f87171; }
+    .settings {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #27272a;
+    }
+    .settings input {
+      width: 100%;
+      padding: 6px 10px;
+      border: 1px solid #3f3f46;
+      border-radius: 6px;
+      background: #27272a;
+      color: #e4e4e7;
+      font-size: 12px;
+      margin-top: 4px;
+      margin-bottom: 8px;
+    }
+    .settings label {
+      font-size: 11px;
+      color: #71717a;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" stroke-width="2">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+    </svg>
+    <h1>Code Agent Clipper</h1>
+    <span class="badge" id="captureCount">0</span>
+  </div>
+
+  <div class="status" id="status">
+    <span class="status-dot disconnected" id="statusDot"></span>
+    <span id="statusText">检查连接...</span>
+  </div>
+
+  <div class="toggle-row">
+    <label for="autoCapture">自动采集访问的页面</label>
+    <label class="toggle" for="autoCapture">
+      <input type="checkbox" id="autoCapture" checked />
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="page-info">
+    <div class="page-title" id="pageTitle">-</div>
+    <div class="page-url" id="pageUrl">-</div>
+  </div>
+
+  <button class="btn btn-primary" id="captureBtn" disabled>手动采集此页</button>
+
+  <div id="result" style="display:none"></div>
+
+  <details class="settings">
+    <summary style="cursor:pointer; font-size:12px; color:#71717a; margin-bottom:8px;">设置</summary>
+    <label>API 地址</label>
+    <input type="text" id="apiUrl" placeholder="http://localhost:8080" />
+    <label>API Key</label>
+    <input type="password" id="apiKey" placeholder="可选" />
+    <button class="btn btn-secondary" id="saveSettings">保存设置</button>
+  </details>
+
+  <script src="popup.js"></script>
+</body>
+</html>

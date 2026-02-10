@@ -20,6 +20,9 @@ let router: ModelRouter | null = null;
  * 使用 GLM-4-Flash（免费）生成，与命令执行并行不增加延迟
  */
 export async function generateBashDescription(command: string): Promise<string | null> {
+  // 评测模式下跳过（避免调用非主推理模型）
+  if (process.env.ADAPTIVE_ROUTER_DISABLED === 'true') return null;
+
   const cacheKey = command.slice(0, 80);
   if (descriptionCache.has(cacheKey)) {
     return descriptionCache.get(cacheKey)!;

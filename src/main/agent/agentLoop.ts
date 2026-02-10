@@ -217,6 +217,8 @@ export class AgentLoop {
 
   // Context overflow auto-recovery
   private _contextOverflowRetried: boolean = false;
+  // Network error retry guard
+  private _networkRetried: boolean = false;
 
   // E7: Content quality gate
   private contentVerificationRetries: Map<string, number> = new Map();
@@ -2423,6 +2425,25 @@ export class AgentLoop {
 
         this.emitTaskProgress('failed', '上下文超限');
         return { type: 'text', content: '' };
+      }
+
+      // 网络/TLS 瞬态错误：在 agentLoop 层再重试一次（provider 层重试已耗尽后的最后兜底）
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const errCode = (error as NodeJS.ErrnoException).code;
+      const isNetworkError = /ECONNRESET|ETIMEDOUT|ECONNREFUSED|socket hang up|TLS connection|network socket disconnected/i.test(errMsg)
+        || /ECONNRESET|ETIMEDOUT|ECONNREFUSED/i.test(errCode || '');
+      if (isNetworkError && !this._networkRetried) {
+        this._networkRetried = true;
+        logger.warn(`[AgentLoop] Network error "${errMsg}" (code=${errCode}), retrying inference once...`);
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+          const retryResult = await this.inference();
+          this._networkRetried = false;
+          return retryResult;
+        } catch (retryErr) {
+          this._networkRetried = false;
+          logger.error('[AgentLoop] Network retry also failed:', retryErr);
+        }
       }
 
       throw error;

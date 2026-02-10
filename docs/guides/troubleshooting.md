@@ -353,3 +353,53 @@ data: {"id":"gen-xxx","choices":[...]}
 | Model Unavailable | AUTO_SWITCH_PROVIDER | 切换到 fallback 模型 |
 
 相关代码：`src/main/errors/recoveryEngine.ts`
+
+---
+
+## v0.16.34 新增问题 (2026-02-10)
+
+### Vitest 原生模块 SIGSEGV 崩溃 ✅ 已修复
+
+**症状**: `npx vitest run` 部分测试文件报 `Worker exited unexpectedly`（exit code 139）
+
+**排查过程**: 起初误判为 `isolated-vm` 导致，实际通过二分法定位到完整导入链：
+```
+ToolRegistry → tools → shell/bash → dynamicDescription → ModelRouter
+→ configService → secureStorage → require('keytar') → SIGSEGV
+```
+
+**根因**: `keytar` 原生模块为 Electron Node.js 编译（NODE_MODULE_VERSION 130），在系统 Node.js（127）中加载导致 SIGSEGV。**SIGSEGV 是进程级崩溃，JavaScript try-catch 无法捕获。**
+
+**误判记录**:
+| 尝试 | 为什么无效 |
+|------|-----------|
+| `vi.mock('isolated-vm')` | 目标错误，isolated-vm 不是崩溃源 |
+| `vi.mock('electron')` in setup.ts | ESM import 有效，但 `require('keytar')` 是 CJS |
+| `resolve.alias` for keytar | vitest 的 alias 对 CJS `require()` 无效 |
+
+**最终修复**（三层防御）:
+1. `tests/setup.ts` 设置 `process.env.CODE_AGENT_CLI_MODE = '1'`，利用 `secureStorage.ts` 现有守卫跳过 `require('keytar')`
+2. `vitest.config.ts` 的 `resolve.alias` 将 `electron` / `keytar` 映射到 mock 文件（解决 ESM import）
+3. `tests/setup.ts` 的 `vi.mock()` 覆盖 6 个原生模块（electron, isolated-vm, node-pty, keytar, electron-store, better-sqlite3）
+
+**关键教训**:
+- **SIGSEGV 不可 catch**: `require()` 加载编译错误的原生模块会直接 kill 进程
+- **二分法调试**: 面对模块级崩溃，逐步缩小 import 范围比猜测更高效
+- **`npx tsx` 是利器**: 可以在 vitest 之外快速验证单个 import 是否崩溃
+- **CJS vs ESM**: vitest 的 `vi.mock()` 和 `resolve.alias` 只对 ESM import 有效，CJS `require()` 需要通过环境变量等机制绕过
+- **查看 exit code**: 139 = SIGSEGV (128 + 11)，134 = SIGABRT (128 + 6)
+
+**相关代码**:
+- `tests/setup.ts` — 全局测试 setup
+- `tests/__mocks__/electron.ts` — Electron API mock
+- `tests/__mocks__/keytar.ts` — Keytar mock
+- `vitest.config.ts` — resolve.alias + setupFiles
+- `src/main/tools/evolution/sandbox.ts` — isolated-vm 懒加载
+
+### isolated-vm 懒加载改造
+
+**问题**: `sandbox.ts` 在模块顶层 `require('isolated-vm')`，即使没有用到 sandbox 功能也会加载原生模块
+**修复**: 改为 `getIvm()` 懒加载函数，只在 `initialize()` 实际调用时才加载
+**收益**: 测试环境中不再触发 isolated-vm 加载；运行时行为不变
+
+相关代码：`src/main/tools/evolution/sandbox.ts`

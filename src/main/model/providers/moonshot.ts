@@ -18,6 +18,57 @@ const moonshotAgent = httpsAgent || new https.Agent({
   maxSockets: 10,
 });
 
+// ============================================================================
+// Moonshot 并发限流器
+// cn.haioi.net 第三方代理在 ≥4 并发 SSE 连接时频繁断开 TLS
+// 安全并发上限: 2（留余量，避免与 retry 请求叠加超限）
+// ============================================================================
+class MoonshotRateLimiter {
+  private queue: Array<{ resolve: () => void; reject: (err: Error) => void }> = [];
+  private activeRequests = 0;
+  private readonly maxConcurrent: number;
+
+  constructor(maxConcurrent = 2) {
+    this.maxConcurrent = maxConcurrent;
+  }
+
+  async acquire(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new Error('Request was cancelled');
+    return new Promise((resolve, reject) => {
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          const idx = this.queue.findIndex(item => item.resolve === resolve);
+          if (idx >= 0) {
+            this.queue.splice(idx, 1);
+            reject(new Error('Request was cancelled while waiting'));
+          }
+        }, { once: true });
+      }
+      this.queue.push({ resolve, reject });
+      this.tryNext();
+    });
+  }
+
+  release(): void {
+    this.activeRequests = Math.max(0, this.activeRequests - 1);
+    this.tryNext();
+  }
+
+  private tryNext(): void {
+    if (this.activeRequests >= this.maxConcurrent || this.queue.length === 0) return;
+    const next = this.queue.shift();
+    if (next) {
+      this.activeRequests++;
+      logger.debug(`[Moonshot限流] 请求开始, 当前并发: ${this.activeRequests}/${this.maxConcurrent}, 队列: ${this.queue.length}`);
+      next.resolve();
+    }
+  }
+}
+
+const moonshotLimiter = new MoonshotRateLimiter(
+  parseInt(process.env.MOONSHOT_MAX_CONCURRENT || '2')
+);
+
 /**
  * Call Moonshot (Kimi) API
  * 支持 Kimi K2.5 包月套餐（第三方代理）
@@ -61,17 +112,24 @@ export async function callMoonshot(
 
   logger.info(`[Moonshot] 请求: model=${requestBody.model}, baseUrl=${baseUrl}, stream=true`);
 
-  // 带重试的流式请求（处理 socket hang up 等瞬态错误）
-  return withTransientRetry(
-    () => openAISSEStream({
-      providerName: 'Moonshot',
-      baseUrl,
-      apiKey,
-      requestBody,
-      onStream,
-      signal,
-      agent: moonshotAgent,
-    }),
-    { providerName: 'Moonshot', signal }
-  );
+  // 限流：等待获取请求许可（cn.haioi.net 代理安全并发上限 2）
+  await moonshotLimiter.acquire(signal);
+  try {
+    // 带重试的流式请求（处理 socket hang up 等瞬态错误）
+    return await withTransientRetry(
+      () => openAISSEStream({
+        providerName: 'Moonshot',
+        baseUrl,
+        apiKey,
+        requestBody,
+        onStream,
+        signal,
+        agent: moonshotAgent,
+        extraHeaders: { 'User-Agent': 'claude-code/1.0' },
+      }),
+      { providerName: 'Moonshot', signal }
+    );
+  } finally {
+    moonshotLimiter.release();
+  }
 }

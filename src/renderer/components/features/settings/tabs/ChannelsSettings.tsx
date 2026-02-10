@@ -71,7 +71,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
     (account?.config as HttpApiChannelConfig)?.port?.toString() || '8080'
   );
   const [apiKey, setApiKey] = useState(
-    (account?.config as HttpApiChannelConfig)?.apiKey || ''
+    (account?.config as HttpApiChannelConfig)?.apiKey || crypto.randomUUID().replace(/-/g, '')
   );
   const [enableCors, setEnableCors] = useState(
     (account?.config as HttpApiChannelConfig)?.enableCors ?? true
@@ -508,10 +508,29 @@ export const ChannelsSettings: React.FC = () => {
                       <span className={getStatusColor(account.status)}>
                         {getStatusText(account.status)}
                       </span>
-                      {account.type === 'http-api' && account.status === 'connected' && (
-                        <span className="text-zinc-400">
-                          端口: {(account.config as HttpApiChannelConfig).port}
-                        </span>
+                      {account.type === 'http-api' && (
+                        <>
+                          <span className="text-zinc-400">
+                            端口: {(account.config as HttpApiChannelConfig).port}
+                          </span>
+                          <span className="text-zinc-500 font-mono">
+                            Key: {(account.config as HttpApiChannelConfig).apiKey?.substring(0, 8)}...
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const key = (account.config as HttpApiChannelConfig).apiKey;
+                              if (key) {
+                                navigator.clipboard.writeText(key);
+                                setMessage({ type: 'success', text: 'API Key 已复制到剪贴板' });
+                              }
+                            }}
+                            className="text-indigo-400 hover:text-indigo-300 transition-colors"
+                            title="复制 API Key"
+                          >
+                            复制Key
+                          </button>
+                        </>
                       )}
                       {account.errorMessage && (
                         <span className="text-red-400 truncate max-w-[200px]" title={account.errorMessage}>

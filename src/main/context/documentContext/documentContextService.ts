@@ -12,6 +12,7 @@ import { MarkdownParser } from './parsers/markdownParser';
 import { ExcelParser } from './parsers/excelParser';
 import { DocxParser } from './parsers/docxParser';
 import { PdfParser } from './parsers/pdfParser';
+import { HtmlParser } from './parsers/htmlParser';
 
 const logger = createLogger('DocumentContextService');
 
@@ -86,6 +87,7 @@ export class DocumentContextService {
       new ExcelParser(),
       new DocxParser(),
       new PdfParser(),
+      new HtmlParser(),
     );
 
     logger.debug('DocumentContextService initialized with built-in parsers', {

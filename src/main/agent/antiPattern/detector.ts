@@ -173,48 +173,71 @@ export class AntiPatternDetector {
 
   /**
    * Track a tool failure and detect repeated failures
+   * 4-level escalation: Strike 1 → 参数检查 | Strike 2 → 换工具 | Strike 3 → 重新分析 | Strike 4+ → 升级给用户
    *
-   * @returns Warning message if pattern detected, null otherwise
+   * @returns Warning message if pattern detected, 'ESCALATE_TO_USER' for 4+, null otherwise
    */
   trackToolFailure(toolCall: ToolCall, error: string): string | null {
+    // 1. Always track by exact args for repeated failure detection (original behavior)
     const toolKey = `${toolCall.name}:${JSON.stringify(toolCall.arguments)}`;
     const tracker = this.state.toolFailureTracker.get(toolKey);
+    let exactArgsWarning: string | null = null;
 
-    // Also track by tool name only (for early alternative suggestions)
-    const toolNameKey = `__toolname__:${toolCall.name}`;
-    const toolNameTracker = this.state.toolFailureTracker.get(toolNameKey);
-
-    // Track by tool name for alternative suggestions
-    if (toolNameTracker) {
-      toolNameTracker.count++;
-    } else {
-      this.state.toolFailureTracker.set(toolNameKey, { count: 1, lastError: error });
-    }
-
-    // Check if we should suggest alternative (based on tool name failures)
-    const currentToolNameCount = this.state.toolFailureTracker.get(toolNameKey)?.count || 0;
-    if (currentToolNameCount === this.config.maxFailuresBeforeAlternative) {
-      const alternative = TOOL_ALTERNATIVES[toolCall.name];
-      if (alternative) {
-        logger.info(`Tool ${toolCall.name} failed ${currentToolNameCount} times, suggesting alternative: ${alternative.alternative}`);
-        return this.generateAlternativeSuggestion(toolCall.name, currentToolNameCount, error);
-      }
-    }
-
-    // Track by exact args for repeated failure detection
     if (tracker && tracker.lastError === error) {
       tracker.count++;
       if (tracker.count >= this.config.maxSameToolFailures) {
         logger.warn(`Tool ${toolCall.name} failed ${tracker.count} times with same error`);
-        // Clear tracker to avoid spamming
         this.state.toolFailureTracker.delete(toolKey);
-        return this.generateRepeatedFailureWarning(toolCall.name, tracker.count, error);
+        exactArgsWarning = this.generateRepeatedFailureWarning(toolCall.name, tracker.count, error);
       }
     } else {
       this.state.toolFailureTracker.set(toolKey, { count: 1, lastError: error });
     }
 
-    return null;
+    // 2. Track by tool name for 4-level escalation
+    const toolNameKey = `__toolname__:${toolCall.name}`;
+    const toolNameTracker = this.state.toolFailureTracker.get(toolNameKey);
+
+    if (toolNameTracker) {
+      toolNameTracker.count++;
+      toolNameTracker.lastError = error;
+    } else {
+      this.state.toolFailureTracker.set(toolNameKey, { count: 1, lastError: error });
+    }
+
+    const count = this.state.toolFailureTracker.get(toolNameKey)?.count || 0;
+
+    // Strike 4+: Escalate to user (highest priority)
+    if (count >= 4) {
+      logger.warn(`Tool ${toolCall.name} failed ${count} times — escalating to user`);
+      logCollector.agent('WARN', `Strike 4+: Escalating ${toolCall.name} failure to user`, { count, error: error.substring(0, 200) });
+      return 'ESCALATE_TO_USER';
+    }
+
+    // Strike 3: 重新分析指令
+    if (count === 3) {
+      logger.warn(`Tool ${toolCall.name} failed 3 times — injecting rethink directive`);
+      logCollector.agent('WARN', `Strike 3: Rethink directive for ${toolCall.name}`, { error: error.substring(0, 200) });
+      return this.generateStrike3Rethink(toolCall.name, error);
+    }
+
+    // Strike 2: 建议换工具 or exact-args repeated failure warning
+    if (count === 2) {
+      const alternative = TOOL_ALTERNATIVES[toolCall.name];
+      if (alternative) {
+        logger.info(`Tool ${toolCall.name} failed 2 times — suggesting alternative: ${alternative.alternative}`);
+        return this.generateAlternativeSuggestion(toolCall.name, count, error);
+      }
+      // 无替代工具时，返回 exact-args 警告（如果触发了）
+      return exactArgsWarning;
+    }
+
+    // Strike 1: 参数检查引导
+    if (count === 1) {
+      return this.generateStrike1Guidance(toolCall.name, error);
+    }
+
+    return exactArgsWarning;
   }
 
   /**
@@ -231,6 +254,37 @@ export class AntiPatternDetector {
       `**Why:** ${alternative.reason}\n\n` +
       `Last error: ${error.substring(0, 200)}${error.length > 200 ? '...' : ''}\n` +
       `</strategy-switch-suggestion>`
+    );
+  }
+
+  /**
+   * Strike 1: 参数检查引导 — 温和提示检查参数和前置条件
+   */
+  private generateStrike1Guidance(toolName: string, error: string): string {
+    return (
+      `<strike-1-guidance>\n` +
+      `Tool "${toolName}" failed. Before retrying, verify:\n` +
+      `1. All parameters are correct (paths exist, values are valid)\n` +
+      `2. Required preconditions are met (file exists, directory created)\n` +
+      `3. The error message: ${error.substring(0, 200)}${error.length > 200 ? '...' : ''}\n` +
+      `Fix the root cause before retrying.\n` +
+      `</strike-1-guidance>`
+    );
+  }
+
+  /**
+   * Strike 3: 重新分析指令 — 强制用 read_file 确认状态 + 质疑假设
+   */
+  private generateStrike3Rethink(toolName: string, error: string): string {
+    return (
+      `<strike-3-rethink>\n` +
+      `🚨 Tool "${toolName}" has failed 3 times. STOP and rethink your approach:\n\n` +
+      `1. Use read_file to confirm the ACTUAL current state of the target\n` +
+      `2. Question your assumptions — is the file/path/content what you expect?\n` +
+      `3. Consider a COMPLETELY different approach to achieve the goal\n` +
+      `4. DO NOT retry "${toolName}" with the same method\n\n` +
+      `Last error: ${error.substring(0, 200)}${error.length > 200 ? '...' : ''}\n` +
+      `</strike-3-rethink>`
     );
   }
 

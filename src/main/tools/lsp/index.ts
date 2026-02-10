@@ -3,3 +3,4 @@
 // ============================================================================
 
 export { lspTool } from './lsp';
+export { diagnosticsTool } from './diagnostics';

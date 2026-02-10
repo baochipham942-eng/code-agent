@@ -305,6 +305,22 @@ export class LSPServer extends EventEmitter {
     this.openDocuments.delete(filePath);
   }
 
+  /**
+   * 通知文件内容变更（全量文档同步）
+   */
+  notifyDidChange(filePath: string, content: string): void {
+    const doc = this.openDocuments.get(filePath);
+    if (!doc) return;
+
+    doc.version++;
+    doc.content = content;
+
+    this.sendNotification('textDocument/didChange', {
+      textDocument: { uri: doc.uri, version: doc.version },
+      contentChanges: [{ text: content }],
+    });
+  }
+
   isDocumentOpen(filePath: string): boolean {
     return this.openDocuments.has(filePath);
   }
@@ -464,6 +480,46 @@ export class LSPServerManager extends EventEmitter {
   getFileDiagnostics(filePath: string): LSPDiagnostic[] {
     const uri = pathToFileURL(filePath).href;
     return this.diagnosticsCache.get(uri) || [];
+  }
+
+  /**
+   * 通知文件变更：确保文件已打开 + 发送 didChange
+   */
+  async notifyFileChanged(filePath: string, content: string): Promise<void> {
+    const server = this.getServerForFile(filePath);
+    if (!server) return;
+
+    if (!server.isDocumentOpen(filePath)) {
+      const ext = path.extname(filePath).toLowerCase();
+      const languageId = this.getLanguageId(ext);
+      await server.openDocument(filePath, content, languageId);
+    } else {
+      server.notifyDidChange(filePath, content);
+    }
+  }
+
+  /**
+   * 等待诊断结果（监听 diagnostics 事件，超时返回缓存值）
+   */
+  waitForDiagnostics(filePath: string, timeoutMs = 300): Promise<LSPDiagnostic[]> {
+    const uri = pathToFileURL(filePath).href;
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.removeListener('diagnostics', handler);
+        resolve(this.diagnosticsCache.get(uri) || []);
+      }, timeoutMs);
+
+      const handler = (params: { uri: string; diagnostics: LSPDiagnostic[] }) => {
+        if (params.uri === uri) {
+          clearTimeout(timer);
+          this.removeListener('diagnostics', handler);
+          resolve(params.diagnostics);
+        }
+      };
+
+      this.on('diagnostics', handler);
+    });
   }
 }
 

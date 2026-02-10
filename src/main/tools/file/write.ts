@@ -9,6 +9,7 @@ import { createLogger } from '../../services/infra/logger';
 import { resolvePath } from './pathUtils';
 import { atomicWriteFile } from '../utils/atomicWrite';
 import { getResourceLockManager } from '../../agent/resourceLockManager';
+import { getPostEditDiagnostics } from '../lsp/diagnosticsHelper';
 
 const logger = createLogger('WriteFile');
 
@@ -268,9 +269,21 @@ NEVER create documentation files (*.md, README) unless explicitly requested.`,
         }
       }
 
+      let output = `${action} file: ${filePath} (${content.length} bytes)`;
+
+      // LSP 诊断闭环：写入后自动查询 LSP 诊断
+      try {
+        const diagResult = await getPostEditDiagnostics(filePath);
+        if (diagResult) {
+          output += diagResult.formatted;
+        }
+      } catch {
+        // 诊断失败不影响写入结果
+      }
+
       return {
         success: true,
-        output: `${action} file: ${filePath} (${content.length} bytes)`,
+        output,
       };
     } catch (error: any) {
       return {

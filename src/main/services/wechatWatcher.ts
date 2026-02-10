@@ -5,6 +5,7 @@
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { execFile } from 'child_process';
 import { createLogger } from './infra/logger';
 
 const logger = createLogger('WeChatWatcher');
@@ -172,6 +173,21 @@ export class WeChatWatcher {
   }
 
   /**
+   * 尝试用系统 pdftotext 提取 PDF 文本
+   */
+  private extractPdfText(filePath: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      execFile('pdftotext', [filePath, '-'], { maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
+        if (error || !stdout?.trim()) {
+          resolve(null);
+        } else {
+          resolve(stdout.trim());
+        }
+      });
+    });
+  }
+
+  /**
    * 处理新发现的文件
    */
   private async handleNewFile(filePath: string): Promise<void> {
@@ -186,9 +202,6 @@ export class WeChatWatcher {
     this.processedPaths.add(filePath);
 
     try {
-      const { importLocalFile } = await import('../ipc/capture.ipc');
-
-      // 复用文件导入逻辑，但需要修改 source
       const { getCaptureService } = await import('./captureService');
       const { getDocumentContextService } = await import('../context/documentContext/documentContextService');
       const service = getCaptureService();
@@ -196,17 +209,23 @@ export class WeChatWatcher {
       const basename = path.basename(filePath);
 
       const stat = await fs.promises.stat(filePath);
-      const buffer = await fs.promises.readFile(filePath);
 
       let content: string;
 
-      if (docService.canParse(filePath)) {
-        const doc = await docService.parse(buffer, filePath);
-        content = doc ? doc.sections.map(s => s.content).join('\n\n') : buffer.toString('utf-8');
-      } else if (['.txt', '.htm', '.html'].includes(ext)) {
-        content = buffer.toString('utf-8');
-      } else {
+      if (ext === '.pdf') {
+        // PDF：用系统 pdftotext 提取，失败则占位
+        const text = await this.extractPdfText(filePath);
+        content = text || `[PDF: ${basename}] (${stat.size} bytes)`;
+      } else if (ext === '.pptx') {
         content = `[File: ${basename}] (${ext} format, ${stat.size} bytes)`;
+      } else {
+        const buffer = await fs.promises.readFile(filePath);
+        if (docService.canParse(filePath)) {
+          const doc = await docService.parse(buffer, filePath);
+          content = doc ? doc.sections.map(s => s.content).join('\n\n') : buffer.toString('utf-8');
+        } else {
+          content = buffer.toString('utf-8');
+        }
       }
 
       await service.capture({

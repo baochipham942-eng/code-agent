@@ -236,6 +236,10 @@ export function analyzeTask(task: string): TaskAnalysis {
   if (/\b(search|find|explore|查找|搜索|探索)\b/i.test(task)) taskType = 'search';
   if (/\b(plan|design|规划|设计)\b/i.test(task)) taskType = 'plan';
   if (/\b(test|测试)\b/i.test(task)) taskType = 'test';
+  if (/\b(excel|xlsx|csv|数据|分析|清洗|透视|聚合|统计|dataframe|pandas)\b/i.test(task)) taskType = 'data';
+  if (/\b(ppt|pptx|幻灯片|演示|slide|presentation)\b/i.test(task)) taskType = 'ppt';
+  if (/\b(文章|报告|文档|撰写|write.*article|write.*report|write.*document)\b/i.test(task)) taskType = 'document';
+  if (/\b(生成.*图|画.*图|image|draw|generate.*image|生图|插图)\b/i.test(task)) taskType = 'image';
 
   // 计算置信度
   let confidence = 0.5;

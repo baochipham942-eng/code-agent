@@ -14,7 +14,7 @@ import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import type { EvaluationMetric } from '../../shared/types/evaluation';
 import { EvaluationDimension } from '../../shared/types/evaluation';
-import type { SessionSnapshot, TranscriptMetrics } from './types';
+import type { SessionSnapshot, TranscriptMetrics, ConversationType } from './types';
 
 const logger = createLogger('SwissCheeseEvaluator');
 
@@ -52,17 +52,10 @@ interface CodeVerificationResult {
 export interface SwissCheeseResult {
   overallScore: number;
   consensus: boolean;
+  conversationType: ConversationType;
   reviewerResults: ReviewerResult[];
   codeVerification: CodeVerificationResult;
-  aggregatedMetrics: {
-    outcomeVerification: { score: number; reasons: string[] };
-    codeQuality: { score: number; reasons: string[] };
-    security: { score: number; reasons: string[] };
-    toolEfficiency: { score: number; reasons: string[] };
-    selfRepair: { score: number; reasons: string[] };
-    verificationQuality: { score: number; reasons: string[] };
-    forbiddenPatterns: { score: number; reasons: string[] };
-  };
+  aggregatedMetrics: Record<string, { score: number; reasons: string[] }>;
   transcriptMetrics: TranscriptMetrics;
   suggestions: string[];
   summary: string;
@@ -165,6 +158,119 @@ const EVALUATION_OUTPUT_FORMAT = `
 只输出 JSON，不要其他内容。`;
 
 // ----------------------------------------------------------------------------
+// QA Reviewer Prompt (单次 LLM 调用，输出 3 维度)
+// ----------------------------------------------------------------------------
+
+const QA_REVIEWER_PROMPT = `你是一位严格的问答质量评审员。你需要评估 AI 助手的回答质量。
+
+**核心评估原则**：
+1. **回答正确性** (answer_correctness): 事实是否正确？逻辑是否自洽？是否识别了隐含约束？
+   - 特别注意逻辑陷阱：用户的提问可能包含隐含前提（例如"去洗车"隐含需要把车开过去，"50米很近"不能只看距离要考虑任务本身需求）
+   - 关注推理链中的每一步是否有逻辑支撑
+   - 检查结论是否与前提一致
+
+2. **推理质量** (reasoning_quality): 推理链是否完整？是否考虑了前提条件？结论是否合理？
+   - 是否列出了关键假设
+   - 是否考虑了反面情况
+   - 推理步骤之间是否有跳跃
+
+3. **表达质量** (communication_quality): 回答是否清晰简洁？是否直接回答了问题？
+   - 是否废话过多
+   - 结构是否清晰
+   - 重点是否突出`;
+
+const QA_OUTPUT_FORMAT = `
+请以 JSON 格式输出你的评估结果：
+{
+  "scores": {
+    "answerCorrectness": 0-100,
+    "reasoningQuality": 0-100,
+    "communicationQuality": 0-100
+  },
+  "findings": ["发现1", "发现2"],
+  "concerns": ["担忧1", "担忧2"],
+  "passed": true/false,
+  "summary": "一句话总结"
+}
+
+只输出 JSON，不要其他内容。`;
+
+// ----------------------------------------------------------------------------
+// Research Reviewer Prompts (2 次并行 LLM 调用)
+// ----------------------------------------------------------------------------
+
+const RESEARCH_TASK_ANALYST_PROMPT = `你是一位研究任务分析师。评估 AI 助手是否有效完成了用户的调研/搜索任务。
+
+评估要点：
+1. 是否回答了用户的核心问题？
+2. 搜索策略是否合理（关键词选择、来源多样性）？
+3. 是否有遗漏的关键信息？`;
+
+const RESEARCH_INFO_QUALITY_PROMPT = `你是一位信息质量评估专家。评估 AI 助手提供的研究信息的质量。
+
+评估要点：
+1. **信息准确性**: 提供的信息是否准确？有无明显错误？
+2. **信息全面性**: 是否覆盖了问题的主要方面？有无重要遗漏？
+3. **来源可靠性**: 信息来源是否可靠？是否有引用支撑？
+4. **表达质量**: 信息组织是否清晰？结构是否合理？`;
+
+const RESEARCH_OUTPUT_FORMAT = `
+请以 JSON 格式输出你的评估结果：
+{
+  "scores": {
+    "outcomeVerification": 0-100,
+    "informationQuality": 0-100,
+    "communicationQuality": 0-100
+  },
+  "findings": ["发现1", "发现2"],
+  "concerns": ["担忧1", "担忧2"],
+  "passed": true/false,
+  "summary": "一句话总结"
+}
+
+只输出 JSON，不要其他内容。`;
+
+// ----------------------------------------------------------------------------
+// Creation Reviewer Prompts (2 次并行 LLM 调用)
+// ----------------------------------------------------------------------------
+
+const CREATION_TASK_ANALYST_PROMPT = `你是一位内容创作任务分析师。评估 AI 助手是否成功创作了用户要求的内容。
+
+评估要点：
+1. 是否生成了用户要求的内容类型（PPT、文档、报告等）？
+2. 生成过程是否顺利？有无中断或错误？
+3. 最终产出是否可直接使用？`;
+
+const CREATION_OUTPUT_QUALITY_PROMPT = `你是一位内容产出质量评估专家。评估 AI 助手生成内容的质量。
+
+评估要点：
+1. **产出质量**: 格式是否规范？排版是否美观？内容是否专业？
+2. **需求符合度**: 是否满足了用户的具体要求（主题、风格、长度等）？
+3. **可用性**: 产出是否可以直接使用？是否需要大量修改？`;
+
+const CREATION_OUTPUT_FORMAT = `
+请以 JSON 格式输出你的评估结果：
+{
+  "scores": {
+    "outcomeVerification": 0-100,
+    "outputQuality": 0-100,
+    "requirementCompliance": 0-100
+  },
+  "findings": ["发现1", "发现2"],
+  "concerns": ["担忧1", "担忧2"],
+  "passed": true/false,
+  "summary": "一句话总结"
+}
+
+只输出 JSON，不要其他内容。`;
+
+// ----------------------------------------------------------------------------
+// 工具分类（用于对话类型检测）
+// ----------------------------------------------------------------------------
+
+const SEARCH_TOOLS = ['web_search', 'web_fetch', 'grep', 'glob', 'memory_search'];
+
+// ----------------------------------------------------------------------------
 // Swiss Cheese Evaluator Class
 // ----------------------------------------------------------------------------
 
@@ -176,63 +282,388 @@ export class SwissCheeseEvaluator {
   }
 
   /**
-   * 执行瑞士奶酪多层评测 (v3)
+   * 检测对话类型
+   */
+  detectConversationType(snapshot: SessionSnapshot): ConversationType {
+    const allToolCalls = snapshot.turns.length > 0
+      ? snapshot.turns.flatMap(t => t.toolCalls)
+      : snapshot.toolCalls;
+
+    const toolNames = allToolCalls.map(tc => tc.name);
+    const hasToolCalls = toolNames.length > 0;
+
+    // 检查 assistant 消息中是否有代码块
+    const sources = snapshot.turns.length > 0
+      ? snapshot.turns.map(t => t.assistantResponse)
+      : snapshot.messages.filter(m => m.role === 'assistant').map(m => m.content);
+    const hasCodeBlocks = sources.some(content => /```\w*\n[\s\S]*?```/g.test(content));
+
+    // 获取轮次数
+    const turnCount = snapshot.turns.length > 0
+      ? snapshot.turns.length
+      : snapshot.messages.filter(m => m.role === 'user').length;
+
+    // 检测条件（优先级：qa → coding → creation → research）
+
+    // QA: 无工具调用 + 无代码块 + ≤3 轮
+    if (!hasToolCalls && !hasCodeBlocks && turnCount <= 3) {
+      return 'qa';
+    }
+
+    // Coding: 有代码工具(edit/write/read_file) 或有代码块
+    const hasCodeTools = toolNames.some(name =>
+      name === 'edit_file' || name === 'write_file' ||
+      (name === 'read_file' && toolNames.some(n => n === 'edit_file' || n === 'write_file'))
+    );
+    if (hasCodeTools || (hasCodeBlocks && hasToolCalls)) {
+      return 'coding';
+    }
+
+    // Creation: 有内容创作工具
+    const hasCreationTools = toolNames.some(name =>
+      name === 'ppt_generate' || name === 'xlwings' ||
+      // write_file 用于文档（非代码场景，此时 hasCodeTools 已经为 false）
+      (name === 'write_file' && !hasCodeTools)
+    );
+    if (hasCreationTools) {
+      return 'creation';
+    }
+
+    // Research: 有搜索工具但无代码修改
+    const hasSearchTools = toolNames.some(name => SEARCH_TOOLS.includes(name));
+    if (hasSearchTools) {
+      return 'research';
+    }
+
+    // Fallback: 有工具调用但不匹配任何类型 → coding
+    if (hasToolCalls) {
+      return 'coding';
+    }
+
+    // 无工具调用 + 超过 3 轮 → qa
+    return 'qa';
+  }
+
+  /**
+   * 执行自适应评测（v4: 根据对话类型选择评测策略）
    */
   async evaluate(snapshot: SessionSnapshot): Promise<SwissCheeseResult | null> {
-    const conversationText = this.buildStructuredTranscript(snapshot);
+    const transcript = this.buildStructuredTranscript(snapshot);
 
-    if (!conversationText) {
+    if (!transcript) {
       logger.warn('No conversation to evaluate');
       return null;
     }
 
-    logger.info('Starting Swiss Cheese v3 evaluation...');
+    const conversationType = this.detectConversationType(snapshot);
+    logger.info(`Starting adaptive evaluation, type: ${conversationType}`);
 
     try {
-      // 1. 代码 Grader: 从结构化数据计算硬指标
-      const transcriptMetrics = this.analyzeTranscript(snapshot);
-
-      // 2. 并行运行 LLM 评审员
-      const reviewerPromises = REVIEWER_CONFIGS.map((config) =>
-        this.runReviewer(config, conversationText)
-      );
-      const reviewerResults = await Promise.all(reviewerPromises);
-
-      // 3. 代码执行验证
-      const codeVerification = await this.verifyCode(snapshot);
-
-      // 4. 聚合结果
-      const aggregated = this.aggregateResults(reviewerResults, codeVerification, transcriptMetrics);
-
-      const result: SwissCheeseResult = {
-        overallScore: aggregated.overallScore,
-        consensus: reviewerResults.every((r) => r.passed),
-        reviewerResults,
-        codeVerification,
-        aggregatedMetrics: aggregated.metrics,
-        transcriptMetrics,
-        suggestions: aggregated.suggestions,
-        summary: aggregated.summary,
-        layersCoverage: [
-          '结果验证层',
-          '代码质量审查层',
-          '安全风险检测层',
-          '工具效率评估层',
-          '代码 Grader 层（self-repair, verification, forbidden）',
-        ],
-      };
-
-      logger.info('Swiss Cheese v3 evaluation completed', {
-        overallScore: result.overallScore,
-        consensus: result.consensus,
-        selfRepairRate: transcriptMetrics.selfRepair.rate,
-      });
-
-      return result;
+      switch (conversationType) {
+        case 'qa':
+          return this.evaluateQA(snapshot, transcript);
+        case 'research':
+          return this.evaluateResearch(snapshot, transcript);
+        case 'creation':
+          return this.evaluateCreation(snapshot, transcript);
+        case 'coding':
+        default:
+          return this.evaluateCoding(snapshot, transcript);
+      }
     } catch (error) {
-      logger.error('Swiss Cheese evaluation failed', { error });
+      logger.error('Adaptive evaluation failed', { error, conversationType });
       return null;
     }
+  }
+
+  /**
+   * QA 评测 — 1 次 LLM 调用
+   */
+  private async evaluateQA(
+    snapshot: SessionSnapshot,
+    transcript: string
+  ): Promise<SwissCheeseResult> {
+    logger.info('Running QA evaluation (1 LLM call)...');
+
+    const transcriptMetrics = this.analyzeTranscript(snapshot);
+    const codeVerification = await this.verifyCode(snapshot);
+
+    // 单次 LLM 调用，评估 3 个维度
+    const response = await this.callLLM(
+      `${QA_REVIEWER_PROMPT}\n\n${QA_OUTPUT_FORMAT}`,
+      `请评估以下对话：\n\n${transcript}`
+    );
+
+    let scores = { answerCorrectness: 70, reasoningQuality: 70, communicationQuality: 70 };
+    let findings: string[] = [];
+    let concerns: string[] = [];
+    let passed = true;
+    let summary = 'QA 评测完成';
+
+    if (response) {
+      const parsed = this.parseGenericResponse(response);
+      scores = {
+        answerCorrectness: parsed.scores?.answerCorrectness ?? 70,
+        reasoningQuality: parsed.scores?.reasoningQuality ?? 70,
+        communicationQuality: parsed.scores?.communicationQuality ?? 70,
+      };
+      findings = parsed.findings || [];
+      concerns = parsed.concerns || [];
+      passed = parsed.passed ?? true;
+      summary = parsed.summary || summary;
+    }
+
+    const aggregatedMetrics: Record<string, { score: number; reasons: string[] }> = {
+      answerCorrectness: { score: scores.answerCorrectness, reasons: findings.slice(0, 3) },
+      reasoningQuality: { score: scores.reasoningQuality, reasons: [] },
+      communicationQuality: { score: scores.communicationQuality, reasons: [] },
+    };
+
+    const overallScore = Math.round(
+      scores.answerCorrectness * 0.60 +
+      scores.reasoningQuality * 0.25 +
+      scores.communicationQuality * 0.15
+    );
+
+    const suggestions = concerns.slice(0, 5);
+
+    return {
+      overallScore,
+      consensus: passed,
+      conversationType: 'qa',
+      reviewerResults: [{
+        reviewerId: 'qa_reviewer',
+        reviewerName: 'QA 评审员',
+        perspective: '专注于回答正确性和推理质量',
+        scores: { outcomeVerification: scores.answerCorrectness, codeQuality: 70, security: 70, toolEfficiency: 70 },
+        findings,
+        concerns,
+        passed,
+      }],
+      codeVerification,
+      aggregatedMetrics,
+      transcriptMetrics,
+      suggestions,
+      summary: `QA 评测：综合得分 ${overallScore}。${summary}`,
+      layersCoverage: ['回答正确性层', '推理质量层', '表达质量层'],
+    };
+  }
+
+  /**
+   * Research 评测 — 2 次并行 LLM 调用
+   */
+  private async evaluateResearch(
+    snapshot: SessionSnapshot,
+    transcript: string
+  ): Promise<SwissCheeseResult> {
+    logger.info('Running Research evaluation (2 LLM calls)...');
+
+    const transcriptMetrics = this.analyzeTranscript(snapshot);
+    const codeVerification = await this.verifyCode(snapshot);
+
+    // 2 个评审员并行
+    const [taskAnalystResponse, infoQualityResponse] = await Promise.all([
+      this.callLLM(
+        `${RESEARCH_TASK_ANALYST_PROMPT}\n\n${RESEARCH_OUTPUT_FORMAT}`,
+        `请评估以下研究对话：\n\n${transcript}`
+      ),
+      this.callLLM(
+        `${RESEARCH_INFO_QUALITY_PROMPT}\n\n${RESEARCH_OUTPUT_FORMAT}`,
+        `请评估以下研究对话中的信息质量：\n\n${transcript}`
+      ),
+    ]);
+
+    const taskResult = taskAnalystResponse ? this.parseGenericResponse(taskAnalystResponse) : {};
+    const infoResult = infoQualityResponse ? this.parseGenericResponse(infoQualityResponse) : {};
+
+    const outcomeScore = taskResult.scores?.outcomeVerification ?? 70;
+    const infoScore = infoResult.scores?.informationQuality ?? 70;
+    const commScore = Math.round(
+      ((taskResult.scores?.communicationQuality ?? 70) + (infoResult.scores?.communicationQuality ?? 70)) / 2
+    );
+
+    const allFindings = [...(taskResult.findings || []), ...(infoResult.findings || [])];
+    const allConcerns = [...(taskResult.concerns || []), ...(infoResult.concerns || [])];
+
+    const aggregatedMetrics: Record<string, { score: number; reasons: string[] }> = {
+      outcomeVerification: { score: outcomeScore, reasons: (taskResult.findings || []).slice(0, 3) },
+      informationQuality: { score: infoScore, reasons: (infoResult.findings || []).slice(0, 3) },
+      communicationQuality: { score: commScore, reasons: [] },
+    };
+
+    const overallScore = Math.round(
+      outcomeScore * 0.40 +
+      infoScore * 0.35 +
+      commScore * 0.25
+    );
+
+    const reviewerResults: ReviewerResult[] = [
+      {
+        reviewerId: 'research_task_analyst',
+        reviewerName: '研究任务分析师',
+        perspective: '专注于研究任务完成度',
+        scores: { outcomeVerification: outcomeScore, codeQuality: 70, security: 70, toolEfficiency: 70 },
+        findings: taskResult.findings || [],
+        concerns: taskResult.concerns || [],
+        passed: taskResult.passed ?? true,
+      },
+      {
+        reviewerId: 'information_quality',
+        reviewerName: '信息质量评审员',
+        perspective: '专注于信息准确性和全面性',
+        scores: { outcomeVerification: 70, codeQuality: 70, security: 70, toolEfficiency: infoScore },
+        findings: infoResult.findings || [],
+        concerns: infoResult.concerns || [],
+        passed: infoResult.passed ?? true,
+      },
+    ];
+
+    return {
+      overallScore,
+      consensus: reviewerResults.every(r => r.passed),
+      conversationType: 'research',
+      reviewerResults,
+      codeVerification,
+      aggregatedMetrics,
+      transcriptMetrics,
+      suggestions: allConcerns.slice(0, 5),
+      summary: `研究评测：综合得分 ${overallScore}。${taskResult.summary || ''} ${infoResult.summary || ''}`.trim(),
+      layersCoverage: ['结果验证层', '信息质量层', '表达质量层'],
+    };
+  }
+
+  /**
+   * Creation 评测 — 2 次并行 LLM 调用
+   */
+  private async evaluateCreation(
+    snapshot: SessionSnapshot,
+    transcript: string
+  ): Promise<SwissCheeseResult> {
+    logger.info('Running Creation evaluation (2 LLM calls)...');
+
+    const transcriptMetrics = this.analyzeTranscript(snapshot);
+    const codeVerification = await this.verifyCode(snapshot);
+
+    // 2 个评审员并行
+    const [taskAnalystResponse, outputQualityResponse] = await Promise.all([
+      this.callLLM(
+        `${CREATION_TASK_ANALYST_PROMPT}\n\n${CREATION_OUTPUT_FORMAT}`,
+        `请评估以下内容创作对话：\n\n${transcript}`
+      ),
+      this.callLLM(
+        `${CREATION_OUTPUT_QUALITY_PROMPT}\n\n${CREATION_OUTPUT_FORMAT}`,
+        `请评估以下内容创作的产出质量：\n\n${transcript}`
+      ),
+    ]);
+
+    const taskResult = taskAnalystResponse ? this.parseGenericResponse(taskAnalystResponse) : {};
+    const outputResult = outputQualityResponse ? this.parseGenericResponse(outputQualityResponse) : {};
+
+    const outcomeScore = taskResult.scores?.outcomeVerification ?? 70;
+    const outputScore = outputResult.scores?.outputQuality ?? 70;
+    const reqScore = Math.round(
+      ((taskResult.scores?.requirementCompliance ?? 70) + (outputResult.scores?.requirementCompliance ?? 70)) / 2
+    );
+
+    const allConcerns = [...(taskResult.concerns || []), ...(outputResult.concerns || [])];
+
+    const aggregatedMetrics: Record<string, { score: number; reasons: string[] }> = {
+      outcomeVerification: { score: outcomeScore, reasons: (taskResult.findings || []).slice(0, 3) },
+      outputQuality: { score: outputScore, reasons: (outputResult.findings || []).slice(0, 3) },
+      requirementCompliance: { score: reqScore, reasons: [] },
+    };
+
+    const overallScore = Math.round(
+      outcomeScore * 0.45 +
+      outputScore * 0.35 +
+      reqScore * 0.20
+    );
+
+    const reviewerResults: ReviewerResult[] = [
+      {
+        reviewerId: 'creation_task_analyst',
+        reviewerName: '创作任务分析师',
+        perspective: '专注于创作任务完成度',
+        scores: { outcomeVerification: outcomeScore, codeQuality: 70, security: 70, toolEfficiency: 70 },
+        findings: taskResult.findings || [],
+        concerns: taskResult.concerns || [],
+        passed: taskResult.passed ?? true,
+      },
+      {
+        reviewerId: 'output_quality',
+        reviewerName: '产出质量评审员',
+        perspective: '专注于产出格式和质量',
+        scores: { outcomeVerification: 70, codeQuality: 70, security: 70, toolEfficiency: outputScore },
+        findings: outputResult.findings || [],
+        concerns: outputResult.concerns || [],
+        passed: outputResult.passed ?? true,
+      },
+    ];
+
+    return {
+      overallScore,
+      consensus: reviewerResults.every(r => r.passed),
+      conversationType: 'creation',
+      reviewerResults,
+      codeVerification,
+      aggregatedMetrics,
+      transcriptMetrics,
+      suggestions: allConcerns.slice(0, 5),
+      summary: `创作评测：综合得分 ${overallScore}。${taskResult.summary || ''} ${outputResult.summary || ''}`.trim(),
+      layersCoverage: ['结果验证层', '产出质量层', '需求符合度层'],
+    };
+  }
+
+  /**
+   * Coding 评测 — 4 次并行 LLM 调用（原有逻辑）
+   */
+  private async evaluateCoding(
+    snapshot: SessionSnapshot,
+    transcript: string
+  ): Promise<SwissCheeseResult> {
+    logger.info('Running Coding evaluation (4 LLM calls)...');
+
+    // 1. 代码 Grader: 从结构化数据计算硬指标
+    const transcriptMetrics = this.analyzeTranscript(snapshot);
+
+    // 2. 并行运行 LLM 评审员
+    const reviewerPromises = REVIEWER_CONFIGS.map((config) =>
+      this.runReviewer(config, transcript)
+    );
+    const reviewerResults = await Promise.all(reviewerPromises);
+
+    // 3. 代码执行验证
+    const codeVerification = await this.verifyCode(snapshot);
+
+    // 4. 聚合结果
+    const aggregated = this.aggregateResults(reviewerResults, codeVerification, transcriptMetrics);
+
+    const result: SwissCheeseResult = {
+      overallScore: aggregated.overallScore,
+      consensus: reviewerResults.every((r) => r.passed),
+      conversationType: 'coding',
+      reviewerResults,
+      codeVerification,
+      aggregatedMetrics: aggregated.metrics,
+      transcriptMetrics,
+      suggestions: aggregated.suggestions,
+      summary: aggregated.summary,
+      layersCoverage: [
+        '结果验证层',
+        '代码质量审查层',
+        '安全风险检测层',
+        '工具效率评估层',
+        '代码 Grader 层（self-repair, verification, forbidden）',
+      ],
+    };
+
+    logger.info('Coding evaluation completed', {
+      overallScore: result.overallScore,
+      consensus: result.consensus,
+      selfRepairRate: transcriptMetrics.selfRepair.rate,
+    });
+
+    return result;
   }
 
   /**
@@ -651,16 +1082,138 @@ export class SwissCheeseEvaluator {
   }
 
   /**
-   * 将 SwissCheeseResult 转换为标准 EvaluationMetric 格式 (v3)
+   * 将 SwissCheeseResult 转换为标准 EvaluationMetric 格式（根据 conversationType 适配）
    */
   convertToMetrics(result: SwissCheeseResult): EvaluationMetric[] {
+    switch (result.conversationType) {
+      case 'qa':
+        return this.convertQAMetrics(result);
+      case 'research':
+        return this.convertResearchMetrics(result);
+      case 'creation':
+        return this.convertCreationMetrics(result);
+      case 'coding':
+      default:
+        return this.convertCodingMetrics(result);
+    }
+  }
+
+  /**
+   * QA metrics: 3 维度
+   */
+  private convertQAMetrics(result: SwissCheeseResult): EvaluationMetric[] {
+    return [
+      {
+        dimension: EvaluationDimension.ANSWER_CORRECTNESS,
+        score: result.aggregatedMetrics.answerCorrectness?.score ?? 70,
+        weight: 0.60,
+        details: {
+          reason: result.aggregatedMetrics.answerCorrectness?.reasons?.join('; ') || 'QA 评审员评估',
+        },
+        suggestions: result.suggestions,
+      },
+      {
+        dimension: EvaluationDimension.REASONING_QUALITY,
+        score: result.aggregatedMetrics.reasoningQuality?.score ?? 70,
+        weight: 0.25,
+        details: {
+          reason: result.aggregatedMetrics.reasoningQuality?.reasons?.join('; ') || 'QA 评审员评估',
+        },
+        suggestions: [],
+      },
+      {
+        dimension: EvaluationDimension.COMMUNICATION_QUALITY,
+        score: result.aggregatedMetrics.communicationQuality?.score ?? 70,
+        weight: 0.15,
+        details: {
+          reason: result.aggregatedMetrics.communicationQuality?.reasons?.join('; ') || 'QA 评审员评估',
+        },
+        suggestions: [],
+      },
+    ];
+  }
+
+  /**
+   * Research metrics: 3 维度
+   */
+  private convertResearchMetrics(result: SwissCheeseResult): EvaluationMetric[] {
     return [
       {
         dimension: EvaluationDimension.OUTCOME_VERIFICATION,
-        score: result.aggregatedMetrics.outcomeVerification.score,
+        score: result.aggregatedMetrics.outcomeVerification?.score ?? 70,
+        weight: 0.40,
+        details: {
+          reason: result.aggregatedMetrics.outcomeVerification?.reasons?.join('; ') || '研究任务分析师评估',
+        },
+        suggestions: [],
+      },
+      {
+        dimension: EvaluationDimension.INFORMATION_QUALITY,
+        score: result.aggregatedMetrics.informationQuality?.score ?? 70,
         weight: 0.35,
         details: {
-          reason: result.aggregatedMetrics.outcomeVerification.reasons.join('; ') || '多评审员综合评估',
+          reason: result.aggregatedMetrics.informationQuality?.reasons?.join('; ') || '信息质量评审员评估',
+        },
+        suggestions: result.suggestions,
+      },
+      {
+        dimension: EvaluationDimension.COMMUNICATION_QUALITY,
+        score: result.aggregatedMetrics.communicationQuality?.score ?? 70,
+        weight: 0.25,
+        details: {
+          reason: result.aggregatedMetrics.communicationQuality?.reasons?.join('; ') || '综合评估',
+        },
+        suggestions: [],
+      },
+    ];
+  }
+
+  /**
+   * Creation metrics: 3 维度
+   */
+  private convertCreationMetrics(result: SwissCheeseResult): EvaluationMetric[] {
+    return [
+      {
+        dimension: EvaluationDimension.OUTCOME_VERIFICATION,
+        score: result.aggregatedMetrics.outcomeVerification?.score ?? 70,
+        weight: 0.45,
+        details: {
+          reason: result.aggregatedMetrics.outcomeVerification?.reasons?.join('; ') || '创作任务分析师评估',
+        },
+        suggestions: [],
+      },
+      {
+        dimension: EvaluationDimension.OUTPUT_QUALITY,
+        score: result.aggregatedMetrics.outputQuality?.score ?? 70,
+        weight: 0.35,
+        details: {
+          reason: result.aggregatedMetrics.outputQuality?.reasons?.join('; ') || '产出质量评审员评估',
+        },
+        suggestions: result.suggestions,
+      },
+      {
+        dimension: EvaluationDimension.REQUIREMENT_COMPLIANCE,
+        score: result.aggregatedMetrics.requirementCompliance?.score ?? 70,
+        weight: 0.20,
+        details: {
+          reason: result.aggregatedMetrics.requirementCompliance?.reasons?.join('; ') || '综合评估',
+        },
+        suggestions: [],
+      },
+    ];
+  }
+
+  /**
+   * Coding metrics: 7 维度 + 1 信息维度（原有逻辑）
+   */
+  private convertCodingMetrics(result: SwissCheeseResult): EvaluationMetric[] {
+    return [
+      {
+        dimension: EvaluationDimension.OUTCOME_VERIFICATION,
+        score: result.aggregatedMetrics.outcomeVerification?.score ?? 70,
+        weight: 0.35,
+        details: {
+          reason: result.aggregatedMetrics.outcomeVerification?.reasons?.join('; ') || '多评审员综合评估',
           reviewers: result.reviewerResults.map((r) => ({
             name: r.reviewerName,
             score: r.scores.outcomeVerification,
@@ -670,59 +1223,59 @@ export class SwissCheeseEvaluator {
       },
       {
         dimension: EvaluationDimension.CODE_QUALITY,
-        score: result.aggregatedMetrics.codeQuality.score,
+        score: result.aggregatedMetrics.codeQuality?.score ?? 70,
         weight: 0.20,
         details: {
-          reason: result.aggregatedMetrics.codeQuality.reasons.join('; ') || '多评审员综合评估',
+          reason: result.aggregatedMetrics.codeQuality?.reasons?.join('; ') || '多评审员综合评估',
           codeVerification: result.codeVerification,
         },
         suggestions: [],
       },
       {
         dimension: EvaluationDimension.SECURITY,
-        score: result.aggregatedMetrics.security.score,
+        score: result.aggregatedMetrics.security?.score ?? 70,
         weight: 0.15,
         details: {
-          reason: result.aggregatedMetrics.security.reasons.join('; ') || '多评审员综合评估',
+          reason: result.aggregatedMetrics.security?.reasons?.join('; ') || '多评审员综合评估',
         },
         suggestions: [],
       },
       {
         dimension: EvaluationDimension.TOOL_EFFICIENCY,
-        score: result.aggregatedMetrics.toolEfficiency.score,
+        score: result.aggregatedMetrics.toolEfficiency?.score ?? 70,
         weight: 0.08,
         details: {
-          reason: result.aggregatedMetrics.toolEfficiency.reasons.join('; ') || '多评审员综合评估',
+          reason: result.aggregatedMetrics.toolEfficiency?.reasons?.join('; ') || '多评审员综合评估',
         },
         suggestions: [],
       },
       // 代码 Grader 维度
       {
         dimension: EvaluationDimension.SELF_REPAIR,
-        score: result.aggregatedMetrics.selfRepair.score,
+        score: result.aggregatedMetrics.selfRepair?.score ?? 80,
         weight: 0.05,
         details: {
-          reason: result.aggregatedMetrics.selfRepair.reasons.join('; '),
+          reason: result.aggregatedMetrics.selfRepair?.reasons?.join('; ') || '',
           ...result.transcriptMetrics.selfRepair,
         },
         suggestions: [],
       },
       {
         dimension: EvaluationDimension.VERIFICATION_QUALITY,
-        score: result.aggregatedMetrics.verificationQuality.score,
+        score: result.aggregatedMetrics.verificationQuality?.score ?? 80,
         weight: 0.04,
         details: {
-          reason: result.aggregatedMetrics.verificationQuality.reasons.join('; '),
+          reason: result.aggregatedMetrics.verificationQuality?.reasons?.join('; ') || '',
           ...result.transcriptMetrics.verificationQuality,
         },
         suggestions: [],
       },
       {
         dimension: EvaluationDimension.FORBIDDEN_PATTERNS,
-        score: result.aggregatedMetrics.forbiddenPatterns.score,
+        score: result.aggregatedMetrics.forbiddenPatterns?.score ?? 100,
         weight: 0.03,
         details: {
-          reason: result.aggregatedMetrics.forbiddenPatterns.reasons.join('; '),
+          reason: result.aggregatedMetrics.forbiddenPatterns?.reasons?.join('; ') || '',
           ...result.transcriptMetrics.forbiddenPatterns,
         },
         suggestions: [],
@@ -862,7 +1415,7 @@ export class SwissCheeseEvaluator {
   }
 
   /**
-   * 解析评审员响应
+   * 解析评审员响应（coding 专用，兼容 v2 字段名）
    */
   private parseReviewerResponse(response: string): Partial<ReviewerResult> {
     try {
@@ -886,6 +1439,26 @@ export class SwissCheeseEvaluator {
       return parsed;
     } catch {
       logger.warn('Failed to parse reviewer response');
+      return {};
+    }
+  }
+
+  /**
+   * 解析通用评审响应（QA/Research/Creation 共用）
+   */
+  private parseGenericResponse(response: string): {
+    scores?: Record<string, number>;
+    findings?: string[];
+    concerns?: string[];
+    passed?: boolean;
+    summary?: string;
+  } {
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return {};
+      return JSON.parse(jsonMatch[0]);
+    } catch {
+      logger.warn('Failed to parse generic reviewer response');
       return {};
     }
   }

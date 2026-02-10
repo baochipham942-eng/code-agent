@@ -5,6 +5,11 @@
 import type { EvaluationMetric, EvaluationDimension } from '../../shared/types/evaluation';
 
 /**
+ * 对话类型分类
+ */
+export type ConversationType = 'qa' | 'coding' | 'research' | 'creation';
+
+/**
  * Turn 级快照（结构化遥测数据）
  */
 export interface TurnSnapshot {

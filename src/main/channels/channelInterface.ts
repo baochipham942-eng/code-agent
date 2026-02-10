@@ -90,6 +90,14 @@ export interface IChannelPlugin extends EventEmitter {
    */
   removeReaction?(messageId: string, reaction: string): Promise<boolean>;
 
+  /**
+   * 发送卡片消息 (可选)
+   * @param chatId 聊天 ID
+   * @param text 卡片文本内容
+   * @param buttons 操作按钮
+   */
+  sendCard?(chatId: string, text: string, buttons?: Array<{ text: string; value: string }>): Promise<SendMessageResult>;
+
   // ========== 事件 ==========
   // 通过 EventEmitter 发出以下事件:
   // - 'message': (message: ChannelMessage) => void
@@ -179,4 +187,6 @@ export interface ChannelResponseCallback {
   sendStream?(stream: AsyncIterable<string>): Promise<SendMessageResult>;
   /** 编辑之前的消息 (如果支持) */
   editMessage?(messageId: string, content: string): Promise<SendMessageResult>;
+  /** 发送卡片消息 (如果支持) */
+  sendCard?(text: string, buttons?: Array<{ text: string; value: string }>): Promise<SendMessageResult>;
 }

@@ -75,6 +75,9 @@ export interface ParsedSkill {
   references?: string[];
   referenceContents?: Map<string, string>;
   dependencyStatus?: SkillDependencyStatus;
+
+  /** Whether the full promptContent has been loaded (for lazy loading) */
+  loaded?: boolean;
 }
 
 export type SkillSource = 'user' | 'project' | 'plugin' | 'builtin' | 'library';

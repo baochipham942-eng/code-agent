@@ -9,6 +9,7 @@ import { BASH } from '../../../shared/constants';
 import { startBackgroundTask } from './backgroundTasks';
 import { createPtySession, getPtySessionOutput } from './ptyExecutor';
 import { generateBashDescription } from './dynamicDescription';
+import { getShellPath } from '../../services/infra/shellEnvironment';
 
 const execAsync = promisify(exec);
 
@@ -225,7 +226,7 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
         maxBuffer: BASH.MAX_BUFFER,
         env: {
           ...process.env,
-          PATH: process.env.PATH,
+          PATH: getShellPath(),
         },
       });
 

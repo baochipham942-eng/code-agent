@@ -44,6 +44,33 @@ async function checkFileExists(filePath: string): Promise<boolean> {
   }
 }
 
+// Frontmatter 正则：匹配 --- 开头和结尾的 YAML 块
+const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
+
+/**
+ * 按需加载 Skill 的 promptContent
+ * 用于延迟加载场景：发现阶段只加载元数据，执行时才加载完整内容
+ */
+export async function loadSkillContent(skill: ParsedSkill): Promise<void> {
+  if (skill.loaded) return;
+
+  const skillPath = path.join(skill.basePath, 'SKILL.md');
+  try {
+    const content = await fs.readFile(skillPath, 'utf-8');
+    const match = content.match(FRONTMATTER_REGEX);
+    if (match) {
+      skill.promptContent = match[2].trim();
+    } else {
+      skill.promptContent = content.trim();
+    }
+    skill.loaded = true;
+    logger.info('Loaded skill content on demand', { name: skill.name, path: skillPath });
+  } catch (error) {
+    logger.error('Failed to load skill content', { name: skill.name, error });
+    throw error;
+  }
+}
+
 /**
  * 检查 Skill 的所有依赖
  */

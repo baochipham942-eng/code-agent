@@ -10,11 +10,13 @@ import type {
   CronJobDefinition,
   CronJobExecution,
   CronJobStatus,
+  CronScheduleType,
   CronScheduleConfig,
   CronJobAction,
   CronServiceStats,
 } from '../../shared/types/cron';
 import { getDatabase } from '../services/core/databaseService';
+import { getAgentOrchestrator } from '../app/bootstrap';
 
 const execAsync = promisify(exec);
 
@@ -483,9 +485,24 @@ export class CronService {
       }
 
       case 'agent': {
-        // Agent execution would need to be integrated with the agent system
-        console.log(`[CronService] Would spawn agent: ${action.agentType}`);
-        return { agentType: action.agentType, prompt: action.prompt };
+        const orchestrator = getAgentOrchestrator();
+        if (!orchestrator) {
+          throw new Error('AgentOrchestrator not available');
+        }
+        // Busy guard: retry up to 3 times with 30s interval
+        let attempts = 0;
+        const maxAttempts = 3;
+        while (attempts < maxAttempts) {
+          if (!orchestrator.isProcessing()) break;
+          attempts++;
+          if (attempts >= maxAttempts) {
+            throw new Error('Agent is busy after 3 retry attempts');
+          }
+          console.log(`[CronService] Agent busy, retrying in 30s (attempt ${attempts}/${maxAttempts})`);
+          await new Promise(resolve => setTimeout(resolve, 30000));
+        }
+        const result = await orchestrator.sendMessage(action.prompt);
+        return { agentType: action.agentType, prompt: action.prompt, result };
       }
 
       case 'webhook': {
@@ -541,10 +558,36 @@ export class CronService {
 
   private async loadJobsFromDatabase(): Promise<void> {
     try {
-      const db = getDatabase();
-      // Jobs would be loaded from a cron_jobs table
-      // For now, we'll just initialize empty
-      console.log('[CronService] Database loading not implemented yet');
+      const db = getDatabase().getDb();
+      if (!db) {
+        console.log('[CronService] Database not available, starting with empty jobs');
+        return;
+      }
+      const rows = db.prepare('SELECT * FROM cron_jobs').all() as any[];
+      for (const row of rows) {
+        const job: CronJobDefinition = {
+          id: row.id,
+          name: row.name,
+          description: row.description || undefined,
+          scheduleType: row.schedule_type as CronScheduleType,
+          schedule: JSON.parse(row.schedule),
+          action: JSON.parse(row.action),
+          enabled: row.enabled === 1,
+          maxRetries: row.max_retries || undefined,
+          retryDelay: row.retry_delay || undefined,
+          timeout: row.timeout || undefined,
+          tags: row.tags ? JSON.parse(row.tags) : undefined,
+          metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        };
+        if (job.enabled) {
+          this.registerJob(job);
+        } else {
+          this.jobs.set(job.id, { definition: job });
+        }
+      }
+      console.log(`[CronService] Loaded ${rows.length} jobs from database`);
     } catch (error) {
       console.error('[CronService] Failed to load jobs from database:', error);
     }
@@ -552,9 +595,20 @@ export class CronService {
 
   private async saveJobToDatabase(job: CronJobDefinition): Promise<void> {
     try {
-      const db = getDatabase();
-      // Save job to cron_jobs table
-      console.log('[CronService] Database saving not implemented yet');
+      const db = getDatabase().getDb();
+      if (!db) return;
+      db.prepare(`
+        INSERT OR REPLACE INTO cron_jobs
+        (id, name, description, schedule_type, schedule, action, enabled, max_retries, retry_delay, timeout, tags, metadata, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        job.id, job.name, job.description || null,
+        job.scheduleType, JSON.stringify(job.schedule), JSON.stringify(job.action),
+        job.enabled ? 1 : 0, job.maxRetries || 0, job.retryDelay || 5000,
+        job.timeout || 60000, job.tags ? JSON.stringify(job.tags) : null,
+        job.metadata ? JSON.stringify(job.metadata) : '{}',
+        job.createdAt, job.updatedAt
+      );
     } catch (error) {
       console.error('[CronService] Failed to save job to database:', error);
     }
@@ -562,9 +616,9 @@ export class CronService {
 
   private async deleteJobFromDatabase(jobId: string): Promise<void> {
     try {
-      const db = getDatabase();
-      // Delete job from cron_jobs table
-      console.log('[CronService] Database deletion not implemented yet');
+      const db = getDatabase().getDb();
+      if (!db) return;
+      db.prepare('DELETE FROM cron_jobs WHERE id = ?').run(jobId);
     } catch (error) {
       console.error('[CronService] Failed to delete job from database:', error);
     }
@@ -572,9 +626,20 @@ export class CronService {
 
   private async saveExecutionToDatabase(execution: CronJobExecution): Promise<void> {
     try {
-      const db = getDatabase();
-      // Save execution to cron_executions table
-      console.log('[CronService] Execution saving not implemented yet');
+      const db = getDatabase().getDb();
+      if (!db) return;
+      db.prepare(`
+        INSERT INTO cron_executions
+        (id, job_id, status, scheduled_at, started_at, completed_at, duration, result, error, retry_attempt, exit_code)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        execution.id, execution.jobId, execution.status,
+        execution.scheduledAt, execution.startedAt || null,
+        execution.completedAt || null, execution.duration || null,
+        execution.result ? JSON.stringify(execution.result) : null,
+        execution.error || null, execution.retryAttempt,
+        execution.exitCode || null
+      );
     } catch (error) {
       console.error('[CronService] Failed to save execution to database:', error);
     }

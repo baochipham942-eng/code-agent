@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import { Tool, Param, Description, type ITool, buildToolFromClass } from '../decorators';
 import type { ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { BASH } from '../../../shared/constants';
+import { getShellPath } from '../../services/infra/shellEnvironment';
 
 const execAsync = promisify(exec);
 
@@ -53,8 +54,8 @@ class BashToolDecorated implements ITool {
         maxBuffer: BASH.MAX_BUFFER,
         env: {
           ...process.env,
-          // Ensure we have a proper PATH
-          PATH: process.env.PATH,
+          // Use shell-captured PATH for Electron Finder launch compatibility
+          PATH: getShellPath(),
         },
       });
 

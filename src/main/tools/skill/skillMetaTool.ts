@@ -224,6 +224,12 @@ export const skillMetaTool: Tool = {
       };
     }
 
+    // Lazy load skill content if not loaded yet
+    if (!skill.loaded) {
+      const { loadSkillContent } = await import('../../services/skills/skillLoader');
+      await loadSkillContent(skill);
+    }
+
     logger.info('Executing skill', {
       name: skill.name,
       source: skill.source,

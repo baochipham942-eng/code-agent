@@ -5,6 +5,7 @@
 import { app } from 'electron';
 import path from 'path';
 import { createLogger } from '../services/infra/logger';
+import { loadShellEnvironment } from '../services/infra/shellEnvironment';
 import {
   ConfigService,
   initDatabase,
@@ -108,6 +109,9 @@ export function getTaskManagerInstance(): TaskManager | null {
  * 3. MemoryService 在数据库就绪后初始化
  */
 export async function initializeCoreServices(): Promise<ConfigService> {
+  // Capture shell environment before anything else (for PATH resolution)
+  loadShellEnvironment();
+
   const startTime = Date.now();
 
   // 并行初始化 ConfigService 和 Database（无依赖关系）

@@ -214,25 +214,86 @@ async function waitForZhipuVideoCompletion(
   throw new Error(`视频生成超时（${TIMEOUT_MS.MAX_WAIT / 1000}秒）`);
 }
 
+// ============================================================================
+// 视频提示词扩展系统
+// 区分文生视频和图生视频两套策略
+// ============================================================================
+
+const TEXT_TO_VIDEO_PROMPT = `你是专业的 AI 视频提示词工程师。将用户的简短描述扩展为高质量的 CogVideoX 视频生成提示词。
+
+## 提示词结构公式
+
+主体(含外观) + 动作(含强度) + 场景(含光影) + 镜头(含运动) + 风格
+
+## 核心规则
+
+1. **动作优先**：视频的核心是运动和变化，减少静态描述，聚焦动作
+2. **程度副词必须明确**："快速奔跑"而非"跑"，"猛烈挥拳"而非"打"，"缓慢转身"而非"转"
+3. **镜头语言明确**：使用专业术语 — 推(zoom in)/拉(zoom out)/摇(pan)/移(dolly)/跟(tracking)/环绕(orbit)/升降(crane)/一镜到底(long take)
+4. **光影氛围具体**：逆光/侧光/体积光/丁达尔效应/黄金时刻/霓虹灯光
+5. **每次聚焦**：1 个主体 + 1 个主动作 + 1 个镜头运动
+6. **正面描述**：CogVideoX 不支持否定提示词，用正面描述替代（"清晰画面"而非"没有模糊"）
+7. **控制在 200 字以内**
+8. **直接输出优化后的提示词，不要解释**
+
+## 镜头语言速查
+
+- 推镜头：从远到近，聚焦细节
+- 拉镜头：从近到远，展现全貌
+- 摇镜头：固定位置左右/上下转动
+- 跟镜头：跟随主体移动
+- 环绕镜头：围绕主体 360° 旋转
+- 升降镜头：垂直方向移动
+- 一镜到底：连续无剪辑跟随
+
+## 示例
+
+输入：一只柯基在跑
+输出：一只短腿柯基犬在阳光斑驳的草地上欢快地飞速奔跑，四条小短腿快速交替，蓬松的尾巴左右摇摆，耳朵随风向后飘动。跟镜头从侧面平移拍摄，背景草地和野花快速后退形成动态模糊。黄金时刻暖色光线，电影质感。
+
+输入：一杯咖啡
+输出：一杯热拿铁咖啡放在大理石桌面上，浓密的奶泡表面缓缓形成精致的拉花图案，轻柔的蒸汽螺旋上升消散。镜头从正上方俯拍缓缓推近至特写，侧光勾勒出杯沿金色光边。温暖色调，微距摄影质感。
+
+输入：日落海边
+输出：夕阳缓缓沉入海平面，天空从橙红渐变到深紫色，金色阳光在海面铺开一条闪烁的光路。海浪有节奏地拍打沙滩后缓慢退去，留下湿润的沙面反射余晖。镜头从低角度缓慢摇向天际线，丁达尔光线穿透云层。电影级宽银幕画面。`;
+
+const IMAGE_TO_VIDEO_PROMPT = `你是专业的 AI 视频提示词工程师。用户提供了一张起始图片，你需要描述图片中的内容应该如何动起来。
+
+## 核心原则（图生视频专用）
+
+1. **不要重复描述图片中已有的静态内容**（模型已经能看到图片）
+2. **聚焦三个方面**：主体要做什么动作 + 镜头怎么移动 + 背景怎么变化
+3. **添加区分性特征**帮助模型定位主体（如"戴墨镜的女人"、"红色跑车"）
+4. **程度副词明确运动强度**："猛烈"、"轻柔"、"缓慢"、"快速"
+5. **正面描述**：CogVideoX 不支持否定提示词
+6. **控制在 150 字以内**（图片已包含视觉信息，提示词更精简）
+7. **直接输出优化后的提示词，不要解释**
+
+## 提示词结构
+
+主体区分特征 + 核心动作(含强度) + 镜头运动 + 背景变化 + 氛围变化
+
+## 示例
+
+输入：让她笑起来
+输出：画面中的女人缓缓露出灿烂的笑容，眼角微微上扬，发丝被微风轻轻吹动。镜头缓慢推向面部特写，背景虚化程度加深，暖色光线逐渐增强。
+
+输入：让车开起来
+输出：红色跑车猛然启动向前飞速驶去，轮胎短暂打滑扬起一阵白烟，车身快速缩小。跟镜头从侧面跟随后逐渐拉远至全景，道路两旁的树木快速后退形成运动模糊。
+
+输入：让这个场景动起来
+输出：前景的树叶随风轻柔摇曳，远处的云层缓慢飘移变形。镜头从画面中心缓缓向右平移摇拍，光线随时间推移渐渐变暖，整体氛围从宁静过渡到温馨。`;
+
 /**
  * 扩展视频 prompt，将简短描述转换为详细的视频生成提示词
+ * @param imageUrl 如果提供了图片 URL，使用图生视频策略
  */
 async function expandVideoPrompt(
   apiKey: string,
-  shortPrompt: string
+  shortPrompt: string,
+  imageUrl?: string
 ): Promise<string> {
-  const systemPrompt = `你是一个专业的视频提示词优化师。将用户的简短描述扩展成适合 AI 视频生成的详细提示词。
-
-要求：
-1. 保持原意，但添加视觉细节（光线、色彩、氛围）
-2. 描述动作和运动方式
-3. 添加场景环境细节
-4. 控制在 100 字以内
-5. 直接输出优化后的提示词，不要解释
-
-示例：
-输入：一只柯基在跑
-输出：一只可爱的柯基犬在阳光明媚的草地上欢快奔跑，毛发随风飘动，短腿快速交替，尾巴摇摆，背景是蓝天白云和绿色草坪`;
+  const systemPrompt = imageUrl ? IMAGE_TO_VIDEO_PROMPT : TEXT_TO_VIDEO_PROMPT;
 
   try {
     const response = await fetchWithTimeout(
@@ -249,7 +310,7 @@ async function expandVideoPrompt(
             { role: 'system', content: systemPrompt },
             { role: 'user', content: shortPrompt },
           ],
-          max_tokens: 200,
+          max_tokens: 400,
         }),
       },
       10000
@@ -265,6 +326,7 @@ async function expandVideoPrompt(
 
     if (expandedPrompt) {
       logger.info('[Prompt扩展] 成功', {
+        mode: imageUrl ? '图生视频' : '文生视频',
         original: shortPrompt.substring(0, 30),
         expanded: expandedPrompt.substring(0, 50)
       });
@@ -289,9 +351,9 @@ async function generateVideoWithZhipu(
   const aspectRatio = params.aspect_ratio || '16:9';
   const size = VIDEO_SIZES[aspectRatio] || VIDEO_SIZES['16:9'];
 
-  // 扩展 prompt
+  // 扩展 prompt（区分文生视频和图生视频策略）
   onProgress?.('✨ 优化视频描述...');
-  const expandedPrompt = await expandVideoPrompt(apiKey, params.prompt);
+  const expandedPrompt = await expandVideoPrompt(apiKey, params.prompt, params.image_url);
 
   // 提交任务
   const taskId = await submitZhipuVideoTask(apiKey, {

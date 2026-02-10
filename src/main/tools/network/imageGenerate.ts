@@ -9,7 +9,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { getConfigService } from '../../services';
 import { getAuthService } from '../../services/auth/authService';
 import { createLogger } from '../../services/infra/logger';
-import { CLOUD_ENDPOINTS, MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { CLOUD_ENDPOINTS, MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../shared/constants';
 
 const logger = createLogger('ImageGenerate');
 
@@ -48,23 +48,96 @@ const FLUX_MODELS = {
   schnell: 'black-forest-labs/flux.2-klein-4b', // 普通用户，快速便宜
 } as const;
 
-// Prompt 扩展模型
+// Prompt 扩展模型（OpenRouter fallback 用）
 const PROMPT_EXPAND_MODEL = 'deepseek/deepseek-chat';
 
-// Prompt 扩展 System Prompt
-const EXPAND_SYSTEM_PROMPT = `You are an expert image prompt engineer. Transform the user's brief description into a detailed, high-quality image generation prompt.
+// ============================================================================
+// CogView4 图片提示词扩展系统
+// 基于智谱官方建议：用 GLM 扩写丰富描述配合 CogView4 效果最佳
+// ============================================================================
 
-Rules:
-1. Output in English (better model understanding)
-2. Add visual details: lighting, colors, composition, style
-3. Include technical terms: camera angle, depth of field, etc.
-4. Keep under 200 words
-5. Do not add NSFW content
-6. Preserve the user's core intent
+const COGVIEW4_EXPAND_PROMPT = `你是专业的 AI 图片提示词工程师，专门为 CogView4 图像生成模型优化提示词。将用户的简短描述扩展为高质量的图片生成提示词。
 
-Output only the enhanced prompt, no explanation.`;
+## 提示词结构公式
 
-// 风格后缀映射
+主体(含外观细节) + 环境/场景 + 光影 + 构图/视角 + 风格/媒介 + 氛围/情绪
+
+## 核心规则
+
+1. **中文输出**：CogView4 使用 GLM 编码器，中文理解能力强，直接输出中文
+2. **丰富细节**：CogView4 用长合成描述训练，丰富的描述效果显著优于简短 prompt
+3. **主体具体**：描述外观特征（发型/服装/材质/颜色/纹理），避免泛泛的"一个人"
+4. **光影明确**：指定光源方向和类型（自然光/逆光/侧光/柔光/硬光/体积光/丁达尔效应/黄金时刻光线）
+5. **构图专业**：使用摄影构图术语（三分法/居中对称/对角线/框架构图/引导线/俯拍/仰拍/平视）
+6. **相机引用提升品质**：适当引用镜头参数（85mm f/1.4 浅景深/35mm 广角/微距镜头）
+7. **正面描述**：描述你要什么，而非不要什么
+8. **控制在 200 字以内**
+9. **直接输出优化后的提示词，不要解释**
+
+## 风格指导
+
+如果用户指定了风格，融入提示词中：
+- **摄影(photo)**：强调真实质感、光影层次、景深、镜头参数，如"专业摄影，85mm f/1.4 浅景深"
+- **插画(illustration)**：强调笔触、色彩饱和、艺术感，如"精细数字插画，丰富色彩层次"
+- **3D渲染(3d)**：强调材质、光线追踪、体积感，如"Octane 渲染，真实材质质感，体积光"
+- **动漫(anime)**：强调线条、大眼、色彩鲜明，如"日系动漫风格，精细线条，明亮配色"
+
+## 示例
+
+输入：一只猫
+输出：一只毛茸茸的橘色短毛猫蹲坐在铺着亚麻桌布的木桌上，翠绿色的眼睛好奇地直视镜头，胡须微微前倾，耳朵竖起。柔和的侧窗自然光照亮猫咪半侧脸庞，毛发上泛起金色光泽，背景是温馨的厨房场景虚化成奶油色光斑。85mm f/1.4 浅景深，暖色调，治愈系氛围。
+
+输入：古风美女
+输出：一位身着淡青色交领齐胸襦裙的古风女子，乌黑长发挽成流云髻，发间点缀珍珠步摇，手执一柄团扇半遮面庞，露出含笑的杏眼。她站在盛开的桃花树下，花瓣纷纷飘落在肩头和裙摆上。逆光拍摄，阳光穿过花枝形成斑驳光影，丁达尔效应，整体色调粉白相间。工笔画质感，精致细腻。
+
+输入：赛博朋克城市
+输出：雨夜中的赛博朋克城市街道，高耸的摩天大楼上密布霓虹广告牌，紫色和青色的灯光倒映在湿漉漉的柏油路面上。街边蒸汽从下水道口袅袅升起，一辆飞行汽车从楼宇间低空掠过留下光带轨迹。低角度仰拍，35mm 广角镜头产生强烈透视纵深感，画面暗部浓郁亮部霓虹溢出。电影感调色，颗粒质感。
+
+输入：产品展示：一瓶香水
+输出：一瓶切割面精致的琥珀色香水矗立在黑色大理石台面上，瓶身棱角折射出彩虹般的光谱色散。金色瓶盖上刻有精细花纹，瓶身周围散落几片干燥的玫瑰花瓣和一小截香草荚。单点侧光从左上方打入，在台面上投射出长长的光影，背景渐变为深灰色。微距摄影，焦点锐利在瓶身标签上，前后景虚化，高级广告质感。`;
+
+// ============================================================================
+// FLUX.2 图片提示词扩展系统
+// FLUX 偏好自然语言英文描述，30-80 词甜点，不支持否定提示词和权重语法
+// ============================================================================
+
+const FLUX2_EXPAND_PROMPT = `You are an expert image prompt engineer optimizing prompts for FLUX.2 image generation.
+
+## Prompt Structure
+
+Subject (with appearance) + Environment + Lighting + Composition/Camera + Style/Medium + Mood
+
+## Core Rules
+
+1. **English output**: FLUX.2 performs best with English natural language
+2. **Natural language over keywords**: Write descriptive prose, NOT comma-separated tags. "A woman standing in a sunlit garden" beats "woman, garden, sunlight, standing"
+3. **No weight syntax**: Do NOT use (element:1.3) or [[brackets]] — FLUX ignores them
+4. **No negative prompts**: Describe what you WANT, not what to avoid. "sharp focus" instead of "no blur"
+5. **Camera/lens references boost quality**: "Shot on Sony A7IV, 85mm f/1.2" triggers photographic training data
+6. **Specific over generic**: "weathered oak table" not "table", "amber afternoon light" not "good lighting"
+7. **30-80 words sweet spot**: Too short lacks control, too long dilutes attention
+8. **Output only the enhanced prompt, no explanation**
+
+## Style Integration
+
+If user specifies a style, weave it naturally into the description:
+- **photo**: Emphasize camera model, lens, film stock. "Shot on Canon EOS R5, 85mm f/1.2L, Kodak Portra 400 color palette"
+- **illustration**: Emphasize medium and artist influence. "Digital illustration with rich watercolor textures, detailed linework"
+- **3d**: Emphasize render engine and materials. "Octane render, subsurface scattering, volumetric lighting, PBR materials"
+- **anime**: Emphasize anime studio quality. "Studio Ghibli-inspired anime artwork, cel-shaded, vibrant palette"
+
+## Examples
+
+Input: a cat
+Output: A fluffy orange tabby cat perched on a sunlit windowsill, emerald eyes gazing directly at the viewer with quiet curiosity. Soft morning light streams through sheer curtains, casting warm highlights across its fur and delicate whiskers. Shot with an 85mm f/1.4 lens, shallow depth of field blurring a cozy apartment interior behind. Warm tones, intimate atmosphere.
+
+Input: cyberpunk city
+Output: A rain-soaked cyberpunk street at night, towering skyscrapers draped in holographic advertisements casting neon purple and teal reflections across wet asphalt. Steam rises from a manhole cover as a lone figure in a dark trench coat walks toward the camera. Low angle shot with a 24mm wide-angle lens creating dramatic perspective. Cinematic color grading, film grain, moody atmosphere.
+
+Input: product shot of a perfume bottle
+Output: An elegant crystal perfume bottle standing on a black marble surface, faceted glass catching and refracting a single key light into rainbow prismatic flares. Scattered dried rose petals and a vanilla pod beside the base. Dramatic side lighting from upper left creating long shadows, gradient background fading to charcoal. Macro photography, tack-sharp focus on the label, creamy bokeh fore and aft. High-end advertising aesthetic.`;
+
+// 风格后缀映射（简单模式、不走 LLM 扩写时使用）
 const STYLE_SUFFIXES: Record<string, string> = {
   photo: ', photorealistic, high resolution, professional photography, sharp focus',
   illustration: ', digital illustration, detailed artwork, vibrant colors, artistic',
@@ -329,61 +402,106 @@ async function generateImage(
 
 /**
  * 调用 LLM 扩展 Prompt
+ *
+ * 根据实际生图路径选择不同的扩写策略：
+ * - 智谱 API Key 存在 → CogView4 策略（中文丰富描述，GLM 扩写）
+ * - 走 OpenRouter/FLUX → FLUX.2 策略（英文自然语言，30-80 词）
  */
 async function expandPromptWithLLM(prompt: string, style?: string): Promise<string> {
-  const userPrompt = style ? `Style: ${style}\nDescription: ${prompt}` : prompt;
+  const configService = getConfigService();
+  const zhipuApiKey = configService.getApiKey('zhipu');
 
-  const requestBody = {
+  // 智谱 API Key 存在 → 生图走 CogView4 → 用 CogView4 策略扩写
+  if (zhipuApiKey) {
+    const userPrompt = style ? `风格: ${style}\n描述: ${prompt}` : prompt;
+    try {
+      const response = await fetchWithTimeout(
+        `${MODEL_API_ENDPOINTS.zhipu}/chat/completions`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${zhipuApiKey}`,
+          },
+          body: JSON.stringify({
+            model: DEFAULT_MODELS.quick,
+            messages: [
+              { role: 'system', content: COGVIEW4_EXPAND_PROMPT },
+              { role: 'user', content: userPrompt },
+            ],
+            max_tokens: 500,
+          }),
+        },
+        10000
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        const expanded = result.choices?.[0]?.message?.content?.trim();
+        if (expanded) {
+          logger.info('[Prompt扩展] CogView4 策略 (智谱 GLM)', {
+            original: prompt.substring(0, 30),
+            expanded: expanded.substring(0, 50),
+          });
+          return expanded;
+        }
+      }
+    } catch (e: any) {
+      logger.warn('[Prompt扩展] 智谱 GLM 失败，尝试 OpenRouter fallback', { error: e.message });
+    }
+  }
+
+  // 无智谱 API Key → 生图走 FLUX → 用 FLUX.2 策略扩写
+  const userPrompt = style ? `Style: ${style}\nDescription: ${prompt}` : prompt;
+  const fluxRequestBody = {
     model: PROMPT_EXPAND_MODEL,
     messages: [
-      { role: 'system', content: EXPAND_SYSTEM_PROMPT },
+      { role: 'system', content: FLUX2_EXPAND_PROMPT },
       { role: 'user', content: userPrompt },
     ],
     max_tokens: 500,
   };
 
-  // 优先云端代理（使用较短的超时）
+  // 云端代理
   try {
     const cloudResponse = await callViaCloudProxy(
       'openrouter',
       '/chat/completions',
-      requestBody,
+      fluxRequestBody,
       TIMEOUT_MS.PROMPT_EXPAND
     );
 
     if (cloudResponse.ok) {
       const result = await cloudResponse.json();
-      return result.choices?.[0]?.message?.content?.trim() || prompt;
+      const expanded = result.choices?.[0]?.message?.content?.trim();
+      if (expanded) {
+        logger.info('[Prompt扩展] FLUX.2 策略 (云端代理)');
+        return expanded;
+      }
     }
   } catch (e: any) {
-    if (e.name === 'AbortError') {
-      logger.warn('Cloud proxy timeout for prompt expansion');
-    } else {
-      logger.warn('Cloud proxy failed for prompt expansion');
+    logger.warn('[Prompt扩展] 云端代理失败');
+  }
+
+  // 直连 OpenRouter
+  const openrouterApiKey = configService.getApiKey('openrouter');
+  if (openrouterApiKey) {
+    try {
+      const response = await callDirectOpenRouter(openrouterApiKey, fluxRequestBody, TIMEOUT_MS.PROMPT_EXPAND);
+      if (response.ok) {
+        const result = await response.json();
+        const expanded = result.choices?.[0]?.message?.content?.trim();
+        if (expanded) {
+          logger.info('[Prompt扩展] FLUX.2 策略 (OpenRouter 直连)');
+          return expanded;
+        }
+      }
+    } catch (e: any) {
+      logger.warn('[Prompt扩展] OpenRouter 直连失败');
     }
   }
 
-  // 回退本地
-  const apiKey = getConfigService().getApiKey('openrouter');
-  if (!apiKey) {
-    logger.warn('No API key for prompt expansion, using original prompt');
-    return prompt;
-  }
-
-  try {
-    const response = await callDirectOpenRouter(apiKey, requestBody, TIMEOUT_MS.PROMPT_EXPAND);
-    if (response.ok) {
-      const result = await response.json();
-      return result.choices?.[0]?.message?.content?.trim() || prompt;
-    }
-  } catch (e: any) {
-    if (e.name === 'AbortError') {
-      logger.warn('Direct API timeout for prompt expansion');
-    } else {
-      logger.warn('Direct API failed for prompt expansion');
-    }
-  }
-
+  logger.warn('[Prompt扩展] 所有方式失败，使用原始 prompt');
   return prompt;
 }
 

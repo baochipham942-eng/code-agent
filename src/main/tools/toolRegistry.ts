@@ -92,7 +92,7 @@ import {
   teammateTool,
 } from './multiagent';
 import { strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternTool } from './evolution';
-import { lspTool } from './lsp';
+import { lspTool, diagnosticsTool } from './lsp';
 
 // ----------------------------------------------------------------------------
 // Tool Interface
@@ -270,6 +270,7 @@ export class ToolRegistry {
     this.register(webSearchTool);
     this.register(readPdfTool);
     this.register(lspTool);
+    this.register(diagnosticsTool);
 
     // Gen 5 tools - Office Documents & Image & Data
     this.register(pptGenerateTool);

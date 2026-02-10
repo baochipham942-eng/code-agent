@@ -21,6 +21,7 @@ import {
 } from '../utils/quoteNormalizer';
 import { atomicWriteFile } from '../utils/atomicWrite';
 import { getResourceLockManager } from '../../agent/resourceLockManager';
+import { getPostEditDiagnostics } from '../lsp/diagnosticsHelper';
 
 export const editFileTool: Tool = {
   name: 'edit_file',
@@ -315,6 +316,16 @@ Best practices:
       }
       if (snippet) {
         output += `\n\n${snippet}`;
+      }
+
+      // LSP 诊断闭环：编辑后自动查询 LSP 诊断
+      try {
+        const diagResult = await getPostEditDiagnostics(filePath);
+        if (diagResult) {
+          output += diagResult.formatted;
+        }
+      } catch {
+        // 诊断失败不影响编辑结果
       }
 
       return {

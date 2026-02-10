@@ -17,10 +17,7 @@ export class PPTVerifier implements TaskVerifier {
   taskType = 'ppt' as const;
 
   canVerify(taskAnalysis: TaskAnalysis): boolean {
-    return (
-      taskAnalysis.taskType === 'code' &&
-      taskAnalysis.specializations.includes('frontend')
-    ) || false;
+    return taskAnalysis.taskType === 'ppt';
   }
 
   async verify(context: VerificationContext): Promise<VerificationResult> {

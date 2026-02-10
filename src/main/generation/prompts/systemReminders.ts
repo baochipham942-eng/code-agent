@@ -14,7 +14,10 @@ export type ReminderType =
   | 'PLAN_MODE_ACTIVE'
   | 'AUDIT_MODE'
   | 'REVIEW_MODE'
-  | 'PPT_FORMAT_SELECTION';
+  | 'PPT_FORMAT_SELECTION'
+  | 'DATA_PROCESSING'
+  | 'DOCUMENT_GENERATION'
+  | 'IMAGE_GENERATION';
 
 /**
  * 系统提醒内容
@@ -141,6 +144,73 @@ ppt_generate({
 - ❌ 不要把 Mermaid 代码直接放到 content 里（必须先用 mermaid_export 转 PNG）
 </system-reminder>
 `,
+
+  DATA_PROCESSING: `
+<system-reminder>
+**数据处理任务**：检测到数据分析/处理需求。
+
+**工作流程**：
+1. 先用 read_xlsx/read_file 读取源数据，了解结构（列名、数据类型、行数）
+2. 分析需求，确定处理逻辑（筛选/聚合/透视/时序分析等）
+3. 用 bash 执行 Python/pandas 脚本处理数据
+4. 输出结果到指定格式（xlsx/csv），并描述关键发现
+
+**关键规范**：
+- 先读数据再写代码，不要猜测列名和数据格式
+- 时序分析必须正确设置日期索引（pd.to_datetime + set_index）
+- 聚合统计结果要验证：行数、空列、数值合理性
+- 模糊指令（如"分析一下"）→ 先用 ask_user_question 澄清具体需求
+- 输出文件后必须用文字描述数据结果（不能只输出文件路径）
+
+**禁止**：
+- ❌ 不要在未读取数据的情况下编写处理脚本
+- ❌ 不要忽略空值处理（NaN/None 必须显式处理）
+- ❌ 不要假设日期格式，必须从数据中推断
+</system-reminder>
+`,
+
+  DOCUMENT_GENERATION: `
+<system-reminder>
+**文档生成任务**：检测到文档/报告撰写需求。
+
+**工作流程**：
+1. 如有参考素材 → 先用 read_file/read_pdf 读取
+2. 如需最新数据 → 用 web_search 搜索
+3. 按需求结构化撰写（标题层级、段落、列表）
+4. 用 write_file 输出为目标格式
+
+**关键规范**：
+- 文档必须有清晰的标题层级结构（# / ## / ###）
+- 内容必须具体，不留占位符（[TODO]、[待填写]、lorem ipsum）
+- 数据/案例必须真实或标注为示例
+- 长文档按章节分段，每段聚焦一个主题
+
+**禁止**：
+- ❌ 不要生成空洞的模板式内容
+- ❌ 不要留下任何未填写的占位符
+</system-reminder>
+`,
+
+  IMAGE_GENERATION: `
+<system-reminder>
+**图像生成任务**：检测到图像生成需求。
+
+**工作流程**：
+1. 确定图像类型：流程图/架构图 → mermaid_export；照片/插图 → image_generate
+2. 生成图像文件（PNG/SVG）
+3. 验证文件存在且非空
+
+**工具选择**：
+- 流程图/时序图/类图 → mermaid_export（生成 PNG，加 ?type=png）
+- 照片/插图/创意图 → image_generate
+- 数据图表 → Python matplotlib/seaborn（通过 bash 执行）
+- 简单 SVG → 直接 write_file 写 SVG 代码
+
+**禁止**：
+- ❌ 不要把 Mermaid 语法直接输出为文本（必须转 PNG）
+- ❌ 不要生成空文件或损坏的图片
+</system-reminder>
+`,
 };
 
 /**
@@ -153,6 +223,9 @@ export interface TaskFeatures {
   isReviewTask: boolean;
   isPlanningTask: boolean;
   isPPTTask: boolean;
+  isDataTask: boolean;
+  isDocumentTask: boolean;
+  isImageTask: boolean;
   dimensions: string[];
 }
 
@@ -196,6 +269,28 @@ export function detectTaskFeatures(prompt: string): TaskFeatures {
     '制作ppt', '写个ppt', 'slides',
   ];
 
+  // 数据处理任务关键词
+  const dataKeywords = [
+    'excel', 'xlsx', 'csv', '数据', '分析', '清洗',
+    '透视', '聚合', '统计', 'dataframe', 'pandas',
+    '表格处理', '数据处理',
+  ];
+
+  // 文档生成任务关键词
+  const documentKeywords = [
+    '文章', '报告', '文档', '撰写', '写一篇',
+    'report', 'article', 'document',
+    '起草', '草拟', '编写文档',
+  ];
+
+  // 图像生成任务关键词
+  const imageKeywords = [
+    '生成图', '画图', '画一个', '画一张',
+    'image', 'draw', 'generate image',
+    '生图', '插图', '制图', '作图',
+    '流程图', '架构图', '示意图', '思维导图',
+  ];
+
   return {
     isMultiDimension: matchedDimensions.length >= 2,
     isComplexTask: complexKeywords.some((k) => normalizedPrompt.includes(k)),
@@ -203,6 +298,9 @@ export function detectTaskFeatures(prompt: string): TaskFeatures {
     isReviewTask: reviewKeywords.some((k) => normalizedPrompt.includes(k)),
     isPlanningTask: planningKeywords.some((k) => normalizedPrompt.includes(k)),
     isPPTTask: pptKeywords.some((k) => normalizedPrompt.includes(k)),
+    isDataTask: dataKeywords.some((k) => normalizedPrompt.includes(k)),
+    isDocumentTask: documentKeywords.some((k) => normalizedPrompt.includes(k)),
+    isImageTask: imageKeywords.some((k) => normalizedPrompt.includes(k)),
     dimensions: matchedDimensions,
   };
 }
@@ -214,9 +312,15 @@ export function getSystemReminders(prompt: string): string[] {
   const features = detectTaskFeatures(prompt);
   const reminders: string[] = [];
 
-  // PPT 任务 → 格式选择提醒（优先级最高，放在最前面）
+  // 内容生成任务（互斥，按优先级排列）
   if (features.isPPTTask) {
     reminders.push(REMINDERS.PPT_FORMAT_SELECTION);
+  } else if (features.isDataTask) {
+    reminders.push(REMINDERS.DATA_PROCESSING);
+  } else if (features.isDocumentTask) {
+    reminders.push(REMINDERS.DOCUMENT_GENERATION);
+  } else if (features.isImageTask) {
+    reminders.push(REMINDERS.IMAGE_GENERATION);
   }
 
   // 多维度任务 → 并行派发提醒

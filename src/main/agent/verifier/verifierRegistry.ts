@@ -15,7 +15,7 @@ const logger = createLogger('VerifierRegistry');
 // Types
 // ============================================================================
 
-export type TaskType = 'code' | 'ppt' | 'search' | 'review' | 'generic';
+export type TaskType = 'code' | 'ppt' | 'search' | 'review' | 'data' | 'document' | 'image' | 'generic';
 
 export interface VerificationCheck {
   name: string;

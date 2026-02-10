@@ -75,6 +75,9 @@ import { getInputSanitizer } from '../security/inputSanitizer';
 import { getDiffTracker } from '../services/diff/diffTracker';
 import { getCitationService } from '../services/citation/citationService';
 import { createHash } from 'crypto';
+import { getVerifierRegistry, initializeVerifiers } from './verifier';
+import type { VerificationContext, VerificationResult } from './verifier';
+import { analyzeTask } from './hybrid/taskRouter';
 
 const logger = createLogger('AgentLoop');
 
@@ -204,6 +207,9 @@ export class AgentLoop {
 
   // Context overflow auto-recovery
   private _contextOverflowRetried: boolean = false;
+
+  // E7: Content quality gate
+  private contentVerificationRetries: Map<string, number> = new Map();
 
   // Telemetry adapter
   private telemetryAdapter?: import('../../shared/types/telemetry').TelemetryAdapter;
@@ -1672,6 +1678,40 @@ export class AgentLoop {
           }
         } catch (error) {
           logger.debug('Citation extraction error:', error);
+        }
+      }
+
+      // E7: 内容质量门禁 — Content Quality Gate
+      if (this.shouldRunContentVerification(toolCall, result)) {
+        try {
+          const verification = await this.runContentVerification(toolCall, result);
+          if (verification && !verification.passed) {
+            const retryKey = `${toolCall.name}:${toolCall.id}`;
+            const retryCount = this.contentVerificationRetries.get(retryKey) || 0;
+            if (retryCount < 2) {
+              this.contentVerificationRetries.set(retryKey, retryCount + 1);
+              const feedback = verification.checks
+                .filter(c => !c.passed)
+                .map(c => `- ${c.name}: ${c.message}`)
+                .join('\n');
+              this.injectSystemMessage(
+                `<content-quality-warning>\n` +
+                `输出质量检查未通过（得分: ${verification.score.toFixed(2)}/1.0）:\n` +
+                `${feedback}\n` +
+                `${verification.suggestions?.join('\n') || ''}\n` +
+                `请检查并修正上述问题。\n` +
+                `</content-quality-warning>`
+              );
+              logger.info('Content quality gate triggered', {
+                taskType: verification.taskType,
+                score: verification.score.toFixed(2),
+                failedChecks: verification.checks.filter(c => !c.passed).map(c => c.name),
+                retryCount: retryCount + 1,
+              });
+            }
+          }
+        } catch (error) {
+          logger.debug('Content verification error:', error);
         }
       }
 
@@ -3229,5 +3269,116 @@ ${deferredToolsSummary}
       `DO NOT start over or rewrite the entire file - just APPEND the missing parts!\n` +
       `</auto-continuation-required>`
     );
+  }
+
+  // ===========================================================================
+  // E7: Content Quality Gate — 内容质量门禁
+  // ===========================================================================
+
+  /**
+   * 判断是否应触发内容质量验证
+   * 仅在内容生成完成信号时触发（write_file/bash 成功执行，输出为内容类型文件）
+   */
+  private shouldRunContentVerification(
+    toolCall: ToolCall,
+    result: { success: boolean; output?: string; error?: string }
+  ): boolean {
+    if (!result.success) return false;
+
+    const contentFileExtensions = [
+      '.xlsx', '.xls', '.csv',   // data
+      '.pptx', '.ppt',           // ppt
+      '.md', '.txt', '.doc', '.docx', '.html', // document
+      '.png', '.jpg', '.jpeg', '.svg', '.gif', '.webp', // image
+    ];
+
+    // write_file with content file extension
+    if (toolCall.name === 'write_file') {
+      const filePath = (toolCall.arguments?.file_path || toolCall.arguments?.path || '') as string;
+      const ext = filePath.toLowerCase().match(/\.[^.]+$/)?.[0] || '';
+      return contentFileExtensions.includes(ext);
+    }
+
+    // bash tool that produced content files (check output for file paths)
+    if (toolCall.name === 'bash' && result.output) {
+      const output = result.output;
+      return contentFileExtensions.some(ext => {
+        const pattern = new RegExp(`[^\\s]+\\${ext}\\b`, 'i');
+        return pattern.test(output);
+      });
+    }
+
+    // ppt_generate tool
+    if (toolCall.name === 'ppt_generate') return true;
+
+    return false;
+  }
+
+  /**
+   * 构建 VerificationContext 并调用 verifierRegistry 运行验证
+   */
+  private async runContentVerification(
+    toolCall: ToolCall,
+    result: { success: boolean; output?: string; error?: string }
+  ): Promise<VerificationResult | null> {
+    try {
+      // Initialize verifiers if not done
+      initializeVerifiers();
+
+      // Extract task description from first user message
+      const userMessage = this.messages.find(m => m.role === 'user');
+      const taskDescription = userMessage?.content || '';
+
+      // Analyze the task
+      const taskAnalysis = analyzeTask(taskDescription);
+
+      // Collect modified files
+      const modifiedFilesList = Array.from(this.modifiedFiles);
+
+      // Collect tool calls history (last 20)
+      const recentToolCalls: VerificationContext['toolCalls'] = [];
+      for (const msg of this.messages.slice(-40)) {
+        if (msg.role === 'assistant' && msg.toolCalls) {
+          for (const tc of msg.toolCalls) {
+            recentToolCalls.push({
+              name: tc.name,
+              args: tc.arguments as Record<string, unknown> | undefined,
+              result: undefined,
+            });
+          }
+        }
+      }
+
+      // Add the current tool call with result
+      recentToolCalls.push({
+        name: toolCall.name,
+        args: toolCall.arguments as Record<string, unknown>,
+        result: { success: result.success, output: result.output, error: result.error },
+      });
+
+      // Build agent output (last assistant text messages)
+      let agentOutput = '';
+      for (const msg of this.messages.slice(-10)) {
+        if (msg.role === 'assistant' && msg.content) {
+          agentOutput += msg.content + '\n';
+        }
+      }
+
+      const verificationContext: VerificationContext = {
+        taskDescription,
+        taskAnalysis,
+        agentOutput,
+        toolCalls: recentToolCalls.slice(-20),
+        workingDirectory: this.workingDirectory || process.cwd(),
+        modifiedFiles: modifiedFilesList,
+        sessionId: this.sessionId,
+      };
+
+      const registry = getVerifierRegistry();
+      return await registry.verifyTask(verificationContext, taskAnalysis);
+    } catch (error) {
+      logger.debug('Content verification setup error:', error);
+      return null;
+    }
   }
 }

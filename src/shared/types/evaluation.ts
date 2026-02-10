@@ -15,6 +15,16 @@ export enum EvaluationDimension {
   VERIFICATION_QUALITY = 'verification_quality',
   FORBIDDEN_PATTERNS = 'forbidden_patterns',
 
+  // QA 维度
+  ANSWER_CORRECTNESS = 'answer_correctness',
+  REASONING_QUALITY = 'reasoning_quality',
+  COMMUNICATION_QUALITY = 'communication_quality',
+  // Research 维度
+  INFORMATION_QUALITY = 'information_quality',
+  // Creation 维度
+  OUTPUT_QUALITY = 'output_quality',
+  REQUIREMENT_COMPLIANCE = 'requirement_compliance',
+
   // 信息维度 (不计分)
   EFFICIENCY_METRICS = 'efficiency_metrics',
   ERROR_TAXONOMY = 'error_taxonomy',
@@ -59,6 +69,15 @@ export const DIMENSION_WEIGHTS: Partial<Record<EvaluationDimension, number>> = {
   [EvaluationDimension.SELF_REPAIR]: 0.05,
   [EvaluationDimension.VERIFICATION_QUALITY]: 0.04,
   [EvaluationDimension.FORBIDDEN_PATTERNS]: 0.03,
+  // QA 权重
+  [EvaluationDimension.ANSWER_CORRECTNESS]: 0.60,
+  [EvaluationDimension.REASONING_QUALITY]: 0.25,
+  [EvaluationDimension.COMMUNICATION_QUALITY]: 0.15,
+  // Research 权重
+  [EvaluationDimension.INFORMATION_QUALITY]: 0.35,
+  // Creation 权重
+  [EvaluationDimension.OUTPUT_QUALITY]: 0.35,
+  [EvaluationDimension.REQUIREMENT_COMPLIANCE]: 0.20,
   // v2 兼容权重
   [EvaluationDimension.TASK_COMPLETION]: 0.30,
   [EvaluationDimension.DIALOG_QUALITY]: 0.15,
@@ -76,6 +95,12 @@ export const DIMENSION_NAMES: Record<EvaluationDimension, string> = {
   [EvaluationDimension.SELF_REPAIR]: '自我修复',
   [EvaluationDimension.VERIFICATION_QUALITY]: '验证行为',
   [EvaluationDimension.FORBIDDEN_PATTERNS]: '禁止模式',
+  [EvaluationDimension.ANSWER_CORRECTNESS]: '回答正确性',
+  [EvaluationDimension.REASONING_QUALITY]: '推理质量',
+  [EvaluationDimension.COMMUNICATION_QUALITY]: '表达质量',
+  [EvaluationDimension.INFORMATION_QUALITY]: '信息质量',
+  [EvaluationDimension.OUTPUT_QUALITY]: '产出质量',
+  [EvaluationDimension.REQUIREMENT_COMPLIANCE]: '需求符合度',
   [EvaluationDimension.EFFICIENCY_METRICS]: '效率指标',
   [EvaluationDimension.ERROR_TAXONOMY]: '错误分类',
   [EvaluationDimension.PLAN_QUALITY]: '规划质量',
@@ -96,6 +121,12 @@ export const DIMENSION_ICONS: Record<EvaluationDimension, string> = {
   [EvaluationDimension.SELF_REPAIR]: '🔄',
   [EvaluationDimension.VERIFICATION_QUALITY]: '✅',
   [EvaluationDimension.FORBIDDEN_PATTERNS]: '🚫',
+  [EvaluationDimension.ANSWER_CORRECTNESS]: '🎯',
+  [EvaluationDimension.REASONING_QUALITY]: '🧠',
+  [EvaluationDimension.COMMUNICATION_QUALITY]: '💬',
+  [EvaluationDimension.INFORMATION_QUALITY]: '📚',
+  [EvaluationDimension.OUTPUT_QUALITY]: '📝',
+  [EvaluationDimension.REQUIREMENT_COMPLIANCE]: '✅',
   [EvaluationDimension.EFFICIENCY_METRICS]: '⚡',
   [EvaluationDimension.ERROR_TAXONOMY]: '📋',
   [EvaluationDimension.PLAN_QUALITY]: '📐',

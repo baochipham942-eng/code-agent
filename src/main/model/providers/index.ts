@@ -21,6 +21,9 @@ export {
 // Moonshot (Kimi) - 使用原生 SSE 处理
 export { callMoonshot } from './moonshot';
 
+// Moonshot Provider (new Provider interface)
+export { MoonshotProvider } from './moonshotProvider';
+
 // Gemini
 export { callGemini } from './gemini';
 

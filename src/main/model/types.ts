@@ -48,7 +48,7 @@ export interface ModelResponse {
 // ----------------------------------------------------------------------------
 
 export interface StreamChunk {
-  type: 'text' | 'reasoning' | 'tool_call_start' | 'tool_call_delta' | 'token_estimate';
+  type: 'text' | 'reasoning' | 'tool_call_start' | 'tool_call_delta' | 'token_estimate' | 'complete' | 'usage' | 'error';
   content?: string;
   toolCall?: {
     index: number;
@@ -59,6 +59,11 @@ export interface StreamChunk {
   // Real-time token estimation (type: 'token_estimate')
   inputTokens?: number;
   outputTokens?: number;
+  // complete event
+  finishReason?: string;
+  // error event
+  error?: string;
+  errorCode?: string;
 }
 
 export type StreamCallback = (chunk: string | StreamChunk) => void;
@@ -71,6 +76,21 @@ export interface ToolCallAccumulator {
   id: string;
   name: string;
   arguments: string;
+}
+
+// ----------------------------------------------------------------------------
+// Provider Interface
+// ----------------------------------------------------------------------------
+
+export interface Provider {
+  readonly name: string;
+  inference(
+    messages: ModelMessage[],
+    tools: import('../../shared/types').ToolDefinition[],
+    config: import('../../shared/types').ModelConfig,
+    onStream?: StreamCallback,
+    signal?: AbortSignal
+  ): Promise<ModelResponse>;
 }
 
 // ----------------------------------------------------------------------------

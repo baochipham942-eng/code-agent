@@ -36,6 +36,8 @@ import {
   callOpenRouter,
   callViaCloudProxy,
 } from './providers';
+import type { Provider } from './types';
+import { MoonshotProvider } from './providers/moonshotProvider';
 
 // Re-export PROVIDER_REGISTRY for external use
 export { PROVIDER_REGISTRY };
@@ -45,6 +47,14 @@ export { PROVIDER_REGISTRY };
 // ----------------------------------------------------------------------------
 
 export class ModelRouter {
+  // --------------------------------------------------------------------------
+  // Provider Registry (new Provider interface, incremental migration)
+  // --------------------------------------------------------------------------
+
+  private providers: Map<string, Provider> = new Map([
+    ['moonshot', new MoonshotProvider()],
+  ]);
+
   // --------------------------------------------------------------------------
   // Public Methods
   // --------------------------------------------------------------------------
@@ -347,6 +357,13 @@ export class ModelRouter {
     onStream?: StreamCallback,
     signal?: AbortSignal
   ): Promise<ModelResponse> {
+    // 优先走 Provider 接口（已迁移的 provider）
+    const provider = this.providers.get(config.provider);
+    if (provider) {
+      return provider.inference(messages, tools, config, onStream, signal);
+    }
+
+    // 未迁移的 provider 走 switch/case
     const modelInfo = this.getModelInfo(config.provider, config.model);
 
     switch (config.provider) {

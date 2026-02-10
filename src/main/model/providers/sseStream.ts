@@ -96,6 +96,15 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           } catch {
             errorMessage = `${providerName} API error: ${res.statusCode} - ${errorData.substring(0, 200)}`;
           }
+          // Emit error event
+          if (onStream) {
+            onStream({
+              type: 'error',
+              error: errorMessage,
+              errorCode: String(res.statusCode),
+            });
+          }
+
           reject(new Error(errorMessage));
         });
         return;
@@ -153,6 +162,23 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
 
             if (truncated) {
               logger.warn(`[${providerName}] ⚠️ Output was truncated due to max_tokens limit!`);
+            }
+
+            // Emit usage event (if data available)
+            if (onStream && usageData) {
+              onStream({
+                type: 'usage',
+                inputTokens: usageData.inputTokens,
+                outputTokens: usageData.outputTokens,
+              });
+            }
+
+            // Emit complete event
+            if (onStream) {
+              onStream({
+                type: 'complete',
+                finishReason: finishReason || 'stop',
+              });
             }
 
             resolve(result);
@@ -300,6 +326,12 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
 
       res.on('error', (err) => {
         logger.error(`[${providerName}] 响应错误:`, err);
+        if (onStream) {
+          onStream({
+            type: 'error',
+            error: err.message,
+          });
+        }
         reject(err);
       });
     });
@@ -307,6 +339,13 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
     req.on('error', (err) => {
       const errCode = (err as NodeJS.ErrnoException).code;
       logger.error(`[${providerName}] 请求错误: ${err.message} (code=${errCode})`);
+      if (onStream) {
+        onStream({
+          type: 'error',
+          error: err.message,
+          errorCode: errCode,
+        });
+      }
       reject(err);
     });
 

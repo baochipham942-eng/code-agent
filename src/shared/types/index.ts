@@ -69,3 +69,6 @@ export * from './citation';
 
 // Confirmation types (E2: 确认门控)
 export * from './confirmation';
+
+// Capture types (浏览器采集)
+export * from './capture';

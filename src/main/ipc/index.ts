@@ -44,6 +44,7 @@ import { registerSwarmHandlers } from './swarm.ipc';
 import { registerTaskListHandlers } from '../agent/taskList/taskList.ipc';
 import { registerTelemetryHandlers } from './telemetry.ipc';
 import { registerCronHandlers } from './cron.ipc';
+import { registerCaptureHandlers } from './capture.ipc';
 
 export * from './types';
 
@@ -177,6 +178,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Cron handlers (定时任务)
   registerCronHandlers();
+
+  // Capture handlers (浏览器采集)
+  registerCaptureHandlers(ipcMain);
 
   logger.info('All handlers registered');
 }

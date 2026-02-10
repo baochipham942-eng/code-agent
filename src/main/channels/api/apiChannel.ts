@@ -19,6 +19,7 @@ import type {
   ChannelCapabilities,
 } from '../../../shared/types/channel';
 import { createLogger } from '../../services/infra/logger';
+import { registerCaptureRoutes } from './captureRoutes';
 
 const logger = createLogger('ApiChannel');
 
@@ -248,7 +249,7 @@ export class ApiChannel extends BaseChannelPlugin {
 
         if (!allowedOrigins || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
           res.header('Access-Control-Allow-Origin', origin);
-          res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+          res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
           res.header('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
         }
 
@@ -262,8 +263,8 @@ export class ApiChannel extends BaseChannelPlugin {
 
     // API Key 认证
     this.app.use((req: Request, res: Response, next: NextFunction) => {
-      // 跳过 health check
-      if (req.path === '/health') {
+      // 跳过 health check 和 capture 路由（localhost-only，无需 API Key）
+      if (req.path === '/health' || req.path.startsWith('/api/capture')) {
         next();
         return;
       }
@@ -422,6 +423,9 @@ export class ApiChannel extends BaseChannelPlugin {
         status: this._status,
       });
     });
+
+    // 注册采集相关路由（浏览器插件用）
+    registerCaptureRoutes(this.app);
   }
 }
 

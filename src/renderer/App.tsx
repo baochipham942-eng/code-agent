@@ -23,6 +23,7 @@ import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
 import { LabPage } from './components/features/lab/LabPage';
 import { EvalCenterPanel } from './components/features/evalCenter';
 import { BackgroundTaskPanel } from './components/features/background';
+import { CapturePanel } from './components/features/capture';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
@@ -513,6 +514,9 @@ export const App: React.FC = () => {
 
       {/* Background Task Panel - 后台任务浮动面板 */}
       <BackgroundTaskPanel />
+
+      {/* Capture Panel - 知识库采集面板 */}
+      {useAppStore((s) => s.showCapturePanel) && <CapturePanel />}
       </div>
     </ErrorBoundary>
   );

@@ -404,10 +404,32 @@ export class AntiPatternDetector {
 
     // ========== History format patterns (reverse parse formatToolCallForHistory) ==========
 
-    // bash: "Ran: <command>"
-    const ranMatch = trimmed.match(/^Ran:\s*(.+)$/is);
+    // bash: "Ran: <command>" — 不使用 s flag，避免 .+ 跨行匹配 markdown 内容
+    const ranMatch = trimmed.match(/^Ran:\s*(.+)/i);
     if (ranMatch) {
-      return { toolName: 'bash', args: JSON.stringify({ command: ranMatch[1].trim() }) };
+      let cmd = ranMatch[1].trim();
+
+      // 检测 heredoc（<< 'DELIM' / << "DELIM" / << DELIM / <<-DELIM）
+      const heredocDelim = cmd.match(/<<-?\s*['"]?(\w+)['"]?\s*$/);
+      if (heredocDelim) {
+        // 从完整内容中提取 heredoc 块（Ran: 之后到闭合 delimiter）
+        const delim = heredocDelim[1];
+        const lines = trimmed.split('\n');
+        const endIdx = lines.findIndex((line, i) => i > 0 && line.trim() === delim);
+        if (endIdx > 0) {
+          cmd = lines.slice(0, endIdx + 1).join('\n').replace(/^Ran:\s*/i, '').trim();
+        }
+      } else {
+        // 非 heredoc：截断命令中混入的中文解释文字（常见模式："cmd  数据已成功..."）
+        const cjkBoundary = cmd.search(/\s{2,}[\u4e00-\u9fff\u3000-\u303f]/);
+        if (cjkBoundary > 0) {
+          cmd = cmd.substring(0, cjkBoundary).trim();
+        }
+      }
+
+      if (cmd) {
+        return { toolName: 'bash', args: JSON.stringify({ command: cmd }) };
+      }
     }
 
     // edit_file: "Edited <path>"
@@ -510,7 +532,30 @@ export class AntiPatternDetector {
         const cleanedArgs = cleanXmlResidues(matchedArgs) as string;
         const parsedArgs = JSON.parse(cleanedArgs);
         // Clean parsed object recursively
-        const sanitizedArgs = cleanXmlResidues(parsedArgs);
+        const sanitizedArgs = cleanXmlResidues(parsedArgs) as Record<string, unknown>;
+
+        // bash 命令专项清理：防止 markdown/中文解释文字混入
+        if (toolName === 'bash' && typeof sanitizedArgs.command === 'string') {
+          let cmd = sanitizedArgs.command;
+          // 检测 heredoc 命令（含换行的完整 heredoc 不应截断）
+          const isHeredoc = /<<-?\s*['"]?\w+['"]?\s*$/m.test(cmd.split('\n')[0]);
+          if (!isHeredoc) {
+            // 非 heredoc：移除换行后的内容（防止多行 markdown 泄漏）
+            const nlIdx = cmd.indexOf('\n');
+            if (nlIdx > 0) cmd = cmd.substring(0, nlIdx);
+            // 移除命令后混入的中文解释
+            const cjkBoundary = cmd.search(/\s{2,}[\u4e00-\u9fff\u3000-\u303f]/);
+            if (cjkBoundary > 0) cmd = cmd.substring(0, cjkBoundary);
+          }
+          cmd = cmd.trim();
+          // 如果清理后命令以 markdown 格式开头或为空，拒绝执行
+          if (!cmd || /^\*\*|^\|/.test(cmd)) {
+            logger.warn(`[AntiPatternDetector] Bash command contains markdown, rejecting force execute`);
+            return null;
+          }
+          sanitizedArgs.command = cmd;
+        }
+
         logger.debug(`Parsed tool args from regex match: ${JSON.stringify(sanitizedArgs)}`);
         return {
           id: `force_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,

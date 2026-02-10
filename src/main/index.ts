@@ -137,6 +137,16 @@ app.whenReady().then(async () => {
     initializeBackgroundServices().catch((error) => {
       logger.error('Background services initialization failed', error);
     });
+
+    // 5. Delayed start WeChat watcher (avoid slowing startup)
+    setTimeout(async () => {
+      try {
+        const { getWeChatWatcher } = await import('./services/wechatWatcher');
+        await getWeChatWatcher().start();
+      } catch (error) {
+        logger.warn('WeChat watcher failed to start', error);
+      }
+    }, 5000);
   } catch (error) {
     logger.error('FATAL ERROR during startup', error);
     app.quit();
@@ -159,6 +169,15 @@ app.on('window-all-closed', () => {
 // Cleanup before quitting
 app.on('before-quit', async () => {
   logger.info('Cleaning up before quit...');
+
+  // Stop WeChat watcher
+  try {
+    const { getWeChatWatcher } = await import('./services/wechatWatcher');
+    await getWeChatWatcher().stop();
+    logger.info('WeChat watcher stopped');
+  } catch (error) {
+    logger.error('Error stopping WeChat watcher', error);
+  }
 
   // Shutdown Channel Manager (disconnect all channels)
   try {

@@ -97,6 +97,11 @@ export class AdaptiveRouter {
       logger.info(`[AdaptiveRouter] Stats after ${this.callCount} calls:`, this.routingStats);
     }
 
+    // 环境变量禁用自适应路由（评测等场景需统一模型）
+    if (process.env.ADAPTIVE_ROUTER_DISABLED === 'true') {
+      return defaultConfig;
+    }
+
     // Only route simple tasks to free model (skip if disabled due to auth failure)
     if (complexity.level === 'simple' && !this.freeModelDisabled) {
       logger.info(`[AdaptiveRouter] Simple task → ${this.freeModel.provider}/${this.freeModel.model} (score=${complexity.score}, signals=${complexity.signals.join(',')})`);

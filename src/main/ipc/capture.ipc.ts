@@ -5,6 +5,7 @@
 import type { IpcMain } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { execFile } from 'child_process';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '@shared/ipc';
 import { getCaptureService } from '../services/captureService';
 import { getDocumentContextService } from '../context/documentContext/documentContextService';
@@ -20,6 +21,24 @@ const SUPPORTED_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java',
 ]);
 
+// 纯二进制格式：parser 无法直接 toString('utf-8')
+const BINARY_FORMATS = new Set(['.pdf', '.pptx']);
+
+/**
+ * 尝试用系统 pdftotext 提取 PDF 文本
+ */
+function extractPdfText(filePath: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile('pdftotext', [filePath, '-'], { maxBuffer: 10 * 1024 * 1024 }, (error, stdout) => {
+      if (error || !stdout?.trim()) {
+        resolve(null);
+      } else {
+        resolve(stdout.trim());
+      }
+    });
+  });
+}
+
 /**
  * 导入本地文件到知识库
  */
@@ -31,25 +50,30 @@ async function importLocalFile(filePath: string): Promise<void> {
 
   // 读取文件
   const stat = await fs.promises.stat(filePath);
-  const buffer = await fs.promises.readFile(filePath);
 
   let content: string;
 
-  // 尝试使用文档解析器
-  if (docService.canParse(filePath)) {
-    const doc = await docService.parse(buffer, filePath);
-    if (doc) {
-      content = doc.sections.map(s => s.content).join('\n\n');
+  if (ext === '.pdf') {
+    // PDF：用系统 pdftotext 提取，失败则占位
+    const text = await extractPdfText(filePath);
+    content = text || `[PDF: ${basename}] (${stat.size} bytes，需安装 pdftotext: brew install poppler)`;
+  } else if (BINARY_FORMATS.has(ext)) {
+    // PPTX 等其他纯二进制格式：占位
+    content = `[File: ${basename}] (${ext} format, ${stat.size} bytes)`;
+  } else {
+    // 文本类格式：用解析器或直接读取
+    const buffer = await fs.promises.readFile(filePath);
+
+    if (docService.canParse(filePath)) {
+      const doc = await docService.parse(buffer, filePath);
+      if (doc) {
+        content = doc.sections.map(s => s.content).join('\n\n');
+      } else {
+        content = buffer.toString('utf-8');
+      }
     } else {
-      // 解析失败，尝试直接读取为文本
       content = buffer.toString('utf-8');
     }
-  } else if (['.txt', '.htm', '.html'].includes(ext)) {
-    // 纯文本文件直接读取
-    content = buffer.toString('utf-8');
-  } else {
-    // 不支持的格式，使用文件名占位
-    content = `[File: ${basename}] (${ext} format, ${stat.size} bytes)`;
   }
 
   await service.capture({

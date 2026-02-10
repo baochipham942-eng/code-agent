@@ -210,8 +210,8 @@ describe('reminderRegistry — 3 个新 P1 提醒定义', () => {
     const taskTypeReminders = REMINDER_DEFINITIONS.filter(
       (r) => r.exclusiveGroup === 'task-type-selection'
     );
-    // PPT + DATA + DOCUMENT + IMAGE = 4
-    expect(taskTypeReminders.length).toBe(4);
+    // PPT + DATA + DOCUMENT + IMAGE + VIDEO = 5
+    expect(taskTypeReminders.length).toBe(5);
     expect(taskTypeReminders.every((r) => r.priority === 1)).toBe(true);
   });
 });

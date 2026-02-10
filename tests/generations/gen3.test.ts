@@ -21,6 +21,17 @@ import { findingsWriteTool } from '../../src/main/tools/planning/findingsWrite';
 
 // Mock electron
 vi.mock('electron', () => ({
+  app: {
+    getPath: (name: string) => `/tmp/mock-electron-${name}`,
+    getName: () => 'code-agent-test',
+    getVersion: () => '0.0.0-test',
+    isPackaged: false,
+    on: () => {},
+    once: () => {},
+    quit: () => {},
+    whenReady: () => Promise.resolve(),
+    getAppPath: () => '/tmp/mock-electron-app',
+  },
   BrowserWindow: {
     getAllWindows: () => [],
   },

@@ -5,15 +5,22 @@
 
 import { createLogger } from '../../services/infra/logger';
 
-// 延迟加载 isolated-vm，处理 native 模块版本不匹配的情况
-// CLI 模式或 native 模块编译版本不对时，自动降级
+// 真正的延迟加载 isolated-vm：只在首次调用 getIvm() 时加载
+// 避免模块导入阶段触发原生模块加载（C++ ABI 不匹配会 SIGABRT，try-catch 接不住）
 let ivm: typeof import('isolated-vm') | null = null;
-try {
-  ivm = require('isolated-vm');
-} catch (error) {
-  // native 模块加载失败（版本不匹配、CLI 模式等）
-  // sandbox 功能将不可用，但不影响其他功能
-  console.warn('[Sandbox] isolated-vm not available:', (error as Error).message?.split('\n')[0]);
+let ivmLoaded = false;
+
+function getIvm(): typeof import('isolated-vm') | null {
+  if (ivmLoaded) return ivm;
+  ivmLoaded = true;
+  try {
+    ivm = require('isolated-vm');
+  } catch (error) {
+    // native 模块加载失败（版本不匹配、CLI 模式等）
+    // sandbox 功能将不可用，但不影响其他功能
+    console.warn('[Sandbox] isolated-vm not available:', (error as Error).message?.split('\n')[0]);
+  }
+  return ivm;
 }
 
 const logger = createLogger('Sandbox');
@@ -62,14 +69,15 @@ export class CodeSandbox {
       timeout: options.timeout ?? 5000,
       allowedGlobals: options.allowedGlobals ?? {},
     };
-    this.sandboxAvailable = ivm !== null;
+    this.sandboxAvailable = getIvm() !== null;
   }
 
   /**
    * Initialize the sandbox environment
    */
   async initialize(): Promise<void> {
-    if (!this.sandboxAvailable || !ivm) {
+    const ivmModule = getIvm();
+    if (!this.sandboxAvailable || !ivmModule) {
       logger.warn('Sandbox not available (CLI mode or isolated-vm missing)');
       return;
     }
@@ -78,28 +86,28 @@ export class CodeSandbox {
       return; // Already initialized
     }
 
-    this.isolate = new ivm.Isolate({ memoryLimit: this.options.memoryLimit });
+    this.isolate = new ivmModule.Isolate({ memoryLimit: this.options.memoryLimit });
     this.context = await this.isolate.createContext();
 
     // Set up allowed globals
     const jail = this.context.global;
 
     // Expose safe console methods
-    await jail.set('console', new ivm.ExternalCopy({
+    await jail.set('console', new ivmModule.ExternalCopy({
       log: (...args: unknown[]) => logger.info('sandbox output', { args }),
       warn: (...args: unknown[]) => logger.warn('sandbox warning', { args }),
       error: (...args: unknown[]) => logger.error('sandbox error', new Error(String(args[0])), { args: args.slice(1) }),
     }).copyInto());
 
     // Expose JSON (safe)
-    await jail.set('JSON', new ivm.ExternalCopy({
+    await jail.set('JSON', new ivmModule.ExternalCopy({
       parse: JSON.parse,
       stringify: JSON.stringify,
     }).copyInto());
 
     // Expose allowed custom globals
     for (const [name, fn] of Object.entries(this.options.allowedGlobals)) {
-      await jail.set(name, new ivm.Callback(fn));
+      await jail.set(name, new ivmModule.Callback(fn));
     }
   }
 

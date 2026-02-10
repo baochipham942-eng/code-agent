@@ -425,6 +425,32 @@ edit_file 更安全，只修改指定部分，减少意外覆盖。
     exclusiveGroup: 'task-type-selection',
     category: 'tool',
   },
+  {
+    id: 'VIDEO_GENERATION_WORKFLOW',
+    priority: 1,
+    content: `<system-reminder>
+**视频生成必须遵循的流程**：
+
+**第一步：理解需求**
+- 确认视频主题、风格、时长、画面比例
+- 描述越具体效果越好（场景、运镜、光照、色调）
+
+**第二步：调用 video_generate**
+- prompt: 详细的视频描述
+- aspect_ratio: 16:9（横屏）/ 9:16（竖屏）/ 1:1
+- duration: 5 或 10 秒
+- quality: "quality"（高质量）或 "speed"（快速）
+- 可选 image_url 做图生视频
+
+**第三步：等待与验证**
+- 异步任务最长约 5 分钟，等待完成后告知用户
+- 不要在生成完成前就说"已完成"
+</system-reminder>`,
+    tokens: 180,
+    shouldInclude: (ctx) => ctx.taskFeatures.isVideoTask ? 1.0 : 0,
+    exclusiveGroup: 'task-type-selection',
+    category: 'tool',
+  },
 ];
 
 /**

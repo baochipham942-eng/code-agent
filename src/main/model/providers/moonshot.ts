@@ -9,6 +9,7 @@ import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { logger, httpsAgent, convertToolsToOpenAI, convertToOpenAIMessages } from './shared';
 import { MODEL_API_ENDPOINTS, MODEL_MAX_TOKENS, DEFAULT_MODEL } from '../../../shared/constants';
 import { openAISSEStream } from './sseStream';
+import { withTransientRetry } from './retryStrategy';
 
 // 专用 HTTPS Agent: 禁用 keepAlive 避免 SSE 流结束后连接复用导致 "socket hang up"
 // Node.js 19+ 的 globalAgent 默认 keepAlive=true，会导致并发子代理请求复用已关闭的连接
@@ -61,29 +62,16 @@ export async function callMoonshot(
   logger.info(`[Moonshot] 请求: model=${requestBody.model}, baseUrl=${baseUrl}, stream=true`);
 
   // 带重试的流式请求（处理 socket hang up 等瞬态错误）
-  const MAX_RETRIES = 2;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      return await openAISSEStream({
-        providerName: 'Moonshot',
-        baseUrl,
-        apiKey,
-        requestBody,
-        onStream,
-        signal,
-        agent: moonshotAgent,
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const isTransient = msg.includes('socket hang up') || msg.includes('ECONNRESET') || msg.includes('ECONNREFUSED') || msg.includes('流式响应无内容') || msg.includes('503');
-      if (isTransient && attempt < MAX_RETRIES && !signal?.aborted) {
-        const delay = (attempt + 1) * 1000;
-        logger.warn(`[Moonshot] 瞬态错误 "${msg}", ${delay}ms 后重试 (${attempt + 1}/${MAX_RETRIES})`);
-        await new Promise(r => setTimeout(r, delay));
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw new Error('[Moonshot] 不应到达此处');
+  return withTransientRetry(
+    () => openAISSEStream({
+      providerName: 'Moonshot',
+      baseUrl,
+      apiKey,
+      requestBody,
+      onStream,
+      signal,
+      agent: moonshotAgent,
+    }),
+    { providerName: 'Moonshot', signal }
+  );
 }

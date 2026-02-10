@@ -164,11 +164,14 @@ ppt_generate({
 - 聚合统计结果要验证：行数、空列、数值合理性
 - 模糊指令（如"分析一下"）→ 先用 ask_user_question 澄清具体需求
 - 输出文件后必须用文字描述数据结果（不能只输出文件路径）
+- matplotlib 图表含中文文字时，设置字体：plt.rcParams['font.sans-serif'] = ['PingFang SC', 'SimHei', 'STHeiti']；plt.rcParams['axes.unicode_minus'] = False
 
 **禁止**：
 - ❌ 不要在未读取数据的情况下编写处理脚本
 - ❌ 不要忽略空值处理（NaN/None 必须显式处理）
 - ❌ 不要假设日期格式，必须从数据中推断
+- ❌ 禁止用 excel_generate 内联数据生成 Excel —— 必须用 bash + Python（pandas/openpyxl）从源文件读取数据、计算、写出。内联数据会丢失精度导致数据伪造
+- ❌ 禁止凭记忆编造数据 —— 所有数值必须来自 pd.read_excel() 读取的源文件，不得手写数据行
 
 **数据清洗检查清单**（当任务涉及"清洗/整理/去重"时）：
 1. 读取全量数据，检查行数和列名

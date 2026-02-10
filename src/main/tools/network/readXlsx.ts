@@ -202,8 +202,10 @@ read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
       output += `${'─'.repeat(50)}\n\n`;
       output += result;
 
+      output += `\n\n💡 提示：完整数据请用 bash + Python 读取源文件：pd.read_excel('${absPath}', sheet_name='${worksheet.name}')`;
+
       if (totalRows >= max_rows) {
-        output += `\n\n⚠️ 已达到最大行数限制 (${max_rows})，使用 max_rows 参数调整`;
+        output += `\n⚠️ 已达到最大行数限制 (${max_rows})，使用 max_rows 参数调整`;
       }
 
       return {

@@ -43,6 +43,7 @@ import { registerDiffHandlers } from './diff.ipc';
 import { registerSwarmHandlers } from './swarm.ipc';
 import { registerTaskListHandlers } from '../agent/taskList/taskList.ipc';
 import { registerTelemetryHandlers } from './telemetry.ipc';
+import { registerCronHandlers } from './cron.ipc';
 
 export * from './types';
 
@@ -173,6 +174,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Telemetry handlers (会话遥测)
   registerTelemetryHandlers(getMainWindow);
+
+  // Cron handlers (定时任务)
+  registerCronHandlers();
 
   logger.info('All handlers registered');
 }

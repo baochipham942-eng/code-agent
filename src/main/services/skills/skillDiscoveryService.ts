@@ -6,7 +6,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import type { ParsedSkill, SkillSource } from '../../../shared/types/agentSkill';
-import { parseSkillMd, hasSkillMd } from './skillParser';
+import { parseSkillMd, parseSkillMetadataOnly, hasSkillMd } from './skillParser';
 import { bridgeCloudSkill } from './skillBridge';
 import { getBuiltinSkills } from './builtinSkills';
 import { getCloudConfigService } from '../cloud';
@@ -169,7 +169,7 @@ class SkillDiscoveryService {
         }
 
         try {
-          const skill = await parseSkillMd(skillDir, source);
+          const skill = await parseSkillMetadataOnly(skillDir, source);
           this.skills.set(skill.name, skill);
           logger.debug('Loaded skill', {
             name: skill.name,

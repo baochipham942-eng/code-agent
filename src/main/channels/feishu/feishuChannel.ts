@@ -93,6 +93,11 @@ export class FeishuChannel extends BaseChannelPlugin {
   // 消息 ID 映射 (用于编辑消息)
   private messageIdMap: Map<string, string> = new Map();
 
+  // WebSocket 重连
+  private reconnectAttempts = 0;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private readonly maxReconnectAttempts = 10;
+
   constructor(accountId: string) {
     super(accountId);
     this.meta = {
@@ -147,6 +152,13 @@ export class FeishuChannel extends BaseChannelPlugin {
   }
 
   async disconnect(): Promise<void> {
+    // Clear reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectAttempts = 0;
+
     // 关闭 WebSocket 连接
     if (this.wsClient) {
       this.wsClient = null;
@@ -308,6 +320,100 @@ export class FeishuChannel extends BaseChannelPlugin {
       editMessage: async (messageId: string, content: string) => {
         return this.editMessage(messageId, content);
       },
+      sendCard: async (text: string, buttons?: Array<{ text: string; value: string }>) => {
+        return this.sendCard(chatId, text, buttons);
+      },
+    };
+  }
+
+  async sendCard(
+    chatId: string,
+    text: string,
+    buttons?: Array<{ text: string; value: string }>
+  ): Promise<SendMessageResult> {
+    if (!this.client) {
+      return { success: false, error: 'Channel not connected' };
+    }
+
+    try {
+      const receiveIdType = this.getReceiveIdType(chatId);
+      const card = this.buildCardContent(text, buttons);
+
+      const response = await this.client.im.message.create({
+        params: { receive_id_type: receiveIdType },
+        data: {
+          receive_id: chatId,
+          msg_type: 'interactive',
+          content: JSON.stringify(card),
+        },
+      });
+
+      if (response.code === 0 && response.data?.message_id) {
+        return { success: true, messageId: response.data.message_id };
+      }
+      return { success: false, error: response.msg || 'Failed to send card' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error('Failed to send Feishu card', { error: message });
+      return { success: false, error: message };
+    }
+  }
+
+  async sendStreamingMessage(
+    chatId: string,
+    stream: AsyncIterable<string>
+  ): Promise<SendMessageResult> {
+    // Send initial placeholder message
+    const initial = await this.sendMessage({ chatId, content: '...' });
+    if (!initial.success || !initial.messageId) {
+      return initial;
+    }
+
+    let accumulated = '';
+    let lastUpdateTime = 0;
+    const throttleMs = 500;
+
+    for await (const chunk of stream) {
+      accumulated += chunk;
+      const now = Date.now();
+
+      if (now - lastUpdateTime >= throttleMs) {
+        await this.editMessage(initial.messageId, accumulated);
+        lastUpdateTime = now;
+      }
+    }
+
+    // Final update with complete content
+    if (accumulated) {
+      await this.editMessage(initial.messageId, accumulated);
+    }
+
+    return { success: true, messageId: initial.messageId };
+  }
+
+  private buildCardContent(text: string, buttons?: Array<{ text: string; value: string }>): object {
+    const elements: any[] = [
+      {
+        tag: 'div',
+        text: { content: text, tag: 'lark_md' },
+      },
+    ];
+
+    if (buttons && buttons.length > 0) {
+      elements.push({
+        tag: 'action',
+        actions: buttons.map((b) => ({
+          tag: 'button',
+          text: { content: b.text, tag: 'plain_text' },
+          value: { action: b.value },
+          type: 'primary',
+        })),
+      });
+    }
+
+    return {
+      config: { wide_screen_mode: true },
+      elements,
     };
   }
 
@@ -443,6 +549,35 @@ export class FeishuChannel extends BaseChannelPlugin {
     });
 
     logger.info('Feishu WebSocket connected');
+    this.reconnectAttempts = 0; // Reset on successful connect
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      logger.error('Max reconnect attempts reached, giving up');
+      this.setStatus('error', 'Max reconnect attempts reached');
+      return;
+    }
+
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 60000);
+    this.reconnectAttempts++;
+
+    logger.info('Scheduling WebSocket reconnect', {
+      attempt: this.reconnectAttempts,
+      delay,
+    });
+
+    this.reconnectTimer = setTimeout(async () => {
+      try {
+        await this.connectWebSocket();
+        this.reconnectAttempts = 0;
+        this.setStatus('connected');
+        logger.info('WebSocket reconnected successfully');
+      } catch (error) {
+        logger.error('Reconnect failed', { error });
+        this.scheduleReconnect();
+      }
+    }, delay);
   }
 
   private async handleMessageEvent(event: FeishuMessageEvent): Promise<void> {

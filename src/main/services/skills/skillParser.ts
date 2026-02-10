@@ -181,6 +181,111 @@ function parseAllowedTools(allowedTools: string | string[] | undefined): string[
 }
 
 /**
+ * 仅解析 SKILL.md 的元数据（frontmatter），不加载 promptContent
+ * 用于发现阶段的延迟加载，节省内存和 token
+ *
+ * @param skillDir - 包含 SKILL.md 的目录路径
+ * @param source - Skill 来源
+ * @returns 解析后的 ParsedSkill 对象（promptContent 为空，loaded 为 false）
+ */
+export async function parseSkillMetadataOnly(
+  skillDir: string,
+  source: SkillSource
+): Promise<ParsedSkill> {
+  const skillPath = path.join(skillDir, 'SKILL.md');
+
+  // 1. 读取文件
+  let content: string;
+  try {
+    content = await fs.readFile(skillPath, 'utf-8');
+  } catch (error) {
+    throw new SkillParseError(
+      `Failed to read SKILL.md: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      skillPath,
+      error
+    );
+  }
+
+  // 2. 提取 frontmatter
+  const match = content.match(FRONTMATTER_REGEX);
+  if (!match) {
+    throw new SkillParseError(
+      'Invalid SKILL.md format: missing or malformed YAML frontmatter',
+      skillPath
+    );
+  }
+
+  const [, frontmatterYaml] = match;
+
+  // 3. 解析 YAML
+  let frontmatter: SkillFrontmatter;
+  try {
+    frontmatter = yaml.parse(frontmatterYaml) as SkillFrontmatter;
+  } catch (error) {
+    throw new SkillParseError(
+      `Failed to parse YAML frontmatter: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      skillPath,
+      error
+    );
+  }
+
+  // 4. 验证必填字段
+  if (!frontmatter.name) {
+    throw new SkillValidationError(
+      'Missing required field: name',
+      'name',
+      undefined
+    );
+  }
+
+  if (!frontmatter.description) {
+    throw new SkillValidationError(
+      'Missing required field: description',
+      'description',
+      undefined
+    );
+  }
+
+  // 5. 验证 name 格式
+  validateSkillName(frontmatter.name);
+
+  // 6. 验证 description 长度
+  if (frontmatter.description.length > 1024) {
+    throw new SkillValidationError(
+      'Description exceeds maximum length of 1024 characters',
+      'description',
+      frontmatter.description.length
+    );
+  }
+
+  // 7. 解析 allowed-tools
+  const allowedTools = parseAllowedTools(frontmatter['allowed-tools']);
+
+  // 8. 构建 ParsedSkill（不加载 promptContent）
+  return {
+    name: frontmatter.name,
+    description: frontmatter.description,
+    license: frontmatter.license,
+    compatibility: frontmatter.compatibility,
+    metadata: frontmatter.metadata,
+    promptContent: '',
+    basePath: skillDir,
+    allowedTools,
+    disableModelInvocation: frontmatter['disable-model-invocation'] ?? false,
+    userInvocable: frontmatter['user-invocable'] ?? true,
+    model: frontmatter.model,
+    executionContext: frontmatter.context ?? 'inline',
+    agent: frontmatter.agent,
+    argumentHint: frontmatter['argument-hint'],
+    source,
+    bins: frontmatter.bins,
+    envVars: frontmatter['env-vars'],
+    references: frontmatter.references,
+    loaded: false,
+  };
+}
+
+/**
  * 检查目录是否包含有效的 SKILL.md
  */
 export async function hasSkillMd(dir: string): Promise<boolean> {

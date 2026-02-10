@@ -27,6 +27,12 @@
 export class TimeoutController {
   private timeoutId: NodeJS.Timeout | null = null;
   private timedOut = false;
+  private startedAt = 0;
+  private totalMs = 0;
+  private remainingMs = 0;
+  private paused = false;
+  private rejectFn: ((reason: Error) => void) | null = null;
+  private timeoutMessage = '';
 
   /**
    * 创建一个超时 Promise
@@ -34,10 +40,16 @@ export class TimeoutController {
    * @param message 超时错误信息
    */
   createTimeoutPromise<T = never>(ms: number, message?: string): Promise<T> {
+    this.totalMs = ms;
+    this.remainingMs = ms;
+    this.startedAt = Date.now();
+    this.timeoutMessage = message || `Operation timeout after ${ms}ms`;
+
     return new Promise<T>((_, reject) => {
+      this.rejectFn = reject;
       this.timeoutId = setTimeout(() => {
         this.timedOut = true;
-        reject(new Error(message || `Operation timeout after ${ms}ms`));
+        reject(new Error(this.timeoutMessage));
       }, ms);
     });
   }
@@ -57,6 +69,50 @@ export class TimeoutController {
    */
   isTimedOut(): boolean {
     return this.timedOut;
+  }
+
+  /**
+   * 暂停超时计时器，记录剩余时间
+   */
+  pause(): void {
+    if (this.paused || this.timedOut || this.timeoutId === null) return;
+
+    const elapsed = Date.now() - this.startedAt;
+    this.remainingMs = Math.max(0, this.totalMs - elapsed);
+    clearTimeout(this.timeoutId);
+    this.timeoutId = null;
+    this.paused = true;
+  }
+
+  /**
+   * 恢复超时计时器，使用剩余时间继续倒计时
+   */
+  resume(): void {
+    if (!this.paused || this.timedOut || !this.rejectFn) return;
+
+    this.startedAt = Date.now();
+    this.paused = false;
+    this.timeoutId = setTimeout(() => {
+      this.timedOut = true;
+      this.rejectFn!(new Error(this.timeoutMessage));
+    }, this.remainingMs);
+  }
+
+  /**
+   * 检查是否已暂停
+   */
+  isPaused(): boolean {
+    return this.paused;
+  }
+
+  /**
+   * 获取剩余超时时间（毫秒）
+   */
+  getRemainingMs(): number {
+    if (this.paused) return this.remainingMs;
+    if (this.timedOut) return 0;
+    if (this.startedAt === 0) return this.totalMs;
+    return Math.max(0, this.remainingMs - (Date.now() - this.startedAt));
   }
 }
 
@@ -130,14 +186,18 @@ export async function withTimeout<T>(
 export function createCancellableTimeout(
   ms: number,
   message?: string
-): { promise: Promise<never>; cancel: () => void } {
+): { promise: Promise<never>; cancel: () => void; pause: () => void; resume: () => void } {
   let timeoutId: NodeJS.Timeout | null = null;
-  let reject: ((reason: Error) => void) | null = null;
+  let rejectFn: ((reason: Error) => void) | null = null;
+  let startedAt = Date.now();
+  let remainingMs = ms;
+  let paused = false;
+  const timeoutMessage = message || `Operation timeout after ${ms}ms`;
 
   const promise = new Promise<never>((_, rej) => {
-    reject = rej;
+    rejectFn = rej;
     timeoutId = setTimeout(() => {
-      rej(new Error(message || `Operation timeout after ${ms}ms`));
+      rej(new Error(timeoutMessage));
     }, ms);
   });
 
@@ -148,5 +208,23 @@ export function createCancellableTimeout(
     }
   };
 
-  return { promise, cancel };
+  const pause = () => {
+    if (paused || timeoutId === null) return;
+    const elapsed = Date.now() - startedAt;
+    remainingMs = Math.max(0, remainingMs - elapsed);
+    clearTimeout(timeoutId);
+    timeoutId = null;
+    paused = true;
+  };
+
+  const resume = () => {
+    if (!paused || !rejectFn) return;
+    startedAt = Date.now();
+    paused = false;
+    timeoutId = setTimeout(() => {
+      rejectFn!(new Error(timeoutMessage));
+    }, remainingMs);
+  };
+
+  return { promise, cancel, pause, resume };
 }

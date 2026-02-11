@@ -74,6 +74,9 @@ export const DEFAULT_ENABLED_SKILLS: Record<string, string[]> = {
     'verification-before-completion', // 完成前验证
     'brainstorming', // 头脑风暴
   ],
+  builtin: [
+    'data-cleaning', // 数据清洗 6 步检查清单
+  ],
   'composio-skills': [
     // Composio 默认不自动启用，用户需手动选择
   ],

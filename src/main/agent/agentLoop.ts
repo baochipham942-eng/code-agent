@@ -228,6 +228,11 @@ export class AgentLoop {
   private _truncationRetried: boolean = false;
   // Network error retry guard
   private _networkRetried: boolean = false;
+  // Consecutive truncation circuit breaker (detect repetitive loops)
+  private _consecutiveTruncations: number = 0;
+  private readonly MAX_CONSECUTIVE_TRUNCATIONS = 3;
+  // Output self-check (only once per run)
+  private _outputSelfCheckDone: boolean = false;
 
   // E7: Content quality gate
   private contentVerificationRetries: Map<string, number> = new Map();
@@ -500,6 +505,8 @@ export class AgentLoop {
     this.goalVerificationCount = 0;
     this.externalDataCallCount = 0;
     this.outputFileNudgeCount = 0;
+    this._consecutiveTruncations = 0;
+    this._outputSelfCheckDone = false;
 
     // P5: Extract expected output file paths from user prompt (existence diff)
     const allPaths = extractAbsoluteFilePaths(userMessage);
@@ -1025,6 +1032,27 @@ export class AgentLoop {
           }
         }
 
+        // P6: Output self-check — 输出文件存在但可能质量不达标，触发一次自查
+        if (this.expectedOutputFiles.length > 0 && !this._outputSelfCheckDone) {
+          const existingFiles = this.expectedOutputFiles.filter(f => existsSync(f));
+          if (existingFiles.length > 0) {
+            this._outputSelfCheckDone = true;
+            logger.debug(`[AgentLoop] P6 Self-check: ${existingFiles.length} output files exist, injecting quality check`);
+            logCollector.agent('INFO', `P6 Self-check: verifying output quality for ${existingFiles.length} files`);
+            this.injectSystemMessage(
+              `<output-quality-check>\n` +
+              `输出文件已生成，结束前请快速自查：\n` +
+              `1. 对照用户原始需求，逐条检查是否每个要求都已满足\n` +
+              `2. 输出 Excel 的列名是否清晰（避免 Unnamed:0、Series 默认名等）\n` +
+              `3. 如果用户要求 Top N，确认结果确实只有 N 条而不是全部数据\n` +
+              `4. 数值计算结果是否合理（可用 python3 快速验证关键数字）\n` +
+              `如有遗漏或格式问题，请立即修正后再结束。\n` +
+              `</output-quality-check>`
+            );
+            continue;
+          }
+        }
+
         // 动态 maxTokens: 文本响应截断自动恢复
         if (response.truncated && !this._truncationRetried) {
           this._truncationRetried = true;
@@ -1045,6 +1073,27 @@ export class AgentLoop {
           } else {
             this._truncationRetried = false;
           }
+        }
+
+        // 连续截断断路器: 检测模型陷入重复循环（连续 N 次 finishReason=length）
+        if (response.truncated || response.finishReason === 'length') {
+          this._consecutiveTruncations++;
+          if (this._consecutiveTruncations >= this.MAX_CONSECUTIVE_TRUNCATIONS) {
+            logger.warn(`[AgentLoop] Consecutive truncation circuit breaker: ${this._consecutiveTruncations} consecutive truncations`);
+            logCollector.agent('WARN', `Consecutive truncation breaker triggered (${this._consecutiveTruncations}x)`);
+            this._consecutiveTruncations = 0;
+            this.injectSystemMessage(
+              `<truncation-recovery>\n` +
+              `你已连续 ${this.MAX_CONSECUTIVE_TRUNCATIONS} 次输出被截断，可能陷入了重复循环。请立即：\n` +
+              `1. 停止当前冗长的文字输出\n` +
+              `2. 用 1-2 句话总结当前进展\n` +
+              `3. 直接调用工具执行下一步操作\n` +
+              `</truncation-recovery>`
+            );
+            continue;
+          }
+        } else {
+          this._consecutiveTruncations = 0; // 非截断响应，重置计数
         }
 
         const assistantMessage: Message = {

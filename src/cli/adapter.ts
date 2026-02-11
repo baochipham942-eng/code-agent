@@ -7,6 +7,7 @@ import { terminalOutput, jsonOutput } from './output';
 import type { CLIConfig, CLIRunResult, CLIGlobalOptions } from './types';
 import type { Message, AgentEvent, GenerationId, PRLink } from '../shared/types';
 import { createLogger } from '../main/services/infra/logger';
+import { getSessionSkillService } from '../main/services/skills/sessionSkillService';
 
 const logger = createLogger('CLI-Adapter');
 
@@ -41,6 +42,11 @@ export class CLIAgent {
       workingDirectory: this.config.workingDirectory,
     });
     this.sessionId = session.id;
+
+    // 自动挂载默认 skills（含 builtin/data-cleaning）
+    const skillService = getSessionSkillService();
+    skillService.autoMountDefaultSkills(session.id);
+
     return session.id;
   }
 

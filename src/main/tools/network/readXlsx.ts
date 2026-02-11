@@ -6,6 +6,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import * as fs from 'fs';
 import * as path from 'path';
 import ExcelJS from 'exceljs';
+import { execSync } from 'child_process';
 import { createLogger } from '../../services/infra/logger';
 import { dataFingerprintStore } from '../dataFingerprint';
 
@@ -197,6 +198,9 @@ read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
 
       logger.info('XLSX read', { path: absPath, sheet: worksheet.name, rows: totalRows });
 
+      // 数据质量分析 + 指纹记录
+      const qualitySummary = analyzeDataQuality(rows, headers);
+
       // 记录数据指纹，用于 compaction recovery 时的源数据锚定
       if (rows.length > 0 && headers.length > 0) {
         const sampleValues: Record<string, string> = {};
@@ -227,6 +231,9 @@ read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
           columnNames: headers,
           sampleValues,
           numericRanges: Object.keys(numericRanges).length > 0 ? numericRanges : undefined,
+          categoricalValues: Object.keys(qualitySummary.categoricalValues).length > 0 ? qualitySummary.categoricalValues : undefined,
+          nullCounts: Object.keys(qualitySummary.nullCounts).length > 0 ? qualitySummary.nullCounts : undefined,
+          duplicateRowCount: qualitySummary.duplicateRowCount > 0 ? qualitySummary.duplicateRowCount : undefined,
         });
       }
 
@@ -235,6 +242,14 @@ read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
       output += `可用工作表: ${sheetList.join(', ')}\n`;
       output += `${'─'.repeat(50)}\n\n`;
       output += result;
+
+      // 数据质量摘要（自动附加，模型可据此决策）
+      if (qualitySummary.hasIssues) {
+        output += `\n\n📋 数据质量摘要:\n`;
+        for (const line of qualitySummary.lines) {
+          output += `${line}\n`;
+        }
+      }
 
       output += `\n\n💡 提示：完整数据请用 bash + Python 读取源文件：pd.read_excel('${absPath}', sheet_name='${worksheet.name}')`;
 
@@ -255,6 +270,49 @@ read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
         },
       };
     } catch (error: any) {
+      // Chart fallback: ExcelJS 在含图表的 xlsx 上会崩溃（anchors 等错误）
+      // 回退到 Python pandas 读取
+      if (error.message?.includes('anchors') || error.message?.includes('Cannot read properties of undefined')) {
+        logger.warn(`[ReadXlsx] ExcelJS failed (${error.message}), trying Python pandas fallback`);
+        try {
+          const absPath = path.isAbsolute(file_path)
+            ? file_path
+            : path.join(context.workingDirectory, file_path);
+          const sheetArg = sheet !== undefined ? `, sheet_name='${sheet}'` : '';
+          const pyScript = `import pandas as pd; df = pd.read_excel('${absPath}'${sheetArg}); print(f'ROWS:{len(df)}'); print(f'COLS:{",".join(df.columns.tolist())}'); print('---DATA---'); print(df.head(${max_rows}).to_csv(index=False))`;
+          const pyResult = execSync(`python3 -c "${pyScript.replace(/"/g, '\\"')}"`, {
+            timeout: 30000,
+            encoding: 'utf-8',
+            maxBuffer: 10 * 1024 * 1024,
+          });
+
+          const rowMatch = pyResult.match(/ROWS:(\d+)/);
+          const colMatch = pyResult.match(/COLS:(.+)/);
+          const dataStart = pyResult.indexOf('---DATA---');
+          const csvData = dataStart >= 0 ? pyResult.substring(dataStart + 10).trim() : pyResult;
+
+          const totalRows = rowMatch ? parseInt(rowMatch[1]) : 0;
+          const columnNames = colMatch ? colMatch[1].split(',') : [];
+
+          return {
+            success: true,
+            output: `📊 Excel 内容 (${path.basename(absPath)}) [pandas fallback - 原文件含图表]\n` +
+              `行数: ${totalRows} | 列数: ${columnNames.length}\n` +
+              `${'─'.repeat(50)}\n\n${csvData}` +
+              `\n\n💡 提示：此文件含图表，ExcelJS 无法解析，已通过 pandas 读取。`,
+            metadata: {
+              filePath: absPath,
+              rowCount: totalRows,
+              columnCount: columnNames.length,
+              format: 'csv',
+              fallback: 'pandas',
+            },
+          };
+        } catch (pyError: any) {
+          logger.error('Python pandas fallback also failed', { error: pyError.message });
+        }
+      }
+
       logger.error('XLSX read failed', { error: error.message });
       return {
         success: false,
@@ -263,3 +321,89 @@ read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
     }
   },
 };
+
+// ─── 数据质量分析 ───────────────────────────────────────────────
+
+interface QualitySummary {
+  hasIssues: boolean;
+  lines: string[];
+  nullCounts: Record<string, number>;
+  categoricalValues: Record<string, string[]>;
+  duplicateRowCount: number;
+}
+
+type CellValue = string | number | boolean | null;
+
+function analyzeDataQuality(rows: CellValue[][], headers: string[]): QualitySummary {
+  const lines: string[] = [];
+  const nullCounts: Record<string, number> = {};
+  const categoricalValues: Record<string, string[]> = {};
+  let duplicateRowCount = 0;
+
+  if (rows.length === 0 || headers.length === 0) {
+    return { hasIssues: false, lines, nullCounts, categoricalValues, duplicateRowCount };
+  }
+
+  // 1. 空值统计
+  const colsWithNulls: string[] = [];
+  headers.forEach((h, idx) => {
+    const nullCount = rows.filter(r => r[idx] === null || r[idx] === undefined || r[idx] === '').length;
+    if (nullCount > 0) {
+      nullCounts[h] = nullCount;
+      colsWithNulls.push(`${h}(${nullCount})`);
+    }
+  });
+  if (colsWithNulls.length > 0) {
+    lines.push(`- 空值: ${colsWithNulls.slice(0, 8).join(', ')}${colsWithNulls.length > 8 ? ` ...共${colsWithNulls.length}列` : ''}`);
+  }
+
+  // 2. 重复行检测（抽样: 用前 5000 行检查，避免大数据集性能问题）
+  const checkRows = rows.slice(0, 5000);
+  const seen = new Set<string>();
+  let dupes = 0;
+  for (const row of checkRows) {
+    const key = row.map(c => String(c ?? '')).join('\t');
+    if (seen.has(key)) {
+      dupes++;
+    } else {
+      seen.add(key);
+    }
+  }
+  duplicateRowCount = dupes;
+  if (dupes > 0) {
+    lines.push(`- 完全重复行: ${dupes}${rows.length > 5000 ? ` (前5000行采样)` : ''}`);
+  }
+
+  // 3. 分类值枚举（低基数列 ≤ 20 unique values）
+  const catCols: string[] = [];
+  headers.forEach((h, idx) => {
+    const uniqueVals = new Set<string>();
+    let isLowCardinality = true;
+    for (const row of rows) {
+      const val = row[idx];
+      if (val !== null && val !== undefined && val !== '') {
+        uniqueVals.add(String(val));
+        if (uniqueVals.size > 20) {
+          isLowCardinality = false;
+          break;
+        }
+      }
+    }
+    if (isLowCardinality && uniqueVals.size >= 2 && uniqueVals.size <= 20) {
+      const vals = Array.from(uniqueVals).sort();
+      categoricalValues[h] = vals;
+      catCols.push(`${h}(${vals.length}种: ${vals.slice(0, 6).join('/')})${vals.length > 6 ? '...' : ''}`);
+    }
+  });
+  if (catCols.length > 0) {
+    lines.push(`- 分类列: ${catCols.slice(0, 5).join('; ')}${catCols.length > 5 ? ` ...共${catCols.length}列` : ''}`);
+  }
+
+  return {
+    hasIssues: lines.length > 0,
+    lines,
+    nullCounts,
+    categoricalValues,
+    duplicateRowCount,
+  };
+}

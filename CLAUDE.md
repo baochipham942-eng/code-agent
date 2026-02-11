@@ -319,15 +319,8 @@ pending → ready → running → completed/failed/cancelled/skipped
 
 ## v0.16.37 工程能力提升 (2026-02-11)
 
-Excel Agent Benchmark 评测历史：
-
-| 版本 | 分数 | 等级 | 主要变更 |
-|------|------|------|----------|
-| v5 | 176/200 (88%) | B+ | 基线：动态 maxTokens + 源数据锚定 + 数据清洗 skill |
-| v10 | 183/200 (91.5%) | A | detector.ts heredoc XML 修复 |
-| v11 | 154/200 (77%) | C | 清洗 skill 增强 + 上下文保留扩大（随机波动） |
-| v12 | 153/200 (76.5%) | C | P5 输出文件存在性验证（随机波动） |
-| v14 | **190/200 (95.0%)** | **A** | P5 force-execute 绕过修复 + CLI 禁用 adaptiveRouter |
+Excel Agent Benchmark 最新: v15 174/200 (87%) | 最高: v14 190/200 (95%)
+详细分值见 `excel-agent-benchmark/scores/scorecard.xlsx`
 
 v14 改进要点：
 - P5 Nudge 在 force-execute 路径后增加输出文件检查，防止拦截绕过

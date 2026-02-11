@@ -317,6 +317,76 @@ pending → ready → running → completed/failed/cancelled/skipped
 
 ---
 
+## v0.16.37 工程能力提升 (2026-02-11)
+
+Excel Agent Benchmark v5 评测 176/200 (88%)，三项通用工程能力提升。
+
+### 1. 动态 maxTokens（截断自动恢复）
+
+| 场景 | 机制 |
+|------|------|
+| 文本响应截断 | 自动翻倍 maxTokens（上限 8192），重试一次后恢复原值 |
+| 工具调用截断 | 提升 maxTokens + 注入 `<truncation-recovery>` 续写提示 |
+| 复杂任务预防 | AdaptiveRouter 在 `complexity.level === 'complex'` 时主动提升到 `MODEL_MAX_TOKENS.DEFAULT` |
+
+模式与 `_contextOverflowRetried` 完全一致（`_truncationRetried` 标志）。
+
+相关代码：
+- `src/main/agent/agentLoop.ts` — 截断检测 + 重试逻辑
+- `src/main/model/adaptiveRouter.ts` — 复杂任务 maxTokens 提升
+
+### 2. 源数据锚定（防多轮幻觉）
+
+借鉴 Claude Code 轻量标识符 + Codex 工具输出可引用模式。
+
+**核心思路**：工具读取数据时提取"事实锚点"，compaction 时自动注入为 ground truth。
+
+| 数据源 | 提取内容 | 存储类型 |
+|--------|----------|----------|
+| `read_xlsx` | schema + 首行样本 + 数值范围 | `DataFingerprint` |
+| `bash`（统计输出） | mean/std/min/max 行、JSON 数值、行数 | `ToolFact` |
+| `read_file`（CSV） | 列名 + 首行样本 + 行数 | `ToolFact` |
+| `read_file`（JSON） | 数组长度 + 字段名 + 首条样本 | `ToolFact` |
+
+**注入点**（两处，双保险）：
+1. `autoCompressor.ts` — PreCompact hook 后追加到 `preservedContext`
+2. `agentLoop.ts` — compaction recovery 注入 `block.content`
+
+**注入格式**：
+```
+## 已验证的源数据
+- data.xlsx Sheet1: 100行, 列=[日期,金额,类型]
+  首行: {日期: 2024-01-01, 金额: 1234.5}
+  金额范围: 100.0 ~ 9999.9
+
+## 已验证的计算结果
+- mean    1245.6, std    389.1
+
+⚠️ 所有输出必须基于上述源数据和计算结果，禁止虚构数值
+```
+
+**防膨胀**：ToolFact LRU 上限 20 条，数值范围最多 3 列，样本最多 5 列。
+
+相关代码：
+- `src/main/tools/dataFingerprint.ts` — DataFingerprintStore + ToolFact + 提取函数
+- `src/main/tools/network/readXlsx.ts` — xlsx 指纹记录
+- `src/main/tools/shell/bash.ts` — bash 输出事实提取
+- `src/main/tools/file/read.ts` — CSV/JSON schema 提取
+- `src/main/context/autoCompressor.ts` — compaction 注入
+- `src/main/agent/agentLoop.ts` — recovery 注入
+
+### 3. 数据清洗 Skill
+
+内置 `data-cleaning` skill，6 步系统性清洗检查清单：结构检查 → 重复值 → 缺失值 → 格式标准化 → 异常值检测 → 验证。
+
+通过 skill 机制注入，不污染通用 prompt。
+
+相关代码：
+- `src/main/services/skills/builtinSkills.ts` — skill 定义
+- `src/main/services/skills/skillRepositories.ts` — 关键词映射
+
+---
+
 ## v0.16.11+ 新功能
 
 ### Checkpoint 系统

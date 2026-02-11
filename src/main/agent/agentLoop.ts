@@ -77,7 +77,9 @@ import { getOutcomeDetector } from '../evolution/outcomeDetector';
 import { getInputSanitizer } from '../security/inputSanitizer';
 import { getDiffTracker } from '../services/diff/diffTracker';
 import { getCitationService } from '../services/citation/citationService';
-import { existsSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
+import { join } from 'path';
+import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { getVerifierRegistry, initializeVerifiers } from './verifier';
 import type { VerificationContext, VerificationResult } from './verifier';
@@ -231,8 +233,12 @@ export class AgentLoop {
   // Consecutive truncation circuit breaker (detect repetitive loops)
   private _consecutiveTruncations: number = 0;
   private readonly MAX_CONSECUTIVE_TRUNCATIONS = 3;
-  // Output self-check (only once per run)
-  private _outputSelfCheckDone: boolean = false;
+  // P7: Output structure validation (only once per run)
+  private _outputValidationDone: boolean = false;
+
+  // Workspace diff — 输出目录文件快照（替代纯路径提取）
+  private _outputDirSnapshot: Set<string> = new Set();
+  private _userExpectsOutput: boolean = false;
 
   // E7: Content quality gate
   private contentVerificationRetries: Map<string, number> = new Map();
@@ -506,7 +512,11 @@ export class AgentLoop {
     this.externalDataCallCount = 0;
     this.outputFileNudgeCount = 0;
     this._consecutiveTruncations = 0;
-    this._outputSelfCheckDone = false;
+    this._outputValidationDone = false;
+
+    // Workspace diff: snapshot output directory before agent starts
+    this._outputDirSnapshot = this._snapshotOutputDir();
+    this._userExpectsOutput = /保存|导出|生成.*文件|输出.*文件|写入|\.xlsx|\.csv|\.png|\.pdf|export|save/i.test(userMessage);
 
     // P5: Extract expected output file paths from user prompt (existence diff)
     const allPaths = extractAbsoluteFilePaths(userMessage);
@@ -1008,6 +1018,7 @@ export class AgentLoop {
         }
 
         // P5 Nudge: Verify expected output files exist on disk
+        // Check 1: 显式路径缺失（精确匹配）
         if (this.expectedOutputFiles.length > 0 && this.outputFileNudgeCount < this.maxOutputFileNudges) {
           const missingOutputFiles = this.expectedOutputFiles.filter(f => !existsSync(f));
           if (missingOutputFiles.length > 0) {
@@ -1032,24 +1043,57 @@ export class AgentLoop {
           }
         }
 
-        // P6: Output self-check — 输出文件存在但可能质量不达标，触发一次自查
-        if (this.expectedOutputFiles.length > 0 && !this._outputSelfCheckDone) {
-          const existingFiles = this.expectedOutputFiles.filter(f => existsSync(f));
-          if (existingFiles.length > 0) {
-            this._outputSelfCheckDone = true;
-            logger.debug(`[AgentLoop] P6 Self-check: ${existingFiles.length} output files exist, injecting quality check`);
-            logCollector.agent('INFO', `P6 Self-check: verifying output quality for ${existingFiles.length} files`);
+        // Check 2: Workspace diff — 用户期望输出文件但目录无新增文件
+        if (this._userExpectsOutput && this.expectedOutputFiles.length === 0 && this.outputFileNudgeCount < this.maxOutputFileNudges) {
+          const newFiles = this._getNewOutputFiles();
+          if (newFiles.length === 0) {
+            this.outputFileNudgeCount++;
+            logger.debug(`[AgentLoop] P5 Nudge (workspace-diff): No new files in output dir, nudge ${this.outputFileNudgeCount}/${this.maxOutputFileNudges}`);
+            logCollector.agent('INFO', `P5 Nudge (workspace-diff): user expects output but no new files`);
             this.injectSystemMessage(
-              `<output-quality-check>\n` +
-              `输出文件已生成，结束前请快速自查：\n` +
-              `1. 对照用户原始需求，逐条检查是否每个要求都已满足\n` +
-              `2. 输出 Excel 的列名是否清晰（避免 Unnamed:0、Series 默认名等）\n` +
-              `3. 如果用户要求 Top N，确认结果确实只有 N 条而不是全部数据\n` +
-              `4. 数值计算结果是否合理（可用 python3 快速验证关键数字）\n` +
-              `如有遗漏或格式问题，请立即修正后再结束。\n` +
-              `</output-quality-check>`
+              `<output-file-check>\n` +
+              `STOP! 用户要求保存/导出结果文件，但输出目录中没有检测到任何新文件。\n` +
+              `请确保将结果文件保存到工作目录: ${this.workingDirectory}\n` +
+              `</output-file-check>`
             );
+            this.onEvent({
+              type: 'notification',
+              data: { message: `输出目录无新文件，提示继续 (${this.outputFileNudgeCount}/${this.maxOutputFileNudges})` },
+            });
             continue;
+          }
+        }
+
+        // P7: Output structure validation — 系统自动读取输出 xlsx 结构，模型核对需求
+        // 合并两个来源: 显式路径 + workspace diff 新文件
+        if (!this._outputValidationDone) {
+          const fromExplicit = this.expectedOutputFiles.filter(
+            f => existsSync(f) && (f.endsWith('.xlsx') || f.endsWith('.xls'))
+          );
+          const fromDiff = this._getNewOutputFiles().filter(
+            f => f.endsWith('.xlsx') || f.endsWith('.xls')
+          );
+          const existingXlsx = [...new Set([...fromExplicit, ...fromDiff])];
+          if (existingXlsx.length > 0) {
+            this._outputValidationDone = true;
+            const structureInfo = this._readOutputXlsxStructure(existingXlsx);
+            if (structureInfo) {
+              logger.debug(`[AgentLoop] P7 Validation: read structure of ${existingXlsx.length} output xlsx files`);
+              logCollector.agent('INFO', `P7 Validation: output structure check`, { files: existingXlsx });
+              this.injectSystemMessage(
+                `<output-validation>\n` +
+                `系统已自动读取你生成的输出文件结构：\n\n${structureInfo}\n\n` +
+                `请对照用户的原始需求逐条核对：\n` +
+                `1. 是否所有要求的 sheet/列/指标都已包含？\n` +
+                `2. 行数是否合理（非空表、非仅表头）？\n` +
+                `3. 列名是否清晰（无 Unnamed:0 等默认名）？\n` +
+                `4. 去重是否用了 subset 参数指定主键列？\n` +
+                `5. 阶梯累进计算（提成/税率）是否分段累加？\n` +
+                `如有遗漏或问题，请立即修复。如全部满足，结束任务。\n` +
+                `</output-validation>`
+              );
+              continue;
+            }
           }
         }
 
@@ -1360,22 +1404,40 @@ export class AgentLoop {
 
         // P5 after force-execute: 模型原本想停止（text response），但被 force-execute 拦截
         // 工具执行完后检查输出文件是否存在，防止 force-execute 路径永远绕过 P5
-        if (wasForceExecuted && this.expectedOutputFiles.length > 0 && this.outputFileNudgeCount < this.maxOutputFileNudges) {
-          const missingOutputFiles = this.expectedOutputFiles.filter(f => !existsSync(f));
-          if (missingOutputFiles.length > 0) {
-            this.outputFileNudgeCount++;
-            const fileList = missingOutputFiles.map(f => `- ${f}`).join('\n');
-            logger.debug(`[AgentLoop] P5 Nudge (post force-execute): Missing output files, nudge ${this.outputFileNudgeCount}/${this.maxOutputFileNudges}`);
-            logCollector.agent('INFO', `P5 Nudge (post force-execute): Expected output files missing`, {
-              nudgeCount: this.outputFileNudgeCount,
-              missingFiles: missingOutputFiles,
-            });
-            this.injectSystemMessage(
-              `<output-file-check>\n` +
-              `用户要求的输出文件尚未生成:\n${fileList}\n\n` +
-              `请确保在完成任务前生成这些文件。\n` +
-              `</output-file-check>`
-            );
+        if (wasForceExecuted && this.outputFileNudgeCount < this.maxOutputFileNudges) {
+          // Check 1: 显式路径缺失
+          if (this.expectedOutputFiles.length > 0) {
+            const missingOutputFiles = this.expectedOutputFiles.filter(f => !existsSync(f));
+            if (missingOutputFiles.length > 0) {
+              this.outputFileNudgeCount++;
+              const fileList = missingOutputFiles.map(f => `- ${f}`).join('\n');
+              logger.debug(`[AgentLoop] P5 Nudge (post force-execute): Missing output files, nudge ${this.outputFileNudgeCount}/${this.maxOutputFileNudges}`);
+              logCollector.agent('INFO', `P5 Nudge (post force-execute): Expected output files missing`, {
+                nudgeCount: this.outputFileNudgeCount,
+                missingFiles: missingOutputFiles,
+              });
+              this.injectSystemMessage(
+                `<output-file-check>\n` +
+                `用户要求的输出文件尚未生成:\n${fileList}\n\n` +
+                `请确保在完成任务前生成这些文件。\n` +
+                `</output-file-check>`
+              );
+            }
+          }
+          // Check 2: workspace diff — 用户期望输出但无新文件
+          else if (this._userExpectsOutput && this.expectedOutputFiles.length === 0) {
+            const newFiles = this._getNewOutputFiles();
+            if (newFiles.length === 0) {
+              this.outputFileNudgeCount++;
+              logger.debug(`[AgentLoop] P5 Nudge (post force-execute, workspace-diff): No new files`);
+              logCollector.agent('INFO', `P5 Nudge (post force-execute, workspace-diff): no new files`);
+              this.injectSystemMessage(
+                `<output-file-check>\n` +
+                `用户要求保存/导出结果文件，但输出目录中没有新文件。\n` +
+                `请将结果保存到: ${this.workingDirectory}\n` +
+                `</output-file-check>`
+              );
+            }
           }
         }
 
@@ -2859,6 +2921,68 @@ ${deferredToolsSummary}
       `如果你不确定，做出最佳猜测并执行。错误的修改好过不修改。\n` +
       `</checkpoint-nudge>`
     );
+  }
+
+  /** Workspace diff: 快照输出目录当前文件列表 */
+  private _snapshotOutputDir(): Set<string> {
+    try {
+      return new Set(readdirSync(this.workingDirectory));
+    } catch {
+      return new Set();
+    }
+  }
+
+  /** Workspace diff: 获取 agent 启动后新增的文件（绝对路径） */
+  private _getNewOutputFiles(): string[] {
+    try {
+      const current = readdirSync(this.workingDirectory);
+      return current
+        .filter(f => !this._outputDirSnapshot.has(f))
+        .map(f => join(this.workingDirectory, f));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * P7: 用 Python pandas 读取输出 xlsx 文件的结构（sheet名、列名、行数、前2行样本）
+   * 返回人类可读的文本描述，供模型核对是否满足用户需求
+   */
+  private _readOutputXlsxStructure(xlsxFiles: string[]): string | null {
+    try {
+      const fileListPy = xlsxFiles.map(f => `'${f.replace(/'/g, "\\'")}'`).join(', ');
+      const pyScript = [
+        'import pandas as pd',
+        `for f in [${fileListPy}]:`,
+        '    try:',
+        '        xl = pd.ExcelFile(f)',
+        '        print(f"File: {f}")',
+        '        for name in xl.sheet_names:',
+        '            df = pd.read_excel(xl, name)',
+        '            print(f"  Sheet \'{name}\': {len(df)} rows x {len(df.columns)} cols")',
+        '            print(f"  Columns: {list(df.columns)}")',
+        '            if len(df) > 0:',
+        '                print("  Sample (first 2 rows):")',
+        '                print(df.head(2).to_string(index=False))',
+        '            print()',
+        '    except Exception as e:',
+        '        print(f"  Error: {e}")',
+      ].join('\n');
+
+      const result = spawnSync('python3', ['-'], {
+        input: pyScript,
+        timeout: 15000,
+        encoding: 'utf-8',
+        maxBuffer: 1024 * 1024,
+      });
+
+      if (result.status === 0 && result.stdout) {
+        return result.stdout.trim() || null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   private injectSystemMessage(content: string, category?: string): void {

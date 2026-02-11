@@ -251,6 +251,11 @@ read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
         }
       }
 
+      output += `\n\n⚠️ 数据处理注意:\n`;
+      output += `- 去重: drop_duplicates(subset=['主键列'])，不要全列去重误删合法数据\n`;
+      output += `- 阶梯累进: 提成/税率必须分段累加，不能按最高档全额计算\n`;
+      output += `- 日期统一: pd.to_datetime(col, format='mixed').dt.strftime('%Y-%m-%d')`;
+
       output += `\n\n💡 提示：完整数据请用 bash + Python 读取源文件：pd.read_excel('${absPath}', sheet_name='${worksheet.name}')`;
 
       if (totalRows >= max_rows) {

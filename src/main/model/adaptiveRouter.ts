@@ -5,7 +5,7 @@
 import { createLogger } from '../services/infra/logger';
 import type { ModelMessage } from './types';
 import type { ModelConfig, ModelProvider } from '../../shared/types';
-import { DEFAULT_MODELS } from '../../shared/constants';
+import { DEFAULT_MODELS, MODEL_MAX_TOKENS } from '../../shared/constants';
 
 const logger = createLogger('AdaptiveRouter');
 
@@ -110,6 +110,12 @@ export class AdaptiveRouter {
         provider: this.freeModel.provider,
         model: this.freeModel.model,
       };
+    }
+
+    // 复杂任务主动提高 maxTokens，避免输出截断
+    if (complexity.level === 'complex' && defaultConfig.maxTokens && defaultConfig.maxTokens < MODEL_MAX_TOKENS.DEFAULT) {
+      logger.info(`[AdaptiveRouter] Complex task: boosting maxTokens ${defaultConfig.maxTokens} → ${MODEL_MAX_TOKENS.DEFAULT}`);
+      return { ...defaultConfig, maxTokens: MODEL_MAX_TOKENS.DEFAULT };
     }
 
     return defaultConfig;

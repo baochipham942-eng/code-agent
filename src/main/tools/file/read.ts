@@ -10,6 +10,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { resolvePath } from './pathUtils';
 import { createLogger } from '../../services/infra/logger';
 import { fileReadTracker } from '../fileReadTracker';
+import { extractFileFacts, dataFingerprintStore } from '../dataFingerprint';
 
 const logger = createLogger('ReadFile');
 
@@ -164,6 +165,12 @@ Returns: File content with line numbers in format "  lineNum\\tcontent"`,
       let result = output;
       if (endLine < lines.length) {
         result += `\n\n... (${lines.length - endLine} more lines)`;
+      }
+
+      // 源数据锚定：CSV/JSON 文件提取 schema 指纹
+      const fileFact = extractFileFacts(filePath, result);
+      if (fileFact) {
+        dataFingerprintStore.recordFact(fileFact);
       }
 
       return {

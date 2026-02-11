@@ -20,6 +20,7 @@ import { compactModelSummarize } from './compactModel';
 import type { HookManager } from '../hooks/hookManager';
 import type { Message, CompactionBlock } from '../../shared/types';
 import { getDocumentContextService } from './documentContext';
+import { dataFingerprintStore } from '../tools/dataFingerprint';
 
 const logger = createLogger('AutoCompressor');
 
@@ -208,6 +209,12 @@ export class AutoContextCompressor {
       } catch (error) {
         logger.warn('[AutoCompressor] PreCompact hook failed, continuing without preserved context:', error);
       }
+    }
+
+    // 注入数据指纹摘要（防止多轮对话中虚构数据）
+    const dataContext = dataFingerprintStore.toSummary();
+    if (dataContext) {
+      preservedContext = (preservedContext || '') + '\n\n' + dataContext;
     }
 
     switch (strategy) {

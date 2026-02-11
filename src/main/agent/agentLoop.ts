@@ -30,7 +30,7 @@ import { HookManager, createHookManager } from '../hooks';
 import type { BudgetEventData } from '../../shared/types';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getSystemPromptCache } from '../telemetry/systemPromptCache';
-import { DEFAULT_MODELS } from '../../shared/constants';
+import { DEFAULT_MODELS, MODEL_MAX_TOKENS } from '../../shared/constants';
 
 // Import refactored modules
 import type {
@@ -62,6 +62,7 @@ import { getSessionRecoveryService } from './sessionRecovery';
 import { getCurrentTodos } from '../tools/planning/todoWrite';
 import { getIncompleteTasks } from '../tools/planning';
 import { fileReadTracker } from '../tools/fileReadTracker';
+import { dataFingerprintStore } from '../tools/dataFingerprint';
 import { MAX_PARALLEL_TOOLS, READ_ONLY_TOOLS, WRITE_TOOLS, VERIFY_TOOLS, TaskProgressState } from './loopTypes';
 import {
   compressToolResult,
@@ -217,6 +218,8 @@ export class AgentLoop {
 
   // Context overflow auto-recovery
   private _contextOverflowRetried: boolean = false;
+  // Truncation auto-recovery (text response)
+  private _truncationRetried: boolean = false;
   // Network error retry guard
   private _networkRetried: boolean = false;
 
@@ -984,10 +987,32 @@ export class AgentLoop {
           }
         }
 
+        // 动态 maxTokens: 文本响应截断自动恢复
+        if (response.truncated && !this._truncationRetried) {
+          this._truncationRetried = true;
+          const originalMaxTokens = this.modelConfig.maxTokens || MODEL_MAX_TOKENS.DEFAULT;
+          const newMaxTokens = Math.min(originalMaxTokens * 2, MODEL_MAX_TOKENS.DEFAULT);
+          if (newMaxTokens > originalMaxTokens) {
+            logger.info(`[AgentLoop] Text response truncated, retrying with maxTokens: ${originalMaxTokens} → ${newMaxTokens}`);
+            logCollector.agent('INFO', `Text truncation recovery: maxTokens ${originalMaxTokens} → ${newMaxTokens}`);
+            this.modelConfig.maxTokens = newMaxTokens;
+            try {
+              response = await this.inference();
+            } finally {
+              this._truncationRetried = false;
+              this.modelConfig.maxTokens = originalMaxTokens;
+            }
+            // 重试后如果变成了 tool_use，跳到下一轮处理
+            if (response.type === 'tool_use') continue;
+          } else {
+            this._truncationRetried = false;
+          }
+        }
+
         const assistantMessage: Message = {
           id: this.generateId(),
           role: 'assistant',
-          content: response.content,
+          content: response.content || '',
           timestamp: Date.now(),
           thinking: response.thinking,
           effortLevel: this.effortLevel,
@@ -1029,10 +1054,18 @@ export class AgentLoop {
           toolTotal: response.toolCalls.length,
         });
 
-        // Handle truncation warning
+        // Handle truncation warning + 动态 maxTokens 提升
         if (response.truncated) {
           logger.warn('[AgentLoop] ⚠️ Tool call was truncated due to max_tokens limit!');
           logCollector.agent('WARN', 'Tool call truncated - content may be incomplete');
+
+          // 提高 maxTokens 防止后续截断
+          const currentMax = this.modelConfig.maxTokens || MODEL_MAX_TOKENS.DEFAULT;
+          const boostedMax = Math.min(currentMax * 2, MODEL_MAX_TOKENS.DEFAULT);
+          if (boostedMax > currentMax) {
+            this.modelConfig.maxTokens = boostedMax;
+            logger.info(`[AgentLoop] Tool truncation: boosted maxTokens ${currentMax} → ${boostedMax}`);
+          }
 
           const writeFileCall = response.toolCalls.find(tc => tc.name === 'write_file');
           if (writeFileCall) {
@@ -1041,6 +1074,13 @@ export class AgentLoop {
               logger.warn(`write_file content length: ${content.length} chars - may be truncated!`);
               this.injectSystemMessage(this.generateTruncationWarning());
             }
+          } else {
+            // 非 write_file 截断：注入续写提示让模型继续
+            this.injectSystemMessage(
+              `<truncation-recovery>\n` +
+              `上一次输出因 max_tokens 限制被截断。请继续完成未完成的操作。\n` +
+              `</truncation-recovery>`
+            );
           }
         }
 
@@ -2842,6 +2882,12 @@ ${deferredToolsSummary}
             recoveryContext += incompleteTasks.map(t =>
               `- [${t.status}] ${t.subject}`
             ).join('\n');
+          }
+
+          // 注入数据指纹摘要（防止多轮对话中虚构数据）
+          const dataFingerprint = dataFingerprintStore.toSummary();
+          if (dataFingerprint) {
+            recoveryContext += '\n\n' + dataFingerprint;
           }
 
           if (recoveryContext) {

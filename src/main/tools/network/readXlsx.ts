@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import ExcelJS from 'exceljs';
 import { createLogger } from '../../services/infra/logger';
+import { dataFingerprintStore } from '../dataFingerprint';
 
 const logger = createLogger('ReadXlsx');
 
@@ -195,6 +196,39 @@ read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
       const sheetList = workbook.worksheets.map(ws => ws.name);
 
       logger.info('XLSX read', { path: absPath, sheet: worksheet.name, rows: totalRows });
+
+      // 记录数据指纹，用于 compaction recovery 时的源数据锚定
+      if (rows.length > 0 && headers.length > 0) {
+        const sampleValues: Record<string, string> = {};
+        headers.forEach((h, idx) => {
+          if (rows[0][idx] !== null && rows[0][idx] !== undefined && rows[0][idx] !== '') {
+            sampleValues[h] = String(rows[0][idx]);
+          }
+        });
+
+        const numericRanges: Record<string, { min: number; max: number }> = {};
+        headers.forEach((h, idx) => {
+          const numericValues = rows
+            .map(row => row[idx])
+            .filter((v): v is number => typeof v === 'number' && !isNaN(v));
+          if (numericValues.length > 0) {
+            numericRanges[h] = {
+              min: Math.min(...numericValues),
+              max: Math.max(...numericValues),
+            };
+          }
+        });
+
+        dataFingerprintStore.record({
+          filePath: absPath,
+          readTime: Date.now(),
+          sheetName: worksheet.name,
+          rowCount: totalRows,
+          columnNames: headers,
+          sampleValues,
+          numericRanges: Object.keys(numericRanges).length > 0 ? numericRanges : undefined,
+        });
+      }
 
       let output = `📊 Excel 内容 (${path.basename(absPath)})\n`;
       output += `工作表: ${worksheet.name} | 行数: ${totalRows} | 列数: ${totalCols}\n`;

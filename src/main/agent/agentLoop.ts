@@ -1075,7 +1075,62 @@ export class AgentLoop {
               this.injectSystemMessage(this.generateTruncationWarning());
             }
           } else {
-            // 非 write_file 截断：注入续写提示让模型继续
+            // 检测截断的 bash heredoc —— 执行不完整的 heredoc 会导致 SyntaxError
+            const truncatedBashHeredocs = response.toolCalls.filter(tc =>
+              tc.name === 'bash' &&
+              typeof tc.arguments?.command === 'string' &&
+              /<<\s*['"]?\w+['"]?/.test(tc.arguments.command as string)
+            );
+
+            if (truncatedBashHeredocs.length > 0) {
+              logger.warn(`[AgentLoop] Skipping ${truncatedBashHeredocs.length} truncated bash heredoc(s) to avoid SyntaxError`);
+
+              // 保存 assistant 消息（含截断的 tool calls）
+              const truncAssistantMsg: Message = {
+                id: this.generateId(),
+                role: 'assistant',
+                content: response.content || '',
+                timestamp: Date.now(),
+                toolCalls: response.toolCalls,
+                thinking: response.thinking,
+                effortLevel: this.effortLevel,
+              };
+              await this.addAndPersistMessage(truncAssistantMsg);
+              this.onEvent({ type: 'message', data: truncAssistantMsg });
+
+              // 构造合成错误结果，不实际执行
+              const syntheticResults: ToolResult[] = response.toolCalls.map(tc => ({
+                toolCallId: tc.id,
+                success: false,
+                output: '',
+                error: tc.name === 'bash' && /<<\s*['"]?\w+['"]?/.test((tc.arguments?.command as string) || '')
+                  ? '⚠️ 此 bash heredoc 命令因 max_tokens 截断而不完整，已跳过执行以避免 SyntaxError。请重新生成完整命令。'
+                  : '⚠️ 此工具调用因同批次存在截断的 heredoc 而被跳过。',
+                duration: 0,
+              }));
+
+              const toolMsg: Message = {
+                id: this.generateId(),
+                role: 'tool',
+                content: JSON.stringify(syntheticResults),
+                timestamp: Date.now(),
+                toolResults: syntheticResults,
+              };
+              await this.addAndPersistMessage(toolMsg);
+
+              // 注入恢复提示
+              this.injectSystemMessage(
+                `<truncation-recovery>\n` +
+                `上一次的 bash 命令包含 heredoc（<<EOF...EOF），但因 max_tokens 限制被截断，命令不完整。\n` +
+                `已跳过执行以避免 SyntaxError。请重新生成完整的命令。\n` +
+                `提示：如果内联脚本很长，考虑先用 write_file 写入临时文件再用 bash 执行，而不是使用 heredoc。\n` +
+                `</truncation-recovery>`
+              );
+
+              continue; // 跳到下一轮推理，让模型重新生成
+            }
+
+            // 非 heredoc 截断：注入续写提示让模型继续
             this.injectSystemMessage(
               `<truncation-recovery>\n` +
               `上一次输出因 max_tokens 限制被截断。请继续完成未完成的操作。\n` +

@@ -30,7 +30,13 @@ export function formatToolCallForHistory(tc: ToolCall): string {
       if (cmd.length <= 200) {
         return `Ran: ${cmd}`;
       }
-      // Long commands: preserve head + tail for better context
+      // Heredoc 感知：保留命令头 + heredoc 标记，省略 body，保留 delimiter
+      const heredocMatch = cmd.match(/^(.*?)(<<\s*['"]?(\w+)['"]?\s*\n)/s);
+      if (heredocMatch) {
+        const [, prefix, heredocStart, delimiter] = heredocMatch;
+        return `Ran: ${prefix}${heredocStart}# ... (heredoc body omitted, ${cmd.length} chars total)\n${delimiter}`;
+      }
+      // 非 heredoc 长命令：保留头尾
       const head = cmd.slice(0, 120);
       const tail = cmd.slice(-50);
       const omitted = cmd.length - 170;

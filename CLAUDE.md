@@ -319,7 +319,22 @@ pending → ready → running → completed/failed/cancelled/skipped
 
 ## v0.16.37 工程能力提升 (2026-02-11)
 
-Excel Agent Benchmark v5 评测 176/200 (88%)，三项通用工程能力提升。
+Excel Agent Benchmark 评测历史：
+
+| 版本 | 分数 | 等级 | 主要变更 |
+|------|------|------|----------|
+| v5 | 176/200 (88%) | B+ | 基线：动态 maxTokens + 源数据锚定 + 数据清洗 skill |
+| v10 | 183/200 (91.5%) | A | detector.ts heredoc XML 修复 |
+| v11 | 154/200 (77%) | C | 清洗 skill 增强 + 上下文保留扩大（随机波动） |
+| v12 | 153/200 (76.5%) | C | P5 输出文件存在性验证（随机波动） |
+| v14 | **190/200 (95.0%)** | **A** | P5 force-execute 绕过修复 + CLI 禁用 adaptiveRouter |
+
+v14 改进要点：
+- P5 Nudge 在 force-execute 路径后增加输出文件检查，防止拦截绕过
+- CLI 模式自动禁用 adaptiveRouter（不再将推理路由到智谱免费模型）
+- build:cli 独立于 build，需单独执行
+
+三项通用工程能力提升（v5 基线）：
 
 ### 1. 动态 maxTokens（截断自动恢复）
 
@@ -1075,15 +1090,15 @@ npm version patch --no-git-tag-version
 git add package.json && git commit -m "chore: bump version" && git push
 # 3. 构建
 npm run build
-# 4. 打包（原生模块已通过 postinstall 自动重编译）
+# 4. ⚠️ 重编译原生模块（必须在 dist:mac 之前！）
+npm run rebuild-native
+# 5. 打包
 rm -rf release/ && npm run dist:mac
-# 5. 安装后同步 .env
+# 6. 安装后同步 .env
 cp .env "/Applications/Code Agent.app/Contents/Resources/.env"
 ```
 
-**原生模块自动化**：`postinstall` 钩子会在每次 `npm install` 后自动执行 `rebuild-native.sh`，确保原生模块使用正确的 Electron headers 编译。
-
-如需手动重编译：`npm run rebuild-native`
+**⚠️ 第 4 步不可跳过**：`postinstall` 钩子只在 `npm install` 时触发。如果之后执行过 `npm rebuild`（CLI 测试等）或手动改过 `node_modules/`，原生模块会被系统 Node.js 版本覆盖。打包前必须显式 `npm run rebuild-native`。
 
 ### 本地数据库
 ```
@@ -1367,3 +1382,30 @@ read_file({ file_path: "src/app.ts", offset: 10, limit: 50 })
 **根因**: `store.ts:92` 调用 `await vectorStore.save()`，但测试 mock 只有 `addKnowledge`、`search`、`indexCode`，缺少 `save` 方法
 
 **修复**: 添加 `save: vi.fn().mockResolvedValue(undefined)` 到 VectorStore mock
+
+### 2026-02-11: 打包后启动闪退 — 原生模块 ABI 不匹配 ✅ 已修复
+
+**症状**: v0.16.37 安装后启动 4-6 秒即 SIGABRT，macOS 弹出 "Code Agent quit unexpectedly"
+
+**误判过程**:
+1. 崩溃报告显示 keytar.node 的 N-API cleanup hook abort → 误以为是 Keychain 问题
+2. 第一次从终端运行才看到真正错误（SIGABRT 不 flush stdout，崩溃报告只有 native 栈）
+
+**真正的错误**:
+```
+better_sqlite3.node was compiled against NODE_MODULE_VERSION 127.
+This version of Node.js requires NODE_MODULE_VERSION 139.
+```
+
+**根因链**:
+1. 打包前没执行 `npm run rebuild-native`，better-sqlite3 仍是系统 Node.js（v127）编译版本
+2. Electron 38 内置 Node.js 需要 v139 → 加载 .node 文件失败
+3. 数据库初始化抛出 FATAL ERROR → 主进程开始 quit
+4. quit 过程中 keytar 的 N-API cleanup hook 在非 JS 上下文调用 `ThrowAsJavaScriptException()` → C++ `std::terminate` → SIGABRT
+
+**修复**: 打包清单第 4 步显式加入 `npm run rebuild-native`
+
+**教训**:
+- `postinstall` 不可靠：`npm rebuild`（CLI 测试）、手动操作都会覆盖 Electron 编译的原生模块
+- 崩溃报告的 native 栈帧可能指向"陪葬"模块而非根因 — 永远从终端运行一次看 JS 层报错
+- NODE_MODULE_VERSION 速查：127=Node 22.x（系统），139=Electron 38

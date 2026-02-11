@@ -415,9 +415,17 @@ export class AntiPatternDetector {
         // 从完整内容中提取 heredoc 块（Ran: 之后到闭合 delimiter）
         const delim = heredocDelim[1];
         const lines = trimmed.split('\n');
-        const endIdx = lines.findIndex((line, i) => i > 0 && line.trim() === delim);
+        // 闭合 delimiter 匹配：精确匹配或去掉 XML 残留后匹配（模型常输出 "EOF</invoke>" 等）
+        const endIdx = lines.findIndex((line, i) => {
+          if (i === 0) return false;
+          const stripped = line.trim();
+          return stripped === delim || stripped.replace(/<\/?[^>]+>/g, '').trim() === delim;
+        });
         if (endIdx > 0) {
-          cmd = lines.slice(0, endIdx + 1).join('\n').replace(/^Ran:\s*/i, '').trim();
+          const block = lines.slice(0, endIdx + 1);
+          // 确保闭合行是干净的 delimiter（去掉 XML 残留）
+          block[block.length - 1] = delim;
+          cmd = block.join('\n').replace(/^Ran:\s*/i, '').trim();
         }
       } else {
         // 非 heredoc：截断命令中混入的中文解释文字（常见模式："cmd  数据已成功..."）

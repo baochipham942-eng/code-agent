@@ -268,26 +268,20 @@ function extractTodoStatus(messages: Message[]): PreservedContext['todoStatus'] 
  */
 function extractUserRequirements(messages: Message[]): string[] {
   const requirements: string[] = [];
-  const requirementKeywords = ['请', '需要', '必须', '要求', 'please', 'must', 'should', 'need'];
 
   for (const message of messages) {
     if (message.role !== 'user') continue;
     if (!message.content) continue;
+    // 多轮对话中每条用户消息都可能是指令，不再用关键词过滤
+    if (message.content.length <= 10) continue;
 
-    const hasRequirement = requirementKeywords.some(kw =>
-      message.content!.toLowerCase().includes(kw.toLowerCase())
-    );
-
-    if (hasRequirement && message.content.length > 10) {
-      // 提取要求的关键部分
-      const requirement = message.content.substring(0, 150);
-      if (!requirements.includes(requirement)) {
-        requirements.push(requirement);
-      }
+    const requirement = message.content.substring(0, 500);
+    if (!requirements.includes(requirement)) {
+      requirements.push(requirement);
     }
   }
 
-  return requirements.slice(-5); // 保留最近 5 个要求
+  return requirements.slice(-8); // 保留最近 8 个要求
 }
 
 /**
@@ -343,13 +337,13 @@ function filterByStrategy(
     // 激进压缩：只保留高重要性决策和必要的代码变更
     filtered.decisions = preserved.decisions.filter(d => d.importance === 'high');
     filtered.codeChanges = preserved.codeChanges.slice(-3);
-    filtered.userRequirements = preserved.userRequirements.slice(-2);
+    filtered.userRequirements = preserved.userRequirements.slice(-5);
     filtered.todoStatus = preserved.todoStatus.filter(t => t.status !== 'completed');
   } else if (strategy === 'balanced' || compressionRatio < 0.5) {
     // 平衡压缩
     filtered.decisions = preserved.decisions.filter(d => d.importance !== 'low');
     filtered.codeChanges = preserved.codeChanges.slice(-5);
-    filtered.userRequirements = preserved.userRequirements.slice(-3);
+    filtered.userRequirements = preserved.userRequirements.slice(-5);
   }
   // conservative 策略保留全部
 

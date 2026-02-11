@@ -22,6 +22,9 @@ export interface DataFingerprint {
   columnNames: string[];
   sampleValues: Record<string, string>;   // 列名 → 首行值
   numericRanges?: Record<string, { min: number; max: number }>;
+  categoricalValues?: Record<string, string[]>;  // 低基数列（≤20 unique）→ 唯一值列表
+  nullCounts?: Record<string, number>;           // 列名 → 空值计数
+  duplicateRowCount?: number;                    // 完全重复的行数
 }
 
 // --- 轻量工具事实（bash/web_fetch 等） ---
@@ -228,6 +231,24 @@ class DataFingerprintStore {
         const rangeEntries = Object.entries(fp.numericRanges).slice(0, 3);
         for (const [col, range] of rangeEntries) {
           lines.push(`  ${col}范围: ${range.min} ~ ${range.max}`);
+        }
+      }
+
+      // 数据质量信息
+      if (fp.nullCounts) {
+        const nullEntries = Object.entries(fp.nullCounts).filter(([, c]) => c > 0).slice(0, 5);
+        if (nullEntries.length > 0) {
+          lines.push(`  空值: ${nullEntries.map(([k, v]) => `${k}=${v}`).join(', ')}`);
+        }
+      }
+      if (fp.duplicateRowCount && fp.duplicateRowCount > 0) {
+        lines.push(`  重复行: ${fp.duplicateRowCount}`);
+      }
+      if (fp.categoricalValues) {
+        const catEntries = Object.entries(fp.categoricalValues).slice(0, 3);
+        for (const [col, vals] of catEntries) {
+          const display = vals.length <= 10 ? vals.join(', ') : vals.slice(0, 10).join(', ') + `... (共${vals.length}种)`;
+          lines.push(`  ${col}取值: [${display}]`);
         }
       }
     }

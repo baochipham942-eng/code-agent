@@ -77,6 +77,7 @@ import { getOutcomeDetector } from '../evolution/outcomeDetector';
 import { getInputSanitizer } from '../security/inputSanitizer';
 import { getDiffTracker } from '../services/diff/diffTracker';
 import { getCitationService } from '../services/citation/citationService';
+import { existsSync } from 'fs';
 import { createHash } from 'crypto';
 import { getVerifierRegistry, initializeVerifiers } from './verifier';
 import type { VerificationContext, VerificationResult } from './verifier';
@@ -158,6 +159,11 @@ export class AgentLoop {
   // F4: Goal-based completion verification
   private goalVerificationCount: number = 0;
   private maxGoalVerifications: number = 2;
+
+  // P5: Output file existence verification
+  private expectedOutputFiles: string[] = [];
+  private outputFileNudgeCount: number = 0;
+  private maxOutputFileNudges: number = 2;
 
   // Token optimization
   private hookMessageBuffer: HookMessageBuffer;
@@ -493,6 +499,11 @@ export class AgentLoop {
     this.todoNudgeCount = 0;
     this.goalVerificationCount = 0;
     this.externalDataCallCount = 0;
+    this.outputFileNudgeCount = 0;
+
+    // P5: Extract expected output file paths from user prompt (existence diff)
+    const allPaths = extractAbsoluteFilePaths(userMessage);
+    this.expectedOutputFiles = allPaths.filter(f => !existsSync(f));
 
     // F1: Goal Re-Injection — 从用户消息提取目标
     this.goalTracker.initialize(userMessage);
@@ -774,6 +785,7 @@ export class AgentLoop {
       }
 
       // 2. Handle text response - check for text-described tool calls
+      let wasForceExecuted = false;
       if (response.type === 'text' && response.content) {
         const failedToolCallMatch = this.antiPatternDetector.detectFailedToolCallPattern(response.content);
         if (failedToolCallMatch) {
@@ -785,6 +797,7 @@ export class AgentLoop {
               type: 'tool_use',
               toolCalls: [forceExecuteResult],
             };
+            wasForceExecuted = true;
           } else if (this.toolCallRetryCount < this.maxToolCallRetries) {
             this.toolCallRetryCount++;
             logger.warn(`[AgentLoop] Detected text description of tool call: "${failedToolCallMatch.toolName}"`);
@@ -982,6 +995,31 @@ export class AgentLoop {
             this.onEvent({
               type: 'notification',
               data: { message: `目标完成度检查：尚无写操作 (${this.goalVerificationCount}/${this.maxGoalVerifications})` },
+            });
+            continue;
+          }
+        }
+
+        // P5 Nudge: Verify expected output files exist on disk
+        if (this.expectedOutputFiles.length > 0 && this.outputFileNudgeCount < this.maxOutputFileNudges) {
+          const missingOutputFiles = this.expectedOutputFiles.filter(f => !existsSync(f));
+          if (missingOutputFiles.length > 0) {
+            this.outputFileNudgeCount++;
+            const fileList = missingOutputFiles.map(f => `- ${f}`).join('\n');
+            logger.debug(`[AgentLoop] P5 Nudge: Missing output files, nudge ${this.outputFileNudgeCount}/${this.maxOutputFileNudges}`);
+            logCollector.agent('INFO', `P5 Nudge: Expected output files missing`, {
+              nudgeCount: this.outputFileNudgeCount,
+              missingFiles: missingOutputFiles,
+            });
+            this.injectSystemMessage(
+              `<output-file-check>\n` +
+              `STOP! 用户要求的输出文件不存在:\n${fileList}\n\n` +
+              `你声称任务已完成，但这些文件在磁盘上并未找到。请立即生成这些文件。\n` +
+              `</output-file-check>`
+            );
+            this.onEvent({
+              type: 'notification',
+              data: { message: `检测到 ${missingOutputFiles.length} 个输出文件缺失，提示继续 (${this.outputFileNudgeCount}/${this.maxOutputFileNudges})` },
             });
             continue;
           }
@@ -1270,6 +1308,27 @@ export class AgentLoop {
           this.consecutiveExploringCount = 0; // Reset on progress
         }
         this.lastProgressState = currentState;
+
+        // P5 after force-execute: 模型原本想停止（text response），但被 force-execute 拦截
+        // 工具执行完后检查输出文件是否存在，防止 force-execute 路径永远绕过 P5
+        if (wasForceExecuted && this.expectedOutputFiles.length > 0 && this.outputFileNudgeCount < this.maxOutputFileNudges) {
+          const missingOutputFiles = this.expectedOutputFiles.filter(f => !existsSync(f));
+          if (missingOutputFiles.length > 0) {
+            this.outputFileNudgeCount++;
+            const fileList = missingOutputFiles.map(f => `- ${f}`).join('\n');
+            logger.debug(`[AgentLoop] P5 Nudge (post force-execute): Missing output files, nudge ${this.outputFileNudgeCount}/${this.maxOutputFileNudges}`);
+            logCollector.agent('INFO', `P5 Nudge (post force-execute): Expected output files missing`, {
+              nudgeCount: this.outputFileNudgeCount,
+              missingFiles: missingOutputFiles,
+            });
+            this.injectSystemMessage(
+              `<output-file-check>\n` +
+              `用户要求的输出文件尚未生成:\n${fileList}\n\n` +
+              `请确保在完成任务前生成这些文件。\n` +
+              `</output-file-check>`
+            );
+          }
+        }
 
         logger.debug(` >>>>>> Iteration ${iterations} END (continuing) <<<<<<`);
         continue;
@@ -3592,4 +3651,24 @@ ${deferredToolsSummary}
       return null;
     }
   }
+}
+
+/**
+ * P5: 从文本中提取所有带扩展名的绝对路径
+ * 语言无关——只认路径格式，不依赖中英文动词
+ */
+function extractAbsoluteFilePaths(text: string): string[] {
+  // 匹配 /dir/file.ext 格式，至少两段路径（排除 /file.ext 这种短误匹配）
+  const pattern = /\/[\w.~-]+\/[^\s,，。、;；:："""'']+\.\w{2,5}/g;
+  const files: string[] = [];
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    const p = match[0];
+    // 排除 URL context（往前找同一个 token，看有没有 ://）
+    const tokenStart = text.lastIndexOf(' ', match.index) + 1;
+    const prefix = text.substring(tokenStart, match.index);
+    if (prefix.includes('://') || prefix.endsWith('/') || prefix.endsWith(':')) continue;
+    if (!files.includes(p)) files.push(p);
+  }
+  return files;
 }

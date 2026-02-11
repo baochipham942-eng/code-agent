@@ -97,8 +97,8 @@ export class AdaptiveRouter {
       logger.info(`[AdaptiveRouter] Stats after ${this.callCount} calls:`, this.routingStats);
     }
 
-    // 环境变量禁用自适应路由（评测等场景需统一模型）
-    if (process.env.ADAPTIVE_ROUTER_DISABLED === 'true') {
+    // CLI 模式或环境变量禁用自适应路由（评测等场景需统一模型）
+    if (process.env.ADAPTIVE_ROUTER_DISABLED === 'true' || process.env.CODE_AGENT_CLI_MODE === 'true') {
       return defaultConfig;
     }
 

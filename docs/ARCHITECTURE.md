@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 5.6 (对应 v0.16.22)
-> 日期: 2026-02-08
+> 版本: 5.7 (对应 v0.16.37)
+> 日期: 2026-02-11
 > 作者: Lin Chen
 
 本文档已拆分为模块化的架构文档，便于维护和查阅。
@@ -35,6 +35,16 @@
 | **CLI 接口** | `src/main/cli/` | 命令行交互模式 |
 | **多渠道接入** | `src/main/channels/` | 飞书 Webhook 等渠道支持 |
 | **Skills 系统** | `src/main/skills/` | 用户可定义技能 |
+
+### v0.16.37+ 工程能力提升（动态 maxTokens + 源数据锚定 + 数据清洗）
+
+| 模块 | 位置 | 描述 |
+|------|------|------|
+| **截断自动恢复** | `src/main/agent/agentLoop.ts` | 文本截断翻倍 maxTokens 重试，工具截断注入续写提示 |
+| **复杂任务 maxTokens** | `src/main/model/adaptiveRouter.ts` | 复杂任务主动提升 maxTokens 到 8192 |
+| **DataFingerprintStore** | `src/main/tools/dataFingerprint.ts` | 源数据锚定：xlsx schema + bash 统计 + CSV/JSON schema |
+| **Compaction 事实注入** | `src/main/context/autoCompressor.ts` | 压缩时自动注入已验证的源数据和计算结果 |
+| **数据清洗 Skill** | `src/main/services/skills/builtinSkills.ts` | 6 步系统性清洗检查清单，关键词自动匹配 |
 
 ### v0.16.22+ 成本优化与健壮性增强（Electron 38 + 7 项改进）
 

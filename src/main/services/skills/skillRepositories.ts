@@ -96,6 +96,7 @@ export const SKILL_KEYWORDS: Record<string, string[]> = {
   'systematic-debugging': ['调试', 'debug', 'bug', '错误', '问题'],
   'test-driven-development': ['测试', 'test', 'tdd', '单元测试'],
   brainstorming: ['创意', '头脑风暴', '想法', 'idea', 'brainstorm'],
+  'data-cleaning': ['清洗', '数据清洗', 'clean', 'cleaning', '去重', '缺失值', '异常值'],
 };
 
 // ============================================================================

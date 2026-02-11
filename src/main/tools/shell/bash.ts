@@ -10,6 +10,7 @@ import { startBackgroundTask } from './backgroundTasks';
 import { createPtySession, getPtySessionOutput } from './ptyExecutor';
 import { generateBashDescription } from './dynamicDescription';
 import { getShellPath } from '../../services/infra/shellEnvironment';
+import { extractBashFacts, dataFingerprintStore } from '../dataFingerprint';
 
 const execAsync = promisify(exec);
 
@@ -241,6 +242,12 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       }
 
       const dynamicDesc = await descriptionPromise;
+
+      // 源数据锚定：从 bash 输出中提取关键事实
+      const bashFact = extractBashFacts(command, output);
+      if (bashFact) {
+        dataFingerprintStore.recordFact(bashFact);
+      }
 
       return {
         success: true,

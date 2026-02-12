@@ -101,7 +101,30 @@ Git best practices:
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolExecutionResult> {
-    const command = params.command as string;
+    let command = params.command as string;
+
+    // Self-referential tool call: model passes bash({"command":"actual_cmd"}) as the command
+    // This happens when model outputs the tool call JSON as the command string itself
+    const selfRefMatch = command.match(/^\s*bash\s*\(\s*([\s\S]*)\s*\)\s*$/);
+    if (selfRefMatch) {
+      const inner = selfRefMatch[1].trim();
+      if (inner.startsWith('{')) {
+        // JSON format: bash({"command": "python3 xxx", ...})
+        try {
+          const parsed = JSON.parse(inner);
+          if (parsed.command && typeof parsed.command === 'string') {
+            command = parsed.command;
+          }
+        } catch { /* not valid JSON, keep original */ }
+      } else {
+        // Keyword format: bash(command="python3 xxx")
+        const kwMatch = inner.match(/^command\s*=\s*["'](.+?)["']/s);
+        if (kwMatch) {
+          command = kwMatch[1];
+        }
+      }
+    }
+
     const timeout = Math.min((params.timeout as number) || BASH.DEFAULT_TIMEOUT, 600000);
     const workingDirectory =
       (params.working_directory as string) || context.workingDirectory;
@@ -216,6 +239,47 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       };
     }
 
+    // Tool confusion pre-check: detect tool calls passed as bash commands
+    // e.g. bash(command="write_file({...})") or bash(command="edit_file({...})")
+    const toolConfusionMatch = command.match(/^\s*(write_file|edit_file|read_file|read_xlsx|glob|grep)\s*\(/);
+    if (toolConfusionMatch) {
+      const toolName = toolConfusionMatch[1];
+      return {
+        success: false,
+        error: `❌ 工具混淆: "${toolName}(...)" 不是 shell 命令。请直接使用 ${toolName} 工具，而不是在 bash 中调用。\n\n` +
+          `正确用法: 调用 ${toolName} 工具并传入 JSON 参数\n` +
+          `错误用法: bash(command="${toolName}({...})")`,
+      };
+    }
+
+    // Heredoc truncation pre-check: detect empty/truncated heredocs
+    // Model generates long Python scripts as heredocs, but maxTokens truncation
+    // causes the body to be missing, resulting in empty scripts that succeed but produce nothing
+    const heredocMatch = command.match(/<<-?\s*['"]?(\w+)['"]?\s*$/m);
+    if (heredocMatch) {
+      const delimiter = heredocMatch[1];
+      const delimiterPattern = new RegExp(`^${delimiter}\\s*$`, 'm');
+      const bodyStartIdx = command.indexOf('\n', heredocMatch.index!);
+      if (bodyStartIdx < 0) {
+        // No body at all — just the heredoc opener
+        return {
+          success: false,
+          error: `❌ heredoc 不完整: 缺少脚本内容和结束符 ${delimiter}。\n` +
+            `请改用 write_file 将脚本写入文件，然后用 bash 执行: python3 <文件路径>`,
+        };
+      }
+      const body = command.substring(bodyStartIdx + 1);
+      const delimMatch = body.match(delimiterPattern);
+      const bodyContent = delimMatch ? body.substring(0, delimMatch.index!) : body;
+      if (bodyContent.trim().length < 20) {
+        return {
+          success: false,
+          error: `❌ heredoc 内容被截断（仅 ${bodyContent.trim().length} 字符）。\n` +
+            `长脚本请改用 write_file 写入文件，然后用 bash 执行: python3 <文件路径>`,
+        };
+      }
+    }
+
     // Foreground execution
     try {
       // 并行：生成动态描述（不阻塞命令执行）
@@ -249,9 +313,12 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
         dataFingerprintStore.recordFact(bashFact);
       }
 
+      // 上下文增强：输出头部附加 cwd，引导模型使用绝对路径
+      const cwdPrefix = `[cwd: ${workingDirectory}]\n`;
+
       return {
         success: true,
-        output,
+        output: cwdPrefix + output,
         metadata: dynamicDesc ? { description: dynamicDesc } : undefined,
       };
     } catch (error: any) {

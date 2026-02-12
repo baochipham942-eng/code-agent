@@ -19,13 +19,33 @@ class ZhipuRateLimiter {
     reject: (error: Error) => void;
   }> = [];
   private activeRequests = 0;
-  private readonly maxConcurrent: number;
+  private maxConcurrent: number;
+  private readonly initialMaxConcurrent: number;
   private readonly minInterval: number;
   private lastRequestTime = 0;
+  private lastRateLimitTime = 0;
 
   constructor(maxConcurrent = 3, minIntervalMs = 200) {
     this.maxConcurrent = maxConcurrent;
+    this.initialMaxConcurrent = maxConcurrent;
     this.minInterval = minIntervalMs;
+  }
+
+  /** 限流报错时降低并发（最低 1） */
+  onRateLimit(): void {
+    if (this.maxConcurrent > 1) {
+      this.maxConcurrent--;
+      this.lastRateLimitTime = Date.now();
+      logger.warn(`[智谱限流] 触发降级: maxConcurrent ${this.maxConcurrent + 1} → ${this.maxConcurrent}`);
+    }
+  }
+
+  /** 成功请求后尝试恢复并发（距上次限流 5 分钟后） */
+  onSuccess(): void {
+    if (this.maxConcurrent < this.initialMaxConcurrent && Date.now() - this.lastRateLimitTime > 5 * 60 * 1000) {
+      this.maxConcurrent++;
+      logger.info(`[智谱限流] 恢复并发: maxConcurrent → ${this.maxConcurrent}`);
+    }
   }
 
   async acquire(signal?: AbortSignal): Promise<void> {
@@ -138,7 +158,7 @@ export async function callZhipu(
   await zhipuLimiter.acquire(signal);
 
   try {
-    return await withTransientRetry(
+    const result = await withTransientRetry(
       () => openAISSEStream({
         providerName: '智谱',
         baseUrl,
@@ -149,6 +169,14 @@ export async function callZhipu(
       }),
       { providerName: '智谱', signal }
     );
+    zhipuLimiter.onSuccess();
+    return result;
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('1302') || msg.includes('速率限制') || msg.includes('rate limit')) {
+      zhipuLimiter.onRateLimit();
+    }
+    throw err;
   } finally {
     zhipuLimiter.release();
   }

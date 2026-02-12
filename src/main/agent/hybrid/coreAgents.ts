@@ -63,7 +63,7 @@ export const MODEL_CONFIG: Record<ModelTier, { provider: ModelProvider; model: s
   },
   balanced: {
     provider: (process.env.BALANCED_MODEL_PROVIDER as ModelProvider) || 'zhipu',
-    model: process.env.BALANCED_MODEL || 'glm-4.7',
+    model: process.env.BALANCED_MODEL || 'glm-5',
   },
   powerful: {
     provider: (process.env.POWERFUL_MODEL_PROVIDER as ModelProvider) || (DEFAULT_PROVIDER as ModelProvider),

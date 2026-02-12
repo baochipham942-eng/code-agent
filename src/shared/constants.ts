@@ -50,6 +50,7 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
   'gpt-4o': 128_000,
   'gpt-4o-mini': 128_000,
   // Zhipu
+  'glm-5': 200_000,
   'glm-4.7': 128_000,
   'glm-4.7-flash': 128_000,
   // Moonshot
@@ -77,6 +78,7 @@ export const MODEL_PRICING_PER_1M: Record<string, { input: number; output: numbe
   'claude-3-5-sonnet-20241022': { input: 3, output: 15 },
   'claude-3-5-haiku-20241022': { input: 0.25, output: 1.25 },
   // Zhipu
+  'glm-5': { input: 0.05, output: 0.05 },
   'glm-4.7': { input: 0.05, output: 0.05 },
   'glm-4.6v': { input: 0.05, output: 0.05 },
   'glm-4.7-flash': { input: 0, output: 0 },

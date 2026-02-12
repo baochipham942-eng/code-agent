@@ -78,7 +78,7 @@ import { getInputSanitizer } from '../security/inputSanitizer';
 import { getDiffTracker } from '../services/diff/diffTracker';
 import { getCitationService } from '../services/citation/citationService';
 import { existsSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { join, basename } from 'path';
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { getVerifierRegistry, initializeVerifiers } from './verifier';
@@ -165,7 +165,7 @@ export class AgentLoop {
   // P5: Output file existence verification
   private expectedOutputFiles: string[] = [];
   private outputFileNudgeCount: number = 0;
-  private maxOutputFileNudges: number = 2;
+  private maxOutputFileNudges: number = 3;
 
   // Token optimization
   private hookMessageBuffer: HookMessageBuffer;
@@ -517,6 +517,7 @@ export class AgentLoop {
     // Workspace diff: snapshot output directory before agent starts
     this._outputDirSnapshot = this._snapshotOutputDir();
     this._userExpectsOutput = /保存|导出|生成.*文件|输出.*文件|写入|\.xlsx|\.csv|\.png|\.pdf|export|save/i.test(userMessage);
+
 
     // P5: Extract expected output file paths from user prompt (existence diff)
     const allPaths = extractAbsoluteFilePaths(userMessage);
@@ -1064,6 +1065,32 @@ export class AgentLoop {
           }
         }
 
+        // P5 Check 3: 检测未执行的 Python 脚本
+        // 场景: 模型写了 .py 脚本但没用 bash 执行，导致无数据输出
+        if (this._userExpectsOutput && this.outputFileNudgeCount < this.maxOutputFileNudges) {
+          const newFiles = this._getNewOutputFiles();
+          const scriptFiles = newFiles.filter(f => f.endsWith('.py'));
+          const dataFiles = newFiles.filter(f =>
+            f.endsWith('.xlsx') || f.endsWith('.xls') || f.endsWith('.csv') || f.endsWith('.png')
+          );
+          if (scriptFiles.length > 0 && dataFiles.length === 0) {
+            this.outputFileNudgeCount++;
+            const scripts = scriptFiles.map(f => basename(f)).join(', ');
+            logger.debug(`[AgentLoop] P5 Nudge (unexecuted-script): ${scripts}`);
+            logCollector.agent('INFO', `P5 Nudge: Python scripts not executed`, { scripts: scriptFiles });
+            this.injectSystemMessage(
+              `<output-file-check>\n` +
+              `STOP! 你创建了 Python 脚本 (${scripts}) 但还没有成功执行它。\n` +
+              `输出目录中没有检测到任何数据文件（xlsx/csv/png）。\n` +
+              `请立即用 bash 工具执行该脚本: python3 <脚本路径>\n` +
+              `如果脚本执行出错，请修复错误后重新执行。\n` +
+              `</output-file-check>`
+            );
+            continue;
+          }
+        }
+
+
         // P7: Output structure validation — 系统自动读取输出 xlsx 结构，模型核对需求
         // 合并两个来源: 显式路径 + workspace diff 新文件
         if (!this._outputValidationDone) {
@@ -1437,6 +1464,24 @@ export class AgentLoop {
                 `请将结果保存到: ${this.workingDirectory}\n` +
                 `</output-file-check>`
               );
+            } else {
+              // Check 3: 有新文件但只有脚本，没有数据文件
+              const scriptFiles = newFiles.filter(f => f.endsWith('.py'));
+              const dataFiles = newFiles.filter(f =>
+                f.endsWith('.xlsx') || f.endsWith('.xls') || f.endsWith('.csv') || f.endsWith('.png')
+              );
+              if (scriptFiles.length > 0 && dataFiles.length === 0) {
+                this.outputFileNudgeCount++;
+                const scripts = scriptFiles.map(f => basename(f)).join(', ');
+                logger.debug(`[AgentLoop] P5 Nudge (post force-execute, unexecuted-script): ${scripts}`);
+                logCollector.agent('INFO', `P5 Nudge (post force-execute): scripts not executed`, { scripts: scriptFiles });
+                this.injectSystemMessage(
+                  `<output-file-check>\n` +
+                  `你创建了 Python 脚本 (${scripts}) 但还没有成功执行它。\n` +
+                  `请用 bash 执行: python3 <脚本路径>\n` +
+                  `</output-file-check>`
+                );
+              }
             }
           }
         }
@@ -3176,6 +3221,18 @@ ${deferredToolsSummary}
           if (dataFingerprint) {
             recoveryContext += '\n\n' + dataFingerprint;
           }
+
+          // 注入输出目录文件列表（防止多轮对话压缩后遗忘已创建文件）
+          try {
+            const allOutputFiles = readdirSync(this.workingDirectory)
+              .filter(f => /\.(xlsx|xls|csv|png|pdf|json)$/i.test(f))
+              .sort();
+            if (allOutputFiles.length > 0) {
+              recoveryContext += '\n\n## 当前输出目录中已有的文件\n';
+              recoveryContext += allOutputFiles.map(f => `- ${f}`).join('\n');
+              recoveryContext += '\n\n⚠️ 以上文件已存在于工作目录中，可直接引用';
+            }
+          } catch { /* ignore if directory listing fails */ }
 
           if (recoveryContext) {
             block.content += recoveryContext;

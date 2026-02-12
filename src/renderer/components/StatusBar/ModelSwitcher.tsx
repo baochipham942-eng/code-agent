@@ -17,6 +17,7 @@ interface ModelOption {
 const MODEL_OPTIONS: ModelOption[] = [
   { provider: 'moonshot', model: 'kimi-k2.5', label: 'Kimi K2.5' },
   { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek V3' },
+  { provider: 'zhipu', model: 'glm-5', label: 'GLM-5' },
   { provider: 'zhipu', model: 'glm-4.7', label: 'GLM-4.7' },
   { provider: 'zhipu', model: 'glm-4.7-flash', label: 'GLM-4.7 Flash' },
   { provider: 'openai', model: 'gpt-4o', label: 'GPT-4o' },

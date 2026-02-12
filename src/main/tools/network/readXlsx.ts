@@ -161,6 +161,8 @@ read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
       let result: string;
       const totalRows = rows.length;
       const totalCols = headers.length;
+      // actualRowCount 包含所有非空行（不受 max_rows 限制）
+      const actualTotalRows = worksheet.actualRowCount - 1; // -1 for header
 
       if (format === 'json') {
         const jsonData = rows.map(row => {
@@ -227,7 +229,7 @@ read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
           filePath: absPath,
           readTime: Date.now(),
           sheetName: worksheet.name,
-          rowCount: totalRows,
+          rowCount: actualTotalRows,
           columnNames: headers,
           sampleValues,
           numericRanges: Object.keys(numericRanges).length > 0 ? numericRanges : undefined,
@@ -238,7 +240,8 @@ read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
       }
 
       let output = `📊 Excel 内容 (${path.basename(absPath)})\n`;
-      output += `工作表: ${worksheet.name} | 行数: ${totalRows} | 列数: ${totalCols}\n`;
+      output += `工作表: ${worksheet.name} | 实际总行数: ${actualTotalRows} | 预览行数: ${totalRows} | 列数: ${totalCols}\n`;
+      output += `列名: ${headers.join(', ')}\n`;
       output += `可用工作表: ${sheetList.join(', ')}\n`;
       output += `${'─'.repeat(50)}\n\n`;
       output += result;
@@ -256,10 +259,28 @@ read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
       output += `- 阶梯累进: 提成/税率必须分段累加，不能按最高档全额计算\n`;
       output += `- 日期统一: pd.to_datetime(col, format='mixed').dt.strftime('%Y-%m-%d')`;
 
-      output += `\n\n💡 提示：完整数据请用 bash + Python 读取源文件：pd.read_excel('${absPath}', sheet_name='${worksheet.name}')`;
+      // 大数据集专项指导：提供现成 Python 脚本，避免模型猜错列名
+      if (actualTotalRows > 10000) {
+        const colList = headers.map(h => `'${h}'`).join(', ');
+        output += `\n\n🔴 大数据集 (${actualTotalRows} 行)！必须用 bash + Python 处理全部数据。`;
+        output += `\n列名（精确）: [${colList}]`;
+        output += `\n直接在 bash 中运行以下 Python 脚本处理数据：`;
+        output += `\n\`\`\`python`;
+        output += `\nimport pandas as pd`;
+        output += `\ndf = pd.read_excel('${absPath}', sheet_name='${worksheet.name}')`;
+        output += `\nprint(f"行数: {len(df)}, 列: {list(df.columns)}")`;
+        output += `\nprint(df.head(3))`;
+        output += `\n# 在此基础上编写处理逻辑，使用上述精确列名`;
+        output += `\n\`\`\``;
+        output += `\n⚠️ 不要猜测列名，务必使用上面列出的精确列名！`;
+      } else {
+        const colList = headers.map(h => `'${h}'`).join(', ');
+        output += `\n\n💡 用 Python 处理时使用精确列名: [${colList}]`;
+        output += `\n   pd.read_excel('${absPath}', sheet_name='${worksheet.name}')`;
+      }
 
       if (totalRows >= max_rows) {
-        output += `\n⚠️ 已达到最大行数限制 (${max_rows})，使用 max_rows 参数调整`;
+        output += `\n⚠️ 已达到最大行数限制 (${max_rows})，实际数据有 ${actualTotalRows} 行`;
       }
 
       return {

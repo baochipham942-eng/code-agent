@@ -545,16 +545,34 @@ export class AntiPatternDetector {
         // bash 命令专项清理：防止 markdown/中文解释文字混入
         if (toolName === 'bash' && typeof sanitizedArgs.command === 'string') {
           let cmd = sanitizedArgs.command;
-          // 检测 heredoc 命令（含换行的完整 heredoc 不应截断）
+          // heredoc 命令：检测是否被截断/省略，只拒绝不完整的 heredoc
           const isHeredoc = /<<-?\s*['"]?\w+['"]?\s*$/m.test(cmd.split('\n')[0]);
-          if (!isHeredoc) {
-            // 非 heredoc：移除换行后的内容（防止多行 markdown 泄漏）
-            const nlIdx = cmd.indexOf('\n');
-            if (nlIdx > 0) cmd = cmd.substring(0, nlIdx);
-            // 移除命令后混入的中文解释
-            const cjkBoundary = cmd.search(/\s{2,}[\u4e00-\u9fff\u3000-\u303f]/);
-            if (cjkBoundary > 0) cmd = cmd.substring(0, cjkBoundary);
+          if (isHeredoc) {
+            // 检测截断标记（模型常输出 "# ... (heredoc body omitted, N chars total)" 等占位符）
+            const isTruncated = /\(.*(?:omitted|truncated|省略|chars total)\)/i.test(cmd)
+              || /^#\s*\.\.\./m.test(cmd);
+            if (isTruncated) {
+              logger.warn(`[AntiPatternDetector] Refusing to force-execute truncated heredoc, will nudge model to use tool_use`);
+              return null;
+            }
+            // 检测空/极短 heredoc body（maxTokens 截断导致 body 丢失）
+            const firstNewline = cmd.indexOf('\n');
+            if (firstNewline < 0) {
+              logger.warn(`[AntiPatternDetector] Refusing to force-execute heredoc with no body`);
+              return null;
+            }
+            const bodyAfterFirst = cmd.substring(firstNewline + 1).trim();
+            if (bodyAfterFirst.length < 20) {
+              logger.warn(`[AntiPatternDetector] Refusing to force-execute empty heredoc (body ${bodyAfterFirst.length} chars)`);
+              return null;
+            }
           }
+          // 非 heredoc：移除换行后的内容（防止多行 markdown 泄漏）
+          const nlIdx = cmd.indexOf('\n');
+          if (nlIdx > 0) cmd = cmd.substring(0, nlIdx);
+          // 移除命令后混入的中文解释
+          const cjkBoundary = cmd.search(/\s{2,}[\u4e00-\u9fff\u3000-\u303f]/);
+          if (cjkBoundary > 0) cmd = cmd.substring(0, cjkBoundary);
           cmd = cmd.trim();
           // 如果清理后命令以 markdown 格式开头或为空，拒绝执行
           if (!cmd || /^\*\*|^\|/.test(cmd)) {

@@ -241,10 +241,21 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     id: 'zhipu',
     name: '智谱 GLM',
     requiresApiKey: true,
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    codingBaseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4',
+    baseUrl: 'https://api.0ki.cn/api/paas/v4',
+    codingBaseUrl: 'https://api.0ki.cn/api/coding/paas/v4',
     models: [
-      // === 旗舰模型 (Coding 套餐) ===
+      // === 旗舰模型 ===
+      {
+        id: 'glm-5',
+        name: 'GLM-5 (新一代旗舰)',
+        capabilities: ['general', 'code', 'reasoning'],
+        maxTokens: 16384,
+        supportsTool: true,
+        supportsVision: false,
+        supportsStreaming: true,
+        useCodingEndpoint: true,
+        costType: 'yearly',
+      },
       {
         id: 'glm-4.7',
         name: 'GLM-4.7 (旗舰语言)',

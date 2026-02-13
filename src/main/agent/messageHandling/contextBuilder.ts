@@ -2,6 +2,8 @@
 // Context Builder - Build enhanced system prompts with RAG
 // ============================================================================
 
+import * as os from 'os';
+import { execSync } from 'child_process';
 import { getMemoryService } from '../../memory/memoryService';
 import { getCoreMemoryService } from '../../memory/coreMemory';
 import { getProactiveContextService } from '../../memory/proactiveContext';
@@ -14,24 +16,62 @@ const logger = createLogger('ContextBuilder');
 // Session-level RAG cache to avoid redundant queries
 const ragCache = new RAGContextCache({ ttl: 5 * 60 * 1000, maxEntries: 10 });
 
+
 // ----------------------------------------------------------------------------
 // Working Directory Context
 // ----------------------------------------------------------------------------
 
+// Cache git repo detection per directory (avoids repeated execSync calls)
+const gitRepoCache = new Map<string, boolean>();
+
+function isGitRepo(dir: string): boolean {
+  const cached = gitRepoCache.get(dir);
+  if (cached !== undefined) return cached;
+  try {
+    execSync('git rev-parse --is-inside-work-tree', { cwd: dir, stdio: 'pipe', timeout: 3000 });
+    gitRepoCache.set(dir, true);
+    return true;
+  } catch {
+    gitRepoCache.set(dir, false);
+    return false;
+  }
+}
+
 /**
- * Inject working directory context into system prompt
+ * Build environment info block (Claude Code style <env> block)
+ * Injected once per prompt assembly — ~60 tokens, zero tool calls saved.
+ */
+function buildEnvironmentBlock(workingDirectory: string): string {
+  const platform = process.platform;                    // darwin / linux / win32
+  const osVersion = `${os.type()} ${os.release()}`;    // Darwin 25.2.0
+  const shell = process.env.SHELL || process.env.COMSPEC || 'unknown';
+  const today = new Date().toISOString().split('T')[0]; // 2026-02-13
+  const gitRepo = isGitRepo(workingDirectory);
+
+  return `<env>
+Working directory: ${workingDirectory}
+Is directory a git repo: ${gitRepo ? 'Yes' : 'No'}
+Platform: ${platform}
+OS Version: ${osVersion}
+Default Shell: ${shell}
+Home Directory: ${os.homedir()}
+Today's date: ${today}
+</env>`;
+}
+
+/**
+ * Inject working directory context + environment info into system prompt
  */
 export function injectWorkingDirectoryContext(
   basePrompt: string,
   workingDirectory: string,
   isDefaultWorkingDirectory: boolean
 ): string {
+  // Environment block (platform, OS, shell, date, git)
+  const envBlock = buildEnvironmentBlock(workingDirectory);
+
   const workingDirInfo = isDefaultWorkingDirectory
-    ? `## Working Directory
-
-**Default working directory**: \`${workingDirectory}\`
-
-**File Path Rules**:
+    ? `**File Path Rules**:
 - **Relative paths** (e.g., \`game/index.html\`) → resolved against working directory
 - **Absolute paths** (e.g., \`/Users/xxx/project/file.txt\`) → used directly
 - **Home paths** (e.g., \`~/Desktop/file.txt\`) → expanded to user's home directory
@@ -49,13 +89,9 @@ export function injectWorkingDirectoryContext(
 \`\`\`
 
 **When user intent is CLEAR**, just use the appropriate path directly.`
-    : `## Working Directory
+    : `Use relative paths (resolved against working directory) or absolute paths.`;
 
-**Current working directory**: \`${workingDirectory}\`
-
-Use relative paths (resolved against this directory) or absolute paths.`;
-
-  return `${basePrompt}\n\n${workingDirInfo}`;
+  return `${basePrompt}\n\n${envBlock}\n\n${workingDirInfo}`;
 }
 
 // ----------------------------------------------------------------------------

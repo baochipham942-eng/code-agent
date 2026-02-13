@@ -408,6 +408,18 @@ export function registerSettingsHandlers(
     }
     // bypassPermissions 需要用户审批
     const approved = mode === 'bypassPermissions';
-    return getPermissionModeManager().setMode(mode as 'default' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate', approved);
+    const result = getPermissionModeManager().setMode(mode as 'default' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate', approved);
+
+    // 持久化权限模式到 config（重启/重装后恢复）
+    if (result) {
+      const configService = getConfigService();
+      if (configService) {
+        await configService.updateSettings({
+          permissions: { permissionMode: mode as AppSettings['permissions']['permissionMode'] },
+        } as Partial<AppSettings>);
+      }
+    }
+
+    return result;
   });
 }

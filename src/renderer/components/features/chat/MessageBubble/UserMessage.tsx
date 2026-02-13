@@ -10,30 +10,24 @@ import { AttachmentDisplay } from './AttachmentPreview';
 
 export const UserMessage: React.FC<UserMessageProps> = ({ message }) => {
   return (
-    <div
-      className="py-3 px-4 border-t border-b select-text"
-      style={{
-        backgroundColor: 'var(--cc-user-bg)',
-        borderColor: 'rgba(255,255,255,0.04)',
-      }}
-    >
-      {/* Attachments above text, left-aligned */}
+    <div className="py-3 px-4 select-text">
+      {/* Attachments above text */}
       {message.attachments && message.attachments.length > 0 && (
         <div className="mb-2">
           <AttachmentDisplay attachments={message.attachments} />
         </div>
       )}
 
-      {/* Text content with > prefix */}
+      {/* Text content - 左侧色条 + 现代风格 */}
       {message.content && (
-        <div className="flex gap-2">
-          <span
-            className="flex-shrink-0 font-bold text-base select-none"
-            style={{ color: 'var(--cc-brand)' }}
-          >
-            &gt;
-          </span>
-          <div className="text-zinc-100 leading-relaxed min-w-0 flex-1">
+        <div
+          className="pl-3 border-l-2 rounded-r-lg py-2 pr-3"
+          style={{
+            borderColor: 'var(--cc-brand)',
+            backgroundColor: 'var(--cc-user-bg)',
+          }}
+        >
+          <div className="text-zinc-100 leading-relaxed">
             <MessageContent content={message.content} isUser={true} />
           </div>
         </div>

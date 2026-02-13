@@ -66,7 +66,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
         aria-label="中断并发送新指令"
         title="中断当前任务并发送新指令"
       >
-        <Send className="w-4 h-4 -rotate-45" />
+        <Send className="w-4 h-4 -rotate-45 translate-x-[0.5px] -translate-y-[0.5px]" />
       </button>
     );
   }
@@ -103,7 +103,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
       >
         <Send
           className={`w-4 h-4 transition-transform duration-200 ${
-            hasContent ? '-rotate-45' : ''
+            hasContent ? '-rotate-45 translate-x-[0.5px] -translate-y-[0.5px]' : ''
           }`}
         />
         <span>{label}</span>
@@ -125,7 +125,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
     >
       <Send
         className={`w-4 h-4 transition-transform duration-200 ${
-          hasContent ? '-rotate-45' : ''
+          hasContent ? '-rotate-45 translate-x-[0.5px] -translate-y-[0.5px]' : ''
         }`}
       />
     </button>

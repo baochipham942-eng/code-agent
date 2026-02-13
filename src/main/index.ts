@@ -116,6 +116,19 @@ app.whenReady().then(async () => {
     await initializeCoreServices();
     logger.info('Core services initialized');
 
+    // 1.5. Restore persisted permission mode from config/Keychain
+    const configService = getConfigServiceInstance();
+    if (configService) {
+      const settings = configService.getSettings();
+      const persistedMode = settings.permissions?.permissionMode;
+      if (persistedMode && persistedMode !== 'default') {
+        const { getPermissionModeManager } = await import('./permissions/modes');
+        const approved = persistedMode === 'bypassPermissions'; // bypassPermissions 自动审批（用户之前已确认）
+        getPermissionModeManager().setMode(persistedMode, approved);
+        logger.info('Restored permission mode:', persistedMode);
+      }
+    }
+
     // 2. Setup IPC handlers
     setupAllIpcHandlers(ipcMain, {
       getMainWindow,

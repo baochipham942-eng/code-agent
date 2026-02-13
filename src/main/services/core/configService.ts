@@ -222,15 +222,33 @@ export class ConfigService {
       if (keychainSettings) {
         logger.info('Restoring settings from Keychain:', Object.keys(keychainSettings));
 
+        // === 核心配置 ===
+
         // Restore generation
         if (keychainSettings.generation && typeof keychainSettings.generation === 'string') {
           this.settings.generation.default = keychainSettings.generation as GenerationId;
         }
 
-        // Restore model settings
+        // Restore model provider
         if (keychainSettings.modelProvider && typeof keychainSettings.modelProvider === 'string') {
           this.settings.models.default = keychainSettings.modelProvider as ModelProvider;
         }
+
+        // Restore permissionMode
+        if (keychainSettings.permissionMode && typeof keychainSettings.permissionMode === 'string') {
+          const validModes = ['default', 'acceptEdits', 'dontAsk', 'bypassPermissions', 'plan', 'delegate'];
+          if (validModes.includes(keychainSettings.permissionMode)) {
+            this.settings.permissions.permissionMode = keychainSettings.permissionMode as AppSettings['permissions']['permissionMode'];
+            logger.info('Restored permissionMode from Keychain:', keychainSettings.permissionMode);
+          }
+        }
+
+        // Restore devModeAutoApprove
+        if (typeof keychainSettings.devModeAutoApprove === 'boolean') {
+          this.settings.permissions.devModeAutoApprove = keychainSettings.devModeAutoApprove;
+        }
+
+        // === UI 偏好 ===
 
         // Restore language
         if (keychainSettings.language && typeof keychainSettings.language === 'string') {
@@ -240,9 +258,22 @@ export class ConfigService {
           }
         }
 
-        // Restore devModeAutoApprove
-        if (typeof keychainSettings.devModeAutoApprove === 'boolean') {
-          this.settings.permissions.devModeAutoApprove = keychainSettings.devModeAutoApprove;
+        // Restore theme
+        if (keychainSettings.theme && typeof keychainSettings.theme === 'string') {
+          const validThemes = ['light', 'dark', 'system'];
+          if (validThemes.includes(keychainSettings.theme)) {
+            this.settings.ui.theme = keychainSettings.theme as 'light' | 'dark' | 'system';
+          }
+        }
+
+        // Restore fontSize
+        if (typeof keychainSettings.fontSize === 'number') {
+          this.settings.ui.fontSize = keychainSettings.fontSize;
+        }
+
+        // Restore showToolCalls
+        if (typeof keychainSettings.showToolCalls === 'boolean') {
+          this.settings.ui.showToolCalls = keychainSettings.showToolCalls;
         }
 
         // Restore disclosureLevel
@@ -253,10 +284,47 @@ export class ConfigService {
           }
         }
 
-        // Restore maxTokens
+        // === 超时配置 ===
+
+        // Restore timeout complexity
+        if (keychainSettings.timeoutComplexity && typeof keychainSettings.timeoutComplexity === 'string') {
+          const validComplexities = ['simple', 'medium', 'complex'];
+          if (validComplexities.includes(keychainSettings.timeoutComplexity)) {
+            if (!this.settings.timeouts) {
+              this.settings.timeouts = { complexity: 'medium', simple: 30000, medium: 120000, complex: 600000 };
+            }
+            this.settings.timeouts.complexity = keychainSettings.timeoutComplexity as 'simple' | 'medium' | 'complex';
+          }
+        }
+
+        // === 模型路由 ===
+
+        // Restore model routing
+        if (keychainSettings.modelRouting && typeof keychainSettings.modelRouting === 'object') {
+          const routing = keychainSettings.modelRouting as Record<string, { provider: string; model: string }>;
+          for (const key of ['code', 'vision', 'fast', 'gui'] as const) {
+            if (routing[key]?.provider && routing[key]?.model) {
+              this.settings.models.routing[key] = routing[key] as { provider: ModelProvider; model: string };
+            }
+          }
+        }
+
+        // === 确认门控 ===
+
+        // Restore confirmation gate policy
+        if (keychainSettings.confirmationPolicy && typeof keychainSettings.confirmationPolicy === 'string') {
+          const validPolicies = ['always_ask', 'always_approve', 'ask_if_dangerous', 'session_approve'];
+          if (validPolicies.includes(keychainSettings.confirmationPolicy)) {
+            if (!this.settings.confirmationGate) {
+              this.settings.confirmationGate = { policy: 'ask_if_dangerous' };
+            }
+            this.settings.confirmationGate.policy = keychainSettings.confirmationPolicy as AppSettings['confirmationGate'] extends { policy: infer P } ? P : never;
+          }
+        }
+
+        // === maxTokens ===
+
         if (typeof keychainSettings.maxTokens === 'number') {
-          // Store maxTokens for use when needed (not in default settings structure)
-          // 使用类型扩展来存储动态属性
           (this.settings as AppSettings & { maxTokens?: number }).maxTokens = keychainSettings.maxTokens;
         }
       }
@@ -679,11 +747,23 @@ export class ConfigService {
     try {
       const storage = getSecureStorage();
       const settingsToSync: Record<string, unknown> = {
+        // 核心配置
         generation: this.settings.generation.default,
         modelProvider: this.settings.models.default,
-        language: this.settings.ui.language,
-        disclosureLevel: this.settings.ui.disclosureLevel,
+        permissionMode: this.settings.permissions.permissionMode || 'default',
         devModeAutoApprove: this.settings.permissions.devModeAutoApprove,
+        // UI 偏好
+        language: this.settings.ui.language,
+        theme: this.settings.ui.theme,
+        fontSize: this.settings.ui.fontSize,
+        showToolCalls: this.settings.ui.showToolCalls,
+        disclosureLevel: this.settings.ui.disclosureLevel,
+        // 超时配置
+        timeoutComplexity: this.settings.timeouts?.complexity,
+        // 模型路由
+        modelRouting: this.settings.models.routing,
+        // 确认门控策略
+        confirmationPolicy: this.settings.confirmationGate?.policy,
       };
 
       // Include maxTokens if set

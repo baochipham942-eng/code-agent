@@ -189,19 +189,49 @@ export function convertToolsToClaude(tools: ToolDefinition[]): any[] {
 // ----------------------------------------------------------------------------
 
 /**
- * Convert messages to OpenAI format
+ * Convert messages to OpenAI format (supports structured tool_calls)
+ * 包含 sanitizeToolCallOrder 后处理，确保 assistant+tool_calls 后紧跟 tool 响应
  */
 export function convertToOpenAIMessages(messages: ModelMessage[]): any[] {
-  return messages.map((m) => {
-    if (typeof m.content === 'string') {
+  const raw = messages.map((m) => {
+    // 结构化工具调用（assistant + toolCalls）
+    if (m.role === 'assistant' && m.toolCalls?.length) {
+      const msg: any = {
+        role: 'assistant',
+        content: m.content || null,
+        tool_calls: m.toolCalls.map(tc => ({
+          id: tc.id,
+          type: 'function',
+          function: { name: tc.name, arguments: tc.arguments },
+        })),
+      };
+      // Kimi K2.5 / DeepSeek: 推理模型要求 history 中保留 reasoning_content
+      if (m.thinking) {
+        msg.reasoning_content = m.thinking;
+      }
+      return msg;
+    }
+    // 结构化工具结果（role='tool' + toolCallId）
+    if (m.role === 'tool' && m.toolCallId) {
       return {
-        role: m.role === 'tool' ? 'user' : m.role,
-        content: m.content,
+        role: 'tool',
+        tool_call_id: m.toolCallId,
+        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
       };
     }
-
+    // 回退：无结构化数据的 tool 消息 → user
+    if (m.role === 'tool') {
+      return {
+        role: 'user',
+        content: typeof m.content === 'string' ? m.content : '',
+      };
+    }
+    // 其他消息（system, user, 无 toolCalls 的 assistant）
+    if (typeof m.content === 'string') {
+      return { role: m.role, content: m.content };
+    }
     return {
-      role: m.role === 'tool' ? 'user' : m.role,
+      role: m.role,
       content: m.content.map((c) => {
         if (c.type === 'text') {
           return { type: 'text', text: c.text };
@@ -218,23 +248,149 @@ export function convertToOpenAIMessages(messages: ModelMessage[]): any[] {
       }),
     };
   });
+
+  return sanitizeToolCallOrder(raw);
 }
 
 /**
- * Convert messages to Claude format
+ * OpenAI 协议要求：assistant(+tool_calls) 后必须紧跟对应的 tool 响应消息。
+ * agentLoop 会在 assistant 和 tool 之间注入 system 消息（thinking step、hook、nudge 等），
+ * 导致 API 400 错误。此函数将这些夹层消息移到 tool 响应之后。
+ */
+function sanitizeToolCallOrder(messages: any[]): any[] {
+  const result: any[] = [];
+  let i = 0;
+
+  while (i < messages.length) {
+    const msg = messages[i];
+
+    if (msg.role === 'assistant' && msg.tool_calls?.length) {
+      result.push(msg);
+      i++;
+
+      // 收集期望的 tool_call_ids
+      const expectedIds = new Set<string>(msg.tool_calls.map((tc: any) => tc.id));
+      const toolResponses: any[] = [];
+      const deferredMessages: any[] = [];
+
+      // 向前扫描，收集 tool 响应和需要延后的消息
+      while (i < messages.length) {
+        const next = messages[i];
+        if (next.role === 'tool' && next.tool_call_id && expectedIds.has(next.tool_call_id)) {
+          toolResponses.push(next);
+          expectedIds.delete(next.tool_call_id);
+          i++;
+          if (expectedIds.size === 0) break; // 所有 tool_calls 都匹配到了
+        } else if (next.role === 'assistant' || next.role === 'user') {
+          // 遇到新的 assistant/user 消息，停止扫描（不跨轮次重排）
+          break;
+        } else {
+          // system 消息或无 tool_call_id 的 tool 消息 → 延后
+          deferredMessages.push(next);
+          i++;
+        }
+      }
+
+      // 先放 tool 响应（满足协议要求），再放延后的消息
+      result.push(...toolResponses);
+      result.push(...deferredMessages);
+    } else {
+      result.push(msg);
+      i++;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Convert messages to Claude format (supports structured tool_use / tool_result)
  */
 export function convertToClaudeMessages(messages: ModelMessage[]): any[] {
-  return messages.map((m) => {
-    if (typeof m.content === 'string') {
-      return {
-        role: m.role === 'tool' ? 'user' : m.role,
-        content: m.content,
-      };
-    }
+  const result: any[] = [];
 
+  for (const m of messages) {
+    // assistant + toolCalls → content blocks with tool_use
+    if (m.role === 'assistant' && m.toolCalls?.length) {
+      const blocks: any[] = [];
+      if (m.content && typeof m.content === 'string' && m.content.trim()) {
+        blocks.push({ type: 'text', text: m.content });
+      }
+      for (const tc of m.toolCalls) {
+        let input: any;
+        try { input = JSON.parse(tc.arguments); } catch { input = {}; }
+        blocks.push({ type: 'tool_use', id: tc.id, name: tc.name, input });
+      }
+      result.push({ role: 'assistant', content: blocks });
+      continue;
+    }
+    // tool result → user message with tool_result block
+    // Claude 要求连续的 tool_result 合并为一个 user 消息
+    if (m.role === 'tool' && m.toolCallId) {
+      const lastMsg = result[result.length - 1];
+      const toolResultBlock = {
+        type: 'tool_result',
+        tool_use_id: m.toolCallId,
+        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+      };
+      // 合并到前一个 user 消息（如果也是 tool_result）
+      if (lastMsg?.role === 'user' && Array.isArray(lastMsg.content) && lastMsg.content[0]?.type === 'tool_result') {
+        lastMsg.content.push(toolResultBlock);
+      } else {
+        result.push({ role: 'user', content: [toolResultBlock] });
+      }
+      continue;
+    }
+    // 回退：无结构化的 tool 消息
+    if (m.role === 'tool') {
+      result.push({
+        role: 'user',
+        content: typeof m.content === 'string' ? m.content : '',
+      });
+      continue;
+    }
+    // 其他消息保持不变
+    if (typeof m.content === 'string') {
+      result.push({ role: m.role, content: m.content });
+    } else {
+      result.push({ role: m.role, content: m.content });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Convert messages to text-only format (for models that don't support tool calling)
+ * 回退到纯文本：toolCalls → toolCallText, tool → user
+ */
+export function convertToTextOnlyMessages(messages: ModelMessage[]): any[] {
+  return messages.map((m) => {
+    // assistant + toolCallText → 纯文本回退
+    if (m.role === 'assistant' && m.toolCallText) {
+      return { role: 'assistant', content: m.toolCallText };
+    }
+    // tool → user（保持旧行为）
+    if (m.role === 'tool') {
+      const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+      return { role: 'user', content: m.toolCallId ? content : `Tool results:\n${content}` };
+    }
+    // 其他消息
+    if (typeof m.content === 'string') {
+      return { role: m.role, content: m.content };
+    }
     return {
-      role: m.role === 'tool' ? 'user' : m.role,
-      content: m.content,
+      role: m.role,
+      content: m.content.map((c) => {
+        if (c.type === 'text') return { type: 'text', text: c.text };
+        if (c.type === 'image' && c.source) {
+          return {
+            type: 'image_url',
+            image_url: { url: `data:${c.source.media_type};base64,${c.source.data}` },
+          };
+        }
+        return c;
+      }),
     };
   });
 }

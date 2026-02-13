@@ -4,7 +4,7 @@
 
 import type { ModelConfig, ToolDefinition, ModelInfo, ProviderConfig } from '../../../shared/types';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
-import { logger, httpsAgent, convertToolsToOpenAI, convertToOpenAIMessages } from './shared';
+import { logger, httpsAgent, convertToolsToOpenAI, convertToOpenAIMessages, convertToTextOnlyMessages } from './shared';
 import { MODEL_API_ENDPOINTS, DEFAULT_MODELS, getModelMaxOutputTokens } from '../../../shared/constants';
 import { openAISSEStream } from './sseStream';
 import { withTransientRetry } from './retryStrategy';
@@ -134,16 +134,22 @@ export async function callZhipu(
 
   const zhipuTools = convertToolsToOpenAI(tools);
 
+  // 不支持 tool calling 的模型用纯文本回退
+  const useToolCalling = modelInfo?.supportsTool !== false;
+  const convertedMessages = useToolCalling
+    ? convertToOpenAIMessages(messages)
+    : convertToTextOnlyMessages(messages);
+
   const requestBody: Record<string, unknown> = {
     model: config.model || DEFAULT_MODELS.quick,
-    messages: convertToOpenAIMessages(messages),
+    messages: convertedMessages,
     temperature: config.temperature ?? 0.7,
     max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || DEFAULT_MODELS.quick),
     stream: true,
     stream_options: { include_usage: true },
   };
 
-  if (zhipuTools.length > 0 && modelInfo?.supportsTool) {
+  if (useToolCalling && zhipuTools.length > 0) {
     requestBody.tools = zhipuTools;
     requestBody.tool_choice = 'auto';
   }

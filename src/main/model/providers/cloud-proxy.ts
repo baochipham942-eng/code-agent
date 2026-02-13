@@ -10,6 +10,7 @@ import {
   logger,
   httpsAgent,
   convertToOpenAIMessages,
+  convertToTextOnlyMessages,
   parseOpenAIResponse,
   parseContextLengthError,
   normalizeJsonSchema,
@@ -53,9 +54,15 @@ export async function callViaCloudProxy(
 
   const useStream = !!onStream;
 
+  // 不支持 tool calling 的模型用纯文本回退
+  const useToolCalling = modelInfo?.supportsTool !== false;
+  const convertedMessages = useToolCalling
+    ? convertToOpenAIMessages(messages)
+    : convertToTextOnlyMessages(messages);
+
   const requestBody: Record<string, unknown> = {
     model: config.model || 'google/gemini-2.0-flash-001',
-    messages: convertToOpenAIMessages(messages),
+    messages: convertedMessages,
     temperature: config.temperature ?? 0.7,
     max_tokens: config.maxTokens ?? recommendedMaxTokens,
     stream: useStream,
@@ -67,7 +74,7 @@ export async function callViaCloudProxy(
   }
 
   // 只有支持工具的模型才添加 tools
-  if (openaiTools.length > 0 && modelInfo?.supportsTool) {
+  if (useToolCalling && openaiTools.length > 0) {
     requestBody.tools = openaiTools;
     requestBody.tool_choice = 'auto';
   }

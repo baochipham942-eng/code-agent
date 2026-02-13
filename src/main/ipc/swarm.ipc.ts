@@ -6,15 +6,40 @@ import { BrowserWindow, ipcMain } from 'electron';
 import type { SwarmEvent, AgentStatus } from '../../shared/types/swarm';
 import type { AgentOrchestrator } from '../agent/agentOrchestrator';
 
+// ============================================================================
+// Swarm 事件回调注册（CLI 模式使用）
+// ============================================================================
+
+type SwarmEventListener = (event: SwarmEvent) => void;
+const swarmEventListeners: SwarmEventListener[] = [];
+
+/**
+ * 注册 Swarm 事件监听器（CLI 模式下将事件路由到终端输出）
+ * @returns 取消监听的函数
+ */
+export function addSwarmEventListener(listener: SwarmEventListener): () => void {
+  swarmEventListeners.push(listener);
+  return () => {
+    const idx = swarmEventListeners.indexOf(listener);
+    if (idx >= 0) swarmEventListeners.splice(idx, 1);
+  };
+}
+
 /**
  * 向渲染进程推送 Swarm 事件
  */
 export function emitSwarmEvent(event: SwarmEvent): void {
+  // Electron 模式：IPC 推送到渲染进程
   const windows = BrowserWindow.getAllWindows();
   for (const win of windows) {
     if (!win.isDestroyed()) {
       win.webContents.send('swarm:event', event);
     }
+  }
+
+  // 回调通知（CLI 模式）
+  for (const listener of swarmEventListeners) {
+    try { listener(event); } catch { /* 防止监听器错误影响事件流 */ }
   }
 }
 

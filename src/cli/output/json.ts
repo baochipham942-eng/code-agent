@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { AgentEvent, ToolCall, ToolResult } from '../../shared/types';
+import type { SwarmEvent } from '../../shared/types/swarm';
 import type { CLIOutputEvent, CLIRunResult } from '../types';
 
 /**
@@ -118,6 +119,13 @@ export class JSONOutput {
         });
         break;
     }
+  }
+
+  /**
+   * 处理 Swarm 事件（NDJSON 格式输出）
+   */
+  handleSwarmEvent(event: SwarmEvent): void {
+    console.log(JSON.stringify({ type: 'swarm_event', event_type: event.type, timestamp: event.timestamp, data: event.data }));
   }
 
   /**

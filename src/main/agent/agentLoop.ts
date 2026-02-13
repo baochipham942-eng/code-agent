@@ -237,6 +237,8 @@ export class AgentLoop {
   private _outputValidationDone: boolean = false;
 
   private _userExpectsOutput: boolean = false;
+  // P5-3: 初始数据文件快照（仅统计新增文件）
+  private _initialDataFiles: Set<string> = new Set();
 
   // P0: Requirement re-injection verification (Ralph Loop)
   private _originalUserPrompt: string = '';
@@ -520,6 +522,14 @@ export class AgentLoop {
 
     this._userExpectsOutput = /保存|导出|生成.*文件|输出.*文件|写入|\.xlsx|\.csv|\.png|\.pdf|export|save/i.test(userMessage);
 
+    // P5-3: 记录初始数据文件快照，后续只统计新增文件
+    try {
+      this._initialDataFiles = new Set(
+        readdirSync(this.workingDirectory).filter(f =>
+          f.endsWith('.xlsx') || f.endsWith('.xls') || f.endsWith('.csv') || f.endsWith('.png')
+        )
+      );
+    } catch { this._initialDataFiles = new Set(); }
 
     // P5: Extract expected output file paths from user prompt (existence diff)
     const allPaths = extractAbsoluteFilePaths(userMessage);
@@ -1065,10 +1075,12 @@ export class AgentLoop {
           try {
             const allFiles = readdirSync(this.workingDirectory);
             const scriptFiles = allFiles.filter(f => f.endsWith('.py'));
-            const dataFiles = allFiles.filter(f =>
-              f.endsWith('.xlsx') || f.endsWith('.xls') || f.endsWith('.csv') || f.endsWith('.png')
+            // 只统计新增的数据文件（排除任务开始前就存在的文件）
+            const newDataFiles = allFiles.filter(f =>
+              (f.endsWith('.xlsx') || f.endsWith('.xls') || f.endsWith('.csv') || f.endsWith('.png'))
+              && !this._initialDataFiles.has(f)
             );
-            if (scriptFiles.length > 0 && dataFiles.length === 0) {
+            if (scriptFiles.length > 0 && newDataFiles.length === 0) {
               this.outputFileNudgeCount++;
               const scripts = scriptFiles.map(f => basename(f)).join(', ');
               logger.debug(`[AgentLoop] P5-3: TRIGGER (scripts=${scriptFiles.length}, dataFiles=0)`);
@@ -1083,7 +1095,7 @@ export class AgentLoop {
               );
               continue;
             } else {
-              logger.debug(`[AgentLoop] P5-3: SKIP (scripts=${scriptFiles.length}, dataFiles=${dataFiles.length})`);
+              logger.debug(`[AgentLoop] P5-3: SKIP (scripts=${scriptFiles.length}, newDataFiles=${newDataFiles.length})`);
             }
           } catch { /* ignore readdir errors */ }
         }
@@ -1481,13 +1493,15 @@ export class AgentLoop {
             try {
               const allFiles = readdirSync(this.workingDirectory);
               const scriptFiles = allFiles.filter(f => f.endsWith('.py'));
-              const dataFiles = allFiles.filter(f =>
-                f.endsWith('.xlsx') || f.endsWith('.xls') || f.endsWith('.csv') || f.endsWith('.png')
+              // 只统计新增的数据文件（排除任务开始前就存在的文件）
+              const newDataFiles = allFiles.filter(f =>
+                (f.endsWith('.xlsx') || f.endsWith('.xls') || f.endsWith('.csv') || f.endsWith('.png'))
+                && !this._initialDataFiles.has(f)
               );
-              if (scriptFiles.length > 0 && dataFiles.length === 0) {
+              if (scriptFiles.length > 0 && newDataFiles.length === 0) {
                 this.outputFileNudgeCount++;
                 const scripts = scriptFiles.map(f => basename(f)).join(', ');
-                logger.debug(`[AgentLoop] P5-3 (post force-execute): TRIGGER (scripts=${scriptFiles.length}, dataFiles=0)`);
+                logger.debug(`[AgentLoop] P5-3 (post force-execute): TRIGGER (scripts=${scriptFiles.length}, newDataFiles=0)`);
                 logCollector.agent('INFO', `P5 Nudge (post force-execute): scripts not executed`, { scripts: scriptFiles });
                 this.injectSystemMessage(
                   `<output-file-check>\n` +
@@ -2887,18 +2901,33 @@ ${deferredToolsSummary}
     for (const message of processedMessages) {
       logger.debug(` Message role=${message.role}, hasAttachments=${!!(message as Message).attachments?.length}, attachmentCount=${(message as Message).attachments?.length || 0}`);
 
-      if (message.role === 'tool') {
+      if (message.role === 'tool' && (message as Message).toolResults?.length) {
+        // 结构化 tool results — 每个 result 独立一条消息（OpenAI 协议要求）
+        for (const result of (message as Message).toolResults!) {
+          modelMessages.push({
+            role: 'tool',
+            content: result.output || result.error || '',
+            toolCallId: result.toolCallId,
+          });
+        }
+      } else if (message.role === 'tool') {
+        // 兼容旧数据（无 toolResults 字段）
         modelMessages.push({
-          role: 'user',
+          role: 'tool',
           content: `Tool results:\n${message.content}`,
         });
-      } else if (message.role === 'assistant' && (message as Message).toolCalls) {
-        const toolCallsStr = (message as Message).toolCalls!
-          .map((tc) => formatToolCallForHistory(tc))
-          .join('\n');
+      } else if (message.role === 'assistant' && (message as Message).toolCalls?.length) {
+        const tcs = (message as Message).toolCalls!;
         modelMessages.push({
           role: 'assistant',
-          content: toolCallsStr || message.content,
+          content: message.content || '',
+          toolCalls: tcs.map(tc => ({
+            id: tc.id,
+            name: tc.name,
+            arguments: JSON.stringify(tc.arguments),
+          })),
+          toolCallText: tcs.map(tc => formatToolCallForHistory(tc)).join('\n'),
+          thinking: (message as Message).thinking,
         });
       } else if (message.role === 'user' && (message as Message).attachments?.length) {
         const multimodalContent = buildMultimodalContent(message.content, (message as Message).attachments!);

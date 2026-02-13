@@ -127,6 +127,22 @@ Returns: File content with line numbers in format "  lineNum\\tcontent"`,
     // Resolve path (handles ~, relative paths)
     const filePath = resolvePath(inputPath, context.workingDirectory);
 
+    // 拦截二进制/结构化格式：强制引导到正确工具，防止读到乱码后幻觉
+    const ext = path.extname(filePath).toLowerCase();
+    const BINARY_REDIRECTS: Record<string, string> = {
+      '.xlsx': 'read_xlsx', '.xls': 'read_xlsx',
+      '.docx': 'read_docx',
+      '.pdf': 'read_pdf',
+      '.pptx': 'read_file 不支持此格式',
+    };
+    if (BINARY_REDIRECTS[ext]) {
+      const hint = BINARY_REDIRECTS[ext];
+      return {
+        success: false,
+        error: `Cannot read ${ext} file as text — binary content will be garbled. Use ${hint} tool instead.\nPath: ${filePath}`,
+      };
+    }
+
     try {
       // Get file stats for tracking
       const stats = await fs.stat(filePath);

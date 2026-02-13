@@ -505,6 +505,13 @@ ${contentToSummarize}
   }
 
   /**
+   * 获取当前配置（只读）
+   */
+  getConfig(): Readonly<AutoCompressionConfig> {
+    return this.config;
+  }
+
+  /**
    * 更新配置
    */
   updateConfig(config: Partial<AutoCompressionConfig>): void {
@@ -538,25 +545,12 @@ ${contentToSummarize}
           compressed: true,
         });
       } else {
-        // Older than 50 from end: check tool_result token budget
-        const tokens = estimateTokens(msg.content);
-        if (msg.role === 'tool' && tokens > 500) {
-          // Truncate to ~300 tokens (roughly 1200 chars)
-          const lines = msg.content.split('\n');
-          let accumulated = 0;
-          const kept: string[] = [];
-          for (const line of lines) {
-            const lineTokens = estimateTokens(line);
-            if (accumulated + lineTokens > 300) {
-              kept.push('...[truncated]');
-              break;
-            }
-            kept.push(line);
-            accumulated += lineTokens;
-          }
+        // Older than 50 from end
+        if (msg.role === 'tool') {
+          // Tool 消息：清除内容但保留结构（role + id + toolCallId），维持配对关系
           result.push({
             ...msg,
-            content: kept.join('\n'),
+            content: '[cleared]',
             compressed: true,
           });
         } else {

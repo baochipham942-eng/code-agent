@@ -978,6 +978,20 @@ export const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
 /** 默认 Supabase Anonymous Key */
 export const DEFAULT_SUPABASE_ANON_KEY = (typeof process !== 'undefined' && process.env?.SUPABASE_ANON_KEY) || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcGJ1bmFoemJtZXhzbW1pcXlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODkyMTcsImV4cCI6MjA4NDA2NTIxN30.8swN1QdRX5vIjNyCLNhQTPAx-k2qxeS8EN4Ot2idY7w';
 
+/** 子 Agent 上下文压缩配置 */
+export const SUBAGENT_COMPACTION = {
+  /** 触发压缩的上下文窗口占用比例 */
+  THRESHOLD: 0.80,
+  /** 尾部保留的消息对数（assistant+user 为一对） */
+  PRESERVE_RECENT_PAIRS: 3,
+  /** 截断后 user 消息（工具结果）的最大字符数 */
+  TOOL_RESULT_MAX_CHARS: 200,
+  /** 截断后 assistant 消息（工具调用描述）的最大字符数 */
+  ASSISTANT_MAX_CHARS: 400,
+  /** 跳过前 N 轮迭代（消息量少无需压缩） */
+  SKIP_FIRST_ITERATIONS: 3,
+} as const;
+
 /** 资源管理常量 */
 export const RESOURCE_MANAGEMENT = {
   /** 磁盘空间警告阈值（1GB） */

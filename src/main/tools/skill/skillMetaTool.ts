@@ -29,22 +29,34 @@ function escapeXml(text: string): string {
 }
 
 /**
- * 生成 skill 工具的简化描述
- * 不再嵌入完整 skill 列表，通过 tool_search 发现具体 skills
+ * 动态生成 skill 工具描述
+ * 聚合所有可用 skill 的 name + description 到工具描述中
+ * 对标 Anthropic 的 <available_skills> 机制
  */
-function generateDescription(): string {
-  return `执行已注册的 skill。
+function buildSkillDescription(): string {
+  const discoveryService = getSkillDiscoveryService();
+  const skills = discoveryService.isInitialized()
+    ? discoveryService.getSkillsForContext()
+    : [];
 
-Skills 是专业化的任务能力，如 commit、review-pr、test 等。
+  let desc = `执行已注册的 skill。使用方式：skill({ command: "skill_name", args: "可选参数" })`;
 
-**发现 skills**：使用 tool_search("+skill") 或 tool_search("commit") 搜索可用 skills。
+  if (skills.length > 0) {
+    const CHAR_BUDGET = 2000;
+    let used = 0;
+    const lines: string[] = [];
 
-**使用方式**：skill({ command: "skill_name", args: "可选参数" })
+    for (const s of skills) {
+      const line = `- "${s.name}": ${s.description}`;
+      if (used + line.length > CHAR_BUDGET) break;
+      lines.push(line);
+      used += line.length;
+    }
 
-Skills 来源：
-- ~/.claude/skills/ (用户 skills)
-- .claude/skills/ (项目 skills)
-- 内置 skills`;
+    desc += `\n\n可用 skills:\n${lines.join('\n')}`;
+  }
+
+  return desc;
 }
 
 /**
@@ -167,7 +179,8 @@ async function handleForkExecution(
  */
 export const skillMetaTool: Tool = {
   name: 'skill',
-  description: generateDescription(),
+  description: '执行已注册的 skill',
+  dynamicDescription: buildSkillDescription,
   generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
@@ -263,5 +276,5 @@ export const skillMetaTool: Tool = {
  * 用于需要刷新描述的场景
  */
 export function getSkillToolDescription(): string {
-  return generateDescription();
+  return buildSkillDescription();
 }

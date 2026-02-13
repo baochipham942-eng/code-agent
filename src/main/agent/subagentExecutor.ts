@@ -27,6 +27,8 @@ import {
   type ImageAttachmentInput,
   type NormalizedImageData,
 } from '../utils/imageUtils';
+import { compactSubagentMessages } from './subagentCompaction';
+import { SUBAGENT_COMPACTION } from '../../shared/constants';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -329,6 +331,11 @@ export class SubagentExecutor {
         if (!iterBudgetCheck.allowed) {
           logger.warn(`[${config.name}] Budget exceeded at iteration ${iterations}`);
           break;
+        }
+
+        // Auto-compaction: truncate old messages if approaching context limit
+        if (iterations > SUBAGENT_COMPACTION.SKIP_FIRST_ITERATIONS) {
+          compactSubagentMessages(messages, context.modelConfig.model);
         }
 
         // Call model

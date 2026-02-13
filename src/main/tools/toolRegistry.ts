@@ -406,9 +406,9 @@ export class ToolRegistry {
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
     return this.getForGeneration(generationId).map((tool) => {
-      // 合并云端元数据（云端优先）
+      // 合并云端元数据（优先级: cloud > dynamic > static）
       const cloudMeta = cloudToolMeta[tool.name];
-      const description = cloudMeta?.description || tool.description;
+      const description = cloudMeta?.description || tool.dynamicDescription?.() || tool.description;
 
       return {
         name: tool.name,
@@ -440,7 +440,7 @@ export class ToolRegistry {
     const cloudMeta = getCloudConfigService().getToolMeta(name);
     return {
       name: tool.name,
-      description: cloudMeta?.description || tool.description,
+      description: cloudMeta?.description || tool.dynamicDescription?.() || tool.description,
       inputSchema: tool.inputSchema,
       generations: tool.generations,
       requiresPermission: tool.requiresPermission,
@@ -468,7 +468,7 @@ export class ToolRegistry {
       .filter(tool => CORE_TOOLS.includes(tool.name) || tool.isCore === true)
       .map(tool => {
         const cloudMeta = cloudToolMeta[tool.name];
-        const description = cloudMeta?.description || tool.description;
+        const description = cloudMeta?.description || tool.dynamicDescription?.() || tool.description;
 
         return {
           name: tool.name,
@@ -529,7 +529,7 @@ export class ToolRegistry {
       )
       .map(tool => {
         const cloudMeta = cloudToolMeta[tool.name];
-        const description = cloudMeta?.description || tool.description;
+        const description = cloudMeta?.description || tool.dynamicDescription?.() || tool.description;
 
         return {
           name: tool.name,

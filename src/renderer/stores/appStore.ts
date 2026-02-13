@@ -13,7 +13,7 @@ import type {
 } from '@shared/types';
 import type { ContextHealthState } from '@shared/types/contextHealth';
 import { defaultLanguage, type Language } from '../i18n';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL, MODEL_API_ENDPOINTS } from '@shared/constants';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL, MODEL_API_ENDPOINTS, MODEL_MAX_TOKENS } from '@shared/constants';
 
 // 渐进披露级别
 export type DisclosureLevel = 'simple' | 'standard' | 'advanced' | 'expert';
@@ -142,14 +142,13 @@ const defaultGeneration: Generation = {
 };
 
 // Default model config — 引用 shared/constants.ts 常量
-// maxTokens 增加到 16384 以支持生成完整的代码文件和长篇回复
 const defaultModelConfig: ModelConfig = {
   provider: DEFAULT_PROVIDER,
   model: DEFAULT_MODEL,
   apiKey: '',
   baseUrl: MODEL_API_ENDPOINTS.kimiK25,
   temperature: 0.7,
-  maxTokens: 16384,
+  maxTokens: MODEL_MAX_TOKENS.DEFAULT,
 };
 
 export const useAppStore = create<AppState>((set, get) => ({

@@ -236,8 +236,6 @@ export class AgentLoop {
   // P7: Output structure validation (only once per run)
   private _outputValidationDone: boolean = false;
 
-  // Workspace diff — 输出目录文件快照（替代纯路径提取）
-  private _outputDirSnapshot: Set<string> = new Set();
   private _userExpectsOutput: boolean = false;
 
   // P0: Requirement re-injection verification (Ralph Loop)
@@ -520,8 +518,6 @@ export class AgentLoop {
     this._originalUserPrompt = userMessage;
     this._requirementVerificationDone = false;
 
-    // Workspace diff: snapshot output directory before agent starts
-    this._outputDirSnapshot = this._snapshotOutputDir();
     this._userExpectsOutput = /保存|导出|生成.*文件|输出.*文件|写入|\.xlsx|\.csv|\.png|\.pdf|export|save/i.test(userMessage);
 
 
@@ -1040,7 +1036,7 @@ export class AgentLoop {
           if (missingOutputFiles.length > 0) {
             this.outputFileNudgeCount++;
             const fileList = missingOutputFiles.map(f => `- ${f}`).join('\n');
-            logger.debug(`[AgentLoop] P5 Nudge: Missing output files, nudge ${this.outputFileNudgeCount}/${this.maxOutputFileNudges}`);
+            logger.debug(`[AgentLoop] P5-1: TRIGGER (missing=${missingOutputFiles.length}, nudge=${this.outputFileNudgeCount}/${this.maxOutputFileNudges})`);
             logCollector.agent('INFO', `P5 Nudge: Expected output files missing`, {
               nudgeCount: this.outputFileNudgeCount,
               missingFiles: missingOutputFiles,
@@ -1056,71 +1052,54 @@ export class AgentLoop {
               data: { message: `检测到 ${missingOutputFiles.length} 个输出文件缺失，提示继续 (${this.outputFileNudgeCount}/${this.maxOutputFileNudges})` },
             });
             continue;
+          } else {
+            logger.debug(`[AgentLoop] P5-1: SKIP (explicit=${this.expectedOutputFiles.length}, allExist=true)`);
           }
+        } else {
+          logger.debug(`[AgentLoop] P5-1: SKIP (explicit=${this.expectedOutputFiles.length}, nudgeCount=${this.outputFileNudgeCount}/${this.maxOutputFileNudges})`);
         }
 
-        // Check 2: Workspace diff — 用户期望输出文件但目录无新增文件
-        if (this._userExpectsOutput && this.expectedOutputFiles.length === 0 && this.outputFileNudgeCount < this.maxOutputFileNudges) {
-          const newFiles = this._getNewOutputFiles();
-          if (newFiles.length === 0) {
-            this.outputFileNudgeCount++;
-            logger.debug(`[AgentLoop] P5 Nudge (workspace-diff): No new files in output dir, nudge ${this.outputFileNudgeCount}/${this.maxOutputFileNudges}`);
-            logCollector.agent('INFO', `P5 Nudge (workspace-diff): user expects output but no new files`);
-            this.injectSystemMessage(
-              `<output-file-check>\n` +
-              `STOP! 用户要求保存/导出结果文件，但输出目录中没有检测到任何新文件。\n` +
-              `请确保将结果文件保存到工作目录: ${this.workingDirectory}\n` +
-              `</output-file-check>`
-            );
-            this.onEvent({
-              type: 'notification',
-              data: { message: `输出目录无新文件，提示继续 (${this.outputFileNudgeCount}/${this.maxOutputFileNudges})` },
-            });
-            continue;
-          }
-        }
-
-        // P5 Check 3: 检测未执行的 Python 脚本
+        // P5 Check 3: 检测未执行的 Python 脚本（直接读目录，不依赖 workspace diff）
         // 场景: 模型写了 .py 脚本但没用 bash 执行，导致无数据输出
         if (this._userExpectsOutput && this.outputFileNudgeCount < this.maxOutputFileNudges) {
-          const newFiles = this._getNewOutputFiles();
-          const scriptFiles = newFiles.filter(f => f.endsWith('.py'));
-          const dataFiles = newFiles.filter(f =>
-            f.endsWith('.xlsx') || f.endsWith('.xls') || f.endsWith('.csv') || f.endsWith('.png')
-          );
-          if (scriptFiles.length > 0 && dataFiles.length === 0) {
-            this.outputFileNudgeCount++;
-            const scripts = scriptFiles.map(f => basename(f)).join(', ');
-            logger.debug(`[AgentLoop] P5 Nudge (unexecuted-script): ${scripts}`);
-            logCollector.agent('INFO', `P5 Nudge: Python scripts not executed`, { scripts: scriptFiles });
-            this.injectSystemMessage(
-              `<output-file-check>\n` +
-              `STOP! 你创建了 Python 脚本 (${scripts}) 但还没有成功执行它。\n` +
-              `输出目录中没有检测到任何数据文件（xlsx/csv/png）。\n` +
-              `请立即用 bash 工具执行该脚本: python3 <脚本路径>\n` +
-              `如果脚本执行出错，请修复错误后重新执行。\n` +
-              `</output-file-check>`
+          try {
+            const allFiles = readdirSync(this.workingDirectory);
+            const scriptFiles = allFiles.filter(f => f.endsWith('.py'));
+            const dataFiles = allFiles.filter(f =>
+              f.endsWith('.xlsx') || f.endsWith('.xls') || f.endsWith('.csv') || f.endsWith('.png')
             );
-            continue;
-          }
+            if (scriptFiles.length > 0 && dataFiles.length === 0) {
+              this.outputFileNudgeCount++;
+              const scripts = scriptFiles.map(f => basename(f)).join(', ');
+              logger.debug(`[AgentLoop] P5-3: TRIGGER (scripts=${scriptFiles.length}, dataFiles=0)`);
+              logCollector.agent('INFO', `P5 Nudge: Python scripts not executed`, { scripts: scriptFiles });
+              this.injectSystemMessage(
+                `<output-file-check>\n` +
+                `STOP! 你创建了 Python 脚本 (${scripts}) 但还没有成功执行它。\n` +
+                `输出目录中没有检测到任何数据文件（xlsx/csv/png）。\n` +
+                `请立即用 bash 工具执行该脚本: python3 <脚本路径>\n` +
+                `如果脚本执行出错，请修复错误后重新执行。\n` +
+                `</output-file-check>`
+              );
+              continue;
+            } else {
+              logger.debug(`[AgentLoop] P5-3: SKIP (scripts=${scriptFiles.length}, dataFiles=${dataFiles.length})`);
+            }
+          } catch { /* ignore readdir errors */ }
         }
 
 
         // P7: Output structure validation — 系统自动读取输出 xlsx 结构，模型核对需求
-        // 合并两个来源: 显式路径 + workspace diff 新文件
+        // 只用显式路径（不再依赖 workspace diff，信任模型自行判断）
         if (!this._outputValidationDone) {
-          const fromExplicit = this.expectedOutputFiles.filter(
+          const existingXlsx = this.expectedOutputFiles.filter(
             f => existsSync(f) && (f.endsWith('.xlsx') || f.endsWith('.xls'))
           );
-          const fromDiff = this._getNewOutputFiles().filter(
-            f => f.endsWith('.xlsx') || f.endsWith('.xls')
-          );
-          const existingXlsx = [...new Set([...fromExplicit, ...fromDiff])];
           if (existingXlsx.length > 0) {
             this._outputValidationDone = true;
             const structureInfo = this._readOutputXlsxStructure(existingXlsx);
             if (structureInfo) {
-              logger.debug(`[AgentLoop] P7 Validation: read structure of ${existingXlsx.length} output xlsx files`);
+              logger.debug(`[AgentLoop] P7: TRIGGER (xlsxCount=${existingXlsx.length})`);
               logCollector.agent('INFO', `P7 Validation: output structure check`, { files: existingXlsx });
               this.injectSystemMessage(
                 `<output-validation>\n` +
@@ -1136,6 +1115,8 @@ export class AgentLoop {
               );
               continue;
             }
+          } else {
+            logger.debug(`[AgentLoop] P7: SKIP (xlsxCount=0)`);
           }
         }
 
@@ -1145,16 +1126,17 @@ export class AgentLoop {
             && this._originalUserPrompt) {
           this._requirementVerificationDone = true;
 
-          // 重新收集当前输出状态
-          const allNewFiles = this._getNewOutputFiles();
-          const currentXlsx = allNewFiles.filter(f =>
+          // 用已存在的 expectedOutputFiles（不再依赖 workspace diff）
+          const allExisting = this.expectedOutputFiles.filter(f => existsSync(f));
+          const currentXlsx = allExisting.filter(f =>
             f.endsWith('.xlsx') || f.endsWith('.xls')
           );
-          const fileList = allNewFiles.map(f => basename(f)).join(', ');
+          const fileList = allExisting.map(f => basename(f)).join(', ');
           const structureInfo = currentXlsx.length > 0
             ? this._readOutputXlsxStructure(currentXlsx)
             : null;
 
+          logger.debug(`[AgentLoop] P0: TRIGGER (existingFiles=${allExisting.length})`);
           this.injectSystemMessage(
             `<requirement-verification>\n` +
             `请重新阅读用户的原始需求，逐条核对是否都已完成:\n\n` +
@@ -1164,7 +1146,6 @@ export class AgentLoop {
             `逐条确认每项需求都有对应输出。如有遗漏，立即补充。如全部满足，结束任务。\n` +
             `</requirement-verification>`
           );
-          logger.debug('[AgentLoop] P0: Requirement re-injection for verification');
           continue;
         }
 
@@ -1172,7 +1153,7 @@ export class AgentLoop {
         if (response.truncated && !this._truncationRetried) {
           this._truncationRetried = true;
           const originalMaxTokens = this.modelConfig.maxTokens || MODEL_MAX_TOKENS.DEFAULT;
-          const newMaxTokens = Math.min(originalMaxTokens * 2, MODEL_MAX_TOKENS.DEFAULT);
+          const newMaxTokens = Math.min(originalMaxTokens * 2, MODEL_MAX_TOKENS.EXTENDED);
           if (newMaxTokens > originalMaxTokens) {
             logger.info(`[AgentLoop] Text response truncated, retrying with maxTokens: ${originalMaxTokens} → ${newMaxTokens}`);
             logCollector.agent('INFO', `Text truncation recovery: maxTokens ${originalMaxTokens} → ${newMaxTokens}`);
@@ -1263,7 +1244,7 @@ export class AgentLoop {
 
           // 提高 maxTokens 防止后续截断
           const currentMax = this.modelConfig.maxTokens || MODEL_MAX_TOKENS.DEFAULT;
-          const boostedMax = Math.min(currentMax * 2, MODEL_MAX_TOKENS.DEFAULT);
+          const boostedMax = Math.min(currentMax * 2, MODEL_MAX_TOKENS.EXTENDED);
           if (boostedMax > currentMax) {
             this.modelConfig.maxTokens = boostedMax;
             logger.info(`[AgentLoop] Tool truncation: boosted maxTokens ${currentMax} → ${boostedMax}`);
@@ -1495,29 +1476,18 @@ export class AgentLoop {
               );
             }
           }
-          // Check 2: workspace diff — 用户期望输出但无新文件
-          else if (this._userExpectsOutput && this.expectedOutputFiles.length === 0) {
-            const newFiles = this._getNewOutputFiles();
-            if (newFiles.length === 0) {
-              this.outputFileNudgeCount++;
-              logger.debug(`[AgentLoop] P5 Nudge (post force-execute, workspace-diff): No new files`);
-              logCollector.agent('INFO', `P5 Nudge (post force-execute, workspace-diff): no new files`);
-              this.injectSystemMessage(
-                `<output-file-check>\n` +
-                `用户要求保存/导出结果文件，但输出目录中没有新文件。\n` +
-                `请将结果保存到: ${this.workingDirectory}\n` +
-                `</output-file-check>`
-              );
-            } else {
-              // Check 3: 有新文件但只有脚本，没有数据文件
-              const scriptFiles = newFiles.filter(f => f.endsWith('.py'));
-              const dataFiles = newFiles.filter(f =>
+          // Check 2: 检测未执行的 Python 脚本（直接读目录）
+          else if (this._userExpectsOutput) {
+            try {
+              const allFiles = readdirSync(this.workingDirectory);
+              const scriptFiles = allFiles.filter(f => f.endsWith('.py'));
+              const dataFiles = allFiles.filter(f =>
                 f.endsWith('.xlsx') || f.endsWith('.xls') || f.endsWith('.csv') || f.endsWith('.png')
               );
               if (scriptFiles.length > 0 && dataFiles.length === 0) {
                 this.outputFileNudgeCount++;
                 const scripts = scriptFiles.map(f => basename(f)).join(', ');
-                logger.debug(`[AgentLoop] P5 Nudge (post force-execute, unexecuted-script): ${scripts}`);
+                logger.debug(`[AgentLoop] P5-3 (post force-execute): TRIGGER (scripts=${scriptFiles.length}, dataFiles=0)`);
                 logCollector.agent('INFO', `P5 Nudge (post force-execute): scripts not executed`, { scripts: scriptFiles });
                 this.injectSystemMessage(
                   `<output-file-check>\n` +
@@ -1526,7 +1496,7 @@ export class AgentLoop {
                   `</output-file-check>`
                 );
               }
-            }
+            } catch { /* ignore readdir errors */ }
           }
         }
 
@@ -1564,6 +1534,13 @@ export class AgentLoop {
     } else {
       langfuse.endTrace(this.traceId, `Completed in ${iterations} iterations`);
     }
+
+    // === Mechanism Stats (observability) ===
+    logger.info(`[AgentLoop] === Mechanism Stats ===`);
+    logger.info(`[AgentLoop] P5(output): nudges=${this.outputFileNudgeCount}/${this.maxOutputFileNudges}`);
+    logger.info(`[AgentLoop] P7(structure): ${this._outputValidationDone ? 'triggered' : 'skipped'}`);
+    logger.info(`[AgentLoop] P0(requirements): ${this._requirementVerificationDone ? 'triggered' : 'skipped'}`);
+    logger.info(`[AgentLoop] expectedFiles: [${this.expectedOutputFiles.map(f => basename(f)).join(', ')}]`);
 
     // Session end learning (Gen5+)
     // genNum already declared above in dynamic mode detection
@@ -3012,26 +2989,6 @@ ${deferredToolsSummary}
     );
   }
 
-  /** Workspace diff: 快照输出目录当前文件列表 */
-  private _snapshotOutputDir(): Set<string> {
-    try {
-      return new Set(readdirSync(this.workingDirectory));
-    } catch {
-      return new Set();
-    }
-  }
-
-  /** Workspace diff: 获取 agent 启动后新增的文件（绝对路径） */
-  private _getNewOutputFiles(): string[] {
-    try {
-      const current = readdirSync(this.workingDirectory);
-      return current
-        .filter(f => !this._outputDirSnapshot.has(f))
-        .map(f => join(this.workingDirectory, f));
-    } catch {
-      return [];
-    }
-  }
 
   /**
    * P7: 用 Python pandas 读取输出 xlsx 文件的结构（sheet名、列名、行数、前2行样本）

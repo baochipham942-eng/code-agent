@@ -22,15 +22,59 @@ export const DEFAULT_MODEL = 'kimi-k2.5' as const;
 // 模型输出 Token 上限 — providerRegistry / compactModel 等引用
 // ============================================================================
 
-/** 模型 maxTokens 默认值（按能力分层） */
+/** 模型 maxTokens 分层默认值（对标 Claude Code / Aider 行业标准） */
 export const MODEL_MAX_TOKENS = {
-  /** 大多数模型的默认 maxTokens */
-  DEFAULT: 8192,
-  /** Mini/Compact 模型 */
+  /** 主聊天模型默认值 — 对标 Claude Code Sonnet 16K */
+  DEFAULT: 16384,
+  /** 截断恢复上限 — 对标 Claude Code Opus 32K */
+  EXTENDED: 32768,
+  /** 辅助/免费模型（GLM-4.7-Flash 等快速任务） */
   COMPACT: 4096,
-  /** 视觉模型（智谱等） */
+  /** 视觉模型（GLM-4.6v 等） */
   VISION: 2048,
 } as const;
+
+/**
+ * 每个模型的推荐 maxOutputTokens — 基于官方文档 + 行业标准
+ *
+ * 参考来源:
+ * - Aider: https://aider.chat/docs/config/adv-model-settings.html
+ * - DeepSeek API: https://api-docs.deepseek.com/api/create-chat-completion (8K limit)
+ * - GLM-4.7 Docs: https://docs.z.ai/guides/llm/glm-4.7 (128K output)
+ * - Kimi K2.5: https://openrouter.ai/moonshotai/kimi-k2.5 (96K benchmark)
+ */
+export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
+  // Moonshot — Kimi K2.5 支持 96K output，对标 Claude Code Sonnet 默认
+  'kimi-k2.5': 16384,
+  // DeepSeek — 官方 API 上限 8K
+  'deepseek-chat': 8192,
+  'deepseek-coder': 8192,
+  'deepseek-reasoner': 16384,
+  // 智谱 GLM — 按用途分层
+  'glm-5': 8192,
+  'glm-4.7': 8192,
+  'glm-4.7-flash': 4096,    // 免费快速模型，短任务
+  'glm-4v-plus': 2048,      // 视觉
+  'glm-4.6v': 2048,         // 视觉
+  'glm-4.6v-flash': 1024,   // 视觉快速
+  // Anthropic — 参考 Aider 配置
+  'claude-opus-4-6': 32000,
+  'claude-sonnet-4-20250514': 16384,
+  'claude-sonnet-4-5-20250929': 16384,
+  'claude-3-5-sonnet-20241022': 8192,
+  'claude-3-5-haiku-20241022': 8192,
+  'claude-haiku-4-5-20251001': 16384,
+  // OpenAI
+  'gpt-4o': 16384,
+  'gpt-4o-mini': 16384,
+  // Groq
+  'llama-3.3-70b-versatile': 8192,
+};
+
+/** 根据模型名查找推荐的 maxOutputTokens */
+export function getModelMaxOutputTokens(model: string): number {
+  return MODEL_MAX_OUTPUT_TOKENS[model] || MODEL_MAX_TOKENS.DEFAULT;
+}
 
 // ============================================================================
 // 上下文窗口大小 — contextHealthService / tokenManager 引用
@@ -208,8 +252,8 @@ export const MCP = {
 
 /** 模型配置 */
 export const MODEL = {
-  /** 默认 max_tokens */
-  DEFAULT_MAX_TOKENS: 8192,
+  /** 默认 max_tokens — 与 MODEL_MAX_TOKENS.DEFAULT 保持一致 */
+  DEFAULT_MAX_TOKENS: 16384,
   /** 默认 temperature */
   DEFAULT_TEMPERATURE: 0.7,
   /** 流式响应块大小 */

@@ -12,7 +12,7 @@ import {
   convertToOpenAIMessages,
   parseOpenAIResponse,
 } from './shared';
-import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { MODEL_API_ENDPOINTS, getModelMaxOutputTokens } from '../../../shared/constants';
 import { openAISSEStream } from './sseStream';
 
 /**
@@ -32,7 +32,7 @@ export async function callOpenAI(
     model: config.model || 'gpt-4o',
     messages: convertToOpenAIMessages(messages),
     temperature: config.temperature ?? 0.7,
-    max_tokens: config.maxTokens ?? 8192,
+    max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'gpt-4o'),
   };
 
   if (config.responseFormat) {
@@ -83,7 +83,7 @@ export async function callGroq(
     model: config.model || 'llama-3.3-70b-versatile',
     messages: convertToOpenAIMessages(messages),
     temperature: config.temperature ?? 0.7,
-    max_tokens: config.maxTokens ?? 8192,
+    max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'llama-3.3-70b-versatile'),
     stream: !!onStream,
   };
 
@@ -195,7 +195,7 @@ export async function callQwen(
     model: config.model || 'qwen-max',
     messages: convertToOpenAIMessages(messages),
     temperature: config.temperature ?? 0.7,
-    max_tokens: config.maxTokens ?? 8192,
+    max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'qwen-max'),
     stream: !!onStream,
   };
 
@@ -253,7 +253,7 @@ export async function callMinimax(
     model: config.model || 'abab6.5s-chat',
     messages: convertToOpenAIMessages(messages),
     temperature: config.temperature ?? 0.7,
-    max_tokens: config.maxTokens ?? 8192,
+    max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'abab6.5s-chat'),
     stream: !!onStream,
   };
 
@@ -310,7 +310,7 @@ export async function callPerplexity(
     model: config.model || 'sonar-pro',
     messages: convertToOpenAIMessages(messages),
     temperature: config.temperature ?? 0.7,
-    max_tokens: config.maxTokens ?? 4096,
+    max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'sonar-pro'),
     stream: !!onStream,
   };
 

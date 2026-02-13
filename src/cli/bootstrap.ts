@@ -24,7 +24,7 @@ import { initCLIDatabase, getCLIDatabase, type CLIDatabaseService } from './data
 import { getCLISessionManager, type CLISessionManager } from './session';
 import type { CLIConfig, CLIEventHandler } from './types';
 import type { Generation, ModelConfig, Message, AgentEvent } from '../shared/types';
-import { DEFAULT_MODELS, DEFAULT_GENERATION, DEFAULT_PROVIDER } from '../shared/constants';
+import { DEFAULT_MODELS, DEFAULT_GENERATION, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../shared/constants';
 
 // 延迟导入的模块
 let AgentLoop: typeof import('../main/agent/agentLoop').AgentLoop;
@@ -235,7 +235,7 @@ export function buildCLIConfig(options: {
     model,
     apiKey: config.getApiKey(provider) || '',
     temperature: settings.model?.temperature || 0.7,
-    maxTokens: settings.model?.maxTokens || 4096,
+    maxTokens: settings.model?.maxTokens || MODEL_MAX_TOKENS.DEFAULT,
   };
 
   return {

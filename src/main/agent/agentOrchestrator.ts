@@ -31,7 +31,7 @@ import { createLogger } from '../services/infra/logger';
 import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
 import { getDynamicAgentFactory } from './dynamicAgentFactory';
 import { getAutoAgentCoordinator } from './autoAgentCoordinator';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
 import { PROVIDER_REGISTRY } from '../model/providerRegistry';
 import { getModelSessionState } from '../session/modelSessionState';
 // Agent Routing
@@ -1378,7 +1378,7 @@ export class AgentOrchestrator {
         model: selectedModel,
         apiKey: selectedApiKey,
         temperature: 0.7,
-        maxTokens: 4096,
+        maxTokens: MODEL_MAX_TOKENS.DEFAULT,
       };
     }
 
@@ -1399,7 +1399,7 @@ export class AgentOrchestrator {
         apiKey: undefined,
         useCloudProxy: true,
         temperature: 0.7,
-        maxTokens: 4096,
+        maxTokens: MODEL_MAX_TOKENS.DEFAULT,
       };
     }
 
@@ -1410,7 +1410,7 @@ export class AgentOrchestrator {
       model: selectedModel,
       apiKey: undefined,
       temperature: 0.7,
-      maxTokens: 4096,
+      maxTokens: MODEL_MAX_TOKENS.DEFAULT,
     };
   }
 

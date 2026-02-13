@@ -16,7 +16,7 @@ import type {
   ExecutionProgressEvent,
 } from './types';
 import { createLogger } from '../services/infra/logger';
-import { getCloudApiUrl, ORCHESTRATOR_TIMEOUTS } from '../../shared/constants';
+import { getCloudApiUrl, ORCHESTRATOR_TIMEOUTS, MODEL_MAX_TOKENS } from '../../shared/constants';
 
 const logger = createLogger('CloudExecutor');
 
@@ -157,7 +157,7 @@ export class CloudExecutor extends EventEmitter {
       headers,
       body: JSON.stringify({
         messages: [{ role: 'user', content: request.prompt }],
-        maxTokens: 4096,
+        maxTokens: MODEL_MAX_TOKENS.DEFAULT,
         projectContext: {
           summary: request.metadata?.projectPath as string,
         },
@@ -249,7 +249,7 @@ export class CloudExecutor extends EventEmitter {
         headers,
         body: JSON.stringify({
           messages: [{ role: 'user', content: request.prompt }],
-          maxTokens: 4096,
+          maxTokens: MODEL_MAX_TOKENS.DEFAULT,
           stream: true,
         }),
       });

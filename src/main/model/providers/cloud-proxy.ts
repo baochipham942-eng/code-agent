@@ -14,6 +14,7 @@ import {
   parseContextLengthError,
   normalizeJsonSchema,
 } from './shared';
+import { getModelMaxOutputTokens } from '../../../shared/constants';
 
 /**
  * Get cloud API URL
@@ -38,7 +39,7 @@ export async function callViaCloudProxy(
   const cloudUrl = getCloudApiUrl();
   const providerName = config.provider;
 
-  const recommendedMaxTokens = modelInfo?.maxTokens || 8192;
+  const recommendedMaxTokens = modelInfo?.maxTokens || getModelMaxOutputTokens(config.model || 'gpt-4o');
 
   // 构建工具定义（OpenAI 兼容格式）
   const openaiTools = tools.map((tool) => ({

@@ -7,7 +7,7 @@ import https from 'https';
 import type { ModelConfig, ToolDefinition } from '../../../shared/types';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { logger, httpsAgent, convertToolsToOpenAI, convertToOpenAIMessages } from './shared';
-import { MODEL_API_ENDPOINTS, MODEL_MAX_TOKENS, DEFAULT_MODEL } from '../../../shared/constants';
+import { MODEL_API_ENDPOINTS, DEFAULT_MODEL, getModelMaxOutputTokens } from '../../../shared/constants';
 import { openAISSEStream } from './sseStream';
 import { withTransientRetry } from './retryStrategy';
 
@@ -100,7 +100,7 @@ export async function callMoonshot(
     model: config.model || DEFAULT_MODEL,
     messages: convertToOpenAIMessages(messages),
     temperature: config.temperature ?? 0.7,
-    max_tokens: config.maxTokens ?? MODEL_MAX_TOKENS.DEFAULT,
+    max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || DEFAULT_MODEL),
     stream: true,
     stream_options: { include_usage: true },
   };

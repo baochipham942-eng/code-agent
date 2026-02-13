@@ -50,6 +50,8 @@ export interface AppSettings {
     autoApprove: Record<PermissionLevel, boolean>;
     blockedCommands: string[];
     devModeAutoApprove: boolean; // Development mode: auto-approve all permissions
+    /** 权限模式，持久化存储（重启/重装后恢复） */
+    permissionMode?: 'default' | 'acceptEdits' | 'dontAsk' | 'bypassPermissions' | 'plan' | 'delegate';
   };
   ui: {
     theme: 'light' | 'dark' | 'system';

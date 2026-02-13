@@ -43,41 +43,25 @@ const execAsync = promisify(exec);
 
 export const grepTool: Tool = {
   name: 'grep',
-  description: `Search for patterns in file contents using regex.
+  description: `Search file contents using regex patterns. Built on ripgrep for speed.
 
-Built on ripgrep (with grep fallback) for fast content search.
+Use for: finding function definitions, imports, string occurrences, TODO comments.
+For finding files by name/path, use glob instead.
+Do NOT use bash with grep/rg — this tool is faster and provides structured output.
 
-Usage:
-- pattern: Regex pattern to search for (e.g., "function\\s+\\w+", "TODO:")
-- path: File or directory to search in (default: working directory)
-- include: Glob pattern to filter files (e.g., "*.ts", "*.{js,jsx}")
-- type: Filter by file type (e.g., "ts", "py", "js") - more efficient than include
-- case_insensitive: Set to true for case-insensitive search
-- before_context (-B): Show N lines before each match
-- after_context (-A): Show N lines after each match
-- context (-C): Show N lines before and after each match
+Key parameters:
+- pattern: regex (e.g., "function\\s+\\w+", "TODO|FIXME")
+- path: file or directory (default: working directory)
+- type: filter by file type — more efficient than include (e.g., type="ts" instead of include="*.ts")
+- include: glob pattern filter (e.g., "*.{js,jsx}")
+- context (-C), before_context (-B), after_context (-A): show surrounding lines
 
-Output format:
-- Returns file:line_number:matching_line
-- With context: includes separator (--) between non-adjacent matches
-- Results limited to 200 matches
-- Each line truncated at 500 characters
+Output: file:line_number:matching_line, limited to 200 matches.
+Auto-ignores: node_modules, .git, dist, build.
 
-Auto-ignored directories:
-- node_modules, .git, dist, build
-
-Common patterns:
-- "function\\s+handleClick" - Find function definitions
-- "import.*from\\s+['"]react['"]" - Find React imports
-- "TODO|FIXME|HACK" - Find code comments
-- "class\\s+\\w+\\s+extends" - Find class definitions
-
-Best practices:
-- Use this tool instead of bash grep or rg commands
-- For finding file paths (not content), use glob instead
-- Escape special regex characters: . * + ? [ ] ( ) { } | \\ ^ $
-- Multiple searches can be run in parallel with separate tool calls
-- Use type parameter for efficiency: type="ts" instead of include="*.ts"`,
+Tips:
+- Escape regex special chars: . * + ? [ ] ( ) { } | \\ ^ $
+- Multiple searches can run in parallel with separate tool calls`,
   generations: ['gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',

@@ -150,25 +150,18 @@ export const writeFileTool: Tool = {
   name: 'write_file',
   description: `Create a new file or completely overwrite an existing file.
 
-IMPORTANT: This tool will OVERWRITE the entire file content.
-- If you need to make small changes to an existing file, use edit_file instead
-- ALWAYS prefer editing existing files over creating new ones
+When to use write_file vs edit_file:
+- write_file: Creating NEW files, or rewriting an entire file from scratch
+- edit_file: Making targeted changes to an EXISTING file (preferred — preserves unchanged code)
+ALWAYS prefer edit_file for existing files. Only use write_file when creating new files or when edit_file has failed twice.
+
+Rules:
 - If overwriting an existing file, you MUST read it first with read_file
+- file_path must be an absolute path
+- Creates parent directories automatically
+- For files >300 lines, create a skeleton first, then use edit_file to fill in — this prevents truncation
 
-Usage:
-- file_path must be an absolute path (not relative)
-- Creates parent directories automatically if they don't exist
-- Cannot write files outside the working directory (security restriction)
-
-For large files (300+ lines):
-- Consider using multi-step generation: create skeleton first, then use edit_file to add content
-- This prevents output truncation issues
-
-Code completeness detection:
-- The tool automatically checks for truncated code (unclosed brackets, incomplete statements)
-- If truncation is detected, a warning will be returned
-
-NEVER create documentation files (*.md, README) unless explicitly requested.`,
+The tool checks for truncated code (unclosed brackets, incomplete statements) and warns you.`,
   generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',

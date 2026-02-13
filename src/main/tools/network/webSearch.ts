@@ -77,15 +77,12 @@ interface SearchSourceResult {
 
 export const webSearchTool: Tool = {
   name: 'web_search',
-  description: `Search the web using multiple data sources in parallel.
+  description: `Search the web and return multiple results with titles, URLs, and snippets.
 
-Available sources (based on configured API keys):
-- Cloud Proxy (default, uses server-side keys)
-- Perplexity AI (AI-enhanced search with citations)
-- EXA (high-quality semantic search)
-- Brave Search (traditional web search)
+Use for: finding documentation, researching APIs, looking up error messages, discovering libraries.
 
-The tool automatically uses all available sources and merges results.`,
+For reading a specific URL you already have, use web_fetch instead.
+For searching local code, use grep or glob.`,
   generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',

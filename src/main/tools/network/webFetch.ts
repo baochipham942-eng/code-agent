@@ -6,7 +6,11 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 
 export const webFetchTool: Tool = {
   name: 'web_fetch',
-  description: 'Fetch and process content from a URL',
+  description: `Fetch a single URL and extract information from its content.
+
+Use for: reading a specific webpage, calling an API endpoint, extracting data from a known URL.
+
+For searching the web (when you don't have a specific URL), use web_search instead.`,
   generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',

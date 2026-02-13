@@ -16,7 +16,15 @@ const logger = createLogger('ReadFile');
 
 export const readFileTool: Tool = {
   name: 'read_file',
-  description: `Read the contents of a file from the local filesystem.
+  description: `Read a text file from the local filesystem.
+
+This tool reads text-based files: source code (.ts, .js, .py, etc.), config (.json, .yaml, .toml), plain text (.txt, .csv, .md), and similar formats.
+
+For binary/structured formats, use the dedicated tools instead:
+- Excel (.xlsx, .xls) → use read_xlsx (returns structured columns and data)
+- Word (.docx) → use read_docx
+- PDF (.pdf) → use read_pdf
+- Reading binary files directly will return garbled content with no useful information.
 
 Usage:
 - The file_path must be an absolute path, not a relative path
@@ -24,26 +32,13 @@ Usage:
 - Use offset and limit for large files (e.g., offset: 100, limit: 50 reads lines 100-149)
 - Lines longer than 2000 characters will be truncated
 - Results are returned with line numbers (1-indexed) for easy reference
+- ALWAYS read a file before editing it with edit_file
+- For searching within files, prefer grep tool over read_file
 
 CRITICAL - Parameter format rules:
 - file_path is ONLY the path string, nothing else
 - offset and limit are SEPARATE integer parameters
 - Do NOT combine parameters into file_path
-
-✅ CORRECT examples:
-  read_file(file_path="/src/index.ts", offset=10, limit=50)
-  read_file(file_path="~/Documents/config.json")
-
-❌ WRONG - These will fail:
-  read_file(file_path="/src/index.ts offset=10 limit=50")  // NO! params in path
-  read_file(file_path="/src/index.ts with offset 10")      // NO! text in path
-  read_file(file_path="/src/index.ts lines 7-9")           // NO! use offset/limit
-
-Best practices:
-- ALWAYS read a file before editing it with edit_file
-- If a file is too large, use offset/limit to read specific sections
-- For searching within files, prefer grep tool over read_file
-- Multiple files can be read in parallel with separate tool calls
 
 Returns: File content with line numbers in format "  lineNum\\tcontent"`,
   generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],

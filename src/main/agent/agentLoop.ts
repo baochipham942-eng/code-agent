@@ -240,6 +240,10 @@ export class AgentLoop {
   private _outputDirSnapshot: Set<string> = new Set();
   private _userExpectsOutput: boolean = false;
 
+  // P0: Requirement re-injection verification (Ralph Loop)
+  private _originalUserPrompt: string = '';
+  private _requirementVerificationDone: boolean = false;
+
   // E7: Content quality gate
   private contentVerificationRetries: Map<string, number> = new Map();
 
@@ -513,6 +517,8 @@ export class AgentLoop {
     this.outputFileNudgeCount = 0;
     this._consecutiveTruncations = 0;
     this._outputValidationDone = false;
+    this._originalUserPrompt = userMessage;
+    this._requirementVerificationDone = false;
 
     // Workspace diff: snapshot output directory before agent starts
     this._outputDirSnapshot = this._snapshotOutputDir();
@@ -522,6 +528,15 @@ export class AgentLoop {
     // P5: Extract expected output file paths from user prompt (existence diff)
     const allPaths = extractAbsoluteFilePaths(userMessage);
     this.expectedOutputFiles = allPaths.filter(f => !existsSync(f));
+
+    // P8: Task-specific prompt hardening — 对特定任务模式注入针对性提示
+    const taskHints = this._detectTaskPatterns(userMessage);
+    if (taskHints.length > 0) {
+      this.injectSystemMessage(
+        `<task-specific-hints>\n${taskHints.join('\n')}\n</task-specific-hints>`
+      );
+      logger.debug(`[AgentLoop] P8: Injected ${taskHints.length} task-specific hints`);
+    }
 
     // F1: Goal Re-Injection — 从用户消息提取目标
     this.goalTracker.initialize(userMessage);
@@ -1122,6 +1137,35 @@ export class AgentLoop {
               continue;
             }
           }
+        }
+
+        // P0: 需求回注验证 (Ralph Loop pattern)
+        // 触发条件: P7 已完成 + P0 未触发 + 原始 prompt 存在
+        if (this._outputValidationDone && !this._requirementVerificationDone
+            && this._originalUserPrompt) {
+          this._requirementVerificationDone = true;
+
+          // 重新收集当前输出状态
+          const allNewFiles = this._getNewOutputFiles();
+          const currentXlsx = allNewFiles.filter(f =>
+            f.endsWith('.xlsx') || f.endsWith('.xls')
+          );
+          const fileList = allNewFiles.map(f => basename(f)).join(', ');
+          const structureInfo = currentXlsx.length > 0
+            ? this._readOutputXlsxStructure(currentXlsx)
+            : null;
+
+          this.injectSystemMessage(
+            `<requirement-verification>\n` +
+            `请重新阅读用户的原始需求，逐条核对是否都已完成:\n\n` +
+            `"""\n${this._originalUserPrompt}\n"""\n\n` +
+            `当前输出文件: ${fileList || '无'}\n` +
+            (structureInfo ? `当前输出结构:\n${structureInfo}\n\n` : '\n') +
+            `逐条确认每项需求都有对应输出。如有遗漏，立即补充。如全部满足，结束任务。\n` +
+            `</requirement-verification>`
+          );
+          logger.debug('[AgentLoop] P0: Requirement re-injection for verification');
+          continue;
         }
 
         // 动态 maxTokens: 文本响应截断自动恢复
@@ -3030,6 +3074,42 @@ ${deferredToolsSummary}
     }
   }
 
+  /**
+   * P8: Detect task patterns and return targeted hints to reduce model variance
+   */
+  private _detectTaskPatterns(userMessage: string): string[] {
+    const hints: string[] = [];
+    const msg = userMessage.toLowerCase();
+
+    // 异常检测任务 — 防止输出全部行
+    if (/异常|anomal|outlier|离群/i.test(userMessage)) {
+      hints.push(
+        '【异常检测】输出文件只包含被标记为异常的行，不要输出全部数据。' +
+        '使用 IQR 或 Z-score 方法检测，异常标记列用数值 0/1 或布尔值（不要用中文"是"/"否"字符串）。'
+      );
+    }
+
+    // 透视表 + 交叉分析 — 防止遗漏子任务
+    if (/透视|pivot|交叉分析/i.test(userMessage)) {
+      hints.push(
+        '【透视分析】此类任务通常包含多个子任务，务必逐项完成：' +
+        '① 透视表 ② 排名/Top N ③ 增长率计算 ④ 图表 ⑤ 品类/分类占比数据。' +
+        '每个子任务的结果保存为独立的 sheet 或文件。完成后对照检查是否有遗漏。'
+      );
+    }
+
+    // 多轮迭代任务 — 防止上下文丢失
+    if (this.messages.length > 10) {
+      // This is a continuation turn in a multi-round session
+      hints.push(
+        '【多轮任务】这是多轮迭代任务。请先用 bash ls 检查输出目录中已有的文件，' +
+        '在已有文件基础上修改，不要从头重建。图表修改请先读取数据源再重新生成。'
+      );
+    }
+
+    return hints;
+  }
+
   private injectSystemMessage(content: string, category?: string): void {
     if (category) {
       // Buffer hook messages for later merging
@@ -3230,7 +3310,8 @@ ${deferredToolsSummary}
             if (allOutputFiles.length > 0) {
               recoveryContext += '\n\n## 当前输出目录中已有的文件\n';
               recoveryContext += allOutputFiles.map(f => `- ${f}`).join('\n');
-              recoveryContext += '\n\n⚠️ 以上文件已存在于工作目录中，可直接引用';
+
+              recoveryContext += '\n\n⚠️ 以上文件已存在于工作目录中，请在此基础上修改，不要重新创建';
             }
           } catch { /* ignore if directory listing fails */ }
 

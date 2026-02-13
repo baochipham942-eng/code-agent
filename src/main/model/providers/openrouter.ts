@@ -12,7 +12,7 @@ import {
   parseOpenAIResponse,
   normalizeJsonSchema,
 } from './shared';
-import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { MODEL_API_ENDPOINTS, getModelMaxOutputTokens } from '../../../shared/constants';
 import { openAISSEStream } from './sseStream';
 
 /**
@@ -40,7 +40,7 @@ export async function callOpenRouter(
   }));
 
   // 获取模型信息
-  const recommendedMaxTokens = modelInfo?.maxTokens || 8192;
+  const recommendedMaxTokens = modelInfo?.maxTokens || getModelMaxOutputTokens(config.model || 'gpt-4o');
 
   // 启用流式输出
   const useStream = !!onStream;

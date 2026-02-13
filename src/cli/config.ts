@@ -7,7 +7,7 @@ import fs from 'fs';
 import os from 'os';
 import * as dotenv from 'dotenv';
 import type { AppSettings, GenerationId, ModelProvider, PermissionLevel } from '../shared/types';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_GENERATION } from '../shared/constants';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_GENERATION, MODEL_MAX_TOKENS } from '../shared/constants';
 
 // 加载 .env 文件
 function loadEnvFile(): void {
@@ -138,7 +138,7 @@ export class CLIConfigService {
         provider: DEFAULT_PROVIDER as ModelProvider,  // Kimi K2.5
         model: DEFAULT_MODELS.chat,
         temperature: 0.7,
-        maxTokens: 4096,
+        maxTokens: MODEL_MAX_TOKENS.DEFAULT,
       },
     };
   }

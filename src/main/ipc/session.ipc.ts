@@ -11,7 +11,7 @@ import type { ConfigService } from '../services';
 import type { GenerationManager } from '../generation/generationManager';
 import type { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { Session, Message } from '../../shared/types';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
 import { getModelSessionState } from '../session/modelSessionState';
 import type { ModelProvider } from '../../shared/types';
 
@@ -69,7 +69,7 @@ async function handleCreate(
       provider: settings.model?.provider || DEFAULT_PROVIDER,
       model: settings.model?.model || DEFAULT_MODELS.chat,
       temperature: settings.model?.temperature || 0.7,
-      maxTokens: settings.model?.maxTokens || 4096,
+      maxTokens: settings.model?.maxTokens || MODEL_MAX_TOKENS.DEFAULT,
     },
     workingDirectory,
   });
@@ -157,7 +157,7 @@ async function handleDelete(
         provider: settings.model?.provider || DEFAULT_PROVIDER,
         model: settings.model?.model || DEFAULT_MODELS.chat,
         temperature: settings.model?.temperature || 0.7,
-        maxTokens: settings.model?.maxTokens || 4096,
+        maxTokens: settings.model?.maxTokens || MODEL_MAX_TOKENS.DEFAULT,
       },
     });
 

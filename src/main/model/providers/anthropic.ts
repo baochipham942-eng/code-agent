@@ -10,7 +10,7 @@ import {
   convertToClaudeMessages,
   parseClaudeResponse,
 } from './shared';
-import { MODEL_API_ENDPOINTS, API_VERSIONS } from '../../../shared/constants';
+import { MODEL_API_ENDPOINTS, API_VERSIONS, getModelMaxOutputTokens } from '../../../shared/constants';
 
 /**
  * Call Claude API
@@ -61,7 +61,7 @@ export async function callClaude(
 
   const requestBody: Record<string, unknown> = {
     model: config.model || 'claude-sonnet-4-20250514',
-    max_tokens: config.maxTokens ?? 8192,
+    max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'claude-sonnet-4-20250514'),
     messages: convertToClaudeMessages(otherMessages),
   };
 

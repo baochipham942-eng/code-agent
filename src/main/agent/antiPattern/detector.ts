@@ -433,6 +433,8 @@ export class AntiPatternDetector {
         if (cjkBoundary > 0) {
           cmd = cmd.substring(0, cjkBoundary).trim();
         }
+        // 清理尾部泄漏的括号/引号（来自 "bash({...})" 格式的闭合符号）
+        cmd = cmd.replace(/[)}\]"'`]+$/, '').trim();
       }
 
       if (cmd) {
@@ -583,6 +585,10 @@ export class AntiPatternDetector {
         }
 
         logger.debug(`Parsed tool args from regex match: ${JSON.stringify(sanitizedArgs)}`);
+
+        // Validate required fields before returning
+        if (!this._validateForceExecuteArgs(toolName, sanitizedArgs)) return null;
+
         return {
           id: `force_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
           name: toolName,
@@ -612,6 +618,9 @@ export class AntiPatternDetector {
         const parsedArgs = JSON.parse(jsonStr);
         const sanitizedArgs = cleanXmlResidues(parsedArgs);
         logger.debug(`Parsed tool args from content: ${JSON.stringify(sanitizedArgs)}`);
+
+        if (!this._validateForceExecuteArgs(toolName, sanitizedArgs as Record<string, unknown>)) return null;
+
         return {
           id: `force_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
           name: toolName,
@@ -633,6 +642,9 @@ export class AntiPatternDetector {
         if (parsedArgs.server || parsedArgs.tool || parsedArgs.arguments || parsedArgs.file_path || parsedArgs.command) {
           const sanitizedArgs = cleanXmlResidues(parsedArgs);
           logger.debug(`Parsed tool args from code block: ${JSON.stringify(sanitizedArgs)}`);
+
+          if (!this._validateForceExecuteArgs(toolName, sanitizedArgs as Record<string, unknown>)) return null;
+
           return {
             id: `force_${Date.now()}_${crypto.randomUUID().split('-')[0]}`,
             name: toolName,
@@ -645,6 +657,43 @@ export class AntiPatternDetector {
     }
 
     return null;
+  }
+
+  /**
+   * Validate required fields for force-executed tool calls.
+   * Rejects calls with missing/undefined critical args (e.g. write_file without content).
+   */
+  private _validateForceExecuteArgs(toolName: string, args: Record<string, unknown>): boolean {
+    switch (toolName) {
+      case 'write_file':
+        if (typeof args.file_path !== 'string' || !args.file_path) {
+          logger.warn(`[AntiPatternDetector] Force-execute rejected: write_file missing file_path`);
+          return false;
+        }
+        if (args.content === undefined || args.content === null) {
+          logger.warn(`[AntiPatternDetector] Force-execute rejected: write_file missing content`);
+          return false;
+        }
+        return true;
+      case 'edit_file':
+        if (typeof args.file_path !== 'string' || !args.file_path) {
+          logger.warn(`[AntiPatternDetector] Force-execute rejected: edit_file missing file_path`);
+          return false;
+        }
+        if (typeof args.old_string !== 'string' || typeof args.new_string !== 'string') {
+          logger.warn(`[AntiPatternDetector] Force-execute rejected: edit_file missing old_string/new_string`);
+          return false;
+        }
+        return true;
+      case 'bash':
+        if (typeof args.command !== 'string' || !args.command) {
+          logger.warn(`[AntiPatternDetector] Force-execute rejected: bash missing command`);
+          return false;
+        }
+        return true;
+      default:
+        return true;
+    }
   }
 
   /**

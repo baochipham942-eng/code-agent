@@ -13,7 +13,7 @@ import {
   parseOpenAIResponse,
   parseContextLengthError,
 } from './shared';
-import { MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../shared/constants';
+import { MODEL_API_ENDPOINTS, DEFAULT_MODELS, getModelMaxOutputTokens } from '../../../shared/constants';
 import { openAISSEStream } from './sseStream';
 import { withTransientRetry } from './retryStrategy';
 
@@ -31,7 +31,7 @@ export async function callDeepSeek(
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.deepseek;
   const openaiTools = convertToolsToOpenAI(tools, true);
-  const recommendedMaxTokens = modelInfo?.maxTokens || 8192;
+  const recommendedMaxTokens = modelInfo?.maxTokens || getModelMaxOutputTokens(config.model || DEFAULT_MODELS.chat);
   const useStream = !!onStream;
 
   const requestBody: Record<string, unknown> = {

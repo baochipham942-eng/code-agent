@@ -254,10 +254,8 @@ read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
         }
       }
 
-      output += `\n\n⚠️ 数据处理注意:\n`;
-      output += `- 去重: drop_duplicates(subset=['主键列'])，不要全列去重误删合法数据\n`;
-      output += `- 阶梯累进: 提成/税率必须分段累加，不能按最高档全额计算\n`;
-      output += `- 日期统一: pd.to_datetime(col, format='mixed').dt.strftime('%Y-%m-%d')`;
+      // 列画像：纯事实，不做判断
+      output += buildColumnProfile(rows, headers, actualTotalRows);
 
       // 大数据集专项指导：提供现成 Python 脚本，避免模型猜错列名
       if (actualTotalRows > 10000) {
@@ -432,4 +430,62 @@ function analyzeDataQuality(rows: CellValue[][], headers: string[]): QualitySumm
     categoricalValues,
     duplicateRowCount,
   };
+}
+
+/**
+ * 列画像：纯事实表格，不做任何判断或建议
+ * | 列名 | dtype | 非空 | min | max | 示例值 |
+ */
+function buildColumnProfile(rows: CellValue[][], headers: string[], totalRows: number): string {
+  if (rows.length === 0 || headers.length === 0) return '';
+
+  const profileRows: string[] = [];
+  for (let idx = 0; idx < headers.length; idx++) {
+    const values = rows.map(r => r[idx]);
+    const nonNull = values.filter(v => v !== null && v !== undefined && v !== '');
+    const nonNullCount = nonNull.length;
+
+    // dtype detection: check first non-null values
+    let dtype = 'empty';
+    const numericVals: number[] = [];
+    let hasString = false;
+    let hasNumber = false;
+    for (const v of nonNull) {
+      if (typeof v === 'number') { hasNumber = true; numericVals.push(v); }
+      else if (typeof v === 'boolean') { hasNumber = true; }
+      else { hasString = true; }
+    }
+    if (hasNumber && !hasString) dtype = 'float64';
+    else if (hasString && !hasNumber) dtype = 'string';
+    else if (hasNumber && hasString) dtype = 'mixed';
+    else if (nonNullCount === 0) dtype = 'empty';
+
+    // min/max for numeric columns
+    let minVal = '';
+    let maxVal = '';
+    if (numericVals.length > 0) {
+      const mn = Math.min(...numericVals);
+      const mx = Math.max(...numericVals);
+      // Use scientific notation for large numbers (like phone numbers)
+      minVal = Math.abs(mn) >= 1e9 ? mn.toExponential(3) : String(mn);
+      maxVal = Math.abs(mx) >= 1e9 ? mx.toExponential(3) : String(mx);
+    }
+
+    // 2 sample values
+    const samples = nonNull.slice(0, 2).map(v => {
+      if (typeof v === 'number' && Math.abs(v) >= 1e9) return v.toExponential(3);
+      return String(v);
+    });
+
+    profileRows.push(
+      `| ${headers[idx]} | ${dtype} | ${nonNullCount}/${totalRows} | ${minVal} | ${maxVal} | ${samples.join(', ')} |`
+    );
+  }
+
+  return (
+    `\n\n📊 列画像:\n` +
+    `| 列名 | dtype | 非空 | min | max | 示例值 |\n` +
+    `|------|-------|------|-----|-----|--------|\n` +
+    profileRows.join('\n')
+  );
 }

@@ -21,19 +21,16 @@ interface ReadXlsxParams {
 
 export const readXlsxTool: Tool = {
   name: 'read_xlsx',
-  description: `读取 Excel 表格（.xlsx）的内容。
+  description: `Read Excel files (.xlsx, .xls) and return structured data with column names and rows.
 
-支持输出格式：
-- table: Markdown 表格（默认）
-- json: JSON 数组
-- csv: CSV 格式
+This is the ONLY correct way to read Excel files. Do NOT use read_file for .xlsx/.xls — it will return garbled binary content.
 
-**使用示例：**
-\`\`\`
-read_xlsx { "file_path": "data.xlsx" }
-read_xlsx { "file_path": "data.xlsx", "sheet": "Sheet2" }
-read_xlsx { "file_path": "data.xlsx", "format": "json", "max_rows": 100 }
-\`\`\``,
+Output formats:
+- table: Markdown table (default, best for quick inspection)
+- json: JSON array (best for programmatic processing)
+- csv: CSV format
+
+The output always includes column names, which you should reference exactly when writing analysis scripts.`,
   generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'read',

@@ -8,9 +8,19 @@ AI 编程助手桌面应用，复刻 Claude Code 的 8 个架构代际来研究 
 
 这个项目主要使用 TypeScript（辅以 HTML 报告和少量 JavaScript）。主要语言是 TypeScript — 除非明确告知，否则新文件都使用 TypeScript。
 
+## 项目架构分层
+
+本项目有两个明确的层次：
+- **工程层**（core）：agentLoop、tools、context、scheduler、hooks、security 等核心基础设施
+- **技能层**（skills）：PPT 生成、Excel 分析、数据分析等领域技能
+
+分类或分析功能时必须尊重这个分层。excelAnalyze、excelEdit、pptGenerator 等属于**技能层**，不是工程层。
+
 ## 沟通规则
 
 当我分享截图或参考材料时，假设它们与我们当前讨论的内容相关，除非我明确说明。不要为它们编造独立的上下文。
+
+当我给出简短中文指令（如"帮我实现"、"继续"），先检查当前上下文中的计划、PRD 或任务列表，直接执行下一项。不要因为指令简短就停下来问澄清问题。
 
 ## 调试指南
 

@@ -9,31 +9,15 @@ import { resolvePath } from './pathUtils';
 
 export const globTool: Tool = {
   name: 'glob',
-  description: `Fast file pattern matching tool that works with any codebase size.
+  description: `Find files by name pattern. Fast, works with any codebase size.
 
-Usage:
-- Supports glob patterns like "**/*.ts", "src/**/*.tsx", "*.json"
-- Returns matching file paths sorted by modification time
-- Results limited to 200 files (additional files are indicated in output)
+Use for: finding files by name or extension (e.g., "**/*.ts", "src/**/*.tsx").
+For searching file contents, use grep instead.
+For browsing directory structure, use list_directory.
+Do NOT use bash find or ls — this tool is faster and auto-ignores node_modules/.git.
 
-Common patterns:
-- "**/*.ts" - All TypeScript files recursively
-- "src/**/*.tsx" - All TSX files in src directory
-- "*.config.js" - Config files in current directory
-- "**/*test*.ts" - All test files
-
-Auto-ignored directories:
-- node_modules, .git, dist, build, .next, coverage
-
-Best practices:
-- Use this tool instead of bash find or ls commands
-- When searching for a specific file, use a specific pattern
-- For content search (finding text inside files), use grep instead
-- Multiple glob patterns can be searched in parallel with separate tool calls
-
-When NOT to use:
-- For searching file CONTENTS - use grep instead
-- For reading a file you already know the path to - use read_file instead`,
+Patterns: "**/*.ts" (recursive), "src/*.tsx" (one level), "**/*test*" (name match).
+Results sorted by modification time, limited to 200 files.`,
   generations: ['gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',

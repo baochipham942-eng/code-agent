@@ -25,44 +25,22 @@ import { getPostEditDiagnostics } from '../lsp/diagnosticsHelper';
 
 export const editFileTool: Tool = {
   name: 'edit_file',
-  description: `Perform exact string replacements in files.
+  description: `Make targeted text replacements in existing files. Preferred over write_file for modifying existing code.
 
-CRITICAL: You MUST read the file with read_file before editing.
-This tool will fail if you attempt an edit without reading the file first.
+MUST read the file with read_file first — the tool will reject edits on unread files.
 
-Usage:
-- old_string: The exact text to replace (must be UNIQUE in the file unless using replace_all)
-- new_string: The replacement text (must be different from old_string)
-- replace_all: Set to true to replace all occurrences of old_string
+How it works:
+- old_string must match EXACTLY (whitespace, indentation, newlines all matter)
+- old_string must be unique in the file, or use replace_all: true for all occurrences
+- The line number prefixes from read_file output are NOT part of the file — do not include them
 
-CRITICAL - Parameter format rules:
-- Each parameter is a SEPARATE field
-- file_path is ONLY the path string
-- old_string and new_string are the exact text strings
+If edit fails with "text not found":
+1. Re-read the file — it may have changed
+2. Check indentation (tabs vs spaces) and trailing whitespace
+3. Include 2-3 surrounding lines for uniqueness
+4. After 2 failures, fall back to write_file to rewrite the entire file
 
-✅ CORRECT:
-  edit_file(file_path="/src/index.ts", old_string="foo", new_string="bar")
-
-❌ WRONG - These will fail:
-  edit_file(file_path="/src/index.ts old_string=foo")  // NO! params in path
-
-When editing text from read_file output:
-- Preserve the EXACT indentation (tabs/spaces) as shown in the file content
-- The line number prefix from read_file is NOT part of the file content
-- Match whitespace exactly - trailing spaces and newlines matter
-
-Common errors and solutions:
-- "text not found": Your old_string doesn't match exactly - check whitespace and indentation
-- "multiple occurrences": Provide more surrounding context to make old_string unique, or use replace_all: true
-
-Retry strategy - If edit_file fails twice with "text not found":
-1. Re-read the file to see current content
-2. If still failing, use write_file to replace the entire file content instead
-
-Best practices:
-- Include 2-3 lines of surrounding context in old_string for uniqueness
-- Use replace_all for renaming variables/functions across the file
-- For large changes, make multiple smaller edits instead of one huge replacement`,
+Use replace_all: true for renaming variables/functions across the file.`,
   generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',

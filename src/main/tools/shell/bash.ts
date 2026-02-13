@@ -16,39 +16,29 @@ const execAsync = promisify(exec);
 
 export const bashTool: Tool = {
   name: 'bash',
-  description: `Execute shell commands in a persistent shell session with optional timeout.
+  description: `Execute shell commands with optional timeout.
 
-IMPORTANT: Use for terminal operations (git, npm, docker, etc.) ONLY.
-DO NOT use for file operations - use specialized tools instead:
-- File search: Use glob (NOT find or ls)
-- Content search: Use grep (NOT grep or rg)
-- Read files: Use read_file (NOT cat/head/tail)
-- Edit files: Use edit_file (NOT sed/awk)
-- Write files: Use write_file (NOT echo/cat with heredoc)
+Use for: git, npm, docker, python scripts, and other terminal operations.
 
-Usage notes:
-- Always quote file paths with spaces: cd "/path/with spaces"
-- Use absolute paths, avoid cd when possible
-- Chain dependent commands with && (e.g., git add . && git commit -m "msg")
-- Independent commands can be called in parallel in separate tool calls
-- Output is truncated at 30000 characters
-- Default timeout is 120 seconds (can be overridden)
+DO NOT use bash for file operations — use the dedicated tools:
+- Read files → read_file (not cat/head/tail)
+- Read Excel → read_xlsx (not python pandas in bash)
+- Write files → write_file (not echo/cat heredoc)
+- Edit files → edit_file (not sed/awk)
+- Find files → glob (not find/ls)
+- Search content → grep (not grep/rg in bash)
+Using bash for these wastes a round trip and loses tool-level tracking.
 
-Background execution:
-- Set run_in_background=true for long-running commands
-- Returns a task_id immediately
-- Use task_output tool to check status and get output
-- Use kill_shell tool to terminate background tasks
+Usage:
+- Quote paths with spaces: cd "/path/with spaces"
+- Use absolute paths, avoid cd
+- Chain dependent commands with &&
+- Output truncated at 30000 characters, default timeout 120s
 
-PTY mode (for interactive commands):
-- Set pty=true for commands that require terminal emulation (vim, ssh, etc.)
-- PTY sessions support interactive input via process_write/process_submit tools
-- Use for commands that need ANSI escape sequences or terminal features
+Background: set run_in_background=true for long-running commands.
+PTY mode: set pty=true for interactive commands (vim, ssh).
 
-Git best practices:
-- NEVER use --force push unless explicitly requested
-- NEVER skip hooks (--no-verify) unless explicitly requested
-- Always check git status before committing`,
+Git: NEVER --force push or --no-verify unless explicitly requested.`,
 
   generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
@@ -324,17 +314,26 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
     } catch (error: any) {
       // Handle timeout
       if (error.killed && error.signal === 'SIGTERM') {
+        let timeoutOutput = error.stdout || '';
+        if (error.stderr) {
+          timeoutOutput += (timeoutOutput ? '\n' : '') + `[stderr]: ${error.stderr}`;
+        }
         return {
           success: false,
           error: `Command timed out after ${timeout / 1000} seconds. Consider using run_in_background=true for long-running commands.`,
-          output: error.stdout || undefined,
+          output: timeoutOutput || undefined,
         };
       }
 
+      // 合并 stdout + stderr，确保 Python traceback 等错误信息对模型可见
+      let errorOutput = error.stdout || '';
+      if (error.stderr) {
+        errorOutput += (errorOutput ? '\n' : '') + `[stderr]: ${error.stderr}`;
+      }
       return {
         success: false,
         error: error.message || 'Command execution failed',
-        output: error.stdout || undefined,
+        output: errorOutput || undefined,
       };
     }
   },

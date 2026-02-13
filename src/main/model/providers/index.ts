@@ -47,6 +47,7 @@ export {
   convertToolsToClaude,
   convertToOpenAIMessages,
   convertToClaudeMessages,
+  convertToTextOnlyMessages,
   convertToGeminiMessages,
   safeJsonParse,
   parseOpenAIResponse,

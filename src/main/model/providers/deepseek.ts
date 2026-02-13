@@ -10,6 +10,7 @@ import {
   httpsAgent,
   convertToolsToOpenAI,
   convertToOpenAIMessages,
+  convertToTextOnlyMessages,
   parseOpenAIResponse,
   parseContextLengthError,
 } from './shared';
@@ -34,9 +35,15 @@ export async function callDeepSeek(
   const recommendedMaxTokens = modelInfo?.maxTokens || getModelMaxOutputTokens(config.model || DEFAULT_MODELS.chat);
   const useStream = !!onStream;
 
+  // R1 等推理模型不支持 tool calling，使用纯文本回退
+  const useToolCalling = modelInfo?.supportsTool !== false;
+  const convertedMessages = useToolCalling
+    ? convertToOpenAIMessages(messages)
+    : convertToTextOnlyMessages(messages);
+
   const requestBody: Record<string, unknown> = {
     model: config.model || DEFAULT_MODELS.chat,
-    messages: convertToOpenAIMessages(messages),
+    messages: convertedMessages,
     temperature: config.temperature ?? 0.7,
     max_tokens: config.maxTokens ?? recommendedMaxTokens,
     stream: useStream,
@@ -48,7 +55,7 @@ export async function callDeepSeek(
     logger.debug(' DeepSeek: Using response_format:', config.responseFormat.type);
   }
 
-  if (openaiTools.length > 0) {
+  if (useToolCalling && openaiTools.length > 0) {
     requestBody.tools = openaiTools;
     requestBody.tool_choice = 'auto';
   }

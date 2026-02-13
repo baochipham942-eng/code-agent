@@ -112,11 +112,28 @@ export interface MessageContent {
 }
 
 /**
+ * 结构化工具调用（OpenAI wire format）
+ */
+export interface ModelToolCall {
+  id: string;
+  name: string;
+  arguments: string; // JSON string
+}
+
+/**
  * Model message format
  */
 export interface ModelMessage {
   role: string;
   content: string | MessageContent[];
+  /** assistant 消息的结构化工具调用 */
+  toolCalls?: ModelToolCall[];
+  /** tool 消息关联的 tool_call_id */
+  toolCallId?: string;
+  /** 文本回退（给不支持 tool calling 的模型用） */
+  toolCallText?: string;
+  /** 推理/思考内容（Kimi reasoning / DeepSeek reasoning_content） */
+  thinking?: string;
 }
 
 // ----------------------------------------------------------------------------

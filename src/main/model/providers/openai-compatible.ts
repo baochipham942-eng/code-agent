@@ -10,6 +10,7 @@ import {
   electronFetch,
   convertToolsToOpenAI,
   convertToOpenAIMessages,
+  convertToTextOnlyMessages,
   parseOpenAIResponse,
 } from './shared';
 import { MODEL_API_ENDPOINTS, getModelMaxOutputTokens } from '../../../shared/constants';
@@ -78,16 +79,20 @@ export async function callGroq(
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.groq;
   const groqTools = convertToolsToOpenAI(tools);
+  const useToolCalling = modelInfo?.supportsTool !== false;
+  const convertedMessages = useToolCalling
+    ? convertToOpenAIMessages(messages)
+    : convertToTextOnlyMessages(messages);
 
   const requestBody: Record<string, unknown> = {
     model: config.model || 'llama-3.3-70b-versatile',
-    messages: convertToOpenAIMessages(messages),
+    messages: convertedMessages,
     temperature: config.temperature ?? 0.7,
     max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'llama-3.3-70b-versatile'),
     stream: !!onStream,
   };
 
-  if (groqTools.length > 0 && modelInfo?.supportsTool) {
+  if (useToolCalling && groqTools.length > 0) {
     requestBody.tools = groqTools;
     requestBody.tool_choice = 'auto';
   }
@@ -136,9 +141,10 @@ export async function callLocal(
   const baseUrl = config.baseUrl || 'http://localhost:11434/v1';
   const openaiTools = convertToolsToOpenAI(tools);
 
+  // Local/Ollama: 大多数本地模型 tool calling 支持不完整，用纯文本回退
   const requestBody: Record<string, unknown> = {
     model: config.model || 'qwen2.5-coder:7b',
-    messages: convertToOpenAIMessages(messages),
+    messages: convertToTextOnlyMessages(messages),
     temperature: config.temperature ?? 0.7,
     stream: !!onStream,
   };
@@ -190,16 +196,20 @@ export async function callQwen(
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.qwen;
   const qwenTools = convertToolsToOpenAI(tools);
+  const useToolCalling = modelInfo?.supportsTool !== false;
+  const convertedMessages = useToolCalling
+    ? convertToOpenAIMessages(messages)
+    : convertToTextOnlyMessages(messages);
 
   const requestBody: Record<string, unknown> = {
     model: config.model || 'qwen-max',
-    messages: convertToOpenAIMessages(messages),
+    messages: convertedMessages,
     temperature: config.temperature ?? 0.7,
     max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'qwen-max'),
     stream: !!onStream,
   };
 
-  if (qwenTools.length > 0 && modelInfo?.supportsTool) {
+  if (useToolCalling && qwenTools.length > 0) {
     requestBody.tools = qwenTools;
     requestBody.tool_choice = 'auto';
   }
@@ -248,16 +258,20 @@ export async function callMinimax(
 ): Promise<ModelResponse> {
   const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.minimax;
   const minimaxTools = convertToolsToOpenAI(tools);
+  const useToolCalling = modelInfo?.supportsTool !== false;
+  const convertedMessages = useToolCalling
+    ? convertToOpenAIMessages(messages)
+    : convertToTextOnlyMessages(messages);
 
   const requestBody: Record<string, unknown> = {
     model: config.model || 'abab6.5s-chat',
-    messages: convertToOpenAIMessages(messages),
+    messages: convertedMessages,
     temperature: config.temperature ?? 0.7,
     max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'abab6.5s-chat'),
     stream: !!onStream,
   };
 
-  if (minimaxTools.length > 0 && modelInfo?.supportsTool) {
+  if (useToolCalling && minimaxTools.length > 0) {
     requestBody.tools = minimaxTools;
     requestBody.tool_choice = 'auto';
   }

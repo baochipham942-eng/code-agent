@@ -26,6 +26,7 @@ import {
   SubagentContextBuilder,
   getAgentContextLevel,
 } from '../../agent/subagentContextBuilder';
+import { getSwarmEventEmitter } from '../../ipc/swarm.ipc';
 
 interface SpawnedAgent {
   id: string;
@@ -396,6 +397,7 @@ async function executeParallelAgents(
   context: ToolContext
 ): Promise<ToolExecutionResult> {
   const coordinator = getParallelAgentCoordinator();
+  const emitter = getSwarmEventEmitter();
 
   // Initialize coordinator with context
   coordinator.initialize({
@@ -427,8 +429,42 @@ async function executeParallelAgents(
     };
   });
 
+  // Emit swarm:started
+  emitter.started(tasks.length);
+  for (const task of tasks) {
+    emitter.agentAdded({ id: task.id, name: task.role, role: task.role });
+  }
+
+  // Bridge coordinator events to swarm events
+  const onTaskStart = (evt: { taskId: string; role: string }) => {
+    emitter.agentUpdated(evt.taskId, { status: 'running', startTime: Date.now() });
+  };
+  const onTaskComplete = (evt: { taskId: string; result: { success: boolean; duration: number; output?: string; error?: string } }) => {
+    if (evt.result.success) {
+      emitter.agentCompleted(evt.taskId, evt.result.output);
+    } else {
+      emitter.agentFailed(evt.taskId, evt.result.error || 'Unknown error');
+    }
+  };
+  const onTaskError = (evt: { taskId: string; error: string }) => {
+    emitter.agentFailed(evt.taskId, evt.error);
+  };
+
+  coordinator.on('task:start', onTaskStart);
+  coordinator.on('task:complete', onTaskComplete);
+  coordinator.on('task:error', onTaskError);
+
   try {
     const result = await coordinator.executeParallel(tasks);
+
+    // Emit swarm:completed
+    emitter.completed({
+      total: tasks.length,
+      completed: result.results.filter(r => r.success).length,
+      failed: result.errors.length,
+      parallelPeak: result.parallelism,
+      totalTime: result.totalDuration,
+    });
 
     if (result.success) {
       const summaries = result.results.map((r) =>
@@ -454,9 +490,15 @@ ${summaries}`,
       };
     }
   } catch (error) {
+    emitter.cancelled();
     return {
       success: false,
       error: `Parallel execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
     };
+  } finally {
+    // Cleanup event listeners
+    coordinator.off('task:start', onTaskStart);
+    coordinator.off('task:complete', onTaskComplete);
+    coordinator.off('task:error', onTaskError);
   }
 }

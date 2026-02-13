@@ -4,6 +4,7 @@
 
 import { createAgentLoop, buildCLIConfig, initializeCLIServices, cleanup, getSessionManager } from './bootstrap';
 import { terminalOutput, jsonOutput } from './output';
+import { addSwarmEventListener } from '../main/ipc/swarm.ipc';
 import type { CLIConfig, CLIRunResult, CLIGlobalOptions } from './types';
 import type { Message, AgentEvent, GenerationId, PRLink } from '../shared/types';
 import { createLogger } from '../main/services/infra/logger';
@@ -26,6 +27,7 @@ export class CLIAgent {
   private sessionId: string | null = null;
   private injectedContext: string = '';
   private prLink: PRLink | null = null;
+  private unsubscribeSwarm: (() => void) | null = null;
 
   constructor(options: Partial<CLIGlobalOptions> = {}) {
     this.config = buildCLIConfig(options);
@@ -95,6 +97,17 @@ export class CLIAgent {
       logger.debug('Failed to save user message to session', { error: (error as Error).message });
     }
 
+    // 注册 Swarm 事件监听器（CLI 模式下将 swarm 事件路由到终端/JSON 输出）
+    if (!this.unsubscribeSwarm) {
+      this.unsubscribeSwarm = addSwarmEventListener((event) => {
+        if (this.config.outputFormat === 'json') {
+          jsonOutput.handleSwarmEvent(event);
+        } else {
+          terminalOutput.handleSwarmEvent(event);
+        }
+      });
+    }
+
     // 创建 AgentLoop（传入真实 sessionId）
     const agentLoop = createAgentLoop(
       this.config,
@@ -139,15 +152,9 @@ export class CLIAgent {
     }
 
     if (event.type === 'message' && event.data?.role === 'assistant') {
-      // 保存助手消息到本地历史（不再持久化到 DB，由 agentLoop 的 persistMessage 回调统一处理）
-      const assistantMessage: Message = {
-        id: event.data.id || `msg-${Date.now()}`,
-        role: 'assistant',
-        content: event.data.content || this.lastContent,
-        timestamp: Date.now(),
-        toolCalls: event.data.toolCalls,
-      };
-      this.messages.push(assistantMessage);
+      // 注意：不再手动 push 到 this.messages，因为 agentLoop.addAndPersistMessage()
+      // 已经往共享的 messages 数组 push 了。重复 push 会导致结构化 tool_calls 协议错误
+      // （两个 assistant 消息 back-to-back，API 400: tool_call_ids without response）
     }
 
     // Agent 完成
@@ -173,6 +180,12 @@ export class CLIAgent {
   private finishRun(result: CLIRunResult): void {
     this.isRunning = false;
     this.currentResult = result;
+
+    // 取消 Swarm 事件监听
+    if (this.unsubscribeSwarm) {
+      this.unsubscribeSwarm();
+      this.unsubscribeSwarm = null;
+    }
 
     if (this.resolveRun) {
       this.resolveRun(result);

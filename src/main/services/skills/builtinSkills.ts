@@ -295,6 +295,12 @@ ppt_generate({
     description: '系统性数据清洗与分析 — 处理 Excel/CSV 数据时自动使用，覆盖去重、缺失值、异常值修正、格式标准化、分类统计等',
     promptContent: `# Excel/CSV 数据处理规范
 
+## 核心原则
+
+1. **每步验证，不假设成功** — 去重后检查是否还有残留，格式转换后检查覆盖率，异常修正后检查值域。一次处理没干净就再来一次。
+2. **交付干净数据，不交付报告** — 你的产出是修正后的数据文件，不是问题分析报告。"发现异常并建议人工复核"等于没做。
+3. **需求要图表就必须有图表** — 需求提到占比、分布、趋势等可视化意图时，输出中必须包含对应图表（嵌入 xlsx 或独立 png），不能只给数据表。
+
 ## 工作流程: 读取 → 理解 → 逐步处理 → 每步验证 → 输出 → 回读
 
 ### 第一步：理解数据（必做，不可跳过）
@@ -312,23 +318,22 @@ for col in df.columns:
 ❌ df.drop_duplicates()  # 全列匹配，遗漏业务重复
 ✅ df.drop_duplicates(subset=['订单号'])  # 指定业务主键
 ✅ print(f"去重: {before}→{after} 行, 删除 {before-after}")
+去重后回查一次主键列的 duplicated 计数，若不为零则排查原因继续清洗
 
 ### 缺失值
 按列类型选策略：数值→中位数, 文本→'未知'/众数, 日期→推断
 ✅ df['金额'].fillna(df['金额'].median(), inplace=True)
 ✅ 填充后确认: df.isna().sum()
 
-### 异常值修正（检测+修正缺一不可）
-❌ 只标记不修正 = 未完成
-✅ 负数薪资→取绝对值: df.loc[df['月薪']<0, '月薪'] = df['月薪'].abs()
-✅ 极端值(999999)→IQR检测后替换为中位数
-✅ 修正后打印 describe() 确认范围合理
+### 异常值修正
+检测到不合理的值（负数金额、极端离群值等）必须在数据中实际修正，不能只标记或只写进报告。
+修正后用 describe() 确认值域恢复合理。
 
 ### 格式标准化
 - 性别: 先 value_counts() 查全部取值，再统一映射
   ✅ mapping = {'M':'男','male':'男','F':'女','female':'女','f':'女','m':'男'}
   ✅ df['性别'] = df['性别'].map(mapping).fillna(df['性别'])
-- 日期: pd.to_datetime(df['日期'], format='mixed') → strftime('%Y-%m-%d')
+- 日期: pd.to_datetime → strftime('%Y-%m-%d')，转换后检查覆盖率，未命中的单独处理
 - 电话: str处理→去非数字→补齐11位→验证
 
 ### 文本分类与情感分析
@@ -347,7 +352,7 @@ print(result.describe())
 
 ### 工具选择
 - pandas: 数据分析、聚合统计、去重清洗（90%场景）
-- openpyxl: 需要公式、格式、多sheet样式时
+- openpyxl: 需要公式、格式、多sheet样式、嵌入图表时
 - matplotlib: 图表含中文必须设置字体 plt.rcParams['font.sans-serif']=['SimHei']`,
     basePath: '',
     allowedTools: ['bash', 'read_file', 'read_xlsx', 'write_file', 'edit_file'],
@@ -420,6 +425,10 @@ sheet['D20'] = '=AVERAGE(D2:D19)'
 - #VALUE! → 公式中数据类型错误
 - #NAME? → 函数名拼写错误
 - #N/A → VLOOKUP/INDEX 未找到匹配
+
+## 图表
+需求涉及占比、趋势、对比等可视化意图时，输出中应包含对应图表。
+openpyxl.chart 可嵌入 xlsx，matplotlib 可生成独立 png。图表和数据表同等重要，不能省略。
 
 ## openpyxl 注意事项
 - load_workbook(data_only=True) 读计算值，但保存后公式会丢失！

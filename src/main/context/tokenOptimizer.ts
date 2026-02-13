@@ -511,6 +511,10 @@ export interface CompressedMessage {
   compressed?: boolean;
   /** Original message ID for index-safe compression */
   id?: string;
+  /** tool 消息关联的 tool_call_id（保留配对关系，防止压缩后孤立） */
+  toolCallId?: string;
+  /** assistant 消息的 tool_call IDs（保留配对关系，防止压缩后孤立） */
+  toolCallIds?: string[];
 }
 
 export interface MessageHistoryCompressionConfig {

@@ -300,6 +300,53 @@ function sanitizeToolCallOrder(messages: any[]): any[] {
     }
   }
 
+  // Layer 3: 孤立 tool_call 检测 — 为缺失响应的 tool_call 合成占位 tool 消息
+  // 原因：compaction 可能删除旧 tool 响应，留下孤立的 assistant(tool_calls)
+  // 合成占位比删除 tool_call 更安全（OpenAI 协议不允许修改 assistant.tool_calls 数组）
+  const allToolResponseIds = new Set<string>();
+  for (const m of result) {
+    if (m.role === 'tool' && m.tool_call_id) {
+      allToolResponseIds.add(m.tool_call_id);
+    }
+  }
+
+  const placeholders: any[] = [];
+  for (const m of result) {
+    if (m.role === 'assistant' && m.tool_calls?.length) {
+      for (const tc of m.tool_calls) {
+        if (!allToolResponseIds.has(tc.id)) {
+          placeholders.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: '[context compacted]',
+          });
+          allToolResponseIds.add(tc.id); // 防止重复合成
+        }
+      }
+    }
+  }
+
+  if (placeholders.length > 0) {
+    // 将占位消息插入到对应 assistant 消息之后（而非末尾），以满足协议的顺序要求
+    for (const ph of placeholders) {
+      // 找到对应 assistant 消息的位置
+      const assistantIdx = result.findIndex(
+        m => m.role === 'assistant' && m.tool_calls?.some((tc: any) => tc.id === ph.tool_call_id)
+      );
+      if (assistantIdx >= 0) {
+        // 在 assistant 之后、下一个 non-tool 消息之前插入
+        let insertIdx = assistantIdx + 1;
+        while (insertIdx < result.length && result[insertIdx].role === 'tool') {
+          insertIdx++;
+        }
+        result.splice(insertIdx, 0, ph);
+      } else {
+        result.push(ph);
+      }
+    }
+    logger.info(`[sanitizeToolCallOrder] Synthesized ${placeholders.length} placeholder tool responses for orphaned tool_calls`);
+  }
+
   return result;
 }
 

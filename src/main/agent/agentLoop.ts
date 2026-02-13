@@ -3259,6 +3259,8 @@ ${deferredToolsSummary}
           content: msg.content,
           id: msg.id,
           timestamp: msg.timestamp,
+          toolCallId: msg.toolResults?.[0]?.toolCallId,      // 保留 tool↔assistant 配对
+          toolCallIds: msg.toolCalls?.map(tc => tc.id),       // 保留 assistant→tool 配对
         }));
 
         // 生成 CompactionBlock
@@ -3329,7 +3331,18 @@ ${deferredToolsSummary}
             timestamp: block.timestamp,
             compaction: block,
           };
-          await this.addAndPersistMessage(compactionMessage);
+
+          // Layer 2: 全量替换 — 删除被压缩的旧消息，只保留 compaction + 最近 N 条
+          const preserveCount = this.autoCompressor.getConfig().preserveRecentCount;
+          const boundary = this.messages.length - preserveCount;
+          if (boundary > 0) {
+            // 替换 messages[0..boundary) 为单条 compaction 消息
+            this.messages.splice(0, boundary, compactionMessage);
+            logger.info(`[AgentLoop] Layer 2: spliced ${boundary} old messages, kept ${preserveCount} recent + 1 compaction`);
+          } else {
+            // 消息太少，仅追加
+            this.messages.push(compactionMessage);
+          }
 
           // 发送压缩事件（包含 compaction block 信息）
           this.onEvent({
@@ -3371,6 +3384,8 @@ ${deferredToolsSummary}
         content: msg.content,
         id: msg.id,
         timestamp: msg.timestamp,
+        toolCallId: msg.toolResults?.[0]?.toolCallId,
+        toolCallIds: msg.toolCalls?.map(tc => tc.id),
       }));
 
       const result = await this.autoCompressor.checkAndCompress(

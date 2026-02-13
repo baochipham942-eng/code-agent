@@ -31,6 +31,9 @@ export const CORE_TOOLS: string[] = [
 
   // 工具发现
   'tool_search',
+
+  // Skill 元工具（始终可见，动态描述聚合可用 skills）
+  'skill',
 ];
 
 /**
@@ -137,14 +140,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   // ============================================================================
   // Gen 4: 网络和 Skill
   // ============================================================================
-  {
-    name: 'skill',
-    shortDescription: '执行已注册的 skill（如 commit、review-pr）',
-    tags: ['planning'],
-    aliases: ['slash', 'command'],
-    source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
   {
     name: 'web_fetch',
     shortDescription: '获取网页内容',

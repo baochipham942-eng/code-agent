@@ -57,6 +57,9 @@ export interface ToolDefinition {
 
   /** MCP 服务器名称（仅 MCP 工具） */
   mcpServer?: string;
+
+  /** 动态描述生成器（优先于静态 description） */
+  dynamicDescription?: () => string;
 }
 
 export interface JSONSchema {

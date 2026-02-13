@@ -30,7 +30,7 @@ import { HookManager, createHookManager } from '../hooks';
 import type { BudgetEventData } from '../../shared/types';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getSystemPromptCache } from '../telemetry/systemPromptCache';
-import { DEFAULT_MODELS, MODEL_MAX_TOKENS } from '../../shared/constants';
+import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS } from '../../shared/constants';
 
 // Import refactored modules
 import type {
@@ -2947,7 +2947,7 @@ ${deferredToolsSummary}
     // 注意：maxTokens 是模型的最大输出限制，不是上下文窗口大小
     // 上下文窗口大小应该更大（如 64K-128K），这里使用保守估计 64000
     const currentTokens = estimateModelMessageTokens(modelMessages);
-    const contextWindowSize = 64000; // 上下文窗口大小（保守估计）
+    const contextWindowSize = CONTEXT_WINDOWS[this.modelConfig.model] || 64000;
     if (this.messageHistoryCompressor.shouldProactivelyCompress(currentTokens, contextWindowSize)) {
       logger.info(`[AgentLoop] Proactive compression triggered: ${currentTokens}/${contextWindowSize} tokens (${Math.round(currentTokens / contextWindowSize * 100)}%)`);
       logCollector.agent('INFO', 'Proactive compression triggered', {

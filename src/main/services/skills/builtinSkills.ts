@@ -292,49 +292,142 @@ ppt_generate({
   },
   {
     name: 'data-cleaning',
-    description: '系统性数据清洗，适用于 Excel/CSV 等结构化数据',
-    promptContent: `你是数据清洗专家。请按以下检查清单系统性地清洗数据。
+    description: '系统性数据清洗与分析 — 处理 Excel/CSV 数据时自动使用，覆盖去重、缺失值、异常值修正、格式标准化、分类统计等',
+    promptContent: `# Excel/CSV 数据处理规范
 
-## 清洗检查清单（必须按顺序逐项检查）
+## 工作流程: 读取 → 理解 → 逐步处理 → 每步验证 → 输出 → 回读
 
-### 1. 结构检查
-- [ ] 列名是否一致（空格、大小写、别名）
-- [ ] 数据类型是否正确（数字列是否有文本混入）
-- [ ] 是否有完全空白的行/列需要删除
+### 第一步：理解数据（必做，不可跳过）
+\`\`\`python
+df = pd.read_excel('file.xlsx')
+print(df.shape, df.dtypes)
+print(df.describe(include='all'))
+for col in df.columns:
+    print(f"{col}: {df[col].nunique()} unique, {df[col].isna().sum()} null")
+    if df[col].dtype == 'object':
+        print(f"  → {df[col].value_counts().to_dict()}")
+\`\`\`
 
-### 2. 重复值
-- [ ] 先识别业务主键列（如 订单号、员工ID、日期+姓名 等），用 subset= 参数去重
-- [ ] 禁止无参数 drop_duplicates()——全列完全相同才算重复，会漏掉业务重复
-- [ ] 记录去重前后行数差异
+### 去重
+❌ df.drop_duplicates()  # 全列匹配，遗漏业务重复
+✅ df.drop_duplicates(subset=['订单号'])  # 指定业务主键
+✅ print(f"去重: {before}→{after} 行, 删除 {before-after}")
 
-### 3. 缺失值
-- [ ] 统计每列缺失值数量
-- [ ] 根据业务含义选择填充策略（均值/中位数/众数/前后值/删除行）
-- [ ] 记录填充策略和数量
+### 缺失值
+按列类型选策略：数值→中位数, 文本→'未知'/众数, 日期→推断
+✅ df['金额'].fillna(df['金额'].median(), inplace=True)
+✅ 填充后确认: df.isna().sum()
 
-### 4. 格式标准化
-- [ ] 日期格式统一（转换前先检查原始格式，避免解析错误导致数据丢失）
-- [ ] 性别/状态等分类字段标准化（如 M/male/男 → 男）
-- [ ] 电话号码格式校验（位数、前缀）
-- [ ] 邮箱格式校验
+### 异常值修正（检测+修正缺一不可）
+❌ 只标记不修正 = 未完成
+✅ 负数薪资→取绝对值: df.loc[df['月薪']<0, '月薪'] = df['月薪'].abs()
+✅ 极端值(999999)→IQR检测后替换为中位数
+✅ 修正后打印 describe() 确认范围合理
 
-### 5. 异常值检测与修正
-- [ ] 数值列检查负数是否合理（如薪资不应为负）→ 不合理的必须修正（取绝对值/设为缺失/删除行）
-- [ ] 数值列检查极端值（IQR 或 Z-score）→ 明显不合理的极端值（如薪资=999999）必须修正
-- [ ] 日期列检查不合理日期（如 1899 年、未来日期）→ 修正或设为缺失
-- [ ] 异常值只检测不修正 = 未完成清洗
+### 格式标准化
+- 性别: 先 value_counts() 查全部取值，再统一映射
+  ✅ mapping = {'M':'男','male':'男','F':'女','female':'女','f':'女','m':'男'}
+  ✅ df['性别'] = df['性别'].map(mapping).fillna(df['性别'])
+- 日期: pd.to_datetime(df['日期'], format='mixed') → strftime('%Y-%m-%d')
+- 电话: str处理→去非数字→补齐11位→验证
 
-### 6. 验证
-- [ ] 每步操作后打印 before/after 行数和受影响列的统计（均值/唯一值数等）
-- [ ] 清洗后无残余缺失值
-- [ ] 抽样检查 3-5 行确认数据正确
-- [ ] 最终输出前再做一次全量 describe() 确认数据合理性
+### 文本分类与情感分析
+对于分类任务，逐条分析内容再分类，不要批量猜测：
+✅ 根据评分+文本内容综合判断: 评分>=4=好评, <=2=差评, 其余=中评
+✅ 分类结果写入新列，再做 groupby 统计
+❌ 凭空给所有行贴同一个标签
 
-## 重要原则
-- 每步操作后立即验证结果，不要批量操作后再检查
-- 日期转换是高风险操作：先在小样本验证，确认无数据丢失后再全量转换
-- 分类字段标准化前先 value_counts() 查看所有取值
-- 输出清洗报告：原始行数、清洗后行数、每步操作详情`,
+### 输出验证（必做）
+\`\`\`python
+result = pd.read_excel('output.xlsx')
+print(f"行列: {result.shape}, 缺失值: {result.isna().sum().sum()}")
+print(result.head(3))
+print(result.describe())
+\`\`\`
+
+### 工具选择
+- pandas: 数据分析、聚合统计、去重清洗（90%场景）
+- openpyxl: 需要公式、格式、多sheet样式时
+- matplotlib: 图表含中文必须设置字体 plt.rcParams['font.sans-serif']=['SimHei']`,
+    basePath: '',
+    allowedTools: ['bash', 'read_file', 'read_xlsx', 'write_file', 'edit_file'],
+    disableModelInvocation: false,
+    userInvocable: true,
+    executionContext: 'inline',
+    source: 'builtin',
+    bins: ['python3'],
+  },
+  {
+    name: 'xlsx',
+    description: 'Excel 表格创建、编辑与公式 — 需要生成带公式/格式的 xlsx 文件时自动使用，覆盖财务建模、数字格式、公式构造、recalc 验证等',
+    promptContent: `# Excel 文件创建与编辑规范（对标 Anthropic xlsx skill）
+
+## 核心原则：使用公式，不硬编码计算值
+
+❌ 错误 — Python 计算后硬编码:
+\`\`\`python
+total = df['Sales'].sum()
+sheet['B10'] = total  # 硬编码 5000，源数据变了就过期
+growth = (new - old) / old
+sheet['C5'] = growth  # 硬编码 0.15
+\`\`\`
+
+✅ 正确 — 用 Excel 公式:
+\`\`\`python
+sheet['B10'] = '=SUM(B2:B9)'
+sheet['C5'] = '=(C4-C2)/C2'
+sheet['D20'] = '=AVERAGE(D2:D19)'
+\`\`\`
+所有计算（合计、百分比、增长率、均值）都必须用公式，确保电子表格可动态更新。
+
+## 财务建模颜色标准
+- 蓝色文字 (0,0,255): 硬编码输入值/假设值（用户可修改的数字）
+- 黑色文字 (0,0,0): 所有公式和计算
+- 绿色文字 (0,128,0): 跨 sheet 引用
+- 红色文字 (255,0,0): 外部文件链接
+- 黄色背景 (255,255,0): 需要关注的关键假设
+
+## 数字格式规范
+- 年份: 文本格式 "2024"（不要显示为 "2,024"）
+- 货币: $#,##0 格式，表头注明单位 "Revenue ($mm)"
+- 零值: 显示为 "-"，格式串 "$#,##0;($#,##0);-"
+- 百分比: 0.0% 格式（一位小数）
+- 负数: 用括号 (123) 而非减号 -123
+
+## 公式构造规则
+1. 所有假设值（增长率、利润率等）放在独立单元格，公式用 cell reference
+   ✅ =B5*(1+$B$6)  而非  =B5*1.05
+2. 验证所有 cell reference 指向正确单元格
+3. 注意 off-by-one: DataFrame row 5 = Excel row 6（Excel 1-indexed）
+4. 跨 sheet 引用格式: Sheet1!A1
+5. 除法前检查分母是否为零（避免 #DIV/0!）
+
+## 工作流程
+1. 选工具: pandas 处理数据 → openpyxl 添加公式/格式
+2. 创建/加载 workbook
+3. 写入数据和公式
+4. 应用格式和样式
+5. 保存文件
+6. 公式重算验证（如果系统有 LibreOffice）:
+   \`\`\`bash
+   python3 ~/.code-agent/skills/anthropic-skills/skills/skills/xlsx/recalc.py output.xlsx
+   \`\`\`
+   返回 JSON: status/total_errors/error_summary，有错误则修复后重新运行
+
+## 常见公式错误
+- #REF! → 无效的单元格引用（检查是否删除了被引用的行/列）
+- #DIV/0! → 分母为零（加 IF 判断）
+- #VALUE! → 公式中数据类型错误
+- #NAME? → 函数名拼写错误
+- #N/A → VLOOKUP/INDEX 未找到匹配
+
+## openpyxl 注意事项
+- load_workbook(data_only=True) 读计算值，但保存后公式会丢失！
+- 大文件用 read_only=True / write_only=True
+- 公式写入后未 recalc 前，Excel 打开可能显示旧缓存值
+
+## 代码风格
+写简洁的 Python，不加多余注释和 print。Excel 文件内：复杂公式加 cell comment 说明。`,
     basePath: '',
     allowedTools: ['bash', 'read_file', 'read_xlsx', 'write_file', 'edit_file'],
     disableModelInvocation: false,

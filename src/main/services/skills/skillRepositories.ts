@@ -75,7 +75,8 @@ export const DEFAULT_ENABLED_SKILLS: Record<string, string[]> = {
     'brainstorming', // 头脑风暴
   ],
   builtin: [
-    'data-cleaning', // 数据清洗 6 步检查清单
+    'data-cleaning', // 数据清洗与分析
+    'xlsx', // Excel 创建、公式、格式
   ],
   'composio-skills': [
     // Composio 默认不自动启用，用户需手动选择

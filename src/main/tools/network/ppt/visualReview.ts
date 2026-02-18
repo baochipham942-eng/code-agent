@@ -12,7 +12,7 @@ import { execSync } from 'child_process';
 import { createLogger } from '../../../services/infra/logger';
 import type { ReviewResult, FixSuggestion, VlmCallback, ReviewDimensionType } from './types';
 import { REVIEW_DIMENSION_WEIGHTS } from './types';
-import { LIBREOFFICE_SEARCH_PATHS, LIBREOFFICE_PATH_ENV } from './constants';
+import { LIBREOFFICE_SEARCH_PATHS, LIBREOFFICE_PATH_ENV, CONVERT_TIMEOUTS, PDF_RENDER } from './constants';
 
 const logger = createLogger('VisualReview');
 
@@ -90,7 +90,7 @@ export async function convertToScreenshots(
   try {
     execSync(
       `"${soffice}" --headless --convert-to pdf --outdir "${pdfDir}" "${pptxPath}"`,
-      { timeout: 60000, encoding: 'utf8' }
+      { timeout: CONVERT_TIMEOUTS.PDF_CONVERT, encoding: 'utf8' }
     );
   } catch (err: any) {
     throw new Error(`LibreOffice conversion failed: ${err.message}`);
@@ -122,8 +122,8 @@ async function pdfToImages(
   try {
     execSync('which pdftoppm', { encoding: 'utf8' });
     execSync(
-      `pdftoppm -jpeg -jpegopt quality=85 -r 150 "${pdfPath}" "${path.join(outputDir, baseName)}"`,
-      { timeout: 60000, encoding: 'utf8' }
+      `pdftoppm -jpeg -jpegopt quality=${PDF_RENDER.QUALITY} -r ${PDF_RENDER.DPI} "${pdfPath}" "${path.join(outputDir, baseName)}"`,
+      { timeout: CONVERT_TIMEOUTS.PDFTOPPM, encoding: 'utf8' }
     );
     // pdftoppm 输出 baseName-1.jpg, baseName-2.jpg, ...
     const files = fs.readdirSync(outputDir)
@@ -137,8 +137,8 @@ async function pdfToImages(
   try {
     const magick = execSync('which magick 2>/dev/null || which convert 2>/dev/null', { encoding: 'utf8' }).trim();
     execSync(
-      `"${magick}" -density 150 -quality 85 "${pdfPath}" "${path.join(outputDir, `${baseName}-%d.jpg`)}"`,
-      { timeout: 120000, encoding: 'utf8' }
+      `"${magick}" -density ${PDF_RENDER.DPI} -quality ${PDF_RENDER.QUALITY} "${pdfPath}" "${path.join(outputDir, `${baseName}-%d.jpg`)}"`,
+      { timeout: CONVERT_TIMEOUTS.IMAGEMAGICK, encoding: 'utf8' }
     );
     const files = fs.readdirSync(outputDir)
       .filter(f => f.startsWith(baseName) && f.endsWith('.jpg'))
@@ -151,8 +151,8 @@ async function pdfToImages(
   try {
     const outFile = path.join(outputDir, `${baseName}-preview.png`);
     execSync(
-      `qlmanage -t -s 1920 -o "${outputDir}" "${pdfPath}" 2>/dev/null`,
-      { timeout: 30000, encoding: 'utf8' }
+      `qlmanage -t -s ${PDF_RENDER.QLMANAGE_SIZE} -o "${outputDir}" "${pdfPath}" 2>/dev/null`,
+      { timeout: CONVERT_TIMEOUTS.QLMANAGE, encoding: 'utf8' }
     );
     // qlmanage 输出 <filename>.pdf.png
     const qlFile = path.join(outputDir, `${path.basename(pdfPath)}.png`);

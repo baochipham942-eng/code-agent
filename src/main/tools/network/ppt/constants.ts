@@ -67,6 +67,103 @@ export const LAYOUT_RHYTHM = {
   MAX_IN_WINDOW: 2,
 } as const;
 
+// ---- 幻灯片尺寸 ----
+
+/** 标准 16:9 宽屏幻灯片尺寸（英寸） */
+export const SLIDE = {
+  WIDTH: 10,
+  HEIGHT: 5.63,
+} as const;
+
+// ---- 设计模式画布 ----
+
+/** Design Mode 脚手架画布常量（注入到 LLM 生成的脚本中） */
+export const DESIGN_CANVAS = {
+  WIDTH: 13.33,
+  HEIGHT: 7.5,
+  MARGIN_X: 0.7,
+  MARGIN_Y: 0.5,
+} as const;
+
+// ---- 文本度量 ----
+
+/** 字符宽度估算因子（英寸/点） — 用于 calculateFitFontSize */
+export const TEXT_METRICS = {
+  /** CJK 字符宽度因子（近似方形） */
+  CJK_WIDTH_FACTOR: 0.035,
+  /** Latin 字符宽度因子（较窄） */
+  LATIN_WIDTH_FACTOR: 0.02,
+  /** 行高乘数 */
+  LINE_HEIGHT_FACTOR: 1.3,
+  /** CJK 主导判定阈值（CJK 字符占比 > 此值视为 CJK 主导） */
+  CJK_DOMINANT_THRESHOLD: 0.3,
+} as const;
+
+// ---- 自适应字号 ----
+
+/** 自适应字号阈值配置 */
+export const ADAPTIVE_FONT = {
+  /** 长文本阈值（等效字符数，超过则减 2pt） */
+  LONG_TEXT_THRESHOLD: 80,
+  /** 中等文本阈值（等效字符数，超过则减 1pt） */
+  MEDIUM_TEXT_THRESHOLD: 50,
+  /** 长文本字号减小量 (pt) */
+  LONG_TEXT_REDUCTION: 2,
+  /** 中等文本字号减小量 (pt) */
+  MEDIUM_TEXT_REDUCTION: 1,
+  /** 最小字号下限 (pt) */
+  MIN_FONT_SIZE: 10,
+} as const;
+
+// ---- 设计模式 ----
+
+/** Design Mode 执行配置 */
+export const DESIGN_MODE = {
+  /** VLM 审查最大修订轮数 */
+  MAX_REVISIONS: 2,
+  /** L2 降级时的简化页数上限 */
+  SIMPLIFIED_SLIDE_COUNT: 8,
+  /** 脚本执行超时 (ms) */
+  SCRIPT_TIMEOUT: 30_000,
+  /** tsx 执行输出缓冲区上限 (bytes) */
+  MAX_BUFFER: 10 * 1024 * 1024,
+} as const;
+
+// ---- 外部工具超时 ----
+
+/** PDF/图片转换工具超时 (ms) */
+export const CONVERT_TIMEOUTS = {
+  /** LibreOffice PPTX→PDF */
+  PDF_CONVERT: 60_000,
+  /** poppler pdftoppm */
+  PDFTOPPM: 60_000,
+  /** ImageMagick convert/magick */
+  IMAGEMAGICK: 120_000,
+  /** macOS qlmanage */
+  QLMANAGE: 30_000,
+} as const;
+
+// ---- PDF 渲染参数 ----
+
+/** PDF 转图片质量参数 */
+export const PDF_RENDER = {
+  /** JPEG 质量 (0-100) */
+  QUALITY: 85,
+  /** 渲染分辨率 (DPI) */
+  DPI: 150,
+  /** macOS qlmanage 缩略图尺寸 (px) */
+  QLMANAGE_SIZE: 1920,
+} as const;
+
+// ---- 研究数据裁切 ----
+
+/** 注入 Prompt 时研究数据的最大条数 */
+export const RESEARCH_SLICE = {
+  STATISTICS: 10,
+  FACTS: 8,
+  QUOTES: 3,
+} as const;
+
 // ---- VLM 审查 ----
 
 /** VLM（视觉语言模型）请求超时 (ms) */
@@ -83,3 +180,8 @@ export const LIBREOFFICE_SEARCH_PATHS = [
   '/usr/bin/libreoffice',
   '/usr/local/bin/libreoffice',
 ];
+
+// ---- 预览 ----
+
+/** 预览截断长度 */
+export const PREVIEW_CODE_TRUNCATE = 200;

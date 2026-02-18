@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { SlideData } from './types';
+import { DEFAULT_END_TITLE, DEFAULT_SUBTITLE } from './constants';
 
 /**
  * 解析 Markdown 内容为幻灯片数据
@@ -94,7 +95,7 @@ export function generatePlaceholderSlides(topic: string, count: number): SlideDa
   const slides: SlideData[] = [
     {
       title: topic,
-      subtitle: '深度解析与实践指南',
+      subtitle: DEFAULT_SUBTITLE,
       points: [],
       isTitle: true,
     },
@@ -154,7 +155,7 @@ export function generatePlaceholderSlides(topic: string, count: number): SlideDa
   }
 
   slides.push({
-    title: '谢谢观看',
+    title: DEFAULT_END_TITLE,
     points: [],
     isEnd: true,
   });
@@ -171,7 +172,7 @@ export function outlineToSlideData(topic: string, count: number): SlideData[] {
   const slides: SlideData[] = [
     {
       title: topic,
-      subtitle: '深度解析与实践指南',
+      subtitle: DEFAULT_SUBTITLE,
       points: [],
       isTitle: true,
     },
@@ -250,7 +251,7 @@ export function outlineToSlideData(topic: string, count: number): SlideData[] {
   }
 
   slides.push({
-    title: '谢谢观看',
+    title: DEFAULT_END_TITLE,
     points: [],
     isEnd: true,
   });

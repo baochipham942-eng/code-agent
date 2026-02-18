@@ -163,5 +163,5 @@ export function getThemeConfig(theme: string): ThemeConfig {
  * 判断是否为 apple-dark 纯黑主题
  */
 export function isAppleDark(theme: ThemeConfig): boolean {
-  return theme.bgColor === '06060e' || theme.bgColor === '000000';
+  return theme.name === '苹果暗黑';
 }

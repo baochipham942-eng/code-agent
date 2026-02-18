@@ -6,6 +6,14 @@
 // ============================================================================
 
 import type { ThemeConfig } from './types';
+import {
+  APPLE_ACCENT_BAR,
+  APPLE_CONTENT_PANEL,
+  DEFAULT_ACCENT_BAR,
+  DEFAULT_CONTENT_PANEL,
+  DECORATION_BUDGET_DEFAULT,
+  DECORATION_BUDGET_TITLE,
+} from './constants';
 
 // ============================================================================
 // Decoration Types
@@ -53,8 +61,8 @@ interface DecorationBudget {
   maxTotal: number;
 }
 
-const DEFAULT_BUDGET: DecorationBudget = { maxGlows: 3, maxLines: 4, maxPanels: 2, maxTotal: 7 };
-const TITLE_BUDGET: DecorationBudget = { maxGlows: 3, maxLines: 4, maxPanels: 2, maxTotal: 8 };
+const DEFAULT_BUDGET: DecorationBudget = { ...DECORATION_BUDGET_DEFAULT };
+const TITLE_BUDGET: DecorationBudget = { ...DECORATION_BUDGET_TITLE };
 
 /**
  * 强制执行装饰预算：逐类别截断 → 检查总量 → 超出时从 lines 优先裁剪
@@ -158,10 +166,10 @@ const APPLE_CONTENT_LIST: MasterDecorationConfig = {
     { x: -3, y: 3, w: 6, h: 6, transparency: 96 },
   ],
   lines: [
-    { x: 0.4, y: 0.4, w: 0.06, h: 0.65, transparency: 0 },
+    { ...APPLE_ACCENT_BAR },
   ],
   panels: [
-    { x: 0.4, y: 1.35, w: 9.2, h: 4.0, radius: 0.2 },
+    { ...APPLE_CONTENT_PANEL },
   ],
 };
 
@@ -170,7 +178,7 @@ const APPLE_CONTENT_CHART: MasterDecorationConfig = {
     { x: 6.5, y: -1, w: 6, h: 6, transparency: 95 },
   ],
   lines: [
-    { x: 0.4, y: 0.4, w: 0.06, h: 0.65, transparency: 0 },
+    { ...APPLE_ACCENT_BAR },
   ],
   panels: [
     { x: 0.4, y: 1.35, w: 4.3, h: 4.0, radius: 0.2 },
@@ -193,7 +201,7 @@ const APPLE_HERO_NUMBER: MasterDecorationConfig = {
     { x: -2, y: 3, w: 5, h: 5, transparency: 97 },
   ],
   lines: [
-    { x: 0.4, y: 0.4, w: 0.06, h: 0.65, transparency: 0 },
+    { ...APPLE_ACCENT_BAR },
   ],
   panels: [],
 };
@@ -211,7 +219,7 @@ const APPLE_COMPARISON: MasterDecorationConfig = {
     { x: 3, y: -2, w: 7, h: 7, transparency: 96 },
   ],
   lines: [
-    { x: 0.4, y: 0.4, w: 0.06, h: 0.65, transparency: 0 },
+    { ...APPLE_ACCENT_BAR },
   ],
   panels: [],
 };
@@ -221,10 +229,10 @@ const APPLE_TWO_COL: MasterDecorationConfig = {
     { x: -2, y: -1, w: 6, h: 6, transparency: 96 },
   ],
   lines: [
-    { x: 0.4, y: 0.4, w: 0.06, h: 0.65, transparency: 0 },
+    { ...APPLE_ACCENT_BAR },
   ],
   panels: [
-    { x: 0.4, y: 1.35, w: 9.2, h: 4.0, radius: 0.2 },
+    { ...APPLE_CONTENT_PANEL },
   ],
 };
 
@@ -258,17 +266,17 @@ const DEFAULT_TITLE: MasterDecorationConfig = {
 const DEFAULT_CONTENT_LIST: MasterDecorationConfig = {
   glows: [],
   lines: [
-    { x: 0.4, y: 0.4, w: 0.15, h: 0.65, transparency: 0 },
+    { ...DEFAULT_ACCENT_BAR },
   ],
   panels: [
-    { x: 0.4, y: 1.35, w: 9.2, h: 4.0, radius: 0.2 },
+    { ...DEFAULT_CONTENT_PANEL },
   ],
 };
 
 const DEFAULT_CONTENT_CHART: MasterDecorationConfig = {
   glows: [],
   lines: [
-    { x: 0.4, y: 0.4, w: 0.15, h: 0.65, transparency: 0 },
+    { ...DEFAULT_ACCENT_BAR },
   ],
   panels: [
     { x: 0.4, y: 1.35, w: 4.3, h: 4.0, radius: 0.2 },
@@ -290,7 +298,7 @@ const DEFAULT_CONTENT_IMAGE: MasterDecorationConfig = {
 const DEFAULT_HERO_NUMBER: MasterDecorationConfig = {
   glows: [],
   lines: [
-    { x: 0.4, y: 0.4, w: 0.15, h: 0.65, transparency: 0 },
+    { ...DEFAULT_ACCENT_BAR },
   ],
   panels: [],
 };
@@ -306,7 +314,7 @@ const DEFAULT_QUOTE: MasterDecorationConfig = {
 const DEFAULT_COMPARISON: MasterDecorationConfig = {
   glows: [],
   lines: [
-    { x: 0.4, y: 0.4, w: 0.15, h: 0.65, transparency: 0 },
+    { ...DEFAULT_ACCENT_BAR },
   ],
   panels: [],
 };
@@ -314,10 +322,10 @@ const DEFAULT_COMPARISON: MasterDecorationConfig = {
 const DEFAULT_TWO_COL: MasterDecorationConfig = {
   glows: [],
   lines: [
-    { x: 0.4, y: 0.4, w: 0.15, h: 0.65, transparency: 0 },
+    { ...DEFAULT_ACCENT_BAR },
   ],
   panels: [
-    { x: 0.4, y: 1.35, w: 9.2, h: 4.0, radius: 0.2 },
+    { ...DEFAULT_CONTENT_PANEL },
   ],
 };
 

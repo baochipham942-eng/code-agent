@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { SlideData } from './types';
+import { NARRATIVE_NUMERIC_THRESHOLD, NARRATIVE_MAX_CONSECUTIVE_DATA } from './constants';
 
 export interface NarrativeIssue {
   type: 'missing_intro' | 'consecutive_data' | 'no_evidence' | 'missing_summary';
@@ -18,7 +19,7 @@ const NUMBER_RE = /\d+[\d.,]*[%万亿KMB]?/i;
 /** Check if a slide's points are predominantly numeric (3+ points with digits+units). */
 function hasNumbers(slide: SlideData): boolean {
   const numericPoints = slide.points.filter((p) => NUMBER_RE.test(p));
-  return numericPoints.length >= 3;
+  return numericPoints.length >= NARRATIVE_NUMERIC_THRESHOLD;
 }
 
 /**
@@ -44,7 +45,7 @@ export function validateNarrative(slides: SlideData[]): NarrativeIssue[] {
   for (let i = 0; i < slides.length; i++) {
     if (hasNumbers(slides[i])) {
       consecutive++;
-      if (consecutive >= 3) {
+      if (consecutive >= NARRATIVE_MAX_CONSECUTIVE_DATA) {
         issues.push({
           type: 'consecutive_data',
           slideIndex: i,

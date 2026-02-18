@@ -4,6 +4,8 @@
 // 将所有硬编码坐标提取到配置对象，不同主题/风格只需切换配置。
 // ============================================================================
 
+import { DEFAULT_CARD_RADIUS } from './constants';
+
 // ============================================================================
 // Template Interface
 // ============================================================================
@@ -142,7 +144,7 @@ const DEFAULT_TEMPLATE: LayoutTemplate = {
     numberHeight: 0.8,
     dividerYOffset: 1.7,
     descYOffset: 1.85,
-    cardRadius: 0.2,
+    cardRadius: DEFAULT_CARD_RADIUS,
   },
   cards2: {
     leftX: 0.35,
@@ -157,7 +159,7 @@ const DEFAULT_TEMPLATE: LayoutTemplate = {
     maxRowH: 0.9,
     rightGap: 0.2,
     rightMaxCardH: 1.15,
-    cardRadius: 0.2,
+    cardRadius: DEFAULT_CARD_RADIUS,
   },
   cards3: {
     cardWidth: 2.85,
@@ -169,7 +171,7 @@ const DEFAULT_TEMPLATE: LayoutTemplate = {
     centerHBonus: 0.2,
     numberFontSize: 28,
     bodyFontSize: 12,
-    cardRadius: 0.2,
+    cardRadius: DEFAULT_CARD_RADIUS,
   },
   timeline: {
     startX: 0.65,
@@ -198,7 +200,7 @@ const DEFAULT_TEMPLATE: LayoutTemplate = {
     contentStartY: 1.8,
     maxRowH: 0.85,
     fontSize: 12,
-    cardRadius: 0.2,
+    cardRadius: DEFAULT_CARD_RADIUS,
   },
   twoColumn: {
     dividerX: 4.95,
@@ -243,7 +245,7 @@ const APPLE_TEMPLATE: LayoutTemplate = {
     numberHeight: 1.0,
     dividerYOffset: 1.5,
     descYOffset: 1.65,
-    cardRadius: 0.2,
+    cardRadius: DEFAULT_CARD_RADIUS,
   },
   cards2: {
     leftX: 0.35,
@@ -258,7 +260,7 @@ const APPLE_TEMPLATE: LayoutTemplate = {
     maxRowH: 0.9,
     rightGap: 0.2,
     rightMaxCardH: 1.15,
-    cardRadius: 0.2,
+    cardRadius: DEFAULT_CARD_RADIUS,
   },
   cards3: {
     cardWidth: 2.85,
@@ -270,7 +272,7 @@ const APPLE_TEMPLATE: LayoutTemplate = {
     centerHBonus: 0.2,
     numberFontSize: 32,
     bodyFontSize: 13,
-    cardRadius: 0.2,
+    cardRadius: DEFAULT_CARD_RADIUS,
   },
   timeline: {
     startX: 0.65,
@@ -299,7 +301,7 @@ const APPLE_TEMPLATE: LayoutTemplate = {
     contentStartY: 1.8,
     maxRowH: 0.85,
     fontSize: 13,
-    cardRadius: 0.2,
+    cardRadius: DEFAULT_CARD_RADIUS,
   },
   twoColumn: {
     dividerX: 4.95,

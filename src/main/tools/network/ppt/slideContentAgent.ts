@@ -9,6 +9,7 @@ import { createLogger } from '../../../services/infra/logger';
 import type { SlideData, ResearchContext } from './types';
 import type { StructuredSlide } from './slideSchemas';
 import { validateStructuredSlides } from './slideSchemas';
+import { DEFAULT_TARGET_POINT_COUNT, RESEARCH_SLICE } from './constants';
 
 const logger = createLogger('SlideContentAgent');
 
@@ -73,7 +74,7 @@ export function enrichSlideContent(request: SlideContentRequest): SlideContentRe
 export function batchEnrichSlides(
   slides: SlideData[],
   topic: string,
-  targetPointCount: number = 4
+  targetPointCount: number = DEFAULT_TARGET_POINT_COUNT
 ): SlideData[] {
   return slides.map((slide, index) => {
     if (slide.isTitle || slide.isEnd) return slide;
@@ -103,7 +104,7 @@ export async function batchEnrichSlidesWithModel(
   slides: SlideData[],
   topic: string,
   generator: ModelContentGenerator,
-  targetPointCount: number = 4
+  targetPointCount: number = DEFAULT_TARGET_POINT_COUNT
 ): Promise<SlideData[]> {
   const enrichmentPromises = slides.map(async (slide, index) => {
     if (slide.isTitle || slide.isEnd || slide.points.length >= targetPointCount) {
@@ -208,21 +209,21 @@ function formatResearchForPrompt(research: ResearchContext): string {
 
   if (research.statistics.length > 0) {
     parts.push('## 已验证的统计数据（必须引用，不可虚构）');
-    for (const s of research.statistics.slice(0, 10)) {
+    for (const s of research.statistics.slice(0, RESEARCH_SLICE.STATISTICS)) {
       parts.push(`- ${s.label}: ${s.value}${s.description ? ` (${s.description})` : ''} [来源: ${s.source}]`);
     }
   }
 
   if (research.facts.length > 0) {
     parts.push('\n## 关键事实');
-    for (const f of research.facts.slice(0, 8)) {
+    for (const f of research.facts.slice(0, RESEARCH_SLICE.FACTS)) {
       parts.push(`- ${f.content} [${f.source}]`);
     }
   }
 
   if (research.quotes.length > 0) {
     parts.push('\n## 可用引言');
-    for (const q of research.quotes.slice(0, 3)) {
+    for (const q of research.quotes.slice(0, RESEARCH_SLICE.QUOTES)) {
       parts.push(`- "${q.text}" — ${q.attribution}`);
     }
   }

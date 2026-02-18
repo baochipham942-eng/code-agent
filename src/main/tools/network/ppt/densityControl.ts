@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { SlideData } from './types';
+import { DENSITY_MAX_POINTS, DENSITY_MIN_POINTS } from './constants';
 
 /**
  * 将超过 maxPoints 个要点的幻灯片拆分为多张。
@@ -10,7 +11,7 @@ import type { SlideData } from './types';
  */
 export function splitOverloadedSlides(
   slides: SlideData[],
-  maxPoints: number = 6,
+  maxPoints: number = DENSITY_MAX_POINTS,
 ): SlideData[] {
   const result: SlideData[] = [];
 
@@ -55,7 +56,7 @@ export function splitOverloadedSlides(
  */
 export function mergeThinSlides(
   slides: SlideData[],
-  minPoints: number = 2,
+  minPoints: number = DENSITY_MIN_POINTS,
 ): SlideData[] {
   const result: SlideData[] = [];
   let pending: SlideData | null = null;
@@ -127,8 +128,8 @@ export function normalizeDensity(
   slides: SlideData[],
   options?: { maxPoints?: number; minPoints?: number },
 ): SlideData[] {
-  const maxPoints = options?.maxPoints ?? 6;
-  const minPoints = options?.minPoints ?? 2;
+  const maxPoints = options?.maxPoints ?? DENSITY_MAX_POINTS;
+  const minPoints = options?.minPoints ?? DENSITY_MIN_POINTS;
 
   const split = splitOverloadedSlides(slides, maxPoints);
   return mergeThinSlides(split, minPoints);

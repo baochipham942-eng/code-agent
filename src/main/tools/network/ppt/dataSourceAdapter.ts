@@ -4,6 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { NUMERIC_COLUMN_THRESHOLD, CHART_MAX_ITEMS, CHART_LABEL_MAX_LENGTH } from './constants';
 
 /**
  * Data source loading result
@@ -163,7 +164,7 @@ function detectInsights(columns: string[], rows: string[][]): DataInsight[] {
   const numericCols: number[] = [];
   for (let c = 0; c < columns.length; c++) {
     const numCount = rows.filter(r => r[c] && !isNaN(parseFloat(r[c]))).length;
-    if (numCount > rows.length * 0.5) {
+    if (numCount > rows.length * NUMERIC_COLUMN_THRESHOLD) {
       numericCols.push(c);
     }
   }
@@ -186,7 +187,7 @@ function detectInsights(columns: string[], rows: string[][]): DataInsight[] {
     const sorted = [...rows]
       .filter(r => r[colIdx] && !isNaN(parseFloat(r[colIdx])))
       .sort((a, b) => parseFloat(b[colIdx]) - parseFloat(a[colIdx]))
-      .slice(0, 6);
+      .slice(0, CHART_MAX_ITEMS);
 
     if (sorted.length >= 3) {
       insights.push({
@@ -194,7 +195,7 @@ function detectInsights(columns: string[], rows: string[][]): DataInsight[] {
         title: `${colName} Top ${sorted.length}`,
         description: `按 ${colName} 排序的前 ${sorted.length} 项`,
         data: {
-          labels: sorted.map(r => labelCol >= 0 ? r[labelCol] : r[0]).map(l => l.slice(0, 20)),
+          labels: sorted.map(r => labelCol >= 0 ? r[labelCol] : r[0]).map(l => l.slice(0, CHART_LABEL_MAX_LENGTH)),
           values: sorted.map(r => parseFloat(r[colIdx])),
         },
       });

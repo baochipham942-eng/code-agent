@@ -19,6 +19,7 @@ import type {
 import {
   NUMBER_WITH_UNIT_PATTERN, PROCESS_PATTERN, COMPARISON_PATTERN,
   KEY_POINT_PATTERN, TECHNICAL_PATTERN, QUOTE_PATTERN, LAYOUT_RHYTHM,
+  ADAPTIVE_FONT,
 } from './constants';
 
 // 布局历史记录（用于节奏控制）
@@ -37,13 +38,13 @@ function adaptiveFontSize(text: string, baseFontSize: number, _containerW?: numb
   const effectiveLen = text.length + cjkCount * 0.7; // CJK 等效加权长度
 
   let fontSize = baseFontSize;
-  if (effectiveLen > 80) {
-    fontSize -= 2;
-  } else if (effectiveLen > 50) {
-    fontSize -= 1;
+  if (effectiveLen > ADAPTIVE_FONT.LONG_TEXT_THRESHOLD) {
+    fontSize -= ADAPTIVE_FONT.LONG_TEXT_REDUCTION;
+  } else if (effectiveLen > ADAPTIVE_FONT.MEDIUM_TEXT_THRESHOLD) {
+    fontSize -= ADAPTIVE_FONT.MEDIUM_TEXT_REDUCTION;
   }
 
-  return Math.max(10, fontSize);
+  return Math.max(ADAPTIVE_FONT.MIN_FONT_SIZE, fontSize);
 }
 
 export function resetLayoutRotation(): void {

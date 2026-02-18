@@ -30,7 +30,7 @@ export const MODEL_MAX_TOKENS = {
   EXTENDED: 32768,
   /** 辅助/免费模型（GLM-4.7-Flash 等快速任务） */
   COMPACT: 4096,
-  /** 视觉模型（GLM-4.6v 等） */
+  /** 视觉模型（GLM-4V-Plus via OKI 代理，上限 2048） */
   VISION: 2048,
 } as const;
 
@@ -149,7 +149,7 @@ export const API_VERSIONS = {
 // ============================================================================
 
 /** 智谱视觉模型（支持 base64） */
-export const ZHIPU_VISION_MODEL = 'glm-4.6v' as const;
+export const ZHIPU_VISION_MODEL = 'glm-4v-plus' as const;
 
 /** Mermaid 在线渲染 API */
 export const MERMAID_INK_API = 'https://mermaid.ink';
@@ -580,8 +580,8 @@ export const MODEL_API_ENDPOINTS = {
   groq: 'https://api.groq.com/openai/v1',
   /** 智谱 GLM */
   zhipu: 'https://open.bigmodel.cn/api/paas/v4',
-  /** 智谱 Coding 套餐 */
-  zhipuCoding: 'https://open.bigmodel.cn/api/coding/paas/v4',
+  /** 智谱 Coding 套餐 (OKI 代理) */
+  zhipuCoding: 'https://api.0ki.cn/api/coding/paas/v4',
   /** 通义千问 */
   qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   /** Moonshot/Kimi */

@@ -18,6 +18,7 @@ import { Button, Input } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { MemoryCard } from './MemoryCard';
 import { MemoryEditModal } from './MemoryEditModal';
+import { KeyDecisionsPanel } from './KeyDecisionsPanel';
 import { useI18n } from '../../../../hooks/useI18n';
 import { createLogger } from '../../../../utils/logger';
 import type { MemoryItem, MemoryCategory, MemoryStats } from '@shared/types';
@@ -410,6 +411,9 @@ export const MemoryTab: React.FC = () => {
           );
         })}
       </div>
+
+      {/* Key Decisions Panel */}
+      <KeyDecisionsPanel />
 
       {/* Clear Category Confirmation */}
       {clearingCategory && (

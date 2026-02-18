@@ -141,7 +141,7 @@ async function callZhipuVision(
   };
 
   const response = await fetchWithTimeout(
-    `${MODEL_API_ENDPOINTS.zhipu}/chat/completions`,
+    `${MODEL_API_ENDPOINTS.zhipuCoding}/chat/completions`,
     {
       method: 'POST',
       headers: {

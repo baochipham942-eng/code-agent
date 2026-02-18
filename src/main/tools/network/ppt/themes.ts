@@ -19,6 +19,8 @@ export const THEME_CONFIGS: Record<PPTTheme, ThemeConfig> = {
     fontTitle: 'Arial Black',
     fontBody: 'Arial',
     fontCode: 'Consolas',
+    fontTitleCN: 'PingFang SC',
+    fontBodyCN: 'PingFang SC',
   },
   'neon-blue': {
     name: '电光蓝',
@@ -33,6 +35,8 @@ export const THEME_CONFIGS: Record<PPTTheme, ThemeConfig> = {
     fontTitle: 'Arial Black',
     fontBody: 'Arial',
     fontCode: 'Consolas',
+    fontTitleCN: 'PingFang SC',
+    fontBodyCN: 'PingFang SC',
   },
   'neon-purple': {
     name: '霓虹紫',
@@ -47,6 +51,8 @@ export const THEME_CONFIGS: Record<PPTTheme, ThemeConfig> = {
     fontTitle: 'Arial Black',
     fontBody: 'Arial',
     fontCode: 'Fira Code',
+    fontTitleCN: 'PingFang SC',
+    fontBodyCN: 'PingFang SC',
   },
   'neon-orange': {
     name: '霓虹橙',
@@ -61,6 +67,8 @@ export const THEME_CONFIGS: Record<PPTTheme, ThemeConfig> = {
     fontTitle: 'Arial Black',
     fontBody: 'Arial',
     fontCode: 'Consolas',
+    fontTitleCN: 'PingFang SC',
+    fontBodyCN: 'PingFang SC',
   },
   'glass-light': {
     name: '玻璃浅色',
@@ -75,6 +83,8 @@ export const THEME_CONFIGS: Record<PPTTheme, ThemeConfig> = {
     fontTitle: 'Arial',
     fontBody: 'Arial',
     fontCode: 'Monaco',
+    fontTitleCN: 'PingFang SC',
+    fontBodyCN: 'PingFang SC',
   },
   'glass-dark': {
     name: '玻璃深色',
@@ -89,6 +99,8 @@ export const THEME_CONFIGS: Record<PPTTheme, ThemeConfig> = {
     fontTitle: 'Arial',
     fontBody: 'Arial',
     fontCode: 'Fira Code',
+    fontTitleCN: 'PingFang SC',
+    fontBodyCN: 'PingFang SC',
   },
   'minimal-mono': {
     name: '极简黑白',
@@ -103,6 +115,8 @@ export const THEME_CONFIGS: Record<PPTTheme, ThemeConfig> = {
     fontTitle: 'Helvetica',
     fontBody: 'Helvetica',
     fontCode: 'Monaco',
+    fontTitleCN: 'PingFang SC',
+    fontBodyCN: 'PingFang SC',
   },
   'corporate': {
     name: '企业蓝',
@@ -117,20 +131,24 @@ export const THEME_CONFIGS: Record<PPTTheme, ThemeConfig> = {
     fontTitle: 'Georgia',
     fontBody: 'Arial',
     fontCode: 'Courier New',
+    fontTitleCN: 'Microsoft YaHei',
+    fontBodyCN: 'Microsoft YaHei',
   },
   'apple-dark': {
     name: '苹果暗黑',
-    bgColor: '000000',
-    bgSecondary: '1c1c1e',
+    bgColor: '06060e',
+    bgSecondary: '14142a',
     textPrimary: 'f5f5f7',
-    textSecondary: '86868b',
-    accent: '0071e3',
-    accentGlow: '2997ff',
-    cardBorder: '38383a',
+    textSecondary: '98989d',
+    accent: '0a84ff',
+    accentGlow: '409cff',
+    cardBorder: '2a2a40',
     isDark: true,
     fontTitle: 'Helvetica Neue',
     fontBody: 'Helvetica Neue',
     fontCode: 'SF Mono',
+    fontTitleCN: 'PingFang SC',
+    fontBodyCN: 'PingFang SC',
   },
 };
 
@@ -145,5 +163,5 @@ export function getThemeConfig(theme: string): ThemeConfig {
  * 判断是否为 apple-dark 纯黑主题
  */
 export function isAppleDark(theme: ThemeConfig): boolean {
-  return theme.bgColor === '000000';
+  return theme.bgColor === '06060e' || theme.bgColor === '000000';
 }

@@ -193,7 +193,7 @@ console.log('\n═══ Part 3: Themes 单元测试 ═══');
 {
   const cfg = getThemeConfig('apple-dark');
   log('3.3 isAppleDark', isAppleDark(cfg) === true);
-  log('3.3a 纯黑背景', cfg.bgColor === '000000');
+  log('3.3a 深色背景', cfg.bgColor === '06060e' || cfg.bgColor === '000000');
 }
 
 // 3.4 非 apple 主题

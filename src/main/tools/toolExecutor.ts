@@ -64,6 +64,8 @@ export interface ExecuteOptions {
   }>;
   // 当前工具调用 ID（用于 subagent 追踪）
   currentToolCallId?: string;
+  // 模型回调（工具内二次调用模型，如 PPT 内容生成）
+  modelCallback?: (prompt: string) => Promise<string>;
 }
 
 // ----------------------------------------------------------------------------
@@ -194,6 +196,8 @@ export class ToolExecutor {
       currentAttachments: options.currentAttachments,
       // 当前工具调用 ID（用于 subagent 追踪）
       currentToolCallId: options.currentToolCallId,
+      // 模型回调（工具内二次调用模型）
+      modelCallback: options.modelCallback,
     };
 
     // Security: Pre-execution validation for bash commands

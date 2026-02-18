@@ -3,6 +3,7 @@
 // ============================================================================
 
 import * as fs from 'fs';
+import { DEFAULT_FALLBACK_COLORS, DEFAULT_FALLBACK_FONTS, DEFAULT_CODE_FONT } from './constants';
 import type { ThemeConfig } from './types';
 
 /**
@@ -58,13 +59,13 @@ function parseThemeXml(xml: string): ThemeConfig {
     bgSecondary: isDark ? lighten(bgColor, 10) : darken(colors.lt1 || 'ffffff', 5),
     textPrimary: isDark ? (colors.lt1 || 'ffffff') : (colors.dk1 || '000000'),
     textSecondary: isDark ? lighten(bgColor, 40) : darken(colors.lt1 || 'ffffff', 40),
-    accent: colors.accent1 || '0071e3',
-    accentGlow: colors.accent2 || lighten(colors.accent1 || '0071e3', 20),
+    accent: colors.accent1 || DEFAULT_FALLBACK_COLORS.accent,
+    accentGlow: colors.accent2 || lighten(colors.accent1 || DEFAULT_FALLBACK_COLORS.accent, 20),
     cardBorder: isDark ? lighten(bgColor, 15) : darken(colors.lt1 || 'ffffff', 15),
     isDark,
-    fontTitle: fonts.majorFont || 'Arial',
-    fontBody: fonts.minorFont || 'Arial',
-    fontCode: 'Consolas',
+    fontTitle: fonts.majorFont || DEFAULT_FALLBACK_FONTS.title,
+    fontBody: fonts.minorFont || DEFAULT_FALLBACK_FONTS.body,
+    fontCode: DEFAULT_CODE_FONT,
     fontTitleCN: fonts.majorFontEA || undefined,
     fontBodyCN: fonts.minorFontEA || undefined,
   };

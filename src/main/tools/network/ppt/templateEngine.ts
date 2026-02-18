@@ -12,6 +12,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../../../services/infra/logger';
+import { DEFAULT_FALLBACK_COLORS, DEFAULT_FALLBACK_FONTS, EMU_PER_INCH } from './constants';
 import type { TemplateProfile, MergedTemplateProfile, TemplateMetadata } from './types';
 import type { StructuredSlide } from './slideSchemas';
 
@@ -137,7 +138,7 @@ export async function parseTemplateProfile(pptxPath: string): Promise<TemplatePr
  * 从 ZIP 提取配色方案
  */
 async function extractColorSchemeFromZip(zip: any): Promise<TemplateProfile['colorScheme']> {
-  const defaults = { background: 'ffffff', text: '000000', accent: '0071e3', secondary: '666666' };
+  const defaults = { ...DEFAULT_FALLBACK_COLORS };
 
   try {
     const themeFile = Object.keys(zip.files).find((f: string) =>
@@ -171,7 +172,7 @@ async function extractColorSchemeFromZip(zip: any): Promise<TemplateProfile['col
  * 从 ZIP 提取字体方案
  */
 async function extractFontsFromZip(zip: any): Promise<TemplateProfile['fonts']> {
-  const defaults = { title: 'Arial', body: 'Arial' };
+  const defaults = { ...DEFAULT_FALLBACK_FONTS };
 
   try {
     const themeFile = Object.keys(zip.files).find((f: string) =>
@@ -225,10 +226,10 @@ async function extractLayoutsFromZip(zip: any): Promise<TemplateProfile['layouts
         const phType = typeMatch ? typeMatch[1] : 'other';
 
         // EMU to inches
-        const x = parseInt(match[2]) / 914400;
-        const y = parseInt(match[3]) / 914400;
-        const w = parseInt(match[4]) / 914400;
-        const h = parseInt(match[5]) / 914400;
+        const x = parseInt(match[2]) / EMU_PER_INCH;
+        const y = parseInt(match[3]) / EMU_PER_INCH;
+        const w = parseInt(match[4]) / EMU_PER_INCH;
+        const h = parseInt(match[5]) / EMU_PER_INCH;
 
         placeholders.push({
           name: phType,
@@ -274,8 +275,8 @@ export function mergeTemplateProfiles(
     return {
       layouts: [],
       bestSource: {},
-      colorScheme: { background: 'ffffff', text: '000000', accent: '0071e3', secondary: '666666' },
-      fonts: { title: 'Arial', body: 'Arial' },
+      colorScheme: { ...DEFAULT_FALLBACK_COLORS },
+      fonts: { ...DEFAULT_FALLBACK_FONTS },
       templatePaths: [],
     };
   }

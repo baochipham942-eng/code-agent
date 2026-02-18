@@ -4,6 +4,17 @@
 
 import type { SlideData, ChartType } from './types';
 import type { DataSourceResult, DataInsight } from './dataSourceAdapter';
+import {
+  CHART_MAX_ITEMS,
+  CHART_LABEL_MAX_LENGTH,
+  DATA_OVERVIEW_MAX_COLUMNS,
+  DATA_DETAIL_TOP_N,
+  DATA_DETAIL_MAX_DISPLAY_COLS,
+  CHART_DEFAULT_MAX_ITEMS,
+  FORMAT_YI_THRESHOLD,
+  FORMAT_WAN_THRESHOLD,
+  DEFAULT_END_TITLE,
+} from './constants';
 
 /**
  * Analyze data and generate presentation slides
@@ -38,7 +49,7 @@ export function analyzeDataForPresentation(
     points: [
       `数据来源: ${data.metadata.fileName}${data.metadata.sheetName ? ` (${data.metadata.sheetName})` : ''}`,
       `数据规模: ${data.metadata.rowCount} 条记录, ${data.metadata.columnCount} 个字段`,
-      `字段列表: ${data.columns.slice(0, 6).join(', ')}${data.columns.length > 6 ? ' ...' : ''}`,
+      `字段列表: ${data.columns.slice(0, DATA_OVERVIEW_MAX_COLUMNS).join(', ')}${data.columns.length > DATA_OVERVIEW_MAX_COLUMNS ? ' ...' : ''}`,
       `分析维度: ${data.insights.length} 个自动洞察`,
     ],
   });
@@ -62,22 +73,22 @@ export function analyzeDataForPresentation(
 
   // 5. Top records detail slide
   if (data.rows.length >= 3 && data.columns.length >= 2) {
-    const topRows = data.rows.slice(0, 5);
+    const topRows = data.rows.slice(0, DATA_DETAIL_TOP_N);
     slides.push({
-      title: '数据明细 (Top 5)',
+      title: `数据明细 (Top ${DATA_DETAIL_TOP_N})`,
       points: topRows.map(row =>
-        data.columns.slice(0, 4).map((col, i) => `${col}: ${row[i] || '-'}`).join(' | ')
+        data.columns.slice(0, DATA_DETAIL_MAX_DISPLAY_COLS).map((col, i) => `${col}: ${row[i] || '-'}`).join(' | ')
       ),
       table: {
-        headers: data.columns.slice(0, 6),
-        rows: topRows.map(r => r.slice(0, 6)),
+        headers: data.columns.slice(0, DATA_OVERVIEW_MAX_COLUMNS),
+        rows: topRows.map(r => r.slice(0, DATA_OVERVIEW_MAX_COLUMNS)),
       },
     });
   }
 
   // 6. End slide
   slides.push({
-    title: '谢谢观看',
+    title: DEFAULT_END_TITLE,
     points: [],
     isEnd: true,
   });
@@ -109,7 +120,7 @@ function insightToSlide(insight: DataInsight, data: DataSourceResult): SlideData
         title: insight.title,
         points: [
           insight.description,
-          ...insight.data.labels.slice(0, 4).map((label, i) =>
+          ...insight.data.labels.slice(0, DATA_DETAIL_MAX_DISPLAY_COLS).map((label, i) =>
             `${label}: ${formatNumber(insight.data!.values[i])}`
           ),
         ],
@@ -141,7 +152,7 @@ export function suggestChartType(insight: DataInsight, rowCount: number): ChartT
       return 'line';
 
     case 'distribution':
-      return rowCount <= 6 ? 'doughnut' : 'bar';
+      return rowCount <= CHART_MAX_ITEMS ? 'doughnut' : 'bar';
 
     case 'top_values':
       return 'bar';
@@ -158,7 +169,7 @@ export function generateChartData(
   data: DataSourceResult,
   labelColumnIndex: number,
   valueColumnIndex: number,
-  maxItems: number = 8,
+  maxItems: number = CHART_DEFAULT_MAX_ITEMS,
 ): { labels: string[]; values: number[] } | null {
   if (labelColumnIndex >= data.columns.length || valueColumnIndex >= data.columns.length) {
     return null;
@@ -171,7 +182,7 @@ export function generateChartData(
     const value = parseFloat(row[valueColumnIndex]);
 
     if (label && !isNaN(value)) {
-      items.push({ label: label.slice(0, 20), value });
+      items.push({ label: label.slice(0, CHART_LABEL_MAX_LENGTH), value });
     }
   }
 
@@ -191,11 +202,11 @@ export function generateChartData(
  * Format number for display
  */
 function formatNumber(value: number): string {
-  if (Math.abs(value) >= 1e8) {
-    return (value / 1e8).toFixed(1) + ' 亿';
+  if (Math.abs(value) >= FORMAT_YI_THRESHOLD) {
+    return (value / FORMAT_YI_THRESHOLD).toFixed(1) + ' 亿';
   }
-  if (Math.abs(value) >= 1e4) {
-    return (value / 1e4).toFixed(1) + ' 万';
+  if (Math.abs(value) >= FORMAT_WAN_THRESHOLD) {
+    return (value / FORMAT_WAN_THRESHOLD).toFixed(1) + ' 万';
   }
   if (Number.isInteger(value)) {
     return value.toLocaleString();

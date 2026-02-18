@@ -8,6 +8,7 @@
 
 import { createLogger } from '../../../services/infra/logger';
 import type { TopicBrief, ResearchContext, ResearchFact } from './types';
+import { RESEARCH_MAX_QUERIES, RESEARCH_MAX_URLS, RESEARCH_MAX_FETCH, RESEARCH_MAX_CONTENT_CHARS, DEFAULT_SLIDE_COUNT } from './constants';
 
 const logger = createLogger('ResearchAgent');
 
@@ -49,7 +50,7 @@ export function generateResearchQueries(brief: TopicBrief): string[] {
     queries.push(`${keywords[0]} ${keywords[1]} ${year} 报告 数据`);
   }
 
-  return queries.slice(0, 5);
+  return queries.slice(0, RESEARCH_MAX_QUERIES);
 }
 
 // ============================================================================
@@ -89,10 +90,10 @@ export async function executeResearch(
   }
 
   // Phase 2: 提取 Top 来源 URL 并 fetch 详情
-  const urls = extractUrls(searchResults.join('\n')).slice(0, 5);
+  const urls = extractUrls(searchResults.join('\n')).slice(0, RESEARCH_MAX_URLS);
   const fetchedContent: string[] = [];
   if (webFetch && urls.length > 0) {
-    const fetchPromises = urls.slice(0, 3).map(async (url) => {
+    const fetchPromises = urls.slice(0, RESEARCH_MAX_FETCH).map(async (url) => {
       try {
         return await webFetch(url, `提取关于"${brief.topic}"的关键事实、统计数据和引言`);
       } catch (err: any) {
@@ -123,7 +124,7 @@ async function extractStructuredData(
   modelCallback: (prompt: string) => Promise<string>,
 ): Promise<ResearchContext> {
   // 截取避免超出上下文窗口
-  const trimmedContent = rawContent.slice(0, 8000);
+  const trimmedContent = rawContent.slice(0, RESEARCH_MAX_CONTENT_CHARS);
 
   const prompt = `你是数据研究员。从以下搜索结果中，针对主题"${brief.topic}"提取结构化数据。
 
@@ -167,7 +168,7 @@ ${trimmedContent}
  */
 export function parseTopicBrief(
   topic: string,
-  slidesCount: number = 10,
+  slidesCount: number = DEFAULT_SLIDE_COUNT,
   style?: string,
 ): TopicBrief {
   // 推断受众

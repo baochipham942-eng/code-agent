@@ -2023,6 +2023,8 @@ export class AgentLoop {
           currentAttachments,
           // 传递当前工具调用 ID（用于 subagent 追踪）
           currentToolCallId: toolCall.id,
+          // 模型回调：工具可用此回调二次调用模型（如 PPT 内容生成）
+          modelCallback: this.createModelCallback(),
         }
       );
       logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);
@@ -2433,6 +2435,21 @@ export class AgentLoop {
   }
 
   // --------------------------------------------------------------------------
+  /**
+   * 创建模型回调闭包，供工具内二次调用模型（如 PPT 内容生成）
+   * 使用当前 modelConfig，不带工具定义，非流式
+   */
+  private createModelCallback(): (prompt: string) => Promise<string> {
+    return async (prompt: string): Promise<string> => {
+      const response = await this.modelRouter.inference(
+        [{ role: 'user', content: prompt }],
+        [],
+        this.modelConfig,
+      );
+      return typeof response.content === 'string' ? response.content : '';
+    };
+  }
+
   // Inference
   // --------------------------------------------------------------------------
 

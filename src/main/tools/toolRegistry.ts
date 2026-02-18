@@ -155,6 +155,13 @@ export interface ToolContext {
   agentName?: string;
   /** 当前 Agent 角色 */
   agentRole?: string;
+
+  // ============================================================================
+  // 模型回调支持（工具内二次调用模型）
+  // ============================================================================
+
+  /** 模型推理回调：接收 prompt 文本，返回模型响应文本 */
+  modelCallback?: (prompt: string) => Promise<string>;
 }
 
 export interface PermissionRequestData {

@@ -16,6 +16,10 @@ import type {
   ListContent, TimelineContent, ComparisonContent, QuoteContent,
   ChartContent, TwoColumnContent, HighlightContent,
 } from './slideSchemas';
+import {
+  NUMBER_WITH_UNIT_PATTERN, PROCESS_PATTERN, COMPARISON_PATTERN,
+  KEY_POINT_PATTERN, TECHNICAL_PATTERN, QUOTE_PATTERN, LAYOUT_RHYTHM,
+} from './constants';
 
 // 布局历史记录（用于节奏控制）
 let layoutHistory: LayoutType[] = [];
@@ -62,13 +66,13 @@ function detectContentType(title: string, points: string[]): {
 
   return {
     // 至少 3 个要点含数字才视为数据型内容（适合 stats 布局）
-    hasNumbers: points.filter(p => /\d+[\d.,]*[%万亿KMB]?/i.test(p)).length >= 3,
+    hasNumbers: points.filter(p => NUMBER_WITH_UNIT_PATTERN.test(p)).length >= 3,
     // 流程/步骤只看标题，避免要点中"开发流程""工作流程"等复合词误触发
-    isProcess: /流程|步骤|阶段|step|phase|stage/i.test(title),
-    isComparison: /对比|比较|vs|区别|优势|劣势|特点/i.test(allText),
-    isKeyPoint: /核心|关键|重点|最重要|价值|意义/i.test(title),
-    isTechnical: /架构|技术|实现|原理|算法|系统|模块/i.test(title),
-    isQuote: /引言|语录|名言|格言|quote|saying/i.test(title) && points.length <= 2,
+    isProcess: PROCESS_PATTERN.test(title),
+    isComparison: COMPARISON_PATTERN.test(allText),
+    isKeyPoint: KEY_POINT_PATTERN.test(title),
+    isTechnical: TECHNICAL_PATTERN.test(title),
+    isQuote: QUOTE_PATTERN.test(title) && points.length <= 2,
   };
 }
 
@@ -81,19 +85,21 @@ function wouldViolateRhythm(candidate: LayoutType): boolean {
   const len = layoutHistory.length;
   if (len === 0) return false;
 
-  // 禁止连续 2 个 stats
+  // 禁止连续 stats 超过阈值
   if (candidate === 'stats' && len >= 1 && layoutHistory[len - 1] === 'stats') {
-    return true;
+    const consecutiveStats = layoutHistory.slice(-LAYOUT_RHYTHM.MAX_CONSECUTIVE_STATS).every(l => l === 'stats');
+    if (consecutiveStats) return true;
   }
 
-  // 禁止连续 3+ 同一布局
-  if (len >= 2 && layoutHistory[len - 1] === candidate && layoutHistory[len - 2] === candidate) {
-    return true;
+  // 禁止连续同一布局超过阈值
+  if (len >= LAYOUT_RHYTHM.MAX_CONSECUTIVE_SAME) {
+    const tail = layoutHistory.slice(-LAYOUT_RHYTHM.MAX_CONSECUTIVE_SAME);
+    if (tail.every(l => l === candidate)) return true;
   }
 
-  // 禁止最近 5 页中同一布局出现 2+ 次（提升布局多样性）
-  const recent = layoutHistory.slice(-5);
-  if (recent.filter(l => l === candidate).length >= 2) {
+  // 多样性检查：窗口内同一布局不超过阈值
+  const recent = layoutHistory.slice(-LAYOUT_RHYTHM.DIVERSITY_WINDOW);
+  if (recent.filter(l => l === candidate).length >= LAYOUT_RHYTHM.MAX_IN_WINDOW) {
     return true;
   }
 

@@ -235,6 +235,11 @@ Parameters:
     // Generate agent ID
     const agentId = `agent_${role || 'dynamic'}_${Date.now()}`;
 
+    // Defensive check: ensure sessionId is available for task tool sharing
+    if (!context.sessionId) {
+      console.warn('[SpawnAgent] No sessionId in context — subagent task tools will use isolated session');
+    }
+
     // Create agent record
     const agent: SpawnedAgent = {
       id: agentId,

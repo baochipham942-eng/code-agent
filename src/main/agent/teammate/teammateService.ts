@@ -538,6 +538,42 @@ export class TeammateService {
   }
 
   /**
+   * 导出当前状态（用于持久化）
+   */
+  exportState(): { agents: RegisteredAgent[]; messageHistory: TeammateMessage[] } {
+    return {
+      agents: Array.from(this.agents.values()),
+      messageHistory: [...this.messageHistory],
+    };
+  }
+
+  /**
+   * 导入状态（用于恢复）
+   */
+  importState(state: { agents: RegisteredAgent[]; messageHistory?: TeammateMessage[] }): void {
+    for (const agent of state.agents) {
+      this.agents.set(agent.id, agent);
+      if (!this.mailboxes.has(agent.id)) {
+        this.mailboxes.set(agent.id, {
+          agentId: agent.id,
+          agentName: agent.name,
+          inbox: [],
+          outbox: [],
+          unreadCount: 0,
+        });
+      }
+    }
+    if (state.messageHistory) {
+      this.messageHistory.push(...state.messageHistory);
+      // Trim to max size
+      while (this.messageHistory.length > this.maxHistorySize) {
+        this.messageHistory.shift();
+      }
+    }
+    logger.info(`State imported: ${state.agents.length} agents`);
+  }
+
+  /**
    * 重置服务
    */
   reset(): void {

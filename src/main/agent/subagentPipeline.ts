@@ -75,6 +75,8 @@ export interface SubagentExecutionContext {
   tokenUsage: TokenUsage[];
   /** 允许使用的工具列表（继承自父 Agent 或定义）*/
   allowedTools?: string[];
+  /** AbortController for graceful shutdown */
+  abortController?: AbortController;
 }
 
 // ----------------------------------------------------------------------------

@@ -29,6 +29,8 @@ import {
 } from '../utils/imageUtils';
 import { compactSubagentMessages } from './subagentCompaction';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
+import { createTimedAbortController, combineAbortSignals } from './shutdownProtocol';
+import { getPlanApprovalGate } from './planApproval';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -47,6 +49,10 @@ export interface SubagentConfig {
   maxBudget?: number;
   /** P3: Maximum execution time in milliseconds */
   maxExecutionTimeMs?: number;
+  /** Whether high-risk operations require plan approval from coordinator */
+  requirePlanApproval?: boolean;
+  /** Coordinator agent ID for plan approval (defaults to 'coordinator') */
+  coordinatorId?: string;
 }
 
 // ============================================================================
@@ -146,6 +152,19 @@ export class SubagentExecutor {
       || DEFAULT_EXECUTION_TIMEOUT[config.name]
       || DEFAULT_EXECUTION_TIMEOUT['default'];
     const startTime = Date.now();
+
+    // Create per-execution AbortController with timeout
+    const { controller: timeoutController, cleanup: cleanupTimer } = createTimedAbortController(
+      timeout,
+      { label: config.name }
+    );
+    // Combine with external abort signal if provided
+    const effectiveController = context.abortSignal
+      ? combineAbortSignals(context.abortSignal, timeoutController.signal)
+      : timeoutController;
+    const effectiveSignal = context.abortSignal
+      ? effectiveController.signal
+      : timeoutController.signal;
 
     // Create pipeline context
     const pipeline = getSubagentPipeline();
@@ -294,32 +313,18 @@ export class SubagentExecutor {
         iterations++;
         logger.info(`[${config.name}] Iteration ${iterations}`);
 
-        // 检查 AbortSignal 取消状态
-        if (context.abortSignal?.aborted) {
-          logger.info(`[${config.name}] Execution cancelled by AbortSignal`);
-          pipeline.completeContext(pipelineContext.agentId, false, 'Cancelled');
+        // Check abort signal (covers both external cancel and timeout)
+        if (effectiveSignal.aborted) {
+          const reason = effectiveSignal.reason === 'timeout' ? 'timeout' : 'cancelled';
+          logger.info(`[${config.name}] Execution ${reason} by AbortSignal after ${Date.now() - startTime}ms`);
+          cleanupTimer();
+          pipeline.completeContext(pipelineContext.agentId, false, reason);
           return {
             success: false,
             output: finalOutput || '',
-            error: '任务已取消',
-            toolsUsed: [...new Set(toolsUsed)],
-            iterations,
-            agentId: pipelineContext.agentId,
-          };
-        }
-
-        // P3: 超时检查
-        const elapsed = Date.now() - startTime;
-        if (elapsed > timeout) {
-          logger.warn(`[${config.name}] Execution timeout after ${elapsed}ms (limit: ${timeout}ms)`, {
-            iterations,
-            toolsUsed: [...new Set(toolsUsed)],
-          });
-          pipeline.completeContext(pipelineContext.agentId, false, 'Execution timeout');
-          return {
-            success: false,
-            output: finalOutput || '',
-            error: `执行超时 (${Math.round(timeout / 1000)}秒)，已完成 ${iterations} 次迭代`,
+            error: reason === 'timeout'
+              ? `执行超时 (${Math.round(timeout / 1000)}秒)，已完成 ${iterations} 次迭代`
+              : '任务已取消',
             toolsUsed: [...new Set(toolsUsed)],
             iterations,
             agentId: pipelineContext.agentId,
@@ -388,6 +393,26 @@ export class SubagentExecutor {
             // Log warnings
             for (const warning of permCheck.warnings) {
               logger.warn(`[${config.name}] Tool warning: ${warning}`);
+            }
+
+            // Plan approval gate for high-risk operations
+            if (config.requirePlanApproval) {
+              const gate = getPlanApprovalGate();
+              const risk = gate.assessRisk(toolRequest, context.toolContext.workingDirectory);
+              if (risk.level !== 'low') {
+                const approval = await gate.submitForApproval({
+                  agentId: pipelineContext.agentId,
+                  agentName: config.name,
+                  coordinatorId: config.coordinatorId || 'coordinator',
+                  plan: `Tool: ${toolCall.name}\nArgs: ${JSON.stringify(toolCall.arguments)}\nRisk: ${risk.reasons.join(', ')}`,
+                  risk,
+                });
+                if (!approval.approved) {
+                  toolResults.push(`Tool ${toolCall.name}: Blocked by plan approval — ${approval.feedback || 'rejected'}`);
+                  logger.info(`[${config.name}] Tool ${toolCall.name} blocked by plan approval`);
+                  continue;
+                }
+              }
             }
 
             toolsUsed.push(toolCall.name);
@@ -463,6 +488,7 @@ export class SubagentExecutor {
       }
 
       // Get final cost
+      cleanupTimer();
       const budgetStatus = pipeline.getBudgetStatus(pipelineContext);
       pipeline.completeContext(pipelineContext.agentId, true);
 
@@ -475,6 +501,7 @@ export class SubagentExecutor {
         agentId: pipelineContext.agentId,
       };
     } catch (error) {
+      cleanupTimer();
       pipeline.completeContext(
         pipelineContext.agentId,
         false,

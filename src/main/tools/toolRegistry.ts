@@ -90,6 +90,7 @@ import {
   agentMessageTool,
   workflowOrchestrateTool,
   teammateTool,
+  planReviewTool,
 } from './multiagent';
 import { strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternTool } from './evolution';
 import { lspTool, diagnosticsTool } from './lsp';
@@ -341,6 +342,8 @@ export class ToolRegistry {
     this.register(agentMessageTool);
     this.register(workflowOrchestrateTool);
     this.register(teammateTool);
+    // Plan review (cross-agent approval)
+    this.register(planReviewTool);
 
     // Gen 8 tools - Self-Evolution
     this.register(strategyOptimizeTool);

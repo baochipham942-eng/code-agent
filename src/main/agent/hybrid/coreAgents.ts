@@ -135,10 +135,17 @@ export const CORE_AGENTS: Record<CoreAgentId, CoreAgentConfig> = {
 ## Anti-patterns to Avoid
 - Don't edit without reading first
 - Don't add unnecessary abstractions
-- Don't create new files unless absolutely necessary`,
+- Don't create new files unless absolutely necessary
+
+## Task Management
+- Use task_list to check available tasks before starting work
+- Use task_update to claim tasks (set owner to your name) and mark completed
+- After completing a task, call task_list to find next available work
+- Create sub-tasks with task_create if you discover additional work needed`,
     tools: [
       'bash', 'read_file', 'write_file', 'edit_file',
       'glob', 'grep', 'list_directory', 'todo_write',
+      'task_list', 'task_get', 'task_update', 'task_create',
     ],
     model: 'powerful',
     maxIterations: 20,
@@ -178,10 +185,17 @@ When testing:
 - How to run the tests
 - Coverage expectations
 
-Be constructive and specific. Focus on actionable feedback.`,
+Be constructive and specific. Focus on actionable feedback.
+
+## Task Management
+- Use task_list to check available tasks before starting work
+- Use task_update to claim tasks (set owner to your name) and mark completed
+- After completing a task, call task_list to find next available work
+- Create sub-tasks with task_create if you discover additional work needed`,
     tools: [
       'bash', 'read_file', 'write_file', 'edit_file',
       'glob', 'grep', 'list_directory',
+      'task_list', 'task_get', 'task_update', 'task_create',
     ],
     model: 'balanced',
     maxIterations: 15,
@@ -214,6 +228,10 @@ Be constructive and specific. Focus on actionable feedback.`,
 - Summarize findings clearly with file paths
 - Suggest next steps if appropriate
 
+## Task Management
+- Use task_list to see available tasks and overall progress
+- Use task_get to read task details before starting
+
 ## Output Format
 For code exploration:
 \`\`\`
@@ -233,6 +251,7 @@ Suggested actions:
       'glob', 'grep', 'read_file', 'list_directory',
       'web_search', 'web_fetch',
       'read_pdf', 'read_docx', 'read_xlsx',
+      'task_list', 'task_get',
     ],
     model: 'fast',
     maxIterations: 15,
@@ -285,10 +304,17 @@ Suggested actions:
 - READ-ONLY for exploration, can write plan documents
 - Prefer simplicity over complexity
 - Consider team capabilities and existing patterns
-- Plan for evolution and change`,
+- Plan for evolution and change
+
+## Task Management
+- Use task_list to check available tasks before starting work
+- Use task_update to claim tasks (set owner to your name) and mark completed
+- After completing a task, call task_list to find next available work
+- Create sub-tasks with task_create to break down complex plans`,
     tools: [
       'glob', 'grep', 'read_file', 'list_directory',
       'write_file', 'todo_write',
+      'task_list', 'task_get', 'task_update', 'task_create',
     ],
     model: 'balanced',
     maxIterations: 12,

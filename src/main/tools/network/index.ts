@@ -19,6 +19,7 @@ export { qrcodeGenerateTool } from './qrcodeGenerate';
 export { readDocxTool } from './readDocx';
 export { readXlsxTool } from './readXlsx';
 export { jiraTool } from './jira';
+export { githubPrTool } from './githubPr';
 export { youtubeTranscriptTool } from './youtubeTranscript';
 export { twitterFetchTool } from './twitterFetch';
 export { mermaidExportTool } from './mermaidExport';

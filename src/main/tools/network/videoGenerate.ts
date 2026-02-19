@@ -44,8 +44,8 @@ async function fetchWithTimeout(
 // 智谱视频生成模型
 // 参考文档: https://bigmodel.cn/dev/api/videomodel/cogvideox
 const ZHIPU_VIDEO_MODELS = {
-  standard: 'cogvideox-2',        // CogVideoX 2.0 标准版（注意：不是 cogvideox-v2）
-  flash: 'cogvideox-flash',       // CogVideoX Flash（快速版）
+  standard: 'cogvideox-flash',    // CogVideoX Flash（免费，默认）
+  premium: 'cogvideox-2',         // CogVideoX 2.0 标准版（付费）
 } as const;
 
 // 支持的尺寸（官方支持：720x480, 1024x1024, 1280x960, 960x1280, 1920x1080, 1080x1920, 2048x1080, 3840x2160）
@@ -310,10 +310,10 @@ async function expandVideoPrompt(
             { role: 'system', content: systemPrompt },
             { role: 'user', content: shortPrompt },
           ],
-          max_tokens: 400,
+          max_tokens: 800, // glm-4.7-flash reasoning 会消耗额外 token
         }),
       },
-      10000
+      15000 // glm-4.7-flash reasoning 需要更多时间
     );
 
     if (!response.ok) {
@@ -322,7 +322,9 @@ async function expandVideoPrompt(
     }
 
     const result = await response.json();
-    const expandedPrompt = result.choices?.[0]?.message?.content?.trim();
+    const msg = result.choices?.[0]?.message;
+    // glm-4.7-flash 有 reasoning 模式，content 可能为空，fallback 到 reasoning_content
+    const expandedPrompt = (msg?.content || msg?.reasoning_content || '').trim();
 
     if (expandedPrompt) {
       logger.info('[Prompt扩展] 成功', {

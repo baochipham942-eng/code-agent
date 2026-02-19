@@ -341,7 +341,9 @@ function ImageResultDisplay({ imagePath, imageBase64 }: ImageResultDisplayProps)
     : imageBase64
       ? imageBase64.startsWith('data:')
         ? imageBase64
-        : `data:image/png;base64,${imageBase64}`
+        : imageBase64.startsWith('http://') || imageBase64.startsWith('https://')
+          ? imageBase64 // URL 直接用（兼容旧数据 + 下载失败降级）
+          : `data:image/png;base64,${imageBase64}`
       : '';
 
   const fileName = imagePath?.split('/').pop() || 'generated-image.png';

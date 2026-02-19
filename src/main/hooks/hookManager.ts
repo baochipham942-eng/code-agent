@@ -23,6 +23,7 @@ import { loadAllHooksConfig } from './configParser';
 import { mergeHooks, getHooksForTool, getHooksForEvent } from './merger';
 import { executeScript } from './scriptExecutor';
 import { executePromptHook } from './promptHook';
+import { executeAgentHook } from './agentHook';
 import {
   getBuiltinHookExecutor,
   type BuiltinHookContext,
@@ -68,6 +69,7 @@ export class HookManager {
   private config: HookManagerConfig;
   private hooks: MergedHookConfig[] = [];
   private initialized = false;
+  private executedOnceHooks: Set<string> = new Set();
 
   constructor(config: HookManagerConfig) {
     this.config = {
@@ -573,9 +575,46 @@ export class HookManager {
   }
 
   /**
+   * Generate a unique ID for a hook (used for once-tracking)
+   */
+  private getHookId(hook: HookDefinition): string {
+    if (hook.type === 'command') return `command:${hook.command}`;
+    if (hook.type === 'prompt') return `prompt:${hook.prompt}`;
+    if (hook.type === 'agent') return `agent:${hook.agent}:${hook.agentPrompt || ''}`;
+    return `unknown:${JSON.stringify(hook)}`;
+  }
+
+  /**
    * Execute a single hook definition
    */
   private async executeHook(
+    hook: HookDefinition,
+    context: AnyHookContext
+  ): Promise<HookExecutionResult> {
+    // once check: skip if this hook has already been executed this session
+    if (hook.once) {
+      const hookId = this.getHookId(hook);
+      if (this.executedOnceHooks.has(hookId)) {
+        return { action: 'allow', message: 'Once-hook already executed, skipping', duration: 0 };
+      }
+      this.executedOnceHooks.add(hookId);
+    }
+
+    // async handling: fire-and-forget, return immediately
+    if (hook.async) {
+      this.executeHookCore(hook, context).catch((error) => {
+        logger.warn('Async hook execution failed', { error: (error as Error).message });
+      });
+      return { action: 'allow', message: 'Async hook fired', duration: 0 };
+    }
+
+    return this.executeHookCore(hook, context);
+  }
+
+  /**
+   * Core hook execution logic (separated for async support)
+   */
+  private async executeHookCore(
     hook: HookDefinition,
     context: AnyHookContext
   ): Promise<HookExecutionResult> {
@@ -606,6 +645,20 @@ export class HookManager {
           action: 'allow',
           message: 'Prompt hook skipped - no AI completion configured',
           duration: 0,
+        };
+      }
+
+      // Agent hooks: delegate to AI with a role-based prompt
+      if (hook.type === 'agent' && hook.agent) {
+        const startTime = Date.now();
+        const result = await executeAgentHook(
+          { agent: hook.agent, agentPrompt: hook.agentPrompt, context },
+          this.config.aiCompletion
+        );
+        return {
+          action: result.success ? 'continue' : 'error',
+          message: result.output,
+          duration: Date.now() - startTime,
         };
       }
 

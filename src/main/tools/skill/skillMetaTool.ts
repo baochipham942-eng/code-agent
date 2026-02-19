@@ -11,6 +11,7 @@ import type {
 } from '../../../shared/types/agentSkill';
 import { getSkillDiscoveryService } from '../../services/skills';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
+import { renderSkillContent } from '../../services/skills/skillRenderer';
 import type { ModelConfig } from '../../../shared/types';
 import { createLogger } from '../../services/infra/logger';
 
@@ -62,12 +63,15 @@ function buildSkillDescription(): string {
 /**
  * 处理 inline 执行模式
  */
-function handleInlineExecution(skill: ParsedSkill, args?: string): SkillToolResult {
+function handleInlineExecution(skill: ParsedSkill, args?: string, workingDirectory?: string): SkillToolResult {
   // 构建可见的状态消息
   const statusMessage = `<command-message>Loading skill: ${skill.name}</command-message><command-name>${skill.name}</command-name>`;
 
-  // 构建 skill prompt（包含参数）
-  let promptContent = skill.promptContent;
+  // Render skill content: process !cmd and $ARGUMENTS
+  let promptContent = renderSkillContent(skill.promptContent, {
+    arguments: args,
+    workingDirectory,
+  });
   if (args) {
     promptContent += `\n\n---\nUser provided arguments: ${args}`;
   }
@@ -119,8 +123,11 @@ async function handleForkExecution(
     };
   }
 
-  // 构建完整的 prompt
-  let fullPrompt = skill.promptContent;
+  // Render skill content: process !cmd and $ARGUMENTS, then build prompt
+  let fullPrompt = renderSkillContent(skill.promptContent, {
+    arguments: args,
+    workingDirectory: context.workingDirectory,
+  });
   if (args) {
     fullPrompt += `\n\n---\nUser request: ${args}`;
   }
@@ -255,7 +262,7 @@ export const skillMetaTool: Tool = {
     }
 
     // inline 模式
-    const skillResult = handleInlineExecution(skill, args);
+    const skillResult = handleInlineExecution(skill, args, context.workingDirectory);
 
     // 将 SkillToolResult 转换为 ToolExecutionResult
     // 通过 metadata 传递 newMessages 和 contextModifier

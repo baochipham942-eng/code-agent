@@ -3,15 +3,17 @@
 // Unified display for both developer and cowork modes
 // ============================================================================
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { AssistantMessageProps } from './types';
 import { MessageContent } from './MessageContent';
 import { ToolCallDisplay } from './ToolCallDisplay/index';
+import { IPC_CHANNELS } from '@shared/ipc';
 
 export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) => {
   const [showReasoning, setShowReasoning] = useState(false);
   const reasoningRef = useRef<HTMLDivElement>(null);
   const [reasoningHeight, setReasoningHeight] = useState<number | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (reasoningRef.current) {
@@ -19,11 +21,49 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
     }
   }, [showReasoning, message.reasoning]);
 
+  // Close context menu on click outside
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handler = () => setContextMenu(null);
+    window.addEventListener('click', handler);
+    return () => window.removeEventListener('click', handler);
+  }, [contextMenu]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  const handleCompactFrom = useCallback(async () => {
+    setContextMenu(null);
+    if (message.id) {
+      try {
+        await window.electronAPI?.invoke(IPC_CHANNELS.CONTEXT_COMPACT_FROM, message.id);
+      } catch {
+        // ignore
+      }
+    }
+  }, [message.id]);
+
   const reasoningContent = message.thinking || message.reasoning;
   const effortLabel = message.effortLevel || '';
 
   return (
-    <div className="py-2 px-4">
+    <div className="py-2 px-4" onContextMenu={handleContextMenu}>
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-50 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 min-w-[160px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            onClick={handleCompactFrom}
+            className="w-full px-3 py-1.5 text-left text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
+          >
+            Compact from here
+          </button>
+        </div>
+      )}
       {/* Thinking/Reasoning - simplified plain text fold */}
       {reasoningContent && (
         <div className="mb-2">

@@ -16,6 +16,7 @@ import { TodoBar } from './TodoBar';
 import { PreviewPanel } from './PreviewPanel';
 import { PlanPanel } from './features/chat/PlanPanel';
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
+import { RewindPanel } from './RewindPanel';
 import type { Message, MessageAttachment, TaskProgressData, TaskPlan } from '../../shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
 import {
@@ -40,6 +41,27 @@ export const ChatView: React.FC = () => {
   // Plan 状态
   const [plan, setPlan] = useState<TaskPlan | null>(null);
   const [showPlanPanel, setShowPlanPanel] = useState(false);
+
+  // Rewind Panel 状态 (Esc+Esc)
+  const [showRewindPanel, setShowRewindPanel] = useState(false);
+  const lastEscRef = useRef<number>(0);
+
+  // Esc+Esc 检测
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        const now = Date.now();
+        if (now - lastEscRef.current < 500) {
+          setShowRewindPanel(true);
+          lastEscRef.current = 0; // Reset to avoid triple-tap
+        } else {
+          lastEscRef.current = now;
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // 获取 Plan 数据
   useEffect(() => {
@@ -206,6 +228,9 @@ export const ChatView: React.FC = () => {
       {showPlanPanel && plan && (
         <PlanPanel plan={plan} onClose={() => setShowPlanPanel(false)} />
       )}
+
+      {/* Rewind Panel (Esc+Esc) */}
+      <RewindPanel isOpen={showRewindPanel} onClose={() => setShowRewindPanel(false)} />
     </div>
   );
 };

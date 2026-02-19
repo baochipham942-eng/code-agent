@@ -20,6 +20,8 @@ export interface MergedHookConfig {
   sources: Array<'global' | 'project'>;
   /** Phase 2: Execute hooks in parallel */
   parallel: boolean;
+  /** Match MCP server tools by server name prefix */
+  mcpServer?: string;
 }
 
 /**
@@ -123,6 +125,7 @@ function mergeGroup(
     hooks,
     sources: Array.from(sources),
     parallel,
+    mcpServer: first.mcpServer,
   };
 }
 
@@ -167,6 +170,13 @@ export function getHooksForTool(
 ): MergedHookConfig[] {
   return hooks.filter((h) => {
     if (h.event !== event) return false;
+
+    // When mcpServer is set, match against the MCP server name prefix
+    // e.g., mcpServer: "github" matches tool names like "mcp__github__create_issue"
+    if (h.mcpServer) {
+      const mcpPrefix = `mcp__${h.mcpServer}__`;
+      return toolName.startsWith(mcpPrefix);
+    }
 
     // No matcher means match all tools
     if (!h.matcher) return true;

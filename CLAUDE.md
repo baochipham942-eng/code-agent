@@ -59,6 +59,7 @@ src/
 ├── main/                 # Electron 主进程
 │   ├── agent/           # AgentOrchestrator, AgentLoop
 │   │   ├── hybrid/      # 🆕 混合架构 (v0.16.18+) - 4核心角色+动态扩展+Swarm
+│   │   ├── teammate/    # 🆕 团队协作 (v0.16.19+) - 通信+持久化+团队管理
 │   │   ├── taskList/    # 🆕 任务列表管理 (v0.16.21+) - 可视化任务追踪+IPC
 │   │   ├── subagent/    # Subagent 旧架构 (v0.16.12+, 已废弃)
 │   │   └── recovery/    # 恢复策略 (v0.16.16+)
@@ -196,6 +197,33 @@ src/main/agent/hybrid/
 - Kimi Agent Swarm: 动态生成 + 稀疏汇报
 - LangGraph Send API: 条件路由 + 动态 Worker
 
+### 多 Agent 协作增强 (v0.16.37+)
+
+对标 Claude Code 的 Team/TaskList/Shutdown/PlanApproval 能力，4 个增强模块：
+
+| 模块 | 说明 | 相关文件 |
+|------|------|----------|
+| **E3 持久化团队** | 团队/任务状态写入 `.code-agent/teams/<id>/`，支持 session 中断恢复 | `teammate/teamPersistence.ts`, `teammate/teamManager.ts` |
+| **E4 任务自管理** | 4 核心角色可自行查看/认领/完成/创建任务 | `hybrid/coreAgents.ts`（task 工具注入） |
+| **E1 优雅关闭** | 4 阶段关闭（Signal→Grace 5s→Flush→Force），替代暴力中断 | `shutdownProtocol.ts`, `subagentExecutor.ts` |
+| **E2 跨 Agent 审批** | 高风险操作（文件删除/破坏性命令）需 Coordinator 审批，可选开启 | `planApproval.ts`, `tools/multiagent/planReview.ts` |
+
+**子 Agent 任务工具分配**：
+
+| 角色 | 任务工具 | 权限 |
+|------|---------|------|
+| coder, reviewer, plan | `task_list`, `task_get`, `task_update`, `task_create` | 读写 |
+| explore | `task_list`, `task_get` | 只读 |
+
+**持久化存储结构**：
+```
+.code-agent/teams/<team-id>/
+├── config.json       # 成员、角色、模型
+├── tasks.json        # SessionTask 列表 + counter
+├── findings.json     # SharedContext 发现
+└── checkpoint.json   # 最后活跃状态
+```
+
 ---
 
 ## 子 Agent 系统 (Gen7) - 旧版
@@ -326,6 +354,64 @@ pending → ready → running → completed/failed/cancelled/skipped
 - **Initializable/Disposable**：生命周期钩子
 
 ---
+
+## v0.16.37 Web Search 智能过滤与提取 (2026-02-19)
+
+对标 Claude 官方 Dynamic Filtering 能力，3 个优先级改进：
+
+| 优先级 | 改进 | 文件 | 效果 |
+|--------|------|------|------|
+| P0 | webFetch 智能提取 | `webFetch.ts` + **新建** `htmlUtils.ts` | cheerio 解析 + modelCallback AI 提取，替代 50K 硬截断 |
+| P1 | webSearch 域名过滤 | `webSearch.ts` | `allowed_domains` / `blocked_domains` 参数 |
+| P2 | webSearch 搜索+提取一体化 | `webSearch.ts` | `auto_extract` 参数，搜索后自动 fetch+提取 |
+
+### P0 降级链
+
+`AI 提取（modelCallback）` → `smartTruncate（段落边界 8K）` → `fallbackHtmlToText（原始正则）`
+
+- CLI 模式无 modelCallback，自动走 smartTruncate
+- Token 节省：50K→8K（-54% 实测 MDN 页面）
+
+### P1 域名过滤实现
+
+| 搜索源 | 实现方式 |
+|--------|---------|
+| Brave | `site:` / `-site:` 拼入 query |
+| EXA | 原生 `includeDomains` / `excludeDomains` |
+| Perplexity | 域名约束拼入 message content |
+| Cloud | `allowedDomains` / `blockedDomains` 透传 |
+
+### P2 auto_extract
+
+搜索完成后并行 fetch 前 N 个 URL（10s 超时）→ cheerio 解析 → modelCallback AI 提取（每 URL 3000 字符上限）。无 modelCallback 则跳过。
+
+### 新增/改动文件
+
+| 文件 | 操作 |
+|------|------|
+| `src/main/tools/network/htmlUtils.ts` | **新建** — cheerio 解析 + smartTruncate + buildExtractionPrompt + fallback |
+| `src/main/tools/network/webFetch.ts` | 改写 — modelCallback AI 提取 + max_chars 参数 |
+| `src/main/tools/network/webSearch.ts` | 扩展 — 域名过滤 + auto_extract + extract_count |
+
+---
+
+## v0.16.37 多 Agent 协作增强 (2026-02-19)
+
+对标 Claude Code Team/TaskList/Shutdown/PlanApproval，新增 4 个增强模块（commit `cf7bfb9`）：
+
+| 增强 | 新文件 | 改文件 | 行数 |
+|------|--------|--------|------|
+| E3 持久化团队 | `teamPersistence.ts`, `teamManager.ts` | configPaths, taskStore, teammateService, parallelAgentCoordinator | ~520 |
+| E4 任务自管理 | — | coreAgents, spawnAgent | ~60 |
+| E1 优雅关闭 | `shutdownProtocol.ts` | subagentExecutor, subagentPipeline, parallelAgentCoordinator, agentSwarm | ~200 |
+| E2 审批流 | `planApproval.ts`, `planReview.ts` | subagentExecutor, agentSwarm, taskRouter, toolRegistry, multiagent/index | ~320 |
+
+相关代码：
+- `src/main/agent/teammate/teamPersistence.ts` — 原子写入 JSON 持久化
+- `src/main/agent/teammate/teamManager.ts` — 团队生命周期 + gracefulShutdown handler
+- `src/main/agent/shutdownProtocol.ts` — 4 阶段关闭 + `combineAbortSignals()`
+- `src/main/agent/planApproval.ts` — 风险评估 + 串行审批队列
+- `src/main/tools/multiagent/planReview.ts` — Coordinator 审批工具
 
 ## v0.16.37 工程能力提升 (2026-02-11)
 

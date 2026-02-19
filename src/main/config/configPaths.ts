@@ -157,6 +157,48 @@ export function getAgentsConfigPath(workingDirectory?: string): {
 }
 
 /**
+ * Get agents .md directory paths for custom agent definitions
+ */
+export function getAgentsMdDir(workingDirectory?: string): {
+  user: string;
+  project?: string;
+} {
+  const result: { user: string; project?: string } = {
+    user: path.join(getUserConfigDir(), 'agents'),
+  };
+  if (workingDirectory) {
+    result.project = path.join(getProjectConfigDir(workingDirectory), 'agents');
+  }
+  return result;
+}
+
+/**
+ * Get rules directory paths for path-specific rules
+ */
+export function getRulesDir(workingDirectory?: string): {
+  user: string;
+  project?: string;
+} {
+  const result: { user: string; project?: string } = {
+    user: path.join(getUserConfigDir(), 'rules'),
+  };
+  if (workingDirectory) {
+    result.project = path.join(getProjectConfigDir(workingDirectory), 'rules');
+  }
+  return result;
+}
+
+/**
+ * Get managed config path for enterprise administration
+ */
+export function getManagedConfigPath(): string {
+  if (process.platform === 'darwin' || process.platform === 'linux') {
+    return '/etc/code-agent';
+  }
+  return path.join(os.homedir(), '.config', 'code-agent', 'managed');
+}
+
+/**
  * Get MCP config path
  */
 export function getMcpConfigPath(workingDirectory: string): {
@@ -198,6 +240,30 @@ export function getSettingsPath(workingDirectory?: string): {
  */
 export function getTeamsDir(workingDirectory: string): string {
   return path.join(getProjectConfigDir(workingDirectory), 'teams');
+}
+
+/**
+ * Get permissions config from settings.json
+ */
+export function getPermissionsConfig(workingDirectory?: string): {
+  user: { new: string; legacy: string };
+  project?: { new: string; legacy: string };
+} {
+  const result: ReturnType<typeof getPermissionsConfig> = {
+    user: {
+      new: path.join(getUserConfigDir(), 'permissions.json'),
+      legacy: path.join(getUserConfigDirLegacy(), 'settings.json'),
+    },
+  };
+
+  if (workingDirectory) {
+    result.project = {
+      new: path.join(getProjectConfigDir(workingDirectory), 'permissions.json'),
+      legacy: path.join(getProjectConfigDirLegacy(workingDirectory), 'settings.json'),
+    };
+  }
+
+  return result;
 }
 
 /**

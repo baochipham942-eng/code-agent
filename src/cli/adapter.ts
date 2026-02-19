@@ -29,8 +29,11 @@ export class CLIAgent {
   private prLink: PRLink | null = null;
   private unsubscribeSwarm: (() => void) | null = null;
 
+  private systemPrompt: string | undefined;
+
   constructor(options: Partial<CLIGlobalOptions> = {}) {
     this.config = buildCLIConfig(options);
+    this.systemPrompt = options.systemPrompt;
   }
 
   /**
@@ -80,6 +83,11 @@ export class CLIAgent {
       await this.initSession();
     }
 
+    // Inject system prompt if provided (before user message)
+    if (this.systemPrompt && this.messages.length === 0) {
+      this.injectContext(this.systemPrompt);
+    }
+
     // 添加用户消息
     const userMessage: Message = {
       id: `msg-${Date.now()}`,
@@ -100,7 +108,9 @@ export class CLIAgent {
     // 注册 Swarm 事件监听器（CLI 模式下将 swarm 事件路由到终端/JSON 输出）
     if (!this.unsubscribeSwarm) {
       this.unsubscribeSwarm = addSwarmEventListener((event) => {
-        if (this.config.outputFormat === 'json') {
+        if (this.config.outputFormat === 'stream-json') {
+          this.writeStreamJson('swarm', event);
+        } else if (this.config.outputFormat === 'json') {
           jsonOutput.handleSwarmEvent(event);
         } else {
           terminalOutput.handleSwarmEvent(event);
@@ -131,11 +141,32 @@ export class CLIAgent {
   }
 
   /**
+   * Write a JSONL line for stream-json format
+   */
+  private writeStreamJson(type: string, content: unknown): void {
+    const line = JSON.stringify({ type, content, ts: Date.now() });
+    process.stdout.write(line + '\n');
+  }
+
+  /**
    * 处理 Agent 事件
    */
   private handleEvent(event: AgentEvent): void {
-    // 根据输出格式分发事件
-    if (this.config.outputFormat === 'json') {
+    // stream-json: write JSONL lines for each event
+    if (this.config.outputFormat === 'stream-json') {
+      if (event.type === 'stream_chunk' && event.data?.content) {
+        this.writeStreamJson('text', event.data.content);
+      } else if (event.type === 'tool_call_start') {
+        this.writeStreamJson('tool_call', { name: event.data.name, arguments: event.data.arguments });
+      } else if (event.type === 'tool_call_end') {
+        this.writeStreamJson('tool_result', { toolCallId: event.data.toolCallId, output: event.data.output });
+      } else if (event.type === 'error') {
+        this.writeStreamJson('error', event.data?.message);
+      } else if (event.type === 'agent_complete') {
+        this.writeStreamJson('complete', { success: true });
+      }
+    } else if (this.config.outputFormat === 'json') {
+      // 根据输出格式分发事件
       jsonOutput.handleEvent(event);
     } else {
       terminalOutput.handleEvent(event);

@@ -214,6 +214,8 @@ export function buildCLIConfig(options: {
   json?: boolean;
   plan?: boolean;
   debug?: boolean;
+  outputFormat?: 'text' | 'json' | 'stream-json';
+  systemPrompt?: string;
 }): CLIConfig {
   const config = getConfigService();
   const settings = config.getSettings();
@@ -238,14 +240,23 @@ export function buildCLIConfig(options: {
     maxTokens: settings.model?.maxTokens || MODEL_MAX_TOKENS.DEFAULT,
   };
 
+  // Determine output format: explicit --output-format takes priority over --json
+  let outputFormat: 'text' | 'json' | 'stream-json' = 'text';
+  if (options.outputFormat && options.outputFormat !== 'text') {
+    outputFormat = options.outputFormat;
+  } else if (options.json) {
+    outputFormat = 'json';
+  }
+
   return {
     workingDirectory,
     generationId,
     modelConfig,
-    outputFormat: options.json ? 'json' : 'text',
+    outputFormat,
     enablePlanning: options.plan || false,
     debug: options.debug || false,
     autoApprovePlan: true, // CLI 模式默认自动批准 plan mode
+    systemPrompt: options.systemPrompt,
   };
 }
 

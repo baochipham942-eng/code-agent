@@ -29,7 +29,9 @@ program
   .option('--model <name>', '模型名称')
   .option('--provider <name>', '模型提供商 (deepseek, openai, zhipu)')
   .option('--plan', '启用规划模式（复杂任务自动分解）')
-  .option('--debug', '调试模式');
+  .option('--debug', '调试模式')
+  .option('--output-format <format>', '输出格式 (text|json|stream-json)', 'text')
+  .option('--system-prompt <prompt>', '自定义系统提示');
 
 // Register commands
 program.addCommand(chatCommand);

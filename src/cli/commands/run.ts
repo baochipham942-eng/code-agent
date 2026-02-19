@@ -9,16 +9,35 @@ import { cleanup, initializeCLIServices, getDatabaseService } from '../bootstrap
 import type { CLIGlobalOptions } from '../types';
 import { DEFAULT_GENERATION } from '../../shared/constants';
 
+/**
+ * Read stdin when piped (non-TTY)
+ */
+async function readStdin(): Promise<string> {
+  if (process.stdin.isTTY) return '';
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf-8').trim();
+}
+
 export const runCommand = new Command('run')
   .description('执行单次任务')
   .argument('<prompt>', '要执行的任务描述')
   .option('-s, --session <id>', '恢复指定会话')
   .action(async (prompt: string, options: { session?: string }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
-    const isJson = globalOpts?.json || false;
+    const isJson = globalOpts?.json || globalOpts?.outputFormat === 'json' || globalOpts?.outputFormat === 'stream-json';
+
+    // Read stdin and prepend to prompt if available
+    const stdinContent = await readStdin();
+    let fullPrompt = prompt;
+    if (stdinContent) {
+      fullPrompt = `${stdinContent}\n\n${prompt}`;
+    }
 
     // 检测空 prompt，优雅处理
-    if (!prompt || !prompt.trim()) {
+    if (!fullPrompt || !fullPrompt.trim()) {
       if (isJson) {
         console.log(JSON.stringify({ success: true, output: '请提供任务描述' }));
       } else {
@@ -56,6 +75,8 @@ export const runCommand = new Command('run')
         provider: globalOpts?.provider,
         json: globalOpts?.json,
         debug: globalOpts?.debug,
+        outputFormat: globalOpts?.outputFormat,
+        systemPrompt: globalOpts?.systemPrompt,
       });
 
       // 恢复会话（如果指定）
@@ -70,7 +91,7 @@ export const runCommand = new Command('run')
         }
       }
 
-      const result = await agent.run(prompt);
+      const result = await agent.run(fullPrompt);
 
       // 显示会话 ID
       if (!isJson && agent.getSessionId()) {

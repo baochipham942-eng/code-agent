@@ -659,6 +659,17 @@ export const IPC_CHANNELS = {
   TASKLIST_SET_AUTO_ASSIGN: 'taskList:setAutoAssign',
   TASKLIST_SET_REQUIRE_APPROVAL: 'taskList:setRequireApproval',
 
+  // Checkpoint channels (Rewind UI)
+  CHECKPOINT_LIST: 'checkpoint:list',
+  CHECKPOINT_REWIND: 'checkpoint:rewind',
+  CHECKPOINT_PREVIEW: 'checkpoint:preview',
+
+  // Suggestions channels (智能提示)
+  SUGGESTIONS_GET: 'suggestions:get',
+
+  // Context compact channels (部分压缩)
+  CONTEXT_COMPACT_FROM: 'context:compact-from',
+
   // Telemetry channels (遥测系统)
   TELEMETRY_GET_SESSION: TELEMETRY_CHANNELS.GET_SESSION,
   TELEMETRY_LIST_SESSIONS: TELEMETRY_CHANNELS.LIST_SESSIONS,
@@ -950,6 +961,34 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.TASKLIST_DELETE_TASK]: (taskId: string) => Promise<boolean>;
   [IPC_CHANNELS.TASKLIST_SET_AUTO_ASSIGN]: (enabled: boolean) => Promise<void>;
   [IPC_CHANNELS.TASKLIST_SET_REQUIRE_APPROVAL]: (enabled: boolean) => Promise<void>;
+
+  // Checkpoint (Rewind UI)
+  [IPC_CHANNELS.CHECKPOINT_LIST]: (sessionId: string) => Promise<Array<{
+    id: string;
+    timestamp: number;
+    messageId: string;
+    description?: string;
+    fileCount: number;
+  }>>;
+  [IPC_CHANNELS.CHECKPOINT_REWIND]: (sessionId: string, messageId: string) => Promise<{
+    success: boolean;
+    filesRestored: number;
+    error?: string;
+  }>;
+  [IPC_CHANNELS.CHECKPOINT_PREVIEW]: (sessionId: string, messageId: string) => Promise<Array<{
+    filePath: string;
+    status: 'added' | 'modified' | 'deleted';
+  }>>;
+
+  // Suggestions (智能提示)
+  [IPC_CHANNELS.SUGGESTIONS_GET]: () => Promise<Array<{
+    id: string;
+    text: string;
+    source: string;
+  }>>;
+
+  // Context compact (部分压缩)
+  [IPC_CHANNELS.CONTEXT_COMPACT_FROM]: (messageId: string) => Promise<{ success: boolean; compactedCount: number }>;
 
   // Telemetry (遥测系统)
   [IPC_CHANNELS.TELEMETRY_GET_SESSION]: (sessionId: string) => Promise<TelemetrySession | null>;

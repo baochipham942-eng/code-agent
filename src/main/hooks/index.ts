@@ -58,6 +58,12 @@ export {
   executePromptHook,
 } from './promptHook';
 
+// Agent hooks
+export {
+  type AgentHookConfig,
+  executeAgentHook,
+} from './agentHook';
+
 // Hook Manager (main API)
 export {
   type HookManagerConfig,

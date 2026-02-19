@@ -76,15 +76,50 @@ export async function callClaude(
     requestBody.tools = claudeTools;
   }
 
-  // Computer Use beta header
+  // Thinking support: add thinking parameter before tools/system to ensure correct API shape
+  if (config.thinkingBudget) {
+    requestBody.thinking = {
+      type: 'enabled',
+      budget_tokens: config.thinkingBudget,
+    };
+  }
+
+  // Prompt caching: wrap system prompt and last tool definition with cache_control
+  if (config.promptCaching?.enabled) {
+    if (config.promptCaching.cacheSystem !== false && requestBody.system) {
+      // Wrap system as structured block with cache_control
+      requestBody.system = [
+        {
+          type: 'text',
+          text: requestBody.system as string,
+          cache_control: { type: 'ephemeral' },
+        },
+      ];
+    }
+    // Add cache_control to the last tool definition
+    if (Array.isArray(requestBody.tools) && (requestBody.tools as unknown[]).length > 0) {
+      const tools = requestBody.tools as Array<Record<string, unknown>>;
+      tools[tools.length - 1].cache_control = { type: 'ephemeral' };
+    }
+  }
+
+  // Beta headers
+  const betaFeatures: string[] = [];
+  if (config.computerUse) {
+    betaFeatures.push('computer-use-2024-10-22');
+  }
+  if (config.promptCaching?.enabled) {
+    betaFeatures.push('prompt-caching-2024-07-31');
+  }
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'x-api-key': config.apiKey || '',
     'anthropic-version': API_VERSIONS.ANTHROPIC,
   };
 
-  if (config.computerUse) {
-    headers['anthropic-beta'] = 'computer-use-2024-10-22';
+  if (betaFeatures.length > 0) {
+    headers['anthropic-beta'] = betaFeatures.join(',');
   }
 
   // Check for cancellation before starting

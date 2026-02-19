@@ -10,11 +10,7 @@ import { IDENTITY_PROMPT } from './identity';
 import { BASE_PROMPTS } from './base';
 // 规则已内联到 identity.ts，无需静态导入
 // 动态提醒系统可按需加载特定规则
-import {
-  BASH_TOOL_DESCRIPTION,
-  EDIT_TOOL_DESCRIPTION,
-  TASK_TOOL_DESCRIPTION,
-} from './tools';
+import { getToolDescriptionsForGeneration } from './tools';
 import {
   detectTaskFeatures,
   getSystemReminders,
@@ -81,27 +77,6 @@ function getRulesForGeneration(generationId: GenerationId): string[] {
   rules.push(...RULE_TIERS.content);
 
   return rules;
-}
-
-// ----------------------------------------------------------------------------
-// Tool Descriptions for Each Generation
-// ----------------------------------------------------------------------------
-
-/**
- * Defines which detailed tool descriptions are included in each generation.
- * These provide in-depth usage guides for the most important tools.
- *
- * bash & edit: Available from gen1 (basic tools)
- * task: Available from gen3 (subagent system)
- */
-function getToolDescriptionsForGeneration(generationId: GenerationId): string[] {
-  const genNum = parseInt(generationId.replace('gen', ''), 10);
-
-  if (genNum >= 3) {
-    return [BASH_TOOL_DESCRIPTION, EDIT_TOOL_DESCRIPTION, TASK_TOOL_DESCRIPTION];
-  }
-
-  return [BASH_TOOL_DESCRIPTION, EDIT_TOOL_DESCRIPTION];
 }
 
 // ----------------------------------------------------------------------------

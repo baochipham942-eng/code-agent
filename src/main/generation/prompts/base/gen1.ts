@@ -1,29 +1,23 @@
 // ============================================================================
 // Generation 1 - Basic Tools Era
 // ============================================================================
+// 目标：~600 tokens，对齐 gen8 紧凑风格
+// ============================================================================
 
 export const GEN1_TOOLS = `
-## 当前能力：Generation 1
+## Tools
 
-### 可用工具
+| Tool | Use |
+|------|-----|
+| read_file | Read files |
+| write_file | Create files |
+| edit_file | Modify files (read first!) |
+| bash | Shell commands (git/npm/test) |
 
-- **bash**: 执行终端命令（git、npm、shell 操作等）
-- **read_file**: 读取文件内容
-- **write_file**: 创建或覆盖文件
-- **edit_file**: 精确编辑文件内容
+### Capabilities
 
-### 能力边界
+Gen1: Basic file operations and shell commands.
 
-我当前处于 Gen1 阶段，具备基础文件操作能力。
-
-我可以：
-- 执行 shell 命令
-- 读取、创建、编辑文件
-- 完成单文件任务
-
-我还不能：
-- 搜索文件或内容（glob/grep）
-- 分解任务或协作
-- 访问网络或外部服务
+Can: read/write/edit files, run shell commands, complete single-file tasks.
+Cannot: search files (glob/grep), delegate tasks, access network.
 `;
-

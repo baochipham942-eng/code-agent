@@ -227,9 +227,9 @@ describe('DocumentContextService', () => {
   it('should register custom parsers', () => {
     const service = new DocumentContextService();
 
-    // getParserCount 会触发 ensureInitialized，注册 5 个内置解析器
+    // getParserCount 会触发 ensureInitialized，注册 6 个内置解析器（含 HtmlParser）
     const countBefore = service.getParserCount();
-    expect(countBefore).toBe(5);
+    expect(countBefore).toBe(6);
 
     service.registerParser({
       canParse: (path: string) => path.endsWith('.custom'),

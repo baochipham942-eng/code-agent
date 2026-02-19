@@ -55,6 +55,7 @@ import {
   readDocxTool,
   readXlsxTool,
   jiraTool,
+  githubPrTool,
   youtubeTranscriptTool,
   twitterFetchTool,
   mermaidExportTool,
@@ -292,6 +293,7 @@ export class ToolRegistry {
     this.register(readDocxTool);
     this.register(readXlsxTool);
     this.register(jiraTool);
+    this.register(githubPrTool);
     this.register(youtubeTranscriptTool);
     this.register(twitterFetchTool);
     this.register(mermaidExportTool);

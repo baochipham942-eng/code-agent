@@ -90,6 +90,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
   private config: CoordinatorConfig;
   private runningTasks: Map<string, Promise<AgentTaskResult>> = new Map();
   private completedTasks: Map<string, AgentTaskResult> = new Map();
+  private abortControllers: Map<string, AbortController> = new Map();
   private sharedContext: SharedContext;
   private modelConfig?: ModelConfig;
   private toolRegistry?: Map<string, Tool>;
@@ -233,6 +234,10 @@ export class ParallelAgentCoordinator extends EventEmitter {
 
     this.emit('task:start', { taskId: task.id, role: task.role });
 
+    // Create per-task AbortController for graceful shutdown
+    const taskAbortController = new AbortController();
+    this.abortControllers.set(task.id, taskAbortController);
+
     try {
       // Execute task
       const executor = getSubagentExecutor();
@@ -255,8 +260,8 @@ export class ParallelAgentCoordinator extends EventEmitter {
           modelConfig: this.modelConfig!,
           toolRegistry: this.toolRegistry!,
           toolContext: this.toolContext!,
-          // 传递父工具调用 ID，用于 subagent 消息追踪
           parentToolUseId: this.toolContext!.currentToolCallId,
+          abortSignal: taskAbortController.signal,
         }
       );
 
@@ -279,6 +284,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       };
 
       this.emit('task:complete', { taskId: task.id, result: taskResult });
+      this.abortControllers.delete(task.id);
 
       return taskResult;
     } catch (error) {
@@ -286,6 +292,7 @@ export class ParallelAgentCoordinator extends EventEmitter {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
       this.emit('task:error', { taskId: task.id, error: errorMessage });
+      this.abortControllers.delete(task.id);
 
       return {
         success: false,
@@ -401,6 +408,52 @@ export class ParallelAgentCoordinator extends EventEmitter {
   }
 
   /**
+   * Export shared context for persistence
+   */
+  exportSharedContext(): {
+    findings: Record<string, unknown>;
+    files: Record<string, string>;
+    decisions: Record<string, string>;
+    errors: string[];
+  } {
+    return {
+      findings: Object.fromEntries(this.sharedContext.findings),
+      files: Object.fromEntries(this.sharedContext.files),
+      decisions: Object.fromEntries(this.sharedContext.decisions),
+      errors: [...this.sharedContext.errors],
+    };
+  }
+
+  /**
+   * Import shared context from persistence
+   */
+  importSharedContext(data: {
+    findings?: Record<string, unknown>;
+    files?: Record<string, string>;
+    decisions?: Record<string, string>;
+    errors?: string[];
+  }): void {
+    if (data.findings) {
+      for (const [k, v] of Object.entries(data.findings)) {
+        this.sharedContext.findings.set(k, v);
+      }
+    }
+    if (data.files) {
+      for (const [k, v] of Object.entries(data.files)) {
+        this.sharedContext.files.set(k, v);
+      }
+    }
+    if (data.decisions) {
+      for (const [k, v] of Object.entries(data.decisions)) {
+        this.sharedContext.decisions.set(k, v);
+      }
+    }
+    if (data.errors) {
+      this.sharedContext.errors.push(...data.errors);
+    }
+  }
+
+  /**
    * Clear shared context
    */
   clearSharedContext(): void {
@@ -441,11 +494,25 @@ export class ParallelAgentCoordinator extends EventEmitter {
   }
 
   /**
+   * Abort all running tasks (graceful shutdown trigger)
+   */
+  abortAllRunning(reason = 'coordinator_shutdown'): void {
+    for (const [taskId, controller] of this.abortControllers) {
+      if (!controller.signal.aborted) {
+        logger.info(`Aborting task ${taskId}: ${reason}`);
+        controller.abort(reason);
+      }
+    }
+  }
+
+  /**
    * Reset coordinator state
    */
   reset(): void {
+    this.abortAllRunning('reset');
     this.runningTasks.clear();
     this.completedTasks.clear();
+    this.abortControllers.clear();
     this.clearSharedContext();
     this.removeAllListeners();
   }

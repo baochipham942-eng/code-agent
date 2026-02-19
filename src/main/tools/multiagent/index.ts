@@ -17,6 +17,9 @@ export { agentMessageTool } from './agentMessage';
 export { workflowOrchestrateTool } from './workflowOrchestrate';
 export { teammateTool } from './teammate';
 
+// Plan Review
+export { planReviewTool, PlanReviewTool } from './planReview';
+
 // Helper exports
 export { getSpawnedAgent, listSpawnedAgents, getAvailableAgents } from './spawnAgent';
 export { getAvailableWorkflows } from './workflowOrchestrate';

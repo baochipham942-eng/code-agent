@@ -175,6 +175,30 @@ export function clearTasks(sessionId: string): void {
 }
 
 /**
+ * 导出 session 的所有任务和计数器（用于持久化）
+ */
+export function exportTasks(sessionId: string): { tasks: SessionTask[]; counter: number } {
+  const taskMap = sessionTasks.get(sessionId);
+  const counter = sessionTaskCounters.get(sessionId) || 0;
+  return {
+    tasks: taskMap ? Array.from(taskMap.values()) : [],
+    counter,
+  };
+}
+
+/**
+ * 导入任务到 session（用于恢复持久化状态）
+ */
+export function importTasks(sessionId: string, tasks: SessionTask[], counter: number): void {
+  const taskMap = new Map<string, SessionTask>();
+  for (const task of tasks) {
+    taskMap.set(task.id, task);
+  }
+  sessionTasks.set(sessionId, taskMap);
+  sessionTaskCounters.set(sessionId, counter);
+}
+
+/**
  * 生成 activeForm（进行时形式）
  * 将祈使句转换为进行时形式
  */

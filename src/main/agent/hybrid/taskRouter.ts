@@ -89,6 +89,8 @@ export interface SwarmConfig {
   processIsolation?: boolean;
   maxWorkers?: number;
   workerTimeout?: number;
+  // E2: 高风险操作审批（默认关闭，显式开启）
+  requirePlanApproval?: boolean;
 }
 
 /**

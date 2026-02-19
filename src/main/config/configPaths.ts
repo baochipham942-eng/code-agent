@@ -194,6 +194,13 @@ export function getSettingsPath(workingDirectory?: string): {
 }
 
 /**
+ * Get teams directory for persistent team state
+ */
+export function getTeamsDir(workingDirectory: string): string {
+  return path.join(getProjectConfigDir(workingDirectory), 'teams');
+}
+
+/**
  * Get test directories
  */
 export function getTestDirs(workingDirectory: string): {

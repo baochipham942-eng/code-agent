@@ -15,6 +15,7 @@
 // ============================================================================
 
 import { createLogger } from '../../services/infra/logger';
+import { initiateShutdown } from '../shutdownProtocol';
 import type { DynamicAgentConfig } from './dynamicFactory';
 import type { SwarmConfig } from './taskRouter';
 import { getSwarmEventEmitter, type SwarmEventEmitter } from '../../ipc/swarm.ipc';
@@ -280,6 +281,7 @@ export class AgentSwarm {
   private coordinator = new SwarmCoordinator();
   private lockManager = new ResourceLockManager();
   private runtimes: Map<string, AgentRuntime> = new Map();
+  private agentAbortControllers: Map<string, AbortController> = new Map();
   private config: ExtendedSwarmConfig | null = null;
   private cancelled = false;
   private eventEmitter: SwarmEventEmitter;
@@ -781,13 +783,20 @@ export class AgentSwarm {
   }
 
   /**
-   * 取消剩余的 Agent
+   * 取消剩余的 Agent（含优雅关闭 running agents）
    */
   private cancelRemaining(): void {
     for (const runtime of this.runtimes.values()) {
       if (['pending', 'ready'].includes(runtime.status)) {
         runtime.status = 'cancelled';
         this.report(runtime, 'failed', { status: 'cancelled', error: 'Cancelled' });
+      }
+    }
+    // Abort running agents via their AbortControllers
+    for (const [agentId, controller] of this.agentAbortControllers) {
+      if (!controller.signal.aborted) {
+        logger.info(`[AgentSwarm] Aborting running agent: ${agentId}`);
+        controller.abort('swarm_cancelled');
       }
     }
   }
@@ -861,6 +870,7 @@ export class AgentSwarm {
     }
 
     this.runtimes.clear();
+    this.agentAbortControllers.clear();
     this.lockManager.reset();
   }
 

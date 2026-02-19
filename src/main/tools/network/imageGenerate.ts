@@ -1,6 +1,6 @@
 // ============================================================================
 // Image Generate Tool - AI 图片生成
-// 管理员用 FLUX Pro，普通用户用 FLUX Schnell
+// 优先 CogView-4（智谱，中文原生），备选 FLUX.2（OpenRouter）
 // ============================================================================
 
 import * as fs from 'fs';
@@ -13,11 +13,15 @@ import { CLOUD_ENDPOINTS, MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../s
 
 const logger = createLogger('ImageGenerate');
 
+// 图片生成引擎：决定扩写策略和生图 API
+type ImageEngine = 'cogview' | 'flux' | 'cloud';
+
 // 超时配置
 const TIMEOUT_MS = {
   CLOUD_PROXY: 60000, // 云端代理 60 秒
   DIRECT_API: 90000, // 直接 API 90 秒（图片生成较慢）
-  PROMPT_EXPAND: 30000, // Prompt 扩展 30 秒
+  PROMPT_EXPAND: 15000, // Prompt 扩展 15 秒（glm-4.7-flash reasoning 需要更多时间）
+  IMAGE_DOWNLOAD: 30000, // 图片 URL 下载 30 秒
 };
 
 /**
@@ -207,9 +211,9 @@ async function callDirectOpenRouter(
 
 // 智谱图像生成模型
 const ZHIPU_IMAGE_MODELS = {
-  standard: 'cogview-4',           // 标准模型
-  fast: 'cogview-3-flash',         // 快速模型
-  latest: 'cogview-4-250304',      // 最新版本
+  standard: 'cogview-3-flash',     // 免费模型（默认）
+  premium: 'cogview-4',            // 付费模型（需充值）
+  latest: 'cogview-4-250304',      // 最新版本（需充值）
 } as const;
 
 /**
@@ -293,77 +297,92 @@ function extractImageFromResponse(result: any): string {
 }
 
 /**
- * 生成图片
- *
- * 策略（优先级从高到低）：
- * 1. 智谱 API Key -> 使用 CogView-4（国内直连，快速稳定）
- * 2. OpenRouter API Key -> 使用 FLUX（需 30-90 秒，避免云端代理超时）
- * 3. 云端代理 -> 可能因 Vercel 60 秒超时而失败
+ * 下载图片 URL → base64 data URI（解决临时 URL 过期问题）
+ */
+async function downloadImageAsBase64(url: string): Promise<string> {
+  const response = await fetchWithTimeout(url, {}, TIMEOUT_MS.IMAGE_DOWNLOAD);
+  if (!response.ok) {
+    throw new Error(`图片下载失败: ${response.status}`);
+  }
+  const buffer = await response.arrayBuffer();
+  const base64 = Buffer.from(buffer).toString('base64');
+  const contentType = response.headers.get('content-type') || 'image/png';
+  return `data:${contentType};base64,${base64}`;
+}
+
+/**
+ * 判断是否为 URL（而非 base64 data URI）
+ */
+function isImageUrl(data: string): boolean {
+  return data.startsWith('http://') || data.startsWith('https://');
+}
+
+interface GenerateResult {
+  imageData: string; // URL 或 data URI
+  actualModel: string; // 实际使用的模型名
+}
+
+/**
+ * 生成图片（按 engine 路由，不跨生态 fallback）
  */
 async function generateImage(
-  model: string,
+  engine: ImageEngine,
+  fluxModel: string,
   prompt: string,
   aspectRatio: string
-): Promise<string> {
+): Promise<GenerateResult> {
   const configService = getConfigService();
 
-  // 优先级 1: 智谱 API Key -> 使用 CogView-4
-  const zhipuApiKey = configService.getApiKey('zhipu');
-  if (zhipuApiKey) {
-    logger.info('[图像生成] 检测到智谱 API Key，使用 CogView-4 生成图片');
+  if (engine === 'cogview') {
+    const zhipuApiKey = configService.getApiKey('zhipu')!;
+    logger.info('[图像生成] CogView-4 (智谱)');
     try {
       const result = await callZhipuImageGeneration(zhipuApiKey, prompt, aspectRatio, TIMEOUT_MS.DIRECT_API);
-      return result.url;
+      return { imageData: result.url, actualModel: ZHIPU_IMAGE_MODELS.standard };
     } catch (error: any) {
       if (error.name === 'AbortError') {
-        throw new Error(`智谱图像生成超时（${TIMEOUT_MS.DIRECT_API / 1000}秒），请稍后重试。`);
-      }
-      logger.warn('[图像生成] 智谱 API 失败，尝试回退到 OpenRouter', { error: error.message });
-      // 继续尝试 OpenRouter
-    }
-  }
-
-  // 优先级 2: OpenRouter API Key -> 使用 FLUX
-  const openrouterApiKey = configService.getApiKey('openrouter');
-  if (openrouterApiKey) {
-    logger.info('[图像生成] 使用 OpenRouter FLUX 生成图片');
-
-    const requestBody = {
-      model,
-      messages: [{ role: 'user', content: prompt }],
-      modalities: ['image', 'text'],
-      image_config: { aspect_ratio: aspectRatio },
-    };
-
-    try {
-      const directResponse = await callDirectOpenRouter(openrouterApiKey, requestBody, TIMEOUT_MS.DIRECT_API);
-
-      if (!directResponse.ok) {
-        const error = await directResponse.text();
-        throw new Error(`OpenRouter API 调用失败: ${error}`);
-      }
-
-      const result = await directResponse.json();
-      return extractImageFromResponse(result);
-    } catch (error: any) {
-      // 处理超时错误，给出友好提示
-      if (error.name === 'AbortError') {
-        throw new Error(
-          `图片生成超时（${TIMEOUT_MS.DIRECT_API / 1000}秒）。FLUX 模型可能繁忙，请稍后重试。`
-        );
+        throw new Error(`CogView-4 生成超时（${TIMEOUT_MS.DIRECT_API / 1000}秒），请稍后重试。`);
       }
       throw error;
     }
   }
 
-  // 优先级 3: 云端代理（可能会因 Vercel 超时而失败）
-  logger.info('[图像生成] 无本地 API Key，尝试云端代理...');
+  if (engine === 'flux') {
+    const openrouterApiKey = configService.getApiKey('openrouter')!;
+    logger.info(`[图像生成] FLUX (OpenRouter): ${fluxModel}`);
+
+    const requestBody = {
+      model: fluxModel,
+      messages: [{ role: 'user', content: prompt }],
+      modalities: ['image'],
+      image_config: { aspect_ratio: aspectRatio },
+    };
+
+    try {
+      const response = await callDirectOpenRouter(openrouterApiKey, requestBody, TIMEOUT_MS.DIRECT_API);
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`OpenRouter API 调用失败: ${error}`);
+      }
+      const result = await response.json();
+      const imageData = extractImageFromResponse(result);
+      return { imageData, actualModel: fluxModel };
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        throw new Error(`FLUX 生成超时（${TIMEOUT_MS.DIRECT_API / 1000}秒），请稍后重试。`);
+      }
+      throw error;
+    }
+  }
+
+  // cloud 兜底
+  logger.info('[图像生成] 云端代理');
   logger.warn('[图像生成] 云端代理可能因 Vercel 60s 限制而超时');
 
   const requestBody = {
-    model,
+    model: fluxModel,
     messages: [{ role: 'user', content: prompt }],
-    modalities: ['image', 'text'],
+    modalities: ['image'],
     image_config: { aspect_ratio: aspectRatio },
   };
 
@@ -377,23 +396,18 @@ async function generateImage(
 
     if (cloudResponse.ok) {
       const result = await cloudResponse.json();
-      logger.info('Cloud proxy success');
-      return extractImageFromResponse(result);
+      return { imageData: extractImageFromResponse(result), actualModel: fluxModel };
     }
 
     const errorText = await cloudResponse.text();
-    logger.warn('Cloud proxy failed', { status: cloudResponse.status, error: errorText });
     throw new Error(
-      `云端代理失败: ${errorText}\n\n` +
-      `建议：在设置中配置 OpenRouter API Key，以避免云端代理的超时限制。`
+      `云端代理失败: ${errorText}\n建议：配置智谱 API Key（CogView-4）或 OpenRouter API Key（FLUX）。`
     );
   } catch (error: any) {
-    // 处理超时错误
     if (error.name === 'AbortError') {
       throw new Error(
-        `云端代理超时（${TIMEOUT_MS.CLOUD_PROXY / 1000}秒）。\n\n` +
-        `FLUX 模型生成图片需要 30-90 秒，超过了云端代理的时间限制。\n` +
-        `解决方案：在设置中配置 OpenRouter API Key，直接调用 API。`
+        `云端代理超时（${TIMEOUT_MS.CLOUD_PROXY / 1000}秒）。\n` +
+        `建议：配置智谱 API Key（CogView-4）或 OpenRouter API Key（FLUX）。`
       );
     }
     throw error;
@@ -401,18 +415,27 @@ async function generateImage(
 }
 
 /**
- * 调用 LLM 扩展 Prompt
- *
- * 根据实际生图路径选择不同的扩写策略：
- * - 智谱 API Key 存在 → CogView4 策略（中文丰富描述，GLM 扩写）
- * - 走 OpenRouter/FLUX → FLUX.2 策略（英文自然语言，30-80 词）
+ * 确定图片生成引擎（扩写和生图走同一生态，不跨 ecosystem fallback）
  */
-async function expandPromptWithLLM(prompt: string, style?: string): Promise<string> {
+function determineImageEngine(): ImageEngine {
   const configService = getConfigService();
-  const zhipuApiKey = configService.getApiKey('zhipu');
+  if (configService.getApiKey('zhipu')) return 'cogview';
+  if (configService.getApiKey('openrouter')) return 'flux';
+  return 'cloud';
+}
 
-  // 智谱 API Key 存在 → 生图走 CogView4 → 用 CogView4 策略扩写
-  if (zhipuApiKey) {
+/**
+ * 调用 LLM 扩展 Prompt（与 engine 绑定，不跨生态 fallback）
+ *
+ * - cogview → GLM 中文扩写 → 失败用原始中文 prompt（CogView 本身就懂中文）
+ * - flux/cloud → DeepSeek 英文扩写 → 失败用原始 prompt + style 后缀
+ */
+async function expandPromptWithLLM(prompt: string, engine: ImageEngine, style?: string): Promise<string> {
+  const configService = getConfigService();
+
+  if (engine === 'cogview') {
+    // CogView 生态：GLM 中文扩写
+    const zhipuApiKey = configService.getApiKey('zhipu')!;
     const userPrompt = style ? `风格: ${style}\n描述: ${prompt}` : prompt;
     try {
       const response = await fetchWithTimeout(
@@ -429,17 +452,19 @@ async function expandPromptWithLLM(prompt: string, style?: string): Promise<stri
               { role: 'system', content: COGVIEW4_EXPAND_PROMPT },
               { role: 'user', content: userPrompt },
             ],
-            max_tokens: 500,
+            max_tokens: 1000, // glm-4.7-flash reasoning 会消耗额外 token
           }),
         },
-        10000
+        TIMEOUT_MS.PROMPT_EXPAND
       );
 
       if (response.ok) {
         const result = await response.json();
-        const expanded = result.choices?.[0]?.message?.content?.trim();
+        const msg = result.choices?.[0]?.message;
+        // glm-4.7-flash 有 reasoning 模式，content 可能为空，fallback 到 reasoning_content
+        const expanded = (msg?.content || msg?.reasoning_content || '').trim();
         if (expanded) {
-          logger.info('[Prompt扩展] CogView4 策略 (智谱 GLM)', {
+          logger.info('[Prompt扩展] CogView4 中文策略 (GLM)', {
             original: prompt.substring(0, 30),
             expanded: expanded.substring(0, 50),
           });
@@ -447,11 +472,13 @@ async function expandPromptWithLLM(prompt: string, style?: string): Promise<stri
         }
       }
     } catch (e: any) {
-      logger.warn('[Prompt扩展] 智谱 GLM 失败，尝试 OpenRouter fallback', { error: e.message });
+      logger.warn('[Prompt扩展] GLM 失败，CogView 懂中文，直接用原始 prompt', { error: e.message });
     }
+    // CogView 懂中文，原始 prompt 就够好了，不 fallback 到英文
+    return style ? addStyleSuffix(prompt, style) : prompt;
   }
 
-  // 无智谱 API Key → 生图走 FLUX → 用 FLUX.2 策略扩写
+  // FLUX/Cloud 生态：DeepSeek 英文扩写
   const userPrompt = style ? `Style: ${style}\nDescription: ${prompt}` : prompt;
   const fluxRequestBody = {
     model: PROMPT_EXPAND_MODEL,
@@ -475,7 +502,7 @@ async function expandPromptWithLLM(prompt: string, style?: string): Promise<stri
       const result = await cloudResponse.json();
       const expanded = result.choices?.[0]?.message?.content?.trim();
       if (expanded) {
-        logger.info('[Prompt扩展] FLUX.2 策略 (云端代理)');
+        logger.info('[Prompt扩展] FLUX.2 英文策略 (云端代理)');
         return expanded;
       }
     }
@@ -484,15 +511,15 @@ async function expandPromptWithLLM(prompt: string, style?: string): Promise<stri
   }
 
   // 直连 OpenRouter
-  const openrouterApiKey = configService.getApiKey('openrouter');
-  if (openrouterApiKey) {
+  if (engine === 'flux') {
+    const openrouterApiKey = configService.getApiKey('openrouter')!;
     try {
       const response = await callDirectOpenRouter(openrouterApiKey, fluxRequestBody, TIMEOUT_MS.PROMPT_EXPAND);
       if (response.ok) {
         const result = await response.json();
         const expanded = result.choices?.[0]?.message?.content?.trim();
         if (expanded) {
-          logger.info('[Prompt扩展] FLUX.2 策略 (OpenRouter 直连)');
+          logger.info('[Prompt扩展] FLUX.2 英文策略 (OpenRouter 直连)');
           return expanded;
         }
       }
@@ -501,8 +528,8 @@ async function expandPromptWithLLM(prompt: string, style?: string): Promise<stri
     }
   }
 
-  logger.warn('[Prompt扩展] 所有方式失败，使用原始 prompt');
-  return prompt;
+  logger.warn('[Prompt扩展] 扩写失败，使用原始 prompt');
+  return style ? addStyleSuffix(prompt, style) : prompt;
 }
 
 /**
@@ -515,21 +542,20 @@ function addStyleSuffix(prompt: string, style: string): string {
 export const imageGenerateTool: Tool = {
   name: 'image_generate',
   description: `生成 AI 图片。
-- 管理员用户使用 FLUX Pro（最高质量，约 $0.04/张）
-- 普通用户使用 FLUX Schnell（快速免费）
-- 支持 prompt 自动扩展优化
+- 优先 CogView-4（智谱，中文原生，快速稳定）
+- 备选 FLUX.2（OpenRouter，英文优化）
+- 支持中文 prompt 自动扩展优化
 
 参数：
 - prompt: 图片描述（支持中英文）
 - expand_prompt: 是否使用 LLM 扩展优化 prompt（默认 false）
 - aspect_ratio: 宽高比 "1:1" | "16:9" | "9:16" | "4:3" | "3:4"
-- output_path: 保存路径（不填则返回 base64）
+- output_path: 保存路径（不填则在聊天中直接展示）
 - style: 风格 "photo" | "illustration" | "3d" | "anime"
 
 示例：
 \`\`\`
-image_generate { "prompt": "sunset over mountains" }
-image_generate { "prompt": "一只猫", "expand_prompt": true, "aspect_ratio": "16:9" }
+image_generate { "prompt": "一只猫", "expand_prompt": true }
 image_generate { "prompt": "产品展示图", "output_path": "./product.png", "style": "photo" }
 \`\`\``,
   generations: ['gen5', 'gen6', 'gen7', 'gen8'],
@@ -581,84 +607,93 @@ image_generate { "prompt": "产品展示图", "output_path": "./product.png", "s
     const startTime = Date.now();
 
     try {
-      // 1. 获取用户身份，选择模型
+      // 1. 确定引擎（决定扩写策略 + 生图 API，走同一生态）
+      const engine = determineImageEngine();
       const authService = getAuthService();
       const user = authService.getCurrentUser();
       const isAdmin = user?.isAdmin ?? false;
-      const model = isAdmin ? FLUX_MODELS.pro : FLUX_MODELS.schnell;
+      const fluxModel = isAdmin ? FLUX_MODELS.pro : FLUX_MODELS.schnell;
 
-      logger.info('Image generation started', {
-        isAdmin,
-        model,
-        prompt: prompt.substring(0, 50),
-      });
+      const engineLabel = engine === 'cogview' ? 'CogView-4 (智谱)' :
+        engine === 'flux' ? `FLUX (${isAdmin ? 'Pro' : 'Schnell'})` : 'FLUX (云端代理)';
 
+      logger.info('Image generation started', { engine, prompt: prompt.substring(0, 50) });
       context.emit?.('tool_output', {
         tool: 'image_generate',
-        message: `🎨 使用模型: ${isAdmin ? 'FLUX Pro (管理员)' : 'FLUX Schnell'}`,
+        message: `🎨 使用模型: ${engineLabel}`,
       });
 
-      // 2. Prompt 扩展（可选）
+      // 2. Prompt 扩展（与 engine 绑定，不跨生态 fallback）
       let finalPrompt = prompt;
       if (expand_prompt) {
         context.emit?.('tool_output', {
           tool: 'image_generate',
           message: '✨ 正在扩展优化 prompt...',
         });
-        finalPrompt = await expandPromptWithLLM(prompt, style);
+        finalPrompt = await expandPromptWithLLM(prompt, engine, style);
         logger.info('Prompt expanded', {
           original: prompt.substring(0, 50),
           expanded: finalPrompt.substring(0, 100),
         });
       } else if (style) {
-        // 简单添加风格后缀
         finalPrompt = addStyleSuffix(prompt, style);
       }
 
-      // 3. 调用 OpenRouter 生成图片
+      // 3. 生成图片
       context.emit?.('tool_output', {
         tool: 'image_generate',
         message: '🖼️ 正在生成图片（可能需要 10-30 秒）...',
       });
 
-      const imageData = await generateImage(model, finalPrompt, aspect_ratio);
+      const { imageData: rawImageData, actualModel } = await generateImage(engine, fluxModel, finalPrompt, aspect_ratio);
 
-      // 4. 处理输出
+      // 4. 统一处理：URL → 下载为 base64（解决临时 URL 过期问题）
+      let imageBase64: string;
+      if (isImageUrl(rawImageData)) {
+        context.emit?.('tool_output', {
+          tool: 'image_generate',
+          message: '📥 正在下载图片...',
+        });
+        try {
+          imageBase64 = await downloadImageAsBase64(rawImageData);
+        } catch (e: any) {
+          logger.warn('[图片下载] 下载失败，保留原始 URL', { error: e.message });
+          imageBase64 = rawImageData; // 降级：保留 URL，前端兜底处理
+        }
+      } else {
+        imageBase64 = rawImageData;
+      }
+
+      // 5. 保存到文件（如果指定了 output_path）
       let imagePath: string | undefined;
       if (output_path) {
         const resolvedPath = path.isAbsolute(output_path)
           ? output_path
           : path.join(context.workingDirectory, output_path);
 
-        // 确保目录存在
         const dir = path.dirname(resolvedPath);
         if (!fs.existsSync(dir)) {
           fs.mkdirSync(dir, { recursive: true });
         }
 
-        // 保存图片（移除 data URL 前缀）
-        const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+        const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
         fs.writeFileSync(resolvedPath, Buffer.from(base64Data, 'base64'));
         imagePath = resolvedPath;
-
         logger.info('Image saved', { path: imagePath });
       }
 
       const generationTime = Date.now() - startTime;
 
-      // 简化输出信息 - 图片会在 UI 中直接展示，无需在文本中重复路径
-      // AI 模型只需知道生成成功即可，用户可以在 UI 中查看和操作图片
-      const output = '图片生成成功。';
-
       return {
         success: true,
-        output,
+        output: '图片生成成功。',
         metadata: {
-          model,
+          model: actualModel,
+          engine,
           originalPrompt: prompt,
           expandedPrompt: expand_prompt ? finalPrompt : undefined,
           imagePath,
-          imageBase64: imagePath ? undefined : imageData,
+          imageBase64: imagePath ? undefined : imageBase64,
           aspectRatio: aspect_ratio,
           generationTimeMs: generationTime,
           isAdmin,

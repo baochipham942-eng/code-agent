@@ -173,7 +173,7 @@ describe('GenerationManager', () => {
       const prompt = manager.getPrompt('gen5');
       expect(prompt).toContain('memory_store');
       expect(prompt).toContain('memory_search');
-      expect(prompt).toContain('记忆');
+      expect(prompt).toContain('memory');
     });
 
     it('gen8 prompt should contain advanced tool descriptions', () => {

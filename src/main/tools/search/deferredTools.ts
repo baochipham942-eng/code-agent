@@ -325,6 +325,14 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
+    name: 'github_pr',
+    shortDescription: 'GitHub PR 管理（创建/查看/列表/评论/审查/合并）',
+    tags: ['network'] as ToolTag[],
+    aliases: ['github', 'pr', 'pull-request', 'merge'],
+    source: 'builtin',
+    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
+  },
+  {
     name: 'youtube_transcript',
     shortDescription: '获取 YouTube 视频字幕',
     tags: ['network', 'document'],

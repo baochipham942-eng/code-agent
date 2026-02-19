@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 5.7 (对应 v0.16.37)
-> 日期: 2026-02-11
+> 版本: 5.8 (对应 v0.16.37)
+> 日期: 2026-02-19
 > 作者: Lin Chen
 
 本文档已拆分为模块化的架构文档，便于维护和查阅。
@@ -35,6 +35,18 @@
 | **CLI 接口** | `src/main/cli/` | 命令行交互模式 |
 | **多渠道接入** | `src/main/channels/` | 飞书 Webhook 等渠道支持 |
 | **Skills 系统** | `src/main/skills/` | 用户可定义技能 |
+
+### v0.16.37+ 多 Agent 协作增强（持久化团队 + 优雅关闭 + 任务自管理 + 审批流）
+
+| 模块 | 位置 | 描述 |
+|------|------|------|
+| **E3 持久化团队** | `src/main/agent/teammate/teamPersistence.ts` | 团队/任务状态写入磁盘（config/tasks/findings/checkpoint），支持 session 中断后恢复 |
+| **E3 团队管理器** | `src/main/agent/teammate/teamManager.ts` | 团队生命周期管理（create/resume/snapshot/shutdown），进程退出前自动保存 |
+| **E4 子 Agent 任务自管理** | `src/main/agent/hybrid/coreAgents.ts` | 4 核心角色可自行查看/认领/完成/创建任务，减少 Coordinator 瓶颈 |
+| **E1 优雅关闭协议** | `src/main/agent/shutdownProtocol.ts` | 4 阶段关闭（Signal→Grace→Flush→Force），替代暴力中断 |
+| **E1 信号合并** | `src/main/agent/subagentExecutor.ts` | per-execution AbortController + combineAbortSignals，统一超时与外部取消 |
+| **E2 跨 Agent 审批** | `src/main/agent/planApproval.ts` | 高风险操作提交 plan → Coordinator 审批 → 通过后执行（可选，默认关闭） |
+| **E2 审批工具** | `src/main/tools/multiagent/planReview.ts` | `plan_review` 工具：Coordinator 批准/拒绝子 Agent 的 plan |
 
 ### v0.16.37+ 工程能力提升（动态 maxTokens + 源数据锚定 + 数据清洗）
 

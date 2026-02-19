@@ -76,3 +76,8 @@ export {
   resetSkillWatcher,
   SkillWatcher,
 } from './skillWatcher';
+
+export {
+  renderSkillContent,
+  type SkillRenderOptions,
+} from './skillRenderer';

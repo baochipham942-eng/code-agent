@@ -369,8 +369,13 @@ export class ModelRouter {
     switch (config.provider) {
       case 'deepseek':
         return callDeepSeek(messages, tools, config, modelInfo, onStream, signal);
-      case 'claude':
-        return callClaude(messages, tools, config, onStream, signal);
+      case 'claude': {
+        // Auto-enable prompt caching for Anthropic if not explicitly configured
+        const claudeConfig = config.promptCaching
+          ? config
+          : { ...config, promptCaching: { enabled: true, cacheSystem: true } };
+        return callClaude(messages, tools, claudeConfig, onStream, signal);
+      }
       case 'openai':
         return callOpenAI(messages, tools, config, onStream, signal);
       case 'gemini':

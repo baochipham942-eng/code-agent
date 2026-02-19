@@ -79,12 +79,16 @@ export const chatCommand = new Command('chat')
         }
       }
 
+      // Vim mode state
+      let viMode = false;
+
       // 创建 readline 接口
-      const rl = readline.createInterface({
+      const createRl = () => readline.createInterface({
         input: process.stdin,
         output: process.stdout,
         terminal: true,
       });
+      let rl = createRl();
 
       // 主循环
       const promptUser = () => {
@@ -99,9 +103,34 @@ export const chatCommand = new Command('chat')
           return;
         }
 
+        // P3-18: Bash shortcut - execute shell commands directly with !
+        if (input.startsWith('!')) {
+          const shellCmd = input.slice(1).trim();
+          if (shellCmd) {
+            try {
+              const { execSync } = await import('child_process');
+              const output = execSync(shellCmd, {
+                cwd: globalOpts?.project || process.cwd(),
+                encoding: 'utf-8',
+                timeout: 30000,
+                stdio: ['pipe', 'pipe', 'pipe'],
+              });
+              if (output.trim()) {
+                console.log(output);
+              }
+            } catch (error: any) {
+              if (error.stdout) console.log(error.stdout);
+              if (error.stderr) console.error(error.stderr);
+              else terminalOutput.error(error.message || String(error));
+            }
+          }
+          promptUser();
+          return;
+        }
+
         // 处理命令
         if (input.startsWith('/')) {
-          const handled = await handleCommand(input, agent, rl);
+          const handled = await handleCommand(input, agent, rl, () => viMode, (v: boolean) => { viMode = v; });
           if (!handled) {
             promptUser();
           }
@@ -141,7 +170,9 @@ export const chatCommand = new Command('chat')
 async function handleCommand(
   input: string,
   agent: CLIAgent,
-  rl: readline.Interface
+  rl: readline.Interface,
+  getViMode?: () => boolean,
+  setViMode?: (v: boolean) => void,
 ): Promise<boolean> {
   const [cmd, ...args] = input.slice(1).split(/\s+/);
 
@@ -157,6 +188,8 @@ async function handleCommand(
   /session        显示当前会话信息
   /restore <id>   恢复指定会话
   /config         显示当前配置
+  /vim            切换 Vi 编辑模式
+  !<command>      直接执行 shell 命令
   /exit, /quit    退出程序
 `);
       return false;
@@ -255,6 +288,18 @@ async function handleCommand(
   会话 ID: ${agent.getSessionId() || '未创建'}
 `);
       return false;
+
+    case 'vim':
+    case 'vi': {
+      if (setViMode && getViMode) {
+        const newMode = !getViMode();
+        setViMode(newMode);
+        terminalOutput.info(`Vi 模式已${newMode ? '开启' : '关闭'}（需要重启 readline 生效）`);
+      } else {
+        terminalOutput.info('Vi 模式不可用');
+      }
+      return false;
+    }
 
     case 'exit':
     case 'quit':

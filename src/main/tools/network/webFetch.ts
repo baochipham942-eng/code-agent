@@ -1,8 +1,16 @@
 // ============================================================================
-// Web Fetch Tool - Fetch content from URLs
+// Web Fetch Tool - Fetch content from URLs with AI-powered extraction
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import {
+  smartHtmlToText,
+  smartTruncate,
+  buildExtractionPrompt,
+  fallbackHtmlToText,
+} from './htmlUtils';
+
+const DEFAULT_MAX_CHARS = 8000;
 
 export const webFetchTool: Tool = {
   name: 'web_fetch',
@@ -25,16 +33,21 @@ For searching the web (when you don't have a specific URL), use web_search inste
         type: 'string',
         description: 'What information to extract from the page',
       },
+      max_chars: {
+        type: 'number',
+        description: 'Maximum characters in the extracted output (default: 8000)',
+      },
     },
     required: ['url', 'prompt'],
   },
 
   async execute(
     params: Record<string, unknown>,
-    _context: ToolContext
+    context: ToolContext
   ): Promise<ToolExecutionResult> {
     const url = params.url as string;
     const prompt = params.prompt as string;
+    const maxChars = (params.max_chars as number) || DEFAULT_MAX_CHARS;
 
     // Validate URL
     try {
@@ -69,15 +82,37 @@ For searching the web (when you don't have a specific URL), use web_search inste
       if (contentType.includes('application/json')) {
         const json = await response.json();
         content = JSON.stringify(json, null, 2);
+        // JSON: just truncate, no AI extraction needed
+        if (content.length > maxChars) {
+          content = smartTruncate(content, maxChars);
+        }
       } else {
-        content = await response.text();
-        // Basic HTML to text conversion (very simple)
-        content = htmlToText(content);
-      }
+        const rawHtml = await response.text();
 
-      // Truncate if too long
-      if (content.length > 50000) {
-        content = content.substring(0, 50000) + '\n\n... (content truncated)';
+        // Step 1: cheerio HTML → structured text (fallback to regex)
+        content = smartHtmlToText(rawHtml);
+
+        // Step 2: AI extraction if modelCallback available
+        if (context.modelCallback && content.length > 0) {
+          try {
+            const extractionPrompt = buildExtractionPrompt(prompt, content, maxChars);
+            const extracted = await context.modelCallback(extractionPrompt);
+
+            // Use AI result if substantive (> 50 chars)
+            if (extracted && extracted.trim().length > 50) {
+              content = extracted.trim();
+            } else {
+              // AI returned too little — fall back to smart truncation
+              content = smartTruncate(content, maxChars);
+            }
+          } catch {
+            // AI extraction failed — fall back to smart truncation
+            content = smartTruncate(content, maxChars);
+          }
+        } else {
+          // No modelCallback — smart truncation only
+          content = smartTruncate(content, maxChars);
+        }
       }
 
       return {
@@ -86,33 +121,12 @@ For searching the web (when you don't have a specific URL), use web_search inste
           `Prompt: ${prompt}\n\n` +
           `Content:\n${content}`,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
       return {
         success: false,
-        error: `Failed to fetch URL: ${error.message}`,
+        error: `Failed to fetch URL: ${message}`,
       };
     }
   },
 };
-
-// Simple HTML to text conversion
-function htmlToText(html: string): string {
-  return html
-    // Remove script and style tags
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    // Replace common block elements with newlines
-    .replace(/<\/(p|div|h[1-6]|li|tr)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    // Remove all remaining tags
-    .replace(/<[^>]+>/g, '')
-    // Decode HTML entities
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    // Clean up whitespace
-    .replace(/\n\s*\n/g, '\n\n')
-    .trim();
-}

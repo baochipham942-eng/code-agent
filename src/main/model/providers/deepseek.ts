@@ -56,8 +56,16 @@ export async function callDeepSeek(
   }
 
   if (useToolCalling && openaiTools.length > 0) {
+    // Sort tools by name for stable cache prefix (prompt caching optimization)
+    openaiTools.sort((a, b) => a.function.name.localeCompare(b.function.name));
     requestBody.tools = openaiTools;
     requestBody.tool_choice = 'auto';
+  }
+
+  // Reasoner models: map thinkingBudget to reasoning_effort
+  if (config.model?.includes('reasoner') && config.thinkingBudget) {
+    const effort = config.thinkingBudget <= 4096 ? 'low' : config.thinkingBudget <= 16384 ? 'medium' : 'high';
+    requestBody.reasoning_effort = effort;
   }
 
   if (useStream) {

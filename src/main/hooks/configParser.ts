@@ -12,9 +12,9 @@ import type { HookEvent } from './events';
 // ----------------------------------------------------------------------------
 
 /**
- * Hook type: command (external script) or prompt (AI evaluation)
+ * Hook type: command (external script), prompt (AI evaluation), or agent (AI agent role)
  */
-export type HookType = 'command' | 'prompt';
+export type HookType = 'command' | 'prompt' | 'agent';
 
 /**
  * Individual hook definition
@@ -28,6 +28,14 @@ export interface HookDefinition {
   prompt?: string;
   /** Timeout in milliseconds (default: 5000) */
   timeout?: number;
+  /** Fire-and-forget execution (don't await result) */
+  async?: boolean;
+  /** Execute only once per session */
+  once?: boolean;
+  /** For agent hooks: agent role (e.g., 'reviewer') */
+  agent?: string;
+  /** For agent hooks: custom prompt for the agent */
+  agentPrompt?: string;
 }
 
 /**
@@ -40,6 +48,8 @@ export interface HookMatcher {
   hooks: HookDefinition[];
   /** Phase 2: Execute hooks in parallel (default: false) */
   parallel?: boolean;
+  /** Match MCP server tools by server name prefix (e.g., "github" matches "mcp__github__*") */
+  mcpServer?: string;
 }
 
 /**
@@ -78,6 +88,8 @@ export interface ParsedHookConfig {
   source: 'global' | 'project';
   /** Phase 2: Execute hooks in parallel */
   parallel: boolean;
+  /** Match MCP server tools by server name prefix */
+  mcpServer?: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -163,6 +175,7 @@ function parseHooksObject(
         hooks: validatedHooks,
         source,
         parallel: matcherConfig.parallel ?? false,  // Phase 2: 并行执行支持
+        mcpServer: matcherConfig.mcpServer,
       });
     }
   }
@@ -186,7 +199,7 @@ function validateHooks(hooks: unknown): HookDefinition[] {
     const h = hook as Record<string, unknown>;
 
     // Must have valid type
-    if (h.type !== 'command' && h.type !== 'prompt') {
+    if (h.type !== 'command' && h.type !== 'prompt' && h.type !== 'agent') {
       return false;
     }
 
@@ -197,6 +210,11 @@ function validateHooks(hooks: unknown): HookDefinition[] {
 
     // Prompt hooks must have prompt
     if (h.type === 'prompt' && typeof h.prompt !== 'string') {
+      return false;
+    }
+
+    // Agent hooks must have agent role
+    if (h.type === 'agent' && typeof h.agent !== 'string') {
       return false;
     }
 

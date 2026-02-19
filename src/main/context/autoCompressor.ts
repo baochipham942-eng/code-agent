@@ -682,6 +682,62 @@ ${contentToSummarize}
   }
 
   /**
+   * 从指定消息开始压缩之前的消息
+   * 用于右键菜单"从此处压缩"功能
+   */
+  async compactFrom(
+    messageId: string,
+    messages: CompressedMessage[],
+    systemPrompt: string,
+  ): Promise<{ success: boolean; compactedCount: number; messages: CompressedMessage[] }> {
+    // Find the message index by checking id field
+    const index = messages.findIndex(m => (m as any).id === messageId);
+    if (index <= 0) {
+      return { success: false, compactedCount: 0, messages };
+    }
+
+    const toCompact = messages.slice(0, index);
+    const preserved = messages.slice(index);
+
+    if (toCompact.length < 2) {
+      return { success: false, compactedCount: 0, messages };
+    }
+
+    try {
+      // Build content to summarize
+      const contentToSummarize = toCompact
+        .map(msg => `[${msg.role}]: ${msg.content}`)
+        .join('\n\n---\n\n');
+
+      const originalTokens = estimateTokens(contentToSummarize);
+      const summaryPrompt = `${this.getClaudeStyleSummaryPrompt()}\n\n对话历史：\n${contentToSummarize}\n\n请生成摘要：`;
+      const summary = await compactModelSummarize(summaryPrompt, 1000);
+      const summaryTokens = estimateTokens(summary);
+
+      if (summaryTokens >= originalTokens) {
+        return { success: false, compactedCount: 0, messages };
+      }
+
+      const summaryMessage: CompressedMessage = {
+        role: 'system',
+        content: `[对话历史摘要]\n${summary}`,
+        compressed: true,
+      };
+
+      logger.info(`[AutoCompressor] compactFrom: compacted ${toCompact.length} messages, saved ${originalTokens - summaryTokens} tokens`);
+
+      return {
+        success: true,
+        compactedCount: toCompact.length,
+        messages: [summaryMessage, ...preserved],
+      };
+    } catch (error) {
+      logger.error('[AutoCompressor] compactFrom failed:', error);
+      return { success: false, compactedCount: 0, messages };
+    }
+  }
+
+  /**
    * Claude 风格摘要 prompt：聚焦状态、下一步、关键决策、学到的教训
    */
   private getClaudeStyleSummaryPrompt(): string {

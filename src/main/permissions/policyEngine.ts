@@ -12,6 +12,7 @@ import {
   getPermissionModeManager,
   MODE_CONFIGS,
 } from './modes';
+import { parseToolSpecifier, matchSpecifier, type ParsedSpecifier } from './specifierParser';
 
 const logger = createLogger('PolicyEngine');
 
@@ -33,6 +34,8 @@ export interface PolicyMatcher {
   commandPattern?: string | RegExp;
   /** Match by session ID */
   sessionId?: string;
+  /** Parsed Tool(glob) specifier for fine-grained matching */
+  toolSpecifier?: ParsedSpecifier;
   /** Custom matcher function */
   custom?: (request: PolicyRequest) => boolean;
 }
@@ -299,27 +302,49 @@ export class PolicyEngine {
     // Get mode-based default action
     const modeAction = modeManager.evaluate(request);
 
-    // Try to find a matching rule
+    // Three-level evaluation chain: deny > ask > allow
+    // Collect all matching rules, then apply precedence
     let matchedRule: PolicyRule | undefined;
     let ruleAction: PermissionAction | undefined;
 
+    // Pass 1: Check for non-overridable deny rules (highest precedence)
     for (const rule of this.rules) {
-      if (this.matchesRule(request, rule)) {
+      if (this.matchesRule(request, rule) && !rule.overridable && rule.action === 'deny') {
         matchedRule = rule;
+        ruleAction = 'deny';
+        break;
+      }
+    }
 
-        // Non-overridable rules always apply
-        if (!rule.overridable) {
-          ruleAction = rule.action;
-          break;
-        }
+    // Pass 2: If no hard deny, scan all matching rules with three-level chain
+    if (!ruleAction) {
+      // Collect matching rules from user rules (sorted by priority)
+      const matchingDeny: PolicyRule[] = [];
+      const matchingPrompt: PolicyRule[] = [];
+      const matchingAllow: PolicyRule[] = [];
 
-        // Overridable rules: use rule action unless mode is more restrictive
-        if (this.isMoreRestrictive(rule.action, modeAction)) {
+      for (const rule of this.rules) {
+        if (!this.matchesRule(request, rule)) continue;
+        if (rule.action === 'deny') matchingDeny.push(rule);
+        else if (rule.action === 'prompt') matchingPrompt.push(rule);
+        else matchingAllow.push(rule);
+      }
+
+      // Three-level chain: deny > prompt(ask) > allow
+      if (matchingDeny.length > 0) {
+        matchedRule = matchingDeny[0]; // highest priority deny
+        ruleAction = 'deny';
+      } else if (matchingPrompt.length > 0) {
+        matchedRule = matchingPrompt[0];
+        ruleAction = 'prompt';
+      } else if (matchingAllow.length > 0) {
+        matchedRule = matchingAllow[0];
+        // Overridable allow: mode can be more restrictive
+        if (matchedRule.overridable && this.isMoreRestrictive(modeAction, matchedRule.action)) {
           ruleAction = modeAction;
         } else {
-          ruleAction = rule.action;
+          ruleAction = 'allow';
         }
-        break;
       }
     }
 
@@ -351,6 +376,50 @@ export class PolicyEngine {
     });
 
     return result;
+  }
+
+  /**
+   * Load user-defined permission rules from config (allow/deny/ask arrays).
+   * Creates PolicyRules with specifier parsing from Tool(glob) syntax.
+   */
+  loadUserRules(rules: { allow?: string[]; deny?: string[]; ask?: string[] }): void {
+    const ruleEntries: Array<{ ruleStr: string; action: PermissionAction; priority: number }> = [];
+
+    // deny rules get highest user priority
+    for (const r of rules.deny ?? []) {
+      ruleEntries.push({ ruleStr: r, action: 'deny', priority: 700 });
+    }
+    // ask rules get medium priority
+    for (const r of rules.ask ?? []) {
+      ruleEntries.push({ ruleStr: r, action: 'prompt', priority: 600 });
+    }
+    // allow rules get lowest user priority
+    for (const r of rules.allow ?? []) {
+      ruleEntries.push({ ruleStr: r, action: 'allow', priority: 500 });
+    }
+
+    for (const entry of ruleEntries) {
+      const parsed = parseToolSpecifier(entry.ruleStr);
+      const rule: PolicyRule = {
+        id: `user-${entry.action}-${entry.ruleStr}`,
+        name: `User ${entry.action}: ${entry.ruleStr}`,
+        priority: entry.priority,
+        matcher: {
+          tool: parsed.toolName,
+          toolSpecifier: parsed.specifier ? parsed : undefined,
+        },
+        action: entry.action,
+        overridable: true,
+        audit: entry.action === 'deny',
+      };
+      this.addRule(rule);
+    }
+
+    logger.debug('User rules loaded', {
+      allow: rules.allow?.length ?? 0,
+      deny: rules.deny?.length ?? 0,
+      ask: rules.ask?.length ?? 0,
+    });
   }
 
   /**
@@ -390,6 +459,21 @@ export class PolicyEngine {
       } else {
         if (!matcher.commandPattern.test(request.command)) return false;
       }
+    }
+
+    // Tool specifier matching (glob-based)
+    if (matcher.toolSpecifier) {
+      const spec = matcher.toolSpecifier;
+      // Determine the input to match against based on specifier type
+      let input: string | undefined;
+      if (spec.specifierType === 'command') {
+        input = request.command;
+      } else if (spec.specifierType === 'path') {
+        input = request.filePath;
+      }
+      // If specifier has a pattern but we have no input, no match
+      if (spec.specifier && !input) return false;
+      if (input && !matchSpecifier(spec, input)) return false;
     }
 
     // Session matching

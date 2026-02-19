@@ -15,6 +15,8 @@
 
 import type { ModelProvider } from '../../../shared/types/model';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../../shared/constants';
+import { loadAgentMdFiles } from './agentMdLoader';
+import { getAgentsMdDir } from '../../config/configPaths';
 
 // ============================================================================
 // Types
@@ -334,9 +336,14 @@ export function getCoreAgent(id: CoreAgentId): CoreAgentConfig {
 }
 
 /**
- * 获取角色配置
+ * 获取角色配置（优先检查自定义 agents，然后检查内置）
  */
 export function getAgent(id: string): CoreAgentConfig | undefined {
+  // Check custom agents first
+  if (customAgentCache?.has(id)) {
+    return customAgentCache.get(id);
+  }
+  // Fall back to built-in
   if (isCoreAgent(id)) {
     return CORE_AGENTS[id];
   }
@@ -401,4 +408,38 @@ export function recommendCoreAgent(taskType: string): CoreAgentId {
   };
 
   return mapping[taskType.toLowerCase()] || 'coder';
+}
+
+// ============================================================================
+// Custom Agent Loading (from .code-agent/agents/*.md)
+// ============================================================================
+
+let customAgentCache: Map<string, CoreAgentConfig> | null = null;
+
+/**
+ * Load custom agents from user and project agents directories.
+ * Project-level agents override user-level agents with the same name.
+ */
+export async function loadCustomAgents(workingDirectory?: string): Promise<void> {
+  customAgentCache = new Map();
+  const dirs = getAgentsMdDir(workingDirectory);
+
+  // Load from user dir first, then project dir (project overrides user)
+  for (const dir of [dirs.user, dirs.project].filter(Boolean)) {
+    try {
+      const agents = await loadAgentMdFiles(dir!);
+      for (const agent of agents) {
+        customAgentCache.set(agent.id, agent);
+      }
+    } catch {
+      /* directory may not exist */
+    }
+  }
+}
+
+/**
+ * Get the custom agent cache (for testing/inspection)
+ */
+export function getCustomAgentCache(): Map<string, CoreAgentConfig> | null {
+  return customAgentCache;
 }

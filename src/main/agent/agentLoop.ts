@@ -2648,6 +2648,18 @@ export class AgentLoop {
         }
       }
 
+      // Apply thinking budget based on effort level
+      const EFFORT_TO_BUDGET: Record<string, number> = {
+        low: 2048,
+        medium: 8192,
+        high: 16384,
+        max: 32768,
+      };
+      const budgetForEffort = EFFORT_TO_BUDGET[this.effortLevel];
+      if (budgetForEffort && !effectiveConfig.thinkingBudget) {
+        effectiveConfig = { ...effectiveConfig, thinkingBudget: budgetForEffort };
+      }
+
       logger.debug('[AgentLoop] Calling modelRouter.inference()...');
       logger.debug('[AgentLoop] Effective model:', effectiveConfig.model);
       logger.debug('[AgentLoop] Effective tools count:', effectiveTools.length);

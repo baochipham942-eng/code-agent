@@ -29,3 +29,10 @@ export {
   type PolicyResult,
   type PolicyAuditEntry,
 } from './policyEngine';
+
+// Specifier Parser
+export {
+  parseToolSpecifier,
+  matchSpecifier,
+  type ParsedSpecifier,
+} from './specifierParser';

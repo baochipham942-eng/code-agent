@@ -4,16 +4,19 @@
 // 深度研究通过语义自动检测触发，无需手动切换
 // ============================================================================
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Image, FileText } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/types';
 import { UI } from '@shared/constants';
+import { IPC_CHANNELS } from '@shared/ipc';
 
 import { InputArea, InputAreaRef } from './InputArea';
 import { AttachmentBar } from './AttachmentBar';
 import { SendButton } from './SendButton';
+import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
 import { useFileUpload } from './useFileUpload';
+import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
 import { useSessionStore } from '../../../../stores/sessionStore';
 
 // ============================================================================
@@ -52,8 +55,45 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [isFocused, setIsFocused] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
+  const [suggestions, setSuggestions] = useState<Array<{ id: string; text: string; source: string }>>([]);
   const inputAreaRef = useRef<InputAreaRef>(null);
   const { processFile, processFolderEntry } = useFileUpload();
+
+  // Fetch suggestions when input is empty
+  useEffect(() => {
+    if (value.trim().length === 0 && !disabled) {
+      window.electronAPI?.invoke(IPC_CHANNELS.SUGGESTIONS_GET)
+        .then(s => setSuggestions(s || []))
+        .catch(() => setSuggestions([]));
+    } else {
+      setSuggestions([]);
+    }
+  }, [value, disabled]);
+
+  // Handle suggestion selection
+  const handleSuggestionSelect = useCallback((text: string) => {
+    setValue(text);
+    inputAreaRef.current?.focus();
+  }, []);
+
+  // @ file autocomplete
+  const { matches: fileMatches, isOpen: isAutocompleteOpen, query: atQuery, search: searchFiles, dismiss: dismissAutocomplete } = useFileAutocomplete();
+
+  // Track input changes for @ autocomplete
+  const handleValueChange = useCallback((newValue: string) => {
+    setValue(newValue);
+    // Check for @ pattern at cursor position (approximate: end of string)
+    searchFiles(newValue, newValue.length);
+  }, [searchFiles]);
+
+  // Handle @ file selection
+  const handleFileSelect_autocomplete = useCallback((filePath: string) => {
+    // Replace @query with the file path
+    const beforeAt = value.replace(new RegExp(`@${atQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), '');
+    setValue(beforeAt + '@' + filePath + ' ');
+    dismissAutocomplete();
+    inputAreaRef.current?.focus();
+  }, [value, atQuery, dismissAutocomplete]);
 
   // 历史命令功能
   const {
@@ -65,6 +105,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
   // 处理提交
   // Claude Code 风格：即使正在处理也允许提交（触发中断）
+  // P3-18: ! prefix executes shell command directly
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
     const trimmedValue = value.trim();
@@ -75,10 +116,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       if (trimmedValue) {
         addToInputHistory(trimmedValue);
       }
-      onSend(
-        trimmedValue,
-        attachments.length > 0 ? attachments : undefined
-      );
+      // P3-18: Shell shortcut - ! prefix sends command to agent as bash request
+      if (trimmedValue.startsWith('!')) {
+        const shellCmd = trimmedValue.slice(1).trim();
+        if (shellCmd) {
+          // Send as a bash execution request to the agent
+          onSend(`Execute this shell command and show the output: \`${shellCmd}\``);
+        }
+      } else {
+        onSend(
+          trimmedValue,
+          attachments.length > 0 ? attachments : undefined
+        );
+      }
       setValue('');
       setAttachments([]);
     }
@@ -212,12 +262,32 @@ export const ChatInput: React.FC<ChatInputProps> = ({
           </div>
         )}
 
+        {/* Suggestion Bar - show when input is empty */}
+        {value.trim().length === 0 && suggestions.length > 0 && (
+          <SuggestionBar suggestions={suggestions} onSelect={handleSuggestionSelect} />
+        )}
+
         {/* 输入区域 - 玻璃质感样式 */}
         <div className="relative bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.08] focus-within:border-white/[0.15] focus-within:bg-white/[0.05] transition-all duration-200 shadow-lg shadow-black/20">
+          {/* @ File autocomplete dropdown */}
+          {isAutocompleteOpen && fileMatches.length > 0 && (
+            <div className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-20 max-h-[200px] overflow-y-auto">
+              {fileMatches.map((f, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => handleFileSelect_autocomplete(f.path)}
+                  className="w-full px-3 py-1.5 text-left text-sm text-zinc-300 hover:bg-zinc-800 transition-colors font-mono truncate"
+                >
+                  {f.name}
+                </button>
+              ))}
+            </div>
+          )}
           <InputArea
             ref={inputAreaRef}
             value={value}
-            onChange={setValue}
+            onChange={handleValueChange}
             onSubmit={handleSubmit}
             onFileSelect={handleFileSelect}
             onImagePaste={handleImagePaste}

@@ -1,12 +1,15 @@
 // ============================================================================
 // Web Search Tool - Multi-source parallel web search
 // Supports: Cloud Proxy, Perplexity, EXA, Brave Search
+// P1: Domain filtering (allowed_domains / blocked_domains)
+// P2: Auto-extract (search + fetch + AI extraction)
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { getConfigService } from '../../services/core/configService';
 import { createLogger } from '../../services/infra/logger';
 import { CLOUD_ENDPOINTS, SEARCH_API_ENDPOINTS } from '../../../shared/constants';
+import { smartHtmlToText, smartTruncate, buildExtractionPrompt } from './htmlUtils';
 
 const logger = createLogger('WebSearch');
 
@@ -14,6 +17,12 @@ const CLOUD_SEARCH_URL = `${CLOUD_ENDPOINTS.tools}?action=search`;
 const BRAVE_SEARCH_URL = SEARCH_API_ENDPOINTS.brave;
 const EXA_SEARCH_URL = SEARCH_API_ENDPOINTS.exa;
 const PERPLEXITY_API_URL = SEARCH_API_ENDPOINTS.perplexity;
+
+// Domains to skip when auto-extracting (search engines themselves)
+const SEARCH_ENGINE_DOMAINS = [
+  'google.com', 'bing.com', 'yahoo.com', 'duckduckgo.com',
+  'baidu.com', 'yandex.com', 'brave.com',
+];
 
 // ============================================================================
 // Types
@@ -26,6 +35,11 @@ interface SearchResult {
   description?: string;
   age?: string;
   source?: string;  // 标记数据来源
+}
+
+interface DomainFilter {
+  allowed?: string[];
+  blocked?: string[];
 }
 
 interface CloudSearchResponse {
@@ -106,18 +120,47 @@ For searching local code, use grep or glob.`,
         items: { type: 'string' },
         description: 'Specific sources to use: cloud, perplexity, exa, brave (default: all available)',
       },
+      allowed_domains: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Only include results from these domains (e.g., ["docs.python.org", "github.com"])',
+      },
+      blocked_domains: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Exclude results from these domains (e.g., ["pinterest.com", "quora.com"])',
+      },
+      auto_extract: {
+        type: 'boolean',
+        description: 'After search, auto-fetch top results and extract content (default: false)',
+      },
+      extract_count: {
+        type: 'number',
+        description: 'Number of results to auto-extract (default: 3, max: 5)',
+      },
     },
     required: ['query'],
   },
 
   async execute(
     params: Record<string, unknown>,
-    _context: ToolContext
+    context: ToolContext
   ): Promise<ToolExecutionResult> {
     const query = params.query as string;
     const count = Math.min(Math.max((params.count as number) || 5, 1), 10);
     const parallel = (params.parallel as boolean) ?? true;
     const requestedSources = params.sources as string[] | undefined;
+    const autoExtract = (params.auto_extract as boolean) ?? false;
+    const extractCount = Math.min(Math.max((params.extract_count as number) || 3, 1), 5);
+
+    // Build domain filter
+    const domainFilter: DomainFilter | undefined =
+      (params.allowed_domains || params.blocked_domains)
+        ? {
+            allowed: params.allowed_domains as string[] | undefined,
+            blocked: params.blocked_domains as string[] | undefined,
+          }
+        : undefined;
 
     const configService = getConfigService();
 
@@ -133,13 +176,28 @@ For searching local code, use grep or glob.`,
 
     logger.info(`Searching with ${availableSources.length} sources:`, availableSources.map(s => s.name));
 
+    let searchResult: ToolExecutionResult;
+
     if (parallel && availableSources.length > 1) {
-      // 并行搜索所有可用数据源
-      return parallelSearch(query, count, availableSources, configService);
+      searchResult = await parallelSearch(query, count, availableSources, configService, domainFilter);
     } else {
-      // 串行搜索（优先级：cloud > perplexity > exa > brave）
-      return serialSearch(query, count, availableSources, configService);
+      searchResult = await serialSearch(query, count, availableSources, configService, domainFilter);
     }
+
+    // P2: Auto-extract content from top results
+    if (autoExtract && searchResult.success && context.modelCallback) {
+      const extractedContent = await autoExtractFromResults(
+        searchResult,
+        query,
+        extractCount,
+        context.modelCallback,
+      );
+      if (extractedContent) {
+        searchResult.output = (searchResult.output || '') + '\n\n' + extractedContent;
+      }
+    }
+
+    return searchResult;
   },
 };
 
@@ -149,7 +207,7 @@ For searching local code, use grep or glob.`,
 
 interface SearchSource {
   name: string;
-  search: (query: string, count: number, configService: ReturnType<typeof getConfigService>) => Promise<SearchSourceResult>;
+  search: (query: string, count: number, configService: ReturnType<typeof getConfigService>, domainFilter?: DomainFilter) => Promise<SearchSourceResult>;
   isAvailable: (configService: ReturnType<typeof getConfigService>) => boolean;
   priority: number;
 }
@@ -197,6 +255,26 @@ function getAvailableSources(
 }
 
 // ============================================================================
+// Domain Filter Helpers
+// ============================================================================
+
+/**
+ * Build domain constraint string for query-based filtering (Brave, Perplexity).
+ * e.g., "site:docs.python.org site:github.com -site:pinterest.com"
+ */
+function buildDomainQuerySuffix(domainFilter?: DomainFilter): string {
+  if (!domainFilter) return '';
+  const parts: string[] = [];
+  if (domainFilter.allowed && domainFilter.allowed.length > 0) {
+    parts.push(domainFilter.allowed.map(d => `site:${d}`).join(' OR '));
+  }
+  if (domainFilter.blocked && domainFilter.blocked.length > 0) {
+    parts.push(...domainFilter.blocked.map(d => `-site:${d}`));
+  }
+  return parts.length > 0 ? ' ' + parts.join(' ') : '';
+}
+
+// ============================================================================
 // Parallel Search
 // ============================================================================
 
@@ -204,13 +282,14 @@ async function parallelSearch(
   query: string,
   count: number,
   sources: SearchSource[],
-  configService: ReturnType<typeof getConfigService>
+  configService: ReturnType<typeof getConfigService>,
+  domainFilter?: DomainFilter
 ): Promise<ToolExecutionResult> {
   const startTime = Date.now();
 
   // 并行调用所有数据源（使用 allSettled 实现错误隔离）
   const searchPromises = sources.map(source =>
-    source.search(query, count, configService)
+    source.search(query, count, configService, domainFilter)
       .catch(error => ({
         source: source.name,
         success: false,
@@ -266,14 +345,15 @@ async function serialSearch(
   query: string,
   count: number,
   sources: SearchSource[],
-  configService: ReturnType<typeof getConfigService>
+  configService: ReturnType<typeof getConfigService>,
+  domainFilter?: DomainFilter
 ): Promise<ToolExecutionResult> {
   const startTime = Date.now();
   const errors: string[] = [];
 
   for (const source of sources) {
     try {
-      const result = await source.search(query, count, configService);
+      const result = await source.search(query, count, configService, domainFilter);
       if (result.success) {
         const duration = Date.now() - startTime;
         return formatSingleSourceResult(query, result, duration);
@@ -397,6 +477,87 @@ function formatSingleSourceResult(
 }
 
 // ============================================================================
+// Auto-Extract (P2)
+// ============================================================================
+
+/**
+ * After search completes, fetch top N result URLs and extract content via AI.
+ */
+async function autoExtractFromResults(
+  searchResult: ToolExecutionResult,
+  query: string,
+  extractCount: number,
+  modelCallback: (prompt: string) => Promise<string>,
+): Promise<string | null> {
+  // Extract URLs from search results
+  const resultData = searchResult.result as { results?: SearchResult[] } | undefined;
+  const urls = (resultData?.results || [])
+    .map(r => r.url)
+    .filter(url => {
+      try {
+        const hostname = new URL(url).hostname;
+        return !SEARCH_ENGINE_DOMAINS.some(d => hostname.endsWith(d));
+      } catch {
+        return false;
+      }
+    })
+    .slice(0, extractCount);
+
+  if (urls.length === 0) return null;
+
+  logger.info(`Auto-extracting content from ${urls.length} URLs`);
+
+  // Parallel fetch + extract with 10s timeout per URL
+  const extractPromises = urls.map(async (url): Promise<{ url: string; content: string } | null> => {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; CodeAgent/1.0)',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) return null;
+
+      const html = await response.text();
+      const text = smartHtmlToText(html);
+      if (text.length < 50) return null;
+
+      // AI extraction — max 3000 chars per URL
+      const extractionPrompt = buildExtractionPrompt(query, text, 3000);
+      const extracted = await modelCallback(extractionPrompt);
+
+      if (extracted && extracted.trim().length > 50) {
+        return { url, content: extracted.trim() };
+      }
+
+      // Fallback: smart truncate
+      return { url, content: smartTruncate(text, 3000) };
+    } catch {
+      // Skip failed URLs silently
+      return null;
+    }
+  });
+
+  const results = await Promise.allSettled(extractPromises);
+  const extractedParts: string[] = [];
+
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value) {
+      extractedParts.push(`## Extracted: ${result.value.url}`);
+      extractedParts.push(result.value.content);
+      extractedParts.push('');
+    }
+  }
+
+  if (extractedParts.length === 0) return null;
+
+  return '---\n# Auto-Extracted Content\n\n' + extractedParts.join('\n');
+}
+
+// ============================================================================
 // Search Implementations
 // ============================================================================
 
@@ -406,12 +567,23 @@ function formatSingleSourceResult(
 async function searchViaCloud(
   query: string,
   maxResults: number,
-  _configService: ReturnType<typeof getConfigService>
+  _configService: ReturnType<typeof getConfigService>,
+  domainFilter?: DomainFilter
 ): Promise<SearchSourceResult> {
+  const body: Record<string, unknown> = { query, maxResults };
+
+  // Cloud proxy supports domain filtering natively
+  if (domainFilter?.allowed) {
+    body.allowedDomains = domainFilter.allowed;
+  }
+  if (domainFilter?.blocked) {
+    body.blockedDomains = domainFilter.blocked;
+  }
+
   const response = await fetch(CLOUD_SEARCH_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, maxResults }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -457,11 +629,19 @@ async function searchViaCloud(
 async function searchViaPerplexity(
   query: string,
   _maxResults: number,
-  configService: ReturnType<typeof getConfigService>
+  configService: ReturnType<typeof getConfigService>,
+  domainFilter?: DomainFilter
 ): Promise<SearchSourceResult> {
   const apiKey = configService?.getServiceApiKey('perplexity');
   if (!apiKey) {
     return { source: 'perplexity', success: false, error: 'API key not configured' };
+  }
+
+  // Perplexity: append domain constraints to the user message
+  let messageContent = query;
+  if (domainFilter) {
+    const suffix = buildDomainQuerySuffix(domainFilter);
+    if (suffix) messageContent += suffix;
   }
 
   const response = await fetch(PERPLEXITY_API_URL, {
@@ -472,7 +652,7 @@ async function searchViaPerplexity(
     },
     body: JSON.stringify({
       model: 'sonar',
-      messages: [{ role: 'user', content: query }],
+      messages: [{ role: 'user', content: messageContent }],
       max_tokens: 1024,
       return_citations: true,
     }),
@@ -508,11 +688,31 @@ async function searchViaPerplexity(
 async function searchViaExa(
   query: string,
   maxResults: number,
-  configService: ReturnType<typeof getConfigService>
+  configService: ReturnType<typeof getConfigService>,
+  domainFilter?: DomainFilter
 ): Promise<SearchSourceResult> {
   const apiKey = configService?.getServiceApiKey('exa');
   if (!apiKey) {
     return { source: 'exa', success: false, error: 'API key not configured' };
+  }
+
+  const body: Record<string, unknown> = {
+    query,
+    numResults: maxResults,
+    type: 'auto',
+    useAutoprompt: true,
+    contents: {
+      text: { maxCharacters: 500 },
+      highlights: true,
+    },
+  };
+
+  // EXA supports native domain filtering
+  if (domainFilter?.allowed && domainFilter.allowed.length > 0) {
+    body.includeDomains = domainFilter.allowed;
+  }
+  if (domainFilter?.blocked && domainFilter.blocked.length > 0) {
+    body.excludeDomains = domainFilter.blocked;
   }
 
   const response = await fetch(EXA_SEARCH_URL, {
@@ -521,16 +721,7 @@ async function searchViaExa(
       'x-api-key': apiKey,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      query,
-      numResults: maxResults,
-      type: 'auto',
-      useAutoprompt: true,
-      contents: {
-        text: { maxCharacters: 500 },
-        highlights: true,
-      },
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -566,15 +757,22 @@ async function searchViaExa(
 async function searchViaBrave(
   query: string,
   maxResults: number,
-  configService: ReturnType<typeof getConfigService>
+  configService: ReturnType<typeof getConfigService>,
+  domainFilter?: DomainFilter
 ): Promise<SearchSourceResult> {
   const apiKey = configService?.getServiceApiKey('brave') || process.env.BRAVE_API_KEY;
   if (!apiKey) {
     return { source: 'brave', success: false, error: 'API key not configured' };
   }
 
+  // Brave: append site:/−site: operators to query
+  let filteredQuery = query;
+  if (domainFilter) {
+    filteredQuery += buildDomainQuerySuffix(domainFilter);
+  }
+
   const url = new URL(BRAVE_SEARCH_URL);
-  url.searchParams.set('q', query);
+  url.searchParams.set('q', filteredQuery);
   url.searchParams.set('count', maxResults.toString());
 
   const response = await fetch(url.toString(), {

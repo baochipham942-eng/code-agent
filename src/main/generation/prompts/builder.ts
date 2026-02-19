@@ -30,6 +30,12 @@ import {
   type ReminderSelectionResult,
 } from './dynamicReminders';
 import type { ReminderContext } from './reminderRegistry';
+import {
+  loadRulesDir,
+  getMatchingRules,
+  type PathRule,
+} from '../../config/rulesLoader';
+import { getRulesDir } from '../../config/configPaths';
 
 // ----------------------------------------------------------------------------
 // Rule Tiers - Token-optimized rule groupings
@@ -346,3 +352,66 @@ export function getEnhancedReminders(
  * 导出动态提醒相关类型和函数
  */
 export { createReminderContext, selectReminders, type ReminderSelectionResult, type ReminderContext };
+
+// ----------------------------------------------------------------------------
+// Path-Specific Rules (from .code-agent/rules/*.md)
+// ----------------------------------------------------------------------------
+
+let cachedRules: PathRule[] | null = null;
+
+/**
+ * Load path-specific rules from user and project rules directories.
+ * Results are cached; call reloadRules() to refresh.
+ */
+export async function loadRules(workingDirectory?: string): Promise<PathRule[]> {
+  const dirs = getRulesDir(workingDirectory);
+  const allRules: PathRule[] = [];
+
+  for (const dir of [dirs.user, dirs.project].filter(Boolean)) {
+    const rules = await loadRulesDir(dir!);
+    allRules.push(...rules);
+  }
+
+  cachedRules = allRules;
+  return allRules;
+}
+
+/**
+ * Force reload rules from disk.
+ */
+export async function reloadRules(workingDirectory?: string): Promise<PathRule[]> {
+  cachedRules = null;
+  return loadRules(workingDirectory);
+}
+
+/**
+ * Get rules matching a file path. Uses cached rules if available.
+ */
+export function getRulesForFile(filePath: string): string[] {
+  if (!cachedRules) return [];
+  return getMatchingRules(cachedRules, filePath);
+}
+
+/**
+ * Build a prompt with path-specific rules injected for the given file paths.
+ */
+export function buildPromptWithRules(
+  generationId: GenerationId,
+  filePaths: string[]
+): string {
+  const basePrompt = buildPrompt(generationId);
+  if (!cachedRules || filePaths.length === 0) return basePrompt;
+
+  // Collect unique matching rules across all file paths
+  const matchedRules = new Set<string>();
+  for (const fp of filePaths) {
+    for (const rule of getMatchingRules(cachedRules, fp)) {
+      matchedRules.add(rule);
+    }
+  }
+
+  if (matchedRules.size === 0) return basePrompt;
+
+  const rulesSection = `\n\n# Path-Specific Rules\n\n${[...matchedRules].join('\n\n')}`;
+  return basePrompt + rulesSection;
+}

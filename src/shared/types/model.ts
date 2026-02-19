@@ -49,6 +49,13 @@ export interface ModelConfig {
   useCloudProxy?: boolean; // 使用云端代理（管理员专用）
   // T6: Structured output support
   responseFormat?: ResponseFormat; // OpenAI-compatible response_format
+  // Prompt caching (Anthropic)
+  promptCaching?: {
+    enabled: boolean;
+    cacheSystem?: boolean;
+  };
+  // Extended thinking budget (tokens)
+  thinkingBudget?: number;
 }
 
 export interface ProviderConfig {

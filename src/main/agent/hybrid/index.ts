@@ -31,7 +31,15 @@ export {
   isCoreAgent,
   validateAgentId,
   recommendCoreAgent,
+  loadCustomAgents,
+  getCustomAgentCache,
 } from './coreAgents';
+
+// Agent Markdown Loader
+export { parseAgentMd, loadAgentMdFiles } from './agentMdLoader';
+
+// Agent Markdown Watcher
+export { watchAgentsMdDir } from './agentMdWatcher';
 
 // Dynamic Factory (Layer 2)
 export {

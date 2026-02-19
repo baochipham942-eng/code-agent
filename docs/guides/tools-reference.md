@@ -164,29 +164,68 @@ findings_write {
 
 ## Gen4 网络工具
 
-### web_fetch - HTTP 请求
+### web_fetch - 网页抓取与智能提取
+
+基于 cheerio 的 HTML 解析 + modelCallback AI 提取，替代简单正则+硬截断。
 
 ```bash
-# GET 请求
-web_fetch { "url": "https://api.example.com/data" }
+# 基础用法
+web_fetch { "url": "https://docs.python.org/3/tutorial/", "prompt": "Python 基础教程" }
 
-# POST 请求
-web_fetch {
-  "url": "https://api.example.com/submit",
-  "method": "POST",
-  "headers": { "Content-Type": "application/json" },
-  "body": "{\"name\": \"test\"}"
-}
+# 控制提取长度
+web_fetch { "url": "https://example.com/long-article", "prompt": "核心内容", "max_chars": 5000 }
 ```
 
-### web_search - 网络搜索
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `url` | string | 要抓取的 URL（必填）|
+| `prompt` | string | 要提取的信息描述（必填）|
+| `max_chars` | number | 提取结果最大字符数（默认: 8000）|
+
+**降级链**：AI 提取（modelCallback）→ smartTruncate（段落边界）→ 正则 fallback
+
+**智能解析**（`htmlUtils.ts`）：
+- cheerio 移除噪声（nav/footer/sidebar/ads 等 15 个选择器）
+- 优先提取正文区域（main/article 等 9 个选择器）
+- 保留语义结构（标题→`#`，列表→`-`，代码→` ``` `，表格→`|`，链接→`[]()`）
+
+### web_search - 多源并行网络搜索
+
+支持 Cloud、Perplexity、EXA、Brave 四源并行搜索，域名过滤和自动内容提取。
 
 ```bash
+# 基础搜索
 web_search { "query": "TypeScript best practices 2024" }
-web_search { "query": "React hooks tutorial", "limit": 5 }
+
+# 域名过滤 — 只搜索指定域名
+web_search { "query": "React hooks", "allowed_domains": ["developer.mozilla.org", "react.dev"] }
+
+# 排除域名
+web_search { "query": "CSS tutorial", "blocked_domains": ["pinterest.com", "quora.com"] }
+
+# 搜索+自动提取正文
+web_search { "query": "Node.js stream API", "auto_extract": true, "extract_count": 3 }
+
+# 指定搜索源
+web_search { "query": "AI agent", "sources": ["exa", "brave"], "count": 10 }
 ```
 
-**要求**：需配置 Brave Search API Key 或使用云端代理。
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `query` | string | 搜索查询（必填）|
+| `count` | number | 每源返回结果数（默认: 5，最大: 10）|
+| `parallel` | boolean | 是否并行搜索所有源（默认: true）|
+| `sources` | string[] | 指定搜索源: cloud, perplexity, exa, brave |
+| `allowed_domains` | string[] | 只保留指定域名的结果 |
+| `blocked_domains` | string[] | 排除指定域名的结果 |
+| `auto_extract` | boolean | 搜索后自动 fetch+提取正文（默认: false）|
+| `extract_count` | number | 自动提取的 URL 数量（默认: 3，最大: 5）|
+
+**域名过滤实现**：Brave 用 `site:`/`-site:` 拼入 query，EXA 用原生 `includeDomains`/`excludeDomains`，Perplexity 拼入 message，Cloud 透传字段。
+
+**auto_extract**：搜索完成后并行 fetch 前 N 个 URL（10s 超时），cheerio 解析 + modelCallback AI 提取（每 URL 3000 字符）。需要 modelCallback（CLI 模式无效）。
+
+**要求**：需配置至少一个搜索源 API Key 或使用云端代理。
 
 ### read_pdf - PDF 智能处理
 

@@ -15,6 +15,8 @@ export interface CLIGlobalOptions {
   provider?: string;
   plan?: boolean;
   debug: boolean;
+  outputFormat?: 'text' | 'json' | 'stream-json';
+  systemPrompt?: string;
 }
 
 /**
@@ -24,11 +26,13 @@ export interface CLIConfig {
   workingDirectory: string;
   generationId: string;
   modelConfig: ModelConfig;
-  outputFormat: 'text' | 'json';
+  outputFormat: 'text' | 'json' | 'stream-json';
   enablePlanning: boolean;
   debug: boolean;
   /** 自动批准 plan mode 计划（用于 CLI/测试场景） */
   autoApprovePlan?: boolean;
+  /** Custom system prompt to inject */
+  systemPrompt?: string;
 }
 
 /**

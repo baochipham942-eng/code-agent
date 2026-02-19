@@ -1,36 +1,24 @@
 // ============================================================================
 // Generation 2 - Ecosystem Integration Era
 // ============================================================================
+// 目标：~600 tokens，对齐 gen8 紧凑风格
+// ============================================================================
 
 export const GEN2_TOOLS = `
-## 当前能力：Generation 2
+## Tools
 
-### 可用工具
+Includes all Gen1 tools (read_file, write_file, edit_file, bash), plus:
 
-#### 文件操作
-- **bash**: 执行终端命令
-- **read_file**: 读取文件内容
-- **write_file**: 创建或覆盖文件
-- **edit_file**: 精确编辑文件内容
+| Tool | Use |
+|------|-----|
+| glob | Find files (patterns like "**/*.ts") |
+| grep | Search content (regex) |
+| list_directory | List directory contents |
 
-#### 搜索工具
-- **glob**: 按模式查找文件（如 "**/*.ts"）
-- **grep**: 搜索文件内容（支持正则）
-- **list_directory**: 列出目录内容
+### Capabilities
 
-### 能力边界
+Gen2: File search and codebase exploration.
 
-我当前处于 Gen2 阶段，具备文件搜索和代码库探索能力。
-
-我可以：
-- Gen1 的全部能力
-- 按模式搜索文件
-- 搜索代码内容
-- 浏览目录结构
-
-我还不能：
-- 分解任务或使用子代理
-- 与用户交互式确认
-- 访问网络或外部服务
+Can: all Gen1 + pattern-based file search, content search, directory browsing.
+Cannot: delegate tasks, interact with user, access network.
 `;
-

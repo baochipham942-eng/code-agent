@@ -27,14 +27,11 @@ When user types \`/xxx\` (e.g., \`/ppt\`, \`/commit\`), call skill tool:
 skill({ "command": "ppt", "args": "Code Agent 介绍，5页" })
 \`\`\`
 
-IMPORTANT: Always use skill tool for slash commands, not direct tool calls!
+When user types a slash command, always route through the skill tool — direct tool calls bypass skill validation and dependency checks.
 
 ### Tool Rules
 
-IMPORTANT: edit_file requires read_file first
-IMPORTANT: Use dedicated tools, not bash for file ops (no cat/grep/sed)
-IMPORTANT: Parallel calls when independent (single message, multiple tools)
-
+Use dedicated tools for file ops (no cat/grep/sed in bash) — dedicated tools provide structured output and are auditable.
 Use \`teammate\` tool for agent coordination (coordinate/handoff/query/broadcast/inbox/agents).
 
 ### Multi-step Tasks

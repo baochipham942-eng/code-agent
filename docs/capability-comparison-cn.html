@@ -1,0 +1,1417 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Code Agent vs Claude Code 全面产品能力对比分析</title>
+<style>
+  :root {
+    --bg-primary: #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary: #21262d;
+    --bg-card: #1c2128;
+    --border-color: #30363d;
+    --border-light: #3d444d;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted: #6e7681;
+    --accent-blue: #58a6ff;
+    --accent-green: #3fb950;
+    --accent-red: #f85149;
+    --accent-orange: #d29922;
+    --accent-purple: #bc8cff;
+    --accent-cyan: #39d5ff;
+    --accent-pink: #f778ba;
+    --p0-color: #f85149;
+    --p0-bg: rgba(248, 81, 73, 0.12);
+    --p1-color: #d29922;
+    --p1-bg: rgba(210, 153, 34, 0.12);
+    --p2-color: #58a6ff;
+    --p2-bg: rgba(88, 166, 255, 0.12);
+    --p3-color: #8b949e;
+    --p3-bg: rgba(139, 148, 158, 0.12);
+    --code-agent-color: #3fb950;
+    --claude-code-color: #bc8cff;
+    --equal-color: #8b949e;
+    --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', Helvetica, Arial, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.7;
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* Sidebar Navigation */
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 280px;
+    height: 100vh;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border-color);
+    overflow-y: auto;
+    padding: 20px 0;
+    z-index: 100;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-light) transparent;
+  }
+
+  .sidebar::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  .sidebar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .sidebar::-webkit-scrollbar-thumb {
+    background: var(--border-light);
+    border-radius: 3px;
+  }
+
+  .sidebar .logo {
+    padding: 0 20px 16px;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 16px;
+  }
+
+  .sidebar .logo h2 {
+    font-size: 15px;
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  .sidebar .logo p {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+  }
+
+  .nav-section {
+    padding: 0 12px;
+    margin-bottom: 8px;
+  }
+
+  .nav-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 8px 8px 4px;
+  }
+
+  .nav-link {
+    display: block;
+    padding: 6px 12px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    border-radius: 6px;
+    transition: all 0.15s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .nav-link:hover {
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+  }
+
+  .nav-link.active {
+    color: var(--accent-blue);
+    background: rgba(88, 166, 255, 0.1);
+  }
+
+  /* Main Content */
+  .main-content {
+    margin-left: 280px;
+    flex: 1;
+    max-width: 1100px;
+    padding: 40px 48px 80px;
+  }
+
+  /* Header */
+  .page-header {
+    margin-bottom: 40px;
+  }
+
+  .page-header h1 {
+    font-size: 32px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 12px;
+  }
+
+  .page-header .meta {
+    color: var(--text-secondary);
+    font-size: 14px;
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+
+  .page-header .meta span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Summary Cards */
+  .summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 48px;
+  }
+
+  .summary-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    text-align: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .summary-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+  }
+
+  .summary-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+  }
+
+  .summary-card.code-agent::before {
+    background: linear-gradient(90deg, var(--accent-green), #2ea043);
+  }
+
+  .summary-card.claude-code::before {
+    background: linear-gradient(90deg, var(--accent-purple), #8957e5);
+  }
+
+  .summary-card.equal::before {
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+  }
+
+  .summary-card .card-number {
+    font-size: 48px;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+
+  .summary-card.code-agent .card-number {
+    color: var(--accent-green);
+  }
+
+  .summary-card.claude-code .card-number {
+    color: var(--accent-purple);
+  }
+
+  .summary-card.equal .card-number {
+    color: var(--accent-blue);
+  }
+
+  .summary-card .card-label {
+    font-size: 14px;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  .summary-card .card-sublabel {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* Section */
+  .section {
+    margin-bottom: 48px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .section-header h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .section-header .section-badge {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 28px 0 16px;
+  }
+
+  h4 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 20px 0 12px;
+  }
+
+  /* Tables */
+  .table-wrapper {
+    overflow-x: auto;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  thead {
+    background: var(--bg-tertiary);
+  }
+
+  thead th {
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-primary);
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  tbody tr {
+    border-bottom: 1px solid var(--border-color);
+    transition: background 0.15s;
+  }
+
+  tbody tr:last-child {
+    border-bottom: none;
+  }
+
+  tbody tr:nth-child(even) {
+    background: rgba(22, 27, 34, 0.5);
+  }
+
+  tbody tr:hover {
+    background: rgba(88, 166, 255, 0.06);
+  }
+
+  tbody td {
+    padding: 10px 14px;
+    color: var(--text-primary);
+    vertical-align: top;
+  }
+
+  tbody td:first-child {
+    font-weight: 500;
+  }
+
+  /* Comparison badges */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .badge-ca {
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--accent-green);
+    border: 1px solid rgba(63, 185, 80, 0.3);
+  }
+
+  .badge-cc {
+    background: rgba(188, 140, 255, 0.15);
+    color: var(--accent-purple);
+    border: 1px solid rgba(188, 140, 255, 0.3);
+  }
+
+  .badge-eq {
+    background: rgba(139, 148, 158, 0.15);
+    color: var(--text-secondary);
+    border: 1px solid rgba(139, 148, 158, 0.3);
+  }
+
+  /* Priority tags */
+  .priority-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-right: 6px;
+  }
+
+  .priority-p0 {
+    background: var(--p0-bg);
+    color: var(--p0-color);
+    border: 1px solid rgba(248, 81, 73, 0.3);
+  }
+
+  .priority-p1 {
+    background: var(--p1-bg);
+    color: var(--p1-color);
+    border: 1px solid rgba(210, 153, 34, 0.3);
+  }
+
+  .priority-p2 {
+    background: var(--p2-bg);
+    color: var(--p2-color);
+    border: 1px solid rgba(88, 166, 255, 0.3);
+  }
+
+  .priority-p3 {
+    background: var(--p3-bg);
+    color: var(--p3-color);
+    border: 1px solid rgba(139, 148, 158, 0.3);
+  }
+
+  /* Evidence block */
+  .evidence {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--accent-blue);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    margin: 12px 0 24px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.8;
+  }
+
+  .evidence strong {
+    color: var(--text-primary);
+    font-size: 12px;
+  }
+
+  .evidence code {
+    background: var(--bg-tertiary);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+    color: var(--accent-cyan);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  /* Advantages list */
+  .advantages-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+
+  .advantage-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 16px;
+    display: flex;
+    gap: 12px;
+  }
+
+  .advantage-item .adv-num {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    background: rgba(63, 185, 80, 0.15);
+    color: var(--accent-green);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .advantage-item .adv-content h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 4px;
+  }
+
+  .advantage-item .adv-content p {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* Roadmap */
+  .roadmap-section {
+    margin: 20px 0;
+  }
+
+  .roadmap-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .roadmap-header .timeline-badge {
+    padding: 3px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(88, 166, 255, 0.15);
+    color: var(--accent-blue);
+    border: 1px solid rgba(88, 166, 255, 0.3);
+  }
+
+  .roadmap-header h4 {
+    margin: 0;
+    font-size: 15px;
+    color: var(--text-primary);
+  }
+
+  /* Conclusion cards */
+  .conclusion-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+    margin: 20px 0;
+  }
+
+  .conclusion-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+  }
+
+  .conclusion-card .conclusion-num {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent-blue);
+    margin-bottom: 8px;
+  }
+
+  .conclusion-card p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+  }
+
+  .conclusion-card strong {
+    color: var(--text-primary);
+  }
+
+  /* Highlight text */
+  .hl-ca { color: var(--accent-green); }
+  .hl-cc { color: var(--accent-purple); }
+  .hl-warn { color: var(--accent-orange); }
+
+  /* Emoji indicators */
+  .icon-check { color: var(--accent-green); }
+  .icon-cross { color: var(--accent-red); }
+  .icon-tool { color: var(--accent-orange); }
+
+  /* Divider */
+  hr {
+    border: none;
+    border-top: 1px solid var(--border-color);
+    margin: 40px 0;
+  }
+
+  /* Paragraph */
+  p {
+    margin: 8px 0;
+    color: var(--text-secondary);
+    font-size: 14px;
+  }
+
+  /* Responsive */
+  @media (max-width: 1024px) {
+    .sidebar {
+      display: none;
+    }
+    .main-content {
+      margin-left: 0;
+      padding: 24px 20px 60px;
+    }
+    .summary-grid {
+      grid-template-columns: 1fr;
+    }
+    .advantages-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Back to top */
+  .back-to-top {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    width: 40px;
+    height: 40px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 18px;
+    transition: all 0.2s;
+    z-index: 50;
+  }
+
+  .back-to-top:hover {
+    background: var(--accent-blue);
+    color: #fff;
+    border-color: var(--accent-blue);
+  }
+
+  /* Scrollbar for main */
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--border-light);
+  }
+
+  /* Print */
+  @media print {
+    .sidebar, .back-to-top { display: none; }
+    .main-content { margin-left: 0; }
+    body { background: #fff; color: #000; }
+    table, .table-wrapper { border-color: #ccc; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Sidebar Navigation -->
+<nav class="sidebar">
+  <div class="logo">
+    <h2>Code Agent vs Claude Code</h2>
+    <p>全面产品能力对比分析</p>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-title">能力矩阵</div>
+    <a href="#sec1" class="nav-link">1. Agentic Loop 核心循环</a>
+    <a href="#sec2" class="nav-link">2. 工具系统</a>
+    <a href="#sec3" class="nav-link">3. 多 Agent 系统</a>
+    <a href="#sec4" class="nav-link">4. 上下文管理</a>
+    <a href="#sec5" class="nav-link">5. 记忆系统</a>
+    <a href="#sec6" class="nav-link">6. 权限与安全</a>
+    <a href="#sec7" class="nav-link">7. Hooks 系统</a>
+    <a href="#sec8" class="nav-link">8. Skills 系统</a>
+    <a href="#sec9" class="nav-link">9. MCP 集成</a>
+    <a href="#sec10" class="nav-link">10. 模型管理</a>
+    <a href="#sec11" class="nav-link">11. IDE 集成与平台</a>
+    <a href="#sec12" class="nav-link">12. Agent SDK</a>
+    <a href="#sec13" class="nav-link">13. 前端与 UX</a>
+    <a href="#sec14" class="nav-link">14. 企业特性</a>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-section-title">分析</div>
+    <a href="#advantages" class="nav-link">Code Agent 优势</a>
+    <a href="#weaknesses" class="nav-link">薄弱之处</a>
+    <a href="#roadmap" class="nav-link">改进路线图</a>
+    <a href="#summary" class="nav-link">总结</a>
+  </div>
+</nav>
+
+<!-- Main Content -->
+<div class="main-content">
+
+  <!-- Header -->
+  <div class="page-header" id="top">
+    <h1>Code Agent vs Claude Code 全面产品能力对比分析</h1>
+    <div class="meta">
+      <span>基于 Code Agent v0.16.37 代码库 + Claude Code 2026-02 官方文档</span>
+      <span>生成时间: 2026-02-19</span>
+    </div>
+  </div>
+
+  <!-- Summary Cards -->
+  <div class="summary-grid">
+    <div class="summary-card code-agent">
+      <div class="card-number">27</div>
+      <div class="card-label">Code Agent 领先</div>
+      <div class="card-sublabel">垂直能力 + 可视化 + 安全</div>
+    </div>
+    <div class="summary-card claude-code">
+      <div class="card-number">41</div>
+      <div class="card-label">Claude Code 领先</div>
+      <div class="card-sublabel">平台生态 + 企业管控 + IDE</div>
+    </div>
+    <div class="summary-card equal">
+      <div class="card-number">37</div>
+      <div class="card-label">基本持平</div>
+      <div class="card-sublabel">核心循环 + 基础工具 + 任务管理</div>
+    </div>
+  </div>
+
+  <!-- ==================== Section 1 ==================== -->
+  <div class="section" id="sec1">
+    <div class="section-header">
+      <h2>一、能力矩阵对比</h2>
+    </div>
+
+    <h3>1. Agentic Loop 核心循环</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>能力</th><th>Claude Code</th><th>Code Agent</th><th>对比</th></tr></thead>
+        <tbody>
+          <tr><td>核心循环模式</td><td>三阶段自适应（Gather→Act→Verify）</td><td>ReAct 推理-行动循环</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>工具链式调用</td><td><span class="icon-check">&#10003;</span> 自动链式</td><td><span class="icon-check">&#10003;</span> 自动链式</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>可中断</td><td><span class="icon-check">&#10003;</span> Esc 中断+重定向</td><td><span class="icon-check">&#10003;</span> h2A 实时转向（steer()）</td><td><span class="badge badge-ca">Code Agent 更强</span> 不销毁 loop，保留中间状态</td></tr>
+          <tr><td>截断恢复</td><td><span class="icon-check">&#10003;</span> 自动处理</td><td><span class="icon-check">&#10003;</span> Dynamic maxTokens（翻倍重试+续写提示+熔断器）</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>上下文溢出恢复</td><td><span class="icon-check">&#10003;</span> Auto-compact</td><td><span class="icon-check">&#10003;</span> 自动压缩+0.7x maxTokens 重试</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>Extended Thinking</td><td><span class="icon-check">&#10003;</span> <strong>原生 budget_tokens</strong>，effort level low/medium/high</td><td><span class="icon-tool">&#128296;</span> 客户端模拟（prompt 引导，4 级 effort）</td><td><span class="badge badge-cc">Claude Code 显著领先</span> 原生模型能力 vs prompt 模拟</td></tr>
+          <tr><td>Plan Mode</td><td><span class="icon-check">&#10003;</span> EnterPlanMode/ExitPlanMode，只读工具限制</td><td><span class="icon-check">&#10003;</span> setPlanMode/isPlanMode</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>Structured Output</td><td><span class="icon-check">&#10003;</span> --json-schema 验证</td><td><span class="icon-check">&#10003;</span> JSON Schema 验证+自动纠正重试</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>Anti-Pattern 检测</td><td><span class="icon-cross">&#10007;</span> 无明确机制</td><td><span class="icon-check">&#10003;</span> detector.ts：循环检测+策略切换建议+Circuit Breaker</td><td><span class="badge badge-ca">Code Agent 领先</span></td></tr>
+          <tr><td>Nudge 完成引导</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> 5 种策略（只读停止/Checkpoint/文件追踪/输出验证/TODO）</td><td><span class="badge badge-ca">Code Agent 领先</span></td></tr>
+          <tr><td>Budget 控制</td><td><span class="icon-check">&#10003;</span> --max-budget-usd</td><td><span class="icon-check">&#10003;</span> budgetWarningEmitted</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>Verifier 验证器</td><td><span class="icon-cross">&#10007;</span> 无内置（通过 Hooks）</td><td><span class="icon-check">&#10003;</span> 8 种验证器（code/data/document/image/ppt/search/video/generic）</td><td><span class="badge badge-ca">Code Agent 领先</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="evidence">
+      <strong>依据：</strong><br>
+      Claude Code Extended Thinking: <code>docs/claude-code-capabilities.md</code> &sect;18.3 &mdash; <code>MAX_THINKING_TOKENS</code>, <code>CLAUDE_CODE_EFFORT_LEVEL</code><br>
+      Code Agent Adaptive Thinking: <code>src/main/agent/agentLoop.ts:224-225</code> &mdash; <code>effortLevel</code>, 通过 <code>InterleavedThinkingManager</code> prompt 模拟<br>
+      Code Agent Nudge: <code>src/main/agent/agentLoop.ts:128-168</code> &mdash; 5 种策略实现
+    </div>
+  </div>
+
+  <!-- ==================== Section 2 ==================== -->
+  <div class="section" id="sec2">
+    <h3>2. 工具系统</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>能力</th><th>Claude Code</th><th>Code Agent</th><th>对比</th></tr></thead>
+        <tbody>
+          <tr><td>内置工具数</td><td>~15 个核心工具</td><td>70+ 工具（8 代）</td><td><span class="badge badge-ca">Code Agent 远超</span></td></tr>
+          <tr><td>文件操作</td><td>Read/Write/Edit</td><td>read_file/write_file/edit_file + notebook_edit</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>搜索</td><td>Glob/Grep</td><td>glob/grep/list_directory</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>命令执行</td><td>Bash（后台+超时+输出限制）</td><td>bash（JSON-wrapper+heredoc截断+stderr合并+动态描述）</td><td><span class="badge badge-ca">Code Agent 更多预处理</span></td></tr>
+          <tr><td>Web</td><td>WebFetch/WebSearch</td><td>web_fetch(cheerio+AI提取)/web_search(域名过滤+auto_extract)</td><td><span class="badge badge-ca">Code Agent 更强</span> 智能提取+域名过滤</td></tr>
+          <tr><td>子代理</td><td>Task（指定 subagent_type）</td><td>Task + AgentSpawn + WorkflowOrchestrate</td><td><span class="badge badge-ca">Code Agent 更丰富</span></td></tr>
+          <tr><td>任务管理</td><td>TaskCreate/Get/Update/List</td><td>同上 + TodoWrite + PlanRead/Update</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>交互</td><td>AskUserQuestion + ExitPlanMode</td><td>AskUserQuestion + ConfirmAction + EnterPlanMode/ExitPlanMode</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>Notebook</td><td>NotebookEdit</td><td>notebook_edit</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>ToolSearch</td><td><span class="icon-check">&#10003;</span> MCP 工具按需加载</td><td><span class="icon-check">&#10003;</span> deferredTools + toolSearchService</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td><strong>办公文档</strong></td><td><span class="icon-cross">&#10007;</span> 无内置</td><td><span class="icon-check">&#10003;</span> PPT(9模块)/Excel/Word/PDF/图表/二维码</td><td><span class="badge badge-ca">Code Agent 独有优势</span></td></tr>
+          <tr><td><strong>多媒体</strong></td><td><span class="icon-cross">&#10007;</span> 无内置</td><td><span class="icon-check">&#10003;</span> 图片生成/分析/处理/标注/视频生成/语音互转</td><td><span class="badge badge-ca">Code Agent 独有优势</span></td></tr>
+          <tr><td><strong>视觉交互</strong></td><td><span class="icon-cross">&#10007;</span> 内置无（通过 MCP）</td><td><span class="icon-check">&#10003;</span> screenshot/computer_use/browser_navigate/browser_action</td><td><span class="badge badge-ca">Code Agent 领先</span></td></tr>
+          <tr><td><strong>学术搜索</strong></td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> academic_search</td><td><span class="badge badge-ca">Code Agent 独有</span></td></tr>
+          <tr><td><strong>自我进化</strong></td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> strategy_optimize/tool_create/self_evaluate/learn_pattern</td><td><span class="badge badge-ca">Code Agent 独有</span></td></tr>
+          <tr><td>工具 DAG 调度</td><td><span class="icon-check">&#10003;</span> 并行工具调用（模型原生）</td><td><span class="icon-check">&#10003;</span> dagScheduler.ts（WAR/WAW依赖检测+Kahn拓扑排序）</td><td><span class="badge badge-ca">Code Agent 更精细</span></td></tr>
+          <tr><td>动态描述</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> GLM-4.7-Flash 为 bash 命令生成描述</td><td><span class="badge badge-ca">Code Agent 独有</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="evidence">
+      <strong>依据：</strong><br>
+      Claude Code 工具: <code>docs/claude-code-capabilities.md</code> &sect;3 &mdash; 12+ 内置工具<br>
+      Code Agent 工具: <code>docs/capability-inventory.md</code> &sect;2 &mdash; 70+ 工具，8 代演进<br>
+      Code Agent PPT: <code>src/main/tools/network/ppt/</code> &mdash; 30+ 文件，9 主题，137 测试<br>
+      Code Agent DAG: <code>src/main/agent/toolExecution/dagScheduler.ts</code> &mdash; Kahn 算法
+    </div>
+  </div>
+
+  <!-- ==================== Section 3 ==================== -->
+  <div class="section" id="sec3">
+    <h3>3. 多 Agent 系统</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>能力</th><th>Claude Code</th><th>Code Agent</th><th>对比</th></tr></thead>
+        <tbody>
+          <tr><td>子代理类型</td><td>6 种内置</td><td>4 核心角色 + 动态扩展 + Swarm（最多50并行）</td><td><span class="badge badge-ca">Code Agent 架构更复杂</span></td></tr>
+          <tr><td>自定义子代理</td><td><span class="icon-check">&#10003;</span> Markdown+YAML frontmatter</td><td><span class="icon-check">&#10003;</span> coreAgents.ts + dynamicFactory</td><td><span class="badge badge-cc">Claude Code 更灵活</span></td></tr>
+          <tr><td>Agent Teams</td><td><span class="icon-tool">&#128296;</span> 实验性（需 env flag）</td><td><span class="icon-check">&#10003;</span> 已实现（持久化+通信+任务管理）</td><td><span class="badge badge-ca">Code Agent 更成熟</span></td></tr>
+          <tr><td>团队通信</td><td>SendMessage（DM/broadcast/shutdown/plan_approval）</td><td>TeammateService（coordinate/handoff/query/broadcast/respond）</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>任务列表</td><td>TaskCreate/Get/Update/List（共享）</td><td>TaskListManager + 角色权限</td><td><span class="badge badge-ca">Code Agent 更精细</span></td></tr>
+          <tr><td>优雅关闭</td><td>shutdown_request/response</td><td>4 阶段（Signal→Grace 5s→Flush→Force）</td><td><span class="badge badge-ca">Code Agent 更健壮</span></td></tr>
+          <tr><td>计划审批</td><td>plan_approval_request/response</td><td>planApproval.ts（风险评估+串行队列+低风险自动批准）</td><td><span class="badge badge-ca">Code Agent 更智能</span></td></tr>
+          <tr><td>显示模式</td><td>In-process / tmux split panes</td><td>Electron 内 SwarmMonitor + AgentTeamPanel</td><td><span class="badge badge-eq">不同形态</span></td></tr>
+          <tr><td>进程隔离</td><td>每个 teammate 独立实例</td><td>Worker 进程级隔离</td><td><span class="badge badge-eq">不同实现</span></td></tr>
+          <tr><td>模型分工</td><td>子代理可指定 model</td><td>角色→模型层级映射（fast/balanced/powerful）</td><td><span class="badge badge-ca">Code Agent 更自动化</span></td></tr>
+          <tr><td>自定义子代理热加载</td><td><span class="icon-check">&#10003;</span> .claude/agents/*.md 文件即配置</td><td><span class="icon-cross">&#10007;</span> 需代码修改</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="evidence">
+      <strong>依据：</strong><br>
+      Claude Code Subagents: <code>docs/claude-code-capabilities.md</code> &sect;4 &mdash; Markdown+YAML 自定义<br>
+      Claude Code Teams: <code>docs/claude-code-capabilities.md</code> &sect;5 &mdash; 实验性，需 <code>CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1</code><br>
+      Code Agent 混合架构: <code>src/main/agent/hybrid/</code> &mdash; 3 层架构<br>
+      Code Agent 团队持久化: <code>src/main/agent/teammate/teamPersistence.ts</code> &mdash; 原子写入 JSON
+    </div>
+  </div>
+
+  <!-- ==================== Section 4 ==================== -->
+  <div class="section" id="sec4">
+    <h3>4. 上下文管理</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>能力</th><th>Claude Code</th><th>Code Agent</th><th>对比</th></tr></thead>
+        <tbody>
+          <tr><td>Auto-compact</td><td><span class="icon-check">&#10003;</span> 接近限制时自动压缩</td><td><span class="icon-check">&#10003;</span> 双阈值(0.6/0.85)+绝对阈值(100K)+3种策略</td><td><span class="badge badge-ca">Code Agent 更精细</span></td></tr>
+          <tr><td>手动 compact</td><td><span class="icon-check">&#10003;</span> /compact [instructions]</td><td><span class="icon-check">&#10003;</span> CompactionBlock 可审计摘要</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>部分 compact</td><td><span class="icon-check">&#10003;</span> Esc+Esc 选择消息点</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>Checkpoint</td><td><span class="icon-check">&#10003;</span> <strong>每次编辑前自动快照</strong></td><td><span class="icon-check">&#10003;</span> FileCheckpointService（1MB跳过/50个上限/7天保留）</td><td><span class="badge badge-cc">Claude Code UX 更好</span></td></tr>
+          <tr><td>会话管理</td><td><span class="icon-check">&#10003;</span> continue/resume/fork/rename/teleport/desktop</td><td><span class="icon-check">&#10003;</span> session恢复/resume/fork</td><td><span class="badge badge-cc">Claude Code 更丰富</span></td></tr>
+          <tr><td>上下文可视化</td><td><span class="icon-check">&#10003;</span> /context 命令</td><td><span class="icon-check">&#10003;</span> ContextHealthPanel UI</td><td><span class="badge badge-ca">Code Agent UI 更直观</span></td></tr>
+          <tr><td>子代理隔离</td><td><span class="icon-check">&#10003;</span> 独立上下文，只返回摘要</td><td><span class="icon-check">&#10003;</span> subagentContextBuilder + subagentCompaction</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td><strong>Prompt Caching</strong></td><td><span class="icon-check">&#10003;</span> <strong>默认启用</strong></td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 显著领先</span></td></tr>
+          <tr><td><strong>源数据锚定</strong></td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> DataFingerprint（双注入点防幻觉）</td><td><span class="badge badge-ca">Code Agent 独有优势</span></td></tr>
+          <tr><td>文档上下文</td><td><span class="icon-cross">&#10007;</span> 无内置</td><td><span class="icon-check">&#10003;</span> 5种解析器+importance权重</td><td><span class="badge badge-ca">Code Agent 领先</span></td></tr>
+          <tr><td>Token 优化</td><td><span class="icon-cross">&#10007;</span> 无明确机制</td><td><span class="icon-check">&#10003;</span> tokenOptimizer（阈值300→200+去重+xlsx压缩）</td><td><span class="badge badge-ca">Code Agent 领先</span></td></tr>
+          <tr><td>推理缓存</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> inferenceCache LRU（md5 key, 50条, 5分钟TTL）</td><td><span class="badge badge-eq">不同策略</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="evidence">
+      <strong>依据：</strong><br>
+      Claude Code Prompt Caching: <code>docs/claude-code-capabilities.md</code> &sect;18.4 &mdash; <code>DISABLE_PROMPT_CACHING</code><br>
+      Claude Code Checkpoint: <code>docs/claude-code-capabilities.md</code> &sect;6.3 &mdash; Esc+Esc rewind<br>
+      Code Agent DataFingerprint: <code>src/main/tools/dataFingerprint.ts</code> &mdash; LRU 20 条，双注入点<br>
+      Code Agent TokenOptimizer: <code>src/main/context/tokenOptimizer.ts</code> &mdash; 压缩阈值 300→200
+    </div>
+  </div>
+
+  <!-- ==================== Section 5 ==================== -->
+  <div class="section" id="sec5">
+    <h3>5. 记忆系统</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>能力</th><th>Claude Code</th><th>Code Agent</th><th>对比</th></tr></thead>
+        <tbody>
+          <tr><td>记忆层级</td><td>6 层（Managed→Project→Rules→User→Local→Auto）</td><td>向量存储+混合搜索+记忆衰减</td><td><span class="badge badge-eq">不同设计哲学</span></td></tr>
+          <tr><td>CLAUDE.md</td><td><span class="icon-check">&#10003;</span> 递归查找+import语法+路径特定规则</td><td><span class="icon-check">&#10003;</span> .code-agent/ 统一配置</td><td><span class="badge badge-cc">Claude Code 更灵活</span></td></tr>
+          <tr><td>Auto Memory</td><td><span class="icon-check">&#10003;</span> MEMORY.md 前200行→系统提示</td><td><span class="icon-check">&#10003;</span> 24文件记忆系统（向量+嵌入+主动上下文+增量同步）</td><td><span class="badge badge-ca">Code Agent 更复杂</span></td></tr>
+          <tr><td>路径特定规则</td><td><span class="icon-check">&#10003;</span> .claude/rules/*.md + paths frontmatter</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>Import 语法</td><td><span class="icon-check">&#10003;</span> @path/to/file（递归5层）</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>子目录按需加载</td><td><span class="icon-check">&#10003;</span> 自动加载子目录 CLAUDE.md</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>用户级规则</td><td><span class="icon-check">&#10003;</span> ~/.claude/rules/</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>持续学习</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> continuousLearning+patternExtractor+skillSynthesizer</td><td><span class="badge badge-ca">Code Agent 更智能</span></td></tr>
+          <tr><td>错误学习</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> errorLearning.ts+errorClassifier.ts</td><td><span class="badge badge-ca">Code Agent 独有</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="evidence">
+      <strong>依据：</strong><br>
+      Claude Code Memory: <code>docs/claude-code-capabilities.md</code> &sect;7 &mdash; 6 层记忆层级<br>
+      Code Agent Memory: <code>src/main/memory/</code> &mdash; 24 文件<br>
+      Claude Code Rules: <code>docs/claude-code-capabilities.md</code> &sect;7.3 &mdash; import 语法，paths frontmatter
+    </div>
+  </div>
+
+  <!-- ==================== Section 6 ==================== -->
+  <div class="section" id="sec6">
+    <h3>6. 权限与安全</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>能力</th><th>Claude Code</th><th>Code Agent</th><th>对比</th></tr></thead>
+        <tbody>
+          <tr><td>权限模式</td><td>5 种</td><td>确认门控 4 策略</td><td><span class="badge badge-eq">不同设计</span></td></tr>
+          <tr><td>权限规则语法</td><td><span class="icon-check">&#10003;</span> <strong>精细通配符</strong>（Tool(specifier)）</td><td><span class="icon-cross">&#10007;</span> 无类似规则</td><td><span class="badge badge-cc">Claude Code 显著领先</span></td></tr>
+          <tr><td>沙盒</td><td><span class="icon-check">&#10003;</span> OS级文件系统+网络隔离</td><td><span class="icon-check">&#10003;</span> Seatbelt(macOS)+Bubblewrap(Linux)</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>注入检测</td><td><span class="icon-cross">&#10007;</span> 无明确机制</td><td><span class="icon-check">&#10003;</span> InputSanitizer（20+正则，4类检测，3种模式）</td><td><span class="badge badge-ca">Code Agent 领先</span></td></tr>
+          <tr><td>审计日志</td><td><span class="icon-cross">&#10007;</span> 无明确提及</td><td><span class="icon-check">&#10003;</span> auditLogger（JSONL 日志）</td><td><span class="badge badge-ca">Code Agent 领先</span></td></tr>
+          <tr><td>敏感信息检测</td><td><span class="icon-cross">&#10007;</span> 无明确机制</td><td><span class="icon-check">&#10003;</span> sensitiveDetector（API Keys/凭证/私钥/DB URL）</td><td><span class="badge badge-ca">Code Agent 领先</span></td></tr>
+          <tr><td>日志脱敏</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> logMasker</td><td><span class="badge badge-ca">Code Agent 独有</span></td></tr>
+          <tr><td>命令监控</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> commandMonitor</td><td><span class="badge badge-ca">Code Agent 独有</span></td></tr>
+          <tr><td>Managed Settings</td><td><span class="icon-check">&#10003;</span> 系统级不可覆盖</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span>（企业级）</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="evidence">
+      <strong>依据：</strong><br>
+      Claude Code Permissions: <code>docs/claude-code-capabilities.md</code> &sect;8 &mdash; 通配符规则语法<br>
+      Code Agent InputSanitizer: <code>src/main/security/inputSanitizer.ts:71</code> &mdash; 20+ 正则，4 类检测<br>
+      Claude Code Managed Settings: <code>docs/claude-code-capabilities.md</code> &sect;8.5 &mdash; 企业级配置管理
+    </div>
+  </div>
+
+  <!-- ==================== Section 7 ==================== -->
+  <div class="section" id="sec7">
+    <h3>7. Hooks 系统</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>能力</th><th>Claude Code</th><th>Code Agent</th><th>对比</th></tr></thead>
+        <tbody>
+          <tr><td>事件类型数</td><td>14 种</td><td>11 种</td><td><span class="badge badge-cc">Claude Code 更多</span></td></tr>
+          <tr><td>Hook 类型</td><td>3 种（command/prompt/agent）</td><td>command + prompt hook + 内置 hook</td><td><span class="badge badge-cc">Claude Code 更丰富</span></td></tr>
+          <tr><td>异步 Hook</td><td><span class="icon-check">&#10003;</span> async: true</td><td><span class="icon-cross">&#10007;</span> 无明确异步</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>Matcher 模式</td><td><span class="icon-check">&#10003;</span> 正则过滤</td><td><span class="icon-check">&#10003;</span> matcher 字段</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>一次性 Hook</td><td><span class="icon-check">&#10003;</span> once: true</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>MCP 工具 Hook</td><td><span class="icon-check">&#10003;</span> mcp__server__tool</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>配置位置</td><td>5 种</td><td>2 种</td><td><span class="badge badge-cc">Claude Code 更灵活</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="evidence">
+      <strong>依据：</strong><br>
+      Claude Code Hooks: <code>docs/claude-code-capabilities.md</code> &sect;9 &mdash; 14 种事件，3 种 hook 类型<br>
+      Code Agent Hooks: <code>src/main/hooks/hookManager.ts</code> &mdash; 11 种事件
+    </div>
+  </div>
+
+  <!-- ==================== Section 8 ==================== -->
+  <div class="section" id="sec8">
+    <h3>8. Skills 系统</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>能力</th><th>Claude Code</th><th>Code Agent</th><th>对比</th></tr></thead>
+        <tbody>
+          <tr><td>定义方式</td><td>SKILL.md（Markdown+YAML frontmatter）</td><td>builtinSkills.ts + skillRepositories.ts</td><td><span class="badge badge-cc">Claude Code 更灵活</span></td></tr>
+          <tr><td>存储位置</td><td>4 种</td><td>内置 + marketplace</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>按需加载</td><td><span class="icon-check">&#10003;</span> 描述在上下文，内容按需</td><td><span class="icon-check">&#10003;</span> 关键词映射触发</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>动态上下文注入</td><td><span class="icon-check">&#10003;</span> !`cmd` 语法</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>子代理运行</td><td><span class="icon-check">&#10003;</span> context: fork + agent</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>参数替换</td><td><span class="icon-check">&#10003;</span> $ARGUMENTS、$N</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>字符预算</td><td><span class="icon-check">&#10003;</span> 上下文窗口 2%</td><td><span class="icon-cross">&#10007;</span> 无明确限制</td><td><span class="badge badge-cc">Claude Code 更精细</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="evidence">
+      <strong>依据：</strong><br>
+      Claude Code Skills: <code>docs/claude-code-capabilities.md</code> &sect;10 &mdash; SKILL.md 定义<br>
+      Code Agent Skills: <code>src/main/services/skills/</code> &mdash; 11 文件
+    </div>
+  </div>
+
+  <!-- ==================== Section 9 ==================== -->
+  <div class="section" id="sec9">
+    <h3>9. MCP 集成</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>能力</th><th>Claude Code</th><th>Code Agent</th><th>对比</th></tr></thead>
+        <tbody>
+          <tr><td>传输类型</td><td>3 种（HTTP/SSE/stdio）</td><td>MCP 客户端+服务端双向</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>配置作用域</td><td>3 种（local/project/user）</td><td>.code-agent/mcp.json</td><td><span class="badge badge-cc">Claude Code 更灵活</span></td></tr>
+          <tr><td>OAuth 2.0</td><td><span class="icon-check">&#10003;</span> 自动+预配置</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>动态工具更新</td><td><span class="icon-check">&#10003;</span> list_changed 通知</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>作为 MCP 服务器</td><td><span class="icon-check">&#10003;</span> claude mcp serve</td><td><span class="icon-check">&#10003;</span> inProcessServer</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>Resources</td><td><span class="icon-check">&#10003;</span> @server:protocol://path</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>Managed MCP</td><td><span class="icon-check">&#10003;</span> 独占/策略两种模式</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span>（企业级）</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="evidence">
+      <strong>依据：</strong><br>
+      Claude Code MCP: <code>docs/claude-code-capabilities.md</code> &sect;11 &mdash; OAuth、Resources、Managed MCP<br>
+      Code Agent MCP: <code>src/main/mcp/</code> &mdash; 5 文件
+    </div>
+  </div>
+
+  <!-- ==================== Section 10 ==================== -->
+  <div class="section" id="sec10">
+    <h3>10. 模型管理</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>能力</th><th>Claude Code</th><th>Code Agent</th><th>对比</th></tr></thead>
+        <tbody>
+          <tr><td>模型选择</td><td>3 个（Opus/Sonnet/Haiku）</td><td>12 种 Provider</td><td><span class="badge badge-ca">Code Agent 显著领先</span></td></tr>
+          <tr><td>自适应路由</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> adaptiveRouter（简单任务→免费模型）</td><td><span class="badge badge-ca">Code Agent 领先</span></td></tr>
+          <tr><td>推理缓存</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> inferenceCache LRU</td><td><span class="badge badge-ca">Code Agent 独有</span></td></tr>
+          <tr><td>模型热切换</td><td><span class="icon-check">&#10003;</span> Alt+P / /model</td><td><span class="icon-check">&#10003;</span> ModelSwitcher UI</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>限流器</td><td><span class="icon-cross">&#10007;</span> 无需</td><td><span class="icon-check">&#10003;</span> Moonshot(2并发)/Zhipu(3并发)</td><td><span class="badge badge-ca">Code Agent 必须</span></td></tr>
+          <tr><td>实时成本流</td><td><span class="icon-cross">&#10007;</span> /cost 命令</td><td><span class="icon-check">&#10003;</span> 每 500ms 估算+StatusBar 脉冲动画</td><td><span class="badge badge-ca">Code Agent 领先</span></td></tr>
+          <tr><td>Fallback 模型</td><td><span class="icon-check">&#10003;</span> --fallback-model</td><td><span class="icon-check">&#10003;</span> 错误恢复引擎（6种错误模式）</td><td><span class="badge badge-ca">Code Agent 更全面</span></td></tr>
+          <tr><td>Prompt Caching</td><td><span class="icon-check">&#10003;</span> 默认启用</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="evidence">
+      <strong>依据：</strong><br>
+      Claude Code Models: <code>docs/claude-code-capabilities.md</code> &sect;18 &mdash; 3 个模型<br>
+      Code Agent Providers: <code>src/main/model/providers/</code> &mdash; 12 种 Provider<br>
+      Code Agent AdaptiveRouter: <code>src/main/model/adaptiveRouter.ts:18</code>
+    </div>
+  </div>
+
+  <!-- ==================== Section 11 ==================== -->
+  <div class="section" id="sec11">
+    <h3>11. IDE 集成与平台</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>能力</th><th>Claude Code</th><th>Code Agent</th><th>对比</th></tr></thead>
+        <tbody>
+          <tr><td><strong>VS Code</strong></td><td><span class="icon-check">&#10003;</span> 内联 diff、@-mentions、Plan review</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 显著领先</span></td></tr>
+          <tr><td><strong>JetBrains</strong></td><td><span class="icon-check">&#10003;</span> 交互式 diff</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 显著领先</span></td></tr>
+          <tr><td><strong>Desktop App</strong></td><td><span class="icon-check">&#10003;</span> 独立应用</td><td><span class="icon-check">&#10003;</span> Electron 桌面应用</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td><strong>Web</strong></td><td><span class="icon-check">&#10003;</span> claude.ai/code</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td><strong>iOS</strong></td><td><span class="icon-check">&#10003;</span> Claude iOS App</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td><strong>Chrome Extension</strong></td><td><span class="icon-check">&#10003;</span> 浏览器自动化</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td><strong>Slack</strong></td><td><span class="icon-check">&#10003;</span> @Claude 触发</td><td><span class="icon-cross">&#10007;</span> 无（有飞书 Webhook）</td><td><span class="badge badge-eq">不同目标市场</span></td></tr>
+          <tr><td><strong>Terminal CLI</strong></td><td><span class="icon-check">&#10003;</span> 全功能</td><td><span class="icon-check">&#10003;</span> chat/run/export/serve</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td><strong>GitHub Actions</strong></td><td><span class="icon-check">&#10003;</span> 官方 Action</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 显著领先</span></td></tr>
+          <tr><td><strong>GitLab CI/CD</strong></td><td><span class="icon-check">&#10003;</span> 支持</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td><strong>跨设备 Teleport</strong></td><td><span class="icon-check">&#10003;</span> /teleport</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="evidence">
+      <strong>依据：</strong><br>
+      Claude Code IDE: <code>docs/claude-code-capabilities.md</code> &sect;15 &mdash; VS Code/JetBrains/Desktop/Web/iOS<br>
+      Claude Code GitHub: <code>docs/claude-code-capabilities.md</code> &sect;16 &mdash; claude-code-action@v1
+    </div>
+  </div>
+
+  <!-- ==================== Section 12 ==================== -->
+  <div class="section" id="sec12">
+    <h3>12. Agent SDK 与编程式使用</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>能力</th><th>Claude Code</th><th>Code Agent</th><th>对比</th></tr></thead>
+        <tbody>
+          <tr><td>Headless 模式</td><td><span class="icon-check">&#10003;</span> claude -p</td><td><span class="icon-check">&#10003;</span> CLI run 命令</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>流式 JSON</td><td><span class="icon-check">&#10003;</span> --output-format stream-json</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>JSON Schema 输出</td><td><span class="icon-check">&#10003;</span> --json-schema</td><td><span class="icon-check">&#10003;</span> structuredOutput.ts</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>轮次限制</td><td><span class="icon-check">&#10003;</span> --max-turns</td><td><span class="icon-check">&#10003;</span> calculateToolCallMax()</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>预算限制</td><td><span class="icon-check">&#10003;</span> --max-budget-usd</td><td><span class="icon-check">&#10003;</span> budgetWarningEmitted</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>管道输入</td><td><span class="icon-check">&#10003;</span> cat file | claude -p</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>系统提示控制</td><td><span class="icon-check">&#10003;</span> 4 种方式</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="evidence">
+      <strong>依据：</strong><br>
+      Claude Code SDK: <code>docs/claude-code-capabilities.md</code> &sect;17<br>
+      Code Agent CLI: <code>src/cli/</code> &mdash; chat/run/export/serve
+    </div>
+  </div>
+
+  <!-- ==================== Section 13 ==================== -->
+  <div class="section" id="sec13">
+    <h3>13. 前端与 UX</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>能力</th><th>Claude Code</th><th>Code Agent</th><th>对比</th></tr></thead>
+        <tbody>
+          <tr><td>DAG 可视化</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> React Flow</td><td><span class="badge badge-ca">Code Agent 独有</span></td></tr>
+          <tr><td>Swarm 监控</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> SwarmMonitor</td><td><span class="badge badge-ca">Code Agent 独有</span></td></tr>
+          <tr><td>Agent Team 面板</td><td><span class="icon-cross">&#10007;</span> 终端内切换</td><td><span class="icon-check">&#10003;</span> AgentTeamPanel</td><td><span class="badge badge-ca">Code Agent 领先</span></td></tr>
+          <tr><td>Diff 面板</td><td><span class="icon-check">&#10003;</span> IDE 内联 diff</td><td><span class="icon-check">&#10003;</span> DiffPanel</td><td><span class="badge badge-eq">不同形态</span></td></tr>
+          <tr><td>引用列表</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> 5 种引用类型颜色编码</td><td><span class="badge badge-ca">Code Agent 独有</span></td></tr>
+          <tr><td>评测中心</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> 12 组件</td><td><span class="badge badge-ca">Code Agent 独有</span></td></tr>
+          <tr><td>实验室</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> LLaMA Factory/NanoGPT/RLHF</td><td><span class="badge badge-ca">Code Agent 独有</span></td></tr>
+          <tr><td>命令面板</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="icon-check">&#10003;</span> Cmd+K CommandPalette</td><td><span class="badge badge-ca">Code Agent 领先</span></td></tr>
+          <tr><td>上下文健康</td><td><span class="icon-check">&#10003;</span> /context 文字</td><td><span class="icon-check">&#10003;</span> ContextHealthPanel 可视化</td><td><span class="badge badge-ca">Code Agent UI 更直观</span></td></tr>
+          <tr><td>提示建议</td><td><span class="icon-check">&#10003;</span> git/对话历史 suggest</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>Rewind UI</td><td><span class="icon-check">&#10003;</span> Esc+Esc 回退菜单</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="evidence">
+      <strong>依据：</strong><br>
+      Code Agent 前端: <code>src/renderer/components/</code> &mdash; DAG/Swarm/AgentTeam/Diff/Citations/EvalCenter<br>
+      Claude Code UX: <code>docs/claude-code-capabilities.md</code> &sect;14 &mdash; 快捷键、命令、提示建议
+    </div>
+  </div>
+
+  <!-- ==================== Section 14 ==================== -->
+  <div class="section" id="sec14">
+    <h3>14. 企业特性</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>能力</th><th>Claude Code</th><th>Code Agent</th><th>对比</th></tr></thead>
+        <tbody>
+          <tr><td>Managed Settings</td><td><span class="icon-check">&#10003;</span> 系统级不可覆盖</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>权限锁定</td><td><span class="icon-check">&#10003;</span> allowManagedPermissionRulesOnly</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>Hooks 锁定</td><td><span class="icon-check">&#10003;</span> allowManagedHooksOnly</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>插件市场限制</td><td><span class="icon-check">&#10003;</span> strictKnownMarketplaces</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>多云部署</td><td><span class="icon-check">&#10003;</span> Bedrock/Vertex/Foundry</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>OTEL 监控</td><td><span class="icon-check">&#10003;</span> OpenTelemetry</td><td><span class="icon-check">&#10003;</span> Telemetry（自有遥测）</td><td><span class="badge badge-eq">持平</span></td></tr>
+          <tr><td>强制登录</td><td><span class="icon-check">&#10003;</span> forceLoginMethod</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>mTLS</td><td><span class="icon-check">&#10003;</span> 客户端证书</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+          <tr><td>Server-managed</td><td><span class="icon-check">&#10003;</span> 无需 MDM 远程管理</td><td><span class="icon-cross">&#10007;</span> 无</td><td><span class="badge badge-cc">Claude Code 领先</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- ==================== Advantages ==================== -->
+  <div class="section" id="advantages">
+    <div class="section-header">
+      <h2>二、Code Agent 的优势与差异化</h2>
+    </div>
+
+    <h3>核心优势（有据可依）</h3>
+    <div class="advantages-grid">
+      <div class="advantage-item">
+        <div class="adv-num">1</div>
+        <div class="adv-content">
+          <h4>多模型多 Provider 支持</h4>
+          <p>12 种 Provider vs Claude Code 仅 Anthropic 自家模型</p>
+        </div>
+      </div>
+      <div class="advantage-item">
+        <div class="adv-num">2</div>
+        <div class="adv-content">
+          <h4>办公文档全链路</h4>
+          <p>PPT 9 模块+9 主题+137 测试，Excel/Word/PDF/图表一条龙</p>
+        </div>
+      </div>
+      <div class="advantage-item">
+        <div class="adv-num">3</div>
+        <div class="adv-content">
+          <h4>自适应模型路由</h4>
+          <p>简单任务自动路由免费模型，节省成本</p>
+        </div>
+      </div>
+      <div class="advantage-item">
+        <div class="adv-num">4</div>
+        <div class="adv-content">
+          <h4>源数据锚定防幻觉</h4>
+          <p>DataFingerprint 双注入点+LRU 20 条，数据分析场景实测有效</p>
+        </div>
+      </div>
+      <div class="advantage-item">
+        <div class="adv-num">5</div>
+        <div class="adv-content">
+          <h4>Anti-Pattern 检测+Circuit Breaker</h4>
+          <p>防止工具调用死循环</p>
+        </div>
+      </div>
+      <div class="advantage-item">
+        <div class="adv-num">6</div>
+        <div class="adv-content">
+          <h4>Nudge 完成引导</h4>
+          <p>5 种策略，非侵入式引导任务完成</p>
+        </div>
+      </div>
+      <div class="advantage-item">
+        <div class="adv-num">7</div>
+        <div class="adv-content">
+          <h4>8 种输出验证器</h4>
+          <p>code/data/document/image/ppt/search/video/generic</p>
+        </div>
+      </div>
+      <div class="advantage-item">
+        <div class="adv-num">8</div>
+        <div class="adv-content">
+          <h4>可视化 GUI</h4>
+          <p>DAG/Swarm/AgentTeam/EvalCenter/Diff/Citations 面板</p>
+        </div>
+      </div>
+      <div class="advantage-item">
+        <div class="adv-num">9</div>
+        <div class="adv-content">
+          <h4>Deep Research Mode</h4>
+          <p>14 模块完整研究管线</p>
+        </div>
+      </div>
+      <div class="advantage-item">
+        <div class="adv-num">10</div>
+        <div class="adv-content">
+          <h4>自我进化 Gen8</h4>
+          <p>strategy_optimize/tool_create/self_evaluate/learn_pattern</p>
+        </div>
+      </div>
+      <div class="advantage-item">
+        <div class="adv-num">11</div>
+        <div class="adv-content">
+          <h4>实时成本流</h4>
+          <p>每 500ms 估算+脉冲动画</p>
+        </div>
+      </div>
+      <div class="advantage-item">
+        <div class="adv-num">12</div>
+        <div class="adv-content">
+          <h4>Swiss Cheese 评测</h4>
+          <p>多层评测模型+LLM评审+结构化Transcript</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- ==================== Weaknesses ==================== -->
+  <div class="section" id="weaknesses">
+    <div class="section-header">
+      <h2>三、Code Agent 的薄弱之处（按优先级排序）</h2>
+    </div>
+
+    <!-- P0 -->
+    <h3><span class="priority-tag priority-p0">P0</span> 核心体验差距（直接影响用户留存）</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>#</th><th>薄弱点</th><th>影响</th><th>Claude Code 对标</th><th>证据</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><strong>无 IDE 集成</strong></td><td>开发者必须在 Electron 窗口和编辑器之间来回切换</td><td>VS Code 内联 diff + @-mentions + Plan review</td><td>Claude Code &sect;15</td></tr>
+          <tr><td>2</td><td><strong>无 Prompt Caching</strong></td><td>每次请求重复发送完整 system prompt，成本高、延迟大</td><td>默认启用 Prompt Caching</td><td>Claude Code &sect;18.4</td></tr>
+          <tr><td>3</td><td><strong>Extended Thinking 仅 prompt 模拟</strong></td><td>无法利用模型原生推理能力</td><td>原生 budget_tokens + effort level</td><td>Claude Code &sect;18.3</td></tr>
+          <tr><td>4</td><td><strong>权限规则粒度不足</strong></td><td>无法按 Tool(specifier) 精细控制</td><td>精细通配符规则语法</td><td>Claude Code &sect;8.2</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- P1 -->
+    <h3><span class="priority-tag priority-p1">P1</span> 扩展能力差距（影响高级用户和团队场景）</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>#</th><th>薄弱点</th><th>影响</th><th>Claude Code 对标</th><th>证据</th></tr></thead>
+        <tbody>
+          <tr><td>5</td><td><strong>无 GitHub/GitLab CI 集成</strong></td><td>无法自动化 PR review、Issue→代码、CI/CD 管道</td><td>claude-code-action@v1 + @claude 触发</td><td>Claude Code &sect;16</td></tr>
+          <tr><td>6</td><td><strong>自定义子代理需改代码</strong></td><td>用户无法通过 .md 文件热配置子代理</td><td>.claude/agents/*.md 文件即配置</td><td>Claude Code &sect;4.3</td></tr>
+          <tr><td>7</td><td><strong>Skills 系统灵活性不足</strong></td><td>无动态上下文注入、参数替换、子代理运行</td><td>SKILL.md 完整 frontmatter 支持</td><td>Claude Code &sect;10</td></tr>
+          <tr><td>8</td><td><strong>记忆系统缺少路径特定规则</strong></td><td>无法按目录/文件路径自动加载特定规则</td><td>.claude/rules/*.md + paths + @import</td><td>Claude Code &sect;7.3</td></tr>
+          <tr><td>9</td><td><strong>Hooks 系统不够完善</strong></td><td>缺少 agent hook、异步hook、一次性hook、MCP工具hook</td><td>14事件+3类型+异步+一次性+MCP匹配</td><td>Claude Code &sect;9</td></tr>
+          <tr><td>10</td><td><strong>SDK/编程式使用能力弱</strong></td><td>无流式JSON输出、管道输入、系统提示控制</td><td>stream-json+pipe+4种系统提示方式</td><td>Claude Code &sect;13/&sect;17</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- P2 -->
+    <h3><span class="priority-tag priority-p2">P2</span> 生态与平台差距（影响产品竞争力）</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>#</th><th>薄弱点</th><th>影响</th><th>Claude Code 对标</th><th>证据</th></tr></thead>
+        <tbody>
+          <tr><td>11</td><td><strong>无 Web/iOS 多端</strong></td><td>只有 Electron 桌面应用</td><td>Web+iOS+Desktop+Chrome+Slack</td><td>Claude Code &sect;1.1</td></tr>
+          <tr><td>12</td><td><strong>无 Teleport 跨设备</strong></td><td>无法在不同设备间无缝转移会话</td><td>/teleport Web&harr;Terminal</td><td>Claude Code &sect;6.4</td></tr>
+          <tr><td>13</td><td><strong>无 Rewind UI</strong></td><td>有 Checkpoint 但缺少回退菜单 UX</td><td>Esc+Esc 打开回退菜单</td><td>Claude Code &sect;6.3</td></tr>
+          <tr><td>14</td><td><strong>无提示建议</strong></td><td>缺少智能引导</td><td>git历史+对话历史 prompt suggestions</td><td>Claude Code &sect;14.4</td></tr>
+          <tr><td>15</td><td><strong>MCP OAuth/Resources 不足</strong></td><td>缺少 OAuth 2.0 和 Resources 引用</td><td>OAuth 2.0+@server:protocol://path</td><td>Claude Code &sect;11</td></tr>
+          <tr><td>16</td><td><strong>无企业级管控</strong></td><td>无 Managed Settings、权限锁定等</td><td>完整企业级特性套件</td><td>Claude Code &sect;20</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- P3 -->
+    <h3><span class="priority-tag priority-p3">P3</span> 细节打磨（影响体验流畅度）</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>#</th><th>薄弱点</th><th>影响</th><th>Claude Code 对标</th><th>证据</th></tr></thead>
+        <tbody>
+          <tr><td>17</td><td><strong>无 Vim 模式</strong></td><td>终端高级用户缺少 Vim 操作</td><td>/vim 启用完整 vim 操作</td><td>Claude Code &sect;14.3</td></tr>
+          <tr><td>18</td><td><strong>无 Bash 模式快捷键</strong></td><td>无法用 ! 前缀直接运行命令</td><td>! 前缀直接运行 shell</td><td>Claude Code &sect;14.3</td></tr>
+          <tr><td>19</td><td><strong>无 @ 文件引用</strong></td><td>无法快速引用文件路径</td><td>@ 触发文件路径自动补全</td><td>Claude Code &sect;14.3</td></tr>
+          <tr><td>20</td><td><strong>部分 compact 不支持</strong></td><td>无法选择消息点做局部压缩</td><td>Esc+Esc "Summarize from here"</td><td>Claude Code &sect;6.2</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- ==================== Roadmap ==================== -->
+  <div class="section" id="roadmap">
+    <div class="section-header">
+      <h2>四、改进建议路线图</h2>
+    </div>
+
+    <div class="roadmap-section">
+      <div class="roadmap-header">
+        <span class="timeline-badge">1-2 周</span>
+        <h4>短期 &mdash; 低成本高收益</h4>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>建议</th><th>目标</th><th>涉及文件</th><th>预期效果</th></tr></thead>
+          <tbody>
+            <tr><td><strong>实现精细权限规则</strong></td><td>支持 Tool(specifier) 通配符语法</td><td><code>src/main/permissions/</code>、<code>confirmationGate.ts</code></td><td>安全性大幅提升</td></tr>
+            <tr><td><strong>Hooks 系统增强</strong></td><td>增加 agent hook、async flag、once flag</td><td><code>hookManager.ts</code></td><td>覆盖更多自动化场景</td></tr>
+            <tr><td><strong>Skills YAML frontmatter</strong></td><td>支持 SKILL.md 定义</td><td><code>src/main/services/skills/</code></td><td>用户无需写代码即可定义</td></tr>
+            <tr><td><strong>Rewind UI</strong></td><td>消息回退菜单</td><td><code>src/renderer/</code>、<code>checkpoint/</code></td><td>利用已有 Checkpoint 基础设施</td></tr>
+            <tr><td><strong>提示建议</strong></td><td>基于 git/对话历史生成输入建议</td><td><code>ChatView.tsx</code></td><td>引导用户更高效使用</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="roadmap-section">
+      <div class="roadmap-header">
+        <span class="timeline-badge">1-2 月</span>
+        <h4>中期 &mdash; 关键能力补齐</h4>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>建议</th><th>目标</th><th>涉及文件</th><th>预期效果</th></tr></thead>
+          <tbody>
+            <tr><td><strong>VS Code 扩展</strong></td><td>内联 diff、@-mentions、Plan review</td><td>新项目: <code>code-agent-vscode/</code></td><td>消除最大体验差距</td></tr>
+            <tr><td><strong>自定义子代理热加载</strong></td><td>.code-agent/agents/*.md 文件即配置</td><td><code>coreAgents.ts</code>、新增 agentLoader</td><td>灵活性大幅提升</td></tr>
+            <tr><td><strong>Prompt Caching</strong></td><td>对支持缓存的 Provider 实现请求级缓存</td><td><code>src/main/model/providers/</code></td><td>降低成本和延迟</td></tr>
+            <tr><td><strong>记忆系统路径特定规则</strong></td><td>支持 .code-agent/rules/*.md + paths + @import</td><td><code>configPaths.ts</code></td><td>大型项目管理提升</td></tr>
+            <tr><td><strong>SDK 增强</strong></td><td>流式 JSON、管道输入、系统提示控制</td><td><code>src/cli/</code></td><td>编程式使用能力对标</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="roadmap-section">
+      <div class="roadmap-header">
+        <span class="timeline-badge">3+ 月</span>
+        <h4>长期 &mdash; 平台级能力</h4>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead><tr><th>建议</th><th>目标</th><th>涉及文件</th><th>预期效果</th></tr></thead>
+          <tbody>
+            <tr><td><strong>GitHub Actions 集成</strong></td><td>@claude 触发 PR/Issue 自动化</td><td>新项目: <code>code-agent-action/</code></td><td>进入 CI/CD 生态</td></tr>
+            <tr><td><strong>Web 端</strong></td><td>浏览器版本</td><td>新项目: <code>code-agent-web/</code></td><td>降低使用门槛</td></tr>
+            <tr><td><strong>企业级管控</strong></td><td>Managed Settings、权限锁定、OTEL</td><td><code>src/main/config/</code>、新增 managed/</td><td>进入企业市场</td></tr>
+            <tr><td><strong>原生 Extended Thinking</strong></td><td>对接支持 thinking 的模型</td><td><code>deepseek.ts</code></td><td>复杂推理质量提升</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <hr>
+
+  <!-- ==================== Summary ==================== -->
+  <div class="section" id="summary">
+    <div class="section-header">
+      <h2>五、总结</h2>
+    </div>
+
+    <h3>定量对比</h3>
+    <div class="table-wrapper">
+      <table>
+        <thead><tr><th>维度</th><th>Claude Code 领先</th><th>Code Agent 领先</th><th>基本持平</th></tr></thead>
+        <tbody>
+          <tr><td>Agentic Loop</td><td><span class="hl-cc">1</span> (Extended Thinking)</td><td><span class="hl-ca">3</span> (Anti-Pattern/Nudge/Verifier)</td><td>7</td></tr>
+          <tr><td>工具系统</td><td><span class="hl-cc">0</span></td><td><span class="hl-ca">6</span> (办公/多媒体/视觉/学术/进化/动态描述)</td><td>6</td></tr>
+          <tr><td>多 Agent</td><td><span class="hl-cc">1</span> (自定义子代理热加载)</td><td><span class="hl-ca">3</span> (Teams成熟度/关闭/审批)</td><td>5</td></tr>
+          <tr><td>上下文管理</td><td><span class="hl-cc">2</span> (Prompt Caching/部分compact)</td><td><span class="hl-ca">3</span> (锚定/文档上下文/Token优化)</td><td>5</td></tr>
+          <tr><td>记忆系统</td><td><span class="hl-cc">4</span> (路径规则/import/子目录/用户规则)</td><td><span class="hl-ca">2</span> (持续学习/错误学习)</td><td>1</td></tr>
+          <tr><td>安全</td><td><span class="hl-cc">2</span> (权限规则/Managed)</td><td><span class="hl-ca">4</span> (注入检测/审计/敏感/脱敏)</td><td>1</td></tr>
+          <tr><td>Hooks</td><td><span class="hl-cc">4</span> (agent/async/once/MCP)</td><td><span class="hl-ca">0</span></td><td>1</td></tr>
+          <tr><td>Skills</td><td><span class="hl-cc">3</span> (动态注入/参数/子代理)</td><td><span class="hl-ca">0</span></td><td>2</td></tr>
+          <tr><td>MCP</td><td><span class="hl-cc">4</span> (OAuth/动态/Resources/Managed)</td><td><span class="hl-ca">0</span></td><td>2</td></tr>
+          <tr><td>IDE/平台</td><td><span class="hl-cc">7</span> (VS Code/JetBrains/Web/iOS/Chrome/GitHub/Teleport)</td><td><span class="hl-ca">0</span></td><td>2</td></tr>
+          <tr><td>SDK</td><td><span class="hl-cc">3</span> (stream-json/pipe/system-prompt)</td><td><span class="hl-ca">0</span></td><td>3</td></tr>
+          <tr><td>前端 UX</td><td><span class="hl-cc">2</span> (提示建议/Rewind)</td><td><span class="hl-ca">6</span> (DAG/Swarm/Team/引用/评测/实验室)</td><td>1</td></tr>
+          <tr><td>企业</td><td><span class="hl-cc">8</span> (全面领先)</td><td><span class="hl-ca">0</span></td><td>1</td></tr>
+          <tr style="font-weight: 700; background: var(--bg-tertiary);">
+            <td><strong>合计</strong></td>
+            <td><span class="hl-cc"><strong>41</strong></span></td>
+            <td><span class="hl-ca"><strong>27</strong></span></td>
+            <td><strong>37</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>核心结论</h3>
+    <div class="conclusion-grid">
+      <div class="conclusion-card">
+        <div class="conclusion-num">结论 1</div>
+        <p><strong>Claude Code 的护城河是平台生态</strong>：IDE 集成（VS Code/JetBrains）、GitHub Actions、多端（Web/iOS/Slack）、企业管控 &mdash; 这些是 Code Agent 短期难以追平的。</p>
+      </div>
+      <div class="conclusion-card">
+        <div class="conclusion-num">结论 2</div>
+        <p><strong>Code Agent 的差异化在垂直能力</strong>：办公文档全链路、多模型多 Provider、自适应路由、源数据锚定、评测系统、可视化 GUI &mdash; 这些是 Claude Code 不提供的。</p>
+      </div>
+      <div class="conclusion-card">
+        <div class="conclusion-num">结论 3</div>
+        <p><strong>最关键的 3 个差距</strong>：<span class="hl-warn">IDE 集成</span>（影响 80% 开发者工作流）、<span class="hl-warn">Prompt Caching</span>（影响成本和延迟）、<span class="hl-warn">自定义子代理/Skills 灵活性</span>（影响高级用户扩展性）。</p>
+      </div>
+      <div class="conclusion-card">
+        <div class="conclusion-num">结论 4</div>
+        <p><strong>建议策略</strong>：不追求全面对标 Claude Code 的平台能力，而是在差异化方向（办公文档+多模型+数据分析）持续深耕，同时补齐 IDE 集成和 Prompt Caching 等核心体验差距。</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<a href="#top" class="back-to-top" title="回到顶部">&uarr;</a>
+
+<script>
+  // Highlight active nav link on scroll
+  const sections = document.querySelectorAll('.section[id], h3[id]');
+  const navLinks = document.querySelectorAll('.nav-link');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        navLinks.forEach(link => {
+          link.classList.toggle('active', link.getAttribute('href') === '#' + id);
+        });
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+
+  document.querySelectorAll('[id^="sec"], [id="advantages"], [id="weaknesses"], [id="roadmap"], [id="summary"]').forEach(el => observer.observe(el));
+</script>
+
+</body>
+</html>

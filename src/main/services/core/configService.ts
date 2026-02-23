@@ -466,7 +466,7 @@ export class ConfigService {
    * Get API key for non-model services (Brave, Langfuse, EXA, Perplexity, SkillsMP, etc.)
    * Priority: secure storage > environment variable
    */
-  getServiceApiKey(service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' | 'exa' | 'perplexity' | 'skillsmp'): string | undefined {
+  getServiceApiKey(service: 'brave' | 'langfuse_public' | 'langfuse_secret' | 'github' | 'openrouter' | 'exa' | 'perplexity' | 'tavily' | 'skillsmp'): string | undefined {
     const storage = getSecureStorage();
 
     // Check secure storage first
@@ -482,6 +482,7 @@ export class ConfigService {
       openrouter: 'OPENROUTER_API_KEY',
       exa: 'EXA_API_KEY',
       perplexity: 'PERPLEXITY_API_KEY',
+      tavily: 'TAVILY_API_KEY',
       skillsmp: 'SKILLSMP_API_KEY',
     };
 

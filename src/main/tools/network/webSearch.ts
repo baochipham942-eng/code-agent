@@ -17,6 +17,7 @@ const CLOUD_SEARCH_URL = `${CLOUD_ENDPOINTS.tools}?action=search`;
 const BRAVE_SEARCH_URL = SEARCH_API_ENDPOINTS.brave;
 const EXA_SEARCH_URL = SEARCH_API_ENDPOINTS.exa;
 const PERPLEXITY_API_URL = SEARCH_API_ENDPOINTS.perplexity;
+const TAVILY_SEARCH_URL = SEARCH_API_ENDPOINTS.tavily;
 
 // Domains to skip when auto-extracting (search engines themselves)
 const SEARCH_ENGINE_DOMAINS = [
@@ -64,6 +65,7 @@ interface ExaSearchResponse {
     url: string;
     text?: string;
     highlights?: string[];
+    publishedDate?: string;
   }>;
 }
 
@@ -76,6 +78,18 @@ interface PerplexityResponse {
   citations?: string[];
 }
 
+interface TavilySearchResponse {
+  query: string;
+  answer?: string;
+  results: Array<{
+    title: string;
+    url: string;
+    content: string;
+    score: number;
+    published_date?: string;
+  }>;
+}
+
 interface SearchSourceResult {
   source: string;
   success: boolean;
@@ -83,6 +97,25 @@ interface SearchSourceResult {
   answer?: string;
   citations?: string[];
   error?: string;
+}
+
+/** Convert ISO date string to human-readable relative age (e.g. "2 days ago") */
+export function formatAge(dateStr: string): string | undefined {
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return undefined;
+    const diffMs = Date.now() - d.getTime();
+    const diffHours = Math.floor(diffMs / 3600000);
+    if (diffHours < 1) return 'just now';
+    if (diffHours < 24) return `${diffHours} hours ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return '1 day ago';
+    if (diffDays < 30) return `${diffDays} days ago`;
+    const diffMonths = Math.floor(diffDays / 30);
+    return `${diffMonths} month${diffMonths > 1 ? 's' : ''} ago`;
+  } catch {
+    return undefined;
+  }
 }
 
 // ============================================================================
@@ -138,6 +171,22 @@ For searching local code, use grep or glob.`,
         type: 'number',
         description: 'Number of results to auto-extract (default: 3, max: 5)',
       },
+      recency: {
+        type: 'string',
+        description: 'Time filter: "day" (past 24h), "week" (past 7 days), "month" (past 30 days). Only returns results published within this window.',
+      },
+      output_format: {
+        type: 'string',
+        description: 'Output format: "default" (detailed with snippets) or "table" (compact markdown table ready to copy-paste). Use "table" when you need to directly include results in a report.',
+      },
+      save_to: {
+        type: 'string',
+        description: 'File path to automatically save results. The tool writes the file directly — no need to call write_file separately.',
+      },
+      language: {
+        type: 'string',
+        description: 'Output language for results. When set (e.g., "zh"), titles and snippets are translated at the tool level. Requires output_format="table".',
+      },
     },
     required: ['query'],
   },
@@ -152,6 +201,9 @@ For searching local code, use grep or glob.`,
     const requestedSources = params.sources as string[] | undefined;
     const autoExtract = (params.auto_extract as boolean) ?? false;
     const extractCount = Math.min(Math.max((params.extract_count as number) || 3, 1), 5);
+    const recency = params.recency as string | undefined;
+    const outputFormat = (params.output_format as string) || 'default';
+    const language = params.language as string | undefined;
 
     // Build domain filter
     const domainFilter: DomainFilter | undefined =
@@ -179,21 +231,102 @@ For searching local code, use grep or glob.`,
     let searchResult: ToolExecutionResult;
 
     if (parallel && availableSources.length > 1) {
-      searchResult = await parallelSearch(query, count, availableSources, configService, domainFilter);
+      searchResult = await parallelSearch(query, count, availableSources, configService, domainFilter, recency);
     } else {
-      searchResult = await serialSearch(query, count, availableSources, configService, domainFilter);
+      searchResult = await serialSearch(query, count, availableSources, configService, domainFilter, recency);
+    }
+
+    // Deduplicate results (handles same article from different sites)
+    if (searchResult.success) {
+      deduplicateResults(searchResult);
     }
 
     // P2: Auto-extract content from top results
-    if (autoExtract && searchResult.success && context.modelCallback) {
-      const extractedContent = await autoExtractFromResults(
-        searchResult,
-        query,
-        extractCount,
-        context.modelCallback,
-      );
-      if (extractedContent) {
-        searchResult.output = (searchResult.output || '') + '\n\n' + extractedContent;
+    if (autoExtract && searchResult.success) {
+      if (context.modelCallback) {
+        // Electron mode: AI extraction via modelCallback
+        const extractedContent = await autoExtractFromResults(
+          searchResult,
+          query,
+          extractCount,
+          context.modelCallback,
+        );
+        if (extractedContent) {
+          searchResult.output = (searchResult.output || '') + '\n\n' + extractedContent;
+        }
+      } else {
+        // CLI mode fallback: fetch + smartTruncate (no AI, but real page content)
+        const extractedContent = await autoExtractFallback(
+          searchResult,
+          extractCount,
+        );
+        if (extractedContent) {
+          searchResult.output = (searchResult.output || '') + '\n\n' + extractedContent;
+        }
+      }
+    }
+
+    // Convert to table format if requested
+    if (outputFormat === 'table' && searchResult.success) {
+      searchResult.output = formatAsTable(searchResult);
+    }
+
+    // Translate results at tool level if language is specified
+    if (language && searchResult.success && searchResult.output) {
+      const resultData = searchResult.result as { results?: SearchResult[] } | undefined;
+      const results = resultData?.results || [];
+      if (results.length > 0 && context.modelCallback) {
+        try {
+          // Batch translate: send all titles+snippets in one call
+          const items = results.map((r, i) => `${i + 1}. ${r.title}\n${r.snippet || r.description || ''}`).join('\n---\n');
+          const prompt = `Translate the following search result titles and descriptions to ${language === 'zh' ? 'Chinese (简体中文)' : language}. Keep the numbering. Only output the translations, one per item, separated by ---:\n\n${items}`;
+          const translated = await context.modelCallback(prompt);
+          if (translated) {
+            // Parse translated items and rebuild output
+            const translatedItems = translated.split('---').map(s => s.trim()).filter(Boolean);
+            const lines: string[] = [];
+            results.forEach((item, i) => {
+              const tItem = translatedItems[i] || '';
+              // Extract translated title (first line) and description (rest)
+              const tLines = tItem.split('\n').filter(Boolean);
+              const tTitle = tLines[0]?.replace(/^\d+\.\s*/, '') || item.title;
+              const tDesc = tLines.slice(1).join(' ') || item.snippet || item.description || '';
+              const age = item.age ? ` (${item.age})` : '';
+              lines.push(`### ${i + 1}. ${tTitle.substring(0, 100)}${age}`);
+              if (tDesc) lines.push(tDesc.substring(0, 200));
+              lines.push(item.url);
+              lines.push('');
+            });
+            searchResult.output = lines.join('\n');
+            logger.info(`Translated ${results.length} results to ${language}`);
+          }
+        } catch (err) {
+          logger.warn(`Translation failed, keeping original language:`, err instanceof Error ? err.message : err);
+        }
+      }
+    }
+
+    // Save to file if requested (bypasses model — writes directly)
+    const saveTo = params.save_to as string | undefined;
+    if (saveTo && searchResult.success && searchResult.output) {
+      try {
+        const fs = await import('fs');
+        const path = await import('path');
+        const resolvedPath = saveTo.replace(/^~/, process.env.HOME || '');
+        const dir = path.dirname(resolvedPath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        // Add header with today's date and query
+        const today = new Date().toISOString().slice(0, 10);
+        const fileContent = `# 搜索结果 - ${today}\n\n查询: ${query}\n\n${searchResult.output}`;
+        fs.writeFileSync(resolvedPath, fileContent, 'utf8');
+        searchResult.output += `\n\n✅ Results saved to: ${resolvedPath}`;
+        logger.info(`Search results saved to: ${resolvedPath}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown error';
+        searchResult.output += `\n\n⚠️ Failed to save: ${msg}`;
+        logger.warn(`Failed to save results to ${saveTo}:`, msg);
       }
     }
 
@@ -202,12 +335,89 @@ For searching local code, use grep or glob.`,
 };
 
 // ============================================================================
+// Table Format Output
+// ============================================================================
+
+/**
+ * Convert search results to a compact markdown list with descriptions.
+ * Each item includes title, age, snippet, and URL.
+ */
+export function formatAsTable(searchResult: ToolExecutionResult): string {
+  const resultData = searchResult.result as { results?: SearchResult[]; sources?: string[]; duration?: number } | undefined;
+  const results = resultData?.results || [];
+
+  if (results.length === 0) {
+    return 'No results found.';
+  }
+
+  const lines: string[] = [];
+
+  results.forEach((item, i) => {
+    const title = (item.title || 'Untitled').substring(0, 100);
+    const age = item.age ? ` (${item.age})` : '';
+    lines.push(`### ${i + 1}. ${title}${age}`);
+    const snippet = item.snippet || item.description || '';
+    if (snippet) {
+      lines.push(snippet.substring(0, 200));
+    }
+    lines.push(item.url);
+    lines.push('');
+  });
+
+  if (resultData?.sources) {
+    lines.push(`---\nSources: ${resultData.sources.join(', ')}`);
+  }
+
+  return lines.join('\n');
+}
+
+// ============================================================================
+// Deduplication
+// ============================================================================
+
+/**
+ * Normalize title for dedup: lowercase, collapse whitespace, take first 60 chars.
+ * This catches identical articles syndicated across different sites
+ * where full titles may differ slightly (trailing punctuation, etc.).
+ */
+export function normalizeTitleForDedup(title: string): string {
+  return title.toLowerCase().replace(/\s+/g, ' ').trim().substring(0, 60);
+}
+
+/**
+ * Remove duplicate results from a ToolExecutionResult in-place.
+ * Deduplicates by URL and by normalized title prefix (case-insensitive, first 60 chars).
+ */
+export function deduplicateResults(searchResult: ToolExecutionResult): void {
+  const resultData = searchResult.result as { results?: SearchResult[] } | undefined;
+  if (!resultData?.results || resultData.results.length === 0) return;
+
+  const seenUrls = new Set<string>();
+  const seenTitles = new Set<string>();
+  const before = resultData.results.length;
+
+  resultData.results = resultData.results.filter(item => {
+    if (seenUrls.has(item.url)) return false;
+    const normalizedTitle = normalizeTitleForDedup(item.title || '');
+    if (normalizedTitle && seenTitles.has(normalizedTitle)) return false;
+    seenUrls.add(item.url);
+    if (normalizedTitle) seenTitles.add(normalizedTitle);
+    return true;
+  });
+
+  const removed = before - resultData.results.length;
+  if (removed > 0) {
+    logger.info(`Deduplicated: removed ${removed} duplicate results (${before} → ${resultData.results.length})`);
+  }
+}
+
+// ============================================================================
 // Search Source Configuration
 // ============================================================================
 
 interface SearchSource {
   name: string;
-  search: (query: string, count: number, configService: ReturnType<typeof getConfigService>, domainFilter?: DomainFilter) => Promise<SearchSourceResult>;
+  search: (query: string, count: number, configService: ReturnType<typeof getConfigService>, domainFilter?: DomainFilter, recency?: string) => Promise<SearchSourceResult>;
   isAvailable: (configService: ReturnType<typeof getConfigService>) => boolean;
   priority: number;
 }
@@ -216,7 +426,7 @@ const SEARCH_SOURCES: SearchSource[] = [
   {
     name: 'cloud',
     priority: 1,
-    isAvailable: () => true, // 云端总是尝试
+    isAvailable: () => !!(process.env.SUPABASE_URL && typeof window !== 'undefined'), // 仅 Electron 模式
     search: searchViaCloud,
   },
   {
@@ -232,8 +442,14 @@ const SEARCH_SOURCES: SearchSource[] = [
     search: searchViaExa,
   },
   {
-    name: 'brave',
+    name: 'tavily',
     priority: 4,
+    isAvailable: (cs) => !!cs?.getServiceApiKey('tavily') || !!process.env.TAVILY_API_KEY,
+    search: searchViaTavily,
+  },
+  {
+    name: 'brave',
+    priority: 5,
     isAvailable: (cs) => !!cs?.getServiceApiKey('brave') || !!process.env.BRAVE_API_KEY,
     search: searchViaBrave,
   },
@@ -262,7 +478,7 @@ function getAvailableSources(
  * Build domain constraint string for query-based filtering (Brave, Perplexity).
  * e.g., "site:docs.python.org site:github.com -site:pinterest.com"
  */
-function buildDomainQuerySuffix(domainFilter?: DomainFilter): string {
+export function buildDomainQuerySuffix(domainFilter?: DomainFilter): string {
   if (!domainFilter) return '';
   const parts: string[] = [];
   if (domainFilter.allowed && domainFilter.allowed.length > 0) {
@@ -283,13 +499,14 @@ async function parallelSearch(
   count: number,
   sources: SearchSource[],
   configService: ReturnType<typeof getConfigService>,
-  domainFilter?: DomainFilter
+  domainFilter?: DomainFilter,
+  recency?: string
 ): Promise<ToolExecutionResult> {
   const startTime = Date.now();
 
   // 并行调用所有数据源（使用 allSettled 实现错误隔离）
   const searchPromises = sources.map(source =>
-    source.search(query, count, configService, domainFilter)
+    source.search(query, count, configService, domainFilter, recency)
       .catch(error => ({
         source: source.name,
         success: false,
@@ -346,14 +563,15 @@ async function serialSearch(
   count: number,
   sources: SearchSource[],
   configService: ReturnType<typeof getConfigService>,
-  domainFilter?: DomainFilter
+  domainFilter?: DomainFilter,
+  recency?: string
 ): Promise<ToolExecutionResult> {
   const startTime = Date.now();
   const errors: string[] = [];
 
   for (const source of sources) {
     try {
-      const result = await source.search(query, count, configService, domainFilter);
+      const result = await source.search(query, count, configService, domainFilter, recency);
       if (result.success) {
         const duration = Date.now() - startTime;
         return formatSingleSourceResult(query, result, duration);
@@ -376,7 +594,7 @@ async function serialSearch(
 // Result Formatting
 // ============================================================================
 
-function mergeSearchResults(
+export function mergeSearchResults(
   query: string,
   results: SearchSourceResult[],
   failedSources: string[],
@@ -385,6 +603,7 @@ function mergeSearchResults(
   const outputParts: string[] = [];
   const allResults: SearchResult[] = [];
   const seenUrls = new Set<string>();
+  const seenTitles = new Set<string>();
 
   outputParts.push(`# Search results for: "${query}"`);
   outputParts.push(`Sources: ${results.map(r => r.source).join(', ')} | Duration: ${duration}ms`);
@@ -407,12 +626,14 @@ function mergeSearchResults(
     if (result.results && result.results.length > 0) {
       outputParts.push(`## Results from ${result.source}`);
       for (const item of result.results) {
-        // 去重（基于 URL）
-        if (!seenUrls.has(item.url)) {
+        // 去重（基于 URL + 标题前缀规范化）
+        const normalizedTitle = normalizeTitleForDedup(item.title || '');
+        if (!seenUrls.has(item.url) && !seenTitles.has(normalizedTitle)) {
           seenUrls.add(item.url);
+          if (normalizedTitle) seenTitles.add(normalizedTitle);
           allResults.push({ ...item, source: result.source });
           const snippet = item.snippet || item.description || '';
-          outputParts.push(`- **${item.title}**`);
+          outputParts.push(`- **${item.title}**${item.age ? ` (${item.age})` : ''}`);
           outputParts.push(`  ${item.url}`);
           if (snippet) outputParts.push(`  ${snippet}`);
         }
@@ -456,7 +677,7 @@ function formatSingleSourceResult(
   } else if (result.results && result.results.length > 0) {
     result.results.forEach((item, index) => {
       const snippet = item.snippet || item.description || '';
-      outputParts.push(`${index + 1}. ${item.title}`);
+      outputParts.push(`${index + 1}. ${item.title}${item.age ? ` (${item.age})` : ''}`);
       outputParts.push(`   ${item.url}`);
       if (snippet) outputParts.push(`   ${snippet}`);
       outputParts.push('');
@@ -557,6 +778,71 @@ async function autoExtractFromResults(
   return '---\n# Auto-Extracted Content\n\n' + extractedParts.join('\n');
 }
 
+/**
+ * CLI fallback for auto_extract: fetch + smartTruncate (no AI model needed).
+ * Provides actual page content instead of just search snippets.
+ */
+async function autoExtractFallback(
+  searchResult: ToolExecutionResult,
+  extractCount: number,
+): Promise<string | null> {
+  const resultData = searchResult.result as { results?: SearchResult[] } | undefined;
+  const urls = (resultData?.results || [])
+    .map(r => r.url)
+    .filter(url => {
+      try {
+        const hostname = new URL(url).hostname;
+        return !SEARCH_ENGINE_DOMAINS.some(d => hostname.endsWith(d));
+      } catch {
+        return false;
+      }
+    })
+    .slice(0, extractCount);
+
+  if (urls.length === 0) return null;
+
+  logger.info(`[CLI fallback] Auto-extracting from ${urls.length} URLs (no AI, smartTruncate)`);
+
+  const fetchPromises = urls.map(async (url): Promise<{ url: string; content: string } | null> => {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; CodeAgent/1.0)',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (!response.ok) return null;
+
+      const html = await response.text();
+      const text = smartHtmlToText(html);
+      if (text.length < 50) return null;
+
+      // No AI available — just smartTruncate to 2000 chars
+      return { url, content: smartTruncate(text, 2000) };
+    } catch {
+      return null;
+    }
+  });
+
+  const results = await Promise.allSettled(fetchPromises);
+  const extractedParts: string[] = [];
+
+  for (const result of results) {
+    if (result.status === 'fulfilled' && result.value) {
+      extractedParts.push(`## Page: ${result.value.url}`);
+      extractedParts.push(result.value.content);
+      extractedParts.push('');
+    }
+  }
+
+  if (extractedParts.length === 0) return null;
+
+  return '---\n# Fetched Page Content\n\n' + extractedParts.join('\n');
+}
+
 // ============================================================================
 // Search Implementations
 // ============================================================================
@@ -568,7 +854,8 @@ async function searchViaCloud(
   query: string,
   maxResults: number,
   _configService: ReturnType<typeof getConfigService>,
-  domainFilter?: DomainFilter
+  domainFilter?: DomainFilter,
+  _recency?: string
 ): Promise<SearchSourceResult> {
   const body: Record<string, unknown> = { query, maxResults };
 
@@ -630,7 +917,8 @@ async function searchViaPerplexity(
   query: string,
   _maxResults: number,
   configService: ReturnType<typeof getConfigService>,
-  domainFilter?: DomainFilter
+  domainFilter?: DomainFilter,
+  _recency?: string
 ): Promise<SearchSourceResult> {
   const apiKey = configService?.getServiceApiKey('perplexity');
   if (!apiKey) {
@@ -689,7 +977,8 @@ async function searchViaExa(
   query: string,
   maxResults: number,
   configService: ReturnType<typeof getConfigService>,
-  domainFilter?: DomainFilter
+  domainFilter?: DomainFilter,
+  recency?: string
 ): Promise<SearchSourceResult> {
   const apiKey = configService?.getServiceApiKey('exa');
   if (!apiKey) {
@@ -706,6 +995,17 @@ async function searchViaExa(
       highlights: true,
     },
   };
+
+  // EXA: startPublishedDate for recency filtering
+  if (recency) {
+    const daysMap: Record<string, number> = { day: 1, week: 7, month: 30 };
+    const days = daysMap[recency];
+    if (days) {
+      const d = new Date();
+      d.setDate(d.getDate() - days);
+      body.startPublishedDate = d.toISOString().slice(0, 10);
+    }
+  }
 
   // EXA supports native domain filtering
   if (domainFilter?.allowed && domainFilter.allowed.length > 0) {
@@ -746,6 +1046,7 @@ async function searchViaExa(
       title: r.title,
       url: r.url,
       snippet: r.text || r.highlights?.[0] || '',
+      age: r.publishedDate ? formatAge(r.publishedDate) : undefined,
       source: 'exa',
     })),
   };
@@ -758,7 +1059,8 @@ async function searchViaBrave(
   query: string,
   maxResults: number,
   configService: ReturnType<typeof getConfigService>,
-  domainFilter?: DomainFilter
+  domainFilter?: DomainFilter,
+  recency?: string
 ): Promise<SearchSourceResult> {
   const apiKey = configService?.getServiceApiKey('brave') || process.env.BRAVE_API_KEY;
   if (!apiKey) {
@@ -774,6 +1076,12 @@ async function searchViaBrave(
   const url = new URL(BRAVE_SEARCH_URL);
   url.searchParams.set('q', filteredQuery);
   url.searchParams.set('count', maxResults.toString());
+
+  // Brave freshness: pd (past day), pw (past week), pm (past month)
+  if (recency) {
+    const freshnessMap: Record<string, string> = { day: 'pd', week: 'pw', month: 'pm' };
+    if (freshnessMap[recency]) url.searchParams.set('freshness', freshnessMap[recency]);
+  }
 
   const response = await fetch(url.toString(), {
     headers: {
@@ -804,6 +1112,90 @@ async function searchViaBrave(
       snippet: r.description,
       age: r.age,
       source: 'brave',
+    })),
+  };
+}
+
+/**
+ * Search via Tavily API (AI-powered search with answer + results)
+ */
+async function searchViaTavily(
+  query: string,
+  maxResults: number,
+  configService: ReturnType<typeof getConfigService>,
+  domainFilter?: DomainFilter,
+  recency?: string
+): Promise<SearchSourceResult> {
+  const apiKey = configService?.getServiceApiKey('tavily') || process.env.TAVILY_API_KEY;
+  if (!apiKey) {
+    return { source: 'tavily', success: false, error: 'API key not configured' };
+  }
+
+  const body: Record<string, unknown> = {
+    query,
+    max_results: maxResults,
+    include_answer: 'basic',
+    search_depth: 'basic',
+  };
+
+  // Tavily: days parameter for recency
+  if (recency) {
+    const daysMap: Record<string, number> = { day: 1, week: 7, month: 30 };
+    if (daysMap[recency]) body.days = daysMap[recency];
+  }
+
+  // Tavily supports native domain filtering
+  if (domainFilter?.allowed && domainFilter.allowed.length > 0) {
+    body.include_domains = domainFilter.allowed;
+  }
+  if (domainFilter?.blocked && domainFilter.blocked.length > 0) {
+    body.exclude_domains = domainFilter.blocked;
+  }
+
+  const response = await fetch(TAVILY_SEARCH_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    return {
+      source: 'tavily',
+      success: false,
+      error: `HTTP ${response.status}: ${errorText}`,
+    };
+  }
+
+  const data = await response.json() as TavilySearchResponse;
+
+  if (data.answer) {
+    return {
+      source: 'tavily',
+      success: true,
+      answer: data.answer,
+      results: (data.results || []).map(r => ({
+        title: r.title,
+        url: r.url,
+        snippet: r.content,
+        age: r.published_date ? formatAge(r.published_date) : undefined,
+        source: 'tavily',
+      })),
+    };
+  }
+
+  return {
+    source: 'tavily',
+    success: true,
+    results: (data.results || []).map(r => ({
+      title: r.title,
+      url: r.url,
+      snippet: r.content,
+      age: r.published_date ? formatAge(r.published_date) : undefined,
+      source: 'tavily',
     })),
   };
 }

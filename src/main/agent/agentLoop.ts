@@ -762,6 +762,21 @@ export class AgentLoop {
         continue;
       }
 
+      // Emit model_response BEFORE tool execution (logical order: think → act)
+      this.onEvent({
+        type: 'model_response',
+        data: {
+          model: this.modelConfig.model,
+          provider: this.modelConfig.provider,
+          responseType: response.type,
+          duration: inferenceDuration,
+          toolCalls: response.toolCalls?.map(tc => tc.name) || [],
+          textLength: (response.content || '').length,
+          inputTokens: response.usage?.inputTokens,
+          outputTokens: response.usage?.outputTokens,
+        },
+      });
+
       langfuse.logEvent(this.traceId, 'inference_complete', {
         iteration: iterations,
         responseType: response.type,

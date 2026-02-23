@@ -11,6 +11,8 @@ import { chatCommand } from './commands/chat';
 import { runCommand } from './commands/run';
 import { serveCommand } from './commands/serve';
 import { exportCommand } from './commands/export';
+import { listToolsCommand } from './commands/listTools';
+import { listAgentsCommand } from './commands/listAgents';
 import { version } from '../../package.json';
 import { DEFAULT_GENERATION } from '../shared/constants';
 
@@ -31,13 +33,16 @@ program
   .option('--plan', '启用规划模式（复杂任务自动分解）')
   .option('--debug', '调试模式')
   .option('--output-format <format>', '输出格式 (text|json|stream-json)', 'text')
-  .option('--system-prompt <prompt>', '自定义系统提示');
+  .option('--system-prompt <prompt>', '自定义系统提示')
+  .option('--preload-tools <tools>', '预加载工具（逗号分隔），跳过 tool_search');
 
 // Register commands
 program.addCommand(chatCommand);
 program.addCommand(runCommand);
 program.addCommand(serveCommand);
 program.addCommand(exportCommand);
+program.addCommand(listToolsCommand);
+program.addCommand(listAgentsCommand);
 
 // Parse and run
 program.parse();

@@ -28,6 +28,12 @@ export class CLIAgent {
   private injectedContext: string = '';
   private prLink: PRLink | null = null;
   private unsubscribeSwarm: (() => void) | null = null;
+  /** Track spawn_agent tool call IDs for agent_dispatch/agent_result mapping */
+  private pendingAgentCalls: Map<string, { agent: string; task: string }> = new Map();
+  /** Track tool call IDs to tool names for tool_result events */
+  private toolCallNames: Map<string, string> = new Map();
+  /** Track turn timing for model_call events */
+  private turnStartTime: number = 0;
 
   private systemPrompt: string | undefined;
 
@@ -77,6 +83,9 @@ export class CLIAgent {
     this.startTime = Date.now();
     this.toolsUsed = [];
     this.lastContent = '';
+    this.pendingAgentCalls.clear();
+    this.toolCallNames.clear();
+    this.turnStartTime = 0;
 
     // 确保有会话
     if (!this.sessionId) {
@@ -152,18 +161,65 @@ export class CLIAgent {
    * 处理 Agent 事件
    */
   private handleEvent(event: AgentEvent): void {
-    // stream-json: write JSONL lines for each event
+    // stream-json: write JSONL lines for each event (JSONL protocol)
     if (this.config.outputFormat === 'stream-json') {
       if (event.type === 'stream_chunk' && event.data?.content) {
         this.writeStreamJson('text', event.data.content);
       } else if (event.type === 'tool_call_start') {
-        this.writeStreamJson('tool_call', { name: event.data.name, arguments: event.data.arguments });
+        const toolName = event.data.name;
+        const toolArgs = event.data.arguments;
+        this.toolCallNames.set(event.data.id, toolName);
+        if (toolName === 'spawn_agent' || toolName === 'task') {
+          // Emit agent_dispatch for sub-agent spawning
+          const agentRole = String(toolArgs?.role || toolArgs?.agent || 'unknown');
+          const agentTask = String(toolArgs?.task || '');
+          this.pendingAgentCalls.set(event.data.id, { agent: agentRole, task: agentTask });
+          this.writeStreamJson('agent_dispatch', { agent: agentRole, task: agentTask });
+        } else {
+          this.writeStreamJson('tool_start', { name: toolName, args: toolArgs });
+        }
       } else if (event.type === 'tool_call_end') {
-        this.writeStreamJson('tool_result', { toolCallId: event.data.toolCallId, output: event.data.output });
+        const toolCallId = event.data.toolCallId;
+        const pending = this.pendingAgentCalls.get(toolCallId);
+        if (pending) {
+          // Emit agent_result for completed sub-agent
+          this.pendingAgentCalls.delete(toolCallId);
+          this.writeStreamJson('agent_result', {
+            agent: pending.agent,
+            result: event.data.output?.substring(0, 2000) || '',
+            success: event.data.success,
+          });
+        } else {
+          const name = this.toolCallNames.get(toolCallId) || 'unknown';
+          this.toolCallNames.delete(toolCallId);
+          this.writeStreamJson('tool_result', { name, result: { output: event.data.output } });
+        }
+      } else if (event.type === 'turn_start') {
+        this.turnStartTime = Date.now();
+        this.writeStreamJson('turn_start', {});
+      } else if (event.type === 'model_response') {
+        // model_response fires after inference, BEFORE tool execution
+        // Contains model, duration, toolCalls — the logical "decision" event
+        const d = event.data as { model?: string; duration?: number; toolCalls?: string[]; inputTokens?: number; outputTokens?: number } | undefined;
+        this.writeStreamJson('model_call', {
+          model: d?.model || this.config.modelConfig.model,
+          duration: d?.duration ? `${(d.duration / 1000).toFixed(1)}s` : undefined,
+          toolCalls: d?.toolCalls || [],
+          inputTokens: d?.inputTokens,
+          outputTokens: d?.outputTokens,
+        });
+      } else if (event.type === 'turn_end') {
+        // turn_end is a boundary marker — server uses it for context accumulation
+        this.writeStreamJson('turn_end', {});
       } else if (event.type === 'error') {
         this.writeStreamJson('error', event.data?.message);
+      } else if (event.type === 'message' && event.data?.role === 'assistant' && event.data?.content) {
+        // Emit full text content (in case stream_chunk was not used)
+        if (!this.lastContent) {
+          this.writeStreamJson('text', event.data.content);
+        }
       } else if (event.type === 'agent_complete') {
-        this.writeStreamJson('complete', { success: true });
+        this.writeStreamJson('done', null);
       }
     } else if (this.config.outputFormat === 'json') {
       // 根据输出格式分发事件

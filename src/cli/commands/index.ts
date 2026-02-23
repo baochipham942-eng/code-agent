@@ -6,3 +6,5 @@ export { chatCommand } from './chat';
 export { runCommand } from './run';
 export { serveCommand } from './serve';
 export { exportCommand } from './export';
+export { listToolsCommand } from './listTools';
+export { listAgentsCommand } from './listAgents';

@@ -6,6 +6,7 @@ export { strategyOptimizeTool } from './strategyOptimize';
 export { toolCreateTool } from './toolCreate';
 export { selfEvaluateTool } from './selfEvaluate';
 export { learnPatternTool } from './learnPattern';
+export { codeExecuteTool } from './codeExecute';
 
 // Meta Learning Loop
 export {

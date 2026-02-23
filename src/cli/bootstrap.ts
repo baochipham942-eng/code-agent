@@ -216,6 +216,7 @@ export function buildCLIConfig(options: {
   debug?: boolean;
   outputFormat?: 'text' | 'json' | 'stream-json';
   systemPrompt?: string;
+  preloadTools?: string;
 }): CLIConfig {
   const config = getConfigService();
   const settings = config.getSettings();

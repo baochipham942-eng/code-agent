@@ -19,24 +19,27 @@ export const chatCommand = new Command('chat')
   .option('--from-pr <pr>', '关联 GitHub PR (URL 或 #123)')
   .action(async (options: { session?: string; resume?: boolean; fromPr?: string }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;
+    const isJsonMode = globalOpts?.json || globalOpts?.outputFormat === 'json' || globalOpts?.outputFormat === 'stream-json';
 
     try {
       // 初始化服务
       await initializeCLIServices();
 
-      // 显示欢迎信息
-      terminalOutput.welcome(version);
-      terminalOutput.info(`项目目录: ${globalOpts?.project || process.cwd()}`);
-      terminalOutput.info(`代际: ${globalOpts?.gen || DEFAULT_GENERATION}`);
+      if (!isJsonMode) {
+        // 显示欢迎信息
+        terminalOutput.welcome(version);
+        terminalOutput.info(`项目目录: ${globalOpts?.project || process.cwd()}`);
+        terminalOutput.info(`代际: ${globalOpts?.gen || DEFAULT_GENERATION}`);
 
-      // 显示数据库状态
-      const db = getDatabaseService();
-      if (db) {
-        const stats = db.getStats();
-        terminalOutput.info(`数据库: ${stats.sessionCount} 会话, ${stats.messageCount} 消息`);
+        // 显示数据库状态
+        const db = getDatabaseService();
+        if (db) {
+          const stats = db.getStats();
+          terminalOutput.info(`数据库: ${stats.sessionCount} 会话, ${stats.messageCount} 消息`);
+        }
+
+        console.log('输入 /help 查看命令，/exit 退出\n');
       }
-
-      console.log('输入 /help 查看命令，/exit 退出\n');
 
       // 创建 Agent
       const agent = await createCLIAgent({
@@ -44,19 +47,22 @@ export const chatCommand = new Command('chat')
         gen: globalOpts?.gen,
         model: globalOpts?.model,
         provider: globalOpts?.provider,
-        json: false,
+        json: globalOpts?.json,
         debug: globalOpts?.debug,
+        outputFormat: globalOpts?.outputFormat,
       });
 
       // 恢复会话
       if (options.session) {
         const restored = await agent.restoreSession(options.session);
-        if (restored) {
-          terminalOutput.success(`已恢复会话: ${options.session}`);
-          const history = agent.getHistory();
-          terminalOutput.info(`历史消息: ${history.length} 条`);
-        } else {
-          terminalOutput.warning(`无法恢复会话: ${options.session}，创建新会话`);
+        if (!isJsonMode) {
+          if (restored) {
+            terminalOutput.success(`已恢复会话: ${options.session}`);
+            const history = agent.getHistory();
+            terminalOutput.info(`历史消息: ${history.length} 条`);
+          } else {
+            terminalOutput.warning(`无法恢复会话: ${options.session}，创建新会话`);
+          }
         }
       } else if (options.fromPr) {
         // 从 PR 关联
@@ -68,14 +74,16 @@ export const chatCommand = new Command('chat')
           const recent = await sessionManager.getMostRecentSession();
           if (recent) {
             const restored = await agent.restoreSession(recent.id);
-            if (restored) {
+            if (!isJsonMode && restored) {
               terminalOutput.success(`已恢复最近会话: ${recent.title}`);
               const history = agent.getHistory();
               terminalOutput.info(`历史消息: ${history.length} 条`);
             }
           }
         } catch (error) {
-          terminalOutput.warning('无法恢复最近会话');
+          if (!isJsonMode) {
+            terminalOutput.warning('无法恢复最近会话');
+          }
         }
       }
 
@@ -85,14 +93,16 @@ export const chatCommand = new Command('chat')
       // 创建 readline 接口
       const createRl = () => readline.createInterface({
         input: process.stdin,
-        output: process.stdout,
-        terminal: true,
+        output: isJsonMode ? undefined : process.stdout,
+        terminal: !isJsonMode,
       });
       let rl = createRl();
 
       // 主循环
       const promptUser = () => {
-        terminalOutput.prompt();
+        if (!isJsonMode) {
+          terminalOutput.prompt();
+        }
       };
 
       rl.on('line', async (line) => {
@@ -149,7 +159,9 @@ export const chatCommand = new Command('chat')
       });
 
       rl.on('close', async () => {
-        console.log('\n再见！👋\n');
+        if (!isJsonMode) {
+          console.log('\n再见！\n');
+        }
         await cleanup();
         process.exit(0);
       });

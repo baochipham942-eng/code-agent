@@ -17,6 +17,8 @@ export interface CLIGlobalOptions {
   debug: boolean;
   outputFormat?: 'text' | 'json' | 'stream-json';
   systemPrompt?: string;
+  /** Comma-separated tool names to preload (bypass tool_search) */
+  preloadTools?: string;
 }
 
 /**

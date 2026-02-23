@@ -93,7 +93,7 @@ import {
   teammateTool,
   planReviewTool,
 } from './multiagent';
-import { strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternTool } from './evolution';
+import { strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternTool, codeExecuteTool } from './evolution';
 import { lspTool, diagnosticsTool } from './lsp';
 
 // ----------------------------------------------------------------------------
@@ -352,6 +352,7 @@ export class ToolRegistry {
     this.register(toolCreateTool);
     this.register(selfEvaluateTool);
     this.register(learnPatternTool);
+    this.register(codeExecuteTool);
 
     // Tool Search (核心工具，始终可用)
     this.register(toolSearchTool);

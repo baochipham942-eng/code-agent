@@ -564,6 +564,14 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
     generations: ['gen8'],
   },
+  {
+    name: 'code_execute',
+    shortDescription: '在沙箱中执行 JS 代码，可循环/条件调用工具，中间结果不消耗上下文',
+    tags: ['evolution', 'shell'],
+    aliases: ['programmatic', 'batch_tools', 'code_run', 'ptc'],
+    source: 'builtin',
+    generations: ['gen8'],
+  },
 
   // ============================================================================
   // 进程管理工具（PTY）

@@ -19,6 +19,21 @@ export const GEN8_TOOLS = `
 | teammate | Agent communication |
 | todo_write | Track steps (multi-file tasks) |
 | skill | Execute skills (/ppt, /commit, etc) |
+| code_execute | Batch tool calls in JS (3+ similar ops) |
+
+### code_execute (Programmatic Tool Calling)
+
+When a task needs 3+ similar tool calls, use code_execute to batch them:
+\`\`\`javascript
+const files = await callTool('glob', { pattern: 'src/**/*.ts' });
+let total = 0;
+for (const f of files.output.split('\\n').filter(Boolean)) {
+  const r = await callTool('read_file', { file_path: f });
+  if (r.success) total += r.output.split('\\n').length;
+}
+return \`\${total} lines in \${files.output.split('\\n').filter(Boolean).length} files\`;
+\`\`\`
+Advantage: intermediate callTool results stay in code memory, only return/console.log enters your context.
 
 ### Slash Commands (Skills)
 

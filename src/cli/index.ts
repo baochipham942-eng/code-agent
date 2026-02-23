@@ -33,8 +33,7 @@ program
   .option('--plan', '启用规划模式（复杂任务自动分解）')
   .option('--debug', '调试模式')
   .option('--output-format <format>', '输出格式 (text|json|stream-json)', 'text')
-  .option('--system-prompt <prompt>', '自定义系统提示')
-  .option('--preload-tools <tools>', '预加载工具（逗号分隔），跳过 tool_search');
+  .option('--system-prompt <prompt>', '自定义系统提示');
 
 // Register commands
 program.addCommand(chatCommand);

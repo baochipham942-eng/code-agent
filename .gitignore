@@ -34,6 +34,19 @@ npm-debug.log*
 
 # Test data
 .test-data/
+test-ppt-output/
+
+# Generated artifacts (eval/test outputs)
+presentation-*.pptx
+spreadsheet-*.xlsx
+chart-*.png
+mermaid-*.png
+*_annotated_*.png
+AI*.md
+AI*.pptx
+AI*.docx
+ai_*.md
+ai-daily-*.md
 
 # Local config
 .code-agent/

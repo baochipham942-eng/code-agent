@@ -77,6 +77,7 @@ export const runCommand = new Command('run')
         debug: globalOpts?.debug,
         outputFormat: globalOpts?.outputFormat,
         systemPrompt: globalOpts?.systemPrompt,
+        metrics: globalOpts?.metrics,
       });
 
       // 恢复会话（如果指定）

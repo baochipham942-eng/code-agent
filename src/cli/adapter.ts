@@ -9,6 +9,7 @@ import type { CLIConfig, CLIRunResult, CLIGlobalOptions } from './types';
 import type { Message, AgentEvent, GenerationId, PRLink } from '../shared/types';
 import { createLogger } from '../main/services/infra/logger';
 import { getSessionSkillService } from '../main/services/skills/sessionSkillService';
+import { MetricsCollector } from '../main/agent/metricsCollector';
 
 const logger = createLogger('CLI-Adapter');
 
@@ -34,6 +35,8 @@ export class CLIAgent {
   private toolCallNames: Map<string, string> = new Map();
   /** Track turn timing for model_call events */
   private turnStartTime: number = 0;
+  /** Per-run metrics collector (active when --metrics is set) */
+  private metricsCollector: MetricsCollector | null = null;
 
   private systemPrompt: string | undefined;
 
@@ -127,12 +130,20 @@ export class CLIAgent {
       });
     }
 
-    // 创建 AgentLoop（传入真实 sessionId）
+    // Create MetricsCollector if --metrics is configured
+    if (this.config.metricsPath) {
+      this.metricsCollector = new MetricsCollector(this.sessionId || `cli-${Date.now()}`);
+    } else {
+      this.metricsCollector = null;
+    }
+
+    // 创建 AgentLoop（传入真实 sessionId + optional MetricsCollector）
     const agentLoop = createAgentLoop(
       this.config,
       this.handleEvent.bind(this),
       this.messages,
-      this.sessionId || undefined
+      this.sessionId || undefined,
+      this.metricsCollector || undefined
     );
 
     return new Promise<CLIRunResult>((resolve) => {
@@ -244,6 +255,20 @@ export class CLIAgent {
       // （两个 assistant 消息 back-to-back，API 400: tool_call_ids without response）
     }
 
+    // MetricsCollector: track context compression and errors
+    if (this.metricsCollector) {
+      if (event.type === 'context_compressed') {
+        this.metricsCollector.recordCompaction();
+      }
+      if (event.type === 'error') {
+        const errData = event.data as { message?: string; code?: string } | undefined;
+        this.metricsCollector.recordError(
+          errData?.code || 'agent_error',
+          errData?.message || 'unknown error'
+        );
+      }
+    }
+
     // Agent 完成
     if (event.type === 'agent_complete') {
       this.finishRun({
@@ -267,6 +292,26 @@ export class CLIAgent {
   private finishRun(result: CLIRunResult): void {
     this.isRunning = false;
     this.currentResult = result;
+
+    // Write metrics JSON if collector is active
+    if (this.metricsCollector && this.config.metricsPath) {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const metricsPath = path.resolve(this.config.metricsPath);
+        const dir = path.dirname(metricsPath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+        const metricsJson = this.metricsCollector.toJSON();
+        fs.writeFileSync(metricsPath, metricsJson, 'utf-8');
+        result.metricsPath = metricsPath;
+        logger.info(`Metrics written to ${metricsPath}`);
+      } catch (error) {
+        logger.warn('Failed to write metrics file', { error: (error as Error).message });
+      }
+      this.metricsCollector = null;
+    }
 
     // 取消 Swarm 事件监听
     if (this.unsubscribeSwarm) {

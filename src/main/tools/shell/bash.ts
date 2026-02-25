@@ -11,6 +11,7 @@ import { createPtySession, getPtySessionOutput } from './ptyExecutor';
 import { generateBashDescription } from './dynamicDescription';
 import { getShellPath } from '../../services/infra/shellEnvironment';
 import { extractBashFacts, dataFingerprintStore } from '../dataFingerprint';
+import { createSanitizedEnv } from '../../utils/sanitizeEnv';
 
 const execAsync = promisify(exec);
 
@@ -279,10 +280,9 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
         timeout,
         cwd: workingDirectory,
         maxBuffer: BASH.MAX_BUFFER,
-        env: {
-          ...process.env,
+        env: createSanitizedEnv({
           PATH: getShellPath(),
-        },
+        }),
       });
 
       let output = stdout;

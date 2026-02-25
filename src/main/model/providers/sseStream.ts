@@ -9,6 +9,21 @@ import { StringDecoder } from 'string_decoder';
 import type { ModelResponse, StreamCallback } from '../types';
 import { logger, httpsAgent, safeJsonParse } from './shared';
 
+export interface StreamSnapshot {
+  /** Accumulated text content so far */
+  content: string;
+  /** Accumulated reasoning/thinking so far */
+  reasoning: string;
+  /** Tool calls assembled so far */
+  toolCalls: Array<{ id: string; name: string; arguments: string }>;
+  /** Estimated output tokens */
+  estimatedTokens: number;
+  /** Snapshot timestamp */
+  timestamp: number;
+  /** Whether this is the final snapshot (stream completed) */
+  isFinal: boolean;
+}
+
 export interface SSEStreamOptions {
   providerName: string;
   baseUrl: string;
@@ -21,6 +36,10 @@ export interface SSEStreamOptions {
   timeout?: number;
   /** API 路径，默认 '/chat/completions' */
   endpoint?: string;
+  /** Periodic snapshot callback for mid-stream persistence. Called every snapshotIntervalMs with accumulated state. */
+  onSnapshot?: (snapshot: StreamSnapshot) => void;
+  /** Snapshot interval in ms (default: 3000) */
+  snapshotIntervalMs?: number;
 }
 
 /**
@@ -45,6 +64,8 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
     extraHeaders,
     timeout = 300000,
     endpoint = '/chat/completions',
+    onSnapshot,
+    snapshotIntervalMs,
   } = options;
 
   return new Promise((resolve, reject) => {
@@ -65,6 +86,22 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
     let charCount = 0;
     let lastEstimateTime = 0;
     let usageData: { inputTokens: number; outputTokens: number } | undefined;
+
+    // Stream snapshot state
+    let lastSnapshotTime = 0;
+    const snapshotInterval = snapshotIntervalMs ?? 3000;
+
+    function emitSnapshot(isFinal: boolean) {
+      if (!onSnapshot) return;
+      onSnapshot({
+        content,
+        reasoning,
+        toolCalls: Array.from(toolCalls.values()),
+        estimatedTokens: Math.ceil(charCount / 4),
+        timestamp: Date.now(),
+        isFinal,
+      });
+    }
 
     const reqOptions: https.RequestOptions = {
       hostname: url.hostname,
@@ -181,6 +218,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
               });
             }
 
+            emitSnapshot(true);
             resolve(result);
             return;
           }
@@ -289,6 +327,12 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
           } catch {
             logger.debug(`[${providerName}] JSON 解析跳过: ${data.substring(0, 50)}`);
           }
+        }
+
+        // Periodic snapshot for mid-stream persistence
+        if (onSnapshot && Date.now() - lastSnapshotTime > snapshotInterval) {
+          lastSnapshotTime = Date.now();
+          emitSnapshot(false);
         }
       });
 

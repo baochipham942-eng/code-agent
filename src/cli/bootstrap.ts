@@ -24,7 +24,9 @@ import { initCLIDatabase, getCLIDatabase, type CLIDatabaseService } from './data
 import { getCLISessionManager, type CLISessionManager } from './session';
 import type { CLIConfig, CLIEventHandler } from './types';
 import type { Generation, ModelConfig, Message, AgentEvent } from '../shared/types';
+import type { TelemetryAdapter } from '../shared/types/telemetry';
 import { DEFAULT_MODELS, DEFAULT_GENERATION, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../shared/constants';
+import { composeTelemetryAdapters } from '../main/agent/metricsCollector';
 
 // 延迟导入的模块
 let AgentLoop: typeof import('../main/agent/agentLoop').AgentLoop;
@@ -217,6 +219,7 @@ export function buildCLIConfig(options: {
   outputFormat?: 'text' | 'json' | 'stream-json';
   systemPrompt?: string;
   preloadTools?: string;
+  metrics?: string;
 }): CLIConfig {
   const config = getConfigService();
   const settings = config.getSettings();
@@ -258,6 +261,7 @@ export function buildCLIConfig(options: {
     debug: options.debug || false,
     autoApprovePlan: true, // CLI 模式默认自动批准 plan mode
     systemPrompt: options.systemPrompt,
+    metricsPath: options.metrics,
   };
 }
 
@@ -268,7 +272,8 @@ export function createAgentLoop(
   config: CLIConfig,
   onEvent: CLIEventHandler,
   messages: Message[] = [],
-  sessionId?: string
+  sessionId?: string,
+  extraTelemetryAdapter?: TelemetryAdapter
 ): InstanceType<typeof AgentLoop> {
   if (!toolRegistry || !toolExecutor || !generationManager || !AgentLoop) {
     throw new Error('CLI services not initialized');
@@ -297,7 +302,7 @@ export function createAgentLoop(
   }
 
   // Telemetry: 开始会话追踪
-  let telemetryAdapter = undefined;
+  let telemetryAdapter: TelemetryAdapter | undefined = undefined;
   if (getTelemetryCollector) {
     try {
       const collector = getTelemetryCollector();
@@ -314,6 +319,13 @@ export function createAgentLoop(
       // Telemetry 失败不阻止运行
       console.warn('[Telemetry] Failed to start session:', (error as Error).message);
     }
+  }
+
+  // Compose with extra telemetry adapter (e.g. MetricsCollector for --metrics)
+  if (extraTelemetryAdapter) {
+    telemetryAdapter = telemetryAdapter
+      ? composeTelemetryAdapters(telemetryAdapter, extraTelemetryAdapter)
+      : extraTelemetryAdapter;
   }
 
   // 创建 AgentLoop

@@ -19,6 +19,8 @@ export interface CLIGlobalOptions {
   systemPrompt?: string;
   /** Comma-separated tool names to preload (bypass tool_search) */
   preloadTools?: string;
+  /** Path to write session metrics JSON (enables MetricsCollector), mapped from --metrics */
+  metrics?: string;
 }
 
 /**
@@ -35,6 +37,8 @@ export interface CLIConfig {
   autoApprovePlan?: boolean;
   /** Custom system prompt to inject */
   systemPrompt?: string;
+  /** Path to write session metrics JSON (enables MetricsCollector) */
+  metricsPath?: string;
 }
 
 /**
@@ -60,6 +64,8 @@ export interface CLIRunResult {
   error?: string;
   toolsUsed?: string[];
   duration?: number;
+  /** Path to the metrics JSON file (if --metrics was used) */
+  metricsPath?: string;
 }
 
 /**

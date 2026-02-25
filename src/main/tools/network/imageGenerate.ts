@@ -14,7 +14,7 @@ import { CLOUD_ENDPOINTS, MODEL_API_ENDPOINTS, DEFAULT_MODELS } from '../../../s
 const logger = createLogger('ImageGenerate');
 
 // 图片生成引擎：决定扩写策略和生图 API
-type ImageEngine = 'cogview' | 'flux' | 'cloud';
+export type ImageEngine = 'cogview' | 'flux' | 'cloud';
 
 // 超时配置
 const TIMEOUT_MS = {
@@ -299,7 +299,7 @@ function extractImageFromResponse(result: any): string {
 /**
  * 下载图片 URL → base64 data URI（解决临时 URL 过期问题）
  */
-async function downloadImageAsBase64(url: string): Promise<string> {
+export async function downloadImageAsBase64(url: string): Promise<string> {
   const response = await fetchWithTimeout(url, {}, TIMEOUT_MS.IMAGE_DOWNLOAD);
   if (!response.ok) {
     throw new Error(`图片下载失败: ${response.status}`);
@@ -313,7 +313,7 @@ async function downloadImageAsBase64(url: string): Promise<string> {
 /**
  * 判断是否为 URL（而非 base64 data URI）
  */
-function isImageUrl(data: string): boolean {
+export function isImageUrl(data: string): boolean {
   return data.startsWith('http://') || data.startsWith('https://');
 }
 
@@ -325,7 +325,7 @@ interface GenerateResult {
 /**
  * 生成图片（按 engine 路由，不跨生态 fallback）
  */
-async function generateImage(
+export async function generateImage(
   engine: ImageEngine,
   fluxModel: string,
   prompt: string,
@@ -417,7 +417,7 @@ async function generateImage(
 /**
  * 确定图片生成引擎（扩写和生图走同一生态，不跨 ecosystem fallback）
  */
-function determineImageEngine(): ImageEngine {
+export function determineImageEngine(): ImageEngine {
   const configService = getConfigService();
   if (configService.getApiKey('zhipu')) return 'cogview';
   if (configService.getApiKey('openrouter')) return 'flux';

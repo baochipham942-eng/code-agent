@@ -56,6 +56,22 @@ export interface TaskCompleteData {
   toolsUsed: string[];     // 使用的工具列表
 }
 
+// 工具执行进度事件数据（每 5 秒发射一次，用于前端显示耗时）
+export interface ToolProgressData {
+  toolCallId: string;
+  toolName: string;
+  elapsedMs: number;       // 已耗时 ms
+  detail?: string;         // 可选的描述文本
+}
+
+// 工具执行超时警告事件数据（超过阈值时发射）
+export interface ToolTimeoutData {
+  toolCallId: string;
+  toolName: string;
+  elapsedMs: number;       // 已耗时 ms
+  threshold: number;       // 超时阈值 ms
+}
+
 // Memory 学习完成事件数据
 export interface MemoryLearnedData {
   sessionId: string;
@@ -171,7 +187,11 @@ export type AgentEvent =
   // E1: 引用溯源
   | { type: 'citations_updated'; data: { citations: import('./citation').Citation[] } }
   // E4: 模型切换
-  | { type: 'model_switched'; data: { from: string; to: string; provider?: string } };
+  | { type: 'model_switched'; data: { from: string; to: string; provider?: string } }
+  // 工具执行进度（每 5 秒发射，前端展示耗时）
+  | { type: 'tool_progress'; data: ToolProgressData }
+  // 工具执行超时警告（超过阈值时发射）
+  | { type: 'tool_timeout'; data: ToolTimeoutData };
 
 // 上下文压缩事件数据
 export interface ContextCompressedData {

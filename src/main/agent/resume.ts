@@ -54,6 +54,9 @@ export interface ResumeResult {
 
   /** Warnings during restore */
   warnings: string[];
+
+  /** Context summary for degraded resume (new session with previous context) */
+  fallbackContext?: string;
 }
 
 /**
@@ -282,6 +285,50 @@ export class SessionResume {
     }
   }
 
+  /**
+   * Try to resume a session. If resume fails for any reason,
+   * gracefully degrade to a new session with context summary injected.
+   *
+   * Inspired by CodePilot's peek-then-fallback pattern:
+   * try resume -> on failure -> start fresh with context from the failed session.
+   */
+  async resumeOrFallback(
+    sessionId: string,
+    options: Partial<ResumeOptions> = {}
+  ): Promise<ResumeResult> {
+    // First, try normal resume
+    const result = await this.resume(sessionId, options);
+
+    if (result.success) {
+      return result;
+    }
+
+    // Resume failed - try to extract context summary for degraded mode
+    logger.warn(`Resume failed for ${sessionId}: ${result.error}. Falling back to new session with context.`);
+
+    try {
+      const summary = await this.getSessionSummary(sessionId);
+      if (summary) {
+        return {
+          success: true,
+          session: undefined, // No restored session, but we have context
+          warnings: [
+            `Original session could not be resumed: ${result.error}`,
+            'Starting new session with context summary from previous session.',
+          ],
+          // Caller should check: if session is undefined but success is true,
+          // create a new session and inject the context summary
+          fallbackContext: summary,
+        };
+      }
+    } catch (summaryError) {
+      logger.warn('Failed to generate fallback context summary', { summaryError });
+    }
+
+    // Complete failure - return original error
+    return result;
+  }
+
   // --------------------------------------------------------------------------
   // Private Methods
   // --------------------------------------------------------------------------
@@ -469,4 +516,14 @@ export async function resumeLatestSession(
   options?: Partial<ResumeOptions>
 ): Promise<ResumeResult> {
   return getSessionResume().resumeLatest(options);
+}
+
+/**
+ * Convenience function to resume or fallback
+ */
+export async function resumeSessionOrFallback(
+  sessionId: string,
+  options?: Partial<ResumeOptions>
+): Promise<ResumeResult> {
+  return getSessionResume().resumeOrFallback(sessionId, options);
 }

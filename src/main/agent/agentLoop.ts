@@ -30,7 +30,7 @@ import { HookManager, createHookManager } from '../hooks';
 import type { BudgetEventData } from '../../shared/types';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getSystemPromptCache } from '../telemetry/systemPromptCache';
-import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS } from '../../shared/constants';
+import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../shared/constants';
 
 // Import refactored modules
 import type {
@@ -2018,6 +2018,25 @@ export class AgentLoop {
     // 清理工具参数中的 XML 标签残留（如 <arg_key>command</arg_key>）
     toolCall.arguments = cleanXmlResidues(toolCall.arguments) as Record<string, unknown>;
 
+    // Tool progress & timeout tracking
+    const timeoutThreshold = TOOL_TIMEOUT_THRESHOLDS[toolCall.name] ?? TOOL_PROGRESS.DEFAULT_THRESHOLD;
+    let timeoutEmitted = false;
+    const progressInterval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      this.onEvent({
+        type: 'tool_progress',
+        data: { toolCallId: toolCall.id, toolName: toolCall.name, elapsedMs: elapsed },
+      });
+      if (!timeoutEmitted && elapsed > timeoutThreshold) {
+        timeoutEmitted = true;
+        this.onEvent({
+          type: 'tool_timeout',
+          data: { toolCallId: toolCall.id, toolName: toolCall.name, elapsedMs: elapsed, threshold: timeoutThreshold },
+        });
+        logger.warn(`Tool ${toolCall.name} exceeded timeout threshold ${timeoutThreshold}ms (elapsed: ${elapsed}ms)`);
+      }
+    }, TOOL_PROGRESS.REPORT_INTERVAL);
+
     try {
       logger.debug(` Calling toolExecutor.execute for ${toolCall.name}...`);
 
@@ -2042,6 +2061,7 @@ export class AgentLoop {
           modelCallback: this.createModelCallback(),
         }
       );
+      clearInterval(progressInterval);
       logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);
 
       const toolResult: ToolResult = {
@@ -2360,6 +2380,7 @@ export class AgentLoop {
 
       return toolResult;
     } catch (error) {
+      clearInterval(progressInterval);
       logger.error(`Tool ${toolCall.name} threw exception:`, error);
       const toolResult: ToolResult = {
         toolCallId: toolCall.id,

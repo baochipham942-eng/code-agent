@@ -50,6 +50,7 @@ export const chatCommand = new Command('chat')
         json: globalOpts?.json,
         debug: globalOpts?.debug,
         outputFormat: globalOpts?.outputFormat,
+        metrics: globalOpts?.metrics,
       });
 
       // 恢复会话

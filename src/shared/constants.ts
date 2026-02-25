@@ -964,6 +964,29 @@ export const SKILL_TIMEOUTS = {
   INSTALL: 30_000,
 } as const;
 
+/** 工具执行进度报告配置 */
+export const TOOL_PROGRESS = {
+  /** 进度报告间隔 (ms) */
+  REPORT_INTERVAL: 5_000,
+  /** 默认超时警告阈值 (ms) */
+  DEFAULT_THRESHOLD: 90_000,
+} as const;
+
+/** 工具执行超时警告阈值 (ms)，按工具名或前缀匹配 */
+export const TOOL_TIMEOUT_THRESHOLDS: Record<string, number> = {
+  bash: 120_000,            // 2 min（命令可能耗时较长）
+  ppt_generate: 180_000,    // 3 min（多步管道）
+  image_generate: 90_000,   // 1.5 min
+  video_generate: 600_000,  // 10 min（视频生成较慢）
+  web_fetch: 30_000,        // 30s
+  web_search: 30_000,       // 30s
+  read_pdf: 60_000,         // 1 min
+  read_xlsx: 30_000,        // 30s
+  task: 300_000,            // 5 min（子代理任务）
+  spawn_agent: 300_000,     // 5 min（子代理）
+  mcp: 60_000,              // 1 min
+} as const;
+
 // ============================================================================
 // 资源管理配置
 // ============================================================================

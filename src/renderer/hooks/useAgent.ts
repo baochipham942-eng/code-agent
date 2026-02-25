@@ -26,7 +26,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { generateMessageId } from '@shared/utils/id';
-import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData, ResearchDetectedData, InterruptEventData } from '@shared/types';
+import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData, ResearchDetectedData, InterruptEventData, ToolProgressData, ToolTimeoutData } from '@shared/types';
 import { createLogger } from '../utils/logger';
 import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 
@@ -62,6 +62,10 @@ export const useAgent = () => {
   // 任务进度状态（长时任务反馈）
   const [taskProgress, setTaskProgress] = useState<TaskProgressData | null>(null);
   const [lastTaskComplete, setLastTaskComplete] = useState<TaskCompleteData | null>(null);
+
+  // 工具执行进度追踪（实时耗时 + 超时警告）
+  const [activeToolProgress, setActiveToolProgress] = useState<ToolProgressData | null>(null);
+  const [toolTimeoutWarning, setToolTimeoutWarning] = useState<ToolTimeoutData | null>(null);
 
   // 语义研究检测状态
   const [researchDetected, setResearchDetected] = useState<ResearchDetectedData | null>(null);
@@ -412,6 +416,10 @@ export const useAgent = () => {
                     .flatMap(m => m.toolCalls!.map(tc => tc.id))
                 });
               }
+
+              // Clear tool progress/timeout state for this completed tool
+              setActiveToolProgress((prev) => prev?.toolCallId === toolResult.toolCallId ? null : prev);
+              setToolTimeoutWarning((prev) => prev?.toolCallId === toolResult.toolCallId ? null : prev);
             }
             break;
 
@@ -466,6 +474,9 @@ export const useAgent = () => {
               flushRef.current();
             }
             clearSessionProcessing();
+            // Clear tool progress/timeout state
+            setActiveToolProgress(null);
+            setToolTimeoutWarning(null);
             break;
 
           case 'permission_request':
@@ -524,6 +535,23 @@ export const useAgent = () => {
           case 'research_mode_started':
             // 研究模式开始，清除检测状态
             setResearchDetected(null);
+            break;
+
+          // ================================================================
+          // 工具执行进度 & 超时
+          // ================================================================
+
+          case 'tool_progress':
+            if (event.data) {
+              setActiveToolProgress(event.data as ToolProgressData);
+            }
+            break;
+
+          case 'tool_timeout':
+            if (event.data) {
+              logger.debug('tool_timeout', { data: event.data });
+              setToolTimeoutWarning(event.data as ToolTimeoutData);
+            }
             break;
 
           // ================================================================
@@ -694,6 +722,9 @@ export const useAgent = () => {
     // 长时任务进度追踪
     taskProgress,
     lastTaskComplete,
+    // 工具执行进度 & 超时警告
+    activeToolProgress,
+    toolTimeoutWarning,
     // 语义研究检测
     researchDetected,
     dismissResearchDetected,

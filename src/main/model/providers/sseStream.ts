@@ -34,6 +34,8 @@ export interface SSEStreamOptions {
   agent?: https.Agent | http.Agent;
   extraHeaders?: Record<string, string>;
   timeout?: number;
+  /** 首字节超时（ms），连接成功后在此时间内未收到任何数据则断开。默认 60000 */
+  firstByteTimeout?: number;
   /** API 路径，默认 '/chat/completions' */
   endpoint?: string;
   /** Periodic snapshot callback for mid-stream persistence. Called every snapshotIntervalMs with accumulated state. */
@@ -63,6 +65,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
     agent,
     extraHeaders,
     timeout = 300000,
+    firstByteTimeout = 60000,
     endpoint = '/chat/completions',
     onSnapshot,
     snapshotIntervalMs,
@@ -149,8 +152,24 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
 
       let buffer = '';
       const decoder = new StringDecoder('utf8');
+      let receivedFirstByte = false;
+
+      // First-byte timeout: 连接成功（HTTP 200）后，如果在 firstByteTimeout 内
+      // 没有收到任何有效 SSE data chunk，主动断开。
+      // 这覆盖了 Node.js socket timeout 无法检测的场景：
+      // TCP 连接成功、HTTP 200 已返回，但服务端不发送任何 SSE 事件。
+      const firstByteTimer = setTimeout(() => {
+        if (!receivedFirstByte) {
+          logger.error(`[${providerName}] First-byte timeout: ${firstByteTimeout}ms 内未收到任何 SSE 数据`);
+          req.destroy(new Error(`${providerName} API first-byte timeout (${firstByteTimeout}ms)`));
+        }
+      }, firstByteTimeout);
 
       res.on('data', (chunk: Buffer) => {
+        if (!receivedFirstByte) {
+          receivedFirstByte = true;
+          clearTimeout(firstByteTimer);
+        }
         buffer += decoder.write(chunk);
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
@@ -337,6 +356,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
       });
 
       res.on('end', () => {
+        clearTimeout(firstByteTimer);
         // 从 content 中提取 <think> 块，合并到 reasoning
         const thinkRegex = /<think>([\s\S]*?)<\/think>/g;
         let thinkMatch;
@@ -369,6 +389,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
       });
 
       res.on('error', (err) => {
+        clearTimeout(firstByteTimer);
         logger.error(`[${providerName}] 响应错误:`, err);
         if (onStream) {
           onStream({

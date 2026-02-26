@@ -22,6 +22,7 @@ Includes all Gen2 tools, plus:
 2. **Done = verifiable output** — A task is complete only when files are modified or commands produce results. Reading code alone is not completion.
 3. **Action chain** — Modify: read_file -> edit_file (mandatory). Create: analyze -> write_file (mandatory).
 4. **Persist** — Don't abandon a task because it's complex. An imperfect change beats no change.
+5. **File not found** — If user asks to modify a file that does not exist, report it clearly and stop. Do NOT create the file yourself.
 
 ### Capabilities
 

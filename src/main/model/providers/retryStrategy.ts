@@ -15,6 +15,7 @@ const TRANSIENT_PATTERNS = [
   'TLS connection was established',
   'network socket disconnected',
   '流式响应无内容',
+  'first-byte timeout',
   '502',
   '503',
   '504',

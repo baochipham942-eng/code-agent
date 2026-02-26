@@ -240,6 +240,7 @@ export const GENERATION_TOOLS: Record<GenerationId, string[]> = {
     'computer_use',
     'browser_navigate',
     'browser_action',
+    'gui_agent',
   ],
 
   // Gen 7: 多代理协作
@@ -314,6 +315,7 @@ export const GENERATION_TOOLS: Record<GenerationId, string[]> = {
     'computer_use',
     'browser_navigate',
     'browser_action',
+    'gui_agent',
     // Multi-Agent
     'spawn_agent',
     'agent_message',
@@ -393,6 +395,7 @@ export const GENERATION_TOOLS: Record<GenerationId, string[]> = {
     'computer_use',
     'browser_navigate',
     'browser_action',
+    'gui_agent',
     // Multi-Agent
     'spawn_agent',
     'agent_message',

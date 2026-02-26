@@ -80,7 +80,7 @@ import {
   mcpAddServerTool,
 } from './mcp';
 import { memoryStoreTool, memorySearchTool, codeIndexTool, autoLearnTool, forkSessionTool } from './memory';
-import { screenshotTool, computerUseTool, browserNavigateTool, browserActionTool } from './vision';
+import { screenshotTool, computerUseTool, browserNavigateTool, browserActionTool, guiAgentTool } from './vision';
 import {
   sdkTaskTool,
   agentSpawnTool,
@@ -330,6 +330,7 @@ export class ToolRegistry {
     this.register(computerUseTool);
     this.register(browserNavigateTool);
     this.register(browserActionTool);
+    this.register(guiAgentTool);
 
     // Gen 7 tools - Multi-Agent
     // SDK-compatible Task tool (simplified interface)

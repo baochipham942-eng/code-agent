@@ -596,6 +596,8 @@ export const MODEL_API_ENDPOINTS = {
   openrouter: 'https://openrouter.ai/api/v1',
   /** Google Gemini */
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
+  /** 火山引擎 Ark (豆包 GUI 自动化) */
+  volcengine: 'https://ark.cn-beijing.volces.com/api/v3',
 } as const;
 
 // ============================================================================

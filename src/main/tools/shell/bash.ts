@@ -12,6 +12,7 @@ import { generateBashDescription } from './dynamicDescription';
 import { getShellPath } from '../../services/infra/shellEnvironment';
 import { extractBashFacts, dataFingerprintStore } from '../dataFingerprint';
 import { createSanitizedEnv } from '../../utils/sanitizeEnv';
+import { truncateMiddle } from '../../utils/truncate';
 
 const execAsync = promisify(exec);
 
@@ -154,7 +155,7 @@ Git: NEVER --force push or --no-verify unless explicitly requested.`,
 
         let outputText = output.output;
         if (outputText.length > BASH.MAX_OUTPUT_LENGTH) {
-          outputText = outputText.substring(0, BASH.MAX_OUTPUT_LENGTH) + '\n... (output truncated)';
+          outputText = truncateMiddle(outputText, BASH.MAX_OUTPUT_LENGTH);
         }
 
         return {
@@ -292,7 +293,7 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
 
       // Truncate if too long
       if (output.length > BASH.MAX_OUTPUT_LENGTH) {
-        output = output.substring(0, BASH.MAX_OUTPUT_LENGTH) + '\n... (output truncated)';
+        output = truncateMiddle(output, BASH.MAX_OUTPUT_LENGTH);
       }
 
       const dynamicDesc = await descriptionPromise;

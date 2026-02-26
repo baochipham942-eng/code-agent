@@ -55,3 +55,18 @@ export {
   type SanitizationConfig,
   type SanitizationMode,
 } from './inputSanitizer';
+
+// Command Safety (Codex-style safe command whitelist)
+export {
+  isKnownSafeCommand,
+  classifyCommand,
+} from './commandSafety';
+
+// Exec Policy (persistent approval rules)
+export {
+  ExecPolicyStore,
+  getExecPolicyStore,
+  resetExecPolicyStore,
+  type PrefixRule,
+  type PolicyDecision,
+} from './execPolicy';

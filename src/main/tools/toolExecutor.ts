@@ -16,6 +16,8 @@ import {
   getCommandMonitor,
   getAuditLogger,
   maskSensitiveData,
+  isKnownSafeCommand,
+  getExecPolicyStore,
   type ValidationResult,
 } from '../security';
 import { createFileCheckpointIfNeeded } from './middleware/fileCheckpointMiddleware';
@@ -251,7 +253,35 @@ export class ToolExecutor {
       logger.debug('Tool pre-approved by Skill system, skipping permission check', { toolName });
     }
 
-    if (tool.requiresPermission && !isPreApproved) {
+    // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批
+    let isSafeCommand = false;
+    if (toolName === 'bash' && params.command && !isPreApproved) {
+      const cmd = params.command as string;
+
+      // 1. 检查 exec policy 持久化规则
+      try {
+        const policyDecision = getExecPolicyStore().match(cmd);
+        if (policyDecision === 'allow') {
+          isSafeCommand = true;
+          logger.debug('Command allowed by exec policy', { command: cmd.substring(0, 80) });
+        } else if (policyDecision === 'forbidden') {
+          return {
+            success: false,
+            error: `Blocked by exec policy: ${cmd.substring(0, 80)}`,
+          };
+        }
+      } catch {
+        // exec policy not initialized, skip
+      }
+
+      // 2. 检查安全命令白名单
+      if (!isSafeCommand && isKnownSafeCommand(cmd)) {
+        isSafeCommand = true;
+        logger.debug('Command is known safe, skipping approval', { command: cmd.substring(0, 80) });
+      }
+    }
+
+    if (tool.requiresPermission && !isPreApproved && !isSafeCommand) {
       const permissionRequest = this.buildPermissionRequest(tool, params);
 
       // E2: 确认门控 - 为写操作附加预览信息
@@ -266,6 +296,15 @@ export class ToolExecutor {
       }
 
       const approved = await this.requestPermission(permissionRequest);
+
+      // P0: prefix_rule 学习 — 用户批准后生成持久化规则
+      if (approved && toolName === 'bash' && params.command) {
+        try {
+          getExecPolicyStore().learnFromApproval(params.command as string);
+        } catch {
+          // exec policy not initialized, skip
+        }
+      }
 
       if (!approved) {
         // Log permission denial

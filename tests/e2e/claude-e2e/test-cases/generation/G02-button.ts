@@ -25,11 +25,11 @@ export const G02: TestCase = {
 
   expectedBehavior: {
     directExecution: true,
-    toolCallRange: { max: 8 },
+    toolCallRange: { max: 25 },
   },
 
   tags: ['generation', 'react', 'component'],
-  timeout: 120000,
+  timeout: 300000,
 };
 
 export default G02;

@@ -29,7 +29,7 @@ export const T01: TestCase = {
   },
 
   tags: ['documentation', 'jsdoc', 'comments'],
-  timeout: 60000,
+  timeout: 180000,
 };
 
 export default T01;

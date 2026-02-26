@@ -157,7 +157,9 @@ Example of good technical question:
     // Get the main window to send IPC event
     const mainWindow = BrowserWindow.getAllWindows()[0];
     if (!mainWindow) {
-      // Fallback: return questions as text if no window
+      // CLI 模式：无法交互，返回明确的"用户未响应"信号。
+      // 之前返回 "[Please respond in chat]" 会被模型误解为"用户没反对"从而自行决定，
+      // 导致模型执行了不应执行的操作（如创建用户没要求创建的文件）。
       const formatted = questions
         .map((q, i) => {
           const optionsStr = q.options
@@ -169,7 +171,7 @@ Example of good technical question:
 
       return {
         success: true,
-        output: `Questions (no UI available):\n\n${formatted}\n\n[Please respond in chat]`,
+        output: `[用户未响应 - CLI 模式无法交互]\n\n${formatted}\n\n⚠️ 用户无法回答问题。请不要自行选择选项，而是基于当前已知信息给出分析和建议，等待用户下一步指示。不要创建、修改或删除任何文件。`,
       };
     }
 

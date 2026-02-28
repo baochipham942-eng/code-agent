@@ -25,7 +25,7 @@ import { initUnifiedOrchestrator } from '../orchestrator';
 import { logBridge } from '../mcp/logBridge.js';
 import { initPluginSystem, shutdownPluginSystem } from '../plugins';
 import { initDAGEventBridge } from '../scheduler';
-import { initCronService, getCronService, initHeartbeatService, getHeartbeatService } from '../cron';
+import { initCronService, getCronService, initHeartbeatService, getHeartbeatService, HeartbeatTaskLoader } from '../cron';
 import { initFileCheckpointService, getFileCheckpointService } from '../services/checkpoint';
 import { getSkillDiscoveryService, getSkillRepositoryService, initSkillWatcher, getSkillWatcher } from '../services/skills';
 import { getMainWindow } from './window';
@@ -34,6 +34,7 @@ import { initChannelAgentBridge, getChannelAgentBridge } from '../channels/chann
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { detectCodexCLI } from '../tools/shell/codexSandbox';
 import { SYNC, UPDATE, CLOUD, TOOL_CACHE, getCloudApiUrl, DEFAULT_MODELS, DEFAULT_GENERATION, DEFAULT_PROVIDER, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../shared/constants';
+import { loadSoul, watchSoulFiles } from '../generation/prompts/soulLoader';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import { GenerationManager } from '../generation/generationManager';
 import { createPlanningService, type PlanningService } from '../planning';
@@ -396,6 +397,19 @@ async function initializeServices(): Promise<void> {
       logger.warn('HeartbeatService initialization failed (non-blocking)', { error: String(error) });
     });
 
+  // Initialize HeartbeatTaskLoader (HEARTBEAT.md auto-driven tasks)
+  initCronService()
+    .then(async () => {
+      const workingDir = app.isPackaged ? process.cwd() : process.env.CODE_AGENT_WORKING_DIR || process.cwd();
+      const heartbeatLoader = new HeartbeatTaskLoader({ workingDirectory: workingDir, cronService: getCronService() });
+      await heartbeatLoader.loadFromFile();
+      heartbeatLoader.watchFile();
+      logger.info('HeartbeatTaskLoader initialized');
+    })
+    .catch((error) => {
+      logger.warn('HeartbeatTaskLoader initialization failed (non-blocking)', { error: String(error) });
+    });
+
   // 清理过期检查点（启动时执行一次）
   getFileCheckpointService().cleanup().then(count => {
     if (count > 0) {
@@ -554,6 +568,16 @@ async function initializeServices(): Promise<void> {
     logger.info('Update service initialized', { server: updateServerUrl });
   } catch (error: unknown) {
     logger.error('Failed to initialize update service', error);
+  }
+
+  // Load soul/profile personality (before GenerationManager so prompts use it)
+  try {
+    const workingDir = app.isPackaged ? process.cwd() : process.env.CODE_AGENT_WORKING_DIR || process.cwd();
+    loadSoul(workingDir);
+    watchSoulFiles(workingDir);
+    logger.info('Soul/Profile loader initialized');
+  } catch (error) {
+    logger.warn('Soul/Profile loader failed (using default identity)', { error: String(error) });
   }
 
   // Initialize generation manager

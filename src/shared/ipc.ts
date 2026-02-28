@@ -365,6 +365,7 @@ export const IPC_DOMAINS = {
   ERROR: 'domain:error',
   CRON: 'domain:cron',
   CAPTURE: 'domain:capture', // 浏览器采集
+  SOUL: 'domain:soul',
 } as const;
 
 export type IPCDomain = typeof IPC_DOMAINS[keyof typeof IPC_DOMAINS];

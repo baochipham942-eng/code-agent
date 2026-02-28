@@ -60,6 +60,48 @@ Today's date: ${today}
 }
 
 /**
+ * Build runtime mode block — tells the model whether it's running in GUI or CLI,
+ * and provides self-awareness about the app itself (name, version, source location).
+ * This prevents the model from:
+ * 1. Thinking in CLI terms when inside a desktop app
+ * 2. Not knowing it IS code-agent when asked to fix its own bugs
+ */
+export function buildRuntimeModeBlock(): string {
+  const isCLI = process.env.CODE_AGENT_CLI_MODE === 'true';
+
+  // Self-awareness: app identity and source code location
+  let appIdentity = '';
+  try {
+    const { app } = require('electron');
+    const appName = app.getName() || 'Code Agent';
+    const appVersion = app.getVersion() || 'unknown';
+    const isPackaged = app.isPackaged;
+    // In dev mode: source = process.cwd(); packaged: source = app.getAppPath()
+    const sourcePath = isPackaged ? '' : process.cwd();
+    appIdentity = `\nYou ARE the "${appName}" application (v${appVersion}).`;
+    if (sourcePath) {
+      appIdentity += `\nYour own source code is at: ${sourcePath}`;
+      appIdentity += `\nIf the user asks you to fix your own bugs, navigate to that path — not the sandbox working directory.`;
+    }
+  } catch {
+    // electron not available (test env)
+  }
+
+  if (isCLI) {
+    return `\n\n<runtime_mode>
+You are running in CLI mode (terminal). The user interacts via command line.
+GUI features (screenshot, browser_action) are unavailable.${appIdentity}
+</runtime_mode>`;
+  }
+
+  return `\n\n<runtime_mode>
+You are running inside a desktop GUI application (Electron).
+Users interact through a visual chat interface, not a terminal.
+When explaining solutions, frame them from the user's perspective — describe what you're doing, not internal tool names.${appIdentity}
+</runtime_mode>`;
+}
+
+/**
  * Inject working directory context + environment info into system prompt
  */
 export function injectWorkingDirectoryContext(

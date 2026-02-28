@@ -13,6 +13,8 @@ import { getShellPath } from '../../services/infra/shellEnvironment';
 import { extractBashFacts, dataFingerprintStore } from '../dataFingerprint';
 import { createSanitizedEnv } from '../../utils/sanitizeEnv';
 import { truncateMiddle } from '../../utils/truncate';
+import { isCodexSandboxEnabled, runInCodexSandbox } from './codexSandbox';
+import { isKnownSafeCommand } from '../../security/commandSafety';
 
 const execAsync = promisify(exec);
 
@@ -270,6 +272,27 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
             `长脚本请改用 write_file 写入文件，然后用 bash 执行: python3 <文件路径>`,
         };
       }
+    }
+
+    // Codex 沙箱路由：非安全命令委托 Codex 执行
+    if (isCodexSandboxEnabled() && !isKnownSafeCommand(command)) {
+      const codexResult = await runInCodexSandbox(command, {
+        cwd: workingDirectory,
+        timeout,
+      });
+      if (codexResult.success) {
+        let output = codexResult.output;
+        if (output.length > BASH.MAX_OUTPUT_LENGTH) {
+          output = truncateMiddle(output, BASH.MAX_OUTPUT_LENGTH);
+        }
+        const cwdPrefix = `[cwd: ${workingDirectory}] [codex-sandbox]\n`;
+        return {
+          success: true,
+          output: cwdPrefix + output,
+          metadata: codexResult.threadId ? { codexThreadId: codexResult.threadId } : undefined,
+        };
+      }
+      // Codex 失败，fallback 到直接执行
     }
 
     // Foreground execution

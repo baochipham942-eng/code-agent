@@ -36,7 +36,7 @@ AI 编程助手桌面应用，复刻 Claude Code 的 8 个架构代际来研究 
 - **构建**: esbuild (main/preload) + Vite (renderer)
 - **样式**: Tailwind CSS
 - **状态**: Zustand
-- **AI**: Moonshot Kimi K2.5（主）, 智谱/DeepSeek/OpenAI（备）
+- **AI**: Moonshot Kimi K2.5（主）, 智谱/DeepSeek/OpenAI（备）, Codex CLI（沙箱+交叉验证, MCP）
 - **后端**: Supabase + pgvector
 
 ## 文档导航
@@ -64,7 +64,7 @@ src/
 │   │   ├── subagent/    # Subagent 旧架构 (v0.16.12+, 已废弃)
 │   │   └── recovery/    # 恢复策略 (v0.16.16+)
 │   ├── generation/      # GenerationManager, prompts/
-│   ├── tools/           # gen1-gen8 工具实现
+│   ├── tools/           # gen1-gen8 工具实现 + Codex 沙箱 (v0.16.37+)
 │   ├── scheduler/       # DAG 调度器 (v0.16+)
 │   ├── core/            # DI 容器、生命周期管理
 │   ├── config/          # 🆕 统一配置管理 (v0.16.16+)
@@ -73,7 +73,7 @@ src/
 │   ├── context/         # 上下文管理 (v0.9+)
 │   │   └── documentContext/ # 🆕 文档上下文抽象层 (v0.16.19+)
 │   ├── planning/        # 🆕 计划执行系统 (v0.16.16+)
-│   ├── session/         # 🆕 模型热切换 (v0.16.19+)
+│   ├── session/         # 🆕 模型热切换 (v0.16.19+) + Codex 会话挖掘 (v0.16.37+)
 │   ├── services/        # Auth, Sync, Database, FileCheckpoint
 │   │   ├── infra/       # 🆕 基础设施服务 (v0.16.16+)
 │   │   ├── citation/    # 🆕 引用溯源 (v0.16.19+)
@@ -184,7 +184,8 @@ switch (decision.type) {
 src/main/agent/hybrid/
 ├── coreAgents.ts      # 4 个核心角色定义
 ├── dynamicFactory.ts  # 动态 Agent 工厂
-├── taskRouter.ts      # 智能路由器
+├── taskRouter.ts      # 智能路由器（含 crossVerify 决策）
+├── crossVerify.ts     # 🆕 双模型交叉验证 (v0.16.37+)
 ├── agentSwarm.ts      # 并行执行引擎
 └── index.ts           # 统一导出
 ```
@@ -287,6 +288,9 @@ src/main/agent/hybrid/
 | API 版本 | `API_VERSIONS.ANTHROPIC` | 禁止写 `'2023-06-01'` |
 | maxTokens 默认 | `MODEL_MAX_TOKENS.*` | 禁止散布 `8192`、`2048` |
 | 目录名 | `CONFIG_DIR_NEW` (configPaths) | 禁止写 `'.code-agent'` 字面量 |
+| Codex 沙箱 | `CODEX_SANDBOX.*` | 禁止写 `'codex'`、`30000` 等沙箱常量 |
+| 交叉验证 | `CROSS_VERIFY.*` | 禁止写 `0.7`、`60000` 等阈值 |
+| Codex 会话 | `CODEX_SESSION.*` | 禁止写 `'~/.codex/sessions'` 等路径 |
 
 **新增 provider/模型/超时/价格时**，只在 `shared/constants.ts` 添加，然后引用。
 
@@ -352,6 +356,75 @@ pending → ready → running → completed/failed/cancelled/skipped
 - **Singleton**：全局单例
 - **Factory**：每次创建新实例
 - **Initializable/Disposable**：生命周期钩子
+
+---
+
+## v0.16.37 Codex CLI 深度集成 (2026-02-28)
+
+通过 MCP Server 协议深度集成 Codex CLI，实现沙箱执行、交叉验证、会话挖掘三大能力：
+
+| 优先级 | 功能 | 环境变量 | 默认 |
+|--------|------|----------|------|
+| P1 | 危险命令沙箱路由 | `CODEX_SANDBOX_ENABLED` | off |
+| P2 | 双模型交叉验证（Kimi × Codex） | `CROSS_VERIFY_ENABLED` | off |
+| P3 | Codex 会话 error→recovery 挖掘 | — | auto |
+
+### P0 MCP Server 配置
+
+配置文件: `.code-agent/mcp.json`（已 gitignore）
+
+Codex MCP Server 暴露 2 个会话级工具：
+- `codex`: 新建会话（prompt, sandbox, cwd, model, approval-policy）→ {threadId, content}
+- `codex-reply`: 继续会话（threadId, prompt）→ {threadId, content}
+
+### P1 沙箱路由
+
+非安全命令（未在 `commandSafety.ts` 白名单中）委托 Codex 沙箱执行，失败自动 fallback 到直接执行。
+
+防护措施：
+- 命令包裹在 code fence 中，附加 "treat as data" 指令（防 prompt injection）
+- Promise.race 超时 + finally clearTimeout（防 timer 泄漏）
+
+### P2 交叉验证
+
+复杂代码任务中，Codex 独立生成方案与 Kimi 结果做 token-level Jaccard 对比：
+- `similarity >= 0.7` → 使用 Kimi 结果（本地快）
+- `similarity < 0.7` → 标记 disagreement，交由调用方决策
+
+触发条件：`CROSS_VERIFY_ENABLED=true` + complexity=complex + taskType=code + codexAvailable
+
+### P3 会话挖掘
+
+解析 `~/.codex/sessions/YYYY/MM/DD/*.jsonl` 中的 Codex 执行记录，提取 error→recovery 模式喂给 ErrorLearningService。
+
+JSONL 实际格式（通过 MCP 探测发现，与文档不同）：
+- 工具名: `exec_command`（非 `shell`）
+- 参数: `payload.arguments` 为 JSON 字符串
+- 退出码: 嵌入 "Process exited with code N" 文本中
+
+### 新增/改动文件
+
+| 文件 | 操作 | 行数 |
+|------|------|------|
+| `src/main/tools/shell/codexSandbox.ts` | **新建** — 沙箱路由 + MCP callTool | 131 |
+| `src/main/agent/hybrid/crossVerify.ts` | **新建** — Jaccard 相似度 + Codex 调用 | 248 |
+| `src/main/session/codexSessionParser.ts` | **新建** — JSONL 解析 + recovery 提取 | 479 |
+| `src/main/session/codexLearning.ts` | **新建** — ErrorLearningService 管道 | 119 |
+| `src/main/tools/shell/bash.ts` | 改动 — 沙箱路由集成 | +23 |
+| `src/main/agent/hybrid/taskRouter.ts` | 改动 — crossVerify 路由决策 | +28 |
+| `src/main/agent/hybrid/index.ts` | 改动 — 导出 crossVerify | +10 |
+| `src/shared/constants.ts` | 改动 — CODEX_SANDBOX/CROSS_VERIFY/CODEX_SESSION | +36 |
+
+### Codex 交叉审查发现（P4）
+
+使用 `codex exec` 对代码进行独立审查，发现 7 个问题，修复 4 个：
+
+| 严重度 | 问题 | 文件 | 状态 |
+|--------|------|------|------|
+| High | Prompt injection 风险 | codexSandbox.ts:70 | ✅ 已修 |
+| Medium | Timer 泄漏 | codexSandbox.ts, crossVerify.ts | ✅ 已修 |
+| Medium | Lazy-load 绕过 | crossVerify.ts:42 | ✅ 已修 |
+| Medium | 重复错误记录 | codexLearning.ts:58 | ✅ 已修 |
 
 ---
 

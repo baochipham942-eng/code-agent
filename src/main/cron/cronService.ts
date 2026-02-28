@@ -485,6 +485,16 @@ export class CronService {
       }
 
       case 'agent': {
+        // Heartbeat 任务: 检查 active_hours 窗口
+        const ctx = action.context as Record<string, unknown> | undefined;
+        if (ctx?.heartbeatTask && ctx?.activeHours) {
+          const { isWithinActiveHours } = await import('./heartbeatTaskLoader');
+          if (!isWithinActiveHours(ctx.activeHours as string)) {
+            console.log(`[CronService] Heartbeat task skipped (outside active hours: ${ctx.activeHours})`);
+            return { skipped: true, reason: 'outside_active_hours' };
+          }
+        }
+
         const orchestrator = getAgentOrchestrator();
         if (!orchestrator) {
           throw new Error('AgentOrchestrator not available');
@@ -502,6 +512,23 @@ export class CronService {
           await new Promise(resolve => setTimeout(resolve, 30000));
         }
         const result = await orchestrator.sendMessage(action.prompt);
+
+        // Heartbeat 任务: channel 推送
+        if (ctx?.heartbeatTask && ctx?.channel && result) {
+          try {
+            const { getChannelManager } = await import('../channels/channelManager');
+            const channelManager = getChannelManager();
+            const accounts = channelManager.getAllAccounts();
+            const targetAccount = accounts.find(a => a.type === ctx!.channel || a.name === ctx!.channel);
+            if (targetAccount) {
+              await channelManager.sendMessage(targetAccount.id, targetAccount.id, String(result));
+              console.log(`[CronService] Heartbeat result pushed to channel: ${ctx.channel}`);
+            }
+          } catch (pushError) {
+            console.warn(`[CronService] Failed to push heartbeat result to channel: ${ctx.channel}`, pushError);
+          }
+        }
+
         return { agentType: action.agentType, prompt: action.prompt, result };
       }
 

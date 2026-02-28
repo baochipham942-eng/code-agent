@@ -642,16 +642,16 @@ function compressToolMessage(content: string): string {
         }
         return '[Success]';
       });
-      return `[Compressed tool results: ${summaries.join(', ')}]`;
+      return `(tool_output_summary: ${summaries.join(', ')})`;
     }
 
     // Single result
     if (parsed.output) {
       const preview = parsed.output.substring(0, 200);
-      return `[Tool result: ${preview}${parsed.output.length > 200 ? '...' : ''}]`;
+      return `(tool_output_summary: ${preview}${parsed.output.length > 200 ? '...' : ''})`;
     }
 
-    return `[Tool result: ${content.substring(0, 100)}...]`;
+    return `(tool_output_summary: ${content.substring(0, 100)}...)`;
   } catch {
     // Not JSON, just truncate
     return `[Tool output: ${content.substring(0, 200)}...]`;

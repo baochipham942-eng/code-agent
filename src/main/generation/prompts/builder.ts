@@ -7,6 +7,7 @@
 
 import type { GenerationId } from '../../../shared/types';
 import { IDENTITY_PROMPT } from './identity';
+import { getSoul } from './soulLoader';
 import { BASE_PROMPTS } from './base';
 // 规则已内联到 identity.ts，无需静态导入
 // 动态提醒系统可按需加载特定规则
@@ -107,8 +108,8 @@ export function buildPrompt(generationId: GenerationId): string {
     throw new Error(`Unknown generation: ${generationId}`);
   }
 
-  // Claude Code 风格组装：Identity → 代际工具 → 工具描述 → 规则
-  return [IDENTITY_PROMPT, basePrompt, ...toolDescriptions, ...rules].join('\n\n');
+  // Claude Code 风格组装：Identity/Soul → 代际工具 → 工具描述 → 规则
+  return [getSoul(), basePrompt, ...toolDescriptions, ...rules].join('\n\n');
 }
 
 /**

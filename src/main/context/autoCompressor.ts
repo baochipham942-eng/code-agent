@@ -397,8 +397,9 @@ export class AutoContextCompressor {
     }
 
     try {
-      // 构建需要摘要的内容
-      const contentToSummarize = olderMessages
+      // 预截断工具输出，降低 compaction token 成本
+      const truncatedMessages = this.preTruncateForCompaction(olderMessages);
+      const contentToSummarize = truncatedMessages
         .map(msg => `[${msg.role}]: ${msg.content}`)
         .join('\n\n---\n\n');
 
@@ -615,8 +616,9 @@ ${contentToSummarize}
       }
     }
 
-    // 构建摘要内容
-    const contentToSummarize = olderMessages
+    // 预截断工具输出，降低 compaction token 成本
+    const truncatedMessages = this.preTruncateForCompaction(olderMessages);
+    const contentToSummarize = truncatedMessages
       .map(msg => `[${msg.role}]: ${msg.content}`)
       .join('\n\n---\n\n');
 
@@ -704,8 +706,9 @@ ${contentToSummarize}
     }
 
     try {
-      // Build content to summarize
-      const contentToSummarize = toCompact
+      // 预截断工具输出，降低 compaction token 成本
+      const truncatedMessages = this.preTruncateForCompaction(toCompact);
+      const contentToSummarize = truncatedMessages
         .map(msg => `[${msg.role}]: ${msg.content}`)
         .join('\n\n---\n\n');
 
@@ -735,6 +738,24 @@ ${contentToSummarize}
       logger.error('[AutoCompressor] compactFrom failed:', error);
       return { success: false, compactedCount: 0, messages };
     }
+  }
+
+  /**
+   * 预截断工具输出，降低 compaction token 成本
+   * 成功输出保留前 500 字符，错误输出保留前 1000 字符
+   */
+  private preTruncateForCompaction(messages: CompressedMessage[]): CompressedMessage[] {
+    const TOOL_LIMIT = 500;
+    const TOOL_ERROR_LIMIT = 1000;
+
+    return messages.map(msg => {
+      if (msg.role !== 'tool' || msg.content.length <= TOOL_LIMIT) return msg;
+      const isError = /error|Error|ENOENT|EPERM|TypeError|SyntaxError/i.test(msg.content);
+      const limit = isError ? TOOL_ERROR_LIMIT : TOOL_LIMIT;
+      if (msg.content.length <= limit) return msg;
+      const omitted = msg.content.length - limit;
+      return { ...msg, content: msg.content.substring(0, limit) + `\n[...已截断 ${omitted} 字符]` };
+    });
   }
 
   /**

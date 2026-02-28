@@ -58,6 +58,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
     return <SkillStatusMessage content={message.content} />;
   }
 
+  // System messages (nudges, recovery hints) are internal — never show to user
+  if (message.role === 'system') {
+    return null;
+  }
+
   if (message.role === 'user') {
     return <UserMessage message={message} />;
   }

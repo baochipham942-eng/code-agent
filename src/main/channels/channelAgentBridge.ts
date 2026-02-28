@@ -12,6 +12,7 @@ import { ApiChannel } from './api/apiChannel';
 import { createLogger } from '../services/infra/logger';
 import { logCollector } from '../mcp/logCollector';
 import { v4 as uuidv4 } from 'uuid';
+import { IngressPipeline, type IngressMessage } from './ingressPipeline';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -33,6 +34,7 @@ export interface ChannelAgentBridgeConfig {
 export class ChannelAgentBridge {
   private config: ChannelAgentBridgeConfig;
   private channelManager = getChannelManager();
+  private pipeline: IngressPipeline;
 
   // 追踪正在处理的消息
   private processingMessages: Map<string, {
@@ -41,8 +43,14 @@ export class ChannelAgentBridge {
     responseBuffer: string;
   }> = new Map();
 
+  // 暂存入队消息的原始 ChannelMessage（供 pipeline 回调时使用）
+  private pendingChannelMessages: Map<string, { accountId: string; message: ChannelMessage }> = new Map();
+
   constructor(config: ChannelAgentBridgeConfig) {
     this.config = config;
+    this.pipeline = new IngressPipeline({
+      processMessage: (msg) => this.processIngressMessage(msg),
+    });
   }
 
   /**
@@ -65,13 +73,22 @@ export class ChannelAgentBridge {
    * 关闭桥接
    */
   async shutdown(): Promise<void> {
+    this.pipeline.shutdown();
+    this.pendingChannelMessages.clear();
     await this.channelManager.disconnectAll();
     this.processingMessages.clear();
     logger.info('ChannelAgentBridge shutdown');
   }
 
   /**
-   * 处理来自通道的消息
+   * 获取 Ingress Pipeline 状态
+   */
+  getPipelineStats() {
+    return this.pipeline.getStats();
+  }
+
+  /**
+   * 处理来自通道的消息（入队到 Ingress Pipeline）
    */
   private async handleChannelMessage(
     accountId: string,
@@ -83,56 +100,100 @@ export class ChannelAgentBridge {
       content: message.content.substring(0, 50),
     });
 
+    // 流式请求直接处理，不走 pipeline（需要保持 HTTP 连接）
+    const isStreamingRequest = message.raw &&
+      typeof message.raw === 'object' &&
+      (message.raw as Record<string, unknown>).streaming === true;
+
+    if (isStreamingRequest) {
+      const orchestrator = this.config.getOrchestrator();
+      if (!orchestrator) {
+        await this.sendErrorResponse(accountId, message, 'Agent not available');
+        return;
+      }
+      const attachments = this.convertAttachments(message.attachments);
+      await this.handleStreamingMessage(accountId, message, orchestrator, attachments);
+      return;
+    }
+
+    // 非流式消息走 Ingress Pipeline
+    const sessionKey = `${accountId}:${message.context.chatId}`;
+    const ingressKey = `${sessionKey}:${message.id}`;
+
+    // 暂存原始消息供回调时使用
+    this.pendingChannelMessages.set(ingressKey, { accountId, message });
+
+    this.pipeline.enqueue({
+      sessionKey,
+      content: message.content,
+      timestamp: message.timestamp,
+      metadata: {
+        accountId,
+        messageId: message.id,
+        ingressKey,
+        attachments: message.attachments,
+        sender: message.sender,
+        context: message.context,
+        raw: message.raw,
+      },
+    });
+  }
+
+  /**
+   * Pipeline 回调：实际处理入队后的消息
+   */
+  private async processIngressMessage(msg: IngressMessage): Promise<void> {
+    const meta = msg.metadata as Record<string, unknown>;
+    const accountId = meta.accountId as string;
+    const ingressKey = meta.ingressKey as string;
+
+    // 恢复原始 ChannelMessage 或构造合成消息
+    const pending = this.pendingChannelMessages.get(ingressKey);
+    const message: ChannelMessage = pending?.message ?? {
+      id: (meta.messageId as string) || uuidv4(),
+      channelId: 'api' as any,
+      sender: meta.sender as any,
+      context: meta.context as any,
+      content: msg.content,
+      attachments: meta.attachments as ChannelAttachment[] | undefined,
+      timestamp: msg.timestamp,
+      raw: meta.raw,
+    };
+
+    // 清理暂存
+    this.pendingChannelMessages.delete(ingressKey);
+
+    // 使用合并后的内容（可能是多条消息 debounce 合并的）
+    const processMessage: ChannelMessage = { ...message, content: msg.content };
+
     const orchestrator = this.config.getOrchestrator();
     if (!orchestrator) {
       logger.error('Orchestrator not available');
-      await this.sendErrorResponse(accountId, message, 'Agent not available');
+      await this.sendErrorResponse(accountId, processMessage, 'Agent not available');
       return;
     }
-    logger.info('Orchestrator available, processing message...');
 
-    const messageKey = `${accountId}:${message.id}`;
+    const messageKey = `${accountId}:${processMessage.id}`;
 
     try {
-      logger.info('Processing channel message', {
-        accountId,
-        messageId: message.id,
-        sender: message.sender.name,
-        content: message.content.substring(0, 100),
-      });
+      const attachments = this.convertAttachments(processMessage.attachments);
 
-      // 转换附件格式
-      const attachments = this.convertAttachments(message.attachments);
-
-      // 创建消息追踪
       this.processingMessages.set(messageKey, {
         accountId,
-        message,
+        message: processMessage,
         responseBuffer: '',
       });
 
-      // 创建专门的事件处理器
-      const responseCallback = this.channelManager.getResponseCallback(accountId, message);
+      const responseCallback = this.channelManager.getResponseCallback(accountId, processMessage);
       if (!responseCallback) {
         throw new Error('Failed to get response callback');
       }
 
-      // 检查是否是 HTTP API 流式请求
-      const isStreamingRequest = message.raw &&
-        typeof message.raw === 'object' &&
-        (message.raw as Record<string, unknown>).streaming === true;
-
-      if (isStreamingRequest) {
-        // 流式处理
-        await this.handleStreamingMessage(accountId, message, orchestrator, attachments);
-      } else {
-        // 同步处理
-        await this.handleSyncMessage(accountId, message, orchestrator, attachments, responseCallback);
-      }
+      await this.handleSyncMessage(accountId, processMessage, orchestrator, attachments, responseCallback);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      logger.error('Error processing channel message', { accountId, messageId: message.id, error: errorMessage });
-      await this.sendErrorResponse(accountId, message, errorMessage);
+      logger.error('Error processing ingress message', { accountId, messageId: processMessage.id, error: errorMessage });
+      await this.sendErrorResponse(accountId, processMessage, errorMessage);
     } finally {
       this.processingMessages.delete(messageKey);
     }
@@ -227,10 +288,17 @@ export class ChannelAgentBridge {
     // TODO: 实现真正的流式响应
     // 当前简化实现：等待完成后一次性返回
     try {
+      // 记录发送前的消息数量，用于识别新的回复（与 handleSyncMessage 一致）
+      const messagesBefore = orchestrator.getMessages();
+      const messageCountBefore = messagesBefore.length;
+
       await orchestrator.sendMessage(message.content, attachments);
 
-      const messages = orchestrator.getMessages();
-      const lastAssistantMessage = messages.filter(m => m.role === 'assistant').pop();
+      // 只查找新增的消息中的 assistant 回复
+      const messagesAfter = orchestrator.getMessages();
+      const newMessages = messagesAfter.slice(messageCountBefore);
+      const assistantMessages = newMessages.filter(m => m.role === 'assistant' && m.content && m.content.trim());
+      const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
 
       if (lastAssistantMessage) {
         res.write(`data: ${JSON.stringify({ content: lastAssistantMessage.content })}\n\n`);

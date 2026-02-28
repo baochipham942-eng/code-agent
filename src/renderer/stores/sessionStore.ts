@@ -603,7 +603,9 @@ export async function initializeSessionStore(): Promise<void> {
   // 监听会话更新事件（如标题更新）
   window.electronAPI?.on(IPC_CHANNELS.SESSION_UPDATED, (event) => {
     const { sessionId, updates } = event;
-    useSessionStore.getState().updateSessionTitle(sessionId, updates.title || '');
+    if (updates.title) {
+      useSessionStore.getState().updateSessionTitle(sessionId, updates.title);
+    }
   });
 
   // 监听会话状态更新事件（多会话并行支持）

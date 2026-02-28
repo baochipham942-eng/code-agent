@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { X, Cpu, Palette, Info, Database, Download, Cloud, Plug, Settings, Brain, Sparkles, Radio, Bot } from 'lucide-react';
+import { X, Cpu, Palette, Info, Database, Download, Cloud, Plug, Settings, Brain, Sparkles, Radio, Bot, Ghost, Clock } from 'lucide-react';
 import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
@@ -28,12 +28,14 @@ import { SkillsSettings } from './tabs/SkillsSettings';
 import { ChannelsSettings } from './tabs/ChannelsSettings';
 import { AgentsSettings } from './tabs/AgentsSettings';
 import { AboutSettings } from './tabs/AboutSettings';
+import { SoulSettings } from './tabs/SoulSettings';
+import { CronSettings } from './tabs/CronSettings';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'cloud' | 'mcp' | 'skills' | 'channels' | 'agents' | 'memory' | 'update' | 'about';
+type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'cloud' | 'mcp' | 'skills' | 'channels' | 'agents' | 'soul' | 'cron' | 'memory' | 'update' | 'about';
 
 // ============================================================================
 // Component
@@ -74,6 +76,8 @@ export const SettingsModal: React.FC = () => {
     { id: 'skills', label: 'Skills', icon: <Sparkles className="w-4 h-4" /> },
     { id: 'channels', label: '通道', icon: <Radio className="w-4 h-4" /> },
     { id: 'agents', label: 'Agents', icon: <Bot className="w-4 h-4" /> },
+    { id: 'soul', label: '人格', icon: <Ghost className="w-4 h-4" /> },
+    { id: 'cron', label: '定时', icon: <Clock className="w-4 h-4" /> },
     { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <Brain className="w-4 h-4" /> },
     { id: 'update', label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: optionalUpdateInfo?.hasUpdate },
     { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
@@ -137,6 +141,8 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'skills' && <SkillsSettings />}
             {activeTab === 'channels' && <ChannelsSettings />}
             {activeTab === 'agents' && <AgentsSettings />}
+            {activeTab === 'soul' && <SoulSettings />}
+            {activeTab === 'cron' && <CronSettings />}
             {activeTab === 'memory' && <MemoryTab />}
             {activeTab === 'update' && (
               <UpdateSettings

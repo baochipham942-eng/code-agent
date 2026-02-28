@@ -17,6 +17,7 @@ import { ContextUsage } from './ContextUsage';
 import { SessionDuration } from './SessionDuration';
 import { NetworkStatus } from './NetworkStatus';
 import { GitInfo } from './GitInfo';
+import { SoulIndicator } from './SoulIndicator';
 
 /**
  * 分隔符组件
@@ -79,6 +80,7 @@ export function StatusBar() {
         <NetworkStatus status={networkStatus} />
         <Separator />
         <GitInfo />
+        <SoulIndicator />
         {/* Autonomous mode indicator (when active) */}
         {isStreaming && (
           <>
@@ -103,3 +105,4 @@ export { ContextUsage } from './ContextUsage';
 export { SessionDuration } from './SessionDuration';
 export { NetworkStatus } from './NetworkStatus';
 export { GitInfo } from './GitInfo';
+export { SoulIndicator } from './SoulIndicator';

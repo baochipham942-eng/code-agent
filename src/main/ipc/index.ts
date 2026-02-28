@@ -46,6 +46,7 @@ import { registerTelemetryHandlers } from './telemetry.ipc';
 import { registerCronHandlers } from './cron.ipc';
 import { registerCaptureHandlers } from './capture.ipc';
 import { registerSuggestionsHandlers } from './suggestions.ipc';
+import { registerSoulHandlers } from './soul.ipc';
 
 export * from './types';
 
@@ -182,6 +183,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Capture handlers (浏览器采集)
   registerCaptureHandlers(ipcMain);
+
+  // Soul handlers (人格)
+  registerSoulHandlers();
 
   // Suggestions handlers (智能提示)
   registerSuggestionsHandlers(() => {

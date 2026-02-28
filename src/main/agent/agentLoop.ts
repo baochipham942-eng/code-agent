@@ -53,6 +53,7 @@ import {
   buildEnhancedSystemPrompt,
   buildEnhancedSystemPromptWithProactiveContext,
   buildEnhancedSystemPromptAsync,
+  buildRuntimeModeBlock,
 } from './messageHandling/contextBuilder';
 import { getPromptForTask, buildDynamicPrompt, buildDynamicPromptV2, type AgentMode } from '../generation/prompts/builder';
 import { AntiPatternDetector } from './antiPattern/detector';
@@ -1222,20 +1223,15 @@ export class AgentLoop {
         const assistantMessage: Message = {
           id: this.generateId(),
           role: 'assistant',
-          content: response.content || '',
+          content: this.stripInternalFormatMimicry(response.content || ''),
           timestamp: Date.now(),
           thinking: response.thinking,
           effortLevel: this.effortLevel,
         };
         await this.addAndPersistMessage(assistantMessage);
 
-        // Adaptive Thinking: 如果有思考过程，发送事件
-        if (response.thinking) {
-          this.onEvent({
-            type: 'stream_reasoning',
-            data: { content: response.thinking, turnId: this.currentTurnId },
-          });
-        }
+        // Adaptive Thinking: 流式阶段已通过 stream_reasoning 逐 chunk 发送，此处不再重发
+        // （重发会导致前端 append 两遍完整 reasoning 文本）
 
         this.onEvent({ type: 'message', data: assistantMessage });
 
@@ -1354,10 +1350,14 @@ export class AgentLoop {
           logCollector.tool('INFO', `Tool call: ${tc.name}`, { toolId: tc.id, args: tc.arguments });
         });
 
+        // 清理模型输出中模仿内部格式的文本（"Ran:", "Tool results:", "[Compressed tool results:]"）
+        // 当 response 有 toolCalls 时，这些文本是模型模仿会话历史格式的副产物，不应显示
+        const cleanedContent = this.stripInternalFormatMimicry(response.content || '');
+
         const assistantMessage: Message = {
           id: this.generateId(),
           role: 'assistant',
-          content: response.content || '',
+          content: cleanedContent,
           timestamp: Date.now(),
           toolCalls: response.toolCalls,
           // Adaptive Thinking: 保留模型的原生思考过程
@@ -1366,13 +1366,8 @@ export class AgentLoop {
         };
         await this.addAndPersistMessage(assistantMessage);
 
-        // Adaptive Thinking: 如果有思考过程，发送事件
-        if (response.thinking) {
-          this.onEvent({
-            type: 'stream_reasoning',
-            data: { content: response.thinking, turnId: this.currentTurnId },
-          });
-        }
+        // Adaptive Thinking: 流式阶段已通过 stream_reasoning 逐 chunk 发送，此处不再重发
+        // （重发会导致前端 append 两遍完整 reasoning 文本）
 
         logger.debug('[AgentLoop] Emitting message event for tool calls');
         this.onEvent({ type: 'message', data: assistantMessage });
@@ -2879,6 +2874,7 @@ export class AgentLoop {
     }
 
     systemPrompt = injectWorkingDirectoryContext(systemPrompt, this.workingDirectory, this.isDefaultWorkingDirectory);
+    systemPrompt += buildRuntimeModeBlock();
 
     // 注入延迟工具提示
     if (this.enableToolDeferredLoading) {
@@ -2977,9 +2973,10 @@ ${deferredToolsSummary}
         }
       } else if (message.role === 'tool') {
         // 兼容旧数据（无 toolResults 字段）
+        // 注意：不加 "Tool results:" 前缀，避免模型模仿该格式并输出为纯文本
         modelMessages.push({
           role: 'tool',
-          content: `Tool results:\n${message.content}`,
+          content: message.content,
         });
       } else if (message.role === 'assistant' && (message as Message).toolCalls?.length) {
         const tcs = (message as Message).toolCalls!;
@@ -3067,18 +3064,38 @@ ${deferredToolsSummary}
   }
 
   /**
+   * Strip internal format mimicry from model's text output.
+   * When models see patterns like "Ran:", "Tool results:", "[Compressed tool results:]"
+   * in conversation history, they sometimes mimic these as plain text output.
+   * This strips those patterns so they don't leak to the UI.
+   */
+  private stripInternalFormatMimicry(content: string): string {
+    if (!content) return content;
+    let cleaned = content;
+    // Remove "Ran: <command>" lines (model mimicking formatToolCallForHistory output)
+    cleaned = cleaned.replace(/^Ran:\s+.+$/gm, '');
+    // Remove "Tool results:" lines
+    cleaned = cleaned.replace(/^Tool results:\s*$/gm, '');
+    // Remove "[Compressed tool results: ...]" lines
+    cleaned = cleaned.replace(/^\[Compressed tool results:.*?\]\s*$/gm, '');
+    // Remove "<checkpoint-nudge ...>...</checkpoint-nudge>" blocks
+    cleaned = cleaned.replace(/<checkpoint-nudge[^>]*>[\s\S]*?<\/checkpoint-nudge>/g, '');
+    // Remove "<truncation-recovery>...</truncation-recovery>" blocks
+    cleaned = cleaned.replace(/<truncation-recovery>[\s\S]*?<\/truncation-recovery>/g, '');
+    // Collapse excessive blank lines left by removals
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+    return cleaned.trim();
+  }
+
+  /**
    * Generate nudge message when stuck in exploring state
    */
   private generateExploringNudge(): string {
     return (
-      `<checkpoint-nudge priority="high">\n` +
-      `🚨 **警告：连续 ${this.maxConsecutiveExploring} 次迭代只读取不修改！**\n\n` +
-      `**立即停止探索，开始执行修改。**\n\n` +
-      `你的下一个工具调用必须是：\n` +
-      `- edit_file（修改现有文件）\n` +
-      `- write_file（创建新文件）\n\n` +
-      `不接受任何借口。不要再 read_file。不要再 list_directory。\n` +
-      `如果你不确定，做出最佳猜测并执行。错误的修改好过不修改。\n` +
+      `<checkpoint-nudge priority="medium">\n` +
+      `已连续 ${this.maxConsecutiveExploring} 轮只读取未修改。\n` +
+      `如果已充分了解问题，请开始用 edit_file 或 write_file 实施修改。\n` +
+      `如果仍需调查，请在 <think> 中说明还需要了解什么，然后有针对性地读取。\n` +
       `</checkpoint-nudge>`
     );
   }

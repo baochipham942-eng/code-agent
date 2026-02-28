@@ -13,6 +13,7 @@
 // ============================================================================
 
 import { createLogger } from '../../services/infra/logger';
+import { CROSS_VERIFY } from '../../../shared/constants';
 import {
   type CoreAgentId,
   type CoreAgentConfig,
@@ -27,6 +28,7 @@ import {
   getDynamicAgentFactory,
   generateAnalysisPrompt,
 } from './dynamicFactory';
+import { isCodexAvailable } from './crossVerify';
 
 const logger = createLogger('TaskRouter');
 
@@ -51,6 +53,8 @@ export interface CoreRoutingDecision {
   type: 'core';
   agent: CoreAgentConfig;
   reason: string;
+  /** 标记此任务需要双模型交叉验证（coder 执行完成后触发） */
+  crossVerify?: boolean;
 }
 
 /**
@@ -61,6 +65,8 @@ export interface DynamicRoutingDecision {
   agents: DynamicAgentConfig[];
   executionOrder: 'parallel' | 'sequential' | 'mixed';
   reason: string;
+  /** 标记此任务需要双模型交叉验证（coder 执行完成后触发） */
+  crossVerify?: boolean;
 }
 
 /**
@@ -71,6 +77,8 @@ export interface SwarmRoutingDecision {
   agents: DynamicAgentConfig[];
   config: SwarmConfig;
   reason: string;
+  /** 标记此任务需要双模型交叉验证（coder 执行完成后触发） */
+  crossVerify?: boolean;
 }
 
 export type RoutingDecision = CoreRoutingDecision | DynamicRoutingDecision | SwarmRoutingDecision;
@@ -312,9 +320,16 @@ export class TaskRouter {
       decision = await this.routeToDynamic(analysis, context);
     }
 
+    // 交叉验证标记（纯增强，不改变路由结果）
+    if (this.shouldCrossVerify(analysis)) {
+      decision.crossVerify = true;
+      logger.info('Task marked for cross-verify with Codex');
+    }
+
     logger.info('Routing decision', {
       type: decision.type,
       reason: decision.reason,
+      crossVerify: decision.crossVerify ?? false,
       routingTime: Date.now() - startTime,
     });
 
@@ -363,6 +378,19 @@ export class TaskRouter {
     }
 
     return false;
+  }
+
+  /**
+   * 判断是否需要双模型交叉验证
+   * 条件：环境变量开启 + 复杂任务 + 代码类型 + Codex MCP 可用
+   */
+  private shouldCrossVerify(analysis: TaskAnalysis): boolean {
+    return (
+      process.env[CROSS_VERIFY.ENV_VAR] === 'true' &&
+      analysis.complexity === 'complex' &&
+      analysis.taskType === 'code' &&
+      isCodexAvailable()
+    );
   }
 
   /**

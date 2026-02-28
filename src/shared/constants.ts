@@ -472,6 +472,18 @@ export const SANDBOX = {
   DEFAULT_TIMEOUT: 5000,
 } as const;
 
+/** Codex 沙箱委托配置 */
+export const CODEX_SANDBOX = {
+  /** 工具调用超时 (ms) */
+  TIMEOUT: 30_000,
+  /** 是否默认启用 */
+  ENABLED_DEFAULT: false,
+  /** 环境变量名（启用/禁用开关） */
+  ENV_VAR: 'CODEX_SANDBOX_ENABLED',
+  /** Codex MCP 服务器名称 */
+  SERVER_NAME: 'codex',
+} as const;
+
 /** 向量存储配置 */
 export const VECTOR_STORE = {
   /** 最大文档数 */
@@ -966,6 +978,18 @@ export const SKILL_TIMEOUTS = {
   INSTALL: 30_000,
 } as const;
 
+/** 双模型交叉验证配置 */
+export const CROSS_VERIFY = {
+  /** 默认关闭 */
+  ENABLED_DEFAULT: false,
+  /** 环境变量开关 */
+  ENV_VAR: 'CROSS_VERIFY_ENABLED',
+  /** Codex 调用超时 (ms) */
+  TIMEOUT: 60_000,
+  /** 相似度阈值 — >= 此值视为 agreement */
+  SIMILARITY_THRESHOLD: 0.7,
+} as const;
+
 /** 工具执行进度报告配置 */
 export const TOOL_PROGRESS = {
   /** 进度报告间隔 (ms) */
@@ -1002,6 +1026,18 @@ export const DEFAULT_SUPABASE_URL = 'https://xepbunahzbmexsmmiqyq.supabase.co';
 
 /** 默认 Supabase Anonymous Key */
 export const DEFAULT_SUPABASE_ANON_KEY = (typeof process !== 'undefined' && process.env?.SUPABASE_ANON_KEY) || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhlcGJ1bmFoemJtZXhzbW1pcXlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg0ODkyMTcsImV4cCI6MjA4NDA2NTIxN30.8swN1QdRX5vIjNyCLNhQTPAx-k2qxeS8EN4Ot2idY7w';
+
+/** Codex 会话挖掘配置 */
+export const CODEX_SESSION = {
+  /** Codex 会话存储目录 */
+  DIR: '~/.codex/sessions',
+  /** 学习回溯天数 */
+  LEARNING_LOOKBACK_DAYS: 7,
+  /** 每次扫描的最大会话数 */
+  MAX_SESSIONS_PER_SCAN: 50,
+  /** 单行最大字符数（超过截断） */
+  MAX_LINE_LENGTH: 500_000,
+} as const;
 
 /** 子 Agent 上下文压缩配置 */
 export const SUBAGENT_COMPACTION = {

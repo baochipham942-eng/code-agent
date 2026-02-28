@@ -73,6 +73,15 @@ export interface AppSettings {
     displayWidth: number;
     displayHeight: number;
   };
+  // Codex CLI 集成配置
+  codex?: {
+    /** 是否启用 Codex 沙箱路由 */
+    sandboxEnabled: boolean;
+    /** 是否启用双模型交叉验证 */
+    crossVerifyEnabled: boolean;
+    /** 自动检测到的 codex 二进制路径 */
+    detectedPath?: string | null;
+  };
   // MCP 配置
   mcp?: {
     servers: Array<{

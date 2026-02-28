@@ -32,6 +32,7 @@ import { getMainWindow } from './window';
 import { getChannelManager } from '../channels';
 import { initChannelAgentBridge, getChannelAgentBridge } from '../channels/channelAgentBridge';
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { detectCodexCLI } from '../tools/shell/codexSandbox';
 import { SYNC, UPDATE, CLOUD, TOOL_CACHE, getCloudApiUrl, DEFAULT_MODELS, DEFAULT_GENERATION, DEFAULT_PROVIDER, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../shared/constants';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import { GenerationManager } from '../generation/generationManager';
@@ -272,8 +273,47 @@ async function initializeServices(): Promise<void> {
         logger.warn('SkillDiscovery initialization failed (non-blocking)', { error: String(skillError) });
       }
 
-      // Now initialize MCP client AFTER CloudConfig is ready
+      // Codex CLI auto-discovery + MCP injection
       const mcpConfigs: MCPServerConfig[] = settings.mcp?.servers || [];
+      try {
+        const codexPath = await detectCodexCLI();
+        if (codexPath) {
+          // Save detected path to settings
+          if (configService) {
+            const current = configService.getSettings();
+            if (current.codex?.detectedPath !== codexPath) {
+              await configService.updateSettings({
+                codex: { ...current.codex, sandboxEnabled: current.codex?.sandboxEnabled ?? false, crossVerifyEnabled: current.codex?.crossVerifyEnabled ?? false, detectedPath: codexPath },
+              });
+            }
+          }
+          // Auto-inject codex MCP server if sandbox is enabled and not already configured
+          const hasCodexServer = mcpConfigs.some(s => s.name === 'codex');
+          const sandboxEnabled = settings.codex?.sandboxEnabled || settings.codex?.crossVerifyEnabled;
+          if (sandboxEnabled && !hasCodexServer) {
+            mcpConfigs.push({
+              name: 'codex',
+              command: codexPath,
+              args: ['mcp-server'],
+              enabled: true,
+              lazyLoad: false, // Sandbox needs immediate connection
+            });
+            logger.info('Auto-injected Codex MCP server', { path: codexPath });
+          }
+        } else if (configService) {
+          // Clear detected path if codex not found
+          const current = configService.getSettings();
+          if (current.codex?.detectedPath) {
+            configService.updateSettings({
+              codex: { ...current.codex, detectedPath: null },
+            });
+          }
+        }
+      } catch (codexError) {
+        logger.warn('Codex CLI detection failed (non-blocking)', { error: String(codexError) });
+      }
+
+      // Now initialize MCP client AFTER CloudConfig is ready
       logger.info('Initializing MCP servers...', { customCount: mcpConfigs.length });
       return initMCPClient(mcpConfigs);
     })

@@ -382,11 +382,32 @@ export class TaskRouter {
 
   /**
    * 判断是否需要双模型交叉验证
-   * 条件：环境变量开启 + 复杂任务 + 代码类型 + Codex MCP 可用
+   * 优先读 settings.codex?.crossVerifyEnabled，回退到环境变量
+   * 条件：启用 + 复杂任务 + 代码类型 + Codex MCP 可用
    */
   private shouldCrossVerify(analysis: TaskAnalysis): boolean {
+    // 1. 优先读 settings
+    let enabled = false;
+    try {
+      const { getConfigServiceInstance } = require('../../app/bootstrap');
+      const configService = getConfigServiceInstance();
+      if (configService) {
+        const settings = configService.getSettings();
+        if (settings.codex?.crossVerifyEnabled !== undefined) {
+          enabled = settings.codex.crossVerifyEnabled;
+        }
+      }
+    } catch {
+      // bootstrap not available, fall through to env var
+    }
+
+    // 2. 回退到环境变量
+    if (!enabled) {
+      enabled = process.env[CROSS_VERIFY.ENV_VAR] === 'true';
+    }
+
     return (
-      process.env[CROSS_VERIFY.ENV_VAR] === 'true' &&
+      enabled &&
       analysis.complexity === 'complex' &&
       analysis.taskType === 'code' &&
       isCodexAvailable()

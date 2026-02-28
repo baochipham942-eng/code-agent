@@ -4,7 +4,13 @@
 // ============================================================================
 
 import { createClient, SupabaseClient, User, Session } from '@supabase/supabase-js';
+import { HttpsProxyAgent } from 'https-proxy-agent';
+import https from 'https';
+import http from 'http';
 import { getSecureStorage } from '../core';
+import { createLogger } from './logger';
+
+const logger = createLogger('SupabaseService');
 
 // Database types for type-safe queries
 export interface Database {
@@ -314,6 +320,68 @@ export interface Database {
 let supabaseInstance: SupabaseClient<Database> | null = null;
 let supabaseConfig: { url: string; anonKey: string } | null = null;
 
+/**
+ * 创建带代理支持的 fetch —— Electron main 进程的 Node.js fetch 不走系统代理，
+ * 在 Clash TUN 等场景下会导致 TLS 握手失败（fake-ip DNS + 直连 = ECONNRESET）。
+ * 使用 https-proxy-agent（项目已有依赖）通过 http.request 代理所有请求。
+ */
+function createProxyFetch(): typeof globalThis.fetch | undefined {
+  const proxyUrl = process.env.HTTP_PROXY || process.env.HTTPS_PROXY;
+  if (!proxyUrl || process.env.NO_PROXY === 'true' || process.env.DISABLE_PROXY === 'true') {
+    logger.info('Proxy fetch disabled (no proxy env var)');
+    return undefined;
+  }
+  try {
+    const agent = new HttpsProxyAgent(proxyUrl);
+    logger.info('Proxy fetch enabled', { proxyUrl });
+
+    return ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+      const method = init?.method || 'GET';
+      const headers = init?.headers
+        ? (init.headers instanceof Headers
+          ? Object.fromEntries(init.headers.entries())
+          : init.headers as Record<string, string>)
+        : {};
+      const body = init?.body;
+
+      return new Promise<Response>((resolve, reject) => {
+        const parsedUrl = new URL(url);
+        const mod = parsedUrl.protocol === 'https:' ? https : http;
+        const req = mod.request(url, { method, headers, agent: agent as never }, (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (c: Buffer) => chunks.push(c));
+          res.on('end', () => {
+            const buf = Buffer.concat(chunks);
+            const status = res.statusCode || 200;
+            // Null-body status codes (204, 304) must not have a body per spec
+            const nullBodyStatuses = [101, 204, 205, 304];
+            const responseBody = nullBodyStatuses.includes(status) ? null : buf;
+            resolve(new Response(responseBody, {
+              status,
+              statusText: res.statusMessage || '',
+              headers: new Headers(res.headers as Record<string, string>),
+            }));
+          });
+        });
+        req.on('error', (err) => {
+          logger.error('Proxy fetch error', { url, error: err.message });
+          reject(err);
+        });
+        if (body) {
+          if (typeof body === 'string') req.write(body);
+          else if (body instanceof ArrayBuffer) req.write(Buffer.from(body));
+          else req.write(String(body));
+        }
+        req.end();
+      });
+    }) as typeof globalThis.fetch;
+  } catch (err) {
+    logger.error('Failed to create proxy fetch', { error: (err as Error).message });
+    return undefined;
+  }
+}
+
 export function initSupabase(url: string, anonKey: string): SupabaseClient<Database> {
   if (supabaseInstance) {
     return supabaseInstance;
@@ -321,6 +389,7 @@ export function initSupabase(url: string, anonKey: string): SupabaseClient<Datab
 
   supabaseConfig = { url, anonKey };
   const secureStorage = getSecureStorage();
+  const proxyFetch = createProxyFetch();
 
   supabaseInstance = createClient<Database>(url, anonKey, {
     auth: {
@@ -357,6 +426,7 @@ export function initSupabase(url: string, anonKey: string): SupabaseClient<Datab
       detectSessionInUrl: false, // We handle OAuth manually in Electron
     },
     global: {
+      ...(proxyFetch ? { fetch: proxyFetch } : {}),
       headers: {
         'X-Client-Info': 'code-agent-electron',
       },

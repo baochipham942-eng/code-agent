@@ -33,7 +33,7 @@ echo "📦 项目目录: $PROJECT_ROOT"
 echo ""
 
 # 原生模块列表（逐个安装以避免并发编译问题）
-NATIVE_MODULES=(isolated-vm better-sqlite3 keytar)
+NATIVE_MODULES=(isolated-vm better-sqlite3 keytar node-pty)
 
 # 逐个重新编译
 for module in "${NATIVE_MODULES[@]}"; do

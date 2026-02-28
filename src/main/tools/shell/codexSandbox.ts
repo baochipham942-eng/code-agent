@@ -8,11 +8,72 @@
 //
 // 本模块将非安全命令路由到 Codex 沙箱执行，提供隔离的执行环境。
 
+import { execFile } from 'child_process';
+import { access, constants as fsConstants, readFile } from 'fs/promises';
+import { readFileSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
+import { app } from 'electron';
 import { getMCPClient } from '../../mcp/mcpClient';
 import { CODEX_SANDBOX } from '../../../shared/constants';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('CodexSandbox');
+
+// ============================================================================
+// Codex CLI Auto-Discovery
+// ============================================================================
+
+const CODEX_CANDIDATE_PATHS = [
+  join(homedir(), '.npm-global', 'bin', 'codex'),
+  '/usr/local/bin/codex',
+  '/opt/homebrew/bin/codex',
+];
+
+/**
+ * 自动发现 Codex CLI 二进制路径
+ * 检查常见安装路径 + which codex，5 秒超时
+ */
+export async function detectCodexCLI(): Promise<string | null> {
+  // 1. 检查已知路径
+  for (const candidate of CODEX_CANDIDATE_PATHS) {
+    try {
+      await access(candidate, fsConstants.X_OK);
+      logger.info('Codex CLI found at known path', { path: candidate });
+      return candidate;
+    } catch {
+      // not found, continue
+    }
+  }
+
+  // 2. Fallback: which codex
+  try {
+    const path = await new Promise<string | null>((resolve) => {
+      const timer = setTimeout(() => resolve(null), 5000);
+      execFile('which', ['codex'], (err, stdout) => {
+        clearTimeout(timer);
+        if (err || !stdout.trim()) {
+          resolve(null);
+        } else {
+          resolve(stdout.trim());
+        }
+      });
+    });
+    if (path) {
+      logger.info('Codex CLI found via which', { path });
+      return path;
+    }
+  } catch {
+    // which failed
+  }
+
+  logger.info('Codex CLI not found');
+  return null;
+}
+
+// ============================================================================
+// Types
+// ============================================================================
 
 export interface CodexSandboxOptions {
   cwd?: string;
@@ -28,9 +89,29 @@ export interface CodexSandboxResult {
 
 /**
  * 检查 Codex 沙箱是否可用
- * 条件：环境变量启用 + MCP client 有 codex server 连接
+ * 优先读 settings.codex?.sandboxEnabled，回退到环境变量（CLI 兼容）
  */
 export function isCodexSandboxEnabled(): boolean {
+  // 1. 直接读 config.json（避免 bootstrap 循环依赖）
+  try {
+    const configPath = join(app.getPath('userData'), 'config.json');
+    const raw = readFileSync(configPath, 'utf-8');
+    const config = JSON.parse(raw);
+    const sandboxSetting = config.codex?.sandboxEnabled;
+    logger.info('Sandbox settings check', { sandboxEnabled: sandboxSetting });
+    if (sandboxSetting === true) {
+      const available = isCodexAvailable();
+      logger.info('Sandbox enabled, codex available', { available });
+      return available;
+    }
+    if (sandboxSetting === false) {
+      return false;
+    }
+  } catch (e) {
+    logger.info('Settings check failed, falling back to env var', { error: (e as Error).message });
+  }
+
+  // 2. 回退到环境变量（CLI 模式）
   const envEnabled = typeof process !== 'undefined'
     && process.env?.[CODEX_SANDBOX.ENV_VAR] === 'true';
 

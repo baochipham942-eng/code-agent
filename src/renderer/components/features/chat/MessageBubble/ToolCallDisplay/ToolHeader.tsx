@@ -17,11 +17,21 @@ export function ToolHeader({ toolCall, status }: Props) {
   const displayName = getToolDisplayName(toolCall.name);
   const params = formatParams(toolCall);
   const duration = toolCall.result?.duration;
+  const isSandboxed = toolCall.name === 'bash' &&
+    typeof toolCall.result?.output === 'string' &&
+    toolCall.result.output.includes('[codex-sandbox]');
 
   return (
     <div className="flex items-center gap-2 flex-1 min-w-0">
       {/* Tool name - always semibold, neutral color */}
       <span className="text-zinc-200 font-semibold">{displayName}</span>
+
+      {/* Sandbox badge */}
+      {isSandboxed && (
+        <span className="text-xs px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400">
+          sandbox
+        </span>
+      )}
 
       {/* Parameters summary */}
       {params && (

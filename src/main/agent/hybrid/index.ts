@@ -68,6 +68,16 @@ export {
   analyzeTask,
 } from './taskRouter';
 
+// Cross Verify (P2: 双模型交叉验证)
+export {
+  type CrossVerifyResult,
+  crossVerifyWithCodex,
+  isCodexAvailable,
+  extractCodeBlocks,
+  calculateSimilarity,
+  extractIdentifiers,
+} from './crossVerify';
+
 // Agent Swarm
 export {
   type AgentStatus,

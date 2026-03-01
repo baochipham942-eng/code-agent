@@ -462,6 +462,78 @@ export class TelemetryCollector {
   }
 
   // --------------------------------------------------------------------------
+  // Observability Queries (Harness Engineering P2a)
+  // --------------------------------------------------------------------------
+
+  /**
+   * 获取当前会话的工具性能统计
+   */
+  getToolPerformance(sessionId: string): Array<{
+    name: string;
+    total: number;
+    success: number;
+    avgDurationMs: number;
+    successRate: number;
+  }> {
+    try {
+      const { getTelemetryStorage } = require('./telemetryStorage');
+      const storage = getTelemetryStorage();
+      const stats = storage.getToolUsageStats(sessionId);
+      return stats.map((s: { name: string; callCount: number; successCount: number; avgDurationMs: number; successRate: number }) => ({
+        name: s.name,
+        total: s.callCount,
+        success: s.successCount,
+        avgDurationMs: s.avgDurationMs,
+        successRate: s.successRate,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 获取当前会话的错误摘要
+   */
+  getErrorSummary(sessionId: string): {
+    totalErrors: number;
+    errorsByTool: Record<string, number>;
+    topErrors: Array<{ error: string; count: number }>;
+  } {
+    const result = {
+      totalErrors: 0,
+      errorsByTool: {} as Record<string, number>,
+      topErrors: [] as Array<{ error: string; count: number }>,
+    };
+
+    try {
+      const { getTelemetryStorage } = require('./telemetryStorage');
+      const storage = getTelemetryStorage();
+      const toolCalls = storage.getToolCallsBySession(sessionId);
+
+      const failedCalls = toolCalls.filter((tc: { success: boolean }) => !tc.success);
+      result.totalErrors = failedCalls.length;
+
+      const errorCounts = new Map<string, number>();
+      for (const tc of failedCalls) {
+        const name = (tc as { name: string }).name;
+        result.errorsByTool[name] = (result.errorsByTool[name] || 0) + 1;
+
+        const errorKey = ((tc as { error?: string }).error || 'unknown').substring(0, 100);
+        errorCounts.set(errorKey, (errorCounts.get(errorKey) || 0) + 1);
+      }
+
+      result.topErrors = [...errorCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([error, count]) => ({ error, count }));
+    } catch {
+      // Storage not available
+    }
+
+    return result;
+  }
+
+  // --------------------------------------------------------------------------
   // Buffer Flush
   // --------------------------------------------------------------------------
 

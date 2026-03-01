@@ -57,6 +57,12 @@ build_exclude_args() {
 get_files() {
   if [[ "${1:-}" == "--all" ]]; then
     find src -name '*.ts' -not -path '*/node_modules/*' 2>/dev/null
+  elif [[ "${1:-}" == "--file" ]]; then
+    # 单文件模式：检查指定文件
+    local target="${2:-}"
+    if [[ -n "$target" && -f "$target" ]]; then
+      echo "$target"
+    fi
   else
     git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep '\.ts$' || true
   fi
@@ -99,7 +105,7 @@ check_pattern() {
 cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
 
 MODE="${1:-}"
-FILES=$(get_files "$MODE")
+FILES=$(get_files "$MODE" "${2:-}")
 
 if [[ -z "$FILES" ]]; then
   if [[ "$MODE" == "--all" ]]; then

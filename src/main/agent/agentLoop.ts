@@ -1249,6 +1249,31 @@ export class AgentLoop {
         });
 
         this.updateContextHealth();
+
+        // PostExecution hook: trigger async health checks (GC, codebase scans)
+        if (this.hookManager) {
+          this.hookManager.triggerPostExecution?.(
+            this.sessionId,
+            iterations,
+            this.toolsUsedInTurn,
+            Array.from(this.modifiedFiles),
+          ).catch((err: unknown) => {
+            logger.error('[AgentLoop] PostExecution hook error:', err);
+          });
+        }
+
+        // GC: async codebase health scan (non-blocking)
+        try {
+          const { getCodebaseHealthScanner } = require('./gc/codebaseHealthScanner');
+          const scanner = getCodebaseHealthScanner();
+          scanner.scan(iterations, this.workingDirectory, Array.from(this.modifiedFiles))
+            .catch((err: unknown) => {
+              logger.debug('[AgentLoop] GC scan error (non-blocking):', err);
+            });
+        } catch {
+          // GC module not available, skip
+        }
+
         break;
       }
 

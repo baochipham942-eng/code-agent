@@ -14,6 +14,7 @@ import type {
   PermissionRequestContext,
   SessionContext,
   CompactContext,
+  PostExecutionContext,
 } from './events';
 import type { HookDefinition, ParsedHookConfig } from './configParser';
 import type { MergedHookConfig, MergeStrategy } from './merger';
@@ -389,6 +390,29 @@ export class HookManager {
       ...merged,
       preservedContext: preservedContext || undefined,
     };
+  }
+
+  /**
+   * Trigger hooks after each agent turn completes (async, non-blocking)
+   * Used for GC scans, codebase health checks, etc.
+   */
+  async triggerPostExecution(
+    sessionId: string,
+    turnCount: number,
+    toolsUsed: string[],
+    modifiedFiles: string[],
+  ): Promise<HookTriggerResult> {
+    const context: PostExecutionContext = {
+      event: 'PostExecution',
+      sessionId,
+      timestamp: Date.now(),
+      workingDirectory: this.config.workingDirectory,
+      turnCount,
+      toolsUsed,
+      modifiedFiles,
+    };
+
+    return this.triggerEventHooks('PostExecution', context);
   }
 
   // --------------------------------------------------------------------------

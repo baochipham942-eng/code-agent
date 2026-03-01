@@ -18,6 +18,7 @@ export type HookEvent =
   | 'SubagentStop'
   | 'SubagentStart'      // Phase 2: 子 Agent 启动时触发
   | 'PermissionRequest'  // Phase 2: 权限请求时触发
+  | 'PostExecution'      // Harness: 每轮 agent turn 结束后触发（GC/健康检查）
   | 'PreCompact'
   | 'Setup'
   | 'SessionStart'
@@ -36,6 +37,7 @@ export const HOOK_EVENT_DESCRIPTIONS: Record<HookEvent, string> = {
   SubagentStop: 'Triggered when a subagent completes its task.',
   SubagentStart: 'Triggered when a subagent is about to start.',
   PermissionRequest: 'Triggered when a permission is requested.',
+  PostExecution: 'Triggered after each agent turn completes. Used for async health checks and GC scans.',
   PreCompact: 'Triggered before context compaction/summarization.',
   Setup: 'Triggered once during initial setup of the session.',
   SessionStart: 'Triggered when a new session begins.',
@@ -137,6 +139,19 @@ export interface SessionContext extends HookEventContext {
 }
 
 /**
+ * Context for post-execution events (after each agent turn)
+ */
+export interface PostExecutionContext extends HookEventContext {
+  event: 'PostExecution';
+  /** Number of turns completed in this session */
+  turnCount: number;
+  /** Tools used in this turn */
+  toolsUsed: string[];
+  /** Files modified in this turn */
+  modifiedFiles: string[];
+}
+
+/**
  * Context for compaction events
  */
 export interface CompactContext extends HookEventContext {
@@ -167,6 +182,7 @@ export type AnyHookContext =
   | StopContext
   | SubagentStartContext
   | PermissionRequestContext
+  | PostExecutionContext
   | SessionContext
   | CompactContext
   | NotificationContext;

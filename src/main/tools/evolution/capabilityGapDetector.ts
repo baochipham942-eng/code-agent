@@ -495,6 +495,45 @@ class CapabilityGapDetectorService {
   }
 
   // --------------------------------------------------------------------------
+  // Auto-Suggest tool_create (Harness Engineering P3)
+  // --------------------------------------------------------------------------
+
+  /**
+   * Check if a capability gap should trigger a tool_create suggestion.
+   * Called after gap analysis — if same category has >= 3 occurrences,
+   * suggest using tool_create to address the gap.
+   */
+  shouldSuggestToolCreate(): { suggest: boolean; reason: string; gapName: string } | null {
+    const openGaps = this.getOpenGaps();
+
+    // Find gaps with >= 3 occurrences in missing_tool or tool_limitation category
+    for (const gap of openGaps) {
+      if (
+        gap.occurrences >= 3 &&
+        (gap.category === 'missing_tool' || gap.category === 'tool_limitation')
+      ) {
+        return {
+          suggest: true,
+          reason: `Recurring ${gap.category} gap (${gap.occurrences} occurrences): ${gap.name}`,
+          gapName: gap.name,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Get analysis result (for queryMetrics tool compatibility)
+   */
+  analyze(): { gaps: CapabilityGap[]; statistics: GapStatistics } {
+    return {
+      gaps: this.getOpenGaps(),
+      statistics: this.getStatistics(),
+    };
+  }
+
+  // --------------------------------------------------------------------------
   // Insights & Actions
   // --------------------------------------------------------------------------
 

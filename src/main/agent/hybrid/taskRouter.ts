@@ -55,6 +55,8 @@ export interface CoreRoutingDecision {
   reason: string;
   /** 标记此任务需要双模型交叉验证（coder 执行完成后触发） */
   crossVerify?: boolean;
+  /** 标记此任务需要 Review Loop（执行后自动验证+迭代修复） */
+  reviewLoop?: boolean;
 }
 
 /**
@@ -67,6 +69,8 @@ export interface DynamicRoutingDecision {
   reason: string;
   /** 标记此任务需要双模型交叉验证（coder 执行完成后触发） */
   crossVerify?: boolean;
+  /** 标记此任务需要 Review Loop（执行后自动验证+迭代修复） */
+  reviewLoop?: boolean;
 }
 
 /**
@@ -79,6 +83,8 @@ export interface SwarmRoutingDecision {
   reason: string;
   /** 标记此任务需要双模型交叉验证（coder 执行完成后触发） */
   crossVerify?: boolean;
+  /** 标记此任务需要 Review Loop（执行后自动验证+迭代修复） */
+  reviewLoop?: boolean;
 }
 
 export type RoutingDecision = CoreRoutingDecision | DynamicRoutingDecision | SwarmRoutingDecision;

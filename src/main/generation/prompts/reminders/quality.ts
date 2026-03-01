@@ -45,4 +45,16 @@ export const QUALITY_REMINDERS: ReminderDefinition[] = [
     shouldInclude: (ctx) => ctx.hasError ? 1 : 0,
     category: 'quality',
   },
+  {
+    id: 'SELF_DIAGNOSIS',
+    priority: 2,
+    content: `<system-reminder>
+**自诊断建议**：检测到多次错误。使用 query_metrics 工具查看 error_patterns 和 tool_performance，
+了解哪些工具频繁失败、错误模式是什么，有助于调整策略。
+</system-reminder>`,
+    tokens: 50,
+    shouldInclude: (ctx) =>
+      ctx.hasError && ctx.iterationCount > 3 ? 0.6 : 0,
+    category: 'quality',
+  },
 ];

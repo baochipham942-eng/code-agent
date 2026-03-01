@@ -789,3 +789,122 @@ export const ${tool.name}Tool: Tool = {
 export function getDynamicTools(): DynamicTool[] {
   return Array.from(dynamicTools.values());
 }
+
+// ============================================================================
+// Tool Persistence (Harness Engineering P3)
+// ============================================================================
+// - tool_create 结果持久化到 .code-agent/tools/<name>.json
+// - SessionEnd 时自动持久化 usageCount >= 2 的动态工具
+// - 下次会话启动时重新加载到 ToolRegistry
+// - 安全约束: 仅 sandboxed_js 类型可自动持久化，上限 20 个
+// ============================================================================
+
+const MAX_PERSISTED_TOOLS = 20;
+const MIN_USAGE_FOR_PERSIST = 2;
+
+/**
+ * Persist a dynamic tool to disk (.code-agent/tools/<name>.json)
+ */
+export async function persistTool(tool: DynamicTool, workingDirectory: string): Promise<string | null> {
+  // Only sandboxed_js tools can be auto-persisted (security constraint)
+  if (tool.type !== 'sandboxed_js') {
+    logger.info(`[ToolPersist] Skipping non-sandboxed tool: ${tool.name} (type=${tool.type})`);
+    return null;
+  }
+
+  const toolsDir = path.join(workingDirectory, '.code-agent', 'tools');
+  await fs.promises.mkdir(toolsDir, { recursive: true });
+
+  // Check limit
+  const existingFiles = await fs.promises.readdir(toolsDir).catch(() => []);
+  const jsonFiles = existingFiles.filter(f => f.endsWith('.json'));
+  if (jsonFiles.length >= MAX_PERSISTED_TOOLS) {
+    logger.warn(`[ToolPersist] Limit reached (${MAX_PERSISTED_TOOLS}), skipping persistence for ${tool.name}`);
+    return null;
+  }
+
+  const filePath = path.join(toolsDir, `${tool.name}.json`);
+  const persistData = {
+    id: tool.id,
+    name: tool.name,
+    description: tool.description,
+    type: tool.type,
+    config: tool.config,
+    createdAt: tool.createdAt,
+    usageCount: tool.usageCount,
+    persistedAt: Date.now(),
+  };
+
+  await fs.promises.writeFile(filePath, JSON.stringify(persistData, null, 2));
+  logger.info(`[ToolPersist] Persisted tool: ${tool.name} → ${filePath}`);
+  return filePath;
+}
+
+/**
+ * Auto-persist tools with usageCount >= 2 (called on SessionEnd)
+ */
+export async function autoPersistTools(workingDirectory: string): Promise<string[]> {
+  const persisted: string[] = [];
+
+  for (const tool of dynamicTools.values()) {
+    if (tool.usageCount >= MIN_USAGE_FOR_PERSIST && tool.type === 'sandboxed_js') {
+      const filePath = await persistTool(tool, workingDirectory);
+      if (filePath) persisted.push(filePath);
+    }
+  }
+
+  if (persisted.length > 0) {
+    logger.info(`[ToolPersist] Auto-persisted ${persisted.length} tools`);
+  }
+
+  return persisted;
+}
+
+/**
+ * Load persisted tools from .code-agent/tools/ on session start
+ */
+export async function loadPersistedTools(workingDirectory: string): Promise<DynamicTool[]> {
+  const toolsDir = path.join(workingDirectory, '.code-agent', 'tools');
+  const loaded: DynamicTool[] = [];
+
+  try {
+    const files = await fs.promises.readdir(toolsDir);
+    const jsonFiles = files.filter(f => f.endsWith('.json'));
+
+    for (const file of jsonFiles) {
+      try {
+        const content = await fs.promises.readFile(path.join(toolsDir, file), 'utf-8');
+        const data = JSON.parse(content);
+
+        // Only load sandboxed_js tools
+        if (data.type !== 'sandboxed_js') continue;
+
+        const tool: DynamicTool = {
+          id: data.id,
+          name: data.name,
+          description: data.description,
+          type: data.type,
+          config: data.config,
+          createdAt: data.createdAt,
+          usageCount: data.usageCount || 0,
+        };
+
+        // Don't overwrite if already exists in current session
+        if (!dynamicTools.has(tool.name)) {
+          dynamicTools.set(tool.name, tool);
+          loaded.push(tool);
+        }
+      } catch (err) {
+        logger.warn(`[ToolPersist] Failed to load tool from ${file}:`, err);
+      }
+    }
+
+    if (loaded.length > 0) {
+      logger.info(`[ToolPersist] Loaded ${loaded.length} persisted tools from ${toolsDir}`);
+    }
+  } catch {
+    // Directory doesn't exist, no persisted tools
+  }
+
+  return loaded;
+}

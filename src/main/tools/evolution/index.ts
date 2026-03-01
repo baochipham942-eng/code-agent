@@ -7,6 +7,8 @@ export { toolCreateTool } from './toolCreate';
 export { selfEvaluateTool } from './selfEvaluate';
 export { learnPatternTool } from './learnPattern';
 export { codeExecuteTool } from './codeExecute';
+export { queryMetricsTool } from './queryMetrics';
+export { autoPersistTools, loadPersistedTools, persistTool } from './toolCreate';
 
 // Meta Learning Loop
 export {

@@ -598,8 +598,8 @@ export const MODEL_API_ENDPOINTS = {
   qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   /** Moonshot/Kimi */
   moonshot: 'https://api.moonshot.cn/v1',
-  /** Kimi K2.5 (包月套餐 - 第三方代理) */
-  kimiK25: 'https://cn.haioi.net/v1',
+  /** Kimi K2.5 (Coding 套餐) */
+  kimiK25: 'https://api.kimi.com/coding/v1',
   /** MiniMax */
   minimax: 'https://api.minimax.chat/v1',
   /** Perplexity */

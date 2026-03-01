@@ -64,6 +64,7 @@ export interface HooksConfig {
   SubagentStop?: HookMatcher[];
   SubagentStart?: HookMatcher[];       // Phase 2
   PermissionRequest?: HookMatcher[];   // Phase 2
+  PostExecution?: HookMatcher[];       // Harness: 每轮 turn 结束后
   PreCompact?: HookMatcher[];
   Setup?: HookMatcher[];
   SessionStart?: HookMatcher[];
@@ -154,6 +155,7 @@ function parseHooksObject(
     'Setup',
     'SessionStart',
     'SessionEnd',
+    'PostExecution',
     'Notification',
   ];
 

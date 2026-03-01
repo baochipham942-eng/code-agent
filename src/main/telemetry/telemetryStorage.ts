@@ -399,6 +399,25 @@ export class TelemetryStorage {
     }
   }
 
+  /**
+   * 获取会话的所有工具调用（用于错误模式分析）
+   */
+  getToolCallsBySession(sessionId: string): TelemetryToolCall[] {
+    if (!this.isDbAvailable()) return [];
+    try {
+      const rows = this.getStmt('get_tool_calls_by_session', `
+        SELECT * FROM telemetry_tool_calls
+        WHERE session_id = ?
+        ORDER BY timestamp ASC
+      `).all(sessionId) as Record<string, unknown>[];
+
+      return rows.map(row => this.rowToToolCall(row));
+    } catch (error) {
+      logger.error('Failed to get tool calls by session:', error);
+      return [];
+    }
+  }
+
   getIntentDistribution(sessionId: string): TelemetryIntentStat[] {
     if (!this.isDbAvailable()) return [];
     try {

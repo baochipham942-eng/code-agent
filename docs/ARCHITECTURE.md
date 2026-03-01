@@ -151,6 +151,7 @@
 | [002](./decisions/002-eight-generation-tool-evolution.md) | 8 代工具演进策略 | accepted |
 | [003](./decisions/003-cloud-local-hybrid-architecture.md) | 云端-本地混合执行架构 | accepted |
 | [004](./decisions/004-unified-plugin-config-structure.md) | 统一插件配置目录结构 | proposed |
+| [005](./decisions/005-eval-engineering.md) | Eval Engineering Key Decisions | accepted |
 
 ---
 
@@ -236,3 +237,10 @@ code-agent/
 - **新增功能**: 更新对应模块文档
 - **架构决策**: 新建 ADR 文档
 - **重大变更**: 更新索引和版本号
+
+---
+
+## 更多文档
+
+- [Release Notes](./releases/) — 版本发布记录
+- [ADR-005: Eval Engineering Key Decisions](./decisions/005-eval-engineering.md) — Excel Agent Benchmark 优化的关键工程决策

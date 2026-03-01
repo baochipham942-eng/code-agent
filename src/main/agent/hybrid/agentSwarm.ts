@@ -29,6 +29,7 @@ import { getVerifierRegistry, initializeVerifiers } from '../verifier';
 import type { VerificationResult } from '../verifier/verifierRegistry';
 import { analyzeTask } from './taskRouter';
 import type { SwarmVerificationResult } from '../../../shared/types/swarm';
+import { executeReviewLoop, shouldUseReviewLoop, type ReviewLoopResult } from './reviewLoop';
 
 const logger = createLogger('AgentSwarm');
 
@@ -1024,6 +1025,79 @@ export class AgentSwarm {
       statistics,
     };
   }
+}
+
+// ============================================================================
+// Review Loop Integration
+// ============================================================================
+
+/**
+ * 带 Review Loop 的 Swarm 执行结果
+ */
+export interface SwarmReviewResult extends SwarmResult {
+  reviewLoop?: ReviewLoopResult;
+}
+
+/**
+ * 带 Review Loop 的 Swarm 执行
+ *
+ * 在 Swarm 执行完成后，如果任务需要 Review Loop，
+ * 自动进入 verify→revise→re-verify 循环，提升产出质量。
+ *
+ * @param agents - Agent 配置列表
+ * @param config - Swarm 配置
+ * @param executor - Agent 执行器
+ * @param workerExecutor - Review Loop 中的 Worker 修订函数
+ * @param workingDirectory - 工作目录
+ * @param sessionId - 会话 ID
+ */
+export async function executeWithReviewLoop(
+  agents: DynamicAgentConfig[],
+  config: SwarmConfig,
+  executor: AgentExecutor,
+  workerExecutor: (feedback: string[], previousOutput: string, iteration: number) => Promise<{ output: string; modifiedFiles: string[] }>,
+  workingDirectory: string,
+  sessionId?: string,
+): Promise<SwarmReviewResult> {
+  const swarm = getAgentSwarm();
+
+  // 1. Execute the swarm normally
+  const swarmResult = await swarm.execute(agents, config, executor);
+
+  // 2. Analyze task to decide if Review Loop is needed
+  const firstPrompt = agents[0]?.prompt || '';
+  const taskAnalysis = analyzeTask(firstPrompt);
+
+  if (!shouldUseReviewLoop(taskAnalysis)) {
+    logger.info('[ReviewLoop] Skipping review loop (simple task or not reviewable)');
+    return swarmResult;
+  }
+
+  // 3. Run Review Loop on the aggregated output
+  const modifiedFiles = swarmResult.agents
+    .filter(a => a.status === 'completed')
+    .flatMap(a => (a.output || '').match(/(?:created|modified|updated)\s+(\S+\.ts)/gi) || []);
+
+  const reviewResult = await executeReviewLoop(
+    firstPrompt,
+    taskAnalysis,
+    swarmResult.aggregatedOutput,
+    modifiedFiles,
+    workerExecutor,
+    workingDirectory,
+    sessionId,
+  );
+
+  logger.info('[ReviewLoop] Review loop completed', {
+    passed: reviewResult.passed,
+    iterations: reviewResult.iterations.length,
+    exitReason: reviewResult.exitReason,
+  });
+
+  return {
+    ...swarmResult,
+    reviewLoop: reviewResult,
+  };
 }
 
 // ============================================================================

@@ -403,3 +403,305 @@ ToolRegistry → tools → shell/bash → dynamicDescription → ModelRouter
 **收益**: 测试环境中不再触发 isolated-vm 加载；运行时行为不变
 
 相关代码：`src/main/tools/evolution/sandbox.ts`
+
+---
+
+## 错题本 (从 CLAUDE.md 迁移)
+
+### 2026-02-02: E2E 测试超时分析错误
+
+**错误做法**：
+- 看到测试超时 10 分钟，武断判断"模型思考太久"
+- 建议增加催促机制或缩短思考时间
+
+**正确分析方法**：
+1. 先检查日志看这 10 分钟**实际产出了什么**（plan 文档？工具调用？还是 0 输出？）
+2. 区分是"模型在生成内容但慢"还是"API 调用完全卡住无响应"
+3. 检查 API 超时配置是否合理
+
+**本案实际原因**：
+- G07/R06 超时：zhipu provider 没有配置 timeout，API 调用卡死无响应
+- M05 失败：子 agent 返回后，模型幻觉了错误路径 `/Users/codeagent/demo/...`
+
+**经验教训**：
+- 分析问题要看**具体日志和数据**，不能只看表面现象
+- "超时"可能是多种原因：网络问题、API 限流、模型推理慢、配置错误
+
+### 2026-02-02: 模型路径幻觉问题
+
+**问题**：子 agent 返回结果后，主 agent 用错误路径读取文件
+
+**不完整的解决方案**：只在 prompt 里声明工作目录
+
+**更健壮的方案**（参考 [LangChain Context Engineering](https://docs.langchain.com/oss/python/langchain/context-engineering)）：
+1. 子 agent 返回**绝对路径**，不依赖主 agent 拼接
+2. 工具层做**路径验证**：文件存在性检查、路径前缀校验
+3. 把 LLM 输出当作**不可信输入**，验证后再执行
+
+### 2026-02-02: API 超时配置
+
+**大厂参考**（[Claude Code Router](https://lgallardo.com/2025/08/20/claude-code-router-openrouter-beyond-anthropic/)）：
+- Claude Code Router: `API_TIMEOUT_MS: 600000` (10 分钟)
+- Anthropic 默认: 1 分钟（大 payload 会 504）
+
+**建议**：
+- 超时时间应**可配置**，不同任务复杂度需要不同超时
+- 流式响应场景：设置首 token 超时 + 总超时
+- 添加**心跳检测**：长时间无 token 返回时主动超时
+
+### 2026-02-02: 模型名称不要乱猜
+
+**错误做法**：
+- 不查文档，凭印象猜测模型名称：`codegeex-4`、`glm-4.7-flash`、`glm-4.7`
+- 结果：API 报错，浪费时间
+
+**正确做法**：
+1. 查阅 [docs/guides/model-config.md](docs/guides/model-config.md) 获取正确的模型名称
+2. 查看 provider 的官方文档确认模型 ID
+3. 如需切换模型，确保环境变量也同步更新
+
+**本次正确配置**：
+- 评测模型：`kimi-k2.5` (provider: `moonshot`)
+- API 地址：`https://cn.haioi.net/v1`
+- 环境变量：`KIMI_K25_API_KEY`
+
+### 2026-02-02: 原生模块必须用 Electron headers 重编译 ✅ 已自动化
+
+**症状**：
+```
+Error: The module was compiled against a different Node.js version
+NODE_MODULE_VERSION 127. This version of Node.js requires NODE_MODULE_VERSION 130.
+```
+
+**原因**：原生模块（isolated-vm, better-sqlite3, keytar）使用系统 Node.js 编译，与 Electron 内置的 Node.js 版本不匹配。
+
+**已实施的自动化方案**：
+- `postinstall` 钩子：每次 `npm install` 后自动执行 `rebuild-native.sh`
+- 脚本自动读取当前 Electron 版本，无需手动指定 `--target`
+- 手动触发：`npm run rebuild-native`
+
+### 2026-02-02: 评测维度显示问题
+
+**问题**：
+1. 维度名称显示英文（`factualAccuracy`、`economicUsage`）
+2. 简单问候"你好"触发了"复杂推理"维度
+
+**原因**：
+1. `DIMENSION_NAMES` 映射缺少新增维度
+2. 复杂推理检测阈值太低（任何推理关键词都触发）
+
+**修复**：
+1. 在 `sessionAnalytics.ts` 添加完整的维度枚举和映射
+2. 提高复杂推理触发阈值：需要 ≥3 个匹配，且排除简单对话（≤2轮且<500字符）
+
+### 2026-02-02: 第三方代理的 SSE 格式问题
+
+**问题**：Kimi K2.5 第三方代理返回非标准 SSE 格式
+
+```
+: OPENROUTER PROCESSING
+
+data: {"id":"gen-xxx","choices":[...]}
+```
+
+**错误做法**：使用 axios/electronFetch 处理流式响应（axios 不支持真正的 SSE 流式处理）
+
+**正确做法**：使用原生 `https` 模块处理 SSE：
+1. 按 `\n` 分割 buffer
+2. 忽略以 `:` 开头的注释行
+3. 只处理 `data:` 开头的行
+4. 处理 `[DONE]` 结束标记
+
+**相关代码**：`src/main/model/providers/moonshot.ts`
+
+### 2026-02-02: CLI vs Electron 原生模块编译
+
+**问题**：CLI 和 Electron 需要不同版本的原生模块
+
+| 运行环境 | Node ABI 版本 | 编译方式 |
+|----------|---------------|----------|
+| CLI (node dist/cli/index.cjs) | NODE_MODULE_VERSION 127 | `npm rebuild --build-from-source` |
+| Electron App | NODE_MODULE_VERSION 130 | `npm run rebuild-native` (使用 Electron headers) |
+
+**注意**：
+- `npm run rebuild-native` 是为 Electron 编译
+- 如果要测试 CLI，需要先用 `npm rebuild` 为 Node.js 重编译
+- 打包前必须运行 `npm run rebuild-native`
+
+### 2026-02-02: L4 复杂任务 + Kimi K2.5 的工具调用问题 ✅ 已修复
+
+**现象**：L4 测试大部分在 6-10 秒内失败，`tool-used: 0/7`
+
+**根因**：
+- Gen8 的 prompt 只列出了工具，没有**强调必须使用工具**
+- 缺少**工具选择决策树**（什么情况用什么工具）
+- 模型倾向于直接给文本建议而不调用工具
+
+**修复方案**（已实施 commit `110c97d`）：
+
+1. **增强 Gen8 Prompt**（`src/main/generation/prompts/base/gen8.ts`）：
+   - 添加工具选择决策树表格
+   - 明确"禁止盲编辑、先探索后执行"等原则
+   - 添加正确/错误做法示例
+   - **关键语句**："你必须使用工具来执行任务，不能只输出文本建议！"
+
+2. **调整子代理模型配置**（`src/main/agent/agentDefinition.ts`）：
+   - 简单任务（explore、bash）→ GLM-4.7-Flash（免费快）
+   - 规划任务（plan、review）→ GLM-5（0ki 包年 Coding 套餐）
+   - 复杂执行（coder、refactorer、debugger）→ DeepSeek V3（代码能力强）
+   - 支持环境变量覆盖
+
+**验证效果**（M04 测试）：
+
+| 指标 | 修复前 | 修复后 |
+|------|--------|--------|
+| 运行时间 | 9.9 秒 | 7.5 分钟 |
+| agent-dispatched | ❌ | ✅ |
+| tool-used | ❌ | ✅ |
+| tool-count-min | ❌ | ✅ |
+
+**结论**：过程验证 6/6 全通过，证明修复有效。结果验证部分失败是因为任务复杂需要更多时间。
+
+### 2026-02-10: cn.haioi.net 代理并发上限 = 2 ✅ 已修复
+
+**现象**：v4 评测全部 10 个 case 出现 TLS 断开，得分从 v3 的 71% 跌至 61%
+
+**错误消息**：`Client network socket disconnected before secure TLS connection was established` (code=ECONNRESET)
+
+**根因链**：
+1. cn.haioi.net（Moonshot 第三方代理）在 ≥4 并发 SSE 连接时主动断开 TLS
+2. `retryStrategy.ts` 只检查 `err.message` 不检查 `err.code`，TLS 错误不被识别为瞬态错误
+3. Moonshot provider 无并发限流器（智谱有 `ZhipuRateLimiter` 限 3 并发）
+4. `agentLoop.ts` 网络错误直接 throw 不重试
+
+**并发安全阈值**：
+
+| 并发数 | 表现 |
+|--------|------|
+| 1-2 | ✅ 稳定 |
+| 3 | ⚠️ 偶发 TLS 断开 |
+| 4+ | ❌ 频繁断开 |
+
+**修复 (4 项)**：
+1. `retryStrategy.ts`: 新增 `TRANSIENT_CODES` 数组 + `isTransientError` 接受 `errCode` 参数
+2. `agentLoop.ts`: 网络错误在 loop 层兜底重试 1 次（2s 延迟）
+3. `moonshot.ts`: 新增 `MoonshotRateLimiter`（默认 maxConcurrent=2）
+4. `detector.ts`: 修复 `Ran:` 正则 `s` flag 导致 markdown 混入 bash 命令
+
+**环境变量**：`MOONSHOT_MAX_CONCURRENT`（默认 2，可覆盖）
+
+**Provider 并发限制汇总**：
+
+| Provider | 限流器 | 默认并发 | 环境变量 |
+|----------|--------|---------|----------|
+| Moonshot (cn.haioi.net) | `MoonshotRateLimiter` | 2 | `MOONSHOT_MAX_CONCURRENT` |
+| 智谱 (0ki 中转) | `ZhipuRateLimiter` | 4 | `ZHIPU_MAX_CONCURRENT` |
+| DeepSeek | 无（官方 API 较稳定）| - | - |
+
+**相关代码**：
+- `src/main/model/providers/moonshot.ts` — 限流器 + keepAlive=false Agent
+- `src/main/model/providers/retryStrategy.ts` — 瞬态错误检测 + 重试
+- `src/main/agent/agentLoop.ts` — 网络错误兜底重试
+- `src/main/agent/antiPattern/detector.ts` — force tool call 正则修复
+
+### 2026-02-03: 模型参数格式混淆
+
+**问题**：模型把多个参数写进单个字段
+```typescript
+// 错误示例
+read_file({ file_path: "src/app.ts offset=10 limit=50" })
+
+// 正确格式
+read_file({ file_path: "src/app.ts", offset: 10, limit: 50 })
+```
+
+**原因**：工具描述缺少明确的参数格式示例
+
+**解决方案**：
+1. 工具描述增加 ✅ 正确 / ❌ 错误示例
+2. 明确参数是独立字段，不能合并到路径中
+
+**相关代码**：`src/main/generation/prompts/tools/*.ts`
+
+### 2026-02-03: edit_file 失败后的重试策略
+
+**问题**：edit_file 失败后无限重试相同参数
+
+**错误做法**：模型反复用相同的 old_string 尝试 edit_file
+
+**正确策略**：
+1. 第 1 次失败：调整 old_string（增加上下文、检查空格/换行）
+2. 第 2 次失败：改用 write_file 重写整个文件
+3. 切换策略时通知用户原因
+
+**相关代码**：
+- `src/main/generation/prompts/tools/edit.ts`
+- `src/main/agent/antiPattern/detector.ts`
+
+### 2026-02-03: 硬编码工具调用上限导致复杂任务失败
+
+**问题**：M06（L5 复杂度，10 步）需要 85 次工具调用，硬编码上限 80 次导致失败
+
+**错误做法**：所有任务使用相同的工具调用上限
+
+**正确做法**：
+- 根据任务复杂度动态计算上限
+- 公式：`基础上限(复杂度) + 步骤数 × 8`
+- L1=20, L2=35, L3=50, L4=70, L5=100, L6=150
+
+**相关代码**：`src/cli/commands/chat.ts` - `calculateToolCallMax()`
+
+### 2026-02-08: Electron 40 升级失败 — isolated-vm V8 API 不兼容
+
+**症状**: `npm install` 后 `rebuild-native` 编译 `isolated-vm` 失败
+
+**根因**: Electron 40 使用 V8 14.4，两个 C++ API 被移除/改名：
+- `v8::Object::GetIsolate()` → 已移除，替代：`v8::Isolate::GetCurrent()`
+- `v8::Object::GetPrototype()` → 改名为 `GetPrototypeV2()`
+
+**影响范围**: `isolated-vm` 的 `src/isolate/class_handle.h:231-233` 使用了这两个 API
+
+**测试结论**:
+| Electron | V8 | isolated-vm 编译 |
+|----------|----|------------------|
+| 33 | 13.0 | ✅ |
+| 38 | 14.0 | ✅ ← 最高兼容 |
+| 39 | 14.2 | ❌ GetIsolate 移除 |
+| 40 | 14.4 | ❌ 同上 + GetPrototype 改名 |
+
+**最终决策**: 升级到 Electron 38（V8 14.0, Node 22.16, Chromium 140），获得 12 个月安全补丁 + Node LTS 跳代
+
+### 2026-02-08: gen5.test.ts VectorStore mock 缺少 save()
+
+**症状**: 4 个 `memory_store` 测试失败，`result.success` 为 false
+
+**根因**: `store.ts:92` 调用 `await vectorStore.save()`，但测试 mock 只有 `addKnowledge`、`search`、`indexCode`，缺少 `save` 方法
+
+**修复**: 添加 `save: vi.fn().mockResolvedValue(undefined)` 到 VectorStore mock
+
+### 2026-02-11: 打包后启动闪退 — 原生模块 ABI 不匹配 ✅ 已修复
+
+**症状**: v0.16.37 安装后启动 4-6 秒即 SIGABRT，macOS 弹出 "Code Agent quit unexpectedly"
+
+**误判过程**:
+1. 崩溃报告显示 keytar.node 的 N-API cleanup hook abort → 误以为是 Keychain 问题
+2. 第一次从终端运行才看到真正错误（SIGABRT 不 flush stdout，崩溃报告只有 native 栈）
+
+**真正的错误**:
+```
+better_sqlite3.node was compiled against NODE_MODULE_VERSION 127.
+This version of Node.js requires NODE_MODULE_VERSION 139.
+```
+
+**根因链**:
+1. 打包前没执行 `npm run rebuild-native`，better-sqlite3 仍是系统 Node.js（v127）编译版本
+2. Electron 38 内置 Node.js 需要 v139 → 加载 .node 文件失败
+3. 数据库初始化抛出 FATAL ERROR → 主进程开始 quit
+4. quit 过程中 keytar 的 N-API cleanup hook 在非 JS 上下文调用 `ThrowAsJavaScriptException()` → C++ `std::terminate` → SIGABRT
+
+**修复**: 打包清单第 4 步显式加入 `npm run rebuild-native`
+
+**教训**:
+- `postinstall` 不可靠：`npm rebuild`（CLI 测试）、手动操作都会覆盖 Electron 编译的原生模块
+- 崩溃报告的 native 栈帧可能指向"陪葬"模块而非根因 — 永远从终端运行一次看 JS 层报错
+- NODE_MODULE_VERSION 速查：127=Node 22.x（系统），139=Electron 38

@@ -15,6 +15,7 @@ import { SECURITY_REMINDERS } from './security';
 import { TOOL_USAGE_REMINDERS } from './toolUsage';
 import { QUALITY_REMINDERS } from './quality';
 import { CONTENT_GENERATION_REMINDERS } from './contentGeneration';
+import { CODEBASE_HEALTH_REMINDERS } from './codebaseHealth';
 
 import type { ReminderDefinition, ReminderPriority } from './types';
 
@@ -29,6 +30,7 @@ export const REMINDER_DEFINITIONS: ReminderDefinition[] = [
   ...SECURITY_REMINDERS,
   ...QUALITY_REMINDERS,
   ...CONTENT_GENERATION_REMINDERS,
+  ...CODEBASE_HEALTH_REMINDERS,
 ];
 
 // ----------------------------------------------------------------------------
@@ -72,3 +74,4 @@ export { SECURITY_REMINDERS } from './security';
 export { TOOL_USAGE_REMINDERS } from './toolUsage';
 export { QUALITY_REMINDERS } from './quality';
 export { CONTENT_GENERATION_REMINDERS } from './contentGeneration';
+export { CODEBASE_HEALTH_REMINDERS } from './codebaseHealth';

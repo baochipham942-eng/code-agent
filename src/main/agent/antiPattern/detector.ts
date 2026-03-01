@@ -214,8 +214,15 @@ export class AntiPatternDetector {
       return 'ESCALATE_TO_USER';
     }
 
-    // Strike 3: 重新分析指令
+    // Strike 3: 硬阻断 — 强制使用替代工具（Harness Engineering: 机械式约束）
     if (count === 3) {
+      const alternative = TOOL_ALTERNATIVES[toolCall.name];
+      if (alternative) {
+        logger.warn(`Tool ${toolCall.name} failed 3 times — FORCE switching to ${alternative.alternative}`);
+        logCollector.agent('WARN', `Strike 3: Force alternative for ${toolCall.name} → ${alternative.alternative}`, { error: error.substring(0, 200) });
+        return this.generateForceAlternative(toolCall.name, alternative.alternative, alternative.reason, error);
+      }
+      // 无替代工具时仍使用重新分析
       logger.warn(`Tool ${toolCall.name} failed 3 times — injecting rethink directive`);
       logCollector.agent('WARN', `Strike 3: Rethink directive for ${toolCall.name}`, { error: error.substring(0, 200) });
       return this.generateStrike3Rethink(toolCall.name, error);
@@ -273,7 +280,22 @@ export class AntiPatternDetector {
   }
 
   /**
-   * Strike 3: 重新分析指令 — 强制用 read_file 确认状态 + 质疑假设
+   * Strike 3 (with alternative): 强制切换工具 — 不再允许使用原工具
+   */
+  private generateForceAlternative(toolName: string, alternative: string, reason: string, error: string): string {
+    return (
+      `<force-alternative>\n` +
+      `🚫 HARD BLOCK: Tool "${toolName}" is now DISABLED after 3 failures.\n\n` +
+      `**You MUST use "${alternative}" instead.**\n` +
+      `Reason: ${reason}\n\n` +
+      `Do NOT attempt "${toolName}" again — it will be rejected.\n` +
+      `Last error: ${error.substring(0, 200)}${error.length > 200 ? '...' : ''}\n` +
+      `</force-alternative>`
+    );
+  }
+
+  /**
+   * Strike 3 (no alternative): 重新分析指令 — 强制用 read_file 确认状态 + 质疑假设
    */
   private generateStrike3Rethink(toolName: string, error: string): string {
     return (

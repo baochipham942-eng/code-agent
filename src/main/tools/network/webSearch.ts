@@ -125,12 +125,24 @@ export function formatAge(dateStr: string): string | undefined {
 
 export const webSearchTool: Tool = {
   name: 'web_search',
-  description: `Search the web and return multiple results with titles, URLs, and snippets.
+  description: `Search the web and return results with titles, URLs, and snippets.
 
-Use for: finding documentation, researching APIs, looking up error messages, discovering libraries.
+Provides up-to-date information beyond the model's knowledge cutoff. Use when you need current data, recent events, or documentation updates.
 
+IMPORTANT: Use the current year in search queries when looking for recent information. Do NOT search with outdated years.
+
+CRITICAL: After answering with search results, you MUST include a "Sources:" section listing relevant URLs as markdown hyperlinks.
+
+Use for: finding documentation, researching APIs, looking up error messages, discovering libraries, current events.
 For reading a specific URL you already have, use web_fetch instead.
-For searching local code, use grep or glob.`,
+For searching local code, use grep or glob.
+
+Features:
+- Parallel search across multiple sources (Perplexity, EXA, Brave, Tavily)
+- Domain filtering with allowed_domains / blocked_domains
+- auto_extract: search + fetch + AI extraction in one call
+- recency: filter results by day/week/month
+- output_format: "table" for compact markdown output`,
   generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',

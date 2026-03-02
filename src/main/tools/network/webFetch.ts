@@ -88,9 +88,20 @@ export const webFetchTool: Tool = {
   name: 'web_fetch',
   description: `Fetch a single URL and extract information from its content.
 
-Use for: reading a specific webpage, calling an API endpoint, extracting data from a known URL.
+IMPORTANT: This tool WILL FAIL for authenticated or private URLs (Google Docs, Confluence, Jira, etc.).
+For GitHub URLs, prefer using bash with gh CLI (e.g., gh pr view, gh issue view, gh api).
 
-For searching the web (when you don't have a specific URL), use web_search instead.`,
+Workflow: fetches URL → converts HTML to markdown → AI extraction based on your prompt → returns extracted content.
+
+Use for: reading a specific webpage, calling an API endpoint, extracting data from a known URL.
+For searching the web (when you don't have a specific URL), use web_search instead.
+
+Notes:
+- URL must be fully-formed (e.g., "https://example.com", not "example.com"). HTTP auto-upgrades to HTTPS.
+- Results may be summarized if the content is very large.
+- Includes a 15-minute cache — repeated requests to the same URL are fast.
+- Cross-domain redirects are reported; you may need to re-fetch the redirect URL.
+- This tool is read-only and does not modify any files.`,
   generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',

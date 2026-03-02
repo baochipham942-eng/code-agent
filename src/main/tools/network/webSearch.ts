@@ -10,6 +10,7 @@ import { getConfigService } from '../../services/core/configService';
 import { createLogger } from '../../services/infra/logger';
 import { CLOUD_ENDPOINTS, SEARCH_API_ENDPOINTS } from '../../../shared/constants';
 import { smartHtmlToText, smartTruncate, buildExtractionPrompt } from './htmlUtils';
+import { fetchDocument } from './fetchDocument';
 
 const logger = createLogger('WebSearch');
 
@@ -389,7 +390,7 @@ export function normalizeTitleForDedup(title: string): string {
  * Deduplicates by URL and by normalized title prefix (case-insensitive, first 60 chars).
  */
 export function deduplicateResults(searchResult: ToolExecutionResult): void {
-  const resultData = searchResult.result as { results?: SearchResult[] } | undefined;
+  const resultData = searchResult.result as { results?: SearchResult[]; source?: string; sources?: string[]; duration?: number } | undefined;
   if (!resultData?.results || resultData.results.length === 0) return;
 
   const seenUrls = new Set<string>();
@@ -408,6 +409,20 @@ export function deduplicateResults(searchResult: ToolExecutionResult): void {
   const removed = before - resultData.results.length;
   if (removed > 0) {
     logger.info(`Deduplicated: removed ${removed} duplicate results (${before} → ${resultData.results.length})`);
+
+    // Rebuild output to match filtered results (fixes serial path timing issue)
+    const outputParts: string[] = [];
+    const source = resultData.source || (resultData.sources || []).join(', ') || 'search';
+    outputParts.push(`Search results for deduplicated results (via ${source})`);
+    outputParts.push('');
+    resultData.results.forEach((item, index) => {
+      const snippet = item.snippet || item.description || '';
+      outputParts.push(`${index + 1}. ${item.title}${item.age ? ` (${item.age})` : ''}`);
+      outputParts.push(`   ${item.url}`);
+      if (snippet) outputParts.push(`   ${snippet}`);
+      outputParts.push('');
+    });
+    searchResult.output = outputParts.join('\n');
   }
 }
 
@@ -703,6 +718,7 @@ function formatSingleSourceResult(
 
 /**
  * After search completes, fetch top N result URLs and extract content via AI.
+ * Uses shared fetchDocument() for caching, timeout, and retry.
  */
 async function autoExtractFromResults(
   searchResult: ToolExecutionResult,
@@ -728,22 +744,20 @@ async function autoExtractFromResults(
 
   logger.info(`Auto-extracting content from ${urls.length} URLs`);
 
-  // Parallel fetch + extract with 10s timeout per URL
+  let failedCount = 0;
+
+  // Parallel fetch + extract using fetchDocument (benefits from caching)
   const extractPromises = urls.map(async (url): Promise<{ url: string; content: string } | null> => {
     try {
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; CodeAgent/1.0)',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(10000),
-      });
+      const doc = await fetchDocument(url);
 
-      if (!response.ok) return null;
-
-      const html = await response.text();
-      const text = smartHtmlToText(html);
+      // If response is already markdown, skip cheerio
+      let text: string;
+      if (doc.contentType.includes('text/markdown')) {
+        text = doc.content;
+      } else {
+        text = smartHtmlToText(doc.content, doc.finalUrl);
+      }
       if (text.length < 50) return null;
 
       // AI extraction — max 3000 chars per URL
@@ -751,13 +765,14 @@ async function autoExtractFromResults(
       const extracted = await modelCallback(extractionPrompt);
 
       if (extracted && extracted.trim().length > 50) {
-        return { url, content: extracted.trim() };
+        return { url: doc.finalUrl, content: extracted.trim() };
       }
 
       // Fallback: smart truncate
-      return { url, content: smartTruncate(text, 3000) };
-    } catch {
-      // Skip failed URLs silently
+      return { url: doc.finalUrl, content: smartTruncate(text, 3000) };
+    } catch (err) {
+      failedCount++;
+      logger.warn(`Auto-extract failed for ${url}:`, err instanceof Error ? err.message : err);
       return null;
     }
   });
@@ -773,14 +788,17 @@ async function autoExtractFromResults(
     }
   }
 
+  const successCount = extractedParts.length;
+  logger.info(`Extracted ${successCount}/${urls.length} pages${failedCount > 0 ? ` (${failedCount} failed)` : ''}`);
+
   if (extractedParts.length === 0) return null;
 
-  return '---\n# Auto-Extracted Content\n\n' + extractedParts.join('\n');
+  return `---\n# Auto-Extracted Content (${successCount}/${urls.length} pages)\n\n` + extractedParts.join('\n');
 }
 
 /**
  * CLI fallback for auto_extract: fetch + smartTruncate (no AI model needed).
- * Provides actual page content instead of just search snippets.
+ * Uses shared fetchDocument() for caching, timeout, and retry.
  */
 async function autoExtractFallback(
   searchResult: ToolExecutionResult,
@@ -803,26 +821,26 @@ async function autoExtractFallback(
 
   logger.info(`[CLI fallback] Auto-extracting from ${urls.length} URLs (no AI, smartTruncate)`);
 
+  let failedCount = 0;
+
   const fetchPromises = urls.map(async (url): Promise<{ url: string; content: string } | null> => {
     try {
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; CodeAgent/1.0)',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(8000),
-      });
+      const doc = await fetchDocument(url);
 
-      if (!response.ok) return null;
-
-      const html = await response.text();
-      const text = smartHtmlToText(html);
+      // If response is already markdown, skip cheerio
+      let text: string;
+      if (doc.contentType.includes('text/markdown')) {
+        text = doc.content;
+      } else {
+        text = smartHtmlToText(doc.content, doc.finalUrl);
+      }
       if (text.length < 50) return null;
 
       // No AI available — just smartTruncate to 2000 chars
-      return { url, content: smartTruncate(text, 2000) };
-    } catch {
+      return { url: doc.finalUrl, content: smartTruncate(text, 2000) };
+    } catch (err) {
+      failedCount++;
+      logger.warn(`[CLI fallback] Fetch failed for ${url}:`, err instanceof Error ? err.message : err);
       return null;
     }
   });
@@ -838,9 +856,12 @@ async function autoExtractFallback(
     }
   }
 
+  const successCount = extractedParts.length;
+  logger.info(`[CLI fallback] Extracted ${successCount}/${urls.length} pages${failedCount > 0 ? ` (${failedCount} failed)` : ''}`);
+
   if (extractedParts.length === 0) return null;
 
-  return '---\n# Fetched Page Content\n\n' + extractedParts.join('\n');
+  return `---\n# Fetched Page Content (${successCount}/${urls.length} pages)\n\n` + extractedParts.join('\n');
 }
 
 // ============================================================================

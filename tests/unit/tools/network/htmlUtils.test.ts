@@ -152,6 +152,72 @@ describe('HTML Utilities', () => {
       });
     });
 
+    describe('baseUrl — relative link resolution', () => {
+      it('should resolve relative links when baseUrl is provided', () => {
+        const html = '<body><a href="/docs/api">API Docs</a></body>';
+        const result = smartHtmlToText(html, 'https://example.com');
+        expect(result).toContain('[API Docs](https://example.com/docs/api)');
+      });
+
+      it('should resolve relative links with path', () => {
+        const html = '<body><a href="../guide">Guide</a></body>';
+        const result = smartHtmlToText(html, 'https://example.com/docs/ref/');
+        expect(result).toContain('[Guide](https://example.com/docs/guide)');
+      });
+
+      it('should keep absolute links unchanged with baseUrl', () => {
+        const html = '<body><a href="https://other.com/page">Other</a></body>';
+        const result = smartHtmlToText(html, 'https://example.com');
+        expect(result).toContain('[Other](https://other.com/page)');
+      });
+
+      it('should treat relative links as plain text without baseUrl', () => {
+        const html = '<body><a href="/page">Internal</a></body>';
+        const result = smartHtmlToText(html);
+        expect(result).toContain('Internal');
+        expect(result).not.toContain('/page');
+      });
+    });
+
+    describe('inline text merging', () => {
+      it('should merge inline text within a paragraph', () => {
+        const html = '<body><p>Hello <strong>world</strong> and <em>universe</em></p></body>';
+        const result = smartHtmlToText(html);
+        // Should be on one line, not split across multiple
+        const lines = result.split('\n').filter(Boolean);
+        const contentLine = lines.find(l => l.includes('Hello'));
+        expect(contentLine).toContain('world');
+        expect(contentLine).toContain('universe');
+      });
+    });
+
+    describe('blockquote prefix', () => {
+      it('should prefix blockquote content with >', () => {
+        const html = '<body><blockquote><p>Quoted text</p></blockquote></body>';
+        const result = smartHtmlToText(html);
+        expect(result).toContain('> ');
+        expect(result).toMatch(/>\s*Quoted text/);
+      });
+
+      it('should handle nested blockquote content', () => {
+        const html = '<body><blockquote>Line one<br>Line two</blockquote></body>';
+        const result = smartHtmlToText(html);
+        expect(result).toContain('>');
+      });
+    });
+
+    describe('li nesting', () => {
+      it('should not duplicate text from nested lists', () => {
+        const html = '<body><ul><li>Parent<ul><li>Child</li></ul></li></ul></body>';
+        const result = smartHtmlToText(html);
+        // "Parent" should appear exactly once
+        const parentMatches = result.match(/Parent/g);
+        expect(parentMatches?.length).toBe(1);
+        expect(result).toContain('- Parent');
+        expect(result).toContain('- Child');
+      });
+    });
+
     describe('edge cases', () => {
       it('should handle empty HTML', () => {
         const result = smartHtmlToText('');

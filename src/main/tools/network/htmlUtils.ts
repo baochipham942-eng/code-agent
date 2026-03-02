@@ -32,8 +32,9 @@ const CONTENT_SELECTORS = [
 /**
  * Convert HTML to structured text using cheerio.
  * Removes noise regions, prioritizes content areas, preserves semantic structure.
+ * @param baseUrl - Optional base URL for resolving relative links
  */
-export function smartHtmlToText(html: string): string {
+export function smartHtmlToText(html: string, baseUrl?: string): string {
   try {
     const $ = cheerio.load(html);
 
@@ -58,7 +59,7 @@ export function smartHtmlToText(html: string): string {
 
     // Convert to structured text
     const lines: string[] = [];
-    processNode($root, $, lines);
+    processNode($root, $, lines, baseUrl);
 
     return lines
       .join('\n')
@@ -71,12 +72,100 @@ export function smartHtmlToText(html: string): string {
 }
 
 /**
+ * Resolve a potentially relative href to an absolute URL.
+ */
+function resolveHref(href: string, baseUrl?: string): string | null {
+  if (href.startsWith('http')) return href;
+  if (baseUrl) {
+    try {
+      return new URL(href, baseUrl).toString();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Collect inline text fragments from a node's children into a single line.
+ * Used for p/div/section to avoid splitting inline content across multiple lines.
+ */
+function collectInlineText(
+  $el: cheerio.Cheerio<AnyNode>,
+  $: cheerio.CheerioAPI,
+  baseUrl?: string
+): string {
+  const fragments: string[] = [];
+
+  $el.contents().each((_, node) => {
+    if (node.type === 'text') {
+      const text = $(node).text().trim();
+      if (text) fragments.push(text);
+      return;
+    }
+
+    if (node.type !== 'tag') return;
+
+    const $node = $(node);
+    const tag = node.tagName?.toLowerCase();
+
+    // Inline elements: collect their text
+    if (tag === 'a') {
+      const text = $node.text().trim();
+      const href = $node.attr('href');
+      if (text && href) {
+        const resolved = resolveHref(href, baseUrl);
+        if (resolved) {
+          fragments.push(`[${text}](${resolved})`);
+        } else {
+          fragments.push(text);
+        }
+      } else if (text) {
+        fragments.push(text);
+      }
+      return;
+    }
+
+    if (tag === 'code' && node.parentNode && (node.parentNode as Element).tagName !== 'pre') {
+      const text = $node.text().trim();
+      if (text) fragments.push('`' + text + '`');
+      return;
+    }
+
+    if (tag === 'strong' || tag === 'b') {
+      const text = $node.text().trim();
+      if (text) fragments.push(`**${text}**`);
+      return;
+    }
+
+    if (tag === 'em' || tag === 'i') {
+      const text = $node.text().trim();
+      if (text) fragments.push(`*${text}*`);
+      return;
+    }
+
+    if (tag === 'br') {
+      // br in inline context: just add a space
+      fragments.push('');
+      return;
+    }
+
+    // For other inline-ish elements, just collect text
+    const text = $node.text().trim();
+    if (text) fragments.push(text);
+  });
+
+  return fragments.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Recursively process DOM nodes into structured text.
  */
 function processNode(
   $el: cheerio.Cheerio<AnyNode>,
   $: cheerio.CheerioAPI,
-  lines: string[]
+  lines: string[],
+  baseUrl?: string
 ): void {
   $el.contents().each((_, node) => {
     if (node.type === 'text') {
@@ -102,10 +191,30 @@ function processNode(
       return;
     }
 
-    // Lists
+    // Lists — only take direct text, let nested ul/ol recurse
     if (tag === 'li') {
-      const text = $node.text().trim();
-      if (text) lines.push('- ' + text);
+      // Collect only direct text children (not nested lists)
+      const directText: string[] = [];
+      $node.contents().each((__, child) => {
+        if (child.type === 'text') {
+          const t = $(child).text().trim();
+          if (t) directText.push(t);
+        } else if (child.type === 'tag') {
+          const childTag = child.tagName?.toLowerCase();
+          // Skip nested lists — they'll be handled by recursion
+          if (childTag === 'ul' || childTag === 'ol') return;
+          // Inline elements: collect text
+          const t = $(child).text().trim();
+          if (t) directText.push(t);
+        }
+      });
+      if (directText.length > 0) {
+        lines.push('- ' + directText.join(' '));
+      }
+      // Recurse into nested lists
+      $node.children('ul, ol').each((__, nested) => {
+        processNode($(nested), $, lines, baseUrl);
+      });
       return;
     }
 
@@ -129,11 +238,34 @@ function processNode(
       return;
     }
 
-    // Block-level elements: recurse into children to preserve inline semantics
-    if (['p', 'div', 'section', 'blockquote'].includes(tag)) {
+    // Paragraph / div / section — merge inline text into single line
+    if (tag === 'p' || tag === 'div' || tag === 'section') {
       lines.push('');
-      if (tag === 'blockquote') lines.push('> ');
-      processNode($node, $, lines);
+      const inlineText = collectInlineText($node, $, baseUrl);
+      if (inlineText) lines.push(inlineText);
+      // Also recurse for any block-level children inside div/section
+      if (tag === 'div' || tag === 'section') {
+        $node.children('div, p, section, ul, ol, table, pre, blockquote, h1, h2, h3, h4, h5, h6').each((__, child) => {
+          const childLines: string[] = [];
+          processNode($(child), $, childLines, baseUrl);
+          lines.push(...childLines);
+        });
+      }
+      lines.push('');
+      return;
+    }
+
+    // Blockquote — recurse into children, add `> ` prefix to each line
+    if (tag === 'blockquote') {
+      const bqLines: string[] = [];
+      processNode($node, $, bqLines, baseUrl);
+      lines.push('');
+      for (const line of bqLines) {
+        const trimmed = line.trim();
+        if (trimmed) {
+          lines.push('> ' + trimmed);
+        }
+      }
       lines.push('');
       return;
     }
@@ -152,12 +284,17 @@ function processNode(
       return;
     }
 
-    // Links: preserve href
+    // Links: preserve href with relative resolution
     if (tag === 'a') {
       const text = $node.text().trim();
       const href = $node.attr('href');
-      if (text && href && href.startsWith('http')) {
-        lines.push(`[${text}](${href})`);
+      if (text && href) {
+        const resolved = resolveHref(href, baseUrl);
+        if (resolved) {
+          lines.push(`[${text}](${resolved})`);
+        } else {
+          lines.push(text);
+        }
       } else if (text) {
         lines.push(text);
       }
@@ -165,7 +302,7 @@ function processNode(
     }
 
     // Other elements: recurse
-    processNode($node, $, lines);
+    processNode($node, $, lines, baseUrl);
   });
 }
 

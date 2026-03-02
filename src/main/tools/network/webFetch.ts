@@ -7,10 +7,82 @@ import {
   smartHtmlToText,
   smartTruncate,
   buildExtractionPrompt,
-  fallbackHtmlToText,
 } from './htmlUtils';
+import { fetchDocument } from './fetchDocument';
+import { createLogger } from '../../services/infra/logger';
+import { WEB_FETCH } from '../../../shared/constants';
+
+const logger = createLogger('WebFetch');
 
 const DEFAULT_MAX_CHARS = 8000;
+
+/** Max learned domains to prevent unbounded growth */
+const MAX_LEARNED_DOMAINS = 200;
+
+// ============================================================================
+// Trusted Documentation Domains
+// These sites return high-quality content — when they respond with text/markdown,
+// skip AI extraction and return content directly (saves a model call).
+// ============================================================================
+
+const TRUSTED_DOCS = new Set([
+  // Claude / Anthropic
+  'platform.claude.com', 'code.claude.com', 'modelcontextprotocol.io',
+  // Language docs
+  'docs.python.org', 'en.cppreference.com', 'docs.oracle.com',
+  'learn.microsoft.com', 'developer.mozilla.org',
+  'go.dev', 'pkg.go.dev', 'doc.rust-lang.org',
+  'www.typescriptlang.org', 'kotlinlang.org', 'ruby-doc.org',
+  'docs.swift.org', 'www.php.net',
+  // Frontend
+  'react.dev', 'vuejs.org', 'angular.io', 'nextjs.org',
+  'tailwindcss.com', 'redux.js.org', 'webpack.js.org', 'jestjs.io',
+  'reactrouter.com', 'reactnative.dev',
+  // Backend
+  'nodejs.org', 'bun.sh', 'expressjs.com',
+  'docs.djangoproject.com', 'flask.palletsprojects.com', 'fastapi.tiangolo.com',
+  'laravel.com', 'docs.spring.io', 'asp.net', 'dotnet.microsoft.com',
+  // Data / ML
+  'pandas.pydata.org', 'numpy.org', 'pytorch.org', 'www.tensorflow.org',
+  'scikit-learn.org', 'keras.io', 'huggingface.co', 'matplotlib.org',
+  // Cloud / DevOps
+  'docs.aws.amazon.com', 'cloud.google.com', 'kubernetes.io',
+  'www.docker.com', 'www.terraform.io', 'vercel.com/docs',
+  'docs.netlify.com',
+  // Database
+  'www.mongodb.com', 'redis.io', 'www.postgresql.org', 'dev.mysql.com',
+  'www.sqlite.org', 'graphql.org', 'prisma.io',
+  // Other
+  'git-scm.com', 'nginx.org', 'httpd.apache.org',
+  'cypress.io', 'selenium.dev',
+]);
+
+/** Domains auto-learned at runtime as markdown-capable (session-persistent) */
+const learnedMarkdownDomains = new Set<string>();
+
+/**
+ * Check if a URL belongs to a trusted documentation site
+ * (hardcoded list OR auto-learned markdown-capable domain).
+ */
+function isTrustedDocs(url: string): boolean {
+  try {
+    const { hostname, pathname } = new URL(url);
+    if (TRUSTED_DOCS.has(hostname)) return true;
+    if (learnedMarkdownDomains.has(hostname)) return true;
+    // Support path-prefix entries like "github.com/anthropics"
+    for (const entry of TRUSTED_DOCS) {
+      if (entry.includes('/')) {
+        const slashIdx = entry.indexOf('/');
+        const domain = entry.substring(0, slashIdx);
+        const pathPrefix = entry.substring(slashIdx);
+        if (hostname === domain && pathname.startsWith(pathPrefix)) return true;
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 export const webFetchTool: Tool = {
   name: 'web_fetch',
@@ -60,69 +132,68 @@ For searching the web (when you don't have a specific URL), use web_search inste
     }
 
     try {
-      // Fetch the page
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; CodeAgent/1.0)',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
-        redirect: 'follow',
-      });
+      // Fetch via shared utility (handles caching, timeout, retry, redirects)
+      const result = await fetchDocument(url);
 
-      if (!response.ok) {
-        return {
-          success: false,
-          error: `HTTP error: ${response.status} ${response.statusText}`,
-        };
-      }
-
-      const contentType = response.headers.get('content-type') || '';
+      // Use finalUrl for trust/domain decisions (handles redirects correctly)
+      const effectiveUrl = result.finalUrl;
+      const contentType = result.contentType;
       let content: string;
 
+      // Cross-domain redirect: warn and disable trusted docs fast path
+      if (result.crossDomainRedirect) {
+        logger.info(`Cross-domain redirect detected: ${url} → ${effectiveUrl}`);
+      }
+
       if (contentType.includes('application/json')) {
-        const json = await response.json();
-        content = JSON.stringify(json, null, 2);
-        // JSON: just truncate, no AI extraction needed
+        // ── JSON fast path ──
+        try {
+          const json = JSON.parse(result.content);
+          content = JSON.stringify(json, null, 2);
+        } catch {
+          content = result.content;
+        }
         if (content.length > maxChars) {
           content = smartTruncate(content, maxChars);
         }
-      } else {
-        const rawHtml = await response.text();
+      } else if (contentType.includes('text/markdown')) {
+        // ── Markdown fast path ──
+        content = result.content;
 
-        // Step 1: cheerio HTML → structured text (fallback to regex)
-        content = smartHtmlToText(rawHtml);
-
-        // Step 2: AI extraction if modelCallback available
-        if (context.modelCallback && content.length > 0) {
-          try {
-            const extractionPrompt = buildExtractionPrompt(prompt, content, maxChars);
-            const extracted = await context.modelCallback(extractionPrompt);
-
-            // Use AI result if substantive (> 50 chars)
-            if (extracted && extracted.trim().length > 50) {
-              content = extracted.trim();
-            } else {
-              // AI returned too little — fall back to smart truncation
-              content = smartTruncate(content, maxChars);
+        // Auto-learn: remember this domain serves markdown (capped)
+        try {
+          const hostname = new URL(effectiveUrl).hostname;
+          if (!TRUSTED_DOCS.has(hostname) && !learnedMarkdownDomains.has(hostname)) {
+            if (learnedMarkdownDomains.size < MAX_LEARNED_DOMAINS) {
+              learnedMarkdownDomains.add(hostname);
             }
-          } catch {
-            // AI extraction failed — fall back to smart truncation
+          }
+        } catch { /* ignore parse errors */ }
+
+        // Trusted docs + within size limit + no cross-domain redirect → skip AI
+        if (isTrustedDocs(effectiveUrl) && !result.crossDomainRedirect && content.length < WEB_FETCH.TRUSTED_DOCS_MAX_CHARS) {
+          if (content.length > maxChars) {
             content = smartTruncate(content, maxChars);
           }
         } else {
-          // No modelCallback — smart truncation only
-          content = smartTruncate(content, maxChars);
+          content = await extractOrTruncate(content, prompt, maxChars, context);
         }
+      } else {
+        // ── HTML path ──
+        content = smartHtmlToText(result.content, effectiveUrl);
+        content = await extractOrTruncate(content, prompt, maxChars, context);
       }
 
+      const cacheNote = result.fromCache ? ' (cached)' : '';
       return {
         success: true,
-        output: `Fetched content from: ${url}\n` +
+        output: `Fetched content from: ${effectiveUrl}${cacheNote}\n` +
           `Prompt: ${prompt}\n\n` +
           `Content:\n${content}`,
       };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.warn(`Failed to fetch ${url}: ${message}`);
       return {
         success: false,
         error: `Failed to fetch URL: ${message}`,
@@ -130,3 +201,25 @@ For searching the web (when you don't have a specific URL), use web_search inste
     }
   },
 };
+
+/**
+ * AI extraction with graceful fallback to smart truncation.
+ * Shared by markdown and HTML paths.
+ */
+async function extractOrTruncate(
+  content: string,
+  prompt: string,
+  maxChars: number,
+  context: ToolContext
+): Promise<string> {
+  if (context.modelCallback && content.length > 0) {
+    try {
+      const extractionPrompt = buildExtractionPrompt(prompt, content, maxChars);
+      const extracted = await context.modelCallback(extractionPrompt);
+      if (extracted && extracted.trim().length > 50) {
+        return extracted.trim();
+      }
+    } catch { /* fall through to truncation */ }
+  }
+  return smartTruncate(content, maxChars);
+}

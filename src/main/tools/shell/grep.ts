@@ -42,6 +42,40 @@ const FILE_TYPE_MAP: Record<string, string[]> = {
 
 const execFileAsync = promisify(execFile);
 
+/** Cached rg binary path (resolved once, reused) */
+let rgBinaryPath: string | null | undefined; // undefined = not yet checked
+
+/**
+ * Find the ripgrep binary. execFile cannot resolve shell aliases,
+ * so we check common locations.
+ */
+function findRgBinary(): string | null {
+  if (rgBinaryPath !== undefined) return rgBinaryPath;
+
+  const { existsSync } = require('fs') as typeof import('fs');
+  const candidates = [
+    // Homebrew
+    '/opt/homebrew/bin/rg',
+    '/usr/local/bin/rg',
+    // Claude Code vendor
+    `${process.env.HOME}/.npm-global/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg`,
+    `${process.env.HOME}/.npm-global/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-darwin/rg`,
+    `${process.env.HOME}/.npm-global/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg`,
+    // System
+    '/usr/bin/rg',
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      rgBinaryPath = candidate;
+      return rgBinaryPath;
+    }
+  }
+
+  rgBinaryPath = null;
+  return null;
+}
+
 /**
  * Check if an error is an EAGAIN (resource temporarily unavailable) error.
  * This can happen on macOS / Linux when ripgrep's thread pool hits OS limits.
@@ -53,6 +87,93 @@ function isEagainError(error: unknown): boolean {
   return text.includes('resource temporarily unavailable')
     || text.includes('eagain')
     || err.code === 'EAGAIN';
+}
+
+interface RgResult {
+  found: boolean;     // rg ran and found matches
+  noMatches: boolean; // rg ran but found no matches
+  stdout: string;
+}
+
+/**
+ * Try running ripgrep directly. Returns:
+ * - { found: true, stdout } if matches found
+ * - { noMatches: true } if rg ran but found nothing
+ * - { found: false, noMatches: false } if rg is not available (fallback to grep)
+ */
+async function tryRipgrep(
+  pattern: string,
+  searchPath: string,
+  caseInsensitive: boolean,
+  ctxBefore: number | undefined,
+  ctxAfter: number | undefined,
+  fileType: string | undefined,
+  include: string | undefined,
+): Promise<RgResult> {
+  const args = [
+    '-n', '--color=never',
+    '-M', String(GREP.MAX_LINE_LENGTH),
+    '--max-count', String(GREP.MAX_MATCHES_PER_FILE),
+  ];
+
+  if (caseInsensitive) args.push('-i');
+  if (ctxBefore !== undefined && ctxBefore > 0) args.push('-B', String(Math.min(ctxBefore, 10)));
+  if (ctxAfter !== undefined && ctxAfter > 0) args.push('-A', String(Math.min(ctxAfter, 10)));
+
+  if (fileType && FILE_TYPE_MAP[fileType]) {
+    for (const ext of FILE_TYPE_MAP[fileType]) args.push('-g', ext);
+  } else if (include) {
+    args.push('-g', include);
+  }
+
+  args.push('--glob', '!node_modules', '--glob', '!.git', '--glob', '!dist', '--glob', '!build');
+  args.push(pattern, searchPath);
+
+  const rgPath = findRgBinary();
+  if (!rgPath) {
+    return { found: false, noMatches: false, stdout: '' };
+  }
+
+  try {
+    const result = await execFileAsync(rgPath, args, {
+      maxBuffer: BASH.MAX_BUFFER,
+      timeout: GREP.DEFAULT_TIMEOUT,
+    });
+    return { found: true, noMatches: false, stdout: result.stdout };
+  } catch (err: unknown) {
+    const e = err as { code?: number | string; stderr?: string; message?: string };
+
+    // EAGAIN: retry with single thread
+    if (isEagainError(err)) {
+      try {
+        const retryArgs = ['-j', String(GREP.EAGAIN_RETRY_THREADS), ...args];
+        const result = await execFileAsync(rgPath, retryArgs, {
+          maxBuffer: BASH.MAX_BUFFER,
+          timeout: GREP.DEFAULT_TIMEOUT,
+        });
+        return { found: true, noMatches: false, stdout: result.stdout };
+      } catch (retryErr: unknown) {
+        const re = retryErr as { code?: number | string; stderr?: string };
+        if (re.code === 1 && !re.stderr) {
+          return { found: false, noMatches: true, stdout: '' };
+        }
+        throw retryErr;
+      }
+    }
+
+    // Exit code 1 + no stderr = no matches (rg IS available, just no results)
+    if (e.code === 1 && !e.stderr) {
+      return { found: false, noMatches: true, stdout: '' };
+    }
+
+    // ENOENT / EACCES = rg not installed — signal fallback to grep
+    if (e.code === 'ENOENT' || (e.message && e.message.includes('ENOENT'))) {
+      return { found: false, noMatches: false, stdout: '' };
+    }
+
+    // Other real errors (bad pattern, etc.)
+    throw err;
+  }
 }
 
 export const grepTool: Tool = {
@@ -186,90 +307,17 @@ Tips:
     try {
       let stdout: string;
 
-      // Check if ripgrep is available
-      try {
-        await execFileAsync('which', ['rg']);
+      // Try ripgrep first, fall back to grep
+      const rgResult = await tryRipgrep(
+        pattern, searchPath, caseInsensitive, ctxBefore, ctxAfter, fileType, include
+      );
 
-        // Build ripgrep args array (no shell interpolation)
-        const args = [
-          '-n', // Line numbers
-          '--color=never',
-          '-M', String(GREP.MAX_LINE_LENGTH), // Max line length
-          '--max-count', String(GREP.MAX_MATCHES_PER_FILE), // Max matches per file
-        ];
-
-        if (caseInsensitive) {
-          args.push('-i');
-        }
-
-        // Add context flags
-        if (ctxBefore !== undefined && ctxBefore > 0) {
-          args.push('-B', String(Math.min(ctxBefore, 10))); // Cap at 10 lines
-        }
-        if (ctxAfter !== undefined && ctxAfter > 0) {
-          args.push('-A', String(Math.min(ctxAfter, 10))); // Cap at 10 lines
-        }
-
-        // File type filtering (more efficient than glob)
-        if (fileType && FILE_TYPE_MAP[fileType]) {
-          for (const ext of FILE_TYPE_MAP[fileType]) {
-            args.push('-g', ext);
-          }
-        } else if (include) {
-          args.push('-g', include);
-        }
-
-        // Common ignores
-        args.push(
-          '--glob', '!node_modules',
-          '--glob', '!.git',
-          '--glob', '!dist',
-          '--glob', '!build'
-        );
-
-        // Pattern and path (no shell escaping needed with execFile)
-        args.push(pattern, searchPath);
-
-        // Execute with EAGAIN retry
-        try {
-          const result = await execFileAsync('rg', args, {
-            maxBuffer: BASH.MAX_BUFFER,
-            timeout: GREP.DEFAULT_TIMEOUT,
-          });
-          stdout = result.stdout;
-        } catch (err: unknown) {
-          if (isEagainError(err)) {
-            // Retry with single thread to avoid resource exhaustion
-            const retryArgs = ['-j', String(GREP.EAGAIN_RETRY_THREADS), ...args];
-            const result = await execFileAsync('rg', retryArgs, {
-              maxBuffer: BASH.MAX_BUFFER,
-              timeout: GREP.DEFAULT_TIMEOUT,
-            });
-            stdout = result.stdout;
-          } else {
-            throw err;
-          }
-        }
-      } catch (outerErr: unknown) {
-        // If ripgrep not available or failed, try grep fallback
-        const isRgNotFound = outerErr && typeof outerErr === 'object'
-          && 'stderr' in outerErr
-          && typeof (outerErr as { stderr: string }).stderr === 'string'
-          && (outerErr as { stderr: string }).stderr.includes('which');
-
-        // If it's a grep exit code 1 (no matches), handle below
-        const exitCode = (outerErr as { code?: number })?.code;
-        const stderr = (outerErr as { stderr?: string })?.stderr || '';
-        if (exitCode === 1 && !stderr) {
-          return { success: true, output: 'No matches found' };
-        }
-
-        if (!isRgNotFound && exitCode !== undefined) {
-          // rg failed for a real reason (not "not found")
-          throw outerErr;
-        }
-
-        // Fallback to grep via execFile
+      if (rgResult.found) {
+        stdout = rgResult.stdout;
+      } else if (rgResult.noMatches) {
+        return { success: true, output: 'No matches found' };
+      } else {
+        // rg not available — fallback to grep via execFile
         const grepArgs = [
           '-r', // Recursive
           '-n', // Line numbers

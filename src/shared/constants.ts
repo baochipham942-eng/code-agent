@@ -386,6 +386,8 @@ export const GREP = {
   MAX_MATCHES_PER_FILE: 100,
   /** 总最大匹配数 */
   MAX_TOTAL_MATCHES: 200,
+  /** EAGAIN 重试标志 — 降级为单线程 */
+  EAGAIN_RETRY_THREADS: 1,
 } as const;
 
 /** Agent 超时配置 (按角色) */
@@ -448,6 +450,24 @@ export const TOOL_CACHE = {
   GREP_TTL: 120000,
   /** Web Fetch TTL (15 分钟) */
   WEB_FETCH_TTL: 900000,
+} as const;
+
+/** Web Fetch 配置 */
+export const WEB_FETCH = {
+  /** 请求超时 (30s) */
+  TIMEOUT: 30_000,
+  /** 瞬态错误重试次数 */
+  MAX_RETRIES: 1,
+  /** 重试延迟 */
+  RETRY_DELAY: 1000,
+  /** 缓存 TTL (15 分钟，与 TOOL_CACHE.WEB_FETCH_TTL 对齐) */
+  CACHE_TTL: 900_000,
+  /** 缓存最大条目数 */
+  CACHE_MAX_ENTRIES: 50,
+  /** 受信文档内容直通上限 */
+  TRUSTED_DOCS_MAX_CHARS: 100_000,
+  /** 可重试 HTTP 状态码 */
+  RETRYABLE_STATUS: [429, 500, 502, 503, 504],
 } as const;
 
 /** 检查点配置 */

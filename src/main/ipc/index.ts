@@ -26,6 +26,7 @@ import { registerMemoryHandlers } from './memory.ipc';
 import { registerPlanningHandlers } from './planning.ipc';
 import { registerDataHandlers } from './data.ipc';
 import { registerSpeechHandlers } from './speech.ipc';
+import { registerMeetingHandlers } from './meeting.ipc';
 import { registerTaskHandlers } from './task.ipc';
 import { registerStatusHandlers } from './status.ipc';
 import { registerContextHealthHandlers } from './contextHealth.ipc';
@@ -126,6 +127,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Speech handlers
   registerSpeechHandlers(ipcMain);
+
+  // Meeting handlers (会议录音)
+  registerMeetingHandlers(ipcMain);
 
   // Task handlers (Wave 5: 多任务并行)
   registerTaskHandlers(ipcMain, getTaskManager);

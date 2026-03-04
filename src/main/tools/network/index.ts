@@ -30,6 +30,8 @@ export { screenshotPageTool } from './screenshotPage';
 export { academicSearchTool } from './academicSearch';
 export { httpRequestTool } from './httpRequest';
 export { speechToTextTool } from './speechToText';
+export { localSpeechToTextTool } from './localSpeechToText';
+export { meetingRecorderTool } from './meetingRecorder';
 export { textToSpeechTool } from './textToSpeech';
 export { imageAnnotateTool } from './imageAnnotate';
 export { xlwingsExecuteTool } from './xlwingsExecute';

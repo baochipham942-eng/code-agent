@@ -12,11 +12,12 @@ import { useRequireAuth } from '../hooks/useRequireAuth';
 import { MessageBubble } from './features/chat/MessageBubble';
 import { ChatInput } from './features/chat/ChatInput';
 import { TaskStatusBar } from './features/chat/TaskStatusBar';
-import { TodoBar } from './TodoBar';
+import { TodoProgressPanel } from './features/chat/TodoProgressPanel';
 import { PreviewPanel } from './PreviewPanel';
 import { PlanPanel } from './features/chat/PlanPanel';
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
+import { PermissionCard } from './PermissionDialog/PermissionCard';
 import type { Message, MessageAttachment, TaskProgressData, TaskPlan } from '../../shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
 import {
@@ -167,6 +168,15 @@ export const ChatView: React.FC = () => {
         {/* Task Status Bar - 显示多任务状态 */}
         <TaskStatusBar className="shrink-0 mx-4 mt-2" />
 
+        {/* Todo Progress Panel - Claude Code 风格任务清单 */}
+        {showTodoBar && (
+          <TodoProgressPanel
+            todos={todos}
+            isProcessing={effectiveIsProcessing}
+            className="mx-4 mt-1"
+          />
+        )}
+
         {/* Messages */}
         <div className="flex-1 overflow-hidden">
           {filteredMessages.length === 0 ? (
@@ -202,12 +212,8 @@ export const ChatView: React.FC = () => {
           </div>
         )}
 
-        {/* Todo Bar - compact progress above input */}
-        {showTodoBar && (
-          <div className="px-6 w-full">
-            <TodoBar />
-          </div>
-        )}
+        {/* Permission Card - 浮动在输入框上方 */}
+        <PermissionCard />
 
         {/* Input */}
         <ChatInput

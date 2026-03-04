@@ -35,6 +35,7 @@ interface AppState {
   showTaskPanel: boolean;
   showSkillsPanel: boolean;
   showCapturePanel: boolean;
+  showMeetingPanel: boolean;
   sidebarCollapsed: boolean;
 
   // 语言设置 - Language
@@ -97,6 +98,7 @@ interface AppState {
   setShowTaskPanel: (show: boolean) => void;
   setShowSkillsPanel: (show: boolean) => void;
   setShowCapturePanel: (show: boolean) => void;
+  setShowMeetingPanel: (show: boolean) => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setLanguage: (language: Language) => void;
   setCloudUIStrings: (strings: CloudUIStrings | null) => void;
@@ -159,6 +161,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   showTaskPanel: true, // Task panel shown by default
   showSkillsPanel: false, // Skills panel hidden by default
   showCapturePanel: false, // Capture panel hidden by default
+  showMeetingPanel: false, // Meeting panel hidden by default
   sidebarCollapsed: false,
 
   // 语言默认为中文
@@ -220,6 +223,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowTaskPanel: (show) => set({ showTaskPanel: show }),
   setShowSkillsPanel: (show) => set({ showSkillsPanel: show }),
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
+  setShowMeetingPanel: (show) => set({ showMeetingPanel: show }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setLanguage: (language) => set({ language }),
   setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),

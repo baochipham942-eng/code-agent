@@ -12,9 +12,9 @@ import type { SessionSnapshot, DimensionEvaluator } from '../types';
 /**
  * 任务完成度评测器
  * 评估指标：
- * - Todo 完成率
  * - 工具调用成功率
- * - 用户确认次数
+ * - 会话轮次效率
+ * - 多信号完成度评估（替代关键词匹配）
  */
 export class TaskCompletionEvaluator implements DimensionEvaluator {
   dimension = EvaluationDimension.TASK_COMPLETION;
@@ -42,20 +42,12 @@ export class TaskCompletionEvaluator implements DimensionEvaluator {
       suggestions.push('会话轮次较多，考虑一次性提供更完整的需求描述');
     }
 
-    // 3. 最终状态（基于最后几条消息判断）
-    const lastAssistantMsg = [...snapshot.messages]
-      .reverse()
-      .find((m) => m.role === 'assistant');
-    const hasCompletion =
-      lastAssistantMsg?.content.includes('完成') ||
-      lastAssistantMsg?.content.includes('已') ||
-      lastAssistantMsg?.content.includes('done') ||
-      lastAssistantMsg?.content.includes('成功');
-    const completionScore = hasCompletion ? 100 : 60;
+    // 3. 多信号完成度评估
+    const completionScore = this.assessCompletion(snapshot);
     subMetrics.push({ name: '任务状态', value: completionScore, unit: '' });
 
-    // 计算综合分数
-    const weights = [0.4, 0.3, 0.3];
+    // 计算综合分数（权重调整：成功率 0.35，轮次 0.25，完成度 0.40）
+    const weights = [0.35, 0.25, 0.40];
     const scores = [successRate, turnEfficiency, completionScore];
     const score = Math.round(
       scores.reduce((acc, s, i) => acc + s * weights[i], 0)
@@ -68,5 +60,49 @@ export class TaskCompletionEvaluator implements DimensionEvaluator {
       subMetrics,
       suggestions: suggestions.length > 0 ? suggestions : undefined,
     };
+  }
+
+  /**
+   * 多信号完成度评估（替代简单关键词匹配）
+   */
+  private assessCompletion(snapshot: SessionSnapshot): number {
+    let signals = 0;
+    let maxSignals = 0;
+
+    // 信号1: 最后一条是 assistant（不是用户在追问）
+    const lastMsg = snapshot.messages[snapshot.messages.length - 1];
+    maxSignals++;
+    if (lastMsg?.role === 'assistant') signals++;
+
+    // 信号2: 有文件产出（如果任务涉及文件操作）
+    const writeTools = ['write_file', 'edit_file'];
+    const hasFileOutput = snapshot.toolCalls.some(
+      (c) => writeTools.some((t) => c.name.toLowerCase().includes(t)) && c.success
+    );
+    const hasFileTask = snapshot.toolCalls.some(
+      (c) => writeTools.some((t) => c.name.toLowerCase().includes(t))
+    );
+    if (hasFileTask) {
+      maxSignals++;
+      if (hasFileOutput) signals++;
+    }
+
+    // 信号3: 最后几个工具调用成功（不是以失败结尾）
+    const lastCalls = snapshot.toolCalls.slice(-3);
+    maxSignals++;
+    if (lastCalls.length === 0 || lastCalls.some((c) => c.success)) signals++;
+
+    // 信号4: 没有未恢复的错误
+    let lastFailedIdx = -1;
+    for (let i = snapshot.toolCalls.length - 1; i >= 0; i--) {
+      if (!snapshot.toolCalls[i].success) { lastFailedIdx = i; break; }
+    }
+    const hasRecovery =
+      lastFailedIdx === -1 ||
+      snapshot.toolCalls.slice(lastFailedIdx + 1).some((c) => c.success);
+    maxSignals++;
+    if (hasRecovery) signals++;
+
+    return maxSignals > 0 ? Math.round((signals / maxSignals) * 100) : 70;
   }
 }

@@ -16,7 +16,7 @@ import { UserQuestionModal } from './components/UserQuestionModal';
 import { AuthModal } from './components/AuthModal';
 import { PasswordResetModal } from './components/PasswordResetModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
-import { PermissionDialog } from './components/PermissionDialog';
+// PermissionDialog moved to PermissionCard inline in ChatView
 import { TaskPanel } from './components/TaskPanel';
 import { SkillsPanel } from './components/SkillsPanel';
 import { WorkflowPanel } from './components/features/workflow/WorkflowPanel';
@@ -24,6 +24,7 @@ import { LabPage } from './components/features/lab/LabPage';
 import { EvalCenterPanel } from './components/features/evalCenter';
 import { BackgroundTaskPanel } from './components/features/background';
 import { CapturePanel } from './components/features/capture';
+import { MeetingPanel } from './components/features/meeting';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
@@ -458,8 +459,7 @@ export const App: React.FC = () => {
         />
       )}
 
-      {/* Permission Dialog - 新版多级审批组件 */}
-      <PermissionDialog />
+      {/* Permission Card - 已移至 ChatView 内联显示 */}
 
       {/* Auth Modal */}
       {showAuthModal && <AuthModal />}
@@ -517,6 +517,9 @@ export const App: React.FC = () => {
 
       {/* Capture Panel - 知识库采集面板 */}
       {useAppStore((s) => s.showCapturePanel) && <CapturePanel />}
+
+      {/* Meeting Panel - 会议记录面板 */}
+      {useAppStore((s) => s.showMeetingPanel) && <MeetingPanel />}
       </div>
     </ErrorBoundary>
   );

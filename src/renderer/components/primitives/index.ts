@@ -36,3 +36,7 @@ export {
 // Modal
 export { Modal, ModalHeader, ModalFooter } from './Modal';
 export type { ModalProps, ModalSize, ModalHeaderProps, ModalFooterProps } from './Modal';
+
+// UndoToast
+export { UndoToast } from './UndoToast';
+export type { UndoToastProps } from './UndoToast';

@@ -197,6 +197,16 @@ export interface EvaluationStatistics {
 }
 
 /**
+ * 基线对比结果
+ */
+export interface BaselineComparison {
+  delta: number; // 与基线的分差
+  baselineScore: number; // 基线分数
+  regressions: string[]; // 退化维度
+  improvements: string[]; // 改善维度
+}
+
+/**
  * 评测结果
  */
 export interface EvaluationResult {
@@ -210,6 +220,7 @@ export interface EvaluationResult {
   topSuggestions: string[];
   aiSummary?: string;
   transcriptMetrics?: import('../../main/evaluation/types').TranscriptMetrics;
+  baselineComparison?: BaselineComparison;
 }
 
 /**

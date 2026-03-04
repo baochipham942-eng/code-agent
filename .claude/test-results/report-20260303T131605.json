@@ -1,0 +1,39 @@
+{
+  "runId": "8c6910a4-16fa-4925-bb0c-690cb2622df8",
+  "startTime": 1772543735478,
+  "endTime": 1772543765494,
+  "duration": 30016,
+  "total": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 0,
+  "results": [
+    {
+      "testId": "read-file-exists",
+      "description": "read_file 工具 - 读取存在的文件",
+      "status": "failed",
+      "duration": 30001,
+      "startTime": 1772543735492,
+      "endTime": 1772543765493,
+      "toolExecutions": [],
+      "responses": [],
+      "errors": [
+        "Test timeout after 30000ms"
+      ],
+      "turnCount": 0,
+      "failureReason": "Test timeout after 30000ms"
+    }
+  ],
+  "environment": {
+    "generation": "gen8",
+    "model": "kimi-k2.5",
+    "provider": "moonshot",
+    "workingDirectory": "/Users/linchen/Downloads/ai/code-agent"
+  },
+  "performance": {
+    "avgResponseTime": 30001,
+    "maxResponseTime": 30001,
+    "totalToolCalls": 0,
+    "totalTurns": 0
+  }
+}

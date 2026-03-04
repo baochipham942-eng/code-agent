@@ -1,0 +1,129 @@
+# ============================================================================
+# GUI & Vision Tests - 图片分析与视觉能力测试
+# ============================================================================
+# 覆盖截图分析、图片理解等视觉能力（Gap Analysis P2）
+# 使用 setup 生成测试图片，测试 image_analyze 工具
+
+name: "图片分析与视觉能力测试"
+description: "测试 Agent 的图片分析和视觉理解能力"
+default_timeout: 120000
+tags:
+  - vision
+  - gui
+  - skill
+
+cases:
+  # --------------------------------------------------------------------------
+  # L2: 图片分析
+  # --------------------------------------------------------------------------
+  - id: vision-analyze-image
+    type: task
+    description: "分析图片内容"
+    setup:
+      - |
+        python3 -c "
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            img = Image.new('RGB', (400, 200), color='white')
+            draw = ImageDraw.Draw(img)
+            draw.rectangle([50, 50, 350, 150], outline='blue', width=3)
+            draw.text((100, 80), 'Hello Agent', fill='black')
+            img.save('test-analyze.png')
+        except ImportError:
+            # Fallback: create minimal 1x1 PNG
+            import struct, zlib
+            def create_png():
+                sig = b'\x89PNG\r\n\x1a\n'
+                ihdr = struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)
+                ihdr_chunk = b'IHDR' + ihdr
+                ihdr_crc = struct.pack('>I', zlib.crc32(ihdr_chunk) & 0xffffffff)
+                ihdr_full = struct.pack('>I', len(ihdr)) + ihdr_chunk + ihdr_crc
+                raw = b'\x00\xff\x00\x00'
+                compressed = zlib.compress(raw)
+                idat_chunk = b'IDAT' + compressed
+                idat_crc = struct.pack('>I', zlib.crc32(idat_chunk) & 0xffffffff)
+                idat_full = struct.pack('>I', len(compressed)) + idat_chunk + idat_crc
+                iend_chunk = b'IEND'
+                iend_crc = struct.pack('>I', zlib.crc32(iend_chunk) & 0xffffffff)
+                iend_full = struct.pack('>I', 0) + iend_chunk + iend_crc
+                with open('test-analyze.png', 'wb') as f:
+                    f.write(sig + ihdr_full + idat_full + iend_full)
+            create_png()
+        "
+    prompt: "分析 test-analyze.png 图片，描述你看到的内容"
+    expect:
+      min_tool_calls: 1
+      no_crash: true
+    cleanup:
+      - rm -f test-analyze.png
+
+  - id: vision-screenshot-describe
+    type: task
+    description: "截屏并描述"
+    prompt: "截取当前屏幕的截图，保存到 test-screenshot.png"
+    expect:
+      no_crash: true
+    cleanup:
+      - rm -f test-screenshot.png
+    timeout: 60000
+
+  # --------------------------------------------------------------------------
+  # L2: 图片批量处理
+  # --------------------------------------------------------------------------
+  - id: vision-batch-filter
+    type: task
+    description: "批量图片筛选"
+    setup:
+      - |
+        mkdir -p test-images
+        python3 -c "
+        try:
+            from PIL import Image
+            for i, color in enumerate(['red', 'blue', 'green']):
+                img = Image.new('RGB', (100, 100), color=color)
+                img.save(f'test-images/img_{i}.png')
+        except ImportError:
+            import struct, zlib
+            colors = [(255,0,0), (0,0,255), (0,255,0)]
+            for i, (r,g,b) in enumerate(colors):
+                sig = b'\x89PNG\r\n\x1a\n'
+                ihdr = struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)
+                ihdr_chunk = b'IHDR' + ihdr
+                ihdr_crc = struct.pack('>I', zlib.crc32(ihdr_chunk) & 0xffffffff)
+                ihdr_full = struct.pack('>I', len(ihdr)) + ihdr_chunk + ihdr_crc
+                raw = bytes([0, r, g, b])
+                compressed = zlib.compress(raw)
+                idat_chunk = b'IDAT' + compressed
+                idat_crc = struct.pack('>I', zlib.crc32(idat_chunk) & 0xffffffff)
+                idat_full = struct.pack('>I', len(compressed)) + idat_chunk + idat_crc
+                iend_chunk = b'IEND'
+                iend_crc = struct.pack('>I', zlib.crc32(iend_chunk) & 0xffffffff)
+                iend_full = struct.pack('>I', 0) + iend_chunk + iend_crc
+                with open(f'test-images/img_{i}.png', 'wb') as f:
+                    f.write(sig + ihdr_full + idat_full + iend_full)
+        "
+    prompt: "test-images 目录下有几张图片？分别描述每张图片的主要颜色"
+    expect:
+      min_tool_calls: 1
+      no_crash: true
+    cleanup:
+      - rm -rf test-images
+
+  # --------------------------------------------------------------------------
+  # L3: 图片 + 代码联动
+  # --------------------------------------------------------------------------
+  - id: vision-ui-to-code
+    type: task
+    description: "根据 UI 描述生成代码"
+    prompt: "帮我生成一个简单的 HTML 页面 test-ui.html，包含：一个蓝色标题栏（写着 'Code Agent'）、一个文本输入框、一个绿色的'发送'按钮"
+    expect:
+      files_created:
+        - test-ui.html
+      file_contains:
+        test-ui.html:
+          - "Code Agent"
+          - "<input"
+          - "button"
+      no_crash: true
+    cleanup:
+      - rm -f test-ui.html

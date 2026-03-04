@@ -221,9 +221,30 @@ export interface FeishuChannelConfig {
 }
 
 /**
+ * Telegram 通道配置
+ */
+export interface TelegramChannelConfig {
+  type: 'telegram';
+  /** Bot Token (从 @BotFather 获取) */
+  botToken: string;
+  /** 主代理 URL，默认读 HTTPS_PROXY 环境变量 */
+  proxyUrl?: string;
+  /** 备用代理 URL（如龙虾 VPS），主代理不可用时自动切换 */
+  fallbackProxyUrl?: string;
+  /** 白名单用户 ID，空数组=允许所有 */
+  allowedUserIds?: number[];
+  /** 群组白名单 ID，空数组=允许所有 */
+  allowedChatIds?: number[];
+  /** 流式编辑节流间隔 (ms)，默认 1000 */
+  streamEditIntervalMs?: number;
+  /** 消息解析模式 */
+  parseMode?: 'MarkdownV2' | 'HTML' | 'Markdown';
+}
+
+/**
  * 通道账号配置联合类型
  */
-export type ChannelAccountConfig = HttpApiChannelConfig | FeishuChannelConfig;
+export type ChannelAccountConfig = HttpApiChannelConfig | FeishuChannelConfig | TelegramChannelConfig;
 
 /**
  * 通道账号

@@ -5,6 +5,7 @@
 import type { AgentInterface } from './testRunner';
 import type { ToolExecutionRecord } from './types';
 import type { AgentLoop } from '../agent/agentLoop';
+import type { ModelProvider } from '../../shared/types';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('AgentAdapter');
@@ -176,6 +177,47 @@ export class MockAgentAdapter implements AgentInterface {
  * Used for auto-test mode without GUI
  */
 export class StandaloneAgentAdapter implements AgentInterface {
+  private static _electronMockInjected = false;
+
+  /**
+   * Inject electron mock for non-Electron environments (CLI/test mode).
+   * No-op if mock is already injected (e.g., by real-test-entry.ts bootstrap).
+   */
+  static async _ensureElectronMock(): Promise<void> {
+    if (StandaloneAgentAdapter._electronMockInjected || process.versions.electron) {
+      return;
+    }
+
+    // Check if electron mock is already injected (e.g., by CJS entry point)
+    try {
+      const electron = require('electron');
+      if (electron?.app?.getName?.()) {
+        StandaloneAgentAdapter._electronMockInjected = true;
+        return;
+      }
+    } catch { /* not available yet */ }
+
+    StandaloneAgentAdapter._electronMockInjected = true;
+
+    // For ESM environments (npx tsx), use dynamic import + require patching
+    try {
+      const { createRequire } = await import('module');
+      const _require = createRequire(import.meta.url);
+      const electronMock = (await import('../../cli/electron-mock')).default;
+
+      const Module = _require('module') as any;
+      const originalRequire = Module.prototype.require;
+      Module.prototype.require = function(id: string) {
+        if (id === 'electron') {
+          return electronMock;
+        }
+        return originalRequire.apply(this, arguments);
+      };
+    } catch {
+      // CJS bundled mode — electron mock should already be injected by entry point
+    }
+  }
+
   private workingDirectory: string;
   private generation: string;
   private modelConfig: {
@@ -204,63 +246,102 @@ export class StandaloneAgentAdapter implements AgentInterface {
     turnCount: number;
     errors: string[];
   }> {
-    // This would create a new AgentLoop instance and run the prompt
-    // Implementation depends on making AgentLoop standalone-compatible
-
     const responses: string[] = [];
     const toolExecutions: ToolExecutionRecord[] = [];
     const errors: string[] = [];
     let turnCount = 0;
 
+    // Track in-flight tool calls for pairing start/end events
+    const pendingToolCalls = new Map<string, { name: string; args: Record<string, unknown>; startTime: number }>();
+
     try {
-      // Dynamic import to avoid circular dependencies
+      // Inject electron mock when not running inside Electron
+      await StandaloneAgentAdapter._ensureElectronMock();
+
+      // Dynamic imports (safe after electron mock is in place)
       const { AgentLoop } = await import('../agent/agentLoop');
       const { GenerationManager } = await import('../generation/generationManager');
-      const { ModelRouter } = await import('../model/modelRouter');
       const { ToolRegistry } = await import('../tools/toolRegistry');
+      const { ToolExecutor } = await import('../tools/toolExecutor');
 
+      // 1. Generation
       const generationManager = new GenerationManager();
       generationManager.switchGeneration(this.generation as any);
       const generation = generationManager.getCurrentGeneration();
 
-      const modelRouter = new ModelRouter();
+      // 2. ToolRegistry + ToolExecutor (auto-approve all permissions for testing)
       const toolRegistry = new ToolRegistry();
+      const toolExecutor = new ToolExecutor({
+        toolRegistry,
+        requestPermission: async () => true,
+        workingDirectory: this.workingDirectory,
+      });
 
-      // Create a minimal agent loop for testing
+      // 3. Shared messages array (AgentLoop writes into it directly)
+      const messages: import('../../shared/types').Message[] = [];
+
+      // 4. Create AgentLoop with correct event handlers
       const loop = new AgentLoop({
         sessionId: `test-${Date.now()}`,
         workingDirectory: this.workingDirectory,
         generation,
-        modelConfig: this.modelConfig as any,
+        modelConfig: {
+          provider: this.modelConfig.provider as ModelProvider,
+          model: this.modelConfig.model,
+          apiKey: this.modelConfig.apiKey || '',
+          temperature: 0.3,
+          maxTokens: 4096,
+        },
         toolRegistry,
-        toolExecutor: null as any,
-        messages: [],
-        onEvent: (event: any) => {
-          if (event.type === 'message' && event.data?.role === 'assistant') {
-            responses.push(event.data.content || '');
-          }
-          if (event.type === 'tool_execution') {
-            toolExecutions.push({
-              tool: event.data?.tool || '',
-              input: event.data?.input || {},
-              output: event.data?.output || '',
-              success: event.data?.success ?? true,
-              error: event.data?.error,
-              duration: event.data?.duration || 0,
-              timestamp: Date.now(),
-            });
+        toolExecutor,
+        messages,
+        enableHooks: false,
+        autoApprovePlan: true,
+        onEvent: (event) => {
+          switch (event.type) {
+            case 'message':
+              if (event.data?.role === 'assistant' && event.data?.content) {
+                responses.push(event.data.content);
+                turnCount++;
+              }
+              break;
+            case 'tool_call_start':
+              pendingToolCalls.set(event.data.id, {
+                name: event.data.name,
+                args: event.data.arguments || {},
+                startTime: Date.now(),
+              });
+              break;
+            case 'tool_call_end': {
+              const pending = pendingToolCalls.get(event.data.toolCallId);
+              if (pending) {
+                toolExecutions.push({
+                  tool: pending.name,
+                  input: pending.args,
+                  output: event.data.output || '',
+                  success: event.data.success,
+                  error: event.data.error,
+                  duration: event.data.duration || (Date.now() - pending.startTime),
+                  timestamp: Date.now(),
+                });
+                pendingToolCalls.delete(event.data.toolCallId);
+              }
+              break;
+            }
+            case 'error':
+              errors.push(event.data?.message || 'Unknown error');
+              break;
           }
         },
       });
 
       await loop.run(prompt);
-      turnCount = (loop as any).getTurnCount?.() || responses.length;
 
     } catch (error: any) {
       errors.push(error.message || String(error));
     }
 
-    return { responses, toolExecutions, turnCount, errors };
+    return { responses, toolExecutions, turnCount: turnCount || responses.length, errors };
   }
 
   async reset(): Promise<void> {

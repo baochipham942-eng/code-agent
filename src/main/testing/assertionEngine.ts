@@ -4,10 +4,10 @@
 
 import fs from 'fs/promises';
 import path from 'path';
+import { execSync } from 'child_process';
 import type {
   TestExpectations,
   ToolExecutionRecord,
-  TestResult,
 } from './types';
 
 /**
@@ -26,6 +26,10 @@ export interface AssertionFailure {
 export interface AssertionResult {
   passed: boolean;
   failures: AssertionFailure[];
+  score: number;
+  totalAssertions: number;
+  passedAssertions: number;
+  hasCriticalFailure: boolean;
 }
 
 /**
@@ -112,6 +116,23 @@ function assertToolExpectations(
     }
   }
 
+  // Check tools_any_of - any of these tools being called counts as pass
+  if (expect.tools_any_of && expect.tools_any_of.length > 0) {
+    const allTools = toolExecutions.map((te) => te.tool);
+    const anyMatch = expect.tools_any_of.some((pattern) => {
+      const regex = new RegExp(pattern);
+      return allTools.some((tool) => regex.test(tool));
+    });
+    if (!anyMatch) {
+      failures.push({
+        assertion: 'tools_any_of',
+        expected: expect.tools_any_of,
+        actual: allTools,
+        message: `Expected any of [${expect.tools_any_of.join(', ')}] to be called`,
+      });
+    }
+  }
+
   // Check tool call counts
   if (expect.min_tool_calls !== undefined) {
     if (toolExecutions.length < expect.min_tool_calls) {
@@ -182,6 +203,23 @@ async function assertFileExpectations(
     }
   }
 
+  // Check file_exists (path check only)
+  if (expect.file_exists && expect.file_exists.length > 0) {
+    for (const file of expect.file_exists) {
+      const filePath = path.isAbsolute(file) ? file : path.join(workingDirectory, file);
+      try {
+        await fs.access(filePath);
+      } catch {
+        failures.push({
+          assertion: 'file_exists',
+          expected: file,
+          actual: 'file not found',
+          message: `Expected file "${file}" to exist`,
+        });
+      }
+    }
+  }
+
   // Check file contents
   if (expect.file_contains) {
     for (const [file, expectedContent] of Object.entries(expect.file_contains)) {
@@ -207,6 +245,30 @@ async function assertFileExpectations(
           actual: 'file not found',
           message: `Cannot check content - file "${file}" not found`,
         });
+      }
+    }
+  }
+
+  // Check file_not_contains
+  if (expect.file_not_contains) {
+    for (const [file, notExpectedContent] of Object.entries(expect.file_not_contains)) {
+      const filePath = path.isAbsolute(file) ? file : path.join(workingDirectory, file);
+      try {
+        const content = await fs.readFile(filePath, 'utf-8');
+        const expectations = Array.isArray(notExpectedContent) ? notExpectedContent : [notExpectedContent];
+
+        for (const notExpected of expectations) {
+          if (content.includes(notExpected)) {
+            failures.push({
+              assertion: 'file_not_contains',
+              expected: `"${file}" should NOT contain "${notExpected}"`,
+              actual: content.substring(0, 200),
+              message: `Expected file "${file}" to NOT contain "${notExpected}"`,
+            });
+          }
+        }
+      } catch {
+        // File not found — skip (file_not_contains on missing file is vacuously true)
       }
     }
   }
@@ -383,6 +445,86 @@ function assertTurnCount(
 }
 
 /**
+ * Assert test_pass — run a command and check exit code 0
+ */
+function assertTestPass(
+  expect: TestExpectations,
+  workingDirectory: string
+): AssertionFailure[] {
+  const failures: AssertionFailure[] = [];
+
+  if (expect.test_pass) {
+    try {
+      execSync(expect.test_pass, {
+        cwd: workingDirectory,
+        timeout: 30000,
+        stdio: 'pipe',
+      });
+    } catch (error: any) {
+      failures.push({
+        assertion: 'test_pass',
+        expected: `"${expect.test_pass}" exits with code 0`,
+        actual: `exit code ${error.status ?? 'unknown'}`,
+        message: `Command "${expect.test_pass}" failed`,
+      });
+    }
+  }
+
+  return failures;
+}
+
+/**
+ * Count total assertions in an expectations object
+ */
+function countAssertions(expect: TestExpectations): number {
+  let count = 0;
+
+  // Tool assertions
+  if (expect.tool) count++;
+  if (expect.success !== undefined) count++;
+  if (expect.output_contains) count += expect.output_contains.length;
+  if (expect.output_not_contains) count += expect.output_not_contains.length;
+  if (expect.args_match) count += Object.keys(expect.args_match).length;
+  if (expect.min_tool_calls !== undefined) count++;
+  if (expect.max_tool_calls !== undefined) count++;
+  if (expect.tools_any_of && expect.tools_any_of.length > 0) count++;
+
+  // File assertions
+  if (expect.files_created) count += expect.files_created.length;
+  if (expect.files_not_exist) count += expect.files_not_exist.length;
+  if (expect.file_exists) count += expect.file_exists.length;
+  if (expect.file_contains) {
+    for (const val of Object.values(expect.file_contains)) {
+      count += Array.isArray(val) ? val.length : 1;
+    }
+  }
+  if (expect.file_not_contains) {
+    for (const val of Object.values(expect.file_not_contains)) {
+      count += Array.isArray(val) ? val.length : 1;
+    }
+  }
+
+  // Error handling
+  if (expect.no_crash) count++;
+  if (expect.error_handled) count++;
+  if (expect.error_message_contains) count += expect.error_message_contains.length;
+
+  // Conversation
+  if (expect.response_contains) count += expect.response_contains.length;
+  if (expect.response_not_contains) count += expect.response_not_contains.length;
+  if (expect.asks_clarification) count++;
+  if (expect.uses_todo) count++;
+
+  // Turn count
+  if (expect.max_turns !== undefined) count++;
+
+  // Test pass
+  if (expect.test_pass) count++;
+
+  return Math.max(count, 1); // At least 1 to avoid division by zero
+}
+
+/**
  * Run all assertions for a test
  */
 export async function runAssertions(
@@ -412,8 +554,21 @@ export async function runAssertions(
   // Turn count assertions
   failures.push(...assertTurnCount(expect, context.turnCount));
 
+  // Test pass assertion
+  failures.push(...assertTestPass(expect, context.workingDirectory));
+
+  // Scoring
+  const totalAssertions = countAssertions(expect);
+  const passedAssertions = totalAssertions - failures.length;
+  const hasCriticalFailure = failures.some((f) => f.assertion === 'no_crash');
+  const score = hasCriticalFailure ? 0 : Math.max(0, passedAssertions / totalAssertions);
+
   return {
     passed: failures.length === 0,
     failures,
+    score,
+    totalAssertions,
+    passedAssertions: Math.max(0, passedAssertions),
+    hasCriticalFailure,
   };
 }

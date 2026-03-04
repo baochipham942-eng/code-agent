@@ -67,7 +67,7 @@ export const Skills: React.FC = () => {
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0" />
           <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-            Skills
+            {t.taskPanel.skills}
           </span>
           {mountedSkills.length > 0 && (
             <span className="text-xs text-zinc-500">({mountedSkills.length})</span>
@@ -85,7 +85,7 @@ export const Skills: React.FC = () => {
           {/* 已挂载的 Skills */}
           {mountedSkills.length === 0 ? (
             <div className="text-xs text-zinc-500 py-1">
-              暂无挂载的 Skills
+              {t.taskPanel.noSkills}
             </div>
           ) : (
             <div className="space-y-1">
@@ -96,7 +96,7 @@ export const Skills: React.FC = () => {
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <Sparkles className="w-3 h-3 text-purple-400/70 flex-shrink-0" />
-                      <span className="text-xs text-zinc-300 truncate">{mount.skillName}</span>
+                      <span className="text-sm text-zinc-300 truncate">{mount.skillName}</span>
                     </div>
                     <button
                       onClick={() => unmountSkill(mount.skillName)}
@@ -151,7 +151,7 @@ export const Skills: React.FC = () => {
             className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors pt-1"
           >
             <Settings className="w-3 h-3" />
-            <span>管理 Skill 库</span>
+            <span>{t.taskPanel.manageSkills}</span>
           </button>
         </div>
       )}

@@ -21,6 +21,7 @@ import type {
 } from '../../shared/types/channel';
 import { ApiChannel, createApiChannelFactory } from './api/apiChannel';
 import { FeishuChannel, createFeishuChannelFactory } from './feishu/feishuChannel';
+import { TelegramChannel, createTelegramChannelFactory } from './telegram/telegramChannel';
 import { getSecureStorage } from '../services/core/secureStorage';
 import { createLogger } from '../services/infra/logger';
 
@@ -406,6 +407,11 @@ export class ChannelManager extends EventEmitter {
         message.context.chatId,
         message.id
       );
+    } else if (channel instanceof TelegramChannel) {
+      return (channel as TelegramChannel).getResponseCallback(
+        message.context.chatId,
+        message.id
+      );
     }
 
     // 通用回调
@@ -467,6 +473,29 @@ export class ChannelManager extends EventEmitter {
         },
       },
       factory: createFeishuChannelFactory(),
+    });
+
+    // 注册 Telegram 通道
+    this.registerPlugin({
+      type: 'telegram',
+      meta: {
+        type: 'telegram',
+        name: 'Telegram',
+        description: 'Telegram Bot 通道，支持私聊和群组',
+        capabilities: {
+          streaming: false,
+          editMessage: true,
+          deleteMessage: true,
+          addReaction: false,
+          richText: true,
+          attachments: true,
+          images: true,
+          mentions: false,
+          threads: true,
+          maxMessageLength: 4096,
+        },
+      },
+      factory: createTelegramChannelFactory(),
     });
   }
 

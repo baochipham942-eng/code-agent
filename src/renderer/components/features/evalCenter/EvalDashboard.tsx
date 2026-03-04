@@ -4,7 +4,7 @@
 
 import React, { useCallback, useState, useEffect } from 'react';
 import { useEvalCenterStore } from '../../../stores/evalCenterStore';
-import type { EvaluationResult } from '../../../../shared/types/evaluation';
+import type { EvaluationResult, BaselineComparison } from '../../../../shared/types/evaluation';
 import type { TelemetryTurn } from '../../../../shared/types/telemetry';
 import { ScoreSummary } from './ScoreSummary';
 import { GraderGrid } from './GraderGrid';
@@ -108,6 +108,11 @@ export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId }) => {
         onEvaluationComplete={handleEvaluationComplete}
       />
 
+      {/* Baseline Comparison */}
+      {evaluation?.baselineComparison && (
+        <BaselineComparisonBar comparison={evaluation.baselineComparison} />
+      )}
+
       {/* Grader Card Grid */}
       {evaluation && evaluation.metrics.length > 0 && (
         <GraderGrid metrics={evaluation.metrics} />
@@ -206,3 +211,46 @@ function convertAggregatedMetrics(
     informational: false,
   }));
 }
+
+// ============================================================================
+// BaselineComparisonBar - 基线对比展示
+// ============================================================================
+
+const BaselineComparisonBar: React.FC<{ comparison: BaselineComparison }> = ({ comparison }) => {
+  const { delta, baselineScore, regressions, improvements } = comparison;
+  const hasChanges = regressions.length > 0 || improvements.length > 0;
+
+  const deltaColor = delta > 0 ? 'text-green-400' : delta < 0 ? 'text-red-400' : 'text-zinc-400';
+  const deltaBg = delta > 0 ? 'bg-green-500/10 border-green-500/20' : delta < 0 ? 'bg-red-500/10 border-red-500/20' : 'bg-zinc-800/30 border-zinc-700/20';
+
+  return (
+    <div className={`rounded-lg p-3 border ${deltaBg}`}>
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">vs 基线</span>
+          <span className="text-[11px] text-zinc-400">
+            (近 5 次均值: {baselineScore})
+          </span>
+        </div>
+        <span className={`text-sm font-bold ${deltaColor}`}>
+          {delta > 0 ? '+' : ''}{delta} 分
+        </span>
+      </div>
+
+      {hasChanges && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
+          {improvements.map((item, i) => (
+            <span key={`imp-${i}`} className="text-[11px] text-green-400/80">
+              ↑ {item}
+            </span>
+          ))}
+          {regressions.map((item, i) => (
+            <span key={`reg-${i}`} className="text-[11px] text-red-400/80">
+              ↓ {item}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};

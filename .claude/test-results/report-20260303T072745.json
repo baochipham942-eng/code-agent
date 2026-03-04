@@ -1,0 +1,72 @@
+{
+  "runId": "83531d2e-0c0b-4d38-80fd-8fa4fe98036a",
+  "startTime": 1772522865452,
+  "endTime": 1772522865816,
+  "duration": 364,
+  "total": 2,
+  "passed": 0,
+  "failed": 2,
+  "skipped": 0,
+  "results": [
+    {
+      "testId": "bash-ls",
+      "description": "bash 工具 - 列出目录",
+      "status": "failed",
+      "duration": 352,
+      "startTime": 1772522865463,
+      "endTime": 1772522865815,
+      "toolExecutions": [],
+      "responses": [],
+      "errors": [
+        "The requested module 'electron' does not provide an export named 'app'"
+      ],
+      "turnCount": 0,
+      "failureReason": "Expected tool matching \"bash\" to be called",
+      "failureDetails": {
+        "expected": [
+          "bash"
+        ],
+        "actual": [
+          []
+        ],
+        "assertion": "tool"
+      }
+    },
+    {
+      "testId": "read-file-exists",
+      "description": "read_file 工具 - 读取存在的文件",
+      "status": "failed",
+      "duration": 1,
+      "startTime": 1772522865815,
+      "endTime": 1772522865816,
+      "toolExecutions": [],
+      "responses": [],
+      "errors": [
+        "The requested module 'electron' does not provide an export named 'app'"
+      ],
+      "turnCount": 0,
+      "failureReason": "Expected tool matching \"read_file\" to be called",
+      "failureDetails": {
+        "expected": [
+          "read_file"
+        ],
+        "actual": [
+          []
+        ],
+        "assertion": "tool"
+      }
+    }
+  ],
+  "environment": {
+    "generation": "gen8",
+    "model": "kimi-k2.5",
+    "provider": "moonshot",
+    "workingDirectory": "/Users/linchen/Downloads/ai/code-agent"
+  },
+  "performance": {
+    "avgResponseTime": 177,
+    "maxResponseTime": 352,
+    "totalToolCalls": 0,
+    "totalTurns": 0
+  }
+}

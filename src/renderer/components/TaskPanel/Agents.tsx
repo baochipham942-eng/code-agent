@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Users, Workflow, GitBranch } from 'lucide-react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useMultiAgentDetection, type CollaborationPattern } from '../../hooks/useMultiAgentDetection';
+import { useI18n } from '../../hooks/useI18n';
 
 // Agent 角色颜色映射
 const AGENT_COLORS: Record<string, string> = {
@@ -44,6 +45,7 @@ const PATTERN_INFO: Record<NonNullPattern, { icon: React.ReactNode; label: strin
 };
 
 export const Agents: React.FC = () => {
+  const { t } = useI18n();
   const { messages } = useSessionStore();
   const { isMultiAgent, agentCount, activeAgents, pattern } = useMultiAgentDetection(messages);
   const [expanded, setExpanded] = useState(true);
@@ -70,7 +72,7 @@ export const Agents: React.FC = () => {
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <Bot className="w-4 h-4 text-blue-400 flex-shrink-0" />
           <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-            Agents
+            {t.taskPanel.agents}
           </span>
           {agentCount > 1 && (
             <span className="text-xs text-zinc-500">({agentCount})</span>
@@ -99,7 +101,7 @@ export const Agents: React.FC = () => {
                 className="flex items-center gap-2 py-1 px-2 bg-zinc-800/30 rounded"
               >
                 <span className="text-sm">{getAgentIcon(agent)}</span>
-                <span className={`text-xs ${getAgentColor(agent)} truncate`}>
+                <span className={`text-sm ${getAgentColor(agent)} truncate`}>
                   {agent}
                 </span>
                 {agent === 'main' && (

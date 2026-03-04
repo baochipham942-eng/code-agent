@@ -4,130 +4,14 @@
 
 import fs from 'fs/promises';
 import path from 'path';
+import yaml from 'js-yaml';
 import type { TestSuite, TestCase } from './types';
 
 /**
- * Simple YAML parser for test cases
- * Supports basic YAML features needed for test definitions
+ * Parse YAML content using js-yaml
  */
 function parseYaml(content: string): unknown {
-  const lines = content.split('\n');
-  const result: Record<string, unknown> = {};
-  const stack: { indent: number; obj: Record<string, unknown>; key?: string; isArray?: boolean }[] = [
-    { indent: -1, obj: result },
-  ];
-
-  let currentArray: unknown[] | null = null;
-  let currentArrayKey: string | null = null;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // Skip empty lines and comments
-    if (!line.trim() || line.trim().startsWith('#')) continue;
-
-    // Calculate indentation
-    const indent = line.search(/\S/);
-    const trimmed = line.trim();
-
-    // Pop stack until we find parent with less indent
-    while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
-      stack.pop();
-    }
-
-    const parent = stack[stack.length - 1];
-
-    // Array item
-    if (trimmed.startsWith('- ')) {
-      const itemContent = trimmed.slice(2).trim();
-
-      // Initialize array if needed
-      if (!currentArray || currentArrayKey !== parent.key) {
-        currentArray = [];
-        currentArrayKey = parent.key || null;
-        if (parent.key) {
-          parent.obj[parent.key] = currentArray;
-        }
-      }
-
-      // Check if it's an object item (has colon)
-      if (itemContent.includes(':')) {
-        const newObj: Record<string, unknown> = {};
-        currentArray.push(newObj);
-
-        // Parse the first key-value pair
-        const colonIdx = itemContent.indexOf(':');
-        const key = itemContent.slice(0, colonIdx).trim();
-        const value = itemContent.slice(colonIdx + 1).trim();
-
-        if (value) {
-          newObj[key] = parseValue(value);
-        }
-
-        stack.push({ indent, obj: newObj, isArray: false });
-      } else {
-        // Simple array item
-        currentArray.push(parseValue(itemContent));
-      }
-      continue;
-    }
-
-    // Key-value pair
-    const colonIdx = trimmed.indexOf(':');
-    if (colonIdx > 0) {
-      const key = trimmed.slice(0, colonIdx).trim();
-      const valueStr = trimmed.slice(colonIdx + 1).trim();
-
-      // Reset array tracking when we see a new key
-      if (currentArrayKey !== key) {
-        currentArray = null;
-        currentArrayKey = null;
-      }
-
-      if (valueStr === '' || valueStr === '|' || valueStr === '>') {
-        // Object or multiline string - will be filled by children
-        const newObj: Record<string, unknown> = {};
-        parent.obj[key] = newObj;
-        stack.push({ indent, obj: newObj, key });
-      } else {
-        // Simple value
-        parent.obj[key] = parseValue(valueStr);
-      }
-    }
-  }
-
-  return result;
-}
-
-/**
- * Parse a YAML value string
- */
-function parseValue(str: string): unknown {
-  // Remove quotes
-  if ((str.startsWith('"') && str.endsWith('"')) || (str.startsWith("'") && str.endsWith("'"))) {
-    return str.slice(1, -1);
-  }
-
-  // Boolean
-  if (str === 'true') return true;
-  if (str === 'false') return false;
-
-  // Null
-  if (str === 'null' || str === '~') return null;
-
-  // Number
-  const num = Number(str);
-  if (!isNaN(num) && str !== '') return num;
-
-  // Array shorthand [a, b, c]
-  if (str.startsWith('[') && str.endsWith(']')) {
-    const inner = str.slice(1, -1);
-    if (!inner.trim()) return [];
-    return inner.split(',').map((s) => parseValue(s.trim()));
-  }
-
-  // String
-  return str;
+  return yaml.load(content);
 }
 
 /**

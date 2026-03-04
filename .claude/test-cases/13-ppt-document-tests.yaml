@@ -1,0 +1,131 @@
+# ============================================================================
+# PPT & Document Tests - PPT 与文档处理测试
+# ============================================================================
+# 覆盖技能层核心功能：PPT 生成、文档处理（Gap Analysis P2）
+
+name: "PPT 与文档处理测试"
+description: "测试 Agent 的 PPT 生成和文档处理能力"
+default_timeout: 180000
+tags:
+  - ppt
+  - document
+  - skill
+
+cases:
+  # --------------------------------------------------------------------------
+  # L2: PPT 基础生成
+  # --------------------------------------------------------------------------
+  - id: ppt-simple-create
+    type: task
+    description: "生成简单 PPT"
+    prompt: "帮我做一个 3 页的 PPT，主题是 AI Agent 架构概述，保存为 test-simple.pptx"
+    expect:
+      min_tool_calls: 1
+      files_created:
+        - test-simple.pptx
+      no_crash: true
+    cleanup:
+      - rm -f test-simple.pptx
+    timeout: 300000
+
+  - id: ppt-from-outline
+    type: task
+    description: "根据大纲生成 PPT"
+    setup:
+      - |
+        cat > test-outline.md << 'EOF'
+        # AI 编程助手产品介绍
+
+        ## 第一页：产品定位
+        - 面向开发者的 AI 编程助手
+        - 本地化部署，保护代码隐私
+
+        ## 第二页：核心功能
+        - 代码生成与调试
+        - 文件管理
+        - 项目分析
+
+        ## 第三页：技术架构
+        - Electron + React 前端
+        - 多 LLM 后端支持
+        EOF
+    prompt: "根据 test-outline.md 大纲生成 PPT，保存为 test-from-outline.pptx"
+    expect:
+      min_tool_calls: 2
+      files_created:
+        - test-from-outline.pptx
+      no_crash: true
+    cleanup:
+      - rm -f test-outline.md test-from-outline.pptx
+    timeout: 300000
+
+  # --------------------------------------------------------------------------
+  # L2: 文档转换
+  # --------------------------------------------------------------------------
+  - id: doc-markdown-to-structured
+    type: task
+    description: "Markdown 转结构化数据"
+    setup:
+      - |
+        cat > test-api-doc.md << 'EOF'
+        # API 文档
+
+        ## GET /users
+        获取用户列表。
+
+        **参数**：
+        - page: 页码（默认 1）
+        - limit: 每页数量（默认 20）
+
+        **返回**：用户数组
+
+        ## POST /users
+        创建新用户。
+
+        **参数**：
+        - name: 用户名（必填）
+        - email: 邮箱（必填）
+
+        **返回**：新用户对象
+        EOF
+    prompt: "读取 test-api-doc.md，把 API 信息提取成 JSON 格式保存到 test-api-spec.json，包含 path、method、params、description"
+    expect:
+      min_tool_calls: 2
+      files_created:
+        - test-api-spec.json
+      file_contains:
+        test-api-spec.json:
+          - "/users"
+          - "GET"
+          - "POST"
+    cleanup:
+      - rm -f test-api-doc.md test-api-spec.json
+
+  # --------------------------------------------------------------------------
+  # L3: 数据驱动文档
+  # --------------------------------------------------------------------------
+  - id: doc-data-to-report
+    type: task
+    description: "数据文件生成分析报告"
+    setup:
+      - |
+        cat > test-metrics.csv << 'EOF'
+        version,score,pass_rate,avg_time
+        v0.15,120,60%,45s
+        v0.16,145,72%,38s
+        v0.16.10,158,79%,35s
+        v0.16.20,132,66%,42s
+        v0.16.30,164,82%,33s
+        v0.16.37,154,77%,36s
+        EOF
+    prompt: "读取 test-metrics.csv，分析版本间的评测分数变化趋势，生成 test-trend-report.md 报告，包含关键发现和建议"
+    expect:
+      min_tool_calls: 2
+      files_created:
+        - test-trend-report.md
+      file_contains:
+        test-trend-report.md:
+          - "v0.16"
+      no_crash: true
+    cleanup:
+      - rm -f test-metrics.csv test-trend-report.md

@@ -1,0 +1,141 @@
+# ============================================================================
+# Edge Case & Boundary Tests - 边界与极端场景测试
+# ============================================================================
+# 覆盖特殊输入、编码异常、畸形数据（Gap Analysis P2）
+
+name: "边界与极端场景测试"
+description: "测试 Agent 在极端输入和边界条件下的鲁棒性"
+default_timeout: 60000
+tags:
+  - edge-case
+  - boundary
+  - redline
+
+cases:
+  # --------------------------------------------------------------------------
+  # 特殊字符文件名
+  # --------------------------------------------------------------------------
+  - id: edge-unicode-filename
+    type: task
+    description: "处理 Unicode 文件名"
+    prompt: "创建一个名为 test-中文文件.txt 的文件，内容写 '测试中文文件名'"
+    expect:
+      files_created:
+        - "test-中文文件.txt"
+      file_contains:
+        "test-中文文件.txt": "测试中文文件名"
+      no_crash: true
+    cleanup:
+      - "rm -f 'test-中文文件.txt'"
+
+  - id: edge-space-filename
+    type: task
+    description: "处理含空格文件名"
+    prompt: "创建一个名为 'test file with spaces.txt' 的文件，写入 'spaces work'"
+    expect:
+      files_created:
+        - "test file with spaces.txt"
+      no_crash: true
+    cleanup:
+      - "rm -f 'test file with spaces.txt'"
+
+  # --------------------------------------------------------------------------
+  # 空输入 / 极简输入
+  # --------------------------------------------------------------------------
+  - id: edge-single-word
+    type: conversation
+    description: "单词输入"
+    prompt: "帮助"
+    expect:
+      no_crash: true
+      response_not_contains:
+        - FATAL
+        - error
+
+  - id: edge-emoji-input
+    type: conversation
+    description: "纯 Emoji 输入"
+    prompt: "👍"
+    expect:
+      no_crash: true
+
+  # --------------------------------------------------------------------------
+  # 矛盾指令
+  # --------------------------------------------------------------------------
+  - id: edge-contradictory
+    type: conversation
+    description: "矛盾指令处理"
+    prompt: "创建一个文件 test-contra.txt 但不要写入任何内容也不要创建任何文件"
+    expect:
+      no_crash: true
+      files_not_exist:
+        - test-contra.txt
+
+  - id: edge-multiple-tasks
+    type: conversation
+    description: "一句话多个无关任务"
+    prompt: "帮我查看天气、计算 1+1、列出当前目录文件、翻译一段英文"
+    expect:
+      no_crash: true
+      min_tool_calls: 1
+
+  # --------------------------------------------------------------------------
+  # 格式异常数据
+  # --------------------------------------------------------------------------
+  - id: edge-malformed-json
+    type: task
+    description: "处理畸形 JSON"
+    setup:
+      - |
+        echo '{"name": "test", "value": 42, "nested": {"a": 1, "b": }' > test-malformed.json
+    prompt: "读取 test-malformed.json 并解析。如果 JSON 格式有错误，指出问题并修复"
+    expect:
+      min_tool_calls: 1
+      no_crash: true
+    cleanup:
+      - rm -f test-malformed.json
+
+  - id: edge-mixed-encoding
+    type: task
+    description: "处理特殊编码内容"
+    setup:
+      - |
+        printf 'Line 1: Hello\nLine 2: 你好\nLine 3: こんにちは\nLine 4: 🎉🚀\nLine 5: café résumé naïve\n' > test-encoding.txt
+    prompt: "读取 test-encoding.txt，告诉我文件里有哪些语言的文字"
+    expect:
+      min_tool_calls: 1
+      response_contains:
+        - 中文
+      no_crash: true
+    cleanup:
+      - rm -f test-encoding.txt
+
+  # --------------------------------------------------------------------------
+  # 路径边界
+  # --------------------------------------------------------------------------
+  - id: edge-deep-path
+    type: task
+    description: "深层路径创建和读取"
+    prompt: "创建 test-deep/a/b/c/d/deep-file.txt 文件，写入 'deep path test'，然后读取确认内容"
+    expect:
+      min_tool_calls: 2
+      files_created:
+        - test-deep/a/b/c/d/deep-file.txt
+      file_contains:
+        test-deep/a/b/c/d/deep-file.txt: "deep path test"
+      no_crash: true
+    cleanup:
+      - rm -rf test-deep
+
+  - id: edge-dotfile
+    type: task
+    description: "处理隐藏文件（dotfile）"
+    prompt: "创建 .test-hidden-config 文件，写入 'hidden=true'，然后读取确认"
+    expect:
+      files_created:
+        - .test-hidden-config
+      file_contains:
+        .test-hidden-config: "hidden=true"
+      no_crash: true
+    cleanup:
+      - rm -f .test-hidden-config

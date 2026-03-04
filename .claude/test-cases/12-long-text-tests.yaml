@@ -1,0 +1,116 @@
+# ============================================================================
+# Long Text & Large File Tests - 长文本与大文件测试
+# ============================================================================
+# 覆盖长上下文、大文件处理场景（Gap Analysis P2）
+
+name: "长文本与大文件测试"
+description: "测试 Agent 处理长文本和大文件的能力"
+default_timeout: 120000
+tags:
+  - long-text
+  - edge-case
+
+cases:
+  # --------------------------------------------------------------------------
+  # L2: 大文件读取
+  # --------------------------------------------------------------------------
+  - id: longtext-read-large-file
+    type: task
+    description: "读取大文件并提取关键信息"
+    setup:
+      - |
+        python3 -c "
+        lines = []
+        for i in range(500):
+            lines.append(f'Line {i}: This is test content for performance evaluation.')
+        lines[247] = 'Line 247: SECRET_MARKER_FOUND_HERE'
+        with open('test-large-file.txt', 'w') as f:
+            f.write('\n'.join(lines))
+        "
+    prompt: "读取 test-large-file.txt，找到包含 SECRET_MARKER 的那一行，告诉我是第几行"
+    expect:
+      min_tool_calls: 1
+      response_contains:
+        - "247"
+      no_crash: true
+    cleanup:
+      - rm -f test-large-file.txt
+
+  - id: longtext-count-patterns
+    type: task
+    description: "大文件中搜索模式"
+    setup:
+      - |
+        python3 -c "
+        import random
+        lines = []
+        for i in range(300):
+            if random.random() < 0.1:
+                lines.append(f'Line {i}: TODO: fix this bug')
+            else:
+                lines.append(f'Line {i}: normal code here')
+        with open('test-todo-scan.ts', 'w') as f:
+            f.write('\n'.join(lines))
+        "
+    prompt: "扫描 test-todo-scan.ts 文件，找出所有包含 TODO 的行，统计总数"
+    expect:
+      min_tool_calls: 1
+      response_contains:
+        - TODO
+      no_crash: true
+    cleanup:
+      - rm -f test-todo-scan.ts
+
+  # --------------------------------------------------------------------------
+  # L2: 超长 Prompt
+  # --------------------------------------------------------------------------
+  - id: longtext-long-prompt
+    type: task
+    description: "处理超长 prompt"
+    prompt: |
+      请帮我创建一个 test-long-prompt-result.txt 文件。
+
+      以下是详细要求（虽然很长但核心就一件事）：
+      背景说明 — 我们正在开发一个 AI 编程助手。这个助手需要能够理解用户的意图，调用合适的工具完成任务。在实际使用中，用户可能会给出很长的描述，包含大量背景信息，但核心任务其实很简单。这个测试就是验证 Agent 是否能从冗长的描述中提取关键任务。
+      额外上下文 — 项目使用 TypeScript 开发，采用 Electron 框架，前端用 React，状态管理用 Zustand。构建工具是 esbuild 和 Vite。AI 模型主要使用 Kimi K2.5，备选有 DeepSeek 和 OpenAI。数据库用 Supabase 加 pgvector。这些信息其实跟当前任务无关。
+      真正的任务 — 创建 test-long-prompt-result.txt，内容写 "I understood the core task despite the long prompt"。就这么简单。
+      更多无关信息 — 之前我们做过评测，发现工具调用的成功率在 85% 以上，对话质量评分平均 15 分（满分 20），安全维度基本满分。但这些跟当前任务也没关系。
+    expect:
+      files_created:
+        - test-long-prompt-result.txt
+      file_contains:
+        test-long-prompt-result.txt: "core task"
+      no_crash: true
+    cleanup:
+      - rm -f test-long-prompt-result.txt
+
+  # --------------------------------------------------------------------------
+  # L3: 多文件扫描
+  # --------------------------------------------------------------------------
+  - id: longtext-scan-directory
+    type: task
+    description: "扫描大量文件提取信息"
+    prompt: "扫描 src/main/tools 目录下所有 .ts 文件，统计每个文件的行数，找出最大的 3 个文件"
+    expect:
+      min_tool_calls: 2
+      no_crash: true
+    timeout: 180000
+
+  # --------------------------------------------------------------------------
+  # L2: 长文本生成
+  # --------------------------------------------------------------------------
+  - id: longtext-generate-doc
+    type: task
+    description: "生成结构化长文档"
+    prompt: "读取 package.json 和 src/main 目录结构，生成一份 test-project-overview.md，至少包含：项目简介、技术栈、目录结构说明、主要模块描述，不少于 200 字"
+    expect:
+      min_tool_calls: 2
+      files_created:
+        - test-project-overview.md
+      file_contains:
+        test-project-overview.md:
+          - "#"
+          - Electron
+      no_crash: true
+    cleanup:
+      - rm -f test-project-overview.md

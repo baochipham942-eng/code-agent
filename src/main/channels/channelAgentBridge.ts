@@ -60,6 +60,21 @@ export class ChannelAgentBridge {
     // 加载账号配置
     await this.channelManager.loadAccounts();
 
+    // 自动创建 Telegram 通道（如果环境变量有 token 但还没有 telegram 账号）
+    const hasTelegram = this.channelManager.getAccounts().some(a => a.type === 'telegram');
+    if (!hasTelegram) {
+      const tgToken = process.env.TELEGRAM_BOT_TOKEN;
+      if (tgToken) {
+        const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || undefined;
+        await this.channelManager.addAccount('Telegram Bot', 'telegram', {
+          type: 'telegram',
+          botToken: tgToken,
+          proxyUrl,
+        });
+        logger.info('Auto-created Telegram channel from TELEGRAM_BOT_TOKEN env');
+      }
+    }
+
     // 设置消息处理器
     this.channelManager.setMessageHandler(this.handleChannelMessage.bind(this));
 

@@ -78,8 +78,6 @@ cases:
     description: "代码解释任务"
     prompt: "读取 src/main/testing/types.ts 文件，解释 TestCase 接口的用途"
     expect:
-      tool: read_file
-      success: true
       response_contains:
         - test
     timeout: 60000

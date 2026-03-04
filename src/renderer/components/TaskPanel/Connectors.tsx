@@ -3,7 +3,7 @@
 // ============================================================================
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plug, ChevronRight, ChevronDown, CheckCircle2, AlertCircle, Loader2, Sparkles, Wrench } from 'lucide-react';
+import { Plug, ChevronRight, ChevronDown, CheckCircle2, AlertCircle, Loader2, Sparkles, Wrench, Settings } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
@@ -158,7 +158,7 @@ export const Connectors: React.FC = () => {
       </button>
 
       {expanded && (
-        <div className="space-y-1 mt-3">
+        <div className="space-y-2 mt-3">
           {servers.length > 0 ? (
             servers.map((server) => {
               const isServerExpanded = expandedServers.has(server.name);
@@ -167,7 +167,7 @@ export const Connectors: React.FC = () => {
                 <div key={server.name} className="rounded overflow-hidden">
                   <button
                     onClick={() => toggleServerExpand(server.name)}
-                    className="w-full flex items-center gap-2 py-1.5 rounded hover:bg-zinc-800/50 transition-colors"
+                    className="w-full flex items-center gap-2 py-1 px-2 bg-zinc-800/30 rounded hover:bg-zinc-800/50 transition-colors"
                   >
                     {getStatusIcon(server.status)}
                     <span className="flex-1 text-sm text-zinc-300 truncate">{server.name}</span>
@@ -208,15 +208,16 @@ export const Connectors: React.FC = () => {
               );
             })
           ) : (
-            <div className="text-xs text-zinc-600 py-2">{t.taskPanel.noConnectors}</div>
+            <div className="text-xs text-zinc-500 py-1">{t.taskPanel.noConnectors}</div>
           )}
 
           {/* View all link */}
           <button
             onClick={() => openSettingsTab('mcp')}
-            className="text-xs text-zinc-500 hover:text-zinc-300 mt-2 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors pt-1"
           >
-            {t.taskPanel.viewAllConnectors}
+            <Settings className="w-3 h-3" />
+            <span>{t.taskPanel.viewAllConnectors}</span>
           </button>
         </div>
       )}
@@ -231,7 +232,7 @@ export const Connectors: React.FC = () => {
             <div className="flex items-center gap-2 flex-1 min-w-0">
               <Wrench className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
               <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
-                本次调用
+                {t.taskPanel.sessionCalls}
               </span>
               <span className="text-[10px] text-zinc-600">
                 ({mcpTools.length + skillTools.length})
@@ -248,7 +249,7 @@ export const Connectors: React.FC = () => {
             <div className="space-y-2">
               {/* MCP Tools */}
               {mcpTools.length > 0 && (
-                <div className="space-y-1">
+                <div className="space-y-1.5">
                   <div className="flex items-center gap-1.5 px-1">
                     <Plug className="w-3 h-3 text-blue-400" />
                     <span className="text-[10px] text-zinc-500 uppercase">MCP</span>

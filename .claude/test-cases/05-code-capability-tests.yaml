@@ -1,0 +1,194 @@
+# ============================================================================
+# Code Capability Tests - 代码能力测试
+# ============================================================================
+# 覆盖代码调试、重构、测试生成等核心开发场景（Gap Analysis P0）
+
+name: "代码能力测试"
+description: "测试 Agent 的代码调试、重构和生成能力"
+default_timeout: 120000
+tags:
+  - code
+  - core-path
+
+cases:
+  # --------------------------------------------------------------------------
+  # L2: 代码调试 — 给 bug 代码，期望定位并修复
+  # --------------------------------------------------------------------------
+  - id: debug-syntax-error
+    type: task
+    description: "调试语法错误 - 缺少括号"
+    setup:
+      - "echo 'function add(a, b { return a + b; }' > test-debug-syntax.js"
+    prompt: "test-debug-syntax.js 有语法错误，帮我修复"
+    reference_solution: "读取文件发现缺少括号，修复为 function add(a, b) 格式"
+    expect:
+      min_tool_calls: 2
+      file_contains:
+        test-debug-syntax.js:
+          - "function add(a, b)"
+          - "return a + b"
+    cleanup:
+      - rm -f test-debug-syntax.js
+
+  - id: debug-logic-error
+    type: task
+    description: "调试逻辑错误 - 数组越界"
+    setup:
+      - |
+        cat > test-debug-logic.py << 'PYEOF'
+        def get_last_item(items):
+            return items[len(items)]
+
+        result = get_last_item([1, 2, 3])
+        print(result)
+        PYEOF
+    prompt: "test-debug-logic.py 运行会报 IndexError，帮我找到 bug 并修复"
+    reference_solution: "发现 items[len(items)] 越界，修改为 items[len(items) - 1]"
+    expect:
+      min_tool_calls: 2
+      file_contains:
+        test-debug-logic.py: "len(items) - 1"
+    cleanup:
+      - rm -f test-debug-logic.py
+
+  - id: debug-runtime-error
+    type: task
+    description: "调试运行时错误 - TypeError"
+    setup:
+      - |
+        cat > test-debug-runtime.js << 'JSEOF'
+        function processUser(user) {
+          const name = user.name.toUpperCase();
+          const age = user.age + 1;
+          return { name, age };
+        }
+        // Bug: user 可能是 null
+        console.log(processUser(null));
+        JSEOF
+    prompt: "test-debug-runtime.js 在 user 为 null 时会崩溃，帮我加上防御性检查"
+    expect:
+      min_tool_calls: 2
+      file_contains:
+        test-debug-runtime.js:
+          - "null"
+    cleanup:
+      - rm -f test-debug-runtime.js
+
+  # --------------------------------------------------------------------------
+  # L2: 代码生成 — 多语言
+  # --------------------------------------------------------------------------
+  - id: codegen-python
+    type: task
+    description: "生成 Python 代码"
+    prompt: "创建 test-fibonacci.py，实现一个计算斐波那契数列第 n 项的函数，包含边界检查"
+    expect:
+      files_created:
+        - test-fibonacci.py
+      file_contains:
+        test-fibonacci.py:
+          - "def"
+          - "fibonacci"
+    cleanup:
+      - rm -f test-fibonacci.py
+
+  - id: codegen-typescript
+    type: task
+    description: "生成 TypeScript 代码"
+    prompt: "创建 test-stack.ts，实现一个泛型栈（Stack<T>），包含 push、pop、peek、isEmpty 方法"
+    expect:
+      files_created:
+        - test-stack.ts
+      file_contains:
+        test-stack.ts:
+          - "Stack"
+          - "push"
+          - "pop"
+    cleanup:
+      - rm -f test-stack.ts
+
+  # --------------------------------------------------------------------------
+  # L3: 代码重构 — 需要理解代码结构
+  # --------------------------------------------------------------------------
+  - id: refactor-extract-function
+    type: task
+    description: "重构 - 提取函数"
+    setup:
+      - |
+        cat > test-refactor.ts << 'TSEOF'
+        function processOrder(order: any) {
+          // 计算折扣
+          let discount = 0;
+          if (order.total > 100) discount = 0.1;
+          if (order.total > 200) discount = 0.15;
+          if (order.total > 500) discount = 0.2;
+          if (order.isVip) discount += 0.05;
+          const finalPrice = order.total * (1 - discount);
+
+          // 生成摘要
+          const summary = `Order #${order.id}: $${finalPrice.toFixed(2)} (${discount * 100}% off)`;
+          console.log(summary);
+          return { finalPrice, discount, summary };
+        }
+        TSEOF
+    prompt: "test-refactor.ts 中 processOrder 函数太长，帮我把折扣计算逻辑提取成独立的 calculateDiscount 函数"
+    expect:
+      min_tool_calls: 2
+      file_contains:
+        test-refactor.ts:
+          - "calculateDiscount"
+    cleanup:
+      - rm -f test-refactor.ts
+
+  - id: refactor-rename-variable
+    type: task
+    description: "重构 - 变量重命名（语义改善）"
+    setup:
+      - |
+        cat > test-rename.ts << 'TSEOF'
+        function calc(d: number[], f: boolean): number {
+          let r = 0;
+          for (const x of d) {
+            r += x;
+          }
+          if (f) r = r / d.length;
+          return r;
+        }
+        TSEOF
+    prompt: "test-rename.ts 的变量命名太差（d, f, r, x），帮我重命名为有意义的名字"
+    expect:
+      min_tool_calls: 2
+      response_not_contains:
+        - "function calc(d"
+    cleanup:
+      - rm -f test-rename.ts
+
+  # --------------------------------------------------------------------------
+  # L3: 测试代码生成
+  # --------------------------------------------------------------------------
+  - id: codegen-unit-test
+    type: task
+    description: "为已有函数生成单元测试"
+    setup:
+      - |
+        cat > test-target.ts << 'TSEOF'
+        export function parseVersion(version: string): { major: number; minor: number; patch: number } | null {
+          const match = version.match(/^(\d+)\.(\d+)\.(\d+)$/);
+          if (!match) return null;
+          return {
+            major: parseInt(match[1]),
+            minor: parseInt(match[2]),
+            patch: parseInt(match[3]),
+          };
+        }
+        TSEOF
+    prompt: "读取 test-target.ts，为 parseVersion 函数创建 test-target.test.ts 测试文件，覆盖正常和异常场景"
+    expect:
+      min_tool_calls: 2
+      files_created:
+        - test-target.test.ts
+      file_contains:
+        test-target.test.ts:
+          - "parseVersion"
+          - "test"
+    cleanup:
+      - rm -f test-target.ts test-target.test.ts

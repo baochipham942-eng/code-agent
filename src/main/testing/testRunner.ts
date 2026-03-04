@@ -16,7 +16,6 @@ import type {
   ToolExecutionRecord,
   TestEvent,
   TestEventListener,
-  TestStatus,
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
 import { runAssertions } from './assertionEngine';
@@ -152,7 +151,7 @@ export class TestRunner {
       const result = await this.runSingleTest(testCase);
       results.push(result);
 
-      if (result.status === 'passed') {
+      if (result.status === 'passed' || result.status === 'partial') {
         passedTests.add(testCase.id);
       }
 
@@ -167,6 +166,11 @@ export class TestRunner {
     const endTime = Date.now();
     const genInfo = this.agent.getGenerationInfo();
 
+    const nonSkipped = results.filter((r) => r.status !== 'skipped');
+    const avgScore = nonSkipped.length > 0
+      ? nonSkipped.reduce((sum, r) => sum + r.score, 0) / nonSkipped.length
+      : 0;
+
     const summary: TestRunSummary = {
       runId,
       startTime,
@@ -176,6 +180,8 @@ export class TestRunner {
       passed: results.filter((r) => r.status === 'passed').length,
       failed: results.filter((r) => r.status === 'failed').length,
       skipped: results.filter((r) => r.status === 'skipped').length,
+      partial: results.filter((r) => r.status === 'partial').length,
+      averageScore: avgScore,
       results,
       environment: {
         generation: genInfo.name,
@@ -210,6 +216,7 @@ export class TestRunner {
       responses: [],
       errors: [],
       turnCount: 0,
+      score: 0,
     };
 
     logger.info('Running test', { testId: testCase.id });
@@ -230,7 +237,7 @@ export class TestRunner {
         setTimeout(() => reject(new Error(`Test timeout after ${timeout}ms`)), timeout);
       });
 
-      // Send the test prompt
+      // Send the test prompt (and follow-up prompts for multi-turn)
       const agentPromise = this.agent.sendMessage(testCase.prompt);
       const agentResult = await Promise.race([agentPromise, timeoutPromise]);
 
@@ -238,6 +245,27 @@ export class TestRunner {
       result.toolExecutions = agentResult.toolExecutions;
       result.turnCount = agentResult.turnCount;
       result.errors = agentResult.errors;
+
+      // Multi-turn: send follow-up prompts sequentially
+      if (testCase.follow_up_prompts && testCase.follow_up_prompts.length > 0) {
+        for (const followUp of testCase.follow_up_prompts) {
+          const remainingTime = timeout - (Date.now() - startTime);
+          if (remainingTime <= 0) break;
+
+          const followUpTimeout = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error(`Follow-up timeout after ${timeout}ms`)), remainingTime);
+          });
+          const followUpResult = await Promise.race([
+            this.agent.sendMessage(followUp),
+            followUpTimeout,
+          ]);
+
+          result.responses.push(...followUpResult.responses);
+          result.toolExecutions.push(...followUpResult.toolExecutions);
+          result.turnCount += followUpResult.turnCount;
+          result.errors.push(...followUpResult.errors);
+        }
+      }
 
       // Emit tool events
       for (const te of result.toolExecutions) {
@@ -258,8 +286,21 @@ export class TestRunner {
         workingDirectory: this.config.workingDirectory,
       });
 
-      if (assertionResult.passed) {
+      result.score = assertionResult.score;
+      result.reference_solution = testCase.reference_solution;
+
+      if (assertionResult.score === 1.0) {
         result.status = 'passed';
+      } else if (assertionResult.score > 0) {
+        result.status = 'partial';
+        result.failureReason = assertionResult.failures
+          .map((f) => f.message)
+          .join('; ');
+        result.failureDetails = {
+          expected: assertionResult.failures.map((f) => f.expected),
+          actual: assertionResult.failures.map((f) => f.actual),
+          assertion: assertionResult.failures.map((f) => f.assertion).join(', '),
+        };
       } else {
         result.status = 'failed';
         result.failureReason = assertionResult.failures
@@ -331,6 +372,7 @@ export class TestRunner {
       responses: [],
       errors: [],
       turnCount: 0,
+      score: 0,
       failureReason: reason,
     };
   }

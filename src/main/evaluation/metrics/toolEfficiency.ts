@@ -7,13 +7,13 @@ import {
   DIMENSION_WEIGHTS,
   type EvaluationMetric,
 } from '../../../shared/types/evaluation';
-import type { SessionSnapshot, DimensionEvaluator, ToolCallStats } from '../types';
+import type { SessionSnapshot, DimensionEvaluator, ToolCallStats, ToolCallRecord } from '../types';
 
 /**
  * 工具效率评测器
  * 评估指标：
  * - 调用成功率
- * - 冗余调用检测
+ * - 冗余调用检测（基于签名匹配）
  * - 工具选择合理性
  */
 export class ToolEfficiencyEvaluator implements DimensionEvaluator {
@@ -74,7 +74,7 @@ export class ToolEfficiencyEvaluator implements DimensionEvaluator {
       redundantCalls: 0,
     };
 
-    const recentCalls: string[] = [];
+    const window: string[] = [];
 
     for (const call of snapshot.toolCalls) {
       if (call.success) {
@@ -91,17 +91,31 @@ export class ToolEfficiencyEvaluator implements DimensionEvaluator {
         stats.byTool[call.name].successCount++;
       }
 
-      // 检测冗余调用（相同工具 + 相似参数）
-      const callKey = `${call.name}:${JSON.stringify(call.args)}`;
-      if (recentCalls.includes(callKey)) {
+      // 改进冗余检测：按工具名+关键参数判断
+      const key = this.getCallSignature(call);
+      if (window.includes(key) && call.success) {
+        // 成功后再次调用同签名 = 冗余
         stats.redundantCalls++;
       }
-      recentCalls.push(callKey);
-      if (recentCalls.length > 10) {
-        recentCalls.shift();
-      }
+      window.push(key);
+      if (window.length > 5) window.shift();
     }
 
     return stats;
+  }
+
+  /**
+   * 提取工具调用签名（工具名+关键参数）
+   */
+  private getCallSignature(call: ToolCallRecord): string {
+    const path = (call.args.path || call.args.file_path || '') as string;
+    if (call.name.includes('read') || call.name.includes('write') || call.name.includes('edit')) {
+      return `${call.name}:${path}`;
+    }
+    if (call.name === 'bash') {
+      const cmd = String(call.args.command || '').slice(0, 50);
+      return `bash:${cmd}`;
+    }
+    return `${call.name}:${JSON.stringify(call.args).slice(0, 50)}`;
   }
 }

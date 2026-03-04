@@ -1,0 +1,104 @@
+# ============================================================================
+# Multi-Agent & Orchestration Tests - 多 Agent 协作测试
+# ============================================================================
+# 覆盖工作流编排、子 Agent 调度等多 Agent 场景（Gap Analysis P2）
+
+name: "多 Agent 协作测试"
+description: "测试 Agent 的工作流编排和多步骤协同能力"
+default_timeout: 180000
+tags:
+  - multiagent
+  - orchestration
+  - skill
+
+cases:
+  # --------------------------------------------------------------------------
+  # L2: 任务分解
+  # --------------------------------------------------------------------------
+  - id: multiagent-task-decompose
+    type: task
+    description: "复杂任务自动分解为子任务"
+    prompt: |
+      帮我完成一个完整的代码审查流程：
+      1. 读取 src/main/testing/types.ts
+      2. 检查是否有未使用的类型定义
+      3. 列出所有导出的接口名称
+      4. 生成一份简要的审查报告保存为 test-review-report.md
+    expect:
+      uses_todo: true
+      min_tool_calls: 3
+      files_created:
+        - test-review-report.md
+      no_crash: true
+    cleanup:
+      - rm -f test-review-report.md
+
+  - id: multiagent-parallel-search
+    type: task
+    description: "并行搜索多个信息源"
+    prompt: "同时搜索项目中所有的 TODO 注释和 FIXME 注释，分别统计数量，然后合并成一份报告"
+    expect:
+      min_tool_calls: 2
+      no_crash: true
+
+  # --------------------------------------------------------------------------
+  # L3: 工作流编排
+  # --------------------------------------------------------------------------
+  - id: multiagent-workflow-analysis
+    type: task
+    description: "分析 → 规划 → 执行 工作流"
+    prompt: |
+      帮我做一个项目健康检查：
+      1. 分析阶段：检查 package.json 的依赖是否有过时的
+      2. 规划阶段：列出需要关注的问题
+      3. 执行阶段：生成 test-health-report.md 报告
+    expect:
+      min_tool_calls: 2
+      files_created:
+        - test-health-report.md
+      no_crash: true
+    cleanup:
+      - rm -f test-health-report.md
+
+  - id: multiagent-cross-file-analysis
+    type: task
+    description: "跨文件关联分析"
+    prompt: "找出 src/main/testing/ 目录下所有文件，分析它们之间的 import 依赖关系，告诉我哪些文件被引用最多"
+    expect:
+      min_tool_calls: 3
+      no_crash: true
+    timeout: 120000
+
+  # --------------------------------------------------------------------------
+  # L3: 工具链协作
+  # --------------------------------------------------------------------------
+  - id: multiagent-toolchain
+    type: task
+    description: "多工具链式协作"
+    setup:
+      - |
+        cat > test-raw-data.txt << 'EOF'
+        user_id,action,timestamp
+        001,login,2024-01-01 08:00
+        002,login,2024-01-01 08:05
+        001,purchase,2024-01-01 08:30
+        003,login,2024-01-01 09:00
+        001,logout,2024-01-01 10:00
+        002,purchase,2024-01-01 10:30
+        EOF
+    prompt: |
+      对 test-raw-data.txt 做完整的数据处理流水线：
+      1. 读取原始数据
+      2. 用 bash 统计每种 action 的数量
+      3. 把处理结果写入 test-processed.json（包含 action 和 count）
+    expect:
+      min_tool_calls: 3
+      files_created:
+        - test-processed.json
+      file_contains:
+        test-processed.json:
+          - "login"
+          - "purchase"
+      no_crash: true
+    cleanup:
+      - rm -f test-raw-data.txt test-processed.json

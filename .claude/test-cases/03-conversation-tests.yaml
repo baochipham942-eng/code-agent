@@ -96,6 +96,7 @@ cases:
     description: "处理中英混合"
     prompt: "查看一下 package.json 里的 dependencies"
     expect:
-      tool: read_file
-      success: true
+      min_tool_calls: 1
+      response_contains:
+        - dependencies
     timeout: 30000

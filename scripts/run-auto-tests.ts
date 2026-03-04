@@ -11,9 +11,10 @@
 //   --ids <id1,id2>         Filter by test IDs
 //   --stop-on-failure       Stop on first failure
 //   --verbose               Verbose output
-//   --generation <gen>      Generation to test (default: gen4)
-//   --provider <provider>   Model provider (default: deepseek)
-//   --model <model>         Model name (default: deepseek-chat)
+//   --generation <gen>      Generation to test (default: from constants)
+//   --provider <provider>   Model provider (default: from constants)
+//   --model <model>         Model name (default: from constants)
+//   --real                  Use real Agent (calls LLM API + executes tools)
 //   --help                  Show help
 //
 // ============================================================================
@@ -21,6 +22,8 @@
 import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
+import { execSync, spawn } from 'child_process';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_GENERATION } from '../src/shared/constants';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -35,6 +38,7 @@ function parseArgs(): {
   generation: string;
   provider: string;
   model: string;
+  real: boolean;
   help: boolean;
 } {
   const args = process.argv.slice(2);
@@ -43,9 +47,10 @@ function parseArgs(): {
     ids: undefined as string[] | undefined,
     stopOnFailure: false,
     verbose: false,
-    generation: 'gen4',
-    provider: 'deepseek',
-    model: 'deepseek-chat',
+    generation: DEFAULT_GENERATION,
+    provider: DEFAULT_PROVIDER,
+    model: DEFAULT_MODEL,
+    real: false,
     help: false,
   };
 
@@ -73,6 +78,9 @@ function parseArgs(): {
       case '--model':
         result.model = args[++i];
         break;
+      case '--real':
+        result.real = true;
+        break;
       case '--help':
       case '-h':
         result.help = true;
@@ -95,9 +103,10 @@ Options:
   --ids <id1,id2>         Filter tests by IDs
   --stop-on-failure       Stop on first test failure
   --verbose, -v           Show verbose output
-  --generation <gen>      Generation to test (default: gen4)
-  --provider <provider>   Model provider (default: deepseek)
-  --model <model>         Model name (default: deepseek-chat)
+  --generation <gen>      Generation to test (default: ${DEFAULT_GENERATION})
+  --provider <provider>   Model provider (default: ${DEFAULT_PROVIDER})
+  --model <model>         Model name (default: ${DEFAULT_MODEL})
+  --real                  Use real Agent (calls LLM API + executes tools)
   --help, -h              Show this help
 
 Test Case Tags:
@@ -107,42 +116,67 @@ Test Case Tags:
   - errors     Error handling tests
   - basic      Basic functionality
   - integration Integration tests
+  - security   Security tests
 
 Environment Variables:
+  MOONSHOT_API_KEY        API key for Moonshot (Kimi)
   DEEPSEEK_API_KEY        API key for DeepSeek
-  OPENAI_API_KEY          API key for OpenAI
+  ZHIPU_API_KEY           API key for Zhipu
+  OPENAI_API_KEY          API key for OpenAI (fallback)
 
 Examples:
-  # Run all tests
+  # Run all tests (mock mode)
   npx tsx scripts/run-auto-tests.ts
+
+  # Run with real agent
+  npx tsx scripts/run-auto-tests.ts --real --ids bash-ls,read-file-exists -v
 
   # Run only tool tests
   npx tsx scripts/run-auto-tests.ts --tags tools
 
-  # Run specific tests
-  npx tsx scripts/run-auto-tests.ts --ids bash-ls,read-file-exists
-
-  # Verbose mode with stop on failure
-  npx tsx scripts/run-auto-tests.ts -v --stop-on-failure
+  # Use a different provider
+  npx tsx scripts/run-auto-tests.ts --real --provider deepseek --model deepseek-chat
 `);
 }
 
-async function loadApiKey(): Promise<string | undefined> {
-  // Try environment variable
-  if (process.env.DEEPSEEK_API_KEY) {
-    return process.env.DEEPSEEK_API_KEY;
-  }
+/** Provider → environment variable name candidates (tried in order) */
+const PROVIDER_KEY_CANDIDATES: Record<string, string[]> = {
+  moonshot: ['KIMI_K25_API_KEY', 'MOONSHOT_API_KEY'],
+  deepseek: ['DEEPSEEK_API_KEY'],
+  zhipu: ['ZHIPU_API_KEY'],
+  openai: ['OPENAI_API_KEY'],
+  claude: ['ANTHROPIC_API_KEY'],
+  groq: ['GROQ_API_KEY'],
+  qwen: ['QWEN_API_KEY', 'DASHSCOPE_API_KEY'],
+  minimax: ['MINIMAX_API_KEY'],
+  openrouter: ['OPENROUTER_API_KEY'],
+};
 
-  // Try .env file
+async function loadApiKey(provider: string): Promise<string | undefined> {
+  const candidates = PROVIDER_KEY_CANDIDATES[provider] || [`${provider.toUpperCase()}_API_KEY`];
+
+  // Load .env content once
+  let envContent: string | null = null;
   try {
     const envPath = path.join(projectRoot, '.env');
-    const content = await fs.readFile(envPath, 'utf-8');
-    const match = content.match(/DEEPSEEK_API_KEY=["']?([^"'\s\n]+)["']?/);
-    if (match) {
-      return match[1].trim();
-    }
+    envContent = await fs.readFile(envPath, 'utf-8');
   } catch {
     // .env doesn't exist
+  }
+
+  // Try each candidate
+  for (const envVarName of candidates) {
+    // Environment variable
+    if (process.env[envVarName]) {
+      return process.env[envVarName];
+    }
+    // .env file
+    if (envContent) {
+      const match = envContent.match(new RegExp(`${envVarName}=["']?([^"'\\s\\n]+)["']?`));
+      if (match) {
+        return match[1].trim();
+      }
+    }
   }
 
   return undefined;
@@ -161,13 +195,15 @@ async function main(): Promise<void> {
   console.log('═══════════════════════════════════════════════════════\n');
 
   // Load API key
-  const apiKey = await loadApiKey();
+  const apiKey = await loadApiKey(args.provider);
   if (!apiKey) {
-    console.error('❌ No API key found. Set DEEPSEEK_API_KEY environment variable.');
+    const candidates = PROVIDER_KEY_CANDIDATES[args.provider] || [`${args.provider.toUpperCase()}_API_KEY`];
+    console.error(`❌ No API key found. Set ${candidates.join(' or ')} environment variable or add it to .env`);
     process.exit(1);
   }
 
   console.log('Configuration:');
+  console.log(`  Mode:       ${args.real ? '🤖 Real Agent (LLM API)' : '🧩 Mock Agent'}`);
   console.log(`  Generation: ${args.generation}`);
   console.log(`  Provider:   ${args.provider}`);
   console.log(`  Model:      ${args.model}`);
@@ -175,23 +211,44 @@ async function main(): Promise<void> {
   console.log(`  IDs:        ${args.ids?.join(', ') || '(all)'}`);
   console.log('');
 
-  // Set environment variables for the test runner
-  process.env.AUTO_TEST = 'true';
-  process.env.AUTO_TEST_VERBOSE = args.verbose ? 'true' : 'false';
-  process.env.AUTO_TEST_STOP_ON_FAILURE = args.stopOnFailure ? 'true' : 'false';
-  process.env.AUTO_TEST_GENERATION = args.generation;
-  process.env.AUTO_TEST_PROVIDER = args.provider;
-  process.env.AUTO_TEST_MODEL = args.model;
+  // --real mode: build CJS bundle via esbuild, then spawn it
+  // (AgentLoop's import chain uses __dirname and electron, which require CJS bundling)
+  if (args.real) {
+    const builtFile = path.join(projectRoot, 'dist/test-runner.cjs');
 
-  if (args.tags) {
-    process.env.AUTO_TEST_TAGS = args.tags.join(',');
-  }
-  if (args.ids) {
-    process.env.AUTO_TEST_IDS = args.ids.join(',');
+    // Build if missing or older than source
+    let needsBuild = true;
+    try {
+      const stat = await fs.stat(builtFile);
+      // Rebuild if older than 1 hour (good enough for dev)
+      needsBuild = Date.now() - stat.mtimeMs > 3600_000;
+    } catch { /* file doesn't exist */ }
+
+    if (needsBuild) {
+      console.log('📦 Building test runner...');
+      try {
+        execSync('npm run build:test-runner', { cwd: projectRoot, stdio: 'pipe' });
+        console.log('📦 Build complete\n');
+      } catch (err: any) {
+        console.error('❌ Build failed:', err.stderr?.toString() || err.message);
+        process.exit(1);
+      }
+    }
+
+    // Forward all args except --real to the built runner
+    const forwardArgs = process.argv.slice(2).filter(a => a !== '--real');
+    const child = spawn('node', [builtFile, ...forwardArgs], {
+      cwd: projectRoot,
+      stdio: 'inherit',
+      env: process.env,
+    });
+
+    child.on('exit', (code) => process.exit(code ?? 1));
+    return;
   }
 
+  // Mock mode: run directly via tsx (no CJS bundling needed)
   try {
-    // Dynamic import of testing module
     const testing = await import('../src/main/testing/index.js');
 
     const workingDirectory = projectRoot;
@@ -202,7 +259,6 @@ async function main(): Promise<void> {
       verbose: args.verbose,
     });
 
-    // Check test cases exist
     try {
       await fs.access(config.testCaseDir);
     } catch {
@@ -210,10 +266,7 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    // Create mock agent for dry run / verification
     const mockAgent = new testing.MockAgentAdapter();
-
-    // Set up some mock responses for testing the framework itself
     mockAgent.setMockResponse('列出当前目录', {
       responses: ['当前目录包含以下文件：package.json, src/, ...'],
       toolExecutions: [
@@ -228,9 +281,10 @@ async function main(): Promise<void> {
       ],
     });
 
+    console.log('🧩 Using mock Agent (no API calls)\n');
+
     const runner = new testing.TestRunner(config, mockAgent);
 
-    // Add event listener for progress
     runner.addEventListener((event) => {
       switch (event.type) {
         case 'suite_start':
@@ -241,7 +295,7 @@ async function main(): Promise<void> {
             console.log(`  ▶️  ${event.testId}: ${event.description}`);
           }
           break;
-        case 'case_end':
+        case 'case_end': {
           const icon =
             event.result.status === 'passed'
               ? '✅'
@@ -255,23 +309,21 @@ async function main(): Promise<void> {
             console.log(`     └─ ${event.result.failureReason}`);
           }
           break;
+        }
         case 'suite_end':
           console.log(testing.generateConsoleReport(event.summary));
           break;
       }
     });
 
-    // Run tests
     const summary = await runner.runAll();
 
-    // Save reports
     const savedFiles = await testing.saveReport(summary, config.resultsDir);
     console.log(`\n📄 Reports saved:`);
     for (const file of savedFiles) {
       console.log(`   ${file}`);
     }
 
-    // Exit with appropriate code
     process.exit(summary.failed > 0 ? 1 : 0);
 
   } catch (error: any) {

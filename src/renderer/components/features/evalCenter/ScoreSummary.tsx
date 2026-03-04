@@ -127,9 +127,23 @@ export const ScoreSummary: React.FC<ScoreSummaryProps> = ({
   return (
     <div className="bg-zinc-800/40 rounded-lg p-4">
       <div className="flex items-center gap-5">
-        {/* Score + Grade */}
+        {/* Score + Grade + Delta */}
         <div className="text-center min-w-[64px]">
-          <div className="text-3xl font-bold text-white">{score}</div>
+          <div className="flex items-baseline justify-center gap-1.5">
+            <div className="text-3xl font-bold text-white">{score}</div>
+            {evaluation.baselineComparison && (
+              <span className={`text-sm font-semibold ${
+                evaluation.baselineComparison.delta > 0
+                  ? 'text-green-400'
+                  : evaluation.baselineComparison.delta < 0
+                    ? 'text-red-400'
+                    : 'text-zinc-500'
+              }`}>
+                {evaluation.baselineComparison.delta > 0 ? '+' : ''}
+                {evaluation.baselineComparison.delta}
+              </span>
+            )}
+          </div>
           <span className={`inline-block ${gradeColor} ${gradeBg} px-2.5 py-0.5 rounded-full text-sm font-bold mt-0.5`}>
             {grade}
           </span>

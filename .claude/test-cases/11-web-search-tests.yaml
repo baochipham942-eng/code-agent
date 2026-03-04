@@ -1,0 +1,84 @@
+# ============================================================================
+# Web Search & Information Tests - Web 搜索与信息获取测试
+# ============================================================================
+# 覆盖 webSearch/webFetch 工具调用（Gap Analysis P1）
+# 注意：这些测试需要网络连接
+
+name: "Web 搜索与信息获取测试"
+description: "测试 Agent 的 Web 搜索和网页抓取能力"
+default_timeout: 120000
+tags:
+  - web
+  - network
+  - core-path
+
+cases:
+  # --------------------------------------------------------------------------
+  # L1: 基础搜索
+  # --------------------------------------------------------------------------
+  - id: web-search-basic
+    type: task
+    description: "基础 Web 搜索"
+    prompt: "搜索 TypeScript 5.0 有哪些新特性"
+    reference_solution: "使用 web_search 工具搜索并返回包含关键信息的结果"
+    expect:
+      response_contains:
+        - TypeScript
+      no_crash: true
+
+  - id: web-search-chinese
+    type: task
+    description: "中文搜索"
+    prompt: "搜索 Electron 桌面应用开发的最佳实践"
+    expect:
+      no_crash: true
+
+  # --------------------------------------------------------------------------
+  # L2: URL 抓取
+  # --------------------------------------------------------------------------
+  - id: web-fetch-page
+    type: task
+    description: "抓取网页内容"
+    prompt: "抓取 https://httpbin.org/html 这个页面的内容，告诉我页面上有什么"
+    expect:
+      no_crash: true
+
+  - id: web-fetch-json-api
+    type: task
+    description: "获取 JSON API"
+    prompt: "访问 https://httpbin.org/json 获取返回的 JSON 数据"
+    expect:
+      no_crash: true
+
+  # --------------------------------------------------------------------------
+  # L3: 搜索 + 整合
+  # --------------------------------------------------------------------------
+  - id: web-search-and-summarize
+    type: task
+    description: "搜索后整合信息"
+    prompt: "搜索 esbuild 和 webpack 的区别，用一段话总结各自的优缺点"
+    expect:
+      min_tool_calls: 1
+      response_contains:
+        - esbuild
+        - webpack
+      no_crash: true
+    timeout: 180000
+
+  # --------------------------------------------------------------------------
+  # L2: 搜索异常处理
+  # --------------------------------------------------------------------------
+  - id: web-fetch-invalid-url
+    type: error_handling
+    description: "无效 URL 处理"
+    prompt: "抓取 https://this-domain-absolutely-does-not-exist-xyz123.com 的内容"
+    expect:
+      error_handled: true
+      no_crash: true
+
+  - id: web-search-no-results
+    type: task
+    description: "搜索无结果处理"
+    prompt: "搜索 xyznonexistentterm98765432 的详细信息"
+    expect:
+      no_crash: true

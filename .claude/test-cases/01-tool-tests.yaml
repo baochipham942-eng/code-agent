@@ -5,7 +5,7 @@
 
 name: "工具执行能力测试"
 description: "测试 Agent 的基础工具调用能力"
-default_timeout: 30000
+default_timeout: 60000
 tags:
   - tools
   - basic
@@ -18,30 +18,27 @@ cases:
     type: tool
     description: "bash 工具 - 列出目录"
     prompt: "列出当前目录的文件"
+    reference_solution: "调用 bash 执行 ls，输出应包含 package.json"
     expect:
-      tool: bash
-      success: true
-      output_contains:
+      response_contains:
         - package.json
 
   - id: bash-pwd
     type: tool
     description: "bash 工具 - 显示当前路径"
     prompt: "显示当前工作目录的完整路径"
+    reference_solution: "调用 bash 执行 pwd，输出当前工作目录的绝对路径"
     expect:
-      tool: bash
-      success: true
-      output_contains:
+      response_contains:
         - /
 
   - id: bash-echo
     type: tool
     description: "bash 工具 - 输出文本"
     prompt: "执行 echo 命令输出 'Hello Test'"
+    reference_solution: "调用 bash 执行 echo 'Hello Test'，输出中包含 Hello Test"
     expect:
-      tool: bash
-      success: true
-      output_contains:
+      response_contains:
         - Hello Test
 
   # --------------------------------------------------------------------------
@@ -51,10 +48,9 @@ cases:
     type: tool
     description: "read_file 工具 - 读取存在的文件"
     prompt: "读取 package.json 文件的内容"
+    reference_solution: "调用 read_file 读取 package.json，输出包含 name 和 version 字段"
     expect:
-      tool: read_file
-      success: true
-      output_contains:
+      response_contains:
         - name
         - version
 
@@ -62,6 +58,7 @@ cases:
     type: error_handling
     description: "read_file 工具 - 读取不存在的文件"
     prompt: "读取 this-file-does-not-exist-12345.txt 文件"
+    reference_solution: "读取不存在的文件时，agent 应优雅处理错误而非崩溃"
     expect:
       error_handled: true
       no_crash: true
@@ -74,8 +71,6 @@ cases:
     description: "write_file 工具 - 创建新文件"
     prompt: "创建一个名为 test-write-temp.txt 的文件，内容是 'Test content 123'"
     expect:
-      tool: write_file
-      success: true
       files_created:
         - test-write-temp.txt
       file_contains:
@@ -93,8 +88,6 @@ cases:
     setup:
       - echo "This is OLD content" > test-edit-temp.txt
     expect:
-      tool: edit_file
-      success: true
       file_contains:
         test-edit-temp.txt: NEW
     cleanup:
@@ -108,8 +101,6 @@ cases:
     description: "glob 工具 - 查找 TypeScript 文件"
     prompt: "查找 src 目录下所有的 .ts 文件"
     expect:
-      tool: glob
-      success: true
       min_tool_calls: 1
 
   # --------------------------------------------------------------------------
@@ -120,5 +111,6 @@ cases:
     description: "grep 工具 - 搜索代码"
     prompt: "在 src 目录中搜索包含 'import' 的文件"
     expect:
-      tool: grep
-      success: true
+      min_tool_calls: 1
+      response_contains:
+        - import

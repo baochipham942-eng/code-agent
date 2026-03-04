@@ -1,0 +1,48 @@
+{
+  "runId": "6be4a01a-5cdb-485f-8a14-eaad3fc5de27",
+  "startTime": 1772543713061,
+  "endTime": 1772543718115,
+  "duration": 5054,
+  "total": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 0,
+  "results": [
+    {
+      "testId": "bash-ls",
+      "description": "bash 工具 - 列出目录",
+      "status": "failed",
+      "duration": 5035,
+      "startTime": 1772543713080,
+      "endTime": 1772543718115,
+      "toolExecutions": [],
+      "responses": [
+        "8"
+      ],
+      "errors": [],
+      "turnCount": 1,
+      "failureReason": "Expected tool matching \"bash\" to be called",
+      "failureDetails": {
+        "expected": [
+          "bash"
+        ],
+        "actual": [
+          []
+        ],
+        "assertion": "tool"
+      }
+    }
+  ],
+  "environment": {
+    "generation": "gen8",
+    "model": "kimi-k2.5",
+    "provider": "moonshot",
+    "workingDirectory": "/Users/linchen/Downloads/ai/code-agent"
+  },
+  "performance": {
+    "avgResponseTime": 5035,
+    "maxResponseTime": 5035,
+    "totalToolCalls": 0,
+    "totalTurns": 1
+  }
+}

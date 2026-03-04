@@ -7,6 +7,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { AssistantMessageProps } from './types';
 import { MessageContent } from './MessageContent';
 import { ToolCallDisplay } from './ToolCallDisplay/index';
+import { ToolCallGroup } from './ToolCallDisplay/ToolCallGroup';
+import { UI } from '@shared/constants';
 import { IPC_CHANNELS } from '@shared/ipc';
 
 export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) => {
@@ -103,14 +105,18 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
       {/* Tool calls - terminal style, no spacing between items */}
       {message.toolCalls && message.toolCalls.length > 0 && (
         <div className="mt-2 space-y-0">
-          {message.toolCalls.map((toolCall, index) => (
-            <ToolCallDisplay
-              key={toolCall.id}
-              toolCall={toolCall}
-              index={index}
-              total={message.toolCalls!.length}
-            />
-          ))}
+          {message.toolCalls.length >= UI.TOOL_GROUP_THRESHOLD ? (
+            <ToolCallGroup toolCalls={message.toolCalls} startIndex={0} />
+          ) : (
+            message.toolCalls.map((toolCall, index) => (
+              <ToolCallDisplay
+                key={toolCall.id}
+                toolCall={toolCall}
+                index={index}
+                total={message.toolCalls!.length}
+              />
+            ))
+          )}
         </div>
       )}
     </div>

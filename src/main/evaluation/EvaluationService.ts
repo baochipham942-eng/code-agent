@@ -9,6 +9,7 @@ import type {
   EvaluationResult,
   EvaluationMetric,
   EvaluationExportFormat,
+  BaselineComparison,
 } from '../../shared/types/evaluation';
 import {
   EvaluationDimension,
@@ -177,6 +178,21 @@ export class EvaluationService {
       topSuggestions: allSuggestions.slice(0, 5),
       aiSummary,
     };
+
+    // 基线对比
+    try {
+      const comparison = await this.compareWithBaseline(result);
+      if (comparison) {
+        result.baselineComparison = comparison;
+        logger.info('Baseline comparison', {
+          delta: comparison.delta,
+          regressions: comparison.regressions.length,
+          improvements: comparison.improvements.length,
+        });
+      }
+    } catch (err) {
+      logger.warn('Baseline comparison failed', { error: err });
+    }
 
     // 可选保存结果
     if (options.save) {
@@ -589,6 +605,43 @@ export class EvaluationService {
         verificationActions: 0,
       },
     };
+  }
+
+  /**
+   * 与历史基线对比，检测显著退化或改善
+   */
+  async compareWithBaseline(current: EvaluationResult): Promise<BaselineComparison | null> {
+    const history = await this.listHistory(undefined, 10);
+    if (history.length < 3) return null; // 数据不够
+
+    const recentHistory = history.slice(0, 5);
+    const baselineScore = Math.round(
+      recentHistory.reduce((sum, r) => sum + r.overallScore, 0) / recentHistory.length
+    );
+    const delta = current.overallScore - baselineScore;
+
+    const regressions: string[] = [];
+    const improvements: string[] = [];
+
+    // 按维度对比
+    for (const metric of current.metrics) {
+      const historicalScores = history
+        .flatMap((r) => r.metrics)
+        .filter((m) => m.dimension === metric.dimension)
+        .map((m) => m.score);
+      if (historicalScores.length === 0) continue;
+      const avg = historicalScores.reduce((a, b) => a + b, 0) / historicalScores.length;
+      const diff = metric.score - avg;
+      const dimName = DIMENSION_NAMES[metric.dimension] || metric.dimension;
+      if (diff < -15) {
+        regressions.push(`${dimName}: ${metric.score} (历史均值 ${Math.round(avg)})`);
+      }
+      if (diff > 15) {
+        improvements.push(`${dimName}: ${metric.score} (历史均值 ${Math.round(avg)})`);
+      }
+    }
+
+    return { delta, baselineScore, regressions, improvements };
   }
 
   /**

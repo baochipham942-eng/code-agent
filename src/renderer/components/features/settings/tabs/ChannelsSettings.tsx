@@ -27,6 +27,7 @@ import type {
   ChannelAccountConfig,
   HttpApiChannelConfig,
   FeishuChannelConfig,
+  TelegramChannelConfig,
 } from '@shared/types/channel';
 
 const logger = createLogger('ChannelsSettings');
@@ -94,6 +95,20 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
     (account?.config as FeishuChannelConfig)?.webhookPort?.toString() || '3200'
   );
 
+  // Telegram 配置
+  const [botToken, setBotToken] = useState(
+    (account?.config as TelegramChannelConfig)?.botToken || ''
+  );
+  const [tgProxyUrl, setTgProxyUrl] = useState(
+    (account?.config as TelegramChannelConfig)?.proxyUrl || ''
+  );
+  const [tgFallbackProxy, setTgFallbackProxy] = useState(
+    (account?.config as TelegramChannelConfig)?.fallbackProxyUrl || ''
+  );
+  const [tgAllowedUserIds, setTgAllowedUserIds] = useState(
+    (account?.config as TelegramChannelConfig)?.allowedUserIds?.join(', ') || ''
+  );
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -115,6 +130,18 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
         verificationToken: verificationToken || undefined,
         useWebSocket: false, // 默认使用 Webhook 模式
         webhookPort: parseInt(webhookPort) || 3200,
+      };
+    } else if (type === 'telegram') {
+      const userIds = tgAllowedUserIds
+        .split(',')
+        .map(s => parseInt(s.trim()))
+        .filter(n => !isNaN(n));
+      config = {
+        type: 'telegram',
+        botToken,
+        proxyUrl: tgProxyUrl || undefined,
+        fallbackProxyUrl: tgFallbackProxy || undefined,
+        allowedUserIds: userIds.length > 0 ? userIds : undefined,
       };
     } else {
       return;
@@ -288,6 +315,73 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
             </>
           )}
 
+          {/* Telegram 配置 */}
+          {type === 'telegram' && (
+            <>
+              <div>
+                <label className="block text-sm text-zinc-400 mb-1">
+                  Bot Token
+                  <button
+                    type="button"
+                    onClick={() => setShowSecrets(!showSecrets)}
+                    className="ml-2 text-zinc-500 hover:text-zinc-300"
+                  >
+                    {showSecrets ? <EyeOff className="w-3 h-3 inline" /> : <Eye className="w-3 h-3 inline" />}
+                  </button>
+                </label>
+                <input
+                  type={showSecrets ? 'text' : 'password'}
+                  value={botToken}
+                  onChange={(e) => setBotToken(e.target.value)}
+                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="从 @BotFather 获取"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-zinc-400 mb-1">代理 URL (可选)</label>
+                <input
+                  type="text"
+                  value={tgProxyUrl}
+                  onChange={(e) => setTgProxyUrl(e.target.value)}
+                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="http://127.0.0.1:7897 (默认读 HTTPS_PROXY)"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-zinc-400 mb-1">备用代理 URL (可选)</label>
+                <input
+                  type="text"
+                  value={tgFallbackProxy}
+                  onChange={(e) => setTgFallbackProxy(e.target.value)}
+                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="主代理不可用时自动切换"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-zinc-400 mb-1">白名单用户 ID (可选)</label>
+                <input
+                  type="text"
+                  value={tgAllowedUserIds}
+                  onChange={(e) => setTgAllowedUserIds(e.target.value)}
+                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-zinc-100 text-sm focus:outline-none focus:border-indigo-500"
+                  placeholder="逗号分隔，留空允许所有用户"
+                />
+              </div>
+              <div className="p-3 bg-zinc-800/50 rounded-lg border border-zinc-700">
+                <p className="text-xs text-zinc-400">
+                  <strong className="text-zinc-300">配置提示：</strong>
+                </p>
+                <ol className="text-xs text-zinc-500 mt-1 space-y-1 list-decimal list-inside">
+                  <li>在 Telegram 中搜索 <code className="text-indigo-400">@BotFather</code> 创建 Bot</li>
+                  <li>发送 <code className="text-indigo-400">/newbot</code> 并按提示操作获取 Token</li>
+                  <li>国内环境需配置代理才能连接 Telegram API</li>
+                  <li>使用 Long Polling 模式，无需公网 IP</li>
+                </ol>
+              </div>
+            </>
+          )}
+
           {/* 按钮 */}
           <div className="flex justify-end gap-3 pt-4">
             <Button type="button" variant="ghost" onClick={onClose}>
@@ -450,6 +544,8 @@ export const ChannelsSettings: React.FC = () => {
         return <Globe className="w-4 h-4 text-indigo-400" />;
       case 'feishu':
         return <MessageSquare className="w-4 h-4 text-blue-400" />;
+      case 'telegram':
+        return <MessageSquare className="w-4 h-4 text-sky-400" />;
       default:
         return <MessageSquare className="w-4 h-4 text-zinc-400" />;
     }
@@ -607,6 +703,10 @@ export const ChannelsSettings: React.FC = () => {
           <p>
             <strong>飞书:</strong> 连接飞书机器人，支持私聊和群聊消息。
             需要在飞书开放平台创建应用并获取凭证。
+          </p>
+          <p>
+            <strong>Telegram:</strong> 连接 Telegram Bot，支持私聊和群组。
+            通过 @BotFather 创建 Bot 获取 Token，使用 Long Polling 无需公网。
           </p>
         </div>
       </div>

@@ -15,7 +15,7 @@ export type TestCaseType =
 /**
  * Test case status
  */
-export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped';
+export type TestStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped' | 'partial';
 
 /**
  * Expected tool call
@@ -45,6 +45,10 @@ export interface ExpectedFiles {
   file_contains?: Record<string, string | string[]>;
   /** Files that should NOT exist */
   files_not_exist?: string[];
+  /** Files that should exist (path check only) */
+  file_exists?: string[];
+  /** File content should NOT contain these strings */
+  file_not_contains?: Record<string, string | string[]>;
 }
 
 /**
@@ -89,6 +93,10 @@ export interface TestExpectations extends
   min_tool_calls?: number;
   /** Maximum number of tool calls */
   max_tool_calls?: number;
+  /** Run command and check exit code 0 */
+  test_pass?: string;
+  /** Any of these tools being called counts as pass (supports regex) */
+  tools_any_of?: string[];
 }
 
 /**
@@ -101,8 +109,10 @@ export interface TestCase {
   type: TestCaseType;
   /** Human-readable description */
   description: string;
-  /** The prompt to send to the agent */
+  /** The prompt to send to the agent (single-turn) */
   prompt: string;
+  /** Additional prompts for multi-turn conversations (sent sequentially after first prompt) */
+  follow_up_prompts?: string[];
   /** Expected results */
   expect: TestExpectations;
   /** Setup commands to run before test */
@@ -119,6 +129,8 @@ export interface TestCase {
   only?: boolean;
   /** Dependencies - other test IDs that must pass first */
   depends_on?: string[];
+  /** Reference solution to prove task is solvable */
+  reference_solution?: string;
 }
 
 /**
@@ -193,6 +205,10 @@ export interface TestResult {
   errors: string[];
   /** Number of agent turns */
   turnCount: number;
+  /** Assertion score (0.0 - 1.0) */
+  score: number;
+  /** Reference solution if provided */
+  reference_solution?: string;
 }
 
 /**
@@ -215,6 +231,10 @@ export interface TestRunSummary {
   failed: number;
   /** Skipped count */
   skipped: number;
+  /** Partial pass count */
+  partial: number;
+  /** Average score across non-skipped tests (0.0 - 1.0) */
+  averageScore: number;
   /** Individual results */
   results: TestResult[];
   /** Environment info */

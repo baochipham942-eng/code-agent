@@ -1,0 +1,123 @@
+# ============================================================================
+# Recovery Loop Tests - 恢复闭环测试
+# ============================================================================
+# 升级"异常处理"为"恢复闭环"：不只测报错，测报错后能否完成任务（Codex 建议）
+
+name: "恢复闭环测试"
+description: "测试 Agent 遇到错误后自主恢复并完成任务的能力"
+default_timeout: 120000
+tags:
+  - recovery
+  - core-path
+
+cases:
+  # --------------------------------------------------------------------------
+  # L2: 工具切换恢复
+  # --------------------------------------------------------------------------
+  - id: recovery-tool-fallback
+    type: task
+    description: "工具失败后自动换工具"
+    prompt: "用 cat 命令读取 package.json 的内容。如果 cat 不行就用其他方式读取。"
+    expect:
+      no_crash: true
+      response_contains:
+        - name
+        - version
+
+  - id: recovery-path-fallback
+    type: task
+    description: "路径不存在时自动寻找替代"
+    prompt: "读取项目的配置文件。先试 config.yaml，没有就试 config.json，都没有就读 package.json"
+    expect:
+      no_crash: true
+      min_tool_calls: 2
+      response_contains:
+        - name
+
+  # --------------------------------------------------------------------------
+  # L2: 写入失败恢复
+  # --------------------------------------------------------------------------
+  - id: recovery-write-readonly
+    type: task
+    description: "写入只读文件时切换策略"
+    setup:
+      - "echo 'original' > test-readonly.txt && chmod 444 test-readonly.txt"
+    prompt: "在 test-readonly.txt 中追加一行 'new content'。如果写不了，创建 test-readonly-copy.txt 替代"
+    expect:
+      no_crash: true
+    cleanup:
+      - rm -f test-readonly.txt test-readonly-copy.txt
+
+  # --------------------------------------------------------------------------
+  # L3: 多步骤部分失败恢复
+  # --------------------------------------------------------------------------
+  - id: recovery-partial-success
+    type: task
+    description: "多步骤任务部分失败后继续"
+    prompt: |
+      帮我做三件事：
+      1. 读取 package.json 的 version 字段
+      2. 读取 nonexistent-changelog.md（如果不存在就跳过）
+      3. 创建 test-summary.txt，写入你获取到的信息
+    expect:
+      no_crash: true
+      files_created:
+        - test-summary.txt
+      file_contains:
+        test-summary.txt: version
+    cleanup:
+      - rm -f test-summary.txt
+
+  - id: recovery-command-retry
+    type: task
+    description: "命令失败后缩小范围重试"
+    prompt: "统计 src 目录下所有文件的总行数。如果有些文件无法读取就跳过，给出能统计到的总数。"
+    expect:
+      no_crash: true
+      min_tool_calls: 1
+      response_contains:
+        - 行
+
+  # --------------------------------------------------------------------------
+  # L3: 创造性恢复
+  # --------------------------------------------------------------------------
+  - id: recovery-missing-dependency
+    type: task
+    description: "缺少依赖时调整策略"
+    setup:
+      - |
+        cat > test-dep-check.ts << 'TSEOF'
+        import { z } from 'zod';
+        const schema = z.object({ name: z.string() });
+        export type User = z.infer<typeof schema>;
+        TSEOF
+    prompt: "读取 test-dep-check.ts，解释这个文件的功能。如果无法运行（可能缺少 zod 依赖），通过阅读代码来分析即可"
+    expect:
+      no_crash: true
+      min_tool_calls: 1
+      response_contains:
+        - zod
+    cleanup:
+      - rm -f test-dep-check.ts
+
+  # --------------------------------------------------------------------------
+  # L2: 边界输入恢复
+  # --------------------------------------------------------------------------
+  - id: recovery-empty-input
+    type: error_handling
+    description: "空文件处理"
+    setup:
+      - "touch test-empty-file.txt"
+    prompt: "读取 test-empty-file.txt 并分析其内容"
+    expect:
+      no_crash: true
+      error_handled: true
+    cleanup:
+      - rm -f test-empty-file.txt
+
+  - id: recovery-binary-file
+    type: error_handling
+    description: "二进制文件处理"
+    prompt: "读取 node_modules/.package-lock.json 文件。如果是二进制或太大，告诉我文件类型和大小即可"
+    expect:
+      no_crash: true

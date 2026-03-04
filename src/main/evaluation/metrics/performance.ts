@@ -12,8 +12,8 @@ import type { SessionSnapshot, DimensionEvaluator } from '../types';
 /**
  * 性能评测器
  * 评估指标：
- * - 响应时间
- * - Token 效率
+ * - 响应时间（自适应阈值）
+ * - Token 效率（自适应阈值）
  * - 成本效益
  */
 export class PerformanceEvaluator implements DimensionEvaluator {
@@ -23,17 +23,20 @@ export class PerformanceEvaluator implements DimensionEvaluator {
     const subMetrics: { name: string; value: number; unit?: string }[] = [];
     const suggestions: string[] = [];
 
-    // 1. 会话时长评分（理想 1-10 分钟）
+    // 获取自适应阈值
+    const thresholds = this.getAdaptiveThresholds(snapshot);
+
+    // 1. 会话时长评分（自适应）
     const durationMs = snapshot.endTime - snapshot.startTime;
     const durationMin = durationMs / 60000;
     let durationScore: number;
-    if (durationMin >= 1 && durationMin <= 10) {
+    if (durationMin >= thresholds.minDuration && durationMin <= thresholds.maxDuration) {
       durationScore = 100;
-    } else if (durationMin < 1) {
-      durationScore = 90; // 太快可能任务简单
+    } else if (durationMin < thresholds.minDuration) {
+      durationScore = 90;
     } else {
-      durationScore = Math.max(50, 100 - (durationMin - 10) * 2);
-      if (durationMin > 30) {
+      durationScore = Math.max(50, 100 - (durationMin - thresholds.maxDuration) * 2);
+      if (durationMin > thresholds.maxDuration * 3) {
         suggestions.push('会话时间较长，可考虑拆分为多个子任务');
       }
     }
@@ -43,15 +46,15 @@ export class PerformanceEvaluator implements DimensionEvaluator {
       unit: '分钟',
     });
 
-    // 2. Token 效率（输出/输入比，理想 1-3）
+    // 2. Token 效率（自适应）
     const tokenRatio =
       snapshot.inputTokens > 0
         ? snapshot.outputTokens / snapshot.inputTokens
         : 1;
     let tokenScore: number;
-    if (tokenRatio >= 0.5 && tokenRatio <= 3) {
+    if (tokenRatio >= thresholds.tokenRatioMin && tokenRatio <= thresholds.tokenRatioMax) {
       tokenScore = 100;
-    } else if (tokenRatio > 3) {
+    } else if (tokenRatio > thresholds.tokenRatioMax) {
       tokenScore = 80;
       suggestions.push('输出 Token 较多，可以考虑更简洁的回复');
     } else {
@@ -61,15 +64,12 @@ export class PerformanceEvaluator implements DimensionEvaluator {
     subMetrics.push({ name: 'Token 总量', value: totalTokens, unit: '' });
 
     // 3. 成本效益
-    const costPer1kTokens =
-      totalTokens > 0 ? (snapshot.totalCost / totalTokens) * 1000 : 0;
     subMetrics.push({
       name: '成本',
       value: Math.round(snapshot.totalCost * 10000) / 10000,
       unit: 'USD',
     });
 
-    // 基于绝对成本的评分
     let costScore: number;
     if (snapshot.totalCost <= 0.01) {
       costScore = 100;
@@ -94,5 +94,23 @@ export class PerformanceEvaluator implements DimensionEvaluator {
       subMetrics,
       suggestions: suggestions.length > 0 ? suggestions : undefined,
     };
+  }
+
+  /**
+   * 根据任务复杂度推断自适应阈值
+   */
+  private getAdaptiveThresholds(snapshot: SessionSnapshot) {
+    const toolCount = snapshot.toolCalls.length;
+
+    if (toolCount === 0) {
+      // 简单问答：快更好
+      return { minDuration: 0, maxDuration: 3, tokenRatioMin: 0.5, tokenRatioMax: 5 };
+    } else if (toolCount <= 5) {
+      // 轻量任务
+      return { minDuration: 0.5, maxDuration: 10, tokenRatioMin: 0.3, tokenRatioMax: 4 };
+    } else {
+      // 复杂任务：允许更长时间
+      return { minDuration: 1, maxDuration: 30, tokenRatioMin: 0.2, tokenRatioMax: 5 };
+    }
   }
 }

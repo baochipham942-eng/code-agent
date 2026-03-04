@@ -1,0 +1,48 @@
+{
+  "runId": "adb2bc26-2259-4820-9a89-a37bc961f737",
+  "startTime": 1772543140960,
+  "endTime": 1772543140974,
+  "duration": 14,
+  "total": 1,
+  "passed": 0,
+  "failed": 1,
+  "skipped": 0,
+  "results": [
+    {
+      "testId": "bash-ls",
+      "description": "bash 工具 - 列出目录",
+      "status": "failed",
+      "duration": 2,
+      "startTime": 1772543140972,
+      "endTime": 1772543140974,
+      "toolExecutions": [],
+      "responses": [],
+      "errors": [
+        "The argument 'filename' must be a file URL object, file URL string, or absolute path string. Received undefined"
+      ],
+      "turnCount": 0,
+      "failureReason": "Expected tool matching \"bash\" to be called",
+      "failureDetails": {
+        "expected": [
+          "bash"
+        ],
+        "actual": [
+          []
+        ],
+        "assertion": "tool"
+      }
+    }
+  ],
+  "environment": {
+    "generation": "gen8",
+    "model": "kimi-k2.5",
+    "provider": "moonshot",
+    "workingDirectory": "/Users/linchen/Downloads/ai/code-agent"
+  },
+  "performance": {
+    "avgResponseTime": 2,
+    "maxResponseTime": 2,
+    "totalToolCalls": 0,
+    "totalTurns": 0
+  }
+}

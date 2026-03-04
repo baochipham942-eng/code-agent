@@ -222,6 +222,14 @@ export const UI = {
   MAX_ATTACHMENTS_DROP: 10,
   /** 文本域最大高度 (px) */
   TEXTAREA_MAX_HEIGHT: 200,
+  /** 工具调用分组阈值：N 个以上自动归组 */
+  TOOL_GROUP_THRESHOLD: 3,
+  /** 工具组自动折叠延迟 (ms) */
+  TOOL_GROUP_COLLAPSE_DELAY: 500,
+  /** Todo 面板全部完成后淡出延迟 (ms) */
+  TODO_PANEL_FADE_DELAY: 3000,
+  /** Todo 面板计时更新间隔 (ms) */
+  TODO_PANEL_TICK_INTERVAL: 1000,
 } as const;
 
 /** 网络配置 */

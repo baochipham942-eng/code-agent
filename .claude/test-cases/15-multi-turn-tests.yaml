@@ -1,0 +1,147 @@
+# ============================================================================
+# Multi-Turn Conversation Tests - 多轮对话测试
+# ============================================================================
+# 测试 Agent 在多轮交互中的上下文保持和连续推理能力
+# 需要引擎 follow_up_prompts 支持（已在 testRunner.ts 中实现）
+
+name: "多轮对话测试"
+description: "测试 Agent 的多轮对话能力：上下文记忆、指代消解、渐进式任务"
+default_timeout: 180000
+tags:
+  - multi-turn
+  - conversation
+  - core-path
+
+cases:
+  # --------------------------------------------------------------------------
+  # L2: 上下文记忆
+  # --------------------------------------------------------------------------
+  - id: multi-turn-context-memory
+    type: conversation
+    description: "记住上一轮提到的信息"
+    prompt: "读取 package.json，告诉我项目名称和版本号"
+    follow_up_prompts:
+      - "刚才读到的版本号是多少？"
+    expect:
+      min_tool_calls: 1
+      response_contains:
+        - version
+      no_crash: true
+
+  - id: multi-turn-pronoun-resolution
+    type: conversation
+    description: "指代消解 - 理解'它'、'那个'指什么"
+    prompt: "读取 tsconfig.json 文件"
+    follow_up_prompts:
+      - "它里面配置了哪些编译选项？"
+    expect:
+      min_tool_calls: 1
+      no_crash: true
+
+  # --------------------------------------------------------------------------
+  # L3: 渐进式任务
+  # --------------------------------------------------------------------------
+  - id: multi-turn-incremental-task
+    type: task
+    description: "分步完成任务"
+    prompt: "创建 test-multi-step.ts 文件，先写一个 add 函数"
+    follow_up_prompts:
+      - "在同一个文件里再加一个 multiply 函数"
+      - "现在给这两个函数都加上 TypeScript 类型注解"
+    expect:
+      files_created:
+        - test-multi-step.ts
+      file_contains:
+        test-multi-step.ts:
+          - "add"
+          - "multiply"
+      no_crash: true
+    cleanup:
+      - rm -f test-multi-step.ts
+
+  - id: multi-turn-correction
+    type: task
+    description: "根据反馈修正"
+    prompt: "创建 test-greeting.ts，写一个 greet 函数，接收名字参数，返回问候语"
+    follow_up_prompts:
+      - "不对，我想要返回中文问候，比如'你好，张三'"
+    expect:
+      files_created:
+        - test-greeting.ts
+      file_contains:
+        test-greeting.ts:
+          - "你好"
+      no_crash: true
+    cleanup:
+      - rm -f test-greeting.ts
+
+  # --------------------------------------------------------------------------
+  # L3: 多轮分析
+  # --------------------------------------------------------------------------
+  - id: multi-turn-drill-down
+    type: task
+    description: "逐步深入分析"
+    prompt: "列出 src/main 目录下有哪些子目录"
+    follow_up_prompts:
+      - "tools 目录下有什么？"
+      - "找一个最大的工具文件，读取前 20 行"
+    expect:
+      min_tool_calls: 3
+      response_contains:
+        - tools
+      no_crash: true
+
+  - id: multi-turn-build-on-previous
+    type: task
+    description: "基于前轮结果继续"
+    setup:
+      - |
+        cat > test-scores.csv << 'EOF'
+        name,score
+        Alice,88
+        Bob,92
+        Carol,75
+        Dave,95
+        EOF
+    prompt: "读取 test-scores.csv"
+    follow_up_prompts:
+      - "谁的分数最高？"
+      - "把所有人的分数都加 5 分，保存回文件"
+    expect:
+      min_tool_calls: 2
+      file_contains:
+        test-scores.csv:
+          - "100"
+      no_crash: true
+    cleanup:
+      - rm -f test-scores.csv
+
+  # --------------------------------------------------------------------------
+  # L2: 对话修复
+  # --------------------------------------------------------------------------
+  - id: multi-turn-misunderstand-fix
+    type: conversation
+    description: "纠正误解"
+    prompt: "帮我看看 src 目录"
+    follow_up_prompts:
+      - "不是 src 目录结构，我是说帮我看看 src/main/testing 下面有几个文件"
+    expect:
+      min_tool_calls: 2
+      no_crash: true
+
+  - id: multi-turn-add-constraint
+    type: task
+    description: "追加约束条件"
+    prompt: "创建 test-config.json，写一个配置对象，包含 host 和 port"
+    follow_up_prompts:
+      - "port 必须是 3000，host 必须是 localhost"
+    expect:
+      files_created:
+        - test-config.json
+      file_contains:
+        test-config.json:
+          - "3000"
+          - "localhost"
+      no_crash: true
+    cleanup:
+      - rm -f test-config.json

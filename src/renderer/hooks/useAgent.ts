@@ -26,7 +26,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { generateMessageId } from '@shared/utils/id';
-import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData, ResearchDetectedData, InterruptEventData, ToolProgressData, ToolTimeoutData } from '@shared/types';
+import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData, ResearchDetectedData, ToolProgressData, ToolTimeoutData } from '@shared/types';
 import { createLogger } from '../utils/logger';
 import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 
@@ -474,7 +474,8 @@ export const useAgent = () => {
               flushRef.current();
             }
             clearSessionProcessing();
-            // Clear tool progress/timeout state
+            // Clear tool progress/timeout state (including task progress)
+            setTaskProgress(null);
             setActiveToolProgress(null);
             setToolTimeoutWarning(null);
             break;

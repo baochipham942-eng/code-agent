@@ -72,7 +72,8 @@ export const Progress: React.FC = () => {
         }
         break;
       case 'agent_complete':
-        // Agent 完成时清除所有状态
+        // Agent 完成时清除所有状态（包括任务进度）
+        setTaskProgress(null);
         setToolProgress(null);
         setToolTimeout(null);
         break;

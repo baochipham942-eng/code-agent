@@ -1,0 +1,119 @@
+# ============================================================================
+# Data Analysis Tests - 数据分析能力测试
+# ============================================================================
+# 覆盖 CSV/JSON 数据处理场景（Gap Analysis P0）
+
+name: "数据分析能力测试"
+description: "测试 Agent 的数据分析和处理能力"
+default_timeout: 120000
+tags:
+  - data
+  - core-path
+
+cases:
+  # --------------------------------------------------------------------------
+  # L2: CSV 数据分析
+  # --------------------------------------------------------------------------
+  - id: data-csv-basic
+    type: task
+    description: "CSV 基础统计分析"
+    setup:
+      - |
+        cat > test-sales.csv << 'EOF'
+        date,product,quantity,price
+        2024-01-01,Widget A,10,29.99
+        2024-01-02,Widget B,5,49.99
+        2024-01-03,Widget A,8,29.99
+        2024-01-04,Widget C,3,99.99
+        2024-01-05,Widget B,12,49.99
+        2024-01-06,Widget A,15,29.99
+        2024-01-07,Widget C,7,99.99
+        EOF
+    prompt: "分析 test-sales.csv，告诉我：1) 总销售额 2) 哪个产品卖得最多 3) 平均单价"
+    expect:
+      min_tool_calls: 1
+      response_contains:
+        - Widget
+      no_crash: true
+    cleanup:
+      - rm -f test-sales.csv
+
+  - id: data-csv-aggregate
+    type: task
+    description: "CSV 分组聚合"
+    setup:
+      - |
+        cat > test-employees.csv << 'EOF'
+        name,department,salary,years
+        Alice,Engineering,120000,5
+        Bob,Engineering,95000,3
+        Carol,Marketing,85000,4
+        Dave,Marketing,92000,6
+        Eve,Engineering,110000,4
+        Frank,Sales,78000,2
+        Grace,Sales,88000,5
+        EOF
+    prompt: "读取 test-employees.csv，按部门统计平均薪资和人数，结果保存到 test-dept-summary.csv"
+    expect:
+      min_tool_calls: 2
+      files_created:
+        - test-dept-summary.csv
+      file_contains:
+        test-dept-summary.csv:
+          - Engineering
+          - Marketing
+    cleanup:
+      - rm -f test-employees.csv test-dept-summary.csv
+
+  # --------------------------------------------------------------------------
+  # L2: JSON 数据处理
+  # --------------------------------------------------------------------------
+  - id: data-json-transform
+    type: task
+    description: "JSON 数据转换"
+    setup:
+      - |
+        cat > test-users.json << 'EOF'
+        [
+          {"id": 1, "first_name": "John", "last_name": "Doe", "email": "john@example.com", "active": true},
+          {"id": 2, "first_name": "Jane", "last_name": "Smith", "email": "jane@example.com", "active": false},
+          {"id": 3, "first_name": "Bob", "last_name": "Wilson", "email": "bob@example.com", "active": true}
+        ]
+        EOF
+    prompt: "读取 test-users.json，提取所有 active 用户的 full name（first + last）和 email，保存到 test-active-users.json"
+    expect:
+      min_tool_calls: 2
+      files_created:
+        - test-active-users.json
+      file_contains:
+        test-active-users.json:
+          - John Doe
+          - Bob Wilson
+    cleanup:
+      - rm -f test-users.json test-active-users.json
+
+  # --------------------------------------------------------------------------
+  # L3: 数据清洗
+  # --------------------------------------------------------------------------
+  - id: data-cleaning
+    type: task
+    description: "数据清洗 - 处理缺失值和异常"
+    setup:
+      - |
+        cat > test-dirty-data.csv << 'EOF'
+        name,age,score
+        Alice,25,88
+        Bob,,92
+        Carol,30,
+        ,28,75
+        Dave,-5,105
+        Eve,22,91
+        EOF
+    prompt: "test-dirty-data.csv 有脏数据（缺失值、负数年龄、超过100的分数），帮我清洗后保存为 test-clean-data.csv，说明你做了哪些清洗"
+    expect:
+      min_tool_calls: 2
+      files_created:
+        - test-clean-data.csv
+      no_crash: true
+    cleanup:
+      - rm -f test-dirty-data.csv test-clean-data.csv

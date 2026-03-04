@@ -17,6 +17,7 @@ import 'katex/dist/katex.min.css';
 import type { Components } from 'react-markdown';
 import type { Element } from 'hast';
 import { useAppStore } from '../../../../stores/appStore';
+import { wrapFilePathsInBackticks } from './filePathProcessor';
 
 // Language display names and colors
 const languageConfig: Record<string, { color: string; name: string }> = {
@@ -150,22 +151,38 @@ const OPENABLE_FILE_EXTENSIONS = [
   '.json', '.xml', '.csv',
   '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg',
   '.mp3', '.mp4', '.wav', '.webm',
+  // Source code files
+  '.ts', '.tsx', '.js', '.jsx', '.py', '.rs', '.go',
+  '.java', '.rb', '.vue', '.css', '.scss',
 ];
 
 // Check if text looks like an openable file path
-// Only absolute paths or explicit relative paths (starting with ./ or ~/) are considered openable
-// Plain filenames like "example.html" are NOT openable because we can't reliably determine their location
+// Supports: /abs/path.ext, ./rel/path.ext, ~/path.ext, src/multi/segment.ext
+// Also supports :lineNumber suffix (e.g., src/main/agent.ts:42)
 const isFilePath = (text: string): boolean => {
   const trimmed = text.trim();
-  // Only accept explicit paths (absolute or relative with ./ or ~/)
-  // Plain filenames without path prefix are NOT openable
+
+  // Strip optional :lineNumber suffix before checking extension
+  const pathWithoutLine = trimmed.replace(/:\d+$/, '');
+
+  // Check extension match
+  const hasExtension = OPENABLE_FILE_EXTENSIONS.some(ext =>
+    pathWithoutLine.toLowerCase().endsWith(ext)
+  );
+  if (!hasExtension) return false;
+
+  // Absolute, explicit relative, or home paths
   if (trimmed.startsWith('/') || trimmed.startsWith('./') || trimmed.startsWith('~/')) {
-    // Check if it has a recognized file extension
-    const hasExtension = OPENABLE_FILE_EXTENSIONS.some(ext =>
-      trimmed.toLowerCase().endsWith(ext)
-    );
-    return hasExtension;
+    return true;
   }
+
+  // Multi-segment relative path (e.g., src/components/App.tsx)
+  // Must have at least 2 path segments (one /) and an extension
+  const segments = pathWithoutLine.split('/');
+  if (segments.length >= 2 && segments.every(s => s.length > 0)) {
+    return true;
+  }
+
   return false;
 };
 
@@ -175,6 +192,18 @@ const isHtmlFile = (text: string): boolean => {
   return trimmed.endsWith('.html') || trimmed.endsWith('.htm');
 };
 
+/**
+ * Parse optional :lineNumber suffix from a file path.
+ * Returns { path, lineNumber } where lineNumber is undefined if not present.
+ */
+function parseFilePathWithLine(text: string): { path: string; lineNumber?: number } {
+  const match = text.trim().match(/^(.+):(\d+)$/);
+  if (match) {
+    return { path: match[1], lineNumber: parseInt(match[2], 10) };
+  }
+  return { path: text.trim() };
+}
+
 // Inline code component with file click support
 const InlineCode = memo(function InlineCode({
   children,
@@ -182,7 +211,7 @@ const InlineCode = memo(function InlineCode({
   onPreviewHtml,
 }: {
   children: React.ReactNode;
-  onOpenFile?: (filePath: string) => void;
+  onOpenFile?: (filePath: string, lineNumber?: number) => void;
   onPreviewHtml?: (filePath: string) => void;
 }) {
   const text = String(children);
@@ -199,17 +228,19 @@ const InlineCode = memo(function InlineCode({
   }
 
   // File path - make it clickable
+  const { path: filePath, lineNumber } = parseFilePathWithLine(text);
+
   return (
     <code
       className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-zinc-900/80 text-primary-300 text-xs font-mono border border-zinc-700/50 cursor-pointer hover:bg-zinc-800/80 hover:border-primary-500/50 hover:text-primary-200 transition-colors group"
       onClick={() => {
         if (isHtml && onPreviewHtml) {
-          onPreviewHtml(text);
+          onPreviewHtml(filePath);
         } else if (onOpenFile) {
-          onOpenFile(text);
+          onOpenFile(filePath, lineNumber);
         }
       }}
-      title={isHtml ? '点击预览' : '点击打开文件'}
+      title={isHtml ? '点击预览' : lineNumber ? `点击打开文件（第 ${lineNumber} 行）` : '点击打开文件'}
     >
       {children}
       {isHtml ? (
@@ -262,14 +293,14 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
   const workingDirectory = useAppStore((state) => state.workingDirectory);
 
   // Handle opening a file externally
-  const handleOpenFile = useCallback(async (filePath: string) => {
+  const handleOpenFile = useCallback(async (filePath: string, lineNumber?: number) => {
     try {
       // Resolve relative paths
       let fullPath = filePath;
       if (!filePath.startsWith('/') && !filePath.startsWith('~')) {
         fullPath = workingDirectory ? `${workingDirectory}/${filePath}` : filePath;
       }
-      await window.domainAPI?.invoke('workspace', 'openPath', { filePath: fullPath });
+      await window.domainAPI?.invoke('workspace', 'openPath', { filePath: fullPath, lineNumber });
     } catch (error) {
       console.error('Failed to open file:', error);
     }
@@ -460,8 +491,11 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
     [handleOpenFile, handlePreviewHtml]
   );
 
-  // Filter out system tags before rendering
-  const filteredContent = useMemo(() => filterSystemTags(content), [content]);
+  // Filter out system tags and wrap file paths in backticks before rendering
+  const filteredContent = useMemo(() => {
+    const cleaned = filterSystemTags(content);
+    return wrapFilePathsInBackticks(cleaned);
+  }, [content]);
 
   return (
     <div className="text-sm leading-relaxed break-words prose prose-invert prose-sm max-w-none">

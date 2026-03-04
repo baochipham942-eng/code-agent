@@ -4,7 +4,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import type { TestRunSummary, TestResult } from './types';
+import type { TestRunSummary } from './types';
 import { formatDuration } from '../../shared/utils/format';
 
 /**
@@ -27,9 +27,11 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
   lines.push('|------|-----|');
   lines.push(`| 总用例数 | ${summary.total} |`);
   lines.push(`| 通过 | ${summary.passed} ✅ |`);
+  lines.push(`| 部分通过 | ${summary.partial} 🟡 |`);
   lines.push(`| 失败 | ${summary.failed} ❌ |`);
   lines.push(`| 跳过 | ${summary.skipped} ⏭️ |`);
   lines.push(`| 通过率 | ${getPassRate(summary)}% |`);
+  lines.push(`| 平均分数 | ${(summary.averageScore * 100).toFixed(1)}% |`);
   lines.push(`| 总耗时 | ${formatDuration(summary.duration)} |`);
   lines.push('');
 
@@ -98,6 +100,43 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
       }
 
       lines.push('---');
+      lines.push('');
+    }
+  }
+
+  // Partial pass tests
+  const partialTests = summary.results.filter((r) => r.status === 'partial');
+  if (partialTests.length > 0) {
+    lines.push('## 部分通过用例');
+    lines.push('');
+    lines.push('| 用例 ID | 描述 | 分数 | 失败原因 |');
+    lines.push('|---------|------|------|----------|');
+
+    for (const result of partialTests) {
+      const scoreStr = `${(result.score * 100).toFixed(0)}%`;
+      const reason = result.failureReason?.substring(0, 80) || '—';
+      lines.push(
+        `| 🟡 ${result.testId} | ${result.description} | ${scoreStr} | ${reason} |`
+      );
+    }
+    lines.push('');
+
+    // Show reference solutions for partial tests
+    for (const result of partialTests) {
+      if (result.reference_solution) {
+        lines.push(`> **${result.testId} 参考解**: ${result.reference_solution}`);
+        lines.push('');
+      }
+    }
+  }
+
+  // Show reference solutions for failed tests
+  const failedWithRef = failedTests.filter((r) => r.reference_solution);
+  if (failedWithRef.length > 0) {
+    lines.push('### 失败用例参考解');
+    lines.push('');
+    for (const result of failedWithRef) {
+      lines.push(`> **${result.testId}**: ${result.reference_solution}`);
       lines.push('');
     }
   }
@@ -198,19 +237,21 @@ export function generateConsoleReport(summary: TestRunSummary): string {
   // Results by status
   for (const result of summary.results) {
     const icon = result.status === 'passed' ? '✅' :
+                 result.status === 'partial' ? '🟡' :
                  result.status === 'failed' ? '❌' : '⏭️';
     const duration = formatDuration(result.duration);
-    lines.push(`  ${icon} ${result.testId.padEnd(30)} ${duration}`);
+    const scoreStr = result.status === 'partial' ? ` (${(result.score * 100).toFixed(0)}%)` : '';
+    lines.push(`  ${icon} ${result.testId.padEnd(30)} ${duration}${scoreStr}`);
 
-    if (result.status === 'failed' && result.failureReason) {
+    if ((result.status === 'failed' || result.status === 'partial') && result.failureReason) {
       lines.push(`     └─ ${result.failureReason}`);
     }
   }
 
   lines.push('');
   lines.push('───────────────────────────────────────────────────────');
-  lines.push(`  Total: ${summary.total}  |  ✅ ${summary.passed}  |  ❌ ${summary.failed}  |  ⏭️ ${summary.skipped}`);
-  lines.push(`  Duration: ${formatDuration(summary.duration)}  |  Pass rate: ${getPassRate(summary)}%`);
+  lines.push(`  Total: ${summary.total}  |  ✅ ${summary.passed}  |  🟡 ${summary.partial}  |  ❌ ${summary.failed}  |  ⏭️ ${summary.skipped}`);
+  lines.push(`  Duration: ${formatDuration(summary.duration)}  |  Pass rate: ${getPassRate(summary)}%  |  Avg score: ${(summary.averageScore * 100).toFixed(1)}%`);
   lines.push('═══════════════════════════════════════════════════════');
   lines.push('');
 
@@ -285,11 +326,13 @@ function generateProgressBar(summary: TestRunSummary): string {
 
   const width = 40;
   const passedWidth = Math.round((summary.passed / total) * width);
+  const partialWidth = Math.round((summary.partial / total) * width);
   const failedWidth = Math.round((summary.failed / total) * width);
-  const skippedWidth = width - passedWidth - failedWidth;
+  const skippedWidth = Math.max(0, width - passedWidth - partialWidth - failedWidth);
 
   const bar =
     '█'.repeat(passedWidth) +
+    '▒'.repeat(partialWidth) +
     '▓'.repeat(failedWidth) +
     '░'.repeat(skippedWidth);
 

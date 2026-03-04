@@ -1,0 +1,154 @@
+# ============================================================================
+# Complex Workflow Tests - 复杂工作流测试（L3-L4）
+# ============================================================================
+# 端到端真实开发场景，拉升难度梯度（Gap Analysis P1）
+
+name: "复杂工作流测试"
+description: "测试 Agent 在真实开发场景中的端到端能力"
+default_timeout: 180000
+tags:
+  - workflow
+  - complex
+  - core-path
+
+cases:
+  # --------------------------------------------------------------------------
+  # L3: 读懂→改→验证 闭环
+  # --------------------------------------------------------------------------
+  - id: workflow-read-modify-verify
+    type: task
+    description: "读取代码 → 修改 → 验证闭环"
+    setup:
+      - |
+        cat > test-calculator.ts << 'TSEOF'
+        export function calculate(a: number, b: number, op: string): number {
+          switch (op) {
+            case '+': return a + b;
+            case '-': return a - b;
+            case '*': return a * b;
+            case '/': return a / b;  // Bug: 没有处理除以零
+            default: throw new Error(`Unknown operator: ${op}`);
+          }
+        }
+        TSEOF
+    prompt: "读取 test-calculator.ts，修复除以零的 bug（应该抛出错误而不是返回 Infinity），然后验证修复是否正确"
+    expect:
+      min_tool_calls: 3
+      file_contains:
+        test-calculator.ts:
+          - "0"
+    cleanup:
+      - rm -f test-calculator.ts
+
+  # --------------------------------------------------------------------------
+  # L3: 多文件协同修改
+  # --------------------------------------------------------------------------
+  - id: workflow-multi-file
+    type: task
+    description: "多文件协同 - 添加接口和实现"
+    setup:
+      - |
+        mkdir -p test-multifile
+        cat > test-multifile/types.ts << 'TSEOF'
+        export interface User {
+          id: number;
+          name: string;
+          email: string;
+        }
+        TSEOF
+        cat > test-multifile/service.ts << 'TSEOF'
+        import { User } from './types';
+
+        const users: User[] = [
+          { id: 1, name: 'Alice', email: 'alice@example.com' },
+        ];
+
+        export function getUser(id: number): User | undefined {
+          return users.find(u => u.id === id);
+        }
+        TSEOF
+    prompt: "在 test-multifile/ 中：1) 给 User 接口添加 role 字段（类型 string） 2) 更新 service.ts 中的示例数据包含 role 3) 创建 test-multifile/utils.ts 导出一个 isAdmin 函数检查 role 是否为 'admin'"
+    expect:
+      min_tool_calls: 4
+      file_contains:
+        test-multifile/types.ts: "role"
+        test-multifile/service.ts: "role"
+      files_created:
+        - test-multifile/utils.ts
+    cleanup:
+      - rm -rf test-multifile
+
+  # --------------------------------------------------------------------------
+  # L3: 代码分析 + 文档生成
+  # --------------------------------------------------------------------------
+  - id: workflow-analyze-and-document
+    type: task
+    description: "分析代码并生成文档"
+    prompt: "分析 src/main/tools 目录的结构，列出所有工具文件及其用途，生成 test-tools-doc.md 文档"
+    expect:
+      min_tool_calls: 3
+      files_created:
+        - test-tools-doc.md
+      file_contains:
+        test-tools-doc.md:
+          - bash
+          - read
+    cleanup:
+      - rm -f test-tools-doc.md
+
+  # --------------------------------------------------------------------------
+  # L3: 项目脚手架
+  # --------------------------------------------------------------------------
+  - id: workflow-scaffold-project
+    type: task
+    description: "从零创建小型项目结构"
+    prompt: |
+      在 test-scaffold/ 目录下创建一个简单的 Node.js 项目：
+      1. package.json（name: test-app, 版本 1.0.0）
+      2. src/index.ts（导出一个 greet 函数）
+      3. tsconfig.json（基础 TypeScript 配置）
+    expect:
+      min_tool_calls: 3
+      files_created:
+        - test-scaffold/package.json
+        - test-scaffold/src/index.ts
+        - test-scaffold/tsconfig.json
+      file_contains:
+        test-scaffold/package.json:
+          - "test-app"
+          - "1.0.0"
+        test-scaffold/src/index.ts: "greet"
+    cleanup:
+      - rm -rf test-scaffold
+
+  # --------------------------------------------------------------------------
+  # L4: 综合任务 - 分析 + 改进 + 验证
+  # --------------------------------------------------------------------------
+  - id: workflow-e2e-improve
+    type: task
+    description: "端到端：分析性能问题并优化"
+    setup:
+      - |
+        cat > test-perf.ts << 'TSEOF'
+        // 性能差的实现：O(n^2) 查找重复
+        export function findDuplicates(arr: number[]): number[] {
+          const duplicates: number[] = [];
+          for (let i = 0; i < arr.length; i++) {
+            for (let j = i + 1; j < arr.length; j++) {
+              if (arr[i] === arr[j] && !duplicates.includes(arr[i])) {
+                duplicates.push(arr[i]);
+              }
+            }
+          }
+          return duplicates;
+        }
+        TSEOF
+    prompt: "读取 test-perf.ts，这个 findDuplicates 函数是 O(n²) 的。帮我优化成 O(n) 的实现（用 Set 或 Map），并解释优化思路"
+    expect:
+      min_tool_calls: 2
+      file_contains:
+        test-perf.ts:
+          - "Set"
+    cleanup:
+      - rm -f test-perf.ts
+    timeout: 120000

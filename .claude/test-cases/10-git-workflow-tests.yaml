@@ -1,0 +1,121 @@
+# ============================================================================
+# Git Workflow Tests - Git 工作流测试
+# ============================================================================
+# 覆盖 Git 操作：status/diff/log/commit/branch（Gap Analysis P1）
+# 注意：测试在临时 git 仓库中进行，避免污染项目仓库
+
+name: "Git 工作流测试"
+description: "测试 Agent 的 Git 操作能力"
+default_timeout: 60000
+tags:
+  - git
+  - core-path
+
+cases:
+  # --------------------------------------------------------------------------
+  # L1: Git 基础查询
+  # --------------------------------------------------------------------------
+  - id: git-status
+    type: task
+    description: "查看 Git 状态"
+    setup:
+      - "mkdir -p test-git-repo && cd test-git-repo && git init && echo 'hello' > file.txt && git add . && git commit -m 'init'"
+    prompt: "查看 test-git-repo 目录的 git status"
+    reference_solution: "调用 git status 展示当前仓库状态"
+    expect:
+      no_crash: true
+    cleanup:
+      - rm -rf test-git-repo
+
+  - id: git-log
+    type: task
+    description: "查看 Git 提交历史"
+    setup:
+      - "mkdir -p test-git-repo && cd test-git-repo && git init && echo 'v1' > file.txt && git add . && git commit -m 'first commit' && echo 'v2' > file.txt && git add . && git commit -m 'second commit'"
+    prompt: "查看 test-git-repo 的最近 git 提交记录"
+    expect:
+      min_tool_calls: 1
+      response_contains:
+        - commit
+      no_crash: true
+    cleanup:
+      - rm -rf test-git-repo
+
+  # --------------------------------------------------------------------------
+  # L2: Git 分析操作
+  # --------------------------------------------------------------------------
+  - id: git-diff-analysis
+    type: task
+    description: "分析 Git diff 并解释变更"
+    setup:
+      - |
+        mkdir -p test-git-repo && cd test-git-repo && git init
+        cat > app.js << 'EOF'
+        function greet(name) {
+          return 'Hello, ' + name;
+        }
+        EOF
+        git add . && git commit -m 'init'
+        cat > app.js << 'EOF'
+        function greet(name) {
+          if (!name) throw new Error('Name is required');
+          return `Hello, ${name}!`;
+        }
+        EOF
+    prompt: "查看 test-git-repo 中的未提交变更（git diff），并解释做了什么修改"
+    expect:
+      min_tool_calls: 1
+      response_contains:
+        - name
+      no_crash: true
+    cleanup:
+      - rm -rf test-git-repo
+
+  - id: git-commit-message
+    type: task
+    description: "根据变更生成 commit message"
+    setup:
+      - |
+        mkdir -p test-git-repo && cd test-git-repo && git init
+        echo 'const API_URL = "http://old-api.com"' > config.js
+        git add . && git commit -m 'init'
+        echo 'const API_URL = "https://new-api.com"' > config.js
+    prompt: "查看 test-git-repo 的变更，帮我写一个合适的 git commit message（不要真的提交）"
+    expect:
+      min_tool_calls: 1
+      no_crash: true
+    cleanup:
+      - rm -rf test-git-repo
+
+  # --------------------------------------------------------------------------
+  # L3: Git 高级操作
+  # --------------------------------------------------------------------------
+  - id: git-branch-create
+    type: task
+    description: "创建分支并提交"
+    setup:
+      - "mkdir -p test-git-repo && cd test-git-repo && git init && echo 'init' > file.txt && git add . && git commit -m 'init'"
+    prompt: "在 test-git-repo 中：1) 创建 feature/add-readme 分支 2) 切换到该分支 3) 创建 README.md 写入项目说明 4) 提交"
+    expect:
+      min_tool_calls: 3
+      no_crash: true
+    cleanup:
+      - rm -rf test-git-repo
+
+  - id: git-conflict-awareness
+    type: conversation
+    description: "识别合并冲突"
+    setup:
+      - |
+        mkdir -p test-git-repo && cd test-git-repo && git init
+        echo 'line 1' > shared.txt && git add . && git commit -m 'init'
+        git checkout -b feature && echo 'feature change' > shared.txt && git add . && git commit -m 'feature'
+        git checkout main 2>/dev/null || git checkout master
+        echo 'main change' > shared.txt && git add . && git commit -m 'main change'
+        git merge feature --no-commit 2>/dev/null || true
+    prompt: "test-git-repo 中有合并冲突，帮我查看冲突内容并解释怎么解决"
+    expect:
+      min_tool_calls: 1
+      no_crash: true
+    cleanup:
+      - rm -rf test-git-repo

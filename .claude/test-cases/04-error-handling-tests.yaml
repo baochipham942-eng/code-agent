@@ -84,7 +84,7 @@ cases:
     expect:
       no_crash: true
       min_tool_calls: 1
-      output_contains:
+      response_contains:
         - name
 
   # --------------------------------------------------------------------------

@@ -310,6 +310,65 @@ export const session = {
 };
 
 /**
+ * Mock safeStorage
+ */
+export const safeStorage = {
+  isEncryptionAvailable: () => false,
+  encryptString: (plainText: string) => Buffer.from(plainText),
+  decryptString: (encrypted: Buffer) => encrypted.toString(),
+};
+
+/**
+ * Mock net
+ */
+export const net = {
+  request: () => ({
+    on: () => {},
+    end: () => {},
+    write: () => {},
+    abort: () => {},
+  }),
+  isOnline: () => true,
+};
+
+/**
+ * Mock contentTracing
+ */
+export const contentTracing = {
+  getCategories: () => Promise.resolve([]),
+  startRecording: () => Promise.resolve(),
+  stopRecording: () => Promise.resolve(''),
+};
+
+/**
+ * Mock protocol
+ */
+export const protocol = {
+  registerSchemesAsPrivileged: () => {},
+  registerFileProtocol: () => {},
+  registerStringProtocol: () => {},
+  registerHttpProtocol: () => {},
+  registerBufferProtocol: () => {},
+  unregisterProtocol: () => {},
+  isProtocolRegistered: () => false,
+  interceptFileProtocol: () => {},
+  interceptStringProtocol: () => {},
+  interceptHttpProtocol: () => {},
+  interceptBufferProtocol: () => {},
+  uninterceptProtocol: () => {},
+  handle: () => {},
+};
+
+/**
+ * Mock webContents
+ */
+export const webContents = {
+  getAllWebContents: () => [],
+  getFocusedWebContents: () => null,
+  fromId: () => null,
+};
+
+/**
  * 默认导出所有 mock
  */
 export default {
@@ -330,4 +389,9 @@ export default {
   globalShortcut,
   powerMonitor,
   session,
+  safeStorage,
+  net,
+  contentTracing,
+  protocol,
+  webContents,
 };

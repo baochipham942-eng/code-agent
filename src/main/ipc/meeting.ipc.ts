@@ -19,6 +19,18 @@ import { getQwen3AsrService } from './qwen3AsrService';
 const logger = createLogger('Meeting');
 const execFileAsync = promisify(execFile);
 
+/** Resolve script path — works both in source (src/main/ipc/) and bundled (dist/main/) */
+function findScript(name: string): string {
+  const candidates = [
+    path.join(__dirname, '..', '..', 'scripts', name),       // dist/main/ → project root
+    path.join(__dirname, '..', '..', '..', 'scripts', name), // src/main/ipc/ → project root
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return candidates[0];
+}
+
 export const MEETING_CHANNELS = {
   SAVE_RECORDING: 'meeting:save-recording',
   TRANSCRIBE: 'meeting:transcribe',
@@ -156,7 +168,7 @@ async function transcribeWithGroq(filePath: string, language: string): Promise<s
 }
 
 async function transcribeWithQwen3Asr(wavPath: string): Promise<string> {
-  const scriptPath = path.join(__dirname, '..', '..', '..', 'scripts', 'qwen3-asr-inference.py');
+  const scriptPath = findScript('qwen3-asr-inference.py');
 
   return new Promise((resolve, reject) => {
     execFile('python3', [scriptPath, '--audio', wavPath, '--model', '0.6b'],
@@ -184,7 +196,7 @@ async function transcribeWithQwen3Asr(wavPath: string): Promise<string> {
 }
 
 async function checkQwen3AsrAvailability(): Promise<{ available: boolean; modelPath?: string }> {
-  const scriptPath = path.join(__dirname, '..', '..', '..', 'scripts', 'qwen3-asr-inference.py');
+  const scriptPath = findScript('qwen3-asr-inference.py');
   return new Promise((resolve) => {
     execFile('python3', [scriptPath, '--check'], { timeout: 10000 }, (error, stdout) => {
       if (error) {
@@ -544,13 +556,13 @@ export function registerMeetingHandlers(ipcMain: IpcMain): void {
         const buffer = Buffer.from(data.audioBase64, 'base64');
         await fs.promises.writeFile(tmpFile, buffer);
 
-        // Convert to WAV (16kHz mono) if not already wav
+        // Convert to WAV (16kHz mono) — frontend sends sliding window (~5s), so this is fast
         const wavPath = await convertToWav(tmpFile);
 
-        // Transcribe via persistent process
+        // Transcribe via persistent Qwen3-ASR process
         const result = await getQwen3AsrService().transcribeChunk(wavPath);
 
-        // Cleanup temp files
+        // Cleanup
         fs.promises.unlink(tmpFile).catch(() => {});
         if (wavPath !== tmpFile) fs.promises.unlink(wavPath).catch(() => {});
 

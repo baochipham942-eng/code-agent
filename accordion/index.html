@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>手风琴组件</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="accordion">
+    <div class="accordion-item">
+      <input type="radio" name="accordion" id="section1" checked>
+      <label for="section1" class="accordion-header">
+        <span>第一节：什么是 HTML？</span>
+        <span class="icon">▼</span>
+      </label>
+      <div class="accordion-content">
+        <p>HTML（超文本标记语言）是构建网页的标准标记语言。它定义了网页内容的含义和结构。除 HTML 以外的其他技术则通常用于描述网页的表现与展示效果（CSS），或功能与行为（JavaScript）。</p>
+      </div>
+    </div>
+
+    <div class="accordion-item">
+      <input type="radio" name="accordion" id="section2">
+      <label for="section2" class="accordion-header">
+        <span>第二节：什么是 CSS？</span>
+        <span class="icon">▼</span>
+      </label>
+      <div class="accordion-content">
+        <p>CSS（层叠样式表）是一种用于描述 HTML 或 XML 文档外观和格式的样式表语言。CSS 描述了元素如何在屏幕、纸张、语音或其他媒体上显示。</p>
+      </div>
+    </div>
+
+    <div class="accordion-item">
+      <input type="radio" name="accordion" id="section3">
+      <label for="section3" class="accordion-header">
+        <span>第三节：什么是 JavaScript？</span>
+        <span class="icon">▼</span>
+      </label>
+      <div class="accordion-content">
+        <p>JavaScript 是一种轻量级的解释型编程语言，具有函数优先的特性。它是一种基于原型、多范式的动态脚本语言，支持面向对象、命令式和声明式（如函数式编程）风格。</p>
+      </div>
+    </div>
+
+    <div class="accordion-item">
+      <input type="radio" name="accordion" id="section4">
+      <label for="section4" class="accordion-header">
+        <span>第四节：前端框架</span>
+        <span class="icon">▼</span>
+      </label>
+      <div class="accordion-content">
+        <p>现代前端开发中常用的框架包括 React、Vue 和 Angular。这些框架提供了组件化开发、状态管理、路由等功能，大大提高了开发效率和代码可维护性。</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

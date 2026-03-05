@@ -1,5 +1,6 @@
 // ============================================================================
-// Qwen3-ASR 常驻进程服务 — 模型只加载一次，stdin/stdout JSONL 协议通信
+// FunASR Service — Paraformer-zh + VAD + Punctuation
+// JSONL stdio protocol (backward compatible with qwen3AsrService)
 // ============================================================================
 
 import { spawn, ChildProcess } from 'child_process';
@@ -8,23 +9,23 @@ import * as fs from 'fs';
 import * as readline from 'readline';
 import { createLogger } from '../services/infra/logger';
 
-/** Resolve script path — works both in source (src/main/ipc/) and bundled (dist/main/) */
+const logger = createLogger('FunAsrService');
+
+const MAX_RESTART_ATTEMPTS = 3;
+const READY_TIMEOUT_MS = 120000; // FunASR model loading can take longer
+const TRANSCRIBE_TIMEOUT_MS = 30000;
+
+/** Resolve script path — works both in source and bundled */
 function findScript(name: string): string {
   const candidates = [
-    path.join(__dirname, '..', '..', 'scripts', name),       // dist/main/ → project root
-    path.join(__dirname, '..', '..', '..', 'scripts', name), // src/main/ipc/ → project root
+    path.join(__dirname, '..', '..', 'scripts', name),
+    path.join(__dirname, '..', '..', '..', 'scripts', name),
   ];
   for (const p of candidates) {
     if (fs.existsSync(p)) return p;
   }
-  return candidates[0]; // fallback to first candidate
+  return candidates[0];
 }
-
-const logger = createLogger('Qwen3AsrService');
-
-const MAX_RESTART_ATTEMPTS = 3;
-const READY_TIMEOUT_MS = 60000;
-const TRANSCRIBE_TIMEOUT_MS = 30000;
 
 interface PendingRequest {
   resolve: (value: { text: string; duration: number }) => void;
@@ -32,7 +33,7 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>;
 }
 
-class Qwen3AsrService {
+class FunAsrService {
   private process: ChildProcess | null = null;
   private rl: readline.Interface | null = null;
   private pending = new Map<string, PendingRequest>();
@@ -54,7 +55,7 @@ class Qwen3AsrService {
   }
 
   private async _start(): Promise<void> {
-    const scriptPath = findScript('qwen3-asr-inference.py');
+    const scriptPath = findScript('funasr-server.py');
 
     return new Promise<void>((resolve, reject) => {
       const proc = spawn('python3', [scriptPath, '--serve'], {
@@ -64,31 +65,35 @@ class Qwen3AsrService {
       this.process = proc;
 
       const timeout = setTimeout(() => {
-        reject(new Error('Qwen3-ASR serve mode: ready timeout (60s)'));
+        reject(new Error('FunASR serve mode: ready timeout (120s)'));
         this.kill();
       }, READY_TIMEOUT_MS);
 
       proc.stderr?.on('data', (data: Buffer) => {
-        logger.warn('[Qwen3-ASR stderr]', data.toString().trim());
+        const msg = data.toString().trim();
+        // Filter out noisy debug logs from model loading
+        if (msg && !msg.includes('DEBUG') && !msg.includes('jieba')) {
+          logger.warn('[FunASR stderr]', msg.substring(0, 200));
+        }
       });
 
       proc.on('error', (err) => {
         clearTimeout(timeout);
-        logger.error('[Qwen3-ASR] Process error:', err.message);
+        logger.error('[FunASR] Process error:', err.message);
         this.handleCrash();
         reject(err);
       });
 
       proc.on('exit', (code, signal) => {
-        logger.info(`[Qwen3-ASR] Process exited: code=${code}, signal=${signal}`);
+        logger.info(`[FunASR] Process exited: code=${code}, signal=${signal}`);
+        const wasRunning = this.running;
         this.running = false;
         this.rejectAllPending(new Error(`Process exited: code=${code}`));
-        if (this.running) this.handleCrash();
+        if (wasRunning) this.handleCrash();
       });
 
       this.rl = readline.createInterface({ input: proc.stdout! });
 
-      // Wait for the first "ready" line
       const onFirstLine = (line: string) => {
         try {
           const msg = JSON.parse(line);
@@ -96,20 +101,18 @@ class Qwen3AsrService {
             clearTimeout(timeout);
             this.running = true;
             this.restartCount = 0;
-            logger.info('[Qwen3-ASR] Serve mode ready, model:', msg.model_path);
+            logger.info('[FunASR] Ready:', msg.engine || 'unknown engine');
 
-            // Switch to normal message handling
             this.rl!.removeListener('line', onFirstLine);
             this.rl!.on('line', (l) => this.handleLine(l));
-
             resolve();
           } else if (msg.status === 'error') {
             clearTimeout(timeout);
-            reject(new Error(msg.message || 'Qwen3-ASR startup error'));
+            reject(new Error(msg.message || 'FunASR startup error'));
             this.kill();
           }
         } catch {
-          // ignore non-JSON lines during startup
+          // ignore non-JSON during startup
         }
       };
 
@@ -135,13 +138,13 @@ class Qwen3AsrService {
         pending.resolve({ text: msg.text || '', duration: msg.duration || 0 });
       }
     } catch {
-      // ignore non-JSON output
+      // ignore
     }
   }
 
   async transcribeChunk(wavPath: string): Promise<{ text: string; duration: number }> {
     if (!this.running || !this.process?.stdin) {
-      throw new Error('Qwen3-ASR service not running');
+      throw new Error('FunASR service not running');
     }
 
     const id = `req-${++this.requestCounter}`;
@@ -164,12 +167,10 @@ class Qwen3AsrService {
 
     this.running = false;
 
-    // Send quit command
     try {
       this.process.stdin?.write(JSON.stringify({ command: 'quit' }) + '\n');
     } catch { /* stdin may be closed */ }
 
-    // Wait briefly for graceful shutdown, then force kill
     await new Promise<void>((resolve) => {
       const forceTimer = setTimeout(() => {
         this.kill();
@@ -202,7 +203,7 @@ class Qwen3AsrService {
   }
 
   private rejectAllPending(error: Error): void {
-    for (const [id, req] of this.pending) {
+    for (const [, req] of this.pending) {
       clearTimeout(req.timer);
       req.reject(error);
     }
@@ -214,12 +215,12 @@ class Qwen3AsrService {
 
     if (this.restartCount < MAX_RESTART_ATTEMPTS) {
       this.restartCount++;
-      logger.warn(`[Qwen3-ASR] Crash detected, restarting (${this.restartCount}/${MAX_RESTART_ATTEMPTS})...`);
+      logger.warn(`[FunASR] Crash detected, restarting (${this.restartCount}/${MAX_RESTART_ATTEMPTS})...`);
       this.start().catch((err) => {
-        logger.error('[Qwen3-ASR] Restart failed:', err.message);
+        logger.error('[FunASR] Restart failed:', err.message);
       });
     } else {
-      logger.error('[Qwen3-ASR] Max restart attempts reached, giving up');
+      logger.error('[FunASR] Max restart attempts reached');
     }
   }
 
@@ -229,11 +230,11 @@ class Qwen3AsrService {
 }
 
 // Singleton
-let instance: Qwen3AsrService | null = null;
+let instance: FunAsrService | null = null;
 
-export function getQwen3AsrService(): Qwen3AsrService {
+export function getFunAsrService(): FunAsrService {
   if (!instance) {
-    instance = new Qwen3AsrService();
+    instance = new FunAsrService();
   }
   return instance;
 }

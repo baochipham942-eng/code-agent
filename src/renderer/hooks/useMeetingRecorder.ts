@@ -9,7 +9,7 @@ import { useAppStore } from '../stores/appStore';
 
 const logger = createLogger('MeetingRecorder');
 
-export type MeetingStatus = 'idle' | 'recording' | 'paused' | 'saving' | 'transcribing' | 'generating' | 'done' | 'error';
+export type MeetingStatus = 'idle' | 'recording' | 'paused' | 'saving' | 'transcribing' | 'transcribed' | 'generating' | 'done' | 'error';
 
 export interface LiveSegment {
   text: string;
@@ -39,6 +39,8 @@ export interface UseMeetingRecorderReturn {
   stopRecording: () => void;
   pauseRecording: () => void;
   resumeRecording: () => void;
+  generateMinutes: () => void;
+  skipMinutes: () => void;
   reset: () => void;
 }
 
@@ -104,25 +106,47 @@ export function useMeetingRecorder(): UseMeetingRecorderReturn {
   const liveAsrActiveRef = useRef(false);
   const pendingChunksRef = useRef<Blob[]>([]);
   const liveAsrIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastAsrChunkIndexRef = useRef(0);
+  const lastAsrTextRef = useRef('');
+  const asrBusyRef = useRef(false);
+  const transcriptCacheRef = useRef<{ filePath: string; transcript: string; duration: number } | null>(null);
 
   const { setMeetingStatus, setMeetingDuration } = useAppStore();
 
-  // Detect ASR engine on mount
+  // Detect ASR engine on mount via IPC
   useEffect(() => {
-    meetingInvoke('meeting:transcribe', { filePath: '__check__' }).catch(() => {});
-    // We can't easily check whisper-cpp from renderer, so show based on Speech API
-    const sr = createSpeechRecognition();
-    if (sr) {
-      setAsrEngine('实时: Web Speech API | 精确: whisper-cpp / Groq');
-      sr.abort?.();
-    } else {
-      setAsrEngine('whisper-cpp / Groq Whisper (录后转写)');
-    }
+    meetingInvoke('meeting:check-asr-engines', {}).then((result: any) => {
+      if (!result?.engines) {
+        setAsrEngine('检测失败');
+        return;
+      }
+      const engines = result.engines as { name: string; available: boolean }[];
+      const qwen = engines.find(e => e.name === 'Qwen3-ASR');
+      const whisper = engines.find(e => e.name === 'whisper-cpp');
+      const groq = engines.find(e => e.name === 'Groq');
+
+      const parts: string[] = [];
+      // Real-time engine
+      if (qwen?.available) {
+        parts.push('实时: Qwen3-ASR 0.6B (本地)');
+      }
+      // Precise engine
+      const precise: string[] = [];
+      if (qwen?.available) precise.push('Qwen3-ASR');
+      if (whisper?.available) precise.push('whisper-cpp');
+      if (groq?.available) precise.push('Groq');
+      if (precise.length > 0) {
+        parts.push(`精确: ${precise.join(' / ')}`);
+      }
+      setAsrEngine(parts.join(' | ') || '无可用引擎');
+    }).catch(() => {
+      setAsrEngine('检测失败');
+    });
   }, []);
 
   // Sync status to appStore
   useEffect(() => {
-    const appStatus = (status === 'saving' || status === 'transcribing' || status === 'generating')
+    const appStatus = (status === 'saving' || status === 'transcribing' || status === 'generating' || status === 'transcribed')
       ? 'processing' as const
       : status === 'error'
         ? 'idle' as const
@@ -259,26 +283,54 @@ export function useMeetingRecorder(): UseMeetingRecorderReturn {
     try {
       const result = await meetingInvoke('meeting:live-asr-start', {});
       if (!result?.success) {
-        logger.info('Live ASR unavailable, falling back to Web Speech API');
-        startSpeechRecognition();
+        logger.info('Live ASR unavailable, trying Web Speech API fallback');
+        const sr = createSpeechRecognition();
+        if (sr) {
+          sr.abort?.();
+          startSpeechRecognition();
+        } else {
+          logger.warn('No real-time ASR available (Qwen3-ASR failed, Web Speech API unavailable)');
+          setAsrEngine(prev => prev.replace(/实时: .+?(\s*\||\s*$)/, '实时: 不可用$1'));
+        }
         return;
       }
 
       liveAsrActiveRef.current = true;
+      lastAsrChunkIndexRef.current = 0;
+      lastAsrTextRef.current = '';
+      setAsrEngine('实时: Qwen3-ASR 0.6B (转录中...)');
       logger.info('Live ASR (Qwen3) started');
 
       liveAsrIntervalRef.current = setInterval(async () => {
-        const chunks = pendingChunksRef.current;
-        if (chunks.length === 0) return;
-        pendingChunksRef.current = [];
+        // Prevent concurrent ASR requests
+        if (asrBusyRef.current) return;
+
+        // VAD: skip if no speech detected (read analyser directly to avoid stale closure)
+        if (analyserRef.current) {
+          const buf = new Uint8Array(analyserRef.current.frequencyBinCount);
+          analyserRef.current.getByteFrequencyData(buf);
+          let sum = 0;
+          for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+          const rms = Math.sqrt(sum / buf.length) / 255;
+          if (rms < 0.02) return;
+        }
+
+        const allChunks = chunksRef.current;
+        if (allChunks.length === 0 || allChunks.length === lastAsrChunkIndexRef.current) return;
+        lastAsrChunkIndexRef.current = allChunks.length;
+        asrBusyRef.current = true;
 
         try {
-          const blob = new Blob(chunks, { type: mimeTypeRef.current });
+          // Sliding window: header chunk (0) + last 5 chunks (~5s)
+          const WINDOW = 5;
+          const windowChunks = allChunks.length <= WINDOW + 1
+            ? [...allChunks]
+            : [allChunks[0], ...allChunks.slice(-WINDOW)];
+          const blob = new Blob(windowChunks, { type: mimeTypeRef.current });
           const audioBase64 = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => {
               const dataUrl = reader.result as string;
-              // Strip data URL prefix (e.g. "data:audio/webm;base64,")
               const base64 = dataUrl.split(',')[1] || '';
               resolve(base64);
             };
@@ -292,22 +344,32 @@ export function useMeetingRecorder(): UseMeetingRecorderReturn {
           });
 
           if (asrResult?.success && asrResult.text && asrResult.text.trim()) {
+            const text = asrResult.text.trim();
             const elapsed = elapsedBeforePauseRef.current +
               Math.floor((Date.now() - lastResumeTimeRef.current) / 1000);
             setLiveSegments(prev => [...prev, {
-              text: asrResult.text.trim(),
+              text,
               timestamp: elapsed,
               isFinal: true,
             }]);
           }
         } catch (err) {
           logger.warn('Live ASR chunk error:', err as Record<string, unknown>);
+        } finally {
+          asrBusyRef.current = false;
         }
-      }, 3000);
+      }, 1000);
 
     } catch (err) {
-      logger.info('Live ASR start failed, falling back to Web Speech API:', err as Record<string, unknown>);
-      startSpeechRecognition();
+      logger.info('Live ASR start failed, trying Web Speech API fallback:', err as Record<string, unknown>);
+      const sr = createSpeechRecognition();
+      if (sr) {
+        sr.abort?.();
+        startSpeechRecognition();
+      } else {
+        logger.warn('No real-time ASR available');
+        setAsrEngine(prev => prev.replace(/实时: .+?(\s*\||\s*$)/, '实时: 不可用$1'));
+      }
     }
   }, [startSpeechRecognition]);
 
@@ -377,21 +439,17 @@ export function useMeetingRecorder(): UseMeetingRecorderReturn {
         setAsrEngine(transcribeResult.engine);
       }
 
-      // Generate minutes
-      setStatus('generating');
-      logger.debug('Generating minutes');
-      const minutesResult = await meetingInvoke('meeting:generate-minutes', { transcript });
-      if (!minutesResult?.success) throw new Error(minutesResult?.error || '生成会议纪要失败');
-
+      // Save transcript result and pause — let user decide whether to generate minutes
+      transcriptCacheRef.current = { filePath, transcript, duration: recordingDuration };
       setResult({
         filePath,
         transcript,
-        minutes: minutesResult.minutes,
+        minutes: '',
         duration: recordingDuration,
-        model: minutesResult.model || 'unknown',
+        model: '',
       });
-      setStatus('done');
-      logger.info('Meeting processing complete');
+      setStatus('transcribed');
+      logger.info('Transcription complete, waiting for user action');
 
     } catch (err) {
       logger.error('Processing error:', err);
@@ -507,14 +565,31 @@ export function useMeetingRecorder(): UseMeetingRecorderReturn {
     }
     // Resume live ASR or speech recognition
     if (liveAsrActiveRef.current) {
-      // Restart the 3-second interval for live ASR
+      // Restart the 3-second interval for live ASR (same logic as startLiveAsr)
       liveAsrIntervalRef.current = setInterval(async () => {
-        const chunks = pendingChunksRef.current;
-        if (chunks.length === 0) return;
-        pendingChunksRef.current = [];
+        if (asrBusyRef.current) return;
+
+        if (analyserRef.current) {
+          const buf = new Uint8Array(analyserRef.current.frequencyBinCount);
+          analyserRef.current.getByteFrequencyData(buf);
+          let sum = 0;
+          for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+          const rms = Math.sqrt(sum / buf.length) / 255;
+          if (rms < 0.02) return;
+        }
+
+        const allChunks = chunksRef.current;
+        if (allChunks.length === 0 || allChunks.length === lastAsrChunkIndexRef.current) return;
+        lastAsrChunkIndexRef.current = allChunks.length;
+        asrBusyRef.current = true;
 
         try {
-          const blob = new Blob(chunks, { type: mimeTypeRef.current });
+          // Sliding window: header chunk (0) + last 5 chunks (~5s)
+          const WINDOW = 5;
+          const windowChunks = allChunks.length <= WINDOW + 1
+            ? [...allChunks]
+            : [allChunks[0], ...allChunks.slice(-WINDOW)];
+          const blob = new Blob(windowChunks, { type: mimeTypeRef.current });
           const audioBase64 = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => {
@@ -532,18 +607,21 @@ export function useMeetingRecorder(): UseMeetingRecorderReturn {
           });
 
           if (asrResult?.success && asrResult.text && asrResult.text.trim()) {
+            const text = asrResult.text.trim();
             const elapsed = elapsedBeforePauseRef.current +
               Math.floor((Date.now() - lastResumeTimeRef.current) / 1000);
             setLiveSegments(prev => [...prev, {
-              text: asrResult.text.trim(),
+              text,
               timestamp: elapsed,
               isFinal: true,
             }]);
           }
         } catch (err) {
           logger.warn('Live ASR chunk error:', err as Record<string, unknown>);
+        } finally {
+          asrBusyRef.current = false;
         }
-      }, 3000);
+      }, 1000);
     } else {
       startSpeechRecognition();
     }
@@ -560,6 +638,47 @@ export function useMeetingRecorder(): UseMeetingRecorderReturn {
     }
   }, [stopLiveAsr, stopSpeechRecognition]);
 
+  // User chooses to generate minutes after transcription
+  const generateMinutes = useCallback(async () => {
+    const cache = transcriptCacheRef.current;
+    if (!cache) return;
+
+    try {
+      setStatus('generating');
+      logger.debug('Generating minutes');
+      const minutesResult = await meetingInvoke('meeting:generate-minutes', { transcript: cache.transcript });
+      if (!minutesResult?.success) throw new Error(minutesResult?.error || '生成会议纪要失败');
+
+      setResult({
+        filePath: cache.filePath,
+        transcript: cache.transcript,
+        minutes: minutesResult.minutes,
+        duration: cache.duration,
+        model: minutesResult.model || 'unknown',
+      });
+      setStatus('done');
+    } catch (err) {
+      logger.error('Minutes generation error:', err);
+      setError(err instanceof Error ? err.message : '生成纪要失败');
+      setStatus('error');
+    }
+  }, []);
+
+  // User skips minutes generation, go directly to done with transcript only
+  const skipMinutes = useCallback(() => {
+    const cache = transcriptCacheRef.current;
+    if (!cache) return;
+
+    setResult({
+      filePath: cache.filePath,
+      transcript: cache.transcript,
+      minutes: '',
+      duration: cache.duration,
+      model: '仅转写',
+    });
+    setStatus('done');
+  }, []);
+
   const reset = useCallback(() => {
     cleanup();
     setStatus('idle');
@@ -574,6 +693,9 @@ export function useMeetingRecorder(): UseMeetingRecorderReturn {
     chunksRef.current = [];
     pendingChunksRef.current = [];
     isProcessingRef.current = false;
+    lastAsrChunkIndexRef.current = 0;
+    lastAsrTextRef.current = '';
+    transcriptCacheRef.current = null;
   }, [cleanup]);
 
   return {
@@ -590,6 +712,8 @@ export function useMeetingRecorder(): UseMeetingRecorderReturn {
     stopRecording,
     pauseRecording,
     resumeRecording,
+    generateMinutes,
+    skipMinutes,
     reset,
   };
 }

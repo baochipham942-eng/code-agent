@@ -541,6 +541,8 @@ export const MeetingRecorder: React.FC = () => {
     stopRecording,
     pauseRecording,
     resumeRecording,
+    generateMinutes,
+    skipMinutes,
     reset,
   } = useMeetingRecorder();
 
@@ -600,6 +602,44 @@ export const MeetingRecorder: React.FC = () => {
       {/* ── Processing ── */}
       {isProcessing && (
         <ProcessingView status={status} duration={duration} liveSegments={liveSegments} />
+      )}
+
+      {/* ── Transcribed: user chooses next step ── */}
+      {status === 'transcribed' && result && (
+        <div className="flex flex-col items-center justify-center flex-1 px-6 space-y-5">
+          <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+            <Check className="w-6 h-6 text-emerald-400" />
+          </div>
+          <div className="text-center">
+            <p className="text-[15px] text-zinc-200 font-medium mb-1">转写完成</p>
+            <p className="text-[12px] text-zinc-500">
+              时长 {formatDuration(Math.round(result.duration))} · {result.transcript.length} 字
+            </p>
+          </div>
+
+          {/* Preview snippet */}
+          <div className="w-full max-w-md rounded-lg bg-zinc-800/50 border border-zinc-700/40 p-4 max-h-32 overflow-y-auto">
+            <p className="text-[12px] text-zinc-400 leading-relaxed">
+              {result.transcript.slice(0, 300)}{result.transcript.length > 300 ? '...' : ''}
+            </p>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={skipMinutes}
+              className="px-6 py-2.5 text-[13px] bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700 border border-zinc-700/50 transition-colors"
+            >
+              仅保留转写
+            </button>
+            <button
+              onClick={generateMinutes}
+              className="px-6 py-2.5 text-[13px] bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition-colors flex items-center gap-1.5"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              生成会议纪要
+            </button>
+          </div>
+        </div>
       )}
 
       {/* ── Done ── */}

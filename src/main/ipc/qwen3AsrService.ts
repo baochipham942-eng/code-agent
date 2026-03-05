@@ -4,8 +4,21 @@
 
 import { spawn, ChildProcess } from 'child_process';
 import * as path from 'path';
+import * as fs from 'fs';
 import * as readline from 'readline';
 import { createLogger } from '../services/infra/logger';
+
+/** Resolve script path — works both in source (src/main/ipc/) and bundled (dist/main/) */
+function findScript(name: string): string {
+  const candidates = [
+    path.join(__dirname, '..', '..', 'scripts', name),       // dist/main/ → project root
+    path.join(__dirname, '..', '..', '..', 'scripts', name), // src/main/ipc/ → project root
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return candidates[0]; // fallback to first candidate
+}
 
 const logger = createLogger('Qwen3AsrService');
 
@@ -41,7 +54,7 @@ class Qwen3AsrService {
   }
 
   private async _start(): Promise<void> {
-    const scriptPath = path.join(__dirname, '..', '..', '..', 'scripts', 'qwen3-asr-inference.py');
+    const scriptPath = findScript('qwen3-asr-inference.py');
 
     return new Promise<void>((resolve, reject) => {
       const proc = spawn('python3', [scriptPath, '--serve'], {

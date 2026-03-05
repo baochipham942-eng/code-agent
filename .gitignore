@@ -62,3 +62,4 @@ env_output.txt
 test-summary.txt
 TODO_FIXME_Report.md
 scripts/__pycache__/
+.claude/test-results/

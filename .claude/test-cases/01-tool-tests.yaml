@@ -25,8 +25,8 @@ cases:
       response_contains:
         - package.json
     expectations:
-      - type: response_contains
-        description: "响应应包含 package.json 文件名"
+      - type: tool_output_contains
+        description: "工具输出应包含 package.json"
         weight: 1.0
         critical: true
         params:

@@ -802,6 +802,19 @@ async function evaluateExpectation(
         break;
       }
 
+      case 'tool_output_contains': {
+        const texts = Array.isArray(params.text) ? params.text as string[] : [params.text as string];
+        const toolFilter = params.tool as string | undefined;
+        const outputs = context.toolExecutions
+          .filter(te => !toolFilter || new RegExp(toolFilter).test(te.tool))
+          .map(te => te.output)
+          .join('\n');
+        passed = texts.every(t => outputs.includes(t));
+        actual = passed ? 'found in tool output' : outputs.substring(0, 200);
+        expected = `tool output contains ${JSON.stringify(texts)}`;
+        break;
+      }
+
       case 'custom_script': {
         const script = params.script as string;
         try {

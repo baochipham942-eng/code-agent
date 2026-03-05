@@ -4,12 +4,22 @@
 // Logs are transparent and returned to the agent for visibility
 // ============================================================================
 
-import { chromium, Browser, Page, BrowserContext } from 'playwright';
+import type { Browser, Page, BrowserContext } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
 import { app } from 'electron';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from './logger';
+
+// Lazy-load playwright to avoid hard dependency at module load time
+// (e.g., when bundled for test runner where playwright is not installed)
+let _playwright: typeof import('playwright') | null = null;
+async function getPlaywright() {
+  if (!_playwright) {
+    _playwright = await import('playwright');
+  }
+  return _playwright;
+}
 
 const serviceLogger = createLogger('BrowserService');
 
@@ -106,7 +116,8 @@ class BrowserService {
     }
 
     this.logger.log('INFO', 'Launching Chromium browser...');
-    this.browser = await chromium.launch({
+    const pw = await getPlaywright();
+    this.browser = await pw.chromium.launch({
       headless: false, // Show browser window for visual feedback
       args: [
         '--no-sandbox',

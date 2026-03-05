@@ -49,12 +49,30 @@ cases:
 
   - id: bash-pwd
     type: tool
+    category: basic_tool
+    difficulty: easy
     description: "bash 工具 - 显示当前路径"
     prompt: "显示当前工作目录的完整路径"
     reference_solution: "调用 bash 执行 pwd，输出当前工作目录的绝对路径"
     expect:
       response_contains:
         - /
+    expectations:
+      - type: response_contains
+        description: "响应应包含路径（含 /）"
+        weight: 1.0
+        critical: true
+        params:
+          text: "/"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 0.5
+        params: {}
+      - type: max_turns
+        description: "简单任务应在 5 轮内完成"
+        weight: 0.3
+        params:
+          max: 5
 
   - id: bash-echo
     type: tool
@@ -132,6 +150,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: edit-file-modify
     type: tool
+    category: basic_tool
+    difficulty: easy
     description: "edit_file 工具 - 修改现有文件"
     prompt: "先读取 test-edit-temp.txt，然后把 'OLD' 替换成 'NEW'"
     setup:
@@ -139,6 +159,34 @@ cases:
     expect:
       file_contains:
         test-edit-temp.txt: NEW
+    expectations:
+      - type: content_contains
+        description: "文件应包含替换后的 NEW"
+        weight: 1.0
+        critical: true
+        params:
+          path: test-edit-temp.txt
+          contains: "NEW"
+      - type: content_not_contains
+        description: "文件不应包含原始的 OLD"
+        weight: 0.8
+        params:
+          path: test-edit-temp.txt
+          not_contains: "OLD"
+      - type: tool_called
+        description: "应调用读取和编辑/写入工具"
+        weight: 0.5
+        params:
+          tool: read_file|edit_file|write_file|bash
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 0.5
+        params: {}
+      - type: max_turns
+        description: "应在 10 轮内完成"
+        weight: 0.3
+        params:
+          max: 10
     cleanup:
       - rm -f test-edit-temp.txt
 
@@ -157,9 +205,32 @@ cases:
   # --------------------------------------------------------------------------
   - id: grep-search
     type: tool
+    category: basic_tool
+    difficulty: easy
     description: "grep 工具 - 搜索代码"
     prompt: "在 src 目录中搜索包含 'import' 的文件"
     expect:
       min_tool_calls: 1
       response_contains:
         - import
+    expectations:
+      - type: tool_called
+        description: "应调用 grep 或 bash 工具进行搜索"
+        weight: 1.0
+        critical: true
+        params:
+          tool: grep|bash
+      - type: tool_output_contains
+        description: "搜索结果应包含文件路径"
+        weight: 0.8
+        params:
+          text: ".ts"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 0.5
+        params: {}
+      - type: max_turns
+        description: "应在 5 轮内完成"
+        weight: 0.3
+        params:
+          max: 5

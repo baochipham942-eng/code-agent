@@ -16,6 +16,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: task-create-js-file
     type: task
+    category: task_completion
+    difficulty: easy
     description: "创建简单 JavaScript 文件"
     prompt: "创建一个 hello-test.js 文件，包含一个打印 'Hello World' 的函数"
     expect:
@@ -25,6 +27,40 @@ cases:
         hello-test.js:
           - console.log
           - Hello
+    expectations:
+      - type: file_exists
+        description: "hello-test.js 文件应被创建"
+        weight: 1.0
+        critical: true
+        params:
+          path: hello-test.js
+      - type: content_contains
+        description: "文件应包含 console.log"
+        weight: 1.0
+        critical: true
+        params:
+          path: hello-test.js
+          contains: "console.log"
+      - type: content_contains
+        description: "文件应包含 Hello"
+        weight: 0.8
+        params:
+          path: hello-test.js
+          contains: "Hello"
+      - type: tool_called
+        description: "应调用写入工具"
+        weight: 0.5
+        params:
+          tool: write_file|bash
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 0.5
+        params: {}
+      - type: max_turns
+        description: "应在 10 轮内完成"
+        weight: 0.3
+        params:
+          max: 10
     cleanup:
       - rm -f hello-test.js
 

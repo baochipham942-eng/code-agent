@@ -75,6 +75,7 @@ function parseArgs() {
     provider: DEFAULT_PROVIDER,
     model: DEFAULT_MODEL,
     runs: 1,
+    timeout: 0,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -87,6 +88,7 @@ function parseArgs() {
       case '--provider': result.provider = args[++i]; break;
       case '--model': result.model = args[++i]; break;
       case '--runs': result.runs = parseInt(args[++i]) || 1; break;
+      case '--timeout': result.timeout = parseInt(args[++i]) || 0; break;
     }
   }
   return result;
@@ -121,6 +123,7 @@ async function main() {
     filterIds: args.ids,
     stopOnFailure: args.stopOnFailure,
     verbose: args.verbose,
+    ...(args.timeout > 0 ? { defaultTimeout: args.timeout } : {}),
   });
 
   try {

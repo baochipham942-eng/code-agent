@@ -68,17 +68,49 @@ cases:
   # --------------------------------------------------------------------------
   - id: error-recovery-retry
     type: error_handling
+    category: error_recovery
+    difficulty: hard
     description: "错误后继续执行"
     prompt: "先尝试读取 nonexistent.txt，如果失败就创建它并写入 'Created after error'"
     expect:
       no_crash: true
       files_created:
         - nonexistent.txt
+    expectations:
+      - type: no_crash
+        description: "遇到错误不应崩溃"
+        weight: 1.0
+        critical: true
+        params: {}
+      - type: error_handled
+        description: "应优雅处理文件不存在错误"
+        weight: 1.0
+        critical: true
+        params: {}
+      - type: file_exists
+        description: "应在错误后创建 nonexistent.txt"
+        weight: 1.0
+        critical: true
+        params:
+          path: nonexistent.txt
+      - type: content_contains
+        description: "创建的文件应包含指定内容"
+        weight: 0.8
+        params:
+          path: nonexistent.txt
+          contains: "Created after error"
+      - type: max_turns
+        description: "错误恢复任务应在 20 轮内完成"
+        weight: 0.3
+        params:
+          max: 20
     cleanup:
       - rm -f nonexistent.txt
 
   - id: error-graceful-fallback
     type: error_handling
+    category: error_recovery
+    difficulty: medium
     description: "优雅降级"
     prompt: "尝试读取 config.yaml，如果不存在就读取 package.json"
     expect:
@@ -86,6 +118,33 @@ cases:
       min_tool_calls: 1
       response_contains:
         - name
+    expectations:
+      - type: no_crash
+        description: "遇到错误不应崩溃"
+        weight: 1.0
+        critical: true
+        params: {}
+      - type: response_contains
+        description: "最终响应应包含 package.json 中的 name 字段"
+        weight: 1.0
+        critical: true
+        params:
+          text:
+            - name
+      - type: min_tool_calls
+        description: "应至少调用 1 个工具"
+        weight: 0.8
+        params:
+          min: 1
+      - type: error_handled
+        description: "应优雅处理 config.yaml 不存在的情况"
+        weight: 0.8
+        params: {}
+      - type: max_turns
+        description: "中等任务应在 15 轮内完成"
+        weight: 0.3
+        params:
+          max: 15
 
   # --------------------------------------------------------------------------
   # 超时处理

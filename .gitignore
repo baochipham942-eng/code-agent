@@ -57,3 +57,8 @@ ai-daily-*.md
 .env*.local
 
 CLAUDE.local.md
+env.txt
+env_output.txt
+test-summary.txt
+TODO_FIXME_Report.md
+scripts/__pycache__/

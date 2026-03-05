@@ -12,9 +12,20 @@
 //   npx tsx scripts/eval-ci.ts --trend            # show trend
 
 import chalk from 'chalk';
+import { execSync } from 'child_process';
 import { ChangeDetector } from '../src/main/testing/ci/changeDetector';
 import { BaselineManager } from '../src/main/testing/ci/baselineManager';
 import { TrendTracker } from '../src/main/testing/ci/trendTracker';
+import { generateDeltaConsole } from '../src/main/testing/ci/deltaReporter';
+import {
+  TestRunner,
+  createDefaultConfig,
+  MockAgentAdapter,
+  loadAllTestSuites,
+  generateConsoleReport,
+  saveReport,
+} from '../src/main/testing/index';
+import type { TestRunSummary, TrendDataPoint } from '../src/main/testing/types';
 
 // ---------------------------------------------------------------------------
 // Arg parsing
@@ -122,6 +133,68 @@ async function showTrend(tracker: TrendTracker) {
 }
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function getCommitSha(): string {
+  try {
+    return execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
+
+async function runEvals(workingDir: string, _scope: 'smoke' | 'full'): Promise<TestRunSummary> {
+  const config = createDefaultConfig(workingDir, {
+    verbose: false,
+  });
+
+  const mockAgent = new MockAgentAdapter();
+  mockAgent.setMockResponse('列出当前目录', {
+    responses: ['当前目录包含以下文件：package.json, src/, ...'],
+    toolExecutions: [
+      {
+        tool: 'bash',
+        input: { command: 'ls' },
+        output: 'package.json\nsrc\nnode_modules\n',
+        success: true,
+        duration: 50,
+        timestamp: Date.now(),
+      },
+    ],
+  });
+
+  const runner = new TestRunner(config, mockAgent);
+
+  runner.addEventListener((event) => {
+    switch (event.type) {
+      case 'case_end': {
+        const icon =
+          event.result.status === 'passed'
+            ? '✅'
+            : event.result.status === 'failed'
+            ? '❌'
+            : '⏭️';
+        console.log(
+          `  ${icon} ${event.result.testId.padEnd(30)} ${event.result.duration}ms`
+        );
+        break;
+      }
+      case 'suite_end':
+        console.log(generateConsoleReport(event.summary));
+        break;
+    }
+  });
+
+  const summary = await runner.runAll();
+
+  const savedFiles = await saveReport(summary, config.resultsDir);
+  console.log(chalk.dim(`  Reports saved to: ${savedFiles[0]}`));
+
+  return summary;
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -144,11 +217,17 @@ async function main() {
     return;
   }
 
-  // --promote (placeholder — requires a TestRunSummary from an actual eval run)
+  // --promote: run evals then promote results to baseline
   if (promote) {
-    console.log(chalk.yellow('  Promote requires a completed eval run.'));
-    console.log(chalk.dim('  Integration with TestRunner is Phase 3.'));
-    console.log(chalk.dim('  Once integrated: run evals first, then --promote to update baseline.'));
+    console.log(chalk.bold('  Running evals before promoting to baseline...'));
+    console.log('');
+    const summary = await runEvals(workingDir, 'full');
+    const commitSha = getCommitSha();
+    await manager.promote(summary, commitSha);
+    console.log(chalk.green(`  Baseline promoted (commit: ${commitSha.slice(0, 7)})`));
+    console.log(`  Pass rate: ${(summary.total > 0 ? (summary.passed / summary.total) * 100 : 0).toFixed(1)}%`);
+    console.log(`  Avg score: ${(summary.averageScore * 100).toFixed(1)}%`);
+    console.log('');
     return;
   }
 
@@ -182,18 +261,38 @@ async function main() {
     return;
   }
 
-  // Placeholder for actual eval execution (Phase 3)
-  console.log(chalk.yellow(`  Would run ${effectiveScope} eval suite...`));
-  console.log(chalk.dim('  TestRunner integration is Phase 3.'));
+  // Run evals
+  console.log(chalk.cyan(`  Running ${effectiveScope} eval suite...`));
+  console.log('');
+  const summary = await runEvals(workingDir, effectiveScope);
+
+  // Compare to baseline
+  const delta = await manager.compare(summary);
+  console.log(generateDeltaConsole(summary, delta));
+
+  // Track trend
+  const commitSha = getCommitSha();
+  const passRate = summary.total > 0 ? summary.passed / summary.total : 0;
+  const trendPoint: TrendDataPoint = {
+    timestamp: Date.now(),
+    commitSha,
+    scope: effectiveScope,
+    passRate,
+    averageScore: summary.averageScore,
+    totalCases: summary.total,
+    duration: summary.duration,
+    newFailures: delta.newFailures.length,
+    newPasses: delta.newPasses.length,
+  };
+  await tracker.append(trendPoint);
+  console.log(chalk.dim(`  Trend data recorded (commit: ${commitSha.slice(0, 7)})`));
   console.log('');
 
-  // Placeholder for compare-to-baseline step
-  console.log(chalk.dim('  After eval completes:'));
-  console.log(chalk.dim('    1. Compare results against baseline'));
-  console.log(chalk.dim('    2. Generate delta report'));
-  console.log(chalk.dim('    3. Append to trend data'));
-  console.log(chalk.dim('    4. Exit with non-zero code if regression detected'));
-  console.log('');
+  // Exit with non-zero if regression detected
+  if (delta.isRegression) {
+    console.log(chalk.red.bold('  Exiting with code 1 due to regression.'));
+    process.exit(1);
+  }
 }
 
 main().catch((err) => {

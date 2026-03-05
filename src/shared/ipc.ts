@@ -682,6 +682,17 @@ export const IPC_CHANNELS = {
   TELEMETRY_GET_SYSTEM_PROMPT: TELEMETRY_CHANNELS.GET_SYSTEM_PROMPT,
   TELEMETRY_DELETE_SESSION: TELEMETRY_CHANNELS.DELETE_SESSION,
   TELEMETRY_EVENT: TELEMETRY_CHANNELS.EVENT,
+
+  // Meeting ASR channels (语音识别引擎)
+  MEETING_CHECK_ASR_ENGINES: 'meeting:check-asr-engines',
+  MEETING_LIVE_ASR_START: 'meeting:live-asr-start',
+  MEETING_LIVE_ASR_STOP: 'meeting:live-asr-stop',
+  MEETING_LIVE_ASR_CHUNK: 'meeting:live-asr-chunk',
+
+  // VoicePaste channels (全局语音粘贴)
+  VOICE_PASTE_STATUS: 'voice-paste:status',
+  VOICE_PASTE_GET_STATUS: 'voice-paste:get-status',
+  VOICE_PASTE_TOGGLE: 'voice-paste:toggle',
 } as const;
 
 // ----------------------------------------------------------------------------
@@ -1001,6 +1012,11 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.TELEMETRY_GET_EVENTS]: (sessionId: string) => Promise<TelemetryTimelineEvent[]>;
   [IPC_CHANNELS.TELEMETRY_GET_SYSTEM_PROMPT]: (hash: string) => Promise<{ content: string; tokens: number | null; generationId: string | null } | null>;
   [IPC_CHANNELS.TELEMETRY_DELETE_SESSION]: (sessionId: string) => Promise<boolean>;
+
+  // Meeting Live ASR (实时语音识别)
+  [IPC_CHANNELS.MEETING_LIVE_ASR_START]: () => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.MEETING_LIVE_ASR_STOP]: () => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.MEETING_LIVE_ASR_CHUNK]: (payload: { audioBase64: string; mimeType: string }) => Promise<{ success: boolean; text?: string; duration?: number; error?: string }>;
 }
 
 // ----------------------------------------------------------------------------

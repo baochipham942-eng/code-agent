@@ -48,6 +48,7 @@ import { registerCronHandlers } from './cron.ipc';
 import { registerCaptureHandlers } from './capture.ipc';
 import { registerSuggestionsHandlers } from './suggestions.ipc';
 import { registerSoulHandlers } from './soul.ipc';
+import { registerVoicePasteHandlers } from './voicePaste.ipc';
 
 export * from './types';
 
@@ -196,6 +197,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
     const orchestrator = getOrchestrator();
     return (orchestrator as any)?.workingDirectory || process.cwd();
   });
+
+  // VoicePaste handlers (全局语音粘贴 Cmd+`)
+  registerVoicePasteHandlers(ipcMain);
 
   logger.info('All handlers registered');
 }

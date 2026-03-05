@@ -49,7 +49,7 @@ function getRelativeTime(timestamp: number): string {
 }
 
 export const Sidebar: React.FC = () => {
-  const { clearPlanningState, setShowSettings, setShowCapturePanel, showMeetingPanel, setShowMeetingPanel } = useAppStore();
+  const { clearPlanningState, setShowSettings, setShowCapturePanel, showMeetingPanel, setShowMeetingPanel, meetingStatus } = useAppStore();
   const {
     sessions,
     currentSessionId,
@@ -357,7 +357,7 @@ export const Sidebar: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
       {/* Header: New Chat + Multi-select + Filter */}
-      <div className="px-3 py-3 flex items-center justify-between">
+      <div className="px-3 py-3 flex items-center justify-between flex-shrink-0">
         {/* New Chat */}
         <button
           onClick={handleNewChat}
@@ -398,18 +398,6 @@ export const Sidebar: React.FC = () => {
           >
             <BookOpen className="w-3.5 h-3.5" />
           </button>
-          {/* Meeting Recorder */}
-          <button
-            onClick={() => setShowMeetingPanel(!showMeetingPanel)}
-            className={`p-1.5 transition-colors rounded-md ${
-              showMeetingPanel
-                ? 'text-red-400 bg-red-500/10'
-                : 'text-zinc-500 hover:text-orange-400 hover:bg-zinc-800/50'
-            }`}
-            title="会议记录"
-          >
-            <Mic className="w-3.5 h-3.5" />
-          </button>
           {/* Filter Dropdown */}
           <button
             onClick={cycleFilter}
@@ -422,7 +410,7 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* Session List - Grouped */}
-      <div className="flex-1 overflow-y-auto px-2">
+      <div className="flex-1 overflow-y-auto px-2 min-h-0">
         {isLoading && sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
@@ -478,8 +466,29 @@ export const Sidebar: React.FC = () => {
         </div>
       )}
 
+      {/* Meeting Recorder */}
+      <div className="px-3 pb-1 flex-shrink-0">
+        <button
+          onClick={() => setShowMeetingPanel(!showMeetingPanel)}
+          className={`flex items-center gap-2 px-3 py-2 w-full text-left text-sm rounded-md transition-colors ${
+            meetingStatus === 'recording'
+              ? 'text-red-400 bg-red-500/10'
+              : meetingStatus === 'paused'
+                ? 'text-orange-400 bg-orange-500/10'
+                : showMeetingPanel
+                  ? 'text-red-400 bg-red-500/10'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+          }`}
+        >
+          <Mic className={`w-4 h-4 ${meetingStatus === 'recording' ? 'animate-pulse' : ''}`} />
+          <span>
+            {meetingStatus === 'recording' ? '● 录音中' : meetingStatus === 'paused' ? '⏸ 已暂停' : '会议记录'}
+          </span>
+        </button>
+      </div>
+
       {/* Bottom: User Menu or Login */}
-      <div className="p-2 relative" ref={accountMenuRef}>
+      <div className="p-2 relative flex-shrink-0" ref={accountMenuRef}>
         {isAuthenticated && user ? (
           <>
             <button

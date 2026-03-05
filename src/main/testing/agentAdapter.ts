@@ -220,6 +220,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
   private workingDirectory: string;
   private generation: string;
+  private toolMode: 'all' | 'deferred';  
   private modelConfig: {
     provider: string;
     model: string;
@@ -234,10 +235,12 @@ export class StandaloneAgentAdapter implements AgentInterface {
       model: string;
       apiKey?: string;
     };
+    toolMode?: 'all' | 'deferred';
   }) {
     this.workingDirectory = config.workingDirectory;
     this.generation = config.generation;
     this.modelConfig = config.modelConfig;
+    this.toolMode = config.toolMode ?? 'deferred';
   }
 
   async sendMessage(prompt: string): Promise<{
@@ -296,6 +299,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
         toolExecutor,
         messages,
         enableHooks: false,
+        enableToolDeferredLoading: this.toolMode === 'deferred',
         autoApprovePlan: true,
         onEvent: (event) => {
           switch (event.type) {
@@ -334,6 +338,15 @@ export class StandaloneAgentAdapter implements AgentInterface {
           }
         },
       });
+
+      // Add user message to messages array before run() - 
+      // orchestrator does this but test adapter was missing it
+      messages.push({
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: prompt,
+        timestamp: Date.now(),
+      } as import('../../shared/types').Message);
 
       await loop.run(prompt);
 

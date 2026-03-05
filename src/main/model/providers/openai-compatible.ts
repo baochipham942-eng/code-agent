@@ -256,7 +256,9 @@ export async function callMinimax(
   onStream?: StreamCallback,
   signal?: AbortSignal
 ): Promise<ModelResponse> {
+  // 统一使用 api.minimax.chat + /chat/completions（Coding Plan 旧平台）
   const baseUrl = config.baseUrl || MODEL_API_ENDPOINTS.minimax;
+  const endpoint = '/chat/completions';
   const minimaxTools = convertToolsToOpenAI(tools);
   const useToolCalling = modelInfo?.supportsTool !== false;
   const convertedMessages = useToolCalling
@@ -284,11 +286,11 @@ export async function callMinimax(
       requestBody,
       onStream,
       signal,
-      endpoint: '/text/chatcompletion_v2',
+      endpoint,
     });
   }
 
-  const response = await electronFetch(`${baseUrl}/text/chatcompletion_v2`, {
+  const response = await electronFetch(`${baseUrl}${endpoint}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

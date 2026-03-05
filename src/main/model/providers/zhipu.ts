@@ -122,7 +122,7 @@ export async function callZhipu(
 ): Promise<ModelResponse> {
   logger.debug(`进入智谱调用, model=${config.model}, hasApiKey=${!!config.apiKey}, useCloudProxy=${config.useCloudProxy}`);
 
-  // GLM-4.7 等 Coding 套餐模型使用专用端点
+  // Coding 套餐模型使用专用端点（0ki）
   let baseUrl: string;
   if (modelInfo?.useCodingEndpoint && providerConfig.codingBaseUrl) {
     baseUrl = providerConfig.codingBaseUrl;

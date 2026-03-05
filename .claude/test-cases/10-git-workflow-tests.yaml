@@ -17,6 +17,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: git-status
     type: task
+    category: git_workflow
+    difficulty: easy
     description: "查看 Git 状态"
     setup:
       - "mkdir -p test-git-repo && cd test-git-repo && git init && echo 'hello' > file.txt && git add . && git commit -m 'init'"
@@ -24,6 +26,28 @@ cases:
     reference_solution: "调用 git status 展示当前仓库状态"
     expect:
       no_crash: true
+    expectations:
+      - type: tool_called
+        description: "应调用 bash 执行 git 命令"
+        weight: 1.0
+        critical: true
+        params:
+          tool: bash
+      - type: tool_output_contains
+        description: "git 输出应包含 branch 信息"
+        weight: 0.8
+        params:
+          text: "branch"
+          tool: bash
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 0.5
+        params: {}
+      - type: max_turns
+        description: "应在 5 轮内完成"
+        weight: 0.3
+        params:
+          max: 5
     cleanup:
       - rm -rf test-git-repo
 

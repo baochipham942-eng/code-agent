@@ -16,6 +16,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: error-file-not-found
     type: error_handling
+    category: error_handling
+    difficulty: easy
     description: "处理文件不存在错误"
     prompt: "读取 nonexistent-file-xyz-123.txt 文件并显示内容"
     expect:
@@ -24,6 +26,26 @@ cases:
       response_not_contains:
         - FATAL
         - crash
+    expectations:
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1.0
+        critical: true
+        params: {}
+      - type: response_not_contains
+        description: "不应输出 FATAL 或 crash"
+        weight: 0.8
+        params:
+          text: "FATAL"
+      - type: error_handled
+        description: "应优雅处理错误"
+        weight: 0.8
+        params: {}
+      - type: max_turns
+        description: "应在 5 轮内完成"
+        weight: 0.3
+        params:
+          max: 5
 
   - id: error-directory-not-found
     type: error_handling

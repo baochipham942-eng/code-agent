@@ -285,7 +285,8 @@ async function assertFileExpectations(
 function assertErrorHandling(
   expect: TestExpectations,
   toolExecutions: ToolExecutionRecord[],
-  errors: string[]
+  errors: string[],
+  responses: string[] = []
 ): AssertionFailure[] {
   const failures: AssertionFailure[] = [];
 
@@ -319,8 +320,18 @@ function assertErrorHandling(
       return false;
     });
 
-    if (!hasErrors && !recoveredAfterError) {
-      // No errors to handle - this might be OK
+    // Agent can also handle errors by acknowledging them in its response
+    const agentResponse = responses.join(' ');
+    const errorAcknowledged = hasErrors && agentResponse &&
+      /not found|doesn't exist|does not exist|不存在|无法找到|找不到|no such file|failed to|unable to|cannot|错误|出错/i.test(agentResponse);
+
+    if (hasErrors && !recoveredAfterError && !errorAcknowledged) {
+      failures.push({
+        assertion: 'error_handled',
+        expected: 'errors are handled gracefully',
+        actual: 'error not recovered or acknowledged',
+        message: 'Agent did not recover from errors or acknowledge them in response',
+      });
     }
   }
 
@@ -549,7 +560,7 @@ export async function runAssertions(
   failures.push(...await assertFileExpectations(expect, context.workingDirectory));
 
   // Error handling assertions
-  failures.push(...assertErrorHandling(expect, context.toolExecutions, context.errors));
+  failures.push(...assertErrorHandling(expect, context.toolExecutions, context.errors, context.responses));
 
   // Conversation assertions
   failures.push(...assertConversation(expect, context.responses, context.toolExecutions));
@@ -772,8 +783,14 @@ async function evaluateExpectation(
           }
           return false;
         });
-        passed = !hasErrors || recoveredAfterError;
-        actual = passed ? 'error handled gracefully' : 'error not recovered';
+        // Agent can also handle errors by acknowledging them in its response
+        const agentResponse = context.responses.join(' ');
+        const errorAcknowledged = hasErrors && agentResponse &&
+          /not found|doesn't exist|does not exist|不存在|无法找到|找不到|no such file|failed to|unable to|cannot|错误|出错/i.test(agentResponse);
+        passed = !hasErrors || recoveredAfterError || !!errorAcknowledged;
+        actual = passed
+          ? (recoveredAfterError ? 'recovered with subsequent action' : errorAcknowledged ? 'error acknowledged in response' : 'no errors')
+          : 'error not recovered or acknowledged';
         expected = 'errors are handled gracefully';
         break;
       }

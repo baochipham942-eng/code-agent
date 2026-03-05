@@ -37,6 +37,23 @@ cases:
       file_contains:
         test-calculator.ts:
           - "0"
+    expectations:
+      - type: content_contains
+        description: "文件 test-calculator.ts 应包含 '0'"
+        weight: 0.8
+        params:
+          path: "test-calculator.ts"
+          contains: "0"
+      - type: min_tool_calls
+        description: "至少应调用 3 次工具"
+        weight: 0.3
+        params:
+          min: 3
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-calculator.ts
 
@@ -75,6 +92,35 @@ cases:
         test-multifile/service.ts: "role"
       files_created:
         - test-multifile/utils.ts
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-multifile/utils.ts"
+        weight: 1
+        critical: true
+        params:
+          path: "test-multifile/utils.ts"
+      - type: content_contains
+        description: "文件 test-multifile/types.ts 应包含 'role'"
+        weight: 0.8
+        params:
+          path: "test-multifile/types.ts"
+          contains: "role"
+      - type: content_contains
+        description: "文件 test-multifile/service.ts 应包含 'role'"
+        weight: 0.8
+        params:
+          path: "test-multifile/service.ts"
+          contains: "role"
+      - type: min_tool_calls
+        description: "至少应调用 4 次工具"
+        weight: 0.3
+        params:
+          min: 4
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -rf test-multifile
 
@@ -93,6 +139,35 @@ cases:
         test-tools-doc.md:
           - bash
           - read
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-tools-doc.md"
+        weight: 1
+        critical: true
+        params:
+          path: "test-tools-doc.md"
+      - type: content_contains
+        description: "文件 test-tools-doc.md 应包含 'bash'"
+        weight: 0.8
+        params:
+          path: "test-tools-doc.md"
+          contains: "bash"
+      - type: content_contains
+        description: "文件 test-tools-doc.md 应包含 'read'"
+        weight: 0.8
+        params:
+          path: "test-tools-doc.md"
+          contains: "read"
+      - type: min_tool_calls
+        description: "至少应调用 3 次工具"
+        weight: 0.3
+        params:
+          min: 3
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-tools-doc.md
 
@@ -118,6 +193,53 @@ cases:
           - "test-app"
           - "1.0.0"
         test-scaffold/src/index.ts: "greet"
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-scaffold/package.json"
+        weight: 1
+        critical: true
+        params:
+          path: "test-scaffold/package.json"
+      - type: file_exists
+        description: "文件应存在: test-scaffold/src/index.ts"
+        weight: 1
+        critical: true
+        params:
+          path: "test-scaffold/src/index.ts"
+      - type: file_exists
+        description: "文件应存在: test-scaffold/tsconfig.json"
+        weight: 1
+        critical: true
+        params:
+          path: "test-scaffold/tsconfig.json"
+      - type: content_contains
+        description: "文件 test-scaffold/package.json 应包含 'test-app'"
+        weight: 0.8
+        params:
+          path: "test-scaffold/package.json"
+          contains: "test-app"
+      - type: content_contains
+        description: "文件 test-scaffold/package.json 应包含 '1.0.0'"
+        weight: 0.8
+        params:
+          path: "test-scaffold/package.json"
+          contains: "1.0.0"
+      - type: content_contains
+        description: "文件 test-scaffold/src/index.ts 应包含 'greet'"
+        weight: 0.8
+        params:
+          path: "test-scaffold/src/index.ts"
+          contains: "greet"
+      - type: min_tool_calls
+        description: "至少应调用 3 次工具"
+        weight: 0.3
+        params:
+          min: 3
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -rf test-scaffold
 
@@ -149,6 +271,23 @@ cases:
       file_contains:
         test-perf.ts:
           - "Set"
+    expectations:
+      - type: content_contains
+        description: "文件 test-perf.ts 应包含 'Set'"
+        weight: 0.8
+        params:
+          path: "test-perf.ts"
+          contains: "Set"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-perf.ts
     timeout: 120000

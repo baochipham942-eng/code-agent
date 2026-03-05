@@ -24,6 +24,23 @@ cases:
       files_created:
         - test-simple.pptx
       no_crash: true
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-simple.pptx"
+        weight: 1
+        critical: true
+        params:
+          path: "test-simple.pptx"
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-simple.pptx
     timeout: 300000
@@ -55,6 +72,23 @@ cases:
       files_created:
         - test-from-outline.pptx
       no_crash: true
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-from-outline.pptx"
+        weight: 1
+        critical: true
+        params:
+          path: "test-from-outline.pptx"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-outline.md test-from-outline.pptx
     timeout: 300000
@@ -98,6 +132,41 @@ cases:
           - "/users"
           - "GET"
           - "POST"
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-api-spec.json"
+        weight: 1
+        critical: true
+        params:
+          path: "test-api-spec.json"
+      - type: content_contains
+        description: "文件 test-api-spec.json 应包含 '/users'"
+        weight: 0.8
+        params:
+          path: "test-api-spec.json"
+          contains: "/users"
+      - type: content_contains
+        description: "文件 test-api-spec.json 应包含 'GET'"
+        weight: 0.8
+        params:
+          path: "test-api-spec.json"
+          contains: "GET"
+      - type: content_contains
+        description: "文件 test-api-spec.json 应包含 'POST'"
+        weight: 0.8
+        params:
+          path: "test-api-spec.json"
+          contains: "POST"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-api-doc.md test-api-spec.json
 
@@ -127,5 +196,28 @@ cases:
         test-trend-report.md:
           - "v0.16"
       no_crash: true
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-trend-report.md"
+        weight: 1
+        critical: true
+        params:
+          path: "test-trend-report.md"
+      - type: content_contains
+        description: "文件 test-trend-report.md 应包含 'v0.16'"
+        weight: 0.8
+        params:
+          path: "test-trend-report.md"
+          contains: "v0.16"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-metrics.csv test-trend-report.md

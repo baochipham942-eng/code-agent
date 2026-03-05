@@ -27,6 +27,29 @@ cases:
         test-debug-syntax.js:
           - "function add(a, b)"
           - "return a + b"
+    expectations:
+      - type: content_contains
+        description: "文件 test-debug-syntax.js 应包含 'function add(a, b)'"
+        weight: 0.8
+        params:
+          path: "test-debug-syntax.js"
+          contains: "function add(a, b)"
+      - type: content_contains
+        description: "文件 test-debug-syntax.js 应包含 'return a + b'"
+        weight: 0.8
+        params:
+          path: "test-debug-syntax.js"
+          contains: "return a + b"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-debug-syntax.js
 
@@ -48,6 +71,23 @@ cases:
       min_tool_calls: 2
       file_contains:
         test-debug-logic.py: "len(items) - 1"
+    expectations:
+      - type: content_contains
+        description: "文件 test-debug-logic.py 应包含 'len(items) - 1'"
+        weight: 0.8
+        params:
+          path: "test-debug-logic.py"
+          contains: "len(items) - 1"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-debug-logic.py
 
@@ -71,6 +111,23 @@ cases:
       file_contains:
         test-debug-runtime.js:
           - "null"
+    expectations:
+      - type: content_contains
+        description: "文件 test-debug-runtime.js 应包含 'null'"
+        weight: 0.8
+        params:
+          path: "test-debug-runtime.js"
+          contains: "null"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-debug-runtime.js
 
@@ -88,6 +145,30 @@ cases:
         test-fibonacci.py:
           - "def"
           - "fibonacci"
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-fibonacci.py"
+        weight: 1
+        critical: true
+        params:
+          path: "test-fibonacci.py"
+      - type: content_contains
+        description: "文件 test-fibonacci.py 应包含 'def'"
+        weight: 0.8
+        params:
+          path: "test-fibonacci.py"
+          contains: "def"
+      - type: content_contains
+        description: "文件 test-fibonacci.py 应包含 'fibonacci'"
+        weight: 0.8
+        params:
+          path: "test-fibonacci.py"
+          contains: "fibonacci"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-fibonacci.py
 
@@ -103,6 +184,36 @@ cases:
           - "Stack"
           - "push"
           - "pop"
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-stack.ts"
+        weight: 1
+        critical: true
+        params:
+          path: "test-stack.ts"
+      - type: content_contains
+        description: "文件 test-stack.ts 应包含 'Stack'"
+        weight: 0.8
+        params:
+          path: "test-stack.ts"
+          contains: "Stack"
+      - type: content_contains
+        description: "文件 test-stack.ts 应包含 'push'"
+        weight: 0.8
+        params:
+          path: "test-stack.ts"
+          contains: "push"
+      - type: content_contains
+        description: "文件 test-stack.ts 应包含 'pop'"
+        weight: 0.8
+        params:
+          path: "test-stack.ts"
+          contains: "pop"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-stack.ts
 
@@ -136,6 +247,23 @@ cases:
       file_contains:
         test-refactor.ts:
           - "calculateDiscount"
+    expectations:
+      - type: content_contains
+        description: "文件 test-refactor.ts 应包含 'calculateDiscount'"
+        weight: 0.8
+        params:
+          path: "test-refactor.ts"
+          contains: "calculateDiscount"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-refactor.ts
 
@@ -159,6 +287,22 @@ cases:
       min_tool_calls: 2
       response_not_contains:
         - "function calc(d"
+    expectations:
+      - type: response_not_contains
+        description: "响应不应包含 'function calc(d'"
+        weight: 0.8
+        params:
+          text: "function calc(d"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-rename.ts
 
@@ -190,5 +334,34 @@ cases:
         test-target.test.ts:
           - "parseVersion"
           - "test"
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-target.test.ts"
+        weight: 1
+        critical: true
+        params:
+          path: "test-target.test.ts"
+      - type: content_contains
+        description: "文件 test-target.test.ts 应包含 'parseVersion'"
+        weight: 0.8
+        params:
+          path: "test-target.test.ts"
+          contains: "parseVersion"
+      - type: content_contains
+        description: "文件 test-target.test.ts 应包含 'test'"
+        weight: 0.8
+        params:
+          path: "test-target.test.ts"
+          contains: "test"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-target.ts test-target.test.ts

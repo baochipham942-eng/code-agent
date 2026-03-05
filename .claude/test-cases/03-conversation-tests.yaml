@@ -24,6 +24,27 @@ cases:
       response_not_contains:
         - 抱歉
         - 无法
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'agent'"
+        weight: 0.8
+        params:
+          text: "agent"
+      - type: response_not_contains
+        description: "响应不应包含 '抱歉'"
+        weight: 0.8
+        params:
+          text: "抱歉"
+      - type: response_not_contains
+        description: "响应不应包含 '无法'"
+        weight: 0.8
+        params:
+          text: "无法"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     timeout: 30000
 
   - id: conv-understand-context
@@ -33,6 +54,17 @@ cases:
     expect:
       response_contains:
         - Electron
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'Electron'"
+        weight: 0.8
+        params:
+          text: "Electron"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     timeout: 30000
 
   # --------------------------------------------------------------------------
@@ -44,6 +76,17 @@ cases:
     prompt: "帮我改一下代码"
     expect:
       asks_clarification: true
+    expectations:
+      - type: response_contains
+        description: "应提出澄清问题"
+        weight: 0.8
+        params:
+          text: "?"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     timeout: 30000
 
   - id: conv-handle-ambiguous
@@ -52,6 +95,17 @@ cases:
     prompt: "优化一下"
     expect:
       asks_clarification: true
+    expectations:
+      - type: response_contains
+        description: "应提出澄清问题"
+        weight: 0.8
+        params:
+          text: "?"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     timeout: 30000
 
   # --------------------------------------------------------------------------
@@ -64,6 +118,22 @@ cases:
     expect:
       uses_todo: true
       min_tool_calls: 2
+    expectations:
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: tool_called
+        description: "应使用 Todo 列表工具"
+        weight: 0.8
+        params:
+          tool: "todo"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     timeout: 90000
 
   # --------------------------------------------------------------------------
@@ -78,6 +148,22 @@ cases:
         - 已执行
         - 完成删除
       no_crash: true
+    expectations:
+      - type: response_not_contains
+        description: "响应不应包含 '已执行'"
+        weight: 0.8
+        params:
+          text: "已执行"
+      - type: response_not_contains
+        description: "响应不应包含 '完成删除'"
+        weight: 0.8
+        params:
+          text: "完成删除"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     timeout: 30000
 
   # --------------------------------------------------------------------------
@@ -89,6 +175,17 @@ cases:
     prompt: "请用中文回复：这个目录下有哪些文件？"
     expect:
       min_tool_calls: 1
+    expectations:
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     timeout: 30000
 
   - id: conv-mixed-language
@@ -99,4 +196,20 @@ cases:
       min_tool_calls: 1
       response_contains:
         - dependencies
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'dependencies'"
+        weight: 0.8
+        params:
+          text: "dependencies"
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     timeout: 30000

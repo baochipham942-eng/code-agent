@@ -28,6 +28,22 @@ cases:
         - version
       no_crash: true
 
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'version'"
+        weight: 0.8
+        params:
+          text: "version"
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: multi-turn-pronoun-resolution
     type: conversation
     description: "指代消解 - 理解'它'、'那个'指什么"
@@ -41,6 +57,17 @@ cases:
   # --------------------------------------------------------------------------
   # L3: 渐进式任务
   # --------------------------------------------------------------------------
+    expectations:
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: multi-turn-incremental-task
     type: task
     description: "分步完成任务"
@@ -56,6 +83,30 @@ cases:
           - "add"
           - "multiply"
       no_crash: true
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-multi-step.ts"
+        weight: 1
+        critical: true
+        params:
+          path: "test-multi-step.ts"
+      - type: content_contains
+        description: "文件 test-multi-step.ts 应包含 'add'"
+        weight: 0.8
+        params:
+          path: "test-multi-step.ts"
+          contains: "add"
+      - type: content_contains
+        description: "文件 test-multi-step.ts 应包含 'multiply'"
+        weight: 0.8
+        params:
+          path: "test-multi-step.ts"
+          contains: "multiply"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-multi-step.ts
 
@@ -72,6 +123,24 @@ cases:
         test-greeting.ts:
           - "你好"
       no_crash: true
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-greeting.ts"
+        weight: 1
+        critical: true
+        params:
+          path: "test-greeting.ts"
+      - type: content_contains
+        description: "文件 test-greeting.ts 应包含 '你好'"
+        weight: 0.8
+        params:
+          path: "test-greeting.ts"
+          contains: "你好"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-greeting.ts
 
@@ -91,6 +160,22 @@ cases:
         - tools
       no_crash: true
 
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'tools'"
+        weight: 0.8
+        params:
+          text: "tools"
+      - type: min_tool_calls
+        description: "至少应调用 3 次工具"
+        weight: 0.3
+        params:
+          min: 3
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: multi-turn-build-on-previous
     type: task
     description: "基于前轮结果继续"
@@ -113,6 +198,23 @@ cases:
         test-scores.csv:
           - "100"
       no_crash: true
+    expectations:
+      - type: content_contains
+        description: "文件 test-scores.csv 应包含 '100'"
+        weight: 0.8
+        params:
+          path: "test-scores.csv"
+          contains: "100"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-scores.csv
 
@@ -129,6 +231,17 @@ cases:
       min_tool_calls: 2
       no_crash: true
 
+    expectations:
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: multi-turn-add-constraint
     type: task
     description: "追加约束条件"
@@ -143,5 +256,29 @@ cases:
           - "3000"
           - "localhost"
       no_crash: true
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-config.json"
+        weight: 1
+        critical: true
+        params:
+          path: "test-config.json"
+      - type: content_contains
+        description: "文件 test-config.json 应包含 '3000'"
+        weight: 0.8
+        params:
+          path: "test-config.json"
+          contains: "3000"
+      - type: content_contains
+        description: "文件 test-config.json 应包含 'localhost'"
+        weight: 0.8
+        params:
+          path: "test-config.json"
+          contains: "localhost"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-config.json

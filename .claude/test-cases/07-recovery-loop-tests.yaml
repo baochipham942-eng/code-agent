@@ -24,6 +24,22 @@ cases:
         - name
         - version
 
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'name'"
+        weight: 0.8
+        params:
+          text: "name"
+      - type: response_contains
+        description: "响应应包含 'version'"
+        weight: 0.8
+        params:
+          text: "version"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: recovery-path-fallback
     type: task
     description: "路径不存在时自动寻找替代"
@@ -37,6 +53,22 @@ cases:
   # --------------------------------------------------------------------------
   # L2: 写入失败恢复
   # --------------------------------------------------------------------------
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'name'"
+        weight: 0.8
+        params:
+          text: "name"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: recovery-write-readonly
     type: task
     description: "写入只读文件时切换策略"
@@ -45,6 +77,12 @@ cases:
     prompt: "在 test-readonly.txt 中追加一行 'new content'。如果写不了，创建 test-readonly-copy.txt 替代"
     expect:
       no_crash: true
+    expectations:
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-readonly.txt test-readonly-copy.txt
 
@@ -65,6 +103,24 @@ cases:
         - test-summary.txt
       file_contains:
         test-summary.txt: version
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-summary.txt"
+        weight: 1
+        critical: true
+        params:
+          path: "test-summary.txt"
+      - type: content_contains
+        description: "文件 test-summary.txt 应包含 'version'"
+        weight: 0.8
+        params:
+          path: "test-summary.txt"
+          contains: "version"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-summary.txt
 
@@ -81,6 +137,22 @@ cases:
   # --------------------------------------------------------------------------
   # L3: 创造性恢复
   # --------------------------------------------------------------------------
+    expectations:
+      - type: response_contains
+        description: "响应应包含 '行'"
+        weight: 0.8
+        params:
+          text: "行"
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: recovery-missing-dependency
     type: task
     description: "缺少依赖时调整策略"
@@ -97,6 +169,22 @@ cases:
       min_tool_calls: 1
       response_contains:
         - zod
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'zod'"
+        weight: 0.8
+        params:
+          text: "zod"
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-dep-check.ts
 
@@ -112,6 +200,16 @@ cases:
     expect:
       no_crash: true
       error_handled: true
+    expectations:
+      - type: error_handled
+        description: "应优雅处理错误"
+        weight: 0.8
+        params: {}
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-empty-file.txt
 
@@ -121,3 +219,10 @@ cases:
     prompt: "读取 node_modules/.package-lock.json 文件。如果是二进制或太大，告诉我文件类型和大小即可"
     expect:
       no_crash: true
+
+    expectations:
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}

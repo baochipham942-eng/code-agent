@@ -62,6 +62,22 @@ cases:
       response_contains:
         - commit
       no_crash: true
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'commit'"
+        weight: 0.8
+        params:
+          text: "commit"
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -rf test-git-repo
 
@@ -92,6 +108,22 @@ cases:
       response_contains:
         - name
       no_crash: true
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'name'"
+        weight: 0.8
+        params:
+          text: "name"
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -rf test-git-repo
 
@@ -108,6 +140,17 @@ cases:
     expect:
       min_tool_calls: 1
       no_crash: true
+    expectations:
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -rf test-git-repo
 
@@ -123,6 +166,17 @@ cases:
     expect:
       min_tool_calls: 3
       no_crash: true
+    expectations:
+      - type: min_tool_calls
+        description: "至少应调用 3 次工具"
+        weight: 0.3
+        params:
+          min: 3
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -rf test-git-repo
 
@@ -141,5 +195,16 @@ cases:
     expect:
       min_tool_calls: 1
       no_crash: true
+    expectations:
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -rf test-git-repo

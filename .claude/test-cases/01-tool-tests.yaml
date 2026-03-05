@@ -86,6 +86,17 @@ cases:
   # --------------------------------------------------------------------------
   # 文件读取测试
   # --------------------------------------------------------------------------
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'Hello Test'"
+        weight: 0.8
+        params:
+          text: "Hello Test"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: read-file-exists
     type: tool
     description: "read_file 工具 - 读取存在的文件"
@@ -96,6 +107,22 @@ cases:
         - name
         - version
 
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'name'"
+        weight: 0.8
+        params:
+          text: "name"
+      - type: response_contains
+        description: "响应应包含 'version'"
+        weight: 0.8
+        params:
+          text: "version"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: read-file-not-exists
     type: error_handling
     description: "read_file 工具 - 读取不存在的文件"
@@ -108,6 +135,16 @@ cases:
   # --------------------------------------------------------------------------
   # 文件写入测试
   # --------------------------------------------------------------------------
+    expectations:
+      - type: error_handled
+        description: "应优雅处理错误"
+        weight: 0.8
+        params: {}
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: write-file-new
     type: tool
     category: basic_tool
@@ -203,6 +240,17 @@ cases:
   # --------------------------------------------------------------------------
   # Grep 工具测试
   # --------------------------------------------------------------------------
+    expectations:
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: grep-search
     type: tool
     category: basic_tool

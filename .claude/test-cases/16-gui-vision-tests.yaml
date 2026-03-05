@@ -54,6 +54,17 @@ cases:
     expect:
       min_tool_calls: 1
       no_crash: true
+    expectations:
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-analyze.png
 
@@ -63,6 +74,12 @@ cases:
     prompt: "截取当前屏幕的截图，保存到 test-screenshot.png"
     expect:
       no_crash: true
+    expectations:
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-screenshot.png
     timeout: 60000
@@ -106,6 +123,17 @@ cases:
     expect:
       min_tool_calls: 1
       no_crash: true
+    expectations:
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -rf test-images
 
@@ -125,5 +153,35 @@ cases:
           - "<input"
           - "button"
       no_crash: true
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-ui.html"
+        weight: 1
+        critical: true
+        params:
+          path: "test-ui.html"
+      - type: content_contains
+        description: "文件 test-ui.html 应包含 'Code Agent'"
+        weight: 0.8
+        params:
+          path: "test-ui.html"
+          contains: "Code Agent"
+      - type: content_contains
+        description: "文件 test-ui.html 应包含 '<input'"
+        weight: 0.8
+        params:
+          path: "test-ui.html"
+          contains: "<input"
+      - type: content_contains
+        description: "文件 test-ui.html 应包含 'button'"
+        weight: 0.8
+        params:
+          path: "test-ui.html"
+          contains: "button"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-ui.html

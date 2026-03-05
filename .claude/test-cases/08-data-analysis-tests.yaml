@@ -35,6 +35,22 @@ cases:
       response_contains:
         - Widget
       no_crash: true
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'Widget'"
+        weight: 0.8
+        params:
+          text: "Widget"
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-sales.csv
 
@@ -62,6 +78,35 @@ cases:
         test-dept-summary.csv:
           - Engineering
           - Marketing
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-dept-summary.csv"
+        weight: 1
+        critical: true
+        params:
+          path: "test-dept-summary.csv"
+      - type: content_contains
+        description: "文件 test-dept-summary.csv 应包含 'Engineering'"
+        weight: 0.8
+        params:
+          path: "test-dept-summary.csv"
+          contains: "Engineering"
+      - type: content_contains
+        description: "文件 test-dept-summary.csv 应包含 'Marketing'"
+        weight: 0.8
+        params:
+          path: "test-dept-summary.csv"
+          contains: "Marketing"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-employees.csv test-dept-summary.csv
 
@@ -89,6 +134,35 @@ cases:
         test-active-users.json:
           - John Doe
           - Bob Wilson
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-active-users.json"
+        weight: 1
+        critical: true
+        params:
+          path: "test-active-users.json"
+      - type: content_contains
+        description: "文件 test-active-users.json 应包含 'John Doe'"
+        weight: 0.8
+        params:
+          path: "test-active-users.json"
+          contains: "John Doe"
+      - type: content_contains
+        description: "文件 test-active-users.json 应包含 'Bob Wilson'"
+        weight: 0.8
+        params:
+          path: "test-active-users.json"
+          contains: "Bob Wilson"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-users.json test-active-users.json
 
@@ -115,5 +189,22 @@ cases:
       files_created:
         - test-clean-data.csv
       no_crash: true
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-clean-data.csv"
+        weight: 1
+        critical: true
+        params:
+          path: "test-clean-data.csv"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-dirty-data.csv test-clean-data.csv

@@ -14,6 +14,7 @@
 //   --generation <gen>      Generation to test (default: from constants)
 //   --provider <provider>   Model provider (default: from constants)
 //   --model <model>         Model name (default: from constants)
+//   --runs <N>              Run each case N times (statistical mode, default: 1)
 //   --real                  Use real Agent (calls LLM API + executes tools)
 //   --help                  Show help
 //
@@ -38,6 +39,7 @@ function parseArgs(): {
   generation: string;
   provider: string;
   model: string;
+  runs: number;
   real: boolean;
   help: boolean;
 } {
@@ -50,6 +52,7 @@ function parseArgs(): {
     generation: DEFAULT_GENERATION,
     provider: DEFAULT_PROVIDER,
     model: DEFAULT_MODEL,
+    runs: 1,
     real: false,
     help: false,
   };
@@ -77,6 +80,9 @@ function parseArgs(): {
         break;
       case '--model':
         result.model = args[++i];
+        break;
+      case '--runs':
+        result.runs = parseInt(args[++i], 10) || 1;
         break;
       case '--real':
         result.real = true;
@@ -106,6 +112,7 @@ Options:
   --generation <gen>      Generation to test (default: ${DEFAULT_GENERATION})
   --provider <provider>   Model provider (default: ${DEFAULT_PROVIDER})
   --model <model>         Model name (default: ${DEFAULT_MODEL})
+  --runs <N>              Run each case N times (statistical mode, default: 1)
   --real                  Use real Agent (calls LLM API + executes tools)
   --help, -h              Show this help
 
@@ -136,6 +143,9 @@ Examples:
 
   # Use a different provider
   npx tsx scripts/run-auto-tests.ts --real --provider deepseek --model deepseek-chat
+
+  # Statistical mode: run each case 3 times
+  npx tsx scripts/run-auto-tests.ts --runs 3 -v
 `);
 }
 
@@ -207,6 +217,7 @@ async function main(): Promise<void> {
   console.log(`  Generation: ${args.generation}`);
   console.log(`  Provider:   ${args.provider}`);
   console.log(`  Model:      ${args.model}`);
+  console.log(`  Runs:       ${args.runs}${args.runs > 1 ? ' (statistical mode)' : ''}`);
   console.log(`  Tags:       ${args.tags?.join(', ') || '(all)'}`);
   console.log(`  IDs:        ${args.ids?.join(', ') || '(all)'}`);
   console.log('');
@@ -283,48 +294,108 @@ async function main(): Promise<void> {
 
     console.log('🧩 Using mock Agent (no API calls)\n');
 
-    const runner = new testing.TestRunner(config, mockAgent);
+    if (args.runs > 1) {
+      // Statistical mode: run each case N times
+      console.log(`📊 Statistical mode: running each case ${args.runs} times\n`);
+      const statsRunner = new testing.StatisticalRunner(config, mockAgent, { runs: args.runs });
+      const statsSummary = await statsRunner.runAll();
 
-    runner.addEventListener((event) => {
-      switch (event.type) {
-        case 'suite_start':
-          console.log(`\n🧪 Starting tests (${event.totalCases} cases)\n`);
-          break;
-        case 'case_start':
-          if (args.verbose) {
-            console.log(`  ▶️  ${event.testId}: ${event.description}`);
-          }
-          break;
-        case 'case_end': {
-          const icon =
-            event.result.status === 'passed'
-              ? '✅'
-              : event.result.status === 'failed'
-              ? '❌'
-              : '⏭️';
-          console.log(
-            `  ${icon} ${event.result.testId.padEnd(30)} ${event.result.duration}ms`
-          );
-          if (event.result.failureReason && args.verbose) {
-            console.log(`     └─ ${event.result.failureReason}`);
-          }
-          break;
+      // Print statistical report
+      const agg = statsSummary.aggregate;
+      console.log('');
+      console.log('═══════════════════════════════════════════════════════');
+      console.log('           Statistical Summary                         ');
+      console.log('═══════════════════════════════════════════════════════');
+      console.log(`  Total Cases:     ${agg.totalCases}`);
+      console.log(`  Total Runs:      ${agg.totalRuns}`);
+      console.log(`  pass@1:          ${(agg.overallPassAt1 * 100).toFixed(1)}%`);
+      console.log(`  pass@k:          ${(agg.overallPassAtK * 100).toFixed(1)}%`);
+      console.log(`  pass^k:          ${(agg.overallPassCaretK * 100).toFixed(1)}%`);
+      console.log(`  Mean Score:      ${(agg.meanScore * 100).toFixed(1)}%`);
+      console.log(`  Score Stddev:    ${(agg.scoreStddev * 100).toFixed(1)}%`);
+      console.log('');
+
+      if (agg.flakyCases.length > 0) {
+        console.log(`  Flaky Cases (${agg.flakyCases.length}):`);
+        for (const id of agg.flakyCases) {
+          console.log(`    ⚠️  ${id}`);
         }
-        case 'suite_end':
-          console.log(testing.generateConsoleReport(event.summary));
-          break;
+        console.log('');
       }
-    });
 
-    const summary = await runner.runAll();
+      if (agg.stableCases.length > 0) {
+        console.log(`  Stable Cases (${agg.stableCases.length}):`);
+        for (const id of agg.stableCases) {
+          console.log(`    ✅ ${id}`);
+        }
+        console.log('');
+      }
 
-    const savedFiles = await testing.saveReport(summary, config.resultsDir);
-    console.log(`\n📄 Reports saved:`);
-    for (const file of savedFiles) {
-      console.log(`   ${file}`);
+      // Per-case detail
+      if (args.verbose) {
+        console.log('───────────────────────────────────────────────────────');
+        console.log('  Per-Case Detail');
+        console.log('───────────────────────────────────────────────────────');
+        for (const cr of statsSummary.caseResults) {
+          const flakyTag = cr.isFlaky ? ' [FLAKY]' : '';
+          console.log(`  ${cr.testId}${flakyTag}`);
+          console.log(`    pass@1=${(cr.passAt1 * 100).toFixed(0)}%  pass@k=${(cr.passAtK * 100).toFixed(0)}%  pass^k=${(cr.passCaretK * 100).toFixed(0)}%`);
+          console.log(`    score: mean=${(cr.scoreStats.mean * 100).toFixed(0)}% stddev=${(cr.scoreStats.stddev * 100).toFixed(0)}% [${(cr.scoreStats.min * 100).toFixed(0)}%-${(cr.scoreStats.max * 100).toFixed(0)}%]`);
+          console.log(`    status: passed=${cr.statusDistribution.passed} failed=${cr.statusDistribution.failed} partial=${cr.statusDistribution.partial} skipped=${cr.statusDistribution.skipped}`);
+          console.log(`    avg duration: ${cr.avgDuration.toFixed(0)}ms`);
+          console.log('');
+        }
+      }
+
+      console.log('═══════════════════════════════════════════════════════');
+      process.exit(agg.overallPassAt1 < 0.5 ? 1 : 0);
+
+    } else {
+      // Single-run mode (original behavior)
+      const runner = new testing.TestRunner(config, mockAgent);
+
+      runner.addEventListener((event) => {
+        switch (event.type) {
+          case 'suite_start':
+            console.log(`\n🧪 Starting tests (${event.totalCases} cases)\n`);
+            break;
+          case 'case_start':
+            if (args.verbose) {
+              console.log(`  ▶️  ${event.testId}: ${event.description}`);
+            }
+            break;
+          case 'case_end': {
+            const icon =
+              event.result.status === 'passed'
+                ? '✅'
+                : event.result.status === 'failed'
+                ? '❌'
+                : '⏭️';
+            console.log(
+              `  ${icon} ${event.result.testId.padEnd(30)} ${event.result.duration}ms`
+            );
+            if (event.result.failureReason && args.verbose) {
+              console.log(`     └─ ${event.result.failureReason}`);
+            }
+            break;
+          }
+          case 'suite_end':
+            console.log(testing.generateConsoleReport(event.summary));
+            break;
+        }
+      });
+
+      const summary = await runner.runAll();
+
+      const savedFiles = await testing.saveReport(summary, config.resultsDir);
+      console.log(`\n📄 Reports saved:`);
+      for (const file of savedFiles) {
+        console.log(`   ${file}`);
+      }
+
+      process.exit(summary.failed > 0 ? 1 : 0);
     }
 
-    process.exit(summary.failed > 0 ? 1 : 0);
 
   } catch (error: any) {
     console.error('\n❌ Test runner failed:', error.message);

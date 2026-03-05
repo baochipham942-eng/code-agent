@@ -48,6 +48,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: task-multi-step-readme
     type: task
+    category: task_completion
+    difficulty: medium
     description: "多步骤 - 读取项目信息并生成说明"
     prompt: "读取 package.json，然后创建一个 test-readme.md 文件，包含项目名称和描述"
     expect:
@@ -56,6 +58,34 @@ cases:
         - test-readme.md
       file_contains:
         test-readme.md: code-agent
+    expectations:
+      - type: file_exists
+        description: "test-readme.md 文件应被创建"
+        weight: 1.0
+        critical: true
+        params:
+          path: test-readme.md
+      - type: content_contains
+        description: "生成的 README 应包含项目名称"
+        weight: 1.0
+        critical: true
+        params:
+          path: test-readme.md
+          contains: code-agent
+      - type: min_tool_calls
+        description: "应至少调用 2 个工具（读取 + 写入）"
+        weight: 0.8
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 0.5
+        params: {}
+      - type: max_turns
+        description: "中等任务应在 15 轮内完成"
+        weight: 0.3
+        params:
+          max: 15
     cleanup:
       - rm -f test-readme.md
 

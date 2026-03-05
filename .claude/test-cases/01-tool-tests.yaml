@@ -16,12 +16,36 @@ cases:
   # --------------------------------------------------------------------------
   - id: bash-ls
     type: tool
+    category: basic_tool
+    difficulty: easy
     description: "bash 工具 - 列出目录"
     prompt: "列出当前目录的文件"
     reference_solution: "调用 bash 执行 ls，输出应包含 package.json"
     expect:
       response_contains:
         - package.json
+    expectations:
+      - type: response_contains
+        description: "响应应包含 package.json 文件名"
+        weight: 1.0
+        critical: true
+        params:
+          text:
+            - package.json
+      - type: tool_called
+        description: "应调用 bash 工具执行 ls"
+        weight: 0.8
+        params:
+          tool: bash
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 0.5
+        params: {}
+      - type: max_turns
+        description: "简单任务应在 10 轮内完成"
+        weight: 0.3
+        params:
+          max: 10
 
   - id: bash-pwd
     type: tool
@@ -68,6 +92,8 @@ cases:
   # --------------------------------------------------------------------------
   - id: write-file-new
     type: tool
+    category: basic_tool
+    difficulty: easy
     description: "write_file 工具 - 创建新文件"
     prompt: "创建一个名为 test-write-temp.txt 的文件，内容是 'Test content 123'"
     expect:
@@ -75,6 +101,29 @@ cases:
         - test-write-temp.txt
       file_contains:
         test-write-temp.txt: Test content 123
+    expectations:
+      - type: file_exists
+        description: "文件 test-write-temp.txt 应被创建"
+        weight: 1.0
+        critical: true
+        params:
+          path: test-write-temp.txt
+      - type: content_contains
+        description: "文件内容应包含指定文本"
+        weight: 1.0
+        critical: true
+        params:
+          path: test-write-temp.txt
+          contains: "Test content 123"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 0.5
+        params: {}
+      - type: max_turns
+        description: "简单任务应在 10 轮内完成"
+        weight: 0.3
+        params:
+          max: 10
     cleanup:
       - rm -f test-write-temp.txt
 

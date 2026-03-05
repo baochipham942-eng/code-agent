@@ -1,6 +1,6 @@
 // ============================================================================
 // Meeting IPC - 会议录音的 IPC 处理器
-// 保存录音、转写（Qwen3-ASR → whisper-cpp → Groq）、生成会议纪要（Ollama → Kimi → DeepSeek → fallback）
+// 保存录音、转写（FunASR → whisper-cpp → Groq）、生成会议纪要（Ollama → Kimi → DeepSeek → fallback）
 // ============================================================================
 
 import { IpcMain } from 'electron';
@@ -14,7 +14,7 @@ import { promisify } from 'util';
 import Groq from 'groq-sdk';
 import { MODEL_API_ENDPOINTS } from '@shared/constants';
 
-import { getQwen3AsrService } from './qwen3AsrService';
+import { getFunAsrService } from './funasrService';
 
 const logger = createLogger('Meeting');
 const execFileAsync = promisify(execFile);
@@ -167,15 +167,15 @@ async function transcribeWithGroq(filePath: string, language: string): Promise<s
     : (transcription as any).text || '';
 }
 
-async function transcribeWithQwen3Asr(wavPath: string): Promise<string> {
-  const scriptPath = findScript('qwen3-asr-inference.py');
+async function transcribeWithFunAsr(wavPath: string): Promise<string> {
+  const scriptPath = findScript('funasr-server.py');
 
   return new Promise((resolve, reject) => {
-    execFile('python3', [scriptPath, '--audio', wavPath, '--model', '0.6b'],
+    execFile('python3', [scriptPath, '--audio', wavPath],
       { timeout: 120000 },
-      (error, stdout, stderr) => {
+      (error, stdout) => {
         if (error) {
-          reject(new Error(`Qwen3-ASR failed: ${error.message}`));
+          reject(new Error(`FunASR failed: ${error.message}`));
           return;
         }
         try {
@@ -185,18 +185,18 @@ async function transcribeWithQwen3Asr(wavPath: string): Promise<string> {
           } else if (result.text && result.text.trim()) {
             resolve(result.text.trim());
           } else {
-            reject(new Error('Qwen3-ASR returned empty text'));
+            reject(new Error('FunASR returned empty text'));
           }
         } catch (e) {
-          reject(new Error(`Failed to parse Qwen3-ASR output: ${stdout}`));
+          reject(new Error(`Failed to parse FunASR output: ${stdout}`));
         }
       }
     );
   });
 }
 
-async function checkQwen3AsrAvailability(): Promise<{ available: boolean; modelPath?: string }> {
-  const scriptPath = findScript('qwen3-asr-inference.py');
+async function checkFunAsrAvailability(): Promise<{ available: boolean }> {
+  const scriptPath = findScript('funasr-server.py');
   return new Promise((resolve) => {
     execFile('python3', [scriptPath, '--check'], { timeout: 10000 }, (error, stdout) => {
       if (error) {
@@ -205,7 +205,7 @@ async function checkQwen3AsrAvailability(): Promise<{ available: boolean; modelP
       }
       try {
         const result = JSON.parse(stdout.trim());
-        resolve({ available: result.available, modelPath: result.model_path });
+        resolve({ available: result.available });
       } catch {
         resolve({ available: false });
       }
@@ -214,14 +214,14 @@ async function checkQwen3AsrAvailability(): Promise<{ available: boolean; modelP
 }
 
 export async function transcribeAudio(wavPath: string, language: string = 'zh'): Promise<string> {
-  // Try Qwen3-ASR first
+  // Try FunASR first (Paraformer-zh + VAD + Punctuation)
   try {
-    logger.info('[ASR] Trying Qwen3-ASR...');
-    const text = await transcribeWithQwen3Asr(wavPath);
-    logger.info('[ASR] Qwen3-ASR succeeded, text length:', text.length);
+    logger.info('[ASR] Trying FunASR...');
+    const text = await transcribeWithFunAsr(wavPath);
+    logger.info('[ASR] FunASR succeeded, text length:', text.length);
     return text;
   } catch (e) {
-    logger.info('[ASR] Qwen3-ASR failed:', (e as Error).message);
+    logger.info('[ASR] FunASR failed:', (e as Error).message);
   }
 
   // Try whisper-cpp
@@ -511,21 +511,21 @@ export function registerMeetingHandlers(ipcMain: IpcMain): void {
   );
 
   ipcMain.handle(MEETING_CHANNELS.CHECK_ASR_ENGINES, async () => {
-    const qwen3 = await checkQwen3AsrAvailability();
+    const funasr = await checkFunAsrAvailability();
     const whisperAvailable = fs.existsSync('/opt/homebrew/bin/whisper-cpp');
     return {
       engines: [
-        { name: 'Qwen3-ASR', available: qwen3.available, modelPath: qwen3.modelPath },
+        { name: 'FunASR', available: funasr.available, detail: 'Paraformer-zh + VAD + Punc' },
         { name: 'whisper-cpp', available: whisperAvailable },
         { name: 'Groq', available: true }, // always available via API
       ],
     };
   });
 
-  // Live ASR handlers (persistent Qwen3-ASR process)
+  // Live ASR handlers (persistent FunASR process)
   ipcMain.handle(MEETING_CHANNELS.LIVE_ASR_START, async () => {
     try {
-      await getQwen3AsrService().start();
+      await getFunAsrService().start();
       return { success: true };
     } catch (err) {
       logger.error('[LiveASR] Start failed:', err);
@@ -535,7 +535,7 @@ export function registerMeetingHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle(MEETING_CHANNELS.LIVE_ASR_STOP, async () => {
     try {
-      await getQwen3AsrService().stop();
+      await getFunAsrService().stop();
       return { success: true };
     } catch (err) {
       logger.error('[LiveASR] Stop failed:', err);
@@ -559,8 +559,8 @@ export function registerMeetingHandlers(ipcMain: IpcMain): void {
         // Convert to WAV (16kHz mono) — frontend sends sliding window (~5s), so this is fast
         const wavPath = await convertToWav(tmpFile);
 
-        // Transcribe via persistent Qwen3-ASR process
-        const result = await getQwen3AsrService().transcribeChunk(wavPath);
+        // Transcribe via persistent FunASR process
+        const result = await getFunAsrService().transcribeChunk(wavPath);
 
         // Cleanup
         fs.promises.unlink(tmpFile).catch(() => {});

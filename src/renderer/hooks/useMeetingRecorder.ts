@@ -102,7 +102,7 @@ export function useMeetingRecorder(): UseMeetingRecorderReturn {
   const recognitionRef = useRef<any>(null);
   const recognitionActiveRef = useRef(false);
 
-  // Live ASR (Qwen3) refs
+  // Live ASR (FunASR) refs
   const liveAsrActiveRef = useRef(false);
   const pendingChunksRef = useRef<Blob[]>([]);
   const liveAsrIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -121,18 +121,18 @@ export function useMeetingRecorder(): UseMeetingRecorderReturn {
         return;
       }
       const engines = result.engines as { name: string; available: boolean }[];
-      const qwen = engines.find(e => e.name === 'Qwen3-ASR');
+      const funasr = engines.find(e => e.name === 'FunASR');
       const whisper = engines.find(e => e.name === 'whisper-cpp');
       const groq = engines.find(e => e.name === 'Groq');
 
       const parts: string[] = [];
       // Real-time engine
-      if (qwen?.available) {
-        parts.push('实时: Qwen3-ASR 0.6B (本地)');
+      if (funasr?.available) {
+        parts.push('实时: FunASR Paraformer-zh (本地)');
       }
       // Precise engine
       const precise: string[] = [];
-      if (qwen?.available) precise.push('Qwen3-ASR');
+      if (funasr?.available) precise.push('FunASR');
       if (whisper?.available) precise.push('whisper-cpp');
       if (groq?.available) precise.push('Groq');
       if (precise.length > 0) {
@@ -265,7 +265,7 @@ export function useMeetingRecorder(): UseMeetingRecorderReturn {
     }
   }, []);
 
-  // ── Live ASR (Qwen3 persistent process) ──
+  // ── Live ASR (FunASR persistent process) ──
 
   const stopLiveAsr = useCallback(() => {
     if (liveAsrIntervalRef.current) {
@@ -289,7 +289,7 @@ export function useMeetingRecorder(): UseMeetingRecorderReturn {
           sr.abort?.();
           startSpeechRecognition();
         } else {
-          logger.warn('No real-time ASR available (Qwen3-ASR failed, Web Speech API unavailable)');
+          logger.warn('No real-time ASR available (FunASR failed, Web Speech API unavailable)');
           setAsrEngine(prev => prev.replace(/实时: .+?(\s*\||\s*$)/, '实时: 不可用$1'));
         }
         return;
@@ -298,8 +298,8 @@ export function useMeetingRecorder(): UseMeetingRecorderReturn {
       liveAsrActiveRef.current = true;
       lastAsrChunkIndexRef.current = 0;
       lastAsrTextRef.current = '';
-      setAsrEngine('实时: Qwen3-ASR 0.6B (转录中...)');
-      logger.info('Live ASR (Qwen3) started');
+      setAsrEngine('实时: FunASR Paraformer-zh (转录中...)');
+      logger.info('Live ASR (FunASR) started');
 
       liveAsrIntervalRef.current = setInterval(async () => {
         // Prevent concurrent ASR requests

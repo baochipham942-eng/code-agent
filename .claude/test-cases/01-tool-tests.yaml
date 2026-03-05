@@ -33,10 +33,10 @@ cases:
           text:
             - package.json
       - type: tool_called
-        description: "应调用 bash 工具执行 ls"
+        description: "应调用 bash、list_directory 或 glob 工具来列出目录"
         weight: 0.8
         params:
-          tool: bash
+          tool: bash|list_directory|glob
       - type: no_crash
         description: "不应崩溃"
         weight: 0.5

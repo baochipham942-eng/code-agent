@@ -297,6 +297,8 @@ export interface TestRunnerConfig {
   enableEvalCritic?: boolean;
   /** Use LLM for eval critic analysis (P4) */
   evalCriticUseLLM?: boolean;
+  /** 工具加载模式：'all' 全量 | 'deferred' 延迟加载（默认） */
+  toolMode?: 'all' | 'deferred';
 }
 
 /**

@@ -645,7 +645,7 @@ async function evaluateExpectation(
           ? (params.path as string)
           : path.join(context.workingDirectory, params.path as string);
         const content = await fs.readFile(filePath, 'utf-8');
-        const needle = params.text as string;
+        const needle = (params.contains ?? params.text) as string;
         passed = content.includes(needle);
         actual = passed ? 'found' : content.substring(0, 200);
         expected = `file contains "${needle}"`;
@@ -657,7 +657,7 @@ async function evaluateExpectation(
           ? (params.path as string)
           : path.join(context.workingDirectory, params.path as string);
         const content = await fs.readFile(filePath, 'utf-8');
-        const needle = params.text as string;
+        const needle = (params.not_contains ?? params.text) as string;
         passed = !content.includes(needle);
         actual = passed ? 'not found (good)' : 'found (bad)';
         expected = `file does NOT contain "${needle}"`;
@@ -725,11 +725,11 @@ async function evaluateExpectation(
       }
 
       case 'response_contains': {
-        const text = params.text as string;
+        const texts = Array.isArray(params.text) ? params.text as string[] : [params.text as string];
         const allResponses = context.responses.join('\n');
-        passed = allResponses.includes(text);
+        passed = texts.every(t => allResponses.includes(t));
         actual = passed ? 'found in response' : allResponses.substring(0, 200);
-        expected = `response contains "${text}"`;
+        expected = `response contains ${JSON.stringify(texts)}`;
         break;
       }
 

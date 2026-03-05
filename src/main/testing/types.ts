@@ -131,6 +131,14 @@ export interface TestCase {
   depends_on?: string[];
   /** Reference solution to prove task is solvable */
   reference_solution?: string;
+  /** Difficulty level for categorization */
+  difficulty?: TestDifficulty;
+  /** Test category */
+  category?: TestCategory;
+  /** Expectation-based assertions (P1) */
+  expectations?: Expectation[];
+  /** Rotation metadata for test lifecycle */
+  rotation?: { introduced: string; retire_after?: string; variant?: number };
 }
 
 /**
@@ -209,6 +217,10 @@ export interface TestResult {
   score: number;
   /** Reference solution if provided */
   reference_solution?: string;
+  /** Expectation-based assertion results (P1) */
+  expectationResults?: ExpectationResult[];
+  /** Trajectory analysis data (P3) */
+  trajectory?: Trajectory;
 }
 
 /**
@@ -251,6 +263,8 @@ export interface TestRunSummary {
     totalToolCalls: number;
     totalTurns: number;
   };
+  /** Eval self-evolution feedback (P4) */
+  evalFeedback?: EvalFeedback;
 }
 
 /**
@@ -277,6 +291,12 @@ export interface TestRunnerConfig {
   parallel: boolean;
   /** Max parallel tests */
   maxParallel: number;
+  /** Enable trajectory analysis (P3) */
+  enableTrajectoryAnalysis?: boolean;
+  /** Enable eval self-critic (P4) */
+  enableEvalCritic?: boolean;
+  /** Use LLM for eval critic analysis (P4) */
+  evalCriticUseLLM?: boolean;
 }
 
 /**
@@ -295,3 +315,332 @@ export type TestEvent =
  * Test event listener
  */
 export type TestEventListener = (event: TestEvent) => void;
+
+
+// ============================================================================
+// Extended Evaluation System Types (Phase 1)
+// ============================================================================
+
+// === P0: Statistical Evaluation Types ===
+
+export interface StatisticalConfig {
+  runs: number;                    // default: 3
+  concurrency: number;            // default: 1
+  flakyThreshold: number;         // default: 0.3
+}
+
+export interface StatisticalCaseResult {
+  testId: string;
+  description: string;
+  totalRuns: number;
+  runs: TestResult[];
+  scoreStats: {
+    mean: number;
+    stddev: number;
+    min: number;
+    max: number;
+    median: number;
+  };
+  statusDistribution: {
+    passed: number;
+    failed: number;
+    partial: number;
+    skipped: number;
+  };
+  passAt1: number;      // single-try reliability
+  passAtK: number;      // at least 1 pass in k runs
+  passCaretK: number;   // all k runs pass (stability)
+  isFlaky: boolean;
+  avgDuration: number;
+  durationStddev: number;
+}
+
+export interface StatisticalRunSummary {
+  runId: string;
+  config: StatisticalConfig;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  caseResults: StatisticalCaseResult[];
+  aggregate: {
+    totalCases: number;
+    totalRuns: number;
+    overallPassAt1: number;
+    overallPassAtK: number;
+    overallPassCaretK: number;
+    meanScore: number;
+    scoreStddev: number;
+    flakyCases: string[];
+    stableCases: string[];
+  };
+}
+
+// === P1: Expectation-Based Assertion Types ===
+
+export type TestDifficulty = 'easy' | 'medium' | 'hard';
+
+export type TestCategory = 'basic_tool' | 'task_completion' | 'error_recovery' | 'edge_case';
+
+export type ExpectationType =
+  | 'file_exists' | 'file_not_exists'
+  | 'content_contains' | 'content_not_contains'
+  | 'code_compiles' | 'test_passes'
+  | 'output_matches' | 'command_succeeds'
+  | 'response_contains' | 'response_not_contains'
+  | 'tool_called' | 'no_crash' | 'error_handled'
+  | 'max_turns' | 'min_tool_calls' | 'max_tool_calls'
+  | 'custom_script';
+
+export interface Expectation {
+  type: ExpectationType;
+  description: string;
+  weight?: number;           // default: 1.0
+  critical?: boolean;        // failure = entire case fails
+  params: Record<string, unknown>;
+}
+
+export interface ExpectationResult {
+  expectation: Expectation;
+  passed: boolean;
+  evidence: {
+    actual: unknown;
+    expected: unknown;
+    details?: string;
+  };
+  duration: number;
+}
+
+// === P2: A/B Comparison Types ===
+
+export interface CompareConfiguration {
+  name: string;
+  model?: string;
+  provider?: string;
+  generation?: string;
+  systemPrompt?: string;
+  enabledTools?: string[];
+  temperature?: number;
+  agentConfig?: Record<string, unknown>;
+}
+
+export interface DualRubricScore {
+  content: { correctness: number; completeness: number; accuracy: number; total: number };
+  structure: { organization: number; formatting: number; usability: number; total: number };
+  combined: number;
+}
+
+export interface CaseComparison {
+  testId: string;
+  description: string;
+  assignment: { A: 'baseline' | 'candidate'; B: 'baseline' | 'candidate' };
+  scoreA: DualRubricScore;
+  scoreB: DualRubricScore;
+  winner: 'A' | 'B' | 'tie';
+  realWinner: 'baseline' | 'candidate' | 'tie';
+  reasoning: string;
+  durationA: number;
+  durationB: number;
+}
+
+export interface ComparisonResult {
+  runId: string;
+  timestamp: number;
+  baseline: CompareConfiguration;
+  candidate: CompareConfiguration;
+  cases: CaseComparison[];
+  summary: {
+    totalCases: number;
+    baselineWins: number;
+    candidateWins: number;
+    ties: number;
+    baselineAvgScore: number;
+    candidateAvgScore: number;
+    winner: 'baseline' | 'candidate' | 'tie';
+    confidence: number;
+    verdict: string;
+  };
+  duration: number;
+}
+
+// === P3: Trajectory Analysis Types ===
+
+export interface TrajectoryStep {
+  index: number;
+  timestamp: number;
+  type: 'tool_call' | 'decision' | 'error' | 'recovery' | 'backtrack' | 'verification';
+  toolCall?: {
+    name: string;
+    args: Record<string, unknown>;
+    result?: string;
+    success: boolean;
+    duration: number;
+  };
+  decision?: { reasoning: string; chosenAction: string };
+  error?: { message: string; code?: string; recoverable: boolean };
+  recovery?: { fromStepIndex: number; strategy: string; successful: boolean };
+  turnNumber?: number;
+  cumulativeTokens?: { input: number; output: number };
+}
+
+export interface DeviationMarker {
+  stepIndex: number;
+  type: 'wrong_tool' | 'unnecessary_step' | 'missed_step' | 'wrong_args' | 'hallucination' | 'loop';
+  description: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  suggestedFix?: string;
+}
+
+export interface RecoveryPattern {
+  errorStepIndex: number;
+  recoveryStepIndex: number;
+  attempts: number;
+  strategy: string;
+  successful: boolean;
+  tokenCost: number;
+}
+
+export interface TrajectoryEfficiency {
+  totalSteps: number;
+  effectiveSteps: number;
+  redundantSteps: number;
+  backtrackCount: number;
+  totalTokens: { input: number; output: number };
+  totalDuration: number;
+  tokensPerEffectiveStep: number;
+  efficiency: number;    // 0-1
+}
+
+export interface Trajectory {
+  id: string;
+  sessionId: string;
+  testCaseId?: string;
+  startTime: number;
+  endTime: number;
+  steps: TrajectoryStep[];
+  deviations: DeviationMarker[];
+  recoveryPatterns: RecoveryPattern[];
+  efficiency: TrajectoryEfficiency;
+  summary: {
+    intent: string;
+    outcome: 'success' | 'partial' | 'failure';
+    criticalPath: number[];
+    firstDeviationIndex?: number;
+  };
+}
+
+export interface TrajectoryDiff {
+  trajectoryA: string;
+  trajectoryB: string;
+  commonSteps: number;
+  divergencePoint?: number;
+  efficiencyDelta: { steps: number; tokens: number; duration: number };
+}
+
+// === P4: Eval Self-Evolution Types ===
+
+export interface AssertionQuality {
+  assertionKey: string;
+  testCaseId: string;
+  quality: 'strong' | 'adequate' | 'weak' | 'unverifiable';
+  discriminatingPower: number;   // 0-1
+  reason: string;
+  suggestion?: string;
+}
+
+export interface CoverageGap {
+  testCaseId: string;
+  category: 'missing_negative_test' | 'missing_edge_case' | 'missing_output_check'
+           | 'untested_tool' | 'missing_file_assertion' | 'missing_error_path';
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface EvalSuggestion {
+  type: 'strengthen_assertion' | 'add_assertion' | 'remove_assertion'
+      | 'add_test_case' | 'add_negative_test' | 'split_test';
+  targetTestId: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface EvalFeedback {
+  runId: string;
+  timestamp: number;
+  testSuiteVersion: string;
+  overallQualityScore: number;
+  assertionQualities: AssertionQuality[];
+  coverageGaps: CoverageGap[];
+  suggestions: EvalSuggestion[];
+  stats: {
+    totalAssertions: number;
+    strongAssertions: number;
+    weakAssertions: number;
+    unverifiableAssertions: number;
+    coverageGapCount: number;
+  };
+}
+
+export interface EvalHistoryEntry {
+  version: string;
+  parentVersion: string | null;
+  timestamp: number;
+  runId: string;
+  testSuiteHash: string;
+  metrics: {
+    passRate: number;
+    averageScore: number;
+    totalCases: number;
+    qualityScore: number;
+  };
+  changes?: string[];
+}
+
+export interface EvalHistory {
+  currentBest: string;
+  entries: EvalHistoryEntry[];
+}
+
+// === P5: CI / EDD Types ===
+
+export interface EvalBaseline {
+  version: number;
+  updatedAt: number;
+  updatedBy: string;
+  globalMetrics: {
+    passRate: number;
+    averageScore: number;
+    totalCases: number;
+  };
+  caseResults: Record<string, {
+    status: string;
+    score: number;
+    lastPassedAt?: number;
+  }>;
+  thresholds: {
+    minPassRate: number;
+    maxScoreDrop: number;
+    maxNewFailures: number;
+  };
+}
+
+export interface BaselineDelta {
+  isFirstRun: boolean;
+  passRateDelta: number;
+  scoreDelta: number;
+  newFailures: Array<{ testId: string; previousStatus: string; currentStatus: string; reason?: string }>;
+  newPasses: Array<{ testId: string }>;
+  isRegression: boolean;
+  regressionDetails: string[];
+}
+
+export interface TrendDataPoint {
+  timestamp: number;
+  commitSha: string;
+  scope: 'smoke' | 'full';
+  passRate: number;
+  averageScore: number;
+  totalCases: number;
+  duration: number;
+  newFailures: number;
+  newPasses: number;
+}

@@ -43,7 +43,14 @@
     "docs": "typedoc",
     "rebuild-native": "bash scripts/rebuild-native.sh",
     "check:hardcoded": "bash scripts/check-hardcoded-models.sh --all",
-    "postinstall": "npm run rebuild-native"
+    "postinstall": "npm run rebuild-native",
+    "eval": "npx tsx scripts/eval-ci.ts",
+    "eval:smoke": "npx tsx scripts/eval-ci.ts --scope smoke",
+    "eval:full": "npx tsx scripts/eval-ci.ts --scope full",
+    "eval:baseline": "npx tsx scripts/eval-ci.ts --baseline-info",
+    "eval:promote": "npx tsx scripts/eval-ci.ts --promote",
+    "eval:trend": "npx tsx scripts/eval-ci.ts --trend",
+    "eval:setup-hooks": "bash scripts/setup-eval-hooks.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",

@@ -38,6 +38,39 @@ export type {
   TestEvent,
   TestEventListener,
   TestStatus,
+  // P0: Statistical Evaluation
+  StatisticalConfig,
+  StatisticalCaseResult,
+  StatisticalRunSummary,
+  // P1: Expectation-Based Assertions
+  TestDifficulty,
+  TestCategory,
+  ExpectationType,
+  Expectation,
+  ExpectationResult,
+  // P2: A/B Comparison
+  CompareConfiguration,
+  DualRubricScore,
+  CaseComparison,
+  ComparisonResult,
+  // P3: Trajectory Analysis
+  TrajectoryStep,
+  DeviationMarker,
+  RecoveryPattern,
+  TrajectoryEfficiency,
+  Trajectory,
+  TrajectoryDiff,
+  // P4: Eval Self-Evolution
+  AssertionQuality,
+  CoverageGap,
+  EvalSuggestion,
+  EvalFeedback,
+  EvalHistoryEntry,
+  EvalHistory,
+  // P5: CI / EDD
+  EvalBaseline,
+  BaselineDelta,
+  TrendDataPoint,
 } from './types';
 
 // Test case loading
@@ -51,6 +84,7 @@ export {
 // Assertions
 export {
   runAssertions,
+  runExpectations,
   type AssertionResult,
   type AssertionFailure,
 } from './assertionEngine';
@@ -77,6 +111,11 @@ export {
   saveReport,
 } from './reportGenerator';
 
+// Statistical runner
+export {
+  StatisticalRunner,
+} from './statisticalRunner';
+
 // Auto-test hook
 export {
   isAutoTestEnabled,
@@ -84,3 +123,12 @@ export {
   runAutoTests,
   createAutoTestHookConfig,
 } from './autoTestHook';
+
+// P2: A/B Comparison
+export * from './comparator';
+
+// P4: Eval Self-Evolution Critic
+export * from './evalCritic';
+
+// P5: CI / Eval-Driven Development
+export * from './ci';

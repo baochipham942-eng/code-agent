@@ -4,7 +4,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import type { TestRunSummary } from './types';
+import type { TestRunSummary, TestResult } from './types';
 import { formatDuration } from '../../shared/utils/format';
 
 /**
@@ -166,6 +166,69 @@ export function generateMarkdownReport(summary: TestRunSummary): string {
       lines.push(`- ⏭️ **${result.testId}**: ${result.failureReason || result.description}`);
     }
     lines.push('');
+  }
+
+  // Expectation evidence (P1)
+  const resultsWithExpectations = summary.results.filter((r) => r.expectationResults && r.expectationResults.length > 0);
+  if (resultsWithExpectations.length > 0) {
+    lines.push('## 期望断言详情');
+    lines.push('');
+    for (const result of resultsWithExpectations) {
+      lines.push(`### ${result.testId}`);
+      lines.push('');
+      lines.push('| 状态 | 描述 | 证据 |');
+      lines.push('|------|------|------|');
+      for (const er of result.expectationResults!) {
+        const status = er.passed ? '✅' : '❌';
+        const desc = er.expectation.type.replace(/\|/g, '\\|');
+        const evidence = (er.evidence.details ?? '—').replace(/\|/g, '\\|').substring(0, 100);
+        lines.push(`| ${status} | ${desc} | ${evidence} |`);
+      }
+      lines.push('');
+    }
+  }
+
+  // Trajectory summary (P3)
+  const resultsWithTrajectory = summary.results.filter((r) => r.trajectory);
+  if (resultsWithTrajectory.length > 0) {
+    lines.push('## 轨迹分析');
+    lines.push('');
+    lines.push('| 用例 ID | 步骤数 | 效率 | 偏差数 | 恢复次数 |');
+    lines.push('|---------|--------|------|--------|----------|');
+    for (const result of resultsWithTrajectory) {
+      const t = result.trajectory!;
+      const steps = t.steps.length;
+      const efficiency = t.efficiency ? `${(t.efficiency.efficiency * 100).toFixed(0)}%` : '—';
+      const deviations = t.deviations.length;
+      const recoveries = t.recoveryPatterns.length;
+      lines.push(`| ${result.testId} | ${steps} | ${efficiency} | ${deviations} | ${recoveries} |`);
+    }
+    lines.push('');
+  }
+
+  // Eval quality feedback (P4)
+  if (summary.evalFeedback) {
+    const ef = summary.evalFeedback;
+    lines.push('## 评测质量');
+    lines.push('');
+    lines.push(`**质量分数**: ${(ef.overallQualityScore * 100).toFixed(1)}%`);
+    lines.push('');
+    if (ef.assertionQualities.filter((q) => q.quality === 'weak').length > 0) {
+      lines.push('### 弱断言');
+      lines.push('');
+      for (const aq of ef.assertionQualities.filter((q) => q.quality === 'weak')) {
+        lines.push(`- **${aq.testCaseId}** (${aq.assertionKey}): ${aq.suggestion ?? '无建议'}`);
+      }
+      lines.push('');
+    }
+    if (ef.coverageGaps.length > 0) {
+      lines.push('### 覆盖缺口');
+      lines.push('');
+      for (const gap of ef.coverageGaps) {
+        lines.push(`- [${gap.priority}] ${gap.description}`);
+      }
+      lines.push('');
+    }
   }
 
   // Performance stats

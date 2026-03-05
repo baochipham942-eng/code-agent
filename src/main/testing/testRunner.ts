@@ -18,9 +18,12 @@ import type {
   TestEventListener,
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
-import { runAssertions } from './assertionEngine';
+import { runAssertions, runExpectations } from './assertionEngine';
 import { createLogger } from '../services/infra/logger';
 import { getTestDirs } from '../config';
+import { TrajectoryBuilder } from '../evaluation/trajectory';
+import { EvalCritic } from './evalCritic';
+import { loadAllTestSuites as loadSuitesForCritic } from './testCaseLoader';
 
 const execAsync = promisify(exec);
 const logger = createLogger('TestRunner');
@@ -194,6 +197,18 @@ export class TestRunner {
 
     this.emit({ type: 'suite_end', summary });
 
+    // P4: Eval self-evolution critic (when enabled)
+    if (this.config.enableEvalCritic !== false) {
+      try {
+        const critic = new EvalCritic({ enableLLM: this.config.evalCriticUseLLM });
+        const allSuites = await loadSuitesForCritic(this.config.testCaseDir);
+        const allCases = allSuites.flatMap((s) => s.cases);
+        summary.evalFeedback = await critic.critique(summary, allCases);
+      } catch (criticError: any) {
+        logger.warn('Eval critic failed', { error: criticError.message });
+      }
+    }
+
     // Save results
     await this.saveResults(summary);
 
@@ -311,6 +326,46 @@ export class TestRunner {
           actual: assertionResult.failures.map((f) => f.actual),
           assertion: assertionResult.failures.map((f) => f.assertion).join(', '),
         };
+      }
+
+      // P1: Expectation-based assertions (when available, override legacy assertions)
+      if (testCase.expectations && testCase.expectations.length > 0) {
+        const expResult = await runExpectations(testCase.expectations, {
+          toolExecutions: result.toolExecutions,
+          responses: result.responses,
+          errors: result.errors,
+          turnCount: result.turnCount,
+          workingDirectory: this.config.workingDirectory,
+        });
+        result.expectationResults = expResult.results;
+        result.score = expResult.overallScore;
+        if (expResult.passed) {
+          result.status = 'passed';
+          result.failureReason = undefined;
+          result.failureDetails = undefined;
+        } else if (expResult.overallScore > 0 && !expResult.hasCriticalFailure) {
+          result.status = 'partial';
+          result.failureReason = expResult.results
+            .filter((r) => !r.passed)
+            .map((r) => `[${r.expectation.type}] ${r.evidence.details ?? 'failed'}`)
+            .join('; ');
+        } else {
+          result.status = 'failed';
+          result.failureReason = expResult.results
+            .filter((r) => !r.passed)
+            .map((r) => `[${r.expectation.type}] ${r.evidence.details ?? 'failed'}`)
+            .join('; ');
+        }
+      }
+
+      // P3: Trajectory analysis (when enabled)
+      if (this.config.enableTrajectoryAnalysis) {
+        try {
+          const builder = new TrajectoryBuilder();
+          result.trajectory = builder.buildFromTestResult(result, testCase);
+        } catch (trajError: any) {
+          logger.warn('Trajectory analysis failed', { testId: testCase.id, error: trajError.message });
+        }
       }
     } catch (error: any) {
       result.status = 'failed';

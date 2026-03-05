@@ -30,6 +30,28 @@ cases:
       files_created:
         - test-review-report.md
       no_crash: true
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-review-report.md"
+        weight: 1
+        critical: true
+        params:
+          path: "test-review-report.md"
+      - type: min_tool_calls
+        description: "至少应调用 3 次工具"
+        weight: 0.3
+        params:
+          min: 3
+      - type: tool_called
+        description: "应使用 Todo 列表工具"
+        weight: 0.8
+        params:
+          tool: "todo"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-review-report.md
 
@@ -44,6 +66,17 @@ cases:
   # --------------------------------------------------------------------------
   # L3: 工作流编排
   # --------------------------------------------------------------------------
+    expectations:
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: multiagent-workflow-analysis
     type: task
     description: "分析 → 规划 → 执行 工作流"
@@ -57,6 +90,23 @@ cases:
       files_created:
         - test-health-report.md
       no_crash: true
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-health-report.md"
+        weight: 1
+        critical: true
+        params:
+          path: "test-health-report.md"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-health-report.md
 
@@ -67,6 +117,17 @@ cases:
     expect:
       min_tool_calls: 3
       no_crash: true
+    expectations:
+      - type: min_tool_calls
+        description: "至少应调用 3 次工具"
+        weight: 0.3
+        params:
+          min: 3
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     timeout: 120000
 
   # --------------------------------------------------------------------------
@@ -100,5 +161,34 @@ cases:
           - "login"
           - "purchase"
       no_crash: true
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-processed.json"
+        weight: 1
+        critical: true
+        params:
+          path: "test-processed.json"
+      - type: content_contains
+        description: "文件 test-processed.json 应包含 'login'"
+        weight: 0.8
+        params:
+          path: "test-processed.json"
+          contains: "login"
+      - type: content_contains
+        description: "文件 test-processed.json 应包含 'purchase'"
+        weight: 0.8
+        params:
+          path: "test-processed.json"
+          contains: "purchase"
+      - type: min_tool_calls
+        description: "至少应调用 3 次工具"
+        weight: 0.3
+        params:
+          min: 3
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-raw-data.txt test-processed.json

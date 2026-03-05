@@ -26,6 +26,17 @@ cases:
         - TypeScript
       no_crash: true
 
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'TypeScript'"
+        weight: 0.8
+        params:
+          text: "TypeScript"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: web-search-chinese
     type: task
     description: "中文搜索"
@@ -36,6 +47,12 @@ cases:
   # --------------------------------------------------------------------------
   # L2: URL 抓取
   # --------------------------------------------------------------------------
+    expectations:
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: web-fetch-page
     type: task
     description: "抓取网页内容"
@@ -43,6 +60,12 @@ cases:
     expect:
       no_crash: true
 
+    expectations:
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: web-fetch-json-api
     type: task
     description: "获取 JSON API"
@@ -53,6 +76,12 @@ cases:
   # --------------------------------------------------------------------------
   # L3: 搜索 + 整合
   # --------------------------------------------------------------------------
+    expectations:
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: web-search-and-summarize
     type: task
     description: "搜索后整合信息"
@@ -63,6 +92,27 @@ cases:
         - esbuild
         - webpack
       no_crash: true
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'esbuild'"
+        weight: 0.8
+        params:
+          text: "esbuild"
+      - type: response_contains
+        description: "响应应包含 'webpack'"
+        weight: 0.8
+        params:
+          text: "webpack"
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     timeout: 180000
 
   # --------------------------------------------------------------------------
@@ -76,9 +126,26 @@ cases:
       error_handled: true
       no_crash: true
 
+    expectations:
+      - type: error_handled
+        description: "应优雅处理错误"
+        weight: 0.8
+        params: {}
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
   - id: web-search-no-results
     type: task
     description: "搜索无结果处理"
     prompt: "搜索 xyznonexistentterm98765432 的详细信息"
     expect:
       no_crash: true
+
+    expectations:
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}

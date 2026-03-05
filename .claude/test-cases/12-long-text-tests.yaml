@@ -33,6 +33,22 @@ cases:
       response_contains:
         - "247"
       no_crash: true
+    expectations:
+      - type: response_contains
+        description: "响应应包含 '247'"
+        weight: 0.8
+        params:
+          text: "247"
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-large-file.txt
 
@@ -58,6 +74,22 @@ cases:
       response_contains:
         - TODO
       no_crash: true
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'TODO'"
+        weight: 0.8
+        params:
+          text: "TODO"
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-todo-scan.ts
 
@@ -81,6 +113,24 @@ cases:
       file_contains:
         test-long-prompt-result.txt: "core task"
       no_crash: true
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-long-prompt-result.txt"
+        weight: 1
+        critical: true
+        params:
+          path: "test-long-prompt-result.txt"
+      - type: content_contains
+        description: "文件 test-long-prompt-result.txt 应包含 'core task'"
+        weight: 0.8
+        params:
+          path: "test-long-prompt-result.txt"
+          contains: "core task"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-long-prompt-result.txt
 
@@ -94,6 +144,17 @@ cases:
     expect:
       min_tool_calls: 2
       no_crash: true
+    expectations:
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     timeout: 180000
 
   # --------------------------------------------------------------------------
@@ -112,5 +173,34 @@ cases:
           - "#"
           - Electron
       no_crash: true
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-project-overview.md"
+        weight: 1
+        critical: true
+        params:
+          path: "test-project-overview.md"
+      - type: content_contains
+        description: "文件 test-project-overview.md 应包含 '#'"
+        weight: 0.8
+        params:
+          path: "test-project-overview.md"
+          contains: "#"
+      - type: content_contains
+        description: "文件 test-project-overview.md 应包含 'Electron'"
+        weight: 0.8
+        params:
+          path: "test-project-overview.md"
+          contains: "Electron"
+      - type: min_tool_calls
+        description: "至少应调用 2 次工具"
+        weight: 0.3
+        params:
+          min: 2
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-project-overview.md

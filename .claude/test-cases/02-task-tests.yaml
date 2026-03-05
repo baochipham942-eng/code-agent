@@ -76,6 +76,36 @@ cases:
           - name
           - version
           - enabled
+    expectations:
+      - type: file_exists
+        description: "文件应存在: test-config.json"
+        weight: 1
+        critical: true
+        params:
+          path: "test-config.json"
+      - type: content_contains
+        description: "文件 test-config.json 应包含 'name'"
+        weight: 0.8
+        params:
+          path: "test-config.json"
+          contains: "name"
+      - type: content_contains
+        description: "文件 test-config.json 应包含 'version'"
+        weight: 0.8
+        params:
+          path: "test-config.json"
+          contains: "version"
+      - type: content_contains
+        description: "文件 test-config.json 应包含 'enabled'"
+        weight: 0.8
+        params:
+          path: "test-config.json"
+          contains: "enabled"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     cleanup:
       - rm -f test-config.json
 
@@ -134,6 +164,27 @@ cases:
       response_contains:
         - agent
         - tools
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'agent'"
+        weight: 0.8
+        params:
+          text: "agent"
+      - type: response_contains
+        description: "响应应包含 'tools'"
+        weight: 0.8
+        params:
+          text: "tools"
+      - type: min_tool_calls
+        description: "至少应调用 1 次工具"
+        weight: 0.3
+        params:
+          min: 1
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     timeout: 60000
 
   # --------------------------------------------------------------------------
@@ -146,4 +197,15 @@ cases:
     expect:
       response_contains:
         - test
+    expectations:
+      - type: response_contains
+        description: "响应应包含 'test'"
+        weight: 0.8
+        params:
+          text: "test"
+      - type: no_crash
+        description: "不应崩溃"
+        weight: 1
+        critical: true
+        params: {}
     timeout: 60000

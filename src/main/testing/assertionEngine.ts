@@ -8,6 +8,9 @@ import { execSync } from 'child_process';
 import type {
   TestExpectations,
   ToolExecutionRecord,
+  Expectation,
+  ExpectationType,
+  ExpectationResult,
 } from './types';
 
 /**
@@ -569,6 +572,319 @@ export async function runAssertions(
     score,
     totalAssertions,
     passedAssertions: Math.max(0, passedAssertions),
+    hasCriticalFailure,
+  };
+}
+
+// ============================================================================
+// Expectation-Based Assertion Engine (P1)
+// ============================================================================
+
+
+/**
+ * Context for expectation evaluation
+ */
+interface ExpectationContext {
+  toolExecutions: ToolExecutionRecord[];
+  responses: string[];
+  errors: string[];
+  turnCount: number;
+  workingDirectory: string;
+}
+
+/**
+ * Evaluate a single expectation
+ */
+async function evaluateExpectation(
+  expectation: Expectation,
+  context: ExpectationContext
+): Promise<ExpectationResult> {
+  const startTime = Date.now();
+  let passed = false;
+  let actual: unknown = undefined;
+  let expected: unknown = undefined;
+  let details: string | undefined;
+
+  const { params } = expectation;
+
+  try {
+    switch (expectation.type) {
+      case 'file_exists': {
+        const filePath = path.isAbsolute(params.path as string)
+          ? (params.path as string)
+          : path.join(context.workingDirectory, params.path as string);
+        try {
+          await fs.access(filePath);
+          passed = true;
+          actual = 'file exists';
+        } catch {
+          actual = 'file not found';
+        }
+        expected = `file "${params.path}" exists`;
+        break;
+      }
+
+      case 'file_not_exists': {
+        const filePath = path.isAbsolute(params.path as string)
+          ? (params.path as string)
+          : path.join(context.workingDirectory, params.path as string);
+        try {
+          await fs.access(filePath);
+          passed = false;
+          actual = 'file exists';
+        } catch {
+          passed = true;
+          actual = 'file not found';
+        }
+        expected = `file "${params.path}" does not exist`;
+        break;
+      }
+
+      case 'content_contains': {
+        const filePath = path.isAbsolute(params.path as string)
+          ? (params.path as string)
+          : path.join(context.workingDirectory, params.path as string);
+        const content = await fs.readFile(filePath, 'utf-8');
+        const needle = params.text as string;
+        passed = content.includes(needle);
+        actual = passed ? 'found' : content.substring(0, 200);
+        expected = `file contains "${needle}"`;
+        break;
+      }
+
+      case 'content_not_contains': {
+        const filePath = path.isAbsolute(params.path as string)
+          ? (params.path as string)
+          : path.join(context.workingDirectory, params.path as string);
+        const content = await fs.readFile(filePath, 'utf-8');
+        const needle = params.text as string;
+        passed = !content.includes(needle);
+        actual = passed ? 'not found (good)' : 'found (bad)';
+        expected = `file does NOT contain "${needle}"`;
+        break;
+      }
+
+      case 'code_compiles': {
+        const command = (params.command as string) || 'npm run typecheck';
+        try {
+          execSync(command, {
+            cwd: context.workingDirectory,
+            timeout: 60000,
+            stdio: 'pipe',
+          });
+          passed = true;
+          actual = 'compilation succeeded';
+        } catch (e: any) {
+          actual = `compilation failed: ${e.message?.substring(0, 200)}`;
+        }
+        expected = 'code compiles successfully';
+        break;
+      }
+
+      case 'test_passes': {
+        const command = params.command as string;
+        try {
+          execSync(command, {
+            cwd: context.workingDirectory,
+            timeout: 60000,
+            stdio: 'pipe',
+          });
+          passed = true;
+          actual = 'tests passed';
+        } catch (e: any) {
+          actual = `tests failed: exit code ${e.status ?? 'unknown'}`;
+        }
+        expected = `"${command}" exits with code 0`;
+        break;
+      }
+
+      case 'output_matches': {
+        const pattern = new RegExp(params.pattern as string, params.flags as string | undefined);
+        const allOutputs = context.toolExecutions.map((te) => te.output).join('\n');
+        passed = pattern.test(allOutputs);
+        actual = passed ? 'pattern matched' : allOutputs.substring(0, 200);
+        expected = `output matches /${params.pattern}/`;
+        break;
+      }
+
+      case 'command_succeeds': {
+        const command = params.command as string;
+        try {
+          const result = execSync(command, {
+            cwd: context.workingDirectory,
+            timeout: 30000,
+            stdio: 'pipe',
+          });
+          passed = true;
+          actual = result.toString().substring(0, 200);
+        } catch (e: any) {
+          actual = `exit code ${e.status ?? 'unknown'}`;
+        }
+        expected = `"${command}" succeeds`;
+        break;
+      }
+
+      case 'response_contains': {
+        const text = params.text as string;
+        const allResponses = context.responses.join('\n');
+        passed = allResponses.includes(text);
+        actual = passed ? 'found in response' : allResponses.substring(0, 200);
+        expected = `response contains "${text}"`;
+        break;
+      }
+
+      case 'response_not_contains': {
+        const text = params.text as string;
+        const allResponses = context.responses.join('\n');
+        passed = !allResponses.includes(text);
+        actual = passed ? 'not found (good)' : 'found (bad)';
+        expected = `response does NOT contain "${text}"`;
+        break;
+      }
+
+      case 'tool_called': {
+        const toolName = params.tool as string;
+        const toolRegex = new RegExp(toolName);
+        passed = context.toolExecutions.some((te) => toolRegex.test(te.tool));
+        actual = context.toolExecutions.map((te) => te.tool);
+        expected = `tool matching "${toolName}" was called`;
+        break;
+      }
+
+      case 'no_crash': {
+        const hasCrash = context.errors.some(
+          (e) =>
+            e.includes('FATAL') ||
+            e.includes('unhandled') ||
+            e.includes('process exited')
+        );
+        passed = !hasCrash;
+        actual = hasCrash ? context.errors.join('; ') : 'no crash detected';
+        expected = 'no crash';
+        break;
+      }
+
+      case 'error_handled': {
+        const hasErrors = context.toolExecutions.some((te) => !te.success);
+        const recoveredAfterError = context.toolExecutions.some((te, i) => {
+          if (!te.success && i < context.toolExecutions.length - 1) {
+            return context.toolExecutions.slice(i + 1).some((t) => t.success);
+          }
+          return false;
+        });
+        passed = !hasErrors || recoveredAfterError;
+        actual = passed ? 'error handled gracefully' : 'error not recovered';
+        expected = 'errors are handled gracefully';
+        break;
+      }
+
+      case 'max_turns': {
+        const maxTurns = params.max as number;
+        passed = context.turnCount <= maxTurns;
+        actual = context.turnCount;
+        expected = `<= ${maxTurns} turns`;
+        break;
+      }
+
+      case 'min_tool_calls': {
+        const min = params.min as number;
+        passed = context.toolExecutions.length >= min;
+        actual = context.toolExecutions.length;
+        expected = `>= ${min} tool calls`;
+        break;
+      }
+
+      case 'max_tool_calls': {
+        const max = params.max as number;
+        passed = context.toolExecutions.length <= max;
+        actual = context.toolExecutions.length;
+        expected = `<= ${max} tool calls`;
+        break;
+      }
+
+      case 'custom_script': {
+        const script = params.script as string;
+        try {
+          execSync(script, {
+            cwd: context.workingDirectory,
+            timeout: 30000,
+            stdio: 'pipe',
+          });
+          passed = true;
+          actual = 'script succeeded';
+        } catch (e: any) {
+          actual = `script failed: exit code ${e.status ?? 'unknown'}`;
+        }
+        expected = `custom script passes`;
+        details = `script: ${script}`;
+        break;
+      }
+
+      default: {
+        actual = 'unknown expectation type';
+        expected = expectation.type;
+        details = `Unsupported expectation type: ${expectation.type}`;
+      }
+    }
+  } catch (error: any) {
+    actual = `error: ${error.message}`;
+    details = error.stack?.substring(0, 300);
+  }
+
+  return {
+    expectation,
+    passed,
+    evidence: { actual, expected, details },
+    duration: Date.now() - startTime,
+  };
+}
+
+/**
+ * Run all expectation-based assertions for a test case
+ */
+export async function runExpectations(
+  expectations: Expectation[],
+  context: ExpectationContext
+): Promise<{
+  results: ExpectationResult[];
+  overallScore: number;
+  passed: boolean;
+  hasCriticalFailure: boolean;
+}> {
+  const results: ExpectationResult[] = [];
+  let hasCriticalFailure = false;
+
+  for (const expectation of expectations) {
+    const result = await evaluateExpectation(expectation, context);
+    results.push(result);
+
+    if (!result.passed && expectation.critical) {
+      hasCriticalFailure = true;
+    }
+  }
+
+  // Compute weighted score
+  let totalWeight = 0;
+  let earnedWeight = 0;
+
+  for (const result of results) {
+    const weight = result.expectation.weight ?? 1.0;
+    totalWeight += weight;
+    if (result.passed) {
+      earnedWeight += weight;
+    }
+  }
+
+  const overallScore = hasCriticalFailure
+    ? 0
+    : totalWeight > 0
+      ? earnedWeight / totalWeight
+      : 1.0;
+
+  return {
+    results,
+    overallScore,
+    passed: results.every((r) => r.passed),
     hasCriticalFailure,
   };
 }

@@ -389,7 +389,7 @@ export type ExpectationType =
   | 'code_compiles' | 'test_passes'
   | 'output_matches' | 'command_succeeds'
   | 'response_contains' | 'response_not_contains'
-  | 'tool_called' | 'no_crash' | 'error_handled'
+  | 'tool_called' | 'tool_output_contains' | 'no_crash' | 'error_handled'
   | 'max_turns' | 'min_tool_calls' | 'max_tool_calls'
   | 'custom_script';
 

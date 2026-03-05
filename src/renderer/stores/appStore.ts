@@ -36,6 +36,9 @@ interface AppState {
   showSkillsPanel: boolean;
   showCapturePanel: boolean;
   showMeetingPanel: boolean;
+  meetingStatus: 'idle' | 'recording' | 'paused' | 'processing' | 'done';
+  meetingDuration: number;
+  voicePasteStatus: 'idle' | 'recording' | 'transcribing' | 'processing';
   sidebarCollapsed: boolean;
 
   // 语言设置 - Language
@@ -99,6 +102,9 @@ interface AppState {
   setShowSkillsPanel: (show: boolean) => void;
   setShowCapturePanel: (show: boolean) => void;
   setShowMeetingPanel: (show: boolean) => void;
+  setMeetingStatus: (status: 'idle' | 'recording' | 'paused' | 'processing' | 'done') => void;
+  setMeetingDuration: (duration: number) => void;
+  setVoicePasteStatus: (status: 'idle' | 'recording' | 'transcribing' | 'processing') => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setLanguage: (language: Language) => void;
   setCloudUIStrings: (strings: CloudUIStrings | null) => void;
@@ -162,6 +168,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   showSkillsPanel: false, // Skills panel hidden by default
   showCapturePanel: false, // Capture panel hidden by default
   showMeetingPanel: false, // Meeting panel hidden by default
+  meetingStatus: 'idle' as const,
+  meetingDuration: 0,
+  voicePasteStatus: 'idle' as const,
   sidebarCollapsed: false,
 
   // 语言默认为中文
@@ -224,6 +233,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowSkillsPanel: (show) => set({ showSkillsPanel: show }),
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
   setShowMeetingPanel: (show) => set({ showMeetingPanel: show }),
+  setMeetingStatus: (status) => set({ meetingStatus: status }),
+  setMeetingDuration: (duration) => set({ meetingDuration: duration }),
+  setVoicePasteStatus: (status) => set({ voicePasteStatus: status }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setLanguage: (language) => set({ language }),
   setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),

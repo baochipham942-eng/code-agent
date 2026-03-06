@@ -3,7 +3,74 @@ import { spawn, ChildProcess, execFile } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { transcribeAudio } from './meeting.ipc';
+import { promisify } from 'util';
+import { getConfigService } from '../services/core/configService';
+import Groq from 'groq-sdk';
+
+const execFileAsync = promisify(execFile);
+
+// --- Inline ASR functions (extracted from removed meeting.ipc.ts) ---
+
+async function findWhisperCpp(): Promise<string | null> {
+  const candidates = ['/opt/homebrew/bin/whisper-cpp'];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  try {
+    const { stdout } = await execFileAsync('which', ['whisper-cpp']);
+    const trimmed = stdout.trim();
+    if (trimmed && fs.existsSync(trimmed)) return trimmed;
+  } catch { /* not found */ }
+  return null;
+}
+
+async function convertToWav(inputPath: string): Promise<string> {
+  const wavPath = inputPath.replace(/\.[^.]+$/, '.wav');
+  if (inputPath.endsWith('.wav')) return inputPath;
+  await execFileAsync('ffmpeg', ['-i', inputPath, '-ar', '16000', '-ac', '1', '-y', wavPath]);
+  return wavPath;
+}
+
+async function transcribeWithWhisperCpp(filePath: string, language: string): Promise<string> {
+  const whisperPath = await findWhisperCpp();
+  if (!whisperPath) throw new Error('WHISPER_NOT_AVAILABLE');
+  const modelPath = path.join(os.homedir(), '.cache', 'whisper', 'ggml-large-v3-turbo.bin');
+  if (!fs.existsSync(modelPath)) throw new Error('WHISPER_NOT_AVAILABLE');
+  const wavPath = await convertToWav(filePath);
+  try {
+    const { stdout } = await execFileAsync(whisperPath, ['-m', modelPath, '-l', language, '-f', wavPath], { timeout: 300000 });
+    return stdout.trim();
+  } finally {
+    if (wavPath !== filePath && fs.existsSync(wavPath)) {
+      fs.promises.unlink(wavPath).catch(() => {});
+    }
+  }
+}
+
+async function transcribeWithGroq(filePath: string, language: string): Promise<string> {
+  const configService = getConfigService();
+  const apiKey = configService.getApiKey('groq');
+  if (!apiKey) throw new Error('未配置 Groq API Key');
+  const groq = new Groq({ apiKey });
+  const fileStream = fs.createReadStream(filePath);
+  const transcription = await groq.audio.transcriptions.create({
+    file: fileStream,
+    model: 'whisper-large-v3-turbo',
+    language,
+    response_format: 'text',
+  });
+  return typeof transcription === 'string' ? transcription : (transcription as any).text || '';
+}
+
+async function transcribeAudio(wavPath: string, language: string = 'zh'): Promise<string> {
+  // Try whisper-cpp first
+  try {
+    const text = await transcribeWithWhisperCpp(wavPath, language);
+    return text;
+  } catch { /* fall through */ }
+  // Fall back to Groq
+  return await transcribeWithGroq(wavPath, language);
+}
 
 // Model API config - read from environment or config
 const MODEL_API_ENDPOINTS = {

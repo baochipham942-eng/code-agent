@@ -22,7 +22,6 @@ import {
   Square,
   Trash2,
   Pin,
-  Mic,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { IconButton, UndoToast } from './primitives';
@@ -49,7 +48,7 @@ function getRelativeTime(timestamp: number): string {
 }
 
 export const Sidebar: React.FC = () => {
-  const { clearPlanningState, setShowSettings, setShowCapturePanel, showMeetingPanel, setShowMeetingPanel, meetingStatus } = useAppStore();
+  const { clearPlanningState, setShowSettings, setShowCapturePanel } = useAppStore();
   const {
     sessions,
     currentSessionId,
@@ -466,26 +465,7 @@ export const Sidebar: React.FC = () => {
         </div>
       )}
 
-      {/* Meeting Recorder */}
-      <div className="px-3 pb-1 flex-shrink-0">
-        <button
-          onClick={() => setShowMeetingPanel(!showMeetingPanel)}
-          className={`flex items-center gap-2 px-3 py-2 w-full text-left text-sm rounded-md transition-colors ${
-            meetingStatus === 'recording'
-              ? 'text-red-400 bg-red-500/10'
-              : meetingStatus === 'paused'
-                ? 'text-orange-400 bg-orange-500/10'
-                : showMeetingPanel
-                  ? 'text-red-400 bg-red-500/10'
-                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-          }`}
-        >
-          <Mic className={`w-4 h-4 ${meetingStatus === 'recording' ? 'animate-pulse' : ''}`} />
-          <span>
-            {meetingStatus === 'recording' ? '● 录音中' : meetingStatus === 'paused' ? '⏸ 已暂停' : '会议记录'}
-          </span>
-        </button>
-      </div>
+
 
       {/* Bottom: User Menu or Login */}
       <div className="p-2 relative flex-shrink-0" ref={accountMenuRef}>

@@ -66,7 +66,6 @@ import {
   httpRequestTool,
   speechToTextTool,
   localSpeechToTextTool,
-  meetingRecorderTool,
   textToSpeechTool,
   imageAnnotateTool,
   xlwingsExecuteTool,
@@ -306,7 +305,6 @@ export class ToolRegistry {
     this.register(academicSearchTool);
     this.register(speechToTextTool);
     this.register(localSpeechToTextTool);
-    this.register(meetingRecorderTool);
     this.register(textToSpeechTool);
     this.register(imageAnnotateTool);
     this.register(xlwingsExecuteTool);

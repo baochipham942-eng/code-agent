@@ -19,7 +19,6 @@ import {
 } from './app/bootstrap';
 import { createWindow, getMainWindow } from './app/window';
 import { setupAllIpcHandlers } from './ipc';
-import { getFunAsrService } from './ipc/funasrService';
 
 // ----------------------------------------------------------------------------
 // Deep Link Protocol Handler
@@ -188,14 +187,6 @@ app.on('will-quit', () => {
 // Cleanup before quitting
 app.on('before-quit', async () => {
   logger.info('Cleaning up before quit...');
-
-  // Stop FunASR persistent process
-  try {
-    getFunAsrService().stop();
-    logger.info('FunASR service stopped');
-  } catch (error) {
-    logger.error('Error stopping FunASR service', error);
-  }
 
   // Stop WeChat watcher
   try {

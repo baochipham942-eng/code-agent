@@ -11,7 +11,6 @@ export const taskUpdateTool: Tool = {
     'Update a task\'s status, details, or dependencies. ' +
     'Set status="deleted" to permanently remove a task. ' +
     'Use addBlockedBy/addBlocks to establish task dependencies.',
-  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

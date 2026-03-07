@@ -1,8 +1,7 @@
 // ============================================================================
 // Tool Types
 // ============================================================================
-
-import type { Generation, GenerationId } from './generation';
+import type { Generation } from './generation';
 import type { ModelConfig } from './model';
 import type { PermissionRequest } from './permission';
 
@@ -35,7 +34,6 @@ export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: JSONSchema;
-  generations: GenerationId[];
   requiresPermission: boolean;
   permissionLevel: PermissionLevel;
 

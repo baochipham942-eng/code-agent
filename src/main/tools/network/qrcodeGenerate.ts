@@ -58,7 +58,6 @@ qrcode_generate { "content": "WIFI:T:WPA;S:MyNetwork;P:MyPassword;;" }
 \`\`\`
 qrcode_generate { "content": "tel:+8613800138000" }
 \`\`\``,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

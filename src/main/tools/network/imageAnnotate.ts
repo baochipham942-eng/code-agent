@@ -430,7 +430,6 @@ export const imageAnnotateTool: Tool = {
 **需要配置**：
 - 百度 OCR API（需要 BAIDU_OCR_API_KEY 和 BAIDU_OCR_SECRET_KEY）
 - 或智谱 API Key（降级方案，坐标不精确）`,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

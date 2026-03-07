@@ -68,7 +68,6 @@ Parameters:
 - waitForCompletion: (optional) Whether to wait for agent to complete (default: true)
 - parallel: (optional) Set to true to enable parallel execution mode
 - agents: (optional) Array of {role, task, dependsOn?} for parallel execution`,
-  generations: ['gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

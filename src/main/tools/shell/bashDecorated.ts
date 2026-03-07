@@ -33,7 +33,7 @@ Git best practices:
 - NEVER use --force push unless explicitly requested
 - NEVER skip hooks (--no-verify) unless explicitly requested
 - Always check git status before committing`)
-@Tool('bash', { generations: 'gen1+', permission: 'execute' })
+@Tool('bash', { permission: 'execute' })
 @Param('command', { type: 'string', required: true, description: 'The command to execute' })
 @Param('timeout', { type: 'number', required: false, description: 'Timeout in milliseconds (default: 120000)' })
 @Param('working_directory', { type: 'string', required: false, description: 'Working directory for the command' })

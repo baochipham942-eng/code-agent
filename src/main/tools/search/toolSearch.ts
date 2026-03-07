@@ -58,7 +58,6 @@ export const toolSearchTool: Tool = {
     required: ['query'],
   },
 
-  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
 
@@ -83,11 +82,9 @@ export const toolSearchTool: Tool = {
 
     try {
       const service = getToolSearchService();
-      const generationId = context.generation?.id;
 
       const result = await service.searchTools(query, {
         maxResults,
-        generationId,
         includeMCP: true,
       });
 

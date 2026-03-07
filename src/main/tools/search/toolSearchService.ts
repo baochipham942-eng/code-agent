@@ -9,7 +9,6 @@ import type {
   DeferredToolMeta,
   ToolSearchQueryMode,
 } from '../../../shared/types/toolSearch';
-import type { GenerationId } from '../../../shared/types/generation';
 import { DEFERRED_TOOLS_META, buildDeferredToolIndex, isCoreToolName } from './deferredTools';
 import { createLogger } from '../../services/infra/logger';
 
@@ -72,18 +71,18 @@ export class ToolSearchService {
     query: string,
     options: ToolSearchOptions = {}
   ): Promise<ToolSearchResult> {
-    const { maxResults = 5, generationId, includeMCP = true } = options;
+    const { maxResults = 5, includeMCP = true } = options;
     const mode = this.parseQuery(query);
 
     logger.debug(`Searching tools: query="${query}", mode=${mode.type}`);
 
     // 直接选择模式
     if (mode.type === 'select') {
-      return this.selectTool(mode.toolName, generationId);
+      return this.selectTool(mode.toolName);
     }
 
     // 获取所有可搜索的工具元数据
-    const allTools = this.getAllSearchableTools(generationId, includeMCP);
+    const allTools = this.getAllSearchableTools(includeMCP);
 
     // 计算匹配分数
     const scored: Array<{ meta: DeferredToolMeta; score: number }> = [];
@@ -147,7 +146,7 @@ export class ToolSearchService {
   /**
    * 直接选择工具
    */
-  selectTool(toolName: string, generationId?: GenerationId): ToolSearchResult {
+  selectTool(toolName: string): ToolSearchResult {
     const meta = this.deferredToolIndex.get(toolName) || this.mcpToolsMeta.get(toolName);
 
     if (!meta) {
@@ -210,7 +209,6 @@ export class ToolSearchService {
       tags: ['planning'],
       aliases: [name],
       source: 'dynamic',
-      generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
     };
     this.skillsMeta.set(meta.name, meta);
     logger.debug(`Registered skill: ${name}`);
@@ -261,8 +259,8 @@ export class ToolSearchService {
   /**
    * 获取延迟工具摘要（用于 system prompt）
    */
-  getDeferredToolsSummary(generationId?: GenerationId): string {
-    const allTools = this.getAllSearchableTools(generationId, true);
+  getDeferredToolsSummary(): string {
+    const allTools = this.getAllSearchableTools(true);
     const names = allTools.map(t => t.name);
     return names.join('\n');
   }
@@ -275,7 +273,6 @@ export class ToolSearchService {
    * 获取所有可搜索的工具元数据
    */
   private getAllSearchableTools(
-    generationId?: GenerationId,
     includeMCP = true
   ): DeferredToolMeta[] {
     const result: DeferredToolMeta[] = [];

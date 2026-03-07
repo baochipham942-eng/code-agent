@@ -219,7 +219,6 @@ youtube_transcript { "url": "dQw4w9WgXcQ", "language": "zh" }
 - 只能获取已有字幕的视频
 - 自动生成的字幕也可以获取
 - 部分视频可能禁用字幕下载`,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',
   inputSchema: {

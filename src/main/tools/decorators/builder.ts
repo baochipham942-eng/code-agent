@@ -66,7 +66,7 @@ function buildInputSchema(params: ParamMetadataStored[]): JSONSchema {
  * @example
  * ```typescript
  * @Description('Read file contents')
- * @Tool('read_file', { generations: 'gen1+', permission: 'read' })
+ * @Tool('read_file', { permission: 'read' })
  * @Param('file_path', { type: 'string', required: true })
  * class ReadFileTool implements ITool {
  *   async execute(params, ctx) { ... }
@@ -95,7 +95,6 @@ export function buildToolFromClass(ToolClass: ToolConstructor): Tool {
   const tool: Tool = {
     name: toolMeta.name,
     description,
-    generations: toolMeta.generations,
     requiresPermission: toolMeta.permission !== 'none',
     permissionLevel: toolMeta.permission === 'none' ? 'read' : toolMeta.permission,
     inputSchema: buildInputSchema(paramMeta),

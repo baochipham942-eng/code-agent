@@ -15,7 +15,6 @@ import { resolvePath } from '../file/pathUtils';
 // ----------------------------------------------------------------------------
 
 @Tool('read_file', {
-  generations: 'gen1+',  // gen1 及以上所有代际
   permission: 'read',
 })
 @Description(`Read the contents of a file from the local filesystem.

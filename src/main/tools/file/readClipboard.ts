@@ -19,7 +19,6 @@ Use cases:
 - Analyzing clipboard images
 
 Returns: Text content or base64-encoded image data with metadata`,
-  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'read',
   inputSchema: {

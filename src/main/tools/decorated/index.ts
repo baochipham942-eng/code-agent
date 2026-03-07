@@ -21,7 +21,6 @@
 // export const bashTool: Tool = {
 //   name: 'bash',
 //   description: '...',
-//   generations: ['gen1', 'gen2', ...],
 //   inputSchema: { type: 'object', properties: {...}, required: [...] },
 //   async execute(params, context) { ... }
 // };
@@ -29,7 +28,6 @@
 //
 // ### 装饰器定义（约 60 行，更清晰的结构）
 // ```typescript
-// @Tool('bash', { generations: 'gen1+', permission: 'execute' })
 // @Description('...')
 // @Param('command', { type: 'string', required: true })
 // class BashTool implements ITool {

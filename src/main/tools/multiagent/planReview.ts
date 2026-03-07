@@ -35,7 +35,6 @@ Parameters:
     },
     required: ['plan_id', 'action'],
   },
-  generations: ['gen7'],
   requiresPermission: false,
   permissionLevel: 'read' as const,
 

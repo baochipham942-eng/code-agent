@@ -59,7 +59,6 @@ image_process { "input_path": "photo.png", "action": "resize", "width": 800, "he
 \`\`\`
 image_process { "input_path": "icon.png", "action": "upscale", "scale": 2 }
 \`\`\``,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

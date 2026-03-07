@@ -16,7 +16,6 @@ Use for: understanding project layout, browsing directory contents.
 
 For finding specific files by name pattern, use glob instead — it is faster and supports recursive matching (e.g., "**/*.ts").
 For searching file contents, use grep.`,
-  generations: ['gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

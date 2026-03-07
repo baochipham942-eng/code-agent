@@ -101,7 +101,6 @@ return \`\${total} lines across \${files.output.split('\\n').filter(Boolean).len
 callTool returns: { success: boolean, output?: string, error?: string }
 Max 50 tool calls per execution. Timeout: 60s (configurable up to 120s).`,
 
-  generations: ['gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
 
@@ -263,6 +262,7 @@ Max 50 tool calls per execution. Timeout: 60s (configurable up to 120s).`,
                 {
                   generation: {
                     ...context.generation,
+                    id: context.generation.id as import('@shared/types').GenerationId,
                     name: context.generation.id,
                     version: '1.0',
                     description: '',

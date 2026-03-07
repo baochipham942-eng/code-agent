@@ -184,7 +184,6 @@ Examples:
 - {"action": "screenshot"}
 - {"action": "screenshot", "analyze": true, "prompt": "描述页面内容"}
 - {"action": "get_content"}`,
-  generations: ['gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
   inputSchema: {

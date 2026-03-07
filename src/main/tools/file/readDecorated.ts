@@ -23,7 +23,7 @@ Best practices:
 - Multiple files can be read in parallel with separate tool calls
 
 Returns: File content with line numbers in format "  lineNum\\tcontent"`)
-@Tool('read_file', { generations: 'gen1+', permission: 'read' })
+@Tool('read_file', { permission: 'read' })
 @Param('file_path', { type: 'string', required: true, description: 'The absolute path to the file to read' })
 @Param('offset', { type: 'number', required: false, description: 'Line number to start reading from (1-indexed)' })
 @Param('limit', { type: 'number', required: false, description: 'Maximum number of lines to read' })

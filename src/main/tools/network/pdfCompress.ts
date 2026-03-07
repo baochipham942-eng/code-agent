@@ -69,7 +69,6 @@ pdf_compress { "input_path": "/path/to/large.pdf", "quality": "screen" }
 \`\`\`
 pdf_compress { "input_path": "report.pdf", "output_path": "report_small.pdf", "quality": "ebook" }
 \`\`\``,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

@@ -42,7 +42,6 @@ Each entry includes:
 - duration: How long it has been running
 - exit_code: Exit code if completed`,
 
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
 
@@ -144,7 +143,6 @@ Returns only the NEW output since the last time this process was polled.
 
 For PTY sessions, this is the preferred way to check for interactive command output.`,
 
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
 
@@ -240,7 +238,6 @@ export const processLogTool: Tool = {
 Reads the log file directly, which may contain more output than what's in memory.
 Useful for reviewing the complete history of a long-running process.`,
 
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
 
@@ -310,7 +307,6 @@ Use this for sending control characters, escape sequences, or partial input.
 
 For sending complete commands, use process_submit instead which adds a newline.`,
 
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
 
@@ -372,7 +368,6 @@ export const processSubmitTool: Tool = {
 This is the standard way to send commands to an interactive PTY session.
 Equivalent to typing the input and pressing Enter.`,
 
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
 
@@ -425,7 +420,6 @@ export const processKillTool: Tool = {
 Sends SIGTERM (and SIGKILL if needed) to stop the process.
 Works for both background tasks and PTY sessions.`,
 
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
 

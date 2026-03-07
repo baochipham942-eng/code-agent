@@ -165,7 +165,6 @@ Parameters:
 - description: Short description of the task (3-5 words)
 - prompt: Detailed task for the agent
 - subagent_type: Agent type to use`,
-  generations: ['gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

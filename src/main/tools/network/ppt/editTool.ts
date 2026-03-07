@@ -30,7 +30,6 @@ export const pptEditTool: Tool = {
 - extract_style: 提取 PPTX 的主题样式
 
 每次编辑前自动备份原文件。`,
-  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

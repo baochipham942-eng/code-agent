@@ -181,7 +181,6 @@ speech_to_text { "file_path": "lecture.wav", "prompt": "这是一段关于人工
 \`\`\`
 
 注意：需要配置智谱 API Key`,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'read',
   inputSchema: {

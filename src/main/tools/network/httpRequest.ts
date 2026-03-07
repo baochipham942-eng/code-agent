@@ -110,7 +110,6 @@ Examples:
 - POST with JSON: { "url": "https://api.example.com/create", "method": "POST", "body": "{\\"name\\": \\"test\\"}", "headers": { "Content-Type": "application/json" } }
 - With auth: { "url": "https://api.example.com/protected", "headers": { "Authorization": "Bearer token" } }`,
 
-  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',
 

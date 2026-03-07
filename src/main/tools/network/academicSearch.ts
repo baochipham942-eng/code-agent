@@ -234,7 +234,6 @@ academic_search { "query": "大语言模型", "limit": 10, "source": "arxiv" }
 - 引用数（如有）
 - 摘要
 - PDF 链接（如有）`,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',
   inputSchema: {

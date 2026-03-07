@@ -145,7 +145,6 @@ export const localSpeechToTextTool: Tool = {
 local_speech_to_text { "file_path": "/path/to/audio.wav" }
 local_speech_to_text { "file_path": "meeting.mp3", "language": "en", "output_format": "srt" }
 \`\`\``,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'read',
   inputSchema: {

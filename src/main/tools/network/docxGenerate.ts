@@ -426,7 +426,6 @@ export const docxGenerateTool: Tool = {
 docx_generate { "title": "项目报告", "content": "# 概述\\n这是一份报告..." }
 docx_generate { "title": "会议纪要", "content": "## 参会人员\\n- 张三\\n- 李四", "theme": "minimal" }
 \`\`\``,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

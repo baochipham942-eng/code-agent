@@ -40,7 +40,6 @@ Parameters:
 - solution: How to apply/avoid the pattern (for learn)
 - tags: Categorization tags (for learn)
 - query: Search query (for search/apply)`,
-  generations: ['gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

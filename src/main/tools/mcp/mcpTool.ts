@@ -50,7 +50,6 @@ export const mcpTool: Tool = {
     },
     required: ['server', 'tool'],
   },
-  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',
 
@@ -140,7 +139,6 @@ export const mcpListToolsTool: Tool = {
       },
     },
   },
-  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
 
@@ -232,7 +230,6 @@ MCP 资源是服务器暴露的只读数据源，如文件、数据库记录、A
       },
     },
   },
-  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
 
@@ -316,7 +313,6 @@ export const mcpReadResourceTool: Tool = {
     },
     required: ['server', 'uri'],
   },
-  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',
 
@@ -379,7 +375,6 @@ export const mcpGetStatusTool: Tool = {
     type: 'object',
     properties: {},
   },
-  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
 

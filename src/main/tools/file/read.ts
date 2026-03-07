@@ -41,7 +41,6 @@ CRITICAL - Parameter format rules:
 - Do NOT combine parameters into file_path
 
 Returns: File content with line numbers in format "  lineNum\\tcontent"`,
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'read',
   inputSchema: {

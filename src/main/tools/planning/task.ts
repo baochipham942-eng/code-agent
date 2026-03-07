@@ -99,7 +99,6 @@ When to use task tool:
 - Security audits or code reviews (use code-review)
 - Planning complex implementations (use plan)
 - Running multiple related commands (use bash)`,
-  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

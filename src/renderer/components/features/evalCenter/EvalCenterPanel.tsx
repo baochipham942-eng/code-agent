@@ -9,6 +9,7 @@ import { useEvalCenterStore } from '../../../stores/evalCenterStore';
 import { EvalSessionHeader } from './EvalSessionHeader';
 import { EvalDashboard } from './EvalDashboard';
 import { SessionListView } from './SessionListView';
+import { SessionReplayView } from './SessionReplayView';
 import { ChevronLeft } from 'lucide-react';
 
 export const EvalCenterPanel: React.FC = () => {
@@ -16,8 +17,8 @@ export const EvalCenterPanel: React.FC = () => {
   const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const { sessionInfo, isLoading, loadSession } = useEvalCenterStore();
 
-  // mode: 'list' (session list) or 'detail' (dashboard)
-  const [mode, setMode] = useState<'list' | 'detail'>('list');
+  // mode: 'list' (session list), 'detail' (dashboard), or 'replay' (structured replay)
+  const [mode, setMode] = useState<'list' | 'detail' | 'replay'>('list');
   const [detailSessionId, setDetailSessionId] = useState<string | null>(null);
 
   const effectiveSessionId = detailSessionId || evalCenterSessionId || currentSessionId;
@@ -56,22 +57,30 @@ export const EvalCenterPanel: React.FC = () => {
     setMode('list');
   };
 
+  const handleEnterReplay = () => {
+    setMode('replay');
+  };
+
+  const handleBackToDetail = () => {
+    setMode('detail');
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-zinc-900 rounded-xl border border-zinc-700/50 shadow-2xl w-[900px] max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700/50">
           <div className="flex items-center gap-2">
-            {mode === 'detail' && (
+            {(mode === 'detail' || mode === 'replay') && (
               <button
-                onClick={handleBackToList}
+                onClick={mode === 'replay' ? handleBackToDetail : handleBackToList}
                 className="p-1 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
             )}
             <h2 className="text-sm font-medium text-zinc-200">
-              {mode === 'list' ? '评测中心' : '评测中心 / 会话详情'}
+              {mode === 'list' ? '评测中心' : mode === 'detail' ? '评测中心 / 会话详情' : '评测中心 / 会话回放'}
             </h2>
           </div>
           <button
@@ -88,6 +97,16 @@ export const EvalCenterPanel: React.FC = () => {
           <div className="flex-1 overflow-hidden min-h-0">
             <SessionListView onSelectSession={handleSelectSession} />
           </div>
+        ) : mode === 'replay' ? (
+          <div className="flex-1 overflow-hidden min-h-0">
+            {effectiveSessionId ? (
+              <SessionReplayView sessionId={effectiveSessionId} />
+            ) : (
+              <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">
+                请先选择一个会话
+              </div>
+            )}
+          </div>
         ) : (
           <div className="flex-1 overflow-y-auto min-h-0">
             {/* Session Header */}
@@ -98,7 +117,7 @@ export const EvalCenterPanel: React.FC = () => {
                 请先选择一个会话
               </div>
             ) : (
-              <EvalDashboard sessionId={effectiveSessionId} />
+              <EvalDashboard sessionId={effectiveSessionId} onEnterReplay={handleEnterReplay} />
             )}
           </div>
         )}

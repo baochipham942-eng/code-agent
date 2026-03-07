@@ -188,6 +188,10 @@ export const EVALUATION_CHANNELS = {
   GET_SESSION_ANALYSIS: 'evaluation:get-session-analysis',
   /** 执行 LLM 主观评测（按需调用） */
   RUN_SUBJECTIVE_EVALUATION: 'evaluation:run-subjective',
+  /** 列出所有测试报告 */
+  LIST_TEST_REPORTS: 'evaluation:list-test-reports',
+  /** 加载指定测试报告 */
+  LOAD_TEST_REPORT: 'evaluation:load-test-report',
 } as const;
 
 /**
@@ -270,6 +274,8 @@ export const TELEMETRY_CHANNELS = {
   GET_SYSTEM_PROMPT: 'telemetry:get-system-prompt',
   /** 删除会话遥测数据 */
   DELETE_SESSION: 'telemetry:delete-session',
+  /** 获取结构化回放数据 */
+  GET_STRUCTURED_REPLAY: 'replay:get-structured-data',
   /** 实时事件推送（主进程 -> 渲染进程） */
   EVENT: 'telemetry:event',
 } as const;

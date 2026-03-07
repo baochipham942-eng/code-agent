@@ -230,7 +230,7 @@ export function buildCLIConfig(options: {
     : process.cwd();
 
   // 代际
-  const generationId = options.gen || settings.generation?.default || DEFAULT_GENERATION;
+  const generationId = DEFAULT_GENERATION; // Locked to gen8: ignore options.gen and settings
 
   // 模型配置
   const provider = options.provider || settings.model?.provider || DEFAULT_PROVIDER;

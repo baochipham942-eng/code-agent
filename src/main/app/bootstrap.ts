@@ -729,7 +729,7 @@ async function initializeServices(): Promise<void> {
   });
 
   // Set default generation
-  const defaultGenId = settings.generation.default || DEFAULT_GENERATION;
+  const defaultGenId = DEFAULT_GENERATION; // Locked to gen8: ignore settings
   generationManager.switchGeneration(defaultGenId);
   logger.info('Generation set to', { genId: defaultGenId });
 
@@ -803,7 +803,7 @@ async function initializeSession(settings: any): Promise<void> {
   } else {
     const session = await sessionManager.createSession({
       title: 'New Session',
-      generationId: settings.generation.default || DEFAULT_GENERATION,
+      generationId: DEFAULT_GENERATION, // Locked to gen8
       modelConfig: {
         provider: settings.model?.provider || DEFAULT_PROVIDER,
         model: settings.model?.model || DEFAULT_MODELS.chat,

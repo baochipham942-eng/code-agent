@@ -405,10 +405,9 @@ export class ToolRegistry {
    * @param generationId - 代际 ID（如 'gen1', 'gen4'）
    * @returns 该代际可用的工具数组
    */
-  getForGeneration(generationId: GenerationId): Tool[] {
-    return Array.from(this.tools.values()).filter((tool) =>
-      tool.generations.includes(generationId)
-    );
+  /** @simplified Returns all tools regardless of generationId (locked to gen8) */
+  getForGeneration(_generationId: GenerationId): Tool[] {
+    return Array.from(this.tools.values());
   }
 
   /**
@@ -542,7 +541,7 @@ export class ToolRegistry {
     return loadedNames
       .map(name => this.get(name))
       .filter((tool): tool is Tool =>
-        tool !== undefined && tool.generations.includes(generationId)
+        tool !== undefined // gen8 locked: no generation filtering
       )
       .map(tool => {
         const cloudMeta = cloudToolMeta[tool.name];

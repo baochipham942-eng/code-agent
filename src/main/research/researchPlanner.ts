@@ -3,8 +3,8 @@
 // 借鉴 DeerFlow 8 维分析框架，生成结构化研究计划
 // ============================================================================
 
-import { readFileSync } from 'fs';
-import { join } from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 import type {
   ResearchPlan,
   ResearchStep,
@@ -153,14 +153,24 @@ export class ResearchPlanner {
    */
   private loadSkillMethodology(): string | null {
     try {
-      const skillPath = join(__dirname, 'SKILL.md');
-      const content = readFileSync(skillPath, 'utf-8');
-      // Extract content after frontmatter (after second ---)
-      const parts = content.split('---');
-      if (parts.length >= 3) {
-        return parts.slice(2).join('---').trim();
+      // Try multiple possible locations since __dirname may differ in esbuild bundle
+      const possiblePaths = [
+        path.join(__dirname, 'SKILL.md'),
+        path.join(process.cwd(), 'src/main/research/SKILL.md'),
+      ];
+
+      for (const skillPath of possiblePaths) {
+        if (fs.existsSync(skillPath)) {
+          const content = fs.readFileSync(skillPath, 'utf-8');
+          // Extract content after frontmatter (after second ---)
+          const parts = content.split('---');
+          if (parts.length >= 3) {
+            return parts.slice(2).join('---').trim();
+          }
+          return content;
+        }
       }
-      return content;
+      return null;
     } catch {
       return null;
     }

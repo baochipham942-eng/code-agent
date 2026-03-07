@@ -10,7 +10,7 @@ import type {
   DeepResearchConfig,
 } from './types';
 import type { ModelRouter } from '../model/modelRouter';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL, getModelMaxOutputTokens } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('ReportGenerator');
@@ -124,17 +124,50 @@ export class ReportGenerator {
     const reportPrompt = this.buildReportPrompt(plan, stepResults, style);
 
     try {
+      const modelId = config.model ?? DEFAULT_MODEL;
+      const reportProvider = (config.modelProvider as 'deepseek' | 'openai' | 'claude' | 'openrouter') ?? DEFAULT_PROVIDER;
+      const originalMessages: Array<{ role: string; content: string }> = [
+        { role: 'user', content: reportPrompt },
+      ];
+
       const response = await this.modelRouter.chat({
-        provider: (config.modelProvider as 'deepseek' | 'openai' | 'claude' | 'openrouter') ?? DEFAULT_PROVIDER,
-        model: config.model ?? DEFAULT_MODEL,
-        messages: [{ role: 'user', content: reportPrompt }],
-        maxTokens: 4000,
+        provider: reportProvider,
+        model: modelId,
+        messages: [...originalMessages],
+        maxTokens: getModelMaxOutputTokens(modelId) || 16384,
       });
 
-      const content = response.content ?? '';
+      let reportContent = response.content ?? '';
+      let finishReason = response.finishReason;
+      let continuationAttempts = 0;
+      const MAX_CONTINUATIONS = 2;
+
+      // 续写兜底：检测截断后自动续写
+      while (finishReason === 'length' && continuationAttempts < MAX_CONTINUATIONS) {
+        continuationAttempts++;
+        logger.info(`Report truncated, continuation attempt ${continuationAttempts}/${MAX_CONTINUATIONS}`);
+
+        const continuationResponse = await this.modelRouter.chat({
+          provider: reportProvider,
+          model: modelId,
+          messages: [
+            ...originalMessages,
+            { role: 'assistant', content: reportContent },
+            { role: 'user', content: '请继续输出，从上次截断处接续。不要重复已有内容。' },
+          ],
+          maxTokens: getModelMaxOutputTokens(modelId) || 16384,
+        });
+
+        reportContent += continuationResponse.content ?? '';
+        finishReason = continuationResponse.finishReason;
+      }
+
+      if (continuationAttempts > 0) {
+        logger.info(`Report continuation completed after ${continuationAttempts} attempt(s), total length: ${reportContent.length}`);
+      }
 
       // 解析报告
-      const report = this.parseReport(content, plan, style);
+      const report = this.parseReport(reportContent, plan, style);
 
       logger.info('Report generated:', {
         title: report.title,

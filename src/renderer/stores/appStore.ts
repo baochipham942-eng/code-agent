@@ -49,7 +49,6 @@ interface AppState {
 
   // Generation State
   currentGeneration: Generation;
-  availableGenerations: Generation[];
 
   // Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
   isProcessing: boolean;
@@ -175,7 +174,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Initial Generation State
   currentGeneration: defaultGeneration,
-  availableGenerations: [],
 
   // Initial Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
   isProcessing: false,

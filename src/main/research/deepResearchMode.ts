@@ -203,6 +203,10 @@ export class DeepResearchMode {
       // URL expansion: expand compressed URLs in the report
       const enableUrlCompression = config.enableUrlCompression !== false;
       if (enableUrlCompression && executor.urlCompressor.size > 0) {
+        // 程序化兜底：将 LLM 输出中残留的裸 URL 压缩为 [srcN]
+        // （Google 方案：不依赖 LLM 遵循引用格式指令）
+        report.content = executor.urlCompressor.compressText(report.content);
+
         const expandedContent = executor.urlCompressor.expandText(report.content);
         const sourceList = executor.urlCompressor.generateSourceList();
         report = {

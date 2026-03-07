@@ -6,7 +6,7 @@
 import type { GenerationId } from '../../../shared/types';
 import { SYSTEM_PROMPTS } from '../../generation/prompts/builder';
 import { createLogger } from '../infra/logger';
-import { CACHE, CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';
+import { CACHE, CLOUD, CLOUD_ENDPOINTS, DEFAULT_GENERATION } from '../../../shared/constants';
 
 const logger = createLogger('PromptService');
 
@@ -95,14 +95,18 @@ export async function initPromptService(): Promise<void> {
 /**
  * 获取指定代际的 system prompt
  * 优先返回云端版本，降级到本地内置版本
+ * @simplified Always returns gen8 prompt regardless of generationId
  */
 export function getSystemPrompt(generationId: GenerationId): string {
+  // Locked to gen8: ignore generationId parameter
+  const targetId = DEFAULT_GENERATION;
+
   // 检查缓存是否有效
   if (cachedPrompts) {
     const isExpired = Date.now() - cachedPrompts.fetchedAt > CACHE.PROMPT_TTL;
 
-    if (!isExpired && cachedPrompts.prompts[generationId]) {
-      return cachedPrompts.prompts[generationId];
+    if (!isExpired && cachedPrompts.prompts[targetId]) {
+      return cachedPrompts.prompts[targetId];
     }
 
     // 缓存过期，后台刷新（不阻塞）
@@ -113,13 +117,13 @@ export function getSystemPrompt(generationId: GenerationId): string {
     }
 
     // 即使过期也先返回缓存的
-    if (cachedPrompts.prompts[generationId]) {
-      return cachedPrompts.prompts[generationId];
+    if (cachedPrompts.prompts[targetId]) {
+      return cachedPrompts.prompts[targetId];
     }
   }
 
   // 降级到内置 prompts
-  return SYSTEM_PROMPTS[generationId];
+  return SYSTEM_PROMPTS[targetId];
 }
 
 /**

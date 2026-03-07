@@ -21,11 +21,13 @@ async function handleList(getManager: () => GenerationManager | null): Promise<G
   return getManagerOrThrow(getManager).getAllGenerations();
 }
 
+/** @simplified Always returns gen8, ignores payload.id */
 async function handleSwitch(
   getManager: () => GenerationManager | null,
   payload: { id: GenerationId }
 ): Promise<Generation> {
-  return getManagerOrThrow(getManager).switchGeneration(payload.id);
+  // Locked to gen8: ignore payload.id, always return current (gen8)
+  return getManagerOrThrow(getManager).getCurrentGeneration();
 }
 
 async function handleGetPrompt(
@@ -35,11 +37,12 @@ async function handleGetPrompt(
   return getManagerOrThrow(getManager).getPrompt(payload.id);
 }
 
+/** @simplified Always returns empty diff */
 async function handleCompare(
-  getManager: () => GenerationManager | null,
-  payload: { id1: GenerationId; id2: GenerationId }
+  _getManager: () => GenerationManager | null,
+  _payload: { id1: GenerationId; id2: GenerationId }
 ): Promise<GenerationDiff> {
-  return getManagerOrThrow(getManager).compareGenerations(payload.id1, payload.id2);
+  return { added: [], removed: [], modified: [] };
 }
 
 async function handleGetCurrent(getManager: () => GenerationManager | null): Promise<Generation> {

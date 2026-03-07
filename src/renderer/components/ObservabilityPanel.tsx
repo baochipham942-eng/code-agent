@@ -488,18 +488,17 @@ function formatMemoryDetails(event: ObservableEvent): {
 const categoryOrder: EventCategory[] = ['plan', 'bash', 'agent', 'tools', 'skill', 'mcp', 'memory'];
 
 export const ObservabilityPanel: React.FC = () => {
-  const { currentGeneration, contextHealth, contextHealthCollapsed, setContextHealthCollapsed } = useAppStore();
+  const { contextHealth, contextHealthCollapsed, setContextHealthCollapsed } = useAppStore();
   const { messages } = useSessionStore();
   const [expandedCategories, setExpandedCategories] = useState<Set<EventCategory>>(new Set(['plan', 'bash']));
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
 
   // 获取当前代际数字
-  const currentGenNumber = parseInt(currentGeneration.id.replace('gen', ''));
 
   // 根据代际过滤可用分类
   const availableCategories = useMemo(() => {
-    return categoryOrder.filter(cat => categoryConfig[cat].minGeneration <= currentGenNumber);
-  }, [currentGenNumber]);
+    return categoryOrder;
+  }, []);
 
   // 从消息中提取可观测事件
   const events = useMemo(() => {
@@ -605,7 +604,7 @@ export const ObservabilityPanel: React.FC = () => {
         <div>
           <h3 className="text-sm font-medium text-zinc-200">执行追踪</h3>
           <p className="text-xs text-zinc-500 mt-0.5">
-            Gen{currentGenNumber} · {availableCategories.length} 个观测维度
+            Gen8 · {availableCategories.length} 个观测维度
           </p>
         </div>
         <button

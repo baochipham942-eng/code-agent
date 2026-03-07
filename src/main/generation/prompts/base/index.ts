@@ -1,6 +1,7 @@
 // ============================================================================
 // Base Prompts Index - Export all generation tool definitions
 // ============================================================================
+// @simplified: All generations map to gen8 prompt (Sprint 1: locked to gen8)
 
 import type { GenerationId } from '../../../../shared/types';
 import { GEN1_TOOLS } from './gen1';
@@ -21,13 +22,14 @@ export { GEN6_TOOLS } from './gen6';
 export { GEN7_TOOLS } from './gen7';
 export { GEN8_TOOLS } from './gen8';
 
+/** @simplified All generations resolve to gen8 prompt */
 export const BASE_PROMPTS: Record<GenerationId, string> = {
-  gen1: GEN1_TOOLS,
-  gen2: GEN2_TOOLS,
-  gen3: GEN3_TOOLS,
-  gen4: GEN4_TOOLS,
-  gen5: GEN5_TOOLS,
-  gen6: GEN6_TOOLS,
-  gen7: GEN7_TOOLS,
+  gen1: GEN8_TOOLS,
+  gen2: GEN8_TOOLS,
+  gen3: GEN8_TOOLS,
+  gen4: GEN8_TOOLS,
+  gen5: GEN8_TOOLS,
+  gen6: GEN8_TOOLS,
+  gen7: GEN8_TOOLS,
   gen8: GEN8_TOOLS,
 };

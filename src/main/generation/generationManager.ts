@@ -1,12 +1,11 @@
 // ============================================================================
 // Generation Manager - Manages different Claude Code generations
 // ============================================================================
+// Simplified: locked to gen8 only (Sprint 1)
 
 import type { Generation, GenerationId, GenerationDiff } from '../../shared/types';
-import * as diff from 'diff';
 import { GENERATION_DEFINITIONS } from './metadata';
 import { getSystemPrompt } from '../services/cloud/promptService';
-import { isGen8Enabled } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';
 import { DEFAULT_GENERATION } from '../../shared/constants';
 
@@ -42,15 +41,10 @@ export class GenerationManager {
   // Public Methods
   // --------------------------------------------------------------------------
 
+  /** @simplified Always returns only gen8 */
   getAllGenerations(): Generation[] {
-    const all = Array.from(this.generations.values());
-
-    // Feature Flag: Gen8 需要启用才能使用
-    if (!isGen8Enabled()) {
-      return all.filter((g) => g.id !== 'gen8');
-    }
-
-    return all;
+    const gen8 = this.generations.get(DEFAULT_GENERATION);
+    return gen8 ? [gen8] : [];
   }
 
   getGeneration(id: GenerationId): Generation | undefined {
@@ -61,60 +55,31 @@ export class GenerationManager {
     return this.currentGeneration;
   }
 
+  /** @simplified Always returns gen8, ignores requested id */
   switchGeneration(id: GenerationId): Generation {
-    // Feature Flag: 检查 Gen8 是否启用
-    if (id === 'gen8' && !isGen8Enabled()) {
-      throw new Error('Gen8 is not enabled. Contact admin to enable this feature.');
+    if (id !== DEFAULT_GENERATION) {
+      logger.warn(`switchGeneration(${id}) called but locked to ${DEFAULT_GENERATION}`);
     }
-
-    const generation = this.generations.get(id);
-    if (!generation) {
-      throw new Error(`Unknown generation: ${id}`);
-    }
-    this.currentGeneration = generation;
-    return generation;
+    return this.currentGeneration; // always gen8
   }
 
   getPrompt(id: GenerationId): string {
-    const generation = this.generations.get(id);
+    // Always return gen8 prompt regardless of requested id
+    const generation = this.generations.get(DEFAULT_GENERATION);
     if (!generation) {
-      throw new Error(`Unknown generation: ${id}`);
+      throw new Error(`Generation ${DEFAULT_GENERATION} not found`);
     }
     return generation.systemPrompt;
   }
 
-  compareGenerations(id1: GenerationId, id2: GenerationId): GenerationDiff {
-    const gen1 = this.generations.get(id1);
-    const gen2 = this.generations.get(id2);
-
-    if (!gen1 || !gen2) {
-      throw new Error('Invalid generation IDs');
-    }
-
-    const changes = diff.diffLines(gen1.systemPrompt, gen2.systemPrompt);
-
-    const result: GenerationDiff = {
-      added: [],
-      removed: [],
-      modified: [],
-    };
-
-    for (const change of changes) {
-      const lines = change.value.split('\n').filter((l) => l.trim());
-
-      if (change.added) {
-        result.added.push(...lines);
-      } else if (change.removed) {
-        result.removed.push(...lines);
-      }
-    }
-
-    return result;
+  /** @simplified Always returns empty diff */
+  compareGenerations(_id1: GenerationId, _id2: GenerationId): GenerationDiff {
+    return { added: [], removed: [], modified: [] };
   }
 
-  // Get available tools for a generation
-  getGenerationTools(id: GenerationId): string[] {
-    const generation = this.generations.get(id);
+  /** @simplified Returns gen8 tools regardless of id */
+  getGenerationTools(_id: GenerationId): string[] {
+    const generation = this.generations.get(DEFAULT_GENERATION);
     return generation?.tools || [];
   }
 }

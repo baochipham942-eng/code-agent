@@ -241,7 +241,7 @@ export class ModelRouter {
     model: string;
     messages: Array<{ role: string; content: string }>;
     maxTokens?: number;
-  }): Promise<{ content: string | null }> {
+  }): Promise<{ content: string | null; finishReason?: string }> {
     const apiKey = getConfigService().getApiKey(options.provider);
     const config: ModelConfig = {
       provider: options.provider,
@@ -256,7 +256,7 @@ export class ModelRouter {
       config
     );
 
-    return { content: response.content ?? null };
+    return { content: response.content ?? null, finishReason: response.finishReason };
   }
 
   /**

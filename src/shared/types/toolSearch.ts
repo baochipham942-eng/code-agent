@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { ToolTag, ToolSource } from './tool';
-import type { GenerationId } from './generation';
+
 
 /**
  * 工具搜索结果项
@@ -55,8 +55,6 @@ export interface ToolSearchOptions {
   /** 必须匹配的前缀（用 + 标记） */
   requiredPrefix?: string;
 
-  /** 代际过滤 */
-  generationId?: GenerationId;
 
   /** 是否包含 MCP 工具（默认 true） */
   includeMCP?: boolean;
@@ -85,8 +83,6 @@ export interface DeferredToolMeta {
   /** MCP 服务器名称 */
   mcpServer?: string;
 
-  /** 关联的代际 */
-  generations: string[];
 }
 
 /**

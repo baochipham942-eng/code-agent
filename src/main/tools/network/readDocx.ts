@@ -29,7 +29,6 @@ export const readDocxTool: Tool = {
 read_docx { "file_path": "report.docx" }
 read_docx { "file_path": "report.docx", "format": "markdown" }
 \`\`\``,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'read',
   inputSchema: {

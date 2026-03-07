@@ -188,7 +188,6 @@ export const skillMetaTool: Tool = {
   name: 'skill',
   description: '执行已注册的 skill',
   dynamicDescription: buildSkillDescription,
-  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

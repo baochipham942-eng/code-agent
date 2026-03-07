@@ -323,7 +323,6 @@ export class AgentExecutor extends EventEmitter {
     return {
       name: 'delegate_task',
       description: '将子任务委派给其他 Agent 执行',
-      generations: ['gen7', 'gen8'],
       requiresPermission: false,
       permissionLevel: 'read',
       inputSchema: {

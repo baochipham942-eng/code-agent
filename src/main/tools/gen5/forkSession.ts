@@ -45,7 +45,6 @@ export const forkSessionTool: Tool = {
 - fork_session { "query": "优化数据库查询" }  -> 查找数据库相关会话
 - fork_session { "session_id": "abc123" }  -> 直接 Fork 指定会话`,
 
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
 

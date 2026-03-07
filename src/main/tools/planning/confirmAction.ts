@@ -60,7 +60,6 @@ Example:
     confirmText: "删除",
     cancelText: "取消"
   })`,
-  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

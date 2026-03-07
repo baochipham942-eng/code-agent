@@ -6,7 +6,6 @@
 import type {
   Generation,
   GenerationId,
-  GenerationDiff,
   Message,
   MessageAttachment,
   PermissionResponse,
@@ -493,9 +492,6 @@ export const IPC_CHANNELS = {
 
   // Generation channels
   GENERATION_LIST: 'generation:list',
-  GENERATION_SWITCH: 'generation:switch',
-  GENERATION_GET_PROMPT: 'generation:get-prompt',
-  GENERATION_COMPARE: 'generation:compare',
   GENERATION_GET_CURRENT: 'generation:get-current',
 
   // Session channels
@@ -795,12 +791,6 @@ export interface IpcInvokeHandlers {
 
   // Generation
   [IPC_CHANNELS.GENERATION_LIST]: () => Promise<Generation[]>;
-  [IPC_CHANNELS.GENERATION_SWITCH]: (id: GenerationId) => Promise<Generation>;
-  [IPC_CHANNELS.GENERATION_GET_PROMPT]: (id: GenerationId) => Promise<string>;
-  [IPC_CHANNELS.GENERATION_COMPARE]: (
-    id1: GenerationId,
-    id2: GenerationId
-  ) => Promise<GenerationDiff>;
   [IPC_CHANNELS.GENERATION_GET_CURRENT]: () => Promise<Generation>;
 
   // Session

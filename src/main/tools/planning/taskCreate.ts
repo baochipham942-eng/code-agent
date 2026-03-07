@@ -12,7 +12,6 @@ export const taskCreateTool: Tool = {
     'Create a new task to track work progress. ' +
     'Use this for multi-step tasks that need progress tracking. ' +
     'Tasks are session-scoped and support dependencies via task_update.',
-  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

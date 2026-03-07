@@ -562,7 +562,6 @@ export const imageGenerateTool: Tool = {
 image_generate { "prompt": "一只猫", "expand_prompt": true }
 image_generate { "prompt": "产品展示图", "output_path": "./product.png", "style": "photo" }
 \`\`\``,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

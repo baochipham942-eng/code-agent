@@ -18,7 +18,6 @@ To find available task IDs:
 - Check the task_id returned when you started a background command
 - Or list running tasks using the task_output tool without parameters`,
 
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'execute',
 

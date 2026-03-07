@@ -201,7 +201,6 @@ Tips:
 - Pattern uses ripgrep syntax (not grep) — literal braces need escaping: \`interface\\{\\}\` to find \`interface{}\`
 - Escape regex special chars: . * + ? [ ] ( ) { } | \\ ^ $
 - Multiple searches can run in parallel with separate tool calls`,
-  generations: ['gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

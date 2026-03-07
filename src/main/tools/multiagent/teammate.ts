@@ -49,7 +49,6 @@ Parameters:
 - message: Message content (required for send/coordinate/handoff/query/respond/broadcast)
 - responseTo: Original message ID (required for respond action)
 - taskId: Related task ID (optional)`,
-  generations: ['gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

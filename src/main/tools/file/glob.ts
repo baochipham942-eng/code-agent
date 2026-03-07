@@ -18,7 +18,6 @@ Do NOT use bash find or ls — this tool is faster and auto-ignores node_modules
 
 Patterns: "**/*.ts" (recursive), "src/*.tsx" (one level), "**/*test*" (name match).
 Results sorted by modification time, limited to 200 files.`,
-  generations: ['gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

@@ -79,7 +79,6 @@ export const computerUseTool: Tool = {
 - {"action": "get_elements"} - list all interactive elements
 
 IMPORTANT: For smart actions, browser must be launched via browser_action first.`,
-  generations: ['gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
   inputSchema: {

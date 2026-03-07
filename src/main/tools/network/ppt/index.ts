@@ -60,7 +60,6 @@ export const pptGenerateTool: Tool = {
 
 **可用布局：** stats、cards-2、cards-3、list、timeline、comparison、quote、chart
 **9 种配色主题：** neon-green（推荐）、neon-blue、neon-purple、neon-orange、glass-light、glass-dark、minimal-mono、corporate、apple-dark`,
-  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

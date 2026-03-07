@@ -163,7 +163,6 @@ Rules:
 - For files >300 lines, create a skeleton first, then use edit_file to fill in — this prevents truncation
 
 The tool checks for truncated code (unclosed brackets, incomplete statements) and warns you.`,
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

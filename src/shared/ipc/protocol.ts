@@ -45,7 +45,7 @@ export type SessionAction = 'list' | 'create' | 'load' | 'delete' | 'export' | '
 /**
  * Generation 通道 actions
  */
-export type GenerationAction = 'list' | 'switch' | 'getPrompt' | 'getCurrent';
+export type GenerationAction = 'list' | 'getCurrent';
 
 /**
  * Auth 通道 actions

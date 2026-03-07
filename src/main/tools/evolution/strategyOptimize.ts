@@ -31,7 +31,6 @@ Parameters:
 - strategyId: Target strategy (for feedback, analyze)
 - success: Whether strategy worked (for feedback)
 - task: Task description (for recommend)`,
-  generations: ['gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

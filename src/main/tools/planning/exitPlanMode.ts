@@ -24,7 +24,6 @@ export const exitPlanModeTool: Tool = {
 - 每个文件的修改内容概述
 - 实现步骤（按顺序）
 - 潜在风险或注意事项`,
-  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

@@ -385,7 +385,6 @@ image_analyze { "paths": ["/Users/xxx/Photos/*.jpg"], "filter": "有猫的照片
 ## 成本估算
 - 100 张图片 ≈ $0.001（几乎免费）`,
 
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'read',
 

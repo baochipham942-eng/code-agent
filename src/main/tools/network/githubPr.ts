@@ -507,7 +507,6 @@ github_pr { "action": "review", "pr": 42, "event": "approve", "body": "Looks goo
 \`\`\`
 github_pr { "action": "merge", "pr": 42, "method": "squash", "delete_branch": true }
 \`\`\``,
-  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',
   inputSchema: {

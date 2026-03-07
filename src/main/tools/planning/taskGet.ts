@@ -10,7 +10,6 @@ export const taskGetTool: Tool = {
   description:
     'Get full details of a task by its ID. ' +
     'Use this to understand task requirements, dependencies, and context before starting work.',
-  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

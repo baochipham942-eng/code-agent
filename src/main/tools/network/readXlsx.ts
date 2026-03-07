@@ -31,7 +31,6 @@ Output formats:
 - csv: CSV format
 
 The output always includes column names, which you should reference exactly when writing analysis scripts.`,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'read',
   inputSchema: {

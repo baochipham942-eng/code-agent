@@ -44,7 +44,6 @@ PTY mode: set pty=true for interactive commands (vim, ssh).
 
 Git: NEVER --force push or --no-verify unless explicitly requested.`,
 
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
 

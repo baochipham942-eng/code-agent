@@ -4,7 +4,6 @@
 
 import type {
   ToolDefinition,
-  GenerationId,
   JSONSchema,
 } from '../../shared/types';
 import { getCloudConfigService } from '../services/cloud';
@@ -110,7 +109,7 @@ export interface Tool extends ToolDefinition {
 
 export interface ToolContext {
   workingDirectory: string;
-  generation: { id: GenerationId };
+  generation: { id: string };
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   emit?: (event: string, data: unknown) => void;
   emitEvent?: (event: string, data: unknown) => void; // Alias for emit
@@ -406,7 +405,7 @@ export class ToolRegistry {
    * @returns 该代际可用的工具数组
    */
   /** @simplified Returns all tools regardless of generationId (locked to gen8) */
-  getForGeneration(_generationId: GenerationId): Tool[] {
+  getForGeneration(_generationId?: string): Tool[] {
     return Array.from(this.tools.values());
   }
 
@@ -418,10 +417,10 @@ export class ToolRegistry {
    * @param generationId - 代际 ID
    * @returns 工具定义数组
    */
-  getToolDefinitions(generationId: GenerationId): ToolDefinition[] {
+  getToolDefinitions(_generationId?: string): ToolDefinition[] {
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
-    return this.getForGeneration(generationId).map((tool) => {
+    return this.getAllTools().map((tool) => {
       // 合并云端元数据（优先级: cloud > dynamic > static）
       const cloudMeta = cloudToolMeta[tool.name];
       const description = cloudMeta?.description || tool.dynamicDescription?.() || tool.description;
@@ -430,7 +429,6 @@ export class ToolRegistry {
         name: tool.name,
         description,
         inputSchema: tool.inputSchema,
-        generations: tool.generations,
         requiresPermission: tool.requiresPermission,
         permissionLevel: tool.permissionLevel,
       };
@@ -458,7 +456,6 @@ export class ToolRegistry {
       name: tool.name,
       description: cloudMeta?.description || tool.dynamicDescription?.() || tool.description,
       inputSchema: tool.inputSchema,
-      generations: tool.generations,
       requiresPermission: tool.requiresPermission,
       permissionLevel: tool.permissionLevel,
     };
@@ -477,10 +474,10 @@ export class ToolRegistry {
    * @param generationId - 代际 ID
    * @returns 核心工具定义数组
    */
-  getCoreToolDefinitions(generationId: GenerationId): ToolDefinition[] {
+  getCoreToolDefinitions(_generationId?: string): ToolDefinition[] {
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
-    return this.getForGeneration(generationId)
+    return this.getAllTools()
       .filter(tool => CORE_TOOLS.includes(tool.name) || tool.isCore === true)
       .map(tool => {
         const cloudMeta = cloudToolMeta[tool.name];
@@ -490,7 +487,6 @@ export class ToolRegistry {
           name: tool.name,
           description,
           inputSchema: tool.inputSchema,
-          generations: tool.generations,
           requiresPermission: tool.requiresPermission,
           permissionLevel: tool.permissionLevel,
         };
@@ -505,10 +501,10 @@ export class ToolRegistry {
    * @param generationId - 代际 ID
    * @returns 延迟工具定义数组
    */
-  getDeferredToolDefinitions(generationId: GenerationId): ToolDefinition[] {
+  getDeferredToolDefinitions(_generationId?: string): ToolDefinition[] {
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
-    return this.getForGeneration(generationId)
+    return this.getAllTools()
       .filter(tool => !CORE_TOOLS.includes(tool.name) && tool.isCore !== true)
       .map(tool => {
         const cloudMeta = cloudToolMeta[tool.name];
@@ -518,7 +514,6 @@ export class ToolRegistry {
           name: tool.name,
           description,
           inputSchema: tool.inputSchema,
-          generations: tool.generations,
           requiresPermission: tool.requiresPermission,
           permissionLevel: tool.permissionLevel,
         };
@@ -533,7 +528,7 @@ export class ToolRegistry {
    * @param generationId - 代际 ID
    * @returns 已加载的延迟工具定义数组
    */
-  getLoadedDeferredToolDefinitions(generationId: GenerationId): ToolDefinition[] {
+  getLoadedDeferredToolDefinitions(_generationId?: string): ToolDefinition[] {
     const toolSearchService = getToolSearchService();
     const loadedNames = toolSearchService.getLoadedDeferredTools();
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();
@@ -551,7 +546,6 @@ export class ToolRegistry {
           name: tool.name,
           description,
           inputSchema: tool.inputSchema,
-          generations: tool.generations,
           requiresPermission: tool.requiresPermission,
           permissionLevel: tool.permissionLevel,
         };
@@ -566,8 +560,8 @@ export class ToolRegistry {
    * @param generationId - 代际 ID
    * @returns 延迟工具名称列表字符串
    */
-  getDeferredToolsSummary(generationId: GenerationId): string {
-    const deferred = this.getDeferredToolDefinitions(generationId);
+  getDeferredToolsSummary(_generationId?: string): string {
+    const deferred = this.getDeferredToolDefinitions();
     return deferred.map(t => t.name).join('\n');
   }
 }

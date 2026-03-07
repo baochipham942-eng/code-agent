@@ -158,64 +158,7 @@ const ATTACHMENT_HANDLING_RULES = `
 // Base Prompts
 // ----------------------------------------------------------------------------
 
-const BASE_PROMPTS: Record<GenerationId, string> = {
-  gen1: `你是一个 AI 编程助手（Gen1 - 基础工具）。
-
-你可以使用以下工具：
-- bash: 执行 shell 命令
-- read_file: 读取文件内容
-- write_file: 创建或覆盖文件
-- edit_file: 编辑文件的特定部分`,
-
-  gen2: `你是一个 AI 编程助手（Gen2 - 搜索增强）。
-
-你可以使用以下工具：
-- bash, read_file, write_file, edit_file（基础工具）
-- glob: 按模式搜索文件
-- grep: 搜索文件内容
-- list_directory: 列出目录内容`,
-
-  gen3: `你是一个 AI 编程助手（Gen3 - 任务管理）。
-
-你可以使用以下工具：
-- 基础工具 + 搜索工具
-- task: 创建子任务
-- todo_write: 管理任务列表
-- ask_user_question: 向用户提问`,
-
-  gen4: `你是一个 AI 编程助手（Gen4 - 工业化系统期）。
-
-你可以使用以下工具：
-- 基础工具 + 搜索工具 + 任务管理
-- skill: 调用预定义技能
-- web_fetch: 获取网页内容
-- read_pdf: 读取 PDF 文件
-- mcp: 调用 MCP 服务器工具`,
-
-  gen5: `你是一个 AI 编程助手（Gen5 - 记忆系统）。
-
-你可以使用以下工具：
-- 所有 Gen4 工具
-- memory_store: 存储记忆
-- memory_search: 搜索记忆
-- code_index: 索引代码库`,
-
-  gen6: `你是一个 AI 编程助手（Gen6 - 视觉能力）。
-
-你可以使用以下工具：
-- 所有 Gen5 工具
-- screenshot: 截图
-- computer_use: 电脑操作
-- browser_action: 浏览器操作`,
-
-  gen7: `你是一个 AI 编程助手（Gen7 - 多 Agent）。
-
-你可以使用以下工具：
-- 所有 Gen6 工具
-- spawn_agent: 创建子 Agent
-- agent_message: Agent 间通信
-- workflow_orchestrate: 工作流编排`,
-
+const BASE_PROMPTS: Partial<Record<GenerationId, string>> = {
   gen8: `你是一个 AI 编程助手（Gen8 - 自我进化）。
 
 你可以使用以下工具：
@@ -225,14 +168,7 @@ const BASE_PROMPTS: Record<GenerationId, string> = {
 - self_evaluate: 自我评估`,
 };
 
-const GENERATION_RULES: Record<GenerationId, string[]> = {
-  gen1: [OUTPUT_FORMAT_RULES, PROFESSIONAL_OBJECTIVITY_RULES, CODE_REFERENCE_RULES, ERROR_HANDLING_RULES, CODE_SNIPPET_RULES, HTML_GENERATION_RULES, ATTACHMENT_HANDLING_RULES],
-  gen2: [OUTPUT_FORMAT_RULES, PROFESSIONAL_OBJECTIVITY_RULES, CODE_REFERENCE_RULES, PARALLEL_TOOLS_RULES, ERROR_HANDLING_RULES, CODE_SNIPPET_RULES, HTML_GENERATION_RULES, ATTACHMENT_HANDLING_RULES],
-  gen3: [OUTPUT_FORMAT_RULES, PROFESSIONAL_OBJECTIVITY_RULES, CODE_REFERENCE_RULES, PARALLEL_TOOLS_RULES, PLAN_MODE_RULES, GIT_SAFETY_RULES, INJECTION_DEFENSE_RULES, ERROR_HANDLING_RULES, CODE_SNIPPET_RULES, HTML_GENERATION_RULES, ATTACHMENT_HANDLING_RULES],
-  gen4: [OUTPUT_FORMAT_RULES, PROFESSIONAL_OBJECTIVITY_RULES, CODE_REFERENCE_RULES, PARALLEL_TOOLS_RULES, PLAN_MODE_RULES, GIT_SAFETY_RULES, INJECTION_DEFENSE_RULES, GITHUB_ROUTING_RULES, ERROR_HANDLING_RULES, CODE_SNIPPET_RULES, HTML_GENERATION_RULES, ATTACHMENT_HANDLING_RULES],
-  gen5: [OUTPUT_FORMAT_RULES, PROFESSIONAL_OBJECTIVITY_RULES, CODE_REFERENCE_RULES, PARALLEL_TOOLS_RULES, PLAN_MODE_RULES, GIT_SAFETY_RULES, INJECTION_DEFENSE_RULES, GITHUB_ROUTING_RULES, ERROR_HANDLING_RULES, CODE_SNIPPET_RULES, HTML_GENERATION_RULES, ATTACHMENT_HANDLING_RULES],
-  gen6: [OUTPUT_FORMAT_RULES, PROFESSIONAL_OBJECTIVITY_RULES, CODE_REFERENCE_RULES, PARALLEL_TOOLS_RULES, PLAN_MODE_RULES, GIT_SAFETY_RULES, INJECTION_DEFENSE_RULES, GITHUB_ROUTING_RULES, ERROR_HANDLING_RULES, CODE_SNIPPET_RULES, HTML_GENERATION_RULES, ATTACHMENT_HANDLING_RULES],
-  gen7: [OUTPUT_FORMAT_RULES, PROFESSIONAL_OBJECTIVITY_RULES, CODE_REFERENCE_RULES, PARALLEL_TOOLS_RULES, PLAN_MODE_RULES, GIT_SAFETY_RULES, INJECTION_DEFENSE_RULES, GITHUB_ROUTING_RULES, ERROR_HANDLING_RULES, CODE_SNIPPET_RULES, HTML_GENERATION_RULES, ATTACHMENT_HANDLING_RULES],
+const GENERATION_RULES: Partial<Record<GenerationId, string[]>> = {
   gen8: [OUTPUT_FORMAT_RULES, PROFESSIONAL_OBJECTIVITY_RULES, CODE_REFERENCE_RULES, PARALLEL_TOOLS_RULES, PLAN_MODE_RULES, GIT_SAFETY_RULES, INJECTION_DEFENSE_RULES, GITHUB_ROUTING_RULES, ERROR_HANDLING_RULES, CODE_SNIPPET_RULES, HTML_GENERATION_RULES, ATTACHMENT_HANDLING_RULES],
 };
 
@@ -611,7 +547,7 @@ const BUILTIN_VERSION = '2025.01.19.1';
 
 export function getBuiltinConfig(): CloudConfig {
   const prompts = {} as Record<GenerationId, string>;
-  const generations: GenerationId[] = ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'];
+  const generations: GenerationId[] = ['gen8'];
 
   for (const gen of generations) {
     prompts[gen] = buildPrompt(gen);

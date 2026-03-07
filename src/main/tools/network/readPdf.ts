@@ -151,7 +151,6 @@ Best for:
 - Reading text-based PDFs (technical docs, code, reports)
 - Processing scanned documents and images
 - Analyzing PDF forms, diagrams and charts`,
-  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'read',
   inputSchema: {

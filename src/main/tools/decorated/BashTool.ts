@@ -18,7 +18,6 @@ const execAsync = promisify(exec);
 // ----------------------------------------------------------------------------
 
 @Tool('bash', {
-  generations: 'gen1+',  // gen1 及以上所有代际
   permission: 'execute',
 })
 @Description(`Execute shell commands in a persistent shell session with optional timeout.

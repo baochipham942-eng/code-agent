@@ -101,32 +101,17 @@ export function buildPrompt(generationId: GenerationId): string {
 /**
  * Builds all system prompts and returns them as a record.
  */
-export function buildAllPrompts(): Record<GenerationId, string> {
-  const generationIds: GenerationId[] = [
-    'gen1',
-    'gen2',
-    'gen3',
-    'gen4',
-    'gen5',
-    'gen6',
-    'gen7',
-    'gen8',
-  ];
-
-  const prompts: Partial<Record<GenerationId, string>> = {};
-
-  for (const id of generationIds) {
-    prompts[id] = buildPrompt(id);
-  }
-
-  return prompts as Record<GenerationId, string>;
+export function buildAllPrompts(): Partial<Record<GenerationId, string>> {
+  return {
+    gen8: buildPrompt('gen8'),
+  };
 }
 
 /**
  * Pre-built prompts for all generations.
  * Use this for performance when prompts are needed frequently.
  */
-export const SYSTEM_PROMPTS: Record<GenerationId, string> = buildAllPrompts();
+export const SYSTEM_PROMPTS: Partial<Record<GenerationId, string>> = buildAllPrompts();
 
 // ----------------------------------------------------------------------------
 // Simple Task Mode Prompt (Phase 3)
@@ -169,7 +154,7 @@ export function getPromptForTask(
   _generationId: GenerationId,
   _isSimpleTask: boolean
 ): string {
-  return SYSTEM_PROMPTS[DEFAULT_GENERATION];
+  return SYSTEM_PROMPTS[DEFAULT_GENERATION]!;
 }
 
 // ----------------------------------------------------------------------------
@@ -200,7 +185,7 @@ export function buildDynamicPrompt(
   taskPrompt: string
 ): DynamicPromptResult {
   // Locked to gen8: ignore generationId
-  const basePrompt = SYSTEM_PROMPTS[DEFAULT_GENERATION];
+  const basePrompt = SYSTEM_PROMPTS[DEFAULT_GENERATION] ?? "";
   const features = detectTaskFeatures(taskPrompt);
   const mode = selectMode(taskPrompt);
   const modeConfig = getModeConfig(mode);
@@ -278,7 +263,7 @@ export function buildDynamicPromptV2(
   } = {}
 ): DynamicPromptResultV2 {
   // Locked to gen8: ignore generationId
-  const basePrompt = SYSTEM_PROMPTS[DEFAULT_GENERATION];
+  const basePrompt = SYSTEM_PROMPTS[DEFAULT_GENERATION] ?? "";
   const features = detectTaskFeatures(taskPrompt);
   const mode = selectMode(taskPrompt);
   const modeConfig = getModeConfig(mode);

@@ -143,7 +143,6 @@ Features:
 - auto_extract: search + fetch + AI extraction in one call
 - recency: filter results by day/week/month
 - output_format: "table" for compact markdown output`,
-  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',
   inputSchema: {

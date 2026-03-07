@@ -50,7 +50,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['shell'],
     aliases: ['kill', 'stop'],
     source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'task_output',
@@ -58,7 +57,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['shell'],
     aliases: ['output', 'background'],
     source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'notebook_edit',
@@ -66,7 +64,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['file', 'document'],
     aliases: ['jupyter', 'notebook', 'ipynb'],
     source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
 
   // ============================================================================
@@ -78,7 +75,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['planning', 'multiagent'],
     aliases: ['subagent', 'agent'],
     source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'confirm_action',
@@ -86,7 +82,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['planning'],
     aliases: ['confirm', 'approve'],
     source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'read_clipboard',
@@ -94,7 +89,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['file'],
     aliases: ['clipboard', 'paste'],
     source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'plan_read',
@@ -102,7 +96,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['planning'],
     aliases: ['plan'],
     source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'plan_update',
@@ -110,7 +103,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['planning'],
     aliases: ['plan'],
     source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'findings_write',
@@ -118,7 +110,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['planning'],
     aliases: ['findings', 'notes'],
     source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'enter_plan_mode',
@@ -126,7 +117,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['planning'],
     aliases: ['plan'],
     source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'exit_plan_mode',
@@ -134,7 +124,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['planning'],
     aliases: ['plan'],
     source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
 
   // ============================================================================
@@ -146,7 +135,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['network'],
     aliases: ['fetch', 'http', 'url', 'webpage'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'web_search',
@@ -154,7 +142,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['network', 'search'],
     aliases: ['google', 'search', 'bing'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'read_pdf',
@@ -162,7 +149,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['document', 'file'],
     aliases: ['pdf'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'lsp',
@@ -170,7 +156,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['file', 'search'],
     aliases: ['language-server', 'definition', 'references'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'http_request',
@@ -178,7 +163,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['network'],
     aliases: ['api', 'rest', 'request'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
 
   // ============================================================================
@@ -190,7 +174,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['mcp', 'network'],
     aliases: ['mcp-call', 'mcp-tool'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'mcp_list_tools',
@@ -198,7 +181,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['mcp'],
     aliases: ['mcp-tools'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'mcp_list_resources',
@@ -206,7 +188,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['mcp'],
     aliases: ['mcp-resources'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'mcp_read_resource',
@@ -214,7 +195,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['mcp'],
     aliases: ['mcp-read'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'mcp_get_status',
@@ -222,7 +202,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['mcp'],
     aliases: ['mcp-status'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'mcp_add_server',
@@ -230,7 +209,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['mcp'],
     aliases: ['mcp-add'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
 
   // ============================================================================
@@ -242,7 +220,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['document', 'media'],
     aliases: ['ppt', 'powerpoint', 'slides', 'presentation'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'image_generate',
@@ -250,7 +227,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media'],
     aliases: ['dalle', 'image', 'picture', 'draw'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'video_generate',
@@ -258,7 +234,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media'],
     aliases: ['video', 'movie', 'animation'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'image_analyze',
@@ -266,7 +241,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['vision', 'media'],
     aliases: ['analyze', 'vision', 'ocr'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'docx_generate',
@@ -274,7 +248,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['document'],
     aliases: ['docx', 'word', 'doc'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'excel_generate',
@@ -282,7 +255,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['document'],
     aliases: ['excel', 'xlsx', 'spreadsheet'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'chart_generate',
@@ -290,7 +262,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media', 'document'],
     aliases: ['chart', 'graph', 'plot'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'qrcode_generate',
@@ -298,7 +269,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media'],
     aliases: ['qrcode', 'qr'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'read_docx',
@@ -306,7 +276,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['document', 'file'],
     aliases: ['docx', 'word'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'read_xlsx',
@@ -314,7 +283,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['document', 'file'],
     aliases: ['excel', 'xlsx'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'jira',
@@ -322,7 +290,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['network'],
     aliases: ['jira', 'ticket', 'issue'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'github_pr',
@@ -330,7 +297,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['network'] as ToolTag[],
     aliases: ['github', 'pr', 'pull-request', 'merge'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'youtube_transcript',
@@ -338,7 +304,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['network', 'document'],
     aliases: ['youtube', 'transcript', 'subtitle'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'twitter_fetch',
@@ -346,7 +311,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['network'],
     aliases: ['twitter', 'x', 'tweet'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'mermaid_export',
@@ -354,7 +318,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media', 'document'],
     aliases: ['mermaid', 'diagram'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'pdf_generate',
@@ -362,7 +325,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['document'],
     aliases: ['pdf'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'image_process',
@@ -370,7 +332,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media'],
     aliases: ['image', 'resize', 'crop', 'convert'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'screenshot_page',
@@ -378,7 +339,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['vision', 'network'],
     aliases: ['screenshot', 'capture', 'webpage'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'academic_search',
@@ -386,7 +346,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['network', 'search'],
     aliases: ['paper', 'academic', 'scholar', 'arxiv'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'speech_to_text',
@@ -394,7 +353,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media'],
     aliases: ['stt', 'transcribe', 'speech', 'audio'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'text_to_speech',
@@ -402,7 +360,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media'],
     aliases: ['tts', 'voice', 'speak'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'image_annotate',
@@ -410,7 +367,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media', 'vision'],
     aliases: ['annotate', 'mark', 'label'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
 
   // ============================================================================
@@ -422,7 +378,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['memory'],
     aliases: ['remember', 'store', 'save'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'memory_search',
@@ -430,7 +385,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['memory', 'search'],
     aliases: ['recall', 'memory'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'code_index',
@@ -438,7 +392,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['memory', 'search'],
     aliases: ['index', 'codebase'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'auto_learn',
@@ -446,7 +399,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['memory', 'evolution'],
     aliases: ['learn', 'auto'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'fork_session',
@@ -454,7 +406,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['memory'],
     aliases: ['fork', 'branch'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
 
   // ============================================================================
@@ -466,7 +417,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['vision'],
     aliases: ['capture', 'screen'],
     source: 'builtin',
-    generations: ['gen6', 'gen7', 'gen8'],
   },
   {
     name: 'computer_use',
@@ -474,7 +424,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['vision'],
     aliases: ['computer', 'control', 'mouse', 'keyboard'],
     source: 'builtin',
-    generations: ['gen6', 'gen7', 'gen8'],
   },
   {
     name: 'browser_navigate',
@@ -482,7 +431,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['vision', 'network'],
     aliases: ['browser', 'navigate', 'goto'],
     source: 'builtin',
-    generations: ['gen6', 'gen7', 'gen8'],
   },
   {
     name: 'browser_action',
@@ -490,7 +438,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['vision', 'network'],
     aliases: ['browser', 'click', 'type'],
     source: 'builtin',
-    generations: ['gen6', 'gen7', 'gen8'],
   },
 
   // ============================================================================
@@ -502,7 +449,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['multiagent'],
     aliases: ['sdk', 'task'],
     source: 'builtin',
-    generations: ['gen7', 'gen8'],
   },
   {
     name: 'AgentSpawn',
@@ -510,7 +456,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['multiagent'],
     aliases: ['spawn', 'agent', 'create-agent'],
     source: 'builtin',
-    generations: ['gen7', 'gen8'],
   },
   {
     name: 'AgentMessage',
@@ -518,7 +463,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['multiagent'],
     aliases: ['message', 'send'],
     source: 'builtin',
-    generations: ['gen7', 'gen8'],
   },
   {
     name: 'WorkflowOrchestrate',
@@ -526,7 +470,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['multiagent', 'planning'],
     aliases: ['workflow', 'orchestrate', 'dag'],
     source: 'builtin',
-    generations: ['gen7', 'gen8'],
   },
 
   // ============================================================================
@@ -538,7 +481,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['evolution'],
     aliases: ['optimize', 'strategy'],
     source: 'builtin',
-    generations: ['gen8'],
   },
   {
     name: 'tool_create',
@@ -546,7 +488,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['evolution'],
     aliases: ['create-tool', 'new-tool'],
     source: 'builtin',
-    generations: ['gen8'],
   },
   {
     name: 'self_evaluate',
@@ -554,7 +495,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['evolution'],
     aliases: ['evaluate', 'assess'],
     source: 'builtin',
-    generations: ['gen8'],
   },
   {
     name: 'learn_pattern',
@@ -562,7 +502,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['evolution', 'memory'],
     aliases: ['learn', 'pattern'],
     source: 'builtin',
-    generations: ['gen8'],
   },
   {
     name: 'code_execute',
@@ -570,7 +509,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['evolution', 'shell'],
     aliases: ['programmatic', 'batch_tools', 'code_run', 'ptc'],
     source: 'builtin',
-    generations: ['gen8'],
   },
 
   // ============================================================================
@@ -582,7 +520,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['shell'],
     aliases: ['ps', 'processes'],
     source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'process_poll',
@@ -590,7 +527,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['shell'],
     aliases: ['poll'],
     source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'process_log',
@@ -598,7 +534,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['shell'],
     aliases: ['log'],
     source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'process_write',
@@ -606,7 +541,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['shell'],
     aliases: ['stdin'],
     source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'process_submit',
@@ -614,7 +548,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['shell'],
     aliases: ['submit'],
     source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'process_kill',
@@ -622,7 +555,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['shell'],
     aliases: ['kill'],
     source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
 ];
 

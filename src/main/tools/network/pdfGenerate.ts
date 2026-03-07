@@ -176,7 +176,6 @@ pdf_generate { "title": "论文", "content": "## 摘要\\n...", "theme": "academ
 - default: 默认商务风格
 - academic: 学术论文风格
 - minimal: 简约风格`,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

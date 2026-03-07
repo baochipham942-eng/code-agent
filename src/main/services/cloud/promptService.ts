@@ -123,7 +123,7 @@ export function getSystemPrompt(generationId: GenerationId): string {
   }
 
   // 降级到内置 prompts
-  return SYSTEM_PROMPTS[targetId];
+  return SYSTEM_PROMPTS[targetId] ?? "";
 }
 
 /**

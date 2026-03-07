@@ -72,3 +72,6 @@ export * from './confirmation';
 
 // Capture types (浏览器采集)
 export * from './capture';
+
+// Error types (ErrorCode, ErrorSeverity, SerializedError)
+export * from './error';

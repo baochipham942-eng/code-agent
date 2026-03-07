@@ -286,11 +286,12 @@ twitter_fetch { "url": "https://x.com/OpenAI/status/1234567890" }
           url,
         },
       };
-    } catch (error: any) {
-      logger.error('Twitter fetch failed', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Twitter fetch failed', { error: message });
       return {
         success: false,
-        error: `获取推文失败: ${error.message}`,
+        error: `获取推文失败: ${message}`,
       };
     }
   },

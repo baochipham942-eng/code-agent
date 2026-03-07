@@ -474,11 +474,12 @@ function assertTestPass(
         timeout: 30000,
         stdio: 'pipe',
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
       failures.push({
         assertion: 'test_pass',
         expected: `"${expect.test_pass}" exits with code 0`,
-        actual: `exit code ${error.status ?? 'unknown'}`,
+        actual: `exit code ${(error as Record<string, unknown>).status ?? 'unknown'}`,
         message: `Command "${expect.test_pass}" failed`,
       });
     }
@@ -685,8 +686,9 @@ async function evaluateExpectation(
           });
           passed = true;
           actual = 'compilation succeeded';
-        } catch (e: any) {
-          actual = `compilation failed: ${e.message?.substring(0, 200)}`;
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          actual = `compilation failed: ${message?.substring(0, 200)}`;
         }
         expected = 'code compiles successfully';
         break;
@@ -702,8 +704,9 @@ async function evaluateExpectation(
           });
           passed = true;
           actual = 'tests passed';
-        } catch (e: any) {
-          actual = `tests failed: exit code ${e.status ?? 'unknown'}`;
+        } catch (e: unknown) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          actual = `tests failed: exit code ${(e as Record<string, unknown>).status ?? 'unknown'}`;
         }
         expected = `"${command}" exits with code 0`;
         break;
@@ -728,8 +731,9 @@ async function evaluateExpectation(
           });
           passed = true;
           actual = result.toString().substring(0, 200);
-        } catch (e: any) {
-          actual = `exit code ${e.status ?? 'unknown'}`;
+        } catch (e: unknown) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          actual = `exit code ${(e as Record<string, unknown>).status ?? 'unknown'}`;
         }
         expected = `"${command}" succeeds`;
         break;
@@ -842,8 +846,9 @@ async function evaluateExpectation(
           });
           passed = true;
           actual = 'script succeeded';
-        } catch (e: any) {
-          actual = `script failed: exit code ${e.status ?? 'unknown'}`;
+        } catch (e: unknown) {
+          const errMsg = e instanceof Error ? e.message : String(e);
+          actual = `script failed: exit code ${(e as Record<string, unknown>).status ?? 'unknown'}`;
         }
         expected = `custom script passes`;
         details = `script: ${script}`;
@@ -856,9 +861,10 @@ async function evaluateExpectation(
         details = `Unsupported expectation type: ${expectation.type}`;
       }
     }
-  } catch (error: any) {
-    actual = `error: ${error.message}`;
-    details = error.stack?.substring(0, 300);
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    actual = `error: ${errMsg}`;
+    details = (error instanceof Error ? error.stack : undefined)?.substring(0, 300);
   }
 
   return {

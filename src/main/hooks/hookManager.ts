@@ -691,10 +691,11 @@ export class HookManager {
         error: 'Invalid hook configuration',
         duration: 0,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         action: 'error',
-        error: error.message || 'Hook execution failed',
+        error: message || 'Hook execution failed',
         duration: 0,
       };
     }

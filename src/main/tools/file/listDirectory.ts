@@ -67,8 +67,9 @@ For searching file contents, use grep.`,
         success: true,
         output,
       };
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      if ((error as Record<string, unknown>).code === 'ENOENT') {
         return {
           success: false,
           error: `Directory not found: ${dirPath}`,
@@ -76,7 +77,7 @@ For searching file contents, use grep.`,
       }
       return {
         success: false,
-        error: error.message || 'Failed to list directory',
+        error: errMsg || 'Failed to list directory',
       };
     }
   },

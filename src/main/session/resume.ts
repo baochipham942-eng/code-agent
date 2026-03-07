@@ -288,11 +288,12 @@ export async function resumeSession(
       context: resumedContext,
       warnings: warnings.length > 0 ? warnings : undefined,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     logger.error('Failed to resume session', { sessionId, error });
     return {
       success: false,
-      error: error.message || 'Unknown error during resume',
+      error: message || 'Unknown error during resume',
     };
   }
 }

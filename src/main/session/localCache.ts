@@ -446,8 +446,9 @@ export class SessionLocalCache {
         path: this.persistPath,
         sessions: Object.keys(data).length,
       });
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      if ((error as Record<string, unknown>).code !== 'ENOENT') {
         logger.error('Failed to load cache', { error });
       }
     }

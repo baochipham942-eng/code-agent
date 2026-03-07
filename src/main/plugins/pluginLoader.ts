@@ -109,10 +109,11 @@ export async function loadPlugin(pluginDir: string): Promise<PluginLoadResult> {
           error: `Plugin ${manifest.id} has no activate function`,
         };
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       return {
         success: false,
-        error: `Failed to load plugin entry: ${err.message}`,
+        error: `Failed to load plugin entry: ${message}`,
       };
     }
 
@@ -129,10 +130,11 @@ export async function loadPlugin(pluginDir: string): Promise<PluginLoadResult> {
       success: true,
       plugin: loadedPlugin,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     return {
       success: false,
-      error: err.message,
+      error: message,
     };
   }
 }
@@ -164,8 +166,9 @@ export async function discoverPlugins(): Promise<LoadedPlugin[]> {
         console.warn(`Failed to load plugin from ${pluginDir}: ${result.error}`);
       }
     }
-  } catch (err: any) {
-    console.error(`Failed to discover plugins: ${err.message}`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Failed to discover plugins: ${message}`);
   }
 
   return plugins;
@@ -201,9 +204,10 @@ export function watchPluginsDir(
           }
         }
       }
-    } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        console.error(`Plugin watcher error: ${err.message}`);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (!(err instanceof Error) || err.name !== 'AbortError') {
+        console.error(`Plugin watcher error: ${errMsg}`);
       }
     }
   })();

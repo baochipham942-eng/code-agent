@@ -99,10 +99,11 @@ Returns: Text content or base64-encoded image data with metadata`,
         output: `[Clipboard is empty]\nAvailable formats: ${availableFormats.join(', ') || 'none'}`,
       };
 
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: `Failed to read clipboard: ${error.message || 'Unknown error'}`,
+        error: `Failed to read clipboard: ${message || 'Unknown error'}`,
       };
     }
   },

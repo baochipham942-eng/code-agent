@@ -85,11 +85,12 @@ export async function executeScript(
 
     // Parse output
     return parseScriptOutput(stdout, duration);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
     const duration = Date.now() - startTime;
 
     // Check for timeout
-    if (error.killed && error.signal === 'SIGTERM') {
+    if ((error as Record<string, unknown>).killed && (error as Record<string, unknown>).signal === 'SIGTERM') {
       logger.warn('Hook script timed out', {
         command: options.command,
         timeout,
@@ -102,19 +103,19 @@ export async function executeScript(
     }
 
     // Check exit code for intentional block
-    if (error.code === 1) {
+    if ((error as Record<string, unknown>).code === 1) {
       return {
         action: 'block',
-        message: error.stdout?.trim() || 'Blocked by hook script',
+        message: ((error as Record<string, unknown>).stdout as string | undefined)?.trim() || 'Blocked by hook script',
         duration,
       };
     }
 
-    if (error.code === 2) {
+    if ((error as Record<string, unknown>).code === 2) {
       return {
         action: 'continue',
-        message: error.stdout?.trim(),
-        modifiedInput: parseModifiedInput(error.stdout),
+        message: ((error as Record<string, unknown>).stdout as string | undefined)?.trim(),
+        modifiedInput: parseModifiedInput((error as Record<string, unknown>).stdout as string | undefined),
         duration,
       };
     }
@@ -122,13 +123,13 @@ export async function executeScript(
     // Other errors
     logger.error('Hook script execution failed', {
       command: options.command,
-      error: error.message,
-      exitCode: error.code,
+      error: errMsg,
+      exitCode: (error as Record<string, unknown>).code,
     });
 
     return {
       action: 'error',
-      error: error.message || 'Hook script execution failed',
+      error: errMsg || 'Hook script execution failed',
       duration,
     };
   }

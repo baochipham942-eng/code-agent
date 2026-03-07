@@ -419,11 +419,12 @@ pdf_generate { "title": "论文", "content": "## 摘要\\n...", "theme": "academ
           },
         },
       };
-    } catch (error: any) {
-      logger.error('PDF generation failed', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('PDF generation failed', { error: message });
       return {
         success: false,
-        error: `PDF 生成失败: ${error.message}`,
+        error: `PDF 生成失败: ${message}`,
       };
     }
   },

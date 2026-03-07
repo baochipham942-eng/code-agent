@@ -456,10 +456,11 @@ excel_generate { "title": "数据表", "data": "name,age\\n张三,25\\n李四,30
           },
         },
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: `Excel 生成失败: ${error.message}`,
+        error: `Excel 生成失败: ${message}`,
       };
     }
   },

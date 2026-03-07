@@ -81,10 +81,11 @@ class GlobToolDecorated implements ITool {
         success: true,
         output: result,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: error.message || 'Failed to search files',
+        error: message || 'Failed to search files',
       };
     }
   }

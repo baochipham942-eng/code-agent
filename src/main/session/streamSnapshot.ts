@@ -55,9 +55,10 @@ export function saveStreamSnapshot(
     const tmpPath = filePath + '.tmp';
     fs.writeFileSync(tmpPath, JSON.stringify(data), 'utf-8');
     fs.renameSync(tmpPath, filePath);
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     // Non-fatal: snapshot is a best-effort optimization
-    logger.debug(`Failed to save stream snapshot: ${err.message}`);
+    logger.debug(`Failed to save stream snapshot: ${message}`);
   }
 }
 
@@ -87,8 +88,9 @@ export function loadStreamSnapshot(workingDir?: string): PersistedSnapshot | nul
     });
 
     return data;
-  } catch (err: any) {
-    logger.debug(`Failed to load stream snapshot: ${err.message}`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.debug(`Failed to load stream snapshot: ${message}`);
     return null;
   }
 }

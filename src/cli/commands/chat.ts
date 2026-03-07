@@ -129,10 +129,11 @@ export const chatCommand = new Command('chat')
               if (output.trim()) {
                 console.log(output);
               }
-            } catch (error: any) {
-              if (error.stdout) console.log(error.stdout);
-              if (error.stderr) console.error(error.stderr);
-              else terminalOutput.error(error.message || String(error));
+            } catch (error: unknown) {
+              const errMsg = error instanceof Error ? error.message : String(error);
+              if ((error as Record<string, unknown>).stdout) console.log((error as Record<string, unknown>).stdout);
+              if ((error as Record<string, unknown>).stderr) console.error((error as Record<string, unknown>).stderr);
+              else terminalOutput.error(errMsg || String(error));
             }
           }
           promptUser();

@@ -111,8 +111,9 @@ async function analyzeWithVision(
     }
 
     return content || null;
-  } catch (error: any) {
-    logger.warn('[网页截图分析] 分析失败', { error: error.message });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('[网页截图分析] 分析失败', { error: message });
     return null;
   }
 }
@@ -438,11 +439,12 @@ screenshot_page { "url": "https://example.com", "analyze": true, "prompt": "这�
           },
         },
       };
-    } catch (error: any) {
-      logger.error('Screenshot failed', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Screenshot failed', { error: message });
       return {
         success: false,
-        error: `网页截图失败: ${error.message}`,
+        error: `网页截图失败: ${message}`,
       };
     }
   },

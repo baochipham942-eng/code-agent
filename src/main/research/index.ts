@@ -10,6 +10,12 @@ export { ResearchPlanner } from './researchPlanner';
 export { ResearchExecutor, type ProgressCallback, type ResearchExecutorConfig } from './researchExecutor';
 export { ReportGenerator } from './reportGenerator';
 
+// URL Compressor
+export { UrlCompressor, type UrlEntry } from './urlCompressor';
+
+// Reflection result type
+export type { ReflectionResult } from './types';
+
 // Main controller (original)
 export {
   DeepResearchMode,

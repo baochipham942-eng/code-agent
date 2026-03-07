@@ -520,11 +520,12 @@ export const videoGenerateTool: Tool = {
           generationTimeMs: generationTime,
         },
       };
-    } catch (error: any) {
-      logger.error('[视频生成] 失败', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('[视频生成] 失败', { error: message });
       return {
         success: false,
-        error: `视频生成失败: ${error.message}`,
+        error: `视频生成失败: ${message}`,
       };
     }
   },

@@ -138,8 +138,9 @@ Examples:
       let content: string;
       try {
         content = await fs.readFile(resolvedPath, 'utf-8');
-      } catch (err: any) {
-        if (err.code === 'ENOENT') {
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if ((err as Record<string, unknown>).code === 'ENOENT') {
           return {
             success: false,
             error: `Notebook file not found: ${resolvedPath}`,

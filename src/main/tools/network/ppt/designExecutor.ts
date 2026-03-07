@@ -101,8 +101,9 @@ export async function executeDesignScript(
     }
 
     return { success: true, stdout: stdout || '' };
-  } catch (err: any) {
-    const message = err.stderr || err.message || String(err);
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const message = String((err as Record<string, unknown>).stderr || errMsg || err);
     // 截取有用的错误信息
     const lines = message.split('\n').filter((l: string) =>
       l.includes('Error') || l.includes('error') || l.includes('TypeError') ||
@@ -111,7 +112,7 @@ export async function executeDesignScript(
     ).slice(0, 8);
 
     const cleanError = lines.length > 0 ? lines.join('\n') : message.substring(0, 500);
-    return { success: false, stdout: err.stdout || '', error: cleanError };
+    return { success: false, stdout: String((err as Record<string, unknown>).stdout || ''), error: cleanError };
   }
 }
 

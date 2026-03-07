@@ -7,6 +7,7 @@ import type {
   ResearchPlan,
   ResearchReport,
   ReportStyle,
+  DeepResearchConfig,
 } from './types';
 import type { ModelRouter } from '../model/modelRouter';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
@@ -99,7 +100,8 @@ export class ReportGenerator {
    */
   async generate(
     plan: ResearchPlan,
-    style: ReportStyle = 'default'
+    style: ReportStyle = 'default',
+    config: DeepResearchConfig = {}
   ): Promise<ResearchReport> {
     logger.info('Generating report:', {
       topic: plan.clarifiedTopic,
@@ -123,8 +125,8 @@ export class ReportGenerator {
 
     try {
       const response = await this.modelRouter.chat({
-        provider: DEFAULT_PROVIDER,
-        model: DEFAULT_MODEL,
+        provider: (config.modelProvider as 'deepseek' | 'openai' | 'claude' | 'openrouter') ?? DEFAULT_PROVIDER,
+        model: config.model ?? DEFAULT_MODEL,
         messages: [{ role: 'user', content: reportPrompt }],
         maxTokens: 4000,
       });
@@ -169,14 +171,20 @@ ${stepResults}
 ## 写作风格要求
 ${REPORT_STYLE_PROMPTS[style]}
 
+## 引用规则（必须严格遵守）
+- 在正文中使用 [src:N] 格式标注来源（N 是来源编号），例如："MCP 的月下载量超过 97M [src:3]"
+- 绝对不要在正文中嵌入完整 URL
+- 在每个事实性陈述后标注对应的 [src:N]
+- 来源编号对应研究步骤中收集的 URL 顺序
+
 ## 输出格式要求
 
 请输出 Markdown 格式的报告，包含以下部分：
 1. **标题**（使用 # 一级标题）
 2. **摘要**（100-200 字，概述主要发现）
-3. **正文**（根据风格要求组织，使用小标题分节）
+3. **正文**（根据风格要求组织，使用小标题分节，使用 [src:N] 标注来源）
 4. **结论**（总结关键发现和建议）
-5. **参考来源**（如果研究内容中有引用的链接，请整理为参考来源列表）
+5. 不要在报告末尾添加参考来源列表，来源列表会由系统自动生成
 
 请直接输出报告内容，不要添加额外的说明文字：`;
   }

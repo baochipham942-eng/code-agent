@@ -302,8 +302,9 @@ export const pptGenerateTool: Tool = {
           // 实际 web_search 需要在 Skill 层由 Agent 调用
           researchContext = await executeResearch(brief, context.modelCallback);
           logger.debug(`Research: ${researchContext.facts.length} facts, ${researchContext.statistics.length} stats`);
-        } catch (err: any) {
-          logger.warn(`Research failed, continuing without: ${err.message}`);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          logger.warn(`Research failed, continuing without: ${message}`);
         }
       }
 
@@ -352,8 +353,9 @@ export const pptGenerateTool: Tool = {
               try {
                 const json = JSON.parse(data) as { choices?: Array<{ message?: { content?: string } }> };
                 resolve(json.choices?.[0]?.message?.content || '');
-              } catch (e: any) {
-                reject(new Error(`VLM JSON parse error: ${e.message}`));
+              } catch (e: unknown) {
+                const message = e instanceof Error ? e.message : String(e);
+                reject(new Error(`VLM JSON parse error: ${message}`));
               }
             });
           });
@@ -495,8 +497,9 @@ export const pptGenerateTool: Tool = {
             slideImages.push(...illustrationImages);
             logger.debug(`Added ${illustrationImages.length} AI-generated illustrations`);
           }
-        } catch (err: any) {
-          logger.warn(`AI illustration generation failed, continuing without: ${err.message}`);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          logger.warn(`AI illustration generation failed, continuing without: ${message}`);
         }
       }
 
@@ -591,8 +594,9 @@ export const pptGenerateTool: Tool = {
             }
             logger.debug(`Review: avg=${summary.averageScore}, issues=${summary.totalIssues}`);
           }
-        } catch (err: any) {
-          logger.warn(`Visual review failed: ${err.message}`);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          logger.warn(`Visual review failed: ${message}`);
         }
       }
 
@@ -636,10 +640,11 @@ export const pptGenerateTool: Tool = {
           },
         },
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: `PPT 生成失败: ${error.message}`,
+        error: `PPT 生成失败: ${message}`,
       };
     }
   },

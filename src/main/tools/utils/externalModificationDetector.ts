@@ -95,8 +95,9 @@ export async function checkExternalModification(
       modified: false,
       message: 'File has not been modified since last read',
     };
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if ((error as Record<string, unknown>).code === 'ENOENT') {
       return {
         modified: true,
         message: 'File was deleted since last read',
@@ -106,7 +107,7 @@ export async function checkExternalModification(
     logger.error('Error checking external modification', { filePath, error });
     return {
       modified: false,
-      message: `Unable to check modification status: ${error.message}`,
+      message: `Unable to check modification status: ${errMsg}`,
     };
   }
 }

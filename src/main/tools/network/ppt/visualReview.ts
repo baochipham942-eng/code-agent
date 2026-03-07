@@ -92,8 +92,9 @@ export async function convertToScreenshots(
       `"${soffice}" --headless --convert-to pdf --outdir "${pdfDir}" "${pptxPath}"`,
       { timeout: CONVERT_TIMEOUTS.PDF_CONVERT, encoding: 'utf8' }
     );
-  } catch (err: any) {
-    throw new Error(`LibreOffice conversion failed: ${err.message}`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`LibreOffice conversion failed: ${message}`);
   }
 
   const baseName = path.basename(pptxPath, '.pptx');
@@ -282,8 +283,9 @@ score 字段为 8 个维度的加权平均分（权重：Layer1 各 15%，Layer2
       : await modelCallback(prompt);
     const parsed = parseReviewResponse(response);
     return { slideIndex, ...parsed };
-  } catch (err: any) {
-    logger.warn(`VLM review failed for slide ${slideIndex}: ${err.message}`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn(`VLM review failed for slide ${slideIndex}: ${message}`);
     return { slideIndex, score: 3, issues: [], suggestions: [] };
   }
 }

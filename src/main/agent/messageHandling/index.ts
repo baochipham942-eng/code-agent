@@ -14,7 +14,5 @@ export {
 export {
   injectWorkingDirectoryContext,
   buildEnhancedSystemPrompt,
-  buildEnhancedSystemPromptWithProactiveContext,
-  buildEnhancedSystemPromptAsync,
   type RAGContextOptions,
 } from './contextBuilder';

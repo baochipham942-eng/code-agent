@@ -190,11 +190,12 @@ export function forkSession(
         tokenCount: forkedSession.totalTokens,
       },
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     logger.error('Failed to fork session', { error });
     return {
       success: false,
-      error: error.message || 'Unknown error during fork',
+      error: message || 'Unknown error during fork',
     };
   }
 }

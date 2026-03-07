@@ -210,10 +210,11 @@ export const pptEditTool: Tool = {
         output: `${resultMessage}\n备份: ${backupPath}`,
         metadata: { backupPath, action, slideIndex: slide_index },
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: `PPT 编辑失败: ${error.message}`,
+        error: `PPT 编辑失败: ${message}`,
       };
     }
   },

@@ -149,8 +149,9 @@ export async function loadTask(taskId: string): Promise<BackgroundTask | null> {
       logger.error('Failed to parse task JSON', { taskId, parseError });
       return null;
     }
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if ((error as Record<string, unknown>).code === 'ENOENT') {
       return null;
     }
     logger.error('Error loading task', { taskId, error });
@@ -242,8 +243,9 @@ export async function readTaskOutput(
     }
 
     return content;
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if ((error as Record<string, unknown>).code === 'ENOENT') {
       return '';
     }
     throw error;

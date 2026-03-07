@@ -12,6 +12,75 @@ import { createLogger } from '../../services/infra/logger';
 export const logger = createLogger('ModelRouter');
 
 // ----------------------------------------------------------------------------
+// Provider Message & Tool Types
+// ----------------------------------------------------------------------------
+
+/** OpenAI chat completion message format */
+export interface OpenAIMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null | Array<{ type: string; text?: string; image_url?: { url: string; detail?: string } }>;
+  tool_calls?: Array<OpenAIToolCall>;
+  tool_call_id?: string;
+  name?: string;
+  reasoning_content?: string;
+}
+
+/** OpenAI tool call within an assistant message */
+interface OpenAIToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
+/** OpenAI function tool definition */
+export interface OpenAIToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+    strict?: boolean;
+  };
+}
+
+/** Claude content block types */
+interface ClaudeTextBlock {
+  type: 'text';
+  text: string;
+}
+
+interface ClaudeToolUseBlock {
+  type: 'tool_use';
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+interface ClaudeToolResultBlock {
+  type: 'tool_result';
+  tool_use_id: string;
+  content: string;
+}
+
+type ClaudeContentBlock = ClaudeTextBlock | ClaudeToolUseBlock | ClaudeToolResultBlock;
+
+/** Claude message format */
+export interface ClaudeMessage {
+  role: 'user' | 'assistant';
+  content: string | ClaudeContentBlock[];
+}
+
+/** Claude tool definition format */
+interface ClaudeToolDefinition {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+}
+
+/** JSON Schema type for normalizeJsonSchema */
+type JsonSchemaNode = Record<string, unknown>;
+
+// ----------------------------------------------------------------------------
 // Proxy Configuration
 // ----------------------------------------------------------------------------
 
@@ -55,11 +124,12 @@ export async function electronFetch(url: string, options: {
       text: async () => typeof response.data === 'string' ? response.data : JSON.stringify(response.data),
       json: async () => response.data,
     };
-  } catch (error: any) {
-    if (axios.isCancel(error) || error.name === 'AbortError' || error.name === 'CanceledError') {
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (axios.isCancel(error) || (error instanceof Error && (error.name === 'AbortError' || error.name === 'CanceledError'))) {
       throw new Error('Request was cancelled');
     }
-    throw new Error(`Network request failed: ${error.message}`);
+    throw new Error(`Network request failed: ${errMsg}`);
   }
 }
 
@@ -126,12 +196,12 @@ export function parseContextLengthError(errorMessage: string, provider: string):
 /**
  * Normalize JSON Schema for better model compliance
  */
-export function normalizeJsonSchema(schema: any): any {
+export function normalizeJsonSchema(schema: JsonSchemaNode | undefined | null): JsonSchemaNode | undefined | null {
   if (!schema || typeof schema !== 'object') {
     return schema;
   }
 
-  const normalized: any = { ...schema };
+  const normalized: JsonSchemaNode = { ...schema };
 
   if (schema.type === 'object') {
     if (normalized.additionalProperties === undefined) {
@@ -139,16 +209,16 @@ export function normalizeJsonSchema(schema: any): any {
     }
 
     if (normalized.properties) {
-      const normalizedProps: any = {};
+      const normalizedProps: Record<string, JsonSchemaNode | undefined | null> = {};
       for (const [key, value] of Object.entries(normalized.properties)) {
-        normalizedProps[key] = normalizeJsonSchema(value);
+        normalizedProps[key] = normalizeJsonSchema(value as JsonSchemaNode);
       }
       normalized.properties = normalizedProps;
     }
   }
 
   if (schema.type === 'array' && normalized.items) {
-    normalized.items = normalizeJsonSchema(normalized.items);
+    normalized.items = normalizeJsonSchema(normalized.items as JsonSchemaNode);
   }
 
   return normalized;
@@ -161,13 +231,13 @@ export function normalizeJsonSchema(schema: any): any {
 /**
  * Convert tools to OpenAI format
  */
-export function convertToolsToOpenAI(tools: ToolDefinition[], strict = false): any[] {
+export function convertToolsToOpenAI(tools: ToolDefinition[], strict = false): OpenAIToolDefinition[] {
   return tools.map((tool) => ({
     type: 'function' as const,
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: normalizeJsonSchema(tool.inputSchema),
+      parameters: normalizeJsonSchema(tool.inputSchema as unknown as JsonSchemaNode) as Record<string, unknown>,
       ...(strict && { strict: true }),
     },
   }));
@@ -176,11 +246,11 @@ export function convertToolsToOpenAI(tools: ToolDefinition[], strict = false): a
 /**
  * Convert tools to Claude format
  */
-export function convertToolsToClaude(tools: ToolDefinition[]): any[] {
+export function convertToolsToClaude(tools: ToolDefinition[]): ClaudeToolDefinition[] {
   return tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
-    input_schema: tool.inputSchema,
+    input_schema: tool.inputSchema as unknown as Record<string, unknown>,
   }));
 }
 
@@ -192,11 +262,11 @@ export function convertToolsToClaude(tools: ToolDefinition[]): any[] {
  * Convert messages to OpenAI format (supports structured tool_calls)
  * 包含 sanitizeToolCallOrder 后处理，确保 assistant+tool_calls 后紧跟 tool 响应
  */
-export function convertToOpenAIMessages(messages: ModelMessage[]): any[] {
+export function convertToOpenAIMessages(messages: ModelMessage[]): OpenAIMessage[] {
   const raw = messages.map((m) => {
     // 结构化工具调用（assistant + toolCalls）
     if (m.role === 'assistant' && m.toolCalls?.length) {
-      const msg: any = {
+      const msg: OpenAIMessage = {
         role: 'assistant',
         content: m.content || null,
         tool_calls: m.toolCalls.map(tc => ({
@@ -214,7 +284,7 @@ export function convertToOpenAIMessages(messages: ModelMessage[]): any[] {
     // 结构化工具结果（role='tool' + toolCallId）
     if (m.role === 'tool' && m.toolCallId) {
       return {
-        role: 'tool',
+        role: 'tool' as const,
         tool_call_id: m.toolCallId,
         content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
       };
@@ -222,16 +292,16 @@ export function convertToOpenAIMessages(messages: ModelMessage[]): any[] {
     // 回退：无结构化数据的 tool 消息 → user
     if (m.role === 'tool') {
       return {
-        role: 'user',
+        role: 'user' as const,
         content: typeof m.content === 'string' ? m.content : '',
       };
     }
     // 其他消息（system, user, 无 toolCalls 的 assistant）
     if (typeof m.content === 'string') {
-      return { role: m.role, content: m.content };
+      return { role: m.role as OpenAIMessage['role'], content: m.content };
     }
     return {
-      role: m.role,
+      role: m.role as OpenAIMessage['role'],
       content: m.content.map((c) => {
         if (c.type === 'text') {
           return { type: 'text', text: c.text };
@@ -257,8 +327,8 @@ export function convertToOpenAIMessages(messages: ModelMessage[]): any[] {
  * agentLoop 会在 assistant 和 tool 之间注入 system 消息（thinking step、hook、nudge 等），
  * 导致 API 400 错误。此函数将这些夹层消息移到 tool 响应之后。
  */
-function sanitizeToolCallOrder(messages: any[]): any[] {
-  const result: any[] = [];
+function sanitizeToolCallOrder(messages: OpenAIMessage[]): OpenAIMessage[] {
+  const result: OpenAIMessage[] = [];
   let i = 0;
 
   while (i < messages.length) {
@@ -269,9 +339,9 @@ function sanitizeToolCallOrder(messages: any[]): any[] {
       i++;
 
       // 收集期望的 tool_call_ids
-      const expectedIds = new Set<string>(msg.tool_calls.map((tc: any) => tc.id));
-      const toolResponses: any[] = [];
-      const deferredMessages: any[] = [];
+      const expectedIds = new Set<string>(msg.tool_calls.map((tc: OpenAIToolCall) => tc.id));
+      const toolResponses: OpenAIMessage[] = [];
+      const deferredMessages: OpenAIMessage[] = [];
 
       // 向前扫描，收集 tool 响应和需要延后的消息
       while (i < messages.length) {
@@ -310,7 +380,7 @@ function sanitizeToolCallOrder(messages: any[]): any[] {
     }
   }
 
-  const placeholders: any[] = [];
+  const placeholders: OpenAIMessage[] = [];
   for (const m of result) {
     if (m.role === 'assistant' && m.tool_calls?.length) {
       for (const tc of m.tool_calls) {
@@ -331,7 +401,7 @@ function sanitizeToolCallOrder(messages: any[]): any[] {
     for (const ph of placeholders) {
       // 找到对应 assistant 消息的位置
       const assistantIdx = result.findIndex(
-        m => m.role === 'assistant' && m.tool_calls?.some((tc: any) => tc.id === ph.tool_call_id)
+        m => m.role === 'assistant' && m.tool_calls?.some((tc: OpenAIToolCall) => tc.id === ph.tool_call_id)
       );
       if (assistantIdx >= 0) {
         // 在 assistant 之后、下一个 non-tool 消息之前插入
@@ -353,18 +423,18 @@ function sanitizeToolCallOrder(messages: any[]): any[] {
 /**
  * Convert messages to Claude format (supports structured tool_use / tool_result)
  */
-export function convertToClaudeMessages(messages: ModelMessage[]): any[] {
-  const result: any[] = [];
+export function convertToClaudeMessages(messages: ModelMessage[]): ClaudeMessage[] {
+  const result: ClaudeMessage[] = [];
 
   for (const m of messages) {
     // assistant + toolCalls → content blocks with tool_use
     if (m.role === 'assistant' && m.toolCalls?.length) {
-      const blocks: any[] = [];
+      const blocks: ClaudeContentBlock[] = [];
       if (m.content && typeof m.content === 'string' && m.content.trim()) {
         blocks.push({ type: 'text', text: m.content });
       }
       for (const tc of m.toolCalls) {
-        let input: any;
+        let input: Record<string, unknown>;
         try { input = JSON.parse(tc.arguments); } catch { input = {}; }
         blocks.push({ type: 'tool_use', id: tc.id, name: tc.name, input });
       }
@@ -375,7 +445,7 @@ export function convertToClaudeMessages(messages: ModelMessage[]): any[] {
     // Claude 要求连续的 tool_result 合并为一个 user 消息
     if (m.role === 'tool' && m.toolCallId) {
       const lastMsg = result[result.length - 1];
-      const toolResultBlock = {
+      const toolResultBlock: ClaudeToolResultBlock = {
         type: 'tool_result',
         tool_use_id: m.toolCallId,
         content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
@@ -391,16 +461,16 @@ export function convertToClaudeMessages(messages: ModelMessage[]): any[] {
     // 回退：无结构化的 tool 消息
     if (m.role === 'tool') {
       result.push({
-        role: 'user',
+        role: 'user' as const,
         content: typeof m.content === 'string' ? m.content : '',
       });
       continue;
     }
     // 其他消息保持不变
     if (typeof m.content === 'string') {
-      result.push({ role: m.role, content: m.content });
+      result.push({ role: m.role as ClaudeMessage['role'], content: m.content });
     } else {
-      result.push({ role: m.role, content: m.content });
+      result.push({ role: m.role as ClaudeMessage['role'], content: m.content as unknown as ClaudeContentBlock[] });
     }
   }
 
@@ -671,7 +741,7 @@ export function parseOpenAIResponse(data: any): ModelResponse {
           name: tc.function.name,
           arguments: args,
         });
-      } catch (parseError: any) {
+      } catch (parseError: unknown) {
         logger.error(`Failed to parse tool call arguments for ${tc.function.name}:`, parseError);
         const repairedArgs = repairJson(tc.function.arguments || '{}');
         if (repairedArgs) {

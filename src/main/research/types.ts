@@ -100,6 +100,44 @@ export interface DeepResearchConfig {
   modelProvider?: string;
   /** 模型名称 */
   model?: string;
+  /** 规划和搜索查询使用的模型 */
+  queryModel?: string;
+  /** 报告生成使用的模型 */
+  reportModel?: string;
+  /** 启用 reflection 循环（默认 true） */
+  enableReflection?: boolean;
+  /** 最大 reflection 迭代次数（默认 2） */
+  maxReflectionRounds?: number;
+  /** 启用 URL 压缩（默认 true） */
+  enableUrlCompression?: boolean;
+  /** 存储研究结果到记忆（默认 false） */
+  enableMemory?: boolean;
+  /** 在 TaskList 中追踪研究步骤（默认 false） */
+  enableTaskList?: boolean;
+  /** 使用 AgentSwarm 并行执行（默认 false） */
+  enableSwarm?: boolean;
+  /** 会话 ID（用于 TaskList/Memory 集成） */
+  sessionId?: string;
+}
+
+/**
+ * Reflection 结果（灵感来源: Google Deep Research 模板）
+ */
+export interface ReflectionResult {
+  isSufficient: boolean;
+  confidence: number;  // 0.0 - 1.0
+  knowledgeGaps: string[];
+  followUpQueries: string[];
+  infoBalanceScores: {
+    factual: number;     // 0-2
+    analytical: number;  // 0-2
+    opinion: number;     // 0-2
+    practical: number;   // 0-2
+    comparative: number; // 0-2
+    frontier: number;    // 0-2
+  };
+  totalBalanceScore: number;  // 0-12
+  recommendation: 'proceed' | 'one_more_round' | 'need_deep_dive';
 }
 
 /**

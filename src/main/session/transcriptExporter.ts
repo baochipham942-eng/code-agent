@@ -432,11 +432,12 @@ export class TranscriptExporter extends MarkdownExporter {
           toolExecutionCount: 0,
         },
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       logger.error('Failed to export transcript', { sessionId, error });
       return {
         success: false,
-        error: error.message || 'Unknown error',
+        error: message || 'Unknown error',
       };
     }
   }
@@ -470,11 +471,12 @@ export class TranscriptExporter extends MarkdownExporter {
         ...result,
         filePath,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       logger.error('Failed to write transcript file', { filePath, error });
       return {
         success: false,
-        error: `Failed to write file: ${error.message}`,
+        error: `Failed to write file: ${message}`,
       };
     }
   }

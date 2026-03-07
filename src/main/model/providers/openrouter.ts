@@ -36,7 +36,7 @@ export async function callOpenRouter(
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: normalizeJsonSchema(tool.inputSchema),
+      parameters: normalizeJsonSchema(tool.inputSchema as unknown as Record<string, unknown>) as Record<string, unknown>,
     },
   }));
 
@@ -115,13 +115,14 @@ export async function callOpenRouter(
 
     logger.info(' OpenRouter raw response:', JSON.stringify(response.data, null, 2).substring(0, 2000));
     return parseOpenAIResponse(response.data);
-  } catch (error: any) {
-    if (axios.isCancel(error) || error.name === 'AbortError' || error.name === 'CanceledError') {
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (axios.isCancel(error) || (error instanceof Error ? error.name : undefined) === 'AbortError' || (error instanceof Error ? error.name : undefined) === 'CanceledError') {
       throw new Error('Request was cancelled');
     }
-    if (error.response) {
+    if (axios.isAxiosError(error) && error.response) {
       throw new Error(`OpenRouter API error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
     }
-    throw new Error(`OpenRouter request failed: ${error.message}`);
+    throw new Error(`OpenRouter request failed: ${errMsg}`);
   }
 }

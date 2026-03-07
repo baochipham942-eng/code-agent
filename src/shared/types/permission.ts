@@ -2,6 +2,15 @@
 // Permission Types
 // ============================================================================
 
+/**
+ * 权限预设类型
+ * - strict: 最严格，所有操作需确认
+ * - development: 开发模式，项目目录内自动批准
+ * - ci: CI 环境，完全信任
+ * - custom: 用户自定义
+ */
+export type PermissionPreset = 'strict' | 'development' | 'ci' | 'custom';
+
 // 权限类型
 export type PermissionType =
   | 'file_read'

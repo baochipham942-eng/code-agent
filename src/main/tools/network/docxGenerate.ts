@@ -575,10 +575,11 @@ docx_generate { "title": "会议纪要", "content": "## 参会人员\\n- 张三\
           },
         },
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: `Word 文档生成失败: ${error.message}`,
+        error: `Word 文档生成失败: ${message}`,
       };
     }
   },

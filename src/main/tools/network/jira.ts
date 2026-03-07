@@ -395,11 +395,12 @@ jira {
         success: false,
         error: `未知操作: ${action}`,
       };
-    } catch (error: any) {
-      logger.error('Jira operation failed', { action, error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Jira operation failed', { action, error: message });
       return {
         success: false,
-        error: `Jira 操作失败: ${error.message}`,
+        error: `Jira 操作失败: ${message}`,
       };
     }
   },

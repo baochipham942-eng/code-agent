@@ -59,9 +59,10 @@ export async function executeDesignMode(params: DesignModeParams): Promise<Desig
   let llmResponse: string;
   try {
     llmResponse = await modelCallback(prompt);
-  } catch (err: any) {
-    logger.warn(`Design mode LLM call failed: ${err.message}`);
-    return { success: false, iterations: 0, fallbackUsed: false, error: `LLM call failed: ${err.message}` };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn(`Design mode LLM call failed: ${message}`);
+    return { success: false, iterations: 0, fallbackUsed: false, error: `LLM call failed: ${message}` };
   }
 
   lastSlideCode = extractSlideCode(llmResponse);
@@ -111,15 +112,17 @@ export async function executeDesignMode(params: DesignModeParams): Promise<Desig
             } else {
               return { success: false, iterations, fallbackUsed: false, error: 'L2: failed to extract code' };
             }
-          } catch (err: any) {
-            return { success: false, iterations, fallbackUsed: false, error: `L2 LLM failed: ${err.message}` };
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { success: false, iterations, fallbackUsed: false, error: `L2 LLM failed: ${message}` };
           }
         }
       } else {
         return { success: false, iterations, fallbackUsed: false, error: 'L1: failed to extract fixed code' };
       }
-    } catch (err: any) {
-      return { success: false, iterations, fallbackUsed: false, error: `L1 LLM failed: ${err.message}` };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, iterations, fallbackUsed: false, error: `L1 LLM failed: ${message}` };
     }
   } else if (!execResult.success) {
     return { success: false, iterations, fallbackUsed: false, error: execResult.error || 'Execution failed' };
@@ -175,8 +178,9 @@ export async function executeDesignMode(params: DesignModeParams): Promise<Desig
           logger.warn('Failed to extract revised code');
           break;
         }
-      } catch (err: any) {
-        logger.warn(`VLM review failed: ${err.message}`);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn(`VLM review failed: ${message}`);
         break;
       }
     }

@@ -245,13 +245,14 @@ mermaid_export {
           },
         },
       };
-    } catch (error: any) {
-      logger.error('Mermaid export failed', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Mermaid export failed', { error: message });
 
       // 提供更友好的错误提示
-      let errorMessage = error.message;
-      if (error.message.includes('syntax error') || error.message.includes('Parse error')) {
-        errorMessage = `Mermaid 语法错误，请检查图表代码。\n原始错误: ${error.message}`;
+      let errorMessage = message;
+      if (message.includes('syntax error') || message.includes('Parse error')) {
+        errorMessage = `Mermaid 语法错误，请检查图表代码。\n原始错误: ${message}`;
       }
 
       return {

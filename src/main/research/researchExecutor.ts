@@ -4,6 +4,8 @@
 // ============================================================================
 
 import type {
+  ReflectionResult,
+  DeepResearchConfig,
   ResearchPlan,
   ResearchStep,
   ResearchStepType,
@@ -13,6 +15,7 @@ import type { ToolExecutor } from '../tools/toolExecutor';
 import type { Generation } from '../../shared/types';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
+import { UrlCompressor } from './urlCompressor';
 
 const logger = createLogger('ResearchExecutor');
 
@@ -78,6 +81,8 @@ export class ResearchExecutor {
   private modelRouter: ModelRouter;
   private onProgress: ProgressCallback;
   private config: Required<ResearchExecutorConfig>;
+  private _urlCompressor: UrlCompressor;
+  private _lastReflection: ReflectionResult | null = null;
 
   constructor(
     toolExecutor: ToolExecutor,
@@ -88,6 +93,7 @@ export class ResearchExecutor {
     this.toolExecutor = toolExecutor;
     this.modelRouter = modelRouter;
     this.onProgress = onProgress ?? (() => {});
+    this._urlCompressor = new UrlCompressor();
     this.config = {
       maxSearchPerStep: config.maxSearchPerStep ?? 3,
       maxFetchPerSearch: config.maxFetchPerSearch ?? 3,
@@ -97,6 +103,26 @@ export class ResearchExecutor {
       maxConcurrentFetches: config.maxConcurrentFetches ?? 5,
       enableStepParallelism: config.enableStepParallelism ?? true,
     };
+  }
+
+  /** URL 压缩器实例（报告生成器可用来展开 URL） */
+  get urlCompressor(): UrlCompressor {
+    return this._urlCompressor;
+  }
+
+  /**
+   * 获取聚合后的来源列表（基于 UrlCompressor 收集的所有 URL）
+   */
+  getAggregatedSources(): Array<{ title: string; url: string; snippet?: string }> {
+    return this._urlCompressor.getEntries().map(entry => ({
+      url: entry.url,
+      title: entry.title ?? entry.domain ?? entry.url,
+    }));
+  }
+
+  /** 最近一次 reflection 结果 */
+  get lastReflection(): ReflectionResult | null {
+    return this._lastReflection;
   }
 
   /**
@@ -132,6 +158,83 @@ export class ResearchExecutor {
       completed: updatedPlan.steps.filter(s => s.status === 'completed').length,
       failed: updatedPlan.steps.filter(s => s.status === 'failed').length,
     });
+
+    return updatedPlan;
+  }
+
+  /**
+   * 执行研究计划并进行 reflection（含追加搜索轮次）
+   *
+   * 使用迭代 while 循环（非递归），配合硬计数器防止无限循环。
+   * Google 模式：LLM 软停止 + 硬计数器双保险。
+   */
+  async executeWithReflection(
+    plan: ResearchPlan,
+    researchConfig: DeepResearchConfig = {}
+  ): Promise<ResearchPlan> {
+    const maxRounds = researchConfig.maxReflectionRounds ?? 2;
+    const enableReflection = researchConfig.enableReflection !== false;
+
+    // Execute initial research steps
+    let updatedPlan = await this.execute(plan);
+
+    if (!enableReflection) {
+      return updatedPlan;
+    }
+
+    // Iterative reflection loop (NOT recursive)
+    let loopCount = 0;
+    while (loopCount < maxRounds) {
+      loopCount++;
+
+      const reflection = await this.reflect(updatedPlan);
+      this._lastReflection = reflection;
+
+      logger.info(`Reflection round ${loopCount}:`, {
+        recommendation: reflection.recommendation,
+        confidence: reflection.confidence,
+        isSufficient: reflection.isSufficient,
+        totalBalanceScore: reflection.totalBalanceScore,
+        gaps: reflection.knowledgeGaps.length,
+      });
+
+      // Google's dual guard: LLM soft stop + hard counter
+      if (reflection.recommendation === 'proceed' || reflection.isSufficient) {
+        break;
+      }
+
+      // Generate follow-up steps from reflection
+      if (reflection.followUpQueries.length === 0) {
+        break;
+      }
+
+      // Cap follow-up queries per round (DeerFlow's truncation pattern)
+      const maxFollowUps = 5;
+      const queries = reflection.followUpQueries.slice(0, maxFollowUps);
+
+      // Create new steps from follow-up queries
+      const followUpSteps: ResearchStep[] = queries.map((q, i) => ({
+        id: `followup_r${loopCount}_${i + 1}`,
+        title: `补充搜索: ${q.substring(0, 40)}`,
+        description: `Reflection 发现的知识空白补充搜索`,
+        stepType: 'research' as const,
+        needSearch: true,
+        searchQueries: [q],
+        status: 'pending' as const,
+      }));
+
+      // Add to plan and execute only the new steps
+      updatedPlan.steps.push(...followUpSteps);
+
+      for (const step of followUpSteps) {
+        await this.executeSingleStep(
+          step,
+          updatedPlan,
+          updatedPlan.steps.indexOf(step),
+          updatedPlan.steps.length
+        );
+      }
+    }
 
     return updatedPlan;
   }
@@ -305,7 +408,8 @@ export class ResearchExecutor {
       return `未能获取到关于"${step.title}"的相关信息，请检查网络连接或尝试其他搜索关键词。`;
     }
 
-    return results.join('\n\n');
+    // URL 压缩：用短 ID 替代长 URL 节省 token
+    return this._urlCompressor.compressText(results.join('\n\n'));
   }
 
   /**
@@ -450,6 +554,78 @@ ${previousResults}
     // 未来可扩展为真实代码执行（如数据处理、图表生成等）
     logger.info('Processing step converted to analysis:', step.id);
     return await this.executeAnalysisStep(step, plan);
+  }
+
+  /**
+   * Reflection 节点：评估研究充分性
+   */
+  private async reflect(plan: ResearchPlan): Promise<ReflectionResult> {
+    const allContent = plan.steps
+      .filter(s => s.status === 'completed' && s.result)
+      .map(s => s.result!)
+      .join('\n\n');
+
+    const reflectionPrompt = `You are a research quality evaluator. Analyze the following research results and provide a structured reflection.
+
+Research Topic: ${plan.topic}
+Research Objectives: ${plan.objectives.join(', ')}
+
+Collected Information:
+${allContent.substring(0, 8000)}
+
+Evaluate the research completeness and respond in this exact JSON format:
+{
+  "is_sufficient": boolean,
+  "confidence": number (0.0-1.0),
+  "knowledge_gaps": ["list of identified gaps"],
+  "follow_up_queries": ["specific search queries to fill gaps"],
+  "info_balance_scores": {
+    "factual": number (0-2),
+    "analytical": number (0-2),
+    "opinion": number (0-2),
+    "practical": number (0-2),
+    "comparative": number (0-2),
+    "frontier": number (0-2)
+  },
+  "total_balance_score": number (0-12),
+  "recommendation": "proceed" | "one_more_round" | "need_deep_dive"
+}`;
+
+    try {
+      const response = await this.modelRouter.chat({
+        provider: DEFAULT_PROVIDER,
+        model: DEFAULT_MODEL,
+        messages: [{ role: 'user', content: reflectionPrompt }],
+        maxTokens: 1500,
+      });
+
+      const text = response.content ?? '';
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          isSufficient: parsed.is_sufficient ?? true,
+          confidence: parsed.confidence ?? 0.5,
+          knowledgeGaps: parsed.knowledge_gaps ?? [],
+          followUpQueries: parsed.follow_up_queries ?? [],
+          infoBalanceScores: parsed.info_balance_scores ?? { factual: 1, analytical: 1, opinion: 1, practical: 1, comparative: 1, frontier: 1 },
+          totalBalanceScore: parsed.total_balance_score ?? 6,
+          recommendation: parsed.recommendation ?? 'proceed',
+        };
+      }
+    } catch (e) {
+      logger.warn('Reflection failed, defaulting to proceed:', e);
+    }
+
+    return {
+      isSufficient: true,
+      confidence: 0.5,
+      knowledgeGaps: [],
+      followUpQueries: [],
+      infoBalanceScores: { factual: 1, analytical: 1, opinion: 1, practical: 1, comparative: 1, frontier: 1 },
+      totalBalanceScore: 6,
+      recommendation: 'proceed',
+    };
   }
 
   /**

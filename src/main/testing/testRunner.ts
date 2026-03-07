@@ -204,8 +204,9 @@ export class TestRunner {
         const allSuites = await loadSuitesForCritic(this.config.testCaseDir);
         const allCases = allSuites.flatMap((s) => s.cases);
         summary.evalFeedback = await critic.critique(summary, allCases);
-      } catch (criticError: any) {
-        logger.warn('Eval critic failed', { error: criticError.message });
+      } catch (criticError: unknown) {
+        const message = criticError instanceof Error ? criticError.message : String(criticError);
+        logger.warn('Eval critic failed', { error: message });
       }
     }
 
@@ -363,15 +364,17 @@ export class TestRunner {
         try {
           const builder = new TrajectoryBuilder();
           result.trajectory = builder.buildFromTestResult(result, testCase);
-        } catch (trajError: any) {
-          logger.warn('Trajectory analysis failed', { testId: testCase.id, error: trajError.message });
+        } catch (trajError: unknown) {
+          const message = trajError instanceof Error ? trajError.message : String(trajError);
+          logger.warn('Trajectory analysis failed', { testId: testCase.id, error: message });
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       result.status = 'failed';
-      result.failureReason = error.message || 'Unknown error';
-      result.errors.push(error.message || String(error));
-      this.emit({ type: 'error', testId: testCase.id, error: error.message });
+      result.failureReason = message || 'Unknown error';
+      result.errors.push(message || String(error));
+      this.emit({ type: 'error', testId: testCase.id, error: message });
     } finally {
       // Run cleanup commands
       if (testCase.cleanup && testCase.cleanup.length > 0) {
@@ -404,8 +407,9 @@ export class TestRunner {
     for (const cmd of commands) {
       try {
         await execAsync(cmd, { cwd: this.config.workingDirectory });
-      } catch (error: any) {
-        logger.warn(`${phase} command failed`, { cmd, error: error.message });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn(`${phase} command failed`, { cmd, error: message });
         throw new Error(`${phase} failed: ${cmd}`);
       }
     }

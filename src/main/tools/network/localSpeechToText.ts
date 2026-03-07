@@ -80,14 +80,15 @@ async function convertToWav(inputPath: string, outputPath: string): Promise<void
       '-y',
       outputPath,
     ], { timeout: 60000 });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     // 检查 ffmpeg 是否存在
     try {
       await execFileAsync('which', ['ffmpeg']);
     } catch {
       throw new Error('ffmpeg 未安装。请运行: brew install ffmpeg');
     }
-    throw new Error(`音频转换失败: ${error.message}`);
+    throw new Error(`音频转换失败: ${message}`);
   }
 }
 
@@ -332,11 +333,12 @@ local_speech_to_text { "file_path": "meeting.mp3", "language": "en", "output_for
           }
         }
       }
-    } catch (error: any) {
-      logger.error('[本地语音转文字] 失败', { error: error.message });
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      logger.error('[本地语音转文字] 失败', { error: errMsg });
 
       // 超时特殊提示
-      if (error.killed || error.signal === 'SIGTERM') {
+      if ((error as Record<string, unknown>).killed || (error as Record<string, unknown>).signal === 'SIGTERM') {
         return {
           success: false,
           error: `转写超时（超过 ${CONFIG.TIMEOUT_MS / 1000} 秒）。可尝试：\n- 使用更小的模型（如 base 或 small）\n- 增加线程数\n- 分割长音频`,
@@ -345,7 +347,7 @@ local_speech_to_text { "file_path": "meeting.mp3", "language": "en", "output_for
 
       return {
         success: false,
-        error: `本地语音转文字失败: ${error.message}`,
+        error: `本地语音转文字失败: ${errMsg}`,
       };
     }
   },

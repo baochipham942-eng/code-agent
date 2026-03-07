@@ -280,9 +280,10 @@ export async function generateSlideIllustrations(
           image_path: imgPath,
           position: 'right' as const,
         } satisfies SlideImage;
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
         // Silent failure - slide just won't have an image
-        logger.warn(`[slide ${index + 1}] Failed to generate illustration: ${err.message}`);
+        logger.warn(`[slide ${index + 1}] Failed to generate illustration: ${message}`);
         return null;
       }
     })

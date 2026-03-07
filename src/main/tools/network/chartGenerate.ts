@@ -261,11 +261,12 @@ chart_generate {
           },
         },
       };
-    } catch (error: any) {
-      logger.error('Chart generation failed', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Chart generation failed', { error: message });
       return {
         success: false,
-        error: `图表生成失败: ${error.message}`,
+        error: `图表生成失败: ${message}`,
       };
     }
   },

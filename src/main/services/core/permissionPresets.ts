@@ -2,16 +2,11 @@
 // Permission Presets - 权限预设配置
 // ============================================================================
 
-import type { PermissionLevel } from '@shared/types';
+import type { PermissionLevel, PermissionPreset } from '@shared/types';
 
-/**
- * 预设类型
- * - strict: 最严格，所有操作需确认
- * - development: 开发模式，项目目录内自动批准
- * - ci: CI 环境，完全信任
- * - custom: 用户自定义
- */
-export type PermissionPreset = 'strict' | 'development' | 'ci' | 'custom';
+// PermissionPreset 类型已移至 shared/types/permission.ts
+// 此处通过 re-export 保持向后兼容
+export type { PermissionPreset } from '@shared/types';
 
 /**
  * 权限配置接口

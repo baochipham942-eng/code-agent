@@ -73,8 +73,9 @@ export class AgentLoopAdapter implements AgentInterface {
 
       turnCount = state.turnCount || responses.length;
 
-    } catch (error: any) {
-      errors.push(error.message || String(error));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(message || String(error));
       logger.error('Agent execution error', { error });
     }
 
@@ -350,8 +351,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
       await loop.run(prompt);
 
-    } catch (error: any) {
-      errors.push(error.message || String(error));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(message || String(error));
     }
 
     return { responses, toolExecutions, turnCount: turnCount || responses.length, errors };

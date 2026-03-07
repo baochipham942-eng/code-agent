@@ -94,8 +94,9 @@ export async function generateFromTemplate(
     fs.writeFileSync(outputPath, outputBuffer);
 
     return { success: true, outputPath, slidesProcessed, placeholdersReplaced };
-  } catch (error: any) {
-    return { success: false, error: `Template processing failed: ${error.message}` };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { success: false, error: `Template processing failed: ${message}` };
   }
 }
 
@@ -128,8 +129,9 @@ export async function parseTemplateProfile(pptxPath: string): Promise<TemplatePr
       colorScheme,
       fonts,
     };
-  } catch (err: any) {
-    logger.warn(`Failed to parse template profile: ${err.message}`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn(`Failed to parse template profile: ${message}`);
     return null;
   }
 }
@@ -240,8 +242,9 @@ async function extractLayoutsFromZip(zip: any): Promise<TemplateProfile['layouts
 
       layouts.push({ name: layoutName, placeholders });
     }
-  } catch (err: any) {
-    logger.debug(`Layout extraction error: ${err.message}`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.debug(`Layout extraction error: ${message}`);
   }
 
   return layouts;
@@ -413,8 +416,9 @@ export async function assembleFromTemplate(
     fs.writeFileSync(outputPath, outputBuffer);
 
     return { success: true, outputPath, slidesProcessed, placeholdersReplaced };
-  } catch (error: any) {
-    return { success: false, error: `Template assembly failed: ${error.message}` };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { success: false, error: `Template assembly failed: ${message}` };
   }
 }
 
@@ -461,8 +465,9 @@ async function injectSpeakerNotes(
         }
       }
     }
-  } catch (err: any) {
-    logger.debug(`Failed to inject speaker notes: ${err.message}`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.debug(`Failed to inject speaker notes: ${message}`);
   }
 }
 

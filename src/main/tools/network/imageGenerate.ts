@@ -339,8 +339,9 @@ export async function generateImage(
     try {
       const result = await callZhipuImageGeneration(zhipuApiKey, prompt, aspectRatio, TIMEOUT_MS.DIRECT_API);
       return { imageData: result.url, actualModel: ZHIPU_IMAGE_MODELS.standard };
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      if (error instanceof Error && error.name === 'AbortError') {
         throw new Error(`CogView-4 生成超时（${TIMEOUT_MS.DIRECT_API / 1000}秒），请稍后重试。`);
       }
       throw error;
@@ -367,8 +368,9 @@ export async function generateImage(
       const result = await response.json();
       const imageData = extractImageFromResponse(result);
       return { imageData, actualModel: fluxModel };
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      if (error instanceof Error && error.name === 'AbortError') {
         throw new Error(`FLUX 生成超时（${TIMEOUT_MS.DIRECT_API / 1000}秒），请稍后重试。`);
       }
       throw error;
@@ -403,8 +405,9 @@ export async function generateImage(
     throw new Error(
       `云端代理失败: ${errorText}\n建议：配置智谱 API Key（CogView-4）或 OpenRouter API Key（FLUX）。`
     );
-  } catch (error: any) {
-    if (error.name === 'AbortError') {
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (error instanceof Error && error.name === 'AbortError') {
       throw new Error(
         `云端代理超时（${TIMEOUT_MS.CLOUD_PROXY / 1000}秒）。\n` +
         `建议：配置智谱 API Key（CogView-4）或 OpenRouter API Key（FLUX）。`
@@ -471,8 +474,9 @@ async function expandPromptWithLLM(prompt: string, engine: ImageEngine, style?: 
           return expanded;
         }
       }
-    } catch (e: any) {
-      logger.warn('[Prompt扩展] GLM 失败，CogView 懂中文，直接用原始 prompt', { error: e.message });
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      logger.warn('[Prompt扩展] GLM 失败，CogView 懂中文，直接用原始 prompt', { error: message });
     }
     // CogView 懂中文，原始 prompt 就够好了，不 fallback 到英文
     return style ? addStyleSuffix(prompt, style) : prompt;
@@ -506,7 +510,7 @@ async function expandPromptWithLLM(prompt: string, engine: ImageEngine, style?: 
         return expanded;
       }
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     logger.warn('[Prompt扩展] 云端代理失败');
   }
 
@@ -523,7 +527,7 @@ async function expandPromptWithLLM(prompt: string, engine: ImageEngine, style?: 
           return expanded;
         }
       }
-    } catch (e: any) {
+    } catch (e: unknown) {
       logger.warn('[Prompt扩展] OpenRouter 直连失败');
     }
   }
@@ -656,8 +660,9 @@ image_generate { "prompt": "产品展示图", "output_path": "./product.png", "s
         });
         try {
           imageBase64 = await downloadImageAsBase64(rawImageData);
-        } catch (e: any) {
-          logger.warn('[图片下载] 下载失败，保留原始 URL', { error: e.message });
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : String(e);
+          logger.warn('[图片下载] 下载失败，保留原始 URL', { error: message });
           imageBase64 = rawImageData; // 降级：保留 URL，前端兜底处理
         }
       } else {
@@ -699,11 +704,12 @@ image_generate { "prompt": "产品展示图", "output_path": "./product.png", "s
           isAdmin,
         },
       };
-    } catch (error: any) {
-      logger.error('Image generation failed', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Image generation failed', { error: message });
       return {
         success: false,
-        error: `图片生成失败: ${error.message}`,
+        error: `图片生成失败: ${message}`,
       };
     }
   },

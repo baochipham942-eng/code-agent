@@ -453,11 +453,12 @@ export function exportSessionToMarkdown(
         toolExecutionCount,
       },
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     logger.error('Failed to export session', { error });
     return {
       success: false,
-      error: error.message || 'Unknown export error',
+      error: message || 'Unknown export error',
     };
   }
 }
@@ -504,11 +505,12 @@ export async function exportSessionToFile(
       ...result,
       filePath,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     logger.error('Failed to write export file', { filePath, error });
     return {
       success: false,
-      error: `Failed to write file: ${error.message}`,
+      error: `Failed to write file: ${message}`,
     };
   }
 }

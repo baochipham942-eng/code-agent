@@ -3,10 +3,11 @@
 // 借鉴 DeerFlow 8 维分析框架，生成结构化研究计划
 // ============================================================================
 
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import type {
   ResearchPlan,
   ResearchStep,
-  ReportStyle,
   DeepResearchConfig,
 } from './types';
 import type { ModelRouter } from '../model/modelRouter';
@@ -148,12 +149,36 @@ export class ResearchPlanner {
   }
 
   /**
+   * 从 SKILL.md 加载研究方法论
+   */
+  private loadSkillMethodology(): string | null {
+    try {
+      const skillPath = join(__dirname, 'SKILL.md');
+      const content = readFileSync(skillPath, 'utf-8');
+      // Extract content after frontmatter (after second ---)
+      const parts = content.split('---');
+      if (parts.length >= 3) {
+        return parts.slice(2).join('---').trim();
+      }
+      return content;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * 构建计划 Prompt
    */
   private buildPlanPrompt(topic: string, config: DeepResearchConfig): string {
-    return PLAN_PROMPT_TEMPLATE
+    const skillMethodology = this.loadSkillMethodology();
+    const basePrompt = PLAN_PROMPT_TEMPLATE
       .replace('{{TOPIC}}', topic)
       .replace('{{MAX_STEPS}}', String(config.maxSteps ?? 5));
+
+    if (skillMethodology) {
+      return basePrompt + `\n\n## Research Methodology\n\n${skillMethodology}`;
+    }
+    return basePrompt;
   }
 
   /**

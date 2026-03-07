@@ -6,6 +6,7 @@ import { app, BrowserWindow } from 'electron';
 import { getDatabase, getLangfuseService } from '../services';
 import { getMemoryService } from '../memory/memoryService';
 import { getMCPClient } from '../mcp/mcpClient';
+import { cleanupSessionStateManager } from '../session/sessionStateManager';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('Lifecycle');
@@ -51,6 +52,14 @@ export async function cleanup(): Promise<void> {
     logger.info('Langfuse cleaned up');
   } catch (error) {
     logger.error('Error cleaning up Langfuse', error);
+  }
+
+  // Cleanup session state manager timer
+  try {
+    cleanupSessionStateManager();
+    logger.info('Session state manager cleaned up');
+  } catch (error) {
+    logger.error('Error cleaning up session state manager', error);
   }
 }
 

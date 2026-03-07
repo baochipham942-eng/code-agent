@@ -74,8 +74,9 @@ class ReadFileToolDecorated implements ITool {
         success: true,
         output: result,
       };
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      if ((error as Record<string, unknown>).code === 'ENOENT') {
         return {
           success: false,
           error: `File not found: ${filePath}`,
@@ -83,7 +84,7 @@ class ReadFileToolDecorated implements ITool {
       }
       return {
         success: false,
-        error: error.message || 'Failed to read file',
+        error: errMsg || 'Failed to read file',
       };
     }
   }

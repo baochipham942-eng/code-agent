@@ -48,7 +48,7 @@ export async function callViaCloudProxy(
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: normalizeJsonSchema(tool.inputSchema),
+      parameters: normalizeJsonSchema(tool.inputSchema as unknown as Record<string, unknown>) as Record<string, unknown>,
     },
   }));
 
@@ -118,15 +118,16 @@ export async function callViaCloudProxy(
       }
       throw new Error(`云端代理错误: ${response.status} - ${errorMessage}`);
     }
-  } catch (error: any) {
-    if (axios.isCancel(error) || error.name === 'AbortError' || error.name === 'CanceledError') {
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (axios.isCancel(error) || (error instanceof Error ? error.name : undefined) === 'AbortError' || (error instanceof Error ? error.name : undefined) === 'CanceledError') {
       throw new Error('Request was cancelled');
     }
     if (error instanceof ContextLengthExceededError) {
       throw error;
     }
 
-    if (error.response) {
+    if (axios.isAxiosError(error) && error.response) {
       const errorMessage = JSON.stringify(error.response.data);
       const contextError = parseContextLengthError(errorMessage, 'cloud-proxy');
       if (contextError) {
@@ -134,7 +135,7 @@ export async function callViaCloudProxy(
       }
       throw new Error(`云端代理 API 错误: ${error.response.status} - ${errorMessage}`);
     }
-    throw new Error(`云端代理请求失败: ${error.message}`);
+    throw new Error(`云端代理请求失败: ${errMsg}`);
   }
 }
 

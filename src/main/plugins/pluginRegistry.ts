@@ -231,9 +231,10 @@ export class PluginRegistry {
       plugin.state = 'active';
       logger.info(`Plugin activated: ${pluginId}`);
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       plugin.state = 'error';
-      plugin.error = err.message;
+      plugin.error = message;
       logger.error(`Failed to activate plugin ${pluginId}:`, err);
       return false;
     }
@@ -273,9 +274,10 @@ export class PluginRegistry {
       plugin.state = 'inactive';
       logger.info(`Plugin deactivated: ${pluginId}`);
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
       plugin.state = 'error';
-      plugin.error = err.message;
+      plugin.error = message;
       logger.error(`Failed to deactivate plugin ${pluginId}:`, err);
       return false;
     }

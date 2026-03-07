@@ -73,11 +73,12 @@ class BashToolDecorated implements ITool {
         success: true,
         output,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: error.message || 'Command execution failed',
-        output: error.stdout || undefined,
+        error: errMsg || 'Command execution failed',
+        output: ((error as Record<string, unknown>).stdout as string | undefined) || undefined,
       };
     }
   }

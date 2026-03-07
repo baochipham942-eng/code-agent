@@ -115,10 +115,11 @@ export async function executePromptHook(
 
     // Parse AI response
     return parseAIResponse(response as string, duration);
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
     const duration = Date.now() - startTime;
 
-    if (error.message === 'Timeout') {
+    if (message === 'Timeout') {
       logger.warn('Prompt hook timed out', { timeout });
       return {
         action: 'allow', // Default to allow on timeout
@@ -127,10 +128,10 @@ export async function executePromptHook(
       };
     }
 
-    logger.error('Prompt hook execution failed', { error: error.message });
+    logger.error('Prompt hook execution failed', { error: message });
     return {
       action: 'error',
-      error: error.message || 'Prompt hook execution failed',
+      error: message || 'Prompt hook execution failed',
       duration,
     };
   }

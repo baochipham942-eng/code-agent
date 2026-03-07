@@ -176,11 +176,12 @@ export class CloudAgentClient {
       const result = await response.json();
       this.setStatus('ready');
       return result;
-    } catch (error: any) {
-      logger.error('Cloud task execution failed:', error);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      logger.error('Cloud task execution failed:', errMsg);
       this.setStatus('error');
 
-      if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+      if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
         return {
           id: request.id,
           status: 'timeout',
@@ -191,7 +192,7 @@ export class CloudAgentClient {
       return {
         id: request.id,
         status: 'error',
-        error: error.message || 'Unknown error',
+        error: errMsg || 'Unknown error',
       };
     }
   }

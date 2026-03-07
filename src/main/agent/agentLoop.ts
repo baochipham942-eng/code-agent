@@ -37,7 +37,6 @@ import type {
   AgentLoopConfig,
   ModelResponse,
   ModelMessage,
-  MessageContent,
 } from './loopTypes';
 import { isParallelSafeTool, classifyToolCalls } from './toolExecution/parallelStrategy';
 import { CircuitBreaker } from './toolExecution/circuitBreaker';
@@ -51,20 +50,19 @@ import {
 import {
   injectWorkingDirectoryContext,
   buildEnhancedSystemPrompt,
-  buildEnhancedSystemPromptWithProactiveContext,
-  buildEnhancedSystemPromptAsync,
   buildRuntimeModeBlock,
 } from './messageHandling/contextBuilder';
-import { getPromptForTask, buildDynamicPrompt, buildDynamicPromptV2, type AgentMode } from '../generation/prompts/builder';
+import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../generation/prompts/builder';
 import { AntiPatternDetector } from './antiPattern/detector';
 import { cleanXmlResidues } from './antiPattern/cleanXml';
 import { GoalTracker } from './goalTracker';
+import { NudgeManager } from './nudgeManager';
 import { getSessionRecoveryService } from './sessionRecovery';
 import { getCurrentTodos } from '../tools/planning/todoWrite';
 import { getIncompleteTasks } from '../tools/planning';
 import { fileReadTracker } from '../tools/fileReadTracker';
 import { dataFingerprintStore } from '../tools/dataFingerprint';
-import { MAX_PARALLEL_TOOLS, READ_ONLY_TOOLS, WRITE_TOOLS, VERIFY_TOOLS, TaskProgressState } from './loopTypes';
+import { MAX_PARALLEL_TOOLS } from './loopTypes';
 import {
   compressToolResult,
   HookMessageBuffer,
@@ -73,14 +71,13 @@ import {
   estimateTokens,
 } from '../context/tokenOptimizer';
 import { AutoContextCompressor, getAutoCompressor } from '../context/autoCompressor';
-import { getTraceRecorder, type ToolCallWithResult } from '../evolution/traceRecorder';
+import { getTraceRecorder } from '../evolution/traceRecorder';
 import { getOutcomeDetector } from '../evolution/outcomeDetector';
 import { getInputSanitizer } from '../security/inputSanitizer';
 import { getDiffTracker } from '../services/diff/diffTracker';
 import { getCitationService } from '../services/citation/citationService';
 import { existsSync, readdirSync } from 'fs';
 import { join, basename } from 'path';
-import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { getVerifierRegistry, initializeVerifiers } from './verifier';
 import type { VerificationContext, VerificationResult } from './verifier';
@@ -126,22 +123,10 @@ export class AgentLoop {
   private stopHookRetryCount: number = 0;
   private maxStopHookRetries: number = 3;
 
-  // P1 Nudge: Read-only stop pattern detection
-  private readOnlyNudgeCount: number = 0;
-  private maxReadOnlyNudges: number = 3; // Increased from 2 to give more chances
-  private todoNudgeCount: number = 0;
-  private maxTodoNudges: number = 2; // Nudge to complete todos
+  // Nudge management (P1-P5, P7, P0)
+  private nudgeManager: NudgeManager;
 
-  // P3 Nudge: File completion tracking
-  private fileNudgeCount: number = 0;
-  private maxFileNudges: number = 2;
-  private targetFiles: string[] = []; // Files mentioned in prompt that should be modified
-  private modifiedFiles: Set<string> = new Set(); // Files actually modified
 
-  // P2 Checkpoint: Task progress state tracking
-  private consecutiveExploringCount: number = 0;
-  private maxConsecutiveExploring: number = 3;
-  private lastProgressState: TaskProgressState = 'exploring';
 
   // User-configurable hooks (Claude Code v2.0 style)
   private hookManager?: HookManager;
@@ -159,14 +144,7 @@ export class AgentLoop {
   // F3: External data summary nudge
   private externalDataCallCount: number = 0;
 
-  // F4: Goal-based completion verification
-  private goalVerificationCount: number = 0;
-  private maxGoalVerifications: number = 2;
 
-  // P5: Output file existence verification
-  private expectedOutputFiles: string[] = [];
-  private outputFileNudgeCount: number = 0;
-  private maxOutputFileNudges: number = 3;
 
   // Token optimization
   private hookMessageBuffer: HookMessageBuffer;
@@ -234,16 +212,11 @@ export class AgentLoop {
   // Consecutive truncation circuit breaker (detect repetitive loops)
   private _consecutiveTruncations: number = 0;
   private readonly MAX_CONSECUTIVE_TRUNCATIONS = 3;
-  // P7: Output structure validation (only once per run)
-  private _outputValidationDone: boolean = false;
 
-  private _userExpectsOutput: boolean = false;
-  // P5-3: 初始数据文件快照（仅统计新增文件）
-  private _initialDataFiles: Set<string> = new Set();
 
-  // P0: Requirement re-injection verification (Ralph Loop)
-  private _originalUserPrompt: string = '';
-  private _requirementVerificationDone: boolean = false;
+
+
+
 
   // E7: Content quality gate
   private contentVerificationRetries: Map<string, number> = new Map();
@@ -299,6 +272,7 @@ export class AgentLoop {
     this.circuitBreaker = new CircuitBreaker();
     this.antiPatternDetector = new AntiPatternDetector();
     this.goalTracker = new GoalTracker();
+    this.nudgeManager = new NudgeManager();
 
     // Initialize token optimization
     this.hookMessageBuffer = new HookMessageBuffer();
@@ -476,215 +450,10 @@ export class AgentLoop {
   // --------------------------------------------------------------------------
 
   async run(userMessage: string): Promise<void> {
-    
-    logger.debug('[AgentLoop] ========== run() START ==========');
-    logger.debug('[AgentLoop] Message:', userMessage.substring(0, 100));
 
-    logCollector.agent('INFO', `Agent run started: "${userMessage.substring(0, 80)}..."`);
-    logCollector.agent('DEBUG', `Generation: ${this.generation.id}, Model: ${this.modelConfig.provider}`);
-
-    // Langfuse: Start trace
-    const langfuse = getLangfuseService();
-    this.traceId = `trace-${this.sessionId}-${Date.now()}`;
-    langfuse.startTrace(this.traceId, {
-      sessionId: this.sessionId,
-      userId: this.userId,
-      generationId: this.generation.id,
-      modelProvider: this.modelConfig.provider,
-      modelName: this.modelConfig.model,
-    }, userMessage);
-
-    // Gen8: Start trace recording for self-evolution
-    const evolutionTraceRecorder = getTraceRecorder();
-    evolutionTraceRecorder.startTrace(this.sessionId, userMessage, this.workingDirectory);
-
-    await this.initializeUserHooks();
-
-    // Task Complexity Analysis
-    const complexityAnalysis = taskComplexityAnalyzer.analyze(userMessage);
-    const isSimpleTask = complexityAnalysis.complexity === 'simple';
-    this.isSimpleTaskMode = isSimpleTask;
-
-    // Store target files for P3 Nudge
-    this.targetFiles = complexityAnalysis.targetFiles || [];
-    this.modifiedFiles.clear();
-    this.fileNudgeCount = 0;
-
-    // Reset nudge counters at task start (not per-turn, to allow cumulative effect)
-    this.readOnlyNudgeCount = 0;
-    this.todoNudgeCount = 0;
-    this.goalVerificationCount = 0;
-    this.externalDataCallCount = 0;
-    this.outputFileNudgeCount = 0;
-    this._consecutiveTruncations = 0;
-    this._outputValidationDone = false;
-    this._originalUserPrompt = userMessage;
-    this._requirementVerificationDone = false;
-
-    this._userExpectsOutput = /保存|导出|生成.*文件|输出.*文件|写入|\.xlsx|\.csv|\.png|\.pdf|export|save/i.test(userMessage);
-
-    // P5-3: 记录初始数据文件快照，后续只统计新增文件
-    try {
-      this._initialDataFiles = new Set(
-        readdirSync(this.workingDirectory).filter(f =>
-          f.endsWith('.xlsx') || f.endsWith('.xls') || f.endsWith('.csv') || f.endsWith('.png')
-        )
-      );
-    } catch { this._initialDataFiles = new Set(); }
-
-    // P5: Extract expected output file paths from user prompt (existence diff)
-    const allPaths = extractAbsoluteFilePaths(userMessage);
-    this.expectedOutputFiles = allPaths.filter(f => !existsSync(f));
-
-    // P8: Task-specific prompt hardening — 对特定任务模式注入针对性提示
-    const taskHints = this._detectTaskPatterns(userMessage);
-    if (taskHints.length > 0) {
-      this.injectSystemMessage(
-        `<task-specific-hints>\n${taskHints.join('\n')}\n</task-specific-hints>`
-      );
-      logger.debug(`[AgentLoop] P8: Injected ${taskHints.length} task-specific hints`);
-    }
-
-    // F1: Goal Re-Injection — 从用户消息提取目标
-    this.goalTracker.initialize(userMessage);
-
-    logger.debug(` Task complexity: ${complexityAnalysis.complexity} (${Math.round(complexityAnalysis.confidence * 100)}%)`);
-    if (this.targetFiles.length > 0) {
-      logger.debug(` Target files: ${this.targetFiles.join(', ')}`);
-    }
-    logCollector.agent('INFO', `Task complexity: ${complexityAnalysis.complexity}`, {
-      confidence: complexityAnalysis.confidence,
-      reasons: complexityAnalysis.reasons,
-      fastPath: isSimpleTask,
-      targetFiles: this.targetFiles,
-    });
-
-    if (!isSimpleTask) {
-      const complexityHint = taskComplexityAnalyzer.generateComplexityHint(complexityAnalysis);
-      this.injectSystemMessage(complexityHint);
-
-      // Parallel Judgment via small model (Groq)
-      try {
-        const orchestrator = getTaskOrchestrator();
-        const judgment = await orchestrator.judge(userMessage);
-
-        if (judgment.shouldParallel && judgment.confidence >= 0.7) {
-          const parallelHint = orchestrator.generateParallelHint(judgment);
-          this.injectSystemMessage(parallelHint);
-
-          logger.info('[AgentLoop] Parallel execution suggested', {
-            dimensions: judgment.parallelDimensions,
-            criticalPath: judgment.criticalPathLength,
-            speedup: judgment.estimatedSpeedup,
-          });
-          logCollector.agent('INFO', 'Parallel execution suggested', {
-            dimensions: judgment.suggestedDimensions,
-            confidence: judgment.confidence,
-          });
-        }
-      } catch (error) {
-        // 并行判断失败不影响主流程
-        logger.warn('[AgentLoop] Parallel judgment failed, continuing without hint', error);
-      }
-    }
-
-    // Dynamic Agent Mode Detection V2 (基于优先级和预算的动态提醒)
-    // 注意：这里移出了 !isSimpleTask 条件，因为即使简单任务也可能需要动态提醒（如 PPT 格式选择）
-    const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
-    
-    logger.info(`[AgentLoop] Checking dynamic mode for gen${genNum}`);
-    if (genNum >= 3) {
-      try {
-        // 使用 V2 版本，支持 toolsUsedInTurn 上下文
-        // 预算增加到 1200 tokens 以支持 PPT 等大型提醒 (700+ tokens)
-        const dynamicResult = buildDynamicPromptV2(this.generation.id, userMessage, {
-          toolsUsedInTurn: this.toolsUsedInTurn,
-          iterationCount: this.toolsUsedInTurn.length, // 使用工具调用数量作为迭代近似
-          hasError: false,
-          maxReminderTokens: 1200,
-          includeFewShot: genNum >= 4, // Gen4+ 启用 few-shot 示例
-        });
-        this.currentAgentMode = dynamicResult.mode;
-
-        logger.info(`[AgentLoop] Dynamic mode detected: ${dynamicResult.mode}`, {
-          features: dynamicResult.features,
-          readOnly: dynamicResult.modeConfig.readOnly,
-          remindersSelected: dynamicResult.reminderStats.deduplication.selected,
-          tokensUsed: dynamicResult.tokensUsed,
-        });
-        logCollector.agent('INFO', `Dynamic mode: ${dynamicResult.mode}`, {
-          readOnly: dynamicResult.modeConfig.readOnly,
-          isMultiDimension: dynamicResult.features.isMultiDimension,
-          reminderStats: dynamicResult.reminderStats,
-        });
-
-        // 注入模式系统提醒（如果有）
-        if (dynamicResult.userMessage !== userMessage) {
-          const reminder = dynamicResult.userMessage.substring(userMessage.length).trim();
-          if (reminder) {
-            logger.info(`[AgentLoop] Injecting mode reminder (${reminder.length} chars, ${dynamicResult.tokensUsed} tokens)`);
-            this.injectSystemMessage(reminder);
-          }
-        }
-      } catch (error) {
-        logger.error('[AgentLoop] Dynamic mode detection failed:', error);
-      }
-    }
-
-    // Step-by-step execution for models that need it (DeepSeek, etc.)
-    if (this.stepByStepMode && !isSimpleTask) {
-      const { steps, isMultiStep } = this.parseMultiStepTask(userMessage);
-      if (isMultiStep) {
-        logger.info(`[AgentLoop] Multi-step task detected (${steps.length} steps), using step-by-step mode`);
-        await this.runStepByStep(userMessage, steps);
-        return; // Step-by-step mode handles the entire execution
-      }
-    }
-
-    // User-configurable hooks: UserPromptSubmit
-    if (this.hookManager) {
-      const promptResult = await this.hookManager.triggerUserPromptSubmit(userMessage, this.sessionId);
-      if (!promptResult.shouldProceed) {
-        logger.info('[AgentLoop] User prompt blocked by hook', { message: promptResult.message });
-        this.onEvent({
-          type: 'notification',
-          data: { message: promptResult.message || 'Prompt blocked by hook' },
-        });
-        return;
-      }
-      if (promptResult.message) {
-        this.injectSystemMessage(`<user-prompt-hook>\n${promptResult.message}\n</user-prompt-hook>`);
-      }
-    }
-
-    // Session start hooks
-    const shouldRunHooks = this.enableHooks && this.planningService && !isSimpleTask;
-    if (shouldRunHooks) {
-      await this.runSessionStartHook();
-    }
-
-    if (this.hookManager && !isSimpleTask) {
-      const sessionResult = await this.hookManager.triggerSessionStart(this.sessionId);
-      if (sessionResult.message) {
-        this.injectSystemMessage(`<session-start-hook>\n${sessionResult.message}\n</session-start-hook>`);
-      }
-    }
-
-    // F5: 跨会话任务恢复 — 查询同目录的上一个会话，注入恢复摘要
-    if (!isSimpleTask) {
-      try {
-        const recovery = await getSessionRecoveryService().checkPreviousSession(
-          this.sessionId,
-          this.workingDirectory
-        );
-        if (recovery) {
-          this.injectSystemMessage(recovery);
-          logger.info('[AgentLoop] Session recovery summary injected');
-        }
-      } catch {
-        // Graceful: recovery failure doesn't block execution
-      }
-    }
+    const initResult = await this.initializeRun(userMessage);
+    if (!initResult) return; // Early exit (step-by-step mode or hook blocked)
+    const { langfuse, evolutionTraceRecorder, isSimpleTask, shouldRunHooks, genNum } = initResult;
 
     let iterations = 0;
 
@@ -839,7 +608,40 @@ export class AgentLoop {
         });
       }
 
-      // 2. Handle text response - check for text-described tool calls
+      // 2. Handle text response - check for text-described tool calls (extracted)
+      const forceExecResult = this.detectAndForceExecuteTextToolCall(response);
+      if (forceExecResult.shouldContinue) continue;
+      response = forceExecResult.response;
+      const wasForceExecuted = forceExecResult.wasForceExecuted;
+      // 2b. Handle actual text response (extracted)
+      if (response.type === 'text' && response.content) {
+        const textAction = await this.handleTextResponse(response, isSimpleTask, iterations, shouldRunHooks, langfuse);
+        if (textAction === 'break') break;
+        if (textAction === 'continue') continue;
+      }
+
+      // 3. Handle tool calls (extracted)
+      if (response.type === 'tool_use' && response.toolCalls) {
+        const toolAction = await this.handleToolResponse(response, wasForceExecuted, iterations, langfuse);
+        if (toolAction === 'continue') continue;
+      }
+
+      break;
+    }
+
+    await this.finalizeRun(iterations, userMessage, langfuse, evolutionTraceRecorder, genNum);
+  }
+
+
+  /**
+   * Detect text-described tool calls and force-execute them.
+   * Returns the (possibly modified) response and flags.
+   */
+  private detectAndForceExecuteTextToolCall(response: ModelResponse): {
+    response: ModelResponse;
+    wasForceExecuted: boolean;
+    shouldContinue: boolean;
+  } {
       let wasForceExecuted = false;
       if (response.type === 'text' && response.content) {
         const failedToolCallMatch = this.antiPatternDetector.detectFailedToolCallPattern(response.content);
@@ -861,13 +663,24 @@ export class AgentLoop {
               this.antiPatternDetector.generateToolCallFormatError(failedToolCallMatch.toolName, response.content)
             );
             logger.debug(`[AgentLoop] Tool call retry ${this.toolCallRetryCount}/${this.maxToolCallRetries}`);
-            continue;
+            return { response, wasForceExecuted, shouldContinue: true };
           }
         }
       }
+      return { response, wasForceExecuted, shouldContinue: false };
+  }
 
-      // 2b. Handle actual text response
-      if (response.type === 'text' && response.content) {
+  /**
+   * Handle text response: hooks, nudge checks, truncation recovery, output validation.
+   * Returns 'break' to exit loop, 'continue' to retry, or null to fall through.
+   */
+  private async handleTextResponse(
+    response: ModelResponse,
+    isSimpleTask: boolean,
+    iterations: number,
+    shouldRunHooks: boolean,
+    langfuse: ReturnType<typeof getLangfuseService>,
+  ): Promise<'break' | 'continue'> {
         this.emitTaskProgress('generating', '生成回复中...');
 
         // User-configurable Stop hook
@@ -879,7 +692,7 @@ export class AgentLoop {
               if (userStopResult.message) {
                 this.injectSystemMessage(`<stop-hook>\n${userStopResult.message}\n</stop-hook>`);
               }
-              continue;
+              return 'continue';
             }
             if (userStopResult.message) {
               this.injectSystemMessage(`<stop-hook>\n${userStopResult.message}\n</stop-hook>`);
@@ -905,7 +718,7 @@ export class AgentLoop {
                 });
               }
               logger.debug(` Stop hook retry ${this.stopHookRetryCount}/${this.maxStopHookRetries}`);
-              continue;
+              return 'continue';
             } else {
               logger.debug('[AgentLoop] Stop hook max retries reached, allowing stop');
               logCollector.agent('WARN', `Stop hook max retries (${this.maxStopHookRetries}) reached`);
@@ -924,259 +737,27 @@ export class AgentLoop {
           }
         }
 
-        // P1 Nudge: Detect read-only stop pattern
-        // If agent read files but didn't write, nudge it to continue with actual modifications
-        if (this.toolsUsedInTurn.length > 0 && this.readOnlyNudgeCount < this.maxReadOnlyNudges) {
-          const nudgeMessage = this.antiPatternDetector.detectReadOnlyStopPattern(this.toolsUsedInTurn);
-          if (nudgeMessage) {
-            this.readOnlyNudgeCount++;
-            logger.debug(`[AgentLoop] Read-only stop pattern detected, nudge ${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges}`);
-            logCollector.agent('INFO', `Read-only stop pattern detected, nudge ${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges}`);
-            this.injectSystemMessage(nudgeMessage);
-            this.onEvent({
-              type: 'notification',
-              data: { message: `检测到只读模式，提示继续执行修改 (${this.readOnlyNudgeCount}/${this.maxReadOnlyNudges})...` },
-            });
-            continue; // Skip stop, continue execution
-          }
+        // P1-P5 Nudge checks (delegated to NudgeManager)
+        const nudgeTriggered = this.nudgeManager.runNudgeChecks({
+          toolsUsedInTurn: this.toolsUsedInTurn,
+          isSimpleTaskMode: this.isSimpleTaskMode,
+          sessionId: this.sessionId,
+          iterations,
+          workingDirectory: this.workingDirectory,
+          injectSystemMessage: (msg: string) => this.injectSystemMessage(msg),
+          onEvent: (event: { type: string; data: unknown }) => this.onEvent(event as any),
+          goalTracker: this.goalTracker,
+        });
+        if (nudgeTriggered) {
+          return 'continue';
         }
-
-        // P2 Nudge: Check for incomplete todos AND tasks in complex tasks
-        // If agent wants to stop but has incomplete items, nudge it to complete them
-        if (!this.isSimpleTaskMode && this.todoNudgeCount < this.maxTodoNudges) {
-          const todos = getCurrentTodos(this.sessionId);
-          const incompleteTodos = todos.filter(t => t.status !== 'completed');
-          const incompleteTasks = getIncompleteTasks(this.sessionId);
-
-          const totalIncomplete = incompleteTodos.length + incompleteTasks.length;
-
-          if (totalIncomplete > 0) {
-            this.todoNudgeCount++;
-
-            // Build combined list
-            const itemList: string[] = [];
-            if (incompleteTodos.length > 0) {
-              itemList.push(...incompleteTodos.map(t => `- [Todo] ${t.content}`));
-            }
-            if (incompleteTasks.length > 0) {
-              itemList.push(...incompleteTasks.map(t => `- [Task #${t.id}] ${t.subject}`));
-            }
-            const combinedList = itemList.join('\n');
-
-            logger.debug(`[AgentLoop] Incomplete items detected, nudge ${this.todoNudgeCount}/${this.maxTodoNudges}`);
-            logCollector.agent('INFO', `Incomplete items detected: ${totalIncomplete} items`, {
-              nudgeCount: this.todoNudgeCount,
-              incompleteTodos: incompleteTodos.map(t => t.content),
-              incompleteTasks: incompleteTasks.map(t => ({ id: t.id, subject: t.subject })),
-            });
-            this.injectSystemMessage(
-              `<task-completion-check>\n` +
-              `STOP! You have ${totalIncomplete} incomplete item(s):\n${combinedList}\n\n` +
-              `You MUST complete these tasks before finishing. Do NOT provide a final summary until all items are marked as completed.\n` +
-              `- For Todos: use todo_write to update status to "completed"\n` +
-              `- For Tasks: use task_update with status="completed" (or status="deleted" if no longer needed)\n` +
-              `Continue working on the remaining items NOW.\n` +
-              `</task-completion-check>`
-            );
-            this.onEvent({
-              type: 'notification',
-              data: { message: `检测到 ${totalIncomplete} 个未完成的任务，提示继续执行 (${this.todoNudgeCount}/${this.maxTodoNudges})...` },
-            });
-            continue; // Skip stop, continue execution
-          }
+        // P7 + P0 Output validation (delegated to NudgeManager)
+        const validationTriggered = this.nudgeManager.runOutputValidation(
+          (msg: string) => this.injectSystemMessage(msg),
+        );
+        if (validationTriggered) {
+          return 'continue';
         }
-
-        // P3 Nudge: Check if all target files have been modified
-        if (this.targetFiles.length > 0 && this.fileNudgeCount < this.maxFileNudges) {
-          const missingFiles: string[] = [];
-          for (const targetFile of this.targetFiles) {
-            // Normalize target file path for comparison
-            const normalizedTarget = targetFile.replace(/^\.\//, '').replace(/^\//, '');
-            // Check if any modified file matches or contains the target
-            const found = Array.from(this.modifiedFiles).some(modFile =>
-              modFile === normalizedTarget ||
-              modFile.endsWith(normalizedTarget) ||
-              normalizedTarget.endsWith(modFile)
-            );
-            if (!found) {
-              missingFiles.push(targetFile);
-            }
-          }
-
-          if (missingFiles.length > 0) {
-            this.fileNudgeCount++;
-            const fileList = missingFiles.map(f => `- ${f}`).join('\n');
-            logger.debug(`[AgentLoop] P3 Nudge: Missing files detected, nudge ${this.fileNudgeCount}/${this.maxFileNudges}`);
-            logCollector.agent('INFO', `P3 Nudge: Missing file modifications`, {
-              nudgeCount: this.fileNudgeCount,
-              missingFiles,
-              modifiedFiles: Array.from(this.modifiedFiles),
-              targetFiles: this.targetFiles,
-            });
-            this.injectSystemMessage(
-              `<file-completion-check>\n` +
-              `STOP! The following files were mentioned in the task but have not been modified:\n${fileList}\n\n` +
-              `Modified files so far: ${Array.from(this.modifiedFiles).join(', ') || 'none'}\n\n` +
-              `You MUST modify ALL required files before finishing. Continue working on the missing files NOW.\n` +
-              `</file-completion-check>`
-            );
-            this.onEvent({
-              type: 'notification',
-              data: { message: `检测到 ${missingFiles.length} 个文件未修改，提示继续执行 (${this.fileNudgeCount}/${this.maxFileNudges})...` },
-            });
-            continue; // Skip stop, continue execution
-          }
-        }
-
-        // F4 Nudge: Goal-based completion verification
-        // 非简单任务模式下，如果没有任何写操作就要停止，提醒原始目标
-        if (this.goalTracker.isInitialized()
-          && !this.isSimpleTaskMode
-          && this.goalVerificationCount < this.maxGoalVerifications) {
-          const summary = this.goalTracker.getGoalSummary();
-          const hasWriteAction = summary.completed.some(a =>
-            a === 'edit_file' || a === 'write_file' || a === 'bash'
-          );
-          if (!hasWriteAction && iterations > 1) {
-            this.goalVerificationCount++;
-            this.injectSystemMessage(
-              `<goal-completion-check>\n` +
-              `STOP! 任务尚未完成。\n` +
-              `原始目标: ${summary.goal}\n` +
-              `已执行工具: ${summary.completed.join(', ') || '无'}\n` +
-              `尚未进行任何文件修改。请继续完成任务，或明确说明为什么要提前停止。\n` +
-              `</goal-completion-check>`
-            );
-            this.onEvent({
-              type: 'notification',
-              data: { message: `目标完成度检查：尚无写操作 (${this.goalVerificationCount}/${this.maxGoalVerifications})` },
-            });
-            continue;
-          }
-        }
-
-        // P5 Nudge: Verify expected output files exist on disk
-        // Check 1: 显式路径缺失（精确匹配）
-        if (this.expectedOutputFiles.length > 0 && this.outputFileNudgeCount < this.maxOutputFileNudges) {
-          const missingOutputFiles = this.expectedOutputFiles.filter(f => !existsSync(f));
-          if (missingOutputFiles.length > 0) {
-            this.outputFileNudgeCount++;
-            const fileList = missingOutputFiles.map(f => `- ${f}`).join('\n');
-            logger.debug(`[AgentLoop] P5-1: TRIGGER (missing=${missingOutputFiles.length}, nudge=${this.outputFileNudgeCount}/${this.maxOutputFileNudges})`);
-            logCollector.agent('INFO', `P5 Nudge: Expected output files missing`, {
-              nudgeCount: this.outputFileNudgeCount,
-              missingFiles: missingOutputFiles,
-            });
-            this.injectSystemMessage(
-              `<output-file-check>\n` +
-              `STOP! 用户要求的输出文件不存在:\n${fileList}\n\n` +
-              `你声称任务已完成，但这些文件在磁盘上并未找到。请立即生成这些文件。\n` +
-              `</output-file-check>`
-            );
-            this.onEvent({
-              type: 'notification',
-              data: { message: `检测到 ${missingOutputFiles.length} 个输出文件缺失，提示继续 (${this.outputFileNudgeCount}/${this.maxOutputFileNudges})` },
-            });
-            continue;
-          } else {
-            logger.debug(`[AgentLoop] P5-1: SKIP (explicit=${this.expectedOutputFiles.length}, allExist=true)`);
-          }
-        } else {
-          logger.debug(`[AgentLoop] P5-1: SKIP (explicit=${this.expectedOutputFiles.length}, nudgeCount=${this.outputFileNudgeCount}/${this.maxOutputFileNudges})`);
-        }
-
-        // P5 Check 3: 检测未执行的 Python 脚本（直接读目录，不依赖 workspace diff）
-        // 场景: 模型写了 .py 脚本但没用 bash 执行，导致无数据输出
-        if (this._userExpectsOutput && this.outputFileNudgeCount < this.maxOutputFileNudges) {
-          try {
-            const allFiles = readdirSync(this.workingDirectory);
-            const scriptFiles = allFiles.filter(f => f.endsWith('.py'));
-            // 只统计新增的数据文件（排除任务开始前就存在的文件）
-            const newDataFiles = allFiles.filter(f =>
-              (f.endsWith('.xlsx') || f.endsWith('.xls') || f.endsWith('.csv') || f.endsWith('.png'))
-              && !this._initialDataFiles.has(f)
-            );
-            if (scriptFiles.length > 0 && newDataFiles.length === 0) {
-              this.outputFileNudgeCount++;
-              const scripts = scriptFiles.map(f => basename(f)).join(', ');
-              logger.debug(`[AgentLoop] P5-3: TRIGGER (scripts=${scriptFiles.length}, dataFiles=0)`);
-              logCollector.agent('INFO', `P5 Nudge: Python scripts not executed`, { scripts: scriptFiles });
-              this.injectSystemMessage(
-                `<output-file-check>\n` +
-                `STOP! 你创建了 Python 脚本 (${scripts}) 但还没有成功执行它。\n` +
-                `输出目录中没有检测到任何数据文件（xlsx/csv/png）。\n` +
-                `请立即用 bash 工具执行该脚本: python3 <脚本路径>\n` +
-                `如果脚本执行出错，请修复错误后重新执行。\n` +
-                `</output-file-check>`
-              );
-              continue;
-            } else {
-              logger.debug(`[AgentLoop] P5-3: SKIP (scripts=${scriptFiles.length}, newDataFiles=${newDataFiles.length})`);
-            }
-          } catch { /* ignore readdir errors */ }
-        }
-
-
-        // P7: Output structure validation — 系统自动读取输出 xlsx 结构，模型核对需求
-        // 只用显式路径（不再依赖 workspace diff，信任模型自行判断）
-        if (!this._outputValidationDone) {
-          const existingXlsx = this.expectedOutputFiles.filter(
-            f => existsSync(f) && (f.endsWith('.xlsx') || f.endsWith('.xls'))
-          );
-          if (existingXlsx.length > 0) {
-            this._outputValidationDone = true;
-            const structureInfo = this._readOutputXlsxStructure(existingXlsx);
-            if (structureInfo) {
-              logger.debug(`[AgentLoop] P7: TRIGGER (xlsxCount=${existingXlsx.length})`);
-              logCollector.agent('INFO', `P7 Validation: output structure check`, { files: existingXlsx });
-              this.injectSystemMessage(
-                `<output-validation>\n` +
-                `系统已自动读取你生成的输出文件结构：\n\n${structureInfo}\n\n` +
-                `请对照用户的原始需求逐条核对：\n` +
-                `1. 是否所有要求的 sheet/列/指标都已包含？\n` +
-                `2. 行数是否合理（非空表、非仅表头）？\n` +
-                `3. 列名是否清晰（无 Unnamed:0 等默认名）？\n` +
-                `4. 去重是否用了 subset 参数指定主键列？\n` +
-                `5. 阶梯累进计算（提成/税率）是否分段累加？\n` +
-                `如有遗漏或问题，请立即修复。如全部满足，结束任务。\n` +
-                `</output-validation>`
-              );
-              continue;
-            }
-          } else {
-            logger.debug(`[AgentLoop] P7: SKIP (xlsxCount=0)`);
-          }
-        }
-
-        // P0: 需求回注验证 (Ralph Loop pattern)
-        // 触发条件: P7 已完成 + P0 未触发 + 原始 prompt 存在
-        if (this._outputValidationDone && !this._requirementVerificationDone
-            && this._originalUserPrompt) {
-          this._requirementVerificationDone = true;
-
-          // 用已存在的 expectedOutputFiles（不再依赖 workspace diff）
-          const allExisting = this.expectedOutputFiles.filter(f => existsSync(f));
-          const currentXlsx = allExisting.filter(f =>
-            f.endsWith('.xlsx') || f.endsWith('.xls')
-          );
-          const fileList = allExisting.map(f => basename(f)).join(', ');
-          const structureInfo = currentXlsx.length > 0
-            ? this._readOutputXlsxStructure(currentXlsx)
-            : null;
-
-          logger.debug(`[AgentLoop] P0: TRIGGER (existingFiles=${allExisting.length})`);
-          this.injectSystemMessage(
-            `<requirement-verification>\n` +
-            `请重新阅读用户的原始需求，逐条核对是否都已完成:\n\n` +
-            `"""\n${this._originalUserPrompt}\n"""\n\n` +
-            `当前输出文件: ${fileList || '无'}\n` +
-            (structureInfo ? `当前输出结构:\n${structureInfo}\n\n` : '\n') +
-            `逐条确认每项需求都有对应输出。如有遗漏，立即补充。如全部满足，结束任务。\n` +
-            `</requirement-verification>`
-          );
-          continue;
-        }
-
         // 动态 maxTokens: 文本响应截断自动恢复
         if (response.truncated && !this._truncationRetried) {
           this._truncationRetried = true;
@@ -1193,7 +774,7 @@ export class AgentLoop {
               this.modelConfig.maxTokens = originalMaxTokens;
             }
             // 重试后如果变成了 tool_use，跳到下一轮处理
-            if (response.type === 'tool_use') continue;
+            if (response.type === 'tool_use') return 'continue';
           } else {
             this._truncationRetried = false;
           }
@@ -1214,7 +795,7 @@ export class AgentLoop {
               `3. 直接调用工具执行下一步操作\n` +
               `</truncation-recovery>`
             );
-            continue;
+            return 'continue';
           }
         } else {
           this._consecutiveTruncations = 0; // 非截断响应，重置计数
@@ -1256,7 +837,7 @@ export class AgentLoop {
             this.sessionId,
             iterations,
             this.toolsUsedInTurn,
-            Array.from(this.modifiedFiles),
+            Array.from(this.nudgeManager.getModifiedFiles()),
           ).catch((err: unknown) => {
             logger.error('[AgentLoop] PostExecution hook error:', err);
           });
@@ -1266,7 +847,7 @@ export class AgentLoop {
         try {
           const { getCodebaseHealthScanner } = require('./gc/codebaseHealthScanner');
           const scanner = getCodebaseHealthScanner();
-          scanner.scan(iterations, this.workingDirectory, Array.from(this.modifiedFiles))
+          scanner.scan(iterations, this.workingDirectory, Array.from(this.nudgeManager.getModifiedFiles()))
             .catch((err: unknown) => {
               logger.debug('[AgentLoop] GC scan error (non-blocking):', err);
             });
@@ -1274,15 +855,24 @@ export class AgentLoop {
           // GC module not available, skip
         }
 
-        break;
-      }
+        return 'break';
+  }
 
-      // 3. Handle tool calls
-      if (response.type === 'tool_use' && response.toolCalls) {
-        logger.debug(` Tool calls received: ${response.toolCalls.length} calls`);
+  /**
+   * Handle tool_use response: truncation detection, heredoc protection, execution, result compression.
+   * Returns 'continue' to loop back for next iteration.
+   */
+  private async handleToolResponse(
+    response: ModelResponse,
+    wasForceExecuted: boolean,
+    iterations: number,
+    langfuse: ReturnType<typeof getLangfuseService>,
+  ): Promise<'continue'> {
+        const toolCalls = response.toolCalls!;
+        logger.debug(` Tool calls received: ${toolCalls.length} calls`);
 
-        this.emitTaskProgress('tool_pending', `准备执行 ${response.toolCalls.length} 个工具`, {
-          toolTotal: response.toolCalls.length,
+        this.emitTaskProgress('tool_pending', `准备执行 ${toolCalls.length} 个工具`, {
+          toolTotal: toolCalls.length,
         });
 
         // Handle truncation warning + 动态 maxTokens 提升
@@ -1298,7 +888,7 @@ export class AgentLoop {
             logger.info(`[AgentLoop] Tool truncation: boosted maxTokens ${currentMax} → ${boostedMax}`);
           }
 
-          const writeFileCall = response.toolCalls.find(tc => tc.name === 'write_file');
+          const writeFileCall = toolCalls.find(tc => tc.name === 'write_file');
           if (writeFileCall) {
             const content = writeFileCall.arguments?.content as string;
             if (content) {
@@ -1307,7 +897,7 @@ export class AgentLoop {
             }
           } else {
             // 检测截断的 bash heredoc —— 执行不完整的 heredoc 会导致 SyntaxError
-            const truncatedBashHeredocs = response.toolCalls.filter(tc =>
+            const truncatedBashHeredocs = toolCalls.filter(tc =>
               tc.name === 'bash' &&
               typeof tc.arguments?.command === 'string' &&
               /<<\s*['"]?\w+['"]?/.test(tc.arguments.command as string)
@@ -1322,7 +912,7 @@ export class AgentLoop {
                 role: 'assistant',
                 content: response.content || '',
                 timestamp: Date.now(),
-                toolCalls: response.toolCalls,
+                toolCalls: toolCalls,
                 thinking: response.thinking,
                 effortLevel: this.effortLevel,
               };
@@ -1330,7 +920,7 @@ export class AgentLoop {
               this.onEvent({ type: 'message', data: truncAssistantMsg });
 
               // 构造合成错误结果，不实际执行
-              const syntheticResults: ToolResult[] = response.toolCalls.map(tc => ({
+              const syntheticResults: ToolResult[] = toolCalls.map(tc => ({
                 toolCallId: tc.id,
                 success: false,
                 output: '',
@@ -1358,7 +948,7 @@ export class AgentLoop {
                 `</truncation-recovery>`
               );
 
-              continue; // 跳到下一轮推理，让模型重新生成
+              return 'continue'; // 跳到下一轮推理，让模型重新生成
             }
 
             // 非 heredoc 截断：注入续写提示让模型继续
@@ -1370,7 +960,7 @@ export class AgentLoop {
           }
         }
 
-        response.toolCalls.forEach((tc, i) => {
+        toolCalls.forEach((tc, i) => {
           logger.debug(`   Tool ${i + 1}: ${tc.name}, args keys: ${Object.keys(tc.arguments || {}).join(', ')}`);
           logCollector.tool('INFO', `Tool call: ${tc.name}`, { toolId: tc.id, args: tc.arguments });
         });
@@ -1384,7 +974,7 @@ export class AgentLoop {
           role: 'assistant',
           content: cleanedContent,
           timestamp: Date.now(),
-          toolCalls: response.toolCalls,
+          toolCalls: toolCalls,
           // Adaptive Thinking: 保留模型的原生思考过程
           thinking: response.thinking,
           effortLevel: this.effortLevel,
@@ -1399,7 +989,7 @@ export class AgentLoop {
 
         // Execute tools
         logger.debug('[AgentLoop] Starting executeToolsWithHooks...');
-        const toolResults = await this.executeToolsWithHooks(response.toolCalls);
+        const toolResults = await this.executeToolsWithHooks(toolCalls);
         logger.debug(` executeToolsWithHooks completed, ${toolResults.length} results`);
 
         // h2A 实时转向：工具执行期间收到 steer()，保存已有结果后跳到下一轮推理
@@ -1422,7 +1012,7 @@ export class AgentLoop {
             type: 'interrupt_acknowledged',
             data: { message: '已收到新指令，正在调整方向...' },
           });
-          continue;
+          return 'continue';
         }
 
         toolResults.forEach((r, i) => {
@@ -1466,7 +1056,7 @@ export class AgentLoop {
 
         langfuse.endSpan(this.currentIterationSpanId, {
           type: 'tool_calls',
-          toolCount: response.toolCalls.length,
+          toolCount: toolCalls.length,
           successCount: toolResults.filter(r => r.success).length,
         });
 
@@ -1484,78 +1074,250 @@ export class AgentLoop {
         await this.checkAndAutoCompress();
 
         // Adaptive Thinking: 在 tool call 之间插入思考步骤
-        await this.maybeInjectThinking(response.toolCalls, toolResults);
+        await this.maybeInjectThinking(toolCalls, toolResults);
 
-        // P2 Checkpoint: Evaluate task progress state and nudge if stuck in exploring
-        const currentState = this.evaluateProgressState(this.toolsUsedInTurn);
-        if (currentState === 'exploring') {
-          this.consecutiveExploringCount++;
-          if (this.consecutiveExploringCount >= this.maxConsecutiveExploring) {
-            logger.debug(`[AgentLoop] P2 Checkpoint: ${this.consecutiveExploringCount} consecutive exploring iterations, injecting nudge`);
-            logCollector.agent('INFO', `P2 Checkpoint nudge: ${this.consecutiveExploringCount} exploring iterations`);
-            this.injectSystemMessage(this.generateExploringNudge());
-            this.consecutiveExploringCount = 0; // Reset after nudge
-          }
-        } else {
-          this.consecutiveExploringCount = 0; // Reset on progress
-        }
-        this.lastProgressState = currentState;
+        // P2 Checkpoint: Evaluate task progress state (delegated to NudgeManager)
+        this.nudgeManager.checkProgressState(
+          this.toolsUsedInTurn,
+          (msg: string) => this.injectSystemMessage(msg),
+        );
 
-        // P5 after force-execute: 模型原本想停止（text response），但被 force-execute 拦截
-        // 工具执行完后检查输出文件是否存在，防止 force-execute 路径永远绕过 P5
-        if (wasForceExecuted && this.outputFileNudgeCount < this.maxOutputFileNudges) {
-          // Check 1: 显式路径缺失
-          if (this.expectedOutputFiles.length > 0) {
-            const missingOutputFiles = this.expectedOutputFiles.filter(f => !existsSync(f));
-            if (missingOutputFiles.length > 0) {
-              this.outputFileNudgeCount++;
-              const fileList = missingOutputFiles.map(f => `- ${f}`).join('\n');
-              logger.debug(`[AgentLoop] P5 Nudge (post force-execute): Missing output files, nudge ${this.outputFileNudgeCount}/${this.maxOutputFileNudges}`);
-              logCollector.agent('INFO', `P5 Nudge (post force-execute): Expected output files missing`, {
-                nudgeCount: this.outputFileNudgeCount,
-                missingFiles: missingOutputFiles,
-              });
-              this.injectSystemMessage(
-                `<output-file-check>\n` +
-                `用户要求的输出文件尚未生成:\n${fileList}\n\n` +
-                `请确保在完成任务前生成这些文件。\n` +
-                `</output-file-check>`
-              );
-            }
-          }
-          // Check 2: 检测未执行的 Python 脚本（直接读目录）
-          else if (this._userExpectsOutput) {
-            try {
-              const allFiles = readdirSync(this.workingDirectory);
-              const scriptFiles = allFiles.filter(f => f.endsWith('.py'));
-              // 只统计新增的数据文件（排除任务开始前就存在的文件）
-              const newDataFiles = allFiles.filter(f =>
-                (f.endsWith('.xlsx') || f.endsWith('.xls') || f.endsWith('.csv') || f.endsWith('.png'))
-                && !this._initialDataFiles.has(f)
-              );
-              if (scriptFiles.length > 0 && newDataFiles.length === 0) {
-                this.outputFileNudgeCount++;
-                const scripts = scriptFiles.map(f => basename(f)).join(', ');
-                logger.debug(`[AgentLoop] P5-3 (post force-execute): TRIGGER (scripts=${scriptFiles.length}, newDataFiles=0)`);
-                logCollector.agent('INFO', `P5 Nudge (post force-execute): scripts not executed`, { scripts: scriptFiles });
-                this.injectSystemMessage(
-                  `<output-file-check>\n` +
-                  `你创建了 Python 脚本 (${scripts}) 但还没有成功执行它。\n` +
-                  `请用 bash 执行: python3 <脚本路径>\n` +
-                  `</output-file-check>`
-                );
-              }
-            } catch { /* ignore readdir errors */ }
-          }
+        // P5 after force-execute (delegated to NudgeManager)
+        if (wasForceExecuted) {
+          this.nudgeManager.checkPostForceExecute(
+            this.workingDirectory,
+            (msg: string) => this.injectSystemMessage(msg),
+          );
         }
 
         logger.debug(` >>>>>> Iteration ${iterations} END (continuing) <<<<<<`);
-        continue;
-      }
+        return 'continue';
+  }
 
-      break;
+  // ========================================================================
+  // Extracted sub-methods from run() — pure method extraction, no logic changes
+  // ========================================================================
+
+  /**
+   * Initialization logic extracted from run(): Langfuse trace, complexity analysis,
+   * target files, goal tracker, hooks, session recovery, dynamic mode detection.
+   */
+  private async initializeRun(userMessage: string): Promise<{
+    langfuse: ReturnType<typeof getLangfuseService>;
+    evolutionTraceRecorder: ReturnType<typeof getTraceRecorder>;
+    isSimpleTask: boolean;
+    shouldRunHooks: boolean;
+    genNum: number;
+  } | null> {
+    
+    logger.debug('[AgentLoop] ========== run() START ==========');
+    logger.debug('[AgentLoop] Message:', userMessage.substring(0, 100));
+
+    logCollector.agent('INFO', `Agent run started: "${userMessage.substring(0, 80)}..."`);
+    logCollector.agent('DEBUG', `Generation: ${this.generation.id}, Model: ${this.modelConfig.provider}`);
+
+    // Langfuse: Start trace
+    const langfuse = getLangfuseService();
+    this.traceId = `trace-${this.sessionId}-${Date.now()}`;
+    langfuse.startTrace(this.traceId, {
+      sessionId: this.sessionId,
+      userId: this.userId,
+      generationId: this.generation.id,
+      modelProvider: this.modelConfig.provider,
+      modelName: this.modelConfig.model,
+    }, userMessage);
+
+    // Gen8: Start trace recording for self-evolution
+    const evolutionTraceRecorder = getTraceRecorder();
+    evolutionTraceRecorder.startTrace(this.sessionId, userMessage, this.workingDirectory);
+
+    await this.initializeUserHooks();
+
+    // Task Complexity Analysis
+    const complexityAnalysis = taskComplexityAnalyzer.analyze(userMessage);
+    const isSimpleTask = complexityAnalysis.complexity === 'simple';
+    this.isSimpleTaskMode = isSimpleTask;
+
+    // P5: Extract expected output file paths from user prompt (existence diff)
+    const allPaths = extractAbsoluteFilePaths(userMessage);
+    const expectedOutputFiles = allPaths.filter(f => !existsSync(f));
+
+    // Reset all nudge state via NudgeManager
+    this.nudgeManager.reset(
+      complexityAnalysis.targetFiles || [],
+      userMessage,
+      this.workingDirectory,
+      expectedOutputFiles,
+    );
+
+    this.externalDataCallCount = 0;
+    this._consecutiveTruncations = 0;
+
+    // P8: Task-specific prompt hardening — 对特定任务模式注入针对性提示
+    const taskHints = this._detectTaskPatterns(userMessage);
+    if (taskHints.length > 0) {
+      this.injectSystemMessage(
+        `<task-specific-hints>\n${taskHints.join('\n')}\n</task-specific-hints>`
+      );
+      logger.debug(`[AgentLoop] P8: Injected ${taskHints.length} task-specific hints`);
     }
 
+    // F1: Goal Re-Injection — 从用户消息提取目标
+    this.goalTracker.initialize(userMessage);
+
+    logger.debug(` Task complexity: ${complexityAnalysis.complexity} (${Math.round(complexityAnalysis.confidence * 100)}%)`);
+    if (this.nudgeManager.getTargetFiles().length > 0) {
+      logger.debug(` Target files: ${this.nudgeManager.getTargetFiles().join(', ')}`);
+    }
+    logCollector.agent('INFO', `Task complexity: ${complexityAnalysis.complexity}`, {
+      confidence: complexityAnalysis.confidence,
+      reasons: complexityAnalysis.reasons,
+      fastPath: isSimpleTask,
+      targetFiles: this.nudgeManager.getTargetFiles(),
+    });
+
+    if (!isSimpleTask) {
+      const complexityHint = taskComplexityAnalyzer.generateComplexityHint(complexityAnalysis);
+      this.injectSystemMessage(complexityHint);
+
+      // Parallel Judgment via small model (Groq)
+      try {
+        const orchestrator = getTaskOrchestrator();
+        const judgment = await orchestrator.judge(userMessage);
+
+        if (judgment.shouldParallel && judgment.confidence >= 0.7) {
+          const parallelHint = orchestrator.generateParallelHint(judgment);
+          this.injectSystemMessage(parallelHint);
+
+          logger.info('[AgentLoop] Parallel execution suggested', {
+            dimensions: judgment.parallelDimensions,
+            criticalPath: judgment.criticalPathLength,
+            speedup: judgment.estimatedSpeedup,
+          });
+          logCollector.agent('INFO', 'Parallel execution suggested', {
+            dimensions: judgment.suggestedDimensions,
+            confidence: judgment.confidence,
+          });
+        }
+      } catch (error) {
+        // 并行判断失败不影响主流程
+        logger.warn('[AgentLoop] Parallel judgment failed, continuing without hint', error);
+      }
+    }
+
+    // Dynamic Agent Mode Detection V2 (基于优先级和预算的动态提醒)
+    // 注意：这里移出了 !isSimpleTask 条件，因为即使简单任务也可能需要动态提醒（如 PPT 格式选择）
+    const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+    
+    logger.info(`[AgentLoop] Checking dynamic mode for gen${genNum}`);
+    if (genNum >= 3) {
+      try {
+        // 使用 V2 版本，支持 toolsUsedInTurn 上下文
+        // 预算增加到 1200 tokens 以支持 PPT 等大型提醒 (700+ tokens)
+        const dynamicResult = buildDynamicPromptV2(this.generation.id, userMessage, {
+          toolsUsedInTurn: this.toolsUsedInTurn,
+          iterationCount: this.toolsUsedInTurn.length, // 使用工具调用数量作为迭代近似
+          hasError: false,
+          maxReminderTokens: 1200,
+          includeFewShot: genNum >= 4, // Gen4+ 启用 few-shot 示例
+        });
+        this.currentAgentMode = dynamicResult.mode;
+
+        logger.info(`[AgentLoop] Dynamic mode detected: ${dynamicResult.mode}`, {
+          features: dynamicResult.features,
+          readOnly: dynamicResult.modeConfig.readOnly,
+          remindersSelected: dynamicResult.reminderStats.deduplication.selected,
+          tokensUsed: dynamicResult.tokensUsed,
+        });
+        logCollector.agent('INFO', `Dynamic mode: ${dynamicResult.mode}`, {
+          readOnly: dynamicResult.modeConfig.readOnly,
+          isMultiDimension: dynamicResult.features.isMultiDimension,
+          reminderStats: dynamicResult.reminderStats,
+        });
+
+        // 注入模式系统提醒（如果有）
+        if (dynamicResult.userMessage !== userMessage) {
+          const reminder = dynamicResult.userMessage.substring(userMessage.length).trim();
+          if (reminder) {
+            logger.info(`[AgentLoop] Injecting mode reminder (${reminder.length} chars, ${dynamicResult.tokensUsed} tokens)`);
+            this.injectSystemMessage(reminder);
+          }
+        }
+      } catch (error) {
+        logger.error('[AgentLoop] Dynamic mode detection failed:', error);
+      }
+    }
+
+    // Step-by-step execution for models that need it (DeepSeek, etc.)
+    if (this.stepByStepMode && !isSimpleTask) {
+      const { steps, isMultiStep } = this.parseMultiStepTask(userMessage);
+      if (isMultiStep) {
+        logger.info(`[AgentLoop] Multi-step task detected (${steps.length} steps), using step-by-step mode`);
+        await this.runStepByStep(userMessage, steps);
+        return null; // Step-by-step mode handles the entire execution
+      }
+    }
+
+    // User-configurable hooks: UserPromptSubmit
+    if (this.hookManager) {
+      const promptResult = await this.hookManager.triggerUserPromptSubmit(userMessage, this.sessionId);
+      if (!promptResult.shouldProceed) {
+        logger.info('[AgentLoop] User prompt blocked by hook', { message: promptResult.message });
+        this.onEvent({
+          type: 'notification',
+          data: { message: promptResult.message || 'Prompt blocked by hook' },
+        });
+        return null;
+      }
+      if (promptResult.message) {
+        this.injectSystemMessage(`<user-prompt-hook>\n${promptResult.message}\n</user-prompt-hook>`);
+      }
+    }
+
+    // Session start hooks
+    const shouldRunHooks = !!(this.enableHooks && this.planningService && !isSimpleTask);
+    if (shouldRunHooks) {
+      await this.runSessionStartHook();
+    }
+
+    if (this.hookManager && !isSimpleTask) {
+      const sessionResult = await this.hookManager.triggerSessionStart(this.sessionId);
+      if (sessionResult.message) {
+        this.injectSystemMessage(`<session-start-hook>\n${sessionResult.message}\n</session-start-hook>`);
+      }
+    }
+
+    // F5: 跨会话任务恢复 — 查询同目录的上一个会话，注入恢复摘要
+    if (!isSimpleTask) {
+      try {
+        const recovery = await getSessionRecoveryService().checkPreviousSession(
+          this.sessionId,
+          this.workingDirectory
+        );
+        if (recovery) {
+          this.injectSystemMessage(recovery);
+          logger.info('[AgentLoop] Session recovery summary injected');
+        }
+      } catch {
+        // Graceful: recovery failure doesn't block execution
+      }
+    }
+
+    return { langfuse, evolutionTraceRecorder, isSimpleTask, shouldRunHooks, genNum };
+  }
+
+
+
+  /**
+   * Post-loop cleanup: mechanism stats, session end learning, evolution trace.
+   */
+  private async finalizeRun(
+    iterations: number,
+    userMessage: string,
+    langfuse: ReturnType<typeof getLangfuseService>,
+    evolutionTraceRecorder: ReturnType<typeof getTraceRecorder>,
+    genNum: number,
+  ): Promise<void> {
     // Handle loop exit conditions
     if (this.circuitBreaker.isTripped()) {
       logger.info('[AgentLoop] Loop exited due to circuit breaker');
@@ -1586,10 +1348,10 @@ export class AgentLoop {
 
     // === Mechanism Stats (observability) ===
     logger.info(`[AgentLoop] === Mechanism Stats ===`);
-    logger.info(`[AgentLoop] P5(output): nudges=${this.outputFileNudgeCount}/${this.maxOutputFileNudges}`);
-    logger.info(`[AgentLoop] P7(structure): ${this._outputValidationDone ? 'triggered' : 'skipped'}`);
-    logger.info(`[AgentLoop] P0(requirements): ${this._requirementVerificationDone ? 'triggered' : 'skipped'}`);
-    logger.info(`[AgentLoop] expectedFiles: [${this.expectedOutputFiles.map(f => basename(f)).join(', ')}]`);
+    logger.info(`[AgentLoop] P5(output): nudges=${this.nudgeManager.currentOutputFileNudgeCount}/${this.nudgeManager.maxOutputFileNudgeCount}`);
+    logger.info(`[AgentLoop] P7(structure): ${this.nudgeManager.outputValidationDone ? 'triggered' : 'skipped'}`);
+    // P0 stats now internal to NudgeManager
+    logger.info(`[AgentLoop] expectedFiles: [${this.nudgeManager.getExpectedOutputFiles().map(f => basename(f)).join(', ')}]`);
 
     // Session end learning (Gen5+)
     // genNum already declared above in dynamic mode detection
@@ -1668,6 +1430,7 @@ export class AgentLoop {
 
     langfuse.flush().catch((err) => logger.error('[Langfuse] Flush error:', err));
   }
+
 
   cancel(): void {
     this.isCancelled = true;
@@ -2253,10 +2016,7 @@ export class AgentLoop {
       if ((toolCall.name === 'edit_file' || toolCall.name === 'write_file') && result.success) {
         const filePath = (toolCall.arguments?.file_path || toolCall.arguments?.path) as string;
         if (filePath) {
-          // Normalize path for comparison
-          const normalizedPath = filePath.replace(/^\.\//, '').replace(/^\//, '');
-          this.modifiedFiles.add(normalizedPath);
-          logger.debug(`[AgentLoop] P3 Nudge: Tracked modified file: ${normalizedPath}`);
+          this.nudgeManager.trackModifiedFile(filePath);
 
           // E3: Diff tracking - compute and emit diff_computed event
           if (this.sessionId) {
@@ -3058,35 +2818,6 @@ ${deferredToolsSummary}
    *                 If provided, message will be buffered and merged with other messages of same category
    */
   // --------------------------------------------------------------------------
-  // P2 Checkpoint: Task Progress Evaluation
-  // --------------------------------------------------------------------------
-
-  /**
-   * Evaluate the current task progress state based on tools used in this iteration
-   */
-  private evaluateProgressState(toolsUsed: string[]): TaskProgressState {
-    const hasReadTools = toolsUsed.some(t => READ_ONLY_TOOLS.includes(t));
-    const hasWriteTools = toolsUsed.some(t => WRITE_TOOLS.includes(t));
-    const hasVerifyTools = toolsUsed.some(t => VERIFY_TOOLS.includes(t) || t === 'bash');
-
-    // Check for verification first (test/compile commands)
-    if (hasVerifyTools && !hasWriteTools) {
-      return 'verifying';
-    }
-
-    // Modifying if any write tools were used
-    if (hasWriteTools) {
-      return 'modifying';
-    }
-
-    // Exploring if only read tools were used
-    if (hasReadTools) {
-      return 'exploring';
-    }
-
-    // Default to exploring if no tools were used
-    return 'exploring';
-  }
 
   /**
    * Strip internal format mimicry from model's text output.
@@ -3112,75 +2843,8 @@ ${deferredToolsSummary}
     return cleaned.trim();
   }
 
-  /**
-   * Generate nudge message when stuck in exploring state
-   */
-  private generateExploringNudge(): string {
-    return (
-      `<checkpoint-nudge priority="medium">\n` +
-      `已连续 ${this.maxConsecutiveExploring} 轮只读取未修改。\n` +
-      `如果已充分了解问题，请开始用 edit_file 或 write_file 实施修改。\n` +
-      `如果仍需调查，请在 <think> 中说明还需要了解什么，然后有针对性地读取。\n` +
-      `</checkpoint-nudge>`
-    );
-  }
 
 
-  /**
-   * P7: 用 Python pandas 读取输出 xlsx 文件的结构（sheet名、列名、行数、前2行样本）
-   * 返回人类可读的文本描述，供模型核对是否满足用户需求
-   */
-  private _readOutputXlsxStructure(xlsxFiles: string[]): string | null {
-    try {
-      const fileListPy = xlsxFiles.map(f => `'${f.replace(/'/g, "\\'")}'`).join(', ');
-      const pyScript = [
-        'import pandas as pd',
-        'import numpy as np',
-        `for f in [${fileListPy}]:`,
-        '    try:',
-        '        xl = pd.ExcelFile(f)',
-        '        print(f"File: {f}")',
-        '        for name in xl.sheet_names:',
-        '            df = pd.read_excel(xl, name)',
-        '            print(f"  Sheet \'{name}\': {len(df)} rows x {len(df.columns)} cols")',
-        '            print(f"  Columns: {list(df.columns)}")',
-        '            if len(df) > 0:',
-        '                print("  Sample (first 2 rows):")',
-        '                print(df.head(2).to_string(index=False))',
-        '                # Per-column stats',
-        '                print("  Column stats:")',
-        '                for c in df.columns:',
-        '                    col = df[c]',
-        '                    nn = col.notna().sum()',
-        '                    if pd.api.types.is_numeric_dtype(col):',
-        '                        print(f"    {c}: dtype={col.dtype}, non_null={nn}/{len(df)}, min={col.min()}, max={col.max()}, mean={col.mean():.2f}")',
-        '                    else:',
-        '                        nuniq = col.nunique()',
-        '                        print(f"    {c}: dtype={col.dtype}, non_null={nn}/{len(df)}, unique={nuniq}")',
-        '                        if 2 <= nuniq <= 20:',
-        '                            vc = col.value_counts()',
-        '                            dist = ", ".join(f"{k}:{v}" for k,v in vc.head(10).items())',
-        '                            print(f"      distribution: {dist}")',
-        '            print()',
-        '    except Exception as e:',
-        '        print(f"  Error: {e}")',
-      ].join('\n');
-
-      const result = spawnSync('python3', ['-'], {
-        input: pyScript,
-        timeout: 15000,
-        encoding: 'utf-8',
-        maxBuffer: 1024 * 1024,
-      });
-
-      if (result.status === 0 && result.stdout) {
-        return result.stdout.trim() || null;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
 
   /**
    * P8: Detect task patterns and return targeted hints to reduce model variance
@@ -4037,7 +3701,7 @@ ${deferredToolsSummary}
       const taskAnalysis = analyzeTask(taskDescription);
 
       // Collect modified files
-      const modifiedFilesList = Array.from(this.modifiedFiles);
+      const modifiedFilesList = Array.from(this.nudgeManager.getModifiedFiles());
 
       // Collect tool calls history (last 20)
       const recentToolCalls: VerificationContext['toolCalls'] = [];

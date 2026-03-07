@@ -9,7 +9,7 @@
 // 4. AgentCoordination - 多 Agent 协调
 // ============================================================================
 
-import type { PermissionPreset } from '../../main/services/core/permissionPresets';
+import type { PermissionPreset } from './permission';
 
 // ============================================================================
 // 第 1 层：核心行为定义

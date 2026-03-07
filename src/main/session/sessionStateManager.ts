@@ -346,12 +346,12 @@ export class SessionStateManager {
     }
   }
 }
-
 // ----------------------------------------------------------------------------
 // Singleton Instance
 // ----------------------------------------------------------------------------
 
 let sessionStateManagerInstance: SessionStateManager | null = null;
+let cleanupTimerId: ReturnType<typeof setInterval> | null = null;
 
 /**
  * 获取 SessionStateManager 单例
@@ -364,6 +364,17 @@ export function getSessionStateManager(): SessionStateManager {
 }
 
 /**
+ * 清理 SessionStateManager 定时器资源
+ */
+export function cleanupSessionStateManager(): void {
+  if (cleanupTimerId !== null) {
+    clearInterval(cleanupTimerId);
+    cleanupTimerId = null;
+    logger.info('SessionStateManager cleanup timer cleared');
+  }
+}
+
+/**
  * 初始化 SessionStateManager
  */
 export function initSessionStateManager(mainWindow: BrowserWindow): SessionStateManager {
@@ -371,7 +382,7 @@ export function initSessionStateManager(mainWindow: BrowserWindow): SessionState
   manager.setMainWindow(mainWindow);
 
   // 定期清理空闲会话状态（每 10 分钟）
-  setInterval(() => {
+  cleanupTimerId = setInterval(() => {
     manager.cleanupIdleSessions();
   }, 10 * 60 * 1000);
 

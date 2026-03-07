@@ -290,11 +290,12 @@ The output always includes column names, which you should reference exactly when
           format,
         },
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       // Chart fallback: ExcelJS 在含图表的 xlsx 上会崩溃（anchors 等错误）
       // 回退到 Python pandas 读取
-      if (error.message?.includes('anchors') || error.message?.includes('Cannot read properties of undefined')) {
-        logger.warn(`[ReadXlsx] ExcelJS failed (${error.message}), trying Python pandas fallback`);
+      if (message?.includes('anchors') || message?.includes('Cannot read properties of undefined')) {
+        logger.warn(`[ReadXlsx] ExcelJS failed (${message}), trying Python pandas fallback`);
         try {
           const absPath = path.isAbsolute(file_path)
             ? file_path
@@ -329,15 +330,16 @@ The output always includes column names, which you should reference exactly when
               fallback: 'pandas',
             },
           };
-        } catch (pyError: any) {
-          logger.error('Python pandas fallback also failed', { error: pyError.message });
+        } catch (pyError: unknown) {
+          const message = pyError instanceof Error ? pyError.message : String(pyError);
+          logger.error('Python pandas fallback also failed', { error: message });
         }
       }
 
-      logger.error('XLSX read failed', { error: error.message });
+      logger.error('XLSX read failed', { error: message });
       return {
         success: false,
-        error: `Excel 读取失败: ${error.message}`,
+        error: `Excel 读取失败: ${message}`,
       };
     }
   },

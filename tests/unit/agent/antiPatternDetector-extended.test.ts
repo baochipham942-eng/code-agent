@@ -142,10 +142,21 @@ describe('AntiPatternDetector - Extended', () => {
       expect(result).toContain('write_file');
     });
 
-    it('should inject rethink directive on third failure (strike 3)', () => {
+    it('should force alternative on third failure (strike 3) when alternative exists', () => {
       const toolCall1 = makeToolCall('edit_file', { file_path: '/a.ts' });
       const toolCall2 = makeToolCall('edit_file', { file_path: '/b.ts' });
       const toolCall3 = makeToolCall('edit_file', { file_path: '/c.ts' });
+      detector.trackToolFailure(toolCall1, 'error 1');
+      detector.trackToolFailure(toolCall2, 'error 2');
+      const result = detector.trackToolFailure(toolCall3, 'error 3');
+      expect(result).toContain('force-alternative');
+      expect(result).toContain('write_file');
+    });
+
+    it('should inject rethink directive on third failure (strike 3) when no alternative', () => {
+      const toolCall1 = makeToolCall('unknown_tool', { param: '1' });
+      const toolCall2 = makeToolCall('unknown_tool', { param: '2' });
+      const toolCall3 = makeToolCall('unknown_tool', { param: '3' });
       detector.trackToolFailure(toolCall1, 'error 1');
       detector.trackToolFailure(toolCall2, 'error 2');
       const result = detector.trackToolFailure(toolCall3, 'error 3');
@@ -173,8 +184,8 @@ describe('AntiPatternDetector - Extended', () => {
       detector.trackToolFailure(sameToolCall, 'same error');
       const result = detector.trackToolFailure(sameToolCall, 'same error');
       // On 3rd call: exact-args hits maxSameToolFailures=3 AND tool-name hits strike 3
-      // Strike 3 (rethink) has higher priority in the control flow
-      expect(result).toContain('strike-3-rethink');
+      // edit_file has alternative, so strike 3 returns force-alternative (higher priority)
+      expect(result).toContain('force-alternative');
     });
 
     it('should clear failure tracker on success', () => {

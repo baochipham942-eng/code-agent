@@ -126,6 +126,7 @@
 | **统一 Identity** | `src/main/generation/prompts/identity.ts` | 替代 constitution/ 的 6 文件，token -81% |
 | **上下文压缩** | `src/main/context/autoCompressor.ts` | 自动上下文压缩 |
 | **并行评估** | `src/main/evaluation/parallelEvaluator.ts` | 并行会话评估 |
+| **Session Replay** | `src/main/evaluation/replayService.ts` | 评测中心第三模式：结构化会话回放（三表 JOIN + 工具分类 + 自修复链检测） |
 
 ### v0.16.16+ 新增模块
 

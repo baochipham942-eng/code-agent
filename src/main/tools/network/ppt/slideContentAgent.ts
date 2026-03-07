@@ -398,8 +398,9 @@ export async function generateStructuredSlides(
     }
 
     return validSlides;
-  } catch (error: any) {
-    logger.warn(`generateStructuredSlides failed: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`generateStructuredSlides failed: ${message}`);
     return null;
   }
 }

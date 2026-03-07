@@ -80,8 +80,9 @@ export async function executeResearch(
     const searchPromises = queries.map(async (q) => {
       try {
         return await webSearch(q);
-      } catch (err: any) {
-        logger.warn(`Search failed for "${q}": ${err.message}`);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn(`Search failed for "${q}": ${message}`);
         return '';
       }
     });
@@ -96,8 +97,9 @@ export async function executeResearch(
     const fetchPromises = urls.slice(0, RESEARCH_MAX_FETCH).map(async (url) => {
       try {
         return await webFetch(url, `提取关于"${brief.topic}"的关键事实、统计数据和引言`);
-      } catch (err: any) {
-        logger.warn(`Fetch failed for "${url}": ${err.message}`);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.warn(`Fetch failed for "${url}": ${message}`);
         return '';
       }
     });
@@ -152,8 +154,9 @@ ${trimmedContent}
       logger.debug(`Extracted: ${parsed.facts?.length || 0} facts, ${parsed.statistics?.length || 0} stats`);
       return normalizeResearchContext(parsed);
     }
-  } catch (err: any) {
-    logger.warn(`LLM extraction failed: ${err.message}`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.warn(`LLM extraction failed: ${message}`);
   }
 
   return createEmptyContext();

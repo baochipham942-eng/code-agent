@@ -103,7 +103,11 @@ def serve():
         sys.stdout.flush()
         sys.exit(1)
 
-    model = Qwen3ASRModel.from_pretrained(model_path, dtype=torch.float32, device_map="cpu")
+    # Use float16 on Apple Silicon MPS for ~2x faster inference, fallback to fp32 CPU
+    if torch.backends.mps.is_available():
+        model = Qwen3ASRModel.from_pretrained(model_path, dtype=torch.float16, device_map="mps")
+    else:
+        model = Qwen3ASRModel.from_pretrained(model_path, dtype=torch.float32, device_map="cpu")
     json.dump({"status": "ready", "model_path": model_path}, sys.stdout)
     sys.stdout.write("\n")
     sys.stdout.flush()

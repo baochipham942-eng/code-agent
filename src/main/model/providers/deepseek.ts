@@ -99,11 +99,12 @@ export async function callDeepSeek(
 
     logger.info(' DeepSeek raw response:', JSON.stringify(response.data, null, 2).substring(0, 2000));
     return parseOpenAIResponse(response.data);
-  } catch (error: any) {
-    if (axios.isCancel(error) || error.name === 'AbortError' || error.name === 'CanceledError') {
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    if (axios.isCancel(error) || (error instanceof Error ? error.name : undefined) === 'AbortError' || (error instanceof Error ? error.name : undefined) === 'CanceledError') {
       throw new Error('Request was cancelled');
     }
-    if (error.response) {
+    if (axios.isAxiosError(error) && error.response) {
       const errorData = error.response.data;
       const errorMessage = typeof errorData === 'string'
         ? errorData
@@ -116,6 +117,6 @@ export async function callDeepSeek(
 
       throw new Error(`DeepSeek API error: ${error.response.status} - ${errorMessage}`);
     }
-    throw new Error(`DeepSeek request failed: ${error.message}`);
+    throw new Error(`DeepSeek request failed: ${errMsg}`);
   }
 }

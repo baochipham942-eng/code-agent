@@ -608,11 +608,12 @@ github_pr { "action": "merge", "pr": 42, "method": "squash", "delete_branch": tr
         default:
           return { success: false, error: `未知操作: ${p.action}` };
       }
-    } catch (error: any) {
-      logger.error('GitHub PR operation failed', { action: p.action, error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('GitHub PR operation failed', { action: p.action, error: message });
       return {
         success: false,
-        error: `GitHub PR 操作失败: ${error.message}`,
+        error: `GitHub PR 操作失败: ${message}`,
       };
     }
   },

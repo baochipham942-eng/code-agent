@@ -379,9 +379,10 @@ Tips:
         success: true,
         output: output || 'No matches found',
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
       // grep/rg returns exit code 1 when no matches found
-      if (error.code === 1 && !error.stderr) {
+      if ((error as Record<string, unknown>).code === 1 && !(error as Record<string, unknown>).stderr) {
         return {
           success: true,
           output: 'No matches found',
@@ -389,7 +390,7 @@ Tips:
       }
       return {
         success: false,
-        error: error.message || 'Search failed',
+        error: errMsg || 'Search failed',
       };
     }
   },

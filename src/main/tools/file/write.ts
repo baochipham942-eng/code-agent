@@ -126,8 +126,9 @@ function checkCodeCompleteness(content: string, filePath: string): CompletenessC
   if (ext === '.json') {
     try {
       JSON.parse(content);
-    } catch (e: any) {
-      issues.push(`JSON 格式错误: ${e.message}`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      issues.push(`JSON 格式错误: ${message}`);
     }
   }
 
@@ -278,10 +279,11 @@ The tool checks for truncated code (unclosed brackets, incomplete statements) an
         success: true,
         output,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: error.message || 'Failed to write file',
+        error: message || 'Failed to write file',
       };
     } finally {
       // 释放锁

@@ -35,9 +35,6 @@ interface AppState {
   showTaskPanel: boolean;
   showSkillsPanel: boolean;
   showCapturePanel: boolean;
-  showMeetingPanel: boolean;
-  meetingStatus: 'idle' | 'recording' | 'paused' | 'processing' | 'done';
-  meetingDuration: number;
   voicePasteStatus: 'idle' | 'recording' | 'transcribing' | 'processing';
   sidebarCollapsed: boolean;
 
@@ -52,7 +49,6 @@ interface AppState {
 
   // Generation State
   currentGeneration: Generation;
-  availableGenerations: Generation[];
 
   // Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
   isProcessing: boolean;
@@ -73,7 +69,7 @@ interface AppState {
 
   // EvalCenter State (评测中心：合并会话评测 + 遥测)
   showEvalCenter: boolean;
-  evalCenterTab: 'analysis' | 'telemetry';
+  evalCenterTab: 'analysis' | 'telemetry' | 'testResults';
   evalCenterSessionId: string | null;
 
   // HTML Preview State
@@ -101,9 +97,6 @@ interface AppState {
   setShowTaskPanel: (show: boolean) => void;
   setShowSkillsPanel: (show: boolean) => void;
   setShowCapturePanel: (show: boolean) => void;
-  setShowMeetingPanel: (show: boolean) => void;
-  setMeetingStatus: (status: 'idle' | 'recording' | 'paused' | 'processing' | 'done') => void;
-  setMeetingDuration: (duration: number) => void;
   setVoicePasteStatus: (status: 'idle' | 'recording' | 'transcribing' | 'processing') => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setLanguage: (language: Language) => void;
@@ -122,7 +115,7 @@ interface AppState {
   setShowDAGPanel: (show: boolean) => void;
   toggleDAGPanel: () => void;
   setShowLab: (show: boolean) => void;
-  setShowEvalCenter: (show: boolean, tab?: 'analysis' | 'telemetry', sessionId?: string) => void;
+  setShowEvalCenter: (show: boolean, tab?: 'analysis' | 'telemetry' | 'testResults', sessionId?: string) => void;
   setPreviewFilePath: (path: string | null) => void;
   setShowPreviewPanel: (show: boolean) => void;
   openPreview: (filePath: string) => void;
@@ -167,9 +160,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   showTaskPanel: true, // Task panel shown by default
   showSkillsPanel: false, // Skills panel hidden by default
   showCapturePanel: false, // Capture panel hidden by default
-  showMeetingPanel: false, // Meeting panel hidden by default
-  meetingStatus: 'idle' as const,
-  meetingDuration: 0,
   voicePasteStatus: 'idle' as const,
   sidebarCollapsed: false,
 
@@ -184,7 +174,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Initial Generation State
   currentGeneration: defaultGeneration,
-  availableGenerations: [],
 
   // Initial Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
   isProcessing: false,
@@ -232,9 +221,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowTaskPanel: (show) => set({ showTaskPanel: show }),
   setShowSkillsPanel: (show) => set({ showSkillsPanel: show }),
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
-  setShowMeetingPanel: (show) => set({ showMeetingPanel: show }),
-  setMeetingStatus: (status) => set({ meetingStatus: status }),
-  setMeetingDuration: (duration) => set({ meetingDuration: duration }),
   setVoicePasteStatus: (status) => set({ voicePasteStatus: status }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setLanguage: (language) => set({ language }),

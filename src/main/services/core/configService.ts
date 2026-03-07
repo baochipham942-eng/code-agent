@@ -224,10 +224,10 @@ export class ConfigService {
 
         // === 核心配置 ===
 
-        // Restore generation
-        if (keychainSettings.generation && typeof keychainSettings.generation === 'string') {
-          this.settings.generation.default = keychainSettings.generation as GenerationId;
-        }
+        // Restore generation - locked to gen8, ignore saved setting
+        // if (keychainSettings.generation && typeof keychainSettings.generation === 'string') {
+        //   this.settings.generation.default = keychainSettings.generation as GenerationId;
+        // }
 
         // Restore model provider
         if (keychainSettings.modelProvider && typeof keychainSettings.modelProvider === 'string') {

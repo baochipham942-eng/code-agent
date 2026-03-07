@@ -160,16 +160,7 @@ export class ToolSearchService {
       };
     }
 
-    // 检查代际兼容性
-    if (generationId && !meta.generations.includes(generationId)) {
-      logger.warn(`Tool ${toolName} not available for generation ${generationId}`);
-      return {
-        tools: [],
-        hasMore: false,
-        totalCount: 0,
-        loadedTools: [],
-      };
-    }
+    // Generation check removed: locked to gen8, all tools available
 
     // 标记为已加载
     this.loadedDeferredTools.add(meta.name);
@@ -289,27 +280,21 @@ export class ToolSearchService {
   ): DeferredToolMeta[] {
     const result: DeferredToolMeta[] = [];
 
-    // 添加内置延迟工具
+    // 添加内置延迟工具 (gen8 locked: no generation filtering)
     for (const meta of DEFERRED_TOOLS_META) {
-      if (!generationId || meta.generations.includes(generationId)) {
-        result.push(meta);
-      }
+      result.push(meta);
     }
 
-    // 添加 MCP 工具
+    // 添加 MCP 工具 (gen8 locked: no generation filtering)
     if (includeMCP) {
       for (const meta of this.mcpToolsMeta.values()) {
-        if (!generationId || meta.generations.includes(generationId)) {
-          result.push(meta);
-        }
+        result.push(meta);
       }
     }
 
-    // 添加 Skills
+    // 添加 Skills (gen8 locked: no generation filtering)
     for (const meta of this.skillsMeta.values()) {
-      if (!generationId || meta.generations.includes(generationId)) {
-        result.push(meta);
-      }
+      result.push(meta);
     }
 
     return result;

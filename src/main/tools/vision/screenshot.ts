@@ -113,8 +113,9 @@ async function analyzeWithVision(
     }
 
     return content || null;
-  } catch (error: any) {
-    logger.warn('[截图分析] 分析失败', { error: error.message });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('[截图分析] 分析失败', { error: message });
     return null;
   }
 }

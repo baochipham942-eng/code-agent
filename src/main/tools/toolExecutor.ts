@@ -159,15 +159,9 @@ export class ToolExecutor {
       };
     }
 
-    logger.debug('Tool found', { toolName, generations: tool.generations.join(','), current: options.generation.id });
+    logger.debug('Tool found', { toolName, generation: 'gen8' });
 
-    // Check if tool is available for current generation
-    if (!tool.generations.includes(options.generation.id)) {
-      return {
-        success: false,
-        error: `Tool ${toolName} is not available in ${options.generation.name}`,
-      };
-    }
+    // Generation check removed: locked to gen8, all registered tools are available
 
     // 文件检查点：在写入工具执行前保存原文件
     await createFileCheckpointIfNeeded(toolName, params, () => {

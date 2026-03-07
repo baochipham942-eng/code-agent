@@ -27,7 +27,6 @@ export { ChatView } from './ChatView';
 // -----------------------------------------------------------------------------
 // Panel Components
 // -----------------------------------------------------------------------------
-export { GenerationBadge } from './GenerationBadge';
 export { TodoPanel } from './TodoPanel';
 export { WorkspacePanel } from './WorkspacePanel';
 

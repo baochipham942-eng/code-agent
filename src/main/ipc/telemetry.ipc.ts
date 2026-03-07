@@ -5,6 +5,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { TELEMETRY_CHANNELS } from '../../shared/ipc/channels';
 import { getTelemetryStorage } from '../telemetry/telemetryStorage';
+import { extractStructuredReplay } from '../evaluation/replayService';
 import { getTelemetryCollector } from '../telemetry/telemetryCollector';
 import { createLogger } from '../services/infra/logger';
 
@@ -84,6 +85,14 @@ export function registerTelemetryHandlers(
       } catch {
         return null;
       }
+    }
+  );
+
+  // 获取结构化回放数据
+  ipcMain.handle(
+    TELEMETRY_CHANNELS.GET_STRUCTURED_REPLAY,
+    async (_event, sessionId: string) => {
+      return extractStructuredReplay(sessionId);
     }
   );
 

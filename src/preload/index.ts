@@ -8,14 +8,14 @@ import type { ElectronAPI, IPCRequest, IPCResponse, IPCDomain } from '../shared/
 // Type-safe IPC wrapper
 const electronAPI: ElectronAPI = {
   invoke: <K extends keyof import('../shared/ipc').IpcInvokeHandlers>(
-    channel: K,
+    channel: K & string,
     ...args: Parameters<import('../shared/ipc').IpcInvokeHandlers[K]>
   ) => {
     return ipcRenderer.invoke(channel, ...args) as ReturnType<import('../shared/ipc').IpcInvokeHandlers[K]>;
   },
 
   on: <K extends keyof import('../shared/ipc').IpcEventHandlers>(
-    channel: K,
+    channel: K & string,
     callback: import('../shared/ipc').IpcEventHandlers[K]
   ) => {
     const subscription = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => {
@@ -31,7 +31,7 @@ const electronAPI: ElectronAPI = {
   },
 
   off: <K extends keyof import('../shared/ipc').IpcEventHandlers>(
-    channel: K,
+    channel: K & string,
     callback: import('../shared/ipc').IpcEventHandlers[K]
   ) => {
     ipcRenderer.removeListener(channel, callback as (...args: unknown[]) => void);

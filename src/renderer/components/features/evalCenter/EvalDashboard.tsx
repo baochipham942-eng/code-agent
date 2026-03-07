@@ -15,9 +15,10 @@ import { CollapsibleSection } from './CollapsibleSection';
 
 interface EvalDashboardProps {
   sessionId: string;
+  onEnterReplay?: () => void;
 }
 
-export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId }) => {
+export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId, onEnterReplay }) => {
   const { sessionInfo, objective, latestEvaluation, loadSession } =
     useEvalCenterStore();
 
@@ -127,6 +128,17 @@ export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId }) => {
       <MetricStrip objective={objective} />
 
       {/* Turn Timeline — from real TelemetryTurn[] */}
+      <div className="flex items-center justify-between">
+        <div />
+        {onEnterReplay && (
+          <button
+            onClick={onEnterReplay}
+            className="px-3 py-1 text-[11px] text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-500/10 transition"
+          >
+            Session Replay
+          </button>
+        )}
+      </div>
       <TurnTimeline turns={turns} sessionId={sessionId} />
 
       {/* Suggestions */}

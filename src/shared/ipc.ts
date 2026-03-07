@@ -770,6 +770,7 @@ export const IPC_CHANNELS = {
   TELEMETRY_GET_EVENTS: TELEMETRY_CHANNELS.GET_EVENTS,
   TELEMETRY_GET_SYSTEM_PROMPT: TELEMETRY_CHANNELS.GET_SYSTEM_PROMPT,
   TELEMETRY_DELETE_SESSION: TELEMETRY_CHANNELS.DELETE_SESSION,
+  REPLAY_GET_STRUCTURED_DATA: TELEMETRY_CHANNELS.GET_STRUCTURED_REPLAY,
   TELEMETRY_EVENT: TELEMETRY_CHANNELS.EVENT,
 
 
@@ -1098,6 +1099,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.TELEMETRY_GET_EVENTS]: (sessionId: string) => Promise<TelemetryTimelineEvent[]>;
   [IPC_CHANNELS.TELEMETRY_GET_SYSTEM_PROMPT]: (hash: string) => Promise<{ content: string; tokens: number | null; generationId: string | null } | null>;
   [IPC_CHANNELS.TELEMETRY_DELETE_SESSION]: (sessionId: string) => Promise<boolean>;
+  [IPC_CHANNELS.REPLAY_GET_STRUCTURED_DATA]: (sessionId: string) => Promise<unknown>;
 
 }
 

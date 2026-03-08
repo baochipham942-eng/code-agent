@@ -77,8 +77,8 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      // May fail on CI without display, but should handle gracefully
-      expect(result).toBeDefined();
+      // May fail on CI without display, but should return a valid ToolExecutionResult
+      expect(result).toHaveProperty('success');
     });
 
     it('should support custom output path', async () => {
@@ -89,7 +89,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
     });
 
     it('should support window target', async () => {
@@ -101,7 +101,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
     });
 
     it('should support region capture', async () => {
@@ -112,7 +112,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
     });
 
     it('should create screenshots directory', async () => {
@@ -121,7 +121,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
       // Should create .screenshots directory
     });
   });
@@ -154,7 +154,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
     });
 
     it('should support type action', async () => {
@@ -166,7 +166,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
     });
 
     it('should support scroll action', async () => {
@@ -179,7 +179,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
     });
 
     it('should support key press action', async () => {
@@ -191,7 +191,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
     });
 
     it('should support drag action', async () => {
@@ -206,7 +206,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
     });
   });
 
@@ -234,7 +234,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
     });
 
     it('should support wait parameter', async () => {
@@ -246,7 +246,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
     });
   });
 
@@ -276,7 +276,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
     });
 
     it('should support fill form', async () => {
@@ -289,7 +289,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
     });
 
     it('should support get text', async () => {
@@ -301,7 +301,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
     });
 
     it('should support screenshot element', async () => {
@@ -313,7 +313,7 @@ describe('Gen6 - Computer Use Era', () => {
         context
       );
 
-      expect(result).toBeDefined();
+      expect(result).toHaveProperty('success');
     });
   });
 

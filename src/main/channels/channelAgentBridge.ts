@@ -304,64 +304,98 @@ export class ChannelAgentBridge {
       throw new Error('No response object for streaming');
     }
 
-    // 拦截 orchestrator 的 onEvent，注入 SSE 流式推送
-    // 与 handleSyncMessage 使用相同的访问模式（L229）
-    const orchestratorInternal = orchestrator as unknown as { onEvent: (event: AgentEvent) => void };
-    const originalOnEvent = orchestratorInternal.onEvent;
+    // Per-request SSE handler: use addListener/removeListener instead of
+    // overwriting the global onEvent, so concurrent streams don't clobber
+    // each other (fixes Sprint 3 review #2).
+    const orchestratorInternal = orchestrator as unknown as {
+      onEvent: (event: AgentEvent) => void;
+      on?: (event: string, handler: (event: AgentEvent) => void) => void;
+      removeListener?: (event: string, handler: (event: AgentEvent) => void) => void;
+    };
 
-    const sseOnEvent = (event: AgentEvent) => {
-      // 先调用原始 handler（前端渲染 / session 持久化等）
-      originalOnEvent.call(orchestrator, event);
-
-      // 连接已关闭则跳过写入
+    // Helper: write with backpressure handling (fixes Sprint 3 review #3)
+    const safeWrite = async (chunk: string): Promise<void> => {
       if (res.writableEnded) return;
+      const ok = (res as unknown as { write: (data: string) => boolean }).write(chunk);
+      if (!ok) {
+        await new Promise<void>(resolve => (res as unknown as NodeJS.WritableStream).once('drain', resolve));
+      }
+    };
 
-      // 将关键事件实时推送到 SSE 流
+    // Track whether client disconnected
+    let clientDisconnected = false;
+    const req = raw.req as { on?: (event: string, handler: () => void) => void } | undefined;
+    if (req?.on) {
+      req.on('close', () => { clientDisconnected = true; });
+    }
+
+    const sseListener = async (event: AgentEvent) => {
+      if (clientDisconnected || res.writableEnded) return;
+
       switch (event.type) {
         case 'stream_chunk':
           if (event.data.content) {
-            res.write(`data: ${JSON.stringify({ type: 'stream_chunk', content: event.data.content })}\n\n`);
+            await safeWrite(`data: ${JSON.stringify({ type: 'stream_chunk', content: event.data.content })}\n\n`);
           }
           break;
         case 'stream_reasoning':
           if (event.data.content) {
-            res.write(`data: ${JSON.stringify({ type: 'stream_reasoning', content: event.data.content })}\n\n`);
+            await safeWrite(`data: ${JSON.stringify({ type: 'stream_reasoning', content: event.data.content })}\n\n`);
           }
           break;
         case 'tool_call_start':
-          res.write(`data: ${JSON.stringify({ type: 'tool_call_start', name: event.data.name })}\n\n`);
+          await safeWrite(`data: ${JSON.stringify({ type: 'tool_call_start', name: event.data.name })}\n\n`);
           break;
         case 'tool_call_end':
-          res.write(`data: ${JSON.stringify({ type: 'tool_call_end', toolCallId: event.data.toolCallId })}\n\n`);
+          await safeWrite(`data: ${JSON.stringify({ type: 'tool_call_end', toolCallId: event.data.toolCallId })}\n\n`);
           break;
         case 'error':
-          res.write(`data: ${JSON.stringify({ type: 'error', error: event.data.message })}\n\n`);
+          await safeWrite(`data: ${JSON.stringify({ type: 'error', error: event.data.message })}\n\n`);
           break;
-        // message, agent_complete 等事件不推送到 SSE（由 bridge 控制流结束）
       }
     };
 
-    // 替换 onEvent 以注入 SSE 推送
-    orchestratorInternal.onEvent = sseOnEvent;
+    // Wrap async listener for EventEmitter compatibility
+    const syncListener = (event: AgentEvent) => { void sseListener(event); };
+
+    // Prefer EventEmitter-style addListener if available; fall back to wrapping onEvent
+    const useEventEmitter = typeof orchestratorInternal.on === 'function'
+      && typeof orchestratorInternal.removeListener === 'function';
+
+    let originalOnEvent: ((event: AgentEvent) => void) | undefined;
+
+    if (useEventEmitter) {
+      orchestratorInternal.on!('event', syncListener);
+    } else {
+      // Fallback: wrap existing onEvent (single-request safe, still better than raw overwrite)
+      originalOnEvent = orchestratorInternal.onEvent;
+      orchestratorInternal.onEvent = (event: AgentEvent) => {
+        originalOnEvent!.call(orchestrator, event);
+        syncListener(event);
+      };
+    }
 
     try {
       await orchestrator.sendMessage(message.content, attachments);
 
-      // 流式推送完成，发送终止信号
-      if (!res.writableEnded) {
-        res.write('data: [DONE]\n\n');
+      if (!res.writableEnded && !clientDisconnected) {
+        await safeWrite('data: [DONE]\n\n');
         res.end();
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      if (!res.writableEnded) {
-        res.write(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
-        res.write('data: [DONE]\n\n');
+      if (!res.writableEnded && !clientDisconnected) {
+        await safeWrite(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
+        await safeWrite('data: [DONE]\n\n');
         res.end();
       }
     } finally {
-      // 恢复原始 onEvent，避免影响后续请求
-      orchestratorInternal.onEvent = originalOnEvent;
+      // Clean up: remove per-request listener without affecting other streams
+      if (useEventEmitter) {
+        orchestratorInternal.removeListener!('event', syncListener);
+      } else if (originalOnEvent) {
+        orchestratorInternal.onEvent = originalOnEvent;
+      }
     }
   }
 

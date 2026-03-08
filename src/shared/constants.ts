@@ -1102,3 +1102,35 @@ export const OBSERVATION_MASKING = {
   PLACEHOLDER_SUCCESS: '[output cleared - tool was executed successfully]',
   PLACEHOLDER_ERROR: '[output cleared - tool returned error]',
 } as const;
+
+// ============================================================================
+// Provider Fallback Chain — 跨 Provider 降级（429/瞬态错误时自动切换）
+// ============================================================================
+
+/**
+ * 跨 Provider 降级链
+ * 当主 Provider 瞬态重试耗尽后，按顺序尝试下一个 Provider
+ * Key = 起始 provider, Value = 降级顺序（不含自身）
+ */
+export const PROVIDER_FALLBACK_CHAIN: Record<string, Array<{ provider: string; model: string }>> = {
+  moonshot: [
+    { provider: 'deepseek', model: 'deepseek-chat' },
+    { provider: 'zhipu', model: 'glm-4.7-flash' },
+  ],
+  deepseek: [
+    { provider: 'moonshot', model: 'kimi-k2.5' },
+    { provider: 'zhipu', model: 'glm-4.7-flash' },
+  ],
+  claude: [
+    { provider: 'moonshot', model: 'kimi-k2.5' },
+    { provider: 'deepseek', model: 'deepseek-chat' },
+  ],
+  openai: [
+    { provider: 'moonshot', model: 'kimi-k2.5' },
+    { provider: 'deepseek', model: 'deepseek-chat' },
+  ],
+  zhipu: [
+    { provider: 'moonshot', model: 'kimi-k2.5' },
+    { provider: 'deepseek', model: 'deepseek-chat' },
+  ],
+};

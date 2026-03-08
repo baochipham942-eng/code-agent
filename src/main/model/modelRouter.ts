@@ -10,7 +10,9 @@ import type {
   ModelProvider
 } from '../../shared/types';
 import { PROVIDER_REGISTRY } from './providerRegistry';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../shared/constants';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS, PROVIDER_FALLBACK_CHAIN } from '../../shared/constants';
+import { isFallbackEligible } from './providers/retryStrategy';
+import { getModelMaxOutputTokens } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import { getInferenceCache } from './inferenceCache';
 import { getAdaptiveRouter } from './adaptiveRouter';
@@ -335,16 +337,67 @@ export class ModelRouter {
       }
     }
 
-    const result = await this._callProvider(messages, tools, config, onStream, signal);
+    try {
+      const result = await this._callProvider(messages, tools, config, onStream, signal);
 
-    // Cache non-streaming text responses
-    if (!onStream && result.type === 'text') {
-      const cache = getInferenceCache();
-      const cacheKey = cache.computeKey(messages, config);
-      cache.set(cacheKey, result);
+      // Cache non-streaming text responses
+      if (!onStream && result.type === 'text') {
+        const cache = getInferenceCache();
+        const cacheKey = cache.computeKey(messages, config);
+        cache.set(cacheKey, result);
+      }
+
+      return result;
+    } catch (primaryErr) {
+      // ---- Cross-provider fallback chain ----
+      const errMsg = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+      const errCode = (primaryErr as NodeJS.ErrnoException).code;
+
+      if (!isFallbackEligible(errMsg, errCode)) {
+        throw primaryErr;
+      }
+
+      const chain = PROVIDER_FALLBACK_CHAIN[config.provider];
+      if (!chain || chain.length === 0) {
+        throw primaryErr;
+      }
+
+      logger.warn(`[ModelRouter] Provider ${config.provider} exhausted, trying fallback chain...`);
+
+      for (const fallback of chain) {
+        const fallbackApiKey = getConfigService().getApiKey(fallback.provider as ModelProvider);
+        if (!fallbackApiKey) continue;
+
+        const fallbackConfig: ModelConfig = {
+          ...config,
+          provider: fallback.provider as ModelProvider,
+          model: fallback.model,
+          apiKey: fallbackApiKey,
+          maxTokens: getModelMaxOutputTokens(fallback.model),
+        };
+
+        try {
+          logger.warn(`[ModelRouter] Fallback → ${fallback.provider}/${fallback.model}`);
+          const result = await this._callProvider(messages, tools, fallbackConfig, onStream, signal);
+
+          // Cache non-streaming text responses
+          if (!onStream && result.type === 'text') {
+            const cache = getInferenceCache();
+            const cacheKey = cache.computeKey(messages, config);
+            cache.set(cacheKey, result);
+          }
+
+          return result;
+        } catch (fallbackErr) {
+          const fbMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+          logger.warn(`[ModelRouter] Fallback ${fallback.provider} failed: ${fbMsg.split('\n')[0]}`);
+          continue;
+        }
+      }
+
+      // All fallbacks exhausted
+      throw primaryErr;
     }
-
-    return result;
   }
 
   /**

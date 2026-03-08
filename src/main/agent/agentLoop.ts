@@ -207,7 +207,7 @@ export class AgentLoop {
   private autoApprovePlan: boolean = false;
 
   // Tool deferred loading (reduce token usage)
-  private enableToolDeferredLoading: boolean = false;
+  private enableToolDeferredLoading: boolean = true;
 
   // Adaptive Thinking: 交错思考管理
   private effortLevel: import('../../shared/types/agent').EffortLevel = 'high';
@@ -277,7 +277,7 @@ export class AgentLoop {
     this.autoApprovePlan = config.autoApprovePlan ?? false;
 
     // Tool deferred loading (reduce token usage)
-    this.enableToolDeferredLoading = config.enableToolDeferredLoading ?? false;
+    this.enableToolDeferredLoading = config.enableToolDeferredLoading ?? true;
 
     // Telemetry adapter (optional)
     this.telemetryAdapter = config.telemetryAdapter;

@@ -64,6 +64,11 @@ export interface RetryOptions {
  * );
  * ```
  */
+/** 判断错误是否应该触发跨 Provider 降级 */
+export function isFallbackEligible(msg: string, errCode?: string): boolean {
+  return isTransientError(msg, errCode);
+}
+
 export async function withTransientRetry<T>(
   fn: () => Promise<T>,
   options: RetryOptions

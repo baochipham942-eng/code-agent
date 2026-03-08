@@ -238,11 +238,11 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
           )}
           {config.provider === 'claude' && (
             <>
-              <option value="claude-opus-4-5-20251124">Claude 4.5 Opus (最强)</option>
-              <option value="claude-sonnet-4-5-20251124">Claude 4.5 Sonnet (推荐)</option>
-              <option value="claude-haiku-4-5-20251124">Claude 4.5 Haiku (快速)</option>
-              <option value="claude-opus-4-1-20250805">Claude 4.1 Opus</option>
-              <option value="claude-sonnet-4-20250514">Claude 4 Sonnet</option>
+              <option value="claude-opus-4-6">Claude Opus 4.6 (最强)</option>
+              <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (推荐)</option>
+              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (快速)</option>
+              <option value="claude-opus-4-5-20251124">Claude Opus 4.5</option>
+              <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
             </>
           )}
           {config.provider === 'openai' && (

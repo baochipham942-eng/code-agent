@@ -114,8 +114,34 @@ export const TestResultsDashboard: React.FC = () => {
 
   if (!currentReport) {
     return (
-      <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">
-        暂无评测报告
+      <div className="flex flex-col items-center justify-center h-80 text-center gap-4">
+        <div className="w-16 h-16 rounded-2xl bg-zinc-800 flex items-center justify-center">
+          <svg className="w-8 h-8 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-zinc-300 font-medium text-sm">暂无评测报告</p>
+          <p className="text-zinc-500 text-xs mt-1">运行评测集后，报告会自动出现在这里</p>
+        </div>
+        <div className="bg-zinc-800/60 rounded-lg p-4 text-left max-w-sm w-full">
+          <p className="text-zinc-400 text-xs font-medium mb-2">如何生成评测报告</p>
+          <div className="space-y-1.5 text-xs text-zinc-500">
+            <div className="flex gap-2">
+              <span className="text-zinc-600">1.</span>
+              <span>在项目目录配置测试用例 <code className="bg-zinc-700 px-1 rounded text-zinc-300">.code-agent/test-cases/</code></span>
+            </div>
+            <div className="flex gap-2">
+              <span className="text-zinc-600">2.</span>
+              <span>运行 <code className="bg-zinc-700 px-1 rounded text-zinc-300">npm run test:eval</code></span>
+            </div>
+            <div className="flex gap-2">
+              <span className="text-zinc-600">3.</span>
+              <span>报告保存到 <code className="bg-zinc-700 px-1 rounded text-zinc-300">.code-agent/test-results/</code></span>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

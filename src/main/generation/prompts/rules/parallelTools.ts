@@ -16,10 +16,10 @@ export const PARALLEL_TOOLS_RULES = `
 - 同时搜索不同目录
 
 **需顺序执行的示例：**
-- read_file → edit_file（必须先读取才能编辑）
+- Read → Edit（必须先读取才能编辑）
 - git add → git commit（必须先暂存才能提交）
-- mkdir → write_file 到新目录（必须先创建目录）
-- glob 找文件 → read_file 读取找到的文件
+- mkdir → Write 到新目录（必须先创建目录）
+- glob 找文件 → Read 读取找到的文件
 
 **批处理示例：**
 当用户要求"检查项目状态并查看最近的更改"时：

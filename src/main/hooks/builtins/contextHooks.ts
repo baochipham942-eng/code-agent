@@ -207,12 +207,12 @@ function extractCodeChanges(messages: Message[]): PreservedContext['codeChanges'
     if (!message.toolCalls) continue;
 
     for (const toolCall of message.toolCalls) {
-      if (['write_file', 'edit_file'].includes(toolCall.name)) {
+      if (['write_file', 'edit_file', 'Write', 'Edit'].includes(toolCall.name)) {
         const filePath = toolCall.arguments?.file_path as string;
         if (filePath) {
           changes.push({
             file: filePath,
-            operation: toolCall.name === 'write_file' ? 'create' : 'edit',
+            operation: (toolCall.name === 'write_file' || toolCall.name === 'Write') ? 'create' : 'edit',
             summary: `${toolCall.name} on ${filePath}`,
           });
         }

@@ -17,7 +17,7 @@ export const QUALITY_REMINDERS: ReminderDefinition[] = [
 </system-reminder>`,
     tokens: 40,
     shouldInclude: (ctx) =>
-      ctx.toolsUsedInTurn.includes('edit_file') ? 0.5 : 0,
+      ctx.toolsUsedInTurn.includes('Edit') ? 0.5 : 0,
     category: 'quality',
   },
   {
@@ -28,7 +28,7 @@ export const QUALITY_REMINDERS: ReminderDefinition[] = [
 </system-reminder>`,
     tokens: 30,
     shouldInclude: (ctx) =>
-      ctx.toolsUsedInTurn.includes('edit_file') && ctx.iterationCount > 5 ? 0.4 : 0,
+      ctx.toolsUsedInTurn.includes('Edit') && ctx.iterationCount > 5 ? 0.4 : 0,
     category: 'quality',
   },
   {

@@ -30,7 +30,7 @@ task(subagent_type="...", prompt="维度2: ...")
     content: `<system-reminder>
 **委派提醒**：复杂任务请使用 task 工具委派给子代理。
 
-不要直接使用 glob/grep/read_file，而应该：
+不要直接使用 Glob/Grep/Read，而应该：
 - 安全审计 → task(subagent_type="code-review", ...)
 - 代码探索 → task(subagent_type="explore", ...)
 - 架构分析 → task(subagent_type="plan", ...)
@@ -49,7 +49,7 @@ task(subagent_type="...", prompt="维度2: ...")
 </system-reminder>`,
     tokens: 50,
     shouldInclude: (ctx) =>
-      ctx.toolsUsedInTurn.includes('read_file') && ctx.iterationCount > 2 ? 0.8 : 0,
+      ctx.toolsUsedInTurn.includes('Read') && ctx.iterationCount > 2 ? 0.8 : 0,
     category: 'efficiency',
   },
   {

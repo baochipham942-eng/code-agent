@@ -109,10 +109,10 @@ export class ToolEfficiencyEvaluator implements DimensionEvaluator {
    */
   private getCallSignature(call: ToolCallRecord): string {
     const path = (call.args.path || call.args.file_path || '') as string;
-    if (call.name.includes('read') || call.name.includes('write') || call.name.includes('edit')) {
+    if (call.name.includes('read') || call.name.includes('Read') || call.name.includes('write') || call.name.includes('Write') || call.name.includes('edit') || call.name.includes('Edit')) {
       return `${call.name}:${path}`;
     }
-    if (call.name === 'bash') {
+    if (call.name === 'bash' || call.name === 'Bash') {
       const cmd = String(call.args.command || '').slice(0, 50);
       return `bash:${cmd}`;
     }

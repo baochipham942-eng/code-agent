@@ -36,29 +36,8 @@ function registerResponseHandler() {
 }
 
 export const askUserQuestionTool: Tool = {
-  name: 'ask_user_question',
-  description: `Ask the user a question to gather information or clarify requirements.
-
-IMPORTANT GUIDELINES:
-1. For TECHNICAL questions (tech stack, architecture, patterns), YOU MUST provide a recommendation:
-   - Put "(推荐)" at the end of the recommended option's label
-   - Explain WHY you recommend it in the description
-   - Consider the project context when making recommendations
-
-2. For BUSINESS/PREFERENCE questions (features, naming, scope), let the user decide freely.
-
-3. Each option should have a clear description explaining:
-   - What it means in practical terms
-   - Pros and cons where applicable
-   - When this choice is most appropriate
-
-Example of good technical question:
-  question: "选择状态管理方案"
-  options: [
-    { label: "Zustand (推荐)", description: "轻量级，API简洁，适合中小型项目，学习成本低" },
-    { label: "Redux Toolkit", description: "功能完整，生态丰富，适合大型复杂应用" },
-    { label: "Jotai", description: "原子化状态，适合需要精细控制渲染的场景" }
-  ]`,
+  name: 'AskUserQuestion',
+  description: `Asks the user a question and waits for their response. Use when you need clarification, confirmation, or additional information to proceed. Do NOT use this for simple status updates — just output text directly.`,
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

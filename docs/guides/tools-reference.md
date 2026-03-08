@@ -6,10 +6,10 @@
 
 | 代际 | 工具集 |
 |------|--------|
-| Gen1 | bash (PTY支持), read_file, write_file, edit_file, process_list, process_poll, process_log, process_write, process_submit, process_kill |
-| Gen2 | + glob, grep, list_directory |
-| Gen3 | + task, todo_write, ask_user_question, confirm_action, read_clipboard, plan_read, plan_update, enter_plan_mode, exit_plan_mode, findings_write |
-| Gen4 | + skill, web_fetch, web_search, read_pdf, mcp, mcp_list_tools, mcp_list_resources, mcp_read_resource, mcp_get_status |
+| Gen1 | Bash (PTY支持), Read, Write, Edit, Process (统一工具，含 list/poll/log/write/submit/kill) |
+| Gen2 | + Glob, Grep, list_directory |
+| Gen3 | + TaskManager, todo_write, AskUserQuestion, confirm_action, read_clipboard, Plan, PlanMode, findings_write |
+| Gen4 | + skill, WebFetch, WebSearch, ReadDocument, MCPUnified |
 | Gen5 | + memory_store, memory_search, code_index, auto_learn, ppt_generate, image_generate, image_analyze, docx_generate, excel_generate, **read_xlsx** |
 | Gen6 | + screenshot, computer_use, browser_navigate, browser_action |
 | Gen7 | + spawn_agent, agent_message, workflow_orchestrate |
@@ -21,22 +21,22 @@
 
 Gen3 引入了计划模式、任务管理和用户交互能力。
 
-### ask_user_question - 向用户提问
+### AskUserQuestion - 向用户提问
 
 向用户提问并获取回复，支持预设选项。
 
 ```bash
 # 简单问题
-ask_user_question { "question": "你想使用哪个数据库？" }
+AskUserQuestion { "question": "你想使用哪个数据库？" }
 
 # 带预设选项
-ask_user_question {
+AskUserQuestion {
   "question": "选择部署环境",
   "options": ["development", "staging", "production"]
 }
 
 # 多选模式
-ask_user_question {
+AskUserQuestion {
   "question": "需要启用哪些功能？",
   "options": ["日志", "监控", "报警"],
   "allowMultiple": true
@@ -189,25 +189,25 @@ web_fetch { "url": "https://example.com/long-article", "prompt": "核心内容",
 - 优先提取正文区域（main/article 等 9 个选择器）
 - 保留语义结构（标题→`#`，列表→`-`，代码→` ``` `，表格→`|`，链接→`[]()`）
 
-### web_search - 多源并行网络搜索
+### WebSearch - 多源并行网络搜索
 
 支持 Cloud、Perplexity、EXA、Brave 四源并行搜索，域名过滤和自动内容提取。
 
 ```bash
 # 基础搜索
-web_search { "query": "TypeScript best practices 2024" }
+WebSearch { "query": "TypeScript best practices 2024" }
 
 # 域名过滤 — 只搜索指定域名
-web_search { "query": "React hooks", "allowed_domains": ["developer.mozilla.org", "react.dev"] }
+WebSearch { "query": "React hooks", "allowed_domains": ["developer.mozilla.org", "react.dev"] }
 
 # 排除域名
-web_search { "query": "CSS tutorial", "blocked_domains": ["pinterest.com", "quora.com"] }
+WebSearch { "query": "CSS tutorial", "blocked_domains": ["pinterest.com", "quora.com"] }
 
 # 搜索+自动提取正文
-web_search { "query": "Node.js stream API", "auto_extract": true, "extract_count": 3 }
+WebSearch { "query": "Node.js stream API", "auto_extract": true, "extract_count": 3 }
 
 # 指定搜索源
-web_search { "query": "AI agent", "sources": ["exa", "brave"], "count": 10 }
+WebSearch { "query": "AI agent", "sources": ["exa", "brave"], "count": 10 }
 ```
 
 | 参数 | 类型 | 说明 |
@@ -351,7 +351,7 @@ ppt_generate { "topic": "演示", "use_masters": false, "chart_mode": "none" }
 - Slide Master 声明式布局（6 种 Master）
 - 智能布局选择（stats/cards-2/cards-3/timeline/list/highlight/chart）
 - 原生可编辑图表（BAR/DOUGHNUT/LINE/PIE）
-- SCQA 大纲自动生成（配合 web_search）
+- SCQA 大纲自动生成（配合 WebSearch）
 
 ### image_generate - 图片生成
 
@@ -474,7 +474,7 @@ browser_action { "action": "close" }
 | 视觉 | `visual-processing` | 图片编辑（标注、裁剪）|
 | 元 | `code-explore` | 本地代码库搜索（只读）|
 | 元 | `plan` | 任务规划（只读）|
-| 元 | `bash-executor` | Shell 命令执行 |
+| 元 | `Bash` | Shell 命令执行 |
 | 元 | `general-purpose` | 通用全能 Agent |
 | 外部 | `web-search` | 网络搜索 |
 | 外部 | `mcp-connector` | MCP 服务连接 |

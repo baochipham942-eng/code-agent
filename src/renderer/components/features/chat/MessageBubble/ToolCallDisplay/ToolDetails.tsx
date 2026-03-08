@@ -44,8 +44,8 @@ export function ToolDetails({ toolCall, compact }: Props) {
   const [showDiff, setShowDiff] = useState(true);
   const openPreview = useAppStore((state) => state.openPreview);
 
-  // Check if this is edit_file tool
-  const isEditFile = name === 'edit_file';
+  // Check if this is Edit tool
+  const isEditFile = name === 'Edit';
   const editFileArgs = isEditFile
     ? {
         filePath: (args?.file_path as string) || '',
@@ -66,7 +66,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
 
   return (
     <div className="mt-1 space-y-1.5 text-xs">
-      {/* Diff view for edit_file */}
+      {/* Diff view for Edit */}
       {isEditFile && editFileArgs && showDiff && (
         <div className="animate-fadeIn">
           <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">
@@ -149,7 +149,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
             />
           )}
 
-          {/* Created file display for write_file */}
+          {/* Created file display for Write */}
           {createdFilePath && result.success && (
             <FileResultDisplay
               filePath={createdFilePath}
@@ -189,7 +189,7 @@ function formatArgs(
   args: Record<string, unknown>
 ): string {
   switch (toolName) {
-    case 'read_file': {
+    case 'Read': {
       let filePath = (args.file_path as string) || '';
       if (filePath.includes(' offset=') || filePath.includes(' limit=')) {
         filePath = filePath.split(' ')[0];
@@ -202,24 +202,24 @@ function formatArgs(
       return result;
     }
 
-    case 'write_file': {
+    case 'Write': {
       const filePath = (args.file_path as string) || '';
       const content = (args.content as string) || '';
       return `File: ${filePath}\nContent: ${content.length} chars`;
     }
 
-    case 'bash': {
+    case 'Bash': {
       const command = (args.command as string) || '';
       return `Command:\n${command}`;
     }
 
-    case 'glob': {
+    case 'Glob': {
       const pattern = (args.pattern as string) || '';
       const path = (args.path as string) || '.';
       return `Pattern: ${pattern}\nPath: ${path}`;
     }
 
-    case 'grep': {
+    case 'Grep': {
       const pattern = (args.pattern as string) || '';
       const path = (args.path as string) || '.';
       return `Pattern: ${pattern}\nPath: ${path}`;
@@ -240,7 +240,7 @@ function extractCreatedFilePath(toolCall: {
   arguments?: Record<string, unknown>;
   result?: { success: boolean; output?: unknown };
 }): string | null {
-  if (toolCall.name !== 'write_file') return null;
+  if (toolCall.name !== 'Write') return null;
 
   // If result exists and failed, don't show file
   if (toolCall.result && !toolCall.result.success) return null;

@@ -12,12 +12,12 @@ export const TOOL_USAGE_REMINDERS: ReminderDefinition[] = [
     id: 'EDIT_NOT_WRITE',
     priority: 2,
     content: `<system-reminder>
-**优先使用 edit_file**：修改现有文件时，使用 edit_file 而非 write_file。
-edit_file 更安全，只修改指定部分，减少意外覆盖。
+**优先使用 Edit**：修改现有文件时，使用 Edit 而非 Write。
+Edit 更安全，只修改指定部分，减少意外覆盖。
 </system-reminder>`,
     tokens: 50,
     shouldInclude: (ctx) =>
-      ctx.toolsUsedInTurn.includes('write_file') ? 0.9 : 0,
+      ctx.toolsUsedInTurn.includes('Write') ? 0.9 : 0,
     category: 'tool',
   },
   {
@@ -29,7 +29,7 @@ edit_file 更安全，只修改指定部分，减少意外覆盖。
 </system-reminder>`,
     tokens: 60,
     shouldInclude: (ctx) => {
-      const directTools = ['glob', 'grep', 'read_file'];
+      const directTools = ['Glob', 'Grep', 'Read'];
       const usedDirectTools = directTools.filter((t) =>
         ctx.toolsUsedInTurn.includes(t)
       );
@@ -48,8 +48,8 @@ edit_file 更安全，只修改指定部分，减少意外覆盖。
 </system-reminder>`,
     tokens: 60,
     shouldInclude: (ctx) =>
-      ctx.toolsUsedInTurn.includes('edit_file') ||
-      ctx.toolsUsedInTurn.includes('write_file')
+      ctx.toolsUsedInTurn.includes('Edit') ||
+      ctx.toolsUsedInTurn.includes('Write')
         ? 0.3
         : 0,
     category: 'tool',

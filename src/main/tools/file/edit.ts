@@ -24,23 +24,8 @@ import { getResourceLockManager } from '../../agent/resourceLockManager';
 import { getPostEditDiagnostics } from '../lsp/diagnosticsHelper';
 
 export const editFileTool: Tool = {
-  name: 'edit_file',
-  description: `Make targeted text replacements in existing files. Preferred over write_file for modifying existing code.
-
-MUST read the file with read_file first — the tool will reject edits on unread files.
-
-How it works:
-- old_string must match EXACTLY (whitespace, indentation, newlines all matter)
-- old_string must be unique in the file, or use replace_all: true for all occurrences
-- The line number prefixes from read_file output are NOT part of the file — do not include them
-
-If edit fails with "text not found":
-1. Re-read the file — it may have changed
-2. Check indentation (tabs vs spaces) and trailing whitespace
-3. Include 2-3 surrounding lines for uniqueness
-4. After 2 failures, fall back to write_file to rewrite the entire file
-
-Use replace_all: true for renaming variables/functions across the file.`,
+  name: 'Edit',
+  description: `Performs exact string replacements in files. IMPORTANT: Prefer this over Write for modifying existing files — it only sends the diff. The edit will FAIL if old_text is not unique in the file — provide more surrounding context to make it unique, or use replace_all for global replacements.`,
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {
@@ -54,19 +39,19 @@ Use replace_all: true for renaming variables/functions across the file.`,
           'Supports ~ for home directory. File must already exist. ' +
           'IMPORTANT: You must read this file with read_file before editing.',
       },
-      old_string: {
+      old_text: {
         type: 'string',
         description:
           'The exact text to find and replace. MUST be a string. ' +
           'Must match EXACTLY including whitespace, indentation, and newlines. ' +
-          'Copy directly from read_file output (excluding line number prefix). ' +
+          'Copy directly from Read output (excluding line number prefix). ' +
           'Include 2-3 surrounding lines for uniqueness if the text appears multiple times. ' +
           'Example: "function hello() {\\n  console.log(\\"hi\\");\\n}"',
       },
-      new_string: {
+      new_text: {
         type: 'string',
         description:
-          'The replacement text. MUST be a string and MUST be different from old_string. ' +
+          'The replacement text. MUST be a string and MUST be different from old_text. ' +
           'Preserve original indentation style (spaces vs tabs). ' +
           'To delete text, use empty string "". ' +
           'Example: "function hello() {\\n  console.log(\\"hello world\\");\\n}"',
@@ -85,7 +70,7 @@ Use replace_all: true for renaming variables/functions across the file.`,
           'Use with caution - this can overwrite external changes.',
       },
     },
-    required: ['file_path', 'old_string', 'new_string'],
+    required: ['file_path', 'old_text', 'new_text'],
   },
 
   async execute(
@@ -93,8 +78,8 @@ Use replace_all: true for renaming variables/functions across the file.`,
     context: ToolContext
   ): Promise<ToolExecutionResult> {
     const inputPath = params.file_path as string;
-    const oldString = params.old_string as string;
-    const newString = params.new_string as string;
+    const oldString = (params.old_text ?? params.old_string) as string;
+    const newString = (params.new_text ?? params.new_string) as string;
     const replaceAll = (params.replace_all as boolean) || false;
     const force = (params.force as boolean) || false;
 

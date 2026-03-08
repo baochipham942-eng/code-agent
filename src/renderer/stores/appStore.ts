@@ -137,7 +137,7 @@ const defaultGeneration: Generation = {
   name: 'Generation 8',
   version: 'v8.0',
   description: 'Full capabilities with self-evolution',
-  tools: ['bash', 'read_file', 'write_file', 'edit_file'],
+  tools: ['Bash', 'Read', 'Write', 'Edit'],
   systemPrompt: '',
   promptMetadata: { lineCount: 0, toolCount: 4, ruleCount: 0 },
 };

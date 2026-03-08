@@ -79,6 +79,9 @@ evaluateSession(sessionId, options)
      catch → runRuleBasedEvaluation()
   3. 组装 EvaluationResult（综合得分、等级、建议）
   4. 可选保存到数据库
+  5. 可选 Trajectory 分析（dynamic import，失败不影响主流程）
+     → TrajectoryBuilder 构建事件流 → DeviationDetector 检测偏差
+     → 结果写入 EvaluationResult.trajectoryAnalysis
 ```
 
 #### SessionAnalyticsService（399 行）
@@ -132,6 +135,7 @@ interface EvaluationResult {
   metrics: EvaluationMetric[];     // 各维度评分
   statistics: EvaluationStatistics; // 会话统计
   topSuggestions: string[];        // Top 5 改进建议
+  trajectoryAnalysis?: TrajectoryAnalysis; // 可选，Trajectory 偏差检测结果
   aiSummary?: string;              // AI 生成的总结
 }
 ```

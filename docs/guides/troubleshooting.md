@@ -609,10 +609,10 @@ data: {"id":"gen-xxx","choices":[...]}
 **问题**：模型把多个参数写进单个字段
 ```typescript
 // 错误示例
-read_file({ file_path: "src/app.ts offset=10 limit=50" })
+Read({ file_path: "src/app.ts offset=10 limit=50" })
 
 // 正确格式
-read_file({ file_path: "src/app.ts", offset: 10, limit: 50 })
+Read({ file_path: "src/app.ts", offset: 10, limit: 50 })
 ```
 
 **原因**：工具描述缺少明确的参数格式示例
@@ -623,15 +623,15 @@ read_file({ file_path: "src/app.ts", offset: 10, limit: 50 })
 
 **相关代码**：`src/main/generation/prompts/tools/*.ts`
 
-### 2026-02-03: edit_file 失败后的重试策略
+### 2026-02-03: Edit 失败后的重试策略
 
-**问题**：edit_file 失败后无限重试相同参数
+**问题**：Edit 失败后无限重试相同参数
 
-**错误做法**：模型反复用相同的 old_string 尝试 edit_file
+**错误做法**：模型反复用相同的 old_text 尝试 Edit
 
 **正确策略**：
-1. 第 1 次失败：调整 old_string（增加上下文、检查空格/换行）
-2. 第 2 次失败：改用 write_file 重写整个文件
+1. 第 1 次失败：调整 old_text（增加上下文、检查空格/换行）
+2. 第 2 次失败：改用 Write 重写整个文件
 3. 切换策略时通知用户原因
 
 **相关代码**：

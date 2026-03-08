@@ -1011,7 +1011,7 @@ export class AgentLoop {
             logger.info(`[AgentLoop] Tool truncation: boosted maxTokens ${currentMax} → ${boostedMax}`);
           }
 
-          const writeFileCall = toolCalls.find(tc => tc.name === 'write_file');
+          const writeFileCall = toolCalls.find(tc => tc.name === 'write_file' || tc.name === 'Write');
           if (writeFileCall) {
             const content = writeFileCall.arguments?.content as string;
             if (content) {
@@ -1021,7 +1021,7 @@ export class AgentLoop {
           } else {
             // 检测截断的 bash heredoc —— 执行不完整的 heredoc 会导致 SyntaxError
             const truncatedBashHeredocs = toolCalls.filter(tc =>
-              tc.name === 'bash' &&
+              (tc.name === 'bash' || tc.name === 'Bash') &&
               typeof tc.arguments?.command === 'string' &&
               /<<\s*['"]?\w+['"]?/.test(tc.arguments.command as string)
             );
@@ -1049,7 +1049,7 @@ export class AgentLoop {
                 toolCallId: tc.id,
                 success: false,
                 output: '',
-                error: tc.name === 'bash' && /<<\s*['"]?\w+['"]?/.test((tc.arguments?.command as string) || '')
+                error: (tc.name === 'bash' || tc.name === 'Bash') && /<<\s*['"]?\w+['"]?/.test((tc.arguments?.command as string) || '')
                   ? '⚠️ 此 bash heredoc 命令因 max_tokens 截断而不完整，已跳过执行以避免 SyntaxError。请重新生成完整命令。'
                   : '⚠️ 此工具调用因同批次存在截断的 heredoc 而被跳过。',
                 duration: 0,
@@ -2210,7 +2210,7 @@ export class AgentLoop {
       }
 
       // Auto-continuation detection for truncated files
-      if (toolCall.name === 'write_file' && result.success && result.output) {
+      if ((toolCall.name === 'write_file' || toolCall.name === 'Write') && result.success && result.output) {
         const outputStr = result.output;
         if (outputStr.includes('⚠️ **代码完整性警告**') || outputStr.includes('代码完整性警告')) {
           logger.debug('[AgentLoop] ⚠️ Detected truncated file! Injecting auto-continuation prompt');
@@ -2219,7 +2219,7 @@ export class AgentLoop {
       }
 
       // P3 Nudge: Track modified files for completion checking
-      if ((toolCall.name === 'edit_file' || toolCall.name === 'write_file') && result.success) {
+      if ((toolCall.name === 'edit_file' || toolCall.name === 'Edit' || toolCall.name === 'write_file' || toolCall.name === 'Write') && result.success) {
         const filePath = (toolCall.arguments?.file_path || toolCall.arguments?.path) as string;
         if (filePath) {
           this.nudgeManager.trackModifiedFile(filePath);
@@ -4042,14 +4042,14 @@ ${deferredToolsSummary}
     ];
 
     // write_file with content file extension
-    if (toolCall.name === 'write_file') {
+    if (toolCall.name === 'write_file' || toolCall.name === 'Write') {
       const filePath = (toolCall.arguments?.file_path || toolCall.arguments?.path || '') as string;
       const ext = filePath.toLowerCase().match(/\.[^.]+$/)?.[0] || '';
       return contentFileExtensions.includes(ext);
     }
 
     // bash tool that produced content files (check output for file paths)
-    if (toolCall.name === 'bash' && result.output) {
+    if ((toolCall.name === 'bash' || toolCall.name === 'Bash') && result.output) {
       const output = result.output;
       return contentFileExtensions.some(ext => {
         const pattern = new RegExp(`[^\\s]+\\${ext}\\b`, 'i');

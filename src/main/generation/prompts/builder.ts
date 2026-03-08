@@ -128,11 +128,11 @@ export const SIMPLE_TASK_PROMPT = `# Code Agent - Simple Mode
 You are a helpful coding assistant. Help the user with their request directly and concisely.
 
 ## Available Tools
-- read_file: Read file contents
-- write_file: Write/create files
-- edit_file: Edit existing files
-- bash: Run shell commands
-- glob: Find files by pattern
+- Read: Read file contents
+- Write: Write/create files
+- Edit: Edit existing files
+- Bash: Run shell commands
+- Glob: Find files by pattern
 
 ## Guidelines
 - Be direct and concise

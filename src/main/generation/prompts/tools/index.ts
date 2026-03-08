@@ -18,7 +18,7 @@ import { TASK_TOOL_DESCRIPTION } from './task';
 
 export const TOOL_DESCRIPTIONS: Record<string, string> = {
   bash: BASH_TOOL_DESCRIPTION,
-  edit_file: EDIT_TOOL_DESCRIPTION,
+  Edit: EDIT_TOOL_DESCRIPTION,
   task: TASK_TOOL_DESCRIPTION,
 };
 

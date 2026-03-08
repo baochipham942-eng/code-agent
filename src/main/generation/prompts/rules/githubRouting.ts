@@ -18,7 +18,7 @@ export const GITHUB_ROUTING_RULES = `## GitHub 项目智能路由 (MCP + Web Sea
 示例：
 \`\`\`
 用户: "解读 open deepresearch"
-步骤1: web_search("open deep research github repository") → 发现是 langchain-ai/open_deep_research
+步骤1: WebSearch("open deep research github repository") → 发现是 langchain-ai/open_deep_research
 步骤2: mcp(server="deepwiki", tool="ask_question", arguments={repoName: "langchain-ai/open_deep_research", question: "..."})
 \`\`\`
 

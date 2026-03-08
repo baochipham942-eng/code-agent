@@ -128,6 +128,17 @@ import { strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternToo
 // LSP tools
 import { lspTool, diagnosticsTool } from './lsp';
 
+// Unified tools (Phase 2 - consolidated from multiple tools)
+import { ProcessTool } from './shell/ProcessTool';
+import { MCPUnifiedTool } from './mcp/MCPUnifiedTool';
+import { TaskManagerTool } from './planning/TaskManagerTool';
+import { PlanTool } from './planning/PlanTool';
+import { PlanModeTool } from './planning/PlanModeTool';
+import { WebFetchUnifiedTool } from './network/WebFetchUnifiedTool';
+import { ReadDocumentTool } from './network/ReadDocumentTool';
+import { BrowserTool } from './vision/BrowserTool';
+import { ComputerTool } from './vision/ComputerTool';
+
 // ----------------------------------------------------------------------------
 // Tool Interface
 // ----------------------------------------------------------------------------
@@ -223,9 +234,52 @@ const TOOL_ALIASES: Record<string, string> = {
   agent_message: 'AgentMessage',
   workflow_orchestrate: 'WorkflowOrchestrate',
   teammate: 'Teammate',
+  Edit: 'edit_file',
   multi_edit_file: 'edit_file',
   memory_store: 'memory',
   memory_search: 'memory',
+
+  // Phase 2: Deferred tool aliases → unified tools
+  process_list: 'Process',
+  process_poll: 'Process',
+  process_log: 'Process',
+  process_write: 'Process',
+  process_submit: 'Process',
+  process_kill: 'Process',
+  kill_shell: 'Process',
+  task_output: 'Process',
+
+  mcp_list_tools: 'MCPUnified',
+  mcp_list_resources: 'MCPUnified',
+  mcp_read_resource: 'MCPUnified',
+  mcp_get_status: 'MCPUnified',
+  mcp_add_server: 'MCPUnified',
+
+  task_create: 'TaskManager',
+  TaskCreate: 'TaskManager',
+  task_get: 'TaskManager',
+  TaskGet: 'TaskManager',
+  task_list: 'TaskManager',
+  TaskList: 'TaskManager',
+  task_update: 'TaskManager',
+  TaskUpdate: 'TaskManager',
+
+  plan_read: 'Plan',
+  plan_update: 'Plan',
+  enter_plan_mode: 'PlanMode',
+  exit_plan_mode: 'PlanMode',
+
+  http_request: 'WebFetch',
+
+  read_pdf: 'ReadDocument',
+  read_docx: 'ReadDocument',
+  read_xlsx: 'ReadDocument',
+
+  browser_navigate: 'Browser',
+  browser_action: 'Browser',
+
+  screenshot: 'Computer',
+  computer_use: 'Computer',
 };
 
 // ----------------------------------------------------------------------------
@@ -274,7 +328,7 @@ export class ToolRegistry {
     this.register(bashTool);
     this.register(readFileTool);
     this.register(writeFileTool);
-    this.register(editFileTool); // now supports batch mode via edits[] param (replaces multi_edit_file)
+    this.register(editFileTool); // single-edit tool (old_string/new_string)
     this.register(killShellTool);
     this.register(taskOutputTool);
     this.register(notebookEditTool);
@@ -386,6 +440,18 @@ export class ToolRegistry {
     this.register(learnPatternTool);
     this.register(codeExecuteTool);
     this.register(queryMetricsTool);
+
+
+    // Phase 2: Unified tools (consolidated from multiple tools)
+    this.register(ProcessTool);
+    this.register(MCPUnifiedTool);
+    this.register(TaskManagerTool);
+    this.register(PlanTool);
+    this.register(PlanModeTool);
+    this.register(WebFetchUnifiedTool);
+    this.register(ReadDocumentTool);
+    this.register(BrowserTool);
+    this.register(ComputerTool);
 
     // Tool Search (核心工具，始终可用)
     this.register(toolSearchTool);

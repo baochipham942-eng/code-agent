@@ -45,20 +45,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   // Gen 1: 扩展 Shell 工具
   // ============================================================================
   {
-    name: 'kill_shell',
-    shortDescription: '终止正在运行的后台 shell',
-    tags: ['shell'],
-    aliases: ['kill', 'stop'],
-    source: 'builtin',
-  },
-  {
-    name: 'task_output',
-    shortDescription: '获取后台任务的输出',
-    tags: ['shell'],
-    aliases: ['output', 'background'],
-    source: 'builtin',
-  },
-  {
     name: 'notebook_edit',
     shortDescription: '编辑 Jupyter Notebook 单元格',
     tags: ['file', 'document'],
@@ -91,38 +77,10 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
-    name: 'plan_read',
-    shortDescription: '读取当前任务计划',
-    tags: ['planning'],
-    aliases: ['plan'],
-    source: 'builtin',
-  },
-  {
-    name: 'plan_update',
-    shortDescription: '更新任务计划',
-    tags: ['planning'],
-    aliases: ['plan'],
-    source: 'builtin',
-  },
-  {
     name: 'findings_write',
     shortDescription: '记录调查发现',
     tags: ['planning'],
     aliases: ['findings', 'notes'],
-    source: 'builtin',
-  },
-  {
-    name: 'enter_plan_mode',
-    shortDescription: '进入计划模式',
-    tags: ['planning'],
-    aliases: ['plan'],
-    source: 'builtin',
-  },
-  {
-    name: 'exit_plan_mode',
-    shortDescription: '退出计划模式',
-    tags: ['planning'],
-    aliases: ['plan'],
     source: 'builtin',
   },
 
@@ -130,24 +88,10 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   // Gen 4: 网络和 Skill
   // ============================================================================
   {
-    name: 'web_fetch',
-    shortDescription: '获取网页内容',
-    tags: ['network'],
-    aliases: ['fetch', 'http', 'url', 'webpage'],
-    source: 'builtin',
-  },
-  {
     name: 'web_search',
     shortDescription: '搜索网络信息',
     tags: ['network', 'search'],
     aliases: ['google', 'search', 'bing'],
-    source: 'builtin',
-  },
-  {
-    name: 'read_pdf',
-    shortDescription: '读取 PDF 文件内容',
-    tags: ['document', 'file'],
-    aliases: ['pdf'],
     source: 'builtin',
   },
   {
@@ -157,57 +101,71 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     aliases: ['language-server', 'definition', 'references'],
     source: 'builtin',
   },
-  {
-    name: 'http_request',
-    shortDescription: '发送 HTTP API 请求',
-    tags: ['network'],
-    aliases: ['api', 'rest', 'request'],
-    source: 'builtin',
-  },
 
   // ============================================================================
-  // Gen 4: MCP 工具
+  // Phase 2: Unified Tools (consolidated from multiple tools)
   // ============================================================================
   {
-    name: 'mcp',
-    shortDescription: '调用 MCP 服务器工具',
+    name: 'Process',
+    shortDescription: '进程管理（列出/轮询/日志/写入/提交/终止/输出）',
+    tags: ['shell'],
+    aliases: ['process', 'ps', 'kill', 'output', 'background', 'pty'],
+    source: 'builtin',
+  },
+  {
+    name: 'MCPUnified',
+    shortDescription: 'MCP 服务器操作（调用/列表/资源/状态/添加）',
     tags: ['mcp', 'network'],
-    aliases: ['mcp-call', 'mcp-tool'],
+    aliases: ['mcp', 'mcp-call', 'mcp-tools', 'mcp-resources', 'mcp-status', 'mcp-add'],
     source: 'builtin',
   },
   {
-    name: 'mcp_list_tools',
-    shortDescription: '列出 MCP 服务器的可用工具',
-    tags: ['mcp'],
-    aliases: ['mcp-tools'],
+    name: 'TaskManager',
+    shortDescription: '任务管理 CRUD（创建/获取/列表/更新）',
+    tags: ['planning', 'multiagent'],
+    aliases: ['task-create', 'task-get', 'task-list', 'task-update', 'tasks'],
     source: 'builtin',
   },
   {
-    name: 'mcp_list_resources',
-    shortDescription: '列出 MCP 服务器的资源',
-    tags: ['mcp'],
-    aliases: ['mcp-resources'],
+    name: 'Plan',
+    shortDescription: '读取和更新任务计划',
+    tags: ['planning'],
+    aliases: ['plan', 'plan-read', 'plan-update'],
     source: 'builtin',
   },
   {
-    name: 'mcp_read_resource',
-    shortDescription: '读取 MCP 资源内容',
-    tags: ['mcp'],
-    aliases: ['mcp-read'],
+    name: 'PlanMode',
+    shortDescription: '进入/退出规划模式',
+    tags: ['planning'],
+    aliases: ['plan-mode', 'enter-plan', 'exit-plan'],
     source: 'builtin',
   },
   {
-    name: 'mcp_get_status',
-    shortDescription: '获取 MCP 服务器状态',
-    tags: ['mcp'],
-    aliases: ['mcp-status'],
+    name: 'WebFetch',
+    shortDescription: '网页获取和 HTTP API 请求',
+    tags: ['network'],
+    aliases: ['fetch', 'http', 'url', 'api', 'request', 'webpage'],
     source: 'builtin',
   },
   {
-    name: 'mcp_add_server',
-    shortDescription: '添加新的 MCP 服务器',
-    tags: ['mcp'],
-    aliases: ['mcp-add'],
+    name: 'ReadDocument',
+    shortDescription: '读取文档（PDF/Word/Excel）',
+    tags: ['document', 'file'],
+    aliases: ['pdf', 'docx', 'xlsx', 'word', 'excel', 'document'],
+    source: 'builtin',
+  },
+  {
+    name: 'Browser',
+    shortDescription: '浏览器自动化（导航/点击/输入/截图）',
+    tags: ['vision', 'network'],
+    aliases: ['browser', 'navigate', 'click', 'playwright'],
+    source: 'builtin',
+  },
+  {
+    name: 'Computer',
+    shortDescription: '计算机控制（截图/鼠标/键盘）',
+    tags: ['vision'],
+    aliases: ['computer', 'screen', 'mouse', 'keyboard', 'capture'],
     source: 'builtin',
   },
 
@@ -268,20 +226,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     shortDescription: '生成二维码',
     tags: ['media'],
     aliases: ['qrcode', 'qr'],
-    source: 'builtin',
-  },
-  {
-    name: 'read_docx',
-    shortDescription: '读取 Word 文档',
-    tags: ['document', 'file'],
-    aliases: ['docx', 'word'],
-    source: 'builtin',
-  },
-  {
-    name: 'read_xlsx',
-    shortDescription: '读取 Excel 表格',
-    tags: ['document', 'file'],
-    aliases: ['excel', 'xlsx'],
     source: 'builtin',
   },
   {
@@ -409,38 +353,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   },
 
   // ============================================================================
-  // Gen 6: 视觉和浏览器
-  // ============================================================================
-  {
-    name: 'screenshot',
-    shortDescription: '截取屏幕或窗口',
-    tags: ['vision'],
-    aliases: ['capture', 'screen'],
-    source: 'builtin',
-  },
-  {
-    name: 'computer_use',
-    shortDescription: '控制计算机（鼠标、键盘）',
-    tags: ['vision'],
-    aliases: ['computer', 'control', 'mouse', 'keyboard'],
-    source: 'builtin',
-  },
-  {
-    name: 'browser_navigate',
-    shortDescription: '浏览器导航',
-    tags: ['vision', 'network'],
-    aliases: ['browser', 'navigate', 'goto'],
-    source: 'builtin',
-  },
-  {
-    name: 'browser_action',
-    shortDescription: '浏览器交互操作',
-    tags: ['vision', 'network'],
-    aliases: ['browser', 'click', 'type'],
-    source: 'builtin',
-  },
-
-  // ============================================================================
   // Gen 7: 多代理
   // ============================================================================
   {
@@ -514,48 +426,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   // ============================================================================
   // 进程管理工具（PTY）
   // ============================================================================
-  {
-    name: 'process_list',
-    shortDescription: '列出运行中的进程',
-    tags: ['shell'],
-    aliases: ['ps', 'processes'],
-    source: 'builtin',
-  },
-  {
-    name: 'process_poll',
-    shortDescription: '轮询进程状态',
-    tags: ['shell'],
-    aliases: ['poll'],
-    source: 'builtin',
-  },
-  {
-    name: 'process_log',
-    shortDescription: '获取进程日志',
-    tags: ['shell'],
-    aliases: ['log'],
-    source: 'builtin',
-  },
-  {
-    name: 'process_write',
-    shortDescription: '向进程写入输入',
-    tags: ['shell'],
-    aliases: ['stdin'],
-    source: 'builtin',
-  },
-  {
-    name: 'process_submit',
-    shortDescription: '提交进程输入',
-    tags: ['shell'],
-    aliases: ['submit'],
-    source: 'builtin',
-  },
-  {
-    name: 'process_kill',
-    shortDescription: '终止进程',
-    tags: ['shell'],
-    aliases: ['kill'],
-    source: 'builtin',
-  },
 ];
 
 /**

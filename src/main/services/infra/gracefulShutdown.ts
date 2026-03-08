@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { createLogger } from './logger';
+import { getServiceRegistry } from '../serviceRegistry';
 
 const logger = createLogger('GracefulShutdown');
 
@@ -177,6 +178,13 @@ export function getShutdownManager() {
  * 按顺序执行所有处理器
  */
 async function executeHandlers(): Promise<void> {
+  // Dispose all services registered in ServiceRegistry
+  try {
+    await getServiceRegistry().disposeAll();
+  } catch (error) {
+    logger.warn('ServiceRegistry dispose failed', { error });
+  }
+
   for (const { name, handler } of shutdownHandlers) {
     try {
       logger.debug(`Executing shutdown handler: ${name}`);

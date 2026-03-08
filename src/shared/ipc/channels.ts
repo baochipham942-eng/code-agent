@@ -192,6 +192,10 @@ export const EVALUATION_CHANNELS = {
   LIST_TEST_REPORTS: 'evaluation:list-test-reports',
   /** 加载指定测试报告 */
   LOAD_TEST_REPORT: 'evaluation:load-test-report',
+  /** 保存开放编码标注 */
+  SAVE_ANNOTATIONS: 'evaluation:save-annotations',
+  /** 获取轴心编码聚合数据 */
+  GET_AXIAL_CODING: 'evaluation:get-axial-coding',
 } as const;
 
 /**

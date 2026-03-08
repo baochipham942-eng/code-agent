@@ -18,9 +18,9 @@ const logger = createLogger('ConfirmationGate');
 
 // 危险工具列表
 const DANGEROUS_TOOLS = new Set([
-  'bash',
-  'write_file',
-  'edit_file',
+  'bash', 'Bash',
+  'write_file', 'Write',
+  'edit_file', 'Edit',
 ]);
 
 // 高风险 bash 命令模式
@@ -85,7 +85,8 @@ export class ConfirmationGate {
    */
   buildPreview(toolName: string, params: Record<string, unknown>): ConfirmationPreview | undefined {
     switch (toolName) {
-      case 'edit_file': {
+      case 'edit_file':
+      case 'Edit': {
         const oldStr = params.old_string as string | undefined;
         const newStr = params.new_string as string | undefined;
         const filePath = (params.file_path || params.path) as string | undefined;
@@ -112,7 +113,8 @@ export class ConfirmationGate {
         };
       }
 
-      case 'write_file': {
+      case 'write_file':
+      case 'Write': {
         const filePath = (params.file_path || params.path) as string | undefined;
         const content = params.content as string | undefined;
         return {
@@ -122,7 +124,8 @@ export class ConfirmationGate {
         };
       }
 
-      case 'bash': {
+      case 'bash':
+      case 'Bash': {
         const command = params.command as string | undefined;
         return {
           type: 'command',
@@ -146,7 +149,7 @@ export class ConfirmationGate {
       return 'low';
     }
 
-    if (toolName === 'bash') {
+    if (toolName === 'bash' || toolName === 'Bash') {
       const command = (params.command as string) || '';
       if (HIGH_RISK_PATTERNS.some(p => p.test(command))) {
         return 'high';
@@ -154,11 +157,11 @@ export class ConfirmationGate {
       return 'medium';
     }
 
-    if (toolName === 'write_file') {
+    if (toolName === 'write_file' || toolName === 'Write') {
       return 'medium';
     }
 
-    if (toolName === 'edit_file') {
+    if (toolName === 'edit_file' || toolName === 'Edit') {
       return 'low';
     }
 

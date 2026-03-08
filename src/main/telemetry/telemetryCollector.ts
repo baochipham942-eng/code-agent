@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
+import { getServiceRegistry } from '../services/serviceRegistry';
 import { generateMessageId } from '../../shared/utils/id';
 import { getTelemetryStorage } from './telemetryStorage';
 import { getSystemPromptCache } from './systemPromptCache';
@@ -66,6 +67,7 @@ export class TelemetryCollector {
   static getInstance(): TelemetryCollector {
     if (!this.instance) {
       this.instance = new TelemetryCollector();
+      getServiceRegistry().register('TelemetryCollector', this.instance);
     }
     return this.instance;
   }
@@ -536,6 +538,17 @@ export class TelemetryCollector {
   // --------------------------------------------------------------------------
   // Buffer Flush
   // --------------------------------------------------------------------------
+
+  async dispose(): Promise<void> {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    this.flush();
+    this.activeSession = null;
+    this.activeTurn = null;
+    this.eventListeners = [];
+  }
 
   private scheduleFlush(): void {
     if (this.flushTimer) return;

@@ -221,6 +221,29 @@ export interface EvaluationResult {
   aiSummary?: string;
   transcriptMetrics?: import('../../main/evaluation/types').TranscriptMetrics;
   baselineComparison?: BaselineComparison;
+  trajectoryAnalysis?: {
+    deviations: Array<{
+      stepIndex: number;
+      type: string;
+      description: string;
+      severity: 'low' | 'medium' | 'high' | 'critical';
+      suggestedFix?: string;
+    }>;
+    efficiency: {
+      totalSteps: number;
+      effectiveSteps: number;
+      redundantSteps: number;
+      efficiency: number;
+    };
+    recoveryPatterns: Array<{
+      errorStepIndex: number;
+      recoveryStepIndex: number;
+      attempts: number;
+      strategy: string;
+      successful: boolean;
+    }>;
+    outcome: 'success' | 'partial' | 'failure';
+  };
 }
 
 /**

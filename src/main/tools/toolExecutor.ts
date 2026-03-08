@@ -159,6 +159,18 @@ export class ToolExecutor {
       };
     }
 
+    // Inject default params for legacy aliases (e.g. plan_read → Plan + action:'read')
+    const aliasDefaults = this.toolRegistry.getDefaultParamsForAlias(toolName);
+    if (aliasDefaults) {
+      // Only inject defaults for keys not already provided by the caller
+      for (const [key, value] of Object.entries(aliasDefaults)) {
+        if (!(key in params)) {
+          params[key] = value;
+        }
+      }
+      logger.debug('Injected alias default params', { toolName, aliasDefaults });
+    }
+
     logger.debug('Tool found', { toolName, generation: 'gen8' });
 
     // Generation check removed: locked to gen8, all registered tools are available
@@ -430,6 +442,7 @@ export class ToolExecutor {
 
     switch (tool.name) {
       case 'bash':
+      case 'Bash':
         return {
           type: this.isDangerousCommand(params.command as string)
             ? 'dangerous_command'
@@ -440,6 +453,7 @@ export class ToolExecutor {
         };
 
       case 'read_file':
+      case 'Read':
         return {
           type: 'file_read',
           tool: tool.name,
@@ -447,6 +461,7 @@ export class ToolExecutor {
         };
 
       case 'write_file':
+      case 'Write':
         return {
           type: 'file_write',
           tool: tool.name,
@@ -457,6 +472,7 @@ export class ToolExecutor {
         };
 
       case 'edit_file':
+      case 'Edit':
         return {
           type: 'file_edit',
           tool: tool.name,
@@ -468,7 +484,9 @@ export class ToolExecutor {
         };
 
       case 'web_fetch':
+      case 'WebFetch':
       case 'web_search':
+      case 'WebSearch':
         return {
           type: 'network',
           tool: tool.name,
@@ -476,6 +494,7 @@ export class ToolExecutor {
         };
 
       case 'mcp':
+      case 'MCPUnified':
       case 'mcp_read_resource':
         return {
           type: 'network',

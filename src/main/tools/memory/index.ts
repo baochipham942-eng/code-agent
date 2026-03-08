@@ -2,6 +2,7 @@
 // Memory Tools - 记忆工具
 // ============================================================================
 
+export { memoryTool } from './memoryTool';
 export { memoryStoreTool } from './store';
 export { memorySearchTool } from './search';
 export { codeIndexTool } from './codeIndex';

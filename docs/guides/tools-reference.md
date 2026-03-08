@@ -554,3 +554,25 @@ self_evaluate {
 learn_pattern { "source": "code", "path": "src/components/", "patternType": "component_structure" }
 learn_pattern { "action": "list" }
 ```
+
+---
+
+## Phase 2 统一工具（Deferred Tools Consolidation）
+
+Phase 2 将 31 个延迟加载工具合并为 9 个统一工具，使用 `action` 参数分发。旧工具名通过 `TOOL_ALIASES` 保持向后兼容。
+
+| 统一工具 | 合并来源 | action 值 |
+|----------|----------|-----------|
+| **Process** | process_list, process_poll, process_log, process_write, process_submit, process_kill, kill_shell, task_output | list, poll, log, write, submit, kill, kill_shell, task_output |
+| **MCPUnified** | mcp, mcp_list_tools, mcp_list_resources, mcp_read_resource, mcp_get_status, mcp_add_server | call, list_tools, list_resources, read_resource, get_status, add_server |
+| **TaskManager** | TaskCreate, TaskGet, TaskList, TaskUpdate | create, get, list, update |
+| **Plan** | plan_read, plan_update | read, update |
+| **PlanMode** | enter_plan_mode, exit_plan_mode | enter, exit |
+| **WebFetch** | web_fetch, http_request | fetch, http_request |
+| **ReadDocument** | read_pdf, read_docx, read_xlsx | pdf, docx, xlsx |
+| **Browser** | browser_navigate, browser_action | navigate, action |
+| **Computer** | screenshot, computer_use | screenshot, use |
+
+> **注意**: 旧工具名（如 `process_list`、`mcp_list_tools`）仍可使用，会通过别名自动解析到对应的统一工具 + action。
+>
+> Group 10（8 个 generate 工具：ppt/pdf/image/video/docx/excel/chart/qrcode）因参数 schema 差异过大，未合并。

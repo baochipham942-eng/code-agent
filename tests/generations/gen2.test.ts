@@ -208,18 +208,15 @@ describe('Gen2 - Ecosystem Integration Era', () => {
   // Tool Metadata Tests
   // --------------------------------------------------------------------------
   describe('Tool Metadata', () => {
-    it('glob should have correct generations', () => {
-      expect(globTool.generations).toContain('gen2');
-      expect(globTool.name).toBe('glob');
+    it('glob should have correct name', () => {
+      expect(globTool.name).toBe('Glob');
     });
 
-    it('grep should have correct generations', () => {
-      expect(grepTool.generations).toContain('gen2');
-      expect(grepTool.name).toBe('grep');
+    it('grep should have correct name', () => {
+      expect(grepTool.name).toBe('Grep');
     });
 
-    it('list_directory should have correct generations', () => {
-      expect(listDirectoryTool.generations).toContain('gen2');
+    it('list_directory should have correct name', () => {
       expect(listDirectoryTool.name).toBe('list_directory');
     });
   });

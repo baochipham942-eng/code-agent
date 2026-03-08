@@ -42,6 +42,13 @@ interface ReplaySummary {
   thinkingRatio: number;
   selfRepairChains: number;
   totalDurationMs: number;
+  deviations?: Array<{
+    stepIndex: number;
+    type: string;
+    description: string;
+    severity: string;
+    suggestedFix?: string;
+  }>;
 }
 
 interface ReplayBlock {

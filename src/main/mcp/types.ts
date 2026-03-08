@@ -279,3 +279,30 @@ export function isHttpStreamableConfig(config: MCPServerConfig): config is MCPHt
 export function isInProcessConfig(config: MCPServerConfig): config is MCPInProcessServerConfig {
   return config.type === 'in-process';
 }
+
+// ----------------------------------------------------------------------------
+// OAuth Types
+// ----------------------------------------------------------------------------
+
+/**
+ * MCP OAuth 配置
+ */
+export interface MCPOAuthConfig {
+  clientId: string;
+  clientSecret: string;
+  authorizationUrl: string;
+  tokenUrl: string;
+  scopes?: string[];
+  redirectUri?: string;
+}
+
+/**
+ * OAuth Token 信息
+ */
+export interface OAuthTokens {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  tokenType?: string;
+  scope?: string;
+}

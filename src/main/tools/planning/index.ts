@@ -20,3 +20,8 @@ export { taskUpdateTool } from './taskUpdate';
 
 // Task Store utilities
 export { listTasks, getIncompleteTasks, clearTasks } from './taskStore';
+
+// Unified tools (Phase 2)
+export { TaskManagerTool } from './TaskManagerTool';
+export { PlanTool } from './PlanTool';
+export { PlanModeTool } from './PlanModeTool';

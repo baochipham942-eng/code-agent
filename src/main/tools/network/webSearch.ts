@@ -393,14 +393,47 @@ Features:
 
     // Translate results at tool level if language is specified
     if (language && searchResult.success && searchResult.output) {
+      // Skip translation when query language already matches target language
+      const queryText = (params.query as string) || '';
+      const hasChinese = /[\u4e00-\u9fff]/.test(queryText);
+      const isAllEnglish = /^[a-zA-Z0-9\s\-_.,;:!?'"()\[\]{}<>@#$%^&*+=|/\\~`]+$/.test(queryText);
+      const skipTranslation =
+        (language === 'zh' && hasChinese) ||
+        (language === 'en' && isAllEnglish);
+
+      if (skipTranslation) {
+        logger.debug('Skipping translation - query language matches target', { language, query: queryText });
+      }
+
       const resultData = searchResult.result as { results?: SearchResult[] } | undefined;
       const results = resultData?.results || [];
-      if (results.length > 0 && context.modelCallback) {
+      if (!skipTranslation && results.length > 0) {
         try {
+          // Use quick model (fast & free) for translation instead of main model
+          const { quickTask, isQuickModelAvailable } = await import('../../model/quickModel');
+          if (!isQuickModelAvailable() && !context.modelCallback) {
+            logger.warn('No model available for translation, skipping');
+          }
           // Batch translate: send all titles+snippets in one call
           const items = results.map((r, i) => `${i + 1}. ${r.title}\n${r.snippet || r.description || ''}`).join('\n---\n');
           const prompt = `Translate the following search result titles and descriptions to ${language === 'zh' ? 'Chinese (简体中文)' : language}. Keep the numbering. Only output the translations, one per item, separated by ---:\n\n${items}`;
-          const translated = await context.modelCallback(prompt);
+
+          let translated: string | undefined;
+          if (isQuickModelAvailable()) {
+            const result = await quickTask(prompt);
+            translated = result.success ? result.content : undefined;
+            if (!result.success) {
+              logger.warn('Quick model translation failed, falling back to modelCallback', { error: result.error });
+              // Fallback to modelCallback if quick model fails
+              if (context.modelCallback) {
+                translated = await context.modelCallback(prompt);
+              }
+            }
+          } else if (context.modelCallback) {
+            // Fallback: use modelCallback if quick model not available
+            translated = await context.modelCallback(prompt);
+          }
+
           if (translated) {
             // Parse translated items and rebuild output
             const translatedItems = translated.split('---').map(s => s.trim()).filter(Boolean);

@@ -5,6 +5,7 @@
 
 import type { DatabaseService, EntityRelation } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
+import { MEMORY } from '../../shared/constants';
 
 const logger = createLogger('MemoryDedup');
 
@@ -24,7 +25,7 @@ export interface RelationCandidate {
 }
 
 /** Jaccard similarity threshold — above this, two entries are considered near-duplicates */
-const SIMILARITY_THRESHOLD = 0.85;
+const SIMILARITY_THRESHOLD = MEMORY.DEDUP_SIMILARITY_THRESHOLD;
 
 export class MemoryDeduplicator {
   constructor(private readonly db: DatabaseService) {}
@@ -41,6 +42,8 @@ export class MemoryDeduplicator {
 
     // Also track within-batch duplicates to avoid inserting the same pair twice
     const seenInBatch = new Set<string>();
+    // Cache DB queries by sourceId to avoid N+1
+    const relationCache = new Map<string, EntityRelation[]>();
 
     for (const candidate of candidates) {
       const batchKey = `${candidate.sourceId}|${candidate.targetId}|${candidate.relationType}`;
@@ -50,8 +53,12 @@ export class MemoryDeduplicator {
       }
       seenInBatch.add(batchKey);
 
-      // Query existing relations for this source entity
-      const existing = this.db.getRelationsFor(candidate.sourceId, 'source');
+      // Query existing relations for this source entity (cached)
+      let existing = relationCache.get(candidate.sourceId);
+      if (!existing) {
+        existing = this.db.getRelationsFor(candidate.sourceId, 'source');
+        relationCache.set(candidate.sourceId, existing);
+      }
 
       // Exact match check
       const exactMatch = existing.find(
@@ -101,11 +108,6 @@ function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
   return intersection.size / union.size;
 }
 
-let deduplicatorInstance: MemoryDeduplicator | null = null;
-
 export function getMemoryDeduplicator(db: DatabaseService): MemoryDeduplicator {
-  if (!deduplicatorInstance) {
-    deduplicatorInstance = new MemoryDeduplicator(db);
-  }
-  return deduplicatorInstance;
+  return new MemoryDeduplicator(db);
 }

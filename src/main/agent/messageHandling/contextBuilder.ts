@@ -192,12 +192,13 @@ export async function buildEnhancedSystemPrompt(
         logger.debug(`RAG cache hit: ${cached.tokens} tokens saved`);
       } else {
         // Try hybrid search first, fall back to legacy RAG
+        let hybridSearchFailed = false;
         try {
           const vectorStore = getLocalVectorStore();
           const hybridSearch = getHybridSearchService(vectorStore);
           const { results } = await hybridSearch.search(userQuery, {
             topK: 10,
-            threshold: 0.1,
+            threshold: 0.3,
           });
 
           if (results.length > 0) {
@@ -205,9 +206,17 @@ export async function buildEnhancedSystemPrompt(
               .map(r => `[${r.metadata?.type || 'unknown'}] ${r.content}`)
               .join('\n\n');
             logger.debug(`Hybrid search returned ${results.length} results`);
+          } else {
+            hybridSearchFailed = true;
+            logger.debug('Hybrid search returned 0 results, falling back to legacy RAG');
           }
         } catch (hybridError) {
+          hybridSearchFailed = true;
           logger.warn('Hybrid search failed, falling back to legacy RAG:', hybridError);
+        }
+
+        // Fallback to legacy RAG when hybrid search fails or returns empty
+        if (hybridSearchFailed) {
           ragContext = memoryService.getRAGContext(userQuery, {
             includeCode: true,
             includeKnowledge: true,

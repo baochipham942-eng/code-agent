@@ -4,7 +4,7 @@
 // Features auto-fallback mechanism for resilience
 // ============================================================================
 
-import { DEFAULT_PROVIDER, MODEL_API_ENDPOINTS } from '../../shared/constants';
+import { DEFAULT_PROVIDER, MODEL_API_ENDPOINTS, MEMORY } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import {
   EMBEDDING_DIMENSIONS,
@@ -408,7 +408,7 @@ export class EmbeddingService {
   private cache: Map<string, { vector: number[]; ts: number }> = new Map();
   private cacheEnabled: boolean;
   private maxCacheSize: number = 10000;
-  private readonly EMBED_CACHE_TTL = 10 * 60 * 1000; // 10 min
+  private readonly EMBED_CACHE_TTL = MEMORY.EMBEDDING_CACHE_TTL;
   private currentProviderIndex: number = 0;
   private failureCount: Map<number, number> = new Map();
   private readonly maxFailures: number = 3;

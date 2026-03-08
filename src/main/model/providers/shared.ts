@@ -474,6 +474,62 @@ export function convertToClaudeMessages(messages: ModelMessage[]): ClaudeMessage
     }
   }
 
+  // Sanitize: ensure every tool_use has a matching tool_result in the next user message
+  return sanitizeClaudeToolPairing(result);
+}
+
+/**
+ * Claude 协议要求：assistant 消息中的每个 tool_use 都必须在紧随其后的 user 消息中有对应 tool_result。
+ * 此函数检测孤立的 tool_use 并合成 placeholder tool_result，防止 400 错误。
+ */
+function sanitizeClaudeToolPairing(messages: ClaudeMessage[]): ClaudeMessage[] {
+  const result: ClaudeMessage[] = [];
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    result.push(msg);
+
+    // Check assistant messages with tool_use blocks
+    if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+      const toolUseIds = (msg.content as ClaudeContentBlock[])
+        .filter((b): b is ClaudeToolUseBlock => b.type === 'tool_use')
+        .map(b => b.id);
+
+      if (toolUseIds.length === 0) continue;
+
+      // Look at the next message — should be a user message with matching tool_results
+      const nextMsg = messages[i + 1];
+      const existingResultIds = new Set<string>();
+      if (nextMsg?.role === 'user' && Array.isArray(nextMsg.content)) {
+        for (const block of nextMsg.content as ClaudeContentBlock[]) {
+          if (block.type === 'tool_result') {
+            existingResultIds.add((block as ClaudeToolResultBlock).tool_use_id);
+          }
+        }
+      }
+
+      // Find orphaned tool_use ids
+      const orphanedIds = toolUseIds.filter(id => !existingResultIds.has(id));
+      if (orphanedIds.length > 0) {
+        const placeholders: ClaudeToolResultBlock[] = orphanedIds.map(id => ({
+          type: 'tool_result' as const,
+          tool_use_id: id,
+          content: '[context compacted]',
+        }));
+
+        if (nextMsg?.role === 'user' && Array.isArray(nextMsg.content)) {
+          // Append placeholders to existing user message
+          (nextMsg.content as ClaudeContentBlock[]).push(...placeholders);
+        } else {
+          // Insert a new user message with placeholders before next message
+          result.push({ role: 'user', content: placeholders as ClaudeContentBlock[] });
+        }
+
+        logger.info(`[sanitizeClaudeToolPairing] Synthesized ${orphanedIds.length} placeholder tool_results`);
+      }
+    }
+  }
+
   return result;
 }
 

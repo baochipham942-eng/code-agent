@@ -294,9 +294,12 @@ export class AgentLoop {
 
     // Initialize token optimization
     this.hookMessageBuffer = new HookMessageBuffer();
+    // Light compression threshold: 50% of context window (CC triggers heavy compaction at ~80%)
+    const contextWindow = CONTEXT_WINDOWS[this.modelConfig.model] || DEFAULT_CONTEXT_WINDOW;
+    const lightCompressionThreshold = Math.max(8000, Math.round(contextWindow * 0.50));
     this.messageHistoryCompressor = new MessageHistoryCompressor({
-      threshold: 8000,
-      targetTokens: 4000,
+      threshold: lightCompressionThreshold,
+      targetTokens: Math.round(lightCompressionThreshold * 0.5),
       preserveRecentCount: 6,
       preserveUserMessages: true,
     });
@@ -2992,6 +2995,7 @@ ${deferredToolsSummary}
           timestamp: original?.timestamp || m.timestamp || Date.now(),
           attachments: original?.attachments,
           toolCalls: original?.toolCalls,
+          toolResults: original?.toolResults,
         };
       });
     } else {
@@ -3812,9 +3816,12 @@ ${deferredToolsSummary}
       }
 
       // Deduplicate before writing
-      const { toInsert } = dedup.deduplicateRelations(candidates);
+      const { toInsert, toMerge } = dedup.deduplicateRelations(candidates);
       for (const rel of toInsert) {
         db.addRelation(rel);
+      }
+      for (const { existingId, candidate } of toMerge) {
+        db.updateRelationConfidence(existingId, candidate.confidence, candidate.evidence);
       }
     } catch (err) {
       logger.debug('[AgentLoop] Entity relation writing failed:', { error: (err as Error).message });

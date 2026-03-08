@@ -294,6 +294,10 @@ export const MEMORY = {
   RELATION_MIN_CONFIDENCE: 0.1,
   /** Minimum confidence for context builder relation queries */
   RELATION_CONTEXT_MIN_CONFIDENCE: 0.2,
+  /** Embedding cache TTL in ms (10 min) */
+  EMBEDDING_CACHE_TTL: 10 * 60 * 1000,
+  /** Deduplication Jaccard similarity threshold */
+  DEDUP_SIMILARITY_THRESHOLD: 0.85,
 } as const;
 
 /** 规划配置 */

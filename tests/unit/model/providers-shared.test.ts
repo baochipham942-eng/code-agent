@@ -208,7 +208,8 @@ describe('convertToClaudeMessages', () => {
     ];
     const result = convertToClaudeMessages(messages);
 
-    expect(result).toHaveLength(1);
+    // sanitizeClaudeToolPairing synthesizes a placeholder tool_result for orphaned tool_use
+    expect(result).toHaveLength(2);
     expect(result[0].role).toBe('assistant');
     expect(result[0].content).toHaveLength(2);
     expect(result[0].content[0]).toEqual({ type: 'text', text: 'Thinking...' });
@@ -217,6 +218,14 @@ describe('convertToClaudeMessages', () => {
       id: 'tu_1',
       name: 'bash',
       input: { command: 'pwd' },
+    });
+    // Synthesized placeholder
+    expect(result[1].role).toBe('user');
+    expect(result[1].content).toHaveLength(1);
+    expect(result[1].content[0]).toEqual({
+      type: 'tool_result',
+      tool_use_id: 'tu_1',
+      content: '[context compacted]',
     });
   });
 

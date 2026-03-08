@@ -181,14 +181,13 @@ export const editFileTool: Tool = {
       }
 
       if (!exactMatch) {
-        // Provide helpful error message
         let errorMsg =
-          'The specified text was not found in the file. Make sure old_string matches exactly.';
+          'The specified text was not found in the file. ' +
+          'File content may have changed — use Read tool to re-read the file, then retry with the exact current content.';
 
         if (containsSmartChars(oldString)) {
           errorMsg +=
-            ' Note: Your old_string contains smart quotes or special characters. ' +
-            'These were normalized but still no match was found.';
+            ' Note: old_text contains smart quotes or special characters that were normalized but still no match was found.';
         }
 
         return {

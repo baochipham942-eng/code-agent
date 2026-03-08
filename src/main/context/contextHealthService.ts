@@ -184,20 +184,8 @@ export class ContextHealthService {
     let totalTokens = 0;
 
     for (const message of messages) {
-      // 工具调用的结果
-      if (message.toolResults && message.toolResults.length > 0) {
-        for (const result of message.toolResults) {
-          // 计算 output 或 error 的 token 数
-          if (result.output) {
-            totalTokens += estimateTokens(result.output);
-          }
-          if (result.error) {
-            totalTokens += estimateTokens(result.error);
-          }
-        }
-      }
-
-      // 工具消息
+      // role=tool 消息：content 已是 JSON.stringify(toolResults)，直接计 content 即可。
+      // 不再计 message.toolResults 数组，避免与 content 双计。
       if (message.role === 'tool') {
         totalTokens += estimateTokens(message.content);
       }

@@ -1111,6 +1111,7 @@ export const OBSERVATION_MASKING = {
   MIN_TOKEN_THRESHOLD: 100,
   PLACEHOLDER_SUCCESS: '[output cleared - tool was executed successfully]',
   PLACEHOLDER_ERROR: '[output cleared - tool returned error]',
+  PLACEHOLDER_FILE_READ: '[File content cleared - use Read tool to re-read this file before editing it]',
 } as const;
 
 // ============================================================================

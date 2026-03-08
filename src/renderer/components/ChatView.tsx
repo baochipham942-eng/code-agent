@@ -226,7 +226,7 @@ export const ChatView: React.FC = () => {
 
 // Thinking indicator - Claude/ChatGPT style, left-aligned, no avatar
 const ThinkingIndicator: React.FC = () => {
-  const { inputTokens, outputTokens } = useStatusStore();
+  const { inputTokens, outputTokens, contextUsagePercent } = useStatusStore();
   const totalTokens = inputTokens + outputTokens;
 
   // 格式化 token 数
@@ -235,6 +235,12 @@ const ThinkingIndicator: React.FC = () => {
     if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
     return n.toString();
   };
+
+  // 上下文百分比颜色
+  const ctxColor =
+    contextUsagePercent >= 85 ? 'text-red-400' :
+    contextUsagePercent >= 60 ? 'text-amber-400' :
+    'text-zinc-500';
 
   return (
     <div className="animate-slideUp">
@@ -250,6 +256,11 @@ const ThinkingIndicator: React.FC = () => {
         {totalTokens > 0 && (
           <span className="text-xs text-zinc-500 font-mono">
             · {formatTokens(totalTokens)} tokens
+          </span>
+        )}
+        {contextUsagePercent > 0 && (
+          <span className={`text-xs font-mono ${ctxColor}`}>
+            · ctx {contextUsagePercent.toFixed(1)}%
           </span>
         )}
       </div>

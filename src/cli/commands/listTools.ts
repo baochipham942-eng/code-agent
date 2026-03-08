@@ -14,7 +14,7 @@ export const listToolsCommand = new Command('list-tools')
       const registry = new ToolRegistry();
 
       const tools = options.gen
-        ? registry.getForGeneration(options.gen)
+        ? registry.getAll()
         : registry.getAllTools();
 
       const output = tools.map(tool => {

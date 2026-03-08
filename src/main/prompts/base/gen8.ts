@@ -4,7 +4,7 @@
 // 目标：~600 tokens
 // ============================================================================
 
-export const GEN8_TOOLS = `
+export const TOOLS_PROMPT = `
 ## Tools
 
 | Tool | Use |

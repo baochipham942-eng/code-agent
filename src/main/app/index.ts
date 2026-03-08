@@ -13,7 +13,6 @@ export {
   initializeBackgroundServices,
   getConfigServiceInstance,
   getAgentOrchestrator,
-  getGenerationManagerInstance,
   getCurrentSessionId,
   setCurrentSessionId,
   getPlanningServiceInstance,

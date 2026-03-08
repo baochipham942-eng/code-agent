@@ -68,6 +68,21 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     baseUrl: 'https://api.anthropic.com/v1',
     models: [
       {
+        id: 'claude-opus-4-6',
+        name: 'Claude Opus 4.6',
+        capabilities: ['general', 'code', 'vision', 'reasoning'],
+        maxTokens: 32000,
+        supportsTool: true,
+        supportsVision: true,
+        supportsStreaming: true,
+        costType: 'payg',
+        visionCapabilities: {
+          supportsBase64: true,
+          supportsUrl: true,
+          supportedFormats: ['png', 'jpeg', 'gif', 'webp'],
+        },
+      },
+      {
         id: 'claude-sonnet-4-20250514',
         name: 'Claude 4 Sonnet',
         capabilities: ['general', 'code', 'vision', 'gui'],

@@ -14,7 +14,6 @@ import type {
 import type { AgentEvent } from '../../shared/types';
 import type { ModelRouter } from '../model/modelRouter';
 import type { ToolExecutor } from '../tools/toolExecutor';
-import type { Generation } from '../../shared/types';
 import { ResearchPlanner } from './researchPlanner';
 import { ResearchExecutor } from './researchExecutor';
 import { ReportGenerator } from './reportGenerator';
@@ -27,18 +26,7 @@ const logger = createLogger('DeepResearchMode');
 // Constants
 // ----------------------------------------------------------------------------
 
-/**
- * 研究模式所需的最小 Generation（需要 web_search / web_fetch）
- */
-const RESEARCH_GENERATION: Generation = {
-  id: 'gen4',
-  name: 'Gen 4',
-  version: '4.0.0',
-  description: 'Deep Research Mode',
-  tools: ['web_search', 'web_fetch'],
-  systemPrompt: '',
-  promptMetadata: { lineCount: 0, toolCount: 2, ruleCount: 0 },
-};
+
 
 // ----------------------------------------------------------------------------
 // Types
@@ -51,7 +39,6 @@ export interface DeepResearchModeConfig {
   modelRouter: ModelRouter;
   toolExecutor: ToolExecutor;
   onEvent: (event: AgentEvent) => void;
-  generation?: Generation;
 }
 
 /**
@@ -81,14 +68,12 @@ export class DeepResearchMode {
   private modelRouter: ModelRouter;
   private toolExecutor: ToolExecutor;
   private onEvent: (event: AgentEvent) => void;
-  private generation: Generation;
   private isCancelled: boolean = false;
 
   constructor(config: DeepResearchModeConfig) {
     this.modelRouter = config.modelRouter;
     this.toolExecutor = config.toolExecutor;
     this.onEvent = config.onEvent;
-    this.generation = config.generation ?? RESEARCH_GENERATION;
   }
 
   /**
@@ -162,7 +147,7 @@ export class DeepResearchMode {
             status: step.status === 'completed' ? 'completed' : 'running',
           });
         },
-        { generation: this.generation }
+        {}
       );
 
       const executedPlan = await executor.executeWithReflection(plan, config);

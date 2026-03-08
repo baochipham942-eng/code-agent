@@ -31,14 +31,12 @@ describe('@Tool Decorator', () => {
 
   it('should store tool metadata for BashTool', () => {
     const metadata = getToolMetadata(BashTool);
-    // generations removed in Sprint 2
     expect(metadata!.name).toBe('bash');
     expect(metadata!.permission).toBe('execute');
   });
 
   it('should store tool metadata for GlobTool', () => {
     const metadata = getToolMetadata(GlobTool);
-    // generations removed in Sprint 2
     expect(metadata!.name).toBe('glob');
     expect(metadata!.permission).toBe('none');
   });
@@ -127,7 +125,7 @@ describe('BashTool.execute', () => {
   const mockContext: ToolContext = {
     workingDirectory: process.cwd(),
     sessionId: 'test-session',
-    generationId: 'gen1',
+    
     conversationId: 'test-conversation',
     orchestrator: {} as never,
   };
@@ -189,7 +187,7 @@ describe('GlobTool.execute', () => {
   const mockContext: ToolContext = {
     workingDirectory: process.cwd(),
     sessionId: 'test-session',
-    generationId: 'gen2',
+    
     conversationId: 'test-conversation',
     orchestrator: {} as never,
   };

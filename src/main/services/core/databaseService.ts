@@ -26,7 +26,6 @@ import type {
   TokenUsage,
   Message,
   ToolResult,
-  GenerationId,
   ModelProvider,
   TodoItem,
 } from '../../../shared/types';
@@ -691,7 +690,7 @@ export class DatabaseService {
     id: string,
     data: {
       title: string;
-      generationId: GenerationId;
+      generationId?: string;
       modelConfig: { provider: ModelProvider; model: string };
       workingDirectory?: string;
     }
@@ -854,7 +853,7 @@ export class DatabaseService {
     return {
       id: row.id as string,
       title: row.title as string,
-      generationId: row.generation_id as GenerationId,
+      generationId: row.generation_id as string,
       modelConfig: {
         provider: row.model_provider as ModelProvider,
         model: row.model_name as string,

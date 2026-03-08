@@ -4,7 +4,7 @@
 
 import { ipcMain } from 'electron';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import { loadSoul, getSoul } from '../generation/prompts/soulLoader';
+import { loadSoul, getSoul } from '../prompts/soulLoader';
 import { getUserConfigDir, getProjectConfigDir } from '../config/configPaths';
 import * as fs from 'fs';
 import * as path from 'path';

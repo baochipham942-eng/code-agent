@@ -173,7 +173,7 @@ export const ChatView: React.FC = () => {
         {/* Messages */}
         <div className="flex-1 overflow-hidden">
           {filteredMessages.length === 0 ? (
-            <EmptyState generation="Code Agent" generationId="gen8" onSend={handleSendMessage} />
+            <EmptyState onSend={handleSendMessage} />
           ) : (
             <Virtuoso
               ref={virtuosoRef}
@@ -299,23 +299,13 @@ const defaultSuggestions: SuggestionItem[] = [
   },
 ];
 
-// 获取建议卡片（已锁定 gen8）
-function getSuggestionsForGeneration(_genId: string): SuggestionItem[] {
-  return defaultSuggestions;
-}
-
 // Empty state component with enhanced design
 const EmptyState: React.FC<{
-  generation: string;
-  generationId: string;
   onSend: (message: string) => void;
 }> = ({
-  generation,
-  generationId,
   onSend,
 }) => {
-  // 获取当前代际对应的建议卡片
-  const suggestions = getSuggestionsForGeneration(generationId);
+  const suggestions = defaultSuggestions;
   return (
     <div className="h-full flex flex-col items-center justify-center text-center px-6 py-12">
       {/* Hero Section */}
@@ -340,9 +330,6 @@ const EmptyState: React.FC<{
       {/* Title */}
       <h1 className="text-2xl font-bold text-zinc-100 mb-2 animate-fade-in" style={{ animationDelay: '100ms' }}>
         Code Agent
-        <span className="ml-2 text-lg font-medium text-gradient bg-gradient-to-r from-primary-400 to-accent-purple bg-clip-text text-transparent">
-          {generation}
-        </span>
       </h1>
 
       {/* Subtitle */}

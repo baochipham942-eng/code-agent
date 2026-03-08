@@ -10,7 +10,6 @@ import type {
   SessionStatus,
   Message,
   ToolResult,
-  GenerationId,
   ModelProvider,
   TodoItem,
   TokenUsage,
@@ -324,7 +323,7 @@ export class CLIDatabaseService {
     return {
       id: row.id as string,
       title: row.title as string,
-      generationId: row.generation_id as GenerationId,
+      generationId: row.generation_id as string,
       modelConfig: {
         provider: row.model_provider as ModelProvider,
         model: row.model_name as string,

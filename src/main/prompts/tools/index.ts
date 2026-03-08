@@ -29,7 +29,7 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
 /**
  * 返回所有工具描述。代际参数已废弃，保留签名兼容性。
  */
-export function getToolDescriptionsForGeneration(_generationId?: string): string[] {
+export function getToolDescriptions(): string[] {
   return Object.values(TOOL_DESCRIPTIONS).filter(Boolean);
 }
 

@@ -105,7 +105,7 @@
 
 ## 相关文件
 
-- 规则模块: `src/main/generation/prompts/rules/`
-- 提示词构建: `src/main/generation/prompts/builder.ts`
+- 规则模块: `src/main/prompts/rules/`
+- 提示词构建: `src/main/prompts/builder.ts`
 - 分析脚本: `scripts/prompt-coverage-analysis.ts`
 - Claude Code 参考: `docs/prompts/claude-code-v2.0-full.txt`

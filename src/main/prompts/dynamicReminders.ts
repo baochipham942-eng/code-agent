@@ -27,7 +27,7 @@ import {
   selectRemindersWithinBudget,
   getTokenBudgetManager,
   DEFAULT_BUDGET_CONFIG,
-} from '../../context/reminderBudget';
+} from '../context/reminderBudget';
 import { detectTaskFeatures, type TaskFeatures } from './systemReminders';
 
 /**

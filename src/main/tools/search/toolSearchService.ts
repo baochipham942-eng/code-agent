@@ -159,7 +159,6 @@ export class ToolSearchService {
       };
     }
 
-    // Generation check removed: locked to gen8, all tools available
 
     // 标记为已加载
     this.loadedDeferredTools.add(meta.name);
@@ -277,19 +276,16 @@ export class ToolSearchService {
   ): DeferredToolMeta[] {
     const result: DeferredToolMeta[] = [];
 
-    // 添加内置延迟工具 (gen8 locked: no generation filtering)
     for (const meta of DEFERRED_TOOLS_META) {
       result.push(meta);
     }
 
-    // 添加 MCP 工具 (gen8 locked: no generation filtering)
     if (includeMCP) {
       for (const meta of this.mcpToolsMeta.values()) {
         result.push(meta);
       }
     }
 
-    // 添加 Skills (gen8 locked: no generation filtering)
     for (const meta of this.skillsMeta.values()) {
       result.push(meta);
     }

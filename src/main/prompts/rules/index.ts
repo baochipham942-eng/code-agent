@@ -10,7 +10,7 @@ export { CODE_REFERENCE_RULES } from './codeReference';
 export { PLAN_MODE_RULES } from './planMode';
 export { INJECTION_DEFENSE_RULES } from './injectionDefense';
 
-// 原有规则（从 GenerationManager 提取）
+// 原有规则
 export { OUTPUT_FORMAT_RULES } from './outputFormat';
 export { HTML_GENERATION_RULES } from './htmlGeneration';
 

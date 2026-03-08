@@ -1,6 +1,6 @@
 # Code Agent
 
-AI 编程助手桌面应用，复刻 Claude Code 的 8 个架构代际来研究 AI Agent 能力演进。
+AI 编程助手桌面应用，复刻 Claude Code 架构来研究 AI Agent 能力演进。
 
 ## 项目上下文
 
@@ -74,7 +74,6 @@ npm run typecheck    # 类型检查
 
 | 值 | 常量名 | 说明 |
 |----|--------|------|
-| 代际默认值 | `DEFAULT_GENERATION` | 禁止写 `'gen8'` 或 `'gen3'` |
 | Provider 默认值 | `DEFAULT_PROVIDER` | 禁止写 `\|\| 'deepseek'` 或 `\|\| 'moonshot'` |
 | 模型默认值 | `DEFAULT_MODEL` | 禁止写 `'kimi-k2.5'` 或 `'deepseek-chat'` 作为 fallback |
 | API 端点 | `MODEL_API_ENDPOINTS.*` | 禁止在 provider 中硬编码 URL |

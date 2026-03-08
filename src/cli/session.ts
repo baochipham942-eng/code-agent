@@ -6,7 +6,6 @@ import { getCLIDatabase, type StoredSession, type CLIDatabaseService } from './d
 import type {
   Session,
   Message,
-  GenerationId,
   ModelConfig,
   TodoItem,
 } from '../shared/types';
@@ -24,7 +23,7 @@ export interface SessionWithMessages extends Session {
 
 export interface SessionCreateOptions {
   title?: string;
-  generationId: GenerationId;
+  generationId?: string;
   modelConfig: ModelConfig;
   workingDirectory?: string;
 }

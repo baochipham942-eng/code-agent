@@ -219,14 +219,8 @@ const TASK_PATTERNS: Array<{
  * Uses keyword matching, pattern recognition, and capability analysis.
  */
 export class AutoDelegator {
-  private currentGeneration: number = 4;
 
   /**
-   * Set the current generation level
-   */
-  setGeneration(generation: number): void {
-    this.currentGeneration = generation;
-  }
 
   /**
    * Analyze a task description
@@ -297,12 +291,12 @@ export class AutoDelegator {
     const registry = getAgentRegistry();
 
     // Get all agents available for current generation
-    const availableAgents = registry.findByGeneration(this.currentGeneration);
+    const availableAgents = registry.getAll();
 
     if (availableAgents.length === 0) {
       return {
         shouldDelegate: false,
-        reason: 'No agents available for current generation',
+        reason: 'No agents available',
       };
     }
 

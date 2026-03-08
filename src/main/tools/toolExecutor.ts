@@ -2,7 +2,6 @@
 // Tool Executor - Executes tools with permission handling
 // ============================================================================
 
-import type { Generation } from '../../shared/types';
 import type {
   ToolRegistry,
   Tool,
@@ -44,7 +43,7 @@ export interface ToolExecutorConfig {
  * @internal
  */
 export interface ExecuteOptions {
-  generation: Generation;
+  generation?: { id: string };
   planningService?: unknown; // PlanningService instance for persistent planning
   modelConfig?: unknown; // ModelConfig for subagent execution
   // Plan Mode support (borrowed from Claude Code v2.0)
@@ -92,7 +91,6 @@ export interface ExecuteOptions {
  * });
  *
  * const result = await executor.execute('bash', { command: 'ls' }, {
- *   generation: { id: 'gen4', name: 'Gen 4' },
  * });
  * ```
  *
@@ -171,9 +169,8 @@ export class ToolExecutor {
       logger.debug('Injected alias default params', { toolName, aliasDefaults });
     }
 
-    logger.debug('Tool found', { toolName, generation: 'gen8' });
+    logger.debug('Tool found', { toolName });
 
-    // Generation check removed: locked to gen8, all registered tools are available
 
     // 文件检查点：在写入工具执行前保存原文件
     await createFileCheckpointIfNeeded(toolName, params, () => {
@@ -186,7 +183,6 @@ export class ToolExecutor {
     // Create tool context
     const context: ToolContext & { sessionId?: string } = {
       workingDirectory: this.workingDirectory,
-      generation: options.generation,
       requestPermission: this.requestPermission,
       planningService: options.planningService,
       // For subagent execution (task, skill tools)

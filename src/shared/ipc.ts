@@ -57,6 +57,7 @@ import type {
 
 import type { DAGVisualizationEvent } from './types/dagVisualization';
 import { DAG_CHANNELS, LAB_CHANNELS, CHANNEL_CHANNELS, EVALUATION_CHANNELS, LSP_CHANNELS, BACKGROUND_CHANNELS, TELEMETRY_CHANNELS } from './ipc/channels';
+export { DAG_CHANNELS, LAB_CHANNELS, CHANNEL_CHANNELS, EVALUATION_CHANNELS, LSP_CHANNELS, BACKGROUND_CHANNELS, TELEMETRY_CHANNELS } from './ipc/channels';
 
 import type {
   TelemetrySession,
@@ -420,6 +421,31 @@ export interface TestRunReport {
   evalFeedback?: unknown;
 }
 
+export type EvalAnnotationErrorType =
+  | 'tool_misuse'
+  | 'reasoning_error'
+  | 'incomplete_output'
+  | 'hallucination'
+  | 'security_violation';
+
+export interface EvalAnnotationPayload {
+  id: string;
+  caseId: string;
+  round: number;
+  timestamp: string;
+  errorTypes: EvalAnnotationErrorType[];
+  rootCause: string;
+  severity: 1 | 2 | 3 | 4 | 5;
+  annotator: string;
+}
+
+export interface AxialCodingEntryIpc {
+  errorType: EvalAnnotationErrorType;
+  count: number;
+  avgSeverity: number;
+  caseIds: string[];
+}
+
 // ----------------------------------------------------------------------------
 // New Domain-based IPC Channels (TASK-04)
 // ----------------------------------------------------------------------------
@@ -708,6 +734,8 @@ export const IPC_CHANNELS = {
   EVALUATION_RUN_SUBJECTIVE: EVALUATION_CHANNELS.RUN_SUBJECTIVE_EVALUATION,
   EVALUATION_LIST_TEST_REPORTS: EVALUATION_CHANNELS.LIST_TEST_REPORTS,
   EVALUATION_LOAD_TEST_REPORT: EVALUATION_CHANNELS.LOAD_TEST_REPORT,
+  EVALUATION_SAVE_ANNOTATIONS: EVALUATION_CHANNELS.SAVE_ANNOTATIONS,
+  EVALUATION_GET_AXIAL_CODING: EVALUATION_CHANNELS.GET_AXIAL_CODING,
 
   // LSP channels (语言服务器)
   LSP_GET_STATUS: LSP_CHANNELS.GET_STATUS,
@@ -1019,6 +1047,8 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.EVALUATION_RUN_SUBJECTIVE]: (payload: { sessionId: string; save?: boolean }) => Promise<SubjectiveAssessment>;
   [IPC_CHANNELS.EVALUATION_LIST_TEST_REPORTS]: () => Promise<TestReportListItem[]>;
   [IPC_CHANNELS.EVALUATION_LOAD_TEST_REPORT]: (filePath: string) => Promise<TestRunReport>;
+  [IPC_CHANNELS.EVALUATION_SAVE_ANNOTATIONS]: (annotation: EvalAnnotationPayload) => Promise<{ success: boolean; error?: string }>;
+  [IPC_CHANNELS.EVALUATION_GET_AXIAL_CODING]: () => Promise<AxialCodingEntryIpc[]>;
 
   // Background (后台任务)
   [IPC_CHANNELS.BACKGROUND_MOVE_TO_BACKGROUND]: (sessionId: string) => Promise<boolean>;

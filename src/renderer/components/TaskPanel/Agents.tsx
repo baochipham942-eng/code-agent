@@ -2,11 +2,13 @@
 // Agents - Display active agents for current session
 // ============================================================================
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Users, Workflow, GitBranch } from 'lucide-react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useMultiAgentDetection, type CollaborationPattern } from '../../hooks/useMultiAgentDetection';
 import { useI18n } from '../../hooks/useI18n';
+import { EVALUATION_CHANNELS } from '@shared/ipc';
+import type { TestReportListItem } from '@shared/ipc';
 
 // Agent 角色颜色映射
 const AGENT_COLORS: Record<string, string> = {
@@ -117,6 +119,81 @@ export const Agents: React.FC = () => {
               {agentCount} 个 Agent 协同工作中
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const EvalAgentsView: React.FC = () => {
+  const [reports, setReports] = useState<TestReportListItem[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadReports = async () => {
+      setLoading(true);
+      try {
+        const result = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS);
+        if (mounted) {
+          setReports((result ?? []).slice(0, 5));
+        }
+      } catch {
+        if (mounted) {
+          setReports([]);
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadReports();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const getPassRateColor = (passRate: number): string => {
+    if (passRate >= 0.8) return 'text-emerald-400';
+    if (passRate >= 0.6) return 'text-amber-400';
+    return 'text-red-400';
+  };
+
+  return (
+    <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl p-3 border border-white/[0.04]">
+      <div className="flex items-center gap-2 mb-3">
+        <Bot className="w-4 h-4 text-blue-400 flex-shrink-0" />
+        <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Eval Agents</span>
+      </div>
+
+      {loading ? (
+        <div className="text-xs text-zinc-500">加载评测报告中...</div>
+      ) : reports.length === 0 ? (
+        <div className="text-xs text-zinc-500">暂无评测报告</div>
+      ) : (
+        <div className="space-y-2">
+          {reports.map((report) => {
+            const passRate = report.total > 0 ? report.passed / report.total : 0;
+            return (
+              <div
+                key={report.filePath}
+                className="flex items-center justify-between py-1.5 px-2 bg-zinc-800/30 rounded"
+              >
+                <div className="min-w-0">
+                  <div className="text-xs text-zinc-300 truncate">{report.fileName}</div>
+                  <div className="text-[11px] text-zinc-500">
+                    Score {Math.round(report.averageScore)} · {report.passed}/{report.total}
+                  </div>
+                </div>
+                <div className={`text-xs font-medium ${getPassRateColor(passRate)}`}>
+                  {Math.round(passRate * 100)}%
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

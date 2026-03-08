@@ -4,9 +4,11 @@
 
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/ipc';
+import { EVALUATION_CHANNELS } from '../../shared/ipc/channels';
 import { EvaluationService } from '../evaluation';
 import { getSessionAnalyticsService } from '../evaluation/sessionAnalyticsService';
 import { getSwissCheeseEvaluator } from '../evaluation/swissCheeseEvaluator';
+import { AnnotationProxy } from '../evaluation/annotationProxy';
 import type { EvaluationExportFormat } from '../../shared/types/evaluation';
 import { scoreToGrade } from '../../shared/types/evaluation';
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../../shared/constants';
@@ -176,6 +178,17 @@ export function registerEvaluationHandlers(): void {
       };
     }
   );
+
+  // Annotation store handlers (eval-harness)
+  ipcMain.handle(EVALUATION_CHANNELS.SAVE_ANNOTATIONS, async (_event, annotation) => {
+    const proxy = AnnotationProxy.getInstance();
+    return proxy.saveAnnotation(annotation);
+  });
+
+  ipcMain.handle(EVALUATION_CHANNELS.GET_AXIAL_CODING, async () => {
+    const proxy = AnnotationProxy.getInstance();
+    return proxy.getAxialCoding();
+  });
 
   logger.info('Evaluation IPC handlers registered');
 }

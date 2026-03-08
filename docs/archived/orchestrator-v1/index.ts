@@ -10,11 +10,12 @@ export { TaskAnalyzer, getTaskAnalyzer } from './taskAnalyzer';
 export { ExecutionRouter, getExecutionRouter } from './executionRouter';
 export { LocalExecutor, getLocalExecutor, initLocalExecutor } from './localExecutor';
 export { CloudExecutor, getCloudExecutor, initCloudExecutor } from './cloudExecutor';
-export {
-  UnifiedOrchestrator,
-  getUnifiedOrchestrator,
-  initUnifiedOrchestrator,
-} from './unifiedOrchestrator';
+// DEPRECATED: Disconnected during architecture cleanup. Not used anywhere.
+// export {
+//   UnifiedOrchestrator,
+//   getUnifiedOrchestrator,
+//   initUnifiedOrchestrator,
+// } from './unifiedOrchestrator';
 
 // Phase 3: 实时通信和断点续传
 export { RealtimeChannel, getRealtimeChannel, initRealtimeChannel } from './realtimeChannel';

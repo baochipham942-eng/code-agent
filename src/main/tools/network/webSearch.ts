@@ -338,11 +338,13 @@ Features:
     const count = Math.min(Math.max((params.count as number) || 5, 1), 10);
     const parallel = (params.parallel as boolean) ?? true;
     const requestedSources = params.sources as string[] | undefined;
-    const autoExtract = (params.auto_extract as boolean) ?? false;
-    const extractCount = Math.min(Math.max((params.extract_count as number) || 3, 1), 5);
+    const mode = (params.mode as 'quick' | 'research') || 'quick';
+    const autoExtract = params.auto_extract !== undefined
+      ? Boolean(params.auto_extract)
+      : mode === 'research'; // research 模式默认开启
+    const extractCount = Math.min(Math.max((params.extract_count as number) || (mode === 'research' ? 3 : 1), 1), 5);
     const recency = params.recency as string | undefined;
     const outputFormat = (params.output_format as string) || 'default';
-    const mode = (params.mode as 'quick' | 'research') || 'quick';
     const language = params.language as string | undefined;
 
     // Build domain filter
@@ -857,7 +859,7 @@ export function mergeSearchResults(
   const seenTitles = new Set<string>();
 
   outputParts.push(`# Search results for: "${query}"`);
-  outputParts.push(`Sources: ${results.map(r => r.source).join(', ')} | Duration: ${duration}ms`);
+  outputParts.push(`Sources: ${results.map(r => r.source).join(', ')}`);
   outputParts.push('');
 
   // 处理每个数据源的结果
@@ -892,6 +894,11 @@ export function mergeSearchResults(
       outputParts.push('');
     }
   }
+
+  // Log dedup statistics
+  const totalResults = results.reduce((sum, r) => sum + (r.results?.length || 0), 0);
+  const dedupedResults = allResults.length;
+  logger.info('Search results dedup', { before: totalResults, after: dedupedResults, removed: totalResults - dedupedResults });
 
   // 如果有失败的数据源，添加提示
   if (failedSources.length > 0) {

@@ -1,3 +1,5 @@
+// NOTE: Used by spawnAgent.ts for explicit parallel execution.
+// Planned for merge into AutoAgentCoordinator (Sprint 2).
 // ============================================================================
 // ParallelAgentCoordinator - True parallel agent execution and coordination
 // Enhancement 3: Multi-Agent Parallelism

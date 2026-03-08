@@ -47,6 +47,7 @@ describe('ToolExecutor', () => {
 
     mockToolRegistry = {
       get: vi.fn(),
+      getDefaultParamsForAlias: vi.fn().mockReturnValue(undefined),
       getAllTools: vi.fn().mockReturnValue([]),
       getForGeneration: vi.fn().mockReturnValue([]),
       register: vi.fn(),

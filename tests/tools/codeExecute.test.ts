@@ -209,6 +209,7 @@ describe('codeExecuteTool.execute', () => {
           if (name === 'read_file') return mockReadFileTool;
           return undefined;
         }),
+        getDefaultParamsForAlias: vi.fn().mockReturnValue(undefined),
       } as any,
     };
   });

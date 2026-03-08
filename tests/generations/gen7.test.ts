@@ -71,7 +71,6 @@ describe('Gen7 - Multi-Agent Era', () => {
   // --------------------------------------------------------------------------
   describe('spawn_agent', () => {
     it('should have correct metadata', () => {
-      expect(spawnAgentTool.generations).toContain('gen7');
       expect(spawnAgentTool.name).toBe('spawn_agent');
     });
 
@@ -224,7 +223,6 @@ describe('Gen7 - Multi-Agent Era', () => {
   // --------------------------------------------------------------------------
   describe('agent_message', () => {
     it('should have correct metadata', () => {
-      expect(agentMessageTool.generations).toContain('gen7');
       expect(agentMessageTool.name).toBe('agent_message');
     });
 
@@ -276,7 +274,6 @@ describe('Gen7 - Multi-Agent Era', () => {
   // --------------------------------------------------------------------------
   describe('workflow_orchestrate', () => {
     it('should have correct metadata', () => {
-      expect(workflowOrchestrateTool.generations).toContain('gen7');
       expect(workflowOrchestrateTool.name).toBe('workflow_orchestrate');
     });
 
@@ -356,12 +353,12 @@ describe('Gen7 - Multi-Agent Era', () => {
   // Tool Metadata Tests
   // --------------------------------------------------------------------------
   describe('Tool Metadata', () => {
-    it('all gen7 tools should include gen7-8 generations', () => {
+    it('all gen7 tools should be defined', () => {
       const gen7Tools = [spawnAgentTool, agentMessageTool, workflowOrchestrateTool];
 
       for (const tool of gen7Tools) {
-        expect(tool.generations).toContain('gen7');
-        expect(tool.generations).toContain('gen8');
+        expect(tool.name).toBeDefined();
+        expect(tool.execute).toBeDefined();
       }
     });
 

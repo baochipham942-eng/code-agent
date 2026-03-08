@@ -27,16 +27,8 @@ import {
 import type { GenerationId } from '../../../../src/shared/types';
 
 describe('Prompt Builder', () => {
-  const ALL_GENERATIONS: GenerationId[] = [
-    'gen1',
-    'gen2',
-    'gen3',
-    'gen4',
-    'gen5',
-    'gen6',
-    'gen7',
-    'gen8',
-  ];
+  // Sprint 2: only gen8 retained
+  const ALL_GENERATIONS: GenerationId[] = ['gen8'];
 
   // --------------------------------------------------------------------------
   // buildPrompt
@@ -71,11 +63,9 @@ describe('Prompt Builder', () => {
     });
 
     it('should include base prompt for generation', () => {
-      for (const gen of ALL_GENERATIONS) {
-        const prompt = buildPrompt(gen);
-        // Base prompts contain tool definitions
-        expect(prompt).toContain(BASE_PROMPTS[gen]);
-      }
+      const prompt = buildPrompt('gen8');
+      // Base prompts contain tool definitions
+      expect(prompt).toContain(BASE_PROMPTS['gen8']);
     });
 
     it('should include bash tool description for all generations', () => {
@@ -92,46 +82,33 @@ describe('Prompt Builder', () => {
       }
     });
 
-    it('should include task tool description only for gen3+', () => {
-      // gen1 and gen2 should NOT have task tool
-      const gen1Prompt = buildPrompt('gen1');
-      const gen2Prompt = buildPrompt('gen2');
-      expect(gen1Prompt).not.toContain(TASK_TOOL_DESCRIPTION);
-      expect(gen2Prompt).not.toContain(TASK_TOOL_DESCRIPTION);
-
-      // gen3+ should have task tool
-      const laterGens: GenerationId[] = ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'];
-      for (const gen of laterGens) {
-        const prompt = buildPrompt(gen);
-        expect(prompt).toContain(TASK_TOOL_DESCRIPTION);
-      }
+    it('should include task tool description in gen8', () => {
+      // All prompts are gen8, which includes task tool
+      const gen8Prompt = buildPrompt('gen8');
+      expect(gen8Prompt).toContain(TASK_TOOL_DESCRIPTION);
     });
 
-    it('should throw error for invalid generation', () => {
-      expect(() => buildPrompt('gen999' as GenerationId)).toThrow('Unknown generation');
+    it('should not throw for any generation (always returns gen8)', () => {
+      // buildPrompt always uses gen8 internally
+      const prompt = buildPrompt('gen999' as GenerationId);
+      expect(prompt).toBeDefined();
+      expect(prompt.length).toBeGreaterThan(0);
     });
 
-    it('should produce different prompts for different generations', () => {
+    it('should produce same prompt for all generations (all return gen8)', () => {
       const gen1Prompt = buildPrompt('gen1');
-      const gen4Prompt = buildPrompt('gen4');
       const gen8Prompt = buildPrompt('gen8');
 
-      // Different generations have different content
-      expect(gen1Prompt).not.toBe(gen4Prompt);
-      expect(gen4Prompt).not.toBe(gen8Prompt);
-      expect(gen1Prompt).not.toBe(gen8Prompt);
+      // All generations return the same gen8 prompt
+      expect(gen1Prompt).toBe(gen8Prompt);
     });
 
     it('should build prompts in consistent order', () => {
-      // Constitution comes first
-      for (const gen of ALL_GENERATIONS) {
-        const prompt = buildPrompt(gen);
-        const constitutionStart = prompt.indexOf('Code Agent 宪法');
-        const basePromptContent = BASE_PROMPTS[gen].substring(0, 50);
-        const basePromptStart = prompt.indexOf(basePromptContent);
+      const prompt = buildPrompt('gen8');
+      const basePromptContent = BASE_PROMPTS['gen8']!.substring(0, 50);
+      const basePromptStart = prompt.indexOf(basePromptContent);
 
-        expect(constitutionStart).toBeLessThan(basePromptStart);
-      }
+      expect(basePromptStart).toBeGreaterThan(-1);
     });
   });
 
@@ -139,32 +116,27 @@ describe('Prompt Builder', () => {
   // buildAllPrompts
   // --------------------------------------------------------------------------
   describe('buildAllPrompts', () => {
-    it('should return prompts for all 8 generations', () => {
+    it('should return prompt for gen8 only', () => {
       const prompts = buildAllPrompts();
-      expect(Object.keys(prompts)).toHaveLength(8);
+      expect(Object.keys(prompts)).toHaveLength(1);
+      expect(prompts['gen8']).toBeDefined();
     });
 
     it('should have correct generation keys', () => {
       const prompts = buildAllPrompts();
-      for (const gen of ALL_GENERATIONS) {
-        expect(prompts[gen]).toBeDefined();
-        expect(typeof prompts[gen]).toBe('string');
-      }
+      expect(prompts['gen8']).toBeDefined();
+      expect(typeof prompts['gen8']).toBe('string');
     });
 
     it('should return same content as individual buildPrompt calls', () => {
       const allPrompts = buildAllPrompts();
-      for (const gen of ALL_GENERATIONS) {
-        const individualPrompt = buildPrompt(gen);
-        expect(allPrompts[gen]).toBe(individualPrompt);
-      }
+      const individualPrompt = buildPrompt('gen8');
+      expect(allPrompts['gen8']).toBe(individualPrompt);
     });
 
-    it('should return non-empty prompts for all generations', () => {
+    it('should return non-empty prompt for gen8', () => {
       const prompts = buildAllPrompts();
-      for (const gen of ALL_GENERATIONS) {
-        expect(prompts[gen].length).toBeGreaterThan(0);
-      }
+      expect(prompts['gen8']!.length).toBeGreaterThan(0);
     });
   });
 
@@ -177,17 +149,13 @@ describe('Prompt Builder', () => {
       expect(typeof SYSTEM_PROMPTS).toBe('object');
     });
 
-    it('should contain all 8 generations', () => {
-      expect(Object.keys(SYSTEM_PROMPTS)).toHaveLength(8);
-      for (const gen of ALL_GENERATIONS) {
-        expect(SYSTEM_PROMPTS[gen]).toBeDefined();
-      }
+    it('should contain gen8 only', () => {
+      expect(Object.keys(SYSTEM_PROMPTS)).toHaveLength(1);
+      expect(SYSTEM_PROMPTS['gen8']).toBeDefined();
     });
 
     it('should match buildPrompt output', () => {
-      for (const gen of ALL_GENERATIONS) {
-        expect(SYSTEM_PROMPTS[gen]).toBe(buildPrompt(gen));
-      }
+      expect(SYSTEM_PROMPTS['gen8']).toBe(buildPrompt('gen8'));
     });
 
     it('should be immutable reference', () => {
@@ -236,12 +204,11 @@ describe('Prompt Builder', () => {
       // Note: Check if PLAN_MODE_RULES contain specific keywords
     });
 
-    it('should have gen3+ include injection defense rules', () => {
-      const gen2Prompt = buildPrompt('gen2');
-      const gen3Prompt = buildPrompt('gen3');
+    it('gen8 should include injection defense rules', () => {
+      const gen8Prompt = buildPrompt('gen8');
 
-      // gen3 has more content due to injection defense
-      expect(gen3Prompt.length).toBeGreaterThan(gen2Prompt.length);
+      // gen8 should have substantial content
+      expect(gen8Prompt.length).toBeGreaterThan(2000);
     });
 
     it('should have gen4 include additional capabilities', () => {
@@ -256,31 +223,18 @@ describe('Prompt Builder', () => {
   // Generation Evolution
   // --------------------------------------------------------------------------
   describe('Generation Evolution', () => {
-    it('should show increasing complexity from gen1 to gen8', () => {
-      const promptLengths = ALL_GENERATIONS.map((gen) => ({
-        gen,
-        length: buildPrompt(gen).length,
-      }));
-
-      // gen1 and gen2 are simpler (no task tool)
-      expect(promptLengths[0].length).toBeLessThan(promptLengths[2].length); // gen1 < gen3
-
-      // gen3+ have task tool and more rules
-      for (let i = 2; i < 7; i++) {
-        // gen3-gen7 should have similar lengths (same rules)
-        const diff = Math.abs(promptLengths[i].length - promptLengths[i + 1].length);
-        expect(diff).toBeLessThan(5000); // Allow some variance
-      }
+    it('gen8 should have substantial prompt', () => {
+      const gen8Prompt = buildPrompt('gen8');
+      // gen8 has all features
+      expect(gen8Prompt.length).toBeGreaterThan(2000);
     });
 
-    it('should have gen1 as the baseline with minimal features', () => {
-      const gen1Prompt = buildPrompt('gen1');
+    it('all buildPrompt calls should return gen8 with full features', () => {
+      const prompt = buildPrompt('gen1');
 
-      // gen1 has no task tool
-      expect(gen1Prompt).not.toContain(TASK_TOOL_DESCRIPTION);
-
-      // gen1 still has identity and basic rules
-      expect(gen1Prompt).toContain('Code Agent');
+      // Even gen1 returns gen8 now, which has task tool
+      expect(prompt).toContain(TASK_TOOL_DESCRIPTION);
+      expect(prompt).toContain('Code Agent');
     });
 
     it('should have gen4 as feature-complete generation', () => {

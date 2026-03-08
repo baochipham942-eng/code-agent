@@ -35,7 +35,7 @@ describe('ToolExecutor', () => {
     name: 'test_tool',
     description: 'A test tool',
     inputSchema: { type: 'object', properties: {} },
-    generations: ['gen1', 'gen2', 'gen3', 'gen4'],
+    // generations removed in Sprint 2
     requiresPermission: false,
     permissionLevel: 'read',
     execute: vi.fn().mockResolvedValue({ success: true, output: 'Test output' }),
@@ -80,16 +80,16 @@ describe('ToolExecutor', () => {
       expect(result.error).toContain('Unknown tool');
     });
 
-    it('不匹配代际的工具应该返回错误', async () => {
-      const tool = createMockTool({ generations: ['gen1'] });
+    it('任何工具都应该可以执行（代际检查已移除）', async () => {
+      const tool = createMockTool();
       (mockToolRegistry.get as ReturnType<typeof vi.fn>).mockReturnValue(tool);
 
       const result = await executor.execute('test_tool', {}, {
         generation: { id: 'gen4', name: 'Gen 4' } as never,
       });
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('not available');
+      // Generation check removed: all tools are available
+      expect(result.success).toBe(true);
     });
 
     it('匹配代际的工具应该执行成功', async () => {

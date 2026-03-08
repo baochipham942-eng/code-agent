@@ -27,9 +27,9 @@ describe('ToolRegistry', () => {
     });
 
     it('should get tool by name', () => {
-      const bash = registry.get('bash');
+      const bash = registry.get('Bash');
       expect(bash).toBeDefined();
-      expect(bash?.name).toBe('bash');
+      expect(bash?.name).toBe('Bash');
     });
 
     it('should return undefined for unknown tool', () => {
@@ -43,27 +43,27 @@ describe('ToolRegistry', () => {
   // --------------------------------------------------------------------------
   describe('Gen1 Tools', () => {
     it('should have bash tool', () => {
-      const tool = registry.get('bash');
+      const tool = registry.get('Bash');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen1');
+      expect(tool?.name).toBe('Bash');
     });
 
     it('should have read_file tool', () => {
-      const tool = registry.get('read_file');
+      const tool = registry.get('Read');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen1');
+      expect(tool?.name).toBe('Read');
     });
 
     it('should have write_file tool', () => {
-      const tool = registry.get('write_file');
+      const tool = registry.get('Write');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen1');
+      expect(tool?.name).toBe('Write');
     });
 
     it('should have edit_file tool', () => {
-      const tool = registry.get('edit_file');
+      const tool = registry.get('Edit');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen1');
+      expect(tool?.name).toBe('Edit');
     });
   });
 
@@ -72,21 +72,20 @@ describe('ToolRegistry', () => {
   // --------------------------------------------------------------------------
   describe('Gen2 Tools', () => {
     it('should have glob tool', () => {
-      const tool = registry.get('glob');
+      const tool = registry.get('Glob');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen2');
+      expect(tool?.name).toBe('Glob');
     });
 
     it('should have grep tool', () => {
-      const tool = registry.get('grep');
+      const tool = registry.get('Grep');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen2');
+      expect(tool?.name).toBe('Grep');
     });
 
     it('should have list_directory tool', () => {
       const tool = registry.get('list_directory');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen2');
     });
   });
 
@@ -97,37 +96,32 @@ describe('ToolRegistry', () => {
     it('should have task tool', () => {
       const tool = registry.get('task');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen3');
     });
 
     it('should have todo_write tool', () => {
       const tool = registry.get('todo_write');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen3');
     });
 
     it('should have ask_user_question tool', () => {
-      const tool = registry.get('ask_user_question');
+      // ask_user_question is aliased or renamed to AskUserQuestion
+      const tool = registry.get('AskUserQuestion');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen3');
     });
 
     it('should have plan_read tool', () => {
       const tool = registry.get('plan_read');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen3');
     });
 
     it('should have plan_update tool', () => {
       const tool = registry.get('plan_update');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen3');
     });
 
     it('should have findings_write tool', () => {
       const tool = registry.get('findings_write');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen3');
     });
   });
 
@@ -138,13 +132,11 @@ describe('ToolRegistry', () => {
     it('should have skill tool', () => {
       const tool = registry.get('skill');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen4');
     });
 
     it('should have web_fetch tool', () => {
       const tool = registry.get('web_fetch');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen4');
     });
   });
 
@@ -152,28 +144,22 @@ describe('ToolRegistry', () => {
   // Gen5 Tools Tests
   // --------------------------------------------------------------------------
   describe('Gen5 Tools', () => {
-    it('should have memory_store tool', () => {
-      const tool = registry.get('memory_store');
+    it('should have memory tool (unified from memory_store + memory_search)', () => {
+      const tool = registry.get('memory');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen5');
-    });
-
-    it('should have memory_search tool', () => {
-      const tool = registry.get('memory_search');
-      expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen5');
+      // Old names should resolve via aliases
+      const viaAlias = registry.get('memory_store');
+      expect(viaAlias).toBeDefined();
     });
 
     it('should have code_index tool', () => {
       const tool = registry.get('code_index');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen5');
     });
 
     it('should have auto_learn tool', () => {
       const tool = registry.get('auto_learn');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen5');
     });
   });
 
@@ -184,25 +170,21 @@ describe('ToolRegistry', () => {
     it('should have screenshot tool', () => {
       const tool = registry.get('screenshot');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen6');
     });
 
     it('should have computer_use tool', () => {
       const tool = registry.get('computer_use');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen6');
     });
 
     it('should have browser_navigate tool', () => {
       const tool = registry.get('browser_navigate');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen6');
     });
 
     it('should have browser_action tool', () => {
       const tool = registry.get('browser_action');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen6');
     });
   });
 
@@ -210,22 +192,20 @@ describe('ToolRegistry', () => {
   // Gen7 Tools Tests
   // --------------------------------------------------------------------------
   describe('Gen7 Tools', () => {
-    it('should have spawn_agent tool', () => {
+    it('should have spawn_agent tool (via alias)', () => {
+      // spawn_agent is aliased to AgentSpawn
       const tool = registry.get('spawn_agent');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen7');
     });
 
-    it('should have agent_message tool', () => {
+    it('should have agent_message tool (via alias)', () => {
       const tool = registry.get('agent_message');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen7');
     });
 
-    it('should have workflow_orchestrate tool', () => {
+    it('should have workflow_orchestrate tool (via alias)', () => {
       const tool = registry.get('workflow_orchestrate');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen7');
     });
   });
 
@@ -236,25 +216,21 @@ describe('ToolRegistry', () => {
     it('should have strategy_optimize tool', () => {
       const tool = registry.get('strategy_optimize');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen8');
     });
 
     it('should have tool_create tool', () => {
       const tool = registry.get('tool_create');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen8');
     });
 
     it('should have self_evaluate tool', () => {
       const tool = registry.get('self_evaluate');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen8');
     });
 
     it('should have learn_pattern tool', () => {
       const tool = registry.get('learn_pattern');
       expect(tool).toBeDefined();
-      expect(tool?.generations).toContain('gen8');
     });
   });
 
@@ -280,13 +256,14 @@ describe('ToolRegistry', () => {
       expect(tools.length).toBeGreaterThanOrEqual(25);
     });
 
-    it('later generations should have more tools', () => {
+    it('all generations return same tools (gen8)', () => {
       const gen1Tools = registry.getForGeneration('gen1');
       const gen4Tools = registry.getForGeneration('gen4');
       const gen8Tools = registry.getForGeneration('gen8');
 
-      expect(gen4Tools.length).toBeGreaterThan(gen1Tools.length);
-      expect(gen8Tools.length).toBeGreaterThan(gen4Tools.length);
+      // All return gen8 tools after simplification
+      expect(gen1Tools.length).toBe(gen8Tools.length);
+      expect(gen4Tools.length).toBe(gen8Tools.length);
     });
   });
 
@@ -362,7 +339,7 @@ describe('ToolRegistry', () => {
       const customTool = {
         name: 'custom_tool',
         description: 'A custom test tool',
-        generations: ['gen1' as const],
+        // generations removed in Sprint 2
         requiresPermission: false,
         permissionLevel: 'read' as const,
         inputSchema: {

@@ -7,6 +7,7 @@ import type { ToolExecutionRecord } from './types';
 import type { AgentLoop } from '../agent/agentLoop';
 import type { ModelProvider } from '../../shared/types';
 import { createLogger } from '../services/infra/logger';
+import { MODEL_MAX_TOKENS } from '../../shared/constants';
 
 const logger = createLogger('AgentAdapter');
 
@@ -291,7 +292,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
           model: this.modelConfig.model,
           apiKey: this.modelConfig.apiKey || '',
           temperature: 0.3,
-          maxTokens: 4096,
+          maxTokens: MODEL_MAX_TOKENS.DEFAULT,
         },
         toolRegistry,
         toolExecutor,

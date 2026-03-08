@@ -33,7 +33,7 @@ import { getChannelManager } from '../channels';
 import { initChannelAgentBridge, getChannelAgentBridge } from '../channels/channelAgentBridge';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { detectCodexCLI } from '../tools/shell/codexSandbox';
-import { SYNC, UPDATE, CLOUD, TOOL_CACHE, getCloudApiUrl, DEFAULT_MODELS, DEFAULT_PROVIDER, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../shared/constants';
+import { SYNC, UPDATE, CLOUD, TOOL_CACHE, getCloudApiUrl, DEFAULT_MODELS, DEFAULT_PROVIDER, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY, MODEL_MAX_TOKENS } from '../../shared/constants';
 import { loadSoul, watchSoulFiles } from '../prompts/soulLoader';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import { createPlanningService, type PlanningService } from '../planning';
@@ -793,7 +793,7 @@ async function initializeSession(settings: any): Promise<void> {
         provider: settings.model?.provider || DEFAULT_PROVIDER,
         model: settings.model?.model || DEFAULT_MODELS.chat,
         temperature: settings.model?.temperature || 0.7,
-        maxTokens: settings.model?.maxTokens || 4096,
+        maxTokens: settings.model?.maxTokens || MODEL_MAX_TOKENS.DEFAULT,
       },
       workingDirectory: agentOrchestrator?.getWorkingDirectory(),
     });

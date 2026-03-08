@@ -48,6 +48,8 @@ export interface AgentLoopConfig {
   enableToolDeferredLoading?: boolean;
   /** 遥测适配器（可选，用于记录原始数据） */
   telemetryAdapter?: TelemetryAdapter;
+  /** 工具执行日志回调 */
+  onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: import('../../shared/types').ToolResult }) => void;
   /** CLI 模式下的消息持久化回调 */
   persistMessage?: (message: Message) => Promise<void>;
 }

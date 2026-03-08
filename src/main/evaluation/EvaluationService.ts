@@ -194,6 +194,64 @@ export class EvaluationService {
       logger.warn('Baseline comparison failed', { error: err });
     }
 
+    // 可选: Trajectory 分析（不影响主流程）
+    try {
+      const { getSessionEventService } = await import('./sessionEventService');
+      const { TrajectoryBuilder } = await import('./trajectory/trajectoryBuilder');
+      const { DeviationDetector } = await import('./trajectory/deviationDetector');
+
+      const eventService = getSessionEventService();
+      const events = eventService.getSessionEvents(sessionId);
+
+      if (events.length > 0) {
+        const builder = new TrajectoryBuilder();
+        const trajectory = builder.buildFromEvents(
+          events.map(e => ({
+            event_type: e.eventType,
+            event_data: (e.eventData as Record<string, unknown>) || {},
+            timestamp: String(e.timestamp),
+          }))
+        );
+        trajectory.sessionId = sessionId;
+
+        const detector = new DeviationDetector();
+        const deviations = detector.detectByRules(trajectory);
+        trajectory.deviations = deviations;
+
+        result.trajectoryAnalysis = {
+          deviations: deviations.map(d => ({
+            stepIndex: d.stepIndex,
+            type: d.type,
+            description: d.description,
+            severity: d.severity,
+            suggestedFix: d.suggestedFix,
+          })),
+          efficiency: {
+            totalSteps: trajectory.efficiency.totalSteps,
+            effectiveSteps: trajectory.efficiency.effectiveSteps,
+            redundantSteps: trajectory.efficiency.redundantSteps,
+            efficiency: trajectory.efficiency.efficiency,
+          },
+          recoveryPatterns: trajectory.recoveryPatterns.map(rp => ({
+            errorStepIndex: rp.errorStepIndex,
+            recoveryStepIndex: rp.recoveryStepIndex,
+            attempts: rp.attempts,
+            strategy: rp.strategy,
+            successful: rp.successful,
+          })),
+          outcome: trajectory.summary.outcome,
+        };
+
+        logger.info('Trajectory analysis complete', {
+          deviations: deviations.length,
+          efficiency: trajectory.efficiency.efficiency,
+          outcome: trajectory.summary.outcome,
+        });
+      }
+    } catch (trajError) {
+      logger.debug('Trajectory analysis skipped', { error: trajError });
+    }
+
     // 可选保存结果
     if (options.save) {
       await this.saveResult(result);

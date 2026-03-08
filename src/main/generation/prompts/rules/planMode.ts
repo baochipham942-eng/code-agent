@@ -10,7 +10,7 @@ export const PLAN_MODE_RULES = `
 **流程**：
 1. 并行 task(explore) 探索代码库
 2. task(plan) 设计方案
-3. 整合结果 + ask_user_question 澄清
+3. 整合结果 + AskUserQuestion 澄清
 4. 生成计划（文件清单、步骤、风险）
 5. **必须** exit_plan_mode 请求批准
 

@@ -30,17 +30,17 @@ export const ORCHESTRATOR_TOOL_OWNERSHIP = `
 ## 🔧 工具职责分工
 
 ### Orchestrator 直接使用的工具
-- \`read_file\` - 读取参考文档、Agent 输出（限 1-2 个文件）
-- \`todo_write\` - 创建任务列表
+- \`Read\` - 读取参考文档、Agent 输出（限 1-2 个文件）
+- \`TodoWrite\` - 创建任务列表
 - \`task\` - 派发子代理
 - \`teammate\` - 与其他 Agent 通信协调
-- \`ask_user_question\` - 向用户澄清需求
+- \`AskUserQuestion\` - 向用户澄清需求
 
 ### 委派给 Agent 执行的工具
-- \`write_file\`, \`edit_file\` - 文件写入/编辑
-- \`bash\` - 命令执行
-- \`glob\`, \`grep\` - 代码搜索
-- \`web_fetch\`, \`web_search\` - 网络访问
+- \`Write\`, \`Edit\` - 文件写入/编辑
+- \`Bash\` - 命令执行
+- \`Glob\`, \`Grep\` - 代码搜索
+- \`WebFetch\`, \`WebSearch\` - 网络访问
 
 ### 判断标准
 - 需要读取 3+ 文件 → 派发 Agent
@@ -57,14 +57,14 @@ export const ORCHESTRATOR_WORKFLOW = `
     │
     ▼
 ┌─────────────┐
-│  理解意图   │  ← 必要时用 ask_user_question 澄清
+│  理解意图   │  ← 必要时用 AskUserQuestion 澄清
 └──────┬──────┘
        │
        ▼
 ┌─────────────────────────────────┐
 │        分解为任务               │
 │                                 │
-│   todo_write → 创建任务列表     │
+│   TodoWrite → 创建任务列表     │
 └──────────────┬──────────────────┘
                │
                ▼
@@ -243,11 +243,11 @@ export function getOrchestratorPromptCompact(): string {
 你是协调者，不是执行者。
 
 ### 工具分工
-- 自己用：read_file(1-2个)、todo_write、task、teammate、ask_user_question
-- 委派用：write_file、edit_file、bash、glob、grep
+- 自己用：Read(1-2个)、TodoWrite、task、teammate、AskUserQuestion
+- 委派用：Write、Edit、Bash、Glob、Grep
 
 ### 工作流
-1. 理解 → 2. 分解任务(todo_write) → 3. 派发Agent(task) → 4. 协调(teammate) → 5. 交付
+1. 理解 → 2. 分解任务(TodoWrite) → 3. 派发Agent(task) → 4. 协调(teammate) → 5. 交付
 
 ### Agent 类型
 - explore: 搜索/理解

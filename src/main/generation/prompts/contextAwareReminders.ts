@@ -98,8 +98,8 @@ export const CONTEXT_RULES: ContextRule[] = [
     type: 'boost',
     description: '编辑后增强验证提醒',
     condition: (ctx) =>
-      ctx.toolsUsedInTurn.includes('edit_file') ||
-      ctx.toolsUsedInTurn.includes('write_file'),
+      ctx.toolsUsedInTurn.includes('Edit') ||
+      ctx.toolsUsedInTurn.includes('Write'),
     effect: (reminderId, score) => {
       if (reminderId === 'VERIFY_BEFORE_COMMIT') {
         return { newScore: Math.min(score * 1.5, 1) };

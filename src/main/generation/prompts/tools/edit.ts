@@ -1,5 +1,5 @@
 // ============================================================================
-// Edit Tool Description - Detailed usage guide for the edit_file tool
+// Edit Tool Description - Detailed usage guide for the Edit tool
 // ============================================================================
 
 /**
@@ -9,7 +9,7 @@
 export const EDIT_TOOL_DESCRIPTION = `
 ## Edit 工具
 
-精确字符串替换。**必须先 read_file 才能 edit_file**。
+精确字符串替换。**必须先 Read 才能 Edit**。
 
 ### 参数
 - \`file_path\`: 绝对路径（必填）
@@ -26,5 +26,5 @@ export const EDIT_TOOL_DESCRIPTION = `
 ### 要点
 - 保持原文缩进（空格/Tab）
 - 用 \`\\n\` 表示换行
-- read_file 的行号前缀不是文件内容
+- Read 的行号前缀不是文件内容
 `;

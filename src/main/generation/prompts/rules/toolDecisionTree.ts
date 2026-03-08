@@ -27,7 +27,7 @@ export const TOOL_DECISION_TREE = `
    └─ 否 → 继续判断 ↓
 
 4. 是否是简单的单文件操作？（路径已知）
-   ├─ 是 → read_file / edit_file / bash
+   ├─ 是 → Read / Edit / bash
    └─ 否 → task(explore) 先了解再行动
 \`\`\`
 
@@ -35,7 +35,7 @@ export const TOOL_DECISION_TREE = `
 
 | 用户请求 | 决策路径 | 正确工具 |
 |---------|---------|---------|
-| "读取 src/index.ts" | 路径已知 | read_file |
+| "读取 src/index.ts" | 路径已知 | Read |
 | "找到 UserService 类" | 精确查找 | glob/grep |
 | "这个项目怎么处理错误？" | 需要广泛理解 | task(explore) |
 | "审计安全+性能+质量" | 多个独立维度 | **并行 3 个 task** |

@@ -27,27 +27,27 @@ When generating applications (games, interactive tools, etc.) estimated to excee
    - HTML boilerplate + empty style tag + empty script tag
    - Just the container elements, NO actual logic
 
-2. **Step 2-N**: Use edit_file to ADD content incrementally:
-   - Add CSS styles (one edit_file call)
-   - Add HTML body content (one edit_file call)
-   - Add JS variables and state (one edit_file call)
-   - Add each major function separately (multiple edit_file calls)
-   - Add event listeners and init code (one edit_file call)
+2. **Step 2-N**: Use Edit to ADD content incrementally:
+   - Add CSS styles (one Edit call)
+   - Add HTML body content (one Edit call)
+   - Add JS variables and state (one Edit call)
+   - Add each major function separately (multiple Edit calls)
+   - Add event listeners and init code (one Edit call)
 
 **Example workflow for a game:**
 \`\`\`
-Step 1: write_file - Create skeleton (50 lines)
-Step 2: edit_file - Add CSS styles (replace empty style content)
-Step 3: edit_file - Add HTML body elements
-Step 4: edit_file - Add game state variables
-Step 5: edit_file - Add render/draw function
-Step 6: edit_file - Add game logic functions
-Step 7: edit_file - Add input handlers
-Step 8: edit_file - Add game loop and init
+Step 1: Write - Create skeleton (50 lines)
+Step 2: Edit - Add CSS styles (replace empty style content)
+Step 3: Edit - Add HTML body elements
+Step 4: Edit - Add game state variables
+Step 5: Edit - Add render/draw function
+Step 6: Edit - Add game logic functions
+Step 7: Edit - Add input handlers
+Step 8: Edit - Add game loop and init
 \`\`\`
 
 **DO NOT:**
-- Try to write 300+ line files in a single write_file call
+- Try to write 300+ line files in a single Write call
 - Assume your output won't be truncated
 - Write incomplete code and expect it to work
 

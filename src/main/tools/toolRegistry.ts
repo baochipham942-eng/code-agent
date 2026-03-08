@@ -296,6 +296,12 @@ const TOOL_ALIASES: Record<string, string> = {
   web_fetch: 'WebFetch',
   ask_user_question: 'AskUserQuestion',
 
+  // Phase 1 continued: remaining snake_case → PascalCase
+  list_directory: 'ListDirectory',
+  todo_write: 'TodoWrite',
+  tool_search: 'ToolSearch',
+  skill: 'Skill',
+
   // Multi-agent aliases
   spawn_agent: 'AgentSpawn',
   agent_message: 'AgentMessage',

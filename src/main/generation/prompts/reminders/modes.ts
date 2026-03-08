@@ -17,7 +17,7 @@ export const MODE_REMINDERS: ReminderDefinition[] = [
 流程：
 1. 使用 explore 子代理探索代码库
 2. 派发 plan 子代理设计方案
-3. 整合结果，使用 ask_user_question 澄清
+3. 整合结果，使用 AskUserQuestion 澄清
 4. 生成最终计划
 5. 调用 exit_plan_mode
 

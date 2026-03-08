@@ -27,23 +27,23 @@ export function summarizeTool(toolCall: ToolCall): string | null {
 
   // Select summarizer based on tool type
   switch (name) {
-    case 'bash':
+    case 'Bash':
       return summarizeBash(toolCall);
 
-    case 'grep':
+    case 'Grep':
       return summarizeGrep(toolCall);
 
-    case 'glob':
+    case 'Glob':
       return summarizeGlob(toolCall);
 
-    case 'read_file':
+    case 'Read':
     case 'read_pdf':
       return summarizeRead(toolCall);
 
-    case 'edit_file':
+    case 'Edit':
       return summarizeEdit(toolCall);
 
-    case 'write_file':
+    case 'Write':
       return summarizeWrite(toolCall);
 
     case 'list_directory':
@@ -67,13 +67,13 @@ export function summarizeTool(toolCall: ToolCall): string | null {
     case 'video_generate':
       return summarizeVideoGenerate(toolCall);
 
-    case 'web_search':
+    case 'WebSearch':
       return summarizeWebSearch(toolCall);
 
     case 'web_fetch':
       return summarizeWebFetch(toolCall);
 
-    case 'ask_user_question':
+    case 'AskUserQuestion':
       return summarizeAskUser(toolCall);
 
     default:

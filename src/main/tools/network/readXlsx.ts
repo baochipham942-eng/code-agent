@@ -23,7 +23,7 @@ export const readXlsxTool: Tool = {
   name: 'read_xlsx',
   description: `Read Excel files (.xlsx, .xls) and return structured data with column names and rows.
 
-This is the ONLY correct way to read Excel files. Do NOT use read_file for .xlsx/.xls — it will return garbled binary content.
+This is the ONLY correct way to read Excel files. Do NOT use Read for .xlsx/.xls — it will return garbled binary content.
 
 Output formats:
 - table: Markdown table (default, best for quick inspection)

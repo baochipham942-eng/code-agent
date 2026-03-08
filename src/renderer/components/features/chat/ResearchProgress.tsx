@@ -79,6 +79,7 @@ const PHASE_ORDER: ResearchPhase[] = ['planning', 'researching', 'reporting'];
 /** 数据源显示名称 */
 const SOURCE_LABELS: Record<string, string> = {
   web_search: '网络搜索',
+  WebSearch: '网络搜索',
   news_search: '新闻搜索',
   academic_search: '学术搜索',
   code_search: '代码搜索',

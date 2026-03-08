@@ -238,8 +238,8 @@ function routeSources(
 // ============================================================================
 
 export const webSearchTool: Tool = {
-  name: 'web_search',
-  description: 'Search the web and return results with titles, URLs, and snippets.',
+  name: 'WebSearch',
+  description: 'Searches the web for information. Use for finding documentation, researching APIs, checking current facts, or answering questions that require up-to-date information. Returns search results with titles, URLs, and snippets.',
   dynamicDescription: () => {
     const now = new Date();
     const currentDate = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
@@ -253,7 +253,7 @@ IMPORTANT: 当前日期为 ${currentDate}。搜索时务必使用正确的年份
 CRITICAL: After answering with search results, you MUST include a "Sources:" section listing relevant URLs as markdown hyperlinks.
 
 Use for: finding documentation, researching APIs, looking up error messages, discovering libraries, current events.
-For reading a specific URL you already have, use web_fetch instead.
+For reading a specific URL you already have, use WebFetch instead.
 For searching local code, use grep or glob.
 
 Features:
@@ -320,7 +320,7 @@ Features:
       },
       save_to: {
         type: 'string',
-        description: 'File path to automatically save results. The tool writes the file directly — no need to call write_file separately.',
+        description: 'File path to automatically save results. The tool writes the file directly — no need to call Write separately.',
       },
       language: {
         type: 'string',

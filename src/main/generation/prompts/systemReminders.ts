@@ -54,7 +54,7 @@ task(subagent_type="code-review", prompt="维度3: ...")
 
 请使用 task 工具委派给子代理，子代理有专门的工具和上下文窗口，比直接执行更高效。
 
-不要直接使用 glob/grep/read_file，而应该：
+不要直接使用 Glob/Grep/Read，而应该：
 - 安全审计 → task(subagent_type="code-review", prompt="...")
 - 代码探索 → task(subagent_type="explore", prompt="...")
 - 架构分析 → task(subagent_type="plan", prompt="...")
@@ -71,9 +71,9 @@ task(subagent_type="code-review", prompt="维度3: ...")
 5-Phase 流程：
 1. Phase 1: 并行派发 explore 子代理探索代码库
 2. Phase 2: 派发 plan 子代理设计方案
-3. Phase 3: 整合结果，使用 ask_user_question 澄清
+3. Phase 3: 整合结果，使用 AskUserQuestion 澄清
 4. Phase 4: 生成最终计划
-5. Phase 5: 调用 exit_plan_mode（必须用工具调用）
+5. Phase 5: 调用 PlanMode exit（必须用工具调用）
 
 **禁止**：在 Plan Mode 中进行任何文件写入操作。
 </system-reminder>
@@ -121,7 +121,7 @@ task(subagent_type="code-review", prompt="维度3: ...")
 **输出格式**：PPTX 文件（可用 PowerPoint/WPS/Keynote 打开编辑）
 
 **工作流程**：
-1. 如有本地文档素材 → 使用 read_pdf/read_file 读取
+1. 如有本地文档素材 → 使用 ReadDocument/Read 读取
 2. 如需图表 → 使用 mermaid_export 生成 PNG 图片
 3. 如需配图 → 使用 image_generate 生成
 4. 最后调用 ppt_generate 生成 PPTX，通过 images 参数嵌入图片
@@ -143,7 +143,7 @@ ppt_generate({
 - 其他 → tech（深蓝科技风）
 
 **禁止**：
-- ❌ 不要用 write_file 生成 slides.md（用户要的是 PPTX）
+- ❌ 不要用 Write 生成 slides.md（用户要的是 PPTX）
 - ❌ 不要把 Mermaid 代码直接放到 content 里（必须先用 mermaid_export 转 PNG）
 </system-reminder>
 `,
@@ -153,16 +153,16 @@ ppt_generate({
 **数据处理任务**：检测到数据分析/处理需求。
 
 **工作流程**：
-1. 先用 read_xlsx/read_file 读取源数据，了解结构（列名、数据类型、行数）
+1. 先用 ReadDocument/Read 读取源数据，了解结构（列名、数据类型、行数）
 2. 分析需求，确定处理逻辑（筛选/聚合/透视/时序分析等）
-3. 用 bash 执行 Python/pandas 脚本处理数据
+3. 用 Bash 执行 Python/pandas 脚本处理数据
 4. 输出结果到指定格式（xlsx/csv），并描述关键发现
 
 **关键规范**：
 - 先读数据再写代码，不要猜测列名和数据格式
 - 时序分析必须正确设置日期索引（pd.to_datetime + set_index）
 - 聚合统计结果要验证：行数、空列、数值合理性
-- 模糊指令（如"分析一下"）→ 先用 ask_user_question 澄清具体需求
+- 模糊指令（如"分析一下"）→ 先用 AskUserQuestion 澄清具体需求
 - 输出文件后必须用文字描述数据结果（不能只输出文件路径）
 - matplotlib 图表含中文文字时，设置字体：plt.rcParams['font.sans-serif'] = ['PingFang SC', 'SimHei', 'STHeiti']；plt.rcParams['axes.unicode_minus'] = False
 
@@ -197,10 +197,10 @@ ppt_generate({
 **文档生成任务**：检测到文档/报告撰写需求。
 
 **工作流程**：
-1. 如有参考素材 → 先用 read_file/read_pdf 读取
-2. 如需最新数据 → 用 web_search 搜索
+1. 如有参考素材 → 先用 Read/ReadDocument 读取
+2. 如需最新数据 → 用 WebSearch 搜索
 3. 按需求结构化撰写（标题层级、段落、列表）
-4. 用 write_file 输出为目标格式
+4. 用 Write 输出为目标格式
 
 **关键规范**：
 - 文档必须有清晰的标题层级结构（# / ## / ###）
@@ -227,7 +227,7 @@ ppt_generate({
 - 流程图/时序图/类图 → mermaid_export（生成 PNG，加 ?type=png）
 - 照片/插图/创意图 → image_generate
 - 数据图表 → Python matplotlib/seaborn（通过 bash 执行）
-- 简单 SVG → 直接 write_file 写 SVG 代码
+- 简单 SVG → 直接 Write 写 SVG 代码
 
 **禁止**：
 - ❌ 不要把 Mermaid 语法直接输出为文本（必须转 PNG）

@@ -8,16 +8,8 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import { resolvePath } from './pathUtils';
 
 export const globTool: Tool = {
-  name: 'glob',
-  description: `Find files by name pattern. Fast, works with any codebase size.
-
-Use for: finding files by name or extension (e.g., "**/*.ts", "src/**/*.tsx").
-For searching file contents, use grep instead.
-For browsing directory structure, use list_directory.
-Do NOT use bash find or ls — this tool is faster and auto-ignores node_modules/.git.
-
-Patterns: "**/*.ts" (recursive), "src/*.tsx" (one level), "**/*test*" (name match).
-Results sorted by modification time, limited to 200 files.`,
+  name: 'Glob',
+  description: `Fast file pattern matching tool. Use this to find files by name patterns (e.g. '**/*.ts', 'src/**/*.tsx'). Returns matching file paths sorted by modification time. Use this instead of Bash find or ls commands.`,
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

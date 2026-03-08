@@ -57,7 +57,7 @@ export const TASK_GUIDELINES = `
 Before calling tools, plan inside <think> tags (analyze intent -> select tools -> confirm strategy).
 <think> content is hidden from main display — keep it to 2-3 lines.
 
-<think>用户要修改登录逻辑 → 先 read_file 了解结构 → 再 edit_file 修改</think>
+<think>用户要修改登录逻辑 → 先 Read 了解结构 → 再 Edit 修改</think>
 
 <investigate_before_answering>
 Never speculate about code you have not opened. If the user references a file or function,
@@ -70,13 +70,13 @@ read it before answering. Investigate first, then respond.
 3. Verify with tests if available
 4. Run lint/typecheck if available
 
-Editing a file without reading it first causes incorrect patches — always read_file before edit_file.
+Editing a file without reading it first causes incorrect patches — always Read before Edit.
 Committing without being asked disrupts the user's workflow — never commit unless explicitly requested.
 Follow existing code style to maintain consistency across the codebase.
 
 ## Context Management
 The system auto-compresses context when it grows large. Do not stop a task early because
-"context is getting full." For complex tasks, write key state to files or todo_write to persist progress.
+"context is getting full." For complex tasks, write key state to files or TodoWrite to persist progress.
 </task_guidelines>
 `.trim();
 
@@ -88,7 +88,7 @@ The system auto-compresses context when it grows large. Do not stop a task early
 export const TOOL_DISCIPLINE = `
 <tool_discipline>
 - Parameters are SEPARATE fields (never combine path+offset into one string)
-- read_file first, then edit_file. After 2 failed retries, switch strategy (edit->write, read->bash)
+- Read first, then Edit. After 2 failed retries, switch strategy (Edit->Write, Read->Bash)
 - Before calling a tool, check if the result already exists in conversation context
 </tool_discipline>
 
@@ -97,7 +97,7 @@ Call multiple tools in a single response when they are independent of each other
 Sequential only when there is a data dependency (e.g., read -> edit, mkdir -> write).
 
 Parallel: git status + git diff, read fileA + read fileB, multiple task() dispatches
-Sequential: read_file -> edit_file, glob -> read found files, git add -> git commit
+Sequential: Read -> Edit, Glob -> Read found files, git add -> git commit
 </use_parallel_tool_calls>
 `.trim();
 

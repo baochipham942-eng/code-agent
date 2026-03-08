@@ -36,7 +36,7 @@ const STATUS_ICONS: Record<TodoStatus, string> = {
 };
 
 export const todoWriteTool: Tool = {
-  name: 'todo_write',
+  name: 'TodoWrite',
   description:
     'Create or update a todo list to track task progress. ' +
     'Set persist=true to save to task_plan.md file for long-term tracking across sessions.',

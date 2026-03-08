@@ -19,28 +19,8 @@ import { isKnownSafeCommand } from '../../security/commandSafety';
 const execAsync = promisify(exec);
 
 export const bashTool: Tool = {
-  name: 'bash',
-  description: `Execute shell commands with optional timeout.
-
-Use for: git, npm, docker, python scripts, and other terminal operations.
-
-DO NOT use bash for file operations — use the dedicated tools:
-- Read files → read_file (not cat/head/tail)
-- Read Excel → read_xlsx (not python pandas in bash)
-- Write files → write_file (not echo/cat heredoc)
-- Edit files → edit_file (not sed/awk)
-- Find files → glob (not find/ls)
-- Search content → grep (not grep/rg in bash)
-Using bash for these wastes a round trip and loses tool-level tracking.
-
-Usage:
-- Quote paths with spaces: cd "/path/with spaces"
-- Use absolute paths, avoid cd
-- Chain dependent commands with &&
-- Output truncated at 30000 characters, default timeout 120s
-
-Background: set run_in_background=true for long-running commands.
-PTY mode: set pty=true for interactive commands (vim, ssh).
+  name: 'Bash',
+  description: `Executes a bash command and returns its output. Use for system commands, running scripts, git operations, and terminal tasks. IMPORTANT: Do NOT use Bash for file reading (use Read), file searching (use Glob/Grep), or file editing (use Edit). Working directory persists between calls.
 
 Git: NEVER --force push or --no-verify unless explicitly requested.`,
 

@@ -18,11 +18,11 @@ Run shell commands (git, npm, build, test). Timeout: 120s default, 600s max.
 ### Forbidden (use dedicated tools)
 | Don't | Use |
 |-------|-----|
-| cat/head/tail | read_file |
+| cat/head/tail | Read |
 | find | glob |
 | grep -r | grep |
-| sed | edit_file |
-| echo > | write_file |
+| sed | Edit |
+| echo > | Write |
 
 ## Git Commit
 

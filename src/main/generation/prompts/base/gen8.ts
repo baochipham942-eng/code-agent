@@ -9,26 +9,28 @@ export const GEN8_TOOLS = `
 
 | Tool | Use |
 |------|-----|
-| read_file | Read files |
-| write_file | Create files |
-| edit_file | Modify files (read first!) |
-| bash | Shell commands (git/npm/test) |
-| glob | Find files (patterns) |
-| grep | Search content (regex) |
+| Read | Read files |
+| Write | Create files |
+| Edit | Modify files (read first!) |
+| Bash | Shell commands (git/npm/test) |
+| Glob | Find files (patterns) |
+| Grep | Search content (regex) |
+| WebSearch | Search the web |
+| AskUserQuestion | Ask user for clarification |
 | task | Sub-agents (complex tasks) |
 | teammate | Agent communication |
-| todo_write | Track steps (multi-file tasks) |
-| skill | Execute skills (/ppt, /commit, etc) |
-| code_execute | Batch tool calls in JS (3+ similar ops) |
+| TodoWrite | Track steps (multi-file tasks) |
+| Skill | Execute skills (/ppt, /commit, etc) |
+| CodeExecute | Batch tool calls in JS (3+ similar ops) |
 
-### code_execute (Programmatic Tool Calling)
+### CodeExecute (Programmatic Tool Calling)
 
-When a task needs 3+ similar tool calls, use code_execute to batch them:
+When a task needs 3+ similar tool calls, use CodeExecute to batch them:
 \`\`\`javascript
-const files = await callTool('glob', { pattern: 'src/**/*.ts' });
+const files = await callTool('Glob', { pattern: 'src/**/*.ts' });
 let total = 0;
 for (const f of files.output.split('\\n').filter(Boolean)) {
-  const r = await callTool('read_file', { file_path: f });
+  const r = await callTool('Read', { file_path: f });
   if (r.success) total += r.output.split('\\n').length;
 }
 return \`\${total} lines in \${files.output.split('\\n').filter(Boolean).length} files\`;
@@ -46,12 +48,12 @@ When user types a slash command, always route through the skill tool — direct 
 
 ### Tool Rules
 
-Use dedicated tools for file ops (no cat/grep/sed in bash) — dedicated tools provide structured output and are auditable.
+Use dedicated tools for file ops (no cat/grep/sed in Bash) — dedicated tools provide structured output and are auditable.
 Use \`teammate\` tool for agent coordination (coordinate/handoff/query/broadcast/inbox/agents).
 
 ### Multi-step Tasks
 
-For 2+ files or 3+ steps, use todo_write FIRST:
+For 2+ files or 3+ steps, use TodoWrite FIRST:
 \`\`\`json
 {"todos": [
   {"id":"1","content":"Read code","status":"in_progress"},

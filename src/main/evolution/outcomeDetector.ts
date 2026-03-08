@@ -113,10 +113,10 @@ export class OutcomeDetector {
 
     // 检测模式
     const hasFileWrite = toolCalls.some(tc =>
-      ['write_file', 'edit_file'].includes(tc.name) && tc.result.success
+      ['write_file', 'edit_file', 'Write', 'Edit'].includes(tc.name) && tc.result.success
     );
     const hasBashSuccess = toolCalls.some(tc =>
-      tc.name === 'bash' && tc.result.success
+      (tc.name === 'bash' || tc.name === 'Bash') && tc.result.success
     );
     const hasTestRun = toolCalls.some(tc =>
       tc.name === 'bash' &&

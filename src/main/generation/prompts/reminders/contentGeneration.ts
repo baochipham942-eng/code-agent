@@ -15,8 +15,8 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 **PPT 生成必须遵循的流程**：
 
 **第一步：收集信息（必须）**
-- 如果是介绍本地项目/产品 → 先用 read_file 读取 package.json、README.md、CLAUDE.md
-- 如果是通用主题 → 先用 web_search 搜索最新数据
+- 如果是介绍本地项目/产品 → 先用 Read 读取 package.json、README.md、CLAUDE.md
+- 如果是通用主题 → 先用 WebSearch 搜索最新数据
 
 **第二步：内容规范**
 - 每页 4-5 个要点，每个要点 20-40 字
@@ -40,7 +40,7 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 **数据处理必须遵循的流程**：
 
 **第一步：读取数据（必须）**
-- 用 read_xlsx/read_file 读取源数据，确认列名、数据类型、行数
+- 用 read_xlsx/Read 读取源数据，确认列名、数据类型、行数
 - 不要猜测数据结构，必须先看数据
 
 **第二步：处理规范**
@@ -51,7 +51,7 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 **第三步：输出验证**
 - 输出文件后检查：文件 >1KB、无全空列、行数合理
 - 必须用文字描述关键发现（不能只输出文件路径）
-- 模糊指令先用 ask_user_question 澄清
+- 模糊指令先用 AskUserQuestion 澄清
 </system-reminder>`,
     tokens: 200,
     shouldInclude: (ctx) => ctx.taskFeatures.isDataTask ? 1.0 : 0,
@@ -65,8 +65,8 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 **文档生成必须遵循的流程**：
 
 **第一步：收集素材**
-- 如有参考文件 → read_file/read_pdf 读取
-- 如需最新数据 → web_search 搜索
+- 如有参考文件 → Read/read_pdf 读取
+- 如需最新数据 → WebSearch 搜索
 
 **第二步：内容规范**
 - 清晰的标题层级（# / ## / ###）
@@ -92,7 +92,7 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
 - 流程图/时序图 → mermaid_export（输出 PNG，加 ?type=png）
 - 照片/插图 → image_generate
 - 数据图表 → bash 执行 Python matplotlib
-- 简单 SVG → write_file
+- 简单 SVG → Write
 
 **输出验证**：
 - 确认文件存在且 >1KB

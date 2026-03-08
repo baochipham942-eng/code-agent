@@ -95,7 +95,7 @@ export class SessionRecoveryService {
           if (msg.toolCalls) {
             for (const tc of msg.toolCalls) {
               toolsUsed.add(tc.name);
-              if ((tc.name === 'edit_file' || tc.name === 'write_file') && tc.arguments) {
+              if ((tc.name === 'edit_file' || tc.name === 'Edit' || tc.name === 'write_file' || tc.name === 'Write') && tc.arguments) {
                 const fp = (tc.arguments as Record<string, unknown>).file_path as string;
                 if (fp) modifiedFiles.add(fp);
               }

@@ -312,8 +312,8 @@ export class SwissCheeseEvaluator {
 
     // Coding: 有代码工具(edit/write/read_file) 或有代码块
     const hasCodeTools = toolNames.some(name =>
-      name === 'edit_file' || name === 'write_file' ||
-      (name === 'read_file' && toolNames.some(n => n === 'edit_file' || n === 'write_file'))
+      name === 'edit_file' || name === 'Edit' || name === 'write_file' || name === 'Write' ||
+      (name === 'read_file' || name === 'Read') && toolNames.some(n => n === 'edit_file' || n === 'Edit' || n === 'write_file' || n === 'Write')
     );
     if (hasCodeTools || (hasCodeBlocks && hasToolCalls)) {
       return 'coding';
@@ -323,7 +323,7 @@ export class SwissCheeseEvaluator {
     const hasCreationTools = toolNames.some(name =>
       name === 'ppt_generate' || name === 'xlwings' ||
       // write_file 用于文档（非代码场景，此时 hasCodeTools 已经为 false）
-      (name === 'write_file' && !hasCodeTools)
+      ((name === 'write_file' || name === 'Write') && !hasCodeTools)
     );
     if (hasCreationTools) {
       return 'creation';
@@ -815,8 +815,8 @@ export class SwissCheeseEvaluator {
       else if (result.includes('permission')) category = 'permission_denied';
       else if (result.includes('timeout')) category = 'timeout';
       else if (result.includes('unique') || result.includes('not unique')) category = 'edit_not_unique';
-      else if (tc.name === 'edit_file') category = 'edit_failure';
-      else if (tc.name === 'bash') category = 'command_failure';
+      else if (tc.name === 'edit_file' || tc.name === 'Edit') category = 'edit_failure';
+      else if (tc.name === 'bash' || tc.name === 'Bash') category = 'command_failure';
 
       taxonomy[category] = (taxonomy[category] || 0) + 1;
     }

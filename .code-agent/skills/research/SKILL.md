@@ -2,7 +2,7 @@
 name: research
 description: 深度调研 — 多角度搜索、证据链绑定、结构化报告生成
 keywords: [research, 调研, 深度搜索, 深入分析, 全面调查, 研究报告, deep research, comprehensive analysis, in-depth]
-allowed-tools: [web_search, web_fetch, write_file, read_file]
+allowed-tools: [WebSearch, WebFetch, Write, Read]
 execution-context: inline
 ---
 

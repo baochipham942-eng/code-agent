@@ -131,6 +131,11 @@ export function formatParams(toolCall: ToolCall): string {
     case 'list_directory':
       return shortenPath(String(args.path || '.'));
 
+    case 'web_search': {
+      const query = String(args.query || '');
+      return smartTruncate(query, 50);
+    }
+
     case 'web_fetch':
       return shortenUrl(String(args.url || ''));
 
@@ -187,6 +192,24 @@ function shortenPath(path: string): string {
   if (parts.length <= 2) return path;
   // Show last two path segments
   return '.../' + parts.slice(-2).join('/');
+}
+
+/**
+ * Word-boundary-aware truncation.
+ * For mixed CJK/Latin text, finds the last space before the limit to avoid
+ * cutting Latin words mid-way (e.g. "2025" → "202"). Chinese characters are
+ * self-contained so truncating at any position is fine.
+ */
+function smartTruncate(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const truncated = text.slice(0, limit);
+  const lastSpace = truncated.lastIndexOf(' ');
+  // If there's a space, back up to it to avoid cutting a Latin word
+  if (lastSpace > 0) {
+    return truncated.slice(0, lastSpace) + '...';
+  }
+  // No space found (pure CJK or single long token) — just truncate at limit
+  return truncated + '...';
 }
 
 function shortenUrl(url: string): string {

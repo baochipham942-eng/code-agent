@@ -19,6 +19,8 @@ export interface ResearchStep {
   description: string;
   /** 步骤类型 */
   stepType: ResearchStepType;
+  /** 研究维度 */
+  dimension?: string; // One of: historical, current, future, stakeholder, quantitative, qualitative, comparative, risk
   /** 是否需要网络搜索（仅 research 类型有效）*/
   needSearch?: boolean;
   /** 搜索关键词（仅 research 类型有效）*/

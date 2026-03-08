@@ -13,6 +13,7 @@ import type {
 import type { ModelRouter } from '../model/modelRouter';
 import type { ToolExecutor } from '../tools/toolExecutor';
 import type { Generation } from '../../shared/types';
+import type { ModelProvider } from '../../shared/types/model';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import { UrlCompressor } from './urlCompressor';
@@ -83,6 +84,7 @@ export class ResearchExecutor {
   private config: Required<ResearchExecutorConfig>;
   private _urlCompressor: UrlCompressor;
   private _lastReflection: ReflectionResult | null = null;
+  private _researchConfig: DeepResearchConfig = {};
 
   constructor(
     toolExecutor: ToolExecutor,
@@ -123,6 +125,39 @@ export class ResearchExecutor {
   /** 最近一次 reflection 结果 */
   get lastReflection(): ReflectionResult | null {
     return this._lastReflection;
+  }
+
+
+  // --------------------------------------------------------------------------
+  // Model resolution helpers
+  // --------------------------------------------------------------------------
+
+  /**
+   * Resolve provider from config, falling back to DEFAULT_PROVIDER.
+   */
+  private resolveProvider(): ModelProvider {
+    return (this._researchConfig.modelProvider as ModelProvider) || DEFAULT_PROVIDER;
+  }
+
+  /**
+   * Resolve model for a given research phase.
+   *
+   * Priority:
+   * - planning/reflection: queryModel > model > DEFAULT_MODEL
+   * - analysis:            model > DEFAULT_MODEL
+   * - report/synthesis:    reportModel > model > DEFAULT_MODEL
+   */
+  private resolveModel(phase: 'query' | 'analysis' | 'report'): string {
+    const cfg = this._researchConfig;
+    switch (phase) {
+      case 'query':
+        return cfg.queryModel || cfg.model || DEFAULT_MODEL;
+      case 'report':
+        return cfg.reportModel || cfg.model || DEFAULT_MODEL;
+      case 'analysis':
+      default:
+        return cfg.model || DEFAULT_MODEL;
+    }
   }
 
   /**
@@ -172,6 +207,7 @@ export class ResearchExecutor {
     plan: ResearchPlan,
     researchConfig: DeepResearchConfig = {}
   ): Promise<ResearchPlan> {
+    this._researchConfig = researchConfig;
     const maxRounds = researchConfig.maxReflectionRounds ?? 2;
     const enableReflection = researchConfig.enableReflection !== false;
 
@@ -529,8 +565,8 @@ ${previousResults}
 
     try {
       const response = await this.modelRouter.chat({
-        provider: DEFAULT_PROVIDER,
-        model: DEFAULT_MODEL,
+        provider: this.resolveProvider(),
+        model: this.resolveModel('analysis'),
         messages: [{ role: 'user', content: analysisPrompt }],
         maxTokens: 2000,
       });
@@ -593,8 +629,8 @@ Evaluate the research completeness and respond in this exact JSON format:
 
     try {
       const response = await this.modelRouter.chat({
-        provider: DEFAULT_PROVIDER,
-        model: DEFAULT_MODEL,
+        provider: this.resolveProvider(),
+        model: this.resolveModel('query'),
         messages: [{ role: 'user', content: reflectionPrompt }],
         maxTokens: 1500,
       });

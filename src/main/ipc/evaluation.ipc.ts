@@ -179,6 +179,16 @@ export function registerEvaluationHandlers(): void {
     }
   );
 
+  // List test reports
+  ipcMain.handle(EVALUATION_CHANNELS.LIST_TEST_REPORTS, async () => {
+    return service.listTestReports();
+  });
+
+  // Load single test report by path
+  ipcMain.handle(EVALUATION_CHANNELS.LOAD_TEST_REPORT, async (_event, filePath: string) => {
+    return service.loadTestReport(filePath);
+  });
+
   // Annotation store handlers (eval-harness)
   ipcMain.handle(EVALUATION_CHANNELS.SAVE_ANNOTATIONS, async (_event, annotation) => {
     const proxy = AnnotationProxy.getInstance();

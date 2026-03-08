@@ -3113,16 +3113,21 @@ ${deferredToolsSummary}
           content: message.content,
         });
       } else if (message.role === 'assistant' && (message as Message).toolCalls?.length) {
-        const tcs = (message as Message).toolCalls!;
+        // 过滤掉已废弃工具的历史调用，避免模型从上下文中误判这些工具仍可用
+        const REMOVED_TOOLS = new Set(['TodoWrite', 'todo_write']);
+        const tcs = (message as Message).toolCalls!.filter(tc => !REMOVED_TOOLS.has(tc.name));
+        if (tcs.length === 0 && !message.content) continue;
         modelMessages.push({
           role: 'assistant',
           content: message.content || '',
-          toolCalls: tcs.map(tc => ({
-            id: tc.id,
-            name: tc.name,
-            arguments: JSON.stringify(tc.arguments),
-          })),
-          toolCallText: tcs.map(tc => formatToolCallForHistory(tc)).join('\n'),
+          ...(tcs.length > 0 && {
+            toolCalls: tcs.map(tc => ({
+              id: tc.id,
+              name: tc.name,
+              arguments: JSON.stringify(tc.arguments),
+            })),
+            toolCallText: tcs.map(tc => formatToolCallForHistory(tc)).join('\n'),
+          }),
           thinking: (message as Message).thinking,
         });
       } else if (message.role === 'user' && (message as Message).attachments?.length) {

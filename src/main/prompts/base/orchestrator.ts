@@ -31,7 +31,6 @@ export const ORCHESTRATOR_TOOL_OWNERSHIP = `
 
 ### Orchestrator 直接使用的工具
 - \`Read\` - 读取参考文档、Agent 输出（限 1-2 个文件）
-- \`TodoWrite\` - 创建任务列表
 - \`task\` - 派发子代理
 - \`teammate\` - 与其他 Agent 通信协调
 - \`AskUserQuestion\` - 向用户澄清需求

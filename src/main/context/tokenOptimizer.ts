@@ -827,9 +827,22 @@ export function observationMask(
 
     // 判断是成功还是错误
     const isError = /error|Error|ERROR|exception|Exception|failed|Failed|FAILED/.test(msg.content);
-    const placeholder = isError
+
+    // 检测是否为文件读取结果（Read 工具输出以行号格式 "N→" 开头）
+    let placeholder: string = isError
       ? OBSERVATION_MASKING.PLACEHOLDER_ERROR
       : OBSERVATION_MASKING.PLACEHOLDER_SUCCESS;
+
+    if (!isError) {
+      try {
+        const parsed = JSON.parse(msg.content) as Array<{ output?: string }>;
+        if (Array.isArray(parsed) && parsed.some(r => r.output && /^\s*\d+→/.test(r.output))) {
+          placeholder = OBSERVATION_MASKING.PLACEHOLDER_FILE_READ;
+        }
+      } catch {
+        // 非 JSON 格式，使用默认 placeholder
+      }
+    }
 
     maskedCount++;
     savedTokens += tokens - estimateTokens(placeholder);

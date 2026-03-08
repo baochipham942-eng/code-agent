@@ -153,6 +153,7 @@
 | [003](./decisions/003-cloud-local-hybrid-architecture.md) | 云端-本地混合执行架构 | accepted |
 | [004](./decisions/004-unified-plugin-config-structure.md) | 统一插件配置目录结构 | proposed |
 | [005](./decisions/005-eval-engineering.md) | Eval Engineering Key Decisions | accepted |
+| [006](./decisions/006-deferred-tools-consolidation.md) | Deferred Tools 合并精简 (Phase 2) | accepted |
 
 ---
 
@@ -182,6 +183,8 @@
 | Gen6 | 视觉交互 | + screenshot, computer_use |
 | Gen7 | 多代理 | + spawn_agent, agent_message |
 | Gen8 | 自我进化 | + strategy_optimize, tool_create |
+
+> **Phase 2 工具合并**: 31 个延迟加载工具合并为 9 个统一工具（Process, MCPUnified, TaskManager, Plan, PlanMode, WebFetch, ReadDocument, Browser, Computer），使用 action 参数分发。旧名通过 TOOL_ALIASES 保持兼容。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
 
 ### 目录结构
 

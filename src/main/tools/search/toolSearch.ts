@@ -14,7 +14,7 @@ const logger = createLogger('tool_search');
  * 用于搜索和加载延迟工具。支持以下模式：
  *
  * 1. 关键字搜索：`tool_search("pdf")` → 搜索 PDF 相关工具
- * 2. 直接选择：`tool_search("select:web_fetch")` → 直接加载 web_fetch
+ * 2. 直接选择：`tool_search("select:WebFetch")` → 直接加载 web_fetch
  * 3. 必须前缀：`tool_search("+mcp search")` → 只搜索 MCP 相关工具
  *
  * 搜索结果中的工具会自动加载，下次模型请求时可直接使用。
@@ -31,7 +31,7 @@ export const toolSearchTool: Tool = {
    - 返回最多 5 个匹配结果，按相关度排序
 
 2. **直接选择** - 使用 \`select:\` 前缀直接加载指定工具：
-   - "select:web_fetch" → 加载 web_fetch 工具
+   - "select:WebFetch" → 加载 web_fetch 工具
    - "select:mcp__github__search_repos" → 加载 MCP 工具
 
 3. **必须前缀** - 使用 \`+\` 前缀强制匹配某关键字：
@@ -41,7 +41,7 @@ export const toolSearchTool: Tool = {
 **注意：**
 - 搜索结果中的工具会自动加载，无需再次调用 tool_search
 - 直接选择模式只加载该工具，不返回其他结果
-- 核心工具（bash, read_file 等）无需搜索，始终可用`,
+- 核心工具（Bash, Read, Write, Edit 等）无需搜索，始终可用`,
 
   inputSchema: {
     type: 'object',

@@ -11,6 +11,13 @@ interface ReplaySummary {
   thinkingRatio: number;
   selfRepairChains: number;
   totalDurationMs: number;
+  deviations?: Array<{
+    stepIndex: number;
+    type: string;
+    description: string;
+    severity: string;
+    suggestedFix?: string;
+  }>;
 }
 
 interface Props {
@@ -101,6 +108,37 @@ export const ReplayAnalyticsSidebar: React.FC<Props> = ({ summary, objective }) 
           <span className="text-zinc-400 shrink-0">{(summary.thinkingRatio * 100).toFixed(1)}%</span>
         </div>
       </div>
+
+      {/* Deviations */}
+      {summary.deviations && summary.deviations.length > 0 && (
+        <div>
+          <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2 font-medium">
+            Deviations ({summary.deviations.length})
+          </div>
+          <div className="space-y-1.5">
+            {summary.deviations.map((d, i) => {
+              const severityColor = d.severity === 'high' || d.severity === 'critical'
+                ? 'text-red-400'
+                : d.severity === 'medium'
+                ? 'text-amber-400'
+                : 'text-zinc-400';
+              return (
+                <div key={i} className="bg-zinc-800/30 rounded p-1.5 border border-zinc-700/20">
+                  <div className="flex items-center gap-1 mb-0.5">
+                    <span className={`text-[10px] font-medium ${severityColor}`}>
+                      {d.type}
+                    </span>
+                    <span className="text-[9px] text-zinc-600">@{d.stepIndex}</span>
+                  </div>
+                  <div className="text-[10px] text-zinc-500 leading-tight">
+                    {d.description.length > 80 ? d.description.slice(0, 77) + '...' : d.description}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Objective Metrics (from existing pipeline) */}
       {objective && (

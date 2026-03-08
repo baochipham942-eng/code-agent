@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
 import { createLogger } from '../infra/logger';
+import { getServiceRegistry } from '../serviceRegistry';
 
 const logger = createLogger('DatabaseService');
 // 延迟加载 better-sqlite3，CLI 模式下原生模块为 Electron 编译，ABI 不匹配
@@ -1358,6 +1359,10 @@ export class DatabaseService {
     }
   }
 
+  async dispose(): Promise<void> {
+    this.close();
+  }
+
   /**
    * 获取数据库统计信息
    */
@@ -1845,6 +1850,7 @@ let dbInstance: DatabaseService | null = null;
 export function getDatabase(): DatabaseService {
   if (!dbInstance) {
     dbInstance = new DatabaseService();
+    getServiceRegistry().register('DatabaseService', dbInstance);
   }
   return dbInstance;
 }

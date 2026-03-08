@@ -2306,7 +2306,7 @@ export class AgentLoop {
 
       // Plan Mode context restoration on exit
       if (
-        toolCall.name === 'exit_plan_mode' &&
+        (toolCall.name === 'exit_plan_mode' || (toolCall.name === 'PlanMode' && (toolCall.arguments as Record<string, unknown>)?.action === 'exit')) &&
         result.success &&
         this.savedMessages
       ) {
@@ -2336,7 +2336,7 @@ export class AgentLoop {
       // Auto-approve plan mode (for CLI/testing)
       if (
         this.autoApprovePlan &&
-        toolCall.name === 'exit_plan_mode' &&
+        (toolCall.name === 'exit_plan_mode' || (toolCall.name === 'PlanMode' && (toolCall.arguments as Record<string, unknown>)?.action === 'exit')) &&
         result.success &&
         result.metadata?.requiresUserConfirmation
       ) {

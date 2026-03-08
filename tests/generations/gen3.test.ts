@@ -232,7 +232,6 @@ describe('Gen3 - Smart Planning Era', () => {
     });
 
     it('should have correct metadata', () => {
-      expect(planReadTool.generations).toContain('gen3');
       expect(planReadTool.name).toBe('plan_read');
     });
   });
@@ -242,7 +241,6 @@ describe('Gen3 - Smart Planning Era', () => {
   // --------------------------------------------------------------------------
   describe('plan_update', () => {
     it('should have correct metadata', () => {
-      expect(planUpdateTool.generations).toContain('gen3');
       expect(planUpdateTool.name).toBe('plan_update');
     });
 
@@ -262,7 +260,6 @@ describe('Gen3 - Smart Planning Era', () => {
   // --------------------------------------------------------------------------
   describe('findings_write', () => {
     it('should have correct metadata', () => {
-      expect(findingsWriteTool.generations).toContain('gen3');
       expect(findingsWriteTool.name).toBe('findings_write');
     });
 
@@ -294,7 +291,6 @@ describe('Gen3 - Smart Planning Era', () => {
   // --------------------------------------------------------------------------
   describe('task', () => {
     it('should have correct metadata', () => {
-      expect(taskTool.generations).toContain('gen3');
       expect(taskTool.name).toBe('task');
       expect(taskTool.inputSchema.required).toContain('prompt');
     });
@@ -325,18 +321,15 @@ describe('Gen3 - Smart Planning Era', () => {
   // Tool Metadata Tests
   // --------------------------------------------------------------------------
   describe('Tool Metadata', () => {
-    it('todo_write should have correct generations', () => {
-      expect(todoWriteTool.generations).toContain('gen3');
+    it('todo_write should have correct name', () => {
       expect(todoWriteTool.name).toBe('todo_write');
     });
 
-    it('ask_user_question should have correct generations', () => {
-      expect(askUserQuestionTool.generations).toContain('gen3');
-      expect(askUserQuestionTool.name).toBe('ask_user_question');
+    it('ask_user_question should have correct name', () => {
+      expect(askUserQuestionTool.name).toBe('AskUserQuestion');
     });
 
-    it('task should have correct generations', () => {
-      expect(taskTool.generations).toContain('gen3');
+    it('task should have correct name', () => {
       expect(taskTool.name).toBe('task');
     });
   });

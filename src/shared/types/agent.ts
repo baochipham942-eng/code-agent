@@ -138,6 +138,16 @@ export interface ResearchErrorData {
   error: string;
 }
 
+// 任务统计事件数据
+export interface TaskStatsData {
+  elapsed_ms: number;
+  iterations: number;
+  tokensUsed: number;
+  contextUsage: number;
+  toolCallCount: number;
+  contextWindow: number;
+}
+
 export type AgentEvent =
   | { type: 'message'; data: Message }
   | { type: 'tool_call_start'; data: ToolCall & { _index?: number; turnId?: string; parentToolUseId?: string } }
@@ -191,7 +201,15 @@ export type AgentEvent =
   // 工具执行进度（每 5 秒发射，前端展示耗时）
   | { type: 'tool_progress'; data: ToolProgressData }
   // 工具执行超时警告（超过阈值时发射）
-  | { type: 'tool_timeout'; data: ToolTimeoutData };
+  | { type: 'tool_timeout'; data: ToolTimeoutData }
+  // Plan mode events
+  | { type: 'plan_mode_entered'; data: { reason: string } }
+  | { type: 'plan_mode_exited'; data: { plan: string } }
+  // Task stats event
+  | { type: 'task_stats'; data: TaskStatsData }
+  // Context compaction events (Claude Code style)
+  | { type: 'context_compacting'; data: { tokensBefore: number; messagesCount: number } }
+  | { type: 'context_compacted'; data: { tokensBefore: number; tokensAfter: number; messagesRemoved: number; duration_ms: number } };
 
 // 上下文压缩事件数据
 export interface ContextCompressedData {

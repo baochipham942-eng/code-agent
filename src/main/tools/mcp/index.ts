@@ -10,3 +10,6 @@ export {
   mcpGetStatusTool,
 } from './mcpTool';
 export { mcpAddServerTool } from './mcpAddServer';
+
+// Unified tool (Phase 2)
+export { MCPUnifiedTool } from './MCPUnifiedTool';

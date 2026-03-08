@@ -286,6 +286,10 @@ export class ChannelAgentBridge {
 
   /**
    * 处理流式消息 (HTTP API 专用)
+   *
+   * 通过临时拦截 orchestrator 的 onEvent 回调，将 stream_chunk 等事件
+   * 实时推送到 SSE 连接，实现真正的流式响应。
+   * SSE 格式: `data: ${JSON.stringify(event)}\n\n`，流结束发送 `data: [DONE]\n\n`
    */
   private async handleStreamingMessage(
     accountId: string,
@@ -294,37 +298,104 @@ export class ChannelAgentBridge {
     attachments: MessageAttachment[] | undefined
   ): Promise<void> {
     const raw = message.raw as Record<string, unknown>;
-    const res = raw.res as { write: (data: string) => void; end: () => void };
+    const res = raw.res as { write: (data: string) => void; end: () => void; writableEnded?: boolean };
 
     if (!res) {
       throw new Error('No response object for streaming');
     }
 
-    // TODO: 实现真正的流式响应
-    // 当前简化实现：等待完成后一次性返回
-    try {
-      // 记录发送前的消息数量，用于识别新的回复（与 handleSyncMessage 一致）
-      const messagesBefore = orchestrator.getMessages();
-      const messageCountBefore = messagesBefore.length;
+    // Per-request SSE handler: use addListener/removeListener instead of
+    // overwriting the global onEvent, so concurrent streams don't clobber
+    // each other (fixes Sprint 3 review #2).
+    const orchestratorInternal = orchestrator as unknown as {
+      onEvent: (event: AgentEvent) => void;
+      on?: (event: string, handler: (event: AgentEvent) => void) => void;
+      removeListener?: (event: string, handler: (event: AgentEvent) => void) => void;
+    };
 
+    // Helper: write with backpressure handling (fixes Sprint 3 review #3)
+    const safeWrite = async (chunk: string): Promise<void> => {
+      if (res.writableEnded) return;
+      const ok = (res as unknown as { write: (data: string) => boolean }).write(chunk);
+      if (!ok) {
+        await new Promise<void>(resolve => (res as unknown as NodeJS.WritableStream).once('drain', resolve));
+      }
+    };
+
+    // Track whether client disconnected
+    let clientDisconnected = false;
+    const req = raw.req as { on?: (event: string, handler: () => void) => void } | undefined;
+    if (req?.on) {
+      req.on('close', () => { clientDisconnected = true; });
+    }
+
+    const sseListener = async (event: AgentEvent) => {
+      if (clientDisconnected || res.writableEnded) return;
+
+      switch (event.type) {
+        case 'stream_chunk':
+          if (event.data.content) {
+            await safeWrite(`data: ${JSON.stringify({ type: 'stream_chunk', content: event.data.content })}\n\n`);
+          }
+          break;
+        case 'stream_reasoning':
+          if (event.data.content) {
+            await safeWrite(`data: ${JSON.stringify({ type: 'stream_reasoning', content: event.data.content })}\n\n`);
+          }
+          break;
+        case 'tool_call_start':
+          await safeWrite(`data: ${JSON.stringify({ type: 'tool_call_start', name: event.data.name })}\n\n`);
+          break;
+        case 'tool_call_end':
+          await safeWrite(`data: ${JSON.stringify({ type: 'tool_call_end', toolCallId: event.data.toolCallId })}\n\n`);
+          break;
+        case 'error':
+          await safeWrite(`data: ${JSON.stringify({ type: 'error', error: event.data.message })}\n\n`);
+          break;
+      }
+    };
+
+    // Wrap async listener for EventEmitter compatibility
+    const syncListener = (event: AgentEvent) => { void sseListener(event); };
+
+    // Prefer EventEmitter-style addListener if available; fall back to wrapping onEvent
+    const useEventEmitter = typeof orchestratorInternal.on === 'function'
+      && typeof orchestratorInternal.removeListener === 'function';
+
+    let originalOnEvent: ((event: AgentEvent) => void) | undefined;
+
+    if (useEventEmitter) {
+      orchestratorInternal.on!('event', syncListener);
+    } else {
+      // Fallback: wrap existing onEvent (single-request safe, still better than raw overwrite)
+      originalOnEvent = orchestratorInternal.onEvent;
+      orchestratorInternal.onEvent = (event: AgentEvent) => {
+        originalOnEvent!.call(orchestrator, event);
+        syncListener(event);
+      };
+    }
+
+    try {
       await orchestrator.sendMessage(message.content, attachments);
 
-      // 只查找新增的消息中的 assistant 回复
-      const messagesAfter = orchestrator.getMessages();
-      const newMessages = messagesAfter.slice(messageCountBefore);
-      const assistantMessages = newMessages.filter(m => m.role === 'assistant' && m.content && m.content.trim());
-      const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
-
-      if (lastAssistantMessage) {
-        res.write(`data: ${JSON.stringify({ content: lastAssistantMessage.content })}\n\n`);
+      if (!res.writableEnded && !clientDisconnected) {
+        await safeWrite('data: [DONE]\n\n');
+        res.end();
       }
-
-      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-      res.end();
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
-      res.end();
+      if (!res.writableEnded && !clientDisconnected) {
+        await safeWrite(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
+        await safeWrite('data: [DONE]\n\n');
+        res.end();
+      }
+    } finally {
+      // Clean up: remove per-request listener without affecting other streams
+      if (useEventEmitter) {
+        orchestratorInternal.removeListener!('event', syncListener);
+      } else if (originalOnEvent) {
+        orchestratorInternal.onEvent = originalOnEvent;
+      }
     }
   }
 

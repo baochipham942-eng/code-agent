@@ -53,6 +53,13 @@ export interface StructuredReplay {
     thinkingRatio: number;
     selfRepairChains: number;
     totalDurationMs: number;
+    deviations?: Array<{
+      stepIndex: number;
+      type: string;
+      description: string;
+      severity: string;
+      suggestedFix?: string;
+    }>;
   };
 }
 
@@ -297,6 +304,58 @@ export async function extractStructuredReplay(sessionId: string): Promise<Struct
     });
   }
 
+  // 可选: Trajectory 偏差检测
+  let deviations: StructuredReplay['summary']['deviations'];
+  try {
+    const { TrajectoryBuilder } = await import('./trajectory/trajectoryBuilder');
+    const { DeviationDetector } = await import('./trajectory/deviationDetector');
+
+    // 从 replay turns 构建 events
+    const events: Array<{ event_type: string; event_data: Record<string, unknown>; timestamp: string }> = [];
+    for (const turn of turns) {
+      for (const block of turn.blocks) {
+        if (block.type === 'tool_call' && block.toolCall) {
+          events.push({
+            event_type: 'tool_start',
+            event_data: { tool: block.toolCall.name, args: block.toolCall.args },
+            timestamp: String(block.timestamp),
+          });
+          events.push({
+            event_type: 'tool_result',
+            event_data: {
+              tool: block.toolCall.name,
+              success: block.toolCall.success,
+              result: block.toolCall.result,
+              ...(block.toolCall.success ? {} : { error: 'failed' }),
+            },
+            timestamp: String(block.timestamp + block.toolCall.duration),
+          });
+        } else if (block.type === 'error') {
+          events.push({
+            event_type: 'error',
+            event_data: { message: block.content },
+            timestamp: String(block.timestamp),
+          });
+        } else if (block.type === 'thinking') {
+          events.push({
+            event_type: 'thinking',
+            event_data: { content: block.content },
+            timestamp: String(block.timestamp),
+          });
+        }
+      }
+    }
+
+    if (events.length > 0) {
+      const builder = new TrajectoryBuilder();
+      const trajectory = builder.buildFromEvents(events);
+      const detector = new DeviationDetector();
+      deviations = detector.detectByRules(trajectory);
+    }
+  } catch {
+    // Trajectory analysis is optional
+  }
+
   return {
     sessionId,
     turns,
@@ -306,6 +365,7 @@ export async function extractStructuredReplay(sessionId: string): Promise<Struct
       thinkingRatio: totalAllTokens > 0 ? totalThinkingTokens / totalAllTokens : 0,
       selfRepairChains,
       totalDurationMs,
+      deviations,
     },
   };
 }

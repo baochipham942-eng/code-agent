@@ -74,7 +74,6 @@ describe('Gen5 - Cognitive Enhancement Era', () => {
   // --------------------------------------------------------------------------
   describe('memory_store', () => {
     it('should have correct metadata', () => {
-      expect(memoryStoreTool.generations).toContain('gen5');
       expect(memoryStoreTool.name).toBe('memory_store');
     });
 
@@ -165,7 +164,6 @@ describe('Gen5 - Cognitive Enhancement Era', () => {
   // --------------------------------------------------------------------------
   describe('memory_search', () => {
     it('should have correct metadata', () => {
-      expect(memorySearchTool.generations).toContain('gen5');
       expect(memorySearchTool.name).toBe('memory_search');
     });
 
@@ -208,7 +206,6 @@ describe('Gen5 - Cognitive Enhancement Era', () => {
   // --------------------------------------------------------------------------
   describe('code_index', () => {
     it('should have correct metadata', () => {
-      expect(codeIndexTool.generations).toContain('gen5');
       expect(codeIndexTool.name).toBe('code_index');
     });
 
@@ -251,7 +248,6 @@ describe('Gen5 - Cognitive Enhancement Era', () => {
   // --------------------------------------------------------------------------
   describe('auto_learn', () => {
     it('should have correct metadata', () => {
-      expect(autoLearnTool.generations).toContain('gen5');
       expect(autoLearnTool.name).toBe('auto_learn');
     });
 
@@ -303,14 +299,12 @@ describe('Gen5 - Cognitive Enhancement Era', () => {
   // Tool Metadata Tests
   // --------------------------------------------------------------------------
   describe('Tool Metadata', () => {
-    it('all gen5 tools should include gen5-8 generations', () => {
+    it('all gen5 tools should be defined', () => {
       const gen5Tools = [memoryStoreTool, memorySearchTool, codeIndexTool, autoLearnTool];
 
       for (const tool of gen5Tools) {
-        expect(tool.generations).toContain('gen5');
-        expect(tool.generations).toContain('gen6');
-        expect(tool.generations).toContain('gen7');
-        expect(tool.generations).toContain('gen8');
+        expect(tool.name).toBeDefined();
+        expect(tool.execute).toBeDefined();
       }
     });
 

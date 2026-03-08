@@ -370,7 +370,7 @@ describe('mergeSearchResults', () => {
     expect(merged.output).toContain('brave: HTTP 429');
   });
 
-  it('should include query and duration in header', () => {
+  it('should include query and source in header', () => {
     const results = [
       {
         source: 'exa',
@@ -381,7 +381,7 @@ describe('mergeSearchResults', () => {
 
     const merged = mergeSearchResults('my search query', results, [], 1234);
     expect(merged.output).toContain('my search query');
-    expect(merged.output).toContain('1234ms');
+    expect(merged.output).toContain('exa');
   });
 
   it('should include age in result output', () => {

@@ -128,6 +128,17 @@ import { strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternToo
 // LSP tools
 import { lspTool, diagnosticsTool } from './lsp';
 
+// Unified tools (Phase 2 - consolidated from multiple tools)
+import { ProcessTool } from './shell/ProcessTool';
+import { MCPUnifiedTool } from './mcp/MCPUnifiedTool';
+import { TaskManagerTool } from './planning/TaskManagerTool';
+import { PlanTool } from './planning/PlanTool';
+import { PlanModeTool } from './planning/PlanModeTool';
+import { WebFetchUnifiedTool } from './network/WebFetchUnifiedTool';
+import { ReadDocumentTool } from './network/ReadDocumentTool';
+import { BrowserTool } from './vision/BrowserTool';
+import { ComputerTool } from './vision/ComputerTool';
+
 // ----------------------------------------------------------------------------
 // Tool Interface
 // ----------------------------------------------------------------------------
@@ -218,14 +229,124 @@ export interface ToolExecutionResult {
 // Tool Aliases - Maps legacy snake_case names to PascalCase
 // ----------------------------------------------------------------------------
 
+/**
+ * Default action params for aliases that map to unified tools requiring an `action` field.
+ * Without these, calling legacy names like `plan_read` would hit "Unknown action" errors.
+ */
+const ALIAS_DEFAULT_PARAMS: Record<string, Record<string, unknown>> = {
+  // Process unified tool
+  process_list:   { action: 'list' },
+  process_poll:   { action: 'poll' },
+  process_log:    { action: 'log' },
+  process_write:  { action: 'write' },
+  process_submit: { action: 'submit' },
+  process_kill:   { action: 'kill' },
+  kill_shell:     { action: 'kill' },
+  task_output:    { action: 'poll' },
+
+  // MCPUnified tool
+  mcp_list_tools:     { action: 'list_tools' },
+  mcp_list_resources: { action: 'list_resources' },
+  mcp_read_resource:  { action: 'read_resource' },
+  mcp_get_status:     { action: 'get_status' },
+  mcp_add_server:     { action: 'add_server' },
+
+  // TaskManager unified tool
+  task_create: { action: 'create' },
+  TaskCreate:  { action: 'create' },
+  task_get:    { action: 'get' },
+  TaskGet:     { action: 'get' },
+  task_list:   { action: 'list' },
+  TaskList:    { action: 'list' },
+  task_update: { action: 'update' },
+  TaskUpdate:  { action: 'update' },
+
+  // Plan tool
+  plan_read:   { action: 'read' },
+  plan_update: { action: 'update' },
+
+  // PlanMode tool
+  enter_plan_mode: { action: 'enter' },
+  exit_plan_mode:  { action: 'exit' },
+
+  // Browser unified tool
+  browser_navigate: { action: 'navigate' },
+  browser_action:   { action: 'action' },
+
+  // Computer unified tool
+  screenshot:   { action: 'screenshot' },
+  computer_use: { action: 'use' },
+
+  // ReadDocument unified tool
+  read_pdf:  { action: 'read', format: 'pdf' },
+  read_docx: { action: 'read', format: 'docx' },
+  read_xlsx: { action: 'read', format: 'xlsx' },
+};
+
 const TOOL_ALIASES: Record<string, string> = {
+  // Phase 1: Core tool aliases (snake_case → PascalCase)
+  read_file: 'Read',
+  write_file: 'Write',
+  edit_file: 'Edit',
+  multi_edit_file: 'Edit',
+  bash: 'Bash',
+  glob: 'Glob',
+  grep: 'Grep',
+  web_search: 'WebSearch',
+  web_fetch: 'WebFetch',
+  ask_user_question: 'AskUserQuestion',
+
+  // Multi-agent aliases
   spawn_agent: 'AgentSpawn',
   agent_message: 'AgentMessage',
   workflow_orchestrate: 'WorkflowOrchestrate',
   teammate: 'Teammate',
-  multi_edit_file: 'edit_file',
+
+  // Memory aliases
   memory_store: 'memory',
   memory_search: 'memory',
+
+  // Phase 2: Deferred tool aliases → unified tools
+  process_list: 'Process',
+  process_poll: 'Process',
+  process_log: 'Process',
+  process_write: 'Process',
+  process_submit: 'Process',
+  process_kill: 'Process',
+  kill_shell: 'Process',
+  task_output: 'Process',
+
+  mcp_list_tools: 'MCPUnified',
+  mcp_list_resources: 'MCPUnified',
+  mcp_read_resource: 'MCPUnified',
+  mcp_get_status: 'MCPUnified',
+  mcp_add_server: 'MCPUnified',
+
+  task_create: 'TaskManager',
+  TaskCreate: 'TaskManager',
+  task_get: 'TaskManager',
+  TaskGet: 'TaskManager',
+  task_list: 'TaskManager',
+  TaskList: 'TaskManager',
+  task_update: 'TaskManager',
+  TaskUpdate: 'TaskManager',
+
+  plan_read: 'Plan',
+  plan_update: 'Plan',
+  enter_plan_mode: 'PlanMode',
+  exit_plan_mode: 'PlanMode',
+
+  http_request: 'WebFetch',
+
+  read_pdf: 'ReadDocument',
+  read_docx: 'ReadDocument',
+  read_xlsx: 'ReadDocument',
+
+  browser_navigate: 'Browser',
+  browser_action: 'Browser',
+
+  screenshot: 'Computer',
+  computer_use: 'Computer',
 };
 
 // ----------------------------------------------------------------------------
@@ -274,7 +395,7 @@ export class ToolRegistry {
     this.register(bashTool);
     this.register(readFileTool);
     this.register(writeFileTool);
-    this.register(editFileTool); // now supports batch mode via edits[] param (replaces multi_edit_file)
+    this.register(editFileTool); // single-edit tool (old_string/new_string)
     this.register(killShellTool);
     this.register(taskOutputTool);
     this.register(notebookEditTool);
@@ -387,6 +508,18 @@ export class ToolRegistry {
     this.register(codeExecuteTool);
     this.register(queryMetricsTool);
 
+
+    // Phase 2: Unified tools (consolidated from multiple tools)
+    this.register(ProcessTool);
+    this.register(MCPUnifiedTool);
+    this.register(TaskManagerTool);
+    this.register(PlanTool);
+    this.register(PlanModeTool);
+    this.register(WebFetchUnifiedTool);
+    this.register(ReadDocumentTool);
+    this.register(BrowserTool);
+    this.register(ComputerTool);
+
     // Tool Search (核心工具，始终可用)
     this.register(toolSearchTool);
   }
@@ -426,6 +559,15 @@ export class ToolRegistry {
     if (aliasedName) return this.tools.get(aliasedName);
 
     return undefined;
+  }
+
+  /**
+   * Get default params that should be injected when a legacy alias is used.
+   * This ensures unified tools receive the required `action` parameter
+   * even when called via their old snake_case names.
+   */
+  getDefaultParamsForAlias(name: string): Record<string, unknown> | undefined {
+    return ALIAS_DEFAULT_PARAMS[name];
   }
 
   /**

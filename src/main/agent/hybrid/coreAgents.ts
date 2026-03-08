@@ -130,7 +130,7 @@ export const CORE_AGENTS: Record<CoreAgentId, CoreAgentConfig> = {
 
 ## Rules
 - ALWAYS read a file before editing it
-- For multi-step tasks, start with todo_write
+- For multi-step tasks, list your plan as a numbered list
 - Run verification after modifications (bash: npm run typecheck)
 - Follow project conventions and patterns
 
@@ -146,7 +146,7 @@ export const CORE_AGENTS: Record<CoreAgentId, CoreAgentConfig> = {
 - Create sub-tasks with task_create if you discover additional work needed`,
     tools: [
       'bash', 'read_file', 'write_file', 'edit_file',
-      'glob', 'grep', 'list_directory', 'todo_write',
+      'glob', 'grep', 'list_directory',
       'task_list', 'task_get', 'task_update', 'task_create',
     ],
     model: 'powerful',
@@ -315,7 +315,7 @@ Suggested actions:
 - Create sub-tasks with task_create to break down complex plans`,
     tools: [
       'glob', 'grep', 'read_file', 'list_directory',
-      'write_file', 'todo_write',
+      'write_file',
       'task_list', 'task_get', 'task_update', 'task_create',
     ],
     model: 'balanced',

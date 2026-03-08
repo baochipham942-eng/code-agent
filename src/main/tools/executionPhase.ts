@@ -63,7 +63,7 @@ const EDIT_TOOLS = new Set([
   'Edit',
   'notebook_edit',
   'findings_write',
-  'todo_write',
+  // 'todo_write', // 已移除
   'plan_update',
   'Plan',
   'memory',

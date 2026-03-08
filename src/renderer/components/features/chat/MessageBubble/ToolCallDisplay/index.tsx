@@ -108,8 +108,9 @@ export function ToolCallDisplay({
   }, [toolCall, currentSessionId, processingSessionIds]);
 
   // Default expanded state: error or pending shows expanded, success/interrupted collapsed
+  // 默认折叠，仅 error 时自动展开
   const [expanded, setExpanded] = useState(
-    status === 'error' || status === 'pending'
+    status === 'error'
   );
   // Track if user manually toggled
   const [userToggled, setUserToggled] = useState(false);
@@ -124,7 +125,7 @@ export function ToolCallDisplay({
 
   // Auto-expand on error or pending
   useEffect(() => {
-    if (status === 'error' || status === 'pending') {
+    if (status === 'error') {
       setExpanded(true);
       setUserToggled(false);
     }

@@ -254,7 +254,7 @@ const BUILTIN_TOOL_META: Record<string, ToolMetadata> = {
   grep: { name: 'grep', description: '在文件中搜索内容', version: '1.0.0' },
   list_directory: { name: 'list_directory', description: '列出目录内容', version: '1.0.0' },
   task: { name: 'task', description: '创建子任务', version: '1.0.0' },
-  todo_write: { name: 'todo_write', description: '管理任务列表', version: '1.0.0' },
+  // todo_write: { name: 'todo_write', description: '管理任务列表', version: '1.0.0' }, // 已移除
   ask_user_question: { name: 'ask_user_question', description: '向用户提问', version: '1.0.0' },
   skill: { name: 'skill', description: '调用预定义技能', version: '1.0.0' },
   web_fetch: { name: 'web_fetch', description: '获取网页内容', version: '1.0.0' },

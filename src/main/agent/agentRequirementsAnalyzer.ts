@@ -158,7 +158,7 @@ const AGENT_RECOMMENDATIONS: Record<AgentTaskType, SuggestedAgents> = {
 const TOOL_RECOMMENDATIONS: Record<AgentTaskType, ToolConstraints> = {
   code: {
     required: ['read_file', 'write_file', 'edit_file', 'glob'],
-    optional: ['bash', 'grep', 'todo_write'],
+    optional: ['bash', 'grep'],
     forbidden: [],
   },
   analysis: {

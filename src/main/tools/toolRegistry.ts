@@ -39,7 +39,7 @@ import {
 // Planning tools
 import {
   taskTool,
-  todoWriteTool,
+  // todoWriteTool, // 已移除：改为 agentLoop 自动解析任务列表
   askUserQuestionTool,
   confirmActionTool,
   planReadTool,
@@ -298,7 +298,7 @@ const TOOL_ALIASES: Record<string, string> = {
 
   // Phase 1 continued: remaining snake_case → PascalCase
   list_directory: 'ListDirectory',
-  todo_write: 'TodoWrite',
+  // todo_write: 'TodoWrite', // 已移除
   tool_search: 'ToolSearch',
   skill: 'Skill',
 
@@ -421,7 +421,7 @@ export class ToolRegistry {
 
     // Gen 3 tools
     this.register(taskTool);
-    this.register(todoWriteTool);
+    // this.register(todoWriteTool); // 已移除：改为 agentLoop 自动解析任务列表
     this.register(askUserQuestionTool);
     this.register(confirmActionTool);
     this.register(readClipboardTool);

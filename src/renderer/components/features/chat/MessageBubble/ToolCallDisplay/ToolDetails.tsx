@@ -54,6 +54,10 @@ export function ToolDetails({ toolCall, compact }: Props) {
       }
     : null;
 
+  // 空编辑检测：old_string 和 new_string 完全相同
+  const isEmptyEdit = isEditFile && editFileArgs &&
+    editFileArgs.oldString === editFileArgs.newString;
+
   // Check for special file results
   const createdFilePath = extractCreatedFilePath(toolCall);
   const imageResult = extractImageResult(toolCall);
@@ -66,8 +70,8 @@ export function ToolDetails({ toolCall, compact }: Props) {
 
   return (
     <div className="mt-1 space-y-1.5 text-xs">
-      {/* Diff view for Edit */}
-      {isEditFile && editFileArgs && showDiff && (
+      {/* Diff view for Edit (skip for empty edits) */}
+      {isEditFile && editFileArgs && showDiff && !isEmptyEdit && (
         <div className="animate-fadeIn">
           <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">
             <span>Diff</span>
@@ -91,23 +95,31 @@ export function ToolDetails({ toolCall, compact }: Props) {
       {/* Arguments section - hidden in compact mode */}
       {!compact && args && (
         <div>
-          <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">
-            <span>Arguments</span>
-            <div className="flex-1 h-px bg-gray-700/50" />
-            {isEditFile && !showDiff && (
-              <button
-                onClick={() => setShowDiff(true)}
-                className="text-blue-400 hover:text-blue-300 px-2 transition-colors"
-              >
-                View Diff
-              </button>
-            )}
-          </div>
-          <pre className="text-xs text-gray-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto border border-gray-800/50 whitespace-pre-wrap">
-            {isEditFile && editFileArgs
-              ? `File: ${editFileArgs.filePath}\nChanges: ${editFileArgs.oldString.length} -> ${editFileArgs.newString.length} chars`
-              : formatArgs(name, args)}
-          </pre>
+          {isEmptyEdit ? (
+            <div className="text-xs text-zinc-500 italic py-1">
+              无变化 — {editFileArgs!.filePath.split('/').pop()}
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-2">
+                <span>Arguments</span>
+                <div className="flex-1 h-px bg-gray-700/50" />
+                {isEditFile && !showDiff && (
+                  <button
+                    onClick={() => setShowDiff(true)}
+                    className="text-blue-400 hover:text-blue-300 px-2 transition-colors"
+                  >
+                    View Diff
+                  </button>
+                )}
+              </div>
+              <pre className="text-xs text-gray-400 bg-gray-900/50 rounded-lg p-3 overflow-x-auto border border-gray-800/50 whitespace-pre-wrap">
+                {isEditFile && editFileArgs
+                  ? `File: ${editFileArgs.filePath}\nChanges: ${editFileArgs.oldString.length} -> ${editFileArgs.newString.length} chars`
+                  : formatArgs(name, args)}
+              </pre>
+            </>
+          )}
         </div>
       )}
 

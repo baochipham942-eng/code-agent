@@ -249,7 +249,7 @@ export const SEQUENTIAL_TOOLS = new Set([
   'bash',
   'memory_store',
   'ask_user_question',
-  'todo_write',
+  'todo_write' /* 已移除，保留兼容 */,
   // P5: task 已移到并行安全（只读子代理可并行）
   // 注意：spawn_agent 仍需串行，因为可能创建有写权限的代理
   'spawn_agent',

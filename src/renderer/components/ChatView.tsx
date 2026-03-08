@@ -7,12 +7,13 @@ import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
+import { useStatusStore } from '../stores/statusStore';
 import { useAgent } from '../hooks/useAgent';
 import { useRequireAuth } from '../hooks/useRequireAuth';
 import { MessageBubble } from './features/chat/MessageBubble';
 import { ChatInput } from './features/chat/ChatInput';
 import { TaskStatusBar } from './features/chat/TaskStatusBar';
-import { TodoProgressPanel } from './features/chat/TodoProgressPanel';
+
 import { PreviewPanel } from './PreviewPanel';
 import { PlanPanel } from './features/chat/PlanPanel';
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
@@ -23,7 +24,6 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import {
   Bot,
   Code2,
-  Bug,
   FileQuestion,
   Sparkles,
   Terminal,
@@ -32,7 +32,7 @@ import {
 
 export const ChatView: React.FC = () => {
   const { showPreviewPanel } = useAppStore();
-  const { todos, currentSessionId } = useSessionStore();
+  const { currentSessionId } = useSessionStore();
   const { messages, isProcessing, sendMessage, cancel, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
 
   // Plan 状态
@@ -133,9 +133,6 @@ export const ChatView: React.FC = () => {
     });
   }, [requireAuthAsync, sendMessage]);
 
-  // Show Gen 3+ todo bar if there are todos
-  const showTodoBar = todos.length > 0;
-
   // Render individual message item
   const renderMessageItem = useCallback((_index: number, message: Message) => (
     <div className="px-6 py-1 w-full">
@@ -161,14 +158,7 @@ export const ChatView: React.FC = () => {
         {/* Task Status Bar - 显示多任务状态 */}
         <TaskStatusBar className="shrink-0 mx-4 mt-2" />
 
-        {/* Todo Progress Panel - Claude Code 风格任务清单 */}
-        {showTodoBar && (
-          <TodoProgressPanel
-            todos={todos}
-            isProcessing={effectiveIsProcessing}
-            className="mx-4 mt-1"
-          />
-        )}
+        {/* Todo Progress Panel 已移至右侧 TaskInfo 面板 */}
 
         {/* Messages */}
         <div className="flex-1 overflow-hidden">
@@ -236,6 +226,16 @@ export const ChatView: React.FC = () => {
 
 // Thinking indicator - Claude/ChatGPT style, left-aligned, no avatar
 const ThinkingIndicator: React.FC = () => {
+  const { inputTokens, outputTokens } = useStatusStore();
+  const totalTokens = inputTokens + outputTokens;
+
+  // 格式化 token 数
+  const formatTokens = (n: number): string => {
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    return n.toString();
+  };
+
   return (
     <div className="animate-slideUp">
       {/* Thinking indicator - simple dots */}
@@ -247,6 +247,11 @@ const ThinkingIndicator: React.FC = () => {
           <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '300ms' }} />
         </div>
         <span className="text-sm text-zinc-400">思考中</span>
+        {totalTokens > 0 && (
+          <span className="text-xs text-zinc-500 font-mono">
+            · {formatTokens(totalTokens)} tokens
+          </span>
+        )}
       </div>
     </div>
   );

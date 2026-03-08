@@ -241,13 +241,13 @@ const SYSTEM_PROMPT_TEMPLATES: Record<AgentTaskType, string> = {
 // ----------------------------------------------------------------------------
 
 const TASK_TYPE_TOOLS: Record<AgentTaskType, string[]> = {
-  code: ['read_file', 'write_file', 'edit_file', 'glob', 'grep', 'bash', 'todo_write'],
+  code: ['read_file', 'write_file', 'edit_file', 'glob', 'grep', 'bash'],
   analysis: ['read_file', 'glob', 'grep', 'list_directory'],
   research: ['web_fetch', 'web_search', 'read_file', 'glob'],
   documentation: ['read_file', 'write_file', 'glob', 'grep'],
   testing: ['bash', 'read_file', 'write_file', 'glob', 'grep'],
   devops: ['bash', 'read_file', 'write_file', 'glob'],
-  mixed: ['read_file', 'write_file', 'edit_file', 'glob', 'grep', 'bash', 'todo_write'],
+  mixed: ['read_file', 'write_file', 'edit_file', 'glob', 'grep', 'bash'],
 };
 
 const ITERATION_LIMITS: Record<AgentTaskType, number> = {

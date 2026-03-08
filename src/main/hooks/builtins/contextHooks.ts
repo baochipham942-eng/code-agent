@@ -235,7 +235,7 @@ function extractCodeChanges(messages: Message[]): PreservedContext['codeChanges'
 function extractTodoStatus(messages: Message[]): PreservedContext['todoStatus'] {
   const todos: PreservedContext['todoStatus'] = [];
 
-  // 从消息中查找 todo_write 工具调用
+  // 从消息中查找 todo_write 工具调用（向后兼容旧消息历史）
   for (const message of messages) {
     if (!message.toolCalls) continue;
 

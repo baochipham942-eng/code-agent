@@ -76,7 +76,7 @@ Follow existing code style to maintain consistency across the codebase.
 
 ## Context Management
 The system auto-compresses context when it grows large. Do not stop a task early because
-"context is getting full." For complex tasks, write key state to files or TodoWrite to persist progress.
+"context is getting full." For complex tasks, write key state to files to persist progress.
 </task_guidelines>
 `.trim();
 

@@ -18,7 +18,7 @@ const CLASSIFIER_PROVIDER = 'zhipu' as const;
 const CLASSIFIER_MODEL = 'glm-4-flash';
 
 /** Classification timeout to prevent blocking main flow (8s for free model) */
-const CLASSIFY_TIMEOUT_MS = 8000;
+const CLASSIFY_TIMEOUT_MS = 3000;
 
 export type TaskIntent = 'research' | 'code' | 'search' | 'data' | 'general';
 

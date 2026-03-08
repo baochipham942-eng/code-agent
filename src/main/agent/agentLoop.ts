@@ -63,8 +63,16 @@ import { cleanXmlResidues } from './antiPattern/cleanXml';
 import { GoalTracker } from './goalTracker';
 import { NudgeManager } from './nudgeManager';
 import { getSessionRecoveryService } from './sessionRecovery';
-import { getCurrentTodos } from '../tools/planning/todoWrite';
 import { getIncompleteTasks } from '../tools/planning';
+import {
+  parseTodos,
+  mergeTodos,
+  advanceTodoStatus,
+  completeCurrentAndAdvance,
+  getSessionTodos,
+  setSessionTodos,
+  clearSessionTodos,
+} from './todoParser';
 import { fileReadTracker } from '../tools/fileReadTracker';
 import { dataFingerprintStore } from '../tools/dataFingerprint';
 import { MAX_PARALLEL_TOOLS } from './loopTypes';
@@ -941,6 +949,9 @@ export class AgentLoop {
 
         this.onEvent({ type: 'message', data: assistantMessage });
 
+        // === 自动解析任务列表（替代 TodoWrite 工具） ===
+        this.tryParseTodosFromResponse(response);
+
         langfuse.endSpan(this.currentIterationSpanId, { type: 'text_response' });
 
         this.emitTaskProgress('completed', '回复完成');
@@ -1183,6 +1194,12 @@ export class AgentLoop {
           toolResults: compressedResults,
         };
         await this.addAndPersistMessage(toolMessage);
+
+        // === 工具执行后自动推进任务状态 ===
+        this.autoAdvanceTodos(toolCalls, toolResults);
+
+        // 如果模型在 tool_use 轮次也有 thinking/content，尝试从中解析任务列表
+        this.tryParseTodosFromResponse(response);
 
         // Flush hook message buffer at end of iteration
         this.flushHookMessageBuffer();
@@ -1535,7 +1552,7 @@ export class AgentLoop {
     }
 
     // Pre-completion Hook: Check for incomplete todos AND tasks
-    const finalTodos = getCurrentTodos(this.sessionId);
+    const finalTodos = getSessionTodos(this.sessionId);
     const incompleteFinalTodos = finalTodos.filter(t => t.status !== 'completed');
     const incompleteFinalTasks = getIncompleteTasks(this.sessionId);
     const totalIncomplete = incompleteFinalTodos.length + incompleteFinalTasks.length;
@@ -1666,6 +1683,70 @@ export class AgentLoop {
 
   getPlanningService(): PlanningService | undefined {
     return this.planningService;
+  }
+
+  // --------------------------------------------------------------------------
+  // 自动任务列表解析（替代 TodoWrite 工具）
+  // --------------------------------------------------------------------------
+
+  /**
+   * 从模型的 thinking/text content 中提取任务列表，推送到前端
+   */
+  private tryParseTodosFromResponse(response: { content?: string; thinking?: string }): void {
+    // 优先从 thinking content 中解析（计划通常出现在思考过程中）
+    let parsed: import('../../shared/types').TodoItem[] | null = null;
+
+    if (response.thinking) {
+      parsed = parseTodos(response.thinking);
+    }
+
+    // 如果 thinking 中没有，从 text content 中解析
+    if (!parsed && response.content) {
+      parsed = parseTodos(response.content);
+    }
+
+    if (!parsed || parsed.length === 0) return;
+
+    // 合并到会话级任务存储
+    const existing = getSessionTodos(this.sessionId);
+    const merged = existing.length > 0 ? mergeTodos(existing, parsed) : parsed;
+
+    // 自动推进状态：确保有一个 in_progress 的任务
+    const { todos: advanced } = advanceTodoStatus(merged);
+    setSessionTodos(this.sessionId, advanced);
+
+    // 推送到前端
+    this.onEvent({ type: 'todo_update', data: advanced });
+
+    logger.debug(`[AgentLoop] 自动解析到 ${parsed.length} 个任务，合并后 ${advanced.length} 个`);
+  }
+
+  /**
+   * 工具执行完成后自动推进任务状态
+   * 当工具执行成功时，将当前 in_progress 的任务标记为 completed 并推进下一个
+   */
+  private autoAdvanceTodos(
+    toolCalls: Array<{ name: string; id: string }>,
+    toolResults: Array<{ success: boolean; toolCallId: string }>,
+  ): void {
+    const todos = getSessionTodos(this.sessionId);
+    if (todos.length === 0) return;
+
+    // 只有当有成功的工具执行时才推进
+    const hasSuccessfulTool = toolResults.some(r => r.success);
+    if (!hasSuccessfulTool) return;
+
+    // 检查是否有 in_progress 的任务
+    const hasInProgress = todos.some(t => t.status === 'in_progress');
+    if (!hasInProgress) return;
+
+    // 计算成功工具调用的累计数量（简单策略：每轮成功的工具调用推进一次）
+    const { updated, todos: advanced } = completeCurrentAndAdvance(todos);
+    if (updated) {
+      setSessionTodos(this.sessionId, advanced);
+      this.onEvent({ type: 'todo_update', data: advanced });
+      logger.debug(`[AgentLoop] 自动推进任务状态`);
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -3426,7 +3507,7 @@ ${deferredToolsSummary}
             recoveryContext += recentFiles.map(f => `- ${f.path}`).join('\n');
           }
 
-          const todos = getCurrentTodos(this.sessionId);
+          const todos = getSessionTodos(this.sessionId);
           const pendingTodos = todos.filter(t => t.status !== 'completed');
           if (pendingTodos.length > 0) {
             recoveryContext += '\n\n## 未完成的任务\n';
@@ -3987,7 +4068,7 @@ ${deferredToolsSummary}
     }
 
     // 检查未完成的任务
-    const incompleteTodos = getCurrentTodos(this.sessionId).filter(t => t.status !== 'completed');
+    const incompleteTodos = getSessionTodos(this.sessionId).filter(t => t.status !== 'completed');
     const incompleteTasks = getIncompleteTasks(this.sessionId);
 
     if (incompleteTodos.length > 0 || incompleteTasks.length > 0) {

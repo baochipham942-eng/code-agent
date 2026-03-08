@@ -23,7 +23,7 @@ export const CORE_TOOLS: string[] = [
 
   // Gen 3: 规划和任务
   'TaskManager',
-  'TodoWrite',
+  // 'TodoWrite', // 已移除
   'AskUserQuestion',
 
   // Gen 4: 网络搜索

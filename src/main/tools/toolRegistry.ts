@@ -10,6 +10,8 @@ import { getCloudConfigService } from '../services/cloud';
 import { toolSearchTool, CORE_TOOLS, getToolSearchService } from './search';
 
 // Import tool definitions - organized by function
+
+// Shell tools
 import {
   bashTool,
   grepTool,
@@ -22,7 +24,19 @@ import {
   processSubmitTool,
   processKillTool,
 } from './shell';
-import { readFileTool, writeFileTool, editFileTool, globTool, listDirectoryTool, readClipboardTool, notebookEditTool } from './file';
+
+// File tools
+import {
+  readFileTool,
+  writeFileTool,
+  editFileTool,
+  globTool,
+  listDirectoryTool,
+  readClipboardTool,
+  notebookEditTool,
+} from './file';
+
+// Planning tools
 import {
   taskTool,
   todoWriteTool,
@@ -30,15 +44,16 @@ import {
   confirmActionTool,
   planReadTool,
   planUpdateTool,
-  findingsWriteTool,
   enterPlanModeTool,
   exitPlanModeTool,
-  // Task API (Claude Code 2.x compatible)
+  findingsWriteTool,
   taskCreateTool,
   taskGetTool,
   taskListTool,
   taskUpdateTool,
 } from './planning';
+
+// Network tools
 import {
   webFetchTool,
   webSearchTool,
@@ -59,6 +74,7 @@ import {
   twitterFetchTool,
   mermaidExportTool,
   pdfGenerateTool,
+  pdfCompressTool,
   imageProcessTool,
   screenshotPageTool,
   academicSearchTool,
@@ -68,32 +84,48 @@ import {
   textToSpeechTool,
   imageAnnotateTool,
   xlwingsExecuteTool,
-  pdfCompressTool,
 } from './network';
-import { skillMetaTool } from './skill';
+
+// MCP tools
 import {
   mcpTool,
   mcpListToolsTool,
   mcpListResourcesTool,
   mcpReadResourceTool,
   mcpGetStatusTool,
-  mcpAddServerTool,
 } from './mcp';
-import { memoryStoreTool, memorySearchTool, codeIndexTool, autoLearnTool, forkSessionTool } from './memory';
-import { screenshotTool, computerUseTool, browserNavigateTool, browserActionTool, guiAgentTool } from './vision';
+import { mcpAddServerTool } from './mcp';
+
+// Memory tools
+import { memoryTool, codeIndexTool, autoLearnTool, forkSessionTool } from './memory';
+
+// Vision tools
+import {
+  screenshotTool,
+  computerUseTool,
+  browserNavigateTool,
+  browserActionTool,
+  guiAgentTool,
+} from './vision';
+
+// Skill tools
+import { skillMetaTool } from './skill';
+
+// Multi-agent tools
 import {
   sdkTaskTool,
   agentSpawnTool,
   AgentMessageTool,
   WorkflowOrchestrateTool,
   TeammateTool,
-  spawnAgentTool,
-  agentMessageTool,
-  workflowOrchestrateTool,
-  teammateTool,
+  // DEPRECATED: spawnAgentTool, agentMessageTool, workflowOrchestrateTool, teammateTool removed — use PascalCase versions
   planReviewTool,
 } from './multiagent';
+
+// Evolution tools
 import { strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternTool, codeExecuteTool, queryMetricsTool } from './evolution';
+
+// LSP tools
 import { lspTool, diagnosticsTool } from './lsp';
 
 // ----------------------------------------------------------------------------
@@ -190,6 +222,10 @@ const TOOL_ALIASES: Record<string, string> = {
   spawn_agent: 'AgentSpawn',
   agent_message: 'AgentMessage',
   workflow_orchestrate: 'WorkflowOrchestrate',
+  teammate: 'Teammate',
+  multi_edit_file: 'edit_file',
+  memory_store: 'memory',
+  memory_search: 'memory',
 };
 
 // ----------------------------------------------------------------------------
@@ -238,7 +274,7 @@ export class ToolRegistry {
     this.register(bashTool);
     this.register(readFileTool);
     this.register(writeFileTool);
-    this.register(editFileTool);
+    this.register(editFileTool); // now supports batch mode via edits[] param (replaces multi_edit_file)
     this.register(killShellTool);
     this.register(taskOutputTool);
     this.register(notebookEditTool);
@@ -320,8 +356,7 @@ export class ToolRegistry {
     this.register(mcpAddServerTool);
 
     // Gen 5 tools
-    this.register(memoryStoreTool);
-    this.register(memorySearchTool);
+    this.register(memoryTool); // unified store + search (replaces memory_store & memory_search)
     this.register(codeIndexTool);
     this.register(autoLearnTool);
     this.register(forkSessionTool);
@@ -336,16 +371,11 @@ export class ToolRegistry {
     // Gen 7 tools - Multi-Agent
     // SDK-compatible Task tool (simplified interface)
     this.register(sdkTaskTool);
-    // PascalCase tools (recommended for new code)
+    // PascalCase tools (legacy snake_case retired — aliases handle backward compat)
     this.register(agentSpawnTool);
     this.register(AgentMessageTool);
     this.register(WorkflowOrchestrateTool);
     this.register(TeammateTool);
-    // Legacy snake_case tools (backward compatibility)
-    this.register(spawnAgentTool);
-    this.register(agentMessageTool);
-    this.register(workflowOrchestrateTool);
-    this.register(teammateTool);
     // Plan review (cross-agent approval)
     this.register(planReviewTool);
 

@@ -23,6 +23,7 @@ import { getConfigService, getAuthService, getLangfuseService, getBudgetService,
 import { logCollector } from '../mcp/logCollector.js';
 import { generateMessageId } from '../../shared/utils/id';
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
+import { classifyIntent } from './hybrid/intentClassifier';
 import { getTaskOrchestrator } from '../orchestrator/taskOrchestrator';
 import { getMaxIterations } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';
@@ -177,6 +178,9 @@ export class AgentLoop {
 
   // Simple task mode flag
   private isSimpleTaskMode: boolean = false;
+
+  // Research mode flag (set by LLM intent classification)
+  private _researchModeActive: boolean = false;
 
   // Working directory context
   private workingDirectory: string;
@@ -1202,6 +1206,21 @@ export class AgentLoop {
       } catch (error) {
         // 并行判断失败不影响主流程
         logger.warn('[AgentLoop] Parallel judgment failed, continuing without hint', error);
+      }
+    }
+
+    // LLM-based intent classification (for research routing)
+    // Only run if task wasn't already classified as complex by keywords
+    if (complexityAnalysis.complexity === 'simple' || complexityAnalysis.complexity === 'moderate') {
+      try {
+        const intent = await classifyIntent(userMessage, this.modelRouter);
+        logger.info('Intent classified', { intent, message: userMessage.substring(0, 50) });
+
+        if (intent === 'research') {
+          this.injectResearchModePrompt(userMessage);
+        }
+      } catch (error) {
+        logger.warn('Intent classification failed, continuing with normal mode', { error: String(error) });
       }
     }
 
@@ -2880,6 +2899,39 @@ ${deferredToolsSummary}
     }
 
     return hints;
+  }
+
+  /**
+   * Inject a research-mode system prompt that forces multi-angle search planning.
+   * Called when LLM intent classification detects a 'research' intent.
+   */
+  private injectResearchModePrompt(_userMessage: string): void {
+    const researchPrompt = `## 研究模式已激活
+
+用户的请求需要深入调研。请按以下步骤执行：
+
+### 第一步：制定研究计划
+在搜索之前，先思考并列出 3-5 个不同的研究角度。每个角度应该覆盖不同维度：
+- 现状数据（当前市场/行业状态）
+- 趋势分析（发展方向和变化）
+- 定量数据（数字、统计、指标）
+- 定性信息（观点、评价、案例）
+- 对比维度（竞品/同类比较）
+
+### 第二步：多角度搜索
+针对每个研究角度执行独立搜索，搜索关键词必须各不相同，禁止仅改换措辞重复搜索同一内容。
+
+### 第三步：深入抓取
+对关键搜索结果使用 web_fetch 获取详细内容，不要仅依赖搜索摘要。
+
+### 第四步：综合分析
+汇总所有角度的发现，去重后形成结构化报告，包含数据支撑和来源引用。
+
+**重要**：不要只搜索 1-2 次就给出结论。至少执行 4 次不同角度的搜索。`;
+
+    this.injectSystemMessage(researchPrompt);
+    this._researchModeActive = true;
+    logger.info('Research mode prompt injected');
   }
 
   private injectSystemMessage(content: string, category?: string): void {

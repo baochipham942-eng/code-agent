@@ -16,6 +16,32 @@ const logger = createLogger('WebFetch');
 
 const DEFAULT_MAX_CHARS = 8000;
 
+// ============================================================================
+// High-Risk Domains (frequently block crawlers with 403/anti-scraping)
+// Fetch is still attempted, but failures get a more helpful error message.
+// ============================================================================
+
+const HIGH_RISK_DOMAINS = [
+  'zhuanlan.zhihu.com',
+  'www.zhihu.com',
+  'mp.weixin.qq.com',
+  'www.jianshu.com',
+  'juejin.cn',
+];
+
+/**
+ * Check if a URL belongs to a high-risk domain that frequently blocks crawlers.
+ */
+function isHighRiskDomain(url: string): boolean {
+  try {
+    const hostname = new URL(url).hostname;
+    return HIGH_RISK_DOMAINS.some(d => hostname === d || hostname.endsWith('.' + d));
+  } catch {
+    return false;
+  }
+}
+
+
 /** Max learned domains to prevent unbounded growth */
 const MAX_LEARNED_DOMAINS = 200;
 
@@ -141,6 +167,12 @@ Notes:
       };
     }
 
+    // Warn about high-risk domains (still attempt fetch)
+    const highRisk = isHighRiskDomain(url);
+    if (highRisk) {
+      logger.warn('High-risk domain detected, fetch may fail due to anti-scraping', { url });
+    }
+
     try {
       // Fetch via shared utility (handles caching, timeout, retry, redirects)
       const result = await fetchDocument(url);
@@ -204,9 +236,12 @@ Notes:
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       logger.warn(`Failed to fetch ${url}: ${message}`);
+      const hint = highRisk
+        ? '\n\nNote: This site frequently blocks crawlers. Consider using web_search to get summary information instead of direct fetching.'
+        : '';
       return {
         success: false,
-        error: `Failed to fetch URL: ${message}`,
+        error: `Failed to fetch URL: ${message}${hint}`,
       };
     }
   },

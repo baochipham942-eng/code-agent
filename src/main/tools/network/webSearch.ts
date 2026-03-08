@@ -14,6 +14,41 @@ import { fetchDocument } from './fetchDocument';
 
 const logger = createLogger('WebSearch');
 
+// ============================================================================
+// Circuit Breaker for Rate-Limited Sources
+// ============================================================================
+
+/** source name -> cooldown expiry timestamp (ms) */
+const circuitBreaker: Record<string, number> = {};
+const CIRCUIT_BREAKER_COOLDOWN = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Check if a source is currently circuit-broken.
+ * Returns remaining cooldown in ms, or 0 if source is available.
+ */
+function getCircuitBreakerRemaining(source: string): number {
+  const until = circuitBreaker[source];
+  if (!until) return 0;
+  const remaining = until - Date.now();
+  if (remaining <= 0) {
+    delete circuitBreaker[source];
+    return 0;
+  }
+  return remaining;
+}
+
+/**
+ * Trip the circuit breaker for a source after receiving 429.
+ */
+function tripCircuitBreaker(source: string): void {
+  circuitBreaker[source] = Date.now() + CIRCUIT_BREAKER_COOLDOWN;
+  logger.warn('Circuit breaker tripped for source', {
+    source,
+    cooldownMs: CIRCUIT_BREAKER_COOLDOWN,
+    resumeAt: new Date(circuitBreaker[source]).toISOString(),
+  });
+}
+
 const CLOUD_SEARCH_URL = `${CLOUD_ENDPOINTS.tools}?action=search`;
 const BRAVE_SEARCH_URL = SEARCH_API_ENDPOINTS.brave;
 const EXA_SEARCH_URL = SEARCH_API_ENDPOINTS.exa;
@@ -160,7 +195,7 @@ function routeSources(
   if (isChinese) {
     selected.push('perplexity');  // Best Chinese AI summary
     selected.push('tavily');      // Good structured extraction
-    if (isResearchMode) selected.push('brave');  // Extra coverage
+    if (isResearchMode) selected.push('exa');  // Extra coverage (brave skipped: Free plan rate_limit=1)
   } else if (isTwitter) {
     selected.push('brave');       // Best for social/Twitter content
     selected.push('perplexity');  // AI summary context
@@ -176,12 +211,12 @@ function routeSources(
     selected.push('tavily');      // Structured extraction
     if (isResearchMode) selected.push('perplexity');
   } else {
-    // Default: 2 sources for quick, 3-4 for research
+    // Default: 2 sources for quick, 3 for research
+    // Brave excluded from research mode: Free plan rate_limit=1 causes 429 under parallel load
     selected.push('perplexity');
     selected.push('tavily');
     if (isResearchMode) {
       selected.push('exa');
-      selected.push('brave');
     }
   }
 
@@ -671,8 +706,31 @@ async function parallelSearch(
 ): Promise<ToolExecutionResult> {
   const startTime = Date.now();
 
+  // Filter out circuit-broken sources before searching
+  const activeSources: SearchSource[] = [];
+  const skippedSources: string[] = [];
+  for (const source of sources) {
+    const remaining = getCircuitBreakerRemaining(source.name);
+    if (remaining > 0) {
+      logger.info('Circuit breaker active, skipping source', {
+        source: source.name,
+        cooldownRemaining: `${Math.ceil(remaining / 1000)}s`,
+      });
+      skippedSources.push(`${source.name}: circuit breaker (${Math.ceil(remaining / 1000)}s remaining)`);
+    } else {
+      activeSources.push(source);
+    }
+  }
+
+  if (activeSources.length === 0) {
+    return {
+      success: false,
+      error: `All search sources are circuit-broken:\n${skippedSources.join('\n')}`,
+    };
+  }
+
   // 并行调用所有数据源（使用 allSettled 实现错误隔离）
-  const searchPromises = sources.map(source =>
+  const searchPromises = activeSources.map(source =>
     source.search(query, count, configService, domainFilter, recency)
       .catch(error => ({
         source: source.name,
@@ -685,20 +743,28 @@ async function parallelSearch(
 
   // 收集成功的结果
   const successResults: SearchSourceResult[] = [];
-  const failedSources: string[] = [];
+  const failedSources: string[] = [...skippedSources];
 
   for (let i = 0; i < results.length; i++) {
     const result = results[i];
-    const sourceName = sources[i].name;
+    const sourceName = activeSources[i].name;
 
     if (result.status === 'fulfilled') {
       if (result.value.success) {
         successResults.push(result.value);
       } else {
+        // Check for 429 and trip circuit breaker
+        if (result.value.error?.includes('429')) {
+          tripCircuitBreaker(sourceName);
+        }
         failedSources.push(`${sourceName}: ${result.value.error}`);
         logger.warn(`Search source ${sourceName} failed:`, result.value.error);
       }
     } else {
+      const reason = String(result.reason);
+      if (reason.includes('429')) {
+        tripCircuitBreaker(sourceName);
+      }
       failedSources.push(`${sourceName}: ${result.reason}`);
       logger.warn(`Search source ${sourceName} rejected:`, result.reason);
     }
@@ -737,15 +803,33 @@ async function serialSearch(
   const errors: string[] = [];
 
   for (const source of sources) {
+    // Check circuit breaker
+    const remaining = getCircuitBreakerRemaining(source.name);
+    if (remaining > 0) {
+      logger.info('Circuit breaker active, skipping source', {
+        source: source.name,
+        cooldownRemaining: `${Math.ceil(remaining / 1000)}s`,
+      });
+      errors.push(`${source.name}: circuit breaker (${Math.ceil(remaining / 1000)}s remaining)`);
+      continue;
+    }
+
     try {
       const result = await source.search(query, count, configService, domainFilter, recency);
       if (result.success) {
         const duration = Date.now() - startTime;
         return formatSingleSourceResult(query, result, duration);
       }
+      // Check for 429 and trip circuit breaker
+      if (result.error?.includes('429')) {
+        tripCircuitBreaker(source.name);
+      }
       errors.push(`${source.name}: ${result.error}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+      if (message.includes('429')) {
+        tripCircuitBreaker(source.name);
+      }
       errors.push(`${source.name}: ${message}`);
       logger.warn(`Search source ${source.name} failed:`, message);
     }

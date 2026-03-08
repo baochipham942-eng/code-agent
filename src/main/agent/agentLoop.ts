@@ -16,9 +16,11 @@ import type { StructuredOutputConfig, StructuredOutputResult } from './structure
 import { parseStructuredOutput, generateFormatCorrectionPrompt } from './structuredOutput';
 import type { ToolRegistry } from '../tools/toolRegistry';
 import type { ToolExecutor } from '../tools/toolExecutor';
+import { getToolSearchService } from '../tools/search';
 import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/memoryService';
+import { buildSeedMemoryBlock } from '../memory/seedMemoryInjector';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../services';
 import { logCollector } from '../mcp/logCollector.js';
 import { generateMessageId } from '../../shared/utils/id';
@@ -41,6 +43,7 @@ import type {
 } from './loopTypes';
 import { isParallelSafeTool, classifyToolCalls } from './toolExecution/parallelStrategy';
 import { CircuitBreaker } from './toolExecution/circuitBreaker';
+import { classifyExecutionPhase } from '../tools/executionPhase';
 import {
   formatToolCallForHistory,
   sanitizeToolResultsForHistory,
@@ -181,6 +184,7 @@ export class AgentLoop {
 
   // Research mode flag (set by LLM intent classification)
   private _researchModeActive: boolean = false;
+  private _researchIterationCount: number = 0;
 
   // Working directory context
   private workingDirectory: string;
@@ -230,6 +234,7 @@ export class AgentLoop {
 
   // CLI message persistence callback
   private persistMessage?: (message: Message) => Promise<void>;
+  private onToolExecutionLog?: AgentLoopConfig['onToolExecutionLog'];
 
   constructor(config: AgentLoopConfig) {
     this.generation = config.generation;
@@ -271,6 +276,7 @@ export class AgentLoop {
 
     // CLI message persistence callback
     this.persistMessage = config.persistMessage;
+    this.onToolExecutionLog = config.onToolExecutionLog;
 
     // Initialize refactored modules
     this.circuitBreaker = new CircuitBreaker();
@@ -433,14 +439,14 @@ export class AgentLoop {
         stepIterations++;
         const response = await this.inference();
         if (response.type === 'text') {
-          const msg: Message = { id: generateMessageId(), role: 'assistant', content: response.content || '', timestamp: Date.now() };
+          const msg: Message = { id: generateMessageId(), role: 'assistant', content: response.content || '', timestamp: Date.now(), inputTokens: response.usage?.inputTokens, outputTokens: response.usage?.outputTokens };
           this.messages.push(msg);
           this.onEvent({ type: 'message', data: msg });
           break;
         }
         if (response.type === 'tool_use' && response.toolCalls) {
           const results = await this.executeToolsWithHooks(response.toolCalls);
-          const toolMsg: Message = { id: generateMessageId(), role: 'assistant', content: response.content || '', timestamp: Date.now(), toolCalls: response.toolCalls, toolResults: results };
+          const toolMsg: Message = { id: generateMessageId(), role: 'assistant', content: response.content || '', timestamp: Date.now(), toolCalls: response.toolCalls, toolResults: results, inputTokens: response.usage?.inputTokens, outputTokens: response.usage?.outputTokens };
           this.messages.push(toolMsg);
         }
       }
@@ -509,13 +515,82 @@ export class AgentLoop {
       this.toolsUsedInTurn = [];
       // Note: readOnlyNudgeCount and todoNudgeCount are NOT reset here
       // They accumulate across turns to allow escalating nudges
-      this.emitTaskProgress('thinking', '分析请求中...');
+      // Research mode: emit search round progress
+      if (this._researchModeActive) {
+        this._researchIterationCount++;
+        this.emitTaskProgress('thinking', `正在搜索 (第${this._researchIterationCount}轮)`);
+      } else {
+        this.emitTaskProgress('thinking', '分析请求中...');
+      }
 
       // F1: Goal Re-Injection — 每 N 轮注入目标检查点
       const goalCheckpoint = this.goalTracker.getGoalCheckpoint(iterations);
       if (goalCheckpoint) {
         this.injectSystemMessage(goalCheckpoint);
         logger.debug(`[AgentLoop] Goal checkpoint injected at iteration ${iterations}`);
+      }
+
+      // Plan Feedback Loop — inject current plan progress so the model is aware of plan state
+      try {
+        if (this.planningService) {
+          const planContext = await this.buildPlanContextMessage();
+          if (planContext) {
+            this.injectSystemMessage(planContext);
+            logger.debug(`[AgentLoop] Plan context injected at iteration ${iterations}`);
+          }
+        }
+      } catch (planContextError) {
+        // Planning failures must never block the agent loop
+        logger.debug(`[AgentLoop] Plan context injection skipped: ${planContextError instanceof Error ? planContextError.message : 'unknown error'}`);
+      }
+
+      // Contextual Memory Retrieval — on first iteration, search stored memories
+      // using the user's message and inject top-3 relevant results as context
+      if (iterations === 1) {
+        try {
+          const memoryService = getMemoryService();
+          const memoryResults: Array<{ source: string; content: string; score: number }> = [];
+
+          // Search knowledge base
+          const knowledgeHits = memoryService.searchKnowledge(userMessage, undefined, 3);
+          for (const hit of knowledgeHits) {
+            memoryResults.push({
+              source: (hit.document.metadata?.category as string) || hit.document.metadata?.source || 'knowledge',
+              content: hit.document.content,
+              score: hit.score,
+            });
+          }
+
+          // Search conversations for additional context
+          const convHits = memoryService.searchRelevantConversations(userMessage, 3);
+          for (const hit of convHits) {
+            memoryResults.push({
+              source: 'conversation',
+              content: hit.document.content,
+              score: hit.score,
+            });
+          }
+
+          // Sort by score, take top 3
+          memoryResults.sort((a, b) => b.score - a.score);
+          const top3 = memoryResults.slice(0, 3).filter(r => r.score > 0.3);
+
+          if (top3.length > 0) {
+            const lines = top3.map(r => {
+              const preview = r.content.length > 300
+                ? r.content.slice(0, 300) + '...'
+                : r.content;
+              return `- [${r.source}]: ${preview} (relevance: ${Math.round(r.score * 100)}%)`;
+            });
+            this.injectSystemMessage(
+              `<contextual-memory>\n## Related Memories\n${lines.join('\n')}\n</contextual-memory>`
+            );
+            logger.debug(`[AgentLoop] Contextual memory: injected ${top3.length} relevant memories`);
+          }
+        } catch (memoryError) {
+          // Memory search failure should never block the agent
+          logger.debug(`[AgentLoop] Contextual memory retrieval skipped: ${memoryError instanceof Error ? memoryError.message : 'unknown error'}`);
+        }
       }
 
       // 1. Call model
@@ -685,7 +760,12 @@ export class AgentLoop {
     shouldRunHooks: boolean,
     langfuse: ReturnType<typeof getLangfuseService>,
   ): Promise<'break' | 'continue'> {
-        this.emitTaskProgress('generating', '生成回复中...');
+        // Research mode: indicate report generation phase
+        if (this._researchModeActive) {
+          this.emitTaskProgress('generating', '正在生成报告...');
+        } else {
+          this.emitTaskProgress('generating', '生成回复中...');
+        }
 
         // User-configurable Stop hook
         if (this.hookManager && !isSimpleTask) {
@@ -812,6 +892,8 @@ export class AgentLoop {
           timestamp: Date.now(),
           thinking: response.thinking,
           effortLevel: this.effortLevel,
+          inputTokens: response.usage?.inputTokens,
+          outputTokens: response.usage?.outputTokens,
         };
         await this.addAndPersistMessage(assistantMessage);
 
@@ -919,6 +1001,8 @@ export class AgentLoop {
                 toolCalls: toolCalls,
                 thinking: response.thinking,
                 effortLevel: this.effortLevel,
+                inputTokens: response.usage?.inputTokens,
+                outputTokens: response.usage?.outputTokens,
               };
               await this.addAndPersistMessage(truncAssistantMsg);
               this.onEvent({ type: 'message', data: truncAssistantMsg });
@@ -966,7 +1050,7 @@ export class AgentLoop {
 
         toolCalls.forEach((tc, i) => {
           logger.debug(`   Tool ${i + 1}: ${tc.name}, args keys: ${Object.keys(tc.arguments || {}).join(', ')}`);
-          logCollector.tool('INFO', `Tool call: ${tc.name}`, { toolId: tc.id, args: tc.arguments });
+          logCollector.tool('INFO', `Tool call: ${tc.name}`, { toolId: tc.id, phase: classifyExecutionPhase(tc.name), args: tc.arguments });
         });
 
         // 清理模型输出中模仿内部格式的文本（"Ran:", "Tool results:", "[Compressed tool results:]"）
@@ -982,6 +1066,8 @@ export class AgentLoop {
           // Adaptive Thinking: 保留模型的原生思考过程
           thinking: response.thinking,
           effortLevel: this.effortLevel,
+          inputTokens: response.usage?.inputTokens,
+          outputTokens: response.usage?.outputTokens,
         };
         await this.addAndPersistMessage(assistantMessage);
 
@@ -1020,15 +1106,18 @@ export class AgentLoop {
         }
 
         toolResults.forEach((r, i) => {
-          logger.debug(`   Result ${i + 1}: success=${r.success}, error=${r.error || 'none'}`);
+          const matchedToolCall = toolCalls.find(tc => tc.id === r.toolCallId);
+          const phase = matchedToolCall ? classifyExecutionPhase(matchedToolCall.name) : undefined;
+          logger.debug(`   Result ${i + 1}: success=${r.success}, phase=${phase || 'unknown'}, error=${r.error || 'none'}`);
           if (r.success) {
             logCollector.tool('INFO', `Tool result: success`, {
               toolCallId: r.toolCallId,
+              phase,
               outputLength: r.output?.length || 0,
               duration: r.duration,
             });
           } else {
-            logCollector.tool('ERROR', `Tool result: failed - ${r.error}`, { toolCallId: r.toolCallId });
+            logCollector.tool('ERROR', `Tool result: failed - ${r.error}`, { toolCallId: r.toolCallId, phase });
           }
         });
 
@@ -1320,6 +1409,18 @@ export class AgentLoop {
       } catch {
         // Graceful: recovery failure doesn't block execution
       }
+    }
+
+    // Seed Memory Injection — load recent memories into context at session start
+    try {
+      const seedMemoryBlock = buildSeedMemoryBlock(this.workingDirectory);
+      if (seedMemoryBlock) {
+        this.injectSystemMessage(`<seed-memory>\n${seedMemoryBlock}\n</seed-memory>`);
+        logger.info('[AgentLoop] Seed memory injected at session start');
+      }
+    } catch {
+      // Memory failures must never block the agent loop
+      logger.warn('[AgentLoop] Seed memory injection failed, continuing without');
     }
 
     return { langfuse, evolutionTraceRecorder, isSimpleTask, shouldRunHooks, genNum };
@@ -1673,7 +1774,11 @@ export class AgentLoop {
     } else if (parallelGroup.length === 1) {
       const { index, toolCall } = parallelGroup[0];
       this.toolsUsedInTurn.push(toolCall.name);
-      this.emitTaskProgress('tool_running', `执行 ${toolCall.name}`, {
+      // Research mode: show friendly message for web_fetch
+      const singleToolLabel = this._researchModeActive && toolCall.name === 'web_fetch'
+        ? '正在抓取详情...'
+        : `执行 ${toolCall.name}`;
+      this.emitTaskProgress('tool_running', singleToolLabel, {
         tool: toolCall.name,
         toolIndex: index,
         toolTotal: toolCalls.length,
@@ -1692,7 +1797,11 @@ export class AgentLoop {
 
       this.toolsUsedInTurn.push(toolCall.name);
       const progress = Math.round((index / toolCalls.length) * 100);
-      this.emitTaskProgress('tool_running', `执行 ${toolCall.name}`, {
+      // Research mode: show friendly message for web_fetch
+      const toolStepLabel = this._researchModeActive && toolCall.name === 'web_fetch'
+        ? '正在抓取详情...'
+        : `执行 ${toolCall.name}`;
+      this.emitTaskProgress('tool_running', toolStepLabel, {
         tool: toolCall.name,
         toolIndex: index,
         toolTotal: toolCalls.length,
@@ -1814,6 +1923,21 @@ export class AgentLoop {
 
       this.telemetryAdapter?.onToolCallEnd(this.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined);
       this.onEvent({ type: 'tool_call_end', data: toolResult });
+      // Tool execution logging (non-blocking)
+      if (this.onToolExecutionLog && this.sessionId) {
+        try {
+          this.onToolExecutionLog({
+            sessionId: this.sessionId,
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            args: toolCall.arguments as Record<string, unknown>,
+            result: toolResult,
+          });
+        } catch {
+          // Never let logging break tool execution
+        }
+      }
+
       return toolResult;
     }
 
@@ -2176,6 +2300,21 @@ export class AgentLoop {
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (success)`);
       this.telemetryAdapter?.onToolCallEnd(this.currentTurnId, toolCall.id, toolResult.success, toolResult.error, toolResult.duration || 0, toolResult.output?.substring(0, 500));
       this.onEvent({ type: 'tool_call_end', data: toolResult });
+      // Tool execution logging (non-blocking)
+      if (this.onToolExecutionLog && this.sessionId) {
+        try {
+          this.onToolExecutionLog({
+            sessionId: this.sessionId,
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            args: toolCall.arguments as Record<string, unknown>,
+            result: toolResult,
+          });
+        } catch {
+          // Never let logging break tool execution
+        }
+      }
+
 
       return toolResult;
     } catch (error) {
@@ -2264,6 +2403,21 @@ export class AgentLoop {
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (error)`);
       this.telemetryAdapter?.onToolCallEnd(this.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined);
       this.onEvent({ type: 'tool_call_end', data: toolResult });
+      // Tool execution logging (non-blocking)
+      if (this.onToolExecutionLog && this.sessionId) {
+        try {
+          this.onToolExecutionLog({
+            sessionId: this.sessionId,
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            args: toolCall.arguments as Record<string, unknown>,
+            result: toolResult,
+          });
+        } catch {
+          // Never let logging break tool execution
+        }
+      }
+
 
       return toolResult;
     }
@@ -2927,11 +3081,84 @@ ${deferredToolsSummary}
 ### 第四步：综合分析
 汇总所有角度的发现，去重后形成结构化报告，包含数据支撑和来源引用。
 
+### 报告质量要求
+
+#### 证据链绑定
+- 报告中每个关键数据点必须标注来源编号 [S1][S2]...
+- 无法确认来源的数字必须标注为【推断】或【估算】
+- 报告末尾的 Sources 列表必须包含可点击的 URL
+
+#### 年份回退策略
+- 当前日期为 2026 年 3 月。大部分公开数据可能滞后 6-18 个月。
+- 搜索时优先使用 "2025" 或 "最新" 而非 "2026"，除非确实找到 2026 年数据
+- 报告中必须标注数据的实际年份口径，如 "根据 2025 年数据推断"
+
+#### 事实与推断分层
+- 报告必须区分两种内容：
+  1. 📊 实证数据（有明确来源的统计/数字）
+  2. 📈 趋势推断（基于数据的分析和推断，需标注推断依据）
+
+#### 来源可信度
+- Sources 列表中为每个来源标注可信度：
+  - ⭐⭐⭐ 官方报告/政府数据/权威机构
+  - ⭐⭐ 行业媒体/招聘平台统计
+  - ⭐ 个人博客/论坛帖子/未经验证的转载
+
 **重要**：不要只搜索 1-2 次就给出结论。至少执行 4 次不同角度的搜索。`;
 
     this.injectSystemMessage(researchPrompt);
     this._researchModeActive = true;
+
+    // Pre-load web_fetch for research mode to avoid wasting an iteration on tool_search
+    try {
+      const toolSearchService = getToolSearchService();
+      toolSearchService.selectTool('web_fetch');
+      logger.info('[ResearchMode] Pre-loaded web_fetch tool');
+    } catch (error) {
+      logger.warn('[ResearchMode] Failed to pre-load web_fetch', { error: String(error) });
+    }
     logger.info('Research mode prompt injected');
+  }
+
+
+  /**
+   * Build a concise plan context message for model awareness.
+   * Returns null if no active plan or plan is fully completed.
+   */
+  private async buildPlanContextMessage(): Promise<string | null> {
+    if (!this.planningService) return null;
+
+    const plan = this.planningService.plan.getCurrentPlan()
+      ?? await this.planningService.plan.read();
+    if (!plan) return null;
+
+    // Don't inject for fully completed plans
+    if (this.planningService.plan.isComplete()) return null;
+
+    const { completedSteps, totalSteps } = plan.metadata;
+    const lines: string[] = [
+      `<current-plan>`,
+      `## Current Plan: ${plan.title}`,
+      `Progress: ${completedSteps}/${totalSteps} steps completed`,
+      ``,
+    ];
+
+    for (const phase of plan.phases) {
+      for (const step of phase.steps) {
+        if (step.status === 'completed') {
+          lines.push(`✅ ${step.content}`);
+        } else if (step.status === 'in_progress') {
+          lines.push(`→ ${step.content} (CURRENT)`);
+        } else if (step.status === 'skipped') {
+          lines.push(`⊘ ${step.content} (skipped)`);
+        } else {
+          lines.push(`○ ${step.content}`);
+        }
+      }
+    }
+
+    lines.push(`</current-plan>`);
+    return lines.join('\n');
   }
 
   private injectSystemMessage(content: string, category?: string): void {

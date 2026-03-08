@@ -2548,7 +2548,7 @@ export class AgentLoop {
       logger.debug('Tools:', tools.map(t => t.name));
     }
 
-    let modelMessages = this.buildModelMessages();
+    let modelMessages = await this.buildModelMessages();
     logger.debug('[AgentLoop] Model messages count:', modelMessages.length);
     logger.debug('[AgentLoop] Model config:', {
       provider: this.modelConfig.provider,
@@ -2908,7 +2908,7 @@ export class AgentLoop {
   // Message Building
   // --------------------------------------------------------------------------
 
-  private buildModelMessages(): ModelMessage[] {
+  private async buildModelMessages(): Promise<ModelMessage[]> {
     const modelMessages: ModelMessage[] = [];
 
     // Use optimized prompt based on task complexity
@@ -2919,7 +2919,7 @@ export class AgentLoop {
       // Only enhance with RAG for non-simple tasks
       const lastUserMessage = [...this.messages].reverse().find((m) => m.role === 'user');
       const userQuery = lastUserMessage?.content || '';
-      systemPrompt = buildEnhancedSystemPrompt(systemPrompt, userQuery, this.isSimpleTaskMode);
+      systemPrompt = await buildEnhancedSystemPrompt(systemPrompt, userQuery, this.isSimpleTaskMode);
     }
 
     systemPrompt = injectWorkingDirectoryContext(systemPrompt, this.workingDirectory, this.isDefaultWorkingDirectory);
@@ -3760,10 +3760,22 @@ ${deferredToolsSummary}
       `[AgentLoop] Continuous learning: ${result.patternsExtracted} patterns, ${result.skillsSynthesized} skills`
     );
 
-    // Write extracted patterns as entity relations via SQLite database
+    // Write extracted patterns as entity relations via SQLite database (with dedup)
     try {
       const { getDatabase } = await import('../services/core/databaseService');
+      const { getMemoryDeduplicator } = await import('../memory/memoryDeduplicator');
       const db = getDatabase();
+      const dedup = getMemoryDeduplicator(db);
+
+      // Collect all candidate relations first
+      const candidates: Array<{
+        sourceId: string;
+        targetId: string;
+        relationType: 'modifies' | 'references';
+        confidence: number;
+        evidence: string;
+        sessionId: string;
+      }> = [];
 
       for (const pattern of result.patterns || []) {
         if (pattern.confidence < 0.7) continue;
@@ -3773,7 +3785,7 @@ ${deferredToolsSummary}
 
         for (const file of filesModified.slice(0, 5)) {
           for (const tool of toolsUsed.slice(0, 5)) {
-            db.addRelation({
+            candidates.push({
               sourceId: file,
               targetId: tool,
               relationType: 'modifies',
@@ -3787,7 +3799,7 @@ ${deferredToolsSummary}
         // File co-modification relations
         for (let i = 0; i < Math.min(filesModified.length, 5); i++) {
           for (let j = i + 1; j < Math.min(filesModified.length, 5); j++) {
-            db.addRelation({
+            candidates.push({
               sourceId: filesModified[i],
               targetId: filesModified[j],
               relationType: 'references',
@@ -3797,6 +3809,12 @@ ${deferredToolsSummary}
             });
           }
         }
+      }
+
+      // Deduplicate before writing
+      const { toInsert } = dedup.deduplicateRelations(candidates);
+      for (const rel of toInsert) {
+        db.addRelation(rel);
       }
     } catch (err) {
       logger.debug('[AgentLoop] Entity relation writing failed:', { error: (err as Error).message });

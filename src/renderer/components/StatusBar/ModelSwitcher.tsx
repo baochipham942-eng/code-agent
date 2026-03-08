@@ -21,7 +21,7 @@ const MODEL_OPTIONS: ModelOption[] = [
   { provider: 'zhipu', model: 'glm-4.7', label: 'GLM-4.7' },
   { provider: 'zhipu', model: 'glm-4.7-flash', label: 'GLM-4.7 Flash' },
   { provider: 'openai', model: 'gpt-4o', label: 'GPT-4o' },
-  { provider: 'claude', model: 'claude-sonnet-4-20250514', label: 'Sonnet 4' },
+  { provider: 'claude', model: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
 ];
 
 interface ModelSwitcherProps {

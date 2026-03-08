@@ -14,7 +14,7 @@
 export const DEFAULT_PROVIDER = 'claude' as const;
 
 /** 默认模型（主力对话） */
-export const DEFAULT_MODEL = 'claude-sonnet-4-20250514' as const;
+export const DEFAULT_MODEL = 'claude-sonnet-4-6' as const;
 
 // ============================================================================
 // 模型输出 Token 上限 — providerRegistry / compactModel 等引用
@@ -57,11 +57,12 @@ export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   'glm-4.6v-flash': 1024,   // 视觉快速
   // Anthropic — 参考 Aider 配置
   'claude-opus-4-6': 32000,
+  'claude-sonnet-4-6': 16384,
+  'claude-haiku-4-5-20251001': 16384,
   'claude-sonnet-4-20250514': 16384,
   'claude-sonnet-4-5-20250929': 16384,
   'claude-3-5-sonnet-20241022': 8192,
   'claude-3-5-haiku-20241022': 8192,
-  'claude-haiku-4-5-20251001': 16384,
   // OpenAI
   'gpt-4o': 16384,
   'gpt-4o-mini': 16384,
@@ -85,6 +86,9 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
   'deepseek-coder': 64_000,
   'deepseek-reasoner': 64_000,
   // Anthropic
+  'claude-opus-4-6': 200_000,
+  'claude-sonnet-4-6': 200_000,
+  'claude-haiku-4-5-20251001': 200_000,
   'claude-sonnet-4-20250514': 200_000,
   'claude-3-5-sonnet-20241022': 200_000,
   'claude-3-5-haiku-20241022': 200_000,
@@ -669,7 +673,7 @@ export const SEARCH_API_ENDPOINTS = {
 
 export const DEFAULT_MODELS = {
   /** 主要对话模型 - Kimi K2.5 包月 */
-  chat: 'claude-sonnet-4-20250514',
+  chat: 'claude-sonnet-4-6',
   /** 推理模型 - DeepSeek R1 (按需付费) */
   reasoning: 'deepseek-reasoner',
   /** 视觉理解模型 - 智谱包年 */
@@ -677,15 +681,15 @@ export const DEFAULT_MODELS = {
   /** 视觉快速模型（不支持 base64） */
   visionFast: 'glm-4.6v-flash',
   /** 代码模型 - Kimi K2.5 包月 */
-  code: 'claude-sonnet-4-20250514',
+  code: 'claude-sonnet-4-6',
   /** 压缩/摘要模型 - Kimi K2.5 包月无成本 */
   compact: 'kimi-k2.5',
   /** 快速判断模型 - 智谱 Flash 包年免费 */
   quick: 'glm-4.7-flash',
   /** 超长上下文模型（128K+） */
-  longContext: 'claude-sonnet-4-20250514',
+  longContext: 'claude-sonnet-4-6',
   /** 包月无限制模型 */
-  unlimited: 'claude-sonnet-4-20250514',
+  unlimited: 'claude-sonnet-4-6',
 } as const;
 
 // ============================================================================

@@ -6,6 +6,7 @@
 
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
+import { getServiceRegistry } from '../services/serviceRegistry';
 import type { AgentEvent } from '../../shared/types';
 
 const logger = createLogger('SessionEventService');
@@ -34,6 +35,7 @@ export class SessionEventService {
   static getInstance(): SessionEventService {
     if (!SessionEventService.instance) {
       SessionEventService.instance = new SessionEventService();
+      getServiceRegistry().register('SessionEventService', SessionEventService.instance);
     }
     return SessionEventService.instance;
   }
@@ -273,6 +275,10 @@ export class SessionEventService {
   /**
    * 清理旧事件（可选，用于数据库维护）
    */
+  async dispose(): Promise<void> {
+    this.insertStmt = null;
+  }
+
   cleanupOldEvents(olderThanDays: number = 30): number {
     const db = this.getDb();
     const cutoff = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;

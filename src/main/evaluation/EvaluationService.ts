@@ -5,6 +5,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
+import { getServiceRegistry } from '../services/serviceRegistry';
 import type {
   EvaluationResult,
   EvaluationMetric,
@@ -65,9 +66,14 @@ export class EvaluationService {
     );
   }
 
+  async dispose(): Promise<void> {
+    // EvaluationService is stateless, nothing to dispose
+  }
+
   static getInstance(): EvaluationService {
     if (!EvaluationService.instance) {
       EvaluationService.instance = new EvaluationService();
+      getServiceRegistry().register('EvaluationService', EvaluationService.instance);
     }
     return EvaluationService.instance;
   }

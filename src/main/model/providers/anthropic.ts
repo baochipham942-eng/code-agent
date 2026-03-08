@@ -91,7 +91,7 @@ function claudeSSEStream(options: {
 
       res.on('data', (chunk: Buffer) => {
         buffer += decoder.write(chunk);
-        logger.info(`[Claude] SSE raw chunk: ${chunk.toString().substring(0, 500)}`);
+        logger.debug(`[Claude] SSE chunk received: ${chunk.length} bytes`);
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
 

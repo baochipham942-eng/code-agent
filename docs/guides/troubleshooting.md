@@ -139,6 +139,21 @@ ls -la node_modules/keytar/build/Release/keytar.node
 
 ## 模型调用问题
 
+### 模型 429 频繁 / Provider 不可用
+
+**问题**: 主 Provider 频繁返回 429 或瞬态错误，对话中断
+
+**解决方案**: v0.16.42+ 已支持跨 Provider 自动降级。查看日志中的 `[ModelRouter] Fallback →` 确认降级链是否生效。
+
+**排查步骤**：
+1. 确认降级目标 Provider 的 API Key 已配置（`.env` 文件）
+2. 搜索日志 `Fallback →` 确认降级是否触发
+3. 如所有降级均失败，检查各 Provider 的 API 额度
+
+**降级链配置**: `src/shared/constants.ts` 的 `PROVIDER_FALLBACK_CHAIN`
+
+---
+
 ### 视觉模型调用失败
 **问题**: 调用视觉模型时反复出错（模型名错误、参数格式不支持等）
 **根本原因**: `ModelInfo` 类型缺少关键细节：

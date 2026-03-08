@@ -95,7 +95,6 @@ describe('Gen8 - Self-Evolution Era', () => {
   // --------------------------------------------------------------------------
   describe('strategy_optimize', () => {
     it('should have correct metadata', () => {
-      expect(strategyOptimizeTool.generations).toContain('gen8');
       expect(strategyOptimizeTool.name).toBe('strategy_optimize');
     });
 
@@ -258,7 +257,6 @@ describe('Gen8 - Self-Evolution Era', () => {
   // --------------------------------------------------------------------------
   describe('tool_create', () => {
     it('should have correct metadata', () => {
-      expect(toolCreateTool.generations).toContain('gen8');
       expect(toolCreateTool.name).toBe('tool_create');
       expect(toolCreateTool.requiresPermission).toBe(true);
     });
@@ -409,7 +407,6 @@ describe('Gen8 - Self-Evolution Era', () => {
   // --------------------------------------------------------------------------
   describe('self_evaluate', () => {
     it('should have correct metadata', () => {
-      expect(selfEvaluateTool.generations).toContain('gen8');
       expect(selfEvaluateTool.name).toBe('self_evaluate');
     });
 
@@ -479,7 +476,6 @@ describe('Gen8 - Self-Evolution Era', () => {
   // --------------------------------------------------------------------------
   describe('learn_pattern', () => {
     it('should have correct metadata', () => {
-      expect(learnPatternTool.generations).toContain('gen8');
       expect(learnPatternTool.name).toBe('learn_pattern');
     });
 
@@ -602,12 +598,12 @@ describe('Gen8 - Self-Evolution Era', () => {
   // Tool Metadata Tests
   // --------------------------------------------------------------------------
   describe('Tool Metadata', () => {
-    it('all gen8 tools should be gen8 only', () => {
+    it('all gen8 tools should be defined', () => {
       const gen8Tools = [strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternTool];
 
       for (const tool of gen8Tools) {
-        expect(tool.generations).toContain('gen8');
-        expect(tool.generations.length).toBe(1);
+        expect(tool.name).toBeDefined();
+        expect(tool.execute).toBeDefined();
       }
     });
 

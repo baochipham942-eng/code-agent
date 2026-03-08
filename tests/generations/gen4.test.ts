@@ -44,7 +44,6 @@ describe('Gen4 - Industrial System Era', () => {
   // --------------------------------------------------------------------------
   describe('skill', () => {
     it('should have correct metadata', () => {
-      expect(skillTool.generations).toContain('gen4');
       expect(skillTool.name).toBe('skill');
       // New API uses 'command' instead of 'skill'
       expect(skillTool.inputSchema.required).toContain('command');
@@ -92,7 +91,6 @@ describe('Gen4 - Industrial System Era', () => {
   // --------------------------------------------------------------------------
   describe('web_fetch', () => {
     it('should have correct metadata', () => {
-      expect(webFetchTool.generations).toContain('gen4');
       expect(webFetchTool.name).toBe('web_fetch');
       expect(webFetchTool.requiresPermission).toBe(true);
     });
@@ -138,13 +136,10 @@ describe('Gen4 - Industrial System Era', () => {
   describe('Integration', () => {
     it('gen4 should include all gen1-3 tools', () => {
       // Gen4 includes all previous generation tools plus new ones
-      const gen4Tools = ['bash', 'read_file', 'write_file', 'edit_file',
-        'glob', 'grep', 'list_directory', 'task', 'todo_write',
-        'ask_user_question', 'skill', 'web_fetch'];
-
-      // Verify skill and web_fetch are gen4 tools
-      expect(skillTool.generations).toContain('gen4');
-      expect(webFetchTool.generations).toContain('gen4');
+      // With gen simplification, all tools are available in gen8
+      // Verify skill and web_fetch exist
+      expect(skillTool.name).toBe('skill');
+      expect(webFetchTool.name).toBe('web_fetch');
     });
   });
 

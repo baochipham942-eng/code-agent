@@ -29,19 +29,18 @@ describe('@Tool Decorator', () => {
     expect(metadata!.name).toBe('bash');
   });
 
-  it('should parse "gen1+" generation spec correctly', () => {
+  it('should store tool metadata for BashTool', () => {
     const metadata = getToolMetadata(BashTool);
-    expect(metadata!.generations).toContain('gen1');
-    expect(metadata!.generations).toContain('gen8');
-    expect(metadata!.generations.length).toBe(8);
+    // generations removed in Sprint 2
+    expect(metadata!.name).toBe('bash');
+    expect(metadata!.permission).toBe('execute');
   });
 
-  it('should parse "gen2+" generation spec correctly', () => {
+  it('should store tool metadata for GlobTool', () => {
     const metadata = getToolMetadata(GlobTool);
-    expect(metadata!.generations).not.toContain('gen1');
-    expect(metadata!.generations).toContain('gen2');
-    expect(metadata!.generations).toContain('gen8');
-    expect(metadata!.generations.length).toBe(7);
+    // generations removed in Sprint 2
+    expect(metadata!.name).toBe('glob');
+    expect(metadata!.permission).toBe('none');
   });
 
   it('should store permission level', () => {

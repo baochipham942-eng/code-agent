@@ -67,7 +67,6 @@ describe('Gen6 - Computer Use Era', () => {
   // --------------------------------------------------------------------------
   describe('screenshot', () => {
     it('should have correct metadata', () => {
-      expect(screenshotTool.generations).toContain('gen6');
       expect(screenshotTool.name).toBe('screenshot');
       expect(screenshotTool.requiresPermission).toBe(true);
     });
@@ -132,7 +131,6 @@ describe('Gen6 - Computer Use Era', () => {
   // --------------------------------------------------------------------------
   describe('computer_use', () => {
     it('should have correct metadata', () => {
-      expect(computerUseTool.generations).toContain('gen6');
       expect(computerUseTool.name).toBe('computer_use');
       expect(computerUseTool.requiresPermission).toBe(true);
     });
@@ -217,7 +215,6 @@ describe('Gen6 - Computer Use Era', () => {
   // --------------------------------------------------------------------------
   describe('browser_navigate', () => {
     it('should have correct metadata', () => {
-      expect(browserNavigateTool.generations).toContain('gen6');
       expect(browserNavigateTool.name).toBe('browser_navigate');
       expect(browserNavigateTool.requiresPermission).toBe(true);
     });
@@ -258,7 +255,6 @@ describe('Gen6 - Computer Use Era', () => {
   // --------------------------------------------------------------------------
   describe('browser_action', () => {
     it('should have correct metadata', () => {
-      expect(browserActionTool.generations).toContain('gen6');
       expect(browserActionTool.name).toBe('browser_action');
     });
 
@@ -325,13 +321,12 @@ describe('Gen6 - Computer Use Era', () => {
   // Tool Metadata Tests
   // --------------------------------------------------------------------------
   describe('Tool Metadata', () => {
-    it('all gen6 tools should include gen6-8 generations', () => {
+    it('all gen6 tools should be defined', () => {
       const gen6Tools = [screenshotTool, computerUseTool, browserNavigateTool, browserActionTool];
 
       for (const tool of gen6Tools) {
-        expect(tool.generations).toContain('gen6');
-        expect(tool.generations).toContain('gen7');
-        expect(tool.generations).toContain('gen8');
+        expect(tool.name).toBeDefined();
+        expect(tool.execute).toBeDefined();
       }
     });
 

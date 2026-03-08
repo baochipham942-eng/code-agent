@@ -24,24 +24,18 @@ describe('GenerationManager', () => {
 
     it('should get all generations', () => {
       const generations = manager.getAllGenerations();
-      expect(generations.length).toBe(8);
+      // Sprint 2: only gen8 retained
+      expect(generations.length).toBe(1);
 
       const ids = generations.map(g => g.id);
-      expect(ids).toContain('gen1');
-      expect(ids).toContain('gen2');
-      expect(ids).toContain('gen3');
-      expect(ids).toContain('gen4');
-      expect(ids).toContain('gen5');
-      expect(ids).toContain('gen6');
-      expect(ids).toContain('gen7');
       expect(ids).toContain('gen8');
     });
 
     it('should get generation by ID', () => {
-      const gen1 = manager.getGeneration('gen1');
-      expect(gen1).toBeDefined();
-      expect(gen1?.id).toBe('gen1');
-      expect(gen1?.name).toBe('基础工具期');
+      const gen8 = manager.getGeneration('gen8');
+      expect(gen8).toBeDefined();
+      expect(gen8?.id).toBe('gen8');
+      expect(gen8?.name).toBe('自我进化期');
     });
 
     it('should return undefined for invalid generation ID', () => {
@@ -54,10 +48,11 @@ describe('GenerationManager', () => {
   // Generation Switching Tests
   // --------------------------------------------------------------------------
   describe('Generation Switching', () => {
-    it('should switch to gen1', () => {
+    it('should switch to gen1 (returns gen8)', () => {
+      // switchGeneration always returns gen8 after Sprint 2 simplification
       const gen = manager.switchGeneration('gen1');
-      expect(gen.id).toBe('gen1');
-      expect(manager.getCurrentGeneration().id).toBe('gen1');
+      expect(gen.id).toBe('gen8');
+      expect(manager.getCurrentGeneration().id).toBe('gen8');
     });
 
     it('should switch to gen8', () => {
@@ -66,17 +61,19 @@ describe('GenerationManager', () => {
       expect(manager.getCurrentGeneration().id).toBe('gen8');
     });
 
-    it('should throw for invalid generation', () => {
-      expect(() => manager.switchGeneration('gen99' as any)).toThrow('Unknown generation');
+    it('should not throw for any generation (always returns gen8)', () => {
+      // switchGeneration always returns gen8, no throwing
+      const gen = manager.switchGeneration('gen99' as any);
+      expect(gen.id).toBe('gen8');
     });
 
-    it('should switch through all generations', () => {
+    it('should always return gen8 regardless of input', () => {
       const genIds = ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'] as const;
 
       for (const id of genIds) {
         const gen = manager.switchGeneration(id);
-        expect(gen.id).toBe(id);
-        expect(manager.getCurrentGeneration().id).toBe(id);
+        expect(gen.id).toBe('gen8');
+        expect(manager.getCurrentGeneration().id).toBe('gen8');
       }
     });
   });
@@ -85,57 +82,25 @@ describe('GenerationManager', () => {
   // Generation Properties Tests
   // --------------------------------------------------------------------------
   describe('Generation Properties', () => {
-    it('gen1 should have correct properties', () => {
-      const gen = manager.getGeneration('gen1');
-      expect(gen?.version).toBe('v1.0');
+    it('gen8 should contain all tool categories', () => {
+      const gen = manager.getGeneration('gen8');
+      expect(gen?.version).toBe('v8.0');
+      // gen8 contains all tools from all previous generations
       expect(gen?.tools).toContain('bash');
       expect(gen?.tools).toContain('read_file');
-      expect(gen?.tools).toContain('write_file');
-      expect(gen?.tools).toContain('edit_file');
-      expect(gen?.tools.length).toBe(4);
-    });
-
-    it('gen2 should add search tools', () => {
-      const gen = manager.getGeneration('gen2');
       expect(gen?.tools).toContain('glob');
       expect(gen?.tools).toContain('grep');
-      expect(gen?.tools).toContain('list_directory');
-    });
-
-    it('gen3 should add planning tools', () => {
-      const gen = manager.getGeneration('gen3');
       expect(gen?.tools).toContain('task');
-      expect(gen?.tools).toContain('todo_write');
-      expect(gen?.tools).toContain('ask_user_question');
-    });
-
-    it('gen4 should add skill and web tools', () => {
-      const gen = manager.getGeneration('gen4');
       expect(gen?.tools).toContain('skill');
-      expect(gen?.tools).toContain('web_fetch');
-    });
-
-    it('gen5 should add memory tools', () => {
-      const gen = manager.getGeneration('gen5');
       expect(gen?.tools).toContain('memory_store');
-      expect(gen?.tools).toContain('memory_search');
-      expect(gen?.tools).toContain('code_index');
-      expect(gen?.tools).toContain('auto_learn');
-    });
-
-    it('gen6 should add computer use tools', () => {
-      const gen = manager.getGeneration('gen6');
       expect(gen?.tools).toContain('screenshot');
-      expect(gen?.tools).toContain('computer_use');
-      expect(gen?.tools).toContain('browser_navigate');
-      expect(gen?.tools).toContain('browser_action');
+      expect(gen?.tools).toContain('spawn_agent');
     });
 
-    it('gen7 should add multi-agent tools', () => {
-      const gen = manager.getGeneration('gen7');
-      expect(gen?.tools).toContain('spawn_agent');
-      expect(gen?.tools).toContain('agent_message');
-      expect(gen?.tools).toContain('workflow_orchestrate');
+    it('gen1-gen7 should not exist', () => {
+      for (const id of ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7'] as const) {
+        expect(manager.getGeneration(id)).toBeUndefined();
+      }
     });
 
     it('gen8 should add self-evolution tools', () => {
@@ -169,10 +134,9 @@ describe('GenerationManager', () => {
       expect(prompt).toContain('edit_file');
     });
 
-    it('gen5 prompt should contain memory system description', () => {
+    it('gen8 prompt should contain memory system description', () => {
+      // All prompts now return gen8 content
       const prompt = manager.getPrompt('gen5');
-      expect(prompt).toContain('memory_store');
-      expect(prompt).toContain('memory_search');
       expect(prompt).toContain('memory');
     });
 
@@ -183,8 +147,11 @@ describe('GenerationManager', () => {
       expect(prompt).toContain('edit_file');
     });
 
-    it('should throw for invalid generation prompt', () => {
-      expect(() => manager.getPrompt('gen99' as any)).toThrow('Unknown generation');
+    it('should not throw for any generation prompt (returns gen8)', () => {
+      // getPrompt always returns gen8 prompt
+      const prompt = manager.getPrompt('gen99' as any);
+      expect(prompt).toBeDefined();
+      expect(prompt.length).toBeGreaterThan(100);
     });
 
     it('all prompts should contain identity and tool descriptions', () => {
@@ -208,18 +175,21 @@ describe('GenerationManager', () => {
       expect(tools).toContain('read_file');
     });
 
-    it('should return empty array for invalid generation', () => {
+    it('should return gen8 tools for any generation', () => {
+      // getGenerationTools always returns gen8 tools
       const tools = manager.getGenerationTools('gen99' as any);
-      expect(tools).toEqual([]);
+      expect(tools.length).toBeGreaterThan(0);
+      expect(tools).toContain('bash');
     });
 
-    it('later generations should have more tools', () => {
+    it('all generations return same tools (gen8)', () => {
       const gen1Tools = manager.getGenerationTools('gen1');
       const gen4Tools = manager.getGenerationTools('gen4');
       const gen8Tools = manager.getGenerationTools('gen8');
 
-      expect(gen4Tools.length).toBeGreaterThan(gen1Tools.length);
-      expect(gen8Tools.length).toBeGreaterThan(gen4Tools.length);
+      // All return gen8 tools
+      expect(gen1Tools.length).toBe(gen8Tools.length);
+      expect(gen4Tools.length).toBe(gen8Tools.length);
     });
   });
 
@@ -227,21 +197,9 @@ describe('GenerationManager', () => {
   // Generation Comparison Tests
   // --------------------------------------------------------------------------
   describe('Generation Comparison', () => {
-    it('should compare two generations', () => {
-      const diff = manager.compareGenerations('gen1', 'gen2');
-      expect(diff).toHaveProperty('added');
-      expect(diff).toHaveProperty('removed');
-      expect(diff).toHaveProperty('modified');
-    });
-
-    it('should detect additions from gen1 to gen2', () => {
-      const diff = manager.compareGenerations('gen1', 'gen2');
-      // gen2 adds glob, grep, list_directory
-      expect(diff.added.some(line => line.includes('glob'))).toBe(true);
-    });
-
-    it('should throw for invalid comparison', () => {
-      expect(() => manager.compareGenerations('gen1', 'gen99' as any)).toThrow('Invalid generation');
+    it('compareGenerations removed after gen simplification', () => {
+      // compareGenerations method removed in Sprint 2
+      expect((manager as any).compareGenerations).toBeUndefined();
     });
   });
 
@@ -260,12 +218,11 @@ describe('GenerationManager', () => {
       }
     });
 
-    it('metadata should increase with generations', () => {
-      const gen1 = manager.getGeneration('gen1');
+    it('gen8 should have valid metadata', () => {
       const gen8 = manager.getGeneration('gen8');
 
-      expect(gen8!.promptMetadata.lineCount).toBeGreaterThan(gen1!.promptMetadata.lineCount);
-      expect(gen8!.promptMetadata.toolCount).toBeGreaterThan(gen1!.promptMetadata.toolCount);
+      expect(gen8!.promptMetadata.lineCount).toBeGreaterThan(0);
+      expect(gen8!.promptMetadata.toolCount).toBeGreaterThan(0);
     });
 
     it('each generation should have description', () => {

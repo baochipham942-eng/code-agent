@@ -6,8 +6,8 @@
 import https from 'https';
 import http from 'http';
 import { StringDecoder } from 'string_decoder';
-import type { ModelResponse, StreamCallback } from '../types';
-import { logger, httpsAgent, safeJsonParse } from './shared';
+import { type ModelResponse, type StreamCallback, ContextLengthExceededError } from '../types';
+import { logger, httpsAgent, safeJsonParse, parseContextLengthError } from './shared';
 
 export interface StreamSnapshot {
   /** Accumulated text content so far */
@@ -133,10 +133,21 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
             if (parsed.error?.message) {
               errorMessage = `${providerName} API (${res.statusCode}): ${parsed.error.message}`;
             }
+            // 400 错误诊断：区分 token 超限、无效参数等
+            if (res.statusCode === 400) {
+              const errLower = (parsed.error?.message || errorData).toLowerCase();
+              if (errLower.includes('token') || errLower.includes('context_length') || errLower.includes('max_tokens') || errLower.includes('too long') || errLower.includes('exceeds')) {
+                errorMessage = `${providerName}: 上下文 token 超限，建议压缩对话或新开会话。原始错误: ${parsed.error?.message || errorData.substring(0, 200)}`;
+              } else if (errLower.includes('invalid') || errLower.includes('parameter') || errLower.includes('required')) {
+                errorMessage = `${providerName}: 请求参数无效 — ${parsed.error?.message || errorData.substring(0, 200)}`;
+              } else {
+                errorMessage = `${providerName}: 请求格式错误 (400) — ${parsed.error?.message || errorData.substring(0, 200)}`;
+              }
+            }
           } catch {
             errorMessage = `${providerName} API error: ${res.statusCode} - ${errorData.substring(0, 200)}`;
           }
-          // Emit error event
+          // Emit error event with diagnostic info
           if (onStream) {
             onStream({
               type: 'error',
@@ -145,7 +156,13 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
             });
           }
 
-          reject(new Error(errorMessage));
+          // 如果是 token 超限错误，抛出 ContextLengthExceededError 以触发自动压缩
+          const ctxError = parseContextLengthError(errorMessage, providerName);
+          if (ctxError) {
+            reject(ctxError);
+          } else {
+            reject(new Error(errorMessage));
+          }
         });
         return;
       }

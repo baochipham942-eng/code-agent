@@ -69,7 +69,7 @@ export const planUpdateTool: Tool = {
       if (!plan) {
         return {
           success: false,
-          error: 'No plan exists. Create one first using todo_write with persist=true.',
+          error: 'No plan exists. Create one first using plan_update.',
         };
       }
 

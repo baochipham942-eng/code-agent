@@ -628,7 +628,7 @@ export class HybridTaskCoordinator extends EventEmitter {
       planner: {
         name: 'Planner',
         systemPrompt: 'You are a task planner. Break down complex tasks and create structured execution plans.',
-        tools: ['todo_write', 'read_file', 'glob'],
+        tools: ['read_file', 'glob'],
       },
     };
 

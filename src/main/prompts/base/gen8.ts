@@ -19,7 +19,6 @@ export const TOOLS_PROMPT = `
 | AskUserQuestion | Ask user for clarification |
 | task | Sub-agents (complex tasks) |
 | teammate | Agent communication |
-| TodoWrite | Track steps (multi-file tasks) |
 | Skill | Execute skills (/ppt, /commit, etc) |
 | CodeExecute | Batch tool calls in JS (3+ similar ops) |
 
@@ -53,14 +52,12 @@ Use \`teammate\` tool for agent coordination (coordinate/handoff/query/broadcast
 
 ### Multi-step Tasks
 
-For 2+ files or 3+ steps, use TodoWrite FIRST:
-\`\`\`json
-{"todos": [
-  {"id":"1","content":"Read code","status":"in_progress"},
-  {"id":"2","content":"Implement","status":"pending"},
-  {"id":"3","content":"Test","status":"pending"}
-]}
-\`\`\`
+For 2+ files or 3+ steps, list your plan as a numbered list in your thinking/response.
+The system will automatically parse and track your task list.
+Example format:
+1. Read existing code
+2. Implement the feature
+3. Run tests to verify
 `;
 
 // Orchestrator Mode prompt (for swarm scenarios)

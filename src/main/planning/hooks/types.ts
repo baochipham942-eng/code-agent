@@ -51,7 +51,7 @@ export const TOOL_CATEGORIES: Record<ToolCategory, string[]> = {
   critical: ['bash', 'write_file', 'edit_file'],
   view: ['read_file', 'glob', 'grep', 'list_directory', 'web_fetch'],
   write: ['write_file', 'edit_file'],
-  planning: ['plan_read', 'plan_update', 'plan_create', 'todo_write'],
+  planning: ['plan_read', 'plan_update', 'plan_create'],
   communication: ['ask_user_question'],
   external: ['web_fetch', 'mcp', 'mcp_list_tools', 'mcp_read_resource'],
 };

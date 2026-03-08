@@ -52,7 +52,7 @@ export const planReadTool: Tool = {
         success: true,
         output:
           'No planning service available.\n' +
-          'To create a plan, use todo_write with persist=true and planTitle.',
+          'To create a plan, use plan_update tool.',
       };
     }
 
@@ -64,7 +64,7 @@ export const planReadTool: Tool = {
           success: true,
           output:
             'No plan exists yet.\n' +
-            'To create a plan, use todo_write with persist=true and provide a planTitle.',
+            'To create a plan, use plan_update tool.',
         };
       }
 

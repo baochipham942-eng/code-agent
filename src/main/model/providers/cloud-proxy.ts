@@ -38,7 +38,12 @@ export async function callViaCloudProxy(
   signal?: AbortSignal
 ): Promise<ModelResponse> {
   const cloudUrl = getCloudApiUrl();
-  const providerName = config.provider;
+  // Map internal provider names to cloud proxy expected names
+  const PROVIDER_NAME_MAP: Record<string, string> = {
+    claude: 'anthropic',
+    gemini: 'openai', // Gemini uses OpenAI-compatible endpoint on cloud proxy
+  };
+  const providerName = PROVIDER_NAME_MAP[config.provider] ?? config.provider;
 
   const recommendedMaxTokens = modelInfo?.maxTokens || getModelMaxOutputTokens(config.model || 'gpt-4o');
 

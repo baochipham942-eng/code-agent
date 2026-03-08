@@ -11,6 +11,14 @@ export function summarizeEdit(toolCall: ToolCall): string | null {
     const oldString = toolCall.arguments?.old_string as string | undefined;
     const newString = toolCall.arguments?.new_string as string | undefined;
 
+    // 空编辑检测：old_string 和 new_string 完全相同或都为空
+    if (oldString !== undefined && newString !== undefined && oldString === newString) {
+      return '无变化';
+    }
+    if (!oldString && !newString) {
+      return '无变化';
+    }
+
     if (oldString && newString) {
       const oldLines = oldString.split('\n').length;
       const newLines = newString.split('\n').length;

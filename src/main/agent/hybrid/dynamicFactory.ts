@@ -132,7 +132,7 @@ const AVAILABLE_TOOLS: Record<string, { description: string; category: string }>
   'read_xlsx': { description: '读取 Excel 文件', category: 'document' },
 
   // 任务管理
-  'todo_write': { description: '写入任务列表', category: 'task' },
+  // 'todo_write': { description: '写入任务列表', category: 'task' }, // 已移除
   'ask_user_question': { description: '询问用户', category: 'task' },
 
   // MCP

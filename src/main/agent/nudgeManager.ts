@@ -10,7 +10,7 @@ import { createLogger } from '../services/infra/logger';
 import { logCollector } from '../mcp/logCollector.js';
 import { AntiPatternDetector } from './antiPattern/detector';
 import { GoalTracker } from './goalTracker';
-import { getCurrentTodos } from '../tools/planning/todoWrite';
+import { getSessionTodos as getCurrentTodos } from './todoParser';
 import { getIncompleteTasks } from '../tools/planning';
 import { READ_ONLY_TOOLS, WRITE_TOOLS, VERIFY_TOOLS, type TaskProgressState } from './loopTypes';
 import type { Message } from '../../shared/types';
@@ -238,7 +238,7 @@ export class NudgeManager {
           `<task-completion-check>\n` +
           `STOP! You have ${totalIncomplete} incomplete item(s):\n${combinedList}\n\n` +
           `You MUST complete these tasks before finishing. Do NOT provide a final summary until all items are marked as completed.\n` +
-          `- For Todos: use todo_write to update status to "completed"\n` +
+          `- 未完成的 Todo 项会在工具执行后自动推进状态\n` +
           `- For Tasks: use task_update with status="completed" (or status="deleted" if no longer needed)\n` +
           `Continue working on the remaining items NOW.\n` +
           `</task-completion-check>`

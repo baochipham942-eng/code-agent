@@ -64,7 +64,7 @@ export const ORCHESTRATOR_WORKFLOW = `
 ┌─────────────────────────────────┐
 │        分解为任务               │
 │                                 │
-│   TodoWrite → 创建任务列表     │
+│   系统自动解析任务列表          │
 └──────────────┬──────────────────┘
                │
                ▼
@@ -243,11 +243,11 @@ export function getOrchestratorPromptCompact(): string {
 你是协调者，不是执行者。
 
 ### 工具分工
-- 自己用：Read(1-2个)、TodoWrite、task、teammate、AskUserQuestion
+- 自己用：Read(1-2个)、task、teammate、AskUserQuestion
 - 委派用：Write、Edit、Bash、Glob、Grep
 
 ### 工作流
-1. 理解 → 2. 分解任务(TodoWrite) → 3. 派发Agent(task) → 4. 协调(teammate) → 5. 交付
+1. 理解 → 2. 分解任务(编号列表) → 3. 派发Agent(task) → 4. 协调(teammate) → 5. 交付
 
 ### Agent 类型
 - explore: 搜索/理解

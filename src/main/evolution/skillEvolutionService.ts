@@ -242,7 +242,7 @@ export class SkillEvolutionService {
     // 检查工具是否有效
     const validTools = [
       'bash', 'read_file', 'write_file', 'edit_file', 'glob', 'grep',
-      'web_fetch', 'web_search', 'mcp', 'task', 'todo_write', 'ask_user_question',
+      'web_fetch', 'web_search', 'mcp', 'task', 'ask_user_question',
     ];
     for (const tool of parsed.allowedTools) {
       if (!validTools.includes(tool)) {

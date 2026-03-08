@@ -7,6 +7,7 @@ import { execSync } from 'child_process';
 import { getMemoryService } from '../../memory/memoryService';
 import { getCoreMemoryService } from '../../memory/coreMemory';
 import { getProactiveContextService } from '../../memory/proactiveContext';
+import { getDatabase } from '../../services/core/databaseService';
 import { createLogger } from '../../services/infra/logger';
 import { logCollector } from '../../mcp/logCollector';
 import { RAGContextCache } from '../../context/tokenOptimizer';
@@ -206,6 +207,36 @@ export function buildEnhancedSystemPrompt(
       }
     } else if (isLightRAG) {
       // Gen3-4: Lightweight RAG - only project knowledge, no code/conversation search
+    }
+
+    // Entity relationship context (Gen5+)
+    if (isFullRAG) {
+      try {
+        const proactive = getProactiveContextService();
+        const entities = proactive.detectEntities(userQuery);
+
+        if (entities.length > 0) {
+          const db = getDatabase();
+          const relationLines: string[] = [];
+
+          for (const entity of entities.slice(0, 5)) {
+            const relations = db.getRelationsFor(entity.value, 'both');
+            if (relations.length > 0) {
+              const relStr = relations
+                .slice(0, 3)
+                .map(r => `  ${r.sourceId} --[${r.relationType}]--> ${r.targetId}`)
+                .join('\n');
+              relationLines.push(`**${entity.type}:${entity.value}**:\n${relStr}`);
+            }
+          }
+
+          if (relationLines.length > 0) {
+            enhancedPrompt += `\n\n## Entity Relationships\n\n${relationLines.join('\n\n')}`;
+          }
+        }
+      } catch {
+        // Entity relationship context is optional, never block prompt assembly
+      }
     }
 
     // Add project knowledge (all Gen3+)

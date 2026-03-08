@@ -45,7 +45,7 @@
   "$schema": "https://code-agent.dev/schemas/hooks.json",
   "PreToolUse": [
     {
-      "matcher": "bash",
+      "matcher": "Bash",
       "hooks": [
         {
           "type": "command",
@@ -57,7 +57,7 @@
   ],
   "PostToolUse": [
     {
-      "matcher": "edit_file",
+      "matcher": "Edit",
       "hooks": [{ "type": "command", "command": "npm run lint --fix" }]
     }
   ]

@@ -150,6 +150,29 @@
 
 相关代码：`src/main/model/adaptiveRouter.ts`
 
+### 跨 Provider 降级链 (v0.16.42+)
+
+当主 Provider 的瞬态重试（429/超时/连接错误）全部耗尽后，自动按配置链尝试下一个 Provider，无需人工干预。
+
+**降级规则**：
+- 仅瞬态错误触发降级（429、timeout、ECONNRESET 等），非瞬态错误（认证失败、参数错误）**不会**降级
+- 跳过未配置 API Key 的 Provider
+- 所有降级均失败时，抛出原始 Provider 的错误
+
+**当前降级链**（定义在 `PROVIDER_FALLBACK_CHAIN`）：
+
+| 主 Provider | 降级目标 1 | 降级目标 2 |
+|------------|-----------|-----------|
+| moonshot | deepseek/deepseek-chat | zhipu/glm-4.7-flash |
+| deepseek | moonshot/kimi-k2.5 | zhipu/glm-4.7-flash |
+| claude | moonshot/kimi-k2.5 | deepseek/deepseek-chat |
+| openai | moonshot/kimi-k2.5 | deepseek/deepseek-chat |
+| zhipu | moonshot/kimi-k2.5 | deepseek/deepseek-chat |
+
+**日志标识**：降级时日志输出 `[ModelRouter] Fallback → <provider>/<model>`
+
+相关代码：`src/shared/constants.ts`（`PROVIDER_FALLBACK_CHAIN`）、`src/main/model/modelRouter.ts`
+
 ### 推理请求缓存 (v0.16.22+)
 
 非流式请求的 LRU 缓存，避免重复调用 API。

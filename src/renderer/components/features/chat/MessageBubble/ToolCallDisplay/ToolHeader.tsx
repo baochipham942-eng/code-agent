@@ -17,7 +17,7 @@ export function ToolHeader({ toolCall, status }: Props) {
   const displayName = getToolDisplayName(toolCall.name);
   const params = formatParams(toolCall);
   const duration = toolCall.result?.duration;
-  const isSandboxed = toolCall.name === 'bash' &&
+  const isSandboxed = (toolCall.name === 'bash' || toolCall.name === 'Bash') &&
     typeof toolCall.result?.output === 'string' &&
     toolCall.result.output.includes('[codex-sandbox]');
 

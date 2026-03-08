@@ -96,7 +96,7 @@ Anthropic 主导的 [Agent Skills](https://agentskills.io/) 开放标准已被�
 │  │     - Message 2: Skill Prompt (isMeta: true, 用户不可见)     │   │
 │  │     - Message 3: 权限配置 (isMeta: true)                     │   │
 │  │  3. 构建 contextModifier:                                    │   │
-│  │     - preApprovedTools: ['bash', 'read_file']                │   │
+│  │     - preApprovedTools: ['Bash', 'Read']                │   │
 │  │     - modelOverride: (optional)                              │   │
 │  │                                                              │   │
 │  └──────────────────────────┬──────────────────────────────────┘   │
@@ -199,7 +199,7 @@ Assistant: [tool_use: Skill({ command: "commit" })]
 Skill Tool 返回:
   - Message 1 (isMeta: false): "<command-message>Loading commit skill</command-message>"
   - Message 2 (isMeta: true):  "[完整的 commit skill prompt]"
-  - contextModifier: { preApprovedTools: ['bash', 'read_file'] }
+  - contextModifier: { preApprovedTools: ['Bash', 'Read'] }
   │
   ▼
 AgentLoop 注入消息，应用 contextModifier
@@ -229,7 +229,7 @@ Assistant: [tool_use: Bash({ command: "git status" })]  // 预授权，无需确
 │  ┌─────────────────────────────────────────────────────────┐   │
 │  │ 1. 检查精确匹配                                          │   │
 │  │    preApprovedTools.has(tool.name)?                      │   │
-│  │    如: "read_file" in ["read_file", "bash"]              │   │
+│  │    如: "Read" in ["Read", "Bash"]              │   │
 │  │    → YES: 直接允许                                       │   │
 │  └─────────────────────────────────────────────────────────┘   │
 │                         │ NO                                    │

@@ -2,7 +2,7 @@
 // Builtin Config - 内置配置（云端不可用时的降级方案）
 // ============================================================================
 
-import type { GenerationId, SkillDefinition } from '../../../shared/types';
+import type { SkillDefinition } from '../../../shared/types';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -43,7 +43,7 @@ export interface MCPServerCloudConfig {
 
 export interface CloudConfig {
   version: string;
-  prompts: Record<GenerationId, string>;
+  prompts: Record<string, string>;
   skills: SkillDefinition[];
   toolMeta: Record<string, ToolMetadata>;
   featureFlags: FeatureFlags;
@@ -158,7 +158,7 @@ const ATTACHMENT_HANDLING_RULES = `
 // Base Prompts
 // ----------------------------------------------------------------------------
 
-const BASE_PROMPTS: Partial<Record<GenerationId, string>> = {
+const BASE_PROMPTS: Partial<Record<string, string>> = {
   gen8: `你是一个 AI 编程助手（Gen8 - 自我进化）。
 
 你可以使用以下工具：
@@ -168,11 +168,11 @@ const BASE_PROMPTS: Partial<Record<GenerationId, string>> = {
 - self_evaluate: 自我评估`,
 };
 
-const GENERATION_RULES: Partial<Record<GenerationId, string[]>> = {
+const GENERATION_RULES: Partial<Record<string, string[]>> = {
   gen8: [OUTPUT_FORMAT_RULES, PROFESSIONAL_OBJECTIVITY_RULES, CODE_REFERENCE_RULES, PARALLEL_TOOLS_RULES, PLAN_MODE_RULES, GIT_SAFETY_RULES, INJECTION_DEFENSE_RULES, GITHUB_ROUTING_RULES, ERROR_HANDLING_RULES, CODE_SNIPPET_RULES, HTML_GENERATION_RULES, ATTACHMENT_HANDLING_RULES],
 };
 
-function buildPrompt(gen: GenerationId): string {
+function buildPrompt(gen: string): string {
   const base = BASE_PROMPTS[gen];
   const rules = GENERATION_RULES[gen];
   if (!base || !rules) return '';
@@ -301,8 +301,6 @@ const BUILTIN_UI_STRINGS = {
     'chat.send': '发送',
     'chat.stop': '停止',
     'chat.clear': '清空对话',
-    'generation.select': '选择代际',
-    'generation.current': '当前代际',
     'tool.executing': '执行中',
     'tool.completed': '已完成',
     'tool.failed': '失败',
@@ -330,8 +328,6 @@ const BUILTIN_UI_STRINGS = {
     'chat.send': 'Send',
     'chat.stop': 'Stop',
     'chat.clear': 'Clear Chat',
-    'generation.select': 'Select Generation',
-    'generation.current': 'Current Generation',
     'tool.executing': 'Executing',
     'tool.completed': 'Completed',
     'tool.failed': 'Failed',
@@ -546,8 +542,8 @@ const BUILTIN_MCP_SERVERS: MCPServerCloudConfig[] = [
 const BUILTIN_VERSION = '2025.01.19.1';
 
 export function getBuiltinConfig(): CloudConfig {
-  const prompts = {} as Record<GenerationId, string>;
-  const generations: GenerationId[] = ['gen8'];
+  const prompts = {} as Record<string, string>;
+  const generations: string[] = ['gen8'];
 
   for (const gen of generations) {
     prompts[gen] = buildPrompt(gen);

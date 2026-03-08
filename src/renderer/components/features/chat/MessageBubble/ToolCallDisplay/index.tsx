@@ -69,9 +69,9 @@ function StatusIndicator({ status }: { status: ToolStatus }) {
   }
 }
 
-// Extract file path from write_file tool call result
+// Extract file path from Write tool call result
 function extractWriteFilePath(toolCall: ToolCall): string | null {
-  if (toolCall.name !== 'write_file') return null;
+  if (toolCall.name !== 'Write') return null;
   if (toolCall.result && !toolCall.result.success) return null;
 
   const output = toolCall.result?.output as string;
@@ -152,8 +152,8 @@ export function ToolCallDisplay({
       {/* Result summary line with ⎿ connector - only when collapsed and has result */}
       {toolCall.result && !expanded && <ResultSummary toolCall={toolCall} />}
 
-      {/* Quick file actions for write_file - shown when collapsed */}
-      {!expanded && status === 'success' && toolCall.name === 'write_file' && (
+      {/* Quick file actions for Write - shown when collapsed */}
+      {!expanded && status === 'success' && toolCall.name === 'Write' && (
         <QuickFileActions filePath={extractWriteFilePath(toolCall)} />
       )}
 
@@ -167,7 +167,7 @@ export function ToolCallDisplay({
   );
 }
 
-// Quick file actions component - shown inline when write_file is collapsed
+// Quick file actions component - shown inline when Write is collapsed
 function QuickFileActions({ filePath }: { filePath: string | null }) {
   if (!filePath) return null;
 

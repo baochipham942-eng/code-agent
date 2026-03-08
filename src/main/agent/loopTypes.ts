@@ -3,7 +3,6 @@
 // ============================================================================
 
 import type {
-  Generation,
   ModelConfig,
   Message,
   MessageAttachment,
@@ -26,7 +25,7 @@ import type { HookManager } from '../hooks';
  * Agent Loop 配置
  */
 export interface AgentLoopConfig {
-  generation: Generation;
+  systemPrompt?: string;
   modelConfig: ModelConfig;
   toolRegistry: ToolRegistry;
   toolExecutor: ToolExecutor;
@@ -146,7 +145,7 @@ export interface ModelMessage {
  * Tool execution context passed to ToolExecutor
  */
 export interface ToolExecutionContext {
-  generation: Generation;
+  systemPrompt?: string;
   planningService?: PlanningService;
   modelConfig: ModelConfig;
   setPlanMode: (active: boolean) => void;
@@ -264,17 +263,17 @@ export const MAX_PARALLEL_TOOLS = 4;
 /**
  * Read-only tools for anti-pattern tracking
  */
-export const READ_ONLY_TOOLS = ['read_file', 'glob', 'grep', 'list_directory', 'web_fetch'];
+export const READ_ONLY_TOOLS = ['read_file', 'Read', 'glob', 'Glob', 'grep', 'Grep', 'list_directory', 'web_fetch'];
 
 /**
  * Write tools for anti-pattern tracking
  */
-export const WRITE_TOOLS = ['write_file', 'edit_file'];
+export const WRITE_TOOLS = ['write_file', 'Write', 'edit_file', 'Edit'];
 
 /**
  * Verification tools for checkpoint tracking
  */
-export const VERIFY_TOOLS = ['bash', 'test', 'compile'];
+export const VERIFY_TOOLS = ['bash', 'Bash', 'test', 'compile'];
 
 /**
  * Task progress state for P2 checkpoint validation

@@ -87,7 +87,7 @@
   "executionOrder": [["task-1"], ["task-2", "task-3"]], // 并行组
   "estimatedComplexity": "low|medium|high"
 }`,
-  tools: ['read_file', 'glob', 'grep'],  // 只读工具，用于分析
+  tools: ['Read', 'Glob', 'Grep'],  // 只读工具，用于分析
   maxIterations: 5,
   canSpawnSubagents: true,  // 可以建议 spawn 其他 agent
 }
@@ -170,7 +170,7 @@ image_annotate 调用示例：
     { "type": "rectangle", "x": 100, "y": 50, "width": 200, "height": 30, "label": "文字1" }
   ]
 }`,
-  tools: ['image_annotate', 'read_file', 'write_file'],
+  tools: ['image_annotate', 'Read', 'Write'],
   maxIterations: 10,
 }
 ```

@@ -43,9 +43,7 @@ export type AgentAction = 'send' | 'cancel' | 'retry' | 'interrupt';
 export type SessionAction = 'list' | 'create' | 'load' | 'delete' | 'export' | 'import' | 'getMessages' | 'archive' | 'unarchive';
 
 /**
- * Generation 通道 actions
  */
-export type GenerationAction = 'list' | 'getCurrent';
 
 /**
  * Auth 通道 actions
@@ -131,7 +129,6 @@ export type DAGAction = 'getState' | 'subscribe' | 'unsubscribe' | 'list';
 export interface IPCChannelActions {
   agent: AgentAction;
   session: SessionAction;
-  generation: GenerationAction;
   auth: AuthAction;
   sync: SyncAction;
   cloud: CloudAction;
@@ -158,7 +155,6 @@ export type IPCChannel = keyof IPCChannelActions;
 export const IPC_DOMAINS = {
   AGENT: 'agent',
   SESSION: 'session',
-  GENERATION: 'generation',
   AUTH: 'auth',
   SYNC: 'sync',
   CLOUD: 'cloud',

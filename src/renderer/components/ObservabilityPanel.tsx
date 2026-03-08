@@ -59,7 +59,6 @@ const categoryConfig: Record<EventCategory, {
   // 该分类包含的工具列表
   tools: string[];
   // 该分类首次出现的代际
-  minGeneration: number;
 }> = {
   bash: {
     label: 'Bash',
@@ -67,8 +66,7 @@ const categoryConfig: Record<EventCategory, {
     color: 'text-emerald-400',
     bgColor: 'bg-emerald-500/10',
     borderColor: 'border-emerald-500/30',
-    tools: ['bash'],
-    minGeneration: 1,
+    tools: ['Bash'],
   },
   tools: {
     label: 'Tools',
@@ -76,8 +74,7 @@ const categoryConfig: Record<EventCategory, {
     color: 'text-blue-400',
     bgColor: 'bg-blue-500/10',
     borderColor: 'border-blue-500/30',
-    tools: ['read_file', 'write_file', 'edit_file', 'glob', 'grep', 'list_directory', 'web_fetch'],
-    minGeneration: 1,
+    tools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'list_directory', 'web_fetch'],
   },
   plan: {
     label: 'Plan',
@@ -86,7 +83,6 @@ const categoryConfig: Record<EventCategory, {
     bgColor: 'bg-purple-500/10',
     borderColor: 'border-purple-500/30',
     tools: ['todo_write'],
-    minGeneration: 3,
   },
   agent: {
     label: 'Agent',
@@ -94,8 +90,7 @@ const categoryConfig: Record<EventCategory, {
     color: 'text-orange-400',
     bgColor: 'bg-orange-500/10',
     borderColor: 'border-orange-500/30',
-    tools: ['task', 'ask_user_question', 'spawn_agent', 'agent_message', 'workflow_orchestrate'],
-    minGeneration: 3,
+    tools: ['task', 'AskUserQuestion', 'spawn_agent', 'agent_message', 'workflow_orchestrate'],
   },
   mcp: {
     label: 'MCP',
@@ -104,7 +99,6 @@ const categoryConfig: Record<EventCategory, {
     bgColor: 'bg-pink-500/10',
     borderColor: 'border-pink-500/30',
     tools: ['mcp', 'mcp_list_tools', 'mcp_list_resources', 'mcp_read_resource', 'mcp_get_status'],
-    minGeneration: 4,
   },
   skill: {
     label: 'Skill',
@@ -113,7 +107,6 @@ const categoryConfig: Record<EventCategory, {
     bgColor: 'bg-amber-500/10',
     borderColor: 'border-amber-500/30',
     tools: ['skill'],
-    minGeneration: 4,
   },
   memory: {
     label: 'Memory',
@@ -122,21 +115,20 @@ const categoryConfig: Record<EventCategory, {
     bgColor: 'bg-cyan-500/10',
     borderColor: 'border-cyan-500/30',
     tools: ['memory_store', 'memory_search', 'code_index'],
-    minGeneration: 5,
   },
 };
 
 // 工具到分类的映射
 const toolCategoryMap: Record<string, EventCategory> = {
   // Bash
-  bash: 'bash',
+  Bash: 'bash',
 
   // File Tools
-  read_file: 'tools',
-  write_file: 'tools',
-  edit_file: 'tools',
-  glob: 'tools',
-  grep: 'tools',
+  Read: 'tools',
+  Write: 'tools',
+  Edit: 'tools',
+  Glob: 'tools',
+  Grep: 'tools',
   list_directory: 'tools',
 
   // Planning Tools
@@ -144,7 +136,7 @@ const toolCategoryMap: Record<string, EventCategory> = {
 
   // Agent Tools (Gen3+)
   task: 'agent',
-  ask_user_question: 'agent',
+  AskUserQuestion: 'agent',
   // Gen7 Multi-Agent Tools
   spawn_agent: 'agent',
   agent_message: 'agent',
@@ -174,19 +166,19 @@ function getToolSummary(toolCall: ToolCall): string {
   const args = toolCall.arguments || {};
 
   switch (toolCall.name) {
-    case 'bash': {
+    case 'Bash': {
       const cmd = (args.command as string) || '';
       return cmd.length > 50 ? cmd.slice(0, 50) + '...' : cmd;
     }
-    case 'read_file':
+    case 'Read':
       return `读取 ${(args.file_path as string)?.split('/').pop() || '文件'}`;
-    case 'write_file':
+    case 'Write':
       return `写入 ${(args.file_path as string)?.split('/').pop() || '文件'}`;
-    case 'edit_file':
+    case 'Edit':
       return `编辑 ${(args.file_path as string)?.split('/').pop() || '文件'}`;
-    case 'glob':
+    case 'Glob':
       return `搜索 ${args.pattern || '文件'}`;
-    case 'grep':
+    case 'Grep':
       return `搜索 "${args.pattern || '内容'}"`;
     case 'list_directory':
       return `列出 ${(args.path as string)?.split('/').pop() || '目录'}`;
@@ -196,7 +188,7 @@ function getToolSummary(toolCall: ToolCall): string {
     }
     case 'task':
       return (args.description as string) || '执行子任务';
-    case 'ask_user_question':
+    case 'AskUserQuestion':
       return '询问用户';
     case 'skill':
       return `技能: ${args.skill || '未知'}`;
@@ -272,15 +264,16 @@ function getToolSummary(toolCall: ToolCall): string {
 function getToolIcon(name: string): React.ReactNode {
   const iconMap: Record<string, React.ReactNode> = {
     bash: <Terminal className="w-3 h-3" />,
-    read_file: <FileText className="w-3 h-3" />,
-    write_file: <FileText className="w-3 h-3" />,
-    edit_file: <Edit3 className="w-3 h-3" />,
-    glob: <Search className="w-3 h-3" />,
-    grep: <Search className="w-3 h-3" />,
+    Bash: <Terminal className="w-3 h-3" />,
+    Read: <FileText className="w-3 h-3" />,
+    Write: <FileText className="w-3 h-3" />,
+    Edit: <Edit3 className="w-3 h-3" />,
+    Glob: <Search className="w-3 h-3" />,
+    Grep: <Search className="w-3 h-3" />,
     list_directory: <Search className="w-3 h-3" />,
     todo_write: <ListTodo className="w-3 h-3" />,
     task: <Users className="w-3 h-3" />,
-    ask_user_question: <HelpCircle className="w-3 h-3" />,
+    AskUserQuestion: <HelpCircle className="w-3 h-3" />,
     skill: <Sparkles className="w-3 h-3" />,
     web_fetch: <Globe className="w-3 h-3" />,
     memory_store: <Brain className="w-3 h-3" />,

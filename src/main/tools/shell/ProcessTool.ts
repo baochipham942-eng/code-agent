@@ -18,23 +18,7 @@ import { taskOutputTool } from './taskOutput';
 
 export const ProcessTool: Tool = {
   name: 'Process',
-  description: `Unified process management for background tasks and PTY sessions.
-
-Actions:
-- list: List all running/completed background processes and PTY sessions.
-    Params: filter (optional, enum: all|running|completed|failed|pty|background)
-- poll: Poll a process for new output since last poll.
-    Params: session_id (required), block (optional bool), timeout (optional ms)
-- log: Get the full log output from a process.
-    Params: session_id (required), tail (optional number of lines)
-- write: Write raw input to a PTY session (no newline appended).
-    Params: session_id (required), data (required)
-- submit: Submit a command to a PTY session (newline appended automatically).
-    Params: session_id (required), input (required)
-- kill: Terminate a running process. Accepts session_id or task_id (backward compat).
-    Params: session_id or task_id (required)
-- output: Get output from a background task. Accepts session_id or task_id (backward compat).
-    Params: task_id or session_id (optional), block (optional bool, default true), timeout (optional ms)`,
+  description: `Manages system processes: list running processes, kill processes by PID, or get process details. Use for debugging port conflicts, managing background tasks, or cleaning up stuck processes.`,
 
   requiresPermission: true,
   permissionLevel: 'execute',

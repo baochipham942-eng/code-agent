@@ -9,13 +9,7 @@ import { planUpdateTool } from './planUpdate';
 
 export const PlanTool: Tool = {
   name: 'Plan',
-  description: `Unified plan management for reading and updating task plans.
-
-Actions:
-- read: Read the current task plan from task_plan.md. Use to review progress, objectives, and remaining tasks.
-    Params: includeCompleted (optional bool), summary (optional bool)
-- update: Update the status of a step or phase in the task plan.
-    Params: stepContent (required), status (required, enum: pending|in_progress|completed|skipped), phaseTitle (optional), addNote (optional)`,
+  description: `Creates and manages execution plans for complex multi-step tasks. Use to break down work into steps, track progress, and update status. Provides structured task tracking with step-by-step execution.`,
 
   requiresPermission: false,
   permissionLevel: 'read',

@@ -4,7 +4,6 @@
 
 import { create } from 'zustand';
 import type {
-  Generation,
   ModelConfig,
   TaskPlan,
   Finding,
@@ -47,8 +46,6 @@ interface AppState {
   // 渐进披露 - Progressive Disclosure
   disclosureLevel: DisclosureLevel;
 
-  // Generation State
-  currentGeneration: Generation;
 
   // Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
   isProcessing: boolean;
@@ -102,7 +99,6 @@ interface AppState {
   setLanguage: (language: Language) => void;
   setCloudUIStrings: (strings: CloudUIStrings | null) => void;
   setDisclosureLevel: (level: DisclosureLevel) => void;
-  setCurrentGeneration: (gen: Generation) => void;
   setIsProcessing: (processing: boolean) => void;
   // 按会话设置处理状态
   setSessionProcessing: (sessionId: string, processing: boolean) => void;
@@ -128,19 +124,6 @@ interface AppState {
   setContextHealth: (health: ContextHealthState | null) => void;
   setContextHealthCollapsed: (collapsed: boolean) => void;
 }
-
-// Default generation (Gen 1)
-// 代际版本号：Gen1=v1.0, Gen2=v2.0, ..., Gen8=v8.0
-// 注意: id 应与 shared/constants.ts 中的 DEFAULT_GENERATION ('gen8') 保持同步
-const defaultGeneration: Generation = {
-  id: 'gen8',
-  name: 'Generation 8',
-  version: 'v8.0',
-  description: 'Full capabilities with self-evolution',
-  tools: ['bash', 'read_file', 'write_file', 'edit_file'],
-  systemPrompt: '',
-  promptMetadata: { lineCount: 0, toolCount: 4, ruleCount: 0 },
-};
 
 // Default model config — 引用 shared/constants.ts 常量
 const defaultModelConfig: ModelConfig = {
@@ -171,9 +154,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // 渐进披露默认级别
   disclosureLevel: 'standard',
-
-  // Initial Generation State
-  currentGeneration: defaultGeneration,
 
   // Initial Chat State (messages/todos/currentSessionId 已迁移到 sessionStore)
   isProcessing: false,
@@ -227,7 +207,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setCloudUIStrings: (strings) => set({ cloudUIStrings: strings }),
   setDisclosureLevel: (level) => set({ disclosureLevel: level }),
 
-  setCurrentGeneration: (gen) => set({ currentGeneration: gen }),
 
   setIsProcessing: (processing) => set({ isProcessing: processing }),
 

@@ -4,8 +4,6 @@
 // ============================================================================
 
 import type {
-  Generation,
-  GenerationId,
   Message,
   MessageAttachment,
   PermissionResponse,
@@ -217,7 +215,7 @@ export interface TaskListEventIpc {
 export interface SessionExport {
   id: string;
   title: string;
-  generationId: GenerationId;
+  generationId?: string;
   modelConfig: any;
   workingDirectory?: string;
   messages: Message[];
@@ -433,7 +431,6 @@ export interface TestRunReport {
 export const IPC_DOMAINS = {
   AGENT: 'domain:agent',
   SESSION: 'domain:session',
-  GENERATION: 'domain:generation',
   AUTH: 'domain:auth',
   SYNC: 'domain:sync',
   CLOUD: 'domain:cloud',
@@ -490,9 +487,6 @@ export const IPC_CHANNELS = {
   AGENT_EVENT: 'agent:event',
   AGENT_PERMISSION_RESPONSE: 'agent:permission-response',
 
-  // Generation channels
-  GENERATION_LIST: 'generation:list',
-  GENERATION_GET_CURRENT: 'generation:get-current',
 
   // Session channels
   SESSION_LIST: 'session:list',
@@ -789,9 +783,6 @@ export interface IpcInvokeHandlers {
     response: PermissionResponse
   ) => Promise<void>;
 
-  // Generation
-  [IPC_CHANNELS.GENERATION_LIST]: () => Promise<Generation[]>;
-  [IPC_CHANNELS.GENERATION_GET_CURRENT]: () => Promise<Generation>;
 
   // Session
   [IPC_CHANNELS.SESSION_LIST]: (options?: { includeArchived?: boolean }) => Promise<Session[]>;

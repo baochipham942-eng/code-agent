@@ -116,13 +116,6 @@ export function useRunningSessionCount(): number {
 }
 
 /**
- * 获取当前代际信息
- */
-export function useCurrentGeneration() {
-  return useAppStore((state) => state.currentGeneration);
-}
-
-/**
  * 获取模型配置
  */
 export function useModelConfig() {
@@ -193,14 +186,12 @@ export function useSessionContext() {
   const sessionId = useCurrentSessionId();
   const messages = useCurrentMessages();
   const todos = useCurrentTodos();
-  const generation = useCurrentGeneration();
   const workingDirectory = useWorkingDirectory();
 
   return {
     sessionId,
     messages,
     todos,
-    generation,
     workingDirectory,
   };
 }

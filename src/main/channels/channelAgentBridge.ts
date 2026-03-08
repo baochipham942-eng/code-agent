@@ -3,7 +3,6 @@
 // ============================================================================
 
 import type { AgentOrchestrator } from '../agent/agentOrchestrator';
-import type { GenerationManager } from '../generation/generationManager';
 import type { ConfigService } from '../services/core/configService';
 import { getChannelManager } from './channelManager';
 import type { ChannelMessage, ChannelAttachment } from '../../shared/types/channel';
@@ -21,7 +20,6 @@ const logger = createLogger('ChannelAgentBridge');
  */
 export interface ChannelAgentBridgeConfig {
   getOrchestrator: () => AgentOrchestrator | null;
-  generationManager: GenerationManager;
   configService: ConfigService;
 }
 

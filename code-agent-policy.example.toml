@@ -1,0 +1,51 @@
+# code-agent-policy.toml
+# Enterprise Security Policy — Admin-managed, cannot be overridden by developers
+#
+# Place this file at:
+#   - /etc/code-agent/policy.toml   (system-wide, highest priority)
+#   - ~/.code-agent/policy.toml     (user-level)
+#   - ./code-agent-policy.toml      (project-level, lowest priority)
+#
+# Merge rules:
+#   - Higher priority overrides scalar values
+#   - denied/disabled lists are UNION'd (any level can deny)
+
+[network]
+# Whether to allow network access
+allow = true
+# Allowed domain whitelist (only effective when allow=true; empty = allow all)
+allowed_domains = ["api.github.com", "registry.npmjs.org"]
+
+[filesystem]
+# Writable path patterns (glob)
+writable_paths = ["./**", "/tmp/**"]
+# Denied paths (higher priority than writable)
+denied_paths = ["~/.ssh/**", "~/.aws/**", "/etc/**"]
+# Denied file patterns
+denied_file_patterns = ["*.pem", "*.key", "id_rsa*", ".env.production"]
+
+[execution]
+# Whether to allow shell commands
+allow_shell = true
+# Denied command patterns (regex)
+denied_commands = ["rm -rf /", "curl.*\\|.*sh", "wget.*\\|.*sh", "sudo.*"]
+# Allowed command prefixes (empty = allow all)
+allowed_command_prefixes = ["npm", "node", "git", "tsc", "eslint", "prettier"]
+
+[tools]
+# Disabled tools
+disabled = []
+# Tools that always require confirmation (even in bypass mode)
+always_confirm = ["bash", "write_file"]
+
+[model]
+# Allowed model providers (empty = allow all)
+allowed_providers = ["claude", "openai", "zhipu", "moonshot"]
+# Providers restricted from receiving code (data compliance)
+code_restricted_providers = []
+
+[audit]
+# Whether to log all tool calls
+log_all_tool_calls = true
+# Audit log path (relative to project root)
+log_path = ".code-agent/audit.log"

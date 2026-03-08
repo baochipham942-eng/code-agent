@@ -297,7 +297,7 @@ export class NudgeManager {
       && this.goalVerificationCount < this.maxGoalVerifications) {
       const summary = ctx.goalTracker.getGoalSummary();
       const hasWriteAction = summary.completed.some(a =>
-        a === 'edit_file' || a === 'write_file' || a === 'bash'
+        a === 'edit_file' || a === 'Edit' || a === 'write_file' || a === 'Write' || a === 'bash' || a === 'Bash'
       );
       if (!hasWriteAction && ctx.iterations > 1) {
         this.goalVerificationCount++;
@@ -540,7 +540,7 @@ export class NudgeManager {
   private evaluateProgressState(toolsUsed: string[]): TaskProgressState {
     const hasReadTools = toolsUsed.some(t => READ_ONLY_TOOLS.includes(t));
     const hasWriteTools = toolsUsed.some(t => WRITE_TOOLS.includes(t));
-    const hasVerifyTools = toolsUsed.some(t => VERIFY_TOOLS.includes(t) || t === 'bash');
+    const hasVerifyTools = toolsUsed.some(t => VERIFY_TOOLS.includes(t) || t === 'bash' || t === 'Bash');
 
     if (hasVerifyTools && !hasWriteTools) {
       return 'verifying';

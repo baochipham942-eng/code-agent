@@ -12,7 +12,6 @@ import { IPC_CHANNELS } from '../../../shared/ipc';
 import type {
   Session,
   Message,
-  GenerationId,
   ModelConfig,
   TodoItem,
 } from '../../../shared/types';
@@ -34,7 +33,7 @@ export interface SessionWithMessages extends Session {
 
 export interface SessionCreateOptions {
   title?: string;
-  generationId: GenerationId;
+  generationId?: string;
   modelConfig: ModelConfig;
   workingDirectory?: string;
 }
@@ -244,7 +243,7 @@ export class SessionManager {
       interface CloudSession {
         id: string;
         title: string;
-        generation_id: GenerationId;
+        generation_id?: string;
         model_provider: string;
         model_name: string;
         working_directory?: string;

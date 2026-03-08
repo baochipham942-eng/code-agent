@@ -2,7 +2,6 @@
 // Settings Types
 // ============================================================================
 
-import type { GenerationId } from './generation';
 import type { ModelProvider } from './model';
 import type { PermissionLevel } from './tool';
 
@@ -40,7 +39,7 @@ export interface AppSettings {
     custom?: number;
   };
   generation: {
-    default: GenerationId;
+    default?: string;
   };
   workspace: {
     defaultDirectory?: string;

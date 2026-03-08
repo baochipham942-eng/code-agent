@@ -1,5 +1,5 @@
 // ============================================================================
-// Tool Registry - Manages available tools for each generation
+// Tool Registry - Manages available tools
 // ============================================================================
 
 import type {
@@ -152,7 +152,7 @@ export interface Tool extends ToolDefinition {
 
 export interface ToolContext {
   workingDirectory: string;
-  generation: { id: string };
+
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   emit?: (event: string, data: unknown) => void;
   emitEvent?: (event: string, data: unknown) => void; // Alias for emit
@@ -296,6 +296,12 @@ const TOOL_ALIASES: Record<string, string> = {
   web_fetch: 'WebFetch',
   ask_user_question: 'AskUserQuestion',
 
+  // Phase 1 continued: remaining snake_case → PascalCase
+  list_directory: 'ListDirectory',
+  todo_write: 'TodoWrite',
+  tool_search: 'ToolSearch',
+  skill: 'Skill',
+
   // Multi-agent aliases
   spawn_agent: 'AgentSpawn',
   agent_message: 'AgentMessage',
@@ -371,7 +377,7 @@ const TOOL_ALIASES: Record<string, string> = {
  * const registry = new ToolRegistry();
  *
  * // 获取 Gen4 可用的所有工具
- * const tools = registry.getForGeneration('gen4');
+ * const tools = registry.getAll();
  *
  * // 获取特定工具
  * const bash = registry.get('bash');
@@ -573,11 +579,10 @@ export class ToolRegistry {
   /**
    * 获取指定代际可用的所有工具
    *
-   * @param generationId - 代际 ID（如 'gen1', 'gen4'）
    * @returns 该代际可用的工具数组
    */
-  /** @simplified Returns all tools regardless of generationId (locked to gen8) */
-  getForGeneration(_generationId?: string): Tool[] {
+  
+  getAll(): Tool[] {
     return Array.from(this.tools.values());
   }
 
@@ -586,10 +591,9 @@ export class ToolRegistry {
    *
    * 会自动合并云端工具元数据（如描述）
    *
-   * @param generationId - 代际 ID
    * @returns 工具定义数组
    */
-  getToolDefinitions(_generationId?: string): ToolDefinition[] {
+  getToolDefinitions(): ToolDefinition[] {
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
     return this.getAllTools().map((tool) => {
@@ -643,10 +647,9 @@ export class ToolRegistry {
    * 核心工具是最常用的基础工具，始终包含在模型请求中。
    * 其他工具需要通过 tool_search 发现和加载。
    *
-   * @param generationId - 代际 ID
    * @returns 核心工具定义数组
    */
-  getCoreToolDefinitions(_generationId?: string): ToolDefinition[] {
+  getCoreToolDefinitions(): ToolDefinition[] {
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
     return this.getAllTools()
@@ -670,10 +673,9 @@ export class ToolRegistry {
    *
    * 延迟工具不会默认发送给模型，需要通过 tool_search 加载后才可用。
    *
-   * @param generationId - 代际 ID
    * @returns 延迟工具定义数组
    */
-  getDeferredToolDefinitions(_generationId?: string): ToolDefinition[] {
+  getDeferredToolDefinitions(): ToolDefinition[] {
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
     return this.getAllTools()
@@ -697,19 +699,16 @@ export class ToolRegistry {
    *
    * 只返回已通过 tool_search 加载的延迟工具。
    *
-   * @param generationId - 代际 ID
    * @returns 已加载的延迟工具定义数组
    */
-  getLoadedDeferredToolDefinitions(_generationId?: string): ToolDefinition[] {
+  getLoadedDeferredToolDefinitions(): ToolDefinition[] {
     const toolSearchService = getToolSearchService();
     const loadedNames = toolSearchService.getLoadedDeferredTools();
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
     return loadedNames
       .map(name => this.get(name))
-      .filter((tool): tool is Tool =>
-        tool !== undefined // gen8 locked: no generation filtering
-      )
+      .filter((tool): tool is Tool => tool !== undefined)
       .map(tool => {
         const cloudMeta = cloudToolMeta[tool.name];
         const description = cloudMeta?.description || tool.dynamicDescription?.() || tool.description;
@@ -729,10 +728,9 @@ export class ToolRegistry {
    *
    * 返回延迟工具名称列表，提示模型可通过 tool_search 发现这些工具。
    *
-   * @param generationId - 代际 ID
    * @returns 延迟工具名称列表字符串
    */
-  getDeferredToolsSummary(_generationId?: string): string {
+  getDeferredToolsSummary(): string {
     const deferred = this.getDeferredToolDefinitions();
     return deferred.map(t => t.name).join('\n');
   }

@@ -33,10 +33,9 @@ import { getChannelManager } from '../channels';
 import { initChannelAgentBridge, getChannelAgentBridge } from '../channels/channelAgentBridge';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { detectCodexCLI } from '../tools/shell/codexSandbox';
-import { SYNC, UPDATE, CLOUD, TOOL_CACHE, getCloudApiUrl, DEFAULT_MODELS, DEFAULT_GENERATION, DEFAULT_PROVIDER, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } from '../../shared/constants';
-import { loadSoul, watchSoulFiles } from '../generation/prompts/soulLoader';
+import { SYNC, UPDATE, CLOUD, TOOL_CACHE, getCloudApiUrl, DEFAULT_MODELS, DEFAULT_PROVIDER, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY, MODEL_MAX_TOKENS } from '../../shared/constants';
+import { loadSoul, watchSoulFiles } from '../prompts/soulLoader';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
-import { GenerationManager } from '../generation/generationManager';
 import { createPlanningService, type PlanningService } from '../planning';
 import { getSessionManager, notificationService } from '../services';
 import { getTaskManager, type TaskManager } from '../task';
@@ -48,7 +47,6 @@ const logger = createLogger('Bootstrap');
 // Global state
 let configService: ConfigService | null = null;
 let agentOrchestrator: AgentOrchestrator | null = null;
-let generationManager: GenerationManager | null = null;
 let currentSessionId: string | null = null;
 let planningService: PlanningService | null = null;
 
@@ -67,11 +65,8 @@ export function getAgentOrchestrator(): AgentOrchestrator | null {
 }
 
 /**
- * 获取 Generation Manager 实例
  */
-export function getGenerationManagerInstance(): GenerationManager | null {
-  return generationManager;
-}
+
 
 /**
  * 获取当前会话 ID
@@ -570,7 +565,7 @@ async function initializeServices(): Promise<void> {
     logger.error('Failed to initialize update service', error);
   }
 
-  // Load soul/profile personality (before GenerationManager so prompts use it)
+  // Load soul/profile personality
   try {
     const workingDir = app.isPackaged ? process.cwd() : process.env.CODE_AGENT_WORKING_DIR || process.cwd();
     loadSoul(workingDir);
@@ -580,8 +575,6 @@ async function initializeServices(): Promise<void> {
     logger.warn('Soul/Profile loader failed (using default identity)', { error: String(error) });
   }
 
-  // Initialize generation manager
-  generationManager = new GenerationManager();
 
   // 模型一致性校验（非阻塞，仅日志告警）
   try {
@@ -602,7 +595,6 @@ async function initializeServices(): Promise<void> {
 
   // Initialize agent orchestrator
   agentOrchestrator = new AgentOrchestrator({
-    generationManager,
     configService: configService!,
     onEvent: async (event) => {
       logger.debug('onEvent called', { eventType: event.type });
@@ -728,15 +720,10 @@ async function initializeServices(): Promise<void> {
     },
   });
 
-  // Set default generation
-  const defaultGenId = DEFAULT_GENERATION; // Locked to gen8: ignore settings
-  generationManager.switchGeneration(defaultGenId);
-  logger.info('Generation set to', { genId: defaultGenId });
 
   // Initialize TaskManager (Wave 5: 多任务并行)
   const taskManager = getTaskManager();
   taskManager.initialize({
-    generationManager,
     configService: configService!,
     planningService: undefined, // Will be set after planningService is initialized
     onAgentEvent: (sessionId, event) => {
@@ -749,10 +736,8 @@ async function initializeServices(): Promise<void> {
   logger.info('TaskManager initialized');
 
   // Initialize Channel Agent Bridge (multi-channel access: HTTP API, Feishu, etc.)
-  // Must be after agentOrchestrator and generationManager are created
   const channelBridge = initChannelAgentBridge({
     getOrchestrator: () => agentOrchestrator,
-    generationManager: generationManager,
     configService: configService!,
   });
   channelBridge.initialize()
@@ -803,12 +788,12 @@ async function initializeSession(settings: any): Promise<void> {
   } else {
     const session = await sessionManager.createSession({
       title: 'New Session',
-      generationId: DEFAULT_GENERATION, // Locked to gen8
+      generationId: 'gen8',
       modelConfig: {
         provider: settings.model?.provider || DEFAULT_PROVIDER,
         model: settings.model?.model || DEFAULT_MODELS.chat,
         temperature: settings.model?.temperature || 0.7,
-        maxTokens: settings.model?.maxTokens || 4096,
+        maxTokens: settings.model?.maxTokens || MODEL_MAX_TOKENS.DEFAULT,
       },
       workingDirectory: agentOrchestrator?.getWorkingDirectory(),
     });

@@ -7,7 +7,11 @@ import { execSync } from 'child_process';
 import { getMemoryService } from '../../memory/memoryService';
 import { getCoreMemoryService } from '../../memory/coreMemory';
 import { getProactiveContextService } from '../../memory/proactiveContext';
+import { getDatabase } from '../../services/core/databaseService';
+import { getHybridSearchService } from '../../memory/hybridSearch';
+import { getLocalVectorStore } from '../../memory/localVectorStore';
 import { createLogger } from '../../services/infra/logger';
+import { MEMORY } from '../../../shared/constants';
 import { logCollector } from '../../mcp/logCollector';
 import { RAGContextCache } from '../../context/tokenOptimizer';
 
@@ -153,12 +157,11 @@ export interface RAGContextOptions {
  * Gen3-4: Lightweight RAG (project knowledge and user preferences only)
  * Gen5+: Full RAG (code, knowledge base, supports cloud search + proactive context)
  */
-export function buildEnhancedSystemPrompt(
+export async function buildEnhancedSystemPrompt(
   basePrompt: string,
   userQuery: string,
-  generationId: string,
   isSimpleTaskMode: boolean
-): string {
+): Promise<string> {
   // Skip RAG for simple tasks
   if (isSimpleTaskMode) {
     logger.debug('Skipping RAG for simple task (fast path)');
@@ -174,7 +177,7 @@ export function buildEnhancedSystemPrompt(
     let enhancedPrompt = basePrompt;
 
     // Determine RAG level based on generation
-    const genNum = parseInt(generationId.replace('gen', ''), 10);
+    const genNum = parseInt('gen8'.replace('gen', ''), 10);
     const isFullRAG = genNum >= 5;
     const isLightRAG = genNum >= 3 && genNum < 5;
 
@@ -188,12 +191,30 @@ export function buildEnhancedSystemPrompt(
         ragContext = cached.context;
         logger.debug(`RAG cache hit: ${cached.tokens} tokens saved`);
       } else {
-        ragContext = memoryService.getRAGContext(userQuery, {
-          includeCode: true,
-          includeKnowledge: true,
-          includeConversations: false,
-          maxTokens: 1500,
-        });
+        // Try hybrid search first, fall back to legacy RAG
+        try {
+          const vectorStore = getLocalVectorStore();
+          const hybridSearch = getHybridSearchService(vectorStore);
+          const { results } = await hybridSearch.search(userQuery, {
+            topK: 10,
+            threshold: 0.1,
+          });
+
+          if (results.length > 0) {
+            ragContext = results
+              .map(r => `[${r.metadata?.type || 'unknown'}] ${r.content}`)
+              .join('\n\n');
+            logger.debug(`Hybrid search returned ${results.length} results`);
+          }
+        } catch (hybridError) {
+          logger.warn('Hybrid search failed, falling back to legacy RAG:', hybridError);
+          ragContext = memoryService.getRAGContext(userQuery, {
+            includeCode: true,
+            includeKnowledge: true,
+            includeConversations: false,
+            maxTokens: 1500,
+          });
+        }
 
         // Cache the result for future queries
         if (ragContext && ragContext.trim().length > 0) {
@@ -206,6 +227,39 @@ export function buildEnhancedSystemPrompt(
       }
     } else if (isLightRAG) {
       // Gen3-4: Lightweight RAG - only project knowledge, no code/conversation search
+    }
+
+    // Entity relationship context (Gen5+)
+    if (isFullRAG) {
+      try {
+        const proactive = getProactiveContextService();
+        const entities = proactive.detectEntities(userQuery);
+
+        if (entities.length > 0) {
+          const db = getDatabase();
+          const relationLines: string[] = [];
+
+          for (const entity of entities.slice(0, 5)) {
+            const relations = db.getRelationsFor(entity.value, 'both', {
+              decayDays: MEMORY.RELATION_DECAY_DAYS,
+              minConfidence: MEMORY.RELATION_CONTEXT_MIN_CONFIDENCE,
+            });
+            if (relations.length > 0) {
+              const relStr = relations
+                .slice(0, 3)
+                .map(r => `  ${r.sourceId} --[${r.relationType}]--> ${r.targetId}`)
+                .join('\n');
+              relationLines.push(`**${entity.type}:${entity.value}**:\n${relStr}`);
+            }
+          }
+
+          if (relationLines.length > 0) {
+            enhancedPrompt += `\n\n## Entity Relationships\n\n${relationLines.join('\n\n')}`;
+          }
+        }
+      } catch {
+        // Entity relationship context is optional, never block prompt assembly
+      }
     }
 
     // Add project knowledge (all Gen3+)
@@ -237,7 +291,7 @@ export function buildEnhancedSystemPrompt(
     }
 
     const ragType = isFullRAG ? 'full' : isLightRAG ? 'light' : 'none';
-    logger.debug(`Enhanced system prompt with ${ragType} RAG for ${generationId}`);
+    logger.debug(`Enhanced system prompt with ${ragType} RAG for ${'gen8'}`);
     return enhancedPrompt;
   } catch (error) {
     logger.error('Failed to build enhanced system prompt:', error);

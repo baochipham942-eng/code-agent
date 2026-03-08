@@ -6,8 +6,8 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import * as dotenv from 'dotenv';
-import type { AppSettings, GenerationId, ModelProvider, PermissionLevel } from '../shared/types';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_GENERATION, MODEL_MAX_TOKENS } from '../shared/constants';
+import type { AppSettings, ModelProvider, PermissionLevel } from '../shared/types';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER, DEFAULT_MODEL, MODEL_MAX_TOKENS } from '../shared/constants';
 
 // 加载 .env 文件
 function loadEnvFile(): void {
@@ -100,7 +100,7 @@ export class CLIConfigService {
         },
       },
       generation: {
-        default: DEFAULT_GENERATION,  // 使用最新代际，支持所有工具
+        default: 'gen8',  // 使用最新代际，支持所有工具
       },
       workspace: {
         recentDirectories: [],

@@ -3,7 +3,7 @@
 // ============================================================================
 // 负责从云端拉取配置、缓存管理、离线降级
 
-import type { GenerationId, SkillDefinition } from '../../../shared/types';
+import type { SkillDefinition } from '../../../shared/types';
 import { getBuiltinConfig, type CloudConfig, type ToolMetadata, type FeatureFlags, type MCPServerCloudConfig } from './builtinConfig';
 import { createLogger } from '../infra/logger';
 import { CACHE, CLOUD, CLOUD_ENDPOINTS } from '../../../shared/constants';
@@ -121,7 +121,7 @@ export class CloudConfigService {
   /**
    * 获取指定代际的 System Prompt
    */
-  getPrompt(genId: GenerationId): string {
+  getPrompt(genId: string): string {
     const config = this.getConfig();
     return config.prompts[genId] || '';
   }

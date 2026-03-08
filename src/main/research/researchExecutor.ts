@@ -12,7 +12,6 @@ import type {
 } from './types';
 import type { ModelRouter } from '../model/modelRouter';
 import type { ToolExecutor } from '../tools/toolExecutor';
-import type { Generation } from '../../shared/types';
 import type { ModelProvider } from '../../shared/types/model';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
@@ -42,8 +41,6 @@ export interface ResearchExecutorConfig {
   maxFetchPerSearch?: number;
   /** 抓取内容最大长度 */
   maxFetchContentLength?: number;
-  /** 当前代际配置（可选，会使用默认 Gen4 配置） */
-  generation?: Generation;
   /** 并行搜索的最大并发数，默认 3 */
   maxConcurrentSearches?: number;
   /** 并行抓取的最大并发数，默认 5 */
@@ -52,18 +49,7 @@ export interface ResearchExecutorConfig {
   enableStepParallelism?: boolean;
 }
 
-/**
- * 研究模式所需的最小 Generation（需要 web_search / web_fetch）
- */
-const RESEARCH_GENERATION: Generation = {
-  id: 'gen4',
-  name: 'Gen 4',
-  version: '4.0.0',
-  description: 'Deep Research Mode',
-  tools: ['web_search', 'web_fetch'],
-  systemPrompt: '',
-  promptMetadata: { lineCount: 0, toolCount: 2, ruleCount: 0 },
-};
+
 
 // ----------------------------------------------------------------------------
 // Research Executor
@@ -100,7 +86,6 @@ export class ResearchExecutor {
       maxSearchPerStep: config.maxSearchPerStep ?? 3,
       maxFetchPerSearch: config.maxFetchPerSearch ?? 3,
       maxFetchContentLength: config.maxFetchContentLength ?? 3000,
-      generation: config.generation ?? RESEARCH_GENERATION,
       maxConcurrentSearches: config.maxConcurrentSearches ?? 3,
       maxConcurrentFetches: config.maxConcurrentFetches ?? 5,
       enableStepParallelism: config.enableStepParallelism ?? true,
@@ -459,7 +444,7 @@ export class ResearchExecutor {
       const searchResult = await this.toolExecutor.execute(
         'web_search',
         { query, count: 5 },
-        { generation: this.config.generation }
+        {}
       );
 
       if (!searchResult.success || !searchResult.result) {
@@ -507,7 +492,7 @@ export class ResearchExecutor {
       const fetchResult = await this.toolExecutor.execute(
         'web_fetch',
         { url },
-        { generation: this.config.generation }
+        {}
       );
 
       if (fetchResult.success && fetchResult.result) {

@@ -91,7 +91,7 @@ export async function createWindow(): Promise<void> {
 
   if (isDev) {
     logger.info('Loading development URL...');
-    await mainWindow.loadURL('http://localhost:5173');
+    await mainWindow.loadURL('http://localhost:3000');
     mainWindow.webContents.openDevTools();
   } else {
     logger.info('Loading production file...', { rendererPath });

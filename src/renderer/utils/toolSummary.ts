@@ -10,21 +10,21 @@ import type { ToolCall } from '@shared/types';
  */
 const TOOL_ICON_NAMES: Record<string, string> = {
   // Gen 1 - 基础文件操作
-  bash: 'terminal',
-  read_file: 'file-text',
-  write_file: 'file-plus',
-  edit_file: 'file-edit',
+  Bash: 'terminal',
+  Read: 'file-text',
+  Write: 'file-plus',
+  Edit: 'file-edit',
 
   // Gen 2 - 搜索和导航
-  glob: 'search',
-  grep: 'search-code',
+  Glob: 'search',
+  Grep: 'search-code',
   list_directory: 'folder-open',
-  web_search: 'globe',
+  WebSearch: 'globe',
 
   // Gen 3 - 子代理和规划
   task: 'bot',
   todo_write: 'list-todo',
-  ask_user_question: 'message-circle-question',
+  AskUserQuestion: 'message-circle-question',
 
   // Gen 4 - 技能系统和网络
   skill: 'sparkles',
@@ -75,19 +75,19 @@ export function getToolIconName(toolName: string): string {
 export function getToolIcon(toolName: string): string {
   // 保留 emoji 映射用于兼容
   const emojiMap: Record<string, string> = {
-    bash: '💻',
-    read_file: '📖',
-    write_file: '✍️',
-    edit_file: '✏️',
-    glob: '🔍',
-    grep: '🔎',
+    Bash: '💻',
+    Read: '📖',
+    Write: '✍️',
+    Edit: '✏️',
+    Glob: '🔍',
+    Grep: '🔎',
     list_directory: '📁',
     task: '🤖',
     todo_write: '📝',
-    ask_user_question: '❓',
+    AskUserQuestion: '❓',
     skill: '⚡',
     web_fetch: '🌐',
-    web_search: '🔍',
+    WebSearch: '🔍',
     mcp: '🔌',
     memory_store: '💾',
     memory_search: '🧠',
@@ -109,13 +109,13 @@ export function summarizeToolCall(toolCall: ToolCall): string {
   // 根据工具类型生成不同的摘要
   switch (name) {
     // Gen 1 工具
-    case 'bash': {
+    case 'Bash': {
       const command = (args?.command as string) || '';
       const shortCommand = command.length > 60 ? command.slice(0, 57) + '...' : command;
       return `执行命令: ${shortCommand}`;
     }
 
-    case 'read_file': {
+    case 'Read': {
       let filePath = (args?.file_path as string) || '';
       // 清理可能混入的参数（AI 可能把 offset/limit 写到 file_path 里）
       if (filePath.includes(' offset=') || filePath.includes(' limit=')) {
@@ -130,13 +130,13 @@ export function summarizeToolCall(toolCall: ToolCall): string {
       return `读取文件: ${fileName}`;
     }
 
-    case 'write_file': {
+    case 'Write': {
       const filePath = (args?.file_path as string) || '';
       const fileName = filePath.split('/').pop() || filePath;
       return `创建文件: ${fileName}`;
     }
 
-    case 'edit_file': {
+    case 'Edit': {
       const filePath = (args?.file_path as string) || '';
       const fileName = filePath.split('/').pop() || filePath;
       // If tool has result and failed, show failure message instead of line diff
@@ -153,12 +153,12 @@ export function summarizeToolCall(toolCall: ToolCall): string {
     }
 
     // Gen 2 工具
-    case 'glob': {
+    case 'Glob': {
       const pattern = (args?.pattern as string) || '*';
       return `搜索文件: ${pattern}`;
     }
 
-    case 'grep': {
+    case 'Grep': {
       const pattern = (args?.pattern as string) || '';
       const path = (args?.path as string) || '.';
       return `搜索内容: "${pattern}" in ${path}`;
@@ -186,7 +186,7 @@ export function summarizeToolCall(toolCall: ToolCall): string {
       return '更新待办列表';
     }
 
-    case 'ask_user_question': {
+    case 'AskUserQuestion': {
       const question = (args?.question as string) || '';
       const shortQ = question.length > 40 ? question.slice(0, 37) + '...' : question;
       return `询问用户: ${shortQ}`;

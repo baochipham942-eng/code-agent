@@ -94,6 +94,17 @@ export interface MemoryRecord {
 // 使用 Record<string, unknown> 代替 any，但具体字段访问仍需类型断言
 type SQLiteRow = Record<string, unknown>;
 
+
+export interface EntityRelation {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  relationType: string;
+  confidence: number;
+  evidence: string;
+  createdAt: number;
+}
+
 // ----------------------------------------------------------------------------
 // Database Service
 // ----------------------------------------------------------------------------
@@ -551,6 +562,19 @@ export class DatabaseService {
         updated_at INTEGER NOT NULL
       )
     `);
+
+// Entity relations table (for proactive context)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS entity_relations (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        relation_type TEXT NOT NULL,
+        confidence REAL NOT NULL DEFAULT 1.0,
+        evidence TEXT DEFAULT '',
+        created_at INTEGER NOT NULL
+      )
+    `);
   }
 
   private createIndexes(): void {
@@ -572,6 +596,13 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_memories_source ON memories(source);
       CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_path);
       CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id);
+    `);
+
+    // Entity relations indexes
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_entity_relations_source ON entity_relations(source_id);
+      CREATE INDEX IF NOT EXISTS idx_entity_relations_target ON entity_relations(target_id);
+      CREATE INDEX IF NOT EXISTS idx_entity_relations_type ON entity_relations(relation_type);
     `);
 
     // 性能优化：复合索引（首轮响应加速）
@@ -1838,6 +1869,61 @@ export class DatabaseService {
 
     this.db.prepare(`UPDATE sessions SET status = 'idle', updated_at = ? WHERE id = ?`).run(Date.now(), sessionId);
     return this.getSession(sessionId);
+  }
+
+  // ==========================================================================
+  // Entity Relations (sync, for proactive context)
+  // ==========================================================================
+
+  addRelation(params: {
+    sourceId: string;
+    targetId: string;
+    relationType: 'calls' | 'imports' | 'similar_to' | 'solves' | 'depends_on' | 'modifies' | 'references';
+    confidence: number;
+    evidence: string;
+    sessionId: string;
+  }): void {
+    if (!this.db) return;
+
+    const id = `rel_${params.sessionId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    this.db.prepare(`
+      INSERT INTO entity_relations (id, source_id, target_id, relation_type, confidence, evidence, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      params.sourceId,
+      params.targetId,
+      params.relationType,
+      params.confidence,
+      params.evidence,
+      Date.now(),
+    );
+  }
+
+  getRelationsFor(entityId: string, direction: 'source' | 'target' | 'both' = 'both'): EntityRelation[] {
+    if (!this.db) return [];
+
+    let sql: string;
+    if (direction === 'source') {
+      sql = 'SELECT * FROM entity_relations WHERE source_id = ?';
+    } else if (direction === 'target') {
+      sql = 'SELECT * FROM entity_relations WHERE target_id = ?';
+    } else {
+      sql = 'SELECT * FROM entity_relations WHERE source_id = ? OR target_id = ?';
+    }
+
+    const params = direction === 'both' ? [entityId, entityId] : [entityId];
+    const rows = this.db.prepare(sql).all(...params) as SQLiteRow[];
+
+    return rows.map(row => ({
+      id: row.id as string,
+      sourceId: row.source_id as string,
+      targetId: row.target_id as string,
+      relationType: row.relation_type as string,
+      confidence: row.confidence as number,
+      evidence: row.evidence as string,
+      createdAt: row.created_at as number,
+    }));
   }
 }
 

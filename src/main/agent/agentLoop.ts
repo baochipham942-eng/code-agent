@@ -20,6 +20,7 @@ import { getToolSearchService } from '../tools/search';
 import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/memoryService';
+import { getContinuousLearningService } from '../memory/continuousLearningService';
 import { sanitizeMemoryContent } from '../memory/sanitizeMemoryContent';
 import { buildSeedMemoryBlock } from '../memory/seedMemoryInjector';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../services';
@@ -3736,8 +3737,71 @@ ${deferredToolsSummary}
         avgConfidence: decayStats.avgConfidence.toFixed(2),
       });
 
+
+      // Continuous learning: pattern extraction + entity relations
+      this.runContinuousLearning().catch((err: unknown) => {
+        logger.debug('[AgentLoop] Continuous learning skipped:', { error: (err as Error).message });
+      });
     } catch (error) {
       logger.debug('[AgentLoop] Session end learning failed:', { errorMessage: (error as Error).message });
+    }
+  }
+
+  /**
+   * 持续学习：从会话中提取模式并建立实体关系
+   */
+  private async runContinuousLearning(): Promise<void> {
+    if (!this.sessionId || this.messages.length < 4) return;
+
+    const cls = getContinuousLearningService();
+    const result = await cls.learnFromSession(this.sessionId, this.messages);
+
+    if (!result || result.patternsExtracted === 0) return;
+
+    logger.info(
+      `[AgentLoop] Continuous learning: ${result.patternsExtracted} patterns, ${result.skillsSynthesized} skills`
+    );
+
+    // Write extracted patterns as entity relations via SQLite database
+    try {
+      const { getDatabase } = await import('../services/core/databaseService');
+      const db = getDatabase();
+
+      for (const pattern of result.patterns || []) {
+        if (pattern.confidence < 0.7) continue;
+
+        const filesModified: string[] = pattern.context?.filesModified || [];
+        const toolsUsed: string[] = pattern.context?.toolsUsed || [];
+
+        for (const file of filesModified.slice(0, 5)) {
+          for (const tool of toolsUsed.slice(0, 5)) {
+            db.addRelation({
+              sourceId: file,
+              targetId: tool,
+              relationType: 'modifies',
+              confidence: pattern.confidence,
+              evidence: (pattern.content || pattern.type || '').substring(0, 200),
+              sessionId: this.sessionId!,
+            });
+          }
+        }
+
+        // File co-modification relations
+        for (let i = 0; i < Math.min(filesModified.length, 5); i++) {
+          for (let j = i + 1; j < Math.min(filesModified.length, 5); j++) {
+            db.addRelation({
+              sourceId: filesModified[i],
+              targetId: filesModified[j],
+              relationType: 'references',
+              confidence: pattern.confidence * 0.8,
+              evidence: `Co-modified in pattern: ${pattern.type}`,
+              sessionId: this.sessionId!,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      logger.debug('[AgentLoop] Entity relation writing failed:', { error: (err as Error).message });
     }
   }
 

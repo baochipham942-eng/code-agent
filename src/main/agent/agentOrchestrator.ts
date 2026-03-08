@@ -1387,6 +1387,7 @@ export class AgentOrchestrator {
         provider: selectedProvider,
         model: selectedModel,
         apiKey: selectedApiKey,
+        baseUrl: providerConfig?.baseUrl,
         temperature: 0.7,
         maxTokens: MODEL_MAX_TOKENS.DEFAULT,
       };

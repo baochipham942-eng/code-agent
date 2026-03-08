@@ -1,112 +1,41 @@
 // ============================================================================
-// EvalCenterPanel - 评测中心（3 Tab 重构：报告 / 会话历史 / 标注）
+// EvalCenterPanel - 评测中心（全页面布局：左侧导航 + 6 页面）
 // ============================================================================
 
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { useAppStore } from '../../../stores/appStore';
-import { SessionListView } from './SessionListView';
-import { OpenCodingWorkbench } from './testResults/OpenCodingWorkbench';
 import { TestResultsDashboard } from './testResults/TestResultsDashboard';
-import type { CaseAnnotation } from './testResults/OpenCodingWorkbench';
-import type { TestRunReport, TestCaseResult } from '@shared/ipc';
-import { EVALUATION_CHANNELS } from '@shared/ipc';
+import { TestCaseManager } from './pages/TestCaseManager';
+import { ScoringConfigPage } from './pages/ScoringConfigPage';
+import { ExperimentDetailPage } from './pages/ExperimentDetailPage';
+import { FailureAnalysisPage } from './pages/FailureAnalysisPage';
+import { CrossExperimentPage } from './pages/CrossExperimentPage';
 
-type Mode = 'reports' | 'sessions' | 'coding';
+type NavItem = 'overview' | 'test-cases' | 'scoring' | 'detail' | 'failure' | 'compare';
+
+const NAV_ITEMS: Array<{ key: NavItem; icon: string; label: string }> = [
+  { key: 'overview', icon: '📊', label: '实验总览' },
+  { key: 'test-cases', icon: '📋', label: '测试集' },
+  { key: 'scoring', icon: '⚙️', label: '评分配置' },
+  { key: 'detail', icon: '🔬', label: '实验详情' },
+  { key: 'failure', icon: '🔍', label: '失败分析' },
+  { key: 'compare', icon: '📈', label: '对比分析' },
+];
 
 export const EvalCenterPanel: React.FC = () => {
   const { showEvalCenter, setShowEvalCenter } = useAppStore();
-
-  const [mode, setMode] = useState<Mode>('reports');
-  const [codingCases, setCodingCases] = useState<TestCaseResult[]>([]);
+  const [activeNav, setActiveNav] = useState<NavItem>('overview');
 
   const handleClose = () => setShowEvalCenter(false);
-
-  // Load latest report's failed cases and enter coding mode
-  const handleEnterCoding = useCallback(async () => {
-    try {
-      const list = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS) as { filePath: string }[] | undefined;
-      if (list && list.length > 0) {
-        const report = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, list[0].filePath) as TestRunReport | null | undefined;
-        if (report) {
-          const failed = report.results.filter((r: TestCaseResult) => r.status !== 'passed');
-          setCodingCases(failed);
-        }
-      }
-    } catch {
-      // best-effort
-    }
-    setMode('coding');
-  }, []);
-
-  const handleSaveAnnotations = useCallback(async (annotations: CaseAnnotation[]) => {
-    const toEvalErrorType = (errorType: CaseAnnotation['errorTypes'][number]) => {
-      switch (errorType) {
-        case 'tool_selection_wrong':
-          return 'tool_misuse' as const;
-        case 'planning_failure':
-        case 'execution_error':
-          return 'reasoning_error' as const;
-        case 'output_format_wrong':
-          return 'incomplete_output' as const;
-        case 'self_repair_failed':
-          return 'hallucination' as const;
-        default:
-          return 'incomplete_output' as const;
-      }
-    };
-
-    try {
-      await Promise.all(
-        annotations.map((annotation, index) =>
-          window.electronAPI?.invoke(EVALUATION_CHANNELS.SAVE_ANNOTATIONS, {
-            id: `${annotation.caseId}-${Date.now()}-${index}`,
-            caseId: annotation.caseId,
-            round: 1,
-            timestamp: new Date().toISOString(),
-            errorTypes: annotation.errorTypes.map(toEvalErrorType),
-            rootCause: annotation.rootCause || annotation.notes || 'N/A',
-            severity: annotation.severity,
-            annotator: 'open-coding-workbench',
-          })
-        )
-      );
-    } catch (error) {
-      console.error('[OpenCoding] Failed to persist annotations', error);
-    }
-  }, []);
-
-  const tabs: { key: Mode; label: string; onClick?: () => void }[] = [
-    { key: 'reports', label: '📊 评测报告' },
-    { key: 'sessions', label: '📋 会话历史' },
-    { key: 'coding', label: '📝 标注', onClick: handleEnterCoding },
-  ];
 
   if (!showEvalCenter) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-zinc-900 rounded-xl border border-zinc-700/50 shadow-2xl w-[900px] max-h-[90vh] overflow-hidden flex flex-col">
+      <div className="bg-zinc-900 rounded-xl border border-zinc-700/50 shadow-2xl w-full max-w-[1200px] h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700/50">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700/50 shrink-0">
           <h2 className="text-sm font-medium text-zinc-200">评测中心</h2>
-
-          {/* Tab navigation */}
-          <div className="flex items-center gap-1">
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={tab.onClick ?? (() => setMode(tab.key))}
-                className={`px-2.5 py-1 rounded text-xs transition ${
-                  mode === tab.key
-                    ? 'bg-zinc-700 text-zinc-200'
-                    : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
           <button
             onClick={handleClose}
             className="p-1 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition"
@@ -117,25 +46,36 @@ export const EvalCenterPanel: React.FC = () => {
           </button>
         </div>
 
-        {/* Body */}
-        {mode === 'reports' && (
+        {/* Body: sidebar + main */}
+        <div className="flex flex-1 min-h-0">
+          {/* Left sidebar */}
+          <div className="w-[160px] shrink-0 bg-zinc-900/95 border-r border-zinc-700/50 py-2 flex flex-col gap-0.5">
+            {NAV_ITEMS.map((item) => (
+              <button
+                key={item.key}
+                onClick={() => setActiveNav(item.key)}
+                className={`flex items-center gap-2 px-3 py-2 mx-1 rounded text-xs transition ${
+                  activeNav === item.key
+                    ? 'bg-zinc-700/60 text-zinc-200'
+                    : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+                }`}
+              >
+                <span className="text-sm">{item.icon}</span>
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Main content */}
           <div className="flex-1 overflow-y-auto min-h-0">
-            <TestResultsDashboard />
+            {activeNav === 'overview' && <TestResultsDashboard />}
+            {activeNav === 'test-cases' && <TestCaseManager />}
+            {activeNav === 'scoring' && <ScoringConfigPage />}
+            {activeNav === 'detail' && <ExperimentDetailPage />}
+            {activeNav === 'failure' && <FailureAnalysisPage />}
+            {activeNav === 'compare' && <CrossExperimentPage />}
           </div>
-        )}
-        {mode === 'sessions' && (
-          <div className="flex-1 overflow-hidden min-h-0">
-            <SessionListView onSelectSession={() => {}} />
-          </div>
-        )}
-        {mode === 'coding' && (
-          <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
-            <OpenCodingWorkbench
-              cases={codingCases}
-              onSave={handleSaveAnnotations}
-            />
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );

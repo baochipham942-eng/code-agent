@@ -196,6 +196,15 @@ export const EVALUATION_CHANNELS = {
   SAVE_ANNOTATIONS: 'evaluation:save-annotations',
   /** 获取轴心编码聚合数据 */
   GET_AXIAL_CODING: 'evaluation:get-axial-coding',
+
+  // Eval framework channels
+  LIST_EXPERIMENTS: 'evaluation:list-experiments',
+  LOAD_EXPERIMENT: 'evaluation:load-experiment',
+  LIST_TEST_CASES: 'evaluation:list-test-cases',
+  GET_SCORING_CONFIG: 'evaluation:get-scoring-config',
+  UPDATE_SCORING_CONFIG: 'evaluation:update-scoring-config',
+  GET_FAILURE_FUNNEL: 'evaluation:get-failure-funnel',
+  GET_CROSS_EXPERIMENT: 'evaluation:get-cross-experiment',
 } as const;
 
 /**

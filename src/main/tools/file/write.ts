@@ -148,21 +148,8 @@ function checkCodeCompleteness(content: string, filePath: string): CompletenessC
 }
 
 export const writeFileTool: Tool = {
-  name: 'write_file',
-  description: `Create a new file or completely overwrite an existing file.
-
-When to use write_file vs edit_file:
-- write_file: Creating NEW files, or rewriting an entire file from scratch
-- edit_file: Making targeted changes to an EXISTING file (preferred — preserves unchanged code)
-ALWAYS prefer edit_file for existing files. Only use write_file when creating new files or when edit_file has failed twice.
-
-Rules:
-- If overwriting an existing file, you MUST read it first with read_file
-- file_path must be an absolute path
-- Creates parent directories automatically
-- For files >300 lines, create a skeleton first, then use edit_file to fill in — this prevents truncation
-
-The tool checks for truncated code (unclosed brackets, incomplete statements) and warns you.`,
+  name: 'Write',
+  description: `Writes a file to the local filesystem. Overwrites existing files. IMPORTANT: You MUST read the file first before writing to it — use Edit for modifications instead, which only sends the diff. Only use Write for new files or complete rewrites.`,
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

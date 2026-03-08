@@ -84,7 +84,7 @@ code-agent/
 │   │   ├── agent/            # Agent 核心
 │   │   │   ├── AgentOrchestrator.ts  # 编排器
 │   │   │   └── AgentLoop.ts          # 事件循环
-│   │   ├── generation/       # 代际管理
+│   │   ├── prompts/         # Prompt system
 │   │   ├── model/            # 模型路由
 │   │   ├── tools/            # 工具实现 (gen1-gen7)
 │   │   ├── services/         # 核心服务
@@ -196,7 +196,7 @@ npm run typecheck
 
 ### 2026-01-17
 
-- ✅ 支持 8 代工具选择，Generation 下拉框添加滚动支持
+- ✅ 支持 8 代工具选择，（已移除）Generation 下拉框添加滚动支持
 - ✅ Gen6-8 工具实现完成
 - ✅ Terminal Noir UI 设计系统
 - ✅ 用户认证系统 (Supabase)

@@ -91,7 +91,7 @@ export const ServiceKeysSettings: React.FC = () => {
     {
       id: 'brave',
       name: 'Brave Search',
-      description: '网络搜索功能（web_search 工具）',
+      description: '网络搜索功能（WebSearch 工具）',
       icon: <Search className="w-4 h-4 text-orange-400" />,
       placeholder: 'BSA...',
       helpUrl: 'https://brave.com/search/api/',

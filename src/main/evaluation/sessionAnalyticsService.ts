@@ -236,8 +236,8 @@ export class SessionAnalyticsService {
     if (lower.includes('hallucin') || lower.includes('does not exist')) return 'path_hallucination';
     if (lower.includes('rate limit') || lower.includes('429')) return 'rate_limit';
     if (lower.includes('connection') || lower.includes('network')) return 'network_error';
-    if (toolName === 'edit_file') return 'edit_failure';
-    if (toolName === 'bash') return 'command_failure';
+    if (toolName === 'edit_file' || toolName === 'Edit') return 'edit_failure';
+    if (toolName === 'bash' || toolName === 'Bash') return 'command_failure';
     if (lower.includes('retry') || lower.includes('again')) return 'infinite_retry';
     return 'other';
   }

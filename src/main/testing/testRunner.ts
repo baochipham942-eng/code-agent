@@ -42,8 +42,8 @@ export interface AgentInterface {
   }>;
   /** Reset the agent state for a new test */
   reset(): Promise<void>;
-  /** Get current generation info */
-  getGenerationInfo(): { name: string; model: string; provider: string };
+  /** Get current agent info */
+  getAgentInfo(): { name: string; model: string; provider: string };
 }
 
 /**
@@ -167,7 +167,7 @@ export class TestRunner {
 
     // Build summary
     const endTime = Date.now();
-    const genInfo = this.agent.getGenerationInfo();
+    const genInfo = this.agent.getAgentInfo();
 
     const nonSkipped = results.filter((r) => r.status !== 'skipped');
     const avgScore = nonSkipped.length > 0

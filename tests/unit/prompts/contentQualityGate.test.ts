@@ -8,10 +8,10 @@ import { describe, it, expect } from 'vitest';
 import {
   detectTaskFeatures,
   getSystemReminders,
-} from '../../../src/main/generation/prompts/systemReminders';
+} from '../../../src/main/prompts/systemReminders';
 import {
   REMINDER_DEFINITIONS,
-} from '../../../src/main/generation/prompts/reminderRegistry';
+} from '../../../src/main/prompts/reminderRegistry';
 
 // ============================================================================
 // detectTaskFeatures — 意图识别

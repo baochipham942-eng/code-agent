@@ -28,7 +28,7 @@ export const WorkingFolder: React.FC = () => {
     for (const message of messages.slice(-20).reverse()) {
       if (message.toolCalls) {
         for (const toolCall of message.toolCalls) {
-          if (['write_file', 'edit_file', 'read_file'].includes(toolCall.name)) {
+          if (['Write', 'Edit', 'Read'].includes(toolCall.name)) {
             const args = toolCall.arguments as Record<string, unknown>;
             const filePath = (args?.path || args?.file_path) as string | undefined;
             if (filePath && filePath.startsWith('/')) {
@@ -62,7 +62,7 @@ export const WorkingFolder: React.FC = () => {
       if (message.toolCalls) {
         for (const toolCall of message.toolCalls) {
           // Check for file-related tools
-          if (['read_file', 'write_file', 'edit_file'].includes(toolCall.name)) {
+          if (['Read', 'Write', 'Edit'].includes(toolCall.name)) {
             const args = toolCall.arguments as Record<string, unknown>;
             const filePath = (args?.path || args?.file_path) as string | undefined;
             if (filePath && !seenPaths.has(filePath)) {

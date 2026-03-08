@@ -16,7 +16,6 @@ import type {
 } from './types';
 import type { ModelRouter } from '../model/modelRouter';
 import type { ToolExecutor } from '../tools/toolExecutor';
-import type { Generation } from '../../shared/types';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 
@@ -51,24 +50,11 @@ export type ProgressCallback = (progress: EnhancedResearchProgress) => void;
 export interface ProgressiveLoopConfig {
   /** 研究配置 */
   researchConfig: AdaptiveResearchConfig;
-  /** 当前代际 */
-  generation?: Generation;
   /** 触发方式 */
   triggeredBy: 'semantic' | 'manual';
 }
 
-/**
- * 研究模式所需的最小 Generation（需要 web_search / web_fetch）
- */
-const RESEARCH_GENERATION: Generation = {
-  id: 'gen4',
-  name: 'Gen 4',
-  version: '4.0.0',
-  description: 'Progressive Research',
-  tools: ['web_search', 'web_fetch'],
-  systemPrompt: '',
-  promptMetadata: { lineCount: 0, toolCount: 2, ruleCount: 0 },
-};
+
 
 // ----------------------------------------------------------------------------
 // Progressive Research Loop
@@ -88,7 +74,6 @@ export class ProgressiveResearchLoop {
   private toolExecutor: ToolExecutor;
   private modelRouter: ModelRouter;
   private config: ProgressiveLoopConfig;
-  private generation: Generation;
   private onProgress?: ProgressCallback;
 
   constructor(
@@ -100,7 +85,6 @@ export class ProgressiveResearchLoop {
     this.toolExecutor = toolExecutor;
     this.modelRouter = modelRouter;
     this.config = config;
-    this.generation = config.generation ?? RESEARCH_GENERATION;
     this.onProgress = onProgress;
   }
 
@@ -369,7 +353,7 @@ ${[...state.objectivesCovered.keys()].map((o, i) => `${i + 1}. ${o}`).join('\n')
         const searchResult = await this.toolExecutor.execute(
           'web_search',
           { query, count: researchConfig.resultsPerSearch },
-          { generation: this.generation }
+          {}
         );
 
         if (!searchResult.success || !searchResult.result) {
@@ -421,7 +405,7 @@ ${[...state.objectivesCovered.keys()].map((o, i) => `${i + 1}. ${o}`).join('\n')
         const fetchResult = await this.toolExecutor.execute(
           'web_fetch',
           { url },
-          { generation: this.generation }
+          {}
         );
 
         if (!fetchResult.success || !fetchResult.result) {

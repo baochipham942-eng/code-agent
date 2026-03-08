@@ -159,13 +159,13 @@ const ErrorBlock: React.FC<{ content: string }> = ({ content }) => (
 
 function formatArgsPreview(toolName: string, args: Record<string, unknown>): string {
   const lower = toolName.toLowerCase();
-  if ((lower === 'read' || lower === 'read_file') && args.file_path) {
+  if ((lower === 'read') && args.file_path) {
     return String(args.file_path);
   }
-  if ((lower === 'edit' || lower === 'edit_file') && args.file_path) {
+  if ((lower === 'edit') && args.file_path) {
     return String(args.file_path);
   }
-  if ((lower === 'write' || lower === 'write_file') && args.file_path) {
+  if ((lower === 'write') && args.file_path) {
     return String(args.file_path);
   }
   if ((lower === 'bash') && args.command) {

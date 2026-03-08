@@ -11,29 +11,29 @@ import type { ToolTag } from '../../../shared/types/tool';
  */
 export const CORE_TOOLS: string[] = [
   // Gen 1: 基础文件操作
-  'bash',
-  'read_file',
-  'write_file',
-  'edit_file',
+  'Bash',
+  'Read',
+  'Write',
+  'Edit',
 
   // Gen 2: 代码搜索
-  'glob',
-  'grep',
-  'list_directory',
+  'Glob',
+  'Grep',
+  'ListDirectory',
 
-  // Gen 3: 规划和任务（核心 Task API）
-  'TaskCreate',
-  'TaskGet',
-  'TaskList',
-  'TaskUpdate',
-  'todo_write',
-  'ask_user_question',
+  // Gen 3: 规划和任务
+  'TaskManager',
+  'TodoWrite',
+  'AskUserQuestion',
+
+  // Gen 4: 网络搜索
+  'WebSearch',
 
   // 工具发现
-  'tool_search',
+  'ToolSearch',
 
   // Skill 元工具（始终可见，动态描述聚合可用 skills）
-  'skill',
+  'Skill',
 ];
 
 /**
@@ -87,13 +87,7 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   // ============================================================================
   // Gen 4: 网络和 Skill
   // ============================================================================
-  {
-    name: 'web_search',
-    shortDescription: '搜索网络信息',
-    tags: ['network', 'search'],
-    aliases: ['google', 'search', 'bing'],
-    source: 'builtin',
-  },
+  // web_search → WebSearch: promoted to CORE_TOOLS, no longer deferred
   {
     name: 'lsp',
     shortDescription: 'LSP 语言服务协议操作',

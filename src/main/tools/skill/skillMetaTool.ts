@@ -185,7 +185,7 @@ async function handleForkExecution(
  * 4. 支持 isMeta 双通道消息
  */
 export const skillMetaTool: Tool = {
-  name: 'skill',
+  name: 'Skill',
   description: '执行已注册的 skill',
   dynamicDescription: buildSkillDescription,
   requiresPermission: false,

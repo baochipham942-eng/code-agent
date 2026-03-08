@@ -13,9 +13,9 @@ import type {
 } from '../../shared/types';
 import type { ReportStyle, AgentRunOptions, ResearchUserSettings } from '../research/types';
 import { AgentLoop } from './agentLoop';
+import { SYSTEM_PROMPT } from '../prompts/builder';
 import { ToolRegistry } from '../tools/toolRegistry';
 import { ToolExecutor } from '../tools/toolExecutor';
-import type { GenerationManager } from '../generation/generationManager';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager, getAuthService } from '../services';
 import type { PlanningService } from '../planning';
@@ -66,7 +66,6 @@ const logger = createLogger('AgentOrchestrator');
  * @internal
  */
 export interface AgentOrchestratorConfig {
-  generationManager: GenerationManager;
   configService: ConfigService;
   onEvent: (event: AgentEvent) => void;
   planningService?: PlanningService;
@@ -89,7 +88,6 @@ export interface AgentOrchestratorConfig {
  * @example
  * ```typescript
  * const orchestrator = new AgentOrchestrator({
- *   generationManager,
  *   configService,
  *   onEvent: (event) => console.log(event),
  * });
@@ -106,7 +104,6 @@ export interface AgentOrchestratorConfig {
 const MAX_MESSAGES_IN_MEMORY = 200;
 
 export class AgentOrchestrator {
-  private generationManager: GenerationManager;
   private configService: ConfigService;
   private toolRegistry: ToolRegistry;
   private toolExecutor: ToolExecutor;
@@ -139,7 +136,6 @@ export class AgentOrchestrator {
   private taskListManager: TaskListManager;
 
   constructor(config: AgentOrchestratorConfig) {
-    this.generationManager = config.generationManager;
     this.configService = config.configService;
     this.onEvent = config.onEvent;
 
@@ -216,7 +212,7 @@ export class AgentOrchestrator {
     attachments?: unknown[],
     options?: AgentRunOptions
   ): Promise<void> {
-    const generation = this.generationManager.getCurrentGeneration();
+    const systemPrompt = SYSTEM_PROMPT;
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
 
@@ -284,13 +280,13 @@ export class AgentOrchestrator {
 
     if (mode === 'deep-research') {
       // Manual deep research mode (user explicitly requested)
-      await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig, generation);
+      await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig);
     } else if (mode === 'normal') {
       // === Fast path: keyword-based research detection ===
       const analysis = analyzeTask(content);
       if (analysis.taskType === 'research') {
         logger.info('Auto-detected research task (keyword match), routing to deep research pipeline');
-        await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig, generation);
+        await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig);
       } else if (!['code', 'data', 'ppt', 'image', 'video'].includes(analysis.taskType)) {
         // === Slow path: LLM classification for ambiguous cases ===
         // Only for messages not obviously code/data/media tasks
@@ -299,22 +295,22 @@ export class AgentOrchestrator {
           const intent = await classifyIntent(content, modelRouter);
           if (intent === 'research') {
             logger.info('Auto-detected research task (LLM classification), routing to deep research pipeline');
-            await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig, generation);
+            await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig);
           } else {
-            await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, generation, sessionId);
+            await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId);
           }
         } catch (error) {
           logger.warn('LLM intent classification failed, falling back to normal mode', { error: String(error) });
-          await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, generation, sessionId);
+          await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId);
         }
       } else {
         // Obvious non-research task type (code/data/ppt/image/video)
-        await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, generation, sessionId);
+        await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId);
       }
     } else {
       // Normal Mode: 指挥家统一处理任务分类和执行
       // 不再前置 LLM 调用做意图分析，由 AgentLoop 在第一轮直接判断
-      await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, generation, sessionId);
+      await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId);
     }
   }
 
@@ -328,7 +324,6 @@ export class AgentOrchestrator {
     reportStyle: ReportStyle | undefined,
     onEvent: (event: AgentEvent) => void,
     modelConfig: ModelConfig,
-    generation: ReturnType<GenerationManager['getCurrentGeneration']>,
     sessionId?: string
   ): Promise<boolean> {
     // Create model router
@@ -339,7 +334,6 @@ export class AgentOrchestrator {
       modelRouter,
       toolExecutor: this.toolExecutor,
       onEvent,
-      generation,
       userSettings: this.researchUserSettings,
     });
 
@@ -400,8 +394,7 @@ export class AgentOrchestrator {
     topic: string,
     reportStyle: ReportStyle | undefined,
     onEvent: (event: AgentEvent) => void,
-    modelConfig: ModelConfig,
-    generation: ReturnType<GenerationManager['getCurrentGeneration']>
+    modelConfig: ModelConfig
   ): Promise<void> {
     logger.info('========== Starting deep research mode ==========');
     logger.info('Topic:', topic);
@@ -415,7 +408,6 @@ export class AgentOrchestrator {
       modelRouter,
       toolExecutor: this.toolExecutor,
       onEvent,
-      generation,
     });
 
     try {
@@ -464,7 +456,6 @@ export class AgentOrchestrator {
     content: string,
     onEvent: (event: AgentEvent) => void,
     modelConfig: ModelConfig,
-    generation: ReturnType<GenerationManager['getCurrentGeneration']>,
     sessionId?: string
   ): Promise<void> {
     // Update session state to running
@@ -474,7 +465,7 @@ export class AgentOrchestrator {
       // Telemetry: start session tracking
       getTelemetryCollector().startSession(sessionId, {
         title: content.substring(0, 80),
-        generationId: generation.id,
+        generationId: 'gen8',
         modelProvider: modelConfig.provider,
         modelName: modelConfig.model,
         workingDirectory: this.workingDirectory,
@@ -506,7 +497,6 @@ export class AgentOrchestrator {
           requirements,
           onEvent,
           modelConfig,
-          generation,
           sessionId
         );
       } else {
@@ -515,7 +505,6 @@ export class AgentOrchestrator {
           content,
           onEvent,
           modelConfig,
-          generation,
           sessionId
         );
       }
@@ -568,7 +557,6 @@ export class AgentOrchestrator {
     content: string,
     onEvent: (event: AgentEvent) => void,
     modelConfig: ModelConfig,
-    generation: ReturnType<GenerationManager['getCurrentGeneration']>,
     sessionId?: string
   ): Promise<void> {
     // Create simple DAG for visualization (single task for normal conversation)
@@ -597,7 +585,7 @@ export class AgentOrchestrator {
     // Resolve agent routing
     const routingResolution = await this.resolveAgentRouting(content, sessionId);
     let effectiveModelConfig = modelConfig;
-    let effectiveGeneration = generation;
+
 
     if (routingResolution) {
       logger.info('Agent routing resolved', {
@@ -622,12 +610,8 @@ export class AgentOrchestrator {
         });
       }
 
-      // Create custom generation with agent's system prompt
+      // Use agent's system prompt if available
       if (routingResolution.agent.systemPrompt) {
-        effectiveGeneration = {
-          ...generation,
-          systemPrompt: routingResolution.agent.systemPrompt,
-        };
         logger.debug('System prompt overridden by agent', {
           agentId: routingResolution.agent.id,
         });
@@ -649,7 +633,7 @@ export class AgentOrchestrator {
 
     // Create agent loop with potentially overridden config
     this.agentLoop = new AgentLoop({
-      generation: effectiveGeneration,
+      systemPrompt: routingResolution?.agent?.systemPrompt || SYSTEM_PROMPT,
       modelConfig: effectiveModelConfig,
       toolRegistry: this.toolRegistry,
       toolExecutor: this.toolExecutor,
@@ -727,7 +711,6 @@ export class AgentOrchestrator {
     requirements: Awaited<ReturnType<ReturnType<typeof getAgentRequirementsAnalyzer>['analyze']>>,
     onEvent: (event: AgentEvent) => void,
     modelConfig: ModelConfig,
-    generation: ReturnType<GenerationManager['getCurrentGeneration']>,
     sessionId?: string
   ): Promise<void> {
     logger.info('========== Starting auto agent mode ==========');
@@ -746,7 +729,7 @@ export class AgentOrchestrator {
     if (agents.length === 0) {
       // Fallback to standard agent loop if no agents generated
       logger.warn('No auto agents generated, falling back to standard loop');
-      await this.runStandardAgentLoop(content, onEvent, modelConfig, generation, sessionId);
+      await this.runStandardAgentLoop(content, onEvent, modelConfig, sessionId);
       return;
     }
 
@@ -822,7 +805,6 @@ export class AgentOrchestrator {
       toolRegistry: toolMap,
       toolContext: {
         workingDirectory: this.workingDirectory,
-        generation: { id: generation.id },
         requestPermission: async () => true, // Auto-approve for auto agents
       },
       onProgress: (agentId, status, progress) => {
@@ -1023,7 +1005,7 @@ export class AgentOrchestrator {
   ): Promise<void> {
     const { AutonomousLoop } = await import('./autonomous/autonomousLoop');
 
-    const generation = this.generationManager.getCurrentGeneration();
+    const systemPrompt = SYSTEM_PROMPT;
     const settings = this.configService.getSettings();
     const modelConfig = this.getModelConfig(settings);
     const sessionManager = getSessionManager();
@@ -1044,7 +1026,7 @@ export class AgentOrchestrator {
 
       // Create a temporary agent loop
       const tempLoop = new AgentLoop({
-        generation,
+        systemPrompt,
         modelConfig,
         toolRegistry: this.toolRegistry,
         toolExecutor: this.toolExecutor,

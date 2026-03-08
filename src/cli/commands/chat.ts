@@ -10,7 +10,6 @@ import { cleanup, initializeCLIServices, getSessionManager, getDatabaseService }
 import type { CLIGlobalOptions } from '../types';
 import { version } from '../../../package.json';
 import { getPRLinkService } from '../../main/services/github/prLinkService';
-import { DEFAULT_GENERATION } from '../../shared/constants';
 
 export const chatCommand = new Command('chat')
   .description('进入交互式对话模式')
@@ -29,7 +28,7 @@ export const chatCommand = new Command('chat')
         // 显示欢迎信息
         terminalOutput.welcome(version);
         terminalOutput.info(`项目目录: ${globalOpts?.project || process.cwd()}`);
-        terminalOutput.info(`代际: ${globalOpts?.gen || DEFAULT_GENERATION}`);
+        terminalOutput.info(`代际: ${globalOpts?.gen || 'gen8'}`);
 
         // 显示数据库状态
         const db = getDatabaseService();
@@ -295,7 +294,6 @@ async function handleCommand(
       console.log(`
 当前配置:
   工作目录: ${config.workingDirectory}
-  代际: ${config.generationId}
   模型: ${config.modelConfig.model}
   提供商: ${config.modelConfig.provider}
   调试模式: ${config.debug}

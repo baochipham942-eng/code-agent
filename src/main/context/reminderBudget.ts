@@ -5,7 +5,7 @@
 // 确保提醒不超过模型上下文窗口的合理比例
 // ============================================================================
 
-import type { ReminderDefinition, ReminderPriority } from '../generation/prompts/reminderRegistry';
+import type { ReminderDefinition, ReminderPriority } from '../prompts/reminderRegistry';
 
 /**
  * Token 预算配置

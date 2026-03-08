@@ -298,7 +298,7 @@ export class PatternExtractor {
       // 从工具调用中提取代码
       if (message.toolCalls) {
         for (const toolCall of message.toolCalls) {
-          if (toolCall.name === 'write_file' || toolCall.name === 'edit_file') {
+          if (toolCall.name === 'write_file' || toolCall.name === 'edit_file' || toolCall.name === 'Write' || toolCall.name === 'Edit') {
             const content = toolCall.arguments?.content as string;
             const filePath = toolCall.arguments?.file_path as string;
             if (content && content.length > 50) {

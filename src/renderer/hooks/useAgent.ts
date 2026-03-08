@@ -37,7 +37,6 @@ export const useAgent = () => {
     setIsProcessing,
     setSessionProcessing,
     isProcessing,
-    currentGeneration,
     setPendingPermissionRequest,
   } = useAppStore();
 
@@ -719,7 +718,6 @@ export const useAgent = () => {
     isProcessing,
     sendMessage,
     cancel,
-    currentGeneration,
     // 长时任务进度追踪
     taskProgress,
     lastTaskComplete,

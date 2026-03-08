@@ -4,7 +4,6 @@
 // ============================================================================
 
 import type {
-  Generation,
   ModelConfig,
   Message,
   ToolCall,
@@ -20,6 +19,7 @@ import { getToolSearchService } from '../tools/search';
 import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/memoryService';
+import { getContinuousLearningService } from '../memory/continuousLearningService';
 import { sanitizeMemoryContent } from '../memory/sanitizeMemoryContent';
 import { buildSeedMemoryBlock } from '../memory/seedMemoryInjector';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../services';
@@ -57,7 +57,7 @@ import {
   buildEnhancedSystemPrompt,
   buildRuntimeModeBlock,
 } from './messageHandling/contextBuilder';
-import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../generation/prompts/builder';
+import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../prompts/builder';
 import { AntiPatternDetector } from './antiPattern/detector';
 import { cleanXmlResidues } from './antiPattern/cleanXml';
 import { GoalTracker } from './goalTracker';
@@ -108,7 +108,7 @@ export type { AgentLoopConfig };
  * 5. 重复直到完成或达到最大迭代次数
  */
 export class AgentLoop {
-  private generation: Generation;
+  private systemPrompt: string;
   private modelConfig: ModelConfig;
   private toolRegistry: ToolRegistry;
   private toolExecutor: ToolExecutor;
@@ -207,7 +207,7 @@ export class AgentLoop {
   private autoApprovePlan: boolean = false;
 
   // Tool deferred loading (reduce token usage)
-  private enableToolDeferredLoading: boolean = false;
+  private enableToolDeferredLoading: boolean = true;
 
   // Adaptive Thinking: 交错思考管理
   private effortLevel: import('../../shared/types/agent').EffortLevel = 'high';
@@ -245,7 +245,7 @@ export class AgentLoop {
   private onToolExecutionLog?: AgentLoopConfig['onToolExecutionLog'];
 
   constructor(config: AgentLoopConfig) {
-    this.generation = config.generation;
+    this.systemPrompt = config.systemPrompt || '';
     this.modelConfig = config.modelConfig;
     this.toolRegistry = config.toolRegistry;
     this.toolExecutor = config.toolExecutor;
@@ -277,7 +277,7 @@ export class AgentLoop {
     this.autoApprovePlan = config.autoApprovePlan ?? false;
 
     // Tool deferred loading (reduce token usage)
-    this.enableToolDeferredLoading = config.enableToolDeferredLoading ?? false;
+    this.enableToolDeferredLoading = config.enableToolDeferredLoading ?? true;
 
     // Telemetry adapter (optional)
     this.telemetryAdapter = config.telemetryAdapter;
@@ -1011,7 +1011,7 @@ export class AgentLoop {
             logger.info(`[AgentLoop] Tool truncation: boosted maxTokens ${currentMax} → ${boostedMax}`);
           }
 
-          const writeFileCall = toolCalls.find(tc => tc.name === 'write_file');
+          const writeFileCall = toolCalls.find(tc => tc.name === 'write_file' || tc.name === 'Write');
           if (writeFileCall) {
             const content = writeFileCall.arguments?.content as string;
             if (content) {
@@ -1021,7 +1021,7 @@ export class AgentLoop {
           } else {
             // 检测截断的 bash heredoc —— 执行不完整的 heredoc 会导致 SyntaxError
             const truncatedBashHeredocs = toolCalls.filter(tc =>
-              tc.name === 'bash' &&
+              (tc.name === 'bash' || tc.name === 'Bash') &&
               typeof tc.arguments?.command === 'string' &&
               /<<\s*['"]?\w+['"]?/.test(tc.arguments.command as string)
             );
@@ -1049,7 +1049,7 @@ export class AgentLoop {
                 toolCallId: tc.id,
                 success: false,
                 output: '',
-                error: tc.name === 'bash' && /<<\s*['"]?\w+['"]?/.test((tc.arguments?.command as string) || '')
+                error: (tc.name === 'bash' || tc.name === 'Bash') && /<<\s*['"]?\w+['"]?/.test((tc.arguments?.command as string) || '')
                   ? '⚠️ 此 bash heredoc 命令因 max_tokens 截断而不完整，已跳过执行以避免 SyntaxError。请重新生成完整命令。'
                   : '⚠️ 此工具调用因同批次存在截断的 heredoc 而被跳过。',
                 duration: 0,
@@ -1244,7 +1244,7 @@ export class AgentLoop {
     logger.debug('[AgentLoop] Message:', userMessage.substring(0, 100));
 
     logCollector.agent('INFO', `Agent run started: "${userMessage.substring(0, 80)}..."`);
-    logCollector.agent('DEBUG', `Generation: ${this.generation.id}, Model: ${this.modelConfig.provider}`);
+    logCollector.agent('DEBUG', `Model: ${this.modelConfig.provider}`);
 
     // Langfuse: Start trace
     const langfuse = getLangfuseService();
@@ -1252,7 +1252,7 @@ export class AgentLoop {
     langfuse.startTrace(this.traceId, {
       sessionId: this.sessionId,
       userId: this.userId,
-      generationId: this.generation.id,
+      generationId: 'gen8',
       modelProvider: this.modelConfig.provider,
       modelName: this.modelConfig.model,
     }, userMessage);
@@ -1356,14 +1356,14 @@ export class AgentLoop {
 
     // Dynamic Agent Mode Detection V2 (基于优先级和预算的动态提醒)
     // 注意：这里移出了 !isSimpleTask 条件，因为即使简单任务也可能需要动态提醒（如 PPT 格式选择）
-    const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+    const genNum = 8;
     
     logger.info(`[AgentLoop] Checking dynamic mode for gen${genNum}`);
     if (genNum >= 3) {
       try {
         // 使用 V2 版本，支持 toolsUsedInTurn 上下文
         // 预算增加到 1200 tokens 以支持 PPT 等大型提醒 (700+ tokens)
-        const dynamicResult = buildDynamicPromptV2(this.generation.id, userMessage, {
+        const dynamicResult = buildDynamicPromptV2(userMessage, {
           toolsUsedInTurn: this.toolsUsedInTurn,
           iterationCount: this.toolsUsedInTurn.length, // 使用工具调用数量作为迭代近似
           hasError: false,
@@ -2035,7 +2035,6 @@ export class AgentLoop {
         toolCall.name,
         toolCall.arguments,
         {
-          generation: this.generation,
           planningService: this.planningService,
           modelConfig: this.modelConfig,
           setPlanMode: this.setPlanMode.bind(this),
@@ -2210,7 +2209,7 @@ export class AgentLoop {
       }
 
       // Auto-continuation detection for truncated files
-      if (toolCall.name === 'write_file' && result.success && result.output) {
+      if ((toolCall.name === 'write_file' || toolCall.name === 'Write') && result.success && result.output) {
         const outputStr = result.output;
         if (outputStr.includes('⚠️ **代码完整性警告**') || outputStr.includes('代码完整性警告')) {
           logger.debug('[AgentLoop] ⚠️ Detected truncated file! Injecting auto-continuation prompt');
@@ -2219,7 +2218,7 @@ export class AgentLoop {
       }
 
       // P3 Nudge: Track modified files for completion checking
-      if ((toolCall.name === 'edit_file' || toolCall.name === 'write_file') && result.success) {
+      if ((toolCall.name === 'edit_file' || toolCall.name === 'Edit' || toolCall.name === 'write_file' || toolCall.name === 'Write') && result.success) {
         const filePath = (toolCall.arguments?.file_path || toolCall.arguments?.path) as string;
         if (filePath) {
           this.nudgeManager.trackModifiedFile(filePath);
@@ -2539,17 +2538,17 @@ export class AgentLoop {
     let tools;
     if (this.enableToolDeferredLoading) {
       // 使用核心工具 + 已加载的延迟工具
-      const coreTools = this.toolRegistry.getCoreToolDefinitions(this.generation.id);
-      const loadedDeferredTools = this.toolRegistry.getLoadedDeferredToolDefinitions(this.generation.id);
+      const coreTools = this.toolRegistry.getCoreToolDefinitions();
+      const loadedDeferredTools = this.toolRegistry.getLoadedDeferredToolDefinitions();
       tools = [...coreTools, ...loadedDeferredTools];
-      logger.debug(`Tools for ${this.generation.id} (deferred loading): ${coreTools.length} core + ${loadedDeferredTools.length} deferred = ${tools.length} total`);
+      logger.debug(`Tools (deferred loading): ${coreTools.length} core + ${loadedDeferredTools.length} deferred = ${tools.length} total`);
     } else {
       // 传统模式：发送所有工具
-      tools = this.toolRegistry.getToolDefinitions(this.generation.id);
-      logger.debug(`Tools for ${this.generation.id}:`, tools.map(t => t.name));
+      tools = this.toolRegistry.getToolDefinitions();
+      logger.debug('Tools:', tools.map(t => t.name));
     }
 
-    let modelMessages = this.buildModelMessages();
+    let modelMessages = await this.buildModelMessages();
     logger.debug('[AgentLoop] Model messages count:', modelMessages.length);
     logger.debug('[AgentLoop] Model config:', {
       provider: this.modelConfig.provider,
@@ -2909,18 +2908,18 @@ export class AgentLoop {
   // Message Building
   // --------------------------------------------------------------------------
 
-  private buildModelMessages(): ModelMessage[] {
+  private async buildModelMessages(): Promise<ModelMessage[]> {
     const modelMessages: ModelMessage[] = [];
 
     // Use optimized prompt based on task complexity
-    let systemPrompt = getPromptForTask(this.generation.id, this.isSimpleTaskMode);
+    let systemPrompt = getPromptForTask();
 
-    const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+    const genNum = 8;
     if (genNum >= 3 && !this.isSimpleTaskMode) {
       // Only enhance with RAG for non-simple tasks
       const lastUserMessage = [...this.messages].reverse().find((m) => m.role === 'user');
       const userQuery = lastUserMessage?.content || '';
-      systemPrompt = buildEnhancedSystemPrompt(systemPrompt, userQuery, this.generation.id, this.isSimpleTaskMode);
+      systemPrompt = await buildEnhancedSystemPrompt(systemPrompt, userQuery, this.isSimpleTaskMode);
     }
 
     systemPrompt = injectWorkingDirectoryContext(systemPrompt, this.workingDirectory, this.isDefaultWorkingDirectory);
@@ -2928,7 +2927,7 @@ export class AgentLoop {
 
     // 注入延迟工具提示
     if (this.enableToolDeferredLoading) {
-      const deferredToolsSummary = this.toolRegistry.getDeferredToolsSummary(this.generation.id);
+      const deferredToolsSummary = this.toolRegistry.getDeferredToolsSummary();
       if (deferredToolsSummary) {
         systemPrompt += `
 
@@ -2959,7 +2958,7 @@ ${deferredToolsSummary}
     try {
       const hash = createHash('sha256').update(systemPrompt).digest('hex');
       this.currentSystemPromptHash = hash;
-      getSystemPromptCache().store(hash, systemPrompt, systemPromptTokens, this.generation.id);
+      getSystemPromptCache().store(hash, systemPrompt, systemPromptTokens, 'gen8');
     } catch {
       // Non-critical: don't break agent loop if cache fails
     }
@@ -3345,7 +3344,7 @@ ${deferredToolsSummary}
       const health = contextHealthService.update(
         this.sessionId,
         messagesForEstimation,
-        this.generation.systemPrompt,
+        this.systemPrompt,
         model
       );
 
@@ -3407,7 +3406,7 @@ ${deferredToolsSummary}
         // 生成 CompactionBlock
         const compactionResult = await this.autoCompressor.compactToBlock(
           messagesForCompression,
-          this.generation.systemPrompt,
+          this.systemPrompt,
           this.hookManager
         );
 
@@ -3543,7 +3542,7 @@ ${deferredToolsSummary}
       const result = await this.autoCompressor.checkAndCompress(
         this.sessionId,
         messagesForCompression,
-        this.generation.systemPrompt,
+        this.systemPrompt,
         this.modelConfig.model || DEFAULT_MODELS.chat,
         this.hookManager
       );
@@ -3736,8 +3735,89 @@ ${deferredToolsSummary}
         avgConfidence: decayStats.avgConfidence.toFixed(2),
       });
 
+
+      // Continuous learning: pattern extraction + entity relations
+      this.runContinuousLearning().catch((err: unknown) => {
+        logger.debug('[AgentLoop] Continuous learning skipped:', { error: (err as Error).message });
+      });
     } catch (error) {
       logger.debug('[AgentLoop] Session end learning failed:', { errorMessage: (error as Error).message });
+    }
+  }
+
+  /**
+   * 持续学习：从会话中提取模式并建立实体关系
+   */
+  private async runContinuousLearning(): Promise<void> {
+    if (!this.sessionId || this.messages.length < 4) return;
+
+    const cls = getContinuousLearningService();
+    const result = await cls.learnFromSession(this.sessionId, this.messages);
+
+    if (!result || result.patternsExtracted === 0) return;
+
+    logger.info(
+      `[AgentLoop] Continuous learning: ${result.patternsExtracted} patterns, ${result.skillsSynthesized} skills`
+    );
+
+    // Write extracted patterns as entity relations via SQLite database (with dedup)
+    try {
+      const { getDatabase } = await import('../services/core/databaseService');
+      const { getMemoryDeduplicator } = await import('../memory/memoryDeduplicator');
+      const db = getDatabase();
+      const dedup = getMemoryDeduplicator(db);
+
+      // Collect all candidate relations first
+      const candidates: Array<{
+        sourceId: string;
+        targetId: string;
+        relationType: 'modifies' | 'references';
+        confidence: number;
+        evidence: string;
+        sessionId: string;
+      }> = [];
+
+      for (const pattern of result.patterns || []) {
+        if (pattern.confidence < 0.7) continue;
+
+        const filesModified: string[] = pattern.context?.filesModified || [];
+        const toolsUsed: string[] = pattern.context?.toolsUsed || [];
+
+        for (const file of filesModified.slice(0, 5)) {
+          for (const tool of toolsUsed.slice(0, 5)) {
+            candidates.push({
+              sourceId: file,
+              targetId: tool,
+              relationType: 'modifies',
+              confidence: pattern.confidence,
+              evidence: (pattern.content || pattern.type || '').substring(0, 200),
+              sessionId: this.sessionId!,
+            });
+          }
+        }
+
+        // File co-modification relations
+        for (let i = 0; i < Math.min(filesModified.length, 5); i++) {
+          for (let j = i + 1; j < Math.min(filesModified.length, 5); j++) {
+            candidates.push({
+              sourceId: filesModified[i],
+              targetId: filesModified[j],
+              relationType: 'references',
+              confidence: pattern.confidence * 0.8,
+              evidence: `Co-modified in pattern: ${pattern.type}`,
+              sessionId: this.sessionId!,
+            });
+          }
+        }
+      }
+
+      // Deduplicate before writing
+      const { toInsert } = dedup.deduplicateRelations(candidates);
+      for (const rel of toInsert) {
+        db.addRelation(rel);
+      }
+    } catch (err) {
+      logger.debug('[AgentLoop] Entity relation writing failed:', { error: (err as Error).message });
     }
   }
 
@@ -3946,7 +4026,7 @@ ${deferredToolsSummary}
       return;
     }
 
-    const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+    const genNum = 8;
     if (genNum < 8) {
       logger.debug('[AgentLoop] Skipping evolution learning: requires Gen8+');
       return;
@@ -4042,14 +4122,14 @@ ${deferredToolsSummary}
     ];
 
     // write_file with content file extension
-    if (toolCall.name === 'write_file') {
+    if (toolCall.name === 'write_file' || toolCall.name === 'Write') {
       const filePath = (toolCall.arguments?.file_path || toolCall.arguments?.path || '') as string;
       const ext = filePath.toLowerCase().match(/\.[^.]+$/)?.[0] || '';
       return contentFileExtensions.includes(ext);
     }
 
     // bash tool that produced content files (check output for file paths)
-    if (toolCall.name === 'bash' && result.output) {
+    if ((toolCall.name === 'bash' || toolCall.name === 'Bash') && result.output) {
       const output = result.output;
       return contentFileExtensions.some(ext => {
         const pattern = new RegExp(`[^\\s]+\\${ext}\\b`, 'i');

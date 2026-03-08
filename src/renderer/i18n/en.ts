@@ -140,7 +140,7 @@ export const en: Translations = {
       standard: {
         name: 'Standard',
         description: 'Balanced features for daily use',
-        features: ['Todo list panel', 'Generation selector', 'Model settings', 'Session history'],
+        features: ['Todo list panel', 'Model settings', 'Session history'],
       },
       advanced: {
         name: 'Advanced',

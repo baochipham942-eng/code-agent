@@ -22,7 +22,7 @@
 
 #### 1. toolUsagePolicy.ts - 添加并行派发策略
 
-**文件**: `src/main/generation/prompts/rules/toolUsagePolicy.ts`
+**文件**: `src/main/prompts/rules/toolUsagePolicy.ts`
 
 **当前问题**:
 - 完全没有提到 "并行" 或 "parallel"
@@ -56,7 +56,7 @@ task(code-review, "代码质量：检查 any 类型使用")
 
 #### 2. parallelTools.ts - 扩展到 task 工具
 
-**文件**: `src/main/generation/prompts/rules/parallelTools.ts`
+**文件**: `src/main/prompts/rules/parallelTools.ts`
 
 **当前问题**:
 - 只讲了基础工具（git, glob, read_file）的并行
@@ -88,7 +88,7 @@ task(code-review, "代码质量检查")
 
 #### 3. task.ts - 精简工具描述
 
-**文件**: `src/main/generation/prompts/tools/task.ts`
+**文件**: `src/main/prompts/tools/task.ts`
 
 **当前问题**:
 - 900 tokens，信息过载
@@ -103,7 +103,7 @@ task(code-review, "代码质量检查")
 
 #### 4. gen7.ts - 强化并行描述
 
-**文件**: `src/main/generation/prompts/base/gen7.ts`
+**文件**: `src/main/prompts/base/gen7.ts`
 
 **当前状态**:
 - 第 99 行有"协调多个 Agent 并行工作"
@@ -160,10 +160,10 @@ task(code-review, "代码质量检查")
 
 | 文件 | 优先级 | 状态 |
 |------|--------|------|
-| `src/main/generation/prompts/rules/toolUsagePolicy.ts` | P0 | 待修改 |
-| `src/main/generation/prompts/rules/parallelTools.ts` | P0 | 待修改 |
-| `src/main/generation/prompts/tools/task.ts` | P1 | 待精简 |
-| `src/main/generation/prompts/base/gen7.ts` | P1 | 待补充示例 |
+| `src/main/prompts/rules/toolUsagePolicy.ts` | P0 | 待修改 |
+| `src/main/prompts/rules/parallelTools.ts` | P0 | 待修改 |
+| `src/main/prompts/tools/task.ts` | P1 | 待精简 |
+| `src/main/prompts/base/gen7.ts` | P1 | 待补充示例 |
 | `scripts/experiment-multi-agent.ts` | - | 验证工具 |
 
 ---

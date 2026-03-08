@@ -45,7 +45,12 @@ export function registerStatusHandlers(): void {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      const healthUrl = MODEL_API_ENDPOINTS[DEFAULT_PROVIDER === 'moonshot' ? 'kimiK25' : 'deepseek'];
+      const providerEndpointMap: Record<string, keyof typeof MODEL_API_ENDPOINTS> = {
+        moonshot: 'kimiK25',
+        claude: 'claude',
+        deepseek: 'deepseek',
+      };
+      const healthUrl = MODEL_API_ENDPOINTS[providerEndpointMap[DEFAULT_PROVIDER] || 'deepseek'];
       await fetch(healthUrl, {
         method: 'HEAD',
         signal: controller.signal,

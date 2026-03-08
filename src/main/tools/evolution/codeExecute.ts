@@ -253,23 +253,12 @@ Max 50 tool calls per execution. Timeout: 60s (configurable up to 120s).`,
               // ✅ Bash dangerous command detection
               // ✅ File checkpoint (rollback support)
               // ✅ Audit logging (full context)
-              // ✅ Generation compatibility check
               // ✅ Cache check
               // Permission: pre-approved (user already approved code_execute)
               const result = await internalExecutor.execute(
                 msg.name!,
                 msg.args || {},
                 {
-                  generation: {
-                    ...context.generation,
-                    id: context.generation.id as import('@shared/types').GenerationId,
-                    name: context.generation.id,
-                    version: '1.0',
-                    description: '',
-                    tools: allowedTools,
-                    systemPrompt: '',
-                    promptMetadata: { lineCount: 0, toolCount: 0, ruleCount: 0 },
-                  },
                   sessionId: context.sessionId,
                   preApprovedTools: preApprovedToolSet,
                   emitEvent: context.emitEvent || context.emit,

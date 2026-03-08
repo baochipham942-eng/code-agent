@@ -3,20 +3,18 @@
  * 消除魔法数字，集中管理配置值
  */
 
-import type { GenerationId } from './types/generation';
 
 // ============================================================================
 // 核心默认值 — 所有模块的 fallback 必须引用这里
 // ============================================================================
 
 /** 默认代际（CLI 和 Electron 统一） */
-export const DEFAULT_GENERATION: GenerationId = 'gen8';
 
 /** 默认 Provider */
-export const DEFAULT_PROVIDER = 'moonshot' as const;
+export const DEFAULT_PROVIDER = 'claude' as const;
 
 /** 默认模型（主力对话） */
-export const DEFAULT_MODEL = 'kimi-k2.5' as const;
+export const DEFAULT_MODEL = 'claude-sonnet-4-20250514' as const;
 
 // ============================================================================
 // 模型输出 Token 上限 — providerRegistry / compactModel 等引用
@@ -290,6 +288,12 @@ export const MEMORY = {
   EMBEDDING_DIMENSION: 1536,
   /** 索引刷新间隔 (ms) */
   INDEX_REFRESH_INTERVAL: 300000,
+  /** Entity relation time decay half-life in days */
+  RELATION_DECAY_DAYS: 30,
+  /** Minimum confidence after decay to keep a relation */
+  RELATION_MIN_CONFIDENCE: 0.1,
+  /** Minimum confidence for context builder relation queries */
+  RELATION_CONTEXT_MIN_CONFIDENCE: 0.2,
 } as const;
 
 /** 规划配置 */
@@ -661,7 +665,7 @@ export const SEARCH_API_ENDPOINTS = {
 
 export const DEFAULT_MODELS = {
   /** 主要对话模型 - Kimi K2.5 包月 */
-  chat: 'kimi-k2.5',
+  chat: 'claude-sonnet-4-20250514',
   /** 推理模型 - DeepSeek R1 (按需付费) */
   reasoning: 'deepseek-reasoner',
   /** 视觉理解模型 - 智谱包年 */
@@ -669,15 +673,15 @@ export const DEFAULT_MODELS = {
   /** 视觉快速模型（不支持 base64） */
   visionFast: 'glm-4.6v-flash',
   /** 代码模型 - Kimi K2.5 包月 */
-  code: 'kimi-k2.5',
+  code: 'claude-sonnet-4-20250514',
   /** 压缩/摘要模型 - Kimi K2.5 包月无成本 */
   compact: 'kimi-k2.5',
   /** 快速判断模型 - 智谱 Flash 包年免费 */
   quick: 'glm-4.7-flash',
   /** 超长上下文模型（128K+） */
-  longContext: 'kimi-k2.5',
+  longContext: 'claude-sonnet-4-20250514',
   /** 包月无限制模型 */
-  unlimited: 'kimi-k2.5',
+  unlimited: 'claude-sonnet-4-20250514',
 } as const;
 
 // ============================================================================
@@ -1094,3 +1098,45 @@ export const RESOURCE_MANAGEMENT = {
   /** 优雅关闭超时（5秒） */
   GRACEFUL_SHUTDOWN_TIMEOUT: 5_000,
 } as const;
+
+// ============================================================================
+// Observation Masking 常量
+// ============================================================================
+export const OBSERVATION_MASKING = {
+  PRESERVE_RECENT_COUNT: 6,
+  MIN_TOKEN_THRESHOLD: 100,
+  PLACEHOLDER_SUCCESS: '[output cleared - tool was executed successfully]',
+  PLACEHOLDER_ERROR: '[output cleared - tool returned error]',
+} as const;
+
+// ============================================================================
+// Provider Fallback Chain — 跨 Provider 降级（429/瞬态错误时自动切换）
+// ============================================================================
+
+/**
+ * 跨 Provider 降级链
+ * 当主 Provider 瞬态重试耗尽后，按顺序尝试下一个 Provider
+ * Key = 起始 provider, Value = 降级顺序（不含自身）
+ */
+export const PROVIDER_FALLBACK_CHAIN: Record<string, Array<{ provider: string; model: string }>> = {
+  moonshot: [
+    { provider: 'deepseek', model: 'deepseek-chat' },
+    { provider: 'zhipu', model: 'glm-4.7-flash' },
+  ],
+  deepseek: [
+    { provider: 'moonshot', model: 'kimi-k2.5' },
+    { provider: 'zhipu', model: 'glm-4.7-flash' },
+  ],
+  claude: [
+    { provider: 'moonshot', model: 'kimi-k2.5' },
+    { provider: 'deepseek', model: 'deepseek-chat' },
+  ],
+  openai: [
+    { provider: 'moonshot', model: 'kimi-k2.5' },
+    { provider: 'deepseek', model: 'deepseek-chat' },
+  ],
+  zhipu: [
+    { provider: 'moonshot', model: 'kimi-k2.5' },
+    { provider: 'deepseek', model: 'deepseek-chat' },
+  ],
+};

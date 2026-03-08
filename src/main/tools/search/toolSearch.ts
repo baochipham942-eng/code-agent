@@ -20,28 +20,8 @@ const logger = createLogger('tool_search');
  * 搜索结果中的工具会自动加载，下次模型请求时可直接使用。
  */
 export const toolSearchTool: Tool = {
-  name: 'tool_search',
-  description: `搜索或选择延迟加载的工具，使其可用于后续调用。
-
-**查询模式：**
-
-1. **关键字搜索** - 根据名称、描述、别名搜索工具：
-   - "pdf" → 搜索 PDF 相关工具
-   - "image generate" → 搜索图片生成工具
-   - 返回最多 5 个匹配结果，按相关度排序
-
-2. **直接选择** - 使用 \`select:\` 前缀直接加载指定工具：
-   - "select:WebFetch" → 加载 web_fetch 工具
-   - "select:mcp__github__search_repos" → 加载 MCP 工具
-
-3. **必须前缀** - 使用 \`+\` 前缀强制匹配某关键字：
-   - "+mcp search" → 只搜索 MCP 相关工具，按 "search" 排序
-   - "+network api" → 只搜索网络相关工具
-
-**注意：**
-- 搜索结果中的工具会自动加载，无需再次调用 tool_search
-- 直接选择模式只加载该工具，不返回其他结果
-- 核心工具（Bash, Read, Write, Edit 等）无需搜索，始终可用`,
+  name: 'ToolSearch',
+  description: `Searches for or selects deferred tools to make them available. Use keyword search to discover tools or 'select:toolName' for direct selection. You MUST use this to load deferred tools before calling them.`,
 
   inputSchema: {
     type: 'object',

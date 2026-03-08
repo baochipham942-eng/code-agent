@@ -15,32 +15,8 @@ import { extractFileFacts, dataFingerprintStore } from '../dataFingerprint';
 const logger = createLogger('ReadFile');
 
 export const readFileTool: Tool = {
-  name: 'read_file',
-  description: `Read a text file from the local filesystem.
-
-This tool reads text-based files: source code (.ts, .js, .py, etc.), config (.json, .yaml, .toml), plain text (.txt, .csv, .md), and similar formats.
-
-For binary/structured formats, use the dedicated tools instead:
-- Excel (.xlsx, .xls) → use read_xlsx (returns structured columns and data)
-- Word (.docx) → use read_docx
-- PDF (.pdf) → use read_pdf
-- Reading binary files directly will return garbled content with no useful information.
-
-Usage:
-- The file_path must be an absolute path, not a relative path
-- By default, reads up to 2000 lines starting from line 1
-- Use offset and limit for large files (e.g., offset: 100, limit: 50 reads lines 100-149)
-- Lines longer than 2000 characters will be truncated
-- Results are returned with line numbers (1-indexed) for easy reference
-- ALWAYS read a file before editing it with edit_file
-- For searching within files, prefer grep tool over read_file
-
-CRITICAL - Parameter format rules:
-- file_path is ONLY the path string, nothing else
-- offset and limit are SEPARATE integer parameters
-- Do NOT combine parameters into file_path
-
-Returns: File content with line numbers in format "  lineNum\\tcontent"`,
+  name: 'Read',
+  description: `Reads a file from the local filesystem. Use this instead of Bash cat/head/tail. Supports offset and limit for large files. Can read images, PDFs (use pages param for large PDFs), and Jupyter notebooks. Cannot read directories — use Bash ls for that.`,
   requiresPermission: true,
   permissionLevel: 'read',
   inputSchema: {

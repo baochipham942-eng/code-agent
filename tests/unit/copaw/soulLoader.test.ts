@@ -30,7 +30,7 @@ vi.mock('../../../src/main/config/configPaths', () => ({
 }));
 
 // Mock identity
-vi.mock('../../../src/main/generation/prompts/identity', () => ({
+vi.mock('../../../src/main/prompts/identity', () => ({
   IDENTITY_PROMPT: 'DEFAULT_IDENTITY',
 }));
 
@@ -48,7 +48,7 @@ describe('SoulLoader', () => {
   it('should return IDENTITY_PROMPT when no files exist', async () => {
     (fs.existsSync as any).mockReturnValue(false);
 
-    const { loadSoul } = await import('../../../src/main/generation/prompts/soulLoader');
+    const { loadSoul } = await import('../../../src/main/prompts/soulLoader');
     const result = loadSoul('/project');
 
     expect(result).toBe('DEFAULT_IDENTITY');
@@ -60,7 +60,7 @@ describe('SoulLoader', () => {
     );
     (fs.readFileSync as any).mockReturnValue('I am a custom agent');
 
-    const { loadSoul } = await import('../../../src/main/generation/prompts/soulLoader');
+    const { loadSoul } = await import('../../../src/main/prompts/soulLoader');
     const result = loadSoul('/project');
 
     expect(result).toBe('I am a custom agent');
@@ -72,7 +72,7 @@ describe('SoulLoader', () => {
     );
     (fs.readFileSync as any).mockReturnValue('I am user soul');
 
-    const { loadSoul } = await import('../../../src/main/generation/prompts/soulLoader');
+    const { loadSoul } = await import('../../../src/main/prompts/soulLoader');
     const result = loadSoul('/project');
 
     expect(result).toBe('I am user soul');
@@ -86,7 +86,7 @@ describe('SoulLoader', () => {
       return '';
     });
 
-    const { loadSoul } = await import('../../../src/main/generation/prompts/soulLoader');
+    const { loadSoul } = await import('../../../src/main/prompts/soulLoader');
     const result = loadSoul('/project');
 
     expect(result).toBe('project personality');
@@ -95,7 +95,7 @@ describe('SoulLoader', () => {
   it('should cache soul after first load', async () => {
     (fs.existsSync as any).mockReturnValue(false);
 
-    const { loadSoul, getSoul } = await import('../../../src/main/generation/prompts/soulLoader');
+    const { loadSoul, getSoul } = await import('../../../src/main/prompts/soulLoader');
     loadSoul('/project');
 
     // getSoul should return cached value without re-reading
@@ -107,7 +107,7 @@ describe('SoulLoader', () => {
     (fs.existsSync as any).mockReturnValue(true);
     (fs.readFileSync as any).mockReturnValue('   ');
 
-    const { loadSoul } = await import('../../../src/main/generation/prompts/soulLoader');
+    const { loadSoul } = await import('../../../src/main/prompts/soulLoader');
     const result = loadSoul('/project');
 
     // Empty/whitespace-only file should fall through to default
@@ -118,7 +118,7 @@ describe('SoulLoader', () => {
     (fs.existsSync as any).mockReturnValue(true);
     (fs.readFileSync as any).mockReturnValue('soul content');
 
-    const { watchSoulFiles, unwatchSoulFiles } = await import('../../../src/main/generation/prompts/soulLoader');
+    const { watchSoulFiles, unwatchSoulFiles } = await import('../../../src/main/prompts/soulLoader');
     watchSoulFiles('/project');
 
     expect(fs.watch).toHaveBeenCalled();

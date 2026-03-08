@@ -68,7 +68,7 @@
 | **错误恢复引擎** | `src/main/errors/recoveryEngine.ts` | 6 种错误模式自动恢复（429/401/context_length/timeout/connection/unavailable） |
 | **工具 DAG 调度** | `src/main/agent/toolExecution/dagScheduler.ts` | 文件依赖 DAG + Kahn 拓扑排序，WAR/WAW 检测 |
 | **实时成本流** | `src/renderer/stores/statusStore.ts` | SSE 流式 token 估算 + StatusBar 脉冲动画 |
-| **Prompt 精简** | `src/main/generation/prompts/base/gen8.ts` | tool table 再压缩 ~20% |
+| **Prompt 精简** | `src/main/prompts/base/gen8.ts` | tool table 再压缩 ~20% |
 | **激进裁剪** | `src/main/context/autoCompressor.ts` | 更早触发压缩（0.6），旧消息 200 字符摘要 |
 | **错误恢复 IPC** | `src/main/ipc/error.ipc.ts` | 错误恢复事件推送到渲染进程 |
 | **错误恢复 Hook** | `src/renderer/hooks/useErrorRecovery.ts` | React Hook + 自动 dismiss |
@@ -86,6 +86,15 @@
 | **溢出自动恢复** | `src/main/agent/agentLoop.ts` | ContextLengthExceededError → 自动压缩 + 0.7x maxTokens 重试 |
 | **动态 Bash 描述** | `src/main/tools/shell/dynamicDescription.ts` | GLM-4-Flash 生成命令描述，LRU 缓存 |
 | **Moonshot 连接修复** | `src/main/model/providers/moonshot.ts` | 专用 Agent（keepAlive=false）+ 瞬态错误重试 |
+
+### 分层压缩增强（v0.16.42+）
+
+上下文压缩从单一策略改为三层递进：
+- **L1 Observation Masking**（≥60%）：用占位符替换旧 tool result，保留 tool call 骨架（借鉴 JetBrains Junie）
+- **L2 Truncate/CodeExtract**（≥85%）：裁剪中段消息
+- **L3 AI Summary**（≥90%）：Handoff Prompt 生成摘要（借鉴 Codex CLI）
+
+关键文件：`tokenOptimizer.ts`（observationMask）、`autoCompressor.ts`（分层集成）、`constants.ts`（OBSERVATION_MASKING）
 
 ### v0.16.20+ 对标 Claude Code 2026（Compaction + Agent Teams + Adaptive Thinking）
 
@@ -123,7 +132,7 @@
 | 模块 | 位置 | 描述 |
 |------|------|------|
 | **混合 Agent 架构** | `src/main/agent/hybrid/` | 3 层混合架构：核心角色 + 动态扩展 + Swarm |
-| **统一 Identity** | `src/main/generation/prompts/identity.ts` | 替代 constitution/ 的 6 文件，token -81% |
+| **统一 Identity** | `src/main/prompts/identity.ts` | 替代 constitution/ 的 6 文件，token -81% |
 | **上下文压缩** | `src/main/context/autoCompressor.ts` | 自动上下文压缩 |
 | **并行评估** | `src/main/evaluation/parallelEvaluator.ts` | 并行会话评估 |
 | **Session Replay** | `src/main/evaluation/replayService.ts` | 评测中心第三模式：结构化会话回放（三表 JOIN + 工具分类 + 自修复链检测） |
@@ -136,8 +145,8 @@
 | **基础设施服务** | `src/main/services/infra/` | 磁盘监控、文件日志、优雅关闭 |
 | **错误学习系统** | `src/main/memory/errorLearning.ts` | 错误模式学习与避免 |
 | **记忆衰减** | `src/main/memory/memoryDecay.ts` | 基于时间的记忆权重衰减 |
-| **动态提醒** | `src/main/generation/prompts/dynamicReminders.ts` | 上下文感知的动态提示 |
-| **Few-shot 示例** | `src/main/generation/prompts/fewShotExamples.ts` | 任务类型示例管理 |
+| **动态提醒** | `src/main/prompts/dynamicReminders.ts` | 上下文感知的动态提示 |
+| **Few-shot 示例** | `src/main/prompts/fewShotExamples.ts` | 任务类型示例管理 |
 | **执行监控** | `src/main/planning/executionMonitor.ts` | 计划执行进度监控 |
 | **可行性检查** | `src/main/planning/feasibilityChecker.ts` | 任务可行性评估 |
 | **恢复策略** | `src/main/agent/recovery/` | 任务分解、降级、学习策略 |
@@ -207,7 +216,7 @@ code-agent/
 ├── src/
 │   ├── main/                    # Electron 主进程
 │   │   ├── agent/              # AgentOrchestrator, AgentLoop
-│   │   ├── generation/         # GenerationManager
+│   │   ├── prompts/           # Prompt system
 │   │   ├── model/              # ModelRouter
 │   │   ├── tools/              # gen1-gen4 工具实现
 │   │   ├── services/           # Auth, Sync, Database, SecureStorage

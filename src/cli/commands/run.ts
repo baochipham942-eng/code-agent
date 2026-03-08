@@ -9,7 +9,6 @@ import { createCLIAgent } from '../adapter';
 import { terminalOutput, jsonOutput } from '../output';
 import { cleanup, initializeCLIServices, getDatabaseService } from '../bootstrap';
 import type { CLIGlobalOptions } from '../types';
-import { DEFAULT_GENERATION } from '../../shared/constants';
 import { extractJSON } from '../utils/jsonExtractor';
 import { validateSchema, formatValidationErrors, type JSONSchema } from '../utils/schemaValidator';
 
@@ -120,7 +119,7 @@ export const runCommand = new Command('run')
 
       if (!isJson) {
         terminalOutput.info(`项目目录: ${globalOpts?.project || process.cwd()}`);
-        terminalOutput.info(`代际: ${globalOpts?.gen || DEFAULT_GENERATION}`);
+        terminalOutput.info(`代际: ${globalOpts?.gen || 'gen8'}`);
         if (outputSchema) {
           terminalOutput.info(`结构化输出: 已启用 (最多重试 ${maxRetries} 次)`);
         }

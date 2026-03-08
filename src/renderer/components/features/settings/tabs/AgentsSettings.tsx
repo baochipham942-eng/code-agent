@@ -333,7 +333,7 @@ const AgentEditModal: React.FC<AgentEditModalProps> = ({
             <Input
               value={toolsText}
               onChange={(e) => setToolsText(e.target.value)}
-              placeholder="read_file, write_file, bash"
+              placeholder="Read, Write, Bash"
               inputSize="sm"
             />
             <p className="text-xs text-zinc-500 mt-1">留空表示使用所有可用工具</p>

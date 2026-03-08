@@ -41,21 +41,21 @@ export { formatDuration } from '../../../../../../shared/utils/format';
 export function getToolIcon(name: string): React.ReactNode {
   const iconMap: Record<string, React.ReactNode> = {
     // Gen 1 - Basic file operations
-    bash: React.createElement(Terminal, { size: 14 }),
-    read_file: React.createElement(FileText, { size: 14 }),
-    write_file: React.createElement(FilePlus, { size: 14 }),
-    edit_file: React.createElement(FileEdit, { size: 14 }),
+    Bash: React.createElement(Terminal, { size: 14 }),
+    Read: React.createElement(FileText, { size: 14 }),
+    Write: React.createElement(FilePlus, { size: 14 }),
+    Edit: React.createElement(FileEdit, { size: 14 }),
 
     // Gen 2 - Search and navigation
-    glob: React.createElement(Search, { size: 14 }),
-    grep: React.createElement(Search, { size: 14 }),
+    Glob: React.createElement(Search, { size: 14 }),
+    Grep: React.createElement(Search, { size: 14 }),
     list_directory: React.createElement(FolderOpen, { size: 14 }),
-    web_search: React.createElement(Globe, { size: 14 }),
+    WebSearch: React.createElement(Globe, { size: 14 }),
 
     // Gen 3 - Subagent and planning
     task: React.createElement(Bot, { size: 14 }),
     todo_write: React.createElement(ListTodo, { size: 14 }),
-    ask_user_question: React.createElement(MessageCircleQuestion, { size: 14 }),
+    AskUserQuestion: React.createElement(MessageCircleQuestion, { size: 14 }),
 
     // Gen 4 - Skill system and network
     skill: React.createElement(Sparkles, { size: 14 }),
@@ -108,12 +108,12 @@ export function formatParams(toolCall: ToolCall): string {
   if (!args) return '';
 
   switch (name) {
-    case 'bash':
+    case 'Bash':
       return truncateCommand(String(args.command || ''));
 
-    case 'read_file':
-    case 'write_file':
-    case 'edit_file': {
+    case 'Read':
+    case 'Write':
+    case 'Edit': {
       let filePath = String(args.file_path || '');
       // Clean up potential parameter mixing
       if (filePath.includes(' offset=') || filePath.includes(' limit=')) {
@@ -122,16 +122,16 @@ export function formatParams(toolCall: ToolCall): string {
       return shortenPath(filePath);
     }
 
-    case 'grep':
+    case 'Grep':
       return `"${String(args.pattern || '').slice(0, 20)}"`;
 
-    case 'glob':
+    case 'Glob':
       return String(args.pattern || '').slice(0, 30);
 
     case 'list_directory':
       return shortenPath(String(args.path || '.'));
 
-    case 'web_search': {
+    case 'WebSearch': {
       const query = String(args.query || '');
       return smartTruncate(query, 50);
     }
@@ -166,7 +166,7 @@ export function formatParams(toolCall: ToolCall): string {
       return '';
     }
 
-    case 'ask_user_question':
+    case 'AskUserQuestion':
       return String(args.question || '').slice(0, 30);
 
     default: {
@@ -230,19 +230,19 @@ function shortenUrl(url: string): string {
 export function getToolDisplayName(name: string): string {
   // CamelCase for display
   const displayNames: Record<string, string> = {
-    bash: 'Bash',
-    read_file: 'Read',
-    write_file: 'Write',
-    edit_file: 'Edit',
-    glob: 'Glob',
-    grep: 'Grep',
+    Bash: 'Bash',
+    Read: 'Read',
+    Write: 'Write',
+    Edit: 'Edit',
+    Glob: 'Glob',
+    Grep: 'Grep',
     list_directory: 'ListDir',
     task: 'Task',
     todo_write: 'Todo',
-    ask_user_question: 'Ask',
+    AskUserQuestion: 'Ask',
     skill: 'Skill',
     web_fetch: 'Fetch',
-    web_search: 'Search',
+    WebSearch: 'Search',
     mcp: 'MCP',
     read_pdf: 'ReadPDF',
     ppt_generate: 'PPT',

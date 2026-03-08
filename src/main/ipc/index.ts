@@ -4,7 +4,6 @@
 
 import type { IpcMain, BrowserWindow } from 'electron';
 import type { AgentOrchestrator } from '../agent/agentOrchestrator';
-import type { GenerationManager } from '../generation/generationManager';
 import type { ConfigService } from '../services';
 import type { PlanningService } from '../planning';
 import type { TaskManager } from '../task';
@@ -13,7 +12,6 @@ import { createLogger } from '../services/infra/logger';
 const logger = createLogger('IPC');
 
 import { registerAgentHandlers } from './agent.ipc';
-import { registerGenerationHandlers } from './generation.ipc';
 import { registerSessionHandlers } from './session.ipc';
 import { registerAuthHandlers } from './auth.ipc';
 import { registerSyncHandlers } from './sync.ipc';
@@ -57,7 +55,6 @@ export * from './types';
 export interface IpcDependencies {
   getMainWindow: () => BrowserWindow | null;
   getOrchestrator: () => AgentOrchestrator | null;
-  getGenerationManager: () => GenerationManager | null;
   getConfigService: () => ConfigService | null;
   getPlanningService: () => PlanningService | null;
   getTaskManager: () => TaskManager | null;
@@ -72,7 +69,6 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   const {
     getMainWindow,
     getOrchestrator,
-    getGenerationManager,
     getConfigService,
     getPlanningService,
     getTaskManager,
@@ -83,13 +79,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   // Agent handlers
   registerAgentHandlers(ipcMain, getOrchestrator);
 
-  // Generation handlers
-  registerGenerationHandlers(ipcMain, getGenerationManager);
-
   // Session handlers
   registerSessionHandlers(ipcMain, {
     getConfigService,
-    getGenerationManager,
     getOrchestrator,
     getCurrentSessionId,
     setCurrentSessionId,

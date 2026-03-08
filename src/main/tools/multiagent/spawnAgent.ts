@@ -42,32 +42,7 @@ const spawnedAgents: Map<string, SpawnedAgent> = new Map();
 
 export const spawnAgentTool: Tool = {
   name: 'spawn_agent',
-  description: `Create a specialized sub-agent to handle a specific task.
-
-DUAL MODE SUPPORT:
-1. Declarative Mode - Use predefined agent IDs (recommended):
-
-   Available Agents:
-${listPredefinedAgents().map(a => `   - ${a.id}: ${a.description}`).join('\n')}
-
-2. Dynamic Mode - Create custom agents at runtime with customPrompt and tools
-
-Use this tool to:
-- Delegate tasks to specialized agents
-- Run multiple agents in TRUE parallel (using parallel=true with agents array)
-- Create custom agents for specific needs
-
-All subagents go through unified permission/budget/audit pipeline.
-
-Parameters:
-- role: Agent role/ID (from predefined agents or legacy roles)
-- task: Description of what the agent should do
-- customPrompt: (optional) Custom system prompt override
-- customTools: (optional) Custom tool list for dynamic agents
-- maxBudget: (optional) Maximum budget in USD for this agent
-- waitForCompletion: (optional) Whether to wait for agent to complete (default: true)
-- parallel: (optional) Set to true to enable parallel execution mode
-- agents: (optional) Array of {role, task, dependsOn?} for parallel execution`,
+  description: `Spawns a sub-agent to handle complex, multi-step tasks autonomously. Use for parallelizing independent work, deep research, or tasks that benefit from isolated context. Each agent runs independently and returns results when complete.`,
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

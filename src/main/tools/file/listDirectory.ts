@@ -9,7 +9,7 @@ import { resolvePath } from './pathUtils';
 import { formatFileSize } from '../network/utils';
 
 export const listDirectoryTool: Tool = {
-  name: 'list_directory',
+  name: 'ListDirectory',
   description: `List directory contents as a tree structure.
 
 Use for: understanding project layout, browsing directory contents.

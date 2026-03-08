@@ -139,6 +139,21 @@ ls -la node_modules/keytar/build/Release/keytar.node
 
 ## 模型调用问题
 
+### 模型 429 频繁 / Provider 不可用
+
+**问题**: 主 Provider 频繁返回 429 或瞬态错误，对话中断
+
+**解决方案**: v0.16.42+ 已支持跨 Provider 自动降级。查看日志中的 `[ModelRouter] Fallback →` 确认降级链是否生效。
+
+**排查步骤**：
+1. 确认降级目标 Provider 的 API Key 已配置（`.env` 文件）
+2. 搜索日志 `Fallback →` 确认降级是否触发
+3. 如所有降级均失败，检查各 Provider 的 API 额度
+
+**降级链配置**: `src/shared/constants.ts` 的 `PROVIDER_FALLBACK_CHAIN`
+
+---
+
 ### 视觉模型调用失败
 **问题**: 调用视觉模型时反复出错（模型名错误、参数格式不支持等）
 **根本原因**: `ModelInfo` 类型缺少关键细节：
@@ -231,6 +246,11 @@ sqlite3 "~/Library/Application Support/code-agent/code-agent.db" \
 1. 消息摘要压缩历史
 2. 工具结果截断
 3. 系统提示精简
+
+### Observation Masking 排查
+
+**Q: Agent 仍然重复搜索已有信息？**
+检查 L1 Observation Masking 是否生效：日志中应有 `[AutoCompressor] L1 Observation Masking: masked N tool outputs`。如果没有，可能 usage 未达到 60% 阈值，或 tool result 内容低于 100 tokens 未触发 mask。
 
 ### 异步 I/O 优化
 **问题**: 同步 I/O 阻塞主进程
@@ -609,10 +629,10 @@ data: {"id":"gen-xxx","choices":[...]}
 **问题**：模型把多个参数写进单个字段
 ```typescript
 // 错误示例
-read_file({ file_path: "src/app.ts offset=10 limit=50" })
+Read({ file_path: "src/app.ts offset=10 limit=50" })
 
 // 正确格式
-read_file({ file_path: "src/app.ts", offset: 10, limit: 50 })
+Read({ file_path: "src/app.ts", offset: 10, limit: 50 })
 ```
 
 **原因**：工具描述缺少明确的参数格式示例
@@ -623,15 +643,15 @@ read_file({ file_path: "src/app.ts", offset: 10, limit: 50 })
 
 **相关代码**：`src/main/generation/prompts/tools/*.ts`
 
-### 2026-02-03: edit_file 失败后的重试策略
+### 2026-02-03: Edit 失败后的重试策略
 
-**问题**：edit_file 失败后无限重试相同参数
+**问题**：Edit 失败后无限重试相同参数
 
-**错误做法**：模型反复用相同的 old_string 尝试 edit_file
+**错误做法**：模型反复用相同的 old_text 尝试 Edit
 
 **正确策略**：
-1. 第 1 次失败：调整 old_string（增加上下文、检查空格/换行）
-2. 第 2 次失败：改用 write_file 重写整个文件
+1. 第 1 次失败：调整 old_text（增加上下文、检查空格/换行）
+2. 第 2 次失败：改用 Write 重写整个文件
 3. 切换策略时通知用户原因
 
 **相关代码**：

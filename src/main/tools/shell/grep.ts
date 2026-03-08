@@ -177,30 +177,8 @@ async function tryRipgrep(
 }
 
 export const grepTool: Tool = {
-  name: 'grep',
-  description: `Search file contents using regex patterns. Built on ripgrep for speed.
-
-ALWAYS use this tool for content search. NEVER invoke \`grep\` or \`rg\` via bash — this tool has optimized permissions, structured output, and EAGAIN retry.
-
-Use for: finding function definitions, imports, string occurrences, TODO comments.
-For finding files by name/path, use glob instead.
-
-Key parameters:
-- pattern: regex (e.g., "function\\s+\\w+", "TODO|FIXME")
-- path: file or directory (default: working directory). Omit to use default — do NOT pass "undefined" or "null".
-- type: filter by file type — more efficient than include (e.g., type="ts" instead of include="*.ts")
-- include: glob pattern filter (e.g., "*.{js,jsx}")
-- context (-C), before_context (-B), after_context (-A): show surrounding lines
-- head_limit: limit output to first N match groups (default: 0 = unlimited)
-- offset: skip first N match groups before applying head_limit (default: 0)
-
-Output: file:line_number:matching_line, limited to 200 matches.
-Auto-ignores: node_modules, .git, dist, build.
-
-Tips:
-- Pattern uses ripgrep syntax (not grep) — literal braces need escaping: \`interface\\{\\}\` to find \`interface{}\`
-- Escape regex special chars: . * + ? [ ] ( ) { } | \\ ^ $
-- Multiple searches can run in parallel with separate tool calls`,
+  name: 'Grep',
+  description: `Searches file contents using regex patterns. Use this instead of Bash grep or rg. Supports regex syntax, file type filtering, glob patterns, and multiple output modes (content, files_with_matches, count). Use context params (-A/-B/-C) to see surrounding lines.`,
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

@@ -14,7 +14,6 @@ import { exportCommand } from './commands/export';
 import { listToolsCommand } from './commands/listTools';
 import { listAgentsCommand } from './commands/listAgents';
 import { version } from '../../package.json';
-import { DEFAULT_GENERATION } from '../shared/constants';
 
 const program = new Command();
 
@@ -27,7 +26,7 @@ program
 program
   .option('-p, --project <path>', '项目目录', process.cwd())
   .option('--json', 'JSON 格式输出')
-  .option('--gen <id>', '使用的代际 (gen1-gen8)', DEFAULT_GENERATION)
+  .option('--gen <id>', '使用的代际 (gen1-gen8)')
   .option('--model <name>', '模型名称')
   .option('--provider <name>', '模型提供商 (deepseek, openai, zhipu)')
   .option('--plan', '启用规划模式（复杂任务自动分解）')

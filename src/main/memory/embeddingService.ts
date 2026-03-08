@@ -405,9 +405,10 @@ export class EmbeddingService {
   private provider: EmbeddingProvider;
   private fallbackChain: EmbeddingProvider[] = [];
   private fallbackProvider: LocalEmbedding;
-  private cache: Map<string, number[]> = new Map();
+  private cache: Map<string, { vector: number[]; ts: number }> = new Map();
   private cacheEnabled: boolean;
   private maxCacheSize: number = 10000;
+  private readonly EMBED_CACHE_TTL = 10 * 60 * 1000; // 10 min
   private currentProviderIndex: number = 0;
   private failureCount: Map<number, number> = new Map();
   private readonly maxFailures: number = 3;
@@ -555,12 +556,16 @@ export class EmbeddingService {
       throw new Error(`Cannot embed text: ${validation.reason}`);
     }
 
-    // Check cache first
+    // Check cache first (with TTL)
     if (this.cacheEnabled) {
       const cacheKey = this.getCacheKey(text);
       const cached = this.cache.get(cacheKey);
+      if (cached && Date.now() - cached.ts < this.EMBED_CACHE_TTL) {
+        return cached.vector;
+      }
+      // Evict stale entry
       if (cached) {
-        return cached;
+        this.cache.delete(cacheKey);
       }
     }
 
@@ -590,14 +595,16 @@ export class EmbeddingService {
     const uncachedIndices: number[] = [];
     const uncachedTexts: string[] = [];
 
-    // Check cache for each text
+    // Check cache for each text (with TTL)
     if (this.cacheEnabled) {
+      const now = Date.now();
       for (let i = 0; i < texts.length; i++) {
         const cacheKey = this.getCacheKey(texts[i]);
         const cached = this.cache.get(cacheKey);
-        if (cached) {
-          results[i] = cached;
+        if (cached && now - cached.ts < this.EMBED_CACHE_TTL) {
+          results[i] = cached.vector;
         } else {
+          if (cached) this.cache.delete(cacheKey); // evict stale
           uncachedIndices.push(i);
           uncachedTexts.push(texts[i]);
         }
@@ -721,7 +728,7 @@ export class EmbeddingService {
         this.cache.delete(firstKey);
       }
     }
-    this.cache.set(this.getCacheKey(text), embedding);
+    this.cache.set(this.getCacheKey(text), { vector: embedding, ts: Date.now() });
   }
 }
 

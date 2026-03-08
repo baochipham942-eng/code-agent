@@ -2,7 +2,7 @@
 // CLI Types
 // ============================================================================
 
-import type { AgentEvent, ModelConfig, Generation } from '../shared/types';
+import type { AgentEvent, ModelConfig } from '../shared/types';
 
 /**
  * CLI 全局选项

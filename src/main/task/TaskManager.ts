@@ -6,7 +6,6 @@
 import { EventEmitter } from 'events';
 import type { AgentEvent, Message } from '../../shared/types';
 import { AgentOrchestrator, type AgentOrchestratorConfig } from '../agent/agentOrchestrator';
-import type { GenerationManager } from '../generation/generationManager';
 import type { ConfigService } from '../services/core/configService';
 import type { PlanningService } from '../planning';
 import { Semaphore } from './Semaphore';
@@ -123,7 +122,6 @@ export class TaskManager extends EventEmitter {
   private queueTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   // 依赖注入
-  private generationManager: GenerationManager | null = null;
   private configService: ConfigService | null = null;
   private planningService: PlanningService | undefined;
   private onAgentEvent: ((sessionId: string, event: AgentEvent) => void) | null = null;
@@ -143,12 +141,10 @@ export class TaskManager extends EventEmitter {
    * 初始化 TaskManager 依赖
    */
   initialize(deps: {
-    generationManager: GenerationManager;
     configService: ConfigService;
     planningService?: PlanningService;
     onAgentEvent: (sessionId: string, event: AgentEvent) => void;
   }): void {
-    this.generationManager = deps.generationManager;
     this.configService = deps.configService;
     this.planningService = deps.planningService;
     this.onAgentEvent = deps.onAgentEvent;
@@ -174,7 +170,7 @@ export class TaskManager extends EventEmitter {
     message: string,
     attachments?: unknown[]
   ): Promise<void> {
-    if (!this.generationManager || !this.configService || !this.onAgentEvent) {
+    if (!this.configService || !this.onAgentEvent) {
       throw new Error('TaskManager not initialized. Call initialize() first.');
     }
 
@@ -575,7 +571,6 @@ export class TaskManager extends EventEmitter {
 
       // 每个会话创建独立的 Orchestrator，确保完全隔离
       const orchestrator = new AgentOrchestrator({
-        generationManager: this.generationManager!,
         configService: this.configService!,
         planningService: this.planningService,
         onEvent: (event: AgentEvent) => {

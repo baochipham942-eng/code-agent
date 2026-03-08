@@ -232,6 +232,11 @@ sqlite3 "~/Library/Application Support/code-agent/code-agent.db" \
 2. 工具结果截断
 3. 系统提示精简
 
+### Observation Masking 排查
+
+**Q: Agent 仍然重复搜索已有信息？**
+检查 L1 Observation Masking 是否生效：日志中应有 `[AutoCompressor] L1 Observation Masking: masked N tool outputs`。如果没有，可能 usage 未达到 60% 阈值，或 tool result 内容低于 100 tokens 未触发 mask。
+
 ### 异步 I/O 优化
 **问题**: 同步 I/O 阻塞主进程
 **优化**:

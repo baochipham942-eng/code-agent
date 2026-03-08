@@ -87,6 +87,15 @@
 | **动态 Bash 描述** | `src/main/tools/shell/dynamicDescription.ts` | GLM-4-Flash 生成命令描述，LRU 缓存 |
 | **Moonshot 连接修复** | `src/main/model/providers/moonshot.ts` | 专用 Agent（keepAlive=false）+ 瞬态错误重试 |
 
+### 分层压缩增强（v0.16.42+）
+
+上下文压缩从单一策略改为三层递进：
+- **L1 Observation Masking**（≥60%）：用占位符替换旧 tool result，保留 tool call 骨架（借鉴 JetBrains Junie）
+- **L2 Truncate/CodeExtract**（≥85%）：裁剪中段消息
+- **L3 AI Summary**（≥90%）：Handoff Prompt 生成摘要（借鉴 Codex CLI）
+
+关键文件：`tokenOptimizer.ts`（observationMask）、`autoCompressor.ts`（分层集成）、`constants.ts`（OBSERVATION_MASKING）
+
 ### v0.16.20+ 对标 Claude Code 2026（Compaction + Agent Teams + Adaptive Thinking）
 
 | 模块 | 位置 | 描述 |

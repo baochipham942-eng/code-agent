@@ -100,6 +100,11 @@ interface SearchSourceResult {
   error?: string;
 }
 
+interface SourceRoutingResult {
+  sources: string[];
+  reason: string;
+}
+
 /** Convert ISO date string to human-readable relative age (e.g. "2 days ago") */
 export function formatAge(dateStr: string): string | undefined {
   try {
@@ -117,6 +122,80 @@ export function formatAge(dateStr: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+
+// ============================================================================
+// Intelligent Source Routing
+// ============================================================================
+
+/**
+ * Analyze query characteristics and route to best-fit search sources.
+ * Each source has unique strengths — route to 2-3 instead of all 4 every time.
+ *
+ * Source strengths:
+ * - perplexity: AI summary, best for Chinese queries, general knowledge
+ * - exa: Semantic search, excels at technical/academic content
+ * - brave: Real-time news, Twitter/social, broad web coverage
+ * - tavily: Structured extraction, good AI answers, reliable fallback
+ */
+function routeSources(
+  query: string,
+  options: { mode?: 'quick' | 'research'; requestedSources?: string[] }
+): SourceRoutingResult {
+  // If user explicitly requested sources, respect that
+  if (options.requestedSources?.length) {
+    return { sources: options.requestedSources, reason: 'user-specified' };
+  }
+
+  const isChinese = /[\u4e00-\u9fff]{2,}/.test(query);
+  const isTwitter = /twitter|x\.com|@\w+|\u63a8\u7279|tweet/i.test(query);
+  const isAcademic = /paper|\u8bba\u6587|\u7814\u7a76|\u5b66\u672f|arxiv|scholar/i.test(query);
+  const isNews = /\u65b0\u95fb|\u6700\u65b0|today|breaking|\u521a\u521a|\u70ed\u70b9|trending/i.test(query);
+  const isTechnical = /api|sdk|framework|\u5e93|\u6587\u6863|documentation|github/i.test(query);
+  const isResearchMode = options.mode === 'research';
+
+  const selected: string[] = [];
+
+  if (isChinese) {
+    selected.push('perplexity');  // Best Chinese AI summary
+    selected.push('tavily');      // Good structured extraction
+    if (isResearchMode) selected.push('brave');  // Extra coverage
+  } else if (isTwitter) {
+    selected.push('brave');       // Best for social/Twitter content
+    selected.push('perplexity');  // AI summary context
+  } else if (isTechnical) {
+    selected.push('exa');         // Semantic search excels at technical content
+    selected.push('perplexity');  // AI summary for docs
+    if (isResearchMode) selected.push('tavily');
+  } else if (isNews) {
+    selected.push('brave');       // Best for real-time/news
+    selected.push('perplexity');  // AI summary
+  } else if (isAcademic) {
+    selected.push('exa');         // Semantic search for papers
+    selected.push('tavily');      // Structured extraction
+    if (isResearchMode) selected.push('perplexity');
+  } else {
+    // Default: 2 sources for quick, 3-4 for research
+    selected.push('perplexity');
+    selected.push('tavily');
+    if (isResearchMode) {
+      selected.push('exa');
+      selected.push('brave');
+    }
+  }
+
+  return {
+    sources: selected,
+    reason: [
+      isChinese && 'chinese',
+      isTwitter && 'twitter',
+      isAcademic && 'academic',
+      isNews && 'news',
+      isTechnical && 'technical',
+      isResearchMode && 'research-mode',
+    ].filter(Boolean).join('+') || 'default',
+  };
 }
 
 // ============================================================================
@@ -143,6 +222,8 @@ For reading a specific URL you already have, use web_fetch instead.
 For searching local code, use grep or glob.
 
 Features:
+- Intelligent source routing: automatically picks 2-3 best-fit sources based on query characteristics
+- mode: "quick" (2 sources, fast) or "research" (3-4 sources, thorough)
 - Parallel search across multiple sources (Perplexity, EXA, Brave, Tavily)
 - Domain filtering with allowed_domains / blocked_domains
 - auto_extract: search + fetch + AI extraction in one call
@@ -197,6 +278,11 @@ Features:
         type: 'string',
         description: 'Output format: "default" (detailed with snippets) or "table" (compact markdown table ready to copy-paste). Use "table" when you need to directly include results in a report.',
       },
+      mode: {
+        type: 'string',
+        enum: ['quick', 'research'],
+        description: 'Search mode: "quick" uses 2 best-fit sources for speed, "research" uses 3-4 sources for thoroughness. Default: "quick".',
+      },
       save_to: {
         type: 'string',
         description: 'File path to automatically save results. The tool writes the file directly — no need to call write_file separately.',
@@ -221,6 +307,7 @@ Features:
     const extractCount = Math.min(Math.max((params.extract_count as number) || 3, 1), 5);
     const recency = params.recency as string | undefined;
     const outputFormat = (params.output_format as string) || 'default';
+    const mode = (params.mode as 'quick' | 'research') || 'quick';
     const language = params.language as string | undefined;
 
     // Build domain filter
@@ -234,17 +321,32 @@ Features:
 
     const configService = getConfigService();
 
-    // 确定可用的搜索源
-    const availableSources = getAvailableSources(configService, requestedSources);
+    // Get all sources with configured API keys
+    const allAvailable = getAvailableSources(configService);
 
-    if (availableSources.length === 0) {
+    if (allAvailable.length === 0) {
       return {
         success: false,
         error: 'No search sources available. Please configure at least one API key (EXA, Perplexity, or Brave) in Settings > Service API Keys.',
       };
     }
 
-    logger.info(`Searching with ${availableSources.length} sources:`, availableSources.map(s => s.name));
+    // Intelligent source routing: analyze query to pick best-fit sources
+    const routing = routeSources(query, { mode, requestedSources });
+
+    // Intersect: only use routed sources that are actually available
+    const routedAvailable = allAvailable.filter(s => routing.sources.includes(s.name));
+
+    // If routing filtered everything out, fallback to all available
+    const availableSources = routedAvailable.length > 0 ? routedAvailable : allAvailable;
+
+    logger.info('Search source routing', {
+      query: query.substring(0, 50),
+      routed: routing.sources,
+      reason: routing.reason,
+      available: allAvailable.map(s => s.name),
+      final: availableSources.map(s => s.name),
+    });
 
     let searchResult: ToolExecutionResult;
 

@@ -68,6 +68,12 @@ export {
   analyzeTask,
 } from './taskRouter';
 
+// Intent Classifier (hybrid fast/slow path for research detection)
+export {
+  type TaskIntent,
+  classifyIntent,
+} from './intentClassifier';
+
 // Cross Verify (P2: 双模型交叉验证)
 export {
   type CrossVerifyResult,

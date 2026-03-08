@@ -34,3 +34,7 @@ export { localSpeechToTextTool } from './localSpeechToText';
 export { textToSpeechTool } from './textToSpeech';
 export { imageAnnotateTool } from './imageAnnotate';
 export { xlwingsExecuteTool } from './xlwingsExecute';
+
+// Unified tools (Phase 2)
+export { WebFetchUnifiedTool } from './WebFetchUnifiedTool';
+export { ReadDocumentTool } from './ReadDocumentTool';

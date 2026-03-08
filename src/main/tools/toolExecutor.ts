@@ -476,6 +476,7 @@ export class ToolExecutor {
         };
 
       case 'mcp':
+      case 'MCPUnified':
       case 'mcp_read_resource':
         return {
           type: 'network',

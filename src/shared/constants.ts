@@ -288,6 +288,12 @@ export const MEMORY = {
   EMBEDDING_DIMENSION: 1536,
   /** 索引刷新间隔 (ms) */
   INDEX_REFRESH_INTERVAL: 300000,
+  /** Entity relation time decay half-life in days */
+  RELATION_DECAY_DAYS: 30,
+  /** Minimum confidence after decay to keep a relation */
+  RELATION_MIN_CONFIDENCE: 0.1,
+  /** Minimum confidence for context builder relation queries */
+  RELATION_CONTEXT_MIN_CONFIDENCE: 0.2,
 } as const;
 
 /** 规划配置 */

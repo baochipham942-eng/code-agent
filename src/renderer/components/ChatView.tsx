@@ -18,7 +18,7 @@ import { PlanPanel } from './features/chat/PlanPanel';
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 import { PermissionCard } from './PermissionDialog/PermissionCard';
-import type { Message, MessageAttachment, TaskProgressData, TaskPlan } from '../../shared/types';
+import type { Message, MessageAttachment, TaskPlan } from '../../shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
 import {
   Bot,
@@ -28,16 +28,12 @@ import {
   Sparkles,
   Terminal,
   Zap,
-  Brain,
-  Loader2,
-  Wrench,
-  PenLine,
 } from 'lucide-react';
 
 export const ChatView: React.FC = () => {
   const { showPreviewPanel } = useAppStore();
   const { todos, currentSessionId } = useSessionStore();
-  const { messages, isProcessing, sendMessage, cancel, taskProgress, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
+  const { messages, isProcessing, sendMessage, cancel, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
 
   // Plan 状态
   const [plan, setPlan] = useState<TaskPlan | null>(null);
@@ -153,13 +149,10 @@ export const ChatView: React.FC = () => {
 
     return (
       <div className="px-6 py-1 w-full">
-        {taskProgress && taskProgress.phase !== 'completed'
-          ? <EnhancedThinkingIndicator progress={taskProgress} />
-          : <ThinkingIndicator />
-        }
+        <ThinkingIndicator />
       </div>
     );
-  }, [effectiveIsProcessing, taskProgress, cancel]);
+  }, [effectiveIsProcessing, cancel]);
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -259,96 +252,6 @@ const ThinkingIndicator: React.FC = () => {
   );
 };
 
-// Enhanced thinking indicator with task progress - Claude/ChatGPT style
-const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ progress }) => {
-  // 工具名称友好化映射
-  const toolDisplayNames: Record<string, string> = {
-    bash: '执行命令',
-    read_file: '读取文件',
-    write_file: '创建文件',
-    edit_file: '编辑文件',
-    glob: '搜索文件',
-    grep: '搜索内容',
-    list_directory: '浏览目录',
-    task: '委托子任务',
-    web_search: '搜索网络',
-    web_fetch: '获取网页',
-    ppt_generate: '生成 PPT',
-    image_generate: '生成图片',
-  };
-
-  // 从 step 中提取工具名称并友好化
-  const getDisplayStep = (step: string | undefined): string => {
-    if (!step) return '';
-    // 匹配 "执行 xxx" 或 "xxx" 格式
-    const match = step.match(/^执行\s+(\w+)|^(\w+)/);
-    if (match) {
-      const toolName = match[1] || match[2];
-      return toolDisplayNames[toolName] || step;
-    }
-    return step;
-  };
-
-  // 阶段配置
-  const phaseConfig: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
-    thinking: {
-      icon: <Brain className="w-3.5 h-3.5" />,
-      label: '思考中',
-      color: 'text-blue-400',
-    },
-    tool_pending: {
-      icon: <Wrench className="w-3.5 h-3.5" />,
-      label: '准备中',
-      color: 'text-amber-400',
-    },
-    tool_running: {
-      icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
-      label: '执行中',
-      color: 'text-purple-400',
-    },
-    generating: {
-      icon: <PenLine className="w-3.5 h-3.5" />,
-      label: '生成中',
-      color: 'text-emerald-400',
-    },
-  };
-
-  const config = phaseConfig[progress.phase] || phaseConfig.thinking;
-  const hasToolProgress = progress.phase === 'tool_running' && progress.toolTotal;
-  const displayStep = getDisplayStep(progress.step) || config.label;
-
-  return (
-    <div className="animate-slideUp">
-      {/* Progress indicator - no avatar, simple inline display */}
-      <div className="inline-flex items-center gap-3">
-        {/* Status icon and text */}
-        <div className="flex items-center gap-2">
-          <span className={config.color}>{config.icon}</span>
-          <span className={`text-sm ${config.color}`}>
-            {displayStep}
-          </span>
-        </div>
-
-        {/* Tool progress - 显示 "第X步/共Y步" 格式 */}
-        {hasToolProgress && (
-          <div className="flex items-center gap-2">
-            <div className="w-20 h-1.5 bg-zinc-700/50 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-purple-500 rounded-full transition-all duration-300"
-                style={{ width: `${progress.progress || 0}%` }}
-              />
-            </div>
-            <span className="text-xs text-zinc-500">
-              {progress.toolIndex !== undefined && progress.toolTotal
-                ? `第${progress.toolIndex + 1}步 / 共${progress.toolTotal}步`
-                : `${Math.round(progress.progress || 0)}%`}
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
 
 // 建议卡片类型
 interface SuggestionItem {

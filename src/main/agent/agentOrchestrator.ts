@@ -20,6 +20,7 @@ import type { ConfigService } from '../services/core/configService';
 import { getSessionManager, getAuthService } from '../services';
 import type { PlanningService } from '../planning';
 import { DeepResearchMode, SemanticResearchOrchestrator } from '../research';
+import { analyzeTask } from './hybrid/taskRouter';
 import { getSessionStateManager } from '../session/sessionStateManager';
 import { ModelRouter } from '../model/modelRouter';
 import { generateMessageId, generatePermissionRequestId } from '../../shared/utils/id';
@@ -282,6 +283,10 @@ export class AgentOrchestrator {
 
     if (mode === 'deep-research') {
       // Manual deep research mode (user explicitly requested)
+      await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig, generation);
+    } else if (mode === 'normal' && analyzeTask(content).taskType === 'research') {
+      // Auto-detected research task — route to deep research pipeline
+      logger.info('Auto-detected research task, routing to deep research pipeline');
       await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig, generation);
     } else {
       // Normal Mode: 指挥家统一处理任务分类和执行

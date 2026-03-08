@@ -125,11 +125,16 @@ export function formatAge(dateStr: string): string | undefined {
 
 export const webSearchTool: Tool = {
   name: 'web_search',
-  description: `Search the web and return results with titles, URLs, and snippets.
+  description: 'Search the web and return results with titles, URLs, and snippets.',
+  dynamicDescription: () => {
+    const now = new Date();
+    const currentDate = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+    const currentYear = now.getFullYear();
+    return `Search the web and return results with titles, URLs, and snippets.
 
 Provides up-to-date information beyond the model's knowledge cutoff. Use when you need current data, recent events, or documentation updates.
 
-IMPORTANT: Use the current year in search queries when looking for recent information. Do NOT search with outdated years.
+IMPORTANT: 当前日期为 ${currentDate}。搜索时务必使用正确的年份 ${currentYear}，不要搜索过时的年份。
 
 CRITICAL: After answering with search results, you MUST include a "Sources:" section listing relevant URLs as markdown hyperlinks.
 
@@ -142,7 +147,8 @@ Features:
 - Domain filtering with allowed_domains / blocked_domains
 - auto_extract: search + fetch + AI extraction in one call
 - recency: filter results by day/week/month
-- output_format: "table" for compact markdown output`,
+- output_format: "table" for compact markdown output`;
+  },
   requiresPermission: true,
   permissionLevel: 'network',
   inputSchema: {

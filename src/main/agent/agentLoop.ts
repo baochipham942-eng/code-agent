@@ -20,6 +20,7 @@ import { getToolSearchService } from '../tools/search';
 import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
 import type { PlanningService } from '../planning';
 import { getMemoryService } from '../memory/memoryService';
+import { sanitizeMemoryContent } from '../memory/sanitizeMemoryContent';
 import { buildSeedMemoryBlock } from '../memory/seedMemoryInjector';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../services';
 import { logCollector } from '../mcp/logCollector.js';
@@ -80,7 +81,7 @@ import { getOutcomeDetector } from '../evolution/outcomeDetector';
 import { getInputSanitizer } from '../security/inputSanitizer';
 import { getDiffTracker } from '../services/diff/diffTracker';
 import { getCitationService } from '../services/citation/citationService';
-import { existsSync, readdirSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
 import { createHash } from 'crypto';
 import { getVerifierRegistry, initializeVerifiers } from './verifier';
@@ -535,6 +536,11 @@ export class AgentLoop {
         if (this.planningService) {
           const planContext = await this.buildPlanContextMessage();
           if (planContext) {
+            // Remove any existing plan context message to prevent unbounded accumulation.
+            // There should be at most ONE plan context message at any time.
+            this.messages = this.messages.filter(
+              m => !(m.role === 'system' && typeof m.content === 'string' && m.content.includes('<current-plan>'))
+            );
             this.injectSystemMessage(planContext);
             logger.debug(`[AgentLoop] Plan context injected at iteration ${iterations}`);
           }
@@ -577,9 +583,7 @@ export class AgentLoop {
 
           if (top3.length > 0) {
             const lines = top3.map(r => {
-              const preview = r.content.length > 300
-                ? r.content.slice(0, 300) + '...'
-                : r.content;
+              const preview = sanitizeMemoryContent(r.content);
               return `- [${r.source}]: ${preview} (relevance: ${Math.round(r.score * 100)}%)`;
             });
             this.injectSystemMessage(
@@ -3059,55 +3063,44 @@ ${deferredToolsSummary}
    * Inject a research-mode system prompt that forces multi-angle search planning.
    * Called when LLM intent classification detects a 'research' intent.
    */
+  private loadResearchSkillPrompt(): string | null {
+    // Try project-level skill first, then user-level
+    const candidates = [
+      join(this.workingDirectory || process.cwd(), '.code-agent', 'skills', 'research', 'SKILL.md'),
+      join(process.env.HOME || '~', '.code-agent', 'skills', 'research', 'SKILL.md'),
+    ];
+
+    for (const skillPath of candidates) {
+      try {
+        const content = readFileSync(skillPath, 'utf-8');
+        // Strip YAML frontmatter
+        const stripped = content.replace(/^---[\s\S]*?---\n*/m, '');
+        logger.info('Loaded research skill prompt', { path: skillPath });
+        return stripped.trim();
+      } catch {
+        // continue to next candidate
+      }
+    }
+
+    logger.warn('Research skill not found, using fallback prompt');
+    return null;
+  }
+
   private injectResearchModePrompt(_userMessage: string): void {
-    const researchPrompt = `## 研究模式已激活
+    // Try loading from skill file
+    const skillPrompt = this.loadResearchSkillPrompt();
 
-用户的请求需要深入调研。请按以下步骤执行：
+    if (skillPrompt) {
+      this.injectSystemMessage(skillPrompt);
+    } else {
+      // Fallback: minimal research prompt (full version lives in .code-agent/skills/research/SKILL.md)
+      const fallbackPrompt = `## 研究模式已激活\n\n用户的请求需要深入调研。请制定研究计划，从多个角度搜索，使用 web_fetch 深入抓取关键结果，最终形成结构化报告。\n\n报告要求：数据标注来源编号 [S1][S2]...，区分实证数据与趋势推断，至少执行 4 次不同角度的搜索。`;
+      this.injectSystemMessage(fallbackPrompt);
+    }
 
-### 第一步：制定研究计划
-在搜索之前，先思考并列出 3-5 个不同的研究角度。每个角度应该覆盖不同维度：
-- 现状数据（当前市场/行业状态）
-- 趋势分析（发展方向和变化）
-- 定量数据（数字、统计、指标）
-- 定性信息（观点、评价、案例）
-- 对比维度（竞品/同类比较）
-
-### 第二步：多角度搜索
-针对每个研究角度执行独立搜索，搜索关键词必须各不相同，禁止仅改换措辞重复搜索同一内容。
-
-### 第三步：深入抓取
-对关键搜索结果使用 web_fetch 获取详细内容，不要仅依赖搜索摘要。
-
-### 第四步：综合分析
-汇总所有角度的发现，去重后形成结构化报告，包含数据支撑和来源引用。
-
-### 报告质量要求
-
-#### 证据链绑定
-- 报告中每个关键数据点必须标注来源编号 [S1][S2]...
-- 无法确认来源的数字必须标注为【推断】或【估算】
-- 报告末尾的 Sources 列表必须包含可点击的 URL
-
-#### 年份回退策略
-- 当前日期为 2026 年 3 月。大部分公开数据可能滞后 6-18 个月。
-- 搜索时优先使用 "2025" 或 "最新" 而非 "2026"，除非确实找到 2026 年数据
-- 报告中必须标注数据的实际年份口径，如 "根据 2025 年数据推断"
-
-#### 事实与推断分层
-- 报告必须区分两种内容：
-  1. 📊 实证数据（有明确来源的统计/数字）
-  2. 📈 趋势推断（基于数据的分析和推断，需标注推断依据）
-
-#### 来源可信度
-- Sources 列表中为每个来源标注可信度：
-  - ⭐⭐⭐ 官方报告/政府数据/权威机构
-  - ⭐⭐ 行业媒体/招聘平台统计
-  - ⭐ 个人博客/论坛帖子/未经验证的转载
-
-**重要**：不要只搜索 1-2 次就给出结论。至少执行 4 次不同角度的搜索。`;
-
-    this.injectSystemMessage(researchPrompt);
+    // Engineering logic
     this._researchModeActive = true;
+    this._researchIterationCount = 0;
 
     // Pre-load web_fetch for research mode to avoid wasting an iteration on tool_search
     try {
@@ -3115,7 +3108,7 @@ ${deferredToolsSummary}
       toolSearchService.selectTool('web_fetch');
       logger.info('[ResearchMode] Pre-loaded web_fetch tool');
     } catch (error) {
-      logger.warn('[ResearchMode] Failed to pre-load web_fetch', { error: String(error) });
+      logger.debug('[ResearchMode] Could not pre-load web_fetch', { error: String(error) });
     }
     logger.info('Research mode prompt injected');
   }

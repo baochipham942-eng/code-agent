@@ -17,8 +17,8 @@ const logger = createLogger('IntentClassifier');
 const CLASSIFIER_PROVIDER = 'zhipu' as const;
 const CLASSIFIER_MODEL = 'glm-4-flash';
 
-/** Classification timeout to prevent blocking main flow */
-const CLASSIFY_TIMEOUT_MS = 5000;
+/** Classification timeout to prevent blocking main flow (8s for free model) */
+const CLASSIFY_TIMEOUT_MS = 8000;
 
 export type TaskIntent = 'research' | 'code' | 'search' | 'data' | 'general';
 
@@ -35,17 +35,39 @@ const CLASSIFY_PROMPT = `你是一个任务意图分类器。根据用户消息�
 
 只返回分类标签（research/code/search/data/general），不要返回任何其他内容。`;
 
+
+/**
+ * Quick keyword-based intent check (0ms, 100% reliable).
+ * Returns a TaskIntent if keywords match, or null to fall through to LLM.
+ */
+function quickIntentCheck(message: string): TaskIntent | null {
+  const researchKeywords = /深入调研|深度搜索|深度调研|全面分析|深入分析|深入搜索|研究报告|详细调研|comprehensive\s*research|in-depth|deep\s*research|thorough\s*research/i;
+  if (researchKeywords.test(message)) return 'research';
+  return null; // No quick match, need LLM
+}
+
 /**
  * Classify user message intent using a lightweight LLM call.
  *
  * - Uses GLM-4-Flash (free, fast) for classification
  * - Returns 'general' on any failure (safe fallback)
- * - Enforced 5s timeout to never block the main flow
+ * - Enforced 8s timeout to never block the main flow
  */
 export async function classifyIntent(
   message: string,
   modelRouter: ModelRouter,
 ): Promise<TaskIntent> {
+  // Step 1: Quick keyword check (0ms, 100% reliable)
+  const quickResult = quickIntentCheck(message);
+  if (quickResult) {
+    logger.info('Intent classified via keywords', {
+      intent: quickResult,
+      message: message.substring(0, 80),
+    });
+    return quickResult;
+  }
+
+  // Step 2: LLM classification (slower but handles ambiguous cases)
   try {
     const response = await Promise.race([
       modelRouter.chat({
@@ -65,7 +87,7 @@ export async function classifyIntent(
     const label = (response?.content || '').trim().toLowerCase() as TaskIntent;
 
     if (VALID_INTENTS.includes(label)) {
-      logger.info('Intent classified', {
+      logger.info('Intent classified via LLM', {
         message: message.substring(0, 50),
         intent: label,
       });

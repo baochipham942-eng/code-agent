@@ -30,6 +30,7 @@ import type {
   TodoItem,
 } from '../../../shared/types';
 import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/types/capture';
+import { MEMORY } from '../../../shared/constants';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -93,6 +94,13 @@ export interface MemoryRecord {
 // 使用 Record<string, unknown> 代替 any，但具体字段访问仍需类型断言
 type SQLiteRow = Record<string, unknown>;
 
+
+export interface RelationQueryOptions {
+  /** Half-life in days for confidence decay (default: MEMORY.RELATION_DECAY_DAYS) */
+  decayDays?: number;
+  /** Minimum confidence threshold after decay (default: MEMORY.RELATION_MIN_CONFIDENCE) */
+  minConfidence?: number;
+}
 
 export interface EntityRelation {
   id: string;
@@ -1899,8 +1907,14 @@ export class DatabaseService {
     );
   }
 
-  getRelationsFor(entityId: string, direction: 'source' | 'target' | 'both' = 'both'): EntityRelation[] {
+  getRelationsFor(
+    entityId: string,
+    direction: 'source' | 'target' | 'both' = 'both',
+    options: RelationQueryOptions = {}
+  ): EntityRelation[] {
     if (!this.db) return [];
+
+    const { decayDays = MEMORY.RELATION_DECAY_DAYS, minConfidence = MEMORY.RELATION_MIN_CONFIDENCE } = options;
 
     let sql: string;
     if (direction === 'source') {
@@ -1914,7 +1928,10 @@ export class DatabaseService {
     const params = direction === 'both' ? [entityId, entityId] : [entityId];
     const rows = this.db.prepare(sql).all(...params) as SQLiteRow[];
 
-    return rows.map(row => ({
+    const now = Date.now();
+    const halfLifeMs = decayDays * 24 * 60 * 60 * 1000;
+
+    const rawRelations = rows.map(row => ({
       id: row.id as string,
       sourceId: row.source_id as string,
       targetId: row.target_id as string,
@@ -1923,6 +1940,23 @@ export class DatabaseService {
       evidence: row.evidence as string,
       createdAt: row.created_at as number,
     }));
+
+    return rawRelations
+      .map(r => {
+        const ageMs = now - (typeof r.createdAt === 'number' ? r.createdAt : new Date(r.createdAt).getTime());
+        const decayFactor = Math.pow(0.5, ageMs / halfLifeMs);
+        return { ...r, confidence: (r.confidence ?? 1.0) * decayFactor };
+      })
+      .filter(r => r.confidence >= minConfidence)
+      .sort((a, b) => b.confidence - a.confidence);
+  }
+
+  updateRelationConfidence(id: string, confidence: number, evidence?: string): void {
+    if (!this.db) return;
+
+    this.db.prepare(
+      'UPDATE entity_relations SET confidence = ?, evidence = COALESCE(?, evidence) WHERE id = ?'
+    ).run(confidence, evidence ?? null, id);
   }
 }
 

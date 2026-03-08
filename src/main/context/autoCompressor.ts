@@ -111,11 +111,12 @@ export class AutoContextCompressor {
    */
   async checkAndCompress(
     sessionId: string,
-    messages: CompressedMessage[],
+    inputMessages: CompressedMessage[],
     systemPrompt: string,
     model: string,
     hookManager?: HookManager
   ): Promise<CompressionResult> {
+    let messages = inputMessages;
     if (!this.config.enabled) {
       return { compressed: false, messages, savedTokens: 0 };
     }
@@ -133,6 +134,25 @@ export class AutoContextCompressor {
     }
 
     logger.info(`[AutoCompressor] Usage at ${(usageRatio * 100).toFixed(1)}%, checking compression...`);
+
+    // L1: Observation Masking — 先清除旧 tool output，保留 tool call 骨架
+    const { observationMask } = await import('./tokenOptimizer');
+    const maskResult = observationMask(messages, {
+      preserveRecentCount: this.config.preserveRecentCount,
+    });
+
+    if (maskResult.maskedCount > 0) {
+      logger.info(`[AutoCompressor] L1 Observation Masking: masked ${maskResult.maskedCount} tool outputs, saved ~${maskResult.savedTokens} tokens`);
+      messages = maskResult.messages;
+
+      // 重新检查使用率，如果 masking 后降到阈值以下则跳过更重的压缩
+      const postMaskTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content || ''), 0);
+      const postMaskRatio = postMaskTokens / (health.maxTokens || 128000);
+      if (postMaskRatio < this.config.warningThreshold) {
+        logger.info(`[AutoCompressor] L1 sufficient: usage dropped to ${(postMaskRatio * 100).toFixed(1)}%, skipping L2/L3`);
+        return { compressed: true, messages, savedTokens: maskResult.savedTokens };
+      }
+    }
 
     // 选择压缩策略
     const strategy = this.selectStrategy(usageRatio);
@@ -406,16 +426,27 @@ export class AutoContextCompressor {
       const originalTokens = estimateTokens(contentToSummarize);
 
       // 使用轻量级模型生成摘要
-      const summaryPrompt = `请将以下对话历史压缩为简洁的摘要，保留关键信息：
-- 用户的主要需求和问题
-- 重要的代码片段（保留完整）
-- 关键的决策和结论
-- 待解决的问题
+      const summaryPrompt = `You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume this task.
 
-对话历史：
+Include:
+1. **Current progress**: What has been accomplished so far, key decisions made and their rationale
+2. **Important context**: User preferences, constraints, project conventions that must persist
+3. **Remaining work**: Clear, actionable next steps
+4. **Critical references**: File paths, variable names, API endpoints, error messages needed to continue
+5. **Failed approaches**: What was tried and didn't work (to avoid repeating mistakes)
+
+Rules:
+- Preserve ALL file paths as absolute paths
+- Preserve ALL code snippets that are still relevant
+- Preserve ALL error messages and their resolutions
+- Be specific about what changed in which files
+- Do NOT include tool output content that has been cleared
+- Keep summary under 500 words
+
+Conversation history:
 ${contentToSummarize}
 
-请生成一个简洁但信息完整的摘要（目标 500 字以内）：`;
+Generate the handoff summary:`;
 
       const summary = await compactModelSummarize(summaryPrompt, 800);
       const summaryTokens = estimateTokens(summary);
@@ -427,9 +458,10 @@ ${contentToSummarize}
       }
 
       // 创建摘要消息，包含保留的上下文
+      const handoffPrefix = '[Context Handoff] Another language model worked on this task and produced the following summary. Use this to build on the work already done. The tool call history shows what actions were taken — trust the summary for decisions and context, but verify file states if needed.';
       const summaryContent = preservedContext
-        ? `${preservedContext}\n\n[对话历史摘要]\n${summary}`
-        : `[对话历史摘要]\n${summary}`;
+        ? `${preservedContext}\n\n${handoffPrefix}\n\n${summary}`
+        : `${handoffPrefix}\n\n${summary}`;
 
       const summaryMessage: CompressedMessage = {
         role: 'system',
@@ -723,7 +755,7 @@ ${contentToSummarize}
 
       const summaryMessage: CompressedMessage = {
         role: 'system',
-        content: `[对话历史摘要]\n${summary}`,
+        content: `[Context Handoff] Another language model worked on this task and produced the following summary. Use this to build on the work already done.\n\n${summary}`,
         compressed: true,
       };
 
@@ -762,21 +794,21 @@ ${contentToSummarize}
    * Claude 风格摘要 prompt：聚焦状态、下一步、关键决策、学到的教训
    */
   private getClaudeStyleSummaryPrompt(): string {
-    return `请将以下对话历史压缩为一份结构化的工作状态摘要。
+    return `You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume this task.
 
-**摘要必须包含以下部分：**
-1. **当前状态**：任务进展到哪一步了？完成了什么？
-2. **关键决策**：做了哪些重要决策？为什么？
-3. **代码变更**：修改了哪些文件？关键代码片段（保留完整）
-4. **待解决问题**：还有什么没做完？遇到了什么障碍？
-5. **学到的教训**：发现了什么重要信息？哪些方法有效/无效？
-6. **下一步**：接下来应该做什么？
+Include:
+1. **Current progress**: What has been accomplished, key decisions and rationale
+2. **Important context**: User preferences, constraints, conventions
+3. **Remaining work**: Clear, actionable next steps
+4. **Critical references**: File paths, code snippets, error messages
+5. **Failed approaches**: What didn't work (avoid repeating)
 
-**要求**：
-- 保留所有代码片段和文件路径
-- 保留错误信息和调试线索
-- 使用简洁的条目式格式
-- 目标 800 字以内`;
+Rules:
+- Preserve ALL file paths as absolute paths
+- Preserve ALL relevant code snippets
+- Preserve ALL error messages and resolutions
+- Be specific about file changes
+- Keep summary under 800 words`;
   }
 }
 

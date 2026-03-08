@@ -13,10 +13,10 @@ import type { GenerationId } from './types/generation';
 export const DEFAULT_GENERATION: GenerationId = 'gen8';
 
 /** 默认 Provider */
-export const DEFAULT_PROVIDER = 'moonshot' as const;
+export const DEFAULT_PROVIDER = 'claude' as const;
 
 /** 默认模型（主力对话） */
-export const DEFAULT_MODEL = 'kimi-k2.5' as const;
+export const DEFAULT_MODEL = 'claude-sonnet-4-20250514' as const;
 
 // ============================================================================
 // 模型输出 Token 上限 — providerRegistry / compactModel 等引用
@@ -661,7 +661,7 @@ export const SEARCH_API_ENDPOINTS = {
 
 export const DEFAULT_MODELS = {
   /** 主要对话模型 - Kimi K2.5 包月 */
-  chat: 'kimi-k2.5',
+  chat: 'claude-sonnet-4-20250514',
   /** 推理模型 - DeepSeek R1 (按需付费) */
   reasoning: 'deepseek-reasoner',
   /** 视觉理解模型 - 智谱包年 */
@@ -669,15 +669,15 @@ export const DEFAULT_MODELS = {
   /** 视觉快速模型（不支持 base64） */
   visionFast: 'glm-4.6v-flash',
   /** 代码模型 - Kimi K2.5 包月 */
-  code: 'kimi-k2.5',
+  code: 'claude-sonnet-4-20250514',
   /** 压缩/摘要模型 - Kimi K2.5 包月无成本 */
   compact: 'kimi-k2.5',
   /** 快速判断模型 - 智谱 Flash 包年免费 */
   quick: 'glm-4.7-flash',
   /** 超长上下文模型（128K+） */
-  longContext: 'kimi-k2.5',
+  longContext: 'claude-sonnet-4-20250514',
   /** 包月无限制模型 */
-  unlimited: 'kimi-k2.5',
+  unlimited: 'claude-sonnet-4-20250514',
 } as const;
 
 // ============================================================================
@@ -1093,4 +1093,14 @@ export const RESOURCE_MANAGEMENT = {
   LOG_MAX_FILES: 10,
   /** 优雅关闭超时（5秒） */
   GRACEFUL_SHUTDOWN_TIMEOUT: 5_000,
+} as const;
+
+// ============================================================================
+// Observation Masking 常量
+// ============================================================================
+export const OBSERVATION_MASKING = {
+  PRESERVE_RECENT_COUNT: 6,
+  MIN_TOKEN_THRESHOLD: 100,
+  PLACEHOLDER_SUCCESS: '[output cleared - tool was executed successfully]',
+  PLACEHOLDER_ERROR: '[output cleared - tool returned error]',
 } as const;

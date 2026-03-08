@@ -156,8 +156,8 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   // Agent Routing handlers (Agent 路由)
   registerAgentRoutingHandlers(ipcMain);
 
-  // Checkpoint handlers
-  registerCheckpointHandlers(ipcMain);
+  // Checkpoint handlers (文件回滚 + 消息截断)
+  registerCheckpointHandlers(ipcMain, { getOrchestrator });
 
   // Evaluation handlers (会话评测)
   registerEvaluationHandlers();

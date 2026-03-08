@@ -945,6 +945,18 @@ export class DatabaseService {
     }));
   }
 
+  /**
+   * 删除指定时间戳及之后的所有消息（用于 Rewind 回退）
+   */
+  deleteMessagesFrom(sessionId: string, fromTimestamp: number): number {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = this.db.prepare(
+      'DELETE FROM messages WHERE session_id = ? AND timestamp >= ?'
+    ).run(sessionId, fromTimestamp);
+    return result.changes;
+  }
+
   getMessageCount(sessionId: string): number {
     if (!this.db) throw new Error('Database not initialized');
 

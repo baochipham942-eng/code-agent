@@ -1062,6 +1062,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CHECKPOINT_REWIND]: (sessionId: string, messageId: string) => Promise<{
     success: boolean;
     filesRestored: number;
+    messagesRemoved: number;
     error?: string;
   }>;
   [IPC_CHANNELS.CHECKPOINT_PREVIEW]: (sessionId: string, messageId: string) => Promise<Array<{

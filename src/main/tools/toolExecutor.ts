@@ -163,8 +163,8 @@ export class ToolExecutor {
 
     // Generation check removed: locked to gen8, all registered tools are available
 
-    // 文件检查点：在写入工具执行前保存原文件
-    await createFileCheckpointIfNeeded(toolName, params, () => {
+    // 文件检查点：在写入工具执行前保存原文件（使用 tool.name 规范名，不受 alias 影响）
+    await createFileCheckpointIfNeeded(tool.name, params, () => {
       if (!options.sessionId) return null;
       // messageId 从 context 中获取，如果没有则使用工具调用 ID
       const messageId = options.currentToolCallId || `msg_${Date.now()}`;
@@ -198,7 +198,7 @@ export class ToolExecutor {
 
     // Security: Pre-execution validation for bash commands
     let commandValidation: ValidationResult | undefined;
-    if (toolName === 'bash' && params.command) {
+    if ((toolName === 'bash' || toolName === 'Bash') && params.command) {
       const commandMonitor = getCommandMonitor(options.sessionId);
       commandValidation = commandMonitor.preExecute(params.command as string);
 
@@ -249,7 +249,7 @@ export class ToolExecutor {
 
     // P0: 安全命令白名单 + exec policy — 已知安全命令跳过审批
     let isSafeCommand = false;
-    if (toolName === 'bash' && params.command && !isPreApproved) {
+    if ((toolName === 'bash' || toolName === 'Bash') && params.command && !isPreApproved) {
       const cmd = params.command as string;
 
       // 1. 检查 exec policy 持久化规则
@@ -292,7 +292,7 @@ export class ToolExecutor {
       const approved = await this.requestPermission(permissionRequest);
 
       // P0: prefix_rule 学习 — 用户批准后生成持久化规则
-      if (approved && toolName === 'bash' && params.command) {
+      if (approved && (toolName === 'bash' || toolName === 'Bash') && params.command) {
         try {
           getExecPolicyStore().learnFromApproval(params.command as string);
         } catch {

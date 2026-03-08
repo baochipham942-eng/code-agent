@@ -11,7 +11,6 @@ import {
   initializeBackgroundServices,
   getConfigServiceInstance,
   getAgentOrchestrator,
-  getGenerationManagerInstance,
   getCurrentSessionId,
   setCurrentSessionId,
   getPlanningServiceInstance,
@@ -133,7 +132,6 @@ app.whenReady().then(async () => {
     setupAllIpcHandlers(ipcMain, {
       getMainWindow,
       getOrchestrator: getAgentOrchestrator,
-      getGenerationManager: getGenerationManagerInstance,
       getConfigService: getConfigServiceInstance,
       getPlanningService: getPlanningServiceInstance,
       getTaskManager: getTaskManagerInstance,

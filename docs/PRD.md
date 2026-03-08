@@ -18,7 +18,7 @@ Claude Code 作为 Anthropic 推出的 AI 编程助手，经历了从 v0.2 Beta 
 
 ### 1.2 项目名称
 
-**Code Agent** - AI Coding Assistant with Generation Comparison
+**Code Agent** - AI Coding Assistant
 
 ### 1.3 核心目标
 
@@ -240,7 +240,6 @@ Claude Code 作为 Anthropic 推出的 AI 编程助手，经历了从 v0.2 Beta 
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│           Generation Selector                        │
 ├─────────────────────────────────────────────────────┤
 │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐   │
 │  │  Gen 1  │ │  Gen 2  │ │  Gen 3  │ │  Gen 4  │   │
@@ -418,7 +417,7 @@ Claude Code 作为 Anthropic 推出的 AI 编程助手，经历了从 v0.2 Beta 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                    Generation Comparison View                        │
+│                    Capability Evolution View                        │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  同一任务，不同代际表现:                                             │
@@ -573,4 +572,4 @@ Claude Code 作为 Anthropic 推出的 AI 编程助手，经历了从 v0.2 Beta 
 | MCP | Model Context Protocol，模型上下文协议 |
 | Harness | Agent 运行时框架，提供工具和上下文 |
 | System Prompt | 定义 Agent 行为的初始指令 |
-| Generation/代际 | Agent 能力的主要版本划分 |
+| Generation/代际：（已移除）历史上的能力版本划分

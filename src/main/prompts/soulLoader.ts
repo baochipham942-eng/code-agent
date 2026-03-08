@@ -7,8 +7,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { createLogger } from '../../services/infra/logger';
-import { getUserConfigDir, getProjectConfigDir } from '../../config/configPaths';
+import { createLogger } from '../services/infra/logger';
+import { getUserConfigDir, getProjectConfigDir } from '../config/configPaths';
 import { IDENTITY_PROMPT } from './identity';
 
 const logger = createLogger('SoulLoader');

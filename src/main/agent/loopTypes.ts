@@ -3,7 +3,6 @@
 // ============================================================================
 
 import type {
-  Generation,
   ModelConfig,
   Message,
   MessageAttachment,
@@ -26,7 +25,7 @@ import type { HookManager } from '../hooks';
  * Agent Loop 配置
  */
 export interface AgentLoopConfig {
-  generation: Generation;
+  systemPrompt?: string;
   modelConfig: ModelConfig;
   toolRegistry: ToolRegistry;
   toolExecutor: ToolExecutor;
@@ -146,7 +145,7 @@ export interface ModelMessage {
  * Tool execution context passed to ToolExecutor
  */
 export interface ToolExecutionContext {
-  generation: Generation;
+  systemPrompt?: string;
   planningService?: PlanningService;
   modelConfig: ModelConfig;
   setPlanMode: (active: boolean) => void;

@@ -6,7 +6,7 @@ import type { JSONSchema } from '../../../shared/types';
 import type { ToolContext, ToolExecutionResult } from '../toolRegistry';
 
 // ----------------------------------------------------------------------------
-// Generation Shortcuts
+
 // ----------------------------------------------------------------------------
 
 /**

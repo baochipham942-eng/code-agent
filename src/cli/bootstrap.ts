@@ -23,16 +23,16 @@ import { getCLIConfigService, type CLIConfigService } from './config';
 import { initCLIDatabase, getCLIDatabase, type CLIDatabaseService } from './database';
 import { getCLISessionManager, type CLISessionManager } from './session';
 import type { CLIConfig, CLIEventHandler } from './types';
-import type { Generation, ModelConfig, Message, AgentEvent } from '../shared/types';
+import type { ModelConfig, Message, AgentEvent } from '../shared/types';
 import type { TelemetryAdapter } from '../shared/types/telemetry';
-import { DEFAULT_MODELS, DEFAULT_GENERATION, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../shared/constants';
+import { SYSTEM_PROMPT } from '../main/prompts/builder';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../shared/constants';
 import { composeTelemetryAdapters } from '../main/agent/metricsCollector';
 
 // 延迟导入的模块
 let AgentLoop: typeof import('../main/agent/agentLoop').AgentLoop;
 let ToolRegistry: typeof import('../main/tools/toolRegistry').ToolRegistry;
 let ToolExecutor: typeof import('../main/tools/toolExecutor').ToolExecutor;
-let GenerationManager: typeof import('../main/generation/generationManager').GenerationManager;
 let getSkillDiscoveryService: typeof import('../main/services/skills').getSkillDiscoveryService;
 let getTelemetryCollector: typeof import('../main/telemetry').getTelemetryCollector;
 
@@ -50,7 +50,6 @@ function getCLIDataDir(): string {
 let configService: CLIConfigService | null = null;
 let databaseService: CLIDatabaseService | null = null;
 let sessionManager: CLISessionManager | null = null;
-let generationManager: InstanceType<typeof GenerationManager> | null = null;
 let toolRegistry: InstanceType<typeof ToolRegistry> | null = null;
 let toolExecutor: InstanceType<typeof ToolExecutor> | null = null;
 let initialized = false;
@@ -100,8 +99,6 @@ export async function initializeCLIServices(): Promise<void> {
     const toolExecutorModule = await import('../main/tools/toolExecutor');
     ToolExecutor = toolExecutorModule.ToolExecutor;
 
-    const generationManagerModule = await import('../main/generation/generationManager');
-    GenerationManager = generationManagerModule.GenerationManager;
 
     const skillsModule = await import('../main/services/skills');
     getSkillDiscoveryService = skillsModule.getSkillDiscoveryService;
@@ -114,8 +111,6 @@ export async function initializeCLIServices(): Promise<void> {
   }
 
   // 初始化代际管理器
-  generationManager = new GenerationManager();
-  console.log('GenerationManager initialized');
 
   // 初始化工具注册表
   toolRegistry = new ToolRegistry();
@@ -195,15 +190,6 @@ export function getSessionManager(): CLISessionManager {
   return sessionManager;
 }
 
-/**
- * 获取代际管理器
- */
-export function getGenerationManager(): InstanceType<typeof GenerationManager> {
-  if (!generationManager) {
-    throw new Error('CLI services not initialized. Call initializeCLIServices() first.');
-  }
-  return generationManager;
-}
 
 /**
  * 构建 CLI 配置
@@ -230,7 +216,7 @@ export function buildCLIConfig(options: {
     : process.cwd();
 
   // 代际
-  const generationId = DEFAULT_GENERATION; // Locked to gen8: ignore options.gen and settings
+  const generationId = 'gen8';
 
   // 模型配置
   const provider = options.provider || settings.model?.provider || DEFAULT_PROVIDER;
@@ -275,15 +261,12 @@ export function createAgentLoop(
   sessionId?: string,
   extraTelemetryAdapter?: TelemetryAdapter
 ): InstanceType<typeof AgentLoop> {
-  if (!toolRegistry || !toolExecutor || !generationManager || !AgentLoop) {
+  if (!toolRegistry || !toolExecutor || !AgentLoop) {
     throw new Error('CLI services not initialized');
   }
 
-  // 获取代际配置
-  const generation = generationManager.getGeneration(config.generationId as import('../shared/types').GenerationId);
-  if (!generation) {
-    throw new Error(`Generation ${config.generationId} not found`);
-  }
+  // System prompt
+  const systemPrompt = SYSTEM_PROMPT;
 
   // 统一使用传入的 sessionId，或生成一个临时 ID
   const effectiveSessionId = sessionId || `cli-${Date.now()}`;
@@ -330,7 +313,7 @@ export function createAgentLoop(
 
   // 创建 AgentLoop
   const agentLoop = new AgentLoop({
-    generation,
+    systemPrompt,
     modelConfig: config.modelConfig,
     toolRegistry,
     toolExecutor,

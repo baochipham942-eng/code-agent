@@ -59,7 +59,6 @@ const categoryConfig: Record<EventCategory, {
   // 该分类包含的工具列表
   tools: string[];
   // 该分类首次出现的代际
-  minGeneration: number;
 }> = {
   bash: {
     label: 'Bash',
@@ -68,7 +67,6 @@ const categoryConfig: Record<EventCategory, {
     bgColor: 'bg-emerald-500/10',
     borderColor: 'border-emerald-500/30',
     tools: ['Bash'],
-    minGeneration: 1,
   },
   tools: {
     label: 'Tools',
@@ -77,7 +75,6 @@ const categoryConfig: Record<EventCategory, {
     bgColor: 'bg-blue-500/10',
     borderColor: 'border-blue-500/30',
     tools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'list_directory', 'web_fetch'],
-    minGeneration: 1,
   },
   plan: {
     label: 'Plan',
@@ -86,7 +83,6 @@ const categoryConfig: Record<EventCategory, {
     bgColor: 'bg-purple-500/10',
     borderColor: 'border-purple-500/30',
     tools: ['todo_write'],
-    minGeneration: 3,
   },
   agent: {
     label: 'Agent',
@@ -95,7 +91,6 @@ const categoryConfig: Record<EventCategory, {
     bgColor: 'bg-orange-500/10',
     borderColor: 'border-orange-500/30',
     tools: ['task', 'AskUserQuestion', 'spawn_agent', 'agent_message', 'workflow_orchestrate'],
-    minGeneration: 3,
   },
   mcp: {
     label: 'MCP',
@@ -104,7 +99,6 @@ const categoryConfig: Record<EventCategory, {
     bgColor: 'bg-pink-500/10',
     borderColor: 'border-pink-500/30',
     tools: ['mcp', 'mcp_list_tools', 'mcp_list_resources', 'mcp_read_resource', 'mcp_get_status'],
-    minGeneration: 4,
   },
   skill: {
     label: 'Skill',
@@ -113,7 +107,6 @@ const categoryConfig: Record<EventCategory, {
     bgColor: 'bg-amber-500/10',
     borderColor: 'border-amber-500/30',
     tools: ['skill'],
-    minGeneration: 4,
   },
   memory: {
     label: 'Memory',
@@ -122,7 +115,6 @@ const categoryConfig: Record<EventCategory, {
     bgColor: 'bg-cyan-500/10',
     borderColor: 'border-cyan-500/30',
     tools: ['memory_store', 'memory_search', 'code_index'],
-    minGeneration: 5,
   },
 };
 

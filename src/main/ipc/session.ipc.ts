@@ -8,7 +8,6 @@ import { getSessionManager } from '../services';
 import { getMemoryService } from '../memory/memoryService';
 import { getMemoryTriggerService, type SessionMemoryContext } from '../memory/memoryTriggerService';
 import type { ConfigService } from '../services';
-import type { GenerationManager } from '../generation/generationManager';
 import type { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { Session, Message } from '../../shared/types';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
@@ -17,7 +16,6 @@ import type { ModelProvider } from '../../shared/types';
 
 interface SessionHandlerDeps {
   getConfigService: () => ConfigService | null;
-  getGenerationManager: () => GenerationManager | null;
   getOrchestrator: () => AgentOrchestrator | null;
   getCurrentSessionId: () => string | null;
   setCurrentSessionId: (id: string) => void;
@@ -46,12 +44,11 @@ async function handleCreate(
   deps: SessionHandlerDeps,
   payload?: { title?: string }
 ): Promise<Session> {
-  const { getConfigService, getGenerationManager, getOrchestrator, setCurrentSessionId } = deps;
+  const { getConfigService, getOrchestrator, setCurrentSessionId } = deps;
   const configService = getConfigService();
-  const generationManager = getGenerationManager();
   const orchestrator = getOrchestrator();
 
-  if (!configService || !generationManager) {
+  if (!configService) {
     throw new Error('Services not initialized');
   }
 
@@ -59,12 +56,11 @@ async function handleCreate(
   const memoryService = getMemoryService();
   const memoryTrigger = getMemoryTriggerService();
   const settings = configService.getSettings();
-  const currentGen = generationManager.getCurrentGeneration();
   const workingDirectory = orchestrator?.getWorkingDirectory();
 
   const session = await sessionManager.createSession({
     title: payload?.title || 'New Session',
-    generationId: currentGen.id,
+    generationId: 'gen8',
     modelConfig: {
       provider: settings.model?.provider || DEFAULT_PROVIDER,
       model: settings.model?.model || DEFAULT_MODELS.chat,
@@ -138,21 +134,20 @@ async function handleDelete(
   deps: SessionHandlerDeps,
   payload: { sessionId: string }
 ): Promise<void> {
-  const { getConfigService, getGenerationManager, getCurrentSessionId, setCurrentSessionId } = deps;
+  const { getConfigService, getCurrentSessionId, setCurrentSessionId } = deps;
   const sessionManager = getSessionManager();
   const configService = getConfigService();
-  const generationManager = getGenerationManager();
   const currentSessionId = getCurrentSessionId();
 
   await sessionManager.deleteSession(payload.sessionId);
 
   if (payload.sessionId === currentSessionId) {
     const settings = configService!.getSettings();
-    const currentGen = generationManager!.getCurrentGeneration();
+    // Locked to gen8
 
     const newSession = await sessionManager.createSession({
       title: 'New Session',
-      generationId: currentGen.id,
+      generationId: 'gen8',
       modelConfig: {
         provider: settings.model?.provider || DEFAULT_PROVIDER,
         model: settings.model?.model || DEFAULT_MODELS.chat,
@@ -207,7 +202,6 @@ async function handleGetMemoryContext(
 export function registerSessionHandlers(ipcMain: IpcMain, deps: SessionHandlerDeps): void {
   const {
     getConfigService,
-    getGenerationManager,
     getOrchestrator,
     getCurrentSessionId,
     setCurrentSessionId,

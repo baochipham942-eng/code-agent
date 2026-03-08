@@ -1,219 +1,243 @@
 // ============================================================================
-// Prompt Builder Tests [D3]
+// Prompt Builder Tests
 // ============================================================================
 //
-// Tests for the System Prompt builder module.
-// This file is prepared as a scaffold - tests will be enabled once
-// Session C completes tasks C1-C4 and C8.
-//
-// The builder should:
-// - Assemble prompts from constitution, tools, and rules layers
-// - Include generation-specific tool descriptions
-// - Apply injection defense rules
-// - Support conditional inclusion of components
+// Tests for the system prompt builder module.
+// Tests cover:
+// - Building the system prompt
+// - Pre-built SYSTEM_PROMPT cache
+// - Prompt structure validation
+// - Dynamic prompt building
+// - Path-specific rules
 // ============================================================================
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-
-// TODO: Uncomment when Session C completes C8
-// import { buildSystemPrompt, PromptBuilderOptions } from '../../../src/main/generation/prompts/builder';
+import { describe, it, expect } from 'vitest';
+import {
+  buildPrompt,
+  SYSTEM_PROMPT,
+  getPromptForTask,
+  buildDynamicPrompt,
+  buildDynamicPromptV2,
+  buildPromptWithRules,
+} from '../../../src/main/prompts/builder';
+import { TOOLS_PROMPT } from '../../../src/main/prompts/base';
+import {
+  BASH_TOOL_DESCRIPTION,
+  EDIT_TOOL_DESCRIPTION,
+  TASK_TOOL_DESCRIPTION,
+} from '../../../src/main/prompts/tools';
 
 describe('Prompt Builder', () => {
   // --------------------------------------------------------------------------
-  // Constitution Layer
+  // buildPrompt
   // --------------------------------------------------------------------------
-  describe('Constitution Layer', () => {
-    it.todo('should include soul (identity) section', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // expect(prompt).toContain('identity');
-      // Or whatever marker is used for the soul section
+  describe('buildPrompt', () => {
+    it('should build a valid prompt', () => {
+      const prompt = buildPrompt();
+      expect(prompt).toBeDefined();
+      expect(typeof prompt).toBe('string');
+      expect(prompt.length).toBeGreaterThan(0);
     });
 
-    it.todo('should include values section', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // expect(prompt).toContain('values');
+    it('should include identity in prompt', () => {
+      const prompt = buildPrompt();
+      expect(prompt).toContain('Code Agent');
     });
 
-    it.todo('should include ethics section', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // expect(prompt).toContain('honesty');
+    it('should include base TOOLS_PROMPT', () => {
+      const prompt = buildPrompt();
+      expect(prompt).toContain(TOOLS_PROMPT);
     });
 
-    it.todo('should include hard constraints section', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // expect(prompt).toContain('constraints');
+    it('should include bash tool description', () => {
+      const prompt = buildPrompt();
+      expect(prompt).toContain(BASH_TOOL_DESCRIPTION);
     });
 
-    it.todo('should include safety behaviors section', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // expect(prompt).toContain('safety');
+    it('should include edit tool description', () => {
+      const prompt = buildPrompt();
+      expect(prompt).toContain(EDIT_TOOL_DESCRIPTION);
     });
 
-    it.todo('should include judgment principles section', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // expect(prompt).toContain('judgment');
+    it('should include task tool description', () => {
+      const prompt = buildPrompt();
+      expect(prompt).toContain(TASK_TOOL_DESCRIPTION);
+    });
+
+    it('should return consistent results across calls', () => {
+      const prompt1 = buildPrompt();
+      const prompt2 = buildPrompt();
+      expect(prompt1).toBe(prompt2);
+    });
+
+    it('should build prompt in consistent order', () => {
+      const prompt = buildPrompt();
+      const toolsPromptContent = TOOLS_PROMPT.substring(0, 50);
+      const toolsPromptStart = prompt.indexOf(toolsPromptContent);
+      expect(toolsPromptStart).toBeGreaterThan(-1);
     });
   });
 
   // --------------------------------------------------------------------------
-  // Tool Descriptions Layer
+  // SYSTEM_PROMPT (pre-built cache)
   // --------------------------------------------------------------------------
-  describe('Tool Descriptions Layer', () => {
-    it.todo('should include bash tool description for gen1+', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen1' });
-      // expect(prompt).toContain('bash');
-      // expect(prompt).toContain('Execute shell command');
+  describe('SYSTEM_PROMPT', () => {
+    it('should be pre-built and available', () => {
+      expect(SYSTEM_PROMPT).toBeDefined();
+      expect(typeof SYSTEM_PROMPT).toBe('string');
     });
 
-    it.todo('should include edit tool description for gen1+', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen1' });
-      // expect(prompt).toContain('edit_file');
+    it('should be non-empty', () => {
+      expect(SYSTEM_PROMPT.length).toBeGreaterThan(0);
     });
 
-    it.todo('should include task tool description for gen3+', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen3' });
-      // expect(prompt).toContain('task');
+    it('should match buildPrompt output', () => {
+      expect(SYSTEM_PROMPT).toBe(buildPrompt());
     });
 
-    it.todo('should not include gen3 tools for gen2', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen2' });
-      // expect(prompt).not.toContain('task');
-    });
-
-    it.todo('should include detailed usage examples', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // expect(prompt).toContain('<example>');
-    });
-
-    it.todo('should include "when not to use" sections', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // expect(prompt).toContain('when not to use');
-      // Or similar marker
+    it('should be a stable reference', () => {
+      const ref1 = SYSTEM_PROMPT;
+      const ref2 = SYSTEM_PROMPT;
+      expect(ref1).toBe(ref2);
     });
   });
 
   // --------------------------------------------------------------------------
-  // Injection Defense Layer
+  // getPromptForTask
   // --------------------------------------------------------------------------
-  describe('Injection Defense Rules', () => {
-    it.todo('should include core injection defense rules', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // expect(prompt).toContain('instruction source');
-      // Or whatever marker is used
-    });
-
-    it.todo('should include verification rules', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // expect(prompt).toContain('verify');
-    });
-
-    it.todo('should include meta rules', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // expect(prompt).toContain('cannot be modified');
-    });
-
-    it.todo('should be positioned appropriately in prompt', () => {
-      // Injection defense should be in a protected position
+  describe('getPromptForTask', () => {
+    it('should return the system prompt', () => {
+      const prompt = getPromptForTask();
+      expect(prompt).toBe(SYSTEM_PROMPT);
     });
   });
 
   // --------------------------------------------------------------------------
-  // Generation-Specific Assembly
+  // Prompt Structure
   // --------------------------------------------------------------------------
-  describe('Generation-Specific Assembly', () => {
-    it.todo('should build valid prompt for gen1', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen1' });
-      // expect(prompt).toBeDefined();
-      // expect(prompt.length).toBeGreaterThan(0);
+  describe('Prompt Structure', () => {
+    it('should have reasonable size', () => {
+      const prompt = buildPrompt();
+      expect(prompt.length).toBeGreaterThan(1000);
+      expect(prompt.length).toBeLessThan(100000);
     });
 
-    it.todo('should build valid prompt for gen2', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen2' });
-      // expect(prompt).toContain('glob');
-      // expect(prompt).toContain('grep');
+    it('should include identity components', () => {
+      const prompt = buildPrompt();
+      expect(prompt).toContain('Code Agent');
     });
 
-    it.todo('should build valid prompt for gen3', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen3' });
-      // expect(prompt).toContain('task');
-      // expect(prompt).toContain('todo_write');
-    });
-
-    it.todo('should build valid prompt for gen4', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // expect(prompt).toContain('mcp');
-      // expect(prompt).toContain('web_fetch');
-    });
-
-    it.todo('should increase in complexity with generation', () => {
-      // const gen1 = buildSystemPrompt({ generationId: 'gen1' });
-      // const gen4 = buildSystemPrompt({ generationId: 'gen4' });
-      // expect(gen4.length).toBeGreaterThan(gen1.length);
+    it('should have substantial content', () => {
+      const prompt = buildPrompt();
+      expect(prompt.length).toBeGreaterThan(2000);
     });
   });
 
   // --------------------------------------------------------------------------
-  // Conditional Inclusion
+  // Dynamic Prompt Building
   // --------------------------------------------------------------------------
-  describe('Conditional Inclusion', () => {
-    it.todo('should exclude MCP section if disabled', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4', features: { mcp: false } });
-      // expect(prompt).not.toContain('MCP');
+  describe('buildDynamicPrompt', () => {
+    it('should return a DynamicPromptResult', () => {
+      const result = buildDynamicPrompt('fix a bug in main.ts');
+      expect(result).toHaveProperty('systemPrompt');
+      expect(result).toHaveProperty('userMessage');
+      expect(result).toHaveProperty('features');
+      expect(result).toHaveProperty('mode');
+      expect(result).toHaveProperty('modeConfig');
     });
 
-    it.todo('should include custom rules if provided', () => {
-      // const prompt = buildSystemPrompt({
-      //   generationId: 'gen4',
-      //   customRules: ['Always respond in JSON format'],
-      // });
-      // expect(prompt).toContain('JSON format');
+    it('should use the system prompt as base', () => {
+      const result = buildDynamicPrompt('fix a bug');
+      expect(result.systemPrompt).toBe(SYSTEM_PROMPT);
     });
 
-    it.todo('should include project context if provided', () => {
-      // const prompt = buildSystemPrompt({
-      //   generationId: 'gen4',
-      //   projectContext: { name: 'MyProject', description: 'A test project' },
-      // });
-      // expect(prompt).toContain('MyProject');
+    it('should include the task in the user message', () => {
+      const task = 'add a new feature to the parser';
+      const result = buildDynamicPrompt(task);
+      expect(result.userMessage).toContain(task);
     });
   });
 
   // --------------------------------------------------------------------------
-  // Prompt Quality
+  // Dynamic Prompt Building V2
   // --------------------------------------------------------------------------
-  describe('Prompt Quality', () => {
-    it.todo('should not have duplicate sections', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // const sections = prompt.split('##').length - 1;
-      // Check for unique section headers
+  describe('buildDynamicPromptV2', () => {
+    it('should return a DynamicPromptResultV2', () => {
+      const result = buildDynamicPromptV2('refactor the auth module');
+      expect(result).toHaveProperty('systemPrompt');
+      expect(result).toHaveProperty('userMessage');
+      expect(result).toHaveProperty('features');
+      expect(result).toHaveProperty('mode');
+      expect(result).toHaveProperty('modeConfig');
+      expect(result).toHaveProperty('reminderStats');
+      expect(result).toHaveProperty('tokensUsed');
+      expect(result).toHaveProperty('tokenBudget');
     });
 
-    it.todo('should have consistent formatting', () => {
-      // Check markdown formatting consistency
+    it('should use the system prompt as base', () => {
+      const result = buildDynamicPromptV2('fix a bug');
+      expect(result.systemPrompt).toBe(SYSTEM_PROMPT);
     });
 
-    it.todo('should not exceed reasonable token limit', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // Rough token estimate: ~4 chars per token
-      // expect(prompt.length / 4).toBeLessThan(10000);
-    });
-
-    it.todo('should not have circular references in constitution', () => {
-      // Constitution sections should not reference each other circularly
+    it('should accept options', () => {
+      const result = buildDynamicPromptV2('write tests', {
+        toolsUsedInTurn: ['Read', 'Edit'],
+        iterationCount: 3,
+        hasError: false,
+        maxReminderTokens: 500,
+      });
+      expect(result.tokenBudget).toBe(500);
     });
   });
 
   // --------------------------------------------------------------------------
-  // Error Handling
+  // buildPromptWithRules
   // --------------------------------------------------------------------------
-  describe('Error Handling', () => {
-    it.todo('should throw for invalid generation ID', () => {
-      // expect(() => buildSystemPrompt({ generationId: 'invalid' })).toThrow();
+  describe('buildPromptWithRules', () => {
+    it('should return base prompt when no rules loaded', () => {
+      const prompt = buildPromptWithRules([]);
+      expect(prompt).toBe(buildPrompt());
     });
 
-    it.todo('should handle missing optional components gracefully', () => {
-      // const prompt = buildSystemPrompt({ generationId: 'gen4' });
-      // Should not throw even if some optional files are missing
+    it('should return base prompt for empty file list', () => {
+      const prompt = buildPromptWithRules([]);
+      expect(prompt).toBe(buildPrompt());
+    });
+
+    it('should return base prompt when no rules match', () => {
+      // Without loadRules being called, cachedRules is null
+      const prompt = buildPromptWithRules(['some/file.ts']);
+      expect(prompt).toBe(buildPrompt());
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Performance
+  // --------------------------------------------------------------------------
+  describe('Performance', () => {
+    it('should build prompt quickly', () => {
+      const start = Date.now();
+      buildPrompt();
+      const duration = Date.now() - start;
+      expect(duration).toBeLessThan(100);
+    });
+
+    it('should use cached SYSTEM_PROMPT for performance', () => {
+      const start = Date.now();
+      for (let i = 0; i < 100; i++) {
+        const _ = SYSTEM_PROMPT;
+      }
+      const duration = Date.now() - start;
+      expect(duration).toBeLessThan(10);
+    });
+
+    it('should handle repeated buildPrompt calls', () => {
+      const start = Date.now();
+      for (let i = 0; i < 100; i++) {
+        buildPrompt();
+      }
+      const duration = Date.now() - start;
+      expect(duration).toBeLessThan(500);
     });
   });
 });

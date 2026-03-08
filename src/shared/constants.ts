@@ -3,14 +3,12 @@
  * 消除魔法数字，集中管理配置值
  */
 
-import type { GenerationId } from './types/generation';
 
 // ============================================================================
 // 核心默认值 — 所有模块的 fallback 必须引用这里
 // ============================================================================
 
 /** 默认代际（CLI 和 Electron 统一） */
-export const DEFAULT_GENERATION: GenerationId = 'gen8';
 
 /** 默认 Provider */
 export const DEFAULT_PROVIDER = 'claude' as const;

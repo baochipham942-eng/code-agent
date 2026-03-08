@@ -4,7 +4,6 @@
 // ============================================================================
 
 import type {
-  Generation,
   ModelConfig,
   Message,
   ToolCall,
@@ -58,7 +57,7 @@ import {
   buildEnhancedSystemPrompt,
   buildRuntimeModeBlock,
 } from './messageHandling/contextBuilder';
-import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../generation/prompts/builder';
+import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../prompts/builder';
 import { AntiPatternDetector } from './antiPattern/detector';
 import { cleanXmlResidues } from './antiPattern/cleanXml';
 import { GoalTracker } from './goalTracker';
@@ -109,7 +108,7 @@ export type { AgentLoopConfig };
  * 5. 重复直到完成或达到最大迭代次数
  */
 export class AgentLoop {
-  private generation: Generation;
+  private systemPrompt: string;
   private modelConfig: ModelConfig;
   private toolRegistry: ToolRegistry;
   private toolExecutor: ToolExecutor;
@@ -246,7 +245,7 @@ export class AgentLoop {
   private onToolExecutionLog?: AgentLoopConfig['onToolExecutionLog'];
 
   constructor(config: AgentLoopConfig) {
-    this.generation = config.generation;
+    this.systemPrompt = config.systemPrompt || '';
     this.modelConfig = config.modelConfig;
     this.toolRegistry = config.toolRegistry;
     this.toolExecutor = config.toolExecutor;
@@ -1245,7 +1244,7 @@ export class AgentLoop {
     logger.debug('[AgentLoop] Message:', userMessage.substring(0, 100));
 
     logCollector.agent('INFO', `Agent run started: "${userMessage.substring(0, 80)}..."`);
-    logCollector.agent('DEBUG', `Generation: ${this.generation.id}, Model: ${this.modelConfig.provider}`);
+    logCollector.agent('DEBUG', `Model: ${this.modelConfig.provider}`);
 
     // Langfuse: Start trace
     const langfuse = getLangfuseService();
@@ -1253,7 +1252,7 @@ export class AgentLoop {
     langfuse.startTrace(this.traceId, {
       sessionId: this.sessionId,
       userId: this.userId,
-      generationId: this.generation.id,
+      generationId: 'gen8',
       modelProvider: this.modelConfig.provider,
       modelName: this.modelConfig.model,
     }, userMessage);
@@ -1357,14 +1356,14 @@ export class AgentLoop {
 
     // Dynamic Agent Mode Detection V2 (基于优先级和预算的动态提醒)
     // 注意：这里移出了 !isSimpleTask 条件，因为即使简单任务也可能需要动态提醒（如 PPT 格式选择）
-    const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+    const genNum = 8;
     
     logger.info(`[AgentLoop] Checking dynamic mode for gen${genNum}`);
     if (genNum >= 3) {
       try {
         // 使用 V2 版本，支持 toolsUsedInTurn 上下文
         // 预算增加到 1200 tokens 以支持 PPT 等大型提醒 (700+ tokens)
-        const dynamicResult = buildDynamicPromptV2(this.generation.id, userMessage, {
+        const dynamicResult = buildDynamicPromptV2(userMessage, {
           toolsUsedInTurn: this.toolsUsedInTurn,
           iterationCount: this.toolsUsedInTurn.length, // 使用工具调用数量作为迭代近似
           hasError: false,
@@ -2036,7 +2035,6 @@ export class AgentLoop {
         toolCall.name,
         toolCall.arguments,
         {
-          generation: this.generation,
           planningService: this.planningService,
           modelConfig: this.modelConfig,
           setPlanMode: this.setPlanMode.bind(this),
@@ -2540,14 +2538,14 @@ export class AgentLoop {
     let tools;
     if (this.enableToolDeferredLoading) {
       // 使用核心工具 + 已加载的延迟工具
-      const coreTools = this.toolRegistry.getCoreToolDefinitions(this.generation.id);
-      const loadedDeferredTools = this.toolRegistry.getLoadedDeferredToolDefinitions(this.generation.id);
+      const coreTools = this.toolRegistry.getCoreToolDefinitions();
+      const loadedDeferredTools = this.toolRegistry.getLoadedDeferredToolDefinitions();
       tools = [...coreTools, ...loadedDeferredTools];
-      logger.debug(`Tools for ${this.generation.id} (deferred loading): ${coreTools.length} core + ${loadedDeferredTools.length} deferred = ${tools.length} total`);
+      logger.debug(`Tools (deferred loading): ${coreTools.length} core + ${loadedDeferredTools.length} deferred = ${tools.length} total`);
     } else {
       // 传统模式：发送所有工具
-      tools = this.toolRegistry.getToolDefinitions(this.generation.id);
-      logger.debug(`Tools for ${this.generation.id}:`, tools.map(t => t.name));
+      tools = this.toolRegistry.getToolDefinitions();
+      logger.debug('Tools:', tools.map(t => t.name));
     }
 
     let modelMessages = this.buildModelMessages();
@@ -2914,14 +2912,14 @@ export class AgentLoop {
     const modelMessages: ModelMessage[] = [];
 
     // Use optimized prompt based on task complexity
-    let systemPrompt = getPromptForTask(this.generation.id, this.isSimpleTaskMode);
+    let systemPrompt = getPromptForTask();
 
-    const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+    const genNum = 8;
     if (genNum >= 3 && !this.isSimpleTaskMode) {
       // Only enhance with RAG for non-simple tasks
       const lastUserMessage = [...this.messages].reverse().find((m) => m.role === 'user');
       const userQuery = lastUserMessage?.content || '';
-      systemPrompt = buildEnhancedSystemPrompt(systemPrompt, userQuery, this.generation.id, this.isSimpleTaskMode);
+      systemPrompt = buildEnhancedSystemPrompt(systemPrompt, userQuery, this.isSimpleTaskMode);
     }
 
     systemPrompt = injectWorkingDirectoryContext(systemPrompt, this.workingDirectory, this.isDefaultWorkingDirectory);
@@ -2929,7 +2927,7 @@ export class AgentLoop {
 
     // 注入延迟工具提示
     if (this.enableToolDeferredLoading) {
-      const deferredToolsSummary = this.toolRegistry.getDeferredToolsSummary(this.generation.id);
+      const deferredToolsSummary = this.toolRegistry.getDeferredToolsSummary();
       if (deferredToolsSummary) {
         systemPrompt += `
 
@@ -2960,7 +2958,7 @@ ${deferredToolsSummary}
     try {
       const hash = createHash('sha256').update(systemPrompt).digest('hex');
       this.currentSystemPromptHash = hash;
-      getSystemPromptCache().store(hash, systemPrompt, systemPromptTokens, this.generation.id);
+      getSystemPromptCache().store(hash, systemPrompt, systemPromptTokens, 'gen8');
     } catch {
       // Non-critical: don't break agent loop if cache fails
     }
@@ -3346,7 +3344,7 @@ ${deferredToolsSummary}
       const health = contextHealthService.update(
         this.sessionId,
         messagesForEstimation,
-        this.generation.systemPrompt,
+        this.systemPrompt,
         model
       );
 
@@ -3408,7 +3406,7 @@ ${deferredToolsSummary}
         // 生成 CompactionBlock
         const compactionResult = await this.autoCompressor.compactToBlock(
           messagesForCompression,
-          this.generation.systemPrompt,
+          this.systemPrompt,
           this.hookManager
         );
 
@@ -3544,7 +3542,7 @@ ${deferredToolsSummary}
       const result = await this.autoCompressor.checkAndCompress(
         this.sessionId,
         messagesForCompression,
-        this.generation.systemPrompt,
+        this.systemPrompt,
         this.modelConfig.model || DEFAULT_MODELS.chat,
         this.hookManager
       );
@@ -4010,7 +4008,7 @@ ${deferredToolsSummary}
       return;
     }
 
-    const genNum = parseInt(this.generation.id.replace('gen', ''), 10);
+    const genNum = 8;
     if (genNum < 8) {
       logger.debug('[AgentLoop] Skipping evolution learning: requires Gen8+');
       return;

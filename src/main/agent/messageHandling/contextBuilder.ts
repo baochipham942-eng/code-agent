@@ -157,7 +157,6 @@ export interface RAGContextOptions {
 export function buildEnhancedSystemPrompt(
   basePrompt: string,
   userQuery: string,
-  generationId: string,
   isSimpleTaskMode: boolean
 ): string {
   // Skip RAG for simple tasks
@@ -175,7 +174,7 @@ export function buildEnhancedSystemPrompt(
     let enhancedPrompt = basePrompt;
 
     // Determine RAG level based on generation
-    const genNum = parseInt(generationId.replace('gen', ''), 10);
+    const genNum = parseInt('gen8'.replace('gen', ''), 10);
     const isFullRAG = genNum >= 5;
     const isLightRAG = genNum >= 3 && genNum < 5;
 
@@ -268,7 +267,7 @@ export function buildEnhancedSystemPrompt(
     }
 
     const ragType = isFullRAG ? 'full' : isLightRAG ? 'light' : 'none';
-    logger.debug(`Enhanced system prompt with ${ragType} RAG for ${generationId}`);
+    logger.debug(`Enhanced system prompt with ${ragType} RAG for ${'gen8'}`);
     return enhancedPrompt;
   } catch (error) {
     logger.error('Failed to build enhanced system prompt:', error);

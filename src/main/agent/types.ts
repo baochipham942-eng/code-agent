@@ -63,11 +63,7 @@ export interface AgentDefinition {
   /** Tools this agent can use */
   availableTools: string[];
 
-  /** Required generation level (1-8) */
-  minGeneration: number;
 
-  /** Maximum generation level (optional) */
-  maxGeneration?: number;
 
   /** System prompt override */
   systemPrompt?: string;
@@ -254,7 +250,6 @@ export const BUILT_IN_AGENTS: AgentDefinition[] = [
     keywords: ['explore', 'find', 'search', 'locate', 'understand', 'structure', 'codebase'],
     capabilities: ['file_operations', 'code_analysis'],
     availableTools: ['read_file', 'glob', 'grep', 'list_directory'],
-    minGeneration: 2,
     defaultPermissionMode: 'dontAsk',
     maxPermissionLevels: ['read'],
     priority: 'normal',
@@ -270,7 +265,6 @@ export const BUILT_IN_AGENTS: AgentDefinition[] = [
     keywords: ['run', 'execute', 'test', 'build', 'compile', 'install', 'command', 'bash', 'shell'],
     capabilities: ['code_execution'],
     availableTools: ['bash'],
-    minGeneration: 1,
     defaultPermissionMode: 'default',
     maxPermissionLevels: ['execute'],
     priority: 'normal',
@@ -286,7 +280,6 @@ export const BUILT_IN_AGENTS: AgentDefinition[] = [
     keywords: ['plan', 'design', 'architecture', 'breakdown', 'strategy', 'roadmap'],
     capabilities: ['planning', 'code_analysis'],
     availableTools: ['read_file', 'glob', 'grep', 'todo_write'],
-    minGeneration: 3,
     defaultPermissionMode: 'plan',
     maxPermissionLevels: ['read'],
     priority: 'high',
@@ -302,7 +295,6 @@ export const BUILT_IN_AGENTS: AgentDefinition[] = [
     keywords: ['review', 'check', 'analyze', 'lint', 'security', 'quality', 'bug'],
     capabilities: ['code_analysis', 'file_operations'],
     availableTools: ['read_file', 'glob', 'grep'],
-    minGeneration: 3,
     defaultPermissionMode: 'dontAsk',
     maxPermissionLevels: ['read'],
     priority: 'normal',
@@ -318,7 +310,6 @@ export const BUILT_IN_AGENTS: AgentDefinition[] = [
     keywords: ['research', 'investigate', 'learn', 'study', 'analyze', 'report'],
     capabilities: ['research', 'web_access'],
     availableTools: ['web_fetch', 'web_search'],
-    minGeneration: 4,
     defaultPermissionMode: 'default',
     maxPermissionLevels: ['read', 'network'],
     priority: 'normal',
@@ -335,7 +326,6 @@ export const BUILT_IN_AGENTS: AgentDefinition[] = [
     keywords: ['orchestrate', 'coordinate', 'manage', 'complex', 'multi-step'],
     capabilities: ['delegation', 'planning'],
     availableTools: ['task', 'todo_write', 'ask_user_question'],
-    minGeneration: 3,
     defaultPermissionMode: 'default',
     maxPermissionLevels: ['read', 'write', 'execute'],
     priority: 'critical',
@@ -402,15 +392,6 @@ export class AgentRegistry {
     );
   }
 
-  /**
-   * Find agents available for a given generation
-   */
-  findByGeneration(generation: number): AgentDefinition[] {
-    return this.getAll().filter(a =>
-      a.minGeneration <= generation &&
-      (!a.maxGeneration || a.maxGeneration >= generation)
-    );
-  }
 }
 
 // ----------------------------------------------------------------------------

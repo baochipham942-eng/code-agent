@@ -1,7 +1,6 @@
 // ============================================================================
 // Tool Types
 // ============================================================================
-import type { Generation } from './generation';
 import type { ModelConfig } from './model';
 import type { PermissionRequest } from './permission';
 
@@ -81,7 +80,6 @@ export interface JSONSchemaProperty {
 
 export interface ToolContext {
   workingDirectory: string;
-  currentGeneration: Generation;
   modelConfig: ModelConfig;
   requestPermission: (request: PermissionRequest) => Promise<boolean>;
   emit: (event: string, data: unknown) => void;

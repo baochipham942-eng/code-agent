@@ -15,7 +15,7 @@ const logger = createLogger('AgentAdapter');
  */
 export class AgentLoopAdapter implements AgentInterface {
   private agentLoop: AgentLoop;
-  private generationInfo: {
+  private agentInfo: {
     name: string;
     model: string;
     provider: string;
@@ -23,10 +23,10 @@ export class AgentLoopAdapter implements AgentInterface {
 
   constructor(
     agentLoop: AgentLoop,
-    generationInfo: { name: string; model: string; provider: string }
+    agentInfo: { name: string; model: string; provider: string }
   ) {
     this.agentLoop = agentLoop;
-    this.generationInfo = generationInfo;
+    this.agentInfo = agentInfo;
   }
 
   /**
@@ -98,10 +98,10 @@ export class AgentLoopAdapter implements AgentInterface {
   }
 
   /**
-   * Get generation info
+   * Get agent info
    */
-  getGenerationInfo(): { name: string; model: string; provider: string } {
-    return this.generationInfo;
+  getAgentInfo(): { name: string; model: string; provider: string } {
+    return this.agentInfo;
   }
 }
 
@@ -116,7 +116,7 @@ export class MockAgentAdapter implements AgentInterface {
     errors: string[];
   }> = new Map();
 
-  private generationInfo = {
+  private agentInfo = {
     name: 'mock-gen',
     model: 'mock-model',
     provider: 'mock',
@@ -168,8 +168,8 @@ export class MockAgentAdapter implements AgentInterface {
     // No-op for mock
   }
 
-  getGenerationInfo(): { name: string; model: string; provider: string } {
-    return this.generationInfo;
+  getAgentInfo(): { name: string; model: string; provider: string } {
+    return this.agentInfo;
   }
 }
 
@@ -264,14 +264,11 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
       // Dynamic imports (safe after electron mock is in place)
       const { AgentLoop } = await import('../agent/agentLoop');
-      const { GenerationManager } = await import('../generation/generationManager');
+      const { SYSTEM_PROMPT } = await import('../prompts/builder');
       const { ToolRegistry } = await import('../tools/toolRegistry');
       const { ToolExecutor } = await import('../tools/toolExecutor');
 
-      // 1. Generation
-      const generationManager = new GenerationManager();
-      generationManager.switchGeneration(this.generation as any);
-      const generation = generationManager.getCurrentGeneration();
+      // 1. System prompt
 
       // 2. ToolRegistry + ToolExecutor (auto-approve all permissions for testing)
       const toolRegistry = new ToolRegistry();
@@ -288,7 +285,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       const loop = new AgentLoop({
         sessionId: `test-${Date.now()}`,
         workingDirectory: this.workingDirectory,
-        generation,
+        systemPrompt: SYSTEM_PROMPT,
         modelConfig: {
           provider: this.modelConfig.provider as ModelProvider,
           model: this.modelConfig.model,
@@ -363,7 +360,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
     // Each sendMessage creates a new loop, so no state to reset
   }
 
-  getGenerationInfo(): { name: string; model: string; provider: string } {
+  getAgentInfo(): { name: string; model: string; provider: string } {
     return {
       name: this.generation,
       model: this.modelConfig.model,

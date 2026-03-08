@@ -2,7 +2,6 @@
 // Agent Types
 // ============================================================================
 
-import type { Generation } from './generation';
 import type { ModelConfig } from './model';
 import type { Message } from './message';
 import type { ToolCall, ToolResult } from './tool';
@@ -14,7 +13,6 @@ import type { FileDiff } from './diff';
 export type EffortLevel = 'low' | 'medium' | 'high' | 'max';
 
 export interface AgentConfig {
-  generation: Generation;
   model: ModelConfig;
   workingDirectory: string;
   // Adaptive Thinking: 思考深度级别

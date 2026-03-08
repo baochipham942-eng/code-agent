@@ -4,7 +4,7 @@
 //
 // Tests for the injection defense rules module.
 // This file is prepared as a scaffold - tests will be enabled once
-// Session C completes task C1 (src/main/generation/prompts/rules/injection/).
+// Session C completes task C1 (src/main/prompts/rules/injection/).
 //
 // The injection defense rules should:
 // - Define core instruction source verification
@@ -20,7 +20,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 //   CORE_DEFENSE_RULES,
 //   VERIFICATION_RULES,
 //   META_RULES,
-// } from '../../../src/main/generation/prompts/rules/injection';
+// } from '../../../src/main/prompts/rules/injection';
 
 describe('Injection Defense Rules', () => {
   // --------------------------------------------------------------------------

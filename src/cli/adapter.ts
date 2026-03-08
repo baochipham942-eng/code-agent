@@ -6,7 +6,7 @@ import { createAgentLoop, buildCLIConfig, initializeCLIServices, cleanup, getSes
 import { terminalOutput, jsonOutput } from './output';
 import { addSwarmEventListener } from '../main/ipc/swarm.ipc';
 import type { CLIConfig, CLIRunResult, CLIGlobalOptions } from './types';
-import type { Message, AgentEvent, GenerationId, PRLink } from '../shared/types';
+import type { Message, AgentEvent, PRLink } from '../shared/types';
 import { createLogger } from '../main/services/infra/logger';
 import { getSessionSkillService } from '../main/services/skills/sessionSkillService';
 import { MetricsCollector } from '../main/agent/metricsCollector';
@@ -51,7 +51,7 @@ export class CLIAgent {
   async initSession(): Promise<string> {
     const sessionManager = getSessionManager();
     const session = await sessionManager.getOrCreateCurrentSession({
-      generationId: this.config.generationId as GenerationId,
+      generationId: this.config.generationId as string,
       modelConfig: this.config.modelConfig,
       workingDirectory: this.config.workingDirectory,
     });

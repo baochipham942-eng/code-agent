@@ -5,12 +5,12 @@
 import path from 'path';
 import fs from 'fs/promises';
 import { app } from 'electron';
-import type { AppSettings, GenerationId, ModelProvider } from '../../../shared/types';
+import type { AppSettings, ModelProvider } from '../../../shared/types';
 import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { getSecureStorage } from './secureStorage';
 import { createLogger } from '../infra/logger';
-import { DEFAULT_GENERATION, DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../../shared/constants';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../../shared/constants';
 
 const logger = createLogger('ConfigService');
 
@@ -118,7 +118,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     default: DEFAULT_PROVIDER,  // 默认主力 provider
     providers: {
       deepseek: { enabled: true },
-      claude: { enabled: false },
+      claude: { enabled: true },
       openai: { enabled: false },
       gemini: { enabled: false },
       groq: { enabled: false },
@@ -139,7 +139,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     },
   },
   generation: {
-    default: DEFAULT_GENERATION,
+    default: 'gen8',
   },
   workspace: {
     recentDirectories: [],
@@ -224,14 +224,10 @@ export class ConfigService {
 
         // === 核心配置 ===
 
-        // Restore generation - locked to gen8, ignore saved setting
-        // if (keychainSettings.generation && typeof keychainSettings.generation === 'string') {
-        //   this.settings.generation.default = keychainSettings.generation as GenerationId;
-        // }
 
         // Restore model provider
         if (keychainSettings.modelProvider && typeof keychainSettings.modelProvider === 'string') {
-          this.settings.models.default = keychainSettings.modelProvider as ModelProvider;
+          // this.settings.models.default = keychainSettings.modelProvider as ModelProvider; // Disabled: use config.json value
         }
 
         // Restore permissionMode

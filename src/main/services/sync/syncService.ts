@@ -16,7 +16,7 @@ import { getDatabase } from '../core';
 import { getAuthService } from '../auth';
 import { getSecureStorage } from '../core';
 import { getVectorStore, type VectorDocument } from '../../memory/vectorStore';
-import type { SyncStatus, SyncConflict, DeviceInfo, GenerationId, ModelProvider, Message } from '../../../shared/types';
+import type { SyncStatus, SyncConflict, DeviceInfo, ModelProvider, Message } from '../../../shared/types';
 import type { StoredSession } from '../core';
 import { createLogger } from '../infra/logger';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../../shared/constants';
@@ -327,7 +327,7 @@ class SyncService {
           // 云端数据类型与本地类型不完全匹配，需要类型断言
           db.createSessionWithId(remote.id, {
             title: remote.title,
-            generationId: remote.generation_id as GenerationId,
+            generationId: remote.generation_id as string,
             modelConfig: {
               provider: (remote.model_provider as ModelProvider) || DEFAULT_PROVIDER,
               model: remote.model_name || DEFAULT_MODEL,
@@ -352,7 +352,7 @@ class SyncService {
               // No conflict, update local
               db.updateSession(remote.id, {
                 title: remote.title,
-                generationId: remote.generation_id as GenerationId,
+                generationId: remote.generation_id as string,
               });
               count++;
             }
@@ -678,7 +678,7 @@ class SyncService {
         const remote = conflict.remoteRecord as SessionRow;
         db.updateSession(conflict.id, {
           title: remote.title,
-          generationId: remote.generation_id as GenerationId,
+          generationId: remote.generation_id as string,
         });
       }
     }

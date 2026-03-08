@@ -2,7 +2,6 @@
 // Session Types
 // ============================================================================
 
-import type { GenerationId } from './generation';
 import type { ModelConfig } from './model';
 
 /**
@@ -41,7 +40,7 @@ export interface PRLink {
 export interface Session {
   id: string;
   title: string;
-  generationId: GenerationId;
+  generationId?: string;
   modelConfig: ModelConfig;
   workingDirectory?: string;
   createdAt: number;

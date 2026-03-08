@@ -361,8 +361,8 @@ export async function callClaude(
   }
 
   const requestBody: Record<string, unknown> = {
-    model: config.model || 'claude-sonnet-4-20250514',
-    max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'claude-sonnet-4-20250514'),
+    model: config.model || 'claude-sonnet-4-6',
+    max_tokens: config.maxTokens ?? getModelMaxOutputTokens(config.model || 'claude-sonnet-4-6'),
     messages: convertToClaudeMessages(otherMessages),
   };
 

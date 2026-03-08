@@ -27,14 +27,14 @@ import { logCollector } from '../mcp/logCollector.js';
 import { generateMessageId } from '../../shared/utils/id';
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
 import { classifyIntent } from './hybrid/intentClassifier';
-import { getTaskOrchestrator } from '../orchestrator/taskOrchestrator';
+import { getTaskOrchestrator } from '../planning/taskOrchestrator';
 import { getMaxIterations } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';
 import { HookManager, createHookManager } from '../hooks';
 import type { BudgetEventData } from '../../shared/types';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getSystemPromptCache } from '../telemetry/systemPromptCache';
-import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../shared/constants';
+import { DEFAULT_MODELS, MODEL_MAX_TOKENS, CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, TOOL_PROGRESS, TOOL_TIMEOUT_THRESHOLDS } from '../../shared/constants';
 
 // Import refactored modules
 import type {
@@ -158,6 +158,7 @@ export class AgentLoop {
 
   // Plan Mode support
   private planModeActive: boolean = false;
+  private savedMessages: Message[] | null = null;
 
   // Dynamic Agent Mode (借鉴 Claude Code 模式系统)
   private currentAgentMode: AgentMode = 'normal';
@@ -211,6 +212,12 @@ export class AgentLoop {
   // Adaptive Thinking: 交错思考管理
   private effortLevel: import('../../shared/types/agent').EffortLevel = 'high';
   private thinkingStepCount: number = 0;
+
+  // Task stats tracking
+  private runStartTime: number = 0;
+  private totalIterations: number = 0;
+  private totalTokensUsed: number = 0;
+  private totalToolCallCount: number = 0;
 
   // Context overflow auto-recovery
   private _contextOverflowRetried: boolean = false;
@@ -329,8 +336,27 @@ export class AgentLoop {
   // --------------------------------------------------------------------------
 
   setPlanMode(active: boolean): void {
+    const wasActive = this.planModeActive;
     this.planModeActive = active;
     logger.debug(` Plan mode ${active ? 'activated' : 'deactivated'}`);
+
+    if (active && !wasActive) {
+      // Entering plan mode: save current context and start fresh
+      this.savedMessages = [...this.messages];
+      this.messages.length = 0;
+      this.messages.push({
+        id: this.generateId(),
+        role: 'system',
+        content: 'You are now in Plan Mode. Focus on understanding the task, exploring the codebase, and creating a step-by-step plan. Use read-only tools only (read_file, glob, grep, web_search). Do not make any changes.',
+        timestamp: Date.now(),
+      });
+      logger.info('[AgentLoop] Plan mode entered: context saved, messages isolated');
+      this.onEvent({
+        type: 'plan_mode_entered',
+        data: { reason: 'Plan mode activated' },
+      } as AgentEvent);
+    }
+
     this.onEvent({
       type: 'notification',
       data: { message: `Plan mode ${active ? 'activated' : 'deactivated'}` },
@@ -524,6 +550,9 @@ export class AgentLoop {
         this.emitTaskProgress('thinking', '分析请求中...');
       }
 
+      // Emit task stats at each iteration
+      this.emitTaskStats(iterations);
+
       // F1: Goal Re-Injection — 每 N 轮注入目标检查点
       const goalCheckpoint = this.goalTracker.getGoalCheckpoint(iterations);
       if (goalCheckpoint) {
@@ -629,6 +658,9 @@ export class AgentLoop {
           outputTokens: response.usage?.outputTokens,
         },
       });
+
+      // Accumulate token usage for task stats
+      this.totalTokensUsed += (response.usage?.inputTokens || 0) + (response.usage?.outputTokens || 0);
 
       langfuse.logEvent(this.traceId, 'inference_complete', {
         iteration: iterations,
@@ -961,6 +993,7 @@ export class AgentLoop {
         const toolCalls = response.toolCalls!;
         logger.debug(` Tool calls received: ${toolCalls.length} calls`);
 
+        this.totalToolCallCount += toolCalls.length;
         this.emitTaskProgress('tool_pending', `准备执行 ${toolCalls.length} 个工具`, {
           toolTotal: toolCalls.length,
         });
@@ -1248,6 +1281,10 @@ export class AgentLoop {
     );
 
     this.externalDataCallCount = 0;
+    this.runStartTime = Date.now();
+    this.totalIterations = 0;
+    this.totalTokensUsed = 0;
+    this.totalToolCallCount = 0;
     this._consecutiveTruncations = 0;
 
     // P8: Task-specific prompt hardening — 对特定任务模式注入针对性提示
@@ -1658,6 +1695,28 @@ export class AgentLoop {
         toolsUsed: [...new Set(this.toolsUsedInTurn)],
       },
     });
+  }
+
+  private emitTaskStats(iterations: number): void {
+    try {
+      const healthService = getContextHealthService();
+      const health = healthService.get(this.sessionId);
+      const contextWindow = CONTEXT_WINDOWS[this.modelConfig.model] || DEFAULT_CONTEXT_WINDOW;
+      this.totalIterations = iterations;
+      this.onEvent({
+        type: 'task_stats',
+        data: {
+          elapsed_ms: Date.now() - this.runStartTime,
+          iterations,
+          tokensUsed: this.totalTokensUsed,
+          contextUsage: health.usagePercent / 100,
+          toolCallCount: this.totalToolCallCount,
+          contextWindow,
+        },
+      });
+    } catch (error) {
+      logger.debug('[AgentLoop] Failed to emit task stats:', error);
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -2243,6 +2302,35 @@ export class AgentLoop {
         this.processSkillActivation(
           result.metadata.skillResult as import('../../shared/types/agentSkill').SkillToolResult
         );
+      }
+
+      // Plan Mode context restoration on exit
+      if (
+        toolCall.name === 'exit_plan_mode' &&
+        result.success &&
+        this.savedMessages
+      ) {
+        const planText = result.metadata?.plan as string || '';
+        // Restore saved messages
+        this.messages.length = 0;
+        for (const msg of this.savedMessages) {
+          this.messages.push(msg);
+        }
+        // Inject approved plan as system message
+        if (planText) {
+          this.messages.push({
+            id: this.generateId(),
+            role: 'system',
+            content: `<approved-plan>\n${planText}\n</approved-plan>`,
+            timestamp: Date.now(),
+          });
+        }
+        this.savedMessages = null;
+        logger.info('[AgentLoop] Plan mode exited: context restored, plan injected');
+        this.onEvent({
+          type: 'plan_mode_exited',
+          data: { plan: planText },
+        } as AgentEvent);
       }
 
       // Auto-approve plan mode (for CLI/testing)
@@ -3297,6 +3385,16 @@ ${deferredToolsSummary}
       if (this.autoCompressor.shouldTriggerByTokens(currentTokens)) {
         logger.info(`[AgentLoop] Token threshold reached (${currentTokens}), triggering compaction`);
 
+        // Emit context_compacting event (Claude Code style)
+        const compactionStartTime = Date.now();
+        this.onEvent({
+          type: 'context_compacting',
+          data: {
+            tokensBefore: currentTokens,
+            messagesCount: this.messages.length,
+          },
+        } as AgentEvent);
+
         const messagesForCompression = this.messages.map(msg => ({
           role: msg.role,
           content: msg.content,
@@ -3398,6 +3496,17 @@ ${deferredToolsSummary}
           } as AgentEvent);
 
           logger.info(`[AgentLoop] CompactionBlock generated: ${block.compactedMessageCount} msgs compacted, saved ${block.compactedTokenCount} tokens`);
+
+          // Emit context_compacted event (Claude Code style)
+          this.onEvent({
+            type: 'context_compacted',
+            data: {
+              tokensBefore: currentTokens,
+              tokensAfter: currentTokens - block.compactedTokenCount,
+              messagesRemoved: block.compactedMessageCount,
+              duration_ms: Date.now() - compactionStartTime,
+            },
+          } as AgentEvent);
           logCollector.agent('INFO', 'CompactionBlock generated', {
             compactedMessages: block.compactedMessageCount,
             savedTokens: block.compactedTokenCount,

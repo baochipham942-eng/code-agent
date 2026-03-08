@@ -3,9 +3,12 @@
 // ============================================================================
 
 import { v4 as uuidv4 } from 'uuid';
+import path from 'node:path';
+import fs from 'node:fs/promises';
 import { getDatabase } from '../services/core/databaseService';
 import { createLogger } from '../services/infra/logger';
 import { getServiceRegistry } from '../services/serviceRegistry';
+import { getTestDirs, resolvePathWithFallback } from '../config';
 import type {
   EvaluationResult,
   EvaluationMetric,
@@ -17,6 +20,7 @@ import {
   DIMENSION_NAMES,
   scoreToGrade,
 } from '../../shared/types/evaluation';
+import type { TestReportListItem, TestRunReport } from '../../shared/ipc';
 import type { SessionSnapshot, DimensionEvaluator, TurnSnapshot, QualitySignals } from './types';
 import {
   TaskCompletionEvaluator,
@@ -325,6 +329,75 @@ export class EvaluationService {
 
     const rows = dbInstance.prepare(query).all(...params) as { data: string }[];
     return rows.map((r) => JSON.parse(r.data));
+  }
+
+  /**
+   * 列出测试报告（.json）文件
+   */
+  async listTestReports(): Promise<TestReportListItem[]> {
+    const resultsDir = await this.resolveTestResultsDir();
+
+    try {
+      const entries = await fs.readdir(resultsDir, { withFileTypes: true });
+      const reportFiles = entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+        .filter((entry) => entry.name === 'latest-report.json' || /^report-\d+\.json$/.test(entry.name));
+
+      const reports = await Promise.all(
+        reportFiles.map(async (entry) => {
+          const filePath = path.join(resultsDir, entry.name);
+          try {
+            const report = await this.loadTestReport(filePath);
+            if (!report) return null;
+
+            return {
+              fileName: entry.name,
+              filePath,
+              timestamp: Number(report.endTime) || Number(report.startTime) || 0,
+              model: report.environment?.model || 'unknown',
+              provider: report.environment?.provider || 'unknown',
+              total: Number(report.total) || 0,
+              passed: Number(report.passed) || 0,
+              failed: Number(report.failed) || 0,
+              partial: Number(report.partial) || 0,
+              averageScore: Number(report.averageScore) || 0,
+            } satisfies TestReportListItem;
+          } catch (error) {
+            logger.warn('Failed to parse test report file', { filePath, error });
+            return null;
+          }
+        })
+      );
+
+      return reports
+        .filter((item): item is TestReportListItem => item !== null)
+        .sort((a, b) => b.timestamp - a.timestamp);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 加载指定测试报告
+   */
+  async loadTestReport(filePath: string): Promise<TestRunReport | null> {
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+      return JSON.parse(content) as TestRunReport;
+    } catch (error) {
+      logger.warn('Failed to load test report', { filePath, error });
+      return null;
+    }
+  }
+
+  private async resolveTestResultsDir(): Promise<string> {
+    if (process.env.AUTO_TEST_RESULTS_DIR) {
+      return process.env.AUTO_TEST_RESULTS_DIR;
+    }
+
+    const testDirs = getTestDirs(process.cwd());
+    const resolved = await resolvePathWithFallback(testDirs.results.new, testDirs.results.legacy);
+    return resolved.resolved;
   }
 
   /**

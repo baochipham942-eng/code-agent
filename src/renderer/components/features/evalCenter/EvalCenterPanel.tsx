@@ -19,8 +19,6 @@ export const EvalCenterPanel: React.FC = () => {
   const [mode, setMode] = useState<Mode>('reports');
   const [codingCases, setCodingCases] = useState<TestCaseResult[]>([]);
 
-  if (!showEvalCenter) return null;
-
   const handleClose = () => setShowEvalCenter(false);
 
   // Load latest report's failed cases and enter coding mode
@@ -82,6 +80,8 @@ export const EvalCenterPanel: React.FC = () => {
     { key: 'sessions', label: '📋 会话历史' },
     { key: 'coding', label: '📝 标注', onClick: handleEnterCoding },
   ];
+
+  if (!showEvalCenter) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">

@@ -131,7 +131,6 @@ ${listBuiltInWorkflows().map(w => `- ${w.id}: ${w.description}`).join('\n')}
 **参数**：
 - workflow: 选择合适的工作流模板
 - task: 用户的原始任务描述`,
-  generations: ['gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

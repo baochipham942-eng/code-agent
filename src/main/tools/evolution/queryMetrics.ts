@@ -53,7 +53,6 @@ Use this tool when:
     required: ['action'],
   },
 
-  generations: ['gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
 

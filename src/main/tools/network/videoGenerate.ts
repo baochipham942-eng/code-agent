@@ -391,7 +391,6 @@ export const videoGenerateTool: Tool = {
   description: `生成 AI 视频，可以根据文字描述或图片生成短视频。
 
 支持横屏、竖屏、方形三种比例，时长 5 秒或 10 秒。生成需要 30-180 秒。`,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {
@@ -520,11 +519,12 @@ export const videoGenerateTool: Tool = {
           generationTimeMs: generationTime,
         },
       };
-    } catch (error: any) {
-      logger.error('[视频生成] 失败', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('[视频生成] 失败', { error: message });
       return {
         success: false,
-        error: `视频生成失败: ${error.message}`,
+        error: `视频生成失败: ${message}`,
       };
     }
   },

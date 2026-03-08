@@ -304,25 +304,21 @@ describe('Gen1 - Basic Tools Era', () => {
   // Tool Metadata Tests
   // --------------------------------------------------------------------------
   describe('Tool Metadata', () => {
-    it('bash should have correct generations', () => {
-      expect(bashTool.generations).toContain('gen1');
-      expect(bashTool.name).toBe('bash');
+    it('bash should have correct name and permission', () => {
+      expect(bashTool.name).toBe('Bash');
       expect(bashTool.requiresPermission).toBe(true);
     });
 
-    it('read_file should have correct generations', () => {
-      expect(readFileTool.generations).toContain('gen1');
-      expect(readFileTool.name).toBe('read_file');
+    it('read_file should have correct name', () => {
+      expect(readFileTool.name).toBe('Read');
     });
 
-    it('write_file should have correct generations', () => {
-      expect(writeFileTool.generations).toContain('gen1');
-      expect(writeFileTool.name).toBe('write_file');
+    it('write_file should have correct name', () => {
+      expect(writeFileTool.name).toBe('Write');
     });
 
-    it('edit_file should have correct generations', () => {
-      expect(editFileTool.generations).toContain('gen1');
-      expect(editFileTool.name).toBe('edit_file');
+    it('edit_file should have correct name', () => {
+      expect(editFileTool.name).toBe('Edit');
     });
   });
 });

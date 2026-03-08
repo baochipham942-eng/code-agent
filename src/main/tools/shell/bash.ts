@@ -44,7 +44,6 @@ PTY mode: set pty=true for interactive commands (vim, ssh).
 
 Git: NEVER --force push or --no-verify unless explicitly requested.`,
 
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
 
@@ -335,12 +334,13 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
         output: cwdPrefix + output,
         metadata: dynamicDesc ? { description: dynamicDesc } : undefined,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
       // Handle timeout
-      if (error.killed && error.signal === 'SIGTERM') {
-        let timeoutOutput = error.stdout || '';
-        if (error.stderr) {
-          timeoutOutput += (timeoutOutput ? '\n' : '') + `[stderr]: ${error.stderr}`;
+      if ((error as Record<string, unknown>).killed && (error as Record<string, unknown>).signal === 'SIGTERM') {
+        let timeoutOutput: string = String((error as Record<string, unknown>).stdout || '');
+        if ((error as Record<string, unknown>).stderr) {
+          timeoutOutput += (timeoutOutput ? '\n' : '') + `[stderr]: ${String((error as Record<string, unknown>).stderr)}`;
         }
         return {
           success: false,
@@ -350,13 +350,13 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       }
 
       // 合并 stdout + stderr，确保 Python traceback 等错误信息对模型可见
-      let errorOutput = error.stdout || '';
-      if (error.stderr) {
-        errorOutput += (errorOutput ? '\n' : '') + `[stderr]: ${error.stderr}`;
+      let errorOutput: string = String((error as Record<string, unknown>).stdout || '');
+      if ((error as Record<string, unknown>).stderr) {
+        errorOutput += (errorOutput ? '\n' : '') + `[stderr]: ${String((error as Record<string, unknown>).stderr)}`;
       }
       return {
         success: false,
-        error: error.message || 'Command execution failed',
+        error: errMsg || 'Command execution failed',
         output: errorOutput || undefined,
       };
     }

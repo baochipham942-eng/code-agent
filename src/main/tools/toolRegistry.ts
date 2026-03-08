@@ -4,13 +4,14 @@
 
 import type {
   ToolDefinition,
-  GenerationId,
   JSONSchema,
 } from '../../shared/types';
 import { getCloudConfigService } from '../services/cloud';
 import { toolSearchTool, CORE_TOOLS, getToolSearchService } from './search';
 
 // Import tool definitions - organized by function
+
+// Shell tools
 import {
   bashTool,
   grepTool,
@@ -23,7 +24,19 @@ import {
   processSubmitTool,
   processKillTool,
 } from './shell';
-import { readFileTool, writeFileTool, editFileTool, globTool, listDirectoryTool, readClipboardTool, notebookEditTool } from './file';
+
+// File tools
+import {
+  readFileTool,
+  writeFileTool,
+  editFileTool,
+  globTool,
+  listDirectoryTool,
+  readClipboardTool,
+  notebookEditTool,
+} from './file';
+
+// Planning tools
 import {
   taskTool,
   todoWriteTool,
@@ -31,15 +44,16 @@ import {
   confirmActionTool,
   planReadTool,
   planUpdateTool,
-  findingsWriteTool,
   enterPlanModeTool,
   exitPlanModeTool,
-  // Task API (Claude Code 2.x compatible)
+  findingsWriteTool,
   taskCreateTool,
   taskGetTool,
   taskListTool,
   taskUpdateTool,
 } from './planning';
+
+// Network tools
 import {
   webFetchTool,
   webSearchTool,
@@ -60,43 +74,70 @@ import {
   twitterFetchTool,
   mermaidExportTool,
   pdfGenerateTool,
+  pdfCompressTool,
   imageProcessTool,
   screenshotPageTool,
   academicSearchTool,
   httpRequestTool,
   speechToTextTool,
   localSpeechToTextTool,
-  meetingRecorderTool,
   textToSpeechTool,
   imageAnnotateTool,
   xlwingsExecuteTool,
-  pdfCompressTool,
 } from './network';
-import { skillMetaTool } from './skill';
+
+// MCP tools
 import {
   mcpTool,
   mcpListToolsTool,
   mcpListResourcesTool,
   mcpReadResourceTool,
   mcpGetStatusTool,
-  mcpAddServerTool,
 } from './mcp';
-import { memoryStoreTool, memorySearchTool, codeIndexTool, autoLearnTool, forkSessionTool } from './memory';
-import { screenshotTool, computerUseTool, browserNavigateTool, browserActionTool, guiAgentTool } from './vision';
+import { mcpAddServerTool } from './mcp';
+
+// Memory tools
+import { memoryTool, codeIndexTool, autoLearnTool, forkSessionTool } from './memory';
+
+// Vision tools
+import {
+  screenshotTool,
+  computerUseTool,
+  browserNavigateTool,
+  browserActionTool,
+  guiAgentTool,
+} from './vision';
+
+// Skill tools
+import { skillMetaTool } from './skill';
+
+// Multi-agent tools
 import {
   sdkTaskTool,
   agentSpawnTool,
   AgentMessageTool,
   WorkflowOrchestrateTool,
   TeammateTool,
-  spawnAgentTool,
-  agentMessageTool,
-  workflowOrchestrateTool,
-  teammateTool,
+  // DEPRECATED: spawnAgentTool, agentMessageTool, workflowOrchestrateTool, teammateTool removed — use PascalCase versions
   planReviewTool,
 } from './multiagent';
+
+// Evolution tools
 import { strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternTool, codeExecuteTool, queryMetricsTool } from './evolution';
+
+// LSP tools
 import { lspTool, diagnosticsTool } from './lsp';
+
+// Unified tools (Phase 2 - consolidated from multiple tools)
+import { ProcessTool } from './shell/ProcessTool';
+import { MCPUnifiedTool } from './mcp/MCPUnifiedTool';
+import { TaskManagerTool } from './planning/TaskManagerTool';
+import { PlanTool } from './planning/PlanTool';
+import { PlanModeTool } from './planning/PlanModeTool';
+import { WebFetchUnifiedTool } from './network/WebFetchUnifiedTool';
+import { ReadDocumentTool } from './network/ReadDocumentTool';
+import { BrowserTool } from './vision/BrowserTool';
+import { ComputerTool } from './vision/ComputerTool';
 
 // ----------------------------------------------------------------------------
 // Tool Interface
@@ -111,7 +152,7 @@ export interface Tool extends ToolDefinition {
 
 export interface ToolContext {
   workingDirectory: string;
-  generation: { id: GenerationId };
+  generation: { id: string };
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   emit?: (event: string, data: unknown) => void;
   emitEvent?: (event: string, data: unknown) => void; // Alias for emit
@@ -192,6 +233,53 @@ const TOOL_ALIASES: Record<string, string> = {
   spawn_agent: 'AgentSpawn',
   agent_message: 'AgentMessage',
   workflow_orchestrate: 'WorkflowOrchestrate',
+  teammate: 'Teammate',
+  Edit: 'edit_file',
+  multi_edit_file: 'edit_file',
+  memory_store: 'memory',
+  memory_search: 'memory',
+
+  // Phase 2: Deferred tool aliases → unified tools
+  process_list: 'Process',
+  process_poll: 'Process',
+  process_log: 'Process',
+  process_write: 'Process',
+  process_submit: 'Process',
+  process_kill: 'Process',
+  kill_shell: 'Process',
+  task_output: 'Process',
+
+  mcp_list_tools: 'MCPUnified',
+  mcp_list_resources: 'MCPUnified',
+  mcp_read_resource: 'MCPUnified',
+  mcp_get_status: 'MCPUnified',
+  mcp_add_server: 'MCPUnified',
+
+  task_create: 'TaskManager',
+  TaskCreate: 'TaskManager',
+  task_get: 'TaskManager',
+  TaskGet: 'TaskManager',
+  task_list: 'TaskManager',
+  TaskList: 'TaskManager',
+  task_update: 'TaskManager',
+  TaskUpdate: 'TaskManager',
+
+  plan_read: 'Plan',
+  plan_update: 'Plan',
+  enter_plan_mode: 'PlanMode',
+  exit_plan_mode: 'PlanMode',
+
+  http_request: 'WebFetch',
+
+  read_pdf: 'ReadDocument',
+  read_docx: 'ReadDocument',
+  read_xlsx: 'ReadDocument',
+
+  browser_navigate: 'Browser',
+  browser_action: 'Browser',
+
+  screenshot: 'Computer',
+  computer_use: 'Computer',
 };
 
 // ----------------------------------------------------------------------------
@@ -240,7 +328,7 @@ export class ToolRegistry {
     this.register(bashTool);
     this.register(readFileTool);
     this.register(writeFileTool);
-    this.register(editFileTool);
+    this.register(editFileTool); // single-edit tool (old_string/new_string)
     this.register(killShellTool);
     this.register(taskOutputTool);
     this.register(notebookEditTool);
@@ -306,7 +394,6 @@ export class ToolRegistry {
     this.register(academicSearchTool);
     this.register(speechToTextTool);
     this.register(localSpeechToTextTool);
-    this.register(meetingRecorderTool);
     this.register(textToSpeechTool);
     this.register(imageAnnotateTool);
     this.register(xlwingsExecuteTool);
@@ -323,8 +410,7 @@ export class ToolRegistry {
     this.register(mcpAddServerTool);
 
     // Gen 5 tools
-    this.register(memoryStoreTool);
-    this.register(memorySearchTool);
+    this.register(memoryTool); // unified store + search (replaces memory_store & memory_search)
     this.register(codeIndexTool);
     this.register(autoLearnTool);
     this.register(forkSessionTool);
@@ -339,16 +425,11 @@ export class ToolRegistry {
     // Gen 7 tools - Multi-Agent
     // SDK-compatible Task tool (simplified interface)
     this.register(sdkTaskTool);
-    // PascalCase tools (recommended for new code)
+    // PascalCase tools (legacy snake_case retired — aliases handle backward compat)
     this.register(agentSpawnTool);
     this.register(AgentMessageTool);
     this.register(WorkflowOrchestrateTool);
     this.register(TeammateTool);
-    // Legacy snake_case tools (backward compatibility)
-    this.register(spawnAgentTool);
-    this.register(agentMessageTool);
-    this.register(workflowOrchestrateTool);
-    this.register(teammateTool);
     // Plan review (cross-agent approval)
     this.register(planReviewTool);
 
@@ -359,6 +440,18 @@ export class ToolRegistry {
     this.register(learnPatternTool);
     this.register(codeExecuteTool);
     this.register(queryMetricsTool);
+
+
+    // Phase 2: Unified tools (consolidated from multiple tools)
+    this.register(ProcessTool);
+    this.register(MCPUnifiedTool);
+    this.register(TaskManagerTool);
+    this.register(PlanTool);
+    this.register(PlanModeTool);
+    this.register(WebFetchUnifiedTool);
+    this.register(ReadDocumentTool);
+    this.register(BrowserTool);
+    this.register(ComputerTool);
 
     // Tool Search (核心工具，始终可用)
     this.register(toolSearchTool);
@@ -407,10 +500,9 @@ export class ToolRegistry {
    * @param generationId - 代际 ID（如 'gen1', 'gen4'）
    * @returns 该代际可用的工具数组
    */
-  getForGeneration(generationId: GenerationId): Tool[] {
-    return Array.from(this.tools.values()).filter((tool) =>
-      tool.generations.includes(generationId)
-    );
+  /** @simplified Returns all tools regardless of generationId (locked to gen8) */
+  getForGeneration(_generationId?: string): Tool[] {
+    return Array.from(this.tools.values());
   }
 
   /**
@@ -421,10 +513,10 @@ export class ToolRegistry {
    * @param generationId - 代际 ID
    * @returns 工具定义数组
    */
-  getToolDefinitions(generationId: GenerationId): ToolDefinition[] {
+  getToolDefinitions(_generationId?: string): ToolDefinition[] {
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
-    return this.getForGeneration(generationId).map((tool) => {
+    return this.getAllTools().map((tool) => {
       // 合并云端元数据（优先级: cloud > dynamic > static）
       const cloudMeta = cloudToolMeta[tool.name];
       const description = cloudMeta?.description || tool.dynamicDescription?.() || tool.description;
@@ -433,7 +525,6 @@ export class ToolRegistry {
         name: tool.name,
         description,
         inputSchema: tool.inputSchema,
-        generations: tool.generations,
         requiresPermission: tool.requiresPermission,
         permissionLevel: tool.permissionLevel,
       };
@@ -461,7 +552,6 @@ export class ToolRegistry {
       name: tool.name,
       description: cloudMeta?.description || tool.dynamicDescription?.() || tool.description,
       inputSchema: tool.inputSchema,
-      generations: tool.generations,
       requiresPermission: tool.requiresPermission,
       permissionLevel: tool.permissionLevel,
     };
@@ -480,10 +570,10 @@ export class ToolRegistry {
    * @param generationId - 代际 ID
    * @returns 核心工具定义数组
    */
-  getCoreToolDefinitions(generationId: GenerationId): ToolDefinition[] {
+  getCoreToolDefinitions(_generationId?: string): ToolDefinition[] {
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
-    return this.getForGeneration(generationId)
+    return this.getAllTools()
       .filter(tool => CORE_TOOLS.includes(tool.name) || tool.isCore === true)
       .map(tool => {
         const cloudMeta = cloudToolMeta[tool.name];
@@ -493,7 +583,6 @@ export class ToolRegistry {
           name: tool.name,
           description,
           inputSchema: tool.inputSchema,
-          generations: tool.generations,
           requiresPermission: tool.requiresPermission,
           permissionLevel: tool.permissionLevel,
         };
@@ -508,10 +597,10 @@ export class ToolRegistry {
    * @param generationId - 代际 ID
    * @returns 延迟工具定义数组
    */
-  getDeferredToolDefinitions(generationId: GenerationId): ToolDefinition[] {
+  getDeferredToolDefinitions(_generationId?: string): ToolDefinition[] {
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();
 
-    return this.getForGeneration(generationId)
+    return this.getAllTools()
       .filter(tool => !CORE_TOOLS.includes(tool.name) && tool.isCore !== true)
       .map(tool => {
         const cloudMeta = cloudToolMeta[tool.name];
@@ -521,7 +610,6 @@ export class ToolRegistry {
           name: tool.name,
           description,
           inputSchema: tool.inputSchema,
-          generations: tool.generations,
           requiresPermission: tool.requiresPermission,
           permissionLevel: tool.permissionLevel,
         };
@@ -536,7 +624,7 @@ export class ToolRegistry {
    * @param generationId - 代际 ID
    * @returns 已加载的延迟工具定义数组
    */
-  getLoadedDeferredToolDefinitions(generationId: GenerationId): ToolDefinition[] {
+  getLoadedDeferredToolDefinitions(_generationId?: string): ToolDefinition[] {
     const toolSearchService = getToolSearchService();
     const loadedNames = toolSearchService.getLoadedDeferredTools();
     const cloudToolMeta = getCloudConfigService().getAllToolMeta();
@@ -544,7 +632,7 @@ export class ToolRegistry {
     return loadedNames
       .map(name => this.get(name))
       .filter((tool): tool is Tool =>
-        tool !== undefined && tool.generations.includes(generationId)
+        tool !== undefined // gen8 locked: no generation filtering
       )
       .map(tool => {
         const cloudMeta = cloudToolMeta[tool.name];
@@ -554,7 +642,6 @@ export class ToolRegistry {
           name: tool.name,
           description,
           inputSchema: tool.inputSchema,
-          generations: tool.generations,
           requiresPermission: tool.requiresPermission,
           permissionLevel: tool.permissionLevel,
         };
@@ -569,8 +656,8 @@ export class ToolRegistry {
    * @param generationId - 代际 ID
    * @returns 延迟工具名称列表字符串
    */
-  getDeferredToolsSummary(generationId: GenerationId): string {
-    const deferred = this.getDeferredToolDefinitions(generationId);
+  getDeferredToolsSummary(_generationId?: string): string {
+    const deferred = this.getDeferredToolDefinitions();
     return deferred.map(t => t.name).join('\n');
   }
 }

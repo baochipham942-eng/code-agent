@@ -6,7 +6,6 @@
 import type {
   Generation,
   GenerationId,
-  GenerationDiff,
   Message,
   MessageAttachment,
   PermissionResponse,
@@ -337,6 +336,93 @@ export interface DataStats {
 }
 
 // ----------------------------------------------------------------------------
+// Test Report types (CLI 评测报告)
+// ----------------------------------------------------------------------------
+
+export interface TestReportListItem {
+  fileName: string;
+  filePath: string;
+  timestamp: number;
+  model: string;
+  provider: string;
+  total: number;
+  passed: number;
+  failed: number;
+  partial: number;
+  averageScore: number;
+}
+
+export interface TestExpectation {
+  type: string;
+  description: string;
+  weight: number;
+  critical?: boolean;
+  params: Record<string, unknown>;
+}
+
+export interface TestExpectationResult {
+  expectation: TestExpectation;
+  passed: boolean;
+  evidence: { actual: string; expected: string };
+  duration: number;
+}
+
+export interface TestToolExecution {
+  tool: string;
+  input: Record<string, unknown>;
+  output: string;
+  success: boolean;
+  duration: number;
+  timestamp: number;
+}
+
+export interface TestCaseResult {
+  testId: string;
+  description: string;
+  status: 'passed' | 'failed' | 'partial' | 'skipped';
+  duration: number;
+  startTime: number;
+  endTime: number;
+  toolExecutions: TestToolExecution[];
+  responses: string[];
+  errors: string[];
+  turnCount: number;
+  score: number;
+  failureReason?: string;
+  reference_solution?: string;
+  expectationResults?: TestExpectationResult[];
+  category?: string;
+  difficulty?: string;
+}
+
+export interface TestRunReport {
+  runId: string;
+  startTime: number;
+  endTime: number;
+  duration: number;
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  partial: number;
+  averageScore: number;
+  results: TestCaseResult[];
+  environment: {
+    generation: string;
+    model: string;
+    provider: string;
+    workingDirectory: string;
+  };
+  performance: {
+    avgResponseTime: number;
+    maxResponseTime: number;
+    totalToolCalls: number;
+    totalTurns: number;
+  };
+  evalFeedback?: unknown;
+}
+
+// ----------------------------------------------------------------------------
 // New Domain-based IPC Channels (TASK-04)
 // ----------------------------------------------------------------------------
 
@@ -406,9 +492,6 @@ export const IPC_CHANNELS = {
 
   // Generation channels
   GENERATION_LIST: 'generation:list',
-  GENERATION_SWITCH: 'generation:switch',
-  GENERATION_GET_PROMPT: 'generation:get-prompt',
-  GENERATION_COMPARE: 'generation:compare',
   GENERATION_GET_CURRENT: 'generation:get-current',
 
   // Session channels
@@ -629,6 +712,8 @@ export const IPC_CHANNELS = {
   EVALUATION_GET_OBJECTIVE_METRICS: EVALUATION_CHANNELS.GET_OBJECTIVE_METRICS,
   EVALUATION_GET_SESSION_ANALYSIS: EVALUATION_CHANNELS.GET_SESSION_ANALYSIS,
   EVALUATION_RUN_SUBJECTIVE: EVALUATION_CHANNELS.RUN_SUBJECTIVE_EVALUATION,
+  EVALUATION_LIST_TEST_REPORTS: EVALUATION_CHANNELS.LIST_TEST_REPORTS,
+  EVALUATION_LOAD_TEST_REPORT: EVALUATION_CHANNELS.LOAD_TEST_REPORT,
 
   // LSP channels (语言服务器)
   LSP_GET_STATUS: LSP_CHANNELS.GET_STATUS,
@@ -681,13 +766,9 @@ export const IPC_CHANNELS = {
   TELEMETRY_GET_EVENTS: TELEMETRY_CHANNELS.GET_EVENTS,
   TELEMETRY_GET_SYSTEM_PROMPT: TELEMETRY_CHANNELS.GET_SYSTEM_PROMPT,
   TELEMETRY_DELETE_SESSION: TELEMETRY_CHANNELS.DELETE_SESSION,
+  REPLAY_GET_STRUCTURED_DATA: TELEMETRY_CHANNELS.GET_STRUCTURED_REPLAY,
   TELEMETRY_EVENT: TELEMETRY_CHANNELS.EVENT,
 
-  // Meeting ASR channels (语音识别引擎)
-  MEETING_CHECK_ASR_ENGINES: 'meeting:check-asr-engines',
-  MEETING_LIVE_ASR_START: 'meeting:live-asr-start',
-  MEETING_LIVE_ASR_STOP: 'meeting:live-asr-stop',
-  MEETING_LIVE_ASR_CHUNK: 'meeting:live-asr-chunk',
 
   // VoicePaste channels (全局语音粘贴)
   VOICE_PASTE_STATUS: 'voice-paste:status',
@@ -710,12 +791,6 @@ export interface IpcInvokeHandlers {
 
   // Generation
   [IPC_CHANNELS.GENERATION_LIST]: () => Promise<Generation[]>;
-  [IPC_CHANNELS.GENERATION_SWITCH]: (id: GenerationId) => Promise<Generation>;
-  [IPC_CHANNELS.GENERATION_GET_PROMPT]: (id: GenerationId) => Promise<string>;
-  [IPC_CHANNELS.GENERATION_COMPARE]: (
-    id1: GenerationId,
-    id2: GenerationId
-  ) => Promise<GenerationDiff>;
   [IPC_CHANNELS.GENERATION_GET_CURRENT]: () => Promise<Generation>;
 
   // Session
@@ -951,6 +1026,8 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.EVALUATION_GET_OBJECTIVE_METRICS]: (sessionId: string) => Promise<ObjectiveMetrics>;
   [IPC_CHANNELS.EVALUATION_GET_SESSION_ANALYSIS]: (sessionId: string) => Promise<SessionAnalysisResult>;
   [IPC_CHANNELS.EVALUATION_RUN_SUBJECTIVE]: (payload: { sessionId: string; save?: boolean }) => Promise<SubjectiveAssessment>;
+  [IPC_CHANNELS.EVALUATION_LIST_TEST_REPORTS]: () => Promise<TestReportListItem[]>;
+  [IPC_CHANNELS.EVALUATION_LOAD_TEST_REPORT]: (filePath: string) => Promise<TestRunReport>;
 
   // Background (后台任务)
   [IPC_CHANNELS.BACKGROUND_MOVE_TO_BACKGROUND]: (sessionId: string) => Promise<boolean>;
@@ -985,6 +1062,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.CHECKPOINT_REWIND]: (sessionId: string, messageId: string) => Promise<{
     success: boolean;
     filesRestored: number;
+    messagesRemoved: number;
     error?: string;
   }>;
   [IPC_CHANNELS.CHECKPOINT_PREVIEW]: (sessionId: string, messageId: string) => Promise<Array<{
@@ -1012,11 +1090,8 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.TELEMETRY_GET_EVENTS]: (sessionId: string) => Promise<TelemetryTimelineEvent[]>;
   [IPC_CHANNELS.TELEMETRY_GET_SYSTEM_PROMPT]: (hash: string) => Promise<{ content: string; tokens: number | null; generationId: string | null } | null>;
   [IPC_CHANNELS.TELEMETRY_DELETE_SESSION]: (sessionId: string) => Promise<boolean>;
+  [IPC_CHANNELS.REPLAY_GET_STRUCTURED_DATA]: (sessionId: string) => Promise<unknown>;
 
-  // Meeting Live ASR (实时语音识别)
-  [IPC_CHANNELS.MEETING_LIVE_ASR_START]: () => Promise<{ success: boolean; error?: string }>;
-  [IPC_CHANNELS.MEETING_LIVE_ASR_STOP]: () => Promise<{ success: boolean; error?: string }>;
-  [IPC_CHANNELS.MEETING_LIVE_ASR_CHUNK]: (payload: { audioBase64: string; mimeType: string }) => Promise<{ success: boolean; text?: string; duration?: number; error?: string }>;
 }
 
 // ----------------------------------------------------------------------------

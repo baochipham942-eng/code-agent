@@ -444,20 +444,37 @@ if (!modifiedFiles.includes(expectedFile)) {
 
 ---
 
-## Checkpoint 系统 (v0.16.11+)
+## Checkpoint 系统 (v0.16.11+, v0.16.42 修复)
 
-**位置**: `src/main/services/FileCheckpointService.ts`
+**位置**: `src/main/services/checkpoint/fileCheckpointService.ts`
 
-文件版本快照系统，支持任务级别的回滚。
+文件版本快照系统，在 Write/Edit 工具执行前自动保存原文件内容，支持 Esc+Esc 触发的 Rewind 回滚。
+
+### 架构
+
+```
+ToolExecutor.execute()
+  → fileCheckpointMiddleware（拦截 Write/Edit，使用 tool.name 规范名）
+    → FileCheckpointService.createCheckpoint()
+      → SQLite file_checkpoints 表
+
+RewindPanel (Esc+Esc)
+  → checkpoint:list / checkpoint:preview / checkpoint:rewind (IPC)
+    → FileCheckpointService.rewindFiles()  （文件恢复）
+    → DatabaseService.deleteMessagesFrom() （消息截断）
+    → Orchestrator.setMessages()           （内存同步）
+    → 前端 setMessages() 刷新             （UI 同步）
+```
 
 ### 核心功能
 
 | 功能 | 描述 |
 |------|------|
-| `createCheckpoint()` | 创建当前文件状态快照 |
-| `rewindFiles()` | 回滚到指定检查点 |
-| `getModifiedFiles()` | 获取检查点后修改的文件列表 |
-| `cleanup()` | 清理过期检查点 |
+| `createCheckpoint()` | Write/Edit 执行前自动保存原文件内容 |
+| `rewindFiles()` | 回滚到指定消息之前的文件状态 |
+| `getCheckpoints()` | 获取 session 的所有检查点 |
+| `cleanup()` | 清理过期检查点（7 天 / 启动时自动执行） |
+| `deleteMessagesFrom()` | Rewind 时截断对话消息（DB + 内存 + 前端） |
 
 ### 数据库表结构
 
@@ -465,17 +482,29 @@ if (!modifiedFiles.includes(expectedFile)) {
 CREATE TABLE file_checkpoints (
   id TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
   file_path TEXT NOT NULL,
-  content TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  original_content TEXT,     -- null 表示文件原本不存在
+  file_existed INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 ```
 
+### 限制
+
+| 项目 | 值 |
+|------|------|
+| 单文件上限 | 1MB（大文件跳过） |
+| 每 session 上限 | 50 个检查点（FIFO 淘汰） |
+| 保留期 | 7 天 |
+| 监控工具 | Write、Edit（Bash 不在监控范围） |
+
 ### 使用场景
 
-1. **任务开始前**: 自动创建检查点
-2. **任务失败时**: 回滚到检查点
-3. **用户请求撤销**: 恢复到指定检查点
+1. **Write/Edit 执行前**: middleware 自动创建检查点
+2. **Esc+Esc 触发 Rewind**: 文件恢复 + 消息截断 + UI 刷新
+3. **启动时**: 自动清理过期检查点
 
 ---
 

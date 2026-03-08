@@ -30,7 +30,6 @@ export const pptEditTool: Tool = {
 - extract_style: 提取 PPTX 的主题样式
 
 每次编辑前自动备份原文件。`,
-  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {
@@ -210,10 +209,11 @@ export const pptEditTool: Tool = {
         output: `${resultMessage}\n备份: ${backupPath}`,
         metadata: { backupPath, action, slideIndex: slide_index },
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: `PPT 编辑失败: ${error.message}`,
+        error: `PPT 编辑失败: ${message}`,
       };
     }
   },

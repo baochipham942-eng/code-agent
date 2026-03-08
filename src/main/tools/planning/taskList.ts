@@ -11,7 +11,6 @@ export const taskListTool: Tool = {
     'List all tasks in the current session. ' +
     'Returns a summary of each task including ID, subject, status, owner, and dependencies. ' +
     'Use task_get for full task details.',
-  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

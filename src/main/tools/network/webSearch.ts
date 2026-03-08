@@ -14,6 +14,41 @@ import { fetchDocument } from './fetchDocument';
 
 const logger = createLogger('WebSearch');
 
+// ============================================================================
+// Circuit Breaker for Rate-Limited Sources
+// ============================================================================
+
+/** source name -> cooldown expiry timestamp (ms) */
+const circuitBreaker: Record<string, number> = {};
+const CIRCUIT_BREAKER_COOLDOWN = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Check if a source is currently circuit-broken.
+ * Returns remaining cooldown in ms, or 0 if source is available.
+ */
+function getCircuitBreakerRemaining(source: string): number {
+  const until = circuitBreaker[source];
+  if (!until) return 0;
+  const remaining = until - Date.now();
+  if (remaining <= 0) {
+    delete circuitBreaker[source];
+    return 0;
+  }
+  return remaining;
+}
+
+/**
+ * Trip the circuit breaker for a source after receiving 429.
+ */
+function tripCircuitBreaker(source: string): void {
+  circuitBreaker[source] = Date.now() + CIRCUIT_BREAKER_COOLDOWN;
+  logger.warn('Circuit breaker tripped for source', {
+    source,
+    cooldownMs: CIRCUIT_BREAKER_COOLDOWN,
+    resumeAt: new Date(circuitBreaker[source]).toISOString(),
+  });
+}
+
 const CLOUD_SEARCH_URL = `${CLOUD_ENDPOINTS.tools}?action=search`;
 const BRAVE_SEARCH_URL = SEARCH_API_ENDPOINTS.brave;
 const EXA_SEARCH_URL = SEARCH_API_ENDPOINTS.exa;
@@ -100,6 +135,11 @@ interface SearchSourceResult {
   error?: string;
 }
 
+interface SourceRoutingResult {
+  sources: string[];
+  reason: string;
+}
+
 /** Convert ISO date string to human-readable relative age (e.g. "2 days ago") */
 export function formatAge(dateStr: string): string | undefined {
   try {
@@ -119,17 +159,96 @@ export function formatAge(dateStr: string): string | undefined {
   }
 }
 
+
+// ============================================================================
+// Intelligent Source Routing
+// ============================================================================
+
+/**
+ * Analyze query characteristics and route to best-fit search sources.
+ * Each source has unique strengths — route to 2-3 instead of all 4 every time.
+ *
+ * Source strengths:
+ * - perplexity: AI summary, best for Chinese queries, general knowledge
+ * - exa: Semantic search, excels at technical/academic content
+ * - brave: Real-time news, Twitter/social, broad web coverage
+ * - tavily: Structured extraction, good AI answers, reliable fallback
+ */
+function routeSources(
+  query: string,
+  options: { mode?: 'quick' | 'research'; requestedSources?: string[] }
+): SourceRoutingResult {
+  // If user explicitly requested sources, respect that
+  if (options.requestedSources?.length) {
+    return { sources: options.requestedSources, reason: 'user-specified' };
+  }
+
+  const isChinese = /[\u4e00-\u9fff]{2,}/.test(query);
+  const isTwitter = /twitter|x\.com|@\w+|\u63a8\u7279|tweet/i.test(query);
+  const isAcademic = /paper|\u8bba\u6587|\u7814\u7a76|\u5b66\u672f|arxiv|scholar/i.test(query);
+  const isNews = /\u65b0\u95fb|\u6700\u65b0|today|breaking|\u521a\u521a|\u70ed\u70b9|trending/i.test(query);
+  const isTechnical = /api|sdk|framework|\u5e93|\u6587\u6863|documentation|github/i.test(query);
+  const isResearchMode = options.mode === 'research';
+
+  const selected: string[] = [];
+
+  if (isChinese) {
+    selected.push('perplexity');  // Best Chinese AI summary
+    selected.push('tavily');      // Good structured extraction
+    if (isResearchMode) selected.push('exa');  // Extra coverage (brave skipped: Free plan rate_limit=1)
+  } else if (isTwitter) {
+    selected.push('brave');       // Best for social/Twitter content
+    selected.push('perplexity');  // AI summary context
+  } else if (isTechnical) {
+    selected.push('exa');         // Semantic search excels at technical content
+    selected.push('perplexity');  // AI summary for docs
+    if (isResearchMode) selected.push('tavily');
+  } else if (isNews) {
+    selected.push('brave');       // Best for real-time/news
+    selected.push('perplexity');  // AI summary
+  } else if (isAcademic) {
+    selected.push('exa');         // Semantic search for papers
+    selected.push('tavily');      // Structured extraction
+    if (isResearchMode) selected.push('perplexity');
+  } else {
+    // Default: 2 sources for quick, 3 for research
+    // Brave excluded from research mode: Free plan rate_limit=1 causes 429 under parallel load
+    selected.push('perplexity');
+    selected.push('tavily');
+    if (isResearchMode) {
+      selected.push('exa');
+    }
+  }
+
+  return {
+    sources: selected,
+    reason: [
+      isChinese && 'chinese',
+      isTwitter && 'twitter',
+      isAcademic && 'academic',
+      isNews && 'news',
+      isTechnical && 'technical',
+      isResearchMode && 'research-mode',
+    ].filter(Boolean).join('+') || 'default',
+  };
+}
+
 // ============================================================================
 // Tool Definition
 // ============================================================================
 
 export const webSearchTool: Tool = {
   name: 'web_search',
-  description: `Search the web and return results with titles, URLs, and snippets.
+  description: 'Search the web and return results with titles, URLs, and snippets.',
+  dynamicDescription: () => {
+    const now = new Date();
+    const currentDate = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+    const currentYear = now.getFullYear();
+    return `Search the web and return results with titles, URLs, and snippets.
 
 Provides up-to-date information beyond the model's knowledge cutoff. Use when you need current data, recent events, or documentation updates.
 
-IMPORTANT: Use the current year in search queries when looking for recent information. Do NOT search with outdated years.
+IMPORTANT: 当前日期为 ${currentDate}。搜索时务必使用正确的年份 ${currentYear}，不要搜索过时的年份。
 
 CRITICAL: After answering with search results, you MUST include a "Sources:" section listing relevant URLs as markdown hyperlinks.
 
@@ -138,12 +257,14 @@ For reading a specific URL you already have, use web_fetch instead.
 For searching local code, use grep or glob.
 
 Features:
+- Intelligent source routing: automatically picks 2-3 best-fit sources based on query characteristics
+- mode: "quick" (2 sources, fast) or "research" (3-4 sources, thorough)
 - Parallel search across multiple sources (Perplexity, EXA, Brave, Tavily)
 - Domain filtering with allowed_domains / blocked_domains
 - auto_extract: search + fetch + AI extraction in one call
 - recency: filter results by day/week/month
-- output_format: "table" for compact markdown output`,
-  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
+- output_format: "table" for compact markdown output`;
+  },
   requiresPermission: true,
   permissionLevel: 'network',
   inputSchema: {
@@ -192,6 +313,11 @@ Features:
         type: 'string',
         description: 'Output format: "default" (detailed with snippets) or "table" (compact markdown table ready to copy-paste). Use "table" when you need to directly include results in a report.',
       },
+      mode: {
+        type: 'string',
+        enum: ['quick', 'research'],
+        description: 'Search mode: "quick" uses 2 best-fit sources for speed, "research" uses 3-4 sources for thoroughness. Default: "quick".',
+      },
       save_to: {
         type: 'string',
         description: 'File path to automatically save results. The tool writes the file directly — no need to call write_file separately.',
@@ -212,8 +338,11 @@ Features:
     const count = Math.min(Math.max((params.count as number) || 5, 1), 10);
     const parallel = (params.parallel as boolean) ?? true;
     const requestedSources = params.sources as string[] | undefined;
-    const autoExtract = (params.auto_extract as boolean) ?? false;
-    const extractCount = Math.min(Math.max((params.extract_count as number) || 3, 1), 5);
+    const mode = (params.mode as 'quick' | 'research') || 'quick';
+    const autoExtract = params.auto_extract !== undefined
+      ? Boolean(params.auto_extract)
+      : mode === 'research'; // research 模式默认开启
+    const extractCount = Math.min(Math.max((params.extract_count as number) || (mode === 'research' ? 3 : 1), 1), 5);
     const recency = params.recency as string | undefined;
     const outputFormat = (params.output_format as string) || 'default';
     const language = params.language as string | undefined;
@@ -229,17 +358,32 @@ Features:
 
     const configService = getConfigService();
 
-    // 确定可用的搜索源
-    const availableSources = getAvailableSources(configService, requestedSources);
+    // Get all sources with configured API keys
+    const allAvailable = getAvailableSources(configService);
 
-    if (availableSources.length === 0) {
+    if (allAvailable.length === 0) {
       return {
         success: false,
         error: 'No search sources available. Please configure at least one API key (EXA, Perplexity, or Brave) in Settings > Service API Keys.',
       };
     }
 
-    logger.info(`Searching with ${availableSources.length} sources:`, availableSources.map(s => s.name));
+    // Intelligent source routing: analyze query to pick best-fit sources
+    const routing = routeSources(query, { mode, requestedSources });
+
+    // Intersect: only use routed sources that are actually available
+    const routedAvailable = allAvailable.filter(s => routing.sources.includes(s.name));
+
+    // If routing filtered everything out, fallback to all available
+    const availableSources = routedAvailable.length > 0 ? routedAvailable : allAvailable;
+
+    logger.info('Search source routing', {
+      query: query.substring(0, 50),
+      routed: routing.sources,
+      reason: routing.reason,
+      available: allAvailable.map(s => s.name),
+      final: availableSources.map(s => s.name),
+    });
 
     let searchResult: ToolExecutionResult;
 
@@ -286,14 +430,47 @@ Features:
 
     // Translate results at tool level if language is specified
     if (language && searchResult.success && searchResult.output) {
+      // Skip translation when query language already matches target language
+      const queryText = (params.query as string) || '';
+      const hasChinese = /[\u4e00-\u9fff]/.test(queryText);
+      const isAllEnglish = /^[a-zA-Z0-9\s\-_.,;:!?'"()\[\]{}<>@#$%^&*+=|/\\~`]+$/.test(queryText);
+      const skipTranslation =
+        (language === 'zh' && hasChinese) ||
+        (language === 'en' && isAllEnglish);
+
+      if (skipTranslation) {
+        logger.debug('Skipping translation - query language matches target', { language, query: queryText });
+      }
+
       const resultData = searchResult.result as { results?: SearchResult[] } | undefined;
       const results = resultData?.results || [];
-      if (results.length > 0 && context.modelCallback) {
+      if (!skipTranslation && results.length > 0) {
         try {
+          // Use quick model (fast & free) for translation instead of main model
+          const { quickTask, isQuickModelAvailable } = await import('../../model/quickModel');
+          if (!isQuickModelAvailable() && !context.modelCallback) {
+            logger.warn('No model available for translation, skipping');
+          }
           // Batch translate: send all titles+snippets in one call
           const items = results.map((r, i) => `${i + 1}. ${r.title}\n${r.snippet || r.description || ''}`).join('\n---\n');
           const prompt = `Translate the following search result titles and descriptions to ${language === 'zh' ? 'Chinese (简体中文)' : language}. Keep the numbering. Only output the translations, one per item, separated by ---:\n\n${items}`;
-          const translated = await context.modelCallback(prompt);
+
+          let translated: string | undefined;
+          if (isQuickModelAvailable()) {
+            const result = await quickTask(prompt);
+            translated = result.success ? result.content : undefined;
+            if (!result.success) {
+              logger.warn('Quick model translation failed, falling back to modelCallback', { error: result.error });
+              // Fallback to modelCallback if quick model fails
+              if (context.modelCallback) {
+                translated = await context.modelCallback(prompt);
+              }
+            }
+          } else if (context.modelCallback) {
+            // Fallback: use modelCallback if quick model not available
+            translated = await context.modelCallback(prompt);
+          }
+
           if (translated) {
             // Parse translated items and rebuild output
             const translatedItems = translated.split('---').map(s => s.trim()).filter(Boolean);
@@ -531,8 +708,31 @@ async function parallelSearch(
 ): Promise<ToolExecutionResult> {
   const startTime = Date.now();
 
+  // Filter out circuit-broken sources before searching
+  const activeSources: SearchSource[] = [];
+  const skippedSources: string[] = [];
+  for (const source of sources) {
+    const remaining = getCircuitBreakerRemaining(source.name);
+    if (remaining > 0) {
+      logger.info('Circuit breaker active, skipping source', {
+        source: source.name,
+        cooldownRemaining: `${Math.ceil(remaining / 1000)}s`,
+      });
+      skippedSources.push(`${source.name}: circuit breaker (${Math.ceil(remaining / 1000)}s remaining)`);
+    } else {
+      activeSources.push(source);
+    }
+  }
+
+  if (activeSources.length === 0) {
+    return {
+      success: false,
+      error: `All search sources are circuit-broken:\n${skippedSources.join('\n')}`,
+    };
+  }
+
   // 并行调用所有数据源（使用 allSettled 实现错误隔离）
-  const searchPromises = sources.map(source =>
+  const searchPromises = activeSources.map(source =>
     source.search(query, count, configService, domainFilter, recency)
       .catch(error => ({
         source: source.name,
@@ -545,20 +745,28 @@ async function parallelSearch(
 
   // 收集成功的结果
   const successResults: SearchSourceResult[] = [];
-  const failedSources: string[] = [];
+  const failedSources: string[] = [...skippedSources];
 
   for (let i = 0; i < results.length; i++) {
     const result = results[i];
-    const sourceName = sources[i].name;
+    const sourceName = activeSources[i].name;
 
     if (result.status === 'fulfilled') {
       if (result.value.success) {
         successResults.push(result.value);
       } else {
+        // Check for 429 and trip circuit breaker
+        if (result.value.error?.includes('429')) {
+          tripCircuitBreaker(sourceName);
+        }
         failedSources.push(`${sourceName}: ${result.value.error}`);
         logger.warn(`Search source ${sourceName} failed:`, result.value.error);
       }
     } else {
+      const reason = String(result.reason);
+      if (reason.includes('429')) {
+        tripCircuitBreaker(sourceName);
+      }
       failedSources.push(`${sourceName}: ${result.reason}`);
       logger.warn(`Search source ${sourceName} rejected:`, result.reason);
     }
@@ -597,15 +805,33 @@ async function serialSearch(
   const errors: string[] = [];
 
   for (const source of sources) {
+    // Check circuit breaker
+    const remaining = getCircuitBreakerRemaining(source.name);
+    if (remaining > 0) {
+      logger.info('Circuit breaker active, skipping source', {
+        source: source.name,
+        cooldownRemaining: `${Math.ceil(remaining / 1000)}s`,
+      });
+      errors.push(`${source.name}: circuit breaker (${Math.ceil(remaining / 1000)}s remaining)`);
+      continue;
+    }
+
     try {
       const result = await source.search(query, count, configService, domainFilter, recency);
       if (result.success) {
         const duration = Date.now() - startTime;
         return formatSingleSourceResult(query, result, duration);
       }
+      // Check for 429 and trip circuit breaker
+      if (result.error?.includes('429')) {
+        tripCircuitBreaker(source.name);
+      }
       errors.push(`${source.name}: ${result.error}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+      if (message.includes('429')) {
+        tripCircuitBreaker(source.name);
+      }
       errors.push(`${source.name}: ${message}`);
       logger.warn(`Search source ${source.name} failed:`, message);
     }
@@ -633,7 +859,7 @@ export function mergeSearchResults(
   const seenTitles = new Set<string>();
 
   outputParts.push(`# Search results for: "${query}"`);
-  outputParts.push(`Sources: ${results.map(r => r.source).join(', ')} | Duration: ${duration}ms`);
+  outputParts.push(`Sources: ${results.map(r => r.source).join(', ')}`);
   outputParts.push('');
 
   // 处理每个数据源的结果
@@ -668,6 +894,11 @@ export function mergeSearchResults(
       outputParts.push('');
     }
   }
+
+  // Log dedup statistics
+  const totalResults = results.reduce((sum, r) => sum + (r.results?.length || 0), 0);
+  const dedupedResults = allResults.length;
+  logger.info('Search results dedup', { before: totalResults, after: dedupedResults, removed: totalResults - dedupedResults });
 
   // 如果有失败的数据源，添加提示
   if (failedSources.length > 0) {

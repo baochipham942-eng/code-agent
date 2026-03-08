@@ -32,7 +32,6 @@ export { Description, getDescriptionMetadata } from './description';
 export type {
   ToolOptions,
   ParamOptions,
-  GenerationSpec,
   ITool,
   ToolConstructor,
   ToolMetadataStored,

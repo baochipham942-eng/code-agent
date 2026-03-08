@@ -108,8 +108,9 @@ async function processWithVisionModel(
 
       const errorText = await directResponse.text();
       logger.warn('[PDF解析] OpenRouter 失败', { status: directResponse.status, error: errorText });
-    } catch (error: any) {
-      logger.warn('[PDF解析] OpenRouter 错误', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('[PDF解析] OpenRouter 错误', { error: message });
     }
   }
 
@@ -127,8 +128,9 @@ async function processWithVisionModel(
 
     const errorText = await cloudResponse.text();
     logger.warn('[PDF解析] 云端代理失败', { status: cloudResponse.status, error: errorText });
-  } catch (error: any) {
-    logger.warn('[PDF解析] 云端代理错误', { error: error.message });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('[PDF解析] 云端代理错误', { error: message });
   }
 
   throw new Error('PDF 解析失败。请配置 OpenRouter API Key 或检查网络连接。');
@@ -149,7 +151,6 @@ Best for:
 - Reading text-based PDFs (technical docs, code, reports)
 - Processing scanned documents and images
 - Analyzing PDF forms, diagrams and charts`,
-  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'read',
   inputSchema: {
@@ -215,8 +216,9 @@ Best for:
           fileSizeMB: parseFloat(fileSizeMB),
         },
       };
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      if ((error as Record<string, unknown>).code === 'ENOENT') {
         return {
           success: false,
           error: `文件不存在: ${filePath}`,
@@ -224,7 +226,7 @@ Best for:
       }
       return {
         success: false,
-        error: error.message || '读取 PDF 失败',
+        error: errMsg || '读取 PDF 失败',
       };
     }
   },

@@ -5,6 +5,10 @@
 import path from 'path';
 import fs from 'fs';
 import { app } from 'electron';
+import { createLogger } from '../infra/logger';
+import { getServiceRegistry } from '../serviceRegistry';
+
+const logger = createLogger('DatabaseService');
 // 延迟加载 better-sqlite3，CLI 模式下原生模块为 Electron 编译，ABI 不匹配
 // 降级后数据库功能不可用，CLI 使用自己的 CLIDatabaseService
 import type BetterSqlite3 from 'better-sqlite3';
@@ -146,8 +150,11 @@ export class DatabaseService {
     for (const migration of migrations) {
       try {
         this.db.exec(migration.sql);
-      } catch {
-        // 列已存在，忽略
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+          logger.warn('[DB] Migration unexpected error:', msg);
+        }
       }
     }
   }
@@ -156,8 +163,11 @@ export class DatabaseService {
     if (!this.db) return;
     try {
       this.db.exec("ALTER TABLE telemetry_turns ADD COLUMN agent_id TEXT DEFAULT 'main'");
-    } catch {
-      // 列已存在，忽略
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+        logger.warn('[DB] Migration unexpected error:', msg);
+      }
     }
 
     // telemetry_model_calls 新增 prompt/completion 列（用于评测系统重放）
@@ -168,8 +178,11 @@ export class DatabaseService {
     for (const sql of modelCallMigrations) {
       try {
         this.db.exec(sql);
-      } catch {
-        // 列已存在，忽略
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+          logger.warn('[DB] Migration unexpected error:', msg);
+        }
       }
     }
   }
@@ -209,20 +222,29 @@ export class DatabaseService {
     // 迁移：为旧表添加 attachments 列（如果不存在）
     try {
       this.db.exec(`ALTER TABLE messages ADD COLUMN attachments TEXT`);
-    } catch {
-      // 列已存在，忽略
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+        logger.warn('[DB] Migration unexpected error:', msg);
+      }
     }
 
     // 迁移：为旧表添加 thinking 和 effort_level 列（如果不存在）
     try {
       this.db.exec(`ALTER TABLE messages ADD COLUMN thinking TEXT`);
-    } catch {
-      // 列已存在，忽略
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+        logger.warn('[DB] Migration unexpected error:', msg);
+      }
     }
     try {
       this.db.exec(`ALTER TABLE messages ADD COLUMN effort_level TEXT`);
-    } catch {
-      // 列已存在，忽略
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+        logger.warn('[DB] Migration unexpected error:', msg);
+      }
     }
 
     // Tool Executions 表 (用于缓存和审计)
@@ -791,8 +813,8 @@ export class DatabaseService {
     if (row.last_token_usage) {
       try {
         lastTokenUsage = JSON.parse(row.last_token_usage as string);
-      } catch {
-        // 解析失败时忽略
+      } catch (err: unknown) {
+        logger.warn('[DB] Failed to parse last_token_usage JSON:', err instanceof Error ? err.message : String(err));
       }
     }
 
@@ -921,6 +943,18 @@ export class DatabaseService {
       thinking: (row.thinking as string) || undefined,
       effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
     }));
+  }
+
+  /**
+   * 删除指定时间戳及之后的所有消息（用于 Rewind 回退）
+   */
+  deleteMessagesFrom(sessionId: string, fromTimestamp: number): number {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const result = this.db.prepare(
+      'DELETE FROM messages WHERE session_id = ? AND timestamp >= ?'
+    ).run(sessionId, fromTimestamp);
+    return result.changes;
   }
 
   getMessageCount(sessionId: string): number {
@@ -1335,6 +1369,10 @@ export class DatabaseService {
       this.db.close();
       this.db = null;
     }
+  }
+
+  async dispose(): Promise<void> {
+    this.close();
   }
 
   /**
@@ -1824,6 +1862,7 @@ let dbInstance: DatabaseService | null = null;
 export function getDatabase(): DatabaseService {
   if (!dbInstance) {
     dbInstance = new DatabaseService();
+    getServiceRegistry().register('DatabaseService', dbInstance);
   }
   return dbInstance;
 }

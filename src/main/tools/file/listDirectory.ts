@@ -16,7 +16,6 @@ Use for: understanding project layout, browsing directory contents.
 
 For finding specific files by name pattern, use glob instead — it is faster and supports recursive matching (e.g., "**/*.ts").
 For searching file contents, use grep.`,
-  generations: ['gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {
@@ -67,8 +66,9 @@ For searching file contents, use grep.`,
         success: true,
         output,
       };
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      if ((error as Record<string, unknown>).code === 'ENOENT') {
         return {
           success: false,
           error: `Directory not found: ${dirPath}`,
@@ -76,7 +76,7 @@ For searching file contents, use grep.`,
       }
       return {
         success: false,
-        error: error.message || 'Failed to list directory',
+        error: errMsg || 'Failed to list directory',
       };
     }
   },

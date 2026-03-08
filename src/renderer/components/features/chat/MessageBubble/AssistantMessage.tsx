@@ -67,7 +67,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
         </div>
       )}
       {/* Thinking/Reasoning - simplified plain text fold */}
-      {reasoningContent && (
+      {reasoningContent?.trim() && (
         <div className="mb-2">
           <button
             onClick={() => setShowReasoning(!showReasoning)}

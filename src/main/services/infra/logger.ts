@@ -112,6 +112,10 @@ class Logger {
 
     return result;
   }
+
+  async dispose(): Promise<void> {
+    // Logger has no resources to release
+  }
 }
 
 /**
@@ -126,3 +130,14 @@ export function createLogger(context: string): Logger {
  * 默认 Logger 实例（无上下文）
  */
 export const logger = new Logger();
+
+// Lazy registration to avoid circular dependency (ServiceRegistry imports logger)
+let loggerRegistered = false;
+export function ensureLoggerRegistered(): void {
+  if (loggerRegistered) return;
+  loggerRegistered = true;
+  // Dynamic import to break circular dependency
+  const { getServiceRegistry } = require('../serviceRegistry');
+  getServiceRegistry().register('Logger', logger);
+}
+

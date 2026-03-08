@@ -430,7 +430,6 @@ export const imageAnnotateTool: Tool = {
 **需要配置**：
 - 百度 OCR API（需要 BAIDU_OCR_API_KEY 和 BAIDU_OCR_SECRET_KEY）
 - 或智谱 API Key（降级方案，坐标不精确）`,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {
@@ -552,8 +551,9 @@ export const imageAnnotateTool: Tool = {
           }
 
           logger.info('[图片标注] 百度 OCR 识别完成', { regionCount: regions.length });
-        } catch (error: any) {
-          logger.warn('[图片标注] 百度 OCR 失败，尝试降级方案', { error: error.message });
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          logger.warn('[图片标注] 百度 OCR 失败，尝试降级方案', { error: message });
           // 降级到视觉模型
         }
       }
@@ -649,11 +649,12 @@ export const imageAnnotateTool: Tool = {
           } : undefined,
         },
       };
-    } catch (error: any) {
-      logger.error('[图片标注] 失败', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('[图片标注] 失败', { error: message });
       return {
         success: false,
-        error: `图片标注失败: ${error.message}`,
+        error: `图片标注失败: ${message}`,
       };
     }
   },

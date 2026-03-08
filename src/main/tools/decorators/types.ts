@@ -2,7 +2,7 @@
 // Tool Decorator Types
 // ============================================================================
 
-import type { GenerationId, JSONSchema } from '../../../shared/types';
+import type { JSONSchema } from '../../../shared/types';
 import type { ToolContext, ToolExecutionResult } from '../toolRegistry';
 
 // ----------------------------------------------------------------------------
@@ -14,15 +14,12 @@ import type { ToolContext, ToolExecutionResult } from '../toolRegistry';
  * - 数组: ['gen1', 'gen2', 'gen3']
  * - 字符串: 'gen1+' (gen1 及以上), 'gen3' (仅 gen3)
  */
-export type GenerationSpec = GenerationId[] | string;
 
 // ----------------------------------------------------------------------------
 // Tool Options
 // ----------------------------------------------------------------------------
 
 export interface ToolOptions {
-  /** 工具适用的代际 */
-  generations: GenerationSpec;
   /** 权限级别 */
   permission?: 'read' | 'write' | 'execute' | 'network' | 'none';
   /** 是否需要用户确认 */
@@ -81,7 +78,6 @@ export const DESCRIPTION_METADATA_KEY = Symbol('tool:description');
 
 export interface ToolMetadataStored {
   name: string;
-  generations: GenerationId[];
   permission: 'read' | 'write' | 'execute' | 'network' | 'none';
   requiresConfirmation: boolean;
 }

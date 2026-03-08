@@ -16,7 +16,6 @@ import { resolvePath } from '../file/pathUtils';
 // ----------------------------------------------------------------------------
 
 @Tool('glob', {
-  generations: 'gen2+',  // gen2 及以上所有代际
   permission: 'none',    // 不需要权限确认
 })
 @Description(`Fast file pattern matching tool that works with any codebase size.

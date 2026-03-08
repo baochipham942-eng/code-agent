@@ -6,6 +6,7 @@
 // ============================================================================
 
 import type { GenerationId } from '../../../shared/types';
+import { DEFAULT_GENERATION } from '../../../shared/constants';
 import { IDENTITY_PROMPT } from './identity';
 import { getSoul } from './soulLoader';
 import { BASE_PROMPTS } from './base';
@@ -58,32 +59,15 @@ const RULE_TIERS = {
  * Get rules for a specific generation using tiered loading.
  * This optimizes token consumption by only including necessary rules.
  */
-function getRulesForGeneration(generationId: GenerationId): string[] {
-  const genNum = parseInt(generationId.replace('gen', ''), 10);
-  const rules: string[] = [];
-
-  // Always include basic rules
-  rules.push(...RULE_TIERS.basic);
-
-  // Gen2+: Add collaboration rules
-  if (genNum >= 2) {
-    rules.push(...RULE_TIERS.collaboration);
-  }
-
-  // Gen3+: Add standard rules (planning, git, security)
-  if (genNum >= 3) {
-    rules.push(...RULE_TIERS.standard);
-  }
-
-  // Gen4+: Add network rules (GitHub)
-  if (genNum >= 4) {
-    rules.push(...RULE_TIERS.network);
-  }
-
-  // Always include content rules
-  rules.push(...RULE_TIERS.content);
-
-  return rules;
+/** @simplified Always returns gen8 rules (all tiers) */
+function getRulesForGeneration(_generationId: GenerationId): string[] {
+  return [
+    ...RULE_TIERS.basic,
+    ...RULE_TIERS.collaboration,
+    ...RULE_TIERS.standard,
+    ...RULE_TIERS.network,
+    ...RULE_TIERS.content,
+  ];
 }
 
 // ----------------------------------------------------------------------------
@@ -99,13 +83,15 @@ function getRulesForGeneration(generationId: GenerationId): string[] {
  * 3. Tool Descriptions - 工具详细描述（包含工作流）
  * 4. Rules - 仅保留安全关键规则（注入防护）
  */
+/** @simplified Always builds gen8 prompt regardless of generationId */
 export function buildPrompt(generationId: GenerationId): string {
-  const basePrompt = BASE_PROMPTS[generationId];
-  const toolDescriptions = getToolDescriptionsForGeneration(generationId);
-  const rules = getRulesForGeneration(generationId);
+  const targetId = DEFAULT_GENERATION;
+  const basePrompt = BASE_PROMPTS[targetId];
+  const toolDescriptions = getToolDescriptionsForGeneration(targetId);
+  const rules = getRulesForGeneration(targetId);
 
   if (!basePrompt) {
-    throw new Error(`Unknown generation: ${generationId}`);
+    throw new Error(`Unknown generation: ${targetId}`);
   }
 
   // Claude Code 风格组装：Identity/Soul → 代际工具 → 工具描述 → 规则
@@ -115,32 +101,17 @@ export function buildPrompt(generationId: GenerationId): string {
 /**
  * Builds all system prompts and returns them as a record.
  */
-export function buildAllPrompts(): Record<GenerationId, string> {
-  const generationIds: GenerationId[] = [
-    'gen1',
-    'gen2',
-    'gen3',
-    'gen4',
-    'gen5',
-    'gen6',
-    'gen7',
-    'gen8',
-  ];
-
-  const prompts: Partial<Record<GenerationId, string>> = {};
-
-  for (const id of generationIds) {
-    prompts[id] = buildPrompt(id);
-  }
-
-  return prompts as Record<GenerationId, string>;
+export function buildAllPrompts(): Partial<Record<GenerationId, string>> {
+  return {
+    gen8: buildPrompt('gen8'),
+  };
 }
 
 /**
  * Pre-built prompts for all generations.
  * Use this for performance when prompts are needed frequently.
  */
-export const SYSTEM_PROMPTS: Record<GenerationId, string> = buildAllPrompts();
+export const SYSTEM_PROMPTS: Partial<Record<GenerationId, string>> = buildAllPrompts();
 
 // ----------------------------------------------------------------------------
 // Simple Task Mode Prompt (Phase 3)
@@ -178,18 +149,12 @@ You are a helpful coding assistant. Help the user with their request directly an
  * Get the appropriate prompt based on task complexity.
  * For simple tasks, returns minimal prompt to save tokens.
  */
+/** @simplified Always returns gen8 prompt */
 export function getPromptForTask(
-  generationId: GenerationId,
-  isSimpleTask: boolean
+  _generationId: GenerationId,
+  _isSimpleTask: boolean
 ): string {
-  // Only use simple prompt for Gen1-2 simple tasks
-  const genNum = parseInt(generationId.replace('gen', ''), 10);
-
-  if (isSimpleTask && genNum <= 2) {
-    return SIMPLE_TASK_PROMPT;
-  }
-
-  return SYSTEM_PROMPTS[generationId];
+  return SYSTEM_PROMPTS[DEFAULT_GENERATION]!;
 }
 
 // ----------------------------------------------------------------------------
@@ -219,7 +184,8 @@ export function buildDynamicPrompt(
   generationId: GenerationId,
   taskPrompt: string
 ): DynamicPromptResult {
-  const basePrompt = SYSTEM_PROMPTS[generationId];
+  // Locked to gen8: ignore generationId
+  const basePrompt = SYSTEM_PROMPTS[DEFAULT_GENERATION] ?? "";
   const features = detectTaskFeatures(taskPrompt);
   const mode = selectMode(taskPrompt);
   const modeConfig = getModeConfig(mode);
@@ -296,7 +262,8 @@ export function buildDynamicPromptV2(
     includeFewShot?: boolean;
   } = {}
 ): DynamicPromptResultV2 {
-  const basePrompt = SYSTEM_PROMPTS[generationId];
+  // Locked to gen8: ignore generationId
+  const basePrompt = SYSTEM_PROMPTS[DEFAULT_GENERATION] ?? "";
   const features = detectTaskFeatures(taskPrompt);
   const mode = selectMode(taskPrompt);
   const modeConfig = getModeConfig(mode);
@@ -400,7 +367,7 @@ export function buildPromptWithRules(
   generationId: GenerationId,
   filePaths: string[]
 ): string {
-  const basePrompt = buildPrompt(generationId);
+  const basePrompt = buildPrompt(DEFAULT_GENERATION);
   if (!cachedRules || filePaths.length === 0) return basePrompt;
 
   // Collect unique matching rules across all file paths

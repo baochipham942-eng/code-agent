@@ -45,28 +45,11 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   // Gen 1: 扩展 Shell 工具
   // ============================================================================
   {
-    name: 'kill_shell',
-    shortDescription: '终止正在运行的后台 shell',
-    tags: ['shell'],
-    aliases: ['kill', 'stop'],
-    source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'task_output',
-    shortDescription: '获取后台任务的输出',
-    tags: ['shell'],
-    aliases: ['output', 'background'],
-    source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
     name: 'notebook_edit',
     shortDescription: '编辑 Jupyter Notebook 单元格',
     tags: ['file', 'document'],
     aliases: ['jupyter', 'notebook', 'ipynb'],
     source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
 
   // ============================================================================
@@ -78,7 +61,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['planning', 'multiagent'],
     aliases: ['subagent', 'agent'],
     source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'confirm_action',
@@ -86,7 +68,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['planning'],
     aliases: ['confirm', 'approve'],
     source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'read_clipboard',
@@ -94,23 +75,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['file'],
     aliases: ['clipboard', 'paste'],
     source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'plan_read',
-    shortDescription: '读取当前任务计划',
-    tags: ['planning'],
-    aliases: ['plan'],
-    source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'plan_update',
-    shortDescription: '更新任务计划',
-    tags: ['planning'],
-    aliases: ['plan'],
-    source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'findings_write',
@@ -118,51 +82,17 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['planning'],
     aliases: ['findings', 'notes'],
     source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'enter_plan_mode',
-    shortDescription: '进入计划模式',
-    tags: ['planning'],
-    aliases: ['plan'],
-    source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'exit_plan_mode',
-    shortDescription: '退出计划模式',
-    tags: ['planning'],
-    aliases: ['plan'],
-    source: 'builtin',
-    generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
 
   // ============================================================================
   // Gen 4: 网络和 Skill
   // ============================================================================
   {
-    name: 'web_fetch',
-    shortDescription: '获取网页内容',
-    tags: ['network'],
-    aliases: ['fetch', 'http', 'url', 'webpage'],
-    source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
     name: 'web_search',
     shortDescription: '搜索网络信息',
     tags: ['network', 'search'],
     aliases: ['google', 'search', 'bing'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'read_pdf',
-    shortDescription: '读取 PDF 文件内容',
-    tags: ['document', 'file'],
-    aliases: ['pdf'],
-    source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'lsp',
@@ -170,67 +100,73 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['file', 'search'],
     aliases: ['language-server', 'definition', 'references'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'http_request',
-    shortDescription: '发送 HTTP API 请求',
-    tags: ['network'],
-    aliases: ['api', 'rest', 'request'],
-    source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
 
   // ============================================================================
-  // Gen 4: MCP 工具
+  // Phase 2: Unified Tools (consolidated from multiple tools)
   // ============================================================================
   {
-    name: 'mcp',
-    shortDescription: '调用 MCP 服务器工具',
+    name: 'Process',
+    shortDescription: '进程管理（列出/轮询/日志/写入/提交/终止/输出）',
+    tags: ['shell'],
+    aliases: ['process', 'ps', 'kill', 'output', 'background', 'pty'],
+    source: 'builtin',
+  },
+  {
+    name: 'MCPUnified',
+    shortDescription: 'MCP 服务器操作（调用/列表/资源/状态/添加）',
     tags: ['mcp', 'network'],
-    aliases: ['mcp-call', 'mcp-tool'],
+    aliases: ['mcp', 'mcp-call', 'mcp-tools', 'mcp-resources', 'mcp-status', 'mcp-add'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
-    name: 'mcp_list_tools',
-    shortDescription: '列出 MCP 服务器的可用工具',
-    tags: ['mcp'],
-    aliases: ['mcp-tools'],
+    name: 'TaskManager',
+    shortDescription: '任务管理 CRUD（创建/获取/列表/更新）',
+    tags: ['planning', 'multiagent'],
+    aliases: ['task-create', 'task-get', 'task-list', 'task-update', 'tasks'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
-    name: 'mcp_list_resources',
-    shortDescription: '列出 MCP 服务器的资源',
-    tags: ['mcp'],
-    aliases: ['mcp-resources'],
+    name: 'Plan',
+    shortDescription: '读取和更新任务计划',
+    tags: ['planning'],
+    aliases: ['plan', 'plan-read', 'plan-update'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
-    name: 'mcp_read_resource',
-    shortDescription: '读取 MCP 资源内容',
-    tags: ['mcp'],
-    aliases: ['mcp-read'],
+    name: 'PlanMode',
+    shortDescription: '进入/退出规划模式',
+    tags: ['planning'],
+    aliases: ['plan-mode', 'enter-plan', 'exit-plan'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
-    name: 'mcp_get_status',
-    shortDescription: '获取 MCP 服务器状态',
-    tags: ['mcp'],
-    aliases: ['mcp-status'],
+    name: 'WebFetch',
+    shortDescription: '网页获取和 HTTP API 请求',
+    tags: ['network'],
+    aliases: ['fetch', 'http', 'url', 'api', 'request', 'webpage'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
-    name: 'mcp_add_server',
-    shortDescription: '添加新的 MCP 服务器',
-    tags: ['mcp'],
-    aliases: ['mcp-add'],
+    name: 'ReadDocument',
+    shortDescription: '读取文档（PDF/Word/Excel）',
+    tags: ['document', 'file'],
+    aliases: ['pdf', 'docx', 'xlsx', 'word', 'excel', 'document'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
+  },
+  {
+    name: 'Browser',
+    shortDescription: '浏览器自动化（导航/点击/输入/截图）',
+    tags: ['vision', 'network'],
+    aliases: ['browser', 'navigate', 'click', 'playwright'],
+    source: 'builtin',
+  },
+  {
+    name: 'Computer',
+    shortDescription: '计算机控制（截图/鼠标/键盘）',
+    tags: ['vision'],
+    aliases: ['computer', 'screen', 'mouse', 'keyboard', 'capture'],
+    source: 'builtin',
   },
 
   // ============================================================================
@@ -242,7 +178,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['document', 'media'],
     aliases: ['ppt', 'powerpoint', 'slides', 'presentation'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'image_generate',
@@ -250,7 +185,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media'],
     aliases: ['dalle', 'image', 'picture', 'draw'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'video_generate',
@@ -258,7 +192,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media'],
     aliases: ['video', 'movie', 'animation'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'image_analyze',
@@ -266,7 +199,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['vision', 'media'],
     aliases: ['analyze', 'vision', 'ocr'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'docx_generate',
@@ -274,7 +206,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['document'],
     aliases: ['docx', 'word', 'doc'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'excel_generate',
@@ -282,7 +213,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['document'],
     aliases: ['excel', 'xlsx', 'spreadsheet'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'chart_generate',
@@ -290,7 +220,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media', 'document'],
     aliases: ['chart', 'graph', 'plot'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'qrcode_generate',
@@ -298,23 +227,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media'],
     aliases: ['qrcode', 'qr'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'read_docx',
-    shortDescription: '读取 Word 文档',
-    tags: ['document', 'file'],
-    aliases: ['docx', 'word'],
-    source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'read_xlsx',
-    shortDescription: '读取 Excel 表格',
-    tags: ['document', 'file'],
-    aliases: ['excel', 'xlsx'],
-    source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'jira',
@@ -322,7 +234,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['network'],
     aliases: ['jira', 'ticket', 'issue'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'github_pr',
@@ -330,7 +241,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['network'] as ToolTag[],
     aliases: ['github', 'pr', 'pull-request', 'merge'],
     source: 'builtin',
-    generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'youtube_transcript',
@@ -338,7 +248,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['network', 'document'],
     aliases: ['youtube', 'transcript', 'subtitle'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'twitter_fetch',
@@ -346,7 +255,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['network'],
     aliases: ['twitter', 'x', 'tweet'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'mermaid_export',
@@ -354,7 +262,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media', 'document'],
     aliases: ['mermaid', 'diagram'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'pdf_generate',
@@ -362,7 +269,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['document'],
     aliases: ['pdf'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'image_process',
@@ -370,7 +276,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media'],
     aliases: ['image', 'resize', 'crop', 'convert'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'screenshot_page',
@@ -378,7 +283,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['vision', 'network'],
     aliases: ['screenshot', 'capture', 'webpage'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'academic_search',
@@ -386,7 +290,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['network', 'search'],
     aliases: ['paper', 'academic', 'scholar', 'arxiv'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'speech_to_text',
@@ -394,7 +297,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media'],
     aliases: ['stt', 'transcribe', 'speech', 'audio'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'text_to_speech',
@@ -402,7 +304,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media'],
     aliases: ['tts', 'voice', 'speak'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'image_annotate',
@@ -410,7 +311,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['media', 'vision'],
     aliases: ['annotate', 'mark', 'label'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
 
   // ============================================================================
@@ -422,7 +322,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['memory'],
     aliases: ['remember', 'store', 'save'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'memory_search',
@@ -430,7 +329,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['memory', 'search'],
     aliases: ['recall', 'memory'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'code_index',
@@ -438,7 +336,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['memory', 'search'],
     aliases: ['index', 'codebase'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'auto_learn',
@@ -446,7 +343,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['memory', 'evolution'],
     aliases: ['learn', 'auto'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   },
   {
     name: 'fork_session',
@@ -454,43 +350,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['memory'],
     aliases: ['fork', 'branch'],
     source: 'builtin',
-    generations: ['gen5', 'gen6', 'gen7', 'gen8'],
-  },
-
-  // ============================================================================
-  // Gen 6: 视觉和浏览器
-  // ============================================================================
-  {
-    name: 'screenshot',
-    shortDescription: '截取屏幕或窗口',
-    tags: ['vision'],
-    aliases: ['capture', 'screen'],
-    source: 'builtin',
-    generations: ['gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'computer_use',
-    shortDescription: '控制计算机（鼠标、键盘）',
-    tags: ['vision'],
-    aliases: ['computer', 'control', 'mouse', 'keyboard'],
-    source: 'builtin',
-    generations: ['gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'browser_navigate',
-    shortDescription: '浏览器导航',
-    tags: ['vision', 'network'],
-    aliases: ['browser', 'navigate', 'goto'],
-    source: 'builtin',
-    generations: ['gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'browser_action',
-    shortDescription: '浏览器交互操作',
-    tags: ['vision', 'network'],
-    aliases: ['browser', 'click', 'type'],
-    source: 'builtin',
-    generations: ['gen6', 'gen7', 'gen8'],
   },
 
   // ============================================================================
@@ -502,7 +361,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['multiagent'],
     aliases: ['sdk', 'task'],
     source: 'builtin',
-    generations: ['gen7', 'gen8'],
   },
   {
     name: 'AgentSpawn',
@@ -510,7 +368,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['multiagent'],
     aliases: ['spawn', 'agent', 'create-agent'],
     source: 'builtin',
-    generations: ['gen7', 'gen8'],
   },
   {
     name: 'AgentMessage',
@@ -518,7 +375,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['multiagent'],
     aliases: ['message', 'send'],
     source: 'builtin',
-    generations: ['gen7', 'gen8'],
   },
   {
     name: 'WorkflowOrchestrate',
@@ -526,7 +382,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['multiagent', 'planning'],
     aliases: ['workflow', 'orchestrate', 'dag'],
     source: 'builtin',
-    generations: ['gen7', 'gen8'],
   },
 
   // ============================================================================
@@ -538,7 +393,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['evolution'],
     aliases: ['optimize', 'strategy'],
     source: 'builtin',
-    generations: ['gen8'],
   },
   {
     name: 'tool_create',
@@ -546,7 +400,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['evolution'],
     aliases: ['create-tool', 'new-tool'],
     source: 'builtin',
-    generations: ['gen8'],
   },
   {
     name: 'self_evaluate',
@@ -554,7 +407,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['evolution'],
     aliases: ['evaluate', 'assess'],
     source: 'builtin',
-    generations: ['gen8'],
   },
   {
     name: 'learn_pattern',
@@ -562,7 +414,6 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['evolution', 'memory'],
     aliases: ['learn', 'pattern'],
     source: 'builtin',
-    generations: ['gen8'],
   },
   {
     name: 'code_execute',
@@ -570,60 +421,11 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     tags: ['evolution', 'shell'],
     aliases: ['programmatic', 'batch_tools', 'code_run', 'ptc'],
     source: 'builtin',
-    generations: ['gen8'],
   },
 
   // ============================================================================
   // 进程管理工具（PTY）
   // ============================================================================
-  {
-    name: 'process_list',
-    shortDescription: '列出运行中的进程',
-    tags: ['shell'],
-    aliases: ['ps', 'processes'],
-    source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'process_poll',
-    shortDescription: '轮询进程状态',
-    tags: ['shell'],
-    aliases: ['poll'],
-    source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'process_log',
-    shortDescription: '获取进程日志',
-    tags: ['shell'],
-    aliases: ['log'],
-    source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'process_write',
-    shortDescription: '向进程写入输入',
-    tags: ['shell'],
-    aliases: ['stdin'],
-    source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'process_submit',
-    shortDescription: '提交进程输入',
-    tags: ['shell'],
-    aliases: ['submit'],
-    source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
-  {
-    name: 'process_kill',
-    shortDescription: '终止进程',
-    tags: ['shell'],
-    aliases: ['kill'],
-    source: 'builtin',
-    generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
-  },
 ];
 
 /**

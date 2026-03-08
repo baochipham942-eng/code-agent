@@ -23,7 +23,7 @@ Best practices:
 - Multiple files can be read in parallel with separate tool calls
 
 Returns: File content with line numbers in format "  lineNum\\tcontent"`)
-@Tool('read_file', { generations: 'gen1+', permission: 'read' })
+@Tool('read_file', { permission: 'read' })
 @Param('file_path', { type: 'string', required: true, description: 'The absolute path to the file to read' })
 @Param('offset', { type: 'number', required: false, description: 'Line number to start reading from (1-indexed)' })
 @Param('limit', { type: 'number', required: false, description: 'Maximum number of lines to read' })
@@ -74,8 +74,9 @@ class ReadFileToolDecorated implements ITool {
         success: true,
         output: result,
       };
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      if ((error as Record<string, unknown>).code === 'ENOENT') {
         return {
           success: false,
           error: `File not found: ${filePath}`,
@@ -83,7 +84,7 @@ class ReadFileToolDecorated implements ITool {
       }
       return {
         success: false,
-        error: error.message || 'Failed to read file',
+        error: errMsg || 'Failed to read file',
       };
     }
   }

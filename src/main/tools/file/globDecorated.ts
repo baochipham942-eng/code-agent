@@ -32,7 +32,7 @@ Best practices:
 When NOT to use:
 - For searching file CONTENTS - use grep instead
 - For reading a file you already know the path to - use read_file instead`)
-@Tool('glob', { generations: 'gen2+', permission: 'none' })
+@Tool('glob', { permission: 'none' })
 @Param('pattern', { type: 'string', required: true, description: 'The glob pattern to match (e.g., "**/*.ts")' })
 @Param('path', { type: 'string', required: false, description: 'Directory to search in (default: working directory)' })
 class GlobToolDecorated implements ITool {
@@ -81,10 +81,11 @@ class GlobToolDecorated implements ITool {
         success: true,
         output: result,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: error.message || 'Failed to search files',
+        error: message || 'Failed to search files',
       };
     }
   }

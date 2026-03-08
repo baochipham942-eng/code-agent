@@ -63,7 +63,6 @@ Examples:
 - Insert after cell 2: { "notebook_path": "/path/to/nb.ipynb", "cell_id": "2", "new_source": "# New markdown", "cell_type": "markdown", "edit_mode": "insert" }
 - Delete cell: { "notebook_path": "/path/to/nb.ipynb", "cell_id": "3", "new_source": "", "edit_mode": "delete" }`,
 
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
 
@@ -138,8 +137,9 @@ Examples:
       let content: string;
       try {
         content = await fs.readFile(resolvedPath, 'utf-8');
-      } catch (err: any) {
-        if (err.code === 'ENOENT') {
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if ((err as Record<string, unknown>).code === 'ENOENT') {
           return {
             success: false,
             error: `Notebook file not found: ${resolvedPath}`,

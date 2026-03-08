@@ -111,8 +111,9 @@ async function analyzeWithVision(
     }
 
     return content || null;
-  } catch (error: any) {
-    logger.warn('[网页截图分析] 分析失败', { error: error.message });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('[网页截图分析] 分析失败', { error: message });
     return null;
   }
 }
@@ -240,7 +241,6 @@ screenshot_page { "url": "https://example.com", "analyze": true, "prompt": "这�
 - delay: 等待页面加载的毫秒数（默认: 0）
 - analyze: 启用 AI 分析（默认: false）
 - prompt: 自定义分析提示词`,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',
   inputSchema: {
@@ -438,11 +438,12 @@ screenshot_page { "url": "https://example.com", "analyze": true, "prompt": "这�
           },
         },
       };
-    } catch (error: any) {
-      logger.error('Screenshot failed', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Screenshot failed', { error: message });
       return {
         success: false,
-        error: `网页截图失败: ${error.message}`,
+        error: `网页截图失败: ${message}`,
       };
     }
   },

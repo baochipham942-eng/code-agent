@@ -18,6 +18,7 @@ import type { Generation } from '../../shared/types';
 import { ResearchPlanner } from './researchPlanner';
 import { ResearchExecutor } from './researchExecutor';
 import { ReportGenerator } from './reportGenerator';
+import { UrlCompressor } from './urlCompressor';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('DeepResearchMode');
@@ -120,11 +121,16 @@ export class DeepResearchMode {
       }
 
       const planner = new ResearchPlanner(this.modelRouter);
-      const plan = await planner.createPlan(topic, {
+      const planConfig: DeepResearchConfig = {
         ...config,
         reportStyle,
         enforceWebSearch: true,
-      });
+      };
+      // Split model strategy: use queryModel for planning
+      if (config.queryModel) {
+        planConfig.model = config.queryModel;
+      }
+      const plan = await planner.createPlan(topic, planConfig);
 
       this.emitProgress('planning', '研究计划已生成', 15, {
         title: `已规划 ${plan.steps.length} 个研究步骤`,
@@ -159,7 +165,7 @@ export class DeepResearchMode {
         { generation: this.generation }
       );
 
-      const executedPlan = await executor.execute(plan);
+      const executedPlan = await executor.executeWithReflection(plan, config);
 
       if (this.isCancelled) {
         return this.createCancelledResult(startTime);
@@ -167,6 +173,14 @@ export class DeepResearchMode {
 
       const completedSteps = executedPlan.steps.filter(s => s.status === 'completed').length;
       const failedSteps = executedPlan.steps.filter(s => s.status === 'failed').length;
+
+      if (executor.lastReflection) {
+        logger.info('Reflection result:', {
+          confidence: executor.lastReflection.confidence,
+          totalBalanceScore: executor.lastReflection.totalBalanceScore,
+          recommendation: executor.lastReflection.recommendation,
+        });
+      }
 
       logger.info('Research execution completed:', { completedSteps, failedSteps });
 
@@ -177,8 +191,60 @@ export class DeepResearchMode {
         return this.createCancelledResult(startTime);
       }
 
+      // Split model strategy: use reportModel for report generation
+      const reportConfig: DeepResearchConfig = { ...config };
+      if (config.reportModel) {
+        reportConfig.model = config.reportModel;
+      }
+
       const generator = new ReportGenerator(this.modelRouter);
-      const report = await generator.generate(executedPlan, reportStyle);
+      let report = await generator.generate(executedPlan, reportStyle, reportConfig);
+
+      // URL expansion: expand compressed URLs in the report
+      const enableUrlCompression = config.enableUrlCompression !== false;
+      if (enableUrlCompression && executor.urlCompressor.size > 0) {
+        // 程序化兜底：将 LLM 输出中残留的裸 URL 压缩为 [srcN]
+        // （Google 方案：不依赖 LLM 遵循引用格式指令）
+        report.content = executor.urlCompressor.compressText(report.content);
+
+        const expandedContent = executor.urlCompressor.expandText(report.content);
+        const sourceList = executor.urlCompressor.generateSourceList();
+        report = {
+          ...report,
+          content: expandedContent + (sourceList ? '\n\n' + sourceList : ''),
+        };
+        logger.info('URL compression stats:', executor.urlCompressor.getTokenSavings());
+      }
+
+      // 聚合来源（Google 模式：使用驱动去重）
+      if (executor.urlCompressor.size > 0) {
+        const allSources = executor.getAggregatedSources();
+        // 只保留报告中实际引用了的来源
+        const referencedSources = allSources.filter(s =>
+          report.content.includes(s.url) ||
+          report.content.includes(`[${executor.urlCompressor.compress(s.url)}]`)
+        );
+        report = {
+          ...report,
+          sources: referencedSources.length > 0 ? referencedSources : allSources,
+        };
+      }
+
+      // Memory integration (opt-in)
+      if (config.enableMemory && config.sessionId) {
+        try {
+          const { getMemoryService } = await import('../memory/memoryService');
+          const memoryService = getMemoryService();
+          if (memoryService) {
+            await memoryService.addKnowledge(
+              `Research: ${topic}\n\nSummary: ${report.summary}\n\nSources: ${report.sources.map(s => s.url).join(', ')}`,
+              'research'
+            );
+          }
+        } catch (e) {
+          logger.warn('Failed to store research in memory:', e);
+        }
+      }
 
       // 4. Complete
       const duration = Date.now() - startTime;

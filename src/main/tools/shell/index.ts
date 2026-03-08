@@ -16,3 +16,6 @@ export {
   processSubmitTool,
   processKillTool,
 } from './process';
+
+// Unified tool (Phase 2)
+export { ProcessTool } from './ProcessTool';

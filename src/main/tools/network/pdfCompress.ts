@@ -69,7 +69,6 @@ pdf_compress { "input_path": "/path/to/large.pdf", "quality": "screen" }
 \`\`\`
 pdf_compress { "input_path": "report.pdf", "output_path": "report_small.pdf", "quality": "ebook" }
 \`\`\``,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {
@@ -251,11 +250,12 @@ Windows: 从 https://www.ghostscript.com 下载安装`,
           },
         },
       };
-    } catch (error: any) {
-      logger.error('PDF compression failed', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('PDF compression failed', { error: message });
       return {
         success: false,
-        error: `PDF 压缩失败: ${error.message}`,
+        error: `PDF 压缩失败: ${message}`,
       };
     }
   },

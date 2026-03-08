@@ -59,7 +59,6 @@ image_process { "input_path": "photo.png", "action": "resize", "width": 800, "he
 \`\`\`
 image_process { "input_path": "icon.png", "action": "upscale", "scale": 2 }
 \`\`\``,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {
@@ -283,11 +282,12 @@ image_process { "input_path": "icon.png", "action": "upscale", "scale": 2 }
           },
         },
       };
-    } catch (error: any) {
-      logger.error('Image processing failed', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Image processing failed', { error: message });
       return {
         success: false,
-        error: `图片处理失败: ${error.message}`,
+        error: `图片处理失败: ${message}`,
       };
     }
   },

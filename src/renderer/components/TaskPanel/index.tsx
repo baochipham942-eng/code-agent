@@ -9,7 +9,6 @@ import { WorkingFolder } from './WorkingFolder';
 import { Connectors } from './Connectors';
 import { Agents } from './Agents';
 import { Skills } from './Skills';
-import { GenerationBadge } from '../GenerationBadge';
 import { useI18n } from '../../hooks/useI18n';
 
 export const TaskPanel: React.FC = () => {
@@ -20,7 +19,7 @@ export const TaskPanel: React.FC = () => {
       {/* Header - with Gen selector on the right, aligned with Progress chevron */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
         <span className="text-sm font-medium text-zinc-400">{t.taskPanel.title}</span>
-        <GenerationBadge />
+
       </div>
 
       {/* Content - glassmorphism sections */}

@@ -45,7 +45,7 @@ export const MODEL_MAX_TOKENS = {
  */
 export const MODEL_MAX_OUTPUT_TOKENS: Record<string, number> = {
   // Moonshot — Kimi K2.5 支持 96K output，对标 Claude Code Sonnet 默认
-  'kimi-k2.5': 16384,
+  'kimi-k2.5': 32768,  // Kimi K2.5: 256K context, ~65K max output (OpenRouter data)
   // DeepSeek — 官方 API 上限 8K
   'deepseek-chat': 8192,
   'deepseek-coder': 8192,
@@ -98,7 +98,7 @@ export const CONTEXT_WINDOWS: Record<string, number> = {
   'glm-4.7': 128_000,
   'glm-4.7-flash': 128_000,
   // Moonshot
-  'kimi-k2.5': 128_000,
+  'kimi-k2.5': 256_000,
 };
 
 /** 默认上下文窗口（未知模型 fallback） */

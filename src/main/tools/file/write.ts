@@ -126,8 +126,9 @@ function checkCodeCompleteness(content: string, filePath: string): CompletenessC
   if (ext === '.json') {
     try {
       JSON.parse(content);
-    } catch (e: any) {
-      issues.push(`JSON 格式错误: ${e.message}`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      issues.push(`JSON 格式错误: ${message}`);
     }
   }
 
@@ -162,7 +163,6 @@ Rules:
 - For files >300 lines, create a skeleton first, then use edit_file to fill in — this prevents truncation
 
 The tool checks for truncated code (unclosed brackets, incomplete statements) and warns you.`,
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {
@@ -278,10 +278,11 @@ The tool checks for truncated code (unclosed brackets, incomplete statements) an
         success: true,
         output,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: error.message || 'Failed to write file',
+        error: message || 'Failed to write file',
       };
     } finally {
       // 释放锁

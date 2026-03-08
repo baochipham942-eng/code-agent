@@ -201,7 +201,6 @@ Tips:
 - Pattern uses ripgrep syntax (not grep) — literal braces need escaping: \`interface\\{\\}\` to find \`interface{}\`
 - Escape regex special chars: . * + ? [ ] ( ) { } | \\ ^ $
 - Multiple searches can run in parallel with separate tool calls`,
-  generations: ['gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {
@@ -379,9 +378,10 @@ Tips:
         success: true,
         output: output || 'No matches found',
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
       // grep/rg returns exit code 1 when no matches found
-      if (error.code === 1 && !error.stderr) {
+      if ((error as Record<string, unknown>).code === 1 && !(error as Record<string, unknown>).stderr) {
         return {
           success: true,
           output: 'No matches found',
@@ -389,7 +389,7 @@ Tips:
       }
       return {
         success: false,
-        error: error.message || 'Search failed',
+        error: errMsg || 'Search failed',
       };
     }
   },

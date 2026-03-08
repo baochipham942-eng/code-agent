@@ -183,7 +183,6 @@ twitter_fetch { "url": "https://x.com/OpenAI/status/1234567890" }
 - 支持 twitter.com 和 x.com 链接
 - 部分推文可能因隐私设置无法获取
 - 图片/视频链接会一并返回`,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'network',
   inputSchema: {
@@ -286,11 +285,12 @@ twitter_fetch { "url": "https://x.com/OpenAI/status/1234567890" }
           url,
         },
       };
-    } catch (error: any) {
-      logger.error('Twitter fetch failed', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Twitter fetch failed', { error: message });
       return {
         success: false,
-        error: `获取推文失败: ${error.message}`,
+        error: `获取推文失败: ${message}`,
       };
     }
   },

@@ -20,6 +20,8 @@ import type { ConfigService } from '../services/core/configService';
 import { getSessionManager, getAuthService } from '../services';
 import type { PlanningService } from '../planning';
 import { DeepResearchMode, SemanticResearchOrchestrator } from '../research';
+import { analyzeTask } from './hybrid/taskRouter';
+import { classifyIntent } from './hybrid/intentClassifier';
 import { getSessionStateManager } from '../session/sessionStateManager';
 import { ModelRouter } from '../model/modelRouter';
 import { generateMessageId, generatePermissionRequestId } from '../../shared/utils/id';
@@ -283,6 +285,32 @@ export class AgentOrchestrator {
     if (mode === 'deep-research') {
       // Manual deep research mode (user explicitly requested)
       await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig, generation);
+    } else if (mode === 'normal') {
+      // === Fast path: keyword-based research detection ===
+      const analysis = analyzeTask(content);
+      if (analysis.taskType === 'research') {
+        logger.info('Auto-detected research task (keyword match), routing to deep research pipeline');
+        await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig, generation);
+      } else if (!['code', 'data', 'ppt', 'image', 'video'].includes(analysis.taskType)) {
+        // === Slow path: LLM classification for ambiguous cases ===
+        // Only for messages not obviously code/data/media tasks
+        try {
+          const modelRouter = new ModelRouter();
+          const intent = await classifyIntent(content, modelRouter);
+          if (intent === 'research') {
+            logger.info('Auto-detected research task (LLM classification), routing to deep research pipeline');
+            await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig, generation);
+          } else {
+            await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, generation, sessionId);
+          }
+        } catch (error) {
+          logger.warn('LLM intent classification failed, falling back to normal mode', { error: String(error) });
+          await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, generation, sessionId);
+        }
+      } else {
+        // Obvious non-research task type (code/data/ppt/image/video)
+        await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, generation, sessionId);
+      }
     } else {
       // Normal Mode: 指挥家统一处理任务分类和执行
       // 不再前置 LLM 调用做意图分析，由 AgentLoop 在第一轮直接判断

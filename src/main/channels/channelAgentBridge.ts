@@ -286,6 +286,10 @@ export class ChannelAgentBridge {
 
   /**
    * 处理流式消息 (HTTP API 专用)
+   *
+   * 通过临时拦截 orchestrator 的 onEvent 回调，将 stream_chunk 等事件
+   * 实时推送到 SSE 连接，实现真正的流式响应。
+   * SSE 格式: `data: ${JSON.stringify(event)}\n\n`，流结束发送 `data: [DONE]\n\n`
    */
   private async handleStreamingMessage(
     accountId: string,
@@ -294,37 +298,70 @@ export class ChannelAgentBridge {
     attachments: MessageAttachment[] | undefined
   ): Promise<void> {
     const raw = message.raw as Record<string, unknown>;
-    const res = raw.res as { write: (data: string) => void; end: () => void };
+    const res = raw.res as { write: (data: string) => void; end: () => void; writableEnded?: boolean };
 
     if (!res) {
       throw new Error('No response object for streaming');
     }
 
-    // TODO: 实现真正的流式响应
-    // 当前简化实现：等待完成后一次性返回
-    try {
-      // 记录发送前的消息数量，用于识别新的回复（与 handleSyncMessage 一致）
-      const messagesBefore = orchestrator.getMessages();
-      const messageCountBefore = messagesBefore.length;
+    // 拦截 orchestrator 的 onEvent，注入 SSE 流式推送
+    // 与 handleSyncMessage 使用相同的访问模式（L229）
+    const orchestratorInternal = orchestrator as unknown as { onEvent: (event: AgentEvent) => void };
+    const originalOnEvent = orchestratorInternal.onEvent;
 
+    const sseOnEvent = (event: AgentEvent) => {
+      // 先调用原始 handler（前端渲染 / session 持久化等）
+      originalOnEvent.call(orchestrator, event);
+
+      // 连接已关闭则跳过写入
+      if (res.writableEnded) return;
+
+      // 将关键事件实时推送到 SSE 流
+      switch (event.type) {
+        case 'stream_chunk':
+          if (event.data.content) {
+            res.write(`data: ${JSON.stringify({ type: 'stream_chunk', content: event.data.content })}\n\n`);
+          }
+          break;
+        case 'stream_reasoning':
+          if (event.data.content) {
+            res.write(`data: ${JSON.stringify({ type: 'stream_reasoning', content: event.data.content })}\n\n`);
+          }
+          break;
+        case 'tool_call_start':
+          res.write(`data: ${JSON.stringify({ type: 'tool_call_start', name: event.data.name })}\n\n`);
+          break;
+        case 'tool_call_end':
+          res.write(`data: ${JSON.stringify({ type: 'tool_call_end', toolCallId: event.data.toolCallId })}\n\n`);
+          break;
+        case 'error':
+          res.write(`data: ${JSON.stringify({ type: 'error', error: event.data.message })}\n\n`);
+          break;
+        // message, agent_complete 等事件不推送到 SSE（由 bridge 控制流结束）
+      }
+    };
+
+    // 替换 onEvent 以注入 SSE 推送
+    orchestratorInternal.onEvent = sseOnEvent;
+
+    try {
       await orchestrator.sendMessage(message.content, attachments);
 
-      // 只查找新增的消息中的 assistant 回复
-      const messagesAfter = orchestrator.getMessages();
-      const newMessages = messagesAfter.slice(messageCountBefore);
-      const assistantMessages = newMessages.filter(m => m.role === 'assistant' && m.content && m.content.trim());
-      const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
-
-      if (lastAssistantMessage) {
-        res.write(`data: ${JSON.stringify({ content: lastAssistantMessage.content })}\n\n`);
+      // 流式推送完成，发送终止信号
+      if (!res.writableEnded) {
+        res.write('data: [DONE]\n\n');
+        res.end();
       }
-
-      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-      res.end();
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      res.write(`data: ${JSON.stringify({ error: errorMsg })}\n\n`);
-      res.end();
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify({ type: 'error', error: errorMsg })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        res.end();
+      }
+    } finally {
+      // 恢复原始 onEvent，避免影响后续请求
+      orchestratorInternal.onEvent = originalOnEvent;
     }
   }
 

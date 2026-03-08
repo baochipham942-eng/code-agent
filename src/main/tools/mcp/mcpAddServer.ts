@@ -180,7 +180,6 @@ Examples:
 - Stdio server: { "name": "fs-server", "type": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"] }
 - Without auto-connect: { "name": "test", "type": "sse", "serverUrl": "https://...", "auto_connect": false }`,
 
-  generations: ['gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
 

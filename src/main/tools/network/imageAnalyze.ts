@@ -185,8 +185,9 @@ async function analyzeImage(
     try {
       logger.info('[图片分析] 使用智谱视觉模型 glm-4.6v');
       return await callZhipuVision(zhipuApiKey, base64Image, mimeType, prompt);
-    } catch (error: any) {
-      logger.warn('[图片分析] 智谱视觉 API 失败，尝试回退', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('[图片分析] 智谱视觉 API 失败，尝试回退', { error: message });
     }
   }
 
@@ -221,8 +222,9 @@ async function analyzeImage(
         return result.choices?.[0]?.message?.content || '';
       }
       logger.warn('[图片分析] OpenRouter 失败', { status: directResponse.status });
-    } catch (error: any) {
-      logger.warn('[图片分析] OpenRouter 错误', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn('[图片分析] OpenRouter 错误', { error: message });
     }
   }
 
@@ -255,8 +257,9 @@ async function analyzeImage(
       return result.choices?.[0]?.message?.content || '';
     }
     logger.warn('[图片分析] 云端代理失败', { status: cloudResponse.status });
-  } catch (error: any) {
-    logger.warn('[图片分析] 云端代理错误', { error: error.message });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('[图片分析] 云端代理错误', { error: message });
   }
 
   throw new Error('所有视觉 API 均不可用。请配置智谱或 OpenRouter API Key。');
@@ -382,7 +385,6 @@ image_analyze { "paths": ["/Users/xxx/Photos/*.jpg"], "filter": "有猫的照片
 ## 成本估算
 - 100 张图片 ≈ $0.001（几乎免费）`,
 
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'read',
 
@@ -504,9 +506,10 @@ image_analyze { "paths": ["/Users/xxx/Photos/*.jpg"], "filter": "有猫的照片
             try {
               const matched = await checkImageMatch(imgPath, filter, detail);
               return { path: imgPath, success: true, matched };
-            } catch (error: any) {
-              logger.warn('Image analysis failed', { path: imgPath, error: error.message });
-              return { path: imgPath, success: false, error: error.message };
+            } catch (error: unknown) {
+              const message = error instanceof Error ? error.message : String(error);
+              logger.warn('Image analysis failed', { path: imgPath, error: message });
+              return { path: imgPath, success: false, error: message };
             }
           },
           CONFIG.MAX_PARALLEL,
@@ -557,11 +560,12 @@ image_analyze { "paths": ["/Users/xxx/Photos/*.jpg"], "filter": "有猫的照片
         success: false,
         error: '参数错误：单图模式需要 path，批量模式需要 paths + filter',
       };
-    } catch (error: any) {
-      logger.error('Image analyze failed', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Image analyze failed', { error: message });
       return {
         success: false,
-        error: `图片分析失败: ${error.message}`,
+        error: `图片分析失败: ${message}`,
       };
     }
   },

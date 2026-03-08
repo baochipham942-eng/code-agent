@@ -67,6 +67,9 @@ export function summarizeTool(toolCall: ToolCall): string | null {
     case 'video_generate':
       return summarizeVideoGenerate(toolCall);
 
+    case 'web_search':
+      return summarizeWebSearch(toolCall);
+
     case 'web_fetch':
       return summarizeWebFetch(toolCall);
 
@@ -168,6 +171,27 @@ function summarizeVideoGenerate(toolCall: ToolCall): string | null {
     }
   }
   return '视频生成完成';
+}
+
+function summarizeWebSearch(toolCall: ToolCall): string | null {
+  const output = toolCall.result?.output;
+  if (!output) return null;
+
+  const str = String(output);
+
+  // Count results (lines that look like search results)
+  const lines = str.split('\n').filter(Boolean);
+  const resultCount = lines.filter(l => /^\d+\.\s/.test(l) || /^-\s/.test(l) || /^\[/.test(l)).length || lines.length;
+
+  // Parse "Sources: perplexity, exa, tavily, brave" line
+  const sourcesMatch = str.match(/Sources:\s*([^|\n]+)/i);
+  let summary = `${resultCount} results`;
+  if (sourcesMatch) {
+    const sources = sourcesMatch[1].trim().replace(/,\s*$/, '');
+    summary += ` · via ${sources}`;
+  }
+
+  return summary;
 }
 
 function summarizeWebFetch(toolCall: ToolCall): string | null {

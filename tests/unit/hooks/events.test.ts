@@ -40,6 +40,7 @@ describe('Hook Events', () => {
         'SubagentStop',
         'SubagentStart',
         'PermissionRequest',
+        'PostExecution',
         'PreCompact',
         'Setup',
         'SessionStart',
@@ -54,8 +55,8 @@ describe('Hook Events', () => {
       }
     });
 
-    it('should have 13 event types', () => {
-      expect(Object.keys(HOOK_EVENT_DESCRIPTIONS)).toHaveLength(13);
+    it('should have 14 event types', () => {
+      expect(Object.keys(HOOK_EVENT_DESCRIPTIONS)).toHaveLength(14);
     });
   });
 

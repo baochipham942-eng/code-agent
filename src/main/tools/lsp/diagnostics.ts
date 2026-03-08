@@ -22,7 +22,6 @@ Parameters:
 
 Note: Requires LSP servers to be running for the relevant file types.`,
 
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
 

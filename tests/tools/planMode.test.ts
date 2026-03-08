@@ -51,12 +51,8 @@ describe('Plan Mode Tools', () => {
       expect(result.output).toContain('exit_plan_mode');
     });
 
-    it('should be available in gen3+', () => {
-      expect(enterPlanModeTool.generations).toContain('gen3');
-      expect(enterPlanModeTool.generations).toContain('gen4');
-      expect(enterPlanModeTool.generations).toContain('gen8');
-      expect(enterPlanModeTool.generations).not.toContain('gen1');
-      expect(enterPlanModeTool.generations).not.toContain('gen2');
+    it('should be defined with correct name', () => {
+      expect(enterPlanModeTool.name).toBe('enter_plan_mode');
     });
 
     it('should not require permission', () => {
@@ -158,10 +154,8 @@ describe('Plan Mode Tools', () => {
       expect(result.metadata?.plan).toBe('计划内容');
     });
 
-    it('should be available in gen3+', () => {
-      expect(exitPlanModeTool.generations).toContain('gen3');
-      expect(exitPlanModeTool.generations).toContain('gen5');
-      expect(exitPlanModeTool.generations).toContain('gen8');
+    it('should be defined with correct name', () => {
+      expect(exitPlanModeTool.name).toBe('exit_plan_mode');
     });
 
     it('should require plan parameter in schema', () => {

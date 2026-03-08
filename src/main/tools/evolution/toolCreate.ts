@@ -147,7 +147,6 @@ For composite:
 
 For bash_script (DANGEROUS - requires approval):
   config: { script: "bash commands", args: ["arg1", "arg2"] }`,
-  generations: ['gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
   inputSchema: {
@@ -756,7 +755,6 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 export const ${tool.name}Tool: Tool = {
   name: '${tool.name}',
   description: \`${tool.description}\`,
-  generations: ['gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

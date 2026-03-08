@@ -36,6 +36,51 @@ interface EventSummary {
   timeline: Array<{ time: number; type: string; summary: string }>;
 }
 
+interface ReplaySummary {
+  totalTurns: number;
+  toolDistribution: Record<string, number>;
+  thinkingRatio: number;
+  selfRepairChains: number;
+  totalDurationMs: number;
+  deviations?: Array<{
+    stepIndex: number;
+    type: string;
+    description: string;
+    severity: string;
+    suggestedFix?: string;
+  }>;
+}
+
+interface ReplayBlock {
+  type: 'user' | 'thinking' | 'text' | 'tool_call' | 'tool_result' | 'error';
+  content: string;
+  toolCall?: {
+    id: string;
+    name: string;
+    args: Record<string, unknown>;
+    result?: string;
+    success: boolean;
+    duration: number;
+    category: string;
+  };
+  timestamp: number;
+}
+
+interface ReplayTurn {
+  turnNumber: number;
+  blocks: ReplayBlock[];
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+  startTime: number;
+}
+
+interface StructuredReplay {
+  sessionId: string;
+  turns: ReplayTurn[];
+  summary: ReplaySummary;
+}
+
 interface EvalCenterStore {
   // State
   sessionInfo: SessionInfo | null;
@@ -45,6 +90,10 @@ interface EvalCenterStore {
   eventSummary: EventSummary | null;
   isLoading: boolean;
   error: string | null;
+
+  // Replay state
+  replayData: StructuredReplay | null;
+  replayLoading: boolean;
 
   // Session list state
   sessionList: Array<{
@@ -65,6 +114,7 @@ interface EvalCenterStore {
 
   // Actions
   loadSession: (sessionId: string) => Promise<void>;
+  loadReplay: (sessionId: string) => Promise<void>;
   loadSessionList: () => Promise<void>;
   setFilterStatus: (status: 'all' | 'recording' | 'completed' | 'error') => void;
   setSortBy: (sort: 'time' | 'turns' | 'cost') => void;
@@ -79,6 +129,8 @@ const initialState = {
   eventSummary: null as EventSummary | null,
   isLoading: false,
   error: null as string | null,
+  replayData: null as StructuredReplay | null,
+  replayLoading: false,
   sessionList: [] as EvalCenterStore['sessionList'],
   sessionListLoading: false,
   filterStatus: 'all' as const,
@@ -112,6 +164,19 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
         error: error instanceof Error ? error.message : '加载会话数据失败',
         isLoading: false,
       });
+    }
+  },
+
+  loadReplay: async (sessionId: string) => {
+    set({ replayLoading: true });
+    try {
+      const data = await window.electronAPI?.invoke(
+        'replay:get-structured-data' as 'replay:get-structured-data',
+        sessionId
+      );
+      set({ replayData: (data as StructuredReplay) || null, replayLoading: false });
+    } catch {
+      set({ replayData: null, replayLoading: false });
     }
   },
 

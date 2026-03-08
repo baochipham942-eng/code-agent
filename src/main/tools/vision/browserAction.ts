@@ -111,8 +111,9 @@ async function analyzeWithVision(
     }
 
     return content || null;
-  } catch (error: any) {
-    logger.warn('[浏览器截图分析] 分析失败', { error: error.message });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn('[浏览器截图分析] 分析失败', { error: message });
     return null;
   }
 }
@@ -183,7 +184,6 @@ Examples:
 - {"action": "screenshot"}
 - {"action": "screenshot", "analyze": true, "prompt": "描述页面内容"}
 - {"action": "get_content"}`,
-  generations: ['gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'execute',
   inputSchema: {

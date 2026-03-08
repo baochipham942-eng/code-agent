@@ -67,7 +67,6 @@ All operations require:
 Note: LSP servers must be configured and running for the file type.
 Supported: TypeScript (.ts, .tsx, .js, .jsx), Python (.py)`,
 
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
 

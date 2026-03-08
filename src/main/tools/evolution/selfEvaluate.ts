@@ -48,7 +48,6 @@ Parameters:
 - iterations: Number of iterations (for record)
 - notes: Additional notes (for record)
 - period: Analysis period in hours (for analyze/report)`,
-  generations: ['gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

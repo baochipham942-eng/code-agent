@@ -181,7 +181,6 @@ speech_to_text { "file_path": "lecture.wav", "prompt": "这是一段关于人工
 \`\`\`
 
 注意：需要配置智谱 API Key`,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'read',
   inputSchema: {
@@ -265,11 +264,12 @@ speech_to_text { "file_path": "lecture.wav", "prompt": "这是一段关于人工
           model: CONFIG.MODEL,
         },
       };
-    } catch (error: any) {
-      logger.error('[语音转文字] 失败', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('[语音转文字] 失败', { error: message });
       return {
         success: false,
-        error: `语音转文字失败: ${error.message}`,
+        error: `语音转文字失败: ${message}`,
       };
     }
   },

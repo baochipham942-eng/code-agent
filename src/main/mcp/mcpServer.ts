@@ -49,7 +49,7 @@ export class CodeAgentMCPServer {
   private server: Server;
   private isRunning: boolean = false;
 
-  constructor() {
+  constructor(_options?: { transport?: string; port?: number; host?: string; enableWriteTools?: boolean; workingDirectory?: string }) {
     this.server = new Server(
       {
         name: 'code-agent',

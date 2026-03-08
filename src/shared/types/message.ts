@@ -87,4 +87,7 @@ export interface Message {
   thinking?: string;
   // Effort 级别（Adaptive Thinking 思考深度）
   effortLevel?: 'low' | 'medium' | 'high' | 'max';
+  // Token usage from API response
+  inputTokens?: number;
+  outputTokens?: number;
 }

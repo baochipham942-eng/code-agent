@@ -19,7 +19,6 @@ import {
 } from './app/bootstrap';
 import { createWindow, getMainWindow } from './app/window';
 import { setupAllIpcHandlers } from './ipc';
-import { getQwen3AsrService } from './ipc/qwen3AsrService';
 
 // ----------------------------------------------------------------------------
 // Deep Link Protocol Handler
@@ -188,14 +187,6 @@ app.on('will-quit', () => {
 // Cleanup before quitting
 app.on('before-quit', async () => {
   logger.info('Cleaning up before quit...');
-
-  // Stop Qwen3-ASR persistent process
-  try {
-    getQwen3AsrService().stop();
-    logger.info('Qwen3-ASR service stopped');
-  } catch (error) {
-    logger.error('Error stopping Qwen3-ASR service', error);
-  }
 
   // Stop WeChat watcher
   try {

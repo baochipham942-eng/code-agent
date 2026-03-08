@@ -185,7 +185,6 @@ text_to_speech { "text": "快速播报", "speed": 1.5, "voice": "小陈" }
 \`\`\`
 
 注意：需要配置智谱 API Key`,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {
@@ -297,11 +296,12 @@ text_to_speech { "text": "快速播报", "speed": 1.5, "voice": "小陈" }
           model: CONFIG.MODEL,
         },
       };
-    } catch (error: any) {
-      logger.error('[语音合成] 失败', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('[语音合成] 失败', { error: message });
       return {
         success: false,
-        error: `语音合成失败: ${error.message}`,
+        error: `语音合成失败: ${message}`,
       };
     }
   },

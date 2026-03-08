@@ -58,7 +58,6 @@ qrcode_generate { "content": "WIFI:T:WPA;S:MyNetwork;P:MyPassword;;" }
 \`\`\`
 qrcode_generate { "content": "tel:+8613800138000" }
 \`\`\``,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {
@@ -182,11 +181,12 @@ qrcode_generate { "content": "tel:+8613800138000" }
           },
         },
       };
-    } catch (error: any) {
-      logger.error('QR code generation failed', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('QR code generation failed', { error: message });
       return {
         success: false,
-        error: `二维码生成失败: ${error.message}`,
+        error: `二维码生成失败: ${message}`,
       };
     }
   },

@@ -29,7 +29,6 @@ export const readDocxTool: Tool = {
 read_docx { "file_path": "report.docx" }
 read_docx { "file_path": "report.docx", "format": "markdown" }
 \`\`\``,
-  generations: ['gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'read',
   inputSchema: {
@@ -143,11 +142,12 @@ read_docx { "file_path": "report.docx", "format": "markdown" }
           lineCount,
         },
       };
-    } catch (error: any) {
-      logger.error('DOCX read failed', { error: error.message });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('DOCX read failed', { error: message });
       return {
         success: false,
-        error: `Word 文档读取失败: ${error.message}`,
+        error: `Word 文档读取失败: ${message}`,
       };
     }
   },

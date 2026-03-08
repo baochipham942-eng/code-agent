@@ -14,7 +14,7 @@ export const listToolsCommand = new Command('list-tools')
       const registry = new ToolRegistry();
 
       const tools = options.gen
-        ? registry.getForGeneration(options.gen as import('../../shared/types').GenerationId)
+        ? registry.getForGeneration(options.gen)
         : registry.getAllTools();
 
       const output = tools.map(tool => {
@@ -27,8 +27,8 @@ export const listToolsCommand = new Command('list-tools')
           : [];
 
         // 确定工具所属的最低代际作为 category
-        const category = tool.generations.length > 0
-          ? tool.generations.sort()[0]
+        const category = (tool as any).tags?.length > 0
+          ? (tool as any).tags[0]
           : 'unknown';
 
         return {

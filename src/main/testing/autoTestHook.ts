@@ -156,9 +156,10 @@ export async function runAutoTests(
 
     return summary;
 
-  } catch (error: any) {
-    logger.error('Auto-test failed', { error: error.message });
-    console.error('❌ Auto-test failed:', error.message);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error('Auto-test failed', { error: message });
+    console.error('❌ Auto-test failed:', message);
     return null;
   }
 }

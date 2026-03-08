@@ -64,6 +64,11 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
     try {
       const result = await window.electronAPI?.invoke(IPC_CHANNELS.CHECKPOINT_REWIND, currentSessionId, selectedMessageId);
       if (result?.success) {
+        // 刷新前端消息列表（后端已截断 DB + orchestrator 内存）
+        const messages = await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_GET_MESSAGES, currentSessionId);
+        if (messages) {
+          useSessionStore.getState().setMessages(messages);
+        }
         onClose();
       }
     } finally {

@@ -59,7 +59,6 @@ Example of good technical question:
     { label: "Redux Toolkit", description: "功能完整，生态丰富，适合大型复杂应用" },
     { label: "Jotai", description: "原子化状态，适合需要精细控制渲染的场景" }
   ]`,
-  generations: ['gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: false,
   permissionLevel: 'read',
   inputSchema: {

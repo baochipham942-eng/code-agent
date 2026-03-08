@@ -41,7 +41,6 @@ If edit fails with "text not found":
 4. After 2 failures, fall back to write_file to rewrite the entire file
 
 Use replace_all: true for renaming variables/functions across the file.`,
-  generations: ['gen1', 'gen2', 'gen3', 'gen4', 'gen5', 'gen6', 'gen7', 'gen8'],
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {
@@ -310,8 +309,9 @@ Use replace_all: true for renaming variables/functions across the file.`,
         success: true,
         output,
       };
-    } catch (error: any) {
-      if (error.code === 'ENOENT') {
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      if ((error as Record<string, unknown>).code === 'ENOENT') {
         return {
           success: false,
           error: `File not found: ${filePath}`,
@@ -319,7 +319,7 @@ Use replace_all: true for renaming variables/functions across the file.`,
       }
       return {
         success: false,
-        error: error.message || 'Failed to edit file',
+        error: errMsg || 'Failed to edit file',
       };
     } finally {
       // 释放锁

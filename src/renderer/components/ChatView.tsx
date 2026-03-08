@@ -18,7 +18,7 @@ import { PlanPanel } from './features/chat/PlanPanel';
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 import { PermissionCard } from './PermissionDialog/PermissionCard';
-import type { Message, MessageAttachment, TaskProgressData, TaskPlan } from '../../shared/types';
+import type { Message, MessageAttachment, TaskPlan } from '../../shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
 import {
   Bot,
@@ -28,16 +28,12 @@ import {
   Sparkles,
   Terminal,
   Zap,
-  Brain,
-  Loader2,
-  Wrench,
-  PenLine,
 } from 'lucide-react';
 
 export const ChatView: React.FC = () => {
-  const { currentGeneration, showPreviewPanel } = useAppStore();
+  const { showPreviewPanel } = useAppStore();
   const { todos, currentSessionId } = useSessionStore();
-  const { messages, isProcessing, sendMessage, cancel, taskProgress, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
+  const { messages, isProcessing, sendMessage, cancel, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
 
   // Plan 状态
   const [plan, setPlan] = useState<TaskPlan | null>(null);
@@ -138,7 +134,7 @@ export const ChatView: React.FC = () => {
   }, [requireAuthAsync, sendMessage]);
 
   // Show Gen 3+ todo bar if there are todos
-  const showTodoBar = currentGeneration.tools.includes('todo_write') && todos.length > 0;
+  const showTodoBar = todos.length > 0;
 
   // Render individual message item
   const renderMessageItem = useCallback((_index: number, message: Message) => (
@@ -153,13 +149,10 @@ export const ChatView: React.FC = () => {
 
     return (
       <div className="px-6 py-1 w-full">
-        {taskProgress && taskProgress.phase !== 'completed'
-          ? <EnhancedThinkingIndicator progress={taskProgress} />
-          : <ThinkingIndicator />
-        }
+        <ThinkingIndicator />
       </div>
     );
-  }, [effectiveIsProcessing, taskProgress, cancel]);
+  }, [effectiveIsProcessing, cancel]);
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -180,7 +173,7 @@ export const ChatView: React.FC = () => {
         {/* Messages */}
         <div className="flex-1 overflow-hidden">
           {filteredMessages.length === 0 ? (
-            <EmptyState generation={currentGeneration.name} generationId={currentGeneration.id} onSend={handleSendMessage} />
+            <EmptyState generation="Code Agent" generationId="gen8" onSend={handleSendMessage} />
           ) : (
             <Virtuoso
               ref={virtuosoRef}
@@ -259,96 +252,6 @@ const ThinkingIndicator: React.FC = () => {
   );
 };
 
-// Enhanced thinking indicator with task progress - Claude/ChatGPT style
-const EnhancedThinkingIndicator: React.FC<{ progress: TaskProgressData }> = ({ progress }) => {
-  // 工具名称友好化映射
-  const toolDisplayNames: Record<string, string> = {
-    bash: '执行命令',
-    read_file: '读取文件',
-    write_file: '创建文件',
-    edit_file: '编辑文件',
-    glob: '搜索文件',
-    grep: '搜索内容',
-    list_directory: '浏览目录',
-    task: '委托子任务',
-    web_search: '搜索网络',
-    web_fetch: '获取网页',
-    ppt_generate: '生成 PPT',
-    image_generate: '生成图片',
-  };
-
-  // 从 step 中提取工具名称并友好化
-  const getDisplayStep = (step: string | undefined): string => {
-    if (!step) return '';
-    // 匹配 "执行 xxx" 或 "xxx" 格式
-    const match = step.match(/^执行\s+(\w+)|^(\w+)/);
-    if (match) {
-      const toolName = match[1] || match[2];
-      return toolDisplayNames[toolName] || step;
-    }
-    return step;
-  };
-
-  // 阶段配置
-  const phaseConfig: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
-    thinking: {
-      icon: <Brain className="w-3.5 h-3.5" />,
-      label: '思考中',
-      color: 'text-blue-400',
-    },
-    tool_pending: {
-      icon: <Wrench className="w-3.5 h-3.5" />,
-      label: '准备中',
-      color: 'text-amber-400',
-    },
-    tool_running: {
-      icon: <Loader2 className="w-3.5 h-3.5 animate-spin" />,
-      label: '执行中',
-      color: 'text-purple-400',
-    },
-    generating: {
-      icon: <PenLine className="w-3.5 h-3.5" />,
-      label: '生成中',
-      color: 'text-emerald-400',
-    },
-  };
-
-  const config = phaseConfig[progress.phase] || phaseConfig.thinking;
-  const hasToolProgress = progress.phase === 'tool_running' && progress.toolTotal;
-  const displayStep = getDisplayStep(progress.step) || config.label;
-
-  return (
-    <div className="animate-slideUp">
-      {/* Progress indicator - no avatar, simple inline display */}
-      <div className="inline-flex items-center gap-3">
-        {/* Status icon and text */}
-        <div className="flex items-center gap-2">
-          <span className={config.color}>{config.icon}</span>
-          <span className={`text-sm ${config.color}`}>
-            {displayStep}
-          </span>
-        </div>
-
-        {/* Tool progress - 显示 "第X步/共Y步" 格式 */}
-        {hasToolProgress && (
-          <div className="flex items-center gap-2">
-            <div className="w-20 h-1.5 bg-zinc-700/50 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-purple-500 rounded-full transition-all duration-300"
-                style={{ width: `${progress.progress || 0}%` }}
-              />
-            </div>
-            <span className="text-xs text-zinc-500">
-              {progress.toolIndex !== undefined && progress.toolTotal
-                ? `第${progress.toolIndex + 1}步 / 共${progress.toolTotal}步`
-                : `${Math.round(progress.progress || 0)}%`}
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
 
 // 建议卡片类型
 interface SuggestionItem {
@@ -360,297 +263,45 @@ interface SuggestionItem {
   iconColor: string;
 }
 
-// 按代际分组的建议卡片
-// Gen1-2: 基础文件操作
-// Gen3-4: 规划和技能
-// Gen5-6: 记忆和自动化
-// Gen7-8: 多代理和自我进化
-const suggestionsByGeneration: Record<string, SuggestionItem[]> = {
-  // Gen1: 基础文件操作
-  gen1: [
-    {
-      icon: Terminal,
-      text: '列出当前目录文件',
-      description: '使用 bash 命令',
-      color: 'from-emerald-500/20 to-teal-500/20',
-      borderColor: 'border-emerald-500/20',
-      iconColor: 'text-emerald-400',
-    },
-    {
-      icon: FileQuestion,
-      text: '读取 package.json',
-      description: '查看项目配置',
-      color: 'from-blue-500/20 to-cyan-500/20',
-      borderColor: 'border-blue-500/20',
-      iconColor: 'text-blue-400',
-    },
-    {
-      icon: Code2,
-      text: '创建一个新文件',
-      description: '写入代码内容',
-      color: 'from-purple-500/20 to-pink-500/20',
-      borderColor: 'border-purple-500/20',
-      iconColor: 'text-purple-400',
-    },
-    {
-      icon: Bug,
-      text: '修复文件中的 Bug',
-      description: '编辑并修复代码',
-      color: 'from-red-500/20 to-orange-500/20',
-      borderColor: 'border-red-500/20',
-      iconColor: 'text-red-400',
-    },
-  ],
-  // Gen2: 搜索和导航
-  gen2: [
-    {
-      icon: Terminal,
-      text: '搜索所有 TypeScript 文件',
-      description: '使用 glob 模式',
-      color: 'from-emerald-500/20 to-teal-500/20',
-      borderColor: 'border-emerald-500/20',
-      iconColor: 'text-emerald-400',
-    },
-    {
-      icon: FileQuestion,
-      text: '查找 TODO 注释',
-      description: '使用 grep 搜索',
-      color: 'from-blue-500/20 to-cyan-500/20',
-      borderColor: 'border-blue-500/20',
-      iconColor: 'text-blue-400',
-    },
-    {
-      icon: Code2,
-      text: '分析项目结构',
-      description: '列出目录内容',
-      color: 'from-purple-500/20 to-pink-500/20',
-      borderColor: 'border-purple-500/20',
-      iconColor: 'text-purple-400',
-    },
-    {
-      icon: Bug,
-      text: '定位错误来源',
-      description: '搜索错误关键字',
-      color: 'from-red-500/20 to-orange-500/20',
-      borderColor: 'border-red-500/20',
-      iconColor: 'text-red-400',
-    },
-  ],
-  // Gen3: 实用小应用
-  gen3: [
-    {
-      icon: Code2,
-      text: '做一个贪吃蛇游戏',
-      description: '经典像素风格',
-      color: 'from-emerald-500/20 to-teal-500/20',
-      borderColor: 'border-emerald-500/20',
-      iconColor: 'text-emerald-400',
-    },
-    {
-      icon: Sparkles,
-      text: '做一个番茄钟计时器',
-      description: '专注工作 25 分钟',
-      color: 'from-red-500/20 to-orange-500/20',
-      borderColor: 'border-red-500/20',
-      iconColor: 'text-red-400',
-    },
-    {
-      icon: Terminal,
-      text: '做一个密码生成器',
-      description: '随机安全密码',
-      color: 'from-purple-500/20 to-pink-500/20',
-      borderColor: 'border-purple-500/20',
-      iconColor: 'text-purple-400',
-    },
-    {
-      icon: FileQuestion,
-      text: '做一个记账本',
-      description: '收支统计图表',
-      color: 'from-blue-500/20 to-cyan-500/20',
-      borderColor: 'border-blue-500/20',
-      iconColor: 'text-blue-400',
-    },
-  ],
-  // Gen4: 更多实用工具
-  gen4: [
-    {
-      icon: Code2,
-      text: '做一个打字练习器',
-      description: '测试打字速度',
-      color: 'from-emerald-500/20 to-teal-500/20',
-      borderColor: 'border-emerald-500/20',
-      iconColor: 'text-emerald-400',
-    },
-    {
-      icon: Sparkles,
-      text: '做一个抽奖转盘',
-      description: '自定义奖品选项',
-      color: 'from-purple-500/20 to-pink-500/20',
-      borderColor: 'border-purple-500/20',
-      iconColor: 'text-purple-400',
-    },
-    {
-      icon: Terminal,
-      text: '做一个 Markdown 编辑器',
-      description: '实时预览效果',
-      color: 'from-blue-500/20 to-cyan-500/20',
-      borderColor: 'border-blue-500/20',
-      iconColor: 'text-blue-400',
-    },
-    {
-      icon: Bug,
-      text: '做一个颜色选择器',
-      description: 'RGB/HEX 转换',
-      color: 'from-red-500/20 to-orange-500/20',
-      borderColor: 'border-red-500/20',
-      iconColor: 'text-red-400',
-    },
-  ],
-  // Gen5: 进阶应用
-  gen5: [
-    {
-      icon: Code2,
-      text: '做一个俄罗斯方块',
-      description: '经典休闲游戏',
-      color: 'from-blue-500/20 to-cyan-500/20',
-      borderColor: 'border-blue-500/20',
-      iconColor: 'text-blue-400',
-    },
-    {
-      icon: Sparkles,
-      text: '做一个白噪音播放器',
-      description: '雨声/咖啡厅/火焰',
-      color: 'from-purple-500/20 to-pink-500/20',
-      borderColor: 'border-purple-500/20',
-      iconColor: 'text-purple-400',
-    },
-    {
-      icon: Terminal,
-      text: '做一个二维码生成器',
-      description: '文字转二维码',
-      color: 'from-emerald-500/20 to-teal-500/20',
-      borderColor: 'border-emerald-500/20',
-      iconColor: 'text-emerald-400',
-    },
-    {
-      icon: FileQuestion,
-      text: '做一个习惯打卡',
-      description: '每日任务追踪',
-      color: 'from-red-500/20 to-orange-500/20',
-      borderColor: 'border-red-500/20',
-      iconColor: 'text-red-400',
-    },
-  ],
-  // Gen6: 视觉交互
-  gen6: [
-    {
-      icon: Code2,
-      text: '做一个画板工具',
-      description: '自由绘图涂鸦',
-      color: 'from-blue-500/20 to-cyan-500/20',
-      borderColor: 'border-blue-500/20',
-      iconColor: 'text-blue-400',
-    },
-    {
-      icon: Sparkles,
-      text: '做一个图片滤镜',
-      description: '黑白/复古/模糊',
-      color: 'from-purple-500/20 to-pink-500/20',
-      borderColor: 'border-purple-500/20',
-      iconColor: 'text-purple-400',
-    },
-    {
-      icon: Terminal,
-      text: '做一个截图标注工具',
-      description: '添加箭头和文字',
-      color: 'from-emerald-500/20 to-teal-500/20',
-      borderColor: 'border-emerald-500/20',
-      iconColor: 'text-emerald-400',
-    },
-    {
-      icon: FileQuestion,
-      text: '做一个拼图游戏',
-      description: '上传图片拼图',
-      color: 'from-red-500/20 to-orange-500/20',
-      borderColor: 'border-red-500/20',
-      iconColor: 'text-red-400',
-    },
-  ],
-  // Gen7: 复杂应用
-  gen7: [
-    {
-      icon: Code2,
-      text: '做一个看板任务管理',
-      description: '拖拽卡片排序',
-      color: 'from-blue-500/20 to-cyan-500/20',
-      borderColor: 'border-blue-500/20',
-      iconColor: 'text-blue-400',
-    },
-    {
-      icon: Sparkles,
-      text: '做一个音乐可视化',
-      description: '频谱动画效果',
-      color: 'from-purple-500/20 to-pink-500/20',
-      borderColor: 'border-purple-500/20',
-      iconColor: 'text-purple-400',
-    },
-    {
-      icon: Terminal,
-      text: '做一个聊天界面',
-      description: '仿微信/Slack',
-      color: 'from-emerald-500/20 to-teal-500/20',
-      borderColor: 'border-emerald-500/20',
-      iconColor: 'text-emerald-400',
-    },
-    {
-      icon: FileQuestion,
-      text: '做一个数据仪表盘',
-      description: '图表统计展示',
-      color: 'from-red-500/20 to-orange-500/20',
-      borderColor: 'border-red-500/20',
-      iconColor: 'text-red-400',
-    },
-  ],
-  // Gen8: 高级应用
-  gen8: [
-    {
-      icon: Sparkles,
-      text: '做一个 3D 旋转相册',
-      description: 'CSS 3D 效果',
-      color: 'from-blue-500/20 to-cyan-500/20',
-      borderColor: 'border-blue-500/20',
-      iconColor: 'text-blue-400',
-    },
-    {
-      icon: Code2,
-      text: '做一个代码编辑器',
-      description: '语法高亮/行号',
-      color: 'from-emerald-500/20 to-teal-500/20',
-      borderColor: 'border-emerald-500/20',
-      iconColor: 'text-emerald-400',
-    },
-    {
-      icon: Terminal,
-      text: '做一个流程图编辑器',
-      description: '拖拽连线节点',
-      color: 'from-purple-500/20 to-pink-500/20',
-      borderColor: 'border-purple-500/20',
-      iconColor: 'text-purple-400',
-    },
-    {
-      icon: FileQuestion,
-      text: '做一个粒子动画',
-      description: 'Canvas 特效',
-      color: 'from-red-500/20 to-orange-500/20',
-      borderColor: 'border-red-500/20',
-      iconColor: 'text-red-400',
-    },
-  ],
-};
+// 默认建议卡片（gen8）
+const defaultSuggestions: SuggestionItem[] = [
+  {
+    icon: Sparkles,
+    text: '做一个 3D 旋转相册',
+    description: 'CSS 3D 效果',
+    color: 'from-blue-500/20 to-cyan-500/20',
+    borderColor: 'border-blue-500/20',
+    iconColor: 'text-blue-400',
+  },
+  {
+    icon: Code2,
+    text: '做一个代码编辑器',
+    description: '语法高亮/行号',
+    color: 'from-emerald-500/20 to-teal-500/20',
+    borderColor: 'border-emerald-500/20',
+    iconColor: 'text-emerald-400',
+  },
+  {
+    icon: Terminal,
+    text: '做一个流程图编辑器',
+    description: '拖拽连线节点',
+    color: 'from-purple-500/20 to-pink-500/20',
+    borderColor: 'border-purple-500/20',
+    iconColor: 'text-purple-400',
+  },
+  {
+    icon: FileQuestion,
+    text: '做一个粒子动画',
+    description: 'Canvas 特效',
+    color: 'from-red-500/20 to-orange-500/20',
+    borderColor: 'border-red-500/20',
+    iconColor: 'text-red-400',
+  },
+];
 
-// 获取当前代际的建议卡片
-function getSuggestionsForGeneration(genId: string): SuggestionItem[] {
-  return suggestionsByGeneration[genId] || suggestionsByGeneration.gen3;
+// 获取建议卡片（已锁定 gen8）
+function getSuggestionsForGeneration(_genId: string): SuggestionItem[] {
+  return defaultSuggestions;
 }
 
 // Empty state component with enhanced design

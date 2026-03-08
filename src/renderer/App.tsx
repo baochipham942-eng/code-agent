@@ -24,7 +24,6 @@ import { LabPage } from './components/features/lab/LabPage';
 import { EvalCenterPanel } from './components/features/evalCenter';
 import { BackgroundTaskPanel } from './components/features/background';
 import { CapturePanel } from './components/features/capture';
-import { MeetingPanel } from './components/features/meeting';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
@@ -118,7 +117,7 @@ export const App: React.FC = () => {
   }, []);
 
   // Load settings from backend on mount
-  const { setModelConfig, setDisclosureLevel, setCurrentGeneration, sidebarCollapsed } = useAppStore();
+  const { setModelConfig, setDisclosureLevel, sidebarCollapsed } = useAppStore();
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -137,17 +136,6 @@ export const App: React.FC = () => {
           logger.info('Loaded disclosure level', { level: settings.ui.disclosureLevel });
         }
 
-        // 加载代际选择
-        if (settings?.generation?.default) {
-          const generationId = settings.generation.default;
-          logger.info('Loading generation', { generationId });
-          // 从后端获取完整的 generation 对象
-          const generation = await window.electronAPI?.invoke('generation:switch', generationId);
-          if (generation) {
-            setCurrentGeneration(generation);
-            logger.info('Loaded generation', { generationId: generation.id });
-          }
-        }
 
         // 加载模型配置
         if (settings?.models) {
@@ -171,7 +159,7 @@ export const App: React.FC = () => {
       }
     };
     loadSettings();
-  }, [setLanguage, setModelConfig, setDisclosureLevel, setCurrentGeneration]);
+  }, [setLanguage, setModelConfig, setDisclosureLevel]);
 
   // 应用启动时检查更新（强制更新检查）
   useEffect(() => {
@@ -518,8 +506,7 @@ export const App: React.FC = () => {
       {/* Capture Panel - 知识库采集面板 */}
       {useAppStore((s) => s.showCapturePanel) && <CapturePanel />}
 
-      {/* Meeting Panel - 会议记录面板 */}
-      {useAppStore((s) => s.showMeetingPanel) && <MeetingPanel />}
+
       </div>
     </ErrorBoundary>
   );

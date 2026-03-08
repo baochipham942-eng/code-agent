@@ -30,7 +30,7 @@
 | **生命周期管理** | `src/main/core/lifecycle.ts` | 服务生命周期管理 |
 | **DAG 可视化** | `src/renderer/components/features/workflow/` | React Flow DAG 展示 |
 | **内置 Agent** | `src/shared/types/builtInAgents.ts` | 6+11 个预定义 Agent 角色 |
-| **Checkpoint 系统** | `src/main/services/FileCheckpointService.ts` | 文件版本快照与回滚 |
+| **Checkpoint 系统** | `src/main/services/checkpoint/fileCheckpointService.ts` | 文件版本快照与回滚（Write/Edit 拦截 + Rewind 消息截断） |
 | **ToolSearch** | `src/main/tools/gen4/toolSearch.ts` | 延迟加载工具发现机制 |
 | **CLI 接口** | `src/main/cli/` | 命令行交互模式 |
 | **多渠道接入** | `src/main/channels/` | 飞书 Webhook 等渠道支持 |
@@ -126,6 +126,9 @@
 | **统一 Identity** | `src/main/generation/prompts/identity.ts` | 替代 constitution/ 的 6 文件，token -81% |
 | **上下文压缩** | `src/main/context/autoCompressor.ts` | 自动上下文压缩 |
 | **并行评估** | `src/main/evaluation/parallelEvaluator.ts` | 并行会话评估 |
+| **Session Replay** | `src/main/evaluation/replayService.ts` | 评测中心第三模式：结构化会话回放（三表 JOIN + 工具分类 + 自修复链检测） |
+| **Trajectory 分析** | `src/main/evaluation/trajectory/` | 可选管道：事件流 → TrajectoryBuilder → DeviationDetector → EvaluationResult.trajectoryAnalysis |
+| **ServiceRegistry** | `src/main/services/serviceRegistry.ts` | 统一服务生命周期管理（register/disposeAll/resetAll），gracefulShutdown 接入 |
 
 ### v0.16.16+ 新增模块
 
@@ -152,6 +155,7 @@
 | [003](./decisions/003-cloud-local-hybrid-architecture.md) | 云端-本地混合执行架构 | accepted |
 | [004](./decisions/004-unified-plugin-config-structure.md) | 统一插件配置目录结构 | proposed |
 | [005](./decisions/005-eval-engineering.md) | Eval Engineering Key Decisions | accepted |
+| [006](./decisions/006-deferred-tools-consolidation.md) | Deferred Tools 合并精简 (Phase 2) | accepted |
 
 ---
 
@@ -173,14 +177,16 @@
 
 | 代际 | 核心能力 | 工具集 |
 |------|----------|--------|
-| Gen1 | 基础文件操作 | bash, read_file, write_file, edit_file |
+| Gen1 | 基础文件操作 | Bash, Read, Write, Edit |
 | Gen2 | 代码搜索 | + glob, grep, list_directory, mcp |
-| Gen3 | 任务规划 | + task, todo_write, ask_user_question |
-| Gen4 | 网络能力 | + skill, web_fetch, **web_search** |
+| Gen3 | 任务规划 | + TaskManager, todo_write, AskUserQuestion |
+| Gen4 | 网络能力 | + skill, WebFetch, **WebSearch** |
 | Gen5 | 记忆系统 | + memory_store, memory_search |
 | Gen6 | 视觉交互 | + screenshot, computer_use |
 | Gen7 | 多代理 | + spawn_agent, agent_message |
 | Gen8 | 自我进化 | + strategy_optimize, tool_create |
+
+> **Phase 2 工具合并**: 31 个延迟加载工具合并为 9 个统一工具（Process, MCPUnified, TaskManager, Plan, PlanMode, WebFetch, ReadDocument, Browser, Computer），使用 action 参数分发。旧名通过 TOOL_ALIASES 保持兼容。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
 
 ### 目录结构
 

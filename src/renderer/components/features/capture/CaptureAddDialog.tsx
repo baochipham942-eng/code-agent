@@ -47,7 +47,7 @@ export const CaptureAddDialog: React.FC = () => {
       onClick={() => setAddDialogOpen(false)}
     >
       <div
-        className="w-[500px] bg-[#1e1e24] rounded-lg border border-zinc-700 shadow-xl"
+        className="w-[500px] bg-zinc-900 rounded-lg border border-zinc-700 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 标题栏 */}

@@ -14,7 +14,7 @@ interface CaptureDetailProps {
 
 export const CaptureDetail: React.FC<CaptureDetailProps> = ({ item, onClose }) => {
   return (
-    <div className="flex flex-col h-full bg-[#1c1c21] border-l border-zinc-700">
+    <div className="flex flex-col h-full bg-zinc-900 border-l border-zinc-700">
       {/* 头部 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
         <h3 className="text-sm font-medium text-zinc-200 truncate flex-1">{item.title}</h3>

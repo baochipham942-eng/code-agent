@@ -105,11 +105,13 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
 
       // agent:send-message 特殊处理 — SSE 流式响应
       if (channel === 'agent:send-message') {
-        const prompt = typeof args[0] === 'string' ? args[0] : (args[0] as { content: string }).content;
+        const arg = args[0];
+        const prompt = typeof arg === 'string' ? arg : (arg as { content: string }).content;
+        const sessionId = typeof arg === 'object' && arg !== null ? (arg as { sessionId?: string }).sessionId : undefined;
         const response = await fetch(`${baseUrl}/api/run`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, ...(sessionId ? { sessionId } : {}) }),
         });
 
         // 读取 SSE 流并分发事件到 listeners
@@ -136,9 +138,16 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
                     try {
                       const data = JSON.parse(line.slice(6));
                       // 将 SSE 事件转发到 agent:event listeners
+                      // sessionId 从 data 中提取到顶层，匹配 useAgent 的 event.sessionId 访问方式
+                      const sessionId = data?.sessionId;
                       const cbs = listeners.get('agent:event');
+                      if (currentEvent !== 'stream_chunk') {
+                        console.debug('[HttpTransport] Dispatching SSE event:', currentEvent, sessionId ? `(session: ${sessionId})` : '');
+                      }
                       if (cbs) {
-                        cbs.forEach((cb) => cb({ type: currentEvent, data }));
+                        cbs.forEach((cb) => cb({ type: currentEvent, data, sessionId }));
+                      } else {
+                        console.warn('[HttpTransport] No listeners for agent:event, event dropped:', currentEvent);
                       }
                     } catch {
                       // 忽略解析错误
@@ -148,6 +157,7 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
                 }
               }
             } catch (err) {
+              console.error('[HttpTransport] processStream error:', err);
               const errorCbs = listeners.get('agent:event');
               if (errorCbs) {
                 errorCbs.forEach((cb) => cb({
@@ -158,8 +168,10 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
             }
           };
 
-          // 不 await，让流在后台处理
-          processStream();
+          // 不 await，让流在后台处理，但记录未捕获错误
+          processStream().catch((err) => {
+            console.error('[HttpTransport] Unhandled processStream error:', err);
+          });
         }
 
         return undefined as ReturnType<IpcInvokeHandlers[K]>;

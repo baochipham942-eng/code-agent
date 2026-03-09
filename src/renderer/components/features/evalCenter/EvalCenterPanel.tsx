@@ -1,5 +1,5 @@
 // ============================================================================
-// EvalCenterPanel - 评测中心（全页面布局：左侧导航 + 6 页面）
+// EvalCenterPanel - 评测中心（全页面布局：左侧导航 + 7 页面）
 // ============================================================================
 
 import React, { useState } from 'react';
@@ -10,10 +10,13 @@ import { ScoringConfigPage } from './pages/ScoringConfigPage';
 import { ExperimentDetailPage } from './pages/ExperimentDetailPage';
 import { FailureAnalysisPage } from './pages/FailureAnalysisPage';
 import { CrossExperimentPage } from './pages/CrossExperimentPage';
+import { SessionListView } from './SessionListView';
+import { SessionEvalView } from './pages/SessionEvalView';
 
-type NavItem = 'overview' | 'test-cases' | 'scoring' | 'detail' | 'failure' | 'compare';
+type NavItem = 'sessions' | 'overview' | 'test-cases' | 'scoring' | 'detail' | 'failure' | 'compare';
 
 const NAV_ITEMS: Array<{ key: NavItem; icon: string; label: string }> = [
+  { key: 'sessions', icon: '💬', label: '会话评测' },
   { key: 'overview', icon: '📊', label: '实验总览' },
   { key: 'test-cases', icon: '📋', label: '测试集' },
   { key: 'scoring', icon: '⚙️', label: '评分配置' },
@@ -24,9 +27,18 @@ const NAV_ITEMS: Array<{ key: NavItem; icon: string; label: string }> = [
 
 export const EvalCenterPanel: React.FC = () => {
   const { showEvalCenter, setShowEvalCenter } = useAppStore();
-  const [activeNav, setActiveNav] = useState<NavItem>('overview');
+  const [activeNav, setActiveNav] = useState<NavItem>('sessions');
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
 
   const handleClose = () => setShowEvalCenter(false);
+
+  const handleSelectSession = (id: string) => {
+    setSelectedSessionId(id);
+  };
+
+  const handleBackToSessions = () => {
+    setSelectedSessionId(null);
+  };
 
   if (!showEvalCenter) return null;
 
@@ -53,7 +65,12 @@ export const EvalCenterPanel: React.FC = () => {
             {NAV_ITEMS.map((item) => (
               <button
                 key={item.key}
-                onClick={() => setActiveNav(item.key)}
+                onClick={() => {
+                  setActiveNav(item.key);
+                  if (item.key !== 'sessions') {
+                    setSelectedSessionId(null);
+                  }
+                }}
                 className={`flex items-center gap-2 px-3 py-2 mx-1 rounded text-xs transition ${
                   activeNav === item.key
                     ? 'bg-zinc-700/60 text-zinc-200'
@@ -68,6 +85,16 @@ export const EvalCenterPanel: React.FC = () => {
 
           {/* Main content */}
           <div className="flex-1 overflow-y-auto min-h-0">
+            {activeNav === 'sessions' && (
+              selectedSessionId ? (
+                <SessionEvalView
+                  sessionId={selectedSessionId}
+                  onBack={handleBackToSessions}
+                />
+              ) : (
+                <SessionListView onSelectSession={handleSelectSession} />
+              )
+            )}
             {activeNav === 'overview' && <TestResultsDashboard />}
             {activeNav === 'test-cases' && <TestCaseManager />}
             {activeNav === 'scoring' && <ScoringConfigPage />}

@@ -265,6 +265,8 @@ export interface TestRunSummary {
   };
   /** Eval self-evolution feedback (P4) */
   evalFeedback?: EvalFeedback;
+  /** Warning message if DB persistence failed (best-effort save) */
+  persistenceWarning?: string;
 }
 
 /**

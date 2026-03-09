@@ -7,6 +7,8 @@
 //   npx tsx scripts/eval-ci.ts                    # auto-detect scope
 //   npx tsx scripts/eval-ci.ts --scope smoke      # smoke tests only
 //   npx tsx scripts/eval-ci.ts --scope full       # full suite
+//   npx tsx scripts/eval-ci.ts --real              # use real model execution
+//   npx tsx scripts/eval-ci.ts --real --model gpt-4o  # real mode with specific model
 //   npx tsx scripts/eval-ci.ts --promote          # promote to baseline
 //   npx tsx scripts/eval-ci.ts --baseline-info    # show baseline
 //   npx tsx scripts/eval-ci.ts --trend            # show trend
@@ -21,15 +23,37 @@ import {
   TestRunner,
   createDefaultConfig,
   MockAgentAdapter,
+  StandaloneAgentAdapter,
   loadAllTestSuites,
   generateConsoleReport,
   saveReport,
 } from '../src/main/testing/index';
+import type { AgentInterface } from '../src/main/testing/testRunner';
 import type { TestRunSummary, TrendDataPoint } from '../src/main/testing/types';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../src/shared/constants';
 
 // ---------------------------------------------------------------------------
 // Arg parsing
 // ---------------------------------------------------------------------------
+
+const DEFAULT_MAX_CASES = 50;
+
+/** Rough cost per case by model prefix (USD). Fallback: $0.01 */
+function estimateCostPerCase(modelName: string): number {
+  const m = modelName.toLowerCase();
+  if (m.includes('gpt-4o-mini') || m.includes('gpt-4o mini')) return 0.002;
+  if (m.includes('gpt-4o')) return 0.008;
+  if (m.includes('gpt-4-turbo') || m.includes('gpt-4 turbo')) return 0.015;
+  if (m.includes('gpt-4')) return 0.04;
+  if (m.includes('gpt-3.5')) return 0.001;
+  if (m.includes('claude-3-opus') || m.includes('claude-opus')) return 0.04;
+  if (m.includes('claude-3-sonnet') || m.includes('claude-sonnet')) return 0.008;
+  if (m.includes('claude-3-haiku') || m.includes('claude-haiku')) return 0.002;
+  if (m.includes('deepseek')) return 0.002;
+  if (m.includes('gemini-pro')) return 0.005;
+  if (m.includes('gemini')) return 0.003;
+  return 0.01; // conservative default
+}
 
 function parseArgs(argv: string[]) {
   const args = argv.slice(2);
@@ -38,6 +62,12 @@ function parseArgs(argv: string[]) {
   let baselineInfo = false;
   let trend = false;
   let base: string | undefined;
+  let real = false;
+  let model: string | undefined;
+  let provider: string | undefined;
+  let concurrency: number | undefined;
+  let maxCases: number = DEFAULT_MAX_CASES;
+  let force = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -57,13 +87,37 @@ function parseArgs(argv: string[]) {
       trend = true;
     } else if (arg === '--base' && i + 1 < args.length) {
       base = args[++i];
+    } else if (arg === '--real') {
+      real = true;
+    } else if (arg === '--model' && i + 1 < args.length) {
+      model = args[++i];
+    } else if (arg === '--provider' && i + 1 < args.length) {
+      provider = args[++i];
+    } else if (arg === '--concurrency' && i + 1 < args.length) {
+      concurrency = parseInt(args[++i], 10);
+    } else if (arg === '--max-cases' && i + 1 < args.length) {
+      maxCases = parseInt(args[++i], 10);
+    } else if (arg === '--force') {
+      force = true;
     } else if (arg === '--help' || arg === '-h') {
       printUsage();
       process.exit(0);
     }
   }
 
-  return { scope, promote, baselineInfo, trend, base };
+  // Validate --concurrency: must be a positive integer
+  if (concurrency !== undefined && (!Number.isInteger(concurrency) || concurrency <= 0)) {
+    console.error(chalk.red(`Invalid --concurrency value: must be a positive integer.`));
+    process.exit(1);
+  }
+
+  // Validate --max-cases: must be a positive integer
+  if (!Number.isInteger(maxCases) || maxCases <= 0) {
+    console.error(chalk.red(`Invalid --max-cases value: must be a positive integer.`));
+    process.exit(1);
+  }
+
+  return { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force };
 }
 
 function printUsage() {
@@ -74,6 +128,12 @@ ${chalk.dim('Usage:')}
   npx tsx scripts/eval-ci.ts                    Auto-detect scope from git diff
   npx tsx scripts/eval-ci.ts --scope smoke      Smoke tests only
   npx tsx scripts/eval-ci.ts --scope full       Full eval suite
+  npx tsx scripts/eval-ci.ts --real             Use real model execution (default: mock)
+  npx tsx scripts/eval-ci.ts --model <name>     Model name (implies --real)
+  npx tsx scripts/eval-ci.ts --provider <name>  Model provider (default: from constants)
+  npx tsx scripts/eval-ci.ts --concurrency <n>  Parallel test execution count
+  npx tsx scripts/eval-ci.ts --max-cases <n>    Max cases in --real mode (default: 50)
+  npx tsx scripts/eval-ci.ts --force             Bypass --max-cases limit
   npx tsx scripts/eval-ci.ts --promote          Promote current results to baseline
   npx tsx scripts/eval-ci.ts --baseline-info    Show current baseline
   npx tsx scripts/eval-ci.ts --trend            Show trend chart
@@ -144,37 +204,86 @@ function getCommitSha(): string {
   }
 }
 
-async function runEvals(workingDir: string, _scope: 'smoke' | 'full'): Promise<TestRunSummary> {
+/**
+ * Create the appropriate agent adapter based on --real flag
+ */
+function createAgent(opts: {
+  real: boolean;
+  model?: string;
+  provider?: string;
+  workingDir: string;
+}): AgentInterface {
+  if (!opts.real) {
+    const mockAgent = new MockAgentAdapter();
+    mockAgent.setMockResponse('列出当前目录', {
+      responses: ['当前目录包含以下文件：package.json, src/, ...'],
+      toolExecutions: [
+        {
+          tool: 'bash',
+          input: { command: 'ls' },
+          output: 'package.json\nsrc\nnode_modules\n',
+          success: true,
+          duration: 50,
+          timestamp: Date.now(),
+        },
+      ],
+    });
+    return mockAgent;
+  }
+
+  // Real mode: use StandaloneAgentAdapter
+  const resolvedProvider = opts.provider
+    || process.env.AUTO_TEST_PROVIDER
+    || DEFAULT_PROVIDER;
+  const resolvedModel = opts.model
+    || process.env.AUTO_TEST_MODEL
+    || DEFAULT_MODEL;
+  const generation = process.env.AUTO_TEST_GENERATION || 'gen8';
+
+  console.log(chalk.cyan(`  Mode:     real`));
+  console.log(chalk.cyan(`  Provider: ${resolvedProvider}`));
+  console.log(chalk.cyan(`  Model:    ${resolvedModel}`));
+  console.log('');
+
+  return new StandaloneAgentAdapter({
+    workingDirectory: opts.workingDir,
+    generation,
+    modelConfig: {
+      provider: resolvedProvider,
+      model: resolvedModel,
+      apiKey: process.env.AUTO_TEST_API_KEY,
+    },
+  });
+}
+
+async function runEvals(
+  workingDir: string,
+  _scope: 'smoke' | 'full',
+  opts: { real: boolean; model?: string; provider?: string; concurrency?: number }
+): Promise<TestRunSummary> {
   const config = createDefaultConfig(workingDir, {
     verbose: false,
+    ...(opts.concurrency ? { maxParallel: opts.concurrency, parallel: true } : {}),
   });
 
-  const mockAgent = new MockAgentAdapter();
-  mockAgent.setMockResponse('列出当前目录', {
-    responses: ['当前目录包含以下文件：package.json, src/, ...'],
-    toolExecutions: [
-      {
-        tool: 'bash',
-        input: { command: 'ls' },
-        output: 'package.json\nsrc\nnode_modules\n',
-        success: true,
-        duration: 50,
-        timestamp: Date.now(),
-      },
-    ],
+  const agent = createAgent({
+    real: opts.real,
+    model: opts.model,
+    provider: opts.provider,
+    workingDir,
   });
 
-  const runner = new TestRunner(config, mockAgent);
+  const runner = new TestRunner(config, agent);
 
   runner.addEventListener((event) => {
     switch (event.type) {
       case 'case_end': {
         const icon =
           event.result.status === 'passed'
-            ? '✅'
+            ? '\u2705'
             : event.result.status === 'failed'
-            ? '❌'
-            : '⏭️';
+            ? '\u274C'
+            : '\u23ED\uFE0F';
         console.log(
           `  ${icon} ${event.result.testId.padEnd(30)} ${event.result.duration}ms`
         );
@@ -199,7 +308,10 @@ async function runEvals(workingDir: string, _scope: 'smoke' | 'full'): Promise<T
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const { scope, promote, baselineInfo, trend, base } = parseArgs(process.argv);
+  const { scope, promote, baselineInfo, trend, base, real, model, provider, concurrency, maxCases, force } = parseArgs(process.argv);
+
+  // --model implies --real
+  const effectiveReal = real || !!model;
 
   const workingDir = process.cwd();
   const manager = new BaselineManager(workingDir);
@@ -219,9 +331,34 @@ async function main() {
 
   // --promote: run evals then promote results to baseline
   if (promote) {
+    // --real mode safety guards for promote
+    if (effectiveReal) {
+      const suites = loadAllTestSuites();
+      const totalCases = suites.reduce((sum, s) => sum + s.cases.length, 0);
+      const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
+      const resolvedProvider = provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
+      const costPerCase = estimateCostPerCase(resolvedModel);
+      const casesToRun = Math.min(totalCases, maxCases);
+      const estimatedCost = (casesToRun * costPerCase).toFixed(2);
+
+      console.log(chalk.yellow(
+        `  ⚠️  Real mode: will execute up to ${casesToRun} cases with ${resolvedModel} via ${resolvedProvider}. ` +
+        `Estimated cost: ~$${estimatedCost} (based on avg 5K tokens/case). Use --max-cases to limit.`
+      ));
+      console.log('');
+
+      if (totalCases > maxCases && !force) {
+        console.error(chalk.red(
+          `  Error: ${totalCases} test cases exceed --max-cases limit (${maxCases}). ` +
+          `Use --force to override or --max-cases <n> to raise the limit.`
+        ));
+        process.exit(1);
+      }
+    }
+
     console.log(chalk.bold('  Running evals before promoting to baseline...'));
     console.log('');
-    const summary = await runEvals(workingDir, 'full');
+    const summary = await runEvals(workingDir, 'full', { real: effectiveReal, model, provider, concurrency });
     const commitSha = getCommitSha();
     await manager.promote(summary, commitSha);
     console.log(chalk.green(`  Baseline promoted (commit: ${commitSha.slice(0, 7)})`));
@@ -241,6 +378,7 @@ async function main() {
   console.log(chalk.bold('  Eval-Driven Development'));
   console.log(chalk.dim('  ' + '─'.repeat(50)));
   console.log(`  Scope:        ${chalk.cyan(effectiveScope)}`);
+  console.log(`  Mode:         ${effectiveReal ? chalk.yellow('real') : chalk.dim('mock')}`);
   console.log(`  Should run:   ${detection.shouldRunEval ? chalk.green('yes') : chalk.dim('no')}`);
   console.log(`  Trigger:      ${detection.triggerReason}`);
 
@@ -261,10 +399,36 @@ async function main() {
     return;
   }
 
+  // --real mode safety guards
+  if (effectiveReal) {
+    // Load suites to count total cases
+    const suites = loadAllTestSuites();
+    const totalCases = suites.reduce((sum, s) => sum + s.cases.length, 0);
+    const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
+    const resolvedProvider = provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
+    const costPerCase = estimateCostPerCase(resolvedModel);
+    const casesToRun = Math.min(totalCases, maxCases);
+    const estimatedCost = (casesToRun * costPerCase).toFixed(2);
+
+    console.log(chalk.yellow(
+      `  ⚠️  Real mode: will execute up to ${casesToRun} cases with ${resolvedModel} via ${resolvedProvider}. ` +
+      `Estimated cost: ~$${estimatedCost} (based on avg 5K tokens/case). Use --max-cases to limit.`
+    ));
+    console.log('');
+
+    if (totalCases > maxCases && !force) {
+      console.error(chalk.red(
+        `  Error: ${totalCases} test cases exceed --max-cases limit (${maxCases}). ` +
+        `Use --force to override or --max-cases <n> to raise the limit.`
+      ));
+      process.exit(1);
+    }
+  }
+
   // Run evals
   console.log(chalk.cyan(`  Running ${effectiveScope} eval suite...`));
   console.log('');
-  const summary = await runEvals(workingDir, effectiveScope);
+  const summary = await runEvals(workingDir, effectiveScope, { real: effectiveReal, model, provider, concurrency });
 
   // Compare to baseline
   const delta = await manager.compare(summary);

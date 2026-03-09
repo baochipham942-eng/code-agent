@@ -196,18 +196,18 @@ export class SessionEventService {
       eventStats[event.eventType] = (eventStats[event.eventType] || 0) + 1;
 
       // 提取工具调用
-      if (event.eventType === 'tool_start' || event.eventType === 'tool_result') {
+      if (event.eventType === 'tool_call_start' || event.eventType === 'tool_start' || event.eventType === 'tool_call_end' || event.eventType === 'tool_result') {
         const data = event.eventData as Record<string, unknown>;
         if (data?.tool || data?.name) {
           const toolName = (data.tool || data.name) as string;
           const existing = toolCalls.find(t => t.name === toolName);
-          if (!existing && event.eventType === 'tool_start') {
+          if (!existing && (event.eventType === 'tool_call_start' || event.eventType === 'tool_start')) {
             toolCalls.push({
               name: toolName,
               success: true, // 默认成功，后续更新
             });
           }
-          if (event.eventType === 'tool_result' && data.error) {
+          if ((event.eventType === 'tool_call_end' || event.eventType === 'tool_result') && data.error) {
             const tool = toolCalls.find(t => t.name === toolName);
             if (tool) tool.success = false;
           }
@@ -257,8 +257,10 @@ export class SessionEventService {
     switch (event.eventType) {
       case 'message':
         return `消息: ${String(data?.content || '').slice(0, 50)}...`;
+      case 'tool_call_start':
       case 'tool_start':
         return `工具开始: ${data?.tool || data?.name || 'unknown'}`;
+      case 'tool_call_end':
       case 'tool_result':
         return `工具结果: ${data?.tool || data?.name || 'unknown'}`;
       case 'thinking':

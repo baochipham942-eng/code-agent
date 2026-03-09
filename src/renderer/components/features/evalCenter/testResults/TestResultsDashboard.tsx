@@ -147,8 +147,72 @@ export const TestResultsDashboard: React.FC = () => {
   }
 
 
+  const handleExportReport = useCallback(() => {
+    if (!currentReport) return;
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const passRate = Math.round((currentReport.passed / Math.max(currentReport.total, 1)) * 100);
+    const scoreColor = (s: number) => s >= 80 ? '#34d399' : s >= 60 ? '#fbbf24' : '#f87171';
+    const html = `<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>评测报告 - ${currentReport.runId}</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#333;background:#fafafa}
+  h1{font-size:20px;border-bottom:2px solid #eee;padding-bottom:8px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}
+  .stat{background:#fff;border:1px solid #eee;border-radius:8px;padding:12px;text-align:center}
+  .stat .val{font-size:24px;font-weight:700}
+  .stat .lbl{font-size:11px;color:#888;margin-top:4px}
+  table{width:100%;border-collapse:collapse;margin:20px 0;font-size:13px}
+  th,td{padding:8px 12px;border:1px solid #eee;text-align:left}
+  th{background:#f5f5f5;font-weight:600}
+  .pass{color:#059669} .fail{color:#dc2626} .partial{color:#d97706}
+  .footer{margin-top:40px;padding-top:12px;border-top:1px solid #eee;font-size:11px;color:#999}
+</style></head><body>
+<h1>评测报告</h1>
+<p style="color:#888;font-size:12px">Run ID: ${currentReport.runId} | 生成时间: ${new Date().toLocaleString('zh-CN')}</p>
+<div class="stats">
+  <div class="stat"><div class="val" style="color:${scoreColor(passRate)}">${passRate}%</div><div class="lbl">通过率</div></div>
+  <div class="stat"><div class="val">${currentReport.total}</div><div class="lbl">总用例</div></div>
+  <div class="stat"><div class="val" style="color:#059669">${currentReport.passed}</div><div class="lbl">通过</div></div>
+  <div class="stat"><div class="val" style="color:#dc2626">${currentReport.failed}</div><div class="lbl">失败</div></div>
+</div>
+<h2 style="font-size:16px">用例详情</h2>
+<table><thead><tr><th>Test ID</th><th>状态</th><th>得分</th><th>耗时</th><th>说明</th></tr></thead><tbody>
+${currentReport.results.map(r => {
+  const cls = r.status === 'passed' ? 'pass' : r.status === 'failed' ? 'fail' : 'partial';
+  const label = r.status === 'passed' ? '通过' : r.status === 'failed' ? '失败' : '部分通过';
+  return '<tr><td><code>' + esc(r.testId) + '</code></td><td class="' + cls + '">' + label + '</td><td>' + Math.round(r.score * 100) + '%</td><td>' + (r.duration/1000).toFixed(1) + 's</td><td>' + esc(r.failureReason || r.description || '-') + '</td></tr>';
+}).join('\n')}
+</tbody></table>
+<div class="footer">由 Code Agent 评测中心生成</div>
+</body></html>`;
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'eval-report-' + currentReport.runId.slice(0, 8) + '.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [currentReport]);
+
   return (
     <div className="p-4 space-y-4">
+      {/* Header with export button */}
+      <div className="flex items-center justify-between">
+        <div />
+        <button
+          onClick={handleExportReport}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 bg-zinc-800/60 hover:bg-zinc-700/60 rounded-lg border border-zinc-700/30 transition"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          导出报告
+        </button>
+      </div>
+
       {/* Experiment columns (replaces old TestResultsHeader dropdown) */}
       <ExperimentColumns
         reports={reports}

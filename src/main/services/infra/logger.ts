@@ -1,7 +1,12 @@
 /**
  * 统一日志服务
  * 替代 console.log，提供日志级别、上下文和敏感信息脱敏
+ * 支持文件持久化（JSON 结构化日志，每日轮转，保留 7 天）
  */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 
 export enum LogLevel {
   DEBUG = 0,
@@ -20,6 +25,132 @@ const SENSITIVE_KEYS = [
   'credential',
   'private',
 ];
+
+// ----------------------------------------------------------------------------
+// File Sink - 日志文件持久化
+// ----------------------------------------------------------------------------
+
+/** 获取日志目录：优先 Electron userData，CLI 模式回退到 ~/.code-agent */
+function getLogDir(): string {
+  try {
+    const { app } = require('electron');
+    if (app?.getPath) {
+      return path.join(app.getPath('userData'), 'logs');
+    }
+  } catch {
+    // Not in Electron environment
+  }
+  const dataDir = process.env.CODE_AGENT_DATA_DIR || path.join(os.homedir(), '.code-agent');
+  return path.join(dataDir, 'logs');
+}
+
+function getDateString(date: Date = new Date()): string {
+  return date.toISOString().split('T')[0]; // YYYY-MM-DD
+}
+
+let fileSinkInitialized = false;
+let fileSinkEnabled = true;
+let logDir = '';
+let logStream: fs.WriteStream | null = null;
+let logStreamDate = '';
+
+/** 初始化日志目录并清理旧文件（best-effort） */
+function initFileSink(): void {
+  if (fileSinkInitialized) return;
+  fileSinkInitialized = true;
+
+  try {
+    logDir = getLogDir();
+    fs.mkdirSync(logDir, { recursive: true });
+    cleanOldLogs();
+  } catch {
+    fileSinkEnabled = false;
+  }
+}
+
+/** 删除超过 7 天的日志文件 */
+function cleanOldLogs(): void {
+  try {
+    const files = fs.readdirSync(logDir);
+    const now = Date.now();
+    const maxAge = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+    for (const file of files) {
+      if (!file.startsWith('code-agent-') || !file.endsWith('.log')) continue;
+      const filePath = path.join(logDir, file);
+      try {
+        const stat = fs.statSync(filePath);
+        if (now - stat.mtimeMs > maxAge) {
+          fs.unlinkSync(filePath);
+        }
+      } catch {
+        // Skip files we can't stat/delete
+      }
+    }
+  } catch {
+    // Non-critical, ignore
+  }
+}
+
+/** Get or create a write stream for today's log file (lazy, per-day rotation) */
+function getLogStream(): fs.WriteStream | null {
+  const today = getDateString();
+  if (logStream && logStreamDate === today) return logStream;
+
+  // Day changed or first call — close old stream and open new one
+  if (logStream) {
+    try { logStream.end(); } catch { /* best-effort */ }
+    logStream = null;
+  }
+
+  try {
+    const filePath = path.join(logDir, `code-agent-${today}.log`);
+    logStream = fs.createWriteStream(filePath, { flags: 'a' });
+    logStream.on('error', () => {
+      // Silently ignore write errors — best-effort logging
+      logStream = null;
+    });
+    logStreamDate = today;
+    return logStream;
+  } catch {
+    return null;
+  }
+}
+
+/** 写一行 JSON 日志到文件（non-blocking buffered write） */
+function writeToFile(
+  level: string,
+  context: string | undefined,
+  message: string,
+  data: unknown[] | undefined,
+): void {
+  if (!fileSinkEnabled) return;
+
+  try {
+    initFileSink();
+    if (!fileSinkEnabled) return;
+
+    const logLine = JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level,
+      context: context || undefined,
+      message,
+      data: data && data.length > 0 ? data : undefined,
+    });
+
+    const stream = getLogStream();
+    if (stream) {
+      stream.write(logLine + '\n');
+    }
+  } catch {
+    // File write failed — continue with console only
+    // Don't disable permanently; transient errors (e.g. disk full) may resolve
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Logger Class
+// ----------------------------------------------------------------------------
 
 class Logger {
   private level: LogLevel;
@@ -88,6 +219,11 @@ class Logger {
     } else {
       logFn(`${timestamp} ${level} ${ctx} ${message}`);
     }
+
+    // Write to file for INFO and above (skip DEBUG in file)
+    if (level !== 'DEBUG') {
+      writeToFile(level, this.context, message, sanitizedArgs.length > 0 ? sanitizedArgs : undefined);
+    }
   }
 
   private sanitize(
@@ -114,7 +250,10 @@ class Logger {
   }
 
   async dispose(): Promise<void> {
-    // Logger has no resources to release
+    if (logStream) {
+      try { logStream.end(); } catch { /* best-effort */ }
+      logStream = null;
+    }
   }
 }
 
@@ -140,4 +279,3 @@ export function ensureLoggerRegistered(): void {
   const { getServiceRegistry } = require('../serviceRegistry');
   getServiceRegistry().register('Logger', logger);
 }
-

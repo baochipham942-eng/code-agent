@@ -293,6 +293,16 @@ export class DatabaseService {
       }
     }
 
+    // Experiments 表: 添加 git_commit 列
+    try {
+      this.db.exec("ALTER TABLE experiments ADD COLUMN git_commit TEXT");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+        logger.warn('[DB] Migration unexpected error:', msg);
+      }
+    }
+
     // Tool Executions 表 (用于缓存和审计)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS tool_executions (
@@ -2066,12 +2076,13 @@ export class DatabaseService {
     config_json?: string;
     summary_json: string;
     source?: string;
+    git_commit?: string;
   }): void {
     if (!this.db) throw new Error('Database not initialized');
 
     this.db.prepare(`
-      INSERT OR REPLACE INTO experiments (id, name, timestamp, model, provider, scope, config_json, summary_json, source)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO experiments (id, name, timestamp, model, provider, scope, config_json, summary_json, source, git_commit)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       experiment.id,
       experiment.name,
@@ -2082,6 +2093,7 @@ export class DatabaseService {
       experiment.config_json || null,
       experiment.summary_json,
       experiment.source || 'test-runner',
+      experiment.git_commit || null,
     );
   }
 
@@ -2119,6 +2131,7 @@ export class DatabaseService {
     config_json: string | null;
     summary_json: string;
     source: string;
+    git_commit: string | null;
   }> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -2136,6 +2149,7 @@ export class DatabaseService {
       config_json: row.config_json as string | null,
       summary_json: row.summary_json as string,
       source: (row.source as string) || 'test-runner',
+      git_commit: (row.git_commit as string) || null,
     }));
   }
 
@@ -2150,6 +2164,7 @@ export class DatabaseService {
       config_json: string | null;
       summary_json: string;
       source: string;
+      git_commit: string | null;
     };
     cases: Array<{
       id: string;
@@ -2181,6 +2196,7 @@ export class DatabaseService {
         config_json: expRow.config_json as string | null,
         summary_json: expRow.summary_json as string,
         source: (expRow.source as string) || 'test-runner',
+        git_commit: (expRow.git_commit as string) || null,
       },
       cases: caseRows.map(row => ({
         id: row.id as string,
@@ -2192,6 +2208,14 @@ export class DatabaseService {
         data_json: row.data_json as string | null,
       })),
     };
+  }
+
+  /**
+   * Update an experiment's summary_json (used to track status transitions: pending -> running -> completed/failed)
+   */
+  updateExperimentSummary(id: string, summaryJson: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.prepare('UPDATE experiments SET summary_json = ? WHERE id = ?').run(summaryJson, id);
   }
 
   deleteExperiment(id: string): boolean {

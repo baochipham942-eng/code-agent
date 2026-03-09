@@ -215,6 +215,8 @@ export interface TestResult {
   turnCount: number;
   /** Assertion score (0.0 - 1.0) */
   score: number;
+  /** Pipeline failure stage (from failure funnel analysis) */
+  failureStage?: string;
   /** Reference solution if provided */
   reference_solution?: string;
   /** Expectation-based assertion results (P1) */
@@ -265,6 +267,8 @@ export interface TestRunSummary {
   };
   /** Eval self-evolution feedback (P4) */
   evalFeedback?: EvalFeedback;
+  /** Git commit hash at time of test run */
+  gitCommit?: string;
   /** Warning message if DB persistence failed (best-effort save) */
   persistenceWarning?: string;
 }

@@ -7,8 +7,10 @@ import { TestResultsTable } from './TestResultsTable';
 import { ExperimentColumns } from './ExperimentColumns';
 import { ScoreHeatmap } from './ScoreHeatmap';
 import { FailureFunnel } from './FailureFunnel';
+import { CreateExperimentDialog } from '../CreateExperimentDialog';
 
 export const TestResultsDashboard: React.FC = () => {
+  const [showCreateExperiment, setShowCreateExperiment] = useState(false);
   const [reports, setReports] = useState<TestReportListItem[]>([]);
   const [currentReport, setCurrentReport] = useState<TestRunReport | null>(null);
   // Cache of loaded full reports for heatmap (keyed by filePath)
@@ -199,9 +201,17 @@ ${currentReport.results.map(r => {
 
   return (
     <div className="p-4 space-y-4">
-      {/* Header with export button */}
+      {/* Header with new experiment + export buttons */}
       <div className="flex items-center justify-between">
-        <div />
+        <button
+          onClick={() => setShowCreateExperiment(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg transition font-medium"
+        >
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          新建实验
+        </button>
         <button
           onClick={handleExportReport}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 bg-zinc-800/60 hover:bg-zinc-700/60 rounded-lg border border-zinc-700/30 transition"
@@ -212,6 +222,24 @@ ${currentReport.results.map(r => {
           导出报告
         </button>
       </div>
+
+      {/* Create Experiment Dialog */}
+      <CreateExperimentDialog
+        isOpen={showCreateExperiment}
+        onClose={() => setShowCreateExperiment(false)}
+        onSubmit={async (config) => {
+          await window.electronAPI?.invoke(EVALUATION_CHANNELS.CREATE_EXPERIMENT, config);
+          // Refresh the experiment/report list after creating a new experiment
+          setTimeout(() => {
+            window.electronAPI?.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS).then((reports: any) => {
+              if (reports && Array.isArray(reports)) {
+                // Trigger a re-render by dispatching a custom event
+                window.dispatchEvent(new CustomEvent('experiment-created'));
+              }
+            });
+          }, 1000);
+        }}
+      />
 
       {/* Experiment columns (replaces old TestResultsHeader dropdown) */}
       <ExperimentColumns

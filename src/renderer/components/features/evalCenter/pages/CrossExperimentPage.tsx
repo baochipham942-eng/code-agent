@@ -162,6 +162,70 @@ export const CrossExperimentPage: React.FC = () => {
             ))}
           </div>
 
+          {/* Visual Comparison Bar Chart */}
+          <div className="bg-zinc-800/40 rounded-lg border border-zinc-700/30 p-4">
+            <h4 className="text-xs font-medium text-zinc-400 mb-3">通过率对比</h4>
+            <div className="space-y-1.5">
+              {reports
+                .slice()
+                .sort((a, b) => b.passRate - a.passRate)
+                .map((r, i, sorted) => {
+                  const prevInSorted = i < sorted.length - 1 ? sorted[i + 1] : null;
+                  const delta = prevInSorted !== null ? r.passRate - prevInSorted.passRate : null;
+                  const significant = delta !== null && Math.abs(delta) >= 5;
+                  const expLabel = formatDate(r.timestamp);
+                  return (
+                    <div key={r.filePath} className="flex items-center gap-2 group">
+                      {/* Experiment label */}
+                      <span className="text-[11px] text-zinc-400 w-[110px] truncate flex-shrink-0 font-mono" title={expLabel}>
+                        {expLabel}
+                      </span>
+                      {/* Bar track */}
+                      <div className="flex-1 h-5 bg-zinc-700/50 rounded overflow-hidden relative">
+                        <div
+                          className={`h-full rounded transition-all duration-500 ${
+                            r.passRate >= 80
+                              ? 'bg-emerald-500/80'
+                              : r.passRate >= 60
+                                ? 'bg-amber-500/80'
+                                : 'bg-red-500/80'
+                          }`}
+                          style={{ width: `${r.passRate}%` }}
+                        />
+                      </div>
+                      {/* Pass rate value */}
+                      <span className={`text-[11px] font-mono font-semibold w-[40px] text-right flex-shrink-0 ${
+                        r.passRate >= 80 ? 'text-emerald-400' : r.passRate >= 60 ? 'text-amber-400' : 'text-red-400'
+                      }`}>
+                        {r.passRate}%
+                      </span>
+                      {/* Delta indicator */}
+                      <span className="w-[42px] flex-shrink-0 text-[10px] font-mono text-right">
+                        {delta !== null && significant ? (
+                          <span className={delta > 0 ? 'text-emerald-400' : 'text-red-400'}>
+                            {delta > 0 ? '↑' : '↓'}{Math.abs(delta)}%
+                          </span>
+                        ) : delta !== null ? (
+                          <span className="text-zinc-600">~</span>
+                        ) : null}
+                      </span>
+                      {/* Pass/Fail badge */}
+                      <span className="text-[9px] text-zinc-500 w-[60px] flex-shrink-0 text-right">
+                        {r.passed}/{r.total}
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+            {reports.length >= 2 && (
+              <div className="mt-3 flex items-center gap-4 text-[9px] text-zinc-600">
+                <span className="flex items-center gap-1"><span className="text-emerald-400">{'↑'}</span> 提升 ≥5%</span>
+                <span className="flex items-center gap-1"><span className="text-red-400">{'↓'}</span> 回归 ≥5%</span>
+                <span className="flex items-center gap-1"><span className="text-zinc-500">~</span> {'变化 <5%'}</span>
+              </div>
+            )}
+          </div>
+
           {/* Trend line chart (SVG) */}
           <div className="bg-zinc-800/40 rounded-lg border border-zinc-700/30 p-4">
             <h4 className="text-xs font-medium text-zinc-400 mb-3">通过率趋势</h4>

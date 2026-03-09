@@ -11,23 +11,44 @@ interface FunnelStage {
   count: number;
   dropped: number;
   dropRate: number;
-  color: string;
-  bgColor: string;
 }
 
 /**
  * 将 failureReason / errors 映射到漏斗阶段
  *
- * 阶段顺序（从上到下）：
+ * 阶段顺序（从左到右，流程图）：
  * 1. 总用例
  * 2. 通过安全检查（排除 forbidden pattern 失败）
  * 3. 执行成功（排除 timeout / execution error）
  * 4. 输出符合预期（排除 assertion / tool-not-called 失败）
  * 5. LLM 评分通过（排除 partial/low score）
  */
+/**
+ * Map persisted failureStage (from pipeline or experimentAdapter) to local stage name.
+ * Returns undefined if the value is not recognized (triggers fallback).
+ */
+const STAGE_MAP: Record<string, 'security' | 'execution' | 'assertion' | 'llm_score'> = {
+  security_guard: 'security',
+  security: 'security',
+  compilation_check: 'execution',
+  compilation: 'execution',
+  self_repair_check: 'execution',
+  self_repair: 'execution',
+  outcome_verification: 'assertion',
+  verification: 'assertion',
+  llm_scoring: 'llm_score',
+};
+
 function classifyCase(r: TestCaseResult): 'security' | 'execution' | 'assertion' | 'llm_score' | 'pass' {
   if (r.status === 'passed') return 'pass';
 
+  // Prefer persisted failureStage from pipeline (if available)
+  if (r.failureStage) {
+    const mapped = STAGE_MAP[r.failureStage];
+    if (mapped) return mapped;
+  }
+
+  // Fallback: string-matching heuristics (for legacy data without failureStage)
   const reason = (r.failureReason ?? '').toLowerCase();
   const errText = r.errors.join(' ').toLowerCase();
   const combined = reason + ' ' + errText;
@@ -71,6 +92,103 @@ function classifyCase(r: TestCaseResult): 'security' | 'execution' | 'assertion'
   return 'assertion';
 }
 
+/** Color classes based on retention rate */
+function getNodeColors(retentionRate: number): {
+  border: string;
+  bg: string;
+  text: string;
+  countText: string;
+} {
+  if (retentionRate >= 0.9) {
+    return {
+      border: 'border-emerald-500/60',
+      bg: 'bg-emerald-500/10',
+      text: 'text-emerald-400',
+      countText: 'text-emerald-300',
+    };
+  }
+  if (retentionRate >= 0.7) {
+    return {
+      border: 'border-amber-500/60',
+      bg: 'bg-amber-500/10',
+      text: 'text-amber-400',
+      countText: 'text-amber-300',
+    };
+  }
+  return {
+    border: 'border-red-500/60',
+    bg: 'bg-red-500/10',
+    text: 'text-red-400',
+    countText: 'text-red-300',
+  };
+}
+
+/** SVG arrow connector between nodes */
+const ArrowConnector: React.FC<{ hasDrop: boolean }> = ({ hasDrop }) => (
+  <div className="flex flex-col items-center justify-start pt-5 shrink-0" style={{ width: 36 }}>
+    <svg width="36" height="16" viewBox="0 0 36 16" className="shrink-0">
+      <line
+        x1="0" y1="8" x2="28" y2="8"
+        stroke={hasDrop ? '#f87171' : '#52525b'}
+        strokeWidth="2"
+        strokeDasharray={hasDrop ? '4 2' : undefined}
+      />
+      <polygon
+        points="26,3 36,8 26,13"
+        fill={hasDrop ? '#f87171' : '#52525b'}
+      />
+    </svg>
+  </div>
+);
+
+/** Drop indicator card below the arrow */
+const DropIndicator: React.FC<{ dropped: number; dropRate: number }> = ({ dropped, dropRate }) => {
+  if (dropped === 0) return null;
+  return (
+    <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 whitespace-nowrap">
+      <div className="flex flex-col items-center">
+        <svg width="8" height="8" viewBox="0 0 8 8" className="text-red-400/60 mb-0.5">
+          <polygon points="4,8 0,0 8,0" fill="currentColor" />
+        </svg>
+        <span className="text-[10px] bg-red-500/10 border border-red-500/30 rounded px-1.5 py-0.5 text-red-400 tabular-nums">
+          -{dropped} ({dropRate.toFixed(0)}%)
+        </span>
+      </div>
+    </div>
+  );
+};
+
+/** Stage node in the flow diagram */
+const StageNode: React.FC<{
+  stage: FunnelStage;
+  totalCount: number;
+  isFirst: boolean;
+}> = ({ stage, totalCount, isFirst }) => {
+  const retentionRate = totalCount > 0 ? stage.count / totalCount : 1;
+  const colors = isFirst
+    ? { border: 'border-zinc-500/60', bg: 'bg-zinc-700/40', text: 'text-zinc-300', countText: 'text-zinc-100' }
+    : getNodeColors(retentionRate);
+
+  return (
+    <div className="relative shrink-0" style={{ minWidth: 110 }}>
+      <div
+        className={`${colors.bg} ${colors.border} border rounded-lg px-3 py-3 flex flex-col items-center text-center`}
+      >
+        <span className={`text-[11px] font-semibold ${colors.text} leading-tight`}>
+          {stage.label}
+        </span>
+        <span className={`text-xl font-bold tabular-nums mt-1 ${colors.countText}`}>
+          {stage.count}
+        </span>
+        <span className="text-[9px] text-zinc-500 mt-0.5 leading-tight">
+          {stage.sublabel}
+        </span>
+      </div>
+      {!isFirst && <DropIndicator dropped={stage.dropped} dropRate={stage.dropRate} />}
+    </div>
+  );
+};
+
 export const FailureFunnel: React.FC<Props> = ({ cases }) => {
   const stages = useMemo<FunnelStage[]>(() => {
     const total = cases.length;
@@ -96,44 +214,34 @@ export const FailureFunnel: React.FC<Props> = ({ cases }) => {
         count: total,
         dropped: 0,
         dropRate: 0,
-        color: 'text-zinc-300',
-        bgColor: 'bg-zinc-700/40',
       },
       {
-        label: '通过安全检查',
+        label: '安全检查',
         sublabel: 'Forbidden Patterns',
         count: total - security_fail.length,
         dropped: security_fail.length,
         dropRate: total > 0 ? (security_fail.length / total) * 100 : 0,
-        color: 'text-blue-400',
-        bgColor: 'bg-blue-500/10',
       },
       {
         label: '执行成功',
-        sublabel: 'Timeout / Runtime Error',
+        sublabel: 'Timeout / Runtime',
         count: total - security_fail.length - execution_fail.length,
         dropped: execution_fail.length,
         dropRate: total > 0 ? (execution_fail.length / total) * 100 : 0,
-        color: 'text-violet-400',
-        bgColor: 'bg-violet-500/10',
       },
       {
-        label: '输出符合预期',
-        sublabel: 'Tool / Assertion Fail',
+        label: '输出验证',
+        sublabel: 'Tool / Assertion',
         count: total - security_fail.length - execution_fail.length - assertion_fail.length,
         dropped: assertion_fail.length,
         dropRate: total > 0 ? (assertion_fail.length / total) * 100 : 0,
-        color: 'text-amber-400',
-        bgColor: 'bg-amber-500/10',
       },
       {
-        label: 'LLM 评分通过',
+        label: 'LLM评分',
         sublabel: '部分通过 / 低分',
         count: total - security_fail.length - execution_fail.length - assertion_fail.length - llm_fail.length,
         dropped: llm_fail.length,
         dropRate: total > 0 ? (llm_fail.length / total) * 100 : 0,
-        color: 'text-emerald-400',
-        bgColor: 'bg-emerald-500/10',
       },
     ];
   }, [cases]);
@@ -147,65 +255,25 @@ export const FailureFunnel: React.FC<Props> = ({ cases }) => {
   }
 
   const total = cases.length;
-  const maxCount = total;
 
   return (
     <div className="bg-zinc-800/40 border border-zinc-700/20 rounded-lg overflow-hidden">
       <div className="px-3 py-2 border-b border-zinc-700/20">
         <span className="text-xs font-medium text-zinc-300">失败漏斗</span>
-        <span className="text-[10px] text-zinc-500 ml-2">{total} 用例</span>
+        <span className="text-[10px] text-zinc-500 ml-2">{total} 用例 · 流程图</span>
       </div>
 
-      <div className="p-3 space-y-1.5">
-        {stages.map((stage, idx) => {
-          const widthPct = maxCount > 0 ? (stage.count / maxCount) * 100 : 0;
-          const isLast = idx === stages.length - 1;
-
-          return (
-            <div key={stage.label}>
-              {/* Funnel bar */}
-              <div
-                className={`${stage.bgColor} rounded-md px-3 py-2 transition-all`}
-                style={{ marginLeft: `${idx * 2}%`, marginRight: `${idx * 2}%` }}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <div>
-                    <span className={`text-xs font-medium ${stage.color}`}>{stage.label}</span>
-                    <span className="text-[10px] text-zinc-500 ml-2">{stage.sublabel}</span>
-                  </div>
-                  <span className={`text-sm font-bold tabular-nums ${stage.color}`}>
-                    {stage.count}
-                  </span>
-                </div>
-
-                {/* Width indicator bar */}
-                <div className="w-full h-1 bg-zinc-700/50 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${
-                      isLast ? 'bg-emerald-500' : stage.bgColor.replace('/10', '/60')
-                    }`}
-                    style={{ width: `${widthPct}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Drop arrow between stages */}
-              {!isLast && stage.dropped > 0 && (
-                <div className="flex items-center gap-1.5 py-0.5 pl-4">
-                  <svg className="w-2.5 h-2.5 text-red-400/60" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 16l-6-6h12z" />
-                  </svg>
-                  <span className="text-[10px] text-red-400/70">
-                    流失 {stage.dropped} ({stage.dropRate.toFixed(0)}%)
-                  </span>
-                </div>
+      <div className="p-4 pb-8 overflow-x-auto">
+        <div className="flex items-start gap-0 min-w-max">
+          {stages.map((stage, idx) => (
+            <React.Fragment key={stage.label}>
+              <StageNode stage={stage} totalCount={total} isFirst={idx === 0} />
+              {idx < stages.length - 1 && (
+                <ArrowConnector hasDrop={stages[idx + 1].dropped > 0} />
               )}
-              {!isLast && stage.dropped === 0 && (
-                <div className="h-2" />
-              )}
-            </div>
-          );
-        })}
+            </React.Fragment>
+          ))}
+        </div>
       </div>
     </div>
   );

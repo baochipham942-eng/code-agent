@@ -19,6 +19,7 @@ import type {
 } from './types';
 import { loadAllTestSuites, filterTestCases, sortByDependencies } from './testCaseLoader';
 import { runAssertions, runExpectations } from './assertionEngine';
+import { execSync } from 'child_process';
 import { createLogger } from '../services/infra/logger';
 import { getTestDirs } from '../config';
 import { TrajectoryBuilder } from '../evaluation/trajectory';
@@ -193,6 +194,7 @@ export class TestRunner {
         workingDirectory: this.config.workingDirectory,
       },
       performance: this.calculatePerformanceStats(results),
+      gitCommit: (() => { try { return execSync('git rev-parse HEAD', { encoding: 'utf8', timeout: 5000 }).trim(); } catch { return 'unknown'; } })(),
     };
 
     this.emit({ type: 'suite_end', summary });

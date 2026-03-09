@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { app, ipcMain } from 'electron';
+import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { IPC_CHANNELS } from '../../shared/ipc';
@@ -28,6 +29,27 @@ const logger = createLogger('EvaluationIPC');
  *   5. llm_scoring — partial score (status === 'partial')
  */
 type FailureStage = 'security' | 'compilation' | 'self_repair' | 'verification' | 'llm_scoring' | null;
+
+/**
+ * Map pipeline FailureStage names (from failureFunnel.ts) to local stage names.
+ * Returns null if the value is not a recognized pipeline stage.
+ */
+function mapPipelineStage(pipelineStage: string | undefined): FailureStage {
+  if (!pipelineStage) return null;
+  const mapping: Record<string, FailureStage> = {
+    security_guard: 'security',
+    compilation_check: 'compilation',
+    self_repair_check: 'self_repair',
+    outcome_verification: 'verification',
+    llm_scoring: 'llm_scoring',
+    // Also accept the local names directly (for data written by experimentAdapter)
+    security: 'security',
+    compilation: 'compilation',
+    self_repair: 'self_repair',
+    verification: 'verification',
+  };
+  return mapping[pipelineStage] ?? null;
+}
 
 function classifyFailureStage(failureReason: string, status: string): FailureStage {
   const reason = failureReason.toLowerCase();
@@ -369,8 +391,10 @@ export function registerEvaluationHandlers(): void {
           logger.warn(`Skipping malformed data_json for case in experiment ${experimentId}`);
           continue;
         }
+        // Prefer persisted failureStage from pipeline, fall back to string-matching classifier
+        const persistedStage = mapPipelineStage(detail.failureStage as string | undefined);
         const failureReason: string = (detail.failureReason as string) || '';
-        const stage = classifyFailureStage(failureReason, c.status);
+        const stage = persistedStage ?? classifyFailureStage(failureReason, c.status);
         if (stage) {
           stageCounts[stage]++;
         }
@@ -417,5 +441,319 @@ export function registerEvaluationHandlers(): void {
     }
   });
 
+
+  // Create experiment — wire the "Start Experiment" button to actual execution
+  ipcMain.handle(EVALUATION_CHANNELS.CREATE_EXPERIMENT, async (
+    _event,
+    config: { name: string; model: string; testSetId: string; trialsPerCase: number; gitCommit: string }
+  ) => {
+    try {
+      const { getDatabase } = await import('../services/core/databaseService');
+      const { v4: uuidv4 } = await import('uuid');
+      const { exec } = await import('child_process');
+      const { promisify } = await import('util');
+      const execAsync = promisify(exec);
+      const db = getDatabase();
+      const experimentId = uuidv4();
+
+      // Auto-detect git commit if requested
+      let gitCommit = config.gitCommit;
+      if (gitCommit === 'auto-detect') {
+        try {
+          const { stdout } = await execAsync('git rev-parse --short HEAD');
+          gitCommit = stdout.trim() || 'unknown';
+        } catch {
+          gitCommit = 'unknown';
+        }
+      }
+
+      // Create experiment record in DB with status='pending'
+      const now = Date.now();
+      db.insertExperiment({
+        id: experimentId,
+        name: config.name,
+        timestamp: now,
+        model: config.model,
+        provider: 'anthropic',
+        scope: 'full',
+        config_json: JSON.stringify({
+          testSetId: config.testSetId,
+          trialsPerCase: config.trialsPerCase,
+          gitCommit,
+        }),
+        summary_json: JSON.stringify({
+          total: 0,
+          passed: 0,
+          failed: 0,
+          partial: 0,
+          skipped: 0,
+          passRate: 0,
+          avgScore: 0,
+          duration: 0,
+          status: 'pending',
+        }),
+        source: 'ui-created',
+        git_commit: gitCommit,
+      });
+
+      logger.info('Experiment created, starting async execution', { experimentId, name: config.name, model: config.model });
+
+      // --- Async test execution (fire-and-forget, don't block IPC) ---
+      (async () => {
+        try {
+          // 1. Update status to 'running'
+          db.updateExperimentSummary(experimentId, JSON.stringify({
+            total: 0, passed: 0, failed: 0, partial: 0, skipped: 0,
+            passRate: 0, avgScore: 0, duration: 0, status: 'running',
+          }));
+
+          // 2. Load test suites
+          const { loadAllTestSuites } = await import('../testing/testCaseLoader');
+          const appPath = app.getAppPath();
+          const possibleDirs = [
+            path.join(appPath, '.claude', 'test-cases'),
+            path.join(process.cwd(), '.claude', 'test-cases'),
+            path.join(appPath, '.code-agent', 'test-cases'),
+            path.join(process.cwd(), '.code-agent', 'test-cases'),
+          ];
+
+          let suites: Awaited<ReturnType<typeof loadAllTestSuites>> = [];
+          for (const dir of possibleDirs) {
+            try {
+              suites = await loadAllTestSuites(dir);
+              if (suites.length > 0) break;
+            } catch { /* try next */ }
+          }
+
+          if (suites.length === 0) {
+            throw new Error('No test suites found in any known directory');
+          }
+
+          // Filter by testSetId if specified (match suite name)
+          let testCases = suites.flatMap(s => s.cases);
+          if (config.testSetId && config.testSetId !== 'all') {
+            const matchingSuite = suites.find(s => s.name === config.testSetId);
+            if (matchingSuite) {
+              testCases = matchingSuite.cases;
+            }
+          }
+
+          logger.info('Loaded test cases for experiment', {
+            experimentId,
+            totalCases: testCases.length,
+            suiteCount: suites.length,
+          });
+
+          // 3. Create agent adapter and test runner
+          const { StandaloneAgentAdapter } = await import('../testing/agentAdapter');
+          const { TestRunner, createDefaultConfig } = await import('../testing/testRunner');
+
+          const workingDir = process.cwd();
+          const agent = new StandaloneAgentAdapter({
+            workingDirectory: workingDir,
+            generation: 'experiment',
+            modelConfig: {
+              provider: 'anthropic',
+              model: config.model,
+              apiKey: process.env.ANTHROPIC_API_KEY,
+            },
+          });
+
+          const testConfig = createDefaultConfig(workingDir, {
+            filterIds: testCases.map(tc => tc.id),
+            stopOnFailure: false,
+            enableEvalCritic: false,
+            enableTrajectoryAnalysis: false,
+          });
+
+          const runner = new TestRunner(testConfig, agent);
+
+          // 4. Run all tests
+          const summary = await runner.runAll();
+
+          // 5. Persist results via ExperimentAdapter (updates the experiment record)
+          const { ExperimentAdapter } = await import('../evaluation/experimentAdapter');
+          const adapter = new ExperimentAdapter(db);
+
+          // Overwrite the experiment with actual results (ExperimentAdapter uses INSERT OR REPLACE)
+          // We need to set the runId to our experimentId so it updates the same record
+          (summary as any).runId = experimentId;
+          summary.environment.model = config.model;
+          summary.environment.provider = 'anthropic';
+          await adapter.persistTestRun(summary);
+
+          // 6. Update status to 'completed' with final stats
+          db.updateExperimentSummary(experimentId, JSON.stringify({
+            total: summary.total,
+            passed: summary.passed,
+            failed: summary.failed,
+            partial: summary.partial,
+            skipped: summary.skipped,
+            passRate: summary.total > 0 ? summary.passed / summary.total : 0,
+            avgScore: summary.averageScore,
+            duration: summary.duration,
+            status: 'completed',
+          }));
+
+          logger.info('Experiment completed successfully', {
+            experimentId,
+            total: summary.total,
+            passed: summary.passed,
+            failed: summary.failed,
+            avgScore: summary.averageScore,
+          });
+
+        } catch (execError: unknown) {
+          const errMsg = execError instanceof Error ? execError.message : String(execError);
+          logger.error('Experiment execution failed', { experimentId, error: errMsg });
+
+          // Update status to 'failed'
+          try {
+            db.updateExperimentSummary(experimentId, JSON.stringify({
+              total: 0, passed: 0, failed: 0, partial: 0, skipped: 0,
+              passRate: 0, avgScore: 0, duration: 0,
+              status: 'failed',
+              error: errMsg,
+            }));
+          } catch (dbError) {
+            logger.error('Failed to update experiment status to failed', { experimentId, error: dbError });
+          }
+        }
+      })();
+
+      // Return immediately — execution continues in background
+      return { experimentId, status: 'started' };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to create experiment', { error: msg });
+      throw new Error(`Failed to create experiment: ${msg}`);
+    }
+  });
+
+
+  // Get current git commit hash
+  ipcMain.handle(EVALUATION_CHANNELS.GET_GIT_COMMIT, async () => {
+    try {
+      const hash = execSync('git rev-parse HEAD', { encoding: 'utf8', timeout: 5000 }).trim();
+      return { hash, short: hash.slice(0, 7) };
+    } catch {
+      return { hash: 'unknown', short: 'unknown' };
+    }
+  });
+
   logger.info('Evaluation IPC handlers registered');
+}
+
+// ============================================================================
+// Test Subset Management IPC Handlers
+// ============================================================================
+
+import { SUBSET_CHANNELS } from '../../shared/ipc/channels';
+
+/**
+ * 注册测试子集管理的 IPC handlers
+ */
+export function registerSubsetHandlers(): void {
+  const subsetLogger = createLogger('SubsetIPC');
+
+  const getSubsetDir = () => {
+    const dir = path.join(app.getPath('userData'), 'test-subsets');
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    return dir;
+  };
+
+  // Save a test subset
+  ipcMain.handle(SUBSET_CHANNELS.SAVE, async (
+    _event,
+    subset: { name: string; description?: string; caseIds: string[] }
+  ) => {
+    try {
+      const dir = getSubsetDir();
+      const fileName = subset.name.replace(/[^a-zA-Z0-9_-]/g, '_') + '.json';
+      const filePath = path.join(dir, fileName);
+
+      const data = {
+        name: subset.name,
+        description: subset.description || '',
+        caseIds: subset.caseIds,
+        createdAt: Date.now(),
+      };
+
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+      subsetLogger.info('Subset saved', { name: subset.name, count: subset.caseIds.length, path: filePath });
+
+      return { success: true, path: filePath };
+    } catch (error) {
+      subsetLogger.error('Failed to save subset:', error);
+      throw error;
+    }
+  });
+
+  // List all saved subsets
+  ipcMain.handle(SUBSET_CHANNELS.LIST, async () => {
+    try {
+      const dir = getSubsetDir();
+      const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+      const subsets = [];
+
+      for (const file of files) {
+        try {
+          const content = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf-8'));
+          subsets.push({
+            name: content.name || file.replace('.json', ''),
+            description: content.description || '',
+            caseIds: content.caseIds || [],
+            createdAt: content.createdAt || 0,
+            fileName: file,
+          });
+        } catch {
+          subsetLogger.warn(`Skipping malformed subset file: ${file}`);
+        }
+      }
+
+      return subsets.sort((a, b) => b.createdAt - a.createdAt);
+    } catch (error) {
+      subsetLogger.error('Failed to list subsets:', error);
+      return [];
+    }
+  });
+
+  // Load a specific subset
+  ipcMain.handle(SUBSET_CHANNELS.LOAD, async (_event, fileName: string) => {
+    try {
+      const filePath = path.join(getSubsetDir(), fileName);
+      if (!fs.existsSync(filePath)) return null;
+
+      const content = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      return {
+        name: content.name,
+        description: content.description || '',
+        caseIds: content.caseIds || [],
+        createdAt: content.createdAt || 0,
+      };
+    } catch (error) {
+      subsetLogger.error('Failed to load subset:', error);
+      return null;
+    }
+  });
+
+  // Delete a subset
+  ipcMain.handle(SUBSET_CHANNELS.DELETE, async (_event, fileName: string) => {
+    try {
+      const filePath = path.join(getSubsetDir(), fileName);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        subsetLogger.info('Subset deleted', { fileName });
+        return true;
+      }
+      return false;
+    } catch (error) {
+      subsetLogger.error('Failed to delete subset:', error);
+      return false;
+    }
+  });
+
+  subsetLogger.info('Test subset IPC handlers registered');
 }

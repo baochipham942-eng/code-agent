@@ -5,7 +5,7 @@ import type { CaseAnnotation } from '../testResults/OpenCodingWorkbench';
 import type { TestRunReport, TestCaseResult, EvalAnnotationErrorType, AxialCodingEntryIpc } from '@shared/ipc';
 import { EVALUATION_CHANNELS } from '@shared/ipc';
 
-type FailureView = 'funnel' | 'coding' | 'axial';
+type FailureView = 'funnel' | 'coding' | 'axial' | 'report';
 
 export const FailureAnalysisPage: React.FC = () => {
   const [view, setView] = useState<FailureView>('funnel');
@@ -102,6 +102,7 @@ export const FailureAnalysisPage: React.FC = () => {
           { key: 'funnel' as const, label: '失败漏斗', icon: '\u{1F4CA}' },
           { key: 'coding' as const, label: 'Open Coding', icon: '\u{1F3F7}\uFE0F' },
           { key: 'axial' as const, label: 'Axial Coding', icon: '\u{1F300}' },
+          { key: 'report' as const, label: '报告生成', icon: '\u{1F4CB}' },
         ]).map(tab => (
           <button
             key={tab.key}
@@ -159,14 +160,23 @@ export const FailureAnalysisPage: React.FC = () => {
           <div className="p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-medium text-zinc-200">Axial Coding 聚类</h4>
-              {axialData.length > 0 && (
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={loadAxialData}
-                  className="text-[10px] text-zinc-500 hover:text-zinc-300 transition"
+                  onClick={() => alert('AI auto-clustering will analyze all annotated cases and suggest error pattern groupings. Coming soon.')}
+                  className="px-2.5 py-1 rounded text-[11px] font-medium bg-indigo-600 hover:bg-indigo-500 text-white transition flex items-center gap-1"
                 >
-                  刷新
+                  <span>✨</span>
+                  <span>AI 自动聚类</span>
                 </button>
-              )}
+                {axialData.length > 0 && (
+                  <button
+                    onClick={loadAxialData}
+                    className="text-[10px] text-zinc-500 hover:text-zinc-300 transition"
+                  >
+                    刷新
+                  </button>
+                )}
+              </div>
             </div>
             <p className="text-xs text-zinc-500">
               根据 Open Coding 标注结果自动聚类，识别高频错误模式
@@ -317,6 +327,150 @@ export const FailureAnalysisPage: React.FC = () => {
                 </div>
               );
             })()}
+          </div>
+        )}
+
+        {view === 'report' && (
+          <div className="p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium text-zinc-200">评测分析报告</h4>
+              <button
+                onClick={() => alert('Report export coming soon')}
+                className="px-3 py-1.5 rounded text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition"
+              >
+                Export Report
+              </button>
+            </div>
+
+            {/* Overview Section */}
+            <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
+              <h5 className="text-xs font-medium text-zinc-300 mb-3 uppercase tracking-wide">概览</h5>
+              <div className="grid grid-cols-4 gap-3">
+                <div className="bg-zinc-800/40 rounded-lg p-3 text-center">
+                  <div className="text-lg font-bold text-zinc-200">{allCases.length}</div>
+                  <div className="text-[10px] text-zinc-500">总用例数</div>
+                </div>
+                <div className="bg-emerald-500/10 rounded-lg p-3 text-center">
+                  <div className="text-lg font-bold text-emerald-400">{allCases.filter(c => c.status === 'passed').length}</div>
+                  <div className="text-[10px] text-emerald-400/70">通过</div>
+                </div>
+                <div className="bg-amber-500/10 rounded-lg p-3 text-center">
+                  <div className="text-lg font-bold text-amber-400">{allCases.filter(c => c.status === 'partial').length}</div>
+                  <div className="text-[10px] text-amber-400/70">部分通过</div>
+                </div>
+                <div className="bg-red-500/10 rounded-lg p-3 text-center">
+                  <div className="text-lg font-bold text-red-400">{allCases.filter(c => c.status === 'failed').length}</div>
+                  <div className="text-[10px] text-red-400/70">失败</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Top Error Types */}
+            <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
+              <h5 className="text-xs font-medium text-zinc-300 mb-3 uppercase tracking-wide">高频错误类型</h5>
+              {axialData.length > 0 ? (() => {
+                const sorted = [...axialData].sort((a, b) => b.count - a.count);
+                const maxCount = sorted[0]?.count || 1;
+                const ERROR_LABELS_REPORT: Record<string, string> = {
+                  tool_misuse: '工具误用',
+                  reasoning_error: '推理错误',
+                  incomplete_output: '输出不完整',
+                  hallucination: '幻觉',
+                  security_violation: '安全违规',
+                };
+                return (
+                  <div className="space-y-2">
+                    {sorted.map((entry, i) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <span className="text-[11px] text-zinc-300 w-24 flex-shrink-0 truncate">{ERROR_LABELS_REPORT[entry.errorType] || entry.errorType}</span>
+                        <div className="flex-1 h-5 bg-zinc-800/60 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-blue-500/60 rounded-full transition-all flex items-center justify-end pr-2"
+                            style={{ width: `${Math.max((entry.count / maxCount) * 100, 8)}%` }}
+                          >
+                            <span className="text-[9px] text-white font-bold">{entry.count}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })() : (
+                <p className="text-xs text-zinc-500">完成 Axial Coding 后，错误类型统计将在此显示</p>
+              )}
+            </div>
+
+            {/* Severity Distribution */}
+            <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
+              <h5 className="text-xs font-medium text-zinc-300 mb-3 uppercase tracking-wide">严重程度分布</h5>
+              {axialData.length > 0 ? (() => {
+                const sevCounts: Record<string, number> = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 };
+                const SEV_NAMES: Record<string, string> = { '1': '轻微', '2': '低', '3': '中', '4': '高', '5': '严重' };
+                const SEV_COLORS: Record<string, string> = {
+                  '1': 'bg-zinc-500/20 text-zinc-400',
+                  '2': 'bg-blue-500/20 text-blue-400',
+                  '3': 'bg-amber-500/20 text-amber-400',
+                  '4': 'bg-orange-500/20 text-orange-400',
+                  '5': 'bg-red-500/20 text-red-400',
+                };
+                for (const entry of axialData) {
+                  const bucket = String(Math.round(entry.avgSeverity));
+                  const key = Math.min(5, Math.max(1, parseInt(bucket))).toString();
+                  sevCounts[key] = (sevCounts[key] || 0) + entry.count;
+                }
+                return (
+                  <div className="flex gap-2">
+                    {['1', '2', '3', '4', '5'].map(level => (
+                      <div key={level} className={`flex-1 rounded-lg p-3 text-center ${SEV_COLORS[level]}`}>
+                        <div className="text-lg font-bold">{sevCounts[level]}</div>
+                        <div className="text-[10px] opacity-70">{SEV_NAMES[level]}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })() : (
+                <p className="text-xs text-zinc-500">完成 Axial Coding 后，严重程度分布将在此显示</p>
+              )}
+            </div>
+
+            {/* Recommendations */}
+            <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
+              <h5 className="text-xs font-medium text-zinc-300 mb-3 uppercase tracking-wide">改进建议</h5>
+              {axialData.length > 0 ? (() => {
+                const suggestions: string[] = [];
+                const sorted = [...axialData].sort((a, b) => b.count - a.count);
+                const ERROR_REC: Record<string, string> = {
+                  tool_misuse: '优化工具选择策略：在 system prompt 中增加工具使用的具体指引和示例',
+                  reasoning_error: '加强推理链质量：考虑使用 CoT 提示或分步骤验证中间结果',
+                  incomplete_output: '完善输出校验：增加输出格式验证和完整性检查的后处理步骤',
+                  hallucination: '减少幻觉：增加 grounding 约束，引入检索增强生成（RAG）',
+                  security_violation: '加固安全边界：增加输入/输出过滤层，强化安全相关的 system prompt',
+                };
+                for (const entry of sorted) {
+                  if (ERROR_REC[entry.errorType]) {
+                    suggestions.push(ERROR_REC[entry.errorType]);
+                  }
+                }
+                if (sorted.length > 0 && sorted[0].count >= 3) {
+                  suggestions.push(`重点关注「${sorted[0].errorType}」类错误（出现 ${sorted[0].count} 次），建议优先修复`);
+                }
+                if (suggestions.length === 0) {
+                  suggestions.push('当前错误类型较为分散，建议逐一排查各类错误的根因');
+                }
+                return (
+                  <div className="space-y-2">
+                    {suggestions.map((s, i) => (
+                      <div key={i} className="flex items-start gap-2 text-xs text-zinc-300">
+                        <span className="text-blue-400 flex-shrink-0 mt-0.5">•</span>
+                        <span>{s}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })() : (
+                <p className="text-xs text-zinc-500">完成 Axial Coding 后，系统将自动生成改进建议</p>
+              )}
+            </div>
           </div>
         )}
       </div>

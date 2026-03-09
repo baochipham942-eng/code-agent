@@ -44,6 +44,41 @@ export const ExperimentDetailPage: React.FC = () => {
   const hasData = report && report.results && report.results.length > 0;
   const passRate = report ? Math.round((report.passed / Math.max(report.total, 1)) * 100) : 0;
 
+  const STAT_CARDS = [
+    {
+      label: '用例总数',
+      value: report?.total ?? 0,
+      suffix: '',
+      border: 'border-l-blue-500',
+      iconColor: 'text-blue-400',
+      iconBg: 'bg-blue-500/10',
+    },
+    {
+      label: '通过',
+      value: report?.passed ?? 0,
+      suffix: '',
+      border: 'border-l-emerald-500',
+      iconColor: 'text-emerald-400',
+      iconBg: 'bg-emerald-500/10',
+    },
+    {
+      label: '失败',
+      value: report?.failed ?? 0,
+      suffix: '',
+      border: 'border-l-red-500',
+      iconColor: 'text-red-400',
+      iconBg: 'bg-red-500/10',
+    },
+    {
+      label: '通过率',
+      value: passRate,
+      suffix: '%',
+      border: 'border-l-amber-500',
+      iconColor: 'text-amber-400',
+      iconBg: 'bg-amber-500/10',
+    },
+  ];
+
   const EmptyGuide = ({ message }: { message: string }) => (
     <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] flex flex-col items-center justify-center py-16 gap-4">
       <div className="w-14 h-14 rounded-2xl bg-zinc-800/60 border border-white/[0.04] flex items-center justify-center text-2xl">
@@ -58,6 +93,42 @@ export const ExperimentDetailPage: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Git Commit Badge */}
+      {!loading && hasData && report?.gitCommit && (
+        <div className="flex items-center gap-2 px-4 pt-3">
+          <span className="text-[10px] text-zinc-500">Git Commit:</span>
+          <code className="text-[11px] font-mono text-zinc-400 bg-zinc-800/60 px-1.5 py-0.5 rounded border border-zinc-700/30">
+            {report.gitCommit.length > 7 ? report.gitCommit.slice(0, 7) : report.gitCommit}
+          </code>
+        </div>
+      )}
+
+      {/* Stats Cards Header */}
+      {!loading && hasData && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 px-4 pt-4">
+          {STAT_CARDS.map(card => (
+            <div
+              key={card.label}
+              className={`bg-zinc-800/40 rounded-lg border border-zinc-700/30 border-l-4 ${card.border} p-4 shadow-sm`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-2xl font-bold text-zinc-100 tabular-nums">
+                    {card.value}{card.suffix}
+                  </div>
+                  <div className="text-xs text-zinc-500 mt-1">{card.label}</div>
+                </div>
+                <div className={`w-10 h-10 rounded-lg ${card.iconBg} flex items-center justify-center`}>
+                  <span className={`text-lg font-bold ${card.iconColor}`}>
+                    {card.label === '用例总数' ? '\u{1F4CB}' : card.label === '通过' ? '\u2713' : card.label === '失败' ? '\u2717' : '%'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="flex gap-1 px-4 pt-3 border-b border-zinc-700/30">
         {TABS.map(tab => (
           <button

@@ -2,6 +2,7 @@
 // Experiment Adapter - TestRunner → 统一评测数据模型
 // ============================================================================
 
+import { execSync } from 'child_process';
 import type { DatabaseService } from '../services/core/databaseService';
 import type { TestRunSummary, TestResult } from '../testing/types';
 
@@ -10,6 +11,17 @@ import type { TestRunSummary, TestResult } from '../testing/types';
  */
 export class ExperimentAdapter {
   constructor(private db: DatabaseService) {}
+
+  /**
+   * Get the current git commit hash, or 'unknown' if unavailable.
+   */
+  private getGitCommit(): string {
+    try {
+      return execSync('git rev-parse HEAD', { encoding: 'utf8', timeout: 5000 }).trim();
+    } catch {
+      return 'unknown';
+    }
+  }
 
   /**
    * Convert TestRunSummary to experiment records and persist to DB
@@ -41,6 +53,7 @@ export class ExperimentAdapter {
         performance: summary.performance,
       }),
       source: 'test-runner',
+      git_commit: this.getGitCommit(),
     };
 
     const cases = (summary.results || []).map((r: TestResult) => ({
@@ -53,6 +66,7 @@ export class ExperimentAdapter {
         description: r.description,
         errors: r.errors,
         failureReason: r.failureReason,
+        failureStage: r.failureStage,
         failureDetails: r.failureDetails,
         turnCount: r.turnCount,
         toolExecutions: r.toolExecutions?.length || 0,

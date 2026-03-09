@@ -61,6 +61,18 @@ async function initializeServices(): Promise<void> {
   process.env.CODE_AGENT_CLI_MODE = 'true';
   process.env.CODE_AGENT_WEB_MODE = 'true';
 
+  // 加载 .env 文件（确保 API Key 等环境变量可用）
+  try {
+    const dotenv = await import("dotenv");
+    const envPath = path.join(process.cwd(), ".env");
+    if (fs.existsSync(envPath)) {
+      dotenv.config({ path: envPath });
+      logger.info(`.env loaded from ${envPath}`);
+    }
+  } catch (e) {
+    logger.warn(".env loading failed:", (e as Error).message);
+  }
+
   // 设置数据目录（electronMock 的 app.getPath('userData') 也读这个变量）
   const dataDir = path.join(os.homedir(), '.code-agent');
   if (!fs.existsSync(dataDir)) {
@@ -223,7 +235,9 @@ function createApp(): express.Express {
     });
 
     const taskId = `task-${Date.now()}`;
-    sendSSE(res, 'task_start', { taskId, prompt });
+    // 使用请求中的 sessionId，或生成一个临时的（web 模式兼容）
+    const sessionId = req.body.sessionId || `web-session-${Date.now()}`;
+    sendSSE(res, 'task_start', { taskId, prompt, sessionId });
 
     try {
       const { createCLIAgent } = await import('../cli/adapter');
@@ -238,16 +252,48 @@ function createApp(): express.Express {
       });
 
       const config = agent.getConfig();
+
+      // Fix: CLI config maps 'anthropic' but provider is 'claude'
+      // Ensure apiKey is populated from env if missing
+      if (!config.modelConfig.apiKey) {
+        const providerEnvMap: Record<string, string> = {
+          claude: 'ANTHROPIC_API_KEY',
+          openai: 'OPENAI_API_KEY',
+          deepseek: 'DEEPSEEK_API_KEY',
+          gemini: 'GEMINI_API_KEY',
+          zhipu: 'ZHIPU_API_KEY',
+          groq: 'GROQ_API_KEY',
+          moonshot: 'MOONSHOT_API_KEY',
+        };
+        const envKey = providerEnvMap[config.modelConfig.provider];
+        if (envKey && process.env[envKey]) {
+          config.modelConfig.apiKey = process.env[envKey];
+        }
+      }
+
+      // Create initial messages array with user message
+      // (AgentLoop expects the caller to add user message to messages before run())
+      const messages = [{
+        id: `msg-${Date.now()}`,
+        role: 'user' as const,
+        content: prompt,
+        timestamp: Date.now(),
+      }];
+
       const agentLoop = createAgentLoop(config, (event) => {
-        sendSSE(res, event.type, event.data);
-      });
+        // 所有事件都附带 sessionId，确保前端会话隔离正常工作
+        const eventData = event.data ? { ...event.data, sessionId } : { sessionId };
+        sendSSE(res, event.type, eventData);
+      }, messages);
 
       await agentLoop.run(prompt);
 
-      sendSSE(res, 'task_complete', { taskId });
+      // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
+      sendSSE(res, 'agent_complete', { sessionId });
     } catch (error) {
       sendSSE(res, 'error', {
         message: error instanceof Error ? error.message : 'Unknown error',
+        sessionId,
       });
     } finally {
       res.end();

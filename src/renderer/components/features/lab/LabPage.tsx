@@ -140,7 +140,7 @@ export const LabPage: React.FC = () => {
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#0d0d0f]">
+    <div className="fixed inset-0 z-50 flex flex-col bg-zinc-950">
       {/* Header - pl-20 为 macOS 窗口控制按钮留出空间 */}
       <div className="flex items-center justify-between pl-20 pr-4 py-4 border-b border-zinc-700">
         <div className="flex items-center gap-2">

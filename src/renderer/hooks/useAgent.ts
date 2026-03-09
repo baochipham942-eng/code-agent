@@ -596,15 +596,26 @@ export const useAgent = () => {
         return;
       }
 
-      // 没有会话时无法发送
-      if (!currentSessionId) {
-        logger.warn('sendMessage blocked - no current session');
-        return;
+      // 没有会话时自动创建一个（web 模式下数据库可能未初始化，使用临时会话）
+      let effectiveSessionId = currentSessionId;
+      if (!effectiveSessionId) {
+        logger.warn('sendMessage - no current session, creating fallback');
+        const sessionStore = useSessionStore.getState();
+        const created = await sessionStore.createSession('新对话');
+        if (created) {
+          effectiveSessionId = created.id;
+        } else {
+          // 数据库不可用时，设置一个临时 sessionId 让消息流程继续
+          const tempId = `web-session-${Date.now()}`;
+          logger.warn('sendMessage - session creation failed, using temp sessionId', { tempId });
+          useSessionStore.setState({ currentSessionId: tempId });
+          effectiveSessionId = tempId;
+        }
       }
 
       // 检查当前会话是否正在处理（允许其他会话并发发送）
-      const isCurrentSessionProcessing = currentSessionId
-        ? useAppStore.getState().isSessionProcessing(currentSessionId)
+      const isCurrentSessionProcessing = effectiveSessionId
+        ? useAppStore.getState().isSessionProcessing(effectiveSessionId)
         : isProcessing;
 
       // Claude Code 风格：如果正在处理中，触发中断并继续新消息
@@ -659,7 +670,7 @@ export const useAgent = () => {
       // 2. 工具调用后的新响应会创建新消息，而不是追加到旧消息
 
       // 按会话设置处理状态（允许多会话并发）
-      setSessionProcessing(currentSessionId, true);
+      setSessionProcessing(effectiveSessionId!, true);
       currentTurnMessageIdRef.current = null; // 重置 turn tracking
 
       try {
@@ -668,8 +679,8 @@ export const useAgent = () => {
         logger.debug('Calling invoke agent:send-message');
         // 如果有附件，构建包含附件信息的消息
         const messagePayload = attachments?.length
-          ? { content, attachments }
-          : content;
+          ? { content, sessionId: effectiveSessionId, attachments }
+          : { content, sessionId: effectiveSessionId };
         logger.debug('messagePayload', { type: typeof messagePayload, isObject: typeof messagePayload === 'object' });
         if (typeof messagePayload === 'object') {
           logger.debug('Attachments being sent', { attachments: attachments?.map(a => ({ name: a.name, category: a.category, hasData: !!a.data, dataLen: a.data?.length, path: a.path, hasPath: !!a.path })) });
@@ -687,7 +698,7 @@ export const useAgent = () => {
         };
         addMessage(errorMessage);
         // 按会话清除处理状态
-        setSessionProcessing(currentSessionId, false);
+        setSessionProcessing(effectiveSessionId!, false);
       }
     },
     [addMessage, setSessionProcessing, isProcessing, currentSessionId]

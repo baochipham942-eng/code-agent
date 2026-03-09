@@ -83,7 +83,7 @@ export const CapturePanel: React.FC = () => {
   return (
     <div className="fixed inset-0 z-50 flex bg-black/60" onClick={() => setShowCapturePanel(false)}>
       <div
-        className="m-auto w-[900px] h-[600px] bg-[#1a1a1f] rounded-xl border border-zinc-700 shadow-2xl flex flex-col overflow-hidden"
+        className="m-auto w-[900px] h-[600px] bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 顶栏 */}

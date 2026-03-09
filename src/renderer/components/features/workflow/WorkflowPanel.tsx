@@ -66,10 +66,10 @@ export const WorkflowPanel = memo(({ onClose }: WorkflowPanelProps) => {
   }, [handleClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#0d0d0f]">
+    <div className="fixed inset-0 z-50 flex flex-col bg-zinc-950">
       {/* macOS 标题栏区域 */}
       <div
-        className="h-12 flex items-center justify-between px-4 border-b border-gray-800 bg-[#1a1a1f]"
+        className="h-12 flex items-center justify-between px-4 border-b border-gray-800 bg-zinc-900"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
         {/* 左侧：macOS 红绿灯占位 + 标题 */}

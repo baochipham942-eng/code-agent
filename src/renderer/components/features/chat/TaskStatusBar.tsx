@@ -117,20 +117,20 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
     <div
       className={`
         flex items-center gap-3 px-3 py-1.5
-        bg-zinc-800/50 border border-zinc-700/50 rounded-lg
+        bg-surface border border-border-default rounded-lg
         text-sm transition-all duration-300
         ${className}
       `}
     >
       {/* 统计概览 */}
-      <div className="flex items-center gap-2 text-zinc-400 shrink-0">
+      <div className="flex items-center gap-2 text-text-secondary shrink-0">
         <Activity className="w-4 h-4 text-emerald-400" />
-        <span className="text-zinc-300 font-medium">
+        <span className="text-text-secondary font-medium">
           {runningCount}/{stats.maxConcurrent}
         </span>
         {queuedCount > 0 && (
           <>
-            <span className="text-zinc-600">|</span>
+            <span className="text-text-disabled">|</span>
             <Layers className="w-3.5 h-3.5 text-amber-400" />
             <span className="text-amber-400">{queuedCount}</span>
           </>
@@ -138,10 +138,10 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
       </div>
 
       {/* 分隔线 */}
-      <div className="w-px h-4 bg-zinc-700/50" />
+      <div className="w-px h-4 bg-hover" />
 
       {/* 活跃任务列表 */}
-      <div className="flex items-center gap-2 overflow-x-auto scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent">
+      <div className="flex items-center gap-2 overflow-x-auto scrollbar-thin scrollbar-thumb-hover scrollbar-track-transparent">
         {activeTasks.map((task, index) => (
           <button
             key={task.sessionId}
@@ -152,7 +152,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
               ${
                 task.sessionId === currentSessionId
                   ? 'bg-primary-500/20 text-primary-400 border border-primary-500/30'
-                  : 'hover:bg-zinc-700/50 text-zinc-300 hover:text-zinc-100'
+                  : 'hover:bg-hover text-text-secondary hover:text-text-primary'
               }
             `}
             title={`${task.title}${task.startTime ? ` - ${formatDuration(task.startTime)}` : ''}`}
@@ -169,7 +169,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
 
             {/* 运行时长或队列位置 */}
             {task.status === 'running' && task.startTime && (
-              <span className="text-2xs text-zinc-500 ml-0.5">
+              <span className="text-2xs text-text-tertiary ml-0.5">
                 {formatDuration(task.startTime)}
               </span>
             )}
@@ -179,7 +179,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
 
             {/* 切换指示 */}
             {task.sessionId !== currentSessionId && (
-              <ChevronRight className="w-3 h-3 text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <ChevronRight className="w-3 h-3 text-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity" />
             )}
           </button>
         ))}
@@ -187,7 +187,7 @@ export const TaskStatusBar: React.FC<TaskStatusBarProps> = ({ className = '' }) 
 
       {/* 进度条（可选：显示总体进度） */}
       {runningCount > 0 && (
-        <div className="w-16 h-1 bg-zinc-700/50 rounded-full overflow-hidden shrink-0 ml-auto">
+        <div className="w-16 h-1 bg-hover rounded-full overflow-hidden shrink-0 ml-auto">
           <div
             className="h-full bg-gradient-to-r from-emerald-500 to-primary-500 rounded-full transition-all duration-300"
             style={{

@@ -321,7 +321,7 @@ function formatMemoryDetails(event: ObservableEvent): {
               {category}
             </span>
             {key && (
-              <span className="px-2 py-0.5 text-xs rounded bg-zinc-700 text-zinc-300">
+              <span className="px-2 py-0.5 text-xs rounded bg-active text-text-secondary">
                 key: {key}
               </span>
             )}
@@ -331,7 +331,7 @@ function formatMemoryDetails(event: ObservableEvent): {
               </span>
             )}
           </div>
-          <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded p-2 overflow-x-auto max-h-20 whitespace-pre-wrap">
+          <pre className="text-xs text-text-secondary bg-deep rounded p-2 overflow-x-auto max-h-20 whitespace-pre-wrap">
             {content}
           </pre>
           {event.status === 'success' && (
@@ -361,7 +361,7 @@ function formatMemoryDetails(event: ObservableEvent): {
               {resultCount} 条结果
             </span>
             {args?.category ? (
-              <span className="px-2 py-0.5 text-xs rounded bg-zinc-700 text-zinc-300">
+              <span className="px-2 py-0.5 text-xs rounded bg-active text-text-secondary">
                 {String(args.category)}
               </span>
             ) : null}
@@ -371,7 +371,7 @@ function formatMemoryDetails(event: ObservableEvent): {
               </span>
             ) : null}
           </div>
-          <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded p-2 overflow-x-auto max-h-32 whitespace-pre-wrap">
+          <pre className="text-xs text-text-secondary bg-deep rounded p-2 overflow-x-auto max-h-32 whitespace-pre-wrap">
             {output.slice(0, 500)}{output.length > 500 ? '...' : ''}
           </pre>
         </div>
@@ -398,19 +398,19 @@ function formatMemoryDetails(event: ObservableEvent): {
               <span className="px-2 py-0.5 text-xs rounded bg-blue-500/20 text-blue-300">
                 索引
               </span>
-              <span className="text-xs text-zinc-400">
+              <span className="text-xs text-text-secondary">
                 {pattern || '**/*.{ts,tsx,...}'}
               </span>
             </div>
             {event.status === 'success' && indexMatch && (
               <div className="flex items-center gap-2">
-                <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div className="flex-1 h-1.5 bg-elevated rounded-full overflow-hidden">
                   <div
                     className="h-full bg-emerald-500 transition-all"
                     style={{ width: `${total > 0 ? (indexed / total) * 100 : 0}%` }}
                   />
                 </div>
-                <span className="text-xs text-zinc-400">
+                <span className="text-xs text-text-secondary">
                   {indexed}/{total}
                 </span>
               </div>
@@ -433,7 +433,7 @@ function formatMemoryDetails(event: ObservableEvent): {
               <span className="px-2 py-0.5 text-xs rounded bg-purple-500/20 text-purple-300">
                 代码搜索
               </span>
-              <span className="text-xs text-zinc-400">
+              <span className="text-xs text-text-secondary">
                 "{query}"
               </span>
               {event.status === 'success' && (
@@ -443,7 +443,7 @@ function formatMemoryDetails(event: ObservableEvent): {
               )}
             </div>
             {result?.output && (
-              <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded p-2 overflow-x-auto max-h-32 whitespace-pre-wrap">
+              <pre className="text-xs text-text-secondary bg-deep rounded p-2 overflow-x-auto max-h-32 whitespace-pre-wrap">
                 {result.output.slice(0, 500)}{result.output.length > 500 ? '...' : ''}
               </pre>
             )}
@@ -458,12 +458,12 @@ function formatMemoryDetails(event: ObservableEvent): {
         customContent: (
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 text-xs rounded bg-zinc-700 text-zinc-300">
+              <span className="px-2 py-0.5 text-xs rounded bg-active text-text-secondary">
                 索引状态
               </span>
             </div>
             {result?.output && (
-              <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded p-2 overflow-x-auto max-h-24 whitespace-pre-wrap">
+              <pre className="text-xs text-text-secondary bg-deep rounded p-2 overflow-x-auto max-h-24 whitespace-pre-wrap">
                 {result.output}
               </pre>
             )}
@@ -591,18 +591,18 @@ export const ObservabilityPanel: React.FC = () => {
   const { setShowPlanningPanel } = useAppStore();
 
   return (
-    <div className="w-80 flex flex-col border-l border-zinc-800 bg-zinc-900/50">
+    <div className="w-80 flex flex-col border-l border-border-default bg-deep">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-zinc-800 flex items-start justify-between">
+      <div className="px-4 py-3 border-b border-border-default flex items-start justify-between">
         <div>
-          <h3 className="text-sm font-medium text-zinc-200">执行追踪</h3>
-          <p className="text-xs text-zinc-500 mt-0.5">
+          <h3 className="text-sm font-medium text-text-primary">执行追踪</h3>
+          <p className="text-xs text-text-tertiary mt-0.5">
             Gen8 · {availableCategories.length} 个观测维度
           </p>
         </div>
         <button
           onClick={() => setShowPlanningPanel(false)}
-          className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 rounded transition-colors"
+          className="p-1 text-text-secondary hover:text-text-primary hover:bg-hover rounded transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
@@ -624,17 +624,17 @@ export const ObservabilityPanel: React.FC = () => {
           const hasEvents = categoryEvents.length > 0;
 
           return (
-            <div key={cat} className="border-b border-zinc-800/50">
+            <div key={cat} className="border-b border-border-default">
               {/* Category Header (Accordion Toggle) */}
               <button
                 onClick={() => toggleCategory(cat)}
-                className={`w-full px-4 py-3 flex items-center gap-3 hover:bg-zinc-800/30 transition-colors ${
-                  isExpanded ? 'bg-zinc-800/20' : ''
+                className={`w-full px-4 py-3 flex items-center gap-3 hover:bg-surface transition-colors ${
+                  isExpanded ? 'bg-elevated/20' : ''
                 }`}
               >
                 {/* Expand Icon */}
                 <div className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`}>
-                  <ChevronRight className="w-4 h-4 text-zinc-500" />
+                  <ChevronRight className="w-4 h-4 text-text-tertiary" />
                 </div>
 
                 {/* Category Icon */}
@@ -649,7 +649,7 @@ export const ObservabilityPanel: React.FC = () => {
 
                 {/* Event Count */}
                 <span className={`text-xs px-2 py-0.5 rounded-full ${
-                  hasEvents ? config.bgColor + ' ' + config.color : 'bg-zinc-800 text-zinc-500'
+                  hasEvents ? config.bgColor + ' ' + config.color : 'bg-elevated text-text-tertiary'
                 }`}>
                   {categoryEvents.length}
                 </span>
@@ -657,13 +657,13 @@ export const ObservabilityPanel: React.FC = () => {
 
               {/* Category Events (Collapsed Content) */}
               {isExpanded && (
-                <div className="bg-zinc-900/30">
+                <div className="bg-deep/30">
                   {!hasEvents ? (
                     <div className="px-4 py-6 text-center">
-                      <p className="text-xs text-zinc-500">暂无 {config.label} 记录</p>
+                      <p className="text-xs text-text-tertiary">暂无 {config.label} 记录</p>
                     </div>
                   ) : (
-                    <div className="divide-y divide-zinc-800/30">
+                    <div className="divide-y divide-border-default/30">
                       {categoryEvents.map(event => {
                         const isEventExpanded = expandedEvents.has(event.id);
 
@@ -672,11 +672,11 @@ export const ObservabilityPanel: React.FC = () => {
                             {/* Event Header */}
                             <button
                               onClick={() => toggleEvent(event.id)}
-                              className="w-full px-4 py-2.5 flex items-start gap-2 hover:bg-zinc-800/20 transition-colors text-left"
+                              className="w-full px-4 py-2.5 flex items-start gap-2 hover:bg-hover/20 transition-colors text-left"
                             >
                               {/* Expand Icon */}
                               <div className={`mt-0.5 transition-transform ${isEventExpanded ? 'rotate-90' : ''}`}>
-                                <ChevronRight className="w-3 h-3 text-zinc-600" />
+                                <ChevronRight className="w-3 h-3 text-text-disabled" />
                               </div>
 
                               {/* Tool Icon */}
@@ -686,13 +686,13 @@ export const ObservabilityPanel: React.FC = () => {
 
                               {/* Content */}
                               <div className="flex-1 min-w-0">
-                                <div className="text-xs text-zinc-300 truncate">
+                                <div className="text-xs text-text-secondary truncate">
                                   {event.summary}
                                 </div>
                                 <div className="flex items-center gap-2 mt-0.5">
-                                  <span className="text-xs text-zinc-500">{event.name}</span>
+                                  <span className="text-xs text-text-tertiary">{event.name}</span>
                                   {event.duration && (
-                                    <span className="text-xs text-zinc-600 flex items-center gap-0.5">
+                                    <span className="text-xs text-text-disabled flex items-center gap-0.5">
                                       <Clock className="w-2.5 h-2.5" />
                                       {event.duration < 1000 ? `${event.duration}ms` : `${(event.duration / 1000).toFixed(1)}s`}
                                     </span>
@@ -729,8 +729,8 @@ export const ObservabilityPanel: React.FC = () => {
                                       {/* Arguments */}
                                       {event.details.arguments != null && (
                                         <div className="mb-2">
-                                          <div className="text-xs text-zinc-500 mb-1">参数</div>
-                                          <pre className="text-xs text-zinc-400 bg-zinc-900/50 rounded p-2 overflow-x-auto max-h-24">
+                                          <div className="text-xs text-text-tertiary mb-1">参数</div>
+                                          <pre className="text-xs text-text-secondary bg-deep rounded p-2 overflow-x-auto max-h-24">
                                             {JSON.stringify(event.details.arguments as object, null, 2)}
                                           </pre>
                                         </div>
@@ -738,11 +738,11 @@ export const ObservabilityPanel: React.FC = () => {
                                       {/* Result */}
                                       {event.details.result != null && (
                                         <div>
-                                          <div className="text-xs text-zinc-500 mb-1">结果</div>
+                                          <div className="text-xs text-text-tertiary mb-1">结果</div>
                                           <pre className={`text-xs rounded p-2 overflow-x-auto max-h-24 ${
                                             event.status === 'error'
                                               ? 'text-red-300 bg-red-500/10'
-                                              : 'text-zinc-400 bg-zinc-900/50'
+                                              : 'text-text-secondary bg-deep'
                                           }`}>
                                             {(() => {
                                               const result = event.details.result as { error?: string; output?: unknown } | undefined;
@@ -773,8 +773,8 @@ export const ObservabilityPanel: React.FC = () => {
       </div>
 
       {/* Footer Stats */}
-      <div className="px-4 py-2 border-t border-zinc-800 bg-zinc-900/30">
-        <div className="flex items-center justify-between text-xs text-zinc-500">
+      <div className="px-4 py-2 border-t border-border-default bg-deep/30">
+        <div className="flex items-center justify-between text-xs text-text-tertiary">
           <span>共 {stats.total} 个事件</span>
           <span className="flex items-center gap-2">
             <span className="flex items-center gap-1">

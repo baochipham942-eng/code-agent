@@ -57,7 +57,7 @@ export const CrossExperimentPage: React.FC = () => {
 
   return (
     <div className="p-4 space-y-4">
-      <h3 className="text-sm font-medium text-zinc-200">跨实验对比</h3>
+      <h3 className="text-sm font-medium text-text-primary">跨实验对比</h3>
 
       {loading && (
         <div className="flex items-center justify-center py-12 gap-3">
@@ -65,19 +65,19 @@ export const CrossExperimentPage: React.FC = () => {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          <span className="text-sm text-zinc-500">加载实验数据...</span>
+          <span className="text-sm text-text-tertiary">加载实验数据...</span>
         </div>
       )}
 
       {!loading && !hasEnoughData && (
         <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] flex flex-col items-center justify-center py-16 gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-zinc-800/60 border border-white/[0.04] flex items-center justify-center text-2xl">
+          <div className="w-16 h-16 rounded-2xl bg-elevated/60 border border-white/[0.04] flex items-center justify-center text-2xl">
             {'\u{1F4C8}'}
           </div>
-          <p className="text-sm text-zinc-300">
+          <p className="text-sm text-text-secondary">
             {reports.length === 0 ? '暂无评测报告' : '需要至少 2 轮评测数据'}
           </p>
-          <p className="text-xs text-zinc-500 max-w-sm text-center">
+          <p className="text-xs text-text-tertiary max-w-sm text-center">
             运行至少 2 轮评测后，对比数据将出现在此。包括通过率趋势、稳定性指标 (pass@k / pass^k) 和回归检测。
           </p>
           {reports.length === 1 && (
@@ -91,8 +91,8 @@ export const CrossExperimentPage: React.FC = () => {
       {!loading && hasEnoughData && (
         <>
           {/* Experiment timeline */}
-          <div className="bg-zinc-800/40 rounded-lg border border-zinc-700/30 overflow-hidden">
-            <div className="grid grid-cols-[1fr_80px_80px_80px_100px] gap-2 px-3 py-2 text-[10px] text-zinc-500 uppercase bg-zinc-900/30 border-b border-zinc-700/30">
+          <div className="bg-surface rounded-lg border border-border-subtle overflow-hidden">
+            <div className="grid grid-cols-[1fr_80px_80px_80px_100px] gap-2 px-3 py-2 text-[10px] text-text-tertiary uppercase bg-deep/30 border-b border-border-subtle">
               <span>时间</span>
               <span>总数</span>
               <span>通过</span>
@@ -103,9 +103,9 @@ export const CrossExperimentPage: React.FC = () => {
               const prevRate = i < reports.length - 1 ? reports[i + 1].passRate : null;
               const delta = prevRate !== null ? r.passRate - prevRate : null;
               return (
-                <div key={r.filePath} className="grid grid-cols-[1fr_80px_80px_80px_100px] gap-2 px-3 py-2 text-[11px] border-t border-zinc-700/10 hover:bg-zinc-800/30 transition">
-                  <span className="text-zinc-400">{formatDate(r.timestamp)}</span>
-                  <span className="text-zinc-300 font-mono">{r.total}</span>
+                <div key={r.filePath} className="grid grid-cols-[1fr_80px_80px_80px_100px] gap-2 px-3 py-2 text-[11px] border-t border-border-default/10 hover:bg-surface transition">
+                  <span className="text-text-secondary">{formatDate(r.timestamp)}</span>
+                  <span className="text-text-secondary font-mono">{r.total}</span>
                   <span className="text-emerald-400 font-mono">{r.passed}</span>
                   <span className="text-red-400 font-mono">{r.failed}</span>
                   <div className="flex items-center gap-1.5">
@@ -116,7 +116,7 @@ export const CrossExperimentPage: React.FC = () => {
                     </span>
                     {delta !== null && (
                       <span className={`text-[9px] ${
-                        delta > 0 ? 'text-emerald-400' : delta < 0 ? 'text-red-400' : 'text-zinc-500'
+                        delta > 0 ? 'text-emerald-400' : delta < 0 ? 'text-red-400' : 'text-text-tertiary'
                       }`}>
                         {delta > 0 ? '+' : ''}{delta}%
                       </span>
@@ -138,7 +138,7 @@ export const CrossExperimentPage: React.FC = () => {
                   label: `pass@${reports.length}`,
                   desc: `${reports.length} 轮中至少 1 轮全部通过（能力上限）`,
                   value: anyPassed ? `${Math.max(...reports.map(r => r.passRate))}%` : '0%',
-                  color: anyPassed ? 'text-emerald-400' : 'text-zinc-400',
+                  color: anyPassed ? 'text-emerald-400' : 'text-text-secondary',
                 },
                 {
                   label: `pass^${reports.length}`,
@@ -150,21 +150,21 @@ export const CrossExperimentPage: React.FC = () => {
                   label: '饱和检测',
                   desc: '连续 100% 三轮 → 升级难度',
                   value: saturated ? '已饱和' : reports.length < 3 ? `${reports.length}/3 轮` : '未饱和',
-                  color: saturated ? 'text-emerald-400' : 'text-zinc-400',
+                  color: saturated ? 'text-emerald-400' : 'text-text-secondary',
                 },
               ];
             })().map(item => (
-              <div key={item.label} className="bg-zinc-800/40 rounded-lg p-3 border border-zinc-700/30">
+              <div key={item.label} className="bg-surface rounded-lg p-3 border border-border-subtle">
                 <div className={`text-lg font-bold ${item.color}`}>{item.value}</div>
-                <div className="text-xs font-medium text-zinc-400 mt-1">{item.label}</div>
-                <div className="text-[10px] text-zinc-600 mt-0.5">{item.desc}</div>
+                <div className="text-xs font-medium text-text-secondary mt-1">{item.label}</div>
+                <div className="text-[10px] text-text-disabled mt-0.5">{item.desc}</div>
               </div>
             ))}
           </div>
 
           {/* Visual Comparison Bar Chart */}
-          <div className="bg-zinc-800/40 rounded-lg border border-zinc-700/30 p-4">
-            <h4 className="text-xs font-medium text-zinc-400 mb-3">通过率对比</h4>
+          <div className="bg-surface rounded-lg border border-border-subtle p-4">
+            <h4 className="text-xs font-medium text-text-secondary mb-3">通过率对比</h4>
             <div className="space-y-1.5">
               {reports
                 .slice()
@@ -177,11 +177,11 @@ export const CrossExperimentPage: React.FC = () => {
                   return (
                     <div key={r.filePath} className="flex items-center gap-2 group">
                       {/* Experiment label */}
-                      <span className="text-[11px] text-zinc-400 w-[110px] truncate flex-shrink-0 font-mono" title={expLabel}>
+                      <span className="text-[11px] text-text-secondary w-[110px] truncate flex-shrink-0 font-mono" title={expLabel}>
                         {expLabel}
                       </span>
                       {/* Bar track */}
-                      <div className="flex-1 h-5 bg-zinc-700/50 rounded overflow-hidden relative">
+                      <div className="flex-1 h-5 bg-hover rounded overflow-hidden relative">
                         <div
                           className={`h-full rounded transition-all duration-500 ${
                             r.passRate >= 80
@@ -206,11 +206,11 @@ export const CrossExperimentPage: React.FC = () => {
                             {delta > 0 ? '↑' : '↓'}{Math.abs(delta)}%
                           </span>
                         ) : delta !== null ? (
-                          <span className="text-zinc-600">~</span>
+                          <span className="text-text-disabled">~</span>
                         ) : null}
                       </span>
                       {/* Pass/Fail badge */}
-                      <span className="text-[9px] text-zinc-500 w-[60px] flex-shrink-0 text-right">
+                      <span className="text-[9px] text-text-tertiary w-[60px] flex-shrink-0 text-right">
                         {r.passed}/{r.total}
                       </span>
                     </div>
@@ -218,17 +218,17 @@ export const CrossExperimentPage: React.FC = () => {
                 })}
             </div>
             {reports.length >= 2 && (
-              <div className="mt-3 flex items-center gap-4 text-[9px] text-zinc-600">
+              <div className="mt-3 flex items-center gap-4 text-[9px] text-text-disabled">
                 <span className="flex items-center gap-1"><span className="text-emerald-400">{'↑'}</span> 提升 ≥5%</span>
                 <span className="flex items-center gap-1"><span className="text-red-400">{'↓'}</span> 回归 ≥5%</span>
-                <span className="flex items-center gap-1"><span className="text-zinc-500">~</span> {'变化 <5%'}</span>
+                <span className="flex items-center gap-1"><span className="text-text-tertiary">~</span> {'变化 <5%'}</span>
               </div>
             )}
           </div>
 
           {/* Trend line chart (SVG) */}
-          <div className="bg-zinc-800/40 rounded-lg border border-zinc-700/30 p-4">
-            <h4 className="text-xs font-medium text-zinc-400 mb-3">通过率趋势</h4>
+          <div className="bg-surface rounded-lg border border-border-subtle p-4">
+            <h4 className="text-xs font-medium text-text-secondary mb-3">通过率趋势</h4>
             {(() => {
               const sorted = reports.slice().reverse(); // oldest first
               const chartW = 600;
@@ -243,7 +243,7 @@ export const CrossExperimentPage: React.FC = () => {
 
               if (n === 0) {
                 return (
-                  <div className="flex items-center justify-center py-8 text-xs text-zinc-500">
+                  <div className="flex items-center justify-center py-8 text-xs text-text-tertiary">
                     暂无数据可绘制趋势图
                   </div>
                 );
@@ -274,7 +274,7 @@ export const CrossExperimentPage: React.FC = () => {
                           x1={padL} y1={yOf(tick)} x2={chartW - padR} y2={yOf(tick)}
                           stroke="currentColor" strokeOpacity={0.08} strokeDasharray={tick === 0 ? undefined : '2,3'}
                         />
-                        <text x={padL - 6} y={yOf(tick) + 3} textAnchor="end" className="fill-zinc-500" fontSize={9}>
+                        <text x={padL - 6} y={yOf(tick) + 3} textAnchor="end" className="fill-text-tertiary" fontSize={9}>
                           {tick}%
                         </text>
                       </g>
@@ -298,7 +298,7 @@ export const CrossExperimentPage: React.FC = () => {
                       return (
                         <g key={i}>
                           <circle cx={p.x} cy={p.y} r={4} fill={color} stroke="#18181b" strokeWidth={2} />
-                          <text x={p.x} y={p.y - 8} textAnchor="middle" className="fill-zinc-300" fontSize={9} fontWeight={600}>
+                          <text x={p.x} y={p.y - 8} textAnchor="middle" className="fill-text-secondary" fontSize={9} fontWeight={600}>
                             {p.rate}%
                           </text>
                         </g>
@@ -307,7 +307,7 @@ export const CrossExperimentPage: React.FC = () => {
 
                     {/* X-axis date labels */}
                     {points.map((p, i) => (
-                      <text key={i} x={p.x} y={chartH - 6} textAnchor="middle" className="fill-zinc-500" fontSize={8}>
+                      <text key={i} x={p.x} y={chartH - 6} textAnchor="middle" className="fill-text-tertiary" fontSize={8}>
                         {formatDate(p.ts)}
                       </text>
                     ))}
@@ -323,14 +323,14 @@ export const CrossExperimentPage: React.FC = () => {
             const prev = reports[1];
             const regressed = latest.passRate < prev.passRate;
             return (
-              <div className="bg-zinc-800/40 rounded-lg border border-zinc-700/30 p-4">
-                <h4 className="text-xs font-medium text-zinc-400 mb-3">回归检测</h4>
+              <div className="bg-surface rounded-lg border border-border-subtle p-4">
+                <h4 className="text-xs font-medium text-text-secondary mb-3">回归检测</h4>
                 {regressed ? (
                   <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
                     <p className="text-xs text-red-400">
                       通过率从 {prev.passRate}% 下降到 {latest.passRate}%，建议检查失败的 Case。
                     </p>
-                    <p className="text-[10px] text-zinc-500 mt-1">前往「失败分析」页面定位回归原因</p>
+                    <p className="text-[10px] text-text-tertiary mt-1">前往「失败分析」页面定位回归原因</p>
                   </div>
                 ) : (
                   <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3">

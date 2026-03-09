@@ -45,9 +45,9 @@ const sizeStyles = {
 
 const statusColors: Record<CloudTaskStatus, { bg: string; fill: string; text: string }> = {
   pending: {
-    bg: 'bg-zinc-700',
-    fill: 'bg-zinc-500',
-    text: 'text-zinc-400',
+    bg: 'bg-active',
+    fill: 'bg-active',
+    text: 'text-text-secondary',
   },
   queued: {
     bg: 'bg-yellow-900/30',
@@ -75,9 +75,9 @@ const statusColors: Record<CloudTaskStatus, { bg: string; fill: string; text: st
     text: 'text-red-400',
   },
   cancelled: {
-    bg: 'bg-zinc-800',
-    fill: 'bg-zinc-600',
-    text: 'text-zinc-500',
+    bg: 'bg-elevated',
+    fill: 'bg-active',
+    text: 'text-text-tertiary',
   },
 };
 
@@ -288,13 +288,13 @@ export const StepProgress: React.FC<StepProgressProps> = ({
                 w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium
                 ${step.status === 'completed' ? 'bg-green-500 text-white' : ''}
                 ${step.status === 'current' ? 'bg-blue-500 text-white animate-pulse' : ''}
-                ${step.status === 'pending' ? 'bg-zinc-700 text-zinc-400' : ''}
+                ${step.status === 'pending' ? 'bg-active text-text-secondary' : ''}
                 ${step.status === 'failed' ? 'bg-red-500 text-white' : ''}
               `}
             >
               {step.status === 'completed' ? '✓' : index + 1}
             </div>
-            <span className="mt-1 text-xs text-zinc-500">{step.label}</span>
+            <span className="mt-1 text-xs text-text-tertiary">{step.label}</span>
           </div>
 
           {/* 连接线 */}
@@ -302,7 +302,7 @@ export const StepProgress: React.FC<StepProgressProps> = ({
             <div
               className={`
                 flex-1 h-0.5 mx-2
-                ${step.status === 'completed' ? 'bg-green-500' : 'bg-zinc-700'}
+                ${step.status === 'completed' ? 'bg-green-500' : 'bg-active'}
               `}
             />
           )}

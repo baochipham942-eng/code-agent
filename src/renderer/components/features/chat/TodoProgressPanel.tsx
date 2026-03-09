@@ -42,7 +42,7 @@ function getStatusIcon(status: TodoItem['status']): { char: string; colorClass: 
     case 'in_progress':
       return { char: '◼', colorClass: 'text-amber-400' };
     default:
-      return { char: '◻', colorClass: 'text-zinc-500' };
+      return { char: '◻', colorClass: 'text-text-tertiary' };
   }
 }
 
@@ -157,7 +157,7 @@ export const TodoProgressPanel: React.FC<TodoProgressPanelProps> = ({
   return (
     <div
       className={`
-        bg-zinc-800/60 border border-zinc-700/40 rounded-lg
+        bg-elevated/60 border border-border-default rounded-lg
         transition-all duration-300
         ${isFadingOut ? 'opacity-0 translate-y-[-4px]' : 'opacity-100 animate-slide-down'}
         ${className}
@@ -166,7 +166,7 @@ export const TodoProgressPanel: React.FC<TodoProgressPanelProps> = ({
       {/* 标题行 */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between px-3 py-2 hover:bg-zinc-700/20 rounded-lg transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2 hover:bg-active/20 rounded-lg transition-colors"
       >
         <div className="flex items-center gap-2 min-w-0">
           {/* ✢ 旋转图标 */}
@@ -178,7 +178,7 @@ export const TodoProgressPanel: React.FC<TodoProgressPanelProps> = ({
           )}
 
           {/* 活动描述 */}
-          <span className="text-sm text-zinc-300 truncate">
+          <span className="text-sm text-text-secondary truncate">
             {allCompleted
               ? `全部完成 (${completedCount}/${todos.length})`
               : activeTodo?.activeForm
@@ -188,13 +188,13 @@ export const TodoProgressPanel: React.FC<TodoProgressPanelProps> = ({
           </span>
 
           {/* 总耗时 */}
-          <span className="text-xs text-zinc-500 shrink-0">
+          <span className="text-xs text-text-tertiary shrink-0">
             ({formatDuration(totalElapsed)})
           </span>
         </div>
 
         {/* 折叠/展开 */}
-        <div className="text-zinc-500 shrink-0 ml-2">
+        <div className="text-text-tertiary shrink-0 ml-2">
           {isExpanded ? (
             <ChevronUp className="w-3.5 h-3.5" />
           ) : (
@@ -207,7 +207,7 @@ export const TodoProgressPanel: React.FC<TodoProgressPanelProps> = ({
       {isExpanded && (
         <div className="px-3 pb-2 space-y-0.5">
           {/* 树形连接线 */}
-          <div className="ml-1 border-l border-zinc-700/60 pl-3">
+          <div className="ml-1 border-l border-border-default/60 pl-3">
             {todos.map((todo, index) => {
               const { char, colorClass } = getStatusIcon(todo.status);
               const duration = getTodoDuration(index, todo.status);
@@ -228,10 +228,10 @@ export const TodoProgressPanel: React.FC<TodoProgressPanelProps> = ({
                   <span
                     className={`truncate ${
                       todo.status === 'completed'
-                        ? 'text-zinc-500'
+                        ? 'text-text-tertiary'
                         : isActive
-                          ? 'text-zinc-200'
-                          : 'text-zinc-400'
+                          ? 'text-text-primary'
+                          : 'text-text-secondary'
                     }`}
                   >
                     {isActive && todo.activeForm
@@ -242,7 +242,7 @@ export const TodoProgressPanel: React.FC<TodoProgressPanelProps> = ({
 
                   {/* 耗时 */}
                   {duration && (
-                    <span className="text-xs text-zinc-600 shrink-0 ml-auto">
+                    <span className="text-xs text-text-disabled shrink-0 ml-auto">
                       {duration}
                     </span>
                   )}

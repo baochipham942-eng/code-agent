@@ -81,8 +81,8 @@ export const DisclosureSettings: React.FC<DisclosureSettingsProps> = ({ level, o
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-100 mb-2">{t.disclosure.title}</h3>
-        <p className="text-xs text-zinc-400 mb-4">
+        <h3 className="text-sm font-medium text-text-primary mb-2">{t.disclosure.title}</h3>
+        <p className="text-xs text-text-secondary mb-4">
           {t.disclosure.description}
         </p>
       </div>
@@ -96,35 +96,35 @@ export const DisclosureSettings: React.FC<DisclosureSettingsProps> = ({ level, o
             className={`w-full p-4 rounded-lg border text-left transition-all ${
               level === item.id
                 ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/50'
-                : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/50'
+                : 'border-border-default hover:border-border-strong hover:bg-surface'
             }`}
           >
             <div className="flex items-start gap-3">
               <div
                 className={`p-2 rounded-lg ${
-                  level === item.id ? 'bg-blue-500/20 text-blue-400' : 'bg-zinc-800 text-zinc-400'
+                  level === item.id ? 'bg-blue-500/20 text-blue-400' : 'bg-elevated text-text-secondary'
                 }`}
               >
                 {item.icon}
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-zinc-100">{item.name}</span>
+                  <span className="font-medium text-text-primary">{item.name}</span>
                   {level === item.id && (
                     <span className="px-2 py-0.5 text-xs rounded-full bg-blue-500/20 text-blue-400">
                       {t.common.active}
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-zinc-400 mt-0.5">{item.description}</p>
+                <p className="text-sm text-text-secondary mt-0.5">{item.description}</p>
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {item.features.map((feature) => (
                     <span
                       key={feature}
                       className={`px-2 py-0.5 text-xs rounded ${
                         level === item.id
-                          ? 'bg-zinc-800 text-zinc-300'
-                          : 'bg-zinc-800/50 text-zinc-500'
+                          ? 'bg-elevated text-text-secondary'
+                          : 'bg-surface text-text-tertiary'
                       }`}
                     >
                       {feature}
@@ -138,9 +138,9 @@ export const DisclosureSettings: React.FC<DisclosureSettingsProps> = ({ level, o
       </div>
 
       {/* Why This Matters */}
-      <div className="bg-zinc-800/50 rounded-lg p-4 mt-4">
-        <h4 className="text-sm font-medium text-zinc-100 mb-2">{t.disclosure.whyTitle}</h4>
-        <p className="text-xs text-zinc-400 leading-relaxed">
+      <div className="bg-surface rounded-lg p-4 mt-4">
+        <h4 className="text-sm font-medium text-text-primary mb-2">{t.disclosure.whyTitle}</h4>
+        <p className="text-xs text-text-secondary leading-relaxed">
           {t.disclosure.whyDescription}
         </p>
       </div>

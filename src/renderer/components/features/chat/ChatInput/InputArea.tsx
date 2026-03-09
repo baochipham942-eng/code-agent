@@ -235,7 +235,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
         <button
           type="button"
           onClick={handleAttachClick}
-          className="flex-shrink-0 ml-2 w-9 h-9 rounded-xl flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors"
+          className="flex-shrink-0 ml-2 w-9 h-9 rounded-xl flex items-center justify-center text-text-tertiary hover:text-text-secondary hover:bg-hover transition-colors"
           aria-label="添加图片或文件"
         >
           <Paperclip className="w-4 h-4" />
@@ -254,7 +254,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           placeholder={placeholder ?? (hasAttachments ? '添加描述...' : '描述你想解决的问题...')}
           disabled={disabled}
           rows={1}
-          className="flex-1 min-w-0 bg-transparent py-3 px-2 text-sm text-zinc-200 placeholder-zinc-500 resize-none focus:outline-none disabled:opacity-50 max-h-[200px] leading-relaxed"
+          className="flex-1 min-w-0 bg-transparent py-3 px-2 text-sm text-text-primary placeholder-text-tertiary resize-none focus:outline-none disabled:opacity-50 max-h-[200px] leading-relaxed"
         />
 
         {/* 操作按钮区（语音输入 + 发送） */}

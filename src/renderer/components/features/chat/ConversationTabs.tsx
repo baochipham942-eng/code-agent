@@ -60,12 +60,12 @@ const TabItem: React.FC<TabItemProps> = ({
       onClick={onActivate}
       className={`
         group relative flex items-center gap-1.5 px-3 py-1.5 min-w-[120px] max-w-[180px]
-        border-r border-zinc-800/50
+        border-r border-border-default
         cursor-pointer select-none
         transition-all duration-150
         ${isActive
-          ? 'bg-zinc-800/80 text-zinc-100'
-          : 'bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200'
+          ? 'bg-elevated text-text-primary'
+          : 'bg-deep text-text-secondary hover:bg-surface hover:text-text-primary'
         }
         ${isDragging ? 'opacity-50' : ''}
         ${isDragTarget ? 'border-l-2 border-l-primary-500' : ''}
@@ -95,9 +95,9 @@ const TabItem: React.FC<TabItemProps> = ({
         className={`
           p-0.5 rounded
           opacity-0 group-hover:opacity-100
-          hover:bg-zinc-700/50 hover:text-zinc-100
+          hover:bg-hover hover:text-text-primary
           transition-opacity duration-150
-          ${tab.isPinned ? 'text-zinc-500' : 'text-zinc-500'}
+          ${tab.isPinned ? 'text-text-tertiary' : 'text-text-tertiary'}
         `}
         title={tab.isPinned ? '取消固定后关闭' : '关闭'}
       >
@@ -192,12 +192,12 @@ const TabContextMenu: React.FC<TabContextMenuProps> = ({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 py-1 min-w-[160px] bg-zinc-900 border border-zinc-700/50 rounded-lg shadow-xl"
+      className="fixed z-50 py-1 min-w-[160px] bg-deep border border-border-default rounded-lg shadow-xl"
       style={{ left: state.x, top: state.y }}
     >
       {menuItems.map((item, index) => {
         if (item.type === 'divider') {
-          return <div key={index} className="my-1 border-t border-zinc-800" />;
+          return <div key={index} className="my-1 border-t border-border-default" />;
         }
 
         const Icon = item.icon;
@@ -210,7 +210,7 @@ const TabContextMenu: React.FC<TabContextMenuProps> = ({
             }}
             className={`
               w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left
-              ${item.danger ? 'text-red-400 hover:bg-red-500/10' : 'text-zinc-300 hover:bg-zinc-800'}
+              ${item.danger ? 'text-red-400 hover:bg-red-500/10' : 'text-text-secondary hover:bg-hover'}
               transition-colors
             `}
           >
@@ -316,10 +316,10 @@ export const ConversationTabs: React.FC = () => {
 
   return (
     <>
-      <div className="flex items-center bg-zinc-900/80 border-b border-zinc-800/50">
+      <div className="flex items-center bg-deep border-b border-border-default">
         {/* Tab List */}
         <div
-          className="flex-1 flex items-center overflow-x-auto scrollbar-thin scrollbar-thumb-zinc-700"
+          className="flex-1 flex items-center overflow-x-auto scrollbar-thin scrollbar-thumb-hover"
           onDragEnd={handleDragEnd}
         >
           {tabs.map((tab) => (
@@ -346,7 +346,7 @@ export const ConversationTabs: React.FC = () => {
           className="
             flex items-center justify-center
             w-8 h-8 mx-1
-            text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/50
+            text-text-tertiary hover:text-text-primary hover:bg-surface
             rounded transition-colors
             disabled:opacity-50 disabled:cursor-not-allowed
           "
@@ -375,7 +375,7 @@ export const ConversationTabs: React.FC = () => {
           className="
             flex items-center justify-center
             w-8 h-8 mr-1
-            text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/50
+            text-text-tertiary hover:text-text-primary hover:bg-surface
             rounded transition-colors
           "
           title="更多选项"

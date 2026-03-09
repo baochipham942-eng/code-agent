@@ -33,8 +33,8 @@ export const LanguageSettings: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-100 mb-2">{t.language.title}</h3>
-        <p className="text-xs text-zinc-400 mb-4">
+        <h3 className="text-sm font-medium text-text-primary mb-2">{t.language.title}</h3>
+        <p className="text-xs text-text-secondary mb-4">
           {t.language.description}
         </p>
       </div>
@@ -48,7 +48,7 @@ export const LanguageSettings: React.FC = () => {
             className={`w-full p-4 rounded-lg border text-left transition-all ${
               language === lang.code
                 ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/50'
-                : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/50'
+                : 'border-border-default hover:border-border-strong hover:bg-surface'
             }`}
           >
             <div className="flex items-center justify-between">
@@ -57,14 +57,14 @@ export const LanguageSettings: React.FC = () => {
                   className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg font-medium ${
                     language === lang.code
                       ? 'bg-blue-500/20 text-blue-400'
-                      : 'bg-zinc-800 text-zinc-400'
+                      : 'bg-elevated text-text-secondary'
                   }`}
                 >
                   {lang.code === 'zh' ? '中' : 'En'}
                 </div>
                 <div>
-                  <div className="font-medium text-zinc-100">{lang.native}</div>
-                  <div className="text-sm text-zinc-400">{lang.name}</div>
+                  <div className="font-medium text-text-primary">{lang.native}</div>
+                  <div className="text-sm text-text-secondary">{lang.name}</div>
                 </div>
               </div>
               {language === lang.code && (

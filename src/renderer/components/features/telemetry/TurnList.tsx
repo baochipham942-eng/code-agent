@@ -34,7 +34,7 @@ const INTENT_COLORS: Record<string, string> = {
   code_generation: 'bg-blue-500/20 text-blue-400',
   bug_fix: 'bg-red-500/20 text-red-400',
   search: 'bg-cyan-500/20 text-cyan-400',
-  conversation: 'bg-zinc-500/20 text-zinc-400',
+  conversation: 'bg-active/20 text-text-secondary',
   explanation: 'bg-purple-500/20 text-purple-400',
   refactoring: 'bg-amber-500/20 text-amber-400',
   multi_step_task: 'bg-green-500/20 text-green-400',
@@ -45,7 +45,7 @@ const OutcomeIcon: React.FC<{ status: string }> = ({ status }) => {
     case 'success': return <CheckCircle className="w-3.5 h-3.5 text-green-400" />;
     case 'partial': return <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />;
     case 'failure': return <XCircle className="w-3.5 h-3.5 text-red-400" />;
-    default: return <HelpCircle className="w-3.5 h-3.5 text-zinc-500" />;
+    default: return <HelpCircle className="w-3.5 h-3.5 text-text-tertiary" />;
   }
 };
 
@@ -54,7 +54,7 @@ export const TurnList: React.FC<TurnListProps> = ({ turns, selectedTurnId, onSel
     <div className="space-y-1 overflow-y-auto max-h-[calc(100vh-300px)]">
       {turns.map((turn) => {
         const isSelected = turn.id === selectedTurnId;
-        const intentColor = INTENT_COLORS[turn.intent.primary] ?? 'bg-zinc-500/20 text-zinc-400';
+        const intentColor = INTENT_COLORS[turn.intent.primary] ?? 'bg-active/20 text-text-secondary';
         const toolCount = turn.toolCalls?.length ?? 0;
 
         return (
@@ -63,31 +63,31 @@ export const TurnList: React.FC<TurnListProps> = ({ turns, selectedTurnId, onSel
             onClick={() => onSelectTurn(turn.id)}
             className={`w-full text-left p-2.5 rounded-lg border transition-colors ${
               isSelected
-                ? 'bg-zinc-700/50 border-zinc-600'
-                : 'bg-zinc-800/30 border-transparent hover:bg-zinc-800/50 hover:border-zinc-700/50'
+                ? 'bg-hover border-border-strong'
+                : 'bg-surface border-transparent hover:bg-surface hover:border-border-default'
             }`}
           >
             <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-zinc-500">#{turn.turnNumber}</span>
+                <span className="text-xs font-mono text-text-tertiary">#{turn.turnNumber}</span>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${intentColor}`}>
                   {INTENT_LABELS[turn.intent.primary] ?? turn.intent.primary}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <OutcomeIcon status={turn.outcome.status} />
-                <span className="text-[10px] text-zinc-500">
+                <span className="text-[10px] text-text-tertiary">
                   {(turn.durationMs / 1000).toFixed(1)}s
                 </span>
               </div>
             </div>
 
-            <p className="text-xs text-zinc-300 truncate">
+            <p className="text-xs text-text-secondary truncate">
               {turn.userPrompt.substring(0, 100)}
             </p>
 
             {toolCount > 0 && (
-              <div className="flex items-center gap-1 mt-1 text-[10px] text-zinc-500">
+              <div className="flex items-center gap-1 mt-1 text-[10px] text-text-tertiary">
                 <Wrench className="w-3 h-3" />
                 <span>{toolCount} 个工具</span>
                 {turn.totalInputTokens > 0 && (
@@ -104,7 +104,7 @@ export const TurnList: React.FC<TurnListProps> = ({ turns, selectedTurnId, onSel
       })}
 
       {turns.length === 0 && (
-        <div className="text-center text-zinc-500 text-sm py-8">
+        <div className="text-center text-text-tertiary text-sm py-8">
           暂无轮次数据
         </div>
       )}

@@ -110,8 +110,8 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
         <div className="flex items-start gap-3">
           <Heart className="w-5 h-5 text-orange-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-zinc-200 mb-2">❤️ 偏好优化方法</h3>
-            <p className="text-sm text-zinc-400">
+            <h3 className="text-sm font-medium text-text-primary mb-2">❤️ 偏好优化方法</h3>
+            <p className="text-sm text-text-secondary">
               SFT 教会模型"怎么回答"，但没教"什么是好回答"。
               <span className="text-orange-400">偏好优化</span>让模型从人类偏好中学习，
               输出更有帮助、更安全、更符合期望的回答。
@@ -122,15 +122,15 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
 
       {/* Preference Demo */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+        <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
           <ThumbsUp className="w-4 h-4 text-orange-400" />
           什么是偏好数据？试试选择
         </h3>
-        <div className="bg-zinc-900/50 rounded-lg border border-zinc-800/50 p-4">
+        <div className="bg-deep rounded-lg border border-border-default p-4">
           {/* Prompt */}
           <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
             <div className="text-xs text-blue-400 mb-1">用户问题</div>
-            <p className="text-sm text-zinc-200">{preferenceExample.prompt}</p>
+            <p className="text-sm text-text-primary">{preferenceExample.prompt}</p>
           </div>
 
           {/* Choices */}
@@ -142,7 +142,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
                 p-4 rounded-lg border text-left transition-all
                 ${userChoice === 'chosen'
                   ? 'bg-emerald-500/20 border-emerald-500/30 ring-2 ring-emerald-500/30'
-                  : 'bg-zinc-800/30 border-zinc-700/30 hover:border-zinc-600'
+                  : 'bg-surface border-border-subtle hover:border-border-strong'
                 }
               `}
             >
@@ -150,7 +150,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
                 <span className="text-lg">A</span>
                 {userChoice === 'chosen' && <ThumbsUp className="w-4 h-4 text-emerald-400" />}
               </div>
-              <p className="text-sm text-zinc-300">{preferenceExample.chosen}</p>
+              <p className="text-sm text-text-secondary">{preferenceExample.chosen}</p>
             </button>
 
             {/* Rejected */}
@@ -160,7 +160,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
                 p-4 rounded-lg border text-left transition-all
                 ${userChoice === 'rejected'
                   ? 'bg-red-500/20 border-red-500/30 ring-2 ring-red-500/30'
-                  : 'bg-zinc-800/30 border-zinc-700/30 hover:border-zinc-600'
+                  : 'bg-surface border-border-subtle hover:border-border-strong'
                 }
               `}
             >
@@ -168,7 +168,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
                 <span className="text-lg">B</span>
                 {userChoice === 'rejected' && <ThumbsDown className="w-4 h-4 text-red-400" />}
               </div>
-              <p className="text-sm text-zinc-300">{preferenceExample.rejected}</p>
+              <p className="text-sm text-text-secondary">{preferenceExample.rejected}</p>
             </button>
           </div>
 
@@ -198,7 +198,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
 
       {/* Method Comparison */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300 flex items-center gap-2">
+        <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
           <Zap className="w-4 h-4 text-orange-400" />
           四种偏好优化方法对比
         </h3>
@@ -215,19 +215,19 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
                   p-3 rounded-lg border text-left transition-all
                   ${isSelected
                     ? `${colors.bg} ${colors.border} ring-2 ${colors.ring}`
-                    : 'bg-zinc-800/30 border-zinc-700/30 hover:border-zinc-600'
+                    : 'bg-surface border-border-subtle hover:border-border-strong'
                   }
                 `}
               >
-                <div className={`text-lg font-bold ${isSelected ? colors.text : 'text-zinc-300'}`}>
+                <div className={`text-lg font-bold ${isSelected ? colors.text : 'text-text-secondary'}`}>
                   {method.name}
                 </div>
-                <div className="text-xs text-zinc-500 mb-2">{method.zh}</div>
+                <div className="text-xs text-text-tertiary mb-2">{method.zh}</div>
                 <div className="flex items-center gap-0.5 mb-2">
                   {Array.from({ length: 3 }).map((_, i) => (
                     <span
                       key={i}
-                      className={`text-[10px] ${i < method.difficulty ? 'text-amber-400' : 'text-zinc-700'}`}
+                      className={`text-[10px] ${i < method.difficulty ? 'text-amber-400' : 'text-text-disabled'}`}
                     >
                       ★
                     </span>
@@ -240,7 +240,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
 
         {/* Method Detail */}
         {selectedMethod && (
-          <div className="bg-zinc-900/50 rounded-lg border border-zinc-800/50 p-4">
+          <div className="bg-deep rounded-lg border border-border-default p-4">
             {(() => {
               const method = preferenceMethods.find(m => m.id === selectedMethod)!;
               const colors = getColorClasses(method.color, true);
@@ -248,28 +248,28 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
                 <>
                   <div className="flex items-center gap-3 mb-3">
                     <span className={`text-xl font-bold ${colors.text}`}>{method.name}</span>
-                    <span className="text-sm text-zinc-500">{method.fullName}</span>
+                    <span className="text-sm text-text-tertiary">{method.fullName}</span>
                   </div>
-                  <p className="text-sm text-zinc-400 mb-4">{method.description}</p>
+                  <p className="text-sm text-text-secondary mb-4">{method.description}</p>
 
                   <div className="grid grid-cols-3 gap-4">
-                    <div className="p-3 rounded-lg bg-zinc-800/50">
-                      <div className="text-xs text-zinc-500 mb-2">数据格式</div>
+                    <div className="p-3 rounded-lg bg-surface">
+                      <div className="text-xs text-text-tertiary mb-2">数据格式</div>
                       <code className="text-xs text-orange-400">{method.dataFormat}</code>
                     </div>
-                    <div className="p-3 rounded-lg bg-zinc-800/50">
+                    <div className="p-3 rounded-lg bg-surface">
                       <div className="text-xs text-emerald-400 mb-2">优点</div>
                       <ul className="space-y-1">
                         {method.pros.map((pro, idx) => (
-                          <li key={idx} className="text-xs text-zinc-400">+ {pro}</li>
+                          <li key={idx} className="text-xs text-text-secondary">+ {pro}</li>
                         ))}
                       </ul>
                     </div>
-                    <div className="p-3 rounded-lg bg-zinc-800/50">
+                    <div className="p-3 rounded-lg bg-surface">
                       <div className="text-xs text-red-400 mb-2">缺点</div>
                       <ul className="space-y-1">
                         {method.cons.map((con, idx) => (
-                          <li key={idx} className="text-xs text-zinc-400">- {con}</li>
+                          <li key={idx} className="text-xs text-text-secondary">- {con}</li>
                         ))}
                       </ul>
                     </div>
@@ -284,14 +284,14 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
       {/* SFT vs SFT+DPO */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-zinc-300">📊 SFT vs SFT+DPO 效果对比</h3>
+          <h3 className="text-sm font-medium text-text-secondary">📊 SFT vs SFT+DPO 效果对比</h3>
           <button
             onClick={() => setShowComparison(!showComparison)}
             className={`
               px-3 py-1.5 rounded-lg text-xs transition-all
               ${showComparison
                 ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
-                : 'bg-zinc-800/30 text-zinc-500 border border-zinc-700/30'
+                : 'bg-surface text-text-tertiary border border-border-subtle'
               }
             `}
           >
@@ -300,22 +300,22 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
         </div>
 
         {showComparison && (
-          <div className="bg-zinc-900/50 rounded-lg border border-zinc-800/50 p-4">
+          <div className="bg-deep rounded-lg border border-border-default p-4">
             {comparisonExamples.map((example, idx) => (
               <div key={idx}>
                 <div className="mb-3 p-2 rounded bg-blue-500/10 border border-blue-500/20">
                   <span className="text-xs text-blue-400">问题：</span>
-                  <span className="text-sm text-zinc-300 ml-2">{example.prompt}</span>
+                  <span className="text-sm text-text-secondary ml-2">{example.prompt}</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 mb-3">
-                  <div className="p-3 rounded-lg bg-zinc-800/30 border border-zinc-700/30">
-                    <div className="text-xs text-zinc-500 mb-2">仅 SFT</div>
-                    <p className="text-sm text-zinc-400 whitespace-pre-line">{example.sftOnly}</p>
+                  <div className="p-3 rounded-lg bg-surface border border-border-subtle">
+                    <div className="text-xs text-text-tertiary mb-2">仅 SFT</div>
+                    <p className="text-sm text-text-secondary whitespace-pre-line">{example.sftOnly}</p>
                   </div>
                   <div className="p-3 rounded-lg bg-purple-500/10 border border-purple-500/30">
                     <div className="text-xs text-purple-400 mb-2">SFT + DPO</div>
-                    <p className="text-sm text-zinc-300 whitespace-pre-line">{example.sftPlusDpo}</p>
+                    <p className="text-sm text-text-secondary whitespace-pre-line">{example.sftPlusDpo}</p>
                   </div>
                 </div>
 
@@ -330,28 +330,28 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
 
       {/* Workflow */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300">🔄 推荐工作流</h3>
-        <div className="bg-zinc-900/50 rounded-lg border border-zinc-800/50 p-4">
+        <h3 className="text-sm font-medium text-text-secondary">🔄 推荐工作流</h3>
+        <div className="bg-deep rounded-lg border border-border-default p-4">
           <div className="flex items-center justify-between">
             <div className="flex-1 text-center p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
               <div className="text-2xl mb-1">📝</div>
               <div className="text-sm font-medium text-blue-400">SFT</div>
-              <div className="text-xs text-zinc-500">建立基础能力</div>
+              <div className="text-xs text-text-tertiary">建立基础能力</div>
             </div>
-            <ArrowRight className="w-6 h-6 text-zinc-600 mx-4" />
+            <ArrowRight className="w-6 h-6 text-text-disabled mx-4" />
             <div className="flex-1 text-center p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
               <div className="text-2xl mb-1">❤️</div>
               <div className="text-sm font-medium text-purple-400">DPO/偏好优化</div>
-              <div className="text-xs text-zinc-500">学习人类偏好</div>
+              <div className="text-xs text-text-tertiary">学习人类偏好</div>
             </div>
-            <ArrowRight className="w-6 h-6 text-zinc-600 mx-4" />
+            <ArrowRight className="w-6 h-6 text-text-disabled mx-4" />
             <div className="flex-1 text-center p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
               <div className="text-2xl mb-1">✅</div>
               <div className="text-sm font-medium text-emerald-400">评估</div>
-              <div className="text-xs text-zinc-500">验证效果</div>
+              <div className="text-xs text-text-tertiary">验证效果</div>
             </div>
           </div>
-          <div className="mt-3 text-xs text-zinc-500 text-center">
+          <div className="mt-3 text-xs text-text-tertiary text-center">
             先 SFT 再 DPO 效果更好。也可以用 ORPO 一步到位，但灵活性较低。
           </div>
         </div>
@@ -360,25 +360,25 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
       {/* Key Takeaways */}
       <div className="bg-orange-500/5 rounded-lg border border-orange-500/20 p-4">
         <h4 className="text-sm font-medium text-orange-400 mb-2">📌 小结</h4>
-        <ul className="space-y-2 text-sm text-zinc-400">
+        <ul className="space-y-2 text-sm text-text-secondary">
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-300">DPO 是首选</strong>：实现简单、效果好、训练稳定</span>
+            <span><strong className="text-text-secondary">DPO 是首选</strong>：实现简单、效果好、训练稳定</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-300">KTO 数据要求低</strong>：只需要标注好/坏，不需要配对</span>
+            <span><strong className="text-text-secondary">KTO 数据要求低</strong>：只需要标注好/坏，不需要配对</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-zinc-300">先 SFT 再偏好</strong>：两阶段效果通常优于单阶段</span>
+            <span><strong className="text-text-secondary">先 SFT 再偏好</strong>：两阶段效果通常优于单阶段</span>
           </li>
         </ul>
       </div>
 
       {/* 专有名词 */}
-      <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+      <div className="p-4 rounded-xl bg-deep border border-border-default">
+        <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
           本阶段专有名词
         </h3>
@@ -389,13 +389,13 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
             { en: 'Chosen', zh: '优选回答', desc: '偏好数据中被标注为更好的回答' },
             { en: 'Rejected', zh: '劣选回答', desc: '偏好数据中被标注为较差的回答' },
           ].map((term) => (
-            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+            <div key={term.en} className="p-3 rounded-lg bg-surface">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
-                <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-300">{term.zh}</span>
+                <span className="text-xs text-text-tertiary">|</span>
+                <span className="text-sm text-text-secondary">{term.zh}</span>
               </div>
-              <p className="text-xs text-zinc-500">{term.desc}</p>
+              <p className="text-xs text-text-tertiary">{term.desc}</p>
             </div>
           ))}
         </div>
@@ -405,7 +405,7 @@ export const PreferenceStage: React.FC<PreferenceStageProps> = ({ onComplete, on
       <div className="flex justify-between pt-4">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800/50 text-zinc-400 rounded-lg hover:bg-zinc-800 border border-zinc-700/50 transition-all"
+          className="flex items-center gap-2 px-5 py-2.5 bg-surface text-text-secondary rounded-lg hover:bg-hover border border-border-default transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
           上一步

@@ -38,17 +38,17 @@ export const MetricStrip: React.FC<MetricStripProps> = ({ objective }) => {
 
   return (
     <div>
-      <div className="text-xs font-medium text-zinc-400 mb-1.5">Token & 成本</div>
+      <div className="text-xs font-medium text-text-secondary mb-1.5">Token & 成本</div>
       <div className="flex gap-2">
         {items.map((item) => (
           <div
             key={item.label}
-            className="flex-1 bg-zinc-800/30 rounded-lg py-2 px-3 flex items-center gap-2"
+            className="flex-1 bg-surface rounded-lg py-2 px-3 flex items-center gap-2"
           >
             <span className="text-sm">{item.icon}</span>
             <div>
-              <div className="text-xs font-medium text-zinc-200">{item.value}</div>
-              <div className="text-[10px] text-zinc-500">{item.label}</div>
+              <div className="text-xs font-medium text-text-primary">{item.value}</div>
+              <div className="text-[10px] text-text-tertiary">{item.label}</div>
             </div>
           </div>
         ))}

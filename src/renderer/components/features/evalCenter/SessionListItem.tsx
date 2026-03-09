@@ -15,7 +15,7 @@ const STATUS_STYLES: Record<string, { icon: string; text: string; badge: string;
   completed: {
     icon: '\u2705',
     text: '已完成',
-    badge: 'bg-zinc-600/30 text-zinc-400',
+    badge: 'bg-active/30 text-text-secondary',
     border: 'border-white/[0.04]',
   },
   error: {
@@ -33,7 +33,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   google: 'text-blue-400',
   zhipu: 'text-cyan-400',
   deepseek: 'text-indigo-400',
-  default: 'text-zinc-400',
+  default: 'text-text-secondary',
 };
 
 interface SessionListItemProps {
@@ -76,7 +76,7 @@ export const SessionListItem: React.FC<SessionListItemProps> = ({ session, onCli
     >
       {/* Top row: title + status badge */}
       <div className="flex items-start justify-between gap-2 mb-2">
-        <span className="text-xs text-zinc-200 truncate max-w-[420px] font-medium leading-relaxed group-hover:text-white transition">
+        <span className="text-xs text-text-primary truncate max-w-[420px] font-medium leading-relaxed group-hover:text-text-primary transition">
           {session.title}
         </span>
         <span className={`text-[10px] px-2 py-0.5 rounded-full flex-shrink-0 ${st.badge}`}>
@@ -90,21 +90,21 @@ export const SessionListItem: React.FC<SessionListItemProps> = ({ session, onCli
         <span className={`text-[11px] font-medium ${providerColor}`}>
           {session.modelProvider}
         </span>
-        <span className="text-[11px] text-zinc-500">/</span>
-        <span className="text-[11px] text-zinc-400 truncate">
+        <span className="text-[11px] text-text-tertiary">/</span>
+        <span className="text-[11px] text-text-secondary truncate">
           {session.modelName}
         </span>
       </div>
 
       {/* Stats row - pill style */}
       <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800/60 text-zinc-400">
+        <span className="text-[10px] px-2 py-0.5 rounded-full bg-elevated/60 text-text-secondary">
           {'\u{1F4C5}'} {formatTime(session.startTime)}
         </span>
-        <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800/60 text-zinc-400">
+        <span className="text-[10px] px-2 py-0.5 rounded-full bg-elevated/60 text-text-secondary">
           {'\u{1F504}'} {session.turnCount} 轮
         </span>
-        <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800/60 text-zinc-400">
+        <span className="text-[10px] px-2 py-0.5 rounded-full bg-elevated/60 text-text-secondary">
           {'\u{1F4AC}'} {formatTokens(session.totalTokens)} tokens
         </span>
         {session.estimatedCost > 0 && (

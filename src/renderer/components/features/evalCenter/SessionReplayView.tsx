@@ -33,7 +33,7 @@ export const SessionReplayView: React.FC<Props> = ({ sessionId, onRunEvaluation 
 
   if (replayLoading) {
     return (
-      <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">
+      <div className="flex items-center justify-center h-64 text-text-tertiary text-sm">
         Loading replay data...
       </div>
     );
@@ -41,7 +41,7 @@ export const SessionReplayView: React.FC<Props> = ({ sessionId, onRunEvaluation 
 
   if (!replayData || replayData.turns.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">
+      <div className="flex items-center justify-center h-64 text-text-tertiary text-sm">
         No replay data available for this session
       </div>
     );
@@ -52,7 +52,7 @@ export const SessionReplayView: React.FC<Props> = ({ sessionId, onRunEvaluation 
   return (
     <div className="flex h-full min-h-0">
       {/* Left: Turn Navigator */}
-      <div className="w-[140px] shrink-0 border-r border-zinc-700/30 overflow-y-auto">
+      <div className="w-[140px] shrink-0 border-r border-border-subtle overflow-y-auto">
         <div className="p-2 space-y-0.5">
           {turns.map((turn, idx) => {
             const isActive = idx === activeTurn;
@@ -66,7 +66,7 @@ export const SessionReplayView: React.FC<Props> = ({ sessionId, onRunEvaluation 
                 className={`w-full text-left px-2 py-1.5 rounded transition text-[11px] ${
                   isActive
                     ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
-                    : 'text-zinc-400 hover:bg-zinc-800/50 border border-transparent'
+                    : 'text-text-secondary hover:bg-surface border border-transparent'
                 }`}
               >
                 <div className="flex items-center gap-1.5">
@@ -76,7 +76,7 @@ export const SessionReplayView: React.FC<Props> = ({ sessionId, onRunEvaluation 
                   <span className="font-mono">T{turn.turnNumber}</span>
                 </div>
                 {toolCount > 0 && (
-                  <div className="text-[10px] text-zinc-600 mt-0.5 ml-3">
+                  <div className="text-[10px] text-text-disabled mt-0.5 ml-3">
                     {toolCount} tool{toolCount > 1 ? 's' : ''}
                   </div>
                 )}
@@ -91,7 +91,7 @@ export const SessionReplayView: React.FC<Props> = ({ sessionId, onRunEvaluation 
         <div className="p-4 space-y-6">
           {/* Action bar */}
           <div className="flex items-center justify-between">
-            <div className="text-[10px] text-zinc-500">
+            <div className="text-[10px] text-text-tertiary">
               {turns.length} turns / {replayData.summary.totalTurns} total
             </div>
             {onRunEvaluation && (
@@ -114,11 +114,11 @@ export const SessionReplayView: React.FC<Props> = ({ sessionId, onRunEvaluation 
               className="space-y-2"
             >
               {/* Turn header */}
-              <div className="flex items-center gap-2 text-[10px] text-zinc-500">
+              <div className="flex items-center gap-2 text-[10px] text-text-tertiary">
                 <span className="font-mono font-medium">Turn {turn.turnNumber}</span>
-                <span className="text-zinc-700">|</span>
+                <span className="text-text-disabled">|</span>
                 <span>{turn.inputTokens + turn.outputTokens} tokens</span>
-                <span className="text-zinc-700">|</span>
+                <span className="text-text-disabled">|</span>
                 <span>
                   {turn.durationMs >= 1000
                     ? `${(turn.durationMs / 1000).toFixed(1)}s`
@@ -126,7 +126,7 @@ export const SessionReplayView: React.FC<Props> = ({ sessionId, onRunEvaluation 
                 </span>
                 {turn.startTime > 0 && (
                   <>
-                    <span className="text-zinc-700">|</span>
+                    <span className="text-text-disabled">|</span>
                     <span>
                       {new Date(turn.startTime).toLocaleTimeString('zh-CN', {
                         hour: '2-digit',
@@ -139,7 +139,7 @@ export const SessionReplayView: React.FC<Props> = ({ sessionId, onRunEvaluation 
               </div>
 
               {/* Blocks */}
-              <div className="space-y-1.5 ml-2 border-l-2 border-zinc-700/30 pl-3">
+              <div className="space-y-1.5 ml-2 border-l-2 border-border-subtle pl-3">
                 {turn.blocks.map((block, bIdx) => (
                   <ReplayMessageBlock key={bIdx} block={block} />
                 ))}
@@ -150,7 +150,7 @@ export const SessionReplayView: React.FC<Props> = ({ sessionId, onRunEvaluation 
       </div>
 
       {/* Right: Analytics Sidebar */}
-      <div className="w-[200px] shrink-0 border-l border-zinc-700/30 overflow-y-auto">
+      <div className="w-[200px] shrink-0 border-l border-border-subtle overflow-y-auto">
         <ReplayAnalyticsSidebar summary={replayData.summary} objective={objective} />
       </div>
     </div>

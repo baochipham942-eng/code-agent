@@ -136,7 +136,7 @@ export const MemorySyncPanel: React.FC<MemorySyncPanelProps> = ({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <RefreshCw className="w-5 h-5 animate-spin text-zinc-400" />
+        <RefreshCw className="w-5 h-5 animate-spin text-text-secondary" />
       </div>
     );
   }
@@ -147,18 +147,18 @@ export const MemorySyncPanel: React.FC<MemorySyncPanelProps> = ({
     <div className="space-y-4">
       {/* 同步状态 */}
       <div className={`flex items-center gap-3 p-3 rounded-lg ${
-        isEnabled ? 'bg-green-500/10' : 'bg-zinc-800/50'
+        isEnabled ? 'bg-green-500/10' : 'bg-surface'
       }`}>
         {isEnabled ? (
           <Cloud className="w-5 h-5 text-green-400" />
         ) : (
-          <CloudOff className="w-5 h-5 text-zinc-500" />
+          <CloudOff className="w-5 h-5 text-text-tertiary" />
         )}
         <div className="flex-1">
-          <div className="text-sm font-medium text-zinc-200">
+          <div className="text-sm font-medium text-text-primary">
             {isEnabled ? '云端同步已启用' : '云端同步未启用'}
           </div>
-          <div className="text-xs text-zinc-400">
+          <div className="text-xs text-text-secondary">
             {isEnabled
               ? `上次同步: ${formatRelativeTime(syncStatus?.lastSyncAt || null)}`
               : '登录账户后可跨设备同步记忆'}
@@ -181,28 +181,28 @@ export const MemorySyncPanel: React.FC<MemorySyncPanelProps> = ({
       {/* 同步统计 */}
       {isEnabled && syncStatus && (
         <div className="grid grid-cols-3 gap-2">
-          <div className="bg-zinc-800/30 rounded-lg p-2 text-center">
+          <div className="bg-surface rounded-lg p-2 text-center">
             <div className="flex items-center justify-center gap-1 text-blue-400 mb-1">
               <Upload className="w-3.5 h-3.5" />
             </div>
-            <div className="text-xs text-zinc-400">待上传</div>
-            <div className="text-sm font-medium text-zinc-200">{syncStatus.pendingChanges || 0}</div>
+            <div className="text-xs text-text-secondary">待上传</div>
+            <div className="text-sm font-medium text-text-primary">{syncStatus.pendingChanges || 0}</div>
           </div>
-          <div className="bg-zinc-800/30 rounded-lg p-2 text-center">
+          <div className="bg-surface rounded-lg p-2 text-center">
             <div className="flex items-center justify-center gap-1 text-green-400 mb-1">
               <Download className="w-3.5 h-3.5" />
             </div>
-            <div className="text-xs text-zinc-400">已同步</div>
-            <div className="text-sm font-medium text-zinc-200">
+            <div className="text-xs text-text-secondary">已同步</div>
+            <div className="text-sm font-medium text-text-primary">
               {syncStatus.lastSyncAt ? '✓' : '-'}
             </div>
           </div>
-          <div className="bg-zinc-800/30 rounded-lg p-2 text-center">
+          <div className="bg-surface rounded-lg p-2 text-center">
             <div className="flex items-center justify-center gap-1 text-amber-400 mb-1">
               <ArrowUpDown className="w-3.5 h-3.5" />
             </div>
-            <div className="text-xs text-zinc-400">设备数</div>
-            <div className="text-sm font-medium text-zinc-200">{devices.length}</div>
+            <div className="text-xs text-text-secondary">设备数</div>
+            <div className="text-sm font-medium text-text-primary">{devices.length}</div>
           </div>
         </div>
       )}
@@ -210,23 +210,23 @@ export const MemorySyncPanel: React.FC<MemorySyncPanelProps> = ({
       {/* 已连接设备 */}
       {isEnabled && devices.length > 0 && (
         <div className="space-y-2">
-          <div className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+          <div className="text-xs font-medium text-text-secondary uppercase tracking-wide">
             已连接设备
           </div>
           <div className="space-y-1.5">
             {devices.map(device => (
               <div
                 key={device.id}
-                className="flex items-center gap-2 p-2 bg-zinc-800/30 rounded-lg"
+                className="flex items-center gap-2 p-2 bg-surface rounded-lg"
               >
-                <span className="text-zinc-400">
+                <span className="text-text-secondary">
                   {getDeviceIcon(device.deviceName)}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-zinc-200 truncate">
+                  <div className="text-sm text-text-primary truncate">
                     {device.deviceName}
                   </div>
-                  <div className="text-xs text-zinc-500">
+                  <div className="text-xs text-text-tertiary">
                     {device.isCurrent && (
                       <span className="text-green-400 mr-2">当前设备</span>
                     )}
@@ -247,11 +247,11 @@ export const MemorySyncPanel: React.FC<MemorySyncPanelProps> = ({
 
       {/* 高级选项 */}
       {isEnabled && (
-        <div className="pt-2 border-t border-zinc-800">
+        <div className="pt-2 border-t border-border-default">
           <button
             onClick={handleForceSync}
             disabled={isSyncing}
-            className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            className="text-xs text-text-tertiary hover:text-text-secondary transition-colors"
           >
             强制全量同步（覆盖本地数据）
           </button>
@@ -278,14 +278,14 @@ export const MemorySyncPanel: React.FC<MemorySyncPanelProps> = ({
 
       {/* 未启用提示 */}
       {!isEnabled && (
-        <div className="text-xs text-zinc-500 bg-zinc-800/30 rounded-lg p-3">
+        <div className="text-xs text-text-tertiary bg-surface rounded-lg p-3">
           <p className="mb-2">启用云端同步后，您的记忆将自动在所有设备间保持一致：</p>
-          <ul className="list-disc list-inside space-y-1 text-zinc-400">
+          <ul className="list-disc list-inside space-y-1 text-text-secondary">
             <li>AI 学习的偏好和习惯</li>
             <li>常用信息和模板</li>
             <li>个人设置和配置</li>
           </ul>
-          <p className="mt-2 text-zinc-400">请在「云端」设置中登录账户以启用同步。</p>
+          <p className="mt-2 text-text-secondary">请在「云端」设置中登录账户以启用同步。</p>
         </div>
       )}
     </div>

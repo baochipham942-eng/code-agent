@@ -49,13 +49,13 @@ export const SkillStatusMessage: React.FC<SkillStatusMessageProps> = ({ content 
         </div>
 
         {/* Status message */}
-        <span className="text-sm text-zinc-300">{message}</span>
+        <span className="text-sm text-text-secondary">{message}</span>
 
         {/* Skill name badge */}
         {name && (
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-zinc-800/50 border border-zinc-700/50">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-surface border border-border-default">
             <Sparkles className="w-3 h-3 text-accent-purple" />
-            <span className="text-xs font-medium text-zinc-400">/{name}</span>
+            <span className="text-xs font-medium text-text-secondary">/{name}</span>
           </div>
         )}
       </div>

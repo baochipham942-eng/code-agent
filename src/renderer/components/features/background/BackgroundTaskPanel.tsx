@@ -35,20 +35,20 @@ const BackgroundTaskItem: React.FC<{
   return (
     <button
       onClick={onForeground}
-      className="w-full flex items-center gap-3 p-3 bg-zinc-800/80 hover:bg-zinc-700/80 rounded-lg transition-colors text-left"
+      className="w-full flex items-center gap-3 p-3 bg-elevated hover:bg-active/80 rounded-lg transition-colors text-left"
     >
       {statusIcon}
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-zinc-100 truncate">
+        <div className="text-sm font-medium text-text-primary truncate">
           {task.title}
         </div>
-        <div className="text-xs text-zinc-400">
+        <div className="text-xs text-text-secondary">
           {task.status === 'running' && formatDuration(task.startedAt)}
           {task.status === 'completed' && (task.completionMessage || '已完成')}
           {task.status === 'failed' && (task.completionMessage || '执行失败')}
         </div>
         {task.progress !== undefined && task.status === 'running' && (
-          <div className="mt-1 h-1 bg-zinc-700 rounded-full overflow-hidden">
+          <div className="mt-1 h-1 bg-active rounded-full overflow-hidden">
             <div
               className="h-full bg-blue-500 transition-all duration-300"
               style={{ width: `${task.progress}%` }}
@@ -56,7 +56,7 @@ const BackgroundTaskItem: React.FC<{
           </div>
         )}
       </div>
-      <Play className="w-4 h-4 text-zinc-500" />
+      <Play className="w-4 h-4 text-text-tertiary" />
     </button>
   );
 };
@@ -79,10 +79,10 @@ export const BackgroundTaskPanel: React.FC = () => {
     return (
       <button
         onClick={() => setIsMinimized(false)}
-        className="fixed bottom-4 right-4 flex items-center gap-2 px-3 py-2 bg-zinc-800/90 hover:bg-zinc-700/90 backdrop-blur-sm border border-zinc-700 rounded-full shadow-lg transition-colors z-50"
+        className="fixed bottom-4 right-4 flex items-center gap-2 px-3 py-2 bg-elevated hover:bg-active/90 backdrop-blur-sm border border-border-default rounded-full shadow-lg transition-colors z-50"
       >
         <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-        <span className="text-sm text-zinc-100">
+        <span className="text-sm text-text-primary">
           {backgroundTasks.length} 个后台任务
         </span>
       </button>
@@ -90,13 +90,13 @@ export const BackgroundTaskPanel: React.FC = () => {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 w-80 bg-zinc-900/95 backdrop-blur-sm border border-zinc-700 rounded-xl shadow-2xl z-50">
+    <div className="fixed bottom-4 right-4 w-80 bg-deep backdrop-blur-sm border border-border-default rounded-xl shadow-2xl z-50">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
-        <h3 className="text-sm font-medium text-zinc-100">后台任务</h3>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border-default">
+        <h3 className="text-sm font-medium text-text-primary">后台任务</h3>
         <button
           onClick={() => setIsMinimized(true)}
-          className="p-1 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700 rounded transition-colors"
+          className="p-1 text-text-secondary hover:text-text-primary hover:bg-active rounded transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
@@ -114,8 +114,8 @@ export const BackgroundTaskPanel: React.FC = () => {
       </div>
 
       {/* Footer hint */}
-      <div className="px-4 py-2 border-t border-zinc-700">
-        <p className="text-xs text-zinc-500">点击任务切换到前台</p>
+      <div className="px-4 py-2 border-t border-border-default">
+        <p className="text-xs text-text-tertiary">点击任务切换到前台</p>
       </div>
     </div>
   );

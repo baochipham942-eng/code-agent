@@ -61,8 +61,8 @@ export const UndoToast: React.FC<UndoToastProps> = ({
         visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
       }`}
     >
-      <div className="flex items-center gap-3 px-4 py-2.5 bg-zinc-800 border border-zinc-700/60 rounded-lg shadow-lg">
-        <span className="text-sm text-zinc-300">{message}</span>
+      <div className="flex items-center gap-3 px-4 py-2.5 bg-elevated border border-border-default/60 rounded-lg shadow-lg">
+        <span className="text-sm text-text-secondary">{message}</span>
         <button
           onClick={handleUndo}
           className="text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors whitespace-nowrap"
@@ -71,7 +71,7 @@ export const UndoToast: React.FC<UndoToastProps> = ({
         </button>
       </div>
       {/* 进度条 */}
-      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-zinc-700/30 rounded-b-lg overflow-hidden">
+      <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-hover rounded-b-lg overflow-hidden">
         <div
           className="h-full bg-blue-500/60 transition-[width] duration-50 ease-linear"
           style={{ width: `${progress}%` }}

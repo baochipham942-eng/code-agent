@@ -77,7 +77,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
       <button
         type="button"
         onClick={onStop}
-        className="flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-zinc-300 transition-all duration-200 bg-zinc-700 hover:bg-zinc-600 hover:text-white"
+        className="flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-text-secondary transition-all duration-200 bg-active hover:bg-active hover:text-text-primary"
         aria-label="停止"
       >
         <Square className="w-4 h-4 fill-current" />
@@ -98,7 +98,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
         className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 mr-2 ${
           showActiveState
             ? 'bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-white shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30 scale-100 hover:scale-105'
-            : 'bg-zinc-700/50 text-zinc-400 cursor-not-allowed scale-95 opacity-60'
+            : 'bg-hover text-text-secondary cursor-not-allowed scale-95 opacity-60'
         }`}
       >
         <Send
@@ -119,7 +119,7 @@ export const SendButton: React.FC<SendButtonProps> = ({
       className={`flex-shrink-0 mr-2 w-9 h-9 rounded-xl flex items-center justify-center text-white transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${
         showActiveState
           ? 'bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 shadow-lg shadow-primary-500/20 hover:shadow-primary-500/30 scale-100 hover:scale-105'
-          : 'bg-zinc-700/50 cursor-not-allowed scale-95 opacity-60'
+          : 'bg-hover cursor-not-allowed scale-95 opacity-60'
       }`}
       aria-label="发送消息"
     >

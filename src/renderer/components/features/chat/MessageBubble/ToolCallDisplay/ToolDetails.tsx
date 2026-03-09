@@ -96,7 +96,7 @@ export function ToolDetails({ toolCall, compact }: Props) {
       {!compact && args && (
         <div>
           {isEmptyEdit ? (
-            <div className="text-xs text-zinc-500 italic py-1">
+            <div className="text-xs text-text-tertiary italic py-1">
               无变化 — {editFileArgs!.filePath.split('/').pop()}
             </div>
           ) : (

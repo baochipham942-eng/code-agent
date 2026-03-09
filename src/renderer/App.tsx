@@ -46,6 +46,7 @@ export const App: React.FC = () => {
     showSkillsPanel,
     setShowSkillsPanel,
     showLab,
+    showEvalCenter,
     setShowSettings,
     setLanguage,
   } = useAppStore();
@@ -295,7 +296,7 @@ export const App: React.FC = () => {
         className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
           showPlanningPanel
             ? 'bg-indigo-500/20 text-indigo-300'
-            : 'text-zinc-500 hover:bg-zinc-800'
+            : 'text-text-tertiary hover:bg-hover'
         }`}
         title="执行追踪面板"
       >
@@ -315,7 +316,7 @@ export const App: React.FC = () => {
         className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
           showDAGPanel
             ? 'bg-blue-500/20 text-blue-300'
-            : 'text-zinc-500 hover:bg-zinc-800'
+            : 'text-text-tertiary hover:bg-hover'
         }`}
         title="任务执行图"
       >
@@ -336,7 +337,7 @@ export const App: React.FC = () => {
         className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
           showCloudTaskPanel
             ? 'bg-sky-500/20 text-sky-300'
-            : 'text-zinc-500 hover:bg-zinc-800'
+            : 'text-text-tertiary hover:bg-hover'
         }`}
         title="云端任务"
       >
@@ -356,7 +357,7 @@ export const App: React.FC = () => {
         className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
           showTaskListPanel
             ? 'bg-yellow-500/20 text-yellow-300'
-            : 'text-zinc-500 hover:bg-zinc-800'
+            : 'text-text-tertiary hover:bg-hover'
         }`}
         title="多任务面板"
       >
@@ -376,7 +377,7 @@ export const App: React.FC = () => {
         className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
           showSkillsPanel
             ? 'bg-purple-500/20 text-purple-300'
-            : 'text-zinc-500 hover:bg-zinc-800'
+            : 'text-text-tertiary hover:bg-hover'
         }`}
         title="Skills 面板"
       >
@@ -388,7 +389,7 @@ export const App: React.FC = () => {
 
   return (
     <ErrorBoundary>
-      <div className="h-screen flex flex-col bg-void text-zinc-100">
+      <div className="h-screen flex flex-col bg-void text-text-primary">
         {/* Main Content - Three-column layout with integrated title bars */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Column: Sidebar with its own title bar - darker background */}
@@ -409,17 +410,23 @@ export const App: React.FC = () => {
 
             {/* Content Area */}
             <div className="flex-1 flex overflow-hidden">
-              {/* Chat Area - flexible width, lighter background */}
-              <div className="flex-1 flex flex-col min-w-0 bg-[#1c1c21]">
-                <ChatView />
-              </div>
+              {showEvalCenter ? (
+                <EvalCenterPanel />
+              ) : (
+                <>
+                  {/* Chat Area - flexible width, lighter background */}
+                  <div className="flex-1 flex flex-col min-w-0 bg-[#1c1c21]">
+                    <ChatView />
+                  </div>
 
-              {/* Task Panel - 320px fixed width, right side */}
-              {showTaskPanel && <TaskPanel />}
+                  {/* Task Panel - 320px fixed width, right side */}
+                  {showTaskPanel && <TaskPanel />}
 
-              {/* Skills Panel - 右侧面板，显示当前会话的 Skills */}
-              {showSkillsPanel && (
-                <SkillsPanel onClose={() => setShowSkillsPanel(false)} />
+                  {/* Skills Panel - 右侧面板，显示当前会话的 Skills */}
+                  {showSkillsPanel && (
+                    <SkillsPanel onClose={() => setShowSkillsPanel(false)} />
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -436,8 +443,7 @@ export const App: React.FC = () => {
         <WorkflowPanel onClose={() => setShowDAGPanel(false)} />
       )}
 
-      {/* EvalCenter - 评测中心（合并评测 + 遥测） */}
-      <EvalCenterPanel />
+
 
       {/* User Question Modal (Gen 3+) */}
       {userQuestion && (

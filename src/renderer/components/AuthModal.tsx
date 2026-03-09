@@ -152,7 +152,7 @@ export const AuthModal: React.FC = () => {
           {/* Back button */}
           <button
             onClick={() => handleModeChange('signin')}
-            className="flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-300 transition-colors"
+            className="flex items-center gap-1 text-sm text-text-secondary hover:text-text-secondary transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
             返回登录
@@ -163,16 +163,16 @@ export const AuthModal: React.FC = () => {
             <div className="py-6 text-center space-y-4">
               <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
               <div className="space-y-2">
-                <p className="text-zinc-200 font-medium">重置链接已发送</p>
-                <p className="text-zinc-400 text-sm">
-                  请检查您的邮箱 <span className="text-zinc-300">{email}</span>
+                <p className="text-text-primary font-medium">重置链接已发送</p>
+                <p className="text-text-secondary text-sm">
+                  请检查您的邮箱 <span className="text-text-secondary">{email}</span>
                   <br />
                   点击邮件中的链接重置密码
                 </p>
               </div>
               <button
                 onClick={() => handleModeChange('signin')}
-                className="mt-4 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm transition-colors"
+                className="mt-4 px-4 py-2 bg-active hover:bg-active rounded-lg text-sm transition-colors"
               >
                 返回登录
               </button>
@@ -180,7 +180,7 @@ export const AuthModal: React.FC = () => {
           ) : (
             /* Reset form */
             <form onSubmit={handleEmailSubmit} className="space-y-4">
-              <p className="text-zinc-400 text-sm">
+              <p className="text-text-secondary text-sm">
                 输入您的注册邮箱，我们将向您发送密码重置链接。
               </p>
               <FormField label="邮箱">
@@ -208,13 +208,13 @@ export const AuthModal: React.FC = () => {
         /* Sign in / Sign up mode */
         <>
           {/* Mode tabs */}
-          <div className="flex mb-6 border-b border-zinc-800">
+          <div className="flex mb-6 border-b border-border-default">
             <button
               onClick={() => handleModeChange('signin')}
               className={`flex-1 pb-2 text-sm transition-colors ${
                 mode === 'signin'
                   ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-zinc-400 hover:text-zinc-300'
+                  : 'text-text-secondary hover:text-text-secondary'
               }`}
             >
               <LogIn className="w-4 h-4 inline mr-1" />
@@ -225,7 +225,7 @@ export const AuthModal: React.FC = () => {
               className={`flex-1 pb-2 text-sm transition-colors ${
                 mode === 'signup'
                   ? 'text-blue-400 border-b-2 border-blue-400'
-                  : 'text-zinc-400 hover:text-zinc-300'
+                  : 'text-text-secondary hover:text-text-secondary'
               }`}
             >
               <UserPlus className="w-4 h-4 inline mr-1" />
@@ -277,9 +277,9 @@ export const AuthModal: React.FC = () => {
                 type="checkbox"
                 checked={rememberPassword}
                 onChange={(e) => setRememberPassword(e.target.checked)}
-                className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-blue-500 focus:ring-blue-500 focus:ring-offset-zinc-900"
+                className="w-4 h-4 rounded border-border-strong bg-elevated text-blue-500 focus:ring-blue-500 focus:ring-offset-deep"
               />
-              <span className="text-sm text-zinc-400">记住密码</span>
+              <span className="text-sm text-text-secondary">记住密码</span>
             </label>
 
             <button
@@ -298,7 +298,7 @@ export const AuthModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleModeChange('reset')}
-                  className="text-sm text-zinc-400 hover:text-blue-400 transition-colors"
+                  className="text-sm text-text-secondary hover:text-blue-400 transition-colors"
                 >
                   <KeyRound className="w-3 h-3 inline mr-1" />
                   忘记密码？

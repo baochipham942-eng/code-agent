@@ -52,8 +52,8 @@ export const TestResultsChart: React.FC<Props> = ({ report }) => {
   const svgHeight = categories.length * (barHeight + gap) + 8;
 
   return (
-    <div className="bg-zinc-800/40 border border-zinc-700/20 rounded-lg p-3">
-      <div className="text-xs font-medium text-zinc-400 mb-2">分类通过率</div>
+    <div className="bg-surface border border-border-default/20 rounded-lg p-3">
+      <div className="text-xs font-medium text-text-secondary mb-2">分类通过率</div>
       <div className="overflow-x-auto">
         <svg width={chartWidth} height={svgHeight} className="text-xs">
           {categories.map((cat, i) => {
@@ -69,7 +69,7 @@ export const TestResultsChart: React.FC<Props> = ({ report }) => {
                   x={labelWidth - 4}
                   y={y + barHeight / 2 + 4}
                   textAnchor="end"
-                  className="fill-zinc-400"
+                  className="fill-text-secondary"
                   fontSize={11}
                 >
                   {cat.name}
@@ -81,7 +81,7 @@ export const TestResultsChart: React.FC<Props> = ({ report }) => {
                   width={barAreaWidth}
                   height={barHeight}
                   rx={3}
-                  className="fill-zinc-700/30"
+                  className="fill-hover"
                 />
                 {/* Passed */}
                 <rect
@@ -112,7 +112,7 @@ export const TestResultsChart: React.FC<Props> = ({ report }) => {
                 <text
                   x={labelWidth + barAreaWidth + 4}
                   y={y + barHeight / 2 + 4}
-                  className="fill-zinc-500"
+                  className="fill-text-tertiary"
                   fontSize={10}
                 >
                   {Math.round(cat.rate * 100)}%

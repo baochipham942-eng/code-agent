@@ -80,7 +80,7 @@ export const PermissionModal: React.FC<Props> = ({ request, onAllow, onDeny }) =
             {details.path && <DetailRow label="路径" value={details.path} />}
             {details.changes && (
               <div className="space-y-1">
-                <span className="text-xs text-zinc-500">变更内容:</span>
+                <span className="text-xs text-text-tertiary">变更内容:</span>
                 <pre className="text-xs text-amber-300 bg-amber-500/10 p-2 rounded border border-amber-500/20 overflow-x-auto max-h-32">
                   {details.changes.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH)}
                   {details.changes.length > UI.PREVIEW_TEXT_MAX_LENGTH && '...'}
@@ -96,11 +96,11 @@ export const PermissionModal: React.FC<Props> = ({ request, onAllow, onDeny }) =
           <div className="space-y-2">
             {details.command && (
               <div className="space-y-1">
-                <span className="text-xs text-zinc-500">命令:</span>
+                <span className="text-xs text-text-tertiary">命令:</span>
                 <pre className={`text-xs p-2 rounded border overflow-x-auto ${
                   isDangerous
                     ? 'text-red-300 bg-red-500/10 border-red-500/20'
-                    : 'text-zinc-300 bg-zinc-800/50 border-zinc-700/50'
+                    : 'text-text-secondary bg-surface border-border-default'
                 }`}>
                   {details.command}
                 </pre>
@@ -118,7 +118,7 @@ export const PermissionModal: React.FC<Props> = ({ request, onAllow, onDeny }) =
 
       default:
         return (
-          <pre className="text-xs text-zinc-300 bg-zinc-800/50 p-2 rounded border border-zinc-700/50 overflow-x-auto">
+          <pre className="text-xs text-text-secondary bg-surface p-2 rounded border border-border-default overflow-x-auto">
             {JSON.stringify(details, null, 2)}
           </pre>
         );
@@ -145,7 +145,7 @@ export const PermissionModal: React.FC<Props> = ({ request, onAllow, onDeny }) =
         <ModalFooter>
           <button
             onClick={onDeny}
-            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+            className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-hover rounded-lg transition-colors"
           >
             拒绝
           </button>
@@ -176,7 +176,7 @@ export const PermissionModal: React.FC<Props> = ({ request, onAllow, onDeny }) =
 
         {/* Reason */}
         {request.reason && (
-          <p className="text-sm text-zinc-300">{request.reason}</p>
+          <p className="text-sm text-text-secondary">{request.reason}</p>
         )}
 
         {/* Details */}
@@ -189,7 +189,7 @@ export const PermissionModal: React.FC<Props> = ({ request, onAllow, onDeny }) =
 // Helper component
 const DetailRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <div className="flex items-start gap-2">
-    <span className="text-xs text-zinc-500 shrink-0">{label}:</span>
-    <span className="text-xs text-zinc-300 font-mono break-all">{value}</span>
+    <span className="text-xs text-text-tertiary shrink-0">{label}:</span>
+    <span className="text-xs text-text-secondary font-mono break-all">{value}</span>
   </div>
 );

@@ -55,12 +55,12 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
       {/* Context menu */}
       {contextMenu && (
         <div
-          className="fixed z-50 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 min-w-[160px]"
+          className="fixed z-50 bg-elevated border border-border-default rounded-lg shadow-xl py-1 min-w-[160px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
             onClick={handleCompactFrom}
-            className="w-full px-3 py-1.5 text-left text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
+            className="w-full px-3 py-1.5 text-left text-sm text-text-secondary hover:bg-active transition-colors"
           >
             Compact from here
           </button>
@@ -71,7 +71,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
         <div className="mb-2">
           <button
             onClick={() => setShowReasoning(!showReasoning)}
-            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-400 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors"
           >
             <span className="font-mono">{showReasoning ? '▼' : '▶'}</span>
             <span>
@@ -86,8 +86,8 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
               opacity: showReasoning ? 1 : 0,
             }}
           >
-            <div className="mt-1.5 pl-3 border-l border-zinc-700/50">
-              <p className="text-xs text-zinc-500 leading-relaxed whitespace-pre-wrap font-mono">
+            <div className="mt-1.5 pl-3 border-l border-border-default">
+              <p className="text-xs text-text-tertiary leading-relaxed whitespace-pre-wrap font-mono">
                 {reasoningContent}
               </p>
             </div>
@@ -97,7 +97,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
 
       {/* Text content */}
       {message.content && (
-        <div className="text-zinc-200 leading-relaxed select-text">
+        <div className="text-text-primary leading-relaxed select-text">
           <MessageContent content={message.content} isUser={false} />
         </div>
       )}

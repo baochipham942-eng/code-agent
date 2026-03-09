@@ -102,12 +102,12 @@ export const UserQuestionModal: React.FC<Props> = ({ request, onClose }) => {
         {request.questions.map((q, qIndex) => (
           <div key={qIndex} className="space-y-3">
             <div>
-              <span className="inline-block px-2 py-0.5 text-xs font-medium rounded bg-zinc-800 text-zinc-400 mb-2">
+              <span className="inline-block px-2 py-0.5 text-xs font-medium rounded bg-elevated text-text-secondary mb-2">
                 {q.header}
               </span>
-              <p className="text-sm text-zinc-100">{q.question}</p>
+              <p className="text-sm text-text-primary">{q.question}</p>
               {q.multiSelect && (
-                <p className="text-xs text-zinc-500 mt-1">可多选</p>
+                <p className="text-xs text-text-tertiary mt-1">可多选</p>
               )}
             </div>
 
@@ -119,7 +119,7 @@ export const UserQuestionModal: React.FC<Props> = ({ request, onClose }) => {
                   className={`w-full p-3 rounded-lg border text-left transition-all ${
                     isSelected(q.header, option.label)
                       ? 'border-blue-500 bg-blue-500/10 ring-1 ring-blue-500/50'
-                      : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/50'
+                      : 'border-border-default hover:border-border-strong hover:bg-surface'
                   }`}
                 >
                   <div className="flex items-start gap-3">
@@ -129,7 +129,7 @@ export const UserQuestionModal: React.FC<Props> = ({ request, onClose }) => {
                       } border-2 flex items-center justify-center ${
                         isSelected(q.header, option.label)
                           ? 'border-blue-500 bg-blue-500'
-                          : 'border-zinc-600'
+                          : 'border-border-strong'
                       }`}
                     >
                       {isSelected(q.header, option.label) && (
@@ -137,11 +137,11 @@ export const UserQuestionModal: React.FC<Props> = ({ request, onClose }) => {
                       )}
                     </div>
                     <div className="flex-1">
-                      <div className="font-medium text-zinc-100 text-sm">
+                      <div className="font-medium text-text-primary text-sm">
                         {option.label}
                       </div>
                       {option.description && (
-                        <p className="text-xs text-zinc-400 mt-0.5">
+                        <p className="text-xs text-text-secondary mt-0.5">
                           {option.description}
                         </p>
                       )}

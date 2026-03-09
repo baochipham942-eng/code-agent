@@ -122,7 +122,7 @@ export const DataSection: React.FC = () => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
-        <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
+        <Loader2 className="w-5 h-5 animate-spin text-text-secondary" />
       </div>
     );
   }
@@ -131,7 +131,7 @@ export const DataSection: React.FC = () => {
     <div className="space-y-6">
       {/* Usage Stats */}
       <div>
-        <h4 className="text-sm font-medium text-zinc-100 mb-3">使用统计</h4>
+        <h4 className="text-sm font-medium text-text-primary mb-3">使用统计</h4>
         <div className="grid grid-cols-4 gap-3">
           <StatCard
             icon={<MessageSquare className="w-4 h-4" />}
@@ -162,7 +162,7 @@ export const DataSection: React.FC = () => {
 
       {/* Memory Search */}
       <div>
-        <h4 className="text-sm font-medium text-zinc-100 mb-3 flex items-center gap-2">
+        <h4 className="text-sm font-medium text-text-primary mb-3 flex items-center gap-2">
           <Brain className="w-4 h-4 text-cyan-400" />
           记忆搜索
         </h4>
@@ -194,7 +194,7 @@ export const DataSection: React.FC = () => {
             {searchResults.map((result) => (
               <div
                 key={result.id}
-                className="p-2 bg-zinc-800/50 rounded text-xs"
+                className="p-2 bg-surface rounded text-xs"
               >
                 <div className="flex items-center gap-1.5 mb-1">
                   {result.metadata.source === 'file' ? (
@@ -204,21 +204,21 @@ export const DataSection: React.FC = () => {
                   ) : (
                     <Brain className="w-3 h-3 text-purple-400" />
                   )}
-                  <span className="text-zinc-400 truncate">
+                  <span className="text-text-secondary truncate">
                     {result.metadata.path?.split('/').pop() || result.metadata.category || result.metadata.source}
                   </span>
-                  <span className="ml-auto text-zinc-500">
+                  <span className="ml-auto text-text-tertiary">
                     {Math.round(result.score * 100)}%
                   </span>
                 </div>
-                <p className="text-zinc-300 line-clamp-2">{result.content}</p>
+                <p className="text-text-secondary line-clamp-2">{result.content}</p>
               </div>
             ))}
           </div>
         )}
 
         {searchQuery && searchResults.length === 0 && !isSearching && (
-          <p className="text-xs text-zinc-500 text-center py-3 mt-2">未找到结果</p>
+          <p className="text-xs text-text-tertiary text-center py-3 mt-2">未找到结果</p>
         )}
       </div>
 
@@ -229,11 +229,11 @@ export const DataSection: React.FC = () => {
 
       {/* Clear Cache */}
       <div>
-        <h4 className="text-sm font-medium text-zinc-100 mb-3 flex items-center gap-2">
-          <Trash2 className="w-4 h-4 text-zinc-400" />
+        <h4 className="text-sm font-medium text-text-primary mb-3 flex items-center gap-2">
+          <Trash2 className="w-4 h-4 text-text-secondary" />
           清理缓存
         </h4>
-        <p className="text-xs text-zinc-500 mb-3">
+        <p className="text-xs text-text-tertiary mb-3">
           清理工具调用的临时缓存（文件读取、搜索结果），不影响会话和数据。
         </p>
         <Button
@@ -267,11 +267,11 @@ const StatCard: React.FC<{
   value: string | number;
   color: string;
 }> = ({ icon, label, value, color }) => (
-  <div className="p-3 rounded-lg bg-zinc-800/50">
+  <div className="p-3 rounded-lg bg-surface">
     <div className="flex items-center gap-1.5 mb-1">
       <span className={color}>{icon}</span>
-      <span className="text-xs text-zinc-500">{label}</span>
+      <span className="text-xs text-text-tertiary">{label}</span>
     </div>
-    <span className="text-lg font-semibold text-zinc-200">{value}</span>
+    <span className="text-lg font-semibold text-text-primary">{value}</span>
   </div>
 );

@@ -155,7 +155,7 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({
             className="ml-auto p-1 rounded hover:bg-white/10 transition-colors"
             aria-label="重试"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-zinc-400" />
+            <RefreshCw className="w-3.5 h-3.5 text-text-secondary" />
           </button>
         )}
       </div>
@@ -176,23 +176,23 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({
           {title && (
             <h4 className={`font-medium ${config.textColor} mb-1`}>{title}</h4>
           )}
-          <p className="text-sm text-zinc-300">{normalized.userMessage}</p>
+          <p className="text-sm text-text-secondary">{normalized.userMessage}</p>
 
           {/* Recovery Suggestion */}
           {showSuggestion && normalized.suggestion && (
-            <div className="mt-3 flex items-start gap-2 p-2 rounded bg-zinc-800/50">
-              <HelpCircle className="w-4 h-4 text-zinc-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-zinc-400">{normalized.suggestion}</p>
+            <div className="mt-3 flex items-start gap-2 p-2 rounded bg-surface">
+              <HelpCircle className="w-4 h-4 text-text-tertiary shrink-0 mt-0.5" />
+              <p className="text-xs text-text-secondary">{normalized.suggestion}</p>
             </div>
           )}
 
           {/* Technical Details */}
           {showDetails && normalized.message !== normalized.userMessage && (
             <details className="mt-3">
-              <summary className="text-xs text-zinc-500 cursor-pointer hover:text-zinc-400">
+              <summary className="text-xs text-text-tertiary cursor-pointer hover:text-text-secondary">
                 技术详情
               </summary>
-              <pre className="mt-2 p-2 rounded bg-zinc-900/50 text-xs text-zinc-500 overflow-x-auto">
+              <pre className="mt-2 p-2 rounded bg-deep text-xs text-text-tertiary overflow-x-auto">
                 {normalized.message}
               </pre>
             </details>
@@ -206,18 +206,18 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({
             className="p-1 rounded hover:bg-white/10 transition-colors"
             aria-label="关闭"
           >
-            <XCircle className="w-4 h-4 text-zinc-500" />
+            <XCircle className="w-4 h-4 text-text-tertiary" />
           </button>
         )}
       </div>
 
       {/* Actions */}
       {(onRetry || showSettings) && (
-        <div className="flex items-center gap-2 px-4 py-3 border-t border-zinc-800/50 bg-zinc-900/30">
+        <div className="flex items-center gap-2 px-4 py-3 border-t border-border-default bg-deep/30">
           {normalized.recoverable && onRetry && (
             <button
               onClick={onRetry}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm text-zinc-300 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-elevated hover:bg-active text-sm text-text-secondary transition-colors"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               重试
@@ -226,7 +226,7 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({
           {showSettings && (
             <button
               onClick={onOpenSettings}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-sm text-zinc-300 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-elevated hover:bg-active text-sm text-text-secondary transition-colors"
             >
               <Settings className="w-3.5 h-3.5" />
               打开设置

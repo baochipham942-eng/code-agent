@@ -40,7 +40,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 export const ReplayAnalyticsSidebar: React.FC<Props> = ({ summary, objective }) => {
   if (!summary) {
     return (
-      <div className="p-3 text-xs text-zinc-600">
+      <div className="p-3 text-xs text-text-disabled">
         加载中...
       </div>
     );
@@ -59,19 +59,19 @@ export const ReplayAnalyticsSidebar: React.FC<Props> = ({ summary, objective }) 
     <div className="p-3 space-y-4 text-xs">
       {/* Overview */}
       <div>
-        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2 font-medium">Overview</div>
+        <div className="text-[10px] text-text-tertiary uppercase tracking-wider mb-2 font-medium">Overview</div>
         <div className="grid grid-cols-2 gap-2">
-          <MetricCard label="Turns" value={String(summary.totalTurns)} />
-          <MetricCard label="Duration" value={durationStr} />
-          <MetricCard label="Tools" value={String(totalTools)} />
-          <MetricCard label="Self-Repair" value={String(summary.selfRepairChains)} />
+          <MetricCard label="轮次" value={String(summary.totalTurns)} />
+          <MetricCard label="耗时" value={durationStr} />
+          <MetricCard label="工具" value={String(totalTools)} />
+          <MetricCard label="自修复" value={String(summary.selfRepairChains)} />
         </div>
       </div>
 
       {/* Tool Distribution */}
       {sortedTools.length > 0 && (
         <div>
-          <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2 font-medium">Tool Distribution</div>
+          <div className="text-[10px] text-text-tertiary uppercase tracking-wider mb-2 font-medium">Tool Distribution</div>
           <div className="space-y-1.5">
             {sortedTools.map(([cat, count]) => {
               const pct = totalTools > 0 ? (count / totalTools) * 100 : 0;
@@ -79,10 +79,10 @@ export const ReplayAnalyticsSidebar: React.FC<Props> = ({ summary, objective }) 
               return (
                 <div key={cat}>
                   <div className="flex items-center justify-between mb-0.5">
-                    <span className="text-zinc-400">{cat}</span>
-                    <span className="text-zinc-500">{count} ({pct.toFixed(0)}%)</span>
+                    <span className="text-text-secondary">{cat}</span>
+                    <span className="text-text-tertiary">{count} ({pct.toFixed(0)}%)</span>
                   </div>
-                  <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div className="h-1.5 bg-elevated rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{ width: `${pct}%`, backgroundColor: color }}
@@ -97,22 +97,22 @@ export const ReplayAnalyticsSidebar: React.FC<Props> = ({ summary, objective }) 
 
       {/* Thinking Ratio */}
       <div>
-        <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2 font-medium">Thinking Ratio</div>
+        <div className="text-[10px] text-text-tertiary uppercase tracking-wider mb-2 font-medium">Thinking Ratio</div>
         <div className="flex items-center gap-2">
-          <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden flex-1">
+          <div className="h-1.5 bg-elevated rounded-full overflow-hidden flex-1">
             <div
               className="h-full bg-violet-500 rounded-full"
               style={{ width: `${(summary.thinkingRatio * 100).toFixed(0)}%` }}
             />
           </div>
-          <span className="text-zinc-400 shrink-0">{(summary.thinkingRatio * 100).toFixed(1)}%</span>
+          <span className="text-text-secondary shrink-0">{(summary.thinkingRatio * 100).toFixed(1)}%</span>
         </div>
       </div>
 
       {/* Deviations */}
       {summary.deviations && summary.deviations.length > 0 && (
         <div>
-          <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2 font-medium">
+          <div className="text-[10px] text-text-tertiary uppercase tracking-wider mb-2 font-medium">
             Deviations ({summary.deviations.length})
           </div>
           <div className="space-y-1.5">
@@ -121,16 +121,16 @@ export const ReplayAnalyticsSidebar: React.FC<Props> = ({ summary, objective }) 
                 ? 'text-red-400'
                 : d.severity === 'medium'
                 ? 'text-amber-400'
-                : 'text-zinc-400';
+                : 'text-text-secondary';
               return (
-                <div key={i} className="bg-zinc-800/30 rounded p-1.5 border border-zinc-700/20">
+                <div key={i} className="bg-surface rounded p-1.5 border border-border-default/20">
                   <div className="flex items-center gap-1 mb-0.5">
                     <span className={`text-[10px] font-medium ${severityColor}`}>
                       {d.type}
                     </span>
-                    <span className="text-[9px] text-zinc-600">@{d.stepIndex}</span>
+                    <span className="text-[9px] text-text-disabled">@{d.stepIndex}</span>
                   </div>
-                  <div className="text-[10px] text-zinc-500 leading-tight">
+                  <div className="text-[10px] text-text-tertiary leading-tight">
                     {d.description.length > 80 ? d.description.slice(0, 77) + '...' : d.description}
                   </div>
                 </div>
@@ -145,15 +145,15 @@ export const ReplayAnalyticsSidebar: React.FC<Props> = ({ summary, objective }) 
         <>
           {objective.selfRepairRate !== undefined && (
             <div>
-              <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2 font-medium">Self Repair Rate</div>
+              <div className="text-[10px] text-text-tertiary uppercase tracking-wider mb-2 font-medium">自修复率</div>
               <div className="flex items-center gap-2">
-                <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden flex-1">
+                <div className="h-1.5 bg-elevated rounded-full overflow-hidden flex-1">
                   <div
                     className="h-full bg-emerald-500 rounded-full"
-                    style={{ width: `${(objective.selfRepairRate * 100).toFixed(0)}%` }}
+                    style={{ width: `${Math.min(objective.selfRepairRate, 100).toFixed(0)}%` }}
                   />
                 </div>
-                <span className="text-zinc-400 shrink-0">{(objective.selfRepairRate * 100).toFixed(1)}%</span>
+                <span className="text-text-secondary shrink-0">{objective.selfRepairRate.toFixed(1)}%</span>
               </div>
             </div>
           )}
@@ -161,7 +161,7 @@ export const ReplayAnalyticsSidebar: React.FC<Props> = ({ summary, objective }) 
           {/* Error Taxonomy */}
           {objective.errorTaxonomy && Object.keys(objective.errorTaxonomy).length > 0 && (
             <div>
-              <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2 font-medium">Error Types</div>
+              <div className="text-[10px] text-text-tertiary uppercase tracking-wider mb-2 font-medium">Error Types</div>
               <div className="space-y-1">
                 {Object.entries(objective.errorTaxonomy)
                   .filter(([, v]) => v > 0)
@@ -169,7 +169,7 @@ export const ReplayAnalyticsSidebar: React.FC<Props> = ({ summary, objective }) 
                   .slice(0, 5)
                   .map(([type, count]) => (
                     <div key={type} className="flex items-center justify-between">
-                      <span className="text-zinc-400 truncate mr-2">{type}</span>
+                      <span className="text-text-secondary truncate mr-2">{type}</span>
                       <span className="text-red-400 shrink-0">{count}</span>
                     </div>
                   ))}
@@ -183,8 +183,8 @@ export const ReplayAnalyticsSidebar: React.FC<Props> = ({ summary, objective }) 
 };
 
 const MetricCard: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="bg-zinc-800/30 rounded-lg p-2 border border-zinc-700/20">
-    <div className="text-[10px] text-zinc-500 mb-0.5">{label}</div>
-    <div className="text-sm text-zinc-200 font-medium">{value}</div>
+  <div className="bg-surface rounded-lg p-2 border border-border-default/20">
+    <div className="text-[10px] text-text-tertiary mb-0.5">{label}</div>
+    <div className="text-sm text-text-primary font-medium">{value}</div>
   </div>
 );

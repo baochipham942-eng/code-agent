@@ -271,13 +271,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         <div className="relative bg-white/[0.03] backdrop-blur-sm rounded-2xl border border-white/[0.08] focus-within:border-white/[0.15] focus-within:bg-white/[0.05] transition-all duration-200 shadow-lg shadow-black/20">
           {/* @ File autocomplete dropdown */}
           {isAutocompleteOpen && fileMatches.length > 0 && (
-            <div className="absolute bottom-full left-0 right-0 mb-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-20 max-h-[200px] overflow-y-auto">
+            <div className="absolute bottom-full left-0 right-0 mb-1 bg-deep border border-border-default rounded-lg shadow-xl z-20 max-h-[200px] overflow-y-auto">
               {fileMatches.map((f, i) => (
                 <button
                   key={i}
                   type="button"
                   onClick={() => handleFileSelect_autocomplete(f.path)}
-                  className="w-full px-3 py-1.5 text-left text-sm text-zinc-300 hover:bg-zinc-800 transition-colors font-mono truncate"
+                  className="w-full px-3 py-1.5 text-left text-sm text-text-secondary hover:bg-hover transition-colors font-mono truncate"
                 >
                   {f.name}
                 </button>

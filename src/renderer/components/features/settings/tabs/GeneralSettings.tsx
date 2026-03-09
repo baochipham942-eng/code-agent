@@ -148,15 +148,15 @@ export const GeneralSettings: React.FC = () => {
     <div className="space-y-6">
       {/* Safety Mode Selection */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-100 mb-2">
+        <h3 className="text-sm font-medium text-text-primary mb-2">
           安全模式
         </h3>
-        <p className="text-xs text-zinc-500 mb-4">
+        <p className="text-xs text-text-tertiary mb-4">
           控制 Agent 执行敏感操作时的权限检查行为
         </p>
 
         {isLoadingPermission ? (
-          <div className="text-xs text-zinc-500">加载中...</div>
+          <div className="text-xs text-text-tertiary">加载中...</div>
         ) : (
           <div className="grid grid-cols-1 gap-2">
             {safetyModeOptions.map((option) => {
@@ -175,13 +175,13 @@ export const GeneralSettings: React.FC = () => {
                   className={`relative p-3 rounded-lg border text-left transition-all duration-200 ${
                     isActive
                       ? `${colors.border} ${colors.bg}`
-                      : 'border-zinc-700/50 bg-zinc-800/30 hover:border-zinc-600 hover:bg-zinc-800/50'
+                      : 'border-border-default bg-surface hover:border-border-strong hover:bg-surface'
                   }`}
                 >
                   <div className="flex items-center gap-3">
                     <div
                       className={`p-2 rounded-lg ${
-                        isActive ? `${colors.bg} ${colors.text}` : 'bg-zinc-700/50 text-zinc-400'
+                        isActive ? `${colors.bg} ${colors.text}` : 'bg-hover text-text-secondary'
                       }`}
                     >
                       {option.icon}
@@ -190,7 +190,7 @@ export const GeneralSettings: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <h4
                           className={`text-sm font-medium ${
-                            isActive ? 'text-zinc-100' : 'text-zinc-300'
+                            isActive ? 'text-text-primary' : 'text-text-secondary'
                           }`}
                         >
                           {option.title}
@@ -199,7 +199,7 @@ export const GeneralSettings: React.FC = () => {
                           <CheckCircle className={`w-4 h-4 ${colors.text}`} />
                         )}
                       </div>
-                      <p className="text-xs text-zinc-500 mt-0.5">
+                      <p className="text-xs text-text-tertiary mt-0.5">
                         {option.description}
                       </p>
                     </div>
@@ -227,17 +227,17 @@ export const GeneralSettings: React.FC = () => {
       </div>
 
       {/* Timeout Configuration */}
-      <div className="pt-4 border-t border-zinc-800">
-        <h3 className="text-sm font-medium text-zinc-100 mb-2 flex items-center gap-2">
+      <div className="pt-4 border-t border-border-default">
+        <h3 className="text-sm font-medium text-text-primary mb-2 flex items-center gap-2">
           <Clock className="w-4 h-4" />
           API 超时设置
         </h3>
-        <p className="text-xs text-zinc-500 mb-4">
+        <p className="text-xs text-text-tertiary mb-4">
           根据任务复杂度调整 API 超时时间，复杂任务需要更长的等待时间
         </p>
 
         {isLoadingTimeout ? (
-          <div className="text-xs text-zinc-500">加载中...</div>
+          <div className="text-xs text-text-tertiary">加载中...</div>
         ) : (
           <>
             <div className="grid grid-cols-3 gap-2 mb-3">
@@ -255,17 +255,17 @@ export const GeneralSettings: React.FC = () => {
                     className={`p-3 rounded-lg border text-center transition-all duration-200 ${
                       isActive
                         ? 'border-primary-500/50 bg-primary-500/10'
-                        : 'border-zinc-700/50 bg-zinc-800/30 hover:border-zinc-600 hover:bg-zinc-800/50'
+                        : 'border-border-default bg-surface hover:border-border-strong hover:bg-surface'
                     }`}
                   >
                     <div
                       className={`text-sm font-medium ${
-                        isActive ? 'text-zinc-100' : 'text-zinc-300'
+                        isActive ? 'text-text-primary' : 'text-text-secondary'
                       }`}
                     >
                       {option.label}
                     </div>
-                    <div className={`text-xs mt-1 ${isActive ? 'text-primary-400' : 'text-zinc-500'}`}>
+                    <div className={`text-xs mt-1 ${isActive ? 'text-primary-400' : 'text-text-tertiary'}`}>
                       {option.desc}
                     </div>
                   </button>
@@ -274,12 +274,12 @@ export const GeneralSettings: React.FC = () => {
             </div>
 
             {/* 提示信息 */}
-            <div className="flex items-start gap-2 p-2 rounded bg-zinc-800/50">
-              <Info className="w-4 h-4 text-zinc-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-zinc-400">
-                当前超时：<span className="text-zinc-300">{getCurrentTimeoutSeconds()} 秒</span>
+            <div className="flex items-start gap-2 p-2 rounded bg-surface">
+              <Info className="w-4 h-4 text-text-tertiary shrink-0 mt-0.5" />
+              <p className="text-xs text-text-secondary">
+                当前超时：<span className="text-text-secondary">{getCurrentTimeoutSeconds()} 秒</span>
                 <br />
-                <span className="text-zinc-500">
+                <span className="text-text-tertiary">
                   {timeoutComplexity === 'simple' && '适用于：快速问答、简单代码修改'}
                   {timeoutComplexity === 'medium' && '适用于：代码生成、文件操作、中等分析任务'}
                   {timeoutComplexity === 'complex' && '适用于：大型重构、架构分析、多文件操作'}

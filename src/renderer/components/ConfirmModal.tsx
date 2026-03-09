@@ -91,7 +91,7 @@ export const ConfirmModal: React.FC<Props> = ({
       }
     >
       {typeof message === 'string' ? (
-        <p className="text-sm text-zinc-300 leading-relaxed">{message}</p>
+        <p className="text-sm text-text-secondary leading-relaxed">{message}</p>
       ) : (
         message
       )}
@@ -136,21 +136,21 @@ export const ApiKeySetupModal: React.FC<ApiKeySetupModalProps> = ({
       }
     >
       <div className="space-y-4">
-        <p className="text-sm text-zinc-300 leading-relaxed">
+        <p className="text-sm text-text-secondary leading-relaxed">
           欢迎使用 Code Agent！为了开始使用 AI 助手功能，您需要先配置 API Key。
         </p>
 
-        <div className="bg-zinc-800/50 rounded-lg p-4 space-y-2">
-          <h4 className="text-sm font-medium text-zinc-100">支持的模型提供商：</h4>
-          <ul className="text-xs text-zinc-400 space-y-1">
-            <li>• <span className="text-zinc-300">DeepSeek</span> - 高性价比，推荐用于日常开发</li>
-            <li>• <span className="text-zinc-300">OpenRouter</span> - 支持 Gemini、Claude、GPT 等多种模型</li>
-            <li>• <span className="text-zinc-300">Anthropic Claude</span> - 高质量代码生成</li>
-            <li>• <span className="text-zinc-300">OpenAI</span> - GPT-4o 系列</li>
+        <div className="bg-surface rounded-lg p-4 space-y-2">
+          <h4 className="text-sm font-medium text-text-primary">支持的模型提供商：</h4>
+          <ul className="text-xs text-text-secondary space-y-1">
+            <li>• <span className="text-text-secondary">DeepSeek</span> - 高性价比，推荐用于日常开发</li>
+            <li>• <span className="text-text-secondary">OpenRouter</span> - 支持 Gemini、Claude、GPT 等多种模型</li>
+            <li>• <span className="text-text-secondary">Anthropic Claude</span> - 高质量代码生成</li>
+            <li>• <span className="text-text-secondary">OpenAI</span> - GPT-4o 系列</li>
           </ul>
         </div>
 
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-text-tertiary">
           您可以随时在设置中更改 API Key 配置。
         </p>
       </div>
@@ -233,31 +233,31 @@ export const ToolCreateConfirmModal: React.FC<ToolCreateConfirmModalProps> = ({
         {/* Tool Info */}
         <div className="space-y-3">
           <div className="flex items-start gap-2">
-            <span className="text-xs text-zinc-500 w-16 shrink-0">名称:</span>
-            <span className="text-sm text-zinc-100 font-mono">{request.name}</span>
+            <span className="text-xs text-text-tertiary w-16 shrink-0">名称:</span>
+            <span className="text-sm text-text-primary font-mono">{request.name}</span>
           </div>
           <div className="flex items-start gap-2">
-            <span className="text-xs text-zinc-500 w-16 shrink-0">类型:</span>
+            <span className="text-xs text-text-tertiary w-16 shrink-0">类型:</span>
             <span className={`text-sm font-mono px-2 py-0.5 rounded ${
-              isDangerous ? 'bg-red-500/20 text-red-300' : 'bg-zinc-800 text-zinc-300'
+              isDangerous ? 'bg-red-500/20 text-red-300' : 'bg-elevated text-text-secondary'
             }`}>
               {request.type}
             </span>
           </div>
           <div className="flex items-start gap-2">
-            <span className="text-xs text-zinc-500 w-16 shrink-0">描述:</span>
-            <span className="text-sm text-zinc-300">{request.description}</span>
+            <span className="text-xs text-text-tertiary w-16 shrink-0">描述:</span>
+            <span className="text-sm text-text-secondary">{request.description}</span>
           </div>
         </div>
 
         {/* Code Preview */}
         {(request.code || request.script) && (
           <div className="space-y-1">
-            <span className="text-xs text-zinc-500">代码预览:</span>
+            <span className="text-xs text-text-tertiary">代码预览:</span>
             <pre className={`text-xs p-3 rounded-lg border overflow-x-auto max-h-40 ${
               isDangerous
                 ? 'bg-red-500/10 border-red-500/20 text-red-300'
-                : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-300'
+                : 'bg-surface border-border-default text-text-secondary'
             }`}>
               {(request.code || request.script || '').slice(0, UI.PREVIEW_TEXT_MAX_LENGTH)}
               {(request.code || request.script || '').length > UI.PREVIEW_TEXT_MAX_LENGTH && '...'}
@@ -305,7 +305,7 @@ export const DevModeConfirmModal: React.FC<DevModeConfirmModalProps> = ({
       }
     >
       <div className="space-y-4">
-        <p className="text-sm text-zinc-300 leading-relaxed">
+        <p className="text-sm text-text-secondary leading-relaxed">
           您即将开启<span className="font-medium text-amber-400">「自动授权所有权限」</span>模式。
         </p>
 
@@ -318,9 +318,9 @@ export const DevModeConfirmModal: React.FC<DevModeConfirmModalProps> = ({
           </ul>
         </div>
 
-        <div className="bg-zinc-800/50 rounded-lg p-3">
-          <p className="text-xs text-zinc-400">
-            <span className="text-zinc-300 font-medium">建议：</span>仅在受控的开发环境中使用此功能。
+        <div className="bg-surface rounded-lg p-3">
+          <p className="text-xs text-text-secondary">
+            <span className="text-text-secondary font-medium">建议：</span>仅在受控的开发环境中使用此功能。
             生产环境或处理敏感项目时请保持关闭。
           </p>
         </div>

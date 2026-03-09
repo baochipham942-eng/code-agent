@@ -73,8 +73,8 @@ export const PasswordResetModal: React.FC = () => {
         <div className="py-6 text-center space-y-4">
           <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
           <div className="space-y-2">
-            <p className="text-zinc-200 font-medium">密码已更新</p>
-            <p className="text-zinc-400 text-sm">
+            <p className="text-text-primary font-medium">密码已更新</p>
+            <p className="text-text-secondary text-sm">
               您的密码已成功重置，现在可以使用新密码登录了。
             </p>
           </div>
@@ -106,7 +106,7 @@ export const PasswordResetModal: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-300"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-secondary"
               >
                 {showPassword ? (
                   <EyeOff className="w-4 h-4" />
@@ -134,23 +134,23 @@ export const PasswordResetModal: React.FC = () => {
               <div className="flex gap-1">
                 <div
                   className={`h-1 flex-1 rounded ${
-                    password.length >= 6 ? 'bg-green-500' : 'bg-zinc-600'
+                    password.length >= 6 ? 'bg-green-500' : 'bg-active'
                   }`}
                 />
                 <div
                   className={`h-1 flex-1 rounded ${
-                    password.length >= 8 ? 'bg-green-500' : 'bg-zinc-600'
+                    password.length >= 8 ? 'bg-green-500' : 'bg-active'
                   }`}
                 />
                 <div
                   className={`h-1 flex-1 rounded ${
                     password.length >= 10 && /[A-Z]/.test(password) && /[0-9]/.test(password)
                       ? 'bg-green-500'
-                      : 'bg-zinc-600'
+                      : 'bg-active'
                   }`}
                 />
               </div>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-text-tertiary">
                 {password.length < 6
                   ? '密码太短'
                   : password.length < 8

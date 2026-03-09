@@ -76,7 +76,7 @@ export const DataSettings: React.FC = () => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-48">
-        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+        <Loader2 className="w-6 h-6 animate-spin text-text-secondary" />
       </div>
     );
   }
@@ -85,51 +85,51 @@ export const DataSettings: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-100 mb-2">数据管理</h3>
-        <p className="text-xs text-zinc-400 mb-4">
+        <h3 className="text-sm font-medium text-text-primary mb-2">数据管理</h3>
+        <p className="text-xs text-text-secondary mb-4">
           查看应用数据使用情况。会话、消息和生成的文件不会被清理。
         </p>
       </div>
 
       {/* Data Stats Grid */}
       <div className="grid grid-cols-2 gap-4">
-        <div className="bg-zinc-800/50 rounded-lg p-4">
-          <div className="text-2xl font-bold text-zinc-100">{stats?.sessionCount || 0}</div>
-          <div className="text-xs text-zinc-400">会话数</div>
+        <div className="bg-surface rounded-lg p-4">
+          <div className="text-2xl font-bold text-text-primary">{stats?.sessionCount || 0}</div>
+          <div className="text-xs text-text-secondary">会话数</div>
         </div>
-        <div className="bg-zinc-800/50 rounded-lg p-4">
-          <div className="text-2xl font-bold text-zinc-100">{stats?.messageCount || 0}</div>
-          <div className="text-xs text-zinc-400">消息数</div>
+        <div className="bg-surface rounded-lg p-4">
+          <div className="text-2xl font-bold text-text-primary">{stats?.messageCount || 0}</div>
+          <div className="text-xs text-text-secondary">消息数</div>
         </div>
-        <div className="bg-zinc-800/50 rounded-lg p-4">
+        <div className="bg-surface rounded-lg p-4">
           <div className="text-2xl font-bold text-indigo-400">{formatSize(stats?.databaseSize || 0)}</div>
-          <div className="text-xs text-zinc-400">数据库大小</div>
+          <div className="text-xs text-text-secondary">数据库大小</div>
         </div>
-        <div className="bg-zinc-800/50 rounded-lg p-4">
+        <div className="bg-surface rounded-lg p-4">
           <div className="text-2xl font-bold text-cyan-400">{stats?.cacheEntries || 0}</div>
-          <div className="text-xs text-zinc-400">内存缓存条目</div>
+          <div className="text-xs text-text-secondary">内存缓存条目</div>
         </div>
       </div>
 
       {/* Detailed Stats */}
-      <div className="bg-zinc-800/50 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-zinc-100 mb-3">详细数据</h4>
+      <div className="bg-surface rounded-lg p-4">
+        <h4 className="text-sm font-medium text-text-primary mb-3">详细数据</h4>
         <div className="space-y-2 text-xs">
-          <div className="flex justify-between text-zinc-400">
+          <div className="flex justify-between text-text-secondary">
             <span>工具执行记录</span>
-            <span className="text-zinc-300">{stats?.toolExecutionCount || 0} 条</span>
+            <span className="text-text-secondary">{stats?.toolExecutionCount || 0} 条</span>
           </div>
-          <div className="flex justify-between text-zinc-400">
+          <div className="flex justify-between text-text-secondary">
             <span>项目知识库</span>
-            <span className="text-zinc-300">{stats?.knowledgeCount || 0} 条</span>
+            <span className="text-text-secondary">{stats?.knowledgeCount || 0} 条</span>
           </div>
         </div>
       </div>
 
       {/* Cache Info & Clear Button */}
-      <div className="bg-zinc-800/50 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-zinc-100 mb-3">可清理的缓存</h4>
-        <p className="text-xs text-zinc-400 mb-3">
+      <div className="bg-surface rounded-lg p-4">
+        <h4 className="text-sm font-medium text-text-primary mb-3">可清理的缓存</h4>
+        <p className="text-xs text-text-secondary mb-3">
           工具调用的临时缓存（如文件读取、搜索结果）可以安全清理，不会影响您的会话和数据。
         </p>
         <Button

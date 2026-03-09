@@ -13,7 +13,7 @@ const logger = createLogger('DatabaseService');
 // 降级后数据库功能不可用，CLI 使用自己的 CLIDatabaseService
 import type BetterSqlite3 from 'better-sqlite3';
 let Database: typeof BetterSqlite3 | null = null;
-if (!process.env.CODE_AGENT_CLI_MODE) {
+if (!process.env.CODE_AGENT_CLI_MODE || process.env.CODE_AGENT_WEB_MODE) {
   try {
     Database = require('better-sqlite3');
   } catch (error) {

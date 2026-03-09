@@ -410,9 +410,43 @@ export const webContents = {
   fromId: () => null,
 };
 
-// ── default export (= app) ──────────────────────────────────────────
+// ── default export (full module) ──────────────────────────────────────
+// electron-store 等模块使用 `import electron from 'electron'` 然后
+// 解构 `{ app, ipcMain, shell } = electron`，所以 default export 必须
+// 包含所有命名导出，而非仅导出 app。
 
-export default app;
+const electronModule = {
+  app,
+  ipcMain,
+  ipcRenderer,
+  BrowserWindow,
+  dialog,
+  shell,
+  clipboard,
+  nativeTheme,
+  screen,
+  safeStorage,
+  nativeImage,
+  desktopCapturer,
+  globalShortcut,
+  Menu,
+  MenuItem,
+  Tray,
+  Notification,
+  session,
+  net,
+  autoUpdater,
+  powerMonitor,
+  systemPreferences,
+  contentTracing,
+  protocol,
+  crashReporter,
+  webContents,
+  contextBridge,
+  webUtils,
+};
+
+export default electronModule;
 
 // Preload API mocks
 export const contextBridge = {

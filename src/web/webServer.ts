@@ -18,6 +18,9 @@ import './webEnvInit';
 import { handlers, ipcMain as mockIpcMain } from './electronMock';
 
 import http from 'http';
+import os from 'os';
+import path from 'path';
+import fs from 'fs';
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { setupAllIpcHandlers, type IpcDependencies } from '../main/ipc';
@@ -51,16 +54,50 @@ export function broadcastSSE(channel: string, args: unknown): void {
 
 /**
  * 初始化后端服务（数据库、配置等）
- * 复用 CLI 的初始化逻辑
+ * 直接使用 main 服务（与 IPC handler 内部 import 一致）
  */
 async function initializeServices(): Promise<void> {
   // 设置环境
   process.env.CODE_AGENT_CLI_MODE = 'true';
   process.env.CODE_AGENT_WEB_MODE = 'true';
 
-  // 使用 CLI 的 bootstrap 来初始化核心服务
-  const { initializeCLIServices } = await import('../cli/bootstrap');
-  await initializeCLIServices();
+  // 设置数据目录（electronMock 的 app.getPath('userData') 也读这个变量）
+  const dataDir = path.join(os.homedir(), '.code-agent');
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  process.env.CODE_AGENT_DATA_DIR = dataDir;
+
+  // 1. 初始化 ConfigService（main 模块的单例，IPC handler 通过 getConfigService() 获取）
+  const { initConfigService } = await import('../main/services/core/configService');
+  const configService = initConfigService();
+  await configService.initialize();
+  logger.info('ConfigService initialized');
+
+  // 2. 初始化 Database（main 模块的单例，SessionManager 等依赖）
+  try {
+    const { initDatabase } = await import('../main/services/core/databaseService');
+    await initDatabase();
+    logger.info('Database initialized');
+  } catch (error) {
+    const msg = error instanceof Error ? error.message.split('\n')[0] : String(error);
+    logger.warn('Database not available:', msg);
+  }
+
+  // 3. 初始化 MemoryService（session handler 的 handleCreate 会调用 getMemoryService）
+  try {
+    const { initMemoryService } = await import('../main/memory/memoryService');
+    initMemoryService({
+      maxRecentMessages: 10,
+      toolCacheTTL: 5 * 60 * 1000,
+      maxSessionMessages: 100,
+      maxRAGResults: 5,
+      ragTokenLimit: 2000,
+    });
+    logger.info('MemoryService initialized');
+  } catch (error) {
+    logger.warn('MemoryService not available:', (error as Error).message);
+  }
 
   logger.info('Backend services initialized');
 }
@@ -76,17 +113,10 @@ function registerHandlers(): void {
     getOrchestrator: () => null, // Agent execution via /api/run
     getConfigService: () => {
       try {
-        // 尝试获取 main 的 ConfigService
         const { getConfigService } = require('../main/services/core/configService');
         return getConfigService();
       } catch {
-        // 降级到 CLI 的 ConfigService
-        try {
-          const { getConfigService } = require('../cli/bootstrap');
-          return getConfigService();
-        } catch {
-          return null;
-        }
+        return null;
       }
     },
     getPlanningService: () => null,
@@ -355,9 +385,9 @@ function createApp(): express.Express {
     const { payload, requestId } = req.body;
 
     // 查找 handler — IPC handler 注册时使用的 channel 名
-    // 有些用 IPC_DOMAINS.XXX (如 'session', 'agent')
+    // 有些用 IPC_DOMAINS.XXX (如 'domain:session', 'domain:agent')
     // 有些用 IPC_CHANNELS.XXX (如 'session:list', 'settings:get')
-    const handler = handlers.get(domain);
+    const handler = handlers.get(domain) || handlers.get(`domain:${domain}`);
 
     if (handler) {
       try {

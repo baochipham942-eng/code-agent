@@ -1,3 +1,7 @@
+/* Import theme files - MUST be before @tailwind directives */
+@import './themes/dark.css';
+@import './themes/light.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -6,11 +10,6 @@
    Linear Design System
    A refined, minimal design system inspired by Linear's aesthetic
    ============================================================================ */
-
-/* Import theme files */
-@import './themes/dark.css';
-@import './themes/light.css';
-
 /* ============================================================================
    Design Tokens
    ============================================================================ */

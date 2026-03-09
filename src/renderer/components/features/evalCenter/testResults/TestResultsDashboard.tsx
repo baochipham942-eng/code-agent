@@ -92,6 +92,58 @@ export const TestResultsDashboard: React.FC = () => {
     }
   }, []);
 
+
+
+  const handleExportReport = useCallback(() => {
+    if (!currentReport) return;
+    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const passRate = Math.round((currentReport.passed / Math.max(currentReport.total, 1)) * 100);
+    const scoreColor = (s: number) => s >= 80 ? '#34d399' : s >= 60 ? '#fbbf24' : '#f87171';
+    const html = `<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><title>评测报告 - ${currentReport.runId}</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#333;background:#fafafa}
+  h1{font-size:20px;border-bottom:2px solid #eee;padding-bottom:8px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}
+  .stat{background:#fff;border:1px solid #eee;border-radius:8px;padding:12px;text-align:center}
+  .stat .val{font-size:24px;font-weight:700}
+  .stat .lbl{font-size:11px;color:#888;margin-top:4px}
+  table{width:100%;border-collapse:collapse;margin:20px 0;font-size:13px}
+  th,td{padding:8px 12px;border:1px solid #eee;text-align:left}
+  th{background:#f5f5f5;font-weight:600}
+  .pass{color:#059669} .fail{color:#dc2626} .partial{color:#d97706}
+  .footer{margin-top:40px;padding-top:12px;border-top:1px solid #eee;font-size:11px;color:#999}
+</style></head><body>
+<h1>评测报告</h1>
+<p style="color:#888;font-size:12px">Run ID: ${currentReport.runId} | 生成时间: ${new Date().toLocaleString('zh-CN')}</p>
+<div class="stats">
+  <div class="stat"><div class="val" style="color:${scoreColor(passRate)}">${passRate}%</div><div class="lbl">通过率</div></div>
+  <div class="stat"><div class="val">${currentReport.total}</div><div class="lbl">总用例</div></div>
+  <div class="stat"><div class="val" style="color:#059669">${currentReport.passed}</div><div class="lbl">通过</div></div>
+  <div class="stat"><div class="val" style="color:#dc2626">${currentReport.failed}</div><div class="lbl">失败</div></div>
+</div>
+<h2 style="font-size:16px">用例详情</h2>
+<table><thead><tr><th>Test ID</th><th>状态</th><th>得分</th><th>耗时</th><th>说明</th></tr></thead><tbody>
+${currentReport.results.map(r => {
+  const cls = r.status === 'passed' ? 'pass' : r.status === 'failed' ? 'fail' : 'partial';
+  const label = r.status === 'passed' ? '通过' : r.status === 'failed' ? '失败' : '部分通过';
+  return '<tr><td><code>' + esc(r.testId) + '</code></td><td class="' + cls + '">' + label + '</td><td>' + Math.round(r.score * 100) + '%</td><td>' + (r.duration/1000).toFixed(1) + 's</td><td>' + esc(r.failureReason || r.description || '-') + '</td></tr>';
+}).join('\n')}
+</tbody></table>
+<div class="footer">由 Code Agent 评测中心生成</div>
+</body></html>`;
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'eval-report-' + currentReport.runId.slice(0, 8) + '.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [currentReport]);
+
   if (isLoading && !currentReport) {
     return (
       <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">
@@ -147,58 +199,6 @@ export const TestResultsDashboard: React.FC = () => {
       </div>
     );
   }
-
-
-  const handleExportReport = useCallback(() => {
-    if (!currentReport) return;
-    const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    const passRate = Math.round((currentReport.passed / Math.max(currentReport.total, 1)) * 100);
-    const scoreColor = (s: number) => s >= 80 ? '#34d399' : s >= 60 ? '#fbbf24' : '#f87171';
-    const html = `<!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><title>评测报告 - ${currentReport.runId}</title>
-<style>
-  body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:800px;margin:40px auto;padding:0 20px;color:#333;background:#fafafa}
-  h1{font-size:20px;border-bottom:2px solid #eee;padding-bottom:8px}
-  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}
-  .stat{background:#fff;border:1px solid #eee;border-radius:8px;padding:12px;text-align:center}
-  .stat .val{font-size:24px;font-weight:700}
-  .stat .lbl{font-size:11px;color:#888;margin-top:4px}
-  table{width:100%;border-collapse:collapse;margin:20px 0;font-size:13px}
-  th,td{padding:8px 12px;border:1px solid #eee;text-align:left}
-  th{background:#f5f5f5;font-weight:600}
-  .pass{color:#059669} .fail{color:#dc2626} .partial{color:#d97706}
-  .footer{margin-top:40px;padding-top:12px;border-top:1px solid #eee;font-size:11px;color:#999}
-</style></head><body>
-<h1>评测报告</h1>
-<p style="color:#888;font-size:12px">Run ID: ${currentReport.runId} | 生成时间: ${new Date().toLocaleString('zh-CN')}</p>
-<div class="stats">
-  <div class="stat"><div class="val" style="color:${scoreColor(passRate)}">${passRate}%</div><div class="lbl">通过率</div></div>
-  <div class="stat"><div class="val">${currentReport.total}</div><div class="lbl">总用例</div></div>
-  <div class="stat"><div class="val" style="color:#059669">${currentReport.passed}</div><div class="lbl">通过</div></div>
-  <div class="stat"><div class="val" style="color:#dc2626">${currentReport.failed}</div><div class="lbl">失败</div></div>
-</div>
-<h2 style="font-size:16px">用例详情</h2>
-<table><thead><tr><th>Test ID</th><th>状态</th><th>得分</th><th>耗时</th><th>说明</th></tr></thead><tbody>
-${currentReport.results.map(r => {
-  const cls = r.status === 'passed' ? 'pass' : r.status === 'failed' ? 'fail' : 'partial';
-  const label = r.status === 'passed' ? '通过' : r.status === 'failed' ? '失败' : '部分通过';
-  return '<tr><td><code>' + esc(r.testId) + '</code></td><td class="' + cls + '">' + label + '</td><td>' + Math.round(r.score * 100) + '%</td><td>' + (r.duration/1000).toFixed(1) + 's</td><td>' + esc(r.failureReason || r.description || '-') + '</td></tr>';
-}).join('\n')}
-</tbody></table>
-<div class="footer">由 Code Agent 评测中心生成</div>
-</body></html>`;
-
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'eval-report-' + currentReport.runId.slice(0, 8) + '.html';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [currentReport]);
-
   return (
     <div className="p-4 space-y-4">
       {/* Header with new experiment + export buttons */}
@@ -228,16 +228,22 @@ ${currentReport.results.map(r => {
         isOpen={showCreateExperiment}
         onClose={() => setShowCreateExperiment(false)}
         onSubmit={async (config) => {
-          await window.electronAPI?.invoke(EVALUATION_CHANNELS.CREATE_EXPERIMENT, config);
-          // Refresh the experiment/report list after creating a new experiment
-          setTimeout(() => {
-            window.electronAPI?.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS).then((reports: any) => {
-              if (reports && Array.isArray(reports)) {
-                // Trigger a re-render by dispatching a custom event
-                window.dispatchEvent(new CustomEvent('experiment-created'));
+          try {
+            await window.electronAPI?.invoke(EVALUATION_CHANNELS.CREATE_EXPERIMENT, config);
+            // Refresh the experiment/report list after creating a new experiment
+            setTimeout(async () => {
+              try {
+                const refreshedReports = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS);
+                if (refreshedReports && Array.isArray(refreshedReports)) {
+                  window.dispatchEvent(new CustomEvent('experiment-created'));
+                }
+              } catch {
+                // best-effort refresh, ignore errors
               }
-            });
-          }, 1000);
+            }, 1000);
+          } catch {
+            // best-effort, ignore errors
+          }
         }}
       />
 

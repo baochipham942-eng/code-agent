@@ -333,7 +333,8 @@ async function main() {
   if (promote) {
     // --real mode safety guards for promote
     if (effectiveReal) {
-      const suites = loadAllTestSuites();
+      const testCaseDir_ = createDefaultConfig(workingDir).testCaseDir;
+      const suites = await loadAllTestSuites(testCaseDir_);
       const totalCases = suites.reduce((sum, s) => sum + s.cases.length, 0);
       const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
       const resolvedProvider = provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;
@@ -402,7 +403,8 @@ async function main() {
   // --real mode safety guards
   if (effectiveReal) {
     // Load suites to count total cases
-    const suites = loadAllTestSuites();
+    const testCaseDir_ = createDefaultConfig(workingDir).testCaseDir;
+    const suites = await loadAllTestSuites(testCaseDir_);
     const totalCases = suites.reduce((sum, s) => sum + s.cases.length, 0);
     const resolvedModel = model || process.env.AUTO_TEST_MODEL || DEFAULT_MODEL;
     const resolvedProvider = provider || process.env.AUTO_TEST_PROVIDER || DEFAULT_PROVIDER;

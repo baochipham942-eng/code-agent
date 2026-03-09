@@ -40,14 +40,14 @@ const variantStyles: Record<ButtonVariant, string> = {
     'disabled:from-primary-600/50 disabled:to-primary-500/50',
   ].join(' '),
   secondary: [
-    'bg-zinc-700 hover:bg-zinc-600',
-    'text-zinc-100',
-    'disabled:bg-zinc-700/50',
+    'bg-active hover:bg-active',
+    'text-text-primary',
+    'disabled:bg-hover',
   ].join(' '),
   ghost: [
-    'bg-transparent hover:bg-zinc-800',
-    'text-zinc-400 hover:text-zinc-200',
-    'disabled:text-zinc-600',
+    'bg-transparent hover:bg-hover',
+    'text-text-secondary hover:text-text-primary',
+    'disabled:text-text-disabled',
   ].join(' '),
   danger: [
     'bg-red-600 hover:bg-red-500',

@@ -24,7 +24,7 @@ const VERDICT_BORDER: Record<Verdict, string> = {
   PASS: 'border-t-green-500/60',
   FAIL: 'border-t-red-500/60',
   PARTIAL: 'border-t-yellow-500/60',
-  SKIP: 'border-t-zinc-600/60',
+  SKIP: 'border-t-border-strong',
   INFO: 'border-t-blue-500/60',
 };
 
@@ -32,7 +32,7 @@ const VERDICT_BADGE: Record<Verdict, string> = {
   PASS: 'bg-green-500/20 text-green-400',
   FAIL: 'bg-red-500/20 text-red-400',
   PARTIAL: 'bg-yellow-500/20 text-yellow-400',
-  SKIP: 'bg-zinc-500/20 text-zinc-400',
+  SKIP: 'bg-active/20 text-text-secondary',
   INFO: 'bg-blue-500/20 text-blue-400',
 };
 
@@ -55,23 +55,23 @@ export const GraderCard: React.FC<GraderCardProps> = ({ metric }) => {
 
   return (
     <div
-      className={`bg-zinc-800/40 rounded-lg border border-zinc-700/30 border-t-2 ${VERDICT_BORDER[verdict]} p-3 flex flex-col justify-between min-h-[100px]`}
+      className={`bg-surface rounded-lg border border-border-subtle border-t-2 ${VERDICT_BORDER[verdict]} p-3 flex flex-col justify-between min-h-[100px]`}
     >
       {/* Header: icon + name + weight */}
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <div className="flex items-center gap-1.5">
             <span className="text-sm">{icon}</span>
-            <span className="text-xs font-medium text-zinc-200">{name}</span>
+            <span className="text-xs font-medium text-text-primary">{name}</span>
           </div>
           {weightStr && (
-            <span className="text-[10px] text-zinc-500">{weightStr}</span>
+            <span className="text-[10px] text-text-tertiary">{weightStr}</span>
           )}
         </div>
 
         {/* Description */}
         {displayReason && (
-          <p className="text-[11px] text-zinc-500 leading-relaxed mb-2">
+          <p className="text-[11px] text-text-tertiary leading-relaxed mb-2">
             {displayReason}
             {needsTruncation && (
               <button

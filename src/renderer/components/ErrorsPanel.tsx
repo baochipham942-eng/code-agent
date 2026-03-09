@@ -40,7 +40,7 @@ const StrikeIndicator: React.FC<{ count: number; limit: number }> = ({
               ? isMaxed
                 ? 'bg-red-500'
                 : 'bg-orange-500'
-              : 'bg-zinc-700'
+              : 'bg-active'
           }`}
         />
       ))}
@@ -73,7 +73,7 @@ const SeverityBadge: React.FC<{ count: number; limit: number }> = ({
     );
   }
   return (
-    <span className="flex items-center gap-1 px-1.5 py-0.5 text-xs rounded bg-zinc-500/20 text-zinc-400">
+    <span className="flex items-center gap-1 px-1.5 py-0.5 text-xs rounded bg-active/20 text-text-secondary">
       <Info className="w-3 h-3" />
       Tracked
     </span>
@@ -93,18 +93,18 @@ const ErrorItem: React.FC<{ error: ErrorRecord; strikeLimit: number }> = ({
       className={`border rounded-lg mb-2 ${
         isBlocked
           ? 'border-red-500/30 bg-red-500/5'
-          : 'border-zinc-700 bg-zinc-800/30'
+          : 'border-border-default bg-surface'
       }`}
     >
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-start gap-2 p-2 hover:bg-zinc-700/20 transition-colors rounded-lg"
+        className="w-full flex items-start gap-2 p-2 hover:bg-active/20 transition-colors rounded-lg"
       >
         {expanded ? (
-          <ChevronDown className="w-4 h-4 text-zinc-400 mt-0.5 flex-shrink-0" />
+          <ChevronDown className="w-4 h-4 text-text-secondary mt-0.5 flex-shrink-0" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-zinc-400 mt-0.5 flex-shrink-0" />
+          <ChevronRight className="w-4 h-4 text-text-secondary mt-0.5 flex-shrink-0" />
         )}
         <Terminal
           className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
@@ -113,12 +113,12 @@ const ErrorItem: React.FC<{ error: ErrorRecord; strikeLimit: number }> = ({
         />
         <div className="flex-1 text-left min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-mono text-zinc-200 truncate">
+            <span className="text-sm font-mono text-text-primary truncate">
               {error.toolName}
             </span>
             <SeverityBadge count={error.count} limit={strikeLimit} />
           </div>
-          <span className="text-xs text-zinc-500 line-clamp-1">
+          <span className="text-xs text-text-tertiary line-clamp-1">
             {error.message}
           </span>
         </div>
@@ -127,11 +127,11 @@ const ErrorItem: React.FC<{ error: ErrorRecord; strikeLimit: number }> = ({
 
       {/* Expanded content */}
       {expanded && (
-        <div className="px-3 pb-3 pt-1 border-t border-zinc-700/50">
+        <div className="px-3 pb-3 pt-1 border-t border-border-default">
           {/* Error message */}
           <div className="mb-2">
-            <span className="text-xs text-zinc-500 block mb-1">Error:</span>
-            <p className="text-sm text-red-300 font-mono bg-zinc-900/50 p-2 rounded">
+            <span className="text-xs text-text-tertiary block mb-1">Error:</span>
+            <p className="text-sm text-red-300 font-mono bg-deep p-2 rounded">
               {error.message}
             </p>
           </div>
@@ -139,10 +139,10 @@ const ErrorItem: React.FC<{ error: ErrorRecord; strikeLimit: number }> = ({
           {/* Parameters if available */}
           {error.params && Object.keys(error.params).length > 0 && (
             <div className="mb-2">
-              <span className="text-xs text-zinc-500 block mb-1">
+              <span className="text-xs text-text-tertiary block mb-1">
                 Parameters:
               </span>
-              <pre className="text-xs text-zinc-400 font-mono bg-zinc-900/50 p-2 rounded overflow-x-auto">
+              <pre className="text-xs text-text-secondary font-mono bg-deep p-2 rounded overflow-x-auto">
                 {JSON.stringify(error.params, null, 2)}
               </pre>
             </div>
@@ -151,15 +151,15 @@ const ErrorItem: React.FC<{ error: ErrorRecord; strikeLimit: number }> = ({
           {/* Stack trace if available */}
           {error.stack && (
             <div className="mb-2">
-              <span className="text-xs text-zinc-500 block mb-1">Stack:</span>
-              <pre className="text-xs text-zinc-500 font-mono bg-zinc-900/50 p-2 rounded overflow-x-auto max-h-32">
+              <span className="text-xs text-text-tertiary block mb-1">Stack:</span>
+              <pre className="text-xs text-text-tertiary font-mono bg-deep p-2 rounded overflow-x-auto max-h-32">
                 {error.stack}
               </pre>
             </div>
           )}
 
           {/* Timestamp and count */}
-          <div className="flex items-center justify-between text-xs text-zinc-600 mt-2">
+          <div className="flex items-center justify-between text-xs text-text-disabled mt-2">
             <div className="flex items-center gap-1">
               <Clock className="w-3 h-3" />
               <span>{new Date(error.timestamp).toLocaleString()}</span>
@@ -207,7 +207,7 @@ const ErrorStats: React.FC<{ errors: ErrorRecord[]; strikeLimit: number }> = ({
           {warningCount} warning
         </span>
       )}
-      <span className="text-zinc-500">{totalOccurrences} total errors</span>
+      <span className="text-text-tertiary">{totalOccurrences} total errors</span>
     </div>
   );
 };
@@ -215,9 +215,9 @@ const ErrorStats: React.FC<{ errors: ErrorRecord[]; strikeLimit: number }> = ({
 // Empty state
 const EmptyState: React.FC = () => (
   <div className="flex flex-col items-center justify-center h-full text-center p-4">
-    <AlertOctagon className="w-12 h-12 text-zinc-600 mb-3" />
-    <p className="text-sm text-zinc-400">No errors tracked</p>
-    <p className="text-xs text-zinc-500 mt-1">
+    <AlertOctagon className="w-12 h-12 text-text-disabled mb-3" />
+    <p className="text-sm text-text-secondary">No errors tracked</p>
+    <p className="text-xs text-text-tertiary mt-1">
       Errors will appear here when tools fail
     </p>
   </div>
@@ -236,15 +236,15 @@ export const ErrorsPanel: React.FC<ErrorsPanelProps> = ({
   });
 
   return (
-    <div className="w-80 border-l border-zinc-800 bg-zinc-900/50 flex flex-col">
+    <div className="w-80 border-l border-border-default bg-deep flex flex-col">
       {/* Header */}
-      <div className="p-3 border-b border-zinc-800">
+      <div className="p-3 border-b border-border-default">
         <div className="flex items-center gap-2 mb-1">
           <AlertOctagon className="w-4 h-4 text-red-400" />
-          <span className="text-sm font-medium text-zinc-100">
+          <span className="text-sm font-medium text-text-primary">
             Error Tracker
           </span>
-          <span className="ml-auto text-xs text-zinc-500">
+          <span className="ml-auto text-xs text-text-tertiary">
             3-Strike Rule
           </span>
         </div>
@@ -270,10 +270,10 @@ export const ErrorsPanel: React.FC<ErrorsPanelProps> = ({
 
       {/* Legend */}
       {errors.length > 0 && (
-        <div className="p-2 border-t border-zinc-800">
-          <div className="flex items-center justify-center gap-4 text-xs text-zinc-500">
+        <div className="p-2 border-t border-border-default">
+          <div className="flex items-center justify-center gap-4 text-xs text-text-tertiary">
             <div className="flex items-center gap-1">
-              <div className="w-2 h-2 rounded-full bg-zinc-700" />
+              <div className="w-2 h-2 rounded-full bg-active" />
               <span>Available</span>
             </div>
             <div className="flex items-center gap-1">

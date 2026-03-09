@@ -64,7 +64,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
   return (
     <div className="h-full flex flex-col">
       {/* Header card - AgentsView style */}
-      <div className="p-3 border-b border-zinc-700/50">
+      <div className="p-3 border-b border-border-default">
         <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl p-3 border border-white/[0.04]">
           <button
             onClick={() => setExpanded(!expanded)}
@@ -72,15 +72,15 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
           >
             <div className="flex items-center gap-2 flex-1 min-w-0">
               <span className="text-sm">{'\u{1F4AC}'}</span>
-              <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+              <span className="text-xs font-medium text-text-secondary uppercase tracking-wide">
                 会话列表
               </span>
               {stats.total > 0 && (
-                <span className="text-xs text-zinc-500">({stats.total})</span>
+                <span className="text-xs text-text-tertiary">({stats.total})</span>
               )}
             </div>
             <svg
-              className={`w-3.5 h-3.5 text-zinc-500 flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
+              className={`w-3.5 h-3.5 text-text-tertiary flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`}
               fill="none" stroke="currentColor" viewBox="0 0 24 24"
             >
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -91,7 +91,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
             <div className="mt-3 space-y-3">
               {/* Stats summary - agent-style pills */}
               <div className="flex items-center gap-2">
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800/60 text-zinc-400">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-elevated/60 text-text-secondary">
                   {'\u2705'} {stats.completed} 已完成
                 </span>
                 {stats.recording > 0 && (
@@ -123,7 +123,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                         className={`text-[10px] px-2 py-1 rounded-lg transition-colors ${
                           filterStatus === status
                             ? 'bg-blue-500/20 text-blue-400'
-                            : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+                            : 'text-text-tertiary hover:text-text-secondary hover:bg-surface'
                         }`}
                       >
                         {labels[status]}
@@ -133,7 +133,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                 </div>
 
                 <div className="ml-auto flex items-center gap-1">
-                  <span className="text-[10px] text-zinc-600 mr-1">排序:</span>
+                  <span className="text-[10px] text-text-disabled mr-1">排序:</span>
                   {(['time', 'turns', 'cost'] as const).map((sort) => {
                     const labels: Record<string, string> = {
                       time: '时间',
@@ -147,7 +147,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
                         className={`text-[10px] px-2 py-1 rounded-lg transition-colors ${
                           sortBy === sort
                             ? 'bg-amber-500/20 text-amber-400'
-                            : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+                            : 'text-text-tertiary hover:text-text-secondary hover:bg-surface'
                         }`}
                       >
                         {labels[sort]}
@@ -173,17 +173,17 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
-            <span className="text-sm text-zinc-500">加载会话中...</span>
+            <span className="text-sm text-text-tertiary">加载会话中...</span>
           </div>
         )}
 
         {!sessionListLoading && filtered.length === 0 && (
           <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] flex flex-col items-center justify-center py-16 gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-zinc-800/60 border border-white/[0.04] flex items-center justify-center text-xl">
+            <div className="w-12 h-12 rounded-2xl bg-elevated/60 border border-white/[0.04] flex items-center justify-center text-xl">
               {'\u{1F4AD}'}
             </div>
-            <p className="text-sm text-zinc-500">暂无会话数据</p>
-            <p className="text-xs text-zinc-600">开始一次对话后，会话将显示在这里</p>
+            <p className="text-sm text-text-tertiary">暂无会话数据</p>
+            <p className="text-xs text-text-disabled">开始一次对话后，会话将显示在这里</p>
           </div>
         )}
 
@@ -197,7 +197,7 @@ export const SessionListView: React.FC<SessionListViewProps> = ({ onSelectSessio
 
         {!sessionListLoading && filtered.length > 0 && (
           <div className="text-center py-3">
-            <span className="text-[10px] text-zinc-600 px-3 py-1 rounded-full bg-zinc-800/30">
+            <span className="text-[10px] text-text-disabled px-3 py-1 rounded-full bg-surface">
               共 {filtered.length} 个会话
             </span>
           </div>

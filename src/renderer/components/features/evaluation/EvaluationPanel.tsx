@@ -83,7 +83,7 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
   if (!started) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-        <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-8 text-center max-w-md">
+        <div className="bg-deep rounded-xl border border-border-default p-8 text-center max-w-md">
           <div className="text-6xl mb-4">🧀</div>
           <h2 className="text-xl font-semibold text-gray-200 mb-2">瑞士奶酪评测</h2>
           <p className="text-sm text-gray-400 mb-6">
@@ -105,7 +105,7 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
             </button>
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-zinc-700 text-gray-300 rounded-lg hover:bg-zinc-600 transition"
+              className="px-4 py-2 bg-active text-gray-300 rounded-lg hover:bg-active transition"
             >
               取消
             </button>
@@ -118,7 +118,7 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
   if (loading) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-        <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-8 text-center">
+        <div className="bg-deep rounded-xl border border-border-default p-8 text-center">
           <div className="animate-spin w-8 h-8 border-2 border-amber-500 border-t-transparent rounded-full mx-auto mb-4" />
           <div className="text-gray-300">正在进行瑞士奶酪评测...</div>
           <div className="text-xs text-gray-500 mt-2">4 位 AI 评审员正在分析</div>
@@ -130,7 +130,7 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
   if (error) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-        <div className="bg-zinc-900 rounded-xl border border-zinc-700 p-8 text-center max-w-md">
+        <div className="bg-deep rounded-xl border border-border-default p-8 text-center max-w-md">
           <div className="text-red-400 text-4xl mb-4">⚠</div>
           <div className="text-gray-300 mb-2">评测失败</div>
           <div className="text-xs text-gray-500 mb-4">{error}</div>
@@ -143,7 +143,7 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
             </button>
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-zinc-700 text-gray-300 rounded-lg hover:bg-zinc-600 transition"
+              className="px-4 py-2 bg-active text-gray-300 rounded-lg hover:bg-active transition"
             >
               关闭
             </button>
@@ -162,13 +162,13 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-zinc-900 rounded-xl border border-zinc-700 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-zinc-700">
+      <div className="bg-deep rounded-xl border border-border-default w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-border-default">
           <h2 className="text-lg font-semibold text-gray-200">会话评测</h2>
           <div className="flex items-center gap-2">
             <div className="relative group">
               <button
-                className="px-3 py-1.5 text-sm bg-zinc-800 text-gray-300 rounded-lg hover:bg-zinc-700 transition flex items-center gap-1"
+                className="px-3 py-1.5 text-sm bg-elevated text-gray-300 rounded-lg hover:bg-active transition flex items-center gap-1"
                 disabled={exporting}
               >
                 {exporting ? '导出中...' : '导出'}
@@ -176,16 +176,16 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
-              <div className="absolute right-0 top-full mt-1 hidden group-hover:block bg-zinc-800 rounded-lg shadow-lg border border-zinc-700 overflow-hidden z-10">
+              <div className="absolute right-0 top-full mt-1 hidden group-hover:block bg-elevated rounded-lg shadow-lg border border-border-default overflow-hidden z-10">
                 <button
                   onClick={() => handleExport('markdown')}
-                  className="block w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-zinc-700"
+                  className="block w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-active"
                 >
                   Markdown
                 </button>
                 <button
                   onClick={() => handleExport('json')}
-                  className="block w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-zinc-700"
+                  className="block w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-active"
                 >
                   JSON
                 </button>
@@ -193,7 +193,7 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
             </div>
             <button
               onClick={onClose}
-              className="p-1.5 text-gray-400 hover:text-gray-200 hover:bg-zinc-800 rounded-lg transition"
+              className="p-1.5 text-gray-400 hover:text-gray-200 hover:bg-hover rounded-lg transition"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -204,7 +204,7 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 bg-zinc-800/50 rounded-lg p-4 flex items-center gap-6">
+            <div className="flex-1 bg-surface rounded-lg p-4 flex items-center gap-6">
               <div className="text-center">
                 <div className="text-5xl font-bold text-white mb-1">
                   {result.overallScore}
@@ -266,7 +266,7 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
             </div>
           )}
 
-          <div className="bg-zinc-800/30 rounded-lg p-4">
+          <div className="bg-surface rounded-lg p-4">
             <h3 className="text-sm font-medium text-gray-400 mb-3">统计摘要</h3>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
               <div>

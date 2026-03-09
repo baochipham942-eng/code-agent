@@ -239,7 +239,7 @@ export const TestCaseManager: React.FC = () => {
       case 'easy': return 'text-emerald-400 bg-emerald-500/10';
       case 'medium': return 'text-amber-400 bg-amber-500/10';
       case 'hard': return 'text-red-400 bg-red-500/10';
-      default: return 'text-zinc-400 bg-zinc-500/10';
+      default: return 'text-text-secondary bg-active/10';
     }
   };
 
@@ -253,7 +253,7 @@ export const TestCaseManager: React.FC = () => {
     <div className="p-4 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-zinc-200">测试集管理</h3>
+        <h3 className="text-sm font-medium text-text-primary">测试集管理</h3>
         <div className="flex items-center gap-2">
           {selectionMode ? (
             <>
@@ -262,13 +262,13 @@ export const TestCaseManager: React.FC = () => {
               </span>
               <button
                 onClick={selectAll}
-                className="px-2 py-1 text-[10px] text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded transition"
+                className="px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary border border-border-default rounded transition"
               >
                 全选
               </button>
               <button
                 onClick={deselectAll}
-                className="px-2 py-1 text-[10px] text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded transition"
+                className="px-2 py-1 text-[10px] text-text-secondary hover:text-text-primary border border-border-default rounded transition"
               >
                 取消全选
               </button>
@@ -286,7 +286,7 @@ export const TestCaseManager: React.FC = () => {
               </button>
               <button
                 onClick={exitSelectionMode}
-                className="px-2 py-1 text-[10px] text-zinc-500 hover:text-zinc-300 transition"
+                className="px-2 py-1 text-[10px] text-text-tertiary hover:text-text-secondary transition"
               >
                 取消
               </button>
@@ -309,7 +309,7 @@ export const TestCaseManager: React.FC = () => {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          <span className="text-sm text-zinc-500">加载测试用例...</span>
+          <span className="text-sm text-text-tertiary">加载测试用例...</span>
         </div>
       )}
 
@@ -322,9 +322,9 @@ export const TestCaseManager: React.FC = () => {
 
       {/* Save Subset Dialog */}
       {showSaveDialog && (
-        <div className="bg-zinc-800/80 border border-indigo-500/30 rounded-lg p-4 space-y-3">
+        <div className="bg-elevated border border-indigo-500/30 rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-zinc-200">保存测试子集</span>
+            <span className="text-xs font-medium text-text-primary">保存测试子集</span>
             <span className="text-[10px] text-indigo-400">{selectedCaseIds.size} 个用例已选</span>
           </div>
           <div className="space-y-2">
@@ -333,7 +333,7 @@ export const TestCaseManager: React.FC = () => {
               value={subsetName}
               onChange={(e) => setSubsetName(e.target.value)}
               placeholder="子集名称（如 smoke-6）"
-              className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full bg-deep border border-border-default rounded px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-indigo-500"
               autoFocus
             />
             <input
@@ -341,13 +341,13 @@ export const TestCaseManager: React.FC = () => {
               value={subsetDescription}
               onChange={(e) => setSubsetDescription(e.target.value)}
               placeholder="描述（可选）"
-              className="w-full bg-zinc-900 border border-zinc-700 rounded px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full bg-deep border border-border-default rounded px-3 py-1.5 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
           <div className="flex justify-end gap-2">
             <button
               onClick={() => setShowSaveDialog(false)}
-              className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition"
+              className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition"
             >
               取消
             </button>
@@ -366,21 +366,21 @@ export const TestCaseManager: React.FC = () => {
         <>
           {/* Stats cards */}
           <div className="grid grid-cols-4 gap-3">
-            <div className="bg-zinc-800/40 rounded-lg p-3 border border-zinc-700/30">
+            <div className="bg-surface rounded-lg p-3 border border-border-subtle">
               <div className="text-lg font-bold text-blue-400">{totalCases}</div>
-              <div className="text-[10px] text-zinc-500 mt-0.5">总用例数</div>
+              <div className="text-[10px] text-text-tertiary mt-0.5">总用例数</div>
             </div>
-            <div className="bg-zinc-800/40 rounded-lg p-3 border border-zinc-700/30">
+            <div className="bg-surface rounded-lg p-3 border border-border-subtle">
               <div className="text-lg font-bold text-amber-400">{suites.length}</div>
-              <div className="text-[10px] text-zinc-500 mt-0.5">测试套件</div>
+              <div className="text-[10px] text-text-tertiary mt-0.5">测试套件</div>
             </div>
-            <div className="bg-zinc-800/40 rounded-lg p-3 border border-zinc-700/30">
+            <div className="bg-surface rounded-lg p-3 border border-border-subtle">
               <div className="text-lg font-bold text-emerald-400">{difficultyStats.easy}</div>
-              <div className="text-[10px] text-zinc-500 mt-0.5">Easy</div>
+              <div className="text-[10px] text-text-tertiary mt-0.5">Easy</div>
             </div>
-            <div className="bg-zinc-800/40 rounded-lg p-3 border border-zinc-700/30">
+            <div className="bg-surface rounded-lg p-3 border border-border-subtle">
               <div className="text-lg font-bold text-red-400">{difficultyStats.hard}</div>
-              <div className="text-[10px] text-zinc-500 mt-0.5">Hard</div>
+              <div className="text-[10px] text-text-tertiary mt-0.5">Hard</div>
             </div>
           </div>
 
@@ -388,7 +388,7 @@ export const TestCaseManager: React.FC = () => {
           {typeStats.length > 0 && (
             <div className="flex items-center gap-1.5 flex-wrap">
               {typeStats.map(([type, count]) => (
-                <span key={type} className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800/60 text-zinc-400">
+                <span key={type} className="text-[10px] px-2 py-0.5 rounded-full bg-elevated/60 text-text-secondary">
                   {type}: {count}
                 </span>
               ))}
@@ -396,13 +396,13 @@ export const TestCaseManager: React.FC = () => {
           )}
 
           {/* Tab switcher */}
-          <div className="flex gap-1 border-b border-zinc-700/30 pb-0">
+          <div className="flex gap-1 border-b border-border-subtle pb-0">
             <button
               onClick={() => setActiveTab('suites')}
               className={`px-3 py-1.5 text-xs rounded-t transition border-b-2 ${
                 activeTab === 'suites'
                   ? 'text-blue-400 border-blue-400'
-                  : 'text-zinc-500 hover:text-zinc-300 border-transparent'
+                  : 'text-text-tertiary hover:text-text-secondary border-transparent'
               }`}
             >
               测试套件 ({suites.length})
@@ -412,7 +412,7 @@ export const TestCaseManager: React.FC = () => {
               className={`px-3 py-1.5 text-xs rounded-t transition border-b-2 ${
                 activeTab === 'subsets'
                   ? 'text-indigo-400 border-indigo-400'
-                  : 'text-zinc-500 hover:text-zinc-300 border-transparent'
+                  : 'text-text-tertiary hover:text-text-secondary border-transparent'
               }`}
             >
               子集 ({subsets.length})
@@ -428,7 +428,7 @@ export const TestCaseManager: React.FC = () => {
                   className={`px-3 py-1.5 text-xs rounded transition ${
                     activeTag === 'all'
                       ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                      : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
+                      : 'text-text-tertiary hover:text-text-secondary border border-transparent'
                   }`}
                 >
                   全部 ({totalCases})
@@ -440,7 +440,7 @@ export const TestCaseManager: React.FC = () => {
                     className={`px-3 py-1.5 text-xs rounded transition ${
                       activeTag === tag
                         ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                        : 'text-zinc-500 hover:text-zinc-300 border border-transparent'
+                        : 'text-text-tertiary hover:text-text-secondary border border-transparent'
                     }`}
                   >
                     {tag}
@@ -453,27 +453,27 @@ export const TestCaseManager: React.FC = () => {
                 {filteredSuites.map(suite => {
                   const isExpanded = expandedSuites.has(suite.name);
                   return (
-                    <div key={suite.name} className="bg-zinc-800/40 rounded-lg border border-zinc-700/30 overflow-hidden">
+                    <div key={suite.name} className="bg-surface rounded-lg border border-border-subtle overflow-hidden">
                       <button
                         onClick={() => toggleSuite(suite.name)}
-                        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-zinc-800/60 transition"
+                        className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-hover/60 transition"
                       >
                         <svg
-                          className={`w-3 h-3 text-zinc-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                          className={`w-3 h-3 text-text-tertiary transition-transform ${isExpanded ? 'rotate-90' : ''}`}
                           fill="none" stroke="currentColor" viewBox="0 0 24 24"
                         >
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
-                        <span className="text-xs text-zinc-300 font-medium flex-1 truncate">
+                        <span className="text-xs text-text-secondary font-medium flex-1 truncate">
                           {suite.name}
                         </span>
-                        <span className="text-[10px] text-zinc-500">
+                        <span className="text-[10px] text-text-tertiary">
                           {suite.cases.length} cases
                         </span>
                         {suite.tags && suite.tags.length > 0 && (
                           <div className="flex gap-1">
                             {suite.tags.slice(0, 3).map(tag => (
-                              <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded-full bg-zinc-700/50 text-zinc-400">
+                              <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded-full bg-hover text-text-secondary">
                                 {tag}
                               </span>
                             ))}
@@ -482,9 +482,9 @@ export const TestCaseManager: React.FC = () => {
                       </button>
 
                       {isExpanded && (
-                        <div className="border-t border-zinc-700/30">
+                        <div className="border-t border-border-subtle">
                           {/* Table header */}
-                          <div className={`grid gap-2 px-3 py-1.5 text-[10px] text-zinc-500 uppercase bg-zinc-900/30 ${
+                          <div className={`grid gap-2 px-3 py-1.5 text-[10px] text-text-tertiary uppercase bg-deep/30 ${
                             selectionMode
                               ? 'grid-cols-[24px_1fr_80px_60px_60px]'
                               : 'grid-cols-[1fr_80px_60px_60px]'
@@ -501,10 +501,10 @@ export const TestCaseManager: React.FC = () => {
                             <div
                               key={tc.id}
                               onClick={selectionMode ? () => toggleCaseSelection(tc.id) : undefined}
-                              className={`grid gap-2 px-3 py-1.5 text-[11px] border-t border-zinc-700/10 transition ${
+                              className={`grid gap-2 px-3 py-1.5 text-[11px] border-t border-border-default/10 transition ${
                                 selectionMode
                                   ? 'grid-cols-[24px_1fr_80px_60px_60px] cursor-pointer hover:bg-indigo-500/5'
-                                  : 'grid-cols-[1fr_80px_60px_60px] hover:bg-zinc-800/30'
+                                  : 'grid-cols-[1fr_80px_60px_60px] hover:bg-surface'
                               } ${selectedCaseIds.has(tc.id) ? 'bg-indigo-500/10' : ''}`}
                             >
                               {selectionMode && (
@@ -514,19 +514,19 @@ export const TestCaseManager: React.FC = () => {
                                     checked={selectedCaseIds.has(tc.id)}
                                     onChange={() => toggleCaseSelection(tc.id)}
                                     onClick={(e) => e.stopPropagation()}
-                                    className="w-3 h-3 rounded border-zinc-600 text-indigo-500 bg-zinc-800 focus:ring-0 focus:ring-offset-0"
+                                    className="w-3 h-3 rounded border-border-strong text-indigo-500 bg-elevated focus:ring-0 focus:ring-offset-0"
                                   />
                                 </div>
                               )}
                               <div className="flex flex-col min-w-0">
-                                <span className="text-zinc-300 font-mono truncate">{tc.id}</span>
-                                <span className="text-[10px] text-zinc-500 truncate">{tc.description}</span>
+                                <span className="text-text-secondary font-mono truncate">{tc.id}</span>
+                                <span className="text-[10px] text-text-tertiary truncate">{tc.description}</span>
                               </div>
-                              <span className="text-zinc-400">{tc.type}</span>
+                              <span className="text-text-secondary">{tc.type}</span>
                               <span className={`text-[10px] px-1.5 py-0.5 rounded-full w-fit ${getDifficultyColor(tc.difficulty)}`}>
                                 {tc.difficulty || '-'}
                               </span>
-                              <span className={`text-[10px] ${tc.skip ? 'text-zinc-600' : 'text-emerald-400'}`}>
+                              <span className={`text-[10px] ${tc.skip ? 'text-text-disabled' : 'text-emerald-400'}`}>
                                 {tc.skip ? 'skip' : 'active'}
                               </span>
                             </div>
@@ -541,7 +541,7 @@ export const TestCaseManager: React.FC = () => {
               {/* Show filtered count */}
               {activeTag !== 'all' && (
                 <div className="text-center py-2">
-                  <span className="text-[10px] text-zinc-600 px-3 py-1 rounded-full bg-zinc-800/30">
+                  <span className="text-[10px] text-text-disabled px-3 py-1 rounded-full bg-surface">
                     筛选: {filteredTotal} / {totalCases} 用例
                   </span>
                 </div>
@@ -549,7 +549,7 @@ export const TestCaseManager: React.FC = () => {
 
               {/* Empty state */}
               {suites.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-12 text-zinc-500">
+                <div className="flex flex-col items-center justify-center py-12 text-text-tertiary">
                   <p className="text-sm">未找到测试用例文件</p>
                   <p className="text-xs mt-1">请在 .claude/test-cases/ 目录下放置 YAML 测试用例</p>
                 </div>
@@ -565,11 +565,11 @@ export const TestCaseManager: React.FC = () => {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  <span className="text-xs text-zinc-500">加载子集...</span>
+                  <span className="text-xs text-text-tertiary">加载子集...</span>
                 </div>
               ) : subsets.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-zinc-500">
-                  <svg className="w-8 h-8 mb-2 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex flex-col items-center justify-center py-12 text-text-tertiary">
+                  <svg className="w-8 h-8 mb-2 text-text-disabled" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                       d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                   </svg>
@@ -578,7 +578,7 @@ export const TestCaseManager: React.FC = () => {
                 </div>
               ) : (
                 subsets.map(subset => (
-                  <div key={subset.fileName} className="bg-zinc-800/40 rounded-lg border border-zinc-700/30 overflow-hidden">
+                  <div key={subset.fileName} className="bg-surface rounded-lg border border-border-subtle overflow-hidden">
                     <div className="flex items-center gap-2 px-3 py-2.5">
                       <button
                         onClick={() => setExpandedSubset(expandedSubset === subset.fileName ? null : subset.fileName)}
@@ -591,12 +591,12 @@ export const TestCaseManager: React.FC = () => {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                         <span className="text-xs text-indigo-300 font-medium">{subset.name}</span>
-                        <span className="text-[10px] text-zinc-500">{subset.caseIds.length} cases</span>
+                        <span className="text-[10px] text-text-tertiary">{subset.caseIds.length} cases</span>
                       </button>
-                      <span className="text-[10px] text-zinc-600">{formatDate(subset.createdAt)}</span>
+                      <span className="text-[10px] text-text-disabled">{formatDate(subset.createdAt)}</span>
                       <button
                         onClick={() => handleDeleteSubset(subset.fileName)}
-                        className="text-zinc-600 hover:text-red-400 transition p-0.5"
+                        className="text-text-disabled hover:text-red-400 transition p-0.5"
                         title="删除子集"
                       >
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -607,13 +607,13 @@ export const TestCaseManager: React.FC = () => {
                     </div>
                     {subset.description && (
                       <div className="px-3 pb-2 -mt-1">
-                        <span className="text-[10px] text-zinc-500">{subset.description}</span>
+                        <span className="text-[10px] text-text-tertiary">{subset.description}</span>
                       </div>
                     )}
                     {expandedSubset === subset.fileName && (
-                      <div className="border-t border-zinc-700/30 px-3 py-2 space-y-1">
+                      <div className="border-t border-border-subtle px-3 py-2 space-y-1">
                         {subset.caseIds.map(id => (
-                          <div key={id} className="text-[11px] text-zinc-400 font-mono py-0.5 px-2 bg-zinc-900/30 rounded">
+                          <div key={id} className="text-[11px] text-text-secondary font-mono py-0.5 px-2 bg-deep/30 rounded">
                             {id}
                           </div>
                         ))}

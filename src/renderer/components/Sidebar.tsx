@@ -276,10 +276,10 @@ export const Sidebar: React.FC = () => {
         onMouseLeave={() => setHoveredSession(null)}
         className={`group relative flex items-center px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 ${
           isSelected && !multiSelectMode
-            ? 'bg-zinc-800/60'
+            ? 'bg-elevated/60'
             : isChecked
               ? 'bg-blue-500/10 border border-blue-500/20'
-              : 'hover:bg-zinc-800/40'
+              : 'hover:bg-surface'
         }`}
       >
         {/* 多选模式：Checkbox */}
@@ -288,7 +288,7 @@ export const Sidebar: React.FC = () => {
             {isChecked ? (
               <CheckSquare className="w-4 h-4 text-blue-400" />
             ) : (
-              <Square className="w-4 h-4 text-zinc-500" />
+              <Square className="w-4 h-4 text-text-tertiary" />
             )}
           </div>
         )}
@@ -310,13 +310,13 @@ export const Sidebar: React.FC = () => {
                 onBlur={handleRenameSubmit}
                 onKeyDown={handleRenameKeyDown}
                 onClick={(e) => e.stopPropagation()}
-                className="flex-1 text-sm bg-zinc-700/80 text-zinc-100 px-1.5 py-0.5 rounded border border-zinc-600 focus:border-blue-500 focus:outline-none"
+                className="flex-1 text-sm bg-active/80 text-text-primary px-1.5 py-0.5 rounded border border-border-strong focus:border-blue-500 focus:outline-none"
               />
             ) : (
               <span
                 onDoubleClick={(e) => handleDoubleClick(e, session)}
                 className={`text-sm truncate font-medium flex-1 ${
-                  isSelected ? 'text-zinc-100' : 'text-zinc-300'
+                  isSelected ? 'text-text-primary' : 'text-text-secondary'
                 }`}
               >
                 {session.title}
@@ -326,7 +326,7 @@ export const Sidebar: React.FC = () => {
             {/* 时间 + 操作按钮 */}
             {!isRenaming && (
               <>
-                <span className="text-xs text-zinc-500 shrink-0">
+                <span className="text-xs text-text-tertiary shrink-0">
                   {getRelativeTime(session.updatedAt)}
                 </span>
                 {hoveredSession === session.id && !multiSelectMode && (
@@ -361,9 +361,9 @@ export const Sidebar: React.FC = () => {
         <button
           onClick={handleNewChat}
           disabled={isLoading}
-          className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
         >
-          <span className="w-6 h-6 rounded-full bg-zinc-700 flex items-center justify-center">
+          <span className="w-6 h-6 rounded-full bg-active flex items-center justify-center">
             {isLoading ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : (
@@ -381,7 +381,7 @@ export const Sidebar: React.FC = () => {
               className={`p-1.5 transition-colors rounded-md ${
                 multiSelectMode
                   ? 'text-blue-400 bg-blue-500/10'
-                  : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+                  : 'text-text-tertiary hover:text-text-secondary hover:bg-surface'
               }`}
               title={multiSelectMode ? '退出多选' : '多选'}
             >
@@ -392,7 +392,7 @@ export const Sidebar: React.FC = () => {
           {/* Knowledge Base */}
           <button
             onClick={() => setShowCapturePanel(true)}
-            className="p-1.5 text-zinc-500 hover:text-cyan-400 transition-colors rounded-md hover:bg-zinc-800/50"
+            className="p-1.5 text-text-tertiary hover:text-cyan-400 transition-colors rounded-md hover:bg-surface"
             title="知识库"
           >
             <BookOpen className="w-3.5 h-3.5" />
@@ -400,7 +400,7 @@ export const Sidebar: React.FC = () => {
           {/* Filter Dropdown */}
           <button
             onClick={cycleFilter}
-            className="flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary transition-colors"
           >
             <span>{filterLabels[filter]}</span>
             <ChevronDown className="w-3.5 h-3.5" />
@@ -413,22 +413,22 @@ export const Sidebar: React.FC = () => {
         {isLoading && sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-primary-400" />
-            <span className="text-xs text-zinc-500">加载中...</span>
+            <span className="text-xs text-text-tertiary">加载中...</span>
           </div>
         ) : !hasAnySessions ? (
           <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-            <div className="w-12 h-12 rounded-2xl bg-zinc-800/50 flex items-center justify-center mb-3">
-              <MessageSquare className="w-6 h-6 text-zinc-500" />
+            <div className="w-12 h-12 rounded-2xl bg-surface flex items-center justify-center mb-3">
+              <MessageSquare className="w-6 h-6 text-text-tertiary" />
             </div>
-            <p className="text-sm text-zinc-400 mb-1">暂无对话</p>
-            <p className="text-xs text-zinc-500">开始新的对话</p>
+            <p className="text-sm text-text-secondary mb-1">暂无对话</p>
+            <p className="text-xs text-text-tertiary">开始新的对话</p>
           </div>
         ) : (
           <div className="py-2">
             {groupedSessions.map(({ group, label, sessions: groupSessions }) => (
               <div key={group} className="mb-2">
                 {/* 分组标题 - sticky header */}
-                <div className="sticky top-0 z-10 px-3 py-1.5 text-xs font-medium text-zinc-500 bg-zinc-900/80 backdrop-blur-sm">
+                <div className="sticky top-0 z-10 px-3 py-1.5 text-xs font-medium text-text-tertiary bg-deep backdrop-blur-sm">
                   {label}
                 </div>
                 {/* 分组内容 */}
@@ -443,14 +443,14 @@ export const Sidebar: React.FC = () => {
 
       {/* 多选模式底部操作栏 */}
       {multiSelectMode && selectedSessionIds.size > 0 && (
-        <div className="px-3 py-2 border-t border-zinc-800 flex items-center justify-between">
-          <span className="text-xs text-zinc-400">
+        <div className="px-3 py-2 border-t border-border-default flex items-center justify-between">
+          <span className="text-xs text-text-secondary">
             已选 {selectedSessionIds.size} 个
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={clearSelection}
-              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="text-xs text-text-tertiary hover:text-text-secondary transition-colors"
             >
               取消
             </button>
@@ -482,22 +482,22 @@ export const Sidebar: React.FC = () => {
                   className="w-7 h-7 rounded-full object-cover"
                 />
               ) : (
-                <User className="w-5 h-5 text-zinc-500" />
+                <User className="w-5 h-5 text-text-tertiary" />
               )}
-              <span className="flex-1 text-left text-sm font-medium text-zinc-400 truncate">
+              <span className="flex-1 text-left text-sm font-medium text-text-secondary truncate">
                 {user.nickname || user.email?.split('@')[0]}
               </span>
-              <ChevronDown className={`w-4 h-4 text-zinc-600 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-4 h-4 text-text-disabled transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
             </button>
             {/* User Dropdown Menu */}
             {showUserMenu && (
-              <div className="absolute bottom-full left-2 right-2 mb-2 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl overflow-hidden">
+              <div className="absolute bottom-full left-2 right-2 mb-2 bg-deep border border-border-default rounded-xl shadow-xl overflow-hidden">
                 <button
                   onClick={() => {
                     setShowSettings(true);
                     setShowUserMenu(false);
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-hover transition-colors"
                 >
                   <Settings className="w-4 h-4" />
                   设置
@@ -507,7 +507,7 @@ export const Sidebar: React.FC = () => {
                     signOut();
                     setShowUserMenu(false);
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-hover transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
                   退出登录
@@ -518,7 +518,7 @@ export const Sidebar: React.FC = () => {
         ) : (
           <button
             onClick={() => setShowAuthModal(true)}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.08] border border-white/[0.06] text-zinc-300 text-sm font-medium transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.08] border border-white/[0.06] text-text-secondary text-sm font-medium transition-colors"
           >
             <LogIn className="w-4 h-4" />
             登录

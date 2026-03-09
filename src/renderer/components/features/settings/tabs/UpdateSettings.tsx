@@ -91,18 +91,18 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-100 mb-2">{t.update?.title || '版本更新'}</h3>
-        <p className="text-xs text-zinc-400 mb-4">
+        <h3 className="text-sm font-medium text-text-primary mb-2">{t.update?.title || '版本更新'}</h3>
+        <p className="text-xs text-text-secondary mb-4">
           {t.update?.description || '检查并下载最新版本的 Code Agent'}
         </p>
       </div>
 
       {/* Current Version */}
-      <div className="bg-zinc-800/50 rounded-lg p-4">
+      <div className="bg-surface rounded-lg p-4">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm text-zinc-400">{t.update?.currentVersion || '当前版本'}</div>
-            <div className="text-lg font-semibold text-zinc-100">v{currentVersion}</div>
+            <div className="text-sm text-text-secondary">{t.update?.currentVersion || '当前版本'}</div>
+            <div className="text-lg font-semibold text-text-primary">v{currentVersion}</div>
           </div>
           <Button
             onClick={checkForUpdates}
@@ -126,16 +126,16 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
               <div className="flex items-start gap-3">
                 <Download className="w-5 h-5 text-indigo-400 mt-0.5" />
                 <div className="flex-1">
-                  <div className="text-sm font-medium text-zinc-100">
+                  <div className="text-sm font-medium text-text-primary">
                     {t.update?.newVersion || '发现新版本'}: v{updateInfo.latestVersion}
                   </div>
                   {updateInfo.fileSize && (
-                    <p className="text-xs text-zinc-500 mt-0.5">
+                    <p className="text-xs text-text-tertiary mt-0.5">
                       文件大小: {formatSize(updateInfo.fileSize)}
                     </p>
                   )}
                   {updateInfo.releaseNotes && (
-                    <div className="mt-2 p-2 bg-zinc-800/50 rounded text-xs text-zinc-400 max-h-24 overflow-y-auto whitespace-pre-line">
+                    <div className="mt-2 p-2 bg-surface rounded text-xs text-text-secondary max-h-24 overflow-y-auto whitespace-pre-line">
                       {updateInfo.releaseNotes}
                     </div>
                   )}
@@ -156,7 +156,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
           ) : (
             <div className="flex items-center gap-3">
               <CheckCircle className="w-5 h-5 text-green-400" />
-              <span className="text-sm text-zinc-100">{t.update?.upToDate || '已是最新版本'}</span>
+              <span className="text-sm text-text-primary">{t.update?.upToDate || '已是最新版本'}</span>
             </div>
           )}
         </div>

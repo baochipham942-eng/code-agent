@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { TestRunReport, TestReportListItem } from '@shared/ipc';
-import { EVALUATION_CHANNELS } from '@shared/ipc';
+import { EVALUATION_CHANNELS, IPC_CHANNELS } from '@shared/ipc';
 import { TestResultsSummary } from './TestResultsSummary';
 import { TestResultsChart } from './TestResultsChart';
 import { TestResultsTable } from './TestResultsTable';
@@ -9,9 +9,21 @@ import { ScoreHeatmap } from './ScoreHeatmap';
 import { FailureFunnel } from './FailureFunnel';
 import { CreateExperimentDialog } from '../CreateExperimentDialog';
 
+interface ExperimentSummary {
+  id: string;
+  name: string;
+  timestamp: number;
+  model: string | null;
+  summary_json: string;
+  source: string;
+  git_commit: string | null;
+}
+
 export const TestResultsDashboard: React.FC = () => {
   const [showCreateExperiment, setShowCreateExperiment] = useState(false);
   const [reports, setReports] = useState<TestReportListItem[]>([]);
+  const [experiments, setExperiments] = useState<ExperimentSummary[]>([]);
+  const [experimentsLoading, setExperimentsLoading] = useState(false);
   const [currentReport, setCurrentReport] = useState<TestRunReport | null>(null);
   // Cache of loaded full reports for heatmap (keyed by filePath)
   const reportCache = useRef<Map<string, TestRunReport>>(new Map());
@@ -64,6 +76,22 @@ export const TestResultsDashboard: React.FC = () => {
       }
     };
     loadReports();
+    loadExperiments();
+  }, []);
+
+  // Load experiments from DB
+  const loadExperiments = useCallback(async () => {
+    setExperimentsLoading(true);
+    try {
+      const list = await window.electronAPI?.invoke(
+        IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS, 50
+      ) as ExperimentSummary[] | undefined;
+      setExperiments(list || []);
+    } catch {
+      // best-effort
+    } finally {
+      setExperimentsLoading(false);
+    }
   }, []);
 
   const handleSelectReport = useCallback(async (filePath: string) => {
@@ -146,7 +174,7 @@ ${currentReport.results.map(r => {
 
   if (isLoading && !currentReport) {
     return (
-      <div className="flex items-center justify-center h-64 text-zinc-500 text-sm">
+      <div className="flex items-center justify-center h-64 text-text-tertiary text-sm">
         <div className="flex items-center gap-2">
           <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -169,30 +197,30 @@ ${currentReport.results.map(r => {
   if (!currentReport) {
     return (
       <div className="flex flex-col items-center justify-center h-80 text-center gap-4">
-        <div className="w-16 h-16 rounded-2xl bg-zinc-800 flex items-center justify-center">
-          <svg className="w-8 h-8 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="w-16 h-16 rounded-2xl bg-elevated flex items-center justify-center">
+          <svg className="w-8 h-8 text-text-tertiary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
               d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
         </div>
         <div>
-          <p className="text-zinc-300 font-medium text-sm">暂无评测报告</p>
-          <p className="text-zinc-500 text-xs mt-1">运行评测集后，报告会自动出现在这里</p>
+          <p className="text-text-secondary font-medium text-sm">暂无评测报告</p>
+          <p className="text-text-tertiary text-xs mt-1">运行评测集后，报告会自动出现在这里</p>
         </div>
-        <div className="bg-zinc-800/60 rounded-lg p-4 text-left max-w-sm w-full">
-          <p className="text-zinc-400 text-xs font-medium mb-2">如何生成评测报告</p>
-          <div className="space-y-1.5 text-xs text-zinc-500">
+        <div className="bg-elevated/60 rounded-lg p-4 text-left max-w-sm w-full">
+          <p className="text-text-secondary text-xs font-medium mb-2">如何生成评测报告</p>
+          <div className="space-y-1.5 text-xs text-text-tertiary">
             <div className="flex gap-2">
-              <span className="text-zinc-600">1.</span>
-              <span>在项目目录配置测试用例 <code className="bg-zinc-700 px-1 rounded text-zinc-300">.code-agent/test-cases/</code></span>
+              <span className="text-text-disabled">1.</span>
+              <span>在项目目录配置测试用例 <code className="bg-active px-1 rounded text-text-secondary">.code-agent/test-cases/</code></span>
             </div>
             <div className="flex gap-2">
-              <span className="text-zinc-600">2.</span>
-              <span>运行 <code className="bg-zinc-700 px-1 rounded text-zinc-300">npm run test:eval</code></span>
+              <span className="text-text-disabled">2.</span>
+              <span>运行 <code className="bg-active px-1 rounded text-text-secondary">npm run test:eval</code></span>
             </div>
             <div className="flex gap-2">
-              <span className="text-zinc-600">3.</span>
-              <span>报告保存到 <code className="bg-zinc-700 px-1 rounded text-zinc-300">.code-agent/test-results/</code></span>
+              <span className="text-text-disabled">3.</span>
+              <span>报告保存到 <code className="bg-active px-1 rounded text-text-secondary">.code-agent/test-results/</code></span>
             </div>
           </div>
         </div>
@@ -214,7 +242,7 @@ ${currentReport.results.map(r => {
         </button>
         <button
           onClick={handleExportReport}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 bg-zinc-800/60 hover:bg-zinc-700/60 rounded-lg border border-zinc-700/30 transition"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary bg-elevated/60 hover:bg-hover rounded-lg border border-border-subtle transition"
         >
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -231,15 +259,17 @@ ${currentReport.results.map(r => {
           try {
             await window.electronAPI?.invoke(EVALUATION_CHANNELS.CREATE_EXPERIMENT, config);
             // Refresh the experiment/report list after creating a new experiment
+            // Refresh both report list and experiment list
             setTimeout(async () => {
               try {
                 const refreshedReports = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS);
                 if (refreshedReports && Array.isArray(refreshedReports)) {
-                  window.dispatchEvent(new CustomEvent('experiment-created'));
+                  setReports(refreshedReports);
                 }
               } catch {
                 // best-effort refresh, ignore errors
               }
+              loadExperiments();
             }, 1000);
           } catch {
             // best-effort, ignore errors
@@ -255,11 +285,77 @@ ${currentReport.results.map(r => {
         isLoading={isLoading}
       />
 
-      {/* Summary + Failure Funnel side by side */}
-      <div className="grid grid-cols-[1fr_220px] gap-4 items-start">
-        <TestResultsSummary report={currentReport} />
-        <FailureFunnel cases={currentReport.results} />
-      </div>
+      {/* DB Experiments list */}
+      {(experiments.length > 0 || experimentsLoading) && (
+        <div className="bg-surface border border-border-default/20 rounded-lg overflow-hidden">
+          <div className="px-3 py-2 border-b border-border-default/20 flex items-center justify-between">
+            <span className="text-xs font-medium text-text-secondary">
+              实验记录
+              <span className="text-text-tertiary ml-1.5">{experiments.length} 条</span>
+            </span>
+          </div>
+          {experimentsLoading ? (
+            <div className="flex items-center justify-center py-4 text-text-tertiary text-xs gap-2">
+              <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              加载中...
+            </div>
+          ) : (
+            <div className="divide-y divide-border-default/20 max-h-60 overflow-y-auto">
+              {experiments.map((exp) => {
+                let summary: { total?: number; passed?: number; failed?: number } = {};
+                try { summary = JSON.parse(exp.summary_json || '{}'); } catch { /* ignore */ }
+                const passRate = summary.total && summary.total > 0
+                  ? Math.round(((summary.passed || 0) / summary.total) * 100)
+                  : null;
+                const scoreColor = passRate !== null
+                  ? passRate >= 80 ? 'text-emerald-400' : passRate >= 50 ? 'text-amber-400' : 'text-red-400'
+                  : 'text-text-tertiary';
+
+                return (
+                  <div key={exp.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-active/20 transition text-xs">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-text-primary font-medium truncate">{exp.name}</span>
+                        <span className="text-[10px] text-text-tertiary font-mono shrink-0">
+                          {exp.git_commit ? exp.git_commit.slice(0, 7) : ''}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-text-tertiary">
+                        <span>{exp.model || 'unknown'}</span>
+                        <span>·</span>
+                        <span>{new Date(exp.timestamp).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                        <span>·</span>
+                        <span>{exp.source}</span>
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      {passRate !== null ? (
+                        <span className={`text-sm font-bold tabular-nums ${scoreColor}`}>{passRate}%</span>
+                      ) : (
+                        <span className="text-text-disabled text-[10px]">--</span>
+                      )}
+                      {summary.total != null && (
+                        <div className="text-[10px] text-text-tertiary mt-0.5">
+                          {summary.passed || 0}/{summary.total} 通过
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Summary stats */}
+      <TestResultsSummary report={currentReport} />
+
+      {/* Failure Funnel - full width for proper flow diagram display */}
+      <FailureFunnel cases={currentReport.results} />
 
       <TestResultsChart report={currentReport} />
       <TestResultsTable results={currentReport.results} />

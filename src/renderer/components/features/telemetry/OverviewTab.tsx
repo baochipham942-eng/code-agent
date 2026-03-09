@@ -39,13 +39,13 @@ const StatCard: React.FC<{
   label: string;
   value: string | number;
   iconColor?: string;
-}> = ({ icon: Icon, label, value, iconColor = 'text-zinc-400' }) => (
-  <div className="p-3 bg-zinc-800/50 rounded-lg border border-zinc-700/30">
+}> = ({ icon: Icon, label, value, iconColor = 'text-text-secondary' }) => (
+  <div className="p-3 bg-surface rounded-lg border border-border-subtle">
     <div className="flex items-center gap-2 mb-1">
       <Icon className={`w-4 h-4 ${iconColor}`} />
-      <span className="text-[10px] text-zinc-500 uppercase tracking-wider">{label}</span>
+      <span className="text-[10px] text-text-tertiary uppercase tracking-wider">{label}</span>
     </div>
-    <p className="text-lg font-semibold text-zinc-200">{value}</p>
+    <p className="text-lg font-semibold text-text-primary">{value}</p>
   </div>
 );
 
@@ -68,21 +68,21 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ session, toolStats, in
 
       {/* Intent Distribution */}
       {intentDistribution.length > 0 && (
-        <div className="p-3 bg-zinc-800/30 rounded-lg border border-zinc-700/30">
-          <h4 className="text-xs font-medium text-zinc-400 mb-2">意图分布</h4>
+        <div className="p-3 bg-surface rounded-lg border border-border-subtle">
+          <h4 className="text-xs font-medium text-text-secondary mb-2">意图分布</h4>
           <div className="space-y-1.5">
             {intentDistribution.map((item) => (
               <div key={item.intent} className="flex items-center gap-2">
-                <span className="text-[10px] text-zinc-400 w-16 truncate">
+                <span className="text-[10px] text-text-secondary w-16 truncate">
                   {INTENT_LABELS[item.intent] ?? item.intent}
                 </span>
-                <div className="flex-1 h-3 bg-zinc-900/50 rounded-full overflow-hidden">
+                <div className="flex-1 h-3 bg-deep rounded-full overflow-hidden">
                   <div
                     className="h-full bg-blue-500/40 rounded-full"
                     style={{ width: `${item.percentage * 100}%` }}
                   />
                 </div>
-                <span className="text-[10px] text-zinc-500 w-6 text-right">{item.count}</span>
+                <span className="text-[10px] text-text-tertiary w-6 text-right">{item.count}</span>
               </div>
             ))}
           </div>
@@ -91,13 +91,13 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ session, toolStats, in
 
       {/* Tool Success Rate */}
       {toolStats.length > 0 && (
-        <div className="p-3 bg-zinc-800/30 rounded-lg border border-zinc-700/30">
-          <h4 className="text-xs font-medium text-zinc-400 mb-2">工具成功率</h4>
+        <div className="p-3 bg-surface rounded-lg border border-border-subtle">
+          <h4 className="text-xs font-medium text-text-secondary mb-2">工具成功率</h4>
           <div className="space-y-1.5">
             {toolStats.slice(0, 8).map((stat) => (
               <div key={stat.name} className="flex items-center gap-2">
-                <span className="text-[10px] font-mono text-zinc-400 w-20 truncate">{stat.name}</span>
-                <div className="flex-1 h-3 bg-zinc-900/50 rounded-full overflow-hidden">
+                <span className="text-[10px] font-mono text-text-secondary w-20 truncate">{stat.name}</span>
+                <div className="flex-1 h-3 bg-deep rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full ${
                       stat.successRate >= 0.8 ? 'bg-green-500/40' : stat.successRate >= 0.5 ? 'bg-amber-500/40' : 'bg-red-500/40'
@@ -105,7 +105,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ session, toolStats, in
                     style={{ width: `${stat.successRate * 100}%` }}
                   />
                 </div>
-                <span className="text-[10px] text-zinc-500 w-8 text-right">
+                <span className="text-[10px] text-text-tertiary w-8 text-right">
                   {(stat.successRate * 100).toFixed(0)}%
                 </span>
               </div>

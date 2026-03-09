@@ -73,9 +73,9 @@ export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId, onEnter
           sessionInfo?.title &&
           !sessionInfo.title.startsWith(firstTurn.userPrompt.substring(0, 60));
         return shouldShowUserPrompt ? (
-          <div className="bg-zinc-800/30 rounded-lg p-3 border border-zinc-700/20">
-            <div className="text-[10px] text-zinc-500 mb-1">USER PROMPT</div>
-            <div className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto">
+          <div className="bg-surface rounded-lg p-3 border border-border-default/20">
+            <div className="text-[10px] text-text-tertiary mb-1">USER PROMPT</div>
+            <div className="text-sm text-text-primary leading-relaxed whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto">
               {firstTurn.userPrompt}
             </div>
           </div>
@@ -89,15 +89,15 @@ export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId, onEnter
         onToggle={systemPromptHash ? loadSystemPrompt : undefined}
       >
         {!systemPromptHash ? (
-          <div className="text-xs text-zinc-600 py-2">此会话录制时未记录系统提示词（仅新会话支持）</div>
+          <div className="text-xs text-text-disabled py-2">此会话录制时未记录系统提示词（仅新会话支持）</div>
         ) : systemPromptLoading ? (
-          <div className="text-xs text-zinc-500 py-2">加载中...</div>
+          <div className="text-xs text-text-tertiary py-2">加载中...</div>
         ) : systemPrompt ? (
-          <pre className="text-[11px] text-zinc-400 whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto font-mono leading-relaxed bg-zinc-900/50 rounded p-3">
+          <pre className="text-[11px] text-text-secondary whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto font-mono leading-relaxed bg-deep rounded p-3">
             {systemPrompt}
           </pre>
         ) : (
-          <div className="text-xs text-zinc-600 py-2">展开以加载系统提示词</div>
+          <div className="text-xs text-text-disabled py-2">展开以加载系统提示词</div>
         )}
       </CollapsibleSection>
 
@@ -158,7 +158,7 @@ export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId, onEnter
 
       {/* AI Summary */}
       {evaluation?.aiSummary && (
-        <div className="text-xs text-zinc-500 bg-zinc-800/20 rounded-lg p-3 italic">
+        <div className="text-xs text-text-tertiary bg-elevated/20 rounded-lg p-3 italic">
           {evaluation.aiSummary}
         </div>
       )}
@@ -232,15 +232,15 @@ const BaselineComparisonBar: React.FC<{ comparison: BaselineComparison }> = ({ c
   const { delta, baselineScore, regressions, improvements } = comparison;
   const hasChanges = regressions.length > 0 || improvements.length > 0;
 
-  const deltaColor = delta > 0 ? 'text-green-400' : delta < 0 ? 'text-red-400' : 'text-zinc-400';
-  const deltaBg = delta > 0 ? 'bg-green-500/10 border-green-500/20' : delta < 0 ? 'bg-red-500/10 border-red-500/20' : 'bg-zinc-800/30 border-zinc-700/20';
+  const deltaColor = delta > 0 ? 'text-green-400' : delta < 0 ? 'text-red-400' : 'text-text-secondary';
+  const deltaBg = delta > 0 ? 'bg-green-500/10 border-green-500/20' : delta < 0 ? 'bg-red-500/10 border-red-500/20' : 'bg-surface border-border-default/20';
 
   return (
     <div className={`rounded-lg p-3 border ${deltaBg}`}>
       <div className="flex items-center justify-between mb-1.5">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">vs 基线</span>
-          <span className="text-[11px] text-zinc-400">
+          <span className="text-[10px] text-text-tertiary uppercase tracking-wider font-medium">vs 基线</span>
+          <span className="text-[11px] text-text-secondary">
             (近 5 次均值: {baselineScore})
           </span>
         </div>

@@ -63,10 +63,10 @@ const BindingTag: React.FC<BindingTagProps> = ({ binding }) => {
   };
 
   return (
-    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-zinc-700/50 text-zinc-400">
+    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-hover text-text-secondary">
       {getLabel()}
       {binding.priority !== undefined && binding.priority !== 0 && (
-        <span className="ml-1 text-zinc-500">({binding.priority})</span>
+        <span className="ml-1 text-text-tertiary">({binding.priority})</span>
       )}
     </span>
   );
@@ -92,19 +92,19 @@ const AgentCard: React.FC<AgentCardProps> = ({
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className={`bg-zinc-800/50 rounded-lg border ${
-      isDefault ? 'border-amber-500/50' : 'border-zinc-700'
+    <div className={`bg-surface rounded-lg border ${
+      isDefault ? 'border-amber-500/50' : 'border-border-default'
     } overflow-hidden`}>
       {/* Header */}
       <div className="p-4">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <Bot className={`w-5 h-5 shrink-0 ${
-              agent.enabled !== false ? 'text-emerald-400' : 'text-zinc-500'
+              agent.enabled !== false ? 'text-emerald-400' : 'text-text-tertiary'
             }`} />
             <div>
               <div className="flex items-center gap-2">
-                <h4 className="text-sm font-medium text-zinc-100">{agent.name}</h4>
+                <h4 className="text-sm font-medium text-text-primary">{agent.name}</h4>
                 {isDefault && (
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs bg-amber-500/20 text-amber-400">
                     <Star className="w-3 h-3" />
@@ -112,12 +112,12 @@ const AgentCard: React.FC<AgentCardProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-xs text-zinc-400 mt-0.5">{agent.description}</p>
+              <p className="text-xs text-text-secondary mt-0.5">{agent.description}</p>
             </div>
           </div>
           <button
             onClick={() => onToggleEnabled(agent.id, agent.enabled === false)}
-            className="text-zinc-400 hover:text-zinc-200"
+            className="text-text-secondary hover:text-text-primary"
           >
             {agent.enabled !== false ? (
               <ToggleRight className="w-5 h-5 text-emerald-400" />
@@ -136,7 +136,7 @@ const AgentCard: React.FC<AgentCardProps> = ({
             {!expanded && agent.bindings.length > 3 && (
               <button
                 onClick={() => setExpanded(true)}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-zinc-700/50 text-zinc-400 hover:bg-zinc-700"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-hover text-text-secondary hover:bg-active"
               >
                 +{agent.bindings.length - 3} 更多
                 <ChevronDown className="w-3 h-3" />
@@ -145,7 +145,7 @@ const AgentCard: React.FC<AgentCardProps> = ({
             {expanded && agent.bindings.length > 3 && (
               <button
                 onClick={() => setExpanded(false)}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-zinc-700/50 text-zinc-400 hover:bg-zinc-700"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-hover text-text-secondary hover:bg-active"
               >
                 收起
                 <ChevronUp className="w-3 h-3" />
@@ -167,7 +167,7 @@ const AgentCard: React.FC<AgentCardProps> = ({
       </div>
 
       {/* Actions */}
-      <div className="px-4 py-3 bg-zinc-800/30 border-t border-zinc-700/50 flex justify-between">
+      <div className="px-4 py-3 bg-surface border-t border-border-default flex justify-between">
         <div>
           {!isDefault && agent.id !== 'default' && (
             <Button
@@ -273,12 +273,12 @@ const AgentEditModal: React.FC<AgentEditModalProps> = ({
   return (
     <div className="fixed inset-0 z-60 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60" onClick={onCancel} />
-      <div className="relative w-full max-w-xl max-h-[80vh] bg-zinc-900 rounded-xl border border-zinc-800 shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
-          <h3 className="text-lg font-semibold text-zinc-100">
+      <div className="relative w-full max-w-xl max-h-[80vh] bg-deep rounded-xl border border-border-default shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border-default">
+          <h3 className="text-lg font-semibold text-text-primary">
             {isNew ? '创建 Agent' : '编辑 Agent'}
           </h3>
-          <button onClick={onCancel} className="text-zinc-400 hover:text-zinc-200">
+          <button onClick={onCancel} className="text-text-secondary hover:text-text-primary">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -286,19 +286,19 @@ const AgentEditModal: React.FC<AgentEditModalProps> = ({
         <div className="p-6 space-y-4 overflow-y-auto max-h-[60vh]">
           {isNew && (
             <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-1">ID</label>
+              <label className="block text-sm font-medium text-text-secondary mb-1">ID</label>
               <Input
                 value={formData.id || ''}
                 onChange={(e) => setFormData({ ...formData, id: e.target.value })}
                 placeholder="agent-my-custom"
                 inputSize="sm"
               />
-              <p className="text-xs text-zinc-500 mt-1">唯一标识符，创建后不可修改</p>
+              <p className="text-xs text-text-tertiary mt-1">唯一标识符，创建后不可修改</p>
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1">名称</label>
+            <label className="block text-sm font-medium text-text-secondary mb-1">名称</label>
             <Input
               value={formData.name || ''}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -308,7 +308,7 @@ const AgentEditModal: React.FC<AgentEditModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1">描述</label>
+            <label className="block text-sm font-medium text-text-secondary mb-1">描述</label>
             <Input
               value={formData.description || ''}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -318,40 +318,40 @@ const AgentEditModal: React.FC<AgentEditModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1">System Prompt</label>
+            <label className="block text-sm font-medium text-text-secondary mb-1">System Prompt</label>
             <textarea
               value={formData.systemPrompt || ''}
               onChange={(e) => setFormData({ ...formData, systemPrompt: e.target.value })}
               placeholder="你是一个专门处理..."
               rows={6}
-              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-sm text-text-primary placeholder-text-tertiary focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1">工具列表（逗号分隔）</label>
+            <label className="block text-sm font-medium text-text-secondary mb-1">工具列表（逗号分隔）</label>
             <Input
               value={toolsText}
               onChange={(e) => setToolsText(e.target.value)}
               placeholder="Read, Write, Bash"
               inputSize="sm"
             />
-            <p className="text-xs text-zinc-500 mt-1">留空表示使用所有可用工具</p>
+            <p className="text-xs text-text-tertiary mt-1">留空表示使用所有可用工具</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1">绑定规则 (JSON)</label>
+            <label className="block text-sm font-medium text-text-secondary mb-1">绑定规则 (JSON)</label>
             <textarea
               value={bindingsText}
               onChange={(e) => setBindingsText(e.target.value)}
               placeholder='[{"type": "keyword", "match": {"keywords": ["review", "检查"]}}]'
               rows={4}
-              className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-100 font-mono placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-sm text-text-primary font-mono placeholder-text-tertiary focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-1">标签（逗号分隔）</label>
+            <label className="block text-sm font-medium text-text-secondary mb-1">标签（逗号分隔）</label>
             <Input
               value={tagsText}
               onChange={(e) => setTagsText(e.target.value)}
@@ -361,7 +361,7 @@ const AgentEditModal: React.FC<AgentEditModalProps> = ({
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-zinc-800 flex justify-end gap-3">
+        <div className="px-6 py-4 border-t border-border-default flex justify-end gap-3">
           <Button variant="ghost" onClick={onCancel}>
             取消
           </Button>
@@ -481,7 +481,7 @@ export const AgentsSettings: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+        <Loader2 className="w-6 h-6 animate-spin text-text-secondary" />
       </div>
     );
   }
@@ -491,8 +491,8 @@ export const AgentsSettings: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-medium text-zinc-100 mb-2">Agent 路由</h3>
-          <p className="text-xs text-zinc-400">
+          <h3 className="text-sm font-medium text-text-primary mb-2">Agent 路由</h3>
+          <p className="text-xs text-text-secondary">
             配置多个 Agent，根据上下文自动选择最合适的 Agent 处理任务。
           </p>
         </div>
@@ -527,10 +527,10 @@ export const AgentsSettings: React.FC = () => {
       {/* Agent List */}
       <div className="space-y-3">
         {agents.length === 0 ? (
-          <div className="bg-zinc-800/50 rounded-lg p-6 text-center">
-            <Bot className="w-8 h-8 text-zinc-500 mx-auto mb-2" />
-            <p className="text-sm text-zinc-400">还没有配置任何 Agent</p>
-            <p className="text-xs text-zinc-500 mt-1">
+          <div className="bg-surface rounded-lg p-6 text-center">
+            <Bot className="w-8 h-8 text-text-tertiary mx-auto mb-2" />
+            <p className="text-sm text-text-secondary">还没有配置任何 Agent</p>
+            <p className="text-xs text-text-tertiary mt-1">
               点击"新建 Agent"创建你的第一个自定义 Agent
             </p>
           </div>
@@ -550,18 +550,18 @@ export const AgentsSettings: React.FC = () => {
       </div>
 
       {/* Info Box */}
-      <div className="bg-zinc-800/50 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-zinc-100 mb-2">关于 Agent 路由</h4>
-        <p className="text-xs text-zinc-400 leading-relaxed">
+      <div className="bg-surface rounded-lg p-4">
+        <h4 className="text-sm font-medium text-text-primary mb-2">关于 Agent 路由</h4>
+        <p className="text-xs text-text-secondary leading-relaxed">
           Agent 路由允许你定义多个专门化的 Agent，每个 Agent 有自己的 System Prompt 和工具集。
           系统会根据绑定规则自动选择最合适的 Agent。绑定类型包括：
         </p>
-        <ul className="mt-2 text-xs text-zinc-400 space-y-1 list-disc list-inside">
-          <li><span className="text-zinc-300">keyword</span>: 根据消息中的关键词匹配</li>
-          <li><span className="text-zinc-300">directory</span>: 根据工作目录匹配</li>
-          <li><span className="text-zinc-300">file_pattern</span>: 根据当前文件模式匹配</li>
-          <li><span className="text-zinc-300">intent</span>: 根据用户意图匹配（语义分析）</li>
-          <li><span className="text-zinc-300">always</span>: 始终激活（低优先级后备）</li>
+        <ul className="mt-2 text-xs text-text-secondary space-y-1 list-disc list-inside">
+          <li><span className="text-text-secondary">keyword</span>: 根据消息中的关键词匹配</li>
+          <li><span className="text-text-secondary">directory</span>: 根据工作目录匹配</li>
+          <li><span className="text-text-secondary">file_pattern</span>: 根据当前文件模式匹配</li>
+          <li><span className="text-text-secondary">intent</span>: 根据用户意图匹配（语义分析）</li>
+          <li><span className="text-text-secondary">always</span>: 始终激活（低优先级后备）</li>
         </ul>
       </div>
 

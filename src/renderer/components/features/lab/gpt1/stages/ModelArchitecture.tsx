@@ -74,15 +74,15 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
         {/* 左侧：架构可视化 */}
         <div className="space-y-6">
           {/* 架构图 */}
-          <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-4 flex items-center gap-2">
+          <div className="p-4 rounded-xl bg-deep border border-border-default">
+            <h3 className="text-sm font-semibold text-text-primary mb-4 flex items-center gap-2">
               <Layers className="w-4 h-4 text-blue-400" />
               AI 大脑结构图
             </h3>
 
             <div className="space-y-3">
               {/* Input */}
-              <div className="text-center text-xs text-zinc-500 mb-2">
+              <div className="text-center text-xs text-text-tertiary mb-2">
                 ⬇️ 输入一句话（最多 {modelConfig.blockSize} 个字）
               </div>
 
@@ -92,21 +92,21 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                 className={`w-full p-3 rounded-lg border transition-all ${
                   selectedLayer === 'embedding'
                     ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
-                    : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-300 hover:border-zinc-600'
+                    : 'bg-surface border-border-default text-text-secondary hover:border-border-strong'
                 }`}
               >
                 <div className="text-sm font-medium">把字变成数字</div>
-                <div className="text-xs text-zinc-500 mt-1">
+                <div className="text-xs text-text-tertiary mt-1">
                   每个字 → {modelConfig.nEmbd} 个数字
                 </div>
               </button>
 
               {/* Arrow */}
-              <div className="text-center text-zinc-600">↓</div>
+              <div className="text-center text-text-disabled">↓</div>
 
               {/* Transformer Blocks */}
-              <div className="p-3 rounded-lg border border-zinc-700/50 bg-zinc-800/30">
-                <div className="text-xs text-zinc-500 mb-2 text-center">🧠 思考层 × {modelConfig.nLayer}（重复 {modelConfig.nLayer} 遍，想得更深）</div>
+              <div className="p-3 rounded-lg border border-border-default bg-surface">
+                <div className="text-xs text-text-tertiary mb-2 text-center">🧠 思考层 × {modelConfig.nLayer}（重复 {modelConfig.nLayer} 遍，想得更深）</div>
 
                 {/* Attention */}
                 <button
@@ -114,14 +114,14 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                   className={`w-full p-2 rounded-lg border mb-2 transition-all ${
                     selectedLayer === 'attention'
                       ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
-                      : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:border-zinc-600'
+                      : 'bg-surface border-border-default text-text-secondary hover:border-border-strong'
                   }`}
                 >
                   <div className="text-xs">👀 理解上下文关系</div>
                 </button>
 
                 {/* Residual */}
-                <div className="text-center text-xs text-zinc-600 mb-2">↓ 保留之前的信息</div>
+                <div className="text-center text-xs text-text-disabled mb-2">↓ 保留之前的信息</div>
 
                 {/* FFN */}
                 <button
@@ -129,18 +129,18 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                   className={`w-full p-2 rounded-lg border transition-all ${
                     selectedLayer === 'ffn'
                       ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
-                      : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:border-zinc-600'
+                      : 'bg-surface border-border-default text-text-secondary hover:border-border-strong'
                   }`}
                 >
                   <div className="text-xs">🧠 深度思考和分析</div>
                 </button>
 
                 {/* Residual */}
-                <div className="text-center text-xs text-zinc-600 mt-2">↓ 保留之前的信息</div>
+                <div className="text-center text-xs text-text-disabled mt-2">↓ 保留之前的信息</div>
               </div>
 
               {/* Arrow */}
-              <div className="text-center text-zinc-600">↓</div>
+              <div className="text-center text-text-disabled">↓</div>
 
               {/* Output Layer */}
               <button
@@ -148,39 +148,39 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                 className={`w-full p-3 rounded-lg border transition-all ${
                   selectedLayer === 'output'
                     ? 'bg-amber-500/20 border-amber-500/50 text-amber-400'
-                    : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-300 hover:border-zinc-600'
+                    : 'bg-surface border-border-default text-text-secondary hover:border-border-strong'
                 }`}
               >
                 <div className="text-sm font-medium">🎯 猜下一个字</div>
-                <div className="text-xs text-zinc-500 mt-1">
+                <div className="text-xs text-text-tertiary mt-1">
                   从 {modelConfig.vocabSize} 个字中选一个
                 </div>
               </button>
 
               {/* Output */}
-              <div className="text-center text-xs text-zinc-500 mt-2">
+              <div className="text-center text-xs text-text-tertiary mt-2">
                 ⬇️ 输出：最可能的下一个字
               </div>
             </div>
 
-            <p className="text-xs text-zinc-600 mt-4 text-center">
+            <p className="text-xs text-text-disabled mt-4 text-center">
               点击各层查看详细说明 ↑
             </p>
           </div>
 
           {/* 参数统计 */}
           <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-blue-500/20">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
               <Box className="w-4 h-4 text-blue-400" />
               AI 大脑有多大？
             </h3>
             <div className="text-3xl font-bold text-blue-400 mb-2">
               ~{(totalParams / 1e6).toFixed(0)} 百万
             </div>
-            <div className="text-sm text-zinc-400">
+            <div className="text-sm text-text-secondary">
               个可调节的"旋钮"（参数）
             </div>
-            <p className="text-xs text-zinc-500 mt-2">
+            <p className="text-xs text-text-tertiary mt-2">
               💡 ChatGPT 有约 1750 亿个参数，是这个的 1.5 万倍！
             </p>
           </div>
@@ -190,12 +190,12 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
         <div className="space-y-6">
           {/* 层详情 */}
           {selectedLayer && (
-            <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50 animate-fadeIn">
-              <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+            <div className="p-4 rounded-xl bg-deep border border-border-default animate-fadeIn">
+              <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
                 <Info className="w-4 h-4 text-emerald-400" />
                 {layerDetails[selectedLayer].title}
               </h3>
-              <p className="text-sm text-zinc-400 mb-4 leading-relaxed">
+              <p className="text-sm text-text-secondary mb-4 leading-relaxed">
                 {layerDetails[selectedLayer].description}
               </p>
               <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 mb-3">
@@ -203,8 +203,8 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                   {layerDetails[selectedLayer].analogy}
                 </div>
               </div>
-              <div className="p-3 rounded-lg bg-zinc-800/50">
-                <div className="text-xs text-zinc-500 mb-1">简单来说</div>
+              <div className="p-3 rounded-lg bg-surface">
+                <div className="text-xs text-text-tertiary mb-1">简单来说</div>
                 <div className="text-sm text-emerald-400">
                   {layerDetails[selectedLayer].simple}
                 </div>
@@ -213,8 +213,8 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
           )}
 
           {/* 模型配置 */}
-          <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <div className="p-4 rounded-xl bg-deep border border-border-default">
+            <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
               <Zap className="w-4 h-4 text-amber-400" />
               AI 大脑的"配置"
             </h3>
@@ -225,20 +225,20 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                 { label: '思考多少遍', value: modelConfig.nLayer, color: 'text-purple-400' },
                 { label: '同时关注几个方面', value: modelConfig.nHead, color: 'text-amber-400' },
               ].map((item) => (
-                <div key={item.label} className="p-3 rounded-lg bg-zinc-800/50">
+                <div key={item.label} className="p-3 rounded-lg bg-surface">
                   <div className={`text-xl font-bold ${item.color}`}>{item.value}</div>
-                  <div className="text-xs text-zinc-500">{item.label}</div>
+                  <div className="text-xs text-text-tertiary">{item.label}</div>
                 </div>
               ))}
             </div>
-            <p className="text-xs text-zinc-500 mt-3">
+            <p className="text-xs text-text-tertiary mt-3">
               💡 这些数字越大，AI 越"聪明"，但也需要更多计算资源
             </p>
           </div>
 
           {/* 工作流程 */}
-          <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-            <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+          <div className="p-4 rounded-xl bg-deep border border-border-default">
+            <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
               <span className="text-emerald-400">🔄</span>
               AI 是怎么"想"的？
             </h3>
@@ -247,28 +247,28 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
                 <span className="text-2xl">📝</span>
                 <div>
                   <div className="text-sm text-emerald-300 font-medium">第 1 步：认字</div>
-                  <div className="text-xs text-zinc-400">把"你好"变成数字 [45, 78]</div>
+                  <div className="text-xs text-text-secondary">把"你好"变成数字 [45, 78]</div>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
                 <span className="text-2xl">🔗</span>
                 <div>
                   <div className="text-sm text-blue-300 font-medium">第 2 步：理解关系</div>
-                  <div className="text-xs text-zinc-400">"你"和"好"组合起来是打招呼的意思</div>
+                  <div className="text-xs text-text-secondary">"你"和"好"组合起来是打招呼的意思</div>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
                 <span className="text-2xl">🧠</span>
                 <div>
                   <div className="text-sm text-purple-300 font-medium">第 3 步：深度思考</div>
-                  <div className="text-xs text-zinc-400">根据对话习惯，应该回一句问候...</div>
+                  <div className="text-xs text-text-secondary">根据对话习惯，应该回一句问候...</div>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
                 <span className="text-2xl">🎯</span>
                 <div>
                   <div className="text-sm text-amber-300 font-medium">第 4 步：输出</div>
-                  <div className="text-xs text-zinc-400">猜测下一个字最可能是"你"（接着说"你好"）</div>
+                  <div className="text-xs text-text-secondary">猜测下一个字最可能是"你"（接着说"你好"）</div>
                 </div>
               </div>
             </div>
@@ -277,8 +277,8 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
       </div>
 
       {/* 专有名词解释 */}
-      <div className="mt-8 p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+      <div className="mt-8 p-4 rounded-xl bg-deep border border-border-default">
+        <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
           本阶段专有名词
         </h3>
@@ -293,13 +293,13 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
             { en: 'Residual Connection', zh: '残差连接', desc: '让信息可以"跳跃"传递，帮助训练更深的网络' },
             { en: 'Layer Normalization', zh: '层归一化', desc: '稳定训练过程的技术，让数值保持在合理范围' },
           ].map((term) => (
-            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+            <div key={term.en} className="p-3 rounded-lg bg-surface">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
-                <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-300">{term.zh}</span>
+                <span className="text-xs text-text-tertiary">|</span>
+                <span className="text-sm text-text-secondary">{term.zh}</span>
               </div>
-              <p className="text-xs text-zinc-500">{term.desc}</p>
+              <p className="text-xs text-text-tertiary">{term.desc}</p>
             </div>
           ))}
         </div>
@@ -309,7 +309,7 @@ export const ModelArchitecture: React.FC<Props> = ({ onComplete, onBack }) => {
       <div className="mt-8 flex justify-between">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-zinc-800 text-zinc-300 font-medium hover:bg-zinc-700 transition-colors"
+          className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-elevated text-text-secondary font-medium hover:bg-active transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />
           上一步

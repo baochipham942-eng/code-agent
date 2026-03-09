@@ -79,15 +79,15 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
           <Cpu className="w-7 h-7 text-white" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold text-zinc-100">Code Agent</h3>
-          <p className="text-sm text-zinc-400">v{version}</p>
+          <h3 className="text-lg font-semibold text-text-primary">Code Agent</h3>
+          <p className="text-sm text-text-secondary">v{version}</p>
         </div>
       </div>
 
       {/* Version Check */}
-      <div className="p-4 rounded-lg border border-zinc-800 bg-zinc-900/50">
+      <div className="p-4 rounded-lg border border-border-default bg-deep">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-sm font-medium text-zinc-100">
+          <span className="text-sm font-medium text-text-primary">
             {t.update?.title || '版本更新'}
           </span>
           <Button
@@ -113,16 +113,16 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
                 <div className="flex items-start gap-2">
                   <Download className="w-4 h-4 text-teal-400 mt-0.5" />
                   <div className="flex-1">
-                    <div className="text-sm font-medium text-zinc-100">
+                    <div className="text-sm font-medium text-text-primary">
                       发现新版本: v{updateInfo.latestVersion}
                     </div>
                     {updateInfo.fileSize && (
-                      <p className="text-xs text-zinc-500 mt-0.5">
+                      <p className="text-xs text-text-tertiary mt-0.5">
                         {formatSize(updateInfo.fileSize)}
                       </p>
                     )}
                     {updateInfo.releaseNotes && (
-                      <div className="mt-2 p-2 bg-zinc-800/50 rounded text-xs text-zinc-400 max-h-20 overflow-y-auto whitespace-pre-line">
+                      <div className="mt-2 p-2 bg-surface rounded text-xs text-text-secondary max-h-20 overflow-y-auto whitespace-pre-line">
                         {updateInfo.releaseNotes}
                       </div>
                     )}
@@ -141,7 +141,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
             ) : (
               <div className="flex items-center gap-2">
                 <CheckCircle className="w-4 h-4 text-emerald-400" />
-                <span className="text-sm text-zinc-100">{t.update?.upToDate || '已是最新版本'}</span>
+                <span className="text-sm text-text-primary">{t.update?.upToDate || '已是最新版本'}</span>
               </div>
             )}
           </div>

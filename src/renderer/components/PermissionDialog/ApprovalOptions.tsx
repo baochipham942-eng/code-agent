@@ -28,7 +28,7 @@ export function ApprovalOptions({ onApproval, isDangerous }: ApprovalOptionsProp
       label: '拒绝',
       shortcut: 'n',
       icon: <X size={14} />,
-      color: 'text-zinc-400 hover:bg-zinc-500/20',
+      color: 'text-text-secondary hover:bg-active/20',
       show: true,
     },
     {
@@ -58,7 +58,7 @@ export function ApprovalOptions({ onApproval, isDangerous }: ApprovalOptionsProp
   ];
 
   return (
-    <div className="border-t border-zinc-700 p-3">
+    <div className="border-t border-border-default p-3">
       <div className="space-y-1">
         {options
           .filter((opt) => opt.show)
@@ -81,7 +81,7 @@ export function ApprovalOptions({ onApproval, isDangerous }: ApprovalOptionsProp
               <kbd
                 className="
                   px-1.5 py-0.5 rounded
-                  bg-zinc-700 text-zinc-400 text-xs
+                  bg-active text-text-secondary text-xs
                   font-mono
                 "
               >
@@ -92,7 +92,7 @@ export function ApprovalOptions({ onApproval, isDangerous }: ApprovalOptionsProp
       </div>
 
       {/* 提示文字 */}
-      <div className="mt-3 text-xs text-zinc-500 text-center">
+      <div className="mt-3 text-xs text-text-tertiary text-center">
         按快捷键可快速选择
       </div>
     </div>

@@ -24,7 +24,7 @@ export function ToolHeader({ toolCall, status }: Props) {
   return (
     <div className="flex items-center gap-2 flex-1 min-w-0">
       {/* Tool name - always semibold, neutral color */}
-      <span className="text-zinc-200 font-semibold">{displayName}</span>
+      <span className="text-text-primary font-semibold">{displayName}</span>
 
       {/* Sandbox badge */}
       {isSandboxed && (
@@ -35,12 +35,12 @@ export function ToolHeader({ toolCall, status }: Props) {
 
       {/* Parameters summary */}
       {params && (
-        <span className="text-zinc-500 truncate">{params}</span>
+        <span className="text-text-tertiary truncate">{params}</span>
       )}
 
       {/* Duration - right aligned */}
       {duration !== undefined && status !== 'pending' && (
-        <span className="ml-auto text-zinc-600 text-xs flex-shrink-0">
+        <span className="ml-auto text-text-disabled text-xs flex-shrink-0">
           {formatDuration(duration)}
         </span>
       )}

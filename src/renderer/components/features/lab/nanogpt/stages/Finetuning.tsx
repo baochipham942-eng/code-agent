@@ -179,8 +179,8 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
         <div className="flex items-start gap-3">
           <BookOpen className="w-5 h-5 text-amber-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-zinc-200 mb-2">🚀 「站在巨人肩膀上」的学习方法</h3>
-            <p className="text-sm text-zinc-400">
+            <h3 className="text-sm font-medium text-text-primary mb-2">🚀 「站在巨人肩膀上」的学习方法</h3>
+            <p className="text-sm text-text-secondary">
               与其从零开始学，不如先「借用」别人已经学好的知识！
               这就像一个英语高手来学莎士比亚戏剧——他已经会英语了，只需要学习莎士比亚的风格就行。
             </p>
@@ -190,31 +190,31 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
 
       {/* Why Fine-tuning */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300">🤔 两种学习方式，差别有多大？</h3>
+        <h3 className="text-sm font-medium text-text-secondary">🤔 两种学习方式，差别有多大？</h3>
         <div className="grid grid-cols-2 gap-4">
           {/* From Scratch */}
-          <div className="bg-zinc-800/30 rounded-lg border border-zinc-700/30 p-4">
+          <div className="bg-surface rounded-lg border border-border-subtle p-4">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-lg">🐣</span>
-              <span className="text-sm font-medium text-zinc-400">方式一：从零开始学</span>
+              <span className="text-sm font-medium text-text-secondary">方式一：从零开始学</span>
             </div>
-            <p className="text-xs text-zinc-500 mb-3">{comparisonData.scratch.analogy}</p>
+            <p className="text-xs text-text-tertiary mb-3">{comparisonData.scratch.analogy}</p>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-zinc-500">📉 起始错误率</span>
+                <span className="text-text-tertiary">📉 起始错误率</span>
                 <span className="text-red-400 font-bold">{comparisonData.scratch.startLoss}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500">📈 最终错误率</span>
+                <span className="text-text-tertiary">📈 最终错误率</span>
                 <span className="text-amber-400">{comparisonData.scratch.finalLoss}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500">🔄 需要练习</span>
-                <span className="text-zinc-400">{comparisonData.scratch.steps.toLocaleString()} 轮</span>
+                <span className="text-text-tertiary">🔄 需要练习</span>
+                <span className="text-text-secondary">{comparisonData.scratch.steps.toLocaleString()} 轮</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500">⭐ 最终效果</span>
-                <span className="text-zinc-400">{comparisonData.scratch.quality}</span>
+                <span className="text-text-tertiary">⭐ 最终效果</span>
+                <span className="text-text-secondary">{comparisonData.scratch.quality}</span>
               </div>
             </div>
           </div>
@@ -229,19 +229,19 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
             <p className="text-xs text-emerald-400/70 mb-3">{comparisonData.gpt2.analogy}</p>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-zinc-500">📉 起始错误率</span>
+                <span className="text-text-tertiary">📉 起始错误率</span>
                 <span className="text-emerald-400 font-bold">{comparisonData.gpt2.startLoss}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500">📈 最终错误率</span>
+                <span className="text-text-tertiary">📈 最终错误率</span>
                 <span className="text-emerald-400 font-bold">{comparisonData.gpt2.finalLoss}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500">🔄 需要练习</span>
+                <span className="text-text-tertiary">🔄 需要练习</span>
                 <span className="text-emerald-400">{comparisonData.gpt2.steps.toLocaleString()} 轮</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-zinc-500">⭐ 最终效果</span>
+                <span className="text-text-tertiary">⭐ 最终效果</span>
                 <span className="text-emerald-400 font-bold">{comparisonData.gpt2.quality}</span>
               </div>
             </div>
@@ -254,8 +254,8 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
 
       {/* Fine-tuning Process */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300">📝 进阶学习的步骤</h3>
-        <div className="bg-zinc-900/50 rounded-lg border border-zinc-800/50 p-4">
+        <h3 className="text-sm font-medium text-text-secondary">📝 进阶学习的步骤</h3>
+        <div className="bg-deep rounded-lg border border-border-default p-4">
           <div className="flex items-center justify-between">
             {/* Step 1: Download */}
             <div className="flex flex-col items-center gap-2">
@@ -270,10 +270,10 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
               >
                 {downloadedWeights ? <Check className="w-6 h-6 text-emerald-400" /> : <span className="text-2xl">📥</span>}
               </button>
-              <span className="text-xs text-zinc-500 text-center">下载「高手的知识」</span>
+              <span className="text-xs text-text-tertiary text-center">下载「高手的知识」</span>
             </div>
 
-            <ArrowRight className="w-5 h-5 text-zinc-600" />
+            <ArrowRight className="w-5 h-5 text-text-disabled" />
 
             {/* Step 2: Load */}
             <div className="flex flex-col items-center gap-2">
@@ -281,15 +281,15 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
                 className={`w-14 h-14 rounded-full flex items-center justify-center border transition-all ${
                   downloadedWeights
                     ? 'bg-emerald-500/20 border-emerald-500/50'
-                    : 'bg-zinc-800/50 border-zinc-700/50'
+                    : 'bg-surface border-border-default'
                 }`}
               >
                 {downloadedWeights ? <Check className="w-6 h-6 text-emerald-400" /> : <span className="text-xl">🧠</span>}
               </div>
-              <span className="text-xs text-zinc-500 text-center">装进 AI 大脑</span>
+              <span className="text-xs text-text-tertiary text-center">装进 AI 大脑</span>
             </div>
 
-            <ArrowRight className="w-5 h-5 text-zinc-600" />
+            <ArrowRight className="w-5 h-5 text-text-disabled" />
 
             {/* Step 3: Fine-tune */}
             <div className="flex flex-col items-center gap-2">
@@ -299,15 +299,15 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
                     ? currentStep >= config.maxIters
                       ? 'bg-emerald-500/20 border-emerald-500/50'
                       : 'bg-amber-500/20 border-amber-500/50 animate-pulse'
-                    : 'bg-zinc-800/50 border-zinc-700/50'
+                    : 'bg-surface border-border-default'
                 }`}
               >
                 {currentStep >= config.maxIters ? <Check className="w-6 h-6 text-emerald-400" /> : <span className="text-xl">📚</span>}
               </div>
-              <span className="text-xs text-zinc-500 text-center">学习新风格</span>
+              <span className="text-xs text-text-tertiary text-center">学习新风格</span>
             </div>
 
-            <ArrowRight className="w-5 h-5 text-zinc-600" />
+            <ArrowRight className="w-5 h-5 text-text-disabled" />
 
             {/* Step 4: Inference */}
             <div className="flex flex-col items-center gap-2">
@@ -315,12 +315,12 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
                 className={`w-14 h-14 rounded-full flex items-center justify-center border transition-all ${
                   currentStep >= config.maxIters
                     ? 'bg-emerald-500/20 border-emerald-500/50'
-                    : 'bg-zinc-800/50 border-zinc-700/50'
+                    : 'bg-surface border-border-default'
                 }`}
               >
                 {currentStep >= config.maxIters ? <Check className="w-6 h-6 text-emerald-400" /> : <span className="text-xl">✍️</span>}
               </div>
-              <span className="text-xs text-zinc-500 text-center">开始创作</span>
+              <span className="text-xs text-text-tertiary text-center">开始创作</span>
             </div>
           </div>
         </div>
@@ -328,11 +328,11 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
 
       {/* Fine-tuning Config */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-zinc-300">⚙️ 选择学习方式</h3>
+        <h3 className="text-sm font-medium text-text-secondary">⚙️ 选择学习方式</h3>
         <div className="grid grid-cols-2 gap-4">
           {/* Init From */}
           <div className="space-y-2">
-            <label className="text-xs text-zinc-500">从哪里开始学？</label>
+            <label className="text-xs text-text-tertiary">从哪里开始学？</label>
             <div className="flex gap-2">
               {(['scratch', 'gpt2'] as InitFrom[]).map((opt) => (
                 <button
@@ -345,8 +345,8 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
                     config.initFrom === opt
                       ? opt === 'gpt2'
                         ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-zinc-700/50 text-zinc-300 border border-zinc-600/50'
-                      : 'bg-zinc-800/30 text-zinc-500 border border-zinc-700/30 hover:border-zinc-600'
+                        : 'bg-hover text-text-secondary border border-border-strong/50'
+                      : 'bg-surface text-text-tertiary border border-border-subtle hover:border-border-strong'
                   }`}
                 >
                   {opt === 'scratch' ? '🐣 从零开始' : '🎓 借用高手知识'}
@@ -357,11 +357,11 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
 
           {/* Learning Rate */}
           <div className="space-y-2">
-            <label className="text-xs text-zinc-500">改正力度</label>
-            <div className="px-3 py-2.5 bg-zinc-800/30 rounded-lg border border-zinc-700/30 text-sm">
+            <label className="text-xs text-text-tertiary">改正力度</label>
+            <div className="px-3 py-2.5 bg-surface rounded-lg border border-border-subtle text-sm">
               {config.initFrom === 'gpt2'
-                ? <span className="text-emerald-400">轻轻调整 <span className="text-xs text-zinc-500">（已有好基础）</span></span>
-                : <span className="text-amber-400">大幅调整 <span className="text-xs text-zinc-500">（什么都不会）</span></span>}
+                ? <span className="text-emerald-400">轻轻调整 <span className="text-xs text-text-tertiary">（已有好基础）</span></span>
+                : <span className="text-amber-400">大幅调整 <span className="text-xs text-text-tertiary">（什么都不会）</span></span>}
             </div>
           </div>
         </div>
@@ -370,11 +370,11 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
       {/* Training Visualization */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-zinc-300">📈 观察学习效果</h3>
+          <h3 className="text-sm font-medium text-text-secondary">📈 观察学习效果</h3>
           <div className="flex items-center gap-2">
             <button
               onClick={resetTraining}
-              className="p-2 rounded-lg bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800 border border-zinc-700/50"
+              className="p-2 rounded-lg bg-surface text-text-secondary hover:bg-hover border border-border-default"
               title="重新开始"
             >
               <RotateCcw className="w-4 h-4" />
@@ -384,7 +384,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
               disabled={!downloadedWeights && config.initFrom === 'gpt2'}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all ${
                 !downloadedWeights && config.initFrom === 'gpt2'
-                  ? 'bg-zinc-700/50 text-zinc-500 cursor-not-allowed'
+                  ? 'bg-hover text-text-tertiary cursor-not-allowed'
                   : isTraining
                     ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
                     : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
@@ -405,22 +405,22 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
           </div>
         </div>
 
-        <div className="bg-zinc-900/50 rounded-lg border border-zinc-800/50 p-4">
+        <div className="bg-deep rounded-lg border border-border-default p-4">
           <canvas ref={canvasRef} width={800} height={150} className="w-full h-36 rounded-lg" />
 
-          <div className="mt-3 pt-3 border-t border-zinc-800/50 grid grid-cols-3 gap-4">
+          <div className="mt-3 pt-3 border-t border-border-default grid grid-cols-3 gap-4">
             <div className="text-center p-2 bg-emerald-500/10 rounded-lg">
-              <div className="text-xs text-zinc-500 mb-1">📉 错误率</div>
+              <div className="text-xs text-text-tertiary mb-1">📉 错误率</div>
               <div className="text-xl font-bold text-emerald-400">{latestLoss}</div>
             </div>
             <div className="text-center p-2 bg-blue-500/10 rounded-lg">
-              <div className="text-xs text-zinc-500 mb-1">🔄 学习轮次</div>
+              <div className="text-xs text-text-tertiary mb-1">🔄 学习轮次</div>
               <div className="text-lg font-bold text-blue-400">
                 {currentStep.toLocaleString()} / {config.maxIters.toLocaleString()}
               </div>
             </div>
             <div className="text-center p-2 bg-purple-500/10 rounded-lg">
-              <div className="text-xs text-zinc-500 mb-1">📊 进度</div>
+              <div className="text-xs text-text-tertiary mb-1">📊 进度</div>
               <div className="text-xl font-bold text-purple-400">
                 {((currentStep / config.maxIters) * 100).toFixed(1)}%
               </div>
@@ -432,14 +432,14 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
       {/* Sample Output Comparison */}
       {currentStep >= config.maxIters && (
         <div className="space-y-3">
-          <h3 className="text-sm font-medium text-zinc-300">✨ 看看 AI 学完后写的东西</h3>
+          <h3 className="text-sm font-medium text-text-secondary">✨ 看看 AI 学完后写的东西</h3>
           <div className="grid grid-cols-2 gap-4">
-            <div className="bg-zinc-800/30 rounded-lg border border-zinc-700/30 p-4">
+            <div className="bg-surface rounded-lg border border-border-subtle p-4">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-lg">🐣</span>
-                <span className="text-xs text-zinc-500">从零开始学的 AI</span>
+                <span className="text-xs text-text-tertiary">从零开始学的 AI</span>
               </div>
-              <pre className="text-sm text-zinc-400 whitespace-pre-wrap">{sampleOutputs.scratch}</pre>
+              <pre className="text-sm text-text-secondary whitespace-pre-wrap">{sampleOutputs.scratch}</pre>
             </div>
             <div className="bg-emerald-500/5 rounded-lg border border-emerald-500/30 p-4">
               <div className="flex items-center gap-2 mb-2">
@@ -455,29 +455,29 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
       {/* Key Takeaways */}
       <div className="bg-amber-500/5 rounded-lg border border-amber-500/20 p-4">
         <h4 className="text-sm font-medium text-amber-400 mb-3">💡 进阶学习的秘诀</h4>
-        <div className="grid grid-cols-2 gap-3 text-sm text-zinc-400">
+        <div className="grid grid-cols-2 gap-3 text-sm text-text-secondary">
           <div className="flex items-start gap-2">
             <span>🐢</span>
-            <span><strong className="text-zinc-300">慢慢调整</strong>：已经学过的知识，改正时要轻柔</span>
+            <span><strong className="text-text-secondary">慢慢调整</strong>：已经学过的知识，改正时要轻柔</span>
           </div>
           <div className="flex items-start gap-2">
             <span>⚡</span>
-            <span><strong className="text-zinc-300">学得更快</strong>：有基础后，只需少量练习就能学会</span>
+            <span><strong className="text-text-secondary">学得更快</strong>：有基础后，只需少量练习就能学会</span>
           </div>
           <div className="flex items-start gap-2">
             <span>👀</span>
-            <span><strong className="text-zinc-300">及时检查</strong>：边学边考试，避免学过头</span>
+            <span><strong className="text-text-secondary">及时检查</strong>：边学边考试，避免学过头</span>
           </div>
           <div className="flex items-start gap-2">
             <span>💾</span>
-            <span><strong className="text-zinc-300">保存进度</strong>：定期保存，方便回退</span>
+            <span><strong className="text-text-secondary">保存进度</strong>：定期保存，方便回退</span>
           </div>
         </div>
       </div>
 
       {/* 专有名词解释 */}
-      <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
-        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+      <div className="p-4 rounded-xl bg-deep border border-border-default">
+        <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
           本阶段专有名词
         </h3>
@@ -490,13 +490,13 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
             { en: 'Checkpoint', zh: '检查点', desc: '训练过程中保存的模型状态，方便恢复和回退' },
             { en: 'Overfitting', zh: '过拟合', desc: '模型记住了训练数据但泛化能力差的现象' },
           ].map((term) => (
-            <div key={term.en} className="p-3 rounded-lg bg-zinc-800/50">
+            <div key={term.en} className="p-3 rounded-lg bg-surface">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
-                <span className="text-xs text-zinc-500">|</span>
-                <span className="text-sm text-zinc-300">{term.zh}</span>
+                <span className="text-xs text-text-tertiary">|</span>
+                <span className="text-sm text-text-secondary">{term.zh}</span>
               </div>
-              <p className="text-xs text-zinc-500">{term.desc}</p>
+              <p className="text-xs text-text-tertiary">{term.desc}</p>
             </div>
           ))}
         </div>
@@ -506,7 +506,7 @@ export const Finetuning: React.FC<FinetuningProps> = ({ onComplete, onBack }) =>
       <div className="flex justify-between pt-4">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800/50 text-zinc-400 rounded-lg hover:bg-zinc-800 border border-zinc-700/50 transition-all"
+          className="flex items-center gap-2 px-5 py-2.5 bg-surface text-text-secondary rounded-lg hover:bg-hover border border-border-default transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
           上一步

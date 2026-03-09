@@ -67,6 +67,8 @@ export interface ScoringConfigEntry {
   dimension: string;
   weight: number; // percentage (e.g. 35) or decimal (e.g. 0.35)
   judgePrompt?: string; // custom judge prompt override for LLM-type dimensions
+  graderType?: 'llm' | 'rule' | 'code'; // grader type for this dimension
+  importance?: 'critical' | 'high' | 'medium' | 'low'; // importance level
 }
 
 // ----------------------------------------------------------------------------

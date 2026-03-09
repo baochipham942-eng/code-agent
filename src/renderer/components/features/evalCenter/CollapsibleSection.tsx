@@ -28,7 +28,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
           setIsOpen(next);
           if (next && onToggle) onToggle();
         }}
-        className="flex items-center justify-between w-full text-xs font-medium text-zinc-400 hover:text-zinc-300 transition py-1.5"
+        className="flex items-center justify-between w-full text-xs font-medium text-text-secondary hover:text-text-secondary transition py-1.5"
       >
         <span>{title}</span>
         <ChevronDown

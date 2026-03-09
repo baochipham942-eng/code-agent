@@ -177,7 +177,7 @@ export const MCPSettings: React.FC = () => {
       case 'error':
         return 'text-red-400';
       default:
-        return 'text-zinc-400';
+        return 'text-text-secondary';
     }
   };
 
@@ -203,14 +203,14 @@ export const MCPSettings: React.FC = () => {
       case 'error':
         return <AlertCircle className="w-4 h-4 text-red-400" />;
       default:
-        return <Plug className="w-4 h-4 text-zinc-400" />;
+        return <Plug className="w-4 h-4 text-text-secondary" />;
     }
   };
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+        <Loader2 className="w-6 h-6 animate-spin text-text-secondary" />
       </div>
     );
   }
@@ -219,46 +219,46 @@ export const MCPSettings: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-100 mb-2">MCP 服务器</h3>
-        <p className="text-xs text-zinc-400 mb-4">
+        <h3 className="text-sm font-medium text-text-primary mb-2">MCP 服务器</h3>
+        <p className="text-xs text-text-secondary mb-4">
           Model Context Protocol 服务器状态。MCP 允许 Agent 调用外部工具和资源。
         </p>
       </div>
 
       {/* Overall Status */}
       {mcpStatus && (
-        <div className="bg-zinc-800/50 rounded-lg p-4">
-          <h4 className="text-sm font-medium text-zinc-100 mb-3">总览</h4>
+        <div className="bg-surface rounded-lg p-4">
+          <h4 className="text-sm font-medium text-text-primary mb-3">总览</h4>
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
-              <div className="text-2xl font-semibold text-zinc-100">
+              <div className="text-2xl font-semibold text-text-primary">
                 {mcpStatus.connectedServers.length}
               </div>
-              <div className="text-xs text-zinc-400">已连接服务器</div>
+              <div className="text-xs text-text-secondary">已连接服务器</div>
             </div>
             <div>
               <div className="text-2xl font-semibold text-indigo-400">{mcpStatus.toolCount}</div>
-              <div className="text-xs text-zinc-400">可用工具</div>
+              <div className="text-xs text-text-secondary">可用工具</div>
             </div>
             <div>
               <div className="text-2xl font-semibold text-cyan-400">{mcpStatus.resourceCount}</div>
-              <div className="text-xs text-zinc-400">可用资源</div>
+              <div className="text-xs text-text-secondary">可用资源</div>
             </div>
           </div>
         </div>
       )}
 
       {/* Codex CLI Integration */}
-      <div className="bg-zinc-800/50 rounded-lg p-4 border border-zinc-700/50">
+      <div className="bg-surface rounded-lg p-4 border border-border-default">
         <div className="flex items-center gap-2 mb-3">
           <Zap className="w-4 h-4 text-orange-400" />
-          <h4 className="text-sm font-medium text-zinc-100">Codex CLI</h4>
+          <h4 className="text-sm font-medium text-text-primary">Codex CLI</h4>
           {codexDetectedPath ? (
             <span className="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">
               已检测到
             </span>
           ) : (
-            <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-400">
+            <span className="text-xs px-1.5 py-0.5 rounded bg-active text-text-secondary">
               未安装
             </span>
           )}
@@ -266,19 +266,19 @@ export const MCPSettings: React.FC = () => {
 
         {codexDetectedPath ? (
           <>
-            <p className="text-xs text-zinc-400 mb-3">
-              路径: <code className="text-zinc-300">{codexDetectedPath}</code>
+            <p className="text-xs text-text-secondary mb-3">
+              路径: <code className="text-text-secondary">{codexDetectedPath}</code>
             </p>
             <div className="space-y-2">
               <label className="flex items-center justify-between cursor-pointer">
                 <div>
-                  <span className="text-sm text-zinc-200">沙箱执行</span>
-                  <p className="text-xs text-zinc-500">非安全命令委托 Codex 沙箱执行</p>
+                  <span className="text-sm text-text-primary">沙箱执行</span>
+                  <p className="text-xs text-text-tertiary">非安全命令委托 Codex 沙箱执行</p>
                 </div>
                 <button
                   onClick={() => handleCodexToggle('sandboxEnabled', !codexSandboxEnabled)}
                   className={`relative w-9 h-5 rounded-full transition-colors ${
-                    codexSandboxEnabled ? 'bg-orange-500' : 'bg-zinc-600'
+                    codexSandboxEnabled ? 'bg-orange-500' : 'bg-active'
                   }`}
                 >
                   <span
@@ -290,13 +290,13 @@ export const MCPSettings: React.FC = () => {
               </label>
               <label className="flex items-center justify-between cursor-pointer">
                 <div>
-                  <span className="text-sm text-zinc-200">交叉验证</span>
-                  <p className="text-xs text-zinc-500">复杂代码任务双模型验证</p>
+                  <span className="text-sm text-text-primary">交叉验证</span>
+                  <p className="text-xs text-text-tertiary">复杂代码任务双模型验证</p>
                 </div>
                 <button
                   onClick={() => handleCodexToggle('crossVerifyEnabled', !codexCrossVerifyEnabled)}
                   className={`relative w-9 h-5 rounded-full transition-colors ${
-                    codexCrossVerifyEnabled ? 'bg-orange-500' : 'bg-zinc-600'
+                    codexCrossVerifyEnabled ? 'bg-orange-500' : 'bg-active'
                   }`}
                 >
                   <span
@@ -309,7 +309,7 @@ export const MCPSettings: React.FC = () => {
             </div>
           </>
         ) : (
-          <div className="text-xs text-zinc-400">
+          <div className="text-xs text-text-secondary">
             <p>安装 Codex CLI 后可启用沙箱执行和交叉验证。</p>
             <a
               href="https://github.com/openai/codex"
@@ -325,27 +325,27 @@ export const MCPSettings: React.FC = () => {
 
       {/* Server List */}
       <div className="space-y-3">
-        <h4 className="text-sm font-medium text-zinc-100">服务器列表</h4>
+        <h4 className="text-sm font-medium text-text-primary">服务器列表</h4>
         {serverStates.length === 0 ? (
-          <div className="bg-zinc-800/50 rounded-lg p-4 text-center text-zinc-400 text-sm">
+          <div className="bg-surface rounded-lg p-4 text-center text-text-secondary text-sm">
             没有配置任何 MCP 服务器
           </div>
         ) : (
           serverStates.map((server) => (
             <div
               key={server.config.name}
-              className="bg-zinc-800/50 rounded-lg p-4 flex items-center justify-between"
+              className="bg-surface rounded-lg p-4 flex items-center justify-between"
             >
               <div className="flex items-center gap-3">
                 {getStatusIcon(server.status)}
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-zinc-100">{server.config.name}</span>
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-400">
+                    <span className="text-sm font-medium text-text-primary">{server.config.name}</span>
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-active text-text-secondary">
                       {server.config.type}
                     </span>
                   </div>
-                  <div className="flex items-center gap-3 mt-1 text-xs text-zinc-400">
+                  <div className="flex items-center gap-3 mt-1 text-xs text-text-secondary">
                     <span className={getStatusColor(server.status)}>
                       {getStatusText(server.status)}
                     </span>
@@ -424,9 +424,9 @@ export const MCPSettings: React.FC = () => {
       )}
 
       {/* Info Box */}
-      <div className="bg-zinc-800/50 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-zinc-100 mb-2">关于 MCP</h4>
-        <p className="text-xs text-zinc-400 leading-relaxed">
+      <div className="bg-surface rounded-lg p-4">
+        <h4 className="text-sm font-medium text-text-primary mb-2">关于 MCP</h4>
+        <p className="text-xs text-text-secondary leading-relaxed">
           MCP (Model Context Protocol) 是一个开放协议，允许 AI 模型安全地访问外部工具和数据源。
           已配置的服务器会在应用启动时自动连接。云端配置支持热更新，无需重启应用。
         </p>

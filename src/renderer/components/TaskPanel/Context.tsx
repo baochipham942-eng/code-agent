@@ -43,7 +43,7 @@ export const Context: React.FC = () => {
           } else if (attachment.category === 'folder') {
             icon = <FolderArchive className="w-3.5 h-3.5 text-amber-400" />;
           } else {
-            icon = <FileText className="w-3.5 h-3.5 text-zinc-400" />;
+            icon = <FileText className="w-3.5 h-3.5 text-text-secondary" />;
           }
           contextItems.push({
             type: attachment.type,
@@ -94,15 +94,15 @@ export const Context: React.FC = () => {
 
       return (
         <div key={key} className="mb-2 last:mb-0">
-          <div className="text-zinc-500 font-medium mb-0.5">{key}:</div>
+          <div className="text-text-tertiary font-medium mb-0.5">{key}:</div>
           {isLongText ? (
-            <div className="text-zinc-300 prose prose-sm prose-invert max-w-none prose-p:my-1 prose-pre:my-1 prose-code:text-xs">
+            <div className="text-text-secondary prose prose-sm prose-invert max-w-none prose-p:my-1 prose-pre:my-1 prose-code:text-xs">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {stringValue}
               </ReactMarkdown>
             </div>
           ) : (
-            <pre className="text-zinc-400 overflow-x-auto whitespace-pre-wrap break-all">
+            <pre className="text-text-secondary overflow-x-auto whitespace-pre-wrap break-all">
               {stringValue}
             </pre>
           )}
@@ -123,14 +123,14 @@ export const Context: React.FC = () => {
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <Layers className="w-4 h-4 text-primary-400 flex-shrink-0" />
-          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+          <span className="text-xs font-medium text-text-secondary uppercase tracking-wide">
             {t.taskPanel.context}
           </span>
         </div>
         {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+          <ChevronDown className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+          <ChevronRight className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
         )}
       </button>
 
@@ -146,25 +146,25 @@ export const Context: React.FC = () => {
               <button
                 onClick={() => hasDetails && toggleExpand(item.name)}
                 className={`w-full flex items-center gap-2 py-1.5 text-left transition-colors ${
-                  hasDetails ? 'hover:bg-zinc-800/50 cursor-pointer' : 'cursor-default'
+                  hasDetails ? 'hover:bg-surface cursor-pointer' : 'cursor-default'
                 }`}
               >
                 {item.icon}
-                <span className="flex-1 text-sm text-zinc-300 truncate">{item.name}</span>
+                <span className="flex-1 text-sm text-text-secondary truncate">{item.name}</span>
                 {hasDetails ? (
                   isExpanded ? (
-                    <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                    <ChevronDown className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
                   ) : (
-                    <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                    <ChevronRight className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
                   )
                 ) : (
-                  <ChevronRight className="w-3.5 h-3.5 text-zinc-500/30 flex-shrink-0" />
+                  <ChevronRight className="w-3.5 h-3.5 text-text-tertiary/30 flex-shrink-0" />
                 )}
               </button>
 
               {/* Expanded details with scroll and markdown support */}
               {isExpanded && hasDetails && (
-                <div className="px-2 py-2 bg-zinc-900/50 text-xs max-h-48 overflow-y-auto custom-scrollbar">
+                <div className="px-2 py-2 bg-deep text-xs max-h-48 overflow-y-auto custom-scrollbar">
                   {renderDetails(item.details!)}
                 </div>
               )}

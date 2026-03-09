@@ -196,7 +196,7 @@ export const ContextUsageIndicator: React.FC<ContextUsageIndicatorProps> = ({
           <span className={`${config.fontSize} font-medium ${colors.text} transition-colors duration-300`}>
             {displayPercentage}%
           </span>
-          <span className="text-2xs text-zinc-500">
+          <span className="text-2xs text-text-tertiary">
             {formatTokenCount(used)} / {formatTokenCount(total)}
           </span>
         </div>

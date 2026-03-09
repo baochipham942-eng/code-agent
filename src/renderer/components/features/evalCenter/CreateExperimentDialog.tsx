@@ -35,9 +35,11 @@ interface CreateExperimentDialogProps {
 }
 
 const MODEL_OPTIONS = [
-  { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-  { value: 'claude-haiku-35-20241022', label: 'Claude Haiku' },
-  { value: 'kimi-k2', label: 'Kimi K2' },
+  { value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
+  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+  { value: 'kimi-k2.5', label: 'Kimi K2.5' },
+  { value: 'deepseek-chat', label: 'DeepSeek Chat' },
   { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
 ];
 
@@ -128,12 +130,12 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
   };
 
   const selectClass =
-    'w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 ' +
+    'w-full bg-elevated border border-border-default rounded-lg px-3 py-2 text-sm text-text-primary ' +
     'focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ' +
     'appearance-none cursor-pointer';
 
   const inputClass =
-    'w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 ' +
+    'w-full bg-elevated border border-border-default rounded-lg px-3 py-2 text-sm text-text-primary ' +
     'focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500';
 
   return (
@@ -175,7 +177,7 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
 
         {/* Experiment Name */}
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-zinc-400">
+          <label className="block text-xs font-medium text-text-secondary">
             实验名称
           </label>
           <input
@@ -189,7 +191,7 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
 
         {/* Model Selection */}
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-zinc-400">
+          <label className="block text-xs font-medium text-text-secondary">
             模型选择
           </label>
           <select
@@ -207,11 +209,11 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
 
         {/* Dataset Selection — suites + subsets */}
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-zinc-400">
+          <label className="block text-xs font-medium text-text-secondary">
             测试集
           </label>
           {isLoadingCases ? (
-            <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-500">
+            <div className="flex items-center gap-2 px-3 py-2 text-xs text-text-tertiary">
               <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -219,9 +221,9 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
               加载测试集...
             </div>
           ) : testCases.length === 0 && testSubsets.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-zinc-500 bg-zinc-800/50 rounded-lg border border-zinc-700/50">
+            <div className="px-3 py-2 text-xs text-text-tertiary bg-surface rounded-lg border border-border-default">
               未找到测试集。请在{' '}
-              <code className="bg-zinc-700 px-1 rounded text-zinc-300">
+              <code className="bg-active px-1 rounded text-text-secondary">
                 .code-agent/test-cases/
               </code>{' '}
               目录下创建测试用例。
@@ -256,7 +258,7 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
 
         {/* Trials Per Case */}
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-zinc-400">
+          <label className="block text-xs font-medium text-text-secondary">
             每用例重复次数
           </label>
           <input
@@ -270,20 +272,20 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
             }}
             className={inputClass}
           />
-          <p className="text-[10px] text-zinc-500">范围 1-5，用于评估 pass@k 稳定性</p>
+          <p className="text-[10px] text-text-tertiary">范围 1-5，用于评估 pass@k 稳定性</p>
         </div>
 
         {/* Git Commit */}
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-zinc-400">
+          <label className="block text-xs font-medium text-text-secondary">
             Git Commit
           </label>
-          <div className="flex items-center gap-2 px-3 py-2 bg-zinc-800/50 rounded-lg border border-zinc-700/50">
-            <svg className="w-3.5 h-3.5 text-zinc-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center gap-2 px-3 py-2 bg-surface rounded-lg border border-border-default">
+            <svg className="w-3.5 h-3.5 text-text-tertiary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
             </svg>
-            <span className="text-sm text-zinc-400 font-mono truncate">
+            <span className="text-sm text-text-secondary font-mono truncate">
               {gitCommit}
             </span>
           </div>

@@ -122,7 +122,7 @@ export const Connectors: React.FC = () => {
       case 'error':
         return <AlertCircle className="w-3.5 h-3.5 text-red-400" />;
       default:
-        return <div className="w-3.5 h-3.5 rounded-full bg-zinc-600" />;
+        return <div className="w-3.5 h-3.5 rounded-full bg-active" />;
     }
   };
 
@@ -146,14 +146,14 @@ export const Connectors: React.FC = () => {
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <Plug className="w-4 h-4 text-primary-400 flex-shrink-0" />
-          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+          <span className="text-xs font-medium text-text-secondary uppercase tracking-wide">
             {t.taskPanel.connectors}
           </span>
         </div>
         {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+          <ChevronDown className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+          <ChevronRight className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
         )}
       </button>
 
@@ -167,26 +167,26 @@ export const Connectors: React.FC = () => {
                 <div key={server.name} className="rounded overflow-hidden">
                   <button
                     onClick={() => toggleServerExpand(server.name)}
-                    className="w-full flex items-center gap-2 py-1 px-2 bg-zinc-800/30 rounded hover:bg-zinc-800/50 transition-colors"
+                    className="w-full flex items-center gap-2 py-1 px-2 bg-surface rounded hover:bg-surface transition-colors"
                   >
                     {getStatusIcon(server.status)}
-                    <span className="flex-1 text-sm text-zinc-300 truncate">{server.name}</span>
+                    <span className="flex-1 text-sm text-text-secondary truncate">{server.name}</span>
                     {server.toolCount !== undefined && server.toolCount > 0 && (
-                      <span className="text-xs text-zinc-500">
+                      <span className="text-xs text-text-tertiary">
                         {server.toolCount} {t.taskPanel.tools}
                       </span>
                     )}
                     {isServerExpanded ? (
-                      <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                      <ChevronDown className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
                     ) : (
-                      <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+                      <ChevronRight className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
                     )}
                   </button>
 
                   {/* Expanded server details */}
                   {isServerExpanded && (
-                    <div className="px-2 py-2 bg-zinc-900/50 text-xs space-y-1">
-                      <div className="flex justify-between text-zinc-400">
+                    <div className="px-2 py-2 bg-deep text-xs space-y-1">
+                      <div className="flex justify-between text-text-secondary">
                         <span>Status:</span>
                         <span className={
                           server.status === 'connected' ? 'text-green-400' :
@@ -197,7 +197,7 @@ export const Connectors: React.FC = () => {
                         </span>
                       </div>
                       {server.toolCount !== undefined && (
-                        <div className="flex justify-between text-zinc-400">
+                        <div className="flex justify-between text-text-secondary">
                           <span>Tools:</span>
                           <span>{server.toolCount}</span>
                         </div>
@@ -208,13 +208,13 @@ export const Connectors: React.FC = () => {
               );
             })
           ) : (
-            <div className="text-xs text-zinc-500 py-1">{t.taskPanel.noConnectors}</div>
+            <div className="text-xs text-text-tertiary py-1">{t.taskPanel.noConnectors}</div>
           )}
 
           {/* View all link */}
           <button
             onClick={() => openSettingsTab('mcp')}
-            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors pt-1"
+            className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors pt-1"
           >
             <Settings className="w-3 h-3" />
             <span>{t.taskPanel.viewAllConnectors}</span>
@@ -231,17 +231,17 @@ export const Connectors: React.FC = () => {
           >
             <div className="flex items-center gap-2 flex-1 min-w-0">
               <Wrench className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-              <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+              <span className="text-xs font-medium text-text-secondary uppercase tracking-wide">
                 {t.taskPanel.sessionCalls}
               </span>
-              <span className="text-[10px] text-zinc-600">
+              <span className="text-[10px] text-text-disabled">
                 ({mcpTools.length + skillTools.length})
               </span>
             </div>
             {showToolHistory ? (
-              <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+              <ChevronDown className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
             ) : (
-              <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+              <ChevronRight className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
             )}
           </button>
 
@@ -252,21 +252,21 @@ export const Connectors: React.FC = () => {
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-1.5 px-1">
                     <Plug className="w-3 h-3 text-blue-400" />
-                    <span className="text-[10px] text-zinc-500 uppercase">MCP</span>
+                    <span className="text-[10px] text-text-tertiary uppercase">MCP</span>
                   </div>
                   {mcpTools.slice(0, 5).map((tool) => (
                     <div
                       key={tool.name}
-                      className="flex items-center gap-2 py-1 px-2 rounded bg-zinc-800/30 text-xs"
+                      className="flex items-center gap-2 py-1 px-2 rounded bg-surface text-xs"
                     >
-                      <span className="flex-1 text-zinc-400 truncate">
+                      <span className="flex-1 text-text-secondary truncate">
                         {tool.serverName ? `${tool.serverName}` : tool.name.replace('mcp__', '').replace('mcp_', '')}
                       </span>
-                      <span className="text-zinc-600">{tool.count}x</span>
+                      <span className="text-text-disabled">{tool.count}x</span>
                     </div>
                   ))}
                   {mcpTools.length > 5 && (
-                    <div className="text-[10px] text-zinc-600 px-2">
+                    <div className="text-[10px] text-text-disabled px-2">
                       +{mcpTools.length - 5} 更多
                     </div>
                   )}
@@ -278,17 +278,17 @@ export const Connectors: React.FC = () => {
                 <div className="space-y-1">
                   <div className="flex items-center gap-1.5 px-1">
                     <Sparkles className="w-3 h-3 text-purple-400" />
-                    <span className="text-[10px] text-zinc-500 uppercase">Skills</span>
+                    <span className="text-[10px] text-text-tertiary uppercase">Skills</span>
                   </div>
                   {skillTools.slice(0, 5).map((tool) => (
                     <div
                       key={tool.name}
-                      className="flex items-center gap-2 py-1 px-2 rounded bg-zinc-800/30 text-xs"
+                      className="flex items-center gap-2 py-1 px-2 rounded bg-surface text-xs"
                     >
-                      <span className="flex-1 text-zinc-400 truncate">
+                      <span className="flex-1 text-text-secondary truncate">
                         {tool.name.replace('skill_', '')}
                       </span>
-                      <span className="text-zinc-600">{tool.count}x</span>
+                      <span className="text-text-disabled">{tool.count}x</span>
                     </div>
                   ))}
                 </div>

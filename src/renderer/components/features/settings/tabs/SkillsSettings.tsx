@@ -127,7 +127,7 @@ const SkillCheckbox: React.FC<SkillCheckboxProps> = ({ skill, onToggle, disabled
           ? 'bg-amber-500/20 text-amber-400'
           : skill.enabled
             ? 'bg-emerald-500/20 text-emerald-400'
-            : 'bg-zinc-700/50 text-zinc-400 hover:bg-zinc-700'
+            : 'bg-hover text-text-secondary hover:bg-active'
       } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
       title={tooltipContent || undefined}
     >
@@ -144,7 +144,7 @@ const SkillCheckbox: React.FC<SkillCheckboxProps> = ({ skill, onToggle, disabled
             ? 'bg-amber-500 border-amber-500'
             : skill.enabled
               ? 'bg-emerald-500 border-emerald-500'
-              : 'border-zinc-500'
+              : 'border-border-strong'
         }`}
       >
         {hasMissingDeps ? (
@@ -184,15 +184,15 @@ const LibraryCard: React.FC<LibraryCardProps> = ({
   const hasMore = library.skills.length > 5;
 
   return (
-    <div className="bg-zinc-800/50 rounded-lg border border-zinc-700 overflow-hidden">
+    <div className="bg-surface rounded-lg border border-border-default overflow-hidden">
       {/* Header */}
       <div className="p-4">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <BookOpen className="w-5 h-5 text-amber-400 shrink-0" />
             <div>
-              <h4 className="text-sm font-medium text-zinc-100">{library.repoName}</h4>
-              <div className="flex items-center gap-2 mt-1 text-xs text-zinc-400">
+              <h4 className="text-sm font-medium text-text-primary">{library.repoName}</h4>
+              <div className="flex items-center gap-2 mt-1 text-xs text-text-secondary">
                 <span>{library.skills.length} skills</span>
                 <span>·</span>
                 <span>上次更新: {formatTime(library.lastUpdated)}</span>
@@ -203,7 +203,7 @@ const LibraryCard: React.FC<LibraryCardProps> = ({
 
         {/* Skills */}
         <div className="mt-4">
-          <div className="text-xs text-zinc-400 mb-2">
+          <div className="text-xs text-text-secondary mb-2">
             启用的 Skills ({enabledCount}/{library.skills.length}):
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -218,7 +218,7 @@ const LibraryCard: React.FC<LibraryCardProps> = ({
             {hasMore && !expanded && (
               <button
                 onClick={() => setExpanded(true)}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-zinc-700/50 text-zinc-400 hover:bg-zinc-700 transition-colors"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-hover text-text-secondary hover:bg-active transition-colors"
               >
                 +{library.skills.length - 5} 更多
                 <ChevronDown className="w-3 h-3" />
@@ -227,7 +227,7 @@ const LibraryCard: React.FC<LibraryCardProps> = ({
             {hasMore && expanded && (
               <button
                 onClick={() => setExpanded(false)}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-zinc-700/50 text-zinc-400 hover:bg-zinc-700 transition-colors"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-hover text-text-secondary hover:bg-active transition-colors"
               >
                 收起
                 <ChevronUp className="w-3 h-3" />
@@ -238,7 +238,7 @@ const LibraryCard: React.FC<LibraryCardProps> = ({
       </div>
 
       {/* Actions */}
-      <div className="px-4 py-3 bg-zinc-800/30 border-t border-zinc-700/50 flex justify-end gap-2">
+      <div className="px-4 py-3 bg-surface border-t border-border-default flex justify-end gap-2">
         <Button
           size="sm"
           variant="ghost"
@@ -277,13 +277,13 @@ const RecommendedRepoCard: React.FC<RecommendedRepoCardProps> = ({
   isInstalling,
 }) => {
   return (
-    <div className="bg-zinc-800/50 rounded-lg border border-zinc-700 p-4 flex items-center justify-between">
+    <div className="bg-surface rounded-lg border border-border-default p-4 flex items-center justify-between">
       <div className="flex items-center gap-3">
         <Package className="w-5 h-5 text-blue-400 shrink-0" />
         <div>
-          <h4 className="text-sm font-medium text-zinc-100">{repo.name}</h4>
+          <h4 className="text-sm font-medium text-text-primary">{repo.name}</h4>
           {repo.description && (
-            <p className="text-xs text-zinc-400 mt-0.5">{repo.description}</p>
+            <p className="text-xs text-text-secondary mt-0.5">{repo.description}</p>
           )}
         </div>
       </div>
@@ -323,7 +323,7 @@ const SkillSearchResultCard: React.FC<SkillSearchResultCardProps> = ({
   };
 
   return (
-    <div className="bg-zinc-800/50 rounded-lg border border-zinc-700 p-3 hover:border-zinc-600 transition-colors">
+    <div className="bg-surface rounded-lg border border-border-default p-3 hover:border-border-strong transition-colors">
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
@@ -331,7 +331,7 @@ const SkillSearchResultCard: React.FC<SkillSearchResultCardProps> = ({
               href={skill.skillUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-sm font-medium text-zinc-100 truncate hover:text-blue-400"
+              className="text-sm font-medium text-text-primary truncate hover:text-blue-400"
             >
               {skill.name}
             </a>
@@ -340,11 +340,11 @@ const SkillSearchResultCard: React.FC<SkillSearchResultCardProps> = ({
               <span>{formatStars(skill.stars)}</span>
             </div>
           </div>
-          <p className="text-xs text-zinc-500 mt-0.5 truncate">
+          <p className="text-xs text-text-tertiary mt-0.5 truncate">
             by {skill.author}
           </p>
           {skill.description && (
-            <p className="text-xs text-zinc-400 mt-1 line-clamp-2">{skill.description}</p>
+            <p className="text-xs text-text-secondary mt-1 line-clamp-2">{skill.description}</p>
           )}
         </div>
         <a
@@ -622,7 +622,7 @@ export const SkillsSettings: React.FC = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+        <Loader2 className="w-6 h-6 animate-spin text-text-secondary" />
       </div>
     );
   }
@@ -631,8 +631,8 @@ export const SkillsSettings: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h3 className="text-sm font-medium text-zinc-100 mb-2">Skills 管理</h3>
-        <p className="text-xs text-zinc-400">
+        <h3 className="text-sm font-medium text-text-primary mb-2">Skills 管理</h3>
+        <p className="text-xs text-text-secondary">
           管理已安装的 Skill 库，启用或禁用单个 Skill。
         </p>
       </div>
@@ -657,14 +657,14 @@ export const SkillsSettings: React.FC = () => {
 
       {/* Installed Libraries */}
       <div className="space-y-3">
-        <h4 className="text-sm font-medium text-zinc-100">
+        <h4 className="text-sm font-medium text-text-primary">
           已安装的 Skill 库 ({libraries.length})
         </h4>
         {libraries.length === 0 ? (
-          <div className="bg-zinc-800/50 rounded-lg p-6 text-center">
-            <Package className="w-8 h-8 text-zinc-500 mx-auto mb-2" />
-            <p className="text-sm text-zinc-400">还没有安装任何 Skill 库</p>
-            <p className="text-xs text-zinc-500 mt-1">
+          <div className="bg-surface rounded-lg p-6 text-center">
+            <Package className="w-8 h-8 text-text-tertiary mx-auto mb-2" />
+            <p className="text-sm text-text-secondary">还没有安装任何 Skill 库</p>
+            <p className="text-xs text-text-tertiary mt-1">
               从下方推荐列表安装，或添加自定义仓库
             </p>
           </div>
@@ -686,7 +686,7 @@ export const SkillsSettings: React.FC = () => {
       {/* Recommended Repos */}
       {recommendedRepos.length > 0 && (
         <div className="space-y-3">
-          <h4 className="text-sm font-medium text-zinc-100">推荐安装</h4>
+          <h4 className="text-sm font-medium text-text-primary">推荐安装</h4>
           {recommendedRepos.map((repo) => (
             <RecommendedRepoCard
               key={repo.id}
@@ -700,8 +700,8 @@ export const SkillsSettings: React.FC = () => {
 
       {/* Search Skills from SkillsMP */}
       <div className="space-y-3">
-        <h4 className="text-sm font-medium text-zinc-100">搜索 Skill</h4>
-        <div className="bg-zinc-800/50 rounded-lg border border-zinc-700 p-4">
+        <h4 className="text-sm font-medium text-text-primary">搜索 Skill</h4>
+        <div className="bg-surface rounded-lg border border-border-default p-4">
           <div className="flex gap-2">
             <div className="relative flex-1">
               <Input
@@ -720,7 +720,7 @@ export const SkillsSettings: React.FC = () => {
               {searchQuery && !isSearching && (
                 <button
                   onClick={handleClearSearch}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-secondary"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -737,7 +737,7 @@ export const SkillsSettings: React.FC = () => {
               搜索
             </Button>
           </div>
-          <p className="text-xs text-zinc-500 mt-2">
+          <p className="text-xs text-text-tertiary mt-2">
             从{' '}
             <a
               href="https://skillsmp.com"
@@ -753,7 +753,7 @@ export const SkillsSettings: React.FC = () => {
           {/* Search Results */}
           {searchResults.length > 0 && (
             <div className="mt-4 space-y-2 max-h-80 overflow-y-auto">
-              <div className="text-xs text-zinc-400 mb-2">
+              <div className="text-xs text-text-secondary mb-2">
                 {searchTotal
                   ? `共 ${searchTotal.toLocaleString()} 个结果，显示前 ${searchResults.length} 个：`
                   : `找到 ${searchResults.length} 个结果：`}
@@ -771,7 +771,7 @@ export const SkillsSettings: React.FC = () => {
 
           {/* Search Error */}
           {searchError && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-zinc-400">
+            <div className="mt-3 flex items-center gap-2 text-xs text-text-secondary">
               <AlertCircle className="w-3 h-3" />
               {searchError}
             </div>
@@ -781,8 +781,8 @@ export const SkillsSettings: React.FC = () => {
 
       {/* Add Custom Repository */}
       <div className="space-y-3">
-        <h4 className="text-sm font-medium text-zinc-100">添加自定义 Skill 库</h4>
-        <div className="bg-zinc-800/50 rounded-lg border border-zinc-700 p-4">
+        <h4 className="text-sm font-medium text-text-primary">添加自定义 Skill 库</h4>
+        <div className="bg-surface rounded-lg border border-border-default p-4">
           <div className="space-y-2">
             <Input
               value={customUrl}
@@ -791,7 +791,7 @@ export const SkillsSettings: React.FC = () => {
               inputSize="sm"
               disabled={actionLoading === 'custom'}
             />
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-text-tertiary">
               输入 GitHub 仓库 URL，仓库根目录需包含 skill 目录结构
             </p>
           </div>
@@ -811,9 +811,9 @@ export const SkillsSettings: React.FC = () => {
       </div>
 
       {/* Info Box */}
-      <div className="bg-zinc-800/50 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-zinc-100 mb-2">关于 Skills</h4>
-        <p className="text-xs text-zinc-400 leading-relaxed">
+      <div className="bg-surface rounded-lg p-4">
+        <h4 className="text-sm font-medium text-text-primary mb-2">关于 Skills</h4>
+        <p className="text-xs text-text-secondary leading-relaxed">
           Skills 是预定义的工作流，可以帮助 Agent 更高效地完成特定任务。
           启用的 Skills 会在相关场景下自动推荐使用。
           你可以从官方仓库安装 Skills，也可以添加社区或自定义的 Skill 库。

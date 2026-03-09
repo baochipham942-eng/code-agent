@@ -169,36 +169,36 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-md bg-zinc-900 rounded-xl border border-zinc-800 shadow-2xl overflow-hidden animate-fadeIn">
+      <div className="relative w-full max-w-md bg-deep rounded-xl border border-border-default shadow-2xl overflow-hidden animate-fadeIn">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-default">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100">导出会话</h2>
-            <p className="text-xs text-zinc-500 mt-0.5">
+            <h2 className="text-lg font-semibold text-text-primary">导出会话</h2>
+            <p className="text-xs text-text-tertiary mt-0.5">
               {messages.length} 条消息
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+            className="p-1.5 rounded-lg hover:bg-hover transition-colors"
             aria-label="关闭"
           >
-            <X className="w-5 h-5 text-zinc-400" />
+            <X className="w-5 h-5 text-text-secondary" />
           </button>
         </div>
 
         {/* Content */}
         <div className="p-5 space-y-4">
           {/* Session info */}
-          <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
-            <p className="text-sm text-zinc-300 font-medium truncate">
+          <div className="p-3 rounded-lg bg-surface border border-border-default">
+            <p className="text-sm text-text-secondary font-medium truncate">
               {sessionTitle}
             </p>
           </div>
 
           {/* Format selection */}
           <div>
-            <label className="block text-sm font-medium text-zinc-300 mb-2">
+            <label className="block text-sm font-medium text-text-secondary mb-2">
               导出格式
             </label>
             <div className="grid grid-cols-2 gap-3">
@@ -211,18 +211,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     className={`p-3 rounded-lg border text-left transition-all ${
                       isSelected
                         ? 'border-primary-500 bg-primary-500/10'
-                        : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800/50'
+                        : 'border-border-default hover:border-border-strong hover:bg-surface'
                     }`}
                   >
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={isSelected ? 'text-primary-400' : 'text-zinc-400'}>
+                      <span className={isSelected ? 'text-primary-400' : 'text-text-secondary'}>
                         {option.icon}
                       </span>
-                      <span className={`font-medium ${isSelected ? 'text-zinc-100' : 'text-zinc-300'}`}>
+                      <span className={`font-medium ${isSelected ? 'text-text-primary' : 'text-text-secondary'}`}>
                         {option.label}
                       </span>
                     </div>
-                    <p className="text-xs text-zinc-500">
+                    <p className="text-xs text-text-tertiary">
                       {option.description}
                     </p>
                   </button>
@@ -241,10 +241,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-zinc-800 bg-zinc-900/50">
+        <div className="flex items-center justify-end gap-3 px-5 py-4 border-t border-border-default bg-deep">
           <button
             onClick={handleCopyToClipboard}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-zinc-700 hover:bg-zinc-800 text-sm text-zinc-300 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border-default hover:bg-hover text-sm text-text-secondary transition-colors"
           >
             {copied ? (
               <>

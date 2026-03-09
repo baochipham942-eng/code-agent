@@ -23,7 +23,7 @@ const EVENT_ICONS: Record<string, React.FC<{ className?: string }>> = {
 
 const EVENT_COLORS: Record<string, string> = {
   turn_start: 'text-green-400 bg-green-500/10',
-  turn_end: 'text-zinc-400 bg-zinc-500/10',
+  turn_end: 'text-text-secondary bg-active/10',
   tool_call_start: 'text-blue-400 bg-blue-500/10',
   tool_call_end: 'text-blue-400 bg-blue-500/10',
   message: 'text-cyan-400 bg-cyan-500/10',
@@ -39,14 +39,14 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ events }) => {
   };
 
   if (events.length === 0) {
-    return <div className="text-center text-zinc-500 text-sm py-8">暂无事件数据</div>;
+    return <div className="text-center text-text-tertiary text-sm py-8">暂无事件数据</div>;
   }
 
   return (
     <div className="space-y-0.5 overflow-y-auto max-h-[calc(100vh-300px)]">
       {events.map((event, idx) => {
         const Icon = EVENT_ICONS[event.eventType] ?? Info;
-        const colorClass = EVENT_COLORS[event.eventType] ?? 'text-zinc-400 bg-zinc-500/10';
+        const colorClass = EVENT_COLORS[event.eventType] ?? 'text-text-secondary bg-active/10';
 
         return (
           <div key={event.id || idx} className="flex items-start gap-2 py-1.5">
@@ -55,18 +55,18 @@ export const TimelineView: React.FC<TimelineViewProps> = ({ events }) => {
               <div className={`w-5 h-5 rounded-full flex items-center justify-center ${colorClass}`}>
                 <Icon className="w-3 h-3" />
               </div>
-              {idx < events.length - 1 && <div className="w-px h-4 bg-zinc-700/50" />}
+              {idx < events.length - 1 && <div className="w-px h-4 bg-hover" />}
             </div>
 
             {/* Event content */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-zinc-300 truncate">{event.summary}</span>
+                <span className="text-xs text-text-secondary truncate">{event.summary}</span>
                 <div className="flex items-center gap-2 shrink-0 ml-2">
                   {event.durationMs != null && (
-                    <span className="text-[10px] text-zinc-500">{event.durationMs}ms</span>
+                    <span className="text-[10px] text-text-tertiary">{event.durationMs}ms</span>
                   )}
-                  <span className="text-[10px] text-zinc-600 font-mono">{formatTime(event.timestamp)}</span>
+                  <span className="text-[10px] text-text-disabled font-mono">{formatTime(event.timestamp)}</span>
                 </div>
               </div>
             </div>

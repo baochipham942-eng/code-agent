@@ -12,7 +12,7 @@ interface ToolStatsProps {
 
 export const ToolStats: React.FC<ToolStatsProps> = ({ stats }) => {
   if (stats.length === 0) {
-    return <div className="text-center text-zinc-500 text-sm py-8">暂无工具统计数据</div>;
+    return <div className="text-center text-text-tertiary text-sm py-8">暂无工具统计数据</div>;
   }
 
   const maxCalls = Math.max(...stats.map(s => s.callCount));
@@ -24,17 +24,17 @@ export const ToolStats: React.FC<ToolStatsProps> = ({ stats }) => {
         const successColor = stat.successRate >= 0.8 ? 'bg-green-500/30' : stat.successRate >= 0.5 ? 'bg-amber-500/30' : 'bg-red-500/30';
 
         return (
-          <div key={stat.name} className="p-2.5 bg-zinc-800/30 rounded-lg border border-zinc-700/30">
+          <div key={stat.name} className="p-2.5 bg-surface rounded-lg border border-border-subtle">
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs font-mono text-zinc-300">{stat.name}</span>
-              <div className="flex items-center gap-3 text-[10px] text-zinc-500">
+              <span className="text-xs font-mono text-text-secondary">{stat.name}</span>
+              <div className="flex items-center gap-3 text-[10px] text-text-tertiary">
                 <span>{stat.callCount} 次</span>
                 <span>avg {stat.avgDurationMs}ms</span>
               </div>
             </div>
 
             {/* Bar */}
-            <div className="relative h-4 bg-zinc-900/50 rounded overflow-hidden">
+            <div className="relative h-4 bg-deep rounded overflow-hidden">
               <div
                 className={`absolute inset-y-0 left-0 ${successColor} rounded transition-all`}
                 style={{ width: `${barWidth}%` }}
@@ -55,13 +55,13 @@ export const ToolStats: React.FC<ToolStatsProps> = ({ stats }) => {
 
             {/* Success rate bar */}
             <div className="flex items-center gap-2 mt-1">
-              <div className="flex-1 h-1 bg-zinc-700/50 rounded-full overflow-hidden">
+              <div className="flex-1 h-1 bg-hover rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full ${stat.successRate >= 0.8 ? 'bg-green-500' : stat.successRate >= 0.5 ? 'bg-amber-500' : 'bg-red-500'}`}
                   style={{ width: `${stat.successRate * 100}%` }}
                 />
               </div>
-              <span className="text-[10px] text-zinc-500 w-8 text-right">
+              <span className="text-[10px] text-text-tertiary w-8 text-right">
                 {(stat.successRate * 100).toFixed(0)}%
               </span>
             </div>

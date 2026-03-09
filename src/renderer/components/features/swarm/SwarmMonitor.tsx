@@ -24,12 +24,12 @@ import type { SwarmAgentState, SwarmVerificationResult } from '@shared/types/swa
 
 // Agent 状态颜色映射
 const statusColors: Record<string, { bg: string; text: string; border: string }> = {
-  pending: { bg: 'bg-zinc-500/10', text: 'text-zinc-400', border: 'border-zinc-500/30' },
+  pending: { bg: 'bg-active/10', text: 'text-text-secondary', border: 'border-border-strong/30' },
   ready: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/30' },
   running: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/30' },
   completed: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/30' },
   failed: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/30' },
-  cancelled: { bg: 'bg-zinc-500/10', text: 'text-zinc-500', border: 'border-zinc-500/30' },
+  cancelled: { bg: 'bg-active/10', text: 'text-text-tertiary', border: 'border-border-strong/30' },
 };
 
 // 状态图标
@@ -74,7 +74,7 @@ const AgentCard: React.FC<{ agent: SwarmAgentState }> = ({ agent }) => {
         <div className={colors.text}>
           <StatusIcon status={agent.status} />
         </div>
-        <span className="text-sm font-medium text-zinc-200 truncate flex-1">
+        <span className="text-sm font-medium text-text-primary truncate flex-1">
           {agent.name}
         </span>
         <span className={`text-xs px-1.5 py-0.5 rounded ${colors.bg} ${colors.text}`}>
@@ -83,7 +83,7 @@ const AgentCard: React.FC<{ agent: SwarmAgentState }> = ({ agent }) => {
       </div>
 
       {/* Stats */}
-      <div className="flex items-center gap-3 text-xs text-zinc-500">
+      <div className="flex items-center gap-3 text-xs text-text-tertiary">
         {/* Duration */}
         {agent.startTime && (
           <span className="flex items-center gap-1">
@@ -123,7 +123,7 @@ const AgentCard: React.FC<{ agent: SwarmAgentState }> = ({ agent }) => {
 
       {/* Last Report */}
       {agent.lastReport && agent.status === 'running' && (
-        <div className="mt-1.5 text-xs text-zinc-500 truncate">
+        <div className="mt-1.5 text-xs text-text-tertiary truncate">
           {agent.lastReport}
         </div>
       )}
@@ -138,14 +138,14 @@ const StatCard: React.FC<{
   value: string | number;
   subValue?: string;
   color?: string;
-}> = ({ icon, label, value, subValue, color = 'text-zinc-400' }) => (
-  <div className="flex items-center gap-2 px-3 py-2 bg-zinc-800/50 rounded-lg">
+}> = ({ icon, label, value, subValue, color = 'text-text-secondary' }) => (
+  <div className="flex items-center gap-2 px-3 py-2 bg-surface rounded-lg">
     <div className={color}>{icon}</div>
     <div>
-      <div className="text-sm font-medium text-zinc-200">{value}</div>
-      <div className="text-xs text-zinc-500">
+      <div className="text-sm font-medium text-text-primary">{value}</div>
+      <div className="text-xs text-text-tertiary">
         {label}
-        {subValue && <span className="ml-1 text-zinc-600">({subValue})</span>}
+        {subValue && <span className="ml-1 text-text-disabled">({subValue})</span>}
       </div>
     </div>
   </div>
@@ -172,7 +172,7 @@ const VerificationBadge: React.FC<{ verification?: SwarmVerificationResult }> = 
         <span className={`text-sm font-medium ${passed ? 'text-emerald-300' : 'text-red-300'}`}>
           验证{passed ? '通过' : '未通过'}
         </span>
-        <span className="text-xs text-zinc-500 ml-auto">
+        <span className="text-xs text-text-tertiary ml-auto">
           {(score * 100).toFixed(0)}%
         </span>
       </div>
@@ -226,23 +226,23 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
   // 如果没有 agent，显示空状态
   if (agents.length === 0 && !isRunning) {
     return (
-      <div className="w-80 flex flex-col border-l border-zinc-800 bg-zinc-900/50">
-        <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+      <div className="w-80 flex flex-col border-l border-border-default bg-deep">
+        <div className="px-4 py-3 border-b border-border-default flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-medium text-zinc-200">Swarm Monitor</h3>
-            <p className="text-xs text-zinc-500 mt-0.5">Agent 协作监控</p>
+            <h3 className="text-sm font-medium text-text-primary">Swarm Monitor</h3>
+            <p className="text-xs text-text-tertiary mt-0.5">Agent 协作监控</p>
           </div>
           {onClose && (
             <button
               onClick={onClose}
-              className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 rounded transition-colors"
+              className="p-1 text-text-secondary hover:text-text-primary hover:bg-hover rounded transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
           )}
         </div>
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-zinc-500">
+          <div className="text-center text-text-tertiary">
             <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm">暂无活跃的 Agent Swarm</p>
             <p className="text-xs mt-1">当复杂任务触发多 Agent 协作时显示</p>
@@ -253,11 +253,11 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
   }
 
   return (
-    <div className="w-80 flex flex-col border-l border-zinc-800 bg-zinc-900/50">
+    <div className="w-80 flex flex-col border-l border-border-default bg-deep">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-border-default flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-medium text-zinc-200 flex items-center gap-2">
+          <h3 className="text-sm font-medium text-text-primary flex items-center gap-2">
             Swarm Monitor
             {isRunning && (
               <span className="flex items-center gap-1 text-xs text-amber-400">
@@ -266,14 +266,14 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
               </span>
             )}
           </h3>
-          <p className="text-xs text-zinc-500 mt-0.5">
+          <p className="text-xs text-text-tertiary mt-0.5">
             {statistics.total} 个 Agent · {formatDuration(elapsedTime)}
           </p>
         </div>
         {onClose && (
           <button
             onClick={onClose}
-            className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 rounded transition-colors"
+            className="p-1 text-text-secondary hover:text-text-primary hover:bg-hover rounded transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -281,7 +281,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
       </div>
 
       {/* Statistics */}
-      <div className="px-3 py-2 border-b border-zinc-800/50">
+      <div className="px-3 py-2 border-b border-border-default">
         <div className="grid grid-cols-2 gap-2">
           <StatCard
             icon={<Activity className="w-4 h-4" />}
@@ -330,7 +330,7 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
         {groupedAgents.pending.length > 0 && (
           <AgentSection
             title="等待中"
-            icon={<Clock className="w-3.5 h-3.5 text-zinc-400" />}
+            icon={<Clock className="w-3.5 h-3.5 text-text-secondary" />}
             agents={groupedAgents.pending}
           />
         )}
@@ -368,17 +368,17 @@ const AgentSection: React.FC<{
   const [expanded, setExpanded] = React.useState(defaultExpanded);
 
   return (
-    <div className="border-b border-zinc-800/50">
+    <div className="border-b border-border-default">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full px-4 py-2.5 flex items-center gap-2 hover:bg-zinc-800/30 transition-colors"
+        className="w-full px-4 py-2.5 flex items-center gap-2 hover:bg-surface transition-colors"
       >
         <ChevronRight
-          className={`w-4 h-4 text-zinc-500 transition-transform ${expanded ? 'rotate-90' : ''}`}
+          className={`w-4 h-4 text-text-tertiary transition-transform ${expanded ? 'rotate-90' : ''}`}
         />
         {icon}
-        <span className="text-sm text-zinc-300 flex-1 text-left">{title}</span>
-        <span className="text-xs text-zinc-500 px-1.5 py-0.5 rounded bg-zinc-800">
+        <span className="text-sm text-text-secondary flex-1 text-left">{title}</span>
+        <span className="text-xs text-text-tertiary px-1.5 py-0.5 rounded bg-elevated">
           {agents.length}
         </span>
       </button>

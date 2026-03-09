@@ -307,7 +307,7 @@ const ThinkingIndicator: React.FC = () => {
   const ctxColor =
     contextUsagePercent >= 85 ? 'text-red-400' :
     contextUsagePercent >= 60 ? 'text-amber-400' :
-    'text-zinc-500';
+    'text-text-tertiary';
 
   const modelName = modelConfig?.model ? shortModelName(modelConfig.model) : null;
 
@@ -320,9 +320,9 @@ const ThinkingIndicator: React.FC = () => {
           <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '150ms' }} />
           <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '300ms' }} />
         </div>
-        <span className="text-sm text-zinc-400">思考中</span>
+        <span className="text-sm text-text-secondary">思考中</span>
         {modelName && (
-          <span className="text-xs text-zinc-500 font-mono">· {modelName}</span>
+          <span className="text-xs text-text-tertiary font-mono">· {modelName}</span>
         )}
         {contextUsagePercent > 0 && (
           <span className={`text-xs font-mono ${ctxColor}`}>
@@ -330,11 +330,11 @@ const ThinkingIndicator: React.FC = () => {
           </span>
         )}
         {totalTokens > 0 && (
-          <span className="text-xs text-zinc-500 font-mono">
+          <span className="text-xs text-text-tertiary font-mono">
             · {formatTokens(totalTokens)} tok
           </span>
         )}
-        <span className="text-xs text-zinc-600 font-mono">· {formatElapsed(elapsed)}</span>
+        <span className="text-xs text-text-disabled font-mono">· {formatElapsed(elapsed)}</span>
       </div>
     </div>
   );
@@ -416,12 +416,12 @@ const EmptyState: React.FC<{
       </div>
 
       {/* Title */}
-      <h1 className="text-2xl font-bold text-zinc-100 mb-2 animate-fade-in" style={{ animationDelay: '100ms' }}>
+      <h1 className="text-2xl font-bold text-text-primary mb-2 animate-fade-in" style={{ animationDelay: '100ms' }}>
         Code Agent
       </h1>
 
       {/* Subtitle */}
-      <p className="text-zinc-400 max-w-md mb-10 leading-relaxed animate-fade-in" style={{ animationDelay: '200ms' }}>
+      <p className="text-text-secondary max-w-md mb-10 leading-relaxed animate-fade-in" style={{ animationDelay: '200ms' }}>
         你的 AI 编程助手。我可以帮你编写、调试、解释和测试代码。
         从下方建议开始，或输入你自己的问题。
       </p>
@@ -439,9 +439,9 @@ const EmptyState: React.FC<{
       </div>
 
       {/* Footer hint */}
-      <div className="flex items-center gap-2 mt-10 text-xs text-zinc-600 animate-fade-in" style={{ animationDelay: '600ms' }}>
+      <div className="flex items-center gap-2 mt-10 text-xs text-text-disabled animate-fade-in" style={{ animationDelay: '600ms' }}>
         <Zap className="w-3.5 h-3.5 text-primary-500/50" />
-        <span>小提示：按 <kbd className="px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono text-2xs">/</kbd> 可访问命令</span>
+        <span>小提示：按 <kbd className="px-1.5 py-0.5 rounded bg-elevated text-text-secondary font-mono text-2xs">/</kbd> 可访问命令</span>
       </div>
     </div>
   );
@@ -487,16 +487,16 @@ const SuggestionCard: React.FC<SuggestionCardProps> = ({
       </div>
 
       {/* Text */}
-      <div className="text-sm font-medium text-zinc-200 group-hover:text-white transition-colors mb-0.5">
+      <div className="text-sm font-medium text-text-primary group-hover:text-text-primary transition-colors mb-0.5">
         {text}
       </div>
-      <div className="text-xs text-zinc-500 group-hover:text-zinc-400 transition-colors">
+      <div className="text-xs text-text-tertiary group-hover:text-text-secondary transition-colors">
         {description}
       </div>
 
       {/* Hover arrow */}
       <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-x-1 group-hover:translate-x-0">
-        <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className="w-4 h-4 text-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
         </svg>
       </div>

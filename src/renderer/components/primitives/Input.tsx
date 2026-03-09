@@ -54,11 +54,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     const hasError = error || !!errorMessage;
 
     const baseClasses = [
-      'bg-zinc-800',
+      'bg-elevated',
       'border',
       'rounded-lg',
-      'text-zinc-100',
-      'placeholder:text-zinc-500',
+      'text-text-primary',
+      'placeholder:text-text-tertiary',
       'focus:outline-none',
       'transition-colors',
       sizeClasses[inputSize],
@@ -68,7 +68,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     if (hasError) {
       baseClasses.push('border-red-500', 'focus:border-red-400', 'focus:ring-2', 'focus:ring-red-500/50');
     } else {
-      baseClasses.push('border-zinc-700', 'focus:border-zinc-600', 'focus:ring-2', 'focus:ring-blue-500/50', 'focus:border-blue-500');
+      baseClasses.push('border-border-default', 'focus:border-border-strong', 'focus:ring-2', 'focus:ring-blue-500/50', 'focus:border-blue-500');
     }
 
     // Disabled styles
@@ -89,7 +89,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
     return (
       <div className={`relative ${fullWidth ? 'w-full' : 'inline-block'}`}>
         {leftIcon && (
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none">
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none">
             <span className={iconSizeClasses[inputSize]}>{leftIcon}</span>
           </div>
         )}
@@ -101,7 +101,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           {...props}
         />
         {rightIcon && (
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none">
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none">
             <span className={iconSizeClasses[inputSize]}>{rightIcon}</span>
           </div>
         )}

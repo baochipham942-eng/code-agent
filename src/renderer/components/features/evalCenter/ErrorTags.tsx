@@ -15,7 +15,7 @@ export const ErrorTags: React.FC<ErrorTagsProps> = ({ errorTaxonomy }) => {
 
   return (
     <div>
-      <div className="text-xs font-medium text-zinc-400 mb-1.5">错误标签</div>
+      <div className="text-xs font-medium text-text-secondary mb-1.5">错误标签</div>
       <div className="flex flex-wrap gap-1.5">
         {sorted.map(([type, count]) => (
           <span

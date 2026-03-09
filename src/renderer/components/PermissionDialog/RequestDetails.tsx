@@ -53,9 +53,9 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {/* 确认门控 非 diff 预览（命令/网络/通用） */}
       {details.preview && details.preview.type !== 'diff' && (
         <div className="mt-4">
-          <div className="text-xs text-zinc-500 mb-2">{details.preview.summary}</div>
+          <div className="text-xs text-text-tertiary mb-2">{details.preview.summary}</div>
           {details.preview.diff && (
-            <pre className="text-xs p-2 rounded bg-zinc-800 border border-zinc-700 text-zinc-300 overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
+            <pre className="text-xs p-2 rounded bg-elevated border border-border-default text-text-secondary overflow-x-auto max-h-32 whitespace-pre-wrap break-all">
               {details.preview.diff}
             </pre>
           )}
@@ -65,7 +65,7 @@ export function RequestDetails({ request }: RequestDetailsProps) {
       {/* 编辑预览（简化版，显示变更内容） - 仅在无 diff 预览时显示 */}
       {type === 'file_edit' && details.changes && !details.preview && (
         <div className="mt-4">
-          <div className="text-xs text-zinc-500 mb-2">变更内容</div>
+          <div className="text-xs text-text-tertiary mb-2">变更内容</div>
           <pre
             className="
               text-xs p-2 rounded
@@ -112,7 +112,7 @@ function ConfirmationDiffPreview({ before, after, summary, filePath }: Confirmat
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-xs text-zinc-500">{summary}</div>
+        <div className="text-xs text-text-tertiary">{summary}</div>
         <button
           onClick={() => setExpanded(!expanded)}
           className="text-[10px] text-blue-400 hover:text-blue-300"
@@ -121,7 +121,7 @@ function ConfirmationDiffPreview({ before, after, summary, filePath }: Confirmat
         </button>
       </div>
       {expanded && (
-        <div className="max-h-48 overflow-y-auto rounded border border-zinc-700/50">
+        <div className="max-h-48 overflow-y-auto rounded border border-border-default">
           <DiffView
             oldText={before}
             newText={after}
@@ -139,7 +139,7 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: Detail
 
   return (
     <div>
-      <div className="text-xs text-zinc-500 mb-1">{label}</div>
+      <div className="text-xs text-text-tertiary mb-1">{label}</div>
       <div
         className={`
           p-2 rounded font-mono text-sm
@@ -148,12 +148,12 @@ function DetailItem({ label, value, isPath, isCode, isUrl, isDangerous }: Detail
             isCode
               ? isDangerous
                 ? 'bg-red-500/10 border border-red-500/20 text-red-300'
-                : 'bg-zinc-800 border border-zinc-700 text-zinc-300'
+                : 'bg-elevated border border-border-default text-text-secondary'
               : ''
           }
-          ${isPath ? 'bg-zinc-800/50 text-blue-400' : ''}
-          ${isUrl ? 'bg-zinc-800/50 text-cyan-400' : ''}
-          ${!isCode && !isPath && !isUrl ? 'bg-zinc-800/50 text-zinc-300' : ''}
+          ${isPath ? 'bg-surface text-blue-400' : ''}
+          ${isUrl ? 'bg-surface text-cyan-400' : ''}
+          ${!isCode && !isPath && !isUrl ? 'bg-surface text-text-secondary' : ''}
         `}
         title={value}
       >

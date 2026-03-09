@@ -47,15 +47,15 @@ export const CaptureAddDialog: React.FC = () => {
       onClick={() => setAddDialogOpen(false)}
     >
       <div
-        className="w-[500px] bg-[#1e1e24] rounded-lg border border-zinc-700 shadow-xl"
+        className="w-[500px] bg-[#1e1e24] rounded-lg border border-border-default shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 标题栏 */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
-          <h3 className="text-sm font-medium text-zinc-200">添加知识条目</h3>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border-default">
+          <h3 className="text-sm font-medium text-text-primary">添加知识条目</h3>
           <button
             onClick={() => setAddDialogOpen(false)}
-            className="p-1 text-zinc-500 hover:text-zinc-300"
+            className="p-1 text-text-tertiary hover:text-text-secondary"
           >
             <X className="w-4 h-4" />
           </button>
@@ -64,56 +64,56 @@ export const CaptureAddDialog: React.FC = () => {
         {/* 表单 */}
         <div className="p-4 space-y-3">
           <div>
-            <label className="block text-xs text-zinc-400 mb-1">标题 *</label>
+            <label className="block text-xs text-text-secondary mb-1">标题 *</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="输入标题"
-              className="w-full px-3 py-1.5 text-sm bg-zinc-800/50 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-cyan-600"
+              className="w-full px-3 py-1.5 text-sm bg-surface border border-border-default rounded-md text-text-primary placeholder-text-tertiary focus:outline-none focus:border-cyan-600"
               autoFocus
             />
           </div>
 
           <div>
-            <label className="block text-xs text-zinc-400 mb-1">内容 *</label>
+            <label className="block text-xs text-text-secondary mb-1">内容 *</label>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="输入内容..."
               rows={6}
-              className="w-full px-3 py-1.5 text-sm bg-zinc-800/50 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-cyan-600 resize-none"
+              className="w-full px-3 py-1.5 text-sm bg-surface border border-border-default rounded-md text-text-primary placeholder-text-tertiary focus:outline-none focus:border-cyan-600 resize-none"
             />
           </div>
 
           <div>
-            <label className="block text-xs text-zinc-400 mb-1">标签（逗号分隔）</label>
+            <label className="block text-xs text-text-secondary mb-1">标签（逗号分隔）</label>
             <input
               type="text"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
               placeholder="标签1, 标签2, ..."
-              className="w-full px-3 py-1.5 text-sm bg-zinc-800/50 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-cyan-600"
+              className="w-full px-3 py-1.5 text-sm bg-surface border border-border-default rounded-md text-text-primary placeholder-text-tertiary focus:outline-none focus:border-cyan-600"
             />
           </div>
 
           <div>
-            <label className="block text-xs text-zinc-400 mb-1">URL（可选）</label>
+            <label className="block text-xs text-text-secondary mb-1">URL（可选）</label>
             <input
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://..."
-              className="w-full px-3 py-1.5 text-sm bg-zinc-800/50 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-cyan-600"
+              className="w-full px-3 py-1.5 text-sm bg-surface border border-border-default rounded-md text-text-primary placeholder-text-tertiary focus:outline-none focus:border-cyan-600"
             />
           </div>
         </div>
 
         {/* 按钮 */}
-        <div className="flex justify-end gap-2 px-4 py-3 border-t border-zinc-700">
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-border-default">
           <button
             onClick={() => setAddDialogOpen(false)}
-            className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-300 rounded-md hover:bg-zinc-800"
+            className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-secondary rounded-md hover:bg-hover"
           >
             取消
           </button>

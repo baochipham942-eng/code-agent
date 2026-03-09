@@ -91,7 +91,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = ({
   return (
     <div
       ref={menuRef}
-      className="fixed z-[9999] min-w-[160px] py-1 bg-zinc-900 border border-zinc-700/80 rounded-lg shadow-xl"
+      className="fixed z-[9999] min-w-[160px] py-1 bg-deep border border-border-default/80 rounded-lg shadow-xl"
       style={{ left: pos.left, top: pos.top }}
     >
       {items.map((item, index) => (
@@ -107,7 +107,7 @@ export const SessionContextMenu: React.FC<SessionContextMenuProps> = ({
           className={`w-full flex items-center gap-2 px-3 py-1.5 text-sm transition-colors ${
             item.danger
               ? 'text-red-400 hover:bg-red-500/10 hover:text-red-300'
-              : 'text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100'
+              : 'text-text-secondary hover:bg-hover hover:text-text-primary'
           } ${item.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
         >
           <span className="w-4 text-center shrink-0">{item.icon}</span>

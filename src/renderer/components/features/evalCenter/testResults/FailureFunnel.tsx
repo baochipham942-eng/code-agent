@@ -125,16 +125,16 @@ function getNodeColors(retentionRate: number): {
 
 /** SVG arrow connector between nodes */
 const ArrowConnector: React.FC<{ hasDrop: boolean }> = ({ hasDrop }) => (
-  <div className="flex flex-col items-center justify-start pt-5 shrink-0" style={{ width: 36 }}>
-    <svg width="36" height="16" viewBox="0 0 36 16" className="shrink-0">
+  <div className="flex flex-col items-center justify-start pt-5 shrink-0 mx-0.5" style={{ width: 32 }}>
+    <svg width="32" height="16" viewBox="0 0 32 16" className="shrink-0">
       <line
-        x1="0" y1="8" x2="28" y2="8"
+        x1="0" y1="8" x2="24" y2="8"
         stroke={hasDrop ? '#f87171' : '#52525b'}
-        strokeWidth="2"
+        strokeWidth="1.5"
         strokeDasharray={hasDrop ? '4 2' : undefined}
       />
       <polygon
-        points="26,3 36,8 26,13"
+        points="22,3.5 32,8 22,12.5"
         fill={hasDrop ? '#f87171' : '#52525b'}
       />
     </svg>
@@ -145,15 +145,13 @@ const ArrowConnector: React.FC<{ hasDrop: boolean }> = ({ hasDrop }) => (
 const DropIndicator: React.FC<{ dropped: number; dropRate: number }> = ({ dropped, dropRate }) => {
   if (dropped === 0) return null;
   return (
-    <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 whitespace-nowrap">
-      <div className="flex flex-col items-center">
-        <svg width="8" height="8" viewBox="0 0 8 8" className="text-red-400/60 mb-0.5">
-          <polygon points="4,8 0,0 8,0" fill="currentColor" />
-        </svg>
-        <span className="text-[10px] bg-red-500/10 border border-red-500/30 rounded px-1.5 py-0.5 text-red-400 tabular-nums">
-          -{dropped} ({dropRate.toFixed(0)}%)
-        </span>
-      </div>
+    <div className="mt-1.5 flex flex-col items-center whitespace-nowrap">
+      <svg width="8" height="6" viewBox="0 0 8 6" className="text-red-400/60 mb-0.5">
+        <polygon points="4,6 0,0 8,0" fill="currentColor" />
+      </svg>
+      <span className="text-[10px] bg-red-500/10 border border-red-500/30 rounded px-1.5 py-0.5 text-red-400 tabular-nums">
+        -{dropped} ({dropRate.toFixed(0)}%)
+      </span>
     </div>
   );
 };
@@ -166,21 +164,21 @@ const StageNode: React.FC<{
 }> = ({ stage, totalCount, isFirst }) => {
   const retentionRate = totalCount > 0 ? stage.count / totalCount : 1;
   const colors = isFirst
-    ? { border: 'border-zinc-500/60', bg: 'bg-zinc-700/40', text: 'text-zinc-300', countText: 'text-zinc-100' }
+    ? { border: 'border-border-strong/60', bg: 'bg-hover', text: 'text-text-secondary', countText: 'text-text-primary' }
     : getNodeColors(retentionRate);
 
   return (
-    <div className="relative shrink-0" style={{ minWidth: 110 }}>
+    <div className="shrink-0 flex flex-col items-center" style={{ minWidth: 100 }}>
       <div
-        className={`${colors.bg} ${colors.border} border rounded-lg px-3 py-3 flex flex-col items-center text-center`}
+        className={`${colors.bg} ${colors.border} border rounded-lg px-2.5 py-2.5 flex flex-col items-center text-center w-full`}
       >
         <span className={`text-[11px] font-semibold ${colors.text} leading-tight`}>
           {stage.label}
         </span>
-        <span className={`text-xl font-bold tabular-nums mt-1 ${colors.countText}`}>
+        <span className={`text-lg font-bold tabular-nums mt-1 ${colors.countText}`}>
           {stage.count}
         </span>
-        <span className="text-[9px] text-zinc-500 mt-0.5 leading-tight">
+        <span className="text-[9px] text-text-tertiary mt-0.5 leading-tight">
           {stage.sublabel}
         </span>
       </div>
@@ -217,21 +215,21 @@ export const FailureFunnel: React.FC<Props> = ({ cases }) => {
       },
       {
         label: '安全检查',
-        sublabel: 'Forbidden Patterns',
+        sublabel: '禁止模式',
         count: total - security_fail.length,
         dropped: security_fail.length,
         dropRate: total > 0 ? (security_fail.length / total) * 100 : 0,
       },
       {
         label: '执行成功',
-        sublabel: 'Timeout / Runtime',
+        sublabel: '超时/运行时',
         count: total - security_fail.length - execution_fail.length,
         dropped: execution_fail.length,
         dropRate: total > 0 ? (execution_fail.length / total) * 100 : 0,
       },
       {
         label: '输出验证',
-        sublabel: 'Tool / Assertion',
+        sublabel: '工具/断言',
         count: total - security_fail.length - execution_fail.length - assertion_fail.length,
         dropped: assertion_fail.length,
         dropRate: total > 0 ? (assertion_fail.length / total) * 100 : 0,
@@ -248,7 +246,7 @@ export const FailureFunnel: React.FC<Props> = ({ cases }) => {
 
   if (cases.length === 0) {
     return (
-      <div className="flex items-center justify-center py-6 text-zinc-500 text-xs">
+      <div className="flex items-center justify-center py-6 text-text-tertiary text-xs">
         暂无数据
       </div>
     );
@@ -257,14 +255,14 @@ export const FailureFunnel: React.FC<Props> = ({ cases }) => {
   const total = cases.length;
 
   return (
-    <div className="bg-zinc-800/40 border border-zinc-700/20 rounded-lg overflow-hidden">
-      <div className="px-3 py-2 border-b border-zinc-700/20">
-        <span className="text-xs font-medium text-zinc-300">失败漏斗</span>
-        <span className="text-[10px] text-zinc-500 ml-2">{total} 用例 · 流程图</span>
+    <div className="bg-surface border border-border-default/20 rounded-lg overflow-hidden">
+      <div className="px-3 py-2 border-b border-border-default/20">
+        <span className="text-xs font-medium text-text-secondary">失败漏斗</span>
+        <span className="text-[10px] text-text-tertiary ml-2">{total} 用例 · 流程图</span>
       </div>
 
-      <div className="p-4 pb-8 overflow-x-auto">
-        <div className="flex items-start gap-0 min-w-max">
+      <div className="p-4 overflow-x-auto">
+        <div className="flex items-start gap-0">
           {stages.map((stage, idx) => (
             <React.Fragment key={stage.label}>
               <StageNode stage={stage} totalCount={total} isFirst={idx === 0} />

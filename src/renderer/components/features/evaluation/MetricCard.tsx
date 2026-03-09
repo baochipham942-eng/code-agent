@@ -35,9 +35,9 @@ export function MetricCard({ metric }: MetricCardProps) {
   return (
     <div
       className={`
-        rounded-lg border border-zinc-700/50 p-3
+        rounded-lg border border-border-default p-3
         transition-all cursor-pointer
-        hover:border-zinc-600
+        hover:border-border-strong
         ${expanded ? 'col-span-2' : ''}
       `}
       onClick={() => setExpanded(!expanded)}
@@ -57,7 +57,7 @@ export function MetricCard({ metric }: MetricCardProps) {
           <span className="text-2xl font-bold text-white">{metric.score}</span>
           <span className="text-xs text-gray-500">权重 {(metric.weight * 100).toFixed(0)}%</span>
         </div>
-        <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+        <div className="h-1.5 bg-active rounded-full overflow-hidden">
           <div
             className={`h-full ${getProgressColor(metric.score)} rounded-full transition-all`}
             style={{ width: `${metric.score}%` }}
@@ -66,10 +66,10 @@ export function MetricCard({ metric }: MetricCardProps) {
       </div>
 
       {expanded && (
-        <div className="mt-3 pt-3 border-t border-zinc-700/50 space-y-2">
+        <div className="mt-3 pt-3 border-t border-border-default space-y-2">
           {/* AI 评测理由 */}
           {metric.details?.reason && (
-            <div className="text-xs text-gray-300 bg-zinc-800/50 p-2 rounded">
+            <div className="text-xs text-gray-300 bg-surface p-2 rounded">
               <span className="text-indigo-400 mr-1">AI 分析:</span>
               {metric.details.reason}
             </div>
@@ -87,7 +87,7 @@ export function MetricCard({ metric }: MetricCardProps) {
           ))}
 
           {metric.suggestions && metric.suggestions.length > 0 && (
-            <div className="mt-2 pt-2 border-t border-zinc-700/30">
+            <div className="mt-2 pt-2 border-t border-border-subtle">
               <div className="text-xs text-gray-500 mb-1">改进建议</div>
               {metric.suggestions.map((suggestion, i) => (
                 <div key={i} className="text-xs text-gray-400 pl-2 border-l-2 border-yellow-500/50">

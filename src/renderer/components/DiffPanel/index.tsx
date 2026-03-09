@@ -70,7 +70,7 @@ export function DiffPanel({ sessionId, className = '' }: DiffPanelProps) {
     <div className={`flex flex-col gap-2 ${className}`}>
       {/* 摘要栏 */}
       {summary && (
-        <div className="flex items-center gap-4 px-3 py-2 bg-zinc-800/50 rounded-lg text-xs font-mono">
+        <div className="flex items-center gap-4 px-3 py-2 bg-surface rounded-lg text-xs font-mono">
           <span className="text-gray-400">
             {summary.filesChanged} 个文件
           </span>
@@ -114,13 +114,13 @@ function DiffEntry({ diff, expanded, onToggle }: DiffEntryProps) {
   );
 
   return (
-    <div className="rounded-lg overflow-hidden border border-zinc-700/50">
+    <div className="rounded-lg overflow-hidden border border-border-default">
       {/* 文件头 */}
       <button
         onClick={onToggle}
         className="
           w-full flex items-center gap-2 px-3 py-2
-          bg-zinc-800/80 hover:bg-zinc-800
+          bg-elevated hover:bg-hover
           text-left text-xs font-mono
           transition-colors
         "
@@ -140,11 +140,11 @@ function DiffEntry({ diff, expanded, onToggle }: DiffEntryProps) {
         <DiffView
           oldText={diff.before}
           newText={diff.after}
-          className="border-t border-zinc-700/50"
+          className="border-t border-border-default"
         />
       )}
       {expanded && (diff.before === null || diff.after === null) && (
-        <pre className="p-3 text-xs font-mono text-gray-400 bg-zinc-900 overflow-x-auto max-h-64">
+        <pre className="p-3 text-xs font-mono text-gray-400 bg-deep overflow-x-auto max-h-64">
           {diff.unifiedDiff}
         </pre>
       )}

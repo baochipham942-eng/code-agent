@@ -189,7 +189,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
     <div className="space-y-5">
       {/* Provider Selection - Dropdown */}
       <div>
-        <label className="block text-sm font-medium text-zinc-100 mb-2">
+        <label className="block text-sm font-medium text-text-primary mb-2">
           对话模型提供商
         </label>
         <Select
@@ -206,7 +206,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
 
       {/* API Key */}
       <div>
-        <label className="block text-sm font-medium text-zinc-100 mb-2">
+        <label className="block text-sm font-medium text-text-primary mb-2">
           {t.model.apiKey}
         </label>
         <Input
@@ -216,14 +216,14 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
           placeholder={t.model.apiKeyPlaceholder}
           leftIcon={<Key className="w-4 h-4" />}
         />
-        <p className="text-xs text-zinc-500 mt-1.5">
+        <p className="text-xs text-text-tertiary mt-1.5">
           {t.model.apiKeyHint}
         </p>
       </div>
 
       {/* Model Selection */}
       <div>
-        <label className="block text-sm font-medium text-zinc-100 mb-2">
+        <label className="block text-sm font-medium text-text-primary mb-2">
           {t.model.modelSelect}
         </label>
         <Select
@@ -306,7 +306,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
 
       {/* Temperature */}
       <div>
-        <label className="block text-sm font-medium text-zinc-100 mb-2">
+        <label className="block text-sm font-medium text-text-primary mb-2">
           {t.model.temperature}: <span className="text-teal-400">{config.temperature ?? 0.7}</span>
         </label>
         <input
@@ -316,9 +316,9 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
           step="0.1"
           value={config.temperature ?? 0.7}
           onChange={(e) => onChange({ ...config, temperature: parseFloat(e.target.value) })}
-          className="w-full h-2 bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-teal-500"
+          className="w-full h-2 bg-active rounded-lg appearance-none cursor-pointer accent-teal-500"
         />
-        <div className="flex justify-between text-xs text-zinc-500 mt-1">
+        <div className="flex justify-between text-xs text-text-tertiary mt-1">
           <span>{t.model.temperaturePrecise}</span>
           <span>{t.model.temperatureCreative}</span>
         </div>
@@ -350,16 +350,16 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
       </Button>
 
       {/* Service API Keys - Accordion */}
-      <div className="pt-4 border-t border-zinc-800">
+      <div className="pt-4 border-t border-border-default">
         <button
           onClick={() => setShowServiceKeys(!showServiceKeys)}
-          className="w-full flex items-center justify-between py-2 text-sm font-medium text-zinc-100 hover:text-white transition-colors"
+          className="w-full flex items-center justify-between py-2 text-sm font-medium text-text-primary hover:text-text-primary transition-colors"
         >
           <span className="flex items-center gap-2">
-            <Key className="w-4 h-4 text-zinc-400" />
+            <Key className="w-4 h-4 text-text-secondary" />
             第三方服务 API Keys
           </span>
-          <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform ${showServiceKeys ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`w-4 h-4 text-text-secondary transition-transform ${showServiceKeys ? 'rotate-180' : ''}`} />
         </button>
 
         {showServiceKeys && (
@@ -367,13 +367,13 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
             {services.map((service) => (
               <div
                 key={service.id}
-                className="flex items-center gap-3 p-3 rounded-lg border border-zinc-800 bg-zinc-900/50"
+                className="flex items-center gap-3 p-3 rounded-lg border border-border-default bg-deep"
               >
                 <div className="shrink-0">{service.icon}</div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-zinc-100">{service.name}</span>
-                    <span className="text-xs text-zinc-500">{service.description}</span>
+                    <span className="text-sm font-medium text-text-primary">{service.name}</span>
+                    <span className="text-xs text-text-tertiary">{service.description}</span>
                   </div>
                   <div className="flex gap-2 mt-2">
                     <div className="flex-1 relative">
@@ -387,7 +387,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
                       <button
                         type="button"
                         onClick={() => setVisibleKeys(prev => ({ ...prev, [service.id]: !prev[service.id] }))}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-300"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-text-tertiary hover:text-text-secondary"
                       >
                         <Eye className="w-3.5 h-3.5" />
                       </button>
@@ -413,7 +413,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
                 </div>
               </div>
             ))}
-            <p className="text-xs text-zinc-500">
+            <p className="text-xs text-text-tertiary">
               API Keys 安全存储在系统 Keychain 中
             </p>
           </div>

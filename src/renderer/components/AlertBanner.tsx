@@ -167,10 +167,10 @@ export const AlertBanner: React.FC<AlertBannerProps> = ({
 
       {/* Show more/less toggle */}
       {alerts.length > 1 && (
-        <div className="bg-zinc-800 text-center py-1">
+        <div className="bg-elevated text-center py-1">
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="text-xs text-zinc-400 hover:text-zinc-300 transition-colors"
+            className="text-xs text-text-secondary hover:text-text-secondary transition-colors"
           >
             {collapsed ? (
               <>显示全部 ({alerts.length} 条告警)</>

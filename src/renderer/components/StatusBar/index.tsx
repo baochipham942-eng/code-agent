@@ -49,8 +49,8 @@ export function StatusBar() {
       className="
         fixed bottom-0 left-0 right-0
         h-7 px-3
-        bg-zinc-900/95 backdrop-blur-sm
-        border-t border-zinc-700/50
+        bg-deep backdrop-blur-sm
+        border-t border-border-default
         flex items-center justify-between
         text-xs text-gray-400
         font-mono

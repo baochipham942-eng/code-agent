@@ -104,7 +104,7 @@ export const CronSettings: React.FC = () => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+        <Loader2 className="w-6 h-6 animate-spin text-text-secondary" />
       </div>
     );
   }
@@ -114,8 +114,8 @@ export const CronSettings: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-medium text-zinc-100 mb-2">定时任务</h3>
-          <p className="text-xs text-zinc-400">
+          <h3 className="text-sm font-medium text-text-primary mb-2">定时任务</h3>
+          <p className="text-xs text-text-secondary">
             管理 HEARTBEAT.md 中定义的自动化任务。
           </p>
         </div>
@@ -131,17 +131,17 @@ export const CronSettings: React.FC = () => {
 
       {/* Job List */}
       {jobs.length === 0 ? (
-        <div className="bg-zinc-800/50 rounded-lg p-6 text-center">
-          <p className="text-sm text-zinc-400 mb-2">还没有定时任务</p>
-          <p className="text-xs text-zinc-500">
+        <div className="bg-surface rounded-lg p-6 text-center">
+          <p className="text-sm text-text-secondary mb-2">还没有定时任务</p>
+          <p className="text-xs text-text-tertiary">
             在项目 <code className="text-indigo-400">.code-agent/HEARTBEAT.md</code> 中定义任务
           </p>
         </div>
       ) : (
-        <div className="border border-zinc-800 rounded-lg overflow-hidden">
+        <div className="border border-border-default rounded-lg overflow-hidden">
           <table className="w-full">
             <thead>
-              <tr className="bg-zinc-800/50 text-xs text-zinc-400">
+              <tr className="bg-surface text-xs text-text-secondary">
                 <th className="text-left px-4 py-2 font-medium">名称</th>
                 <th className="text-left px-4 py-2 font-medium">Cron 表达式</th>
                 <th className="text-left px-4 py-2 font-medium">状态</th>
@@ -149,26 +149,26 @@ export const CronSettings: React.FC = () => {
                 <th className="text-right px-4 py-2 font-medium">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800">
+            <tbody className="divide-y divide-border-default">
               {jobs.map((job) => (
-                <tr key={job.id} className="hover:bg-zinc-800/30">
+                <tr key={job.id} className="hover:bg-surface">
                   <td className="px-4 py-2.5">
-                    <div className="text-sm text-zinc-100">{job.name}</div>
+                    <div className="text-sm text-text-primary">{job.name}</div>
                     {job.description && (
-                      <div className="text-xs text-zinc-500 mt-0.5 truncate max-w-[200px]">{job.description}</div>
+                      <div className="text-xs text-text-tertiary mt-0.5 truncate max-w-[200px]">{job.description}</div>
                     )}
                   </td>
                   <td className="px-4 py-2.5">
-                    <code className="text-xs text-indigo-400 bg-zinc-800 px-1.5 py-0.5 rounded">{job.cron}</code>
+                    <code className="text-xs text-indigo-400 bg-elevated px-1.5 py-0.5 rounded">{job.cron}</code>
                   </td>
                   <td className="px-4 py-2.5">
-                    <span className={`inline-flex items-center gap-1 text-xs ${job.enabled ? 'text-green-400' : 'text-zinc-500'}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${job.enabled ? 'bg-green-400' : 'bg-zinc-600'}`} />
+                    <span className={`inline-flex items-center gap-1 text-xs ${job.enabled ? 'text-green-400' : 'text-text-tertiary'}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${job.enabled ? 'bg-green-400' : 'bg-active'}`} />
                       {job.enabled ? '启用' : '禁用'}
                     </span>
                   </td>
                   <td className="px-4 py-2.5">
-                    <span className="text-xs text-zinc-400">{formatLastRun(job.lastRun)}</span>
+                    <span className="text-xs text-text-secondary">{formatLastRun(job.lastRun)}</span>
                     {job.lastResult === 'failure' && (
                       <AlertCircle className="inline w-3 h-3 ml-1 text-red-400" />
                     )}
@@ -214,25 +214,25 @@ export const CronSettings: React.FC = () => {
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-3 gap-3">
-          <div className="bg-zinc-800/50 rounded-lg p-3 text-center">
-            <div className="text-lg font-semibold text-zinc-100">{stats.totalJobs}</div>
-            <div className="text-xs text-zinc-400">总任务</div>
+          <div className="bg-surface rounded-lg p-3 text-center">
+            <div className="text-lg font-semibold text-text-primary">{stats.totalJobs}</div>
+            <div className="text-xs text-text-secondary">总任务</div>
           </div>
-          <div className="bg-zinc-800/50 rounded-lg p-3 text-center">
+          <div className="bg-surface rounded-lg p-3 text-center">
             <div className="text-lg font-semibold text-green-400">{stats.enabledJobs}</div>
-            <div className="text-xs text-zinc-400">已启用</div>
+            <div className="text-xs text-text-secondary">已启用</div>
           </div>
-          <div className="bg-zinc-800/50 rounded-lg p-3 text-center">
+          <div className="bg-surface rounded-lg p-3 text-center">
             <div className="text-lg font-semibold text-indigo-400">{stats.totalExecutions}</div>
-            <div className="text-xs text-zinc-400">总执行</div>
+            <div className="text-xs text-text-secondary">总执行</div>
           </div>
         </div>
       )}
 
       {/* Help */}
-      <div className="bg-zinc-800/50 rounded-lg p-4">
-        <h4 className="text-sm font-medium text-zinc-100 mb-2">使用说明</h4>
-        <div className="text-xs text-zinc-400 leading-relaxed space-y-1">
+      <div className="bg-surface rounded-lg p-4">
+        <h4 className="text-sm font-medium text-text-primary mb-2">使用说明</h4>
+        <div className="text-xs text-text-secondary leading-relaxed space-y-1">
           <p>编辑 <code className="text-indigo-400">.code-agent/HEARTBEAT.md</code> 添加新的定时任务。</p>
           <p>支持标准 cron 表达式，如 <code className="text-indigo-400">0 9 * * 1-5</code> (工作日 9:00)。</p>
         </div>

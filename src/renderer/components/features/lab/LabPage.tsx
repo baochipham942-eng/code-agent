@@ -91,8 +91,8 @@ export const LabPage: React.FC = () => {
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 mb-4">
           <FlaskConical className="w-8 h-8 text-emerald-400" />
         </div>
-        <h1 className="text-2xl font-bold text-zinc-100 mb-2">AI 学习实验室</h1>
-        <p className="text-zinc-400 max-w-xl mx-auto">
+        <h1 className="text-2xl font-bold text-text-primary mb-2">AI 学习实验室</h1>
+        <p className="text-text-secondary max-w-xl mx-auto">
           不需要任何编程基础，通过动手实验，亲眼看看 AI 是怎么一步步学会"说话"的
         </p>
       </div>
@@ -114,25 +114,25 @@ export const LabPage: React.FC = () => {
 
       {/* Learning Path */}
       <div className="mt-12 max-w-3xl mx-auto">
-        <h2 className="text-lg font-semibold text-zinc-200 mb-4 text-center">推荐学习顺序</h2>
+        <h2 className="text-lg font-semibold text-text-primary mb-4 text-center">推荐学习顺序</h2>
         <div className="flex items-center justify-center gap-2 flex-wrap">
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
             <span className="text-emerald-400 text-sm font-medium">① 学说话</span>
           </div>
-          <ChevronRight className="w-4 h-4 text-zinc-600" />
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
-            <span className="text-zinc-500 text-sm">② 读更多书</span>
+          <ChevronRight className="w-4 h-4 text-text-disabled" />
+          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface border border-border-default">
+            <span className="text-text-tertiary text-sm">② 读更多书</span>
           </div>
-          <ChevronRight className="w-4 h-4 text-zinc-600" />
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
-            <span className="text-zinc-500 text-sm">③ 学会听话</span>
+          <ChevronRight className="w-4 h-4 text-text-disabled" />
+          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface border border-border-default">
+            <span className="text-text-tertiary text-sm">③ 学会听话</span>
           </div>
-          <ChevronRight className="w-4 h-4 text-zinc-600" />
-          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
-            <span className="text-zinc-500 text-sm">④ 微调进阶</span>
+          <ChevronRight className="w-4 h-4 text-text-disabled" />
+          <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-surface border border-border-default">
+            <span className="text-text-tertiary text-sm">④ 微调进阶</span>
           </div>
         </div>
-        <p className="text-xs text-zinc-500 mt-3 text-center">
+        <p className="text-xs text-text-tertiary mt-3 text-center">
           建议从第一个实验开始，每个实验大约需要 15-30 分钟
         </p>
       </div>
@@ -142,10 +142,10 @@ export const LabPage: React.FC = () => {
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#0d0d0f]">
       {/* Header - pl-20 为 macOS 窗口控制按钮留出空间 */}
-      <div className="flex items-center justify-between pl-20 pr-4 py-4 border-b border-zinc-800/50">
+      <div className="flex items-center justify-between pl-20 pr-4 py-4 border-b border-border-default">
         <div className="flex items-center gap-2">
           <FlaskConical className="w-5 h-5 text-emerald-400" />
-          <h1 className="text-lg font-semibold text-zinc-100">
+          <h1 className="text-lg font-semibold text-text-primary">
             {currentLab === 'home'
               ? '实验室'
               : currentLab === 'gpt1'
@@ -160,7 +160,7 @@ export const LabPage: React.FC = () => {
         {/* 关闭按钮 - 增大热区 */}
         <button
           onClick={() => setShowLab(false)}
-          className="w-10 h-10 flex items-center justify-center rounded-lg text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+          className="w-10 h-10 flex items-center justify-center rounded-lg text-text-secondary hover:text-text-primary hover:bg-hover transition-colors"
         >
           <X className="w-5 h-5" />
         </button>
@@ -192,8 +192,8 @@ const LabCardComponent: React.FC<{
       className={`
         relative p-6 rounded-2xl text-left transition-all duration-300
         bg-gradient-to-br ${card.gradient}
-        border border-zinc-800/50
-        ${isAvailable ? 'hover:border-zinc-700 hover:scale-[1.02] cursor-pointer' : 'cursor-not-allowed opacity-60'}
+        border border-border-default
+        ${isAvailable ? 'hover:border-border-default hover:scale-[1.02] cursor-pointer' : 'cursor-not-allowed opacity-60'}
       `}
     >
       {/* Status Badge */}
@@ -204,7 +204,7 @@ const LabCardComponent: React.FC<{
       )}
       {isLocked && (
         <div className="absolute top-4 right-4">
-          <Lock className="w-4 h-4 text-zinc-600" />
+          <Lock className="w-4 h-4 text-text-disabled" />
         </div>
       )}
 
@@ -214,11 +214,11 @@ const LabCardComponent: React.FC<{
       </div>
 
       {/* Title */}
-      <h3 className="text-lg font-semibold text-zinc-100 mb-1">{card.title}</h3>
-      <p className="text-sm text-zinc-400 mb-3">{card.subtitle}</p>
+      <h3 className="text-lg font-semibold text-text-primary mb-1">{card.title}</h3>
+      <p className="text-sm text-text-secondary mb-3">{card.subtitle}</p>
 
       {/* Description */}
-      <p className="text-xs text-zinc-500 mb-4 line-clamp-2">{card.description}</p>
+      <p className="text-xs text-text-tertiary mb-4 line-clamp-2">{card.description}</p>
 
       {/* Meta */}
       <div className="flex items-center justify-between">
@@ -226,19 +226,19 @@ const LabCardComponent: React.FC<{
           {Array.from({ length: 3 }).map((_, i) => (
             <span
               key={i}
-              className={`text-xs ${i < card.levelStars ? 'text-amber-400' : 'text-zinc-700'}`}
+              className={`text-xs ${i < card.levelStars ? 'text-amber-400' : 'text-text-disabled'}`}
             >
               ★
             </span>
           ))}
-          <span className="text-xs text-zinc-500 ml-1">{card.level}</span>
+          <span className="text-xs text-text-tertiary ml-1">{card.level}</span>
         </div>
-        <span className="text-xs text-zinc-600">{card.params}</span>
+        <span className="text-xs text-text-disabled">{card.params}</span>
       </div>
 
       {/* Action hint */}
       {isAvailable && (
-        <div className="mt-4 pt-4 border-t border-zinc-800/50">
+        <div className="mt-4 pt-4 border-t border-border-default">
           <span className="text-sm text-emerald-400 flex items-center gap-1">
             开始学习 <ChevronRight className="w-4 h-4" />
           </span>

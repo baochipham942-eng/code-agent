@@ -108,14 +108,14 @@ export const WorkingFolder: React.FC = () => {
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <FolderOpen className="w-4 h-4 text-amber-400 flex-shrink-0" />
-          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
+          <span className="text-xs font-medium text-text-secondary uppercase tracking-wide">
             {t.taskPanel.workingFolder}
           </span>
         </div>
         {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+          <ChevronDown className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
+          <ChevronRight className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
         )}
       </button>
 
@@ -124,7 +124,7 @@ export const WorkingFolder: React.FC = () => {
           {/* Workspace path or select button */}
           {workingDirectory ? (
             <div
-              className="text-xs text-zinc-500 mb-2 truncate cursor-pointer hover:text-zinc-300 transition-colors"
+              className="text-xs text-text-tertiary mb-2 truncate cursor-pointer hover:text-text-secondary transition-colors"
               title={workingDirectory}
               onClick={() => handleOpenInFinder(workingDirectory)}
             >
@@ -133,7 +133,7 @@ export const WorkingFolder: React.FC = () => {
           ) : (
             <button
               onClick={handleSelectDirectory}
-              className="flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-300 mb-2 transition-colors"
+              className="flex items-center gap-2 text-xs text-text-tertiary hover:text-text-secondary mb-2 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>{t.taskPanel.noWorkspace}</span>
@@ -145,16 +145,16 @@ export const WorkingFolder: React.FC = () => {
             recentFiles.map((file) => (
               <div
                 key={file.path}
-                className="flex items-center gap-2 py-1 px-2 rounded hover:bg-zinc-800/50 transition-colors cursor-pointer"
+                className="flex items-center gap-2 py-1 px-2 rounded hover:bg-surface transition-colors cursor-pointer"
                 title={file.path}
                 onClick={() => handleOpenInFinder(file.path)}
               >
-                <FileText className="w-3.5 h-3.5 text-zinc-500" />
-                <span className="text-sm text-zinc-300 truncate">{file.name}</span>
+                <FileText className="w-3.5 h-3.5 text-text-tertiary" />
+                <span className="text-sm text-text-secondary truncate">{file.name}</span>
               </div>
             ))
           ) : (
-            <div className="text-xs text-zinc-600 py-2">{t.taskPanel.noRecentFiles}</div>
+            <div className="text-xs text-text-disabled py-2">{t.taskPanel.noRecentFiles}</div>
           )}
         </div>
       )}

@@ -119,7 +119,7 @@ export function ToolCallGroup({ toolCalls, startIndex }: ToolCallGroupProps) {
       <div>
         {/* 可折叠的组标题 */}
         <div
-          className="flex items-center gap-1.5 cursor-pointer hover:bg-zinc-800/50 rounded px-1 py-0.5 transition-colors font-mono text-sm mb-0.5"
+          className="flex items-center gap-1.5 cursor-pointer hover:bg-surface rounded px-1 py-0.5 transition-colors font-mono text-sm mb-0.5"
           onClick={() => {
             setCollapsed(true);
             setUserToggled(true);
@@ -128,10 +128,10 @@ export function ToolCallGroup({ toolCalls, startIndex }: ToolCallGroupProps) {
           <span className={`w-4 flex-shrink-0 text-center ${statusColor.dot}`}>
             {statusIndicator}
           </span>
-          <span className="text-zinc-500 text-xs">
+          <span className="text-text-tertiary text-xs">
             {toolCalls.length} tool calls
           </span>
-          <span className="text-zinc-600 text-xs ml-1">▼</span>
+          <span className="text-text-disabled text-xs ml-1">▼</span>
         </div>
 
         {/* 逐个渲染 */}
@@ -150,7 +150,7 @@ export function ToolCallGroup({ toolCalls, startIndex }: ToolCallGroupProps) {
   // 折叠视图：摘要行
   return (
     <div
-      className="flex items-center gap-1.5 cursor-pointer hover:bg-zinc-800/50 rounded px-1 py-0.5 transition-colors font-mono text-sm"
+      className="flex items-center gap-1.5 cursor-pointer hover:bg-surface rounded px-1 py-0.5 transition-colors font-mono text-sm"
       onClick={() => {
         setCollapsed(false);
         setUserToggled(true);
@@ -159,18 +159,18 @@ export function ToolCallGroup({ toolCalls, startIndex }: ToolCallGroupProps) {
       <span className={`w-4 flex-shrink-0 text-center ${statusColor.dot}`}>
         {statusIndicator}
       </span>
-      <span className="text-zinc-300 font-bold">
+      <span className="text-text-secondary font-bold">
         {toolCalls.length} tool calls
       </span>
-      <span className="text-zinc-500 text-xs">
+      <span className="text-text-tertiary text-xs">
         ({summaryText})
       </span>
       {totalDuration && (
-        <span className="text-zinc-600 text-xs ml-auto">
+        <span className="text-text-disabled text-xs ml-auto">
           {totalDuration}
         </span>
       )}
-      <span className="text-zinc-600 text-xs ml-1">▶</span>
+      <span className="text-text-disabled text-xs ml-1">▶</span>
     </div>
   );
 }

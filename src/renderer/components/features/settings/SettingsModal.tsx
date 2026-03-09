@@ -92,10 +92,10 @@ export const SettingsModal: React.FC = () => {
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-2xl max-h-[80vh] bg-zinc-900 rounded-xl border border-zinc-800 shadow-2xl overflow-hidden animate-fadeIn">
+      <div className="relative w-full max-w-2xl max-h-[80vh] bg-deep rounded-xl border border-border-default shadow-2xl overflow-hidden animate-fadeIn">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
-          <h2 className="text-lg font-semibold text-zinc-100">{t.settings.title}</h2>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border-default">
+          <h2 className="text-lg font-semibold text-text-primary">{t.settings.title}</h2>
           <IconButton
             icon={<X className="w-5 h-5" />}
             aria-label="Close settings"
@@ -107,15 +107,15 @@ export const SettingsModal: React.FC = () => {
 
         <div className="flex h-[500px]">
           {/* Sidebar */}
-          <div className="w-48 border-r border-zinc-800 p-2">
+          <div className="w-48 border-r border-border-default p-2">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors ${
                   activeTab === tab.id
-                    ? 'bg-zinc-800 text-zinc-100'
-                    : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
+                    ? 'bg-elevated text-text-primary'
+                    : 'text-text-secondary hover:text-text-primary hover:bg-surface'
                 }`}
               >
                 {tab.icon}

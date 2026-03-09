@@ -52,7 +52,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
       // 默认的错误 UI
       return (
-        <div className="h-screen flex items-center justify-center bg-zinc-900 text-zinc-100">
+        <div className="h-screen flex items-center justify-center bg-deep text-text-primary">
           <div className="text-center p-8 max-w-md">
             {/* 错误图标 */}
             <div className="flex justify-center mb-6">
@@ -63,20 +63,20 @@ export class ErrorBoundary extends Component<Props, State> {
 
             {/* 错误标题 */}
             <h1 className="text-xl font-bold mb-2">出错了</h1>
-            <p className="text-zinc-400 mb-6">
+            <p className="text-text-secondary mb-6">
               应用遇到了一个意外错误，请尝试重试或刷新页面。
             </p>
 
             {/* 错误详情（折叠显示） */}
             {this.state.error && (
               <details className="mb-6 text-left">
-                <summary className="cursor-pointer text-zinc-500 hover:text-zinc-400 text-sm">
+                <summary className="cursor-pointer text-text-tertiary hover:text-text-secondary text-sm">
                   查看错误详情
                 </summary>
-                <div className="mt-2 p-3 bg-zinc-800 rounded-lg text-xs font-mono text-red-300 overflow-auto max-h-32">
+                <div className="mt-2 p-3 bg-elevated rounded-lg text-xs font-mono text-red-300 overflow-auto max-h-32">
                   <p className="font-semibold">{this.state.error.name}: {this.state.error.message}</p>
                   {this.state.errorInfo?.componentStack && (
-                    <pre className="mt-2 text-zinc-500 whitespace-pre-wrap">
+                    <pre className="mt-2 text-text-tertiary whitespace-pre-wrap">
                       {this.state.errorInfo.componentStack}
                     </pre>
                   )}
@@ -95,7 +95,7 @@ export class ErrorBoundary extends Component<Props, State> {
               </button>
               <button
                 onClick={this.handleReload}
-                className="px-4 py-2 bg-zinc-700 rounded-lg hover:bg-zinc-600 transition-colors"
+                className="px-4 py-2 bg-active rounded-lg hover:bg-active transition-colors"
               >
                 刷新页面
               </button>

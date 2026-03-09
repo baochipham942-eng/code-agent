@@ -15,19 +15,19 @@ export const TodoPanel: React.FC = () => {
   const progress = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
   return (
-    <div className="w-72 border-l border-zinc-800 bg-zinc-900/50 flex flex-col">
+    <div className="w-72 border-l border-border-default bg-deep flex flex-col">
       {/* Header */}
-      <div className="p-3 border-b border-zinc-800">
+      <div className="p-3 border-b border-border-default">
         <div className="flex items-center gap-2 mb-2">
           <ListTodo className="w-4 h-4 text-purple-400" />
-          <span className="text-sm font-medium text-zinc-100">Tasks</span>
-          <span className="ml-auto text-xs text-zinc-500">
+          <span className="text-sm font-medium text-text-primary">Tasks</span>
+          <span className="ml-auto text-xs text-text-tertiary">
             {completedCount}/{totalCount}
           </span>
         </div>
 
         {/* Progress bar */}
-        <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+        <div className="h-1.5 bg-elevated rounded-full overflow-hidden">
           <div
             className="h-full bg-purple-500 transition-all duration-300"
             style={{ width: `${progress}%` }}
@@ -56,18 +56,18 @@ const TodoItemDisplay: React.FC<{ todo: TodoItem }> = ({ todo }) => {
       case 'in_progress':
         return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
       default:
-        return <Circle className="w-4 h-4 text-zinc-500" />;
+        return <Circle className="w-4 h-4 text-text-tertiary" />;
     }
   };
 
   const getStatusStyles = () => {
     switch (todo.status) {
       case 'completed':
-        return 'text-zinc-500 line-through';
+        return 'text-text-tertiary line-through';
       case 'in_progress':
-        return 'text-zinc-100';
+        return 'text-text-primary';
       default:
-        return 'text-zinc-400';
+        return 'text-text-secondary';
     }
   };
 

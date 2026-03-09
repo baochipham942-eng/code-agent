@@ -51,12 +51,12 @@ const StatusDot: React.FC<{ status: SwarmAgentState['status'] }> = ({ status }) 
     running: 'text-amber-400 animate-pulse',
     completed: 'text-emerald-400',
     failed: 'text-red-400',
-    pending: 'text-zinc-500',
+    pending: 'text-text-tertiary',
     ready: 'text-blue-400',
-    cancelled: 'text-zinc-600',
+    cancelled: 'text-text-disabled',
   };
 
-  return <Circle className={`w-2.5 h-2.5 fill-current ${colors[status] || 'text-zinc-500'}`} />;
+  return <Circle className={`w-2.5 h-2.5 fill-current ${colors[status] || 'text-text-tertiary'}`} />;
 };
 
 const AgentListItem: React.FC<{
@@ -69,21 +69,21 @@ const AgentListItem: React.FC<{
     onClick={onClick}
     className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg transition-all ${
       selected
-        ? 'bg-zinc-700/60 border border-zinc-600/40'
-        : 'hover:bg-zinc-800/40 border border-transparent'
+        ? 'bg-hover border border-border-strong/40'
+        : 'hover:bg-surface border border-transparent'
     }`}
   >
     <StatusDot status={agent.status} />
     <div className="flex-1 text-left min-w-0">
-      <div className="text-sm text-zinc-200 truncate">{agent.name}</div>
-      <div className="text-xs text-zinc-500 truncate">{agent.role}</div>
+      <div className="text-sm text-text-primary truncate">{agent.name}</div>
+      <div className="text-xs text-text-tertiary truncate">{agent.role}</div>
     </div>
     {unreadCount && unreadCount > 0 && (
       <span className="px-1.5 py-0.5 text-xs font-medium text-white bg-cyan-500 rounded-full">
         {unreadCount}
       </span>
     )}
-    <ChevronRight className="w-3.5 h-3.5 text-zinc-600" />
+    <ChevronRight className="w-3.5 h-3.5 text-text-disabled" />
   </button>
 );
 
@@ -121,20 +121,20 @@ const MessageItem: React.FC<{ message: TeammateMessageDisplay; currentAgentId?: 
             : isPlanReview
             ? 'bg-amber-500/10 border border-amber-500/20 text-amber-200'
             : isSent
-            ? 'bg-zinc-700/40 border border-zinc-600/30 text-zinc-200'
-            : 'bg-zinc-800/40 border border-zinc-700/30 text-zinc-300'
+            ? 'bg-hover border border-border-strong/30 text-text-primary'
+            : 'bg-surface border border-border-subtle text-text-secondary'
         }`}
       >
         {/* Header */}
         <div className="flex items-center gap-1.5 mb-1">
           {typeIcons[message.type] || typeIcons.coordination}
-          <span className="font-medium text-zinc-400">
+          <span className="font-medium text-text-secondary">
             {message.from === 'user' ? 'You' : message.from}
           </span>
           {isPlanReview && <ShieldCheck className="w-3 h-3 text-amber-400" />}
           {isPlanApproved && <ShieldCheck className="w-3 h-3 text-emerald-400" />}
           {isPlanRejected && <ShieldX className="w-3 h-3 text-red-400" />}
-          <span className="text-zinc-600 ml-auto">
+          <span className="text-text-disabled ml-auto">
             {new Date(message.timestamp).toLocaleTimeString()}
           </span>
         </div>
@@ -153,18 +153,18 @@ const TaskAssignments: React.FC<{ agents: SwarmAgentState[] }> = ({ agents }) =>
   if (activeAgents.length === 0) return null;
 
   return (
-    <div className="border-b border-zinc-800/50">
+    <div className="border-b border-border-default">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-zinc-400 hover:text-zinc-300 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:text-text-secondary transition-colors"
       >
         <ListTodo className="w-3.5 h-3.5" />
         <span className="font-medium">任务分配</span>
-        <span className="text-zinc-600 ml-auto">{activeAgents.length}</span>
+        <span className="text-text-disabled ml-auto">{activeAgents.length}</span>
         {expanded ? (
-          <ChevronDown className="w-3 h-3 text-zinc-600" />
+          <ChevronDown className="w-3 h-3 text-text-disabled" />
         ) : (
-          <ChevronRight className="w-3 h-3 text-zinc-600" />
+          <ChevronRight className="w-3 h-3 text-text-disabled" />
         )}
       </button>
       {expanded && (
@@ -172,15 +172,15 @@ const TaskAssignments: React.FC<{ agents: SwarmAgentState[] }> = ({ agents }) =>
           {activeAgents.map(agent => (
             <div
               key={agent.id}
-              className="flex items-center gap-2 px-2 py-1.5 rounded bg-zinc-800/30 border border-zinc-700/20"
+              className="flex items-center gap-2 px-2 py-1.5 rounded bg-surface border border-border-default/20"
             >
               <StatusDot status={agent.status} />
-              <span className="text-xs text-zinc-300 truncate flex-1">{agent.name}</span>
+              <span className="text-xs text-text-secondary truncate flex-1">{agent.name}</span>
               {agent.lastReport && (
-                <span className="text-xs text-zinc-500 truncate max-w-[120px]">{agent.lastReport}</span>
+                <span className="text-xs text-text-tertiary truncate max-w-[120px]">{agent.lastReport}</span>
               )}
               {agent.toolCalls != null && agent.toolCalls > 0 && (
-                <span className="text-xs text-zinc-600">{agent.toolCalls} tools</span>
+                <span className="text-xs text-text-disabled">{agent.toolCalls} tools</span>
               )}
             </div>
           ))}
@@ -273,23 +273,23 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ onClose }) => {
   // 空状态
   if (agents.length === 0 && !isRunning) {
     return (
-      <div className="w-80 flex flex-col border-l border-zinc-800 bg-zinc-900/50">
-        <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+      <div className="w-80 flex flex-col border-l border-border-default bg-deep">
+        <div className="px-4 py-3 border-b border-border-default flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-medium text-zinc-200">Agent Teams</h3>
-            <p className="text-xs text-zinc-500 mt-0.5">Agent 间通信</p>
+            <h3 className="text-sm font-medium text-text-primary">Agent Teams</h3>
+            <p className="text-xs text-text-tertiary mt-0.5">Agent 间通信</p>
           </div>
           {onClose && (
             <button
               onClick={onClose}
-              className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 rounded transition-colors"
+              className="p-1 text-text-secondary hover:text-text-primary hover:bg-hover rounded transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
           )}
         </div>
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-zinc-500">
+          <div className="text-center text-text-tertiary">
             <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm">暂无活跃的 Agent 团队</p>
             <p className="text-xs mt-1">当多 Agent 协作任务启动时显示</p>
@@ -300,11 +300,11 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ onClose }) => {
   }
 
   return (
-    <div className="w-80 flex flex-col border-l border-zinc-800 bg-zinc-900/50">
+    <div className="w-80 flex flex-col border-l border-border-default bg-deep">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-border-default flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-medium text-zinc-200 flex items-center gap-2">
+          <h3 className="text-sm font-medium text-text-primary flex items-center gap-2">
             Agent Teams
             {isRunning && (
               <span className="flex items-center gap-1 text-xs text-cyan-400">
@@ -313,14 +313,14 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ onClose }) => {
               </span>
             )}
           </h3>
-          <p className="text-xs text-zinc-500 mt-0.5">
+          <p className="text-xs text-text-tertiary mt-0.5">
             {agents.length} 个 Agent · {messages.length} 条消息
           </p>
         </div>
         {onClose && (
           <button
             onClick={onClose}
-            className="p-1 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/50 rounded transition-colors"
+            className="p-1 text-text-secondary hover:text-text-primary hover:bg-hover rounded transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -328,7 +328,7 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ onClose }) => {
       </div>
 
       {/* Agent List */}
-      <div className="px-2 py-2 border-b border-zinc-800/50 max-h-40 overflow-y-auto">
+      <div className="px-2 py-2 border-b border-border-default max-h-40 overflow-y-auto">
         {agents.map(agent => (
           <AgentListItem
             key={agent.id}
@@ -345,7 +345,7 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ onClose }) => {
       {/* Message Flow */}
       <div className="flex-1 overflow-y-auto px-3 py-2">
         {filteredMessages.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-zinc-600 text-xs">
+          <div className="flex items-center justify-center h-full text-text-disabled text-xs">
             {selectedAgent
               ? `暂无与 ${selectedAgent.name} 的消息`
               : '选择一个 Agent 查看消息'}
@@ -362,7 +362,7 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ onClose }) => {
 
       {/* Input Area */}
       {selectedAgentId && (
-        <div className="px-3 py-2.5 border-t border-zinc-800">
+        <div className="px-3 py-2.5 border-t border-border-default">
           <div className="flex items-center gap-2">
             <input
               ref={inputRef}
@@ -376,7 +376,7 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ onClose }) => {
                 }
               }}
               placeholder={`发消息给 ${selectedAgent?.name || 'Agent'}...`}
-              className="flex-1 bg-zinc-800/50 border border-zinc-700/30 rounded-lg px-3 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-cyan-500/40"
+              className="flex-1 bg-surface border border-border-subtle rounded-lg px-3 py-1.5 text-xs text-text-primary placeholder-text-disabled focus:outline-none focus:border-cyan-500/40"
             />
             <button
               onClick={handleSend}

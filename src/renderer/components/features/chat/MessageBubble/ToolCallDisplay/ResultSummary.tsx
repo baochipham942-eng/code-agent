@@ -26,7 +26,7 @@ export function ResultSummary({ toolCall }: Props) {
       >
         ⎿
       </span>
-      <span className={isError ? 'text-[var(--cc-error)]' : 'text-zinc-500'}>
+      <span className={isError ? 'text-[var(--cc-error)]' : 'text-text-tertiary'}>
         {summary}
       </span>
     </div>

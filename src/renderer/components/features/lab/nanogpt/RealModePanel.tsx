@@ -169,15 +169,15 @@ export const RealModePanel: React.FC = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100">nanoGPT 真实训练</h2>
-            <p className="text-sm text-zinc-500">克隆 Karpathy 的 nanoGPT，执行真实的模型训练</p>
+            <h2 className="text-lg font-semibold text-text-primary">nanoGPT 真实训练</h2>
+            <p className="text-sm text-text-tertiary">克隆 Karpathy 的 nanoGPT，执行真实的模型训练</p>
           </div>
           <button
             onClick={() => {
               checkPythonEnv();
               getProjectStatus();
             }}
-            className="p-2 rounded-lg bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800 border border-zinc-700/50"
+            className="p-2 rounded-lg bg-surface text-text-secondary hover:bg-hover border border-border-default"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
@@ -186,34 +186,34 @@ export const RealModePanel: React.FC = () => {
         {/* Environment Status */}
         <div className="grid grid-cols-2 gap-4">
           {/* Python Environment */}
-          <div className="bg-zinc-800/30 rounded-lg border border-zinc-700/30 p-4">
+          <div className="bg-surface rounded-lg border border-border-subtle p-4">
             <div className="flex items-center gap-2 mb-3">
-              <Terminal className="w-4 h-4 text-zinc-400" />
-              <span className="text-sm font-medium text-zinc-200">Python 环境</span>
+              <Terminal className="w-4 h-4 text-text-secondary" />
+              <span className="text-sm font-medium text-text-primary">Python 环境</span>
             </div>
             {pythonEnv ? (
               <div className="space-y-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">Python</span>
+                  <span className="text-text-tertiary">Python</span>
                   <span className={pythonEnv.pythonInstalled ? 'text-emerald-400' : 'text-red-400'}>
                     {pythonEnv.pythonInstalled ? pythonEnv.pythonVersion : '未安装'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">PyTorch</span>
+                  <span className="text-text-tertiary">PyTorch</span>
                   <span className={pythonEnv.pytorchInstalled ? 'text-emerald-400' : 'text-red-400'}>
                     {pythonEnv.pytorchInstalled ? pythonEnv.pytorchVersion : '未安装'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">tiktoken</span>
+                  <span className="text-text-tertiary">tiktoken</span>
                   <span className={pythonEnv.sentencepieceInstalled ? 'text-emerald-400' : 'text-amber-400'}>
                     {pythonEnv.sentencepieceInstalled ? '已安装' : '需要安装'}
                   </span>
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-xs text-zinc-500">
+              <div className="flex items-center gap-2 text-xs text-text-tertiary">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 检测中...
               </div>
@@ -221,42 +221,42 @@ export const RealModePanel: React.FC = () => {
           </div>
 
           {/* Project Status */}
-          <div className="bg-zinc-800/30 rounded-lg border border-zinc-700/30 p-4">
+          <div className="bg-surface rounded-lg border border-border-subtle p-4">
             <div className="flex items-center gap-2 mb-3">
-              <FolderOpen className="w-4 h-4 text-zinc-400" />
-              <span className="text-sm font-medium text-zinc-200">项目状态</span>
+              <FolderOpen className="w-4 h-4 text-text-secondary" />
+              <span className="text-sm font-medium text-text-primary">项目状态</span>
             </div>
             {projectStatus ? (
               <div className="space-y-2 text-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">已下载</span>
+                  <span className="text-text-tertiary">已下载</span>
                   {projectStatus.downloaded ? (
                     <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   ) : (
-                    <XCircle className="w-4 h-4 text-zinc-500" />
+                    <XCircle className="w-4 h-4 text-text-tertiary" />
                   )}
                 </div>
                 {projectStatus.downloaded && (
                   <>
                     <div className="flex items-center justify-between">
-                      <span className="text-zinc-500">路径</span>
-                      <span className="text-zinc-400 truncate max-w-[200px]" title={projectStatus.projectPath || ''}>
+                      <span className="text-text-tertiary">路径</span>
+                      <span className="text-text-secondary truncate max-w-[200px]" title={projectStatus.projectPath || ''}>
                         {projectStatus.projectPath?.split('/').slice(-2).join('/')}
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-zinc-500">已训练模型</span>
+                      <span className="text-text-tertiary">已训练模型</span>
                       {projectStatus.hasTrainedModel ? (
                         <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                       ) : (
-                        <span className="text-zinc-500">无</span>
+                        <span className="text-text-tertiary">无</span>
                       )}
                     </div>
                   </>
                 )}
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-xs text-zinc-500">
+              <div className="flex items-center gap-2 text-xs text-text-tertiary">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 检测中...
               </div>
@@ -271,7 +271,7 @@ export const RealModePanel: React.FC = () => {
             disabled={isDownloading}
             className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm transition-all ${
               isDownloading
-                ? 'bg-zinc-700/50 text-zinc-500 cursor-not-allowed'
+                ? 'bg-hover text-text-tertiary cursor-not-allowed'
                 : 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 border border-blue-500/30'
             }`}
           >
@@ -293,21 +293,21 @@ export const RealModePanel: React.FC = () => {
         {projectStatus?.downloaded && (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <Settings className="w-4 h-4 text-zinc-400" />
-              <span className="text-sm font-medium text-zinc-200">训练配置</span>
+              <Settings className="w-4 h-4 text-text-secondary" />
+              <span className="text-sm font-medium text-text-primary">训练配置</span>
             </div>
 
             <div className="grid grid-cols-3 gap-4">
               {/* Training Mode */}
               <div className="space-y-2">
-                <label className="text-xs text-zinc-500">训练模式</label>
+                <label className="text-xs text-text-tertiary">训练模式</label>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setConfig((c) => ({ ...c, mode: 'finetune', initFrom: 'gpt2' }))}
                     className={`flex-1 px-3 py-2 rounded-lg text-xs transition-all ${
                       config.mode === 'finetune'
                         ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                        : 'bg-zinc-800/30 text-zinc-500 border border-zinc-700/30'
+                        : 'bg-surface text-text-tertiary border border-border-subtle'
                     }`}
                   >
                     微调
@@ -317,7 +317,7 @@ export const RealModePanel: React.FC = () => {
                     className={`flex-1 px-3 py-2 rounded-lg text-xs transition-all ${
                       config.mode === 'pretrain'
                         ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                        : 'bg-zinc-800/30 text-zinc-500 border border-zinc-700/30'
+                        : 'bg-surface text-text-tertiary border border-border-subtle'
                     }`}
                   >
                     预训练
@@ -327,11 +327,11 @@ export const RealModePanel: React.FC = () => {
 
               {/* Init From */}
               <div className="space-y-2">
-                <label className="text-xs text-zinc-500">初始化来源</label>
+                <label className="text-xs text-text-tertiary">初始化来源</label>
                 <select
                   value={config.initFrom}
                   onChange={(e) => setConfig((c) => ({ ...c, initFrom: e.target.value as InitFrom }))}
-                  className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700/50 rounded-lg text-xs text-zinc-300"
+                  className="w-full px-3 py-2 bg-surface border border-border-default rounded-lg text-xs text-text-secondary"
                 >
                   <option value="scratch">从头训练</option>
                   <option value="gpt2">GPT-2 (124M)</option>
@@ -341,11 +341,11 @@ export const RealModePanel: React.FC = () => {
 
               {/* Device */}
               <div className="space-y-2">
-                <label className="text-xs text-zinc-500">设备</label>
+                <label className="text-xs text-text-tertiary">设备</label>
                 <select
                   value={config.device}
                   onChange={(e) => setConfig((c) => ({ ...c, device: e.target.value as 'cpu' | 'mps' | 'cuda' }))}
-                  className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700/50 rounded-lg text-xs text-zinc-300"
+                  className="w-full px-3 py-2 bg-surface border border-border-default rounded-lg text-xs text-text-secondary"
                 >
                   <option value="cpu">CPU</option>
                   <option value="mps">MPS (Apple Silicon)</option>
@@ -355,34 +355,34 @@ export const RealModePanel: React.FC = () => {
 
               {/* Batch Size */}
               <div className="space-y-2">
-                <label className="text-xs text-zinc-500">Batch Size</label>
+                <label className="text-xs text-text-tertiary">Batch Size</label>
                 <input
                   type="number"
                   value={config.batchSize}
                   onChange={(e) => setConfig((c) => ({ ...c, batchSize: parseInt(e.target.value) || 12 }))}
-                  className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700/50 rounded-lg text-xs text-zinc-300"
+                  className="w-full px-3 py-2 bg-surface border border-border-default rounded-lg text-xs text-text-secondary"
                 />
               </div>
 
               {/* Learning Rate */}
               <div className="space-y-2">
-                <label className="text-xs text-zinc-500">Learning Rate</label>
+                <label className="text-xs text-text-tertiary">Learning Rate</label>
                 <input
                   type="text"
                   value={config.learningRate.toExponential(0)}
                   onChange={(e) => setConfig((c) => ({ ...c, learningRate: parseFloat(e.target.value) || 3e-5 }))}
-                  className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700/50 rounded-lg text-xs text-zinc-300"
+                  className="w-full px-3 py-2 bg-surface border border-border-default rounded-lg text-xs text-text-secondary"
                 />
               </div>
 
               {/* Max Iters */}
               <div className="space-y-2">
-                <label className="text-xs text-zinc-500">Max Iterations</label>
+                <label className="text-xs text-text-tertiary">Max Iterations</label>
                 <input
                   type="number"
                   value={config.maxIters}
                   onChange={(e) => setConfig((c) => ({ ...c, maxIters: parseInt(e.target.value) || 5000 }))}
-                  className="w-full px-3 py-2 bg-zinc-800/50 border border-zinc-700/50 rounded-lg text-xs text-zinc-300"
+                  className="w-full px-3 py-2 bg-surface border border-border-default rounded-lg text-xs text-text-secondary"
                 />
               </div>
             </div>
@@ -394,7 +394,7 @@ export const RealModePanel: React.FC = () => {
                 disabled={!pythonEnv?.pytorchInstalled}
                 className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm transition-all ${
                   !pythonEnv?.pytorchInstalled
-                    ? 'bg-zinc-700/50 text-zinc-500 cursor-not-allowed'
+                    ? 'bg-hover text-text-tertiary cursor-not-allowed'
                     : isTraining
                       ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'
                       : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30'
@@ -421,16 +421,16 @@ export const RealModePanel: React.FC = () => {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Cpu className="w-4 h-4 text-zinc-400" />
-                <span className="text-sm font-medium text-zinc-200">训练进度</span>
+                <Cpu className="w-4 h-4 text-text-secondary" />
+                <span className="text-sm font-medium text-text-primary">训练进度</span>
               </div>
               {isTraining && (
                 <div className="flex items-center gap-4 text-xs">
-                  <span className="text-zinc-500">
-                    Step: <span className="text-zinc-300">{currentStep}</span> / {config.maxIters}
+                  <span className="text-text-tertiary">
+                    Step: <span className="text-text-secondary">{currentStep}</span> / {config.maxIters}
                   </span>
                   {currentLoss !== null && (
-                    <span className="text-zinc-500">
+                    <span className="text-text-tertiary">
                       Loss: <span className="text-emerald-400">{currentLoss.toFixed(4)}</span>
                     </span>
                   )}
@@ -440,7 +440,7 @@ export const RealModePanel: React.FC = () => {
 
             {/* Progress Bar */}
             {isTraining && (
-              <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+              <div className="w-full h-2 bg-elevated rounded-full overflow-hidden">
                 <div
                   className="h-full bg-emerald-500/50 transition-all duration-300"
                   style={{ width: `${(currentStep / config.maxIters) * 100}%` }}
@@ -449,14 +449,14 @@ export const RealModePanel: React.FC = () => {
             )}
 
             {/* Logs */}
-            <div className="bg-zinc-950/50 rounded-lg border border-zinc-800/50 p-4 h-48 overflow-y-auto font-mono text-xs">
+            <div className="bg-void/50 rounded-lg border border-border-default p-4 h-48 overflow-y-auto font-mono text-xs">
               {trainingLogs.map((log, idx) => (
-                <div key={idx} className="text-zinc-400 py-0.5">
+                <div key={idx} className="text-text-secondary py-0.5">
                   {log}
                 </div>
               ))}
               {isTraining && (
-                <div className="text-zinc-500 animate-pulse">▌</div>
+                <div className="text-text-tertiary animate-pulse">▌</div>
               )}
             </div>
           </div>

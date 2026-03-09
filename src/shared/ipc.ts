@@ -526,6 +526,7 @@ export const IPC_CHANNELS = {
   SESSION_LIST_UPDATED: 'session:list-updated',
   SESSION_ARCHIVE: 'session:archive',
   SESSION_UNARCHIVE: 'session:unarchive',
+  SESSION_LOAD_OLDER_MESSAGES: 'session:load-older-messages',
 
   // Memory channels
   MEMORY: 'memory:manage',
@@ -671,6 +672,10 @@ export const IPC_CHANNELS = {
   CONTEXT_HEALTH_GET: 'context:health:get',
   CONTEXT_HEALTH_EVENT: 'context:health:event',
 
+  // Status bar update channels
+  STATUS_TOKEN_UPDATE: 'status:token-update',
+  STATUS_CONTEXT_UPDATE: 'status:context-update',
+
   // Session status channels (multi-session parallel support)
   SESSION_STATUS_UPDATE: 'session:status:update',
   SESSION_STATUS_GET: 'session:status:get',
@@ -736,6 +741,13 @@ export const IPC_CHANNELS = {
   EVALUATION_LOAD_TEST_REPORT: EVALUATION_CHANNELS.LOAD_TEST_REPORT,
   EVALUATION_SAVE_ANNOTATIONS: EVALUATION_CHANNELS.SAVE_ANNOTATIONS,
   EVALUATION_GET_AXIAL_CODING: EVALUATION_CHANNELS.GET_AXIAL_CODING,
+  EVALUATION_LIST_TEST_CASES: EVALUATION_CHANNELS.LIST_TEST_CASES,
+  EVALUATION_GET_SCORING_CONFIG: EVALUATION_CHANNELS.GET_SCORING_CONFIG,
+  EVALUATION_UPDATE_SCORING_CONFIG: EVALUATION_CHANNELS.UPDATE_SCORING_CONFIG,
+  EVALUATION_LIST_EXPERIMENTS: EVALUATION_CHANNELS.LIST_EXPERIMENTS,
+  EVALUATION_LOAD_EXPERIMENT: EVALUATION_CHANNELS.LOAD_EXPERIMENT,
+  EVALUATION_GET_FAILURE_FUNNEL: EVALUATION_CHANNELS.GET_FAILURE_FUNNEL,
+  EVALUATION_GET_CROSS_EXPERIMENT: EVALUATION_CHANNELS.GET_CROSS_EXPERIMENT,
 
   // LSP channels (语言服务器)
   LSP_GET_STATUS: LSP_CHANNELS.GET_STATUS,
@@ -822,6 +834,7 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.SESSION_IMPORT]: (data: SessionExport) => Promise<string>;
   [IPC_CHANNELS.SESSION_ARCHIVE]: (sessionId: string) => Promise<Session>;
   [IPC_CHANNELS.SESSION_UNARCHIVE]: (sessionId: string) => Promise<Session>;
+  [IPC_CHANNELS.SESSION_LOAD_OLDER_MESSAGES]: (payload: { sessionId: string; beforeTimestamp: number; limit?: number }) => Promise<{ messages: Message[]; hasMore: boolean }>;
 
   // Memory (legacy - kept for compatibility)
   [IPC_CHANNELS.MEMORY_GET_CONTEXT]: (query: string) => Promise<MemoryContextResult>;
@@ -1049,6 +1062,13 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.EVALUATION_LOAD_TEST_REPORT]: (filePath: string) => Promise<TestRunReport>;
   [IPC_CHANNELS.EVALUATION_SAVE_ANNOTATIONS]: (annotation: EvalAnnotationPayload) => Promise<{ success: boolean; error?: string }>;
   [IPC_CHANNELS.EVALUATION_GET_AXIAL_CODING]: () => Promise<AxialCodingEntryIpc[]>;
+  [IPC_CHANNELS.EVALUATION_LIST_TEST_CASES]: () => Promise<unknown[]>;
+  [IPC_CHANNELS.EVALUATION_GET_SCORING_CONFIG]: () => Promise<unknown[]>;
+  [IPC_CHANNELS.EVALUATION_UPDATE_SCORING_CONFIG]: (config: unknown) => Promise<{ success: boolean }>;
+  [IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS]: (limit?: number) => Promise<unknown[]>;
+  [IPC_CHANNELS.EVALUATION_LOAD_EXPERIMENT]: (id: string) => Promise<unknown>;
+  [IPC_CHANNELS.EVALUATION_GET_FAILURE_FUNNEL]: (experimentId: string) => Promise<unknown>;
+  [IPC_CHANNELS.EVALUATION_GET_CROSS_EXPERIMENT]: (experimentIds: string[]) => Promise<unknown[]>;
 
   // Background (后台任务)
   [IPC_CHANNELS.BACKGROUND_MOVE_TO_BACKGROUND]: (sessionId: string) => Promise<boolean>;
@@ -1195,6 +1215,8 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.CLOUD_TASK_FAILED]: (task: CloudTask) => void;
   [IPC_CHANNELS.CONTEXT_HEALTH_EVENT]: (event: ContextHealthUpdateEvent) => void;
   [IPC_CHANNELS.SESSION_STATUS_UPDATE]: (event: SessionStatusUpdateEvent) => void;
+  [IPC_CHANNELS.STATUS_TOKEN_UPDATE]: (event: { inputTokens: number; outputTokens: number }) => void;
+  [IPC_CHANNELS.STATUS_CONTEXT_UPDATE]: (event: { percent: number }) => void;
   // Background task events
   [IPC_CHANNELS.BACKGROUND_TASK_UPDATE]: (event: BackgroundTaskUpdateEvent) => void;
   // DAG Visualization events

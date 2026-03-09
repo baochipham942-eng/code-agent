@@ -225,6 +225,26 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       };
     }
 
+    // File-reading anti-pattern: cat/sed/head/tail on a single file
+    // These should use the Read tool (25ms avg vs Bash 21s avg)
+    const fileReadMatch = command.match(
+      /^\s*(cat|sed\s+-n|head(?!\s+-f)|tail(?!\s+-f)|awk)\s+(?!.*[|&*])(['"]?)([^\s'";&|<>*]+\.[^\s'";&|<>*]+)\2\s*$/
+    );
+    if (fileReadMatch) {
+      const cmd = fileReadMatch[1].split(/\s+/)[0];
+      const filePath = fileReadMatch[3];
+      return {
+        success: false,
+        error:
+          `⚠️ 文件读取应使用 Read 工具，而非 Bash。\n\n` +
+          `检测到: \`${cmd} ${filePath}\`\n\n` +
+          `请改用:\n` +
+          `- 读取整个文件: Read(file_path="${filePath}")\n` +
+          `- 读取指定行段: Read(file_path="${filePath}", offset=100, limit=50)\n\n` +
+          `Read 工具平均 25ms，Bash 读文件平均 21s。`,
+      };
+    }
+
     // Heredoc truncation pre-check: detect empty/truncated heredocs
     // Model generates long Python scripts as heredocs, but maxTokens truncation
     // causes the body to be missing, resulting in empty scripts that succeed but produce nothing

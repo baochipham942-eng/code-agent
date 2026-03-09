@@ -504,6 +504,7 @@ export class AgentLoop {
     const { langfuse, evolutionTraceRecorder, isSimpleTask, shouldRunHooks, genNum } = initResult;
 
     let iterations = 0;
+    let userTurnId: string | undefined;
 
     while (!this.isCancelled && !this.isInterrupted && !this.circuitBreaker.isTripped() && iterations < this.maxIterations) {
       iterations++;
@@ -533,6 +534,9 @@ export class AgentLoop {
 
       // Generate turn ID
       this.currentTurnId = generateMessageId();
+      if (iterations === 1) {
+        userTurnId = this.currentTurnId;
+      }
 
       // Langfuse: Start iteration span
       this.currentIterationSpanId = `iteration-${this.traceId}-${iterations}`;
@@ -547,7 +551,7 @@ export class AgentLoop {
       });
 
       // Telemetry: record turn start (only first iteration has the real user prompt)
-      this.telemetryAdapter?.onTurnStart(this.currentTurnId, iterations, iterations === 1 ? userMessage : '');
+      this.telemetryAdapter?.onTurnStart(this.currentTurnId, iterations, iterations === 1 ? userMessage : '', iterations > 1 ? userTurnId : undefined);
 
       this.turnStartTime = Date.now();
       this.toolsUsedInTurn = [];
@@ -2860,6 +2864,26 @@ export class AgentLoop {
                 index: chunk.toolCall?.index,
                 name: chunk.toolCall?.name,
                 argumentsDelta: chunk.toolCall?.argumentsDelta,
+                turnId: this.currentTurnId,
+              },
+            });
+          } else if (chunk.type === 'usage') {
+            // SSE 实时 usage 数据（API 返回的真实 token 用量）
+            this.onEvent({
+              type: 'stream_usage',
+              data: {
+                inputTokens: chunk.inputTokens || 0,
+                outputTokens: chunk.outputTokens || 0,
+                turnId: this.currentTurnId,
+              },
+            });
+          } else if (chunk.type === 'token_estimate') {
+            // SSE 实时 token 估算（每 500ms 基于字符数估算）
+            this.onEvent({
+              type: 'stream_token_estimate',
+              data: {
+                inputTokens: chunk.inputTokens || 0,
+                outputTokens: chunk.outputTokens || 0,
                 turnId: this.currentTurnId,
               },
             });

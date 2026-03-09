@@ -491,6 +491,18 @@ export class SessionManager {
     return db.getRecentMessages(sessionId, count);
   }
 
+  /**
+   * 加载更早的消息（分页）
+   */
+  async loadOlderMessages(sessionId: string, beforeTimestamp: number, limit: number = 30): Promise<{ messages: Message[]; hasMore: boolean }> {
+    const db = getDatabase();
+    const messages = db.getMessagesBefore(sessionId, beforeTimestamp, limit);
+    return {
+      messages,
+      hasMore: messages.length === limit,
+    };
+  }
+
   // --------------------------------------------------------------------------
   // Todo Management
   // --------------------------------------------------------------------------

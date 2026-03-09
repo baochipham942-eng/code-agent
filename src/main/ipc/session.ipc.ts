@@ -343,4 +343,10 @@ export function registerSessionHandlers(ipcMain: IpcMain, deps: SessionHandlerDe
   ipcMain.handle(IPC_CHANNELS.SESSION_IMPORT, async (_, data: unknown) => {
     return handleImport({ data });
   });
+
+  // Load older messages (pagination)
+  ipcMain.handle(IPC_CHANNELS.SESSION_LOAD_OLDER_MESSAGES, async (_, payload: { sessionId: string; beforeTimestamp: number; limit?: number }) => {
+    const sessionManager = getSessionManager();
+    return sessionManager.loadOlderMessages(payload.sessionId, payload.beforeTimestamp, payload.limit ?? 30);
+  });
 }

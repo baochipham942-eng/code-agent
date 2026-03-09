@@ -32,7 +32,7 @@ import {
 
 export const ChatView: React.FC = () => {
   const { showPreviewPanel } = useAppStore();
-  const { currentSessionId } = useSessionStore();
+  const { currentSessionId, hasOlderMessages, isLoadingOlder, loadOlderMessages } = useSessionStore();
   const { messages, isProcessing, sendMessage, cancel, researchDetected, dismissResearchDetected, isInterrupting } = useAgent();
 
   // Plan 状态
@@ -97,6 +97,36 @@ export const ChatView: React.FC = () => {
   const effectiveIsProcessing = currentSessionState ? isCurrentSessionProcessing : isProcessing;
   const { requireAuthAsync } = useRequireAuth();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+
+  // Pagination: firstItemIndex for Virtuoso prepend support
+  const START_INDEX = 100000;
+  const [firstItemIndex, setFirstItemIndex] = useState(START_INDEX);
+  const prevMessagesRef = useRef<Message[]>([]);
+
+  // Detect when older messages are prepended
+  useEffect(() => {
+    const prev = prevMessagesRef.current;
+    if (
+      messages.length > prev.length &&
+      prev.length > 0 &&
+      messages[messages.length - 1]?.id === prev[prev.length - 1]?.id
+    ) {
+      // Messages were prepended (last message same, but more messages at start)
+      const delta = messages.length - prev.length;
+      setFirstItemIndex(i => i - delta);
+    } else if (prev.length > 0 && messages.length > 0 && messages[0]?.id !== prev[0]?.id && messages[messages.length - 1]?.id !== prev[prev.length - 1]?.id) {
+      // Session switched - reset
+      setFirstItemIndex(START_INDEX);
+    }
+    prevMessagesRef.current = messages;
+  }, [messages]);
+
+  // Handle scroll to top - load older messages
+  const handleStartReached = useCallback(() => {
+    if (hasOlderMessages && !isLoadingOlder) {
+      loadOlderMessages();
+    }
+  }, [hasOlderMessages, isLoadingOlder, loadOlderMessages]);
 
   // Filter empty assistant placeholder messages and isMeta messages (Skill system)
   const filteredMessages = useMemo(() => {
@@ -168,12 +198,19 @@ export const ChatView: React.FC = () => {
             <Virtuoso
               ref={virtuosoRef}
               data={filteredMessages}
+              firstItemIndex={firstItemIndex}
               itemContent={renderMessageItem}
+              startReached={handleStartReached}
               followOutput="smooth"
               defaultItemHeight={100}
               overscan={400}
               className="h-full"
               components={{
+                Header: () => hasOlderMessages ? (
+                  <div className="flex justify-center py-3 text-gray-400 text-sm">
+                    {isLoadingOlder ? '加载更早的消息...' : '↑ 滚动加载更多'}
+                  </div>
+                ) : null,
                 Footer,
               }}
               increaseViewportBy={{ top: 200, bottom: 200 }}
@@ -224,10 +261,40 @@ export const ChatView: React.FC = () => {
   );
 };
 
+// 格式化会话耗时
+function formatElapsed(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  if (h > 0) return `${h}h ${m % 60}m`;
+  if (m > 0) return `${m}m ${s % 60}s`;
+  return `${s}s`;
+}
+
+// 模型名称简写
+function shortModelName(model: string): string {
+  return model
+    .replace('claude-opus-4-6', 'Opus 4.6')
+    .replace('claude-sonnet-4-6', 'Sonnet 4.6')
+    .replace('claude-haiku-4-5-20251001', 'Haiku 4.5')
+    .replace('claude-opus-4-5-20251124', 'Opus 4.5')
+    .replace('claude-sonnet-4-20250514', 'Sonnet 4')
+    .replace('kimi-k2.5', 'Kimi K2.5')
+    .replace('deepseek-chat', 'DeepSeek V3')
+    .replace('gpt-4o', 'GPT-4o');
+}
+
 // Thinking indicator - Claude/ChatGPT style, left-aligned, no avatar
 const ThinkingIndicator: React.FC = () => {
-  const { inputTokens, outputTokens, contextUsagePercent } = useStatusStore();
+  const { inputTokens, outputTokens, contextUsagePercent, sessionStartTime } = useStatusStore();
+  const { modelConfig } = useAppStore();
+  const [elapsed, setElapsed] = useState(Date.now() - sessionStartTime);
   const totalTokens = inputTokens + outputTokens;
+
+  useEffect(() => {
+    const interval = setInterval(() => setElapsed(Date.now() - sessionStartTime), 1000);
+    return () => clearInterval(interval);
+  }, [sessionStartTime]);
 
   // 格式化 token 数
   const formatTokens = (n: number): string => {
@@ -242,9 +309,10 @@ const ThinkingIndicator: React.FC = () => {
     contextUsagePercent >= 60 ? 'text-amber-400' :
     'text-zinc-500';
 
+  const modelName = modelConfig?.model ? shortModelName(modelConfig.model) : null;
+
   return (
     <div className="animate-slideUp">
-      {/* Thinking indicator - simple dots */}
       <div className="inline-flex items-center gap-2">
         {/* Typing dots */}
         <div className="flex items-center gap-1">
@@ -253,16 +321,20 @@ const ThinkingIndicator: React.FC = () => {
           <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '300ms' }} />
         </div>
         <span className="text-sm text-zinc-400">思考中</span>
-        {totalTokens > 0 && (
-          <span className="text-xs text-zinc-500 font-mono">
-            · {formatTokens(totalTokens)} tokens
-          </span>
+        {modelName && (
+          <span className="text-xs text-zinc-500 font-mono">· {modelName}</span>
         )}
         {contextUsagePercent > 0 && (
           <span className={`text-xs font-mono ${ctxColor}`}>
             · ctx {contextUsagePercent.toFixed(1)}%
           </span>
         )}
+        {totalTokens > 0 && (
+          <span className="text-xs text-zinc-500 font-mono">
+            · {formatTokens(totalTokens)} tok
+          </span>
+        )}
+        <span className="text-xs text-zinc-600 font-mono">· {formatElapsed(elapsed)}</span>
       </div>
     </div>
   );

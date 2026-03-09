@@ -17,8 +17,34 @@ import type {
   TelemetryAdapter,
   QualitySignals,
   TelemetryPushEvent,
+  ErrorCategory,
 } from '../../shared/types/telemetry';
 import type { AgentEvent } from '../../shared/types';
+
+
+// ----------------------------------------------------------------------------
+// Error Classification
+// ----------------------------------------------------------------------------
+
+
+
+export function classifyError(errorMessage: string): ErrorCategory {
+  const msg = errorMessage.toLowerCase();
+
+  if (msg.includes('enoent') || msg.includes('no such file')) return 'file_not_found';
+  if (msg.includes('eacces') || msg.includes('permission denied')) return 'permission_denied';
+  if (msg.includes('timeout') || msg.includes('etimedout')) return 'timeout';
+  if (msg.includes('syntaxerror') || msg.includes('parse error')) return 'syntax_error';
+  if (msg.includes('not unique') || msg.includes('multiple matches')) return 'edit_not_unique';
+  if (msg.includes('rate limit') || msg.includes('429') || msg.includes('quota')) return 'rate_limit';
+  if (msg.includes('econnrefused') || msg.includes('network') || msg.includes('fetch failed')) return 'network_error';
+  if (msg.includes('exit code') || msg.includes('command failed')) return 'command_failure';
+  if (msg.includes('context length') || msg.includes('token limit')) return 'context_overflow';
+  // path_hallucination: "does not exist" with a file path pattern
+  if (msg.includes('does not exist') && /[\/\][\w.-]+/.test(errorMessage)) return 'path_hallucination';
+
+  return 'unknown';
+}
 
 const logger = createLogger('TelemetryCollector');
 
@@ -175,7 +201,7 @@ export class TelemetryCollector {
   // Turn Lifecycle
   // --------------------------------------------------------------------------
 
-  startTurn(sessionId: string, turnId: string, turnNumber: number, userPrompt: string, agentId?: string): void {
+  startTurn(sessionId: string, turnId: string, turnNumber: number, userPrompt: string, agentId?: string, parentTurnId?: string): void {
     if (this.activeSession?.id !== sessionId) return;
 
     this.activeTurn = {
@@ -197,7 +223,9 @@ export class TelemetryCollector {
       assistantResponseTokens: 0,
       totalInputTokens: 0,
       totalOutputTokens: 0,
-      iterationCount: turnNumber,
+      iterationCount: 1,
+      turnType: parentTurnId ? 'iteration' : 'user',
+      parentTurnId: parentTurnId ?? undefined,
     };
 
     // Reset per-turn counters
@@ -373,6 +401,7 @@ export class TelemetryCollector {
     if (!pending) return;
     this.pendingToolCalls.delete(toolCallId);
 
+    const errorCategory = error ? classifyError(error) : undefined;
     const record: TelemetryToolCall & { turnId: string; sessionId: string } = {
       id: pending.id,
       turnId,
@@ -383,6 +412,7 @@ export class TelemetryCollector {
       resultSummary: (output ?? error ?? '').substring(0, 500),
       success,
       error,
+      errorCategory,
       durationMs,
       timestamp: pending.timestamp,
       index: pending.index,
@@ -445,8 +475,8 @@ export class TelemetryCollector {
   createAdapter(sessionId: string, agentId?: string): TelemetryAdapter {
     const collector = this;
     return {
-      onTurnStart(turnId: string, turnNumber: number, userPrompt: string) {
-        collector.startTurn(sessionId, turnId, turnNumber, userPrompt, agentId);
+      onTurnStart(turnId: string, turnNumber: number, userPrompt: string, parentTurnId?: string) {
+        collector.startTurn(sessionId, turnId, turnNumber, userPrompt, agentId, parentTurnId);
       },
       onModelCall(turnId: string, call: TelemetryModelCall) {
         collector.recordModelCall(turnId, call);

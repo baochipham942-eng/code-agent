@@ -56,8 +56,8 @@ import type {
 } from './types/contextHealth';
 
 import type { DAGVisualizationEvent } from './types/dagVisualization';
-import { DAG_CHANNELS, LAB_CHANNELS, CHANNEL_CHANNELS, EVALUATION_CHANNELS, LSP_CHANNELS, BACKGROUND_CHANNELS, TELEMETRY_CHANNELS } from './ipc/channels';
-export { DAG_CHANNELS, LAB_CHANNELS, CHANNEL_CHANNELS, EVALUATION_CHANNELS, LSP_CHANNELS, BACKGROUND_CHANNELS, TELEMETRY_CHANNELS } from './ipc/channels';
+import { DAG_CHANNELS, LAB_CHANNELS, CHANNEL_CHANNELS, EVALUATION_CHANNELS, LSP_CHANNELS, BACKGROUND_CHANNELS, TELEMETRY_CHANNELS, SUBSET_CHANNELS } from './ipc/channels';
+export { DAG_CHANNELS, LAB_CHANNELS, CHANNEL_CHANNELS, EVALUATION_CHANNELS, LSP_CHANNELS, BACKGROUND_CHANNELS, TELEMETRY_CHANNELS, SUBSET_CHANNELS } from './ipc/channels';
 
 import type {
   TelemetrySession,
@@ -388,6 +388,8 @@ export interface TestCaseResult {
   turnCount: number;
   score: number;
   failureReason?: string;
+  /** Pipeline failure stage (from failure funnel analysis) */
+  failureStage?: string;
   reference_solution?: string;
   expectationResults?: TestExpectationResult[];
   category?: string;
@@ -419,6 +421,7 @@ export interface TestRunReport {
     totalTurns: number;
   };
   evalFeedback?: unknown;
+  gitCommit?: string;
 }
 
 export type EvalAnnotationErrorType =
@@ -748,6 +751,14 @@ export const IPC_CHANNELS = {
   EVALUATION_LOAD_EXPERIMENT: EVALUATION_CHANNELS.LOAD_EXPERIMENT,
   EVALUATION_GET_FAILURE_FUNNEL: EVALUATION_CHANNELS.GET_FAILURE_FUNNEL,
   EVALUATION_GET_CROSS_EXPERIMENT: EVALUATION_CHANNELS.GET_CROSS_EXPERIMENT,
+  EVALUATION_CREATE_EXPERIMENT: EVALUATION_CHANNELS.CREATE_EXPERIMENT,
+  EVALUATION_GET_GIT_COMMIT: EVALUATION_CHANNELS.GET_GIT_COMMIT,
+
+  // Test Subset channels (数据集子集管理)
+  SUBSET_SAVE: SUBSET_CHANNELS.SAVE,
+  SUBSET_LIST: SUBSET_CHANNELS.LIST,
+  SUBSET_LOAD: SUBSET_CHANNELS.LOAD,
+  SUBSET_DELETE: SUBSET_CHANNELS.DELETE,
 
   // LSP channels (语言服务器)
   LSP_GET_STATUS: LSP_CHANNELS.GET_STATUS,
@@ -1069,6 +1080,14 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.EVALUATION_LOAD_EXPERIMENT]: (id: string) => Promise<unknown>;
   [IPC_CHANNELS.EVALUATION_GET_FAILURE_FUNNEL]: (experimentId: string) => Promise<unknown>;
   [IPC_CHANNELS.EVALUATION_GET_CROSS_EXPERIMENT]: (experimentIds: string[]) => Promise<unknown[]>;
+  [IPC_CHANNELS.EVALUATION_CREATE_EXPERIMENT]: (config: { name: string; model: string; testSetId: string; trialsPerCase: number; gitCommit: string }) => Promise<{ experimentId: string; status: string }>;
+  [IPC_CHANNELS.EVALUATION_GET_GIT_COMMIT]: () => Promise<{ hash: string; short: string }>;
+
+  // Test Subset (数据集子集管理)
+  [IPC_CHANNELS.SUBSET_SAVE]: (subset: { name: string; description?: string; caseIds: string[] }) => Promise<{ success: boolean; path: string }>;
+  [IPC_CHANNELS.SUBSET_LIST]: () => Promise<Array<{ name: string; description?: string; caseIds: string[]; createdAt: number; fileName: string }>>;
+  [IPC_CHANNELS.SUBSET_LOAD]: (fileName: string) => Promise<{ name: string; description?: string; caseIds: string[]; createdAt: number } | null>;
+  [IPC_CHANNELS.SUBSET_DELETE]: (fileName: string) => Promise<boolean>;
 
   // Background (后台任务)
   [IPC_CHANNELS.BACKGROUND_MOVE_TO_BACKGROUND]: (sessionId: string) => Promise<boolean>;

@@ -156,11 +156,22 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
       {/* ── Left panel: case list ── */}
       <div className="w-56 flex-shrink-0 border-r border-zinc-700/30 flex flex-col">
         {/* Header */}
-        <div className="px-3 py-2 border-b border-zinc-700/20 flex items-center justify-between">
-          <span className="text-xs font-medium text-zinc-300">用例列表</span>
-          <span className="text-[10px] text-zinc-500">
-            {annotatedCount}/{cases.length} 已标注
-          </span>
+        <div className="px-3 py-2 border-b border-zinc-700/20">
+          <span className="text-xs font-medium text-zinc-300 mb-1.5 block">用例列表</span>
+          <div className="flex gap-1.5">
+            <div className="flex-1 bg-emerald-500/10 rounded px-1.5 py-1 text-center">
+              <div className="text-[10px] text-emerald-400 font-bold">{annotatedCount}</div>
+              <div className="text-[8px] text-emerald-400/70">已编码</div>
+            </div>
+            <div className="flex-1 bg-zinc-700/30 rounded px-1.5 py-1 text-center">
+              <div className="text-[10px] text-zinc-400 font-bold">{cases.length - annotatedCount}</div>
+              <div className="text-[8px] text-zinc-500">未编码</div>
+            </div>
+            <div className="flex-1 bg-blue-500/10 rounded px-1.5 py-1 text-center">
+              <div className="text-[10px] text-blue-400 font-bold">{cases.length > 0 ? Math.round((annotatedCount / cases.length) * 100) : 0}%</div>
+              <div className="text-[8px] text-blue-400/70">编码率</div>
+            </div>
+          </div>
         </div>
 
         {/* Progress bar */}

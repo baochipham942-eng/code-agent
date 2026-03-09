@@ -205,6 +205,8 @@ export const EVALUATION_CHANNELS = {
   UPDATE_SCORING_CONFIG: 'evaluation:update-scoring-config',
   GET_FAILURE_FUNNEL: 'evaluation:get-failure-funnel',
   GET_CROSS_EXPERIMENT: 'evaluation:get-cross-experiment',
+  GET_GIT_COMMIT: 'evaluation:get-git-commit',
+  CREATE_EXPERIMENT: 'evaluation:create-experiment',
 } as const;
 
 /**
@@ -297,3 +299,27 @@ export const TELEMETRY_CHANNELS = {
  * Telemetry 通道名称类型
  */
 export type TelemetryChannel = (typeof TELEMETRY_CHANNELS)[keyof typeof TELEMETRY_CHANNELS];
+
+// ============================================================================
+// Test Subset 数据集子集管理 IPC 通道
+// ============================================================================
+
+/**
+ * Test Subset IPC 通道
+ * 用于前端与主进程之间的测试子集管理
+ */
+export const SUBSET_CHANNELS = {
+  /** 保存测试子集 */
+  SAVE: 'evaluation:save-test-subset',
+  /** 获取所有已保存的子集列表 */
+  LIST: 'evaluation:list-test-subsets',
+  /** 加载指定子集 */
+  LOAD: 'evaluation:load-test-subset',
+  /** 删除指定子集 */
+  DELETE: 'evaluation:delete-test-subset',
+} as const;
+
+/**
+ * Subset 通道名称类型
+ */
+export type SubsetChannel = (typeof SUBSET_CHANNELS)[keyof typeof SUBSET_CHANNELS];

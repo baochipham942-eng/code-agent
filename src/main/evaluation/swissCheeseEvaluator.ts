@@ -66,6 +66,7 @@ export interface SwissCheeseResult {
 export interface ScoringConfigEntry {
   dimension: string;
   weight: number; // percentage (e.g. 35) or decimal (e.g. 0.35)
+  judgePrompt?: string; // custom judge prompt override for LLM-type dimensions
 }
 
 // ----------------------------------------------------------------------------
@@ -633,10 +634,18 @@ export class SwissCheeseEvaluator {
     // 1. 代码 Grader: 从结构化数据计算硬指标
     const transcriptMetrics = this.analyzeTranscript(snapshot);
 
-    // 2. 并行运行 LLM 评审员
-    const reviewerPromises = REVIEWER_CONFIGS.map((config) =>
-      this.runReviewer(config, transcript)
-    );
+    // 2. 并行运行 LLM 评审员（支持自定义 Judge Prompt）
+    const reviewerToDimension: Record<string, string> = {
+      task_analyst: 'outcomeVerification',
+      code_reviewer: 'codeQuality',
+      security_auditor: 'security',
+      efficiency_expert: 'toolEfficiency',
+    };
+    const reviewerPromises = REVIEWER_CONFIGS.map((config) => {
+      const dimName = reviewerToDimension[config.id];
+      const promptOverride = scoringConfig?.find(s => s.dimension === dimName)?.judgePrompt;
+      return this.runReviewer(config, transcript, promptOverride || undefined);
+    });
     const reviewerResults = await Promise.all(reviewerPromises);
 
     // 3. 代码执行验证
@@ -836,13 +845,15 @@ export class SwissCheeseEvaluator {
    */
   private async runReviewer(
     config: (typeof REVIEWER_CONFIGS)[0],
-    conversationText: string
+    conversationText: string,
+    promptOverride?: string
   ): Promise<ReviewerResult> {
     logger.debug(`Running reviewer: ${config.name}`);
 
     try {
+      const effectivePrompt = promptOverride || config.prompt;
       const response = await this.callLLM(
-        `${config.prompt}\n\n${EVALUATION_OUTPUT_FORMAT}`,
+        `${effectivePrompt}\n\n${EVALUATION_OUTPUT_FORMAT}`,
         `请评估以下对话：\n\n${conversationText}`
       );
 

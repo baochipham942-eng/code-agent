@@ -88,18 +88,38 @@ export const app = {
   whenReady: () => Promise.resolve(),
 };
 
+// ── SSE Bridge ──────────────────────────────────────────────────────
+// BrowserWindow.webContents.send() → broadcastSSE()
+// 延迟导入避免循环依赖，在首次调用时解析
+let _broadcastSSE: (channel: string, args: unknown) => void = () => {};
+function getBroadcastSSE(): (channel: string, args: unknown) => void {
+  if (_broadcastSSE === getBroadcastSSE._noop) {
+    try {
+      const { broadcastSSE } = require('./webServer');
+      _broadcastSSE = broadcastSSE;
+    } catch {
+      // webServer 未加载时静默丢弃
+    }
+  }
+  return _broadcastSSE;
+}
+getBroadcastSSE._noop = _broadcastSSE; // 标记初始空函数
+
 // ── BrowserWindow ────────────────────────────────────────────────────
 
 export class BrowserWindow {
   id = 0;
   webContents = {
-    send: (_channel: string, ..._args: unknown[]) => {},
+    send: (channel: string, ...args: unknown[]) => {
+      // 将 Electron IPC 事件转发到 SSE 客户端
+      getBroadcastSSE()(channel, args.length === 1 ? args[0] : args);
+    },
     on: () => {},
     once: () => {},
     openDevTools: () => {},
     session: { clearCache: async () => {} },
     getURL: () => '',
-    isDestroyed: () => true,
+    isDestroyed: () => false, // Web 模式下窗口始终"存在"
   };
 
   loadURL() { return Promise.resolve(); }

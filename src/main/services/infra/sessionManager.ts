@@ -655,6 +655,7 @@ export class SessionManager {
     // 只在标题是默认标题时更新
     const isDefaultTitle =
       session.title === 'New Chat' ||
+      session.title === 'New Session' ||
       session.title.startsWith('Session ') ||
       session.title === '新对话';
 

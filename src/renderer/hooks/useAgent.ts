@@ -74,7 +74,7 @@ export const useAgent = () => {
 
   // Message batcher for reducing re-renders during streaming
   const handleBatchUpdate = useCallback((updates: MessageUpdate[]) => {
-    const currentMessages = messagesRef.current;
+    const currentMessages = useSessionStore.getState().messages;
     for (const update of updates) {
       if (update.type === 'append' && (update.content || update.reasoning)) {
         const targetMessage = currentMessages.find(m => m.id === update.messageId);
@@ -118,8 +118,7 @@ export const useAgent = () => {
         const currentSessionId = useSessionStore.getState().currentSessionId;
         const isCompletionEvent = ['agent_complete', 'error'].includes(event.type);
 
-        if (event.sessionId && event.sessionId !== currentSessionId && !isCompletionEvent) {
-          // 事件属于其他会话，且不是完成类事件，忽略
+        if (event.sessionId && currentSessionId && event.sessionId !== currentSessionId && !isCompletionEvent) {
           return;
         }
 
@@ -133,8 +132,9 @@ export const useAgent = () => {
           }
         };
 
-        // Always get the latest messages from ref
-        const currentMessages = messagesRef.current;
+        // Always get fresh messages from store to avoid stale closures
+        // (the closure-captured ref may not reflect messages added during this event cycle)
+        const getFreshMessages = () => useSessionStore.getState().messages;
 
         switch (event.type) {
           // ================================================================
@@ -166,12 +166,12 @@ export const useAgent = () => {
             if (event.data?.content) {
               // 优先使用 turnId 定位消息，fallback 到最后一条 assistant 消息
               const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
+              const freshMsgs = getFreshMessages();
               const targetMessage = targetMessageId
-                ? currentMessages.find(m => m.id === targetMessageId)
-                : currentMessages[currentMessages.length - 1];
+                ? freshMsgs.find(m => m.id === targetMessageId)
+                : freshMsgs[freshMsgs.length - 1];
 
               if (targetMessage?.role === 'assistant') {
-                // 使用批处理更新，减少重渲染频率
                 queueUpdate({
                   type: 'append',
                   messageId: targetMessage.id,
@@ -179,7 +179,7 @@ export const useAgent = () => {
                 });
               } else {
                 // Fallback: 如果没有找到目标消息，创建一个新的（兼容旧事件格式）
-                const lastMessage = currentMessages[currentMessages.length - 1];
+                const lastMessage = getFreshMessages()[getFreshMessages().length - 1];
                 if (lastMessage?.role === 'assistant') {
                   // 检查是否需要创建新消息（旧逻辑兼容）
                   const hasCompletedToolCalls = lastMessage.toolCalls?.some(
@@ -214,8 +214,8 @@ export const useAgent = () => {
             if (event.data) {
               const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
               const targetMessage = targetMessageId
-                ? currentMessages.find(m => m.id === targetMessageId)
-                : currentMessages[currentMessages.length - 1];
+                ? getFreshMessages().find(m => m.id === targetMessageId)
+                : getFreshMessages()[getFreshMessages().length - 1];
 
               if (targetMessage?.role === 'assistant') {
                 // 保留已有的流式内容
@@ -246,8 +246,8 @@ export const useAgent = () => {
             if (event.data?.content) {
               const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
               const targetMessage = targetMessageId
-                ? currentMessages.find(m => m.id === targetMessageId)
-                : currentMessages[currentMessages.length - 1];
+                ? getFreshMessages().find(m => m.id === targetMessageId)
+                : getFreshMessages()[getFreshMessages().length - 1];
 
               if (targetMessage?.role === 'assistant') {
                 queueUpdate({
@@ -265,8 +265,8 @@ export const useAgent = () => {
               // 使用 turnId 定位目标消息
               const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
               const targetMessage = targetMessageId
-                ? currentMessages.find(m => m.id === targetMessageId)
-                : currentMessages[currentMessages.length - 1];
+                ? getFreshMessages().find(m => m.id === targetMessageId)
+                : getFreshMessages()[getFreshMessages().length - 1];
 
               logger.debug('stream_tool_call_start', { data: event.data, targetMessageId });
               if (targetMessage?.role === 'assistant') {
@@ -290,8 +290,8 @@ export const useAgent = () => {
               // 使用 turnId 定位目标消息
               const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
               const targetMessage = targetMessageId
-                ? currentMessages.find(m => m.id === targetMessageId)
-                : currentMessages[currentMessages.length - 1];
+                ? getFreshMessages().find(m => m.id === targetMessageId)
+                : getFreshMessages()[getFreshMessages().length - 1];
 
               if (targetMessage?.role === 'assistant' && targetMessage.toolCalls) {
                 const index = event.data.index ?? 0;
@@ -328,8 +328,8 @@ export const useAgent = () => {
               // 使用 turnId 定位目标消息
               const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
               const targetMessage = targetMessageId
-                ? currentMessages.find(m => m.id === targetMessageId)
-                : currentMessages[currentMessages.length - 1];
+                ? getFreshMessages().find(m => m.id === targetMessageId)
+                : getFreshMessages()[getFreshMessages().length - 1];
 
               const toolIndex = event.data._index;
               logger.debug('tool_call_start', { index: toolIndex, id: event.data.id, name: event.data.name, targetMessageId });
@@ -391,7 +391,7 @@ export const useAgent = () => {
 
               // Find and update the matching toolCall across all messages
               let matched = false;
-              for (const msg of currentMessages) {
+              for (const msg of getFreshMessages()) {
                 if (msg.role === 'assistant' && msg.toolCalls) {
                   const hasMatch = msg.toolCalls.some((tc: ToolCall) => tc.id === toolResult.toolCallId);
                   if (hasMatch) {
@@ -410,7 +410,7 @@ export const useAgent = () => {
               if (import.meta.env.DEV && !matched) {
                 logger.warn('No matching toolCall found', { toolCallId: toolResult.toolCallId });
                 logger.debug('Available toolCalls', {
-                  ids: currentMessages
+                  ids: getFreshMessages()
                     .filter(m => m.toolCalls)
                     .flatMap(m => m.toolCalls!.map(tc => tc.id))
                 });
@@ -426,12 +426,12 @@ export const useAgent = () => {
             // Update todos - only for current session (fix cross-session pollution)
             // Events from other sessions should be ignored
             if (event.data) {
-              if (!event.sessionId || event.sessionId === currentSessionId) {
+              if (!event.sessionId || event.sessionId === useSessionStore.getState().currentSessionId) {
                 setTodos(event.data);
               } else {
                 logger.debug('Ignoring todo_update from different session', {
                   eventSessionId: event.sessionId,
-                  currentSessionId
+                  currentSessionId: useSessionStore.getState().currentSessionId
                 });
               }
             }
@@ -441,8 +441,8 @@ export const useAgent = () => {
             // Handle error - display it in the chat
             logger.error('Agent error', { message: event.data?.message, code: event.data?.code });
             // 只有当前会话的错误才更新消息
-            if (!event.sessionId || event.sessionId === currentSessionId) {
-              const lastMessage = currentMessages[currentMessages.length - 1];
+            if (!event.sessionId || event.sessionId === useSessionStore.getState().currentSessionId) {
+              const lastMessage = getFreshMessages()[getFreshMessages().length - 1];
               if (lastMessage?.role === 'assistant') {
                 // 根据错误类型生成友好的提示
                 let errorContent: string;
@@ -469,7 +469,7 @@ export const useAgent = () => {
           case 'agent_complete':
             // Agent has finished processing
             // 只有当前会话才刷新流式更新
-            if (!event.sessionId || event.sessionId === currentSessionId) {
+            if (!event.sessionId || event.sessionId === useSessionStore.getState().currentSessionId) {
               flushRef.current();
             }
             clearSessionProcessing();
@@ -573,6 +573,14 @@ export const useAgent = () => {
             // 中断完成，新任务即将开始
             logger.debug('interrupt_complete', { data: event.data });
             setIsInterrupting(false);
+            break;
+
+          case 'stream_end':
+            // SSE 流结束兜底（httpTransport 在流关闭时派发）
+            // 如果 agent_complete 已经处理过则 processing 已清除，这里是安全的二次检查
+            logger.debug('stream_end - ensuring processing state is cleared');
+            flushRef.current();
+            clearSessionProcessing();
             break;
         }
       }

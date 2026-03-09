@@ -80,8 +80,20 @@ async function handleSetDevMode(
 }
 
 async function handleCheckApiKeyConfigured(): Promise<boolean> {
+  // 1. 检查 secureStorage（Electron 模式）
   const { getSecureStorage } = await import('../services/core/secureStorage');
-  return getSecureStorage().getStoredApiKeyProviders().length > 0;
+  if (getSecureStorage().getStoredApiKeyProviders().length > 0) {
+    return true;
+  }
+
+  // 2. 检查环境变量（Web 模式 / .env 配置）
+  const envKeyNames = [
+    'MOONSHOT_API_KEY', 'DEEPSEEK_API_KEY', 'OPENAI_API_KEY',
+    'ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'ZHIPU_API_KEY',
+    'GROQ_API_KEY', 'QWEN_API_KEY', 'MINIMAX_API_KEY',
+    'OPENROUTER_API_KEY', 'PERPLEXITY_API_KEY',
+  ];
+  return envKeyNames.some(name => !!process.env[name]);
 }
 
 async function handleSetServiceApiKey(

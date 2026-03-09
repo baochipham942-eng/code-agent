@@ -5,6 +5,21 @@
 
 :root[data-theme="dark"],
 .dark {
+
+  /* Zinc color scale - original dark values (RGB triplets) */
+  --zinc-50: 250 250 250;
+  --zinc-100: 244 244 245;
+  --zinc-200: 228 228 231;
+  --zinc-300: 212 212 216;
+  --zinc-400: 161 161 170;
+  --zinc-500: 113 113 122;
+  --zinc-600: 82 82 91;
+  --zinc-700: 63 63 70;
+  --zinc-800: 39 39 42;
+  --zinc-850: 31 31 35;
+  --zinc-900: 24 24 27;
+  --zinc-950: 9 9 11;
+
   /* Background layers - from deepest to elevated (with subtle warmth) */
   --bg-void: #101012;
   --bg-deep: #141417;

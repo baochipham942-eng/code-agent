@@ -74,7 +74,29 @@ async function initializeServices(): Promise<void> {
   await configService.initialize();
   logger.info('ConfigService initialized');
 
-  // 2. 初始化 Database（main 模块的单例，SessionManager 等依赖）
+  // 2. 初始化 Supabase（auth 等服务依赖）
+  try {
+    const { initSupabase } = await import('../main/services/infra/supabaseService');
+    const { DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY } = await import('../shared/constants');
+    const settings = configService.getSettings() as Record<string, any>;
+    const supabaseUrl = process.env.SUPABASE_URL || settings.supabase?.url || DEFAULT_SUPABASE_URL;
+    const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || settings.supabase?.anonKey || DEFAULT_SUPABASE_ANON_KEY;
+    initSupabase(supabaseUrl, supabaseAnonKey);
+    logger.info('Supabase initialized');
+  } catch (error) {
+    logger.warn('Supabase not available:', (error as Error).message);
+  }
+
+  // 3. 初始化 AuthService（依赖 Supabase，恢复登录态）
+  try {
+    const { getAuthService } = await import('../main/services/auth/authService');
+    await getAuthService().initialize();
+    logger.info('AuthService initialized');
+  } catch (error) {
+    logger.warn('AuthService not available:', (error as Error).message);
+  }
+
+  // 4. 初始化 Database（main 模块的单例，SessionManager 等依赖）
   try {
     const { initDatabase } = await import('../main/services/core/databaseService');
     await initDatabase();
@@ -84,7 +106,7 @@ async function initializeServices(): Promise<void> {
     logger.warn('Database not available:', msg);
   }
 
-  // 3. 初始化 MemoryService（session handler 的 handleCreate 会调用 getMemoryService）
+  // 5. 初始化 MemoryService（session handler 的 handleCreate 会调用 getMemoryService）
   try {
     const { initMemoryService } = await import('../main/memory/memoryService');
     initMemoryService({
@@ -156,7 +178,7 @@ function createApp(): express.Express {
   });
 
   // JSON body parser
-  app.use(express.json({ limit: '50mb' }));
+  app.use(express.json({ limit: '50mb', strict: false }));
 
   // ── Health ──────────────────────────────────────────────────────────
   app.get('/api/health', (_req: Request, res: Response) => {
@@ -460,6 +482,14 @@ function createApp(): express.Express {
     res.status(404).json({ error: `Unknown channel: ${channel}` });
   });
 
+  // ── Static file serving (production) ─────────────────────────────
+  const staticDir = path.join(process.cwd(), 'dist', 'renderer');
+  app.use(express.static(staticDir));
+  // SPA fallback — serve index.html for non-API routes
+  app.get('/{*path}', (_req: Request, res: Response) => {
+    res.sendFile(path.join(staticDir, 'index.html'));
+  });
+
   return app;
 }
 
@@ -500,6 +530,13 @@ async function main(): Promise<void> {
   // 3. 启动 HTTP 服务
   console.log('[3/3] Starting HTTP server...');
   const app = createApp();
+
+  // ── Static files (production) ─────────────────────────────────────
+  const staticDir = path.join(process.cwd(), 'dist/renderer');
+  app.use(express.static(staticDir));
+  app.get('/{*path}', (_req: any, res: any) => {
+    res.sendFile(path.join(staticDir, 'index.html'));
+  });
 
   const server = http.createServer(app);
 

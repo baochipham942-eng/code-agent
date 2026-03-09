@@ -37,9 +37,17 @@
       "icons/icon.icns"
     ],
     "resources": [
-      "../dist/web/**/*",
-      "../node_modules/**/*",
-      "../package.json"
+      "../dist/web/webServer.cjs",
+      "../dist/web/webServer.cjs.map",
+      "../dist/renderer/**/*",
+      "../package.json",
+      "../.env",
+      "../node_modules/better-sqlite3/**/*",
+      "../node_modules/keytar/**/*",
+      "../node_modules/isolated-vm/**/*",
+      "../node_modules/tree-sitter/**/*",
+      "../node_modules/tree-sitter-typescript/**/*",
+      "../node_modules/node-pty/**/*"
     ],
     "macOS": {
       "minimumSystemVersion": "11.0"

@@ -341,7 +341,7 @@ export class EvaluationService {
       const entries = await fs.readdir(resultsDir, { withFileTypes: true });
       const reportFiles = entries
         .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
-        .filter((entry) => entry.name === 'latest-report.json' || /^report-\d+\.json$/.test(entry.name));
+        .filter((entry) => entry.name === 'latest-report.json' || /^report-[\w]+\.json$/.test(entry.name));
 
       const reports = await Promise.all(
         reportFiles.map(async (entry) => {

@@ -1,3 +1,4 @@
+import type { ModelProvider } from './types';
 /**
  * 全局常量定义
  * 消除魔法数字，集中管理配置值
@@ -666,6 +667,158 @@ export const SEARCH_API_ENDPOINTS = {
   /** Tavily */
   tavily: 'https://api.tavily.com/search',
 } as const;
+
+// ============================================================================
+// Provider → Models 映射 — Settings UI 动态渲染模型列表的唯一数据源
+// ============================================================================
+
+export interface ProviderModelEntry {
+  id: string;
+  label: string;
+  group?: string; // optgroup label（同一 provider 内分组）
+}
+
+export interface ProviderInfo {
+  id: ModelProvider;
+  name: string;
+  description: string;
+  models: ProviderModelEntry[];
+}
+
+/**
+ * 所有 Provider 及其可选模型 — Settings 页面的唯一数据源
+ * 新增/删除模型只需改这里，UI 自动同步
+ */
+export const PROVIDER_MODELS: ProviderInfo[] = [
+  // 国外御三家
+  {
+    id: 'openai',
+    name: 'OpenAI',
+    description: 'GPT / o 系列模型',
+    models: [
+      { id: 'gpt-4.1', label: 'GPT-4.1 (推荐)', group: 'GPT 系列' },
+      { id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini', group: 'GPT 系列' },
+      { id: 'gpt-4.1-nano', label: 'GPT-4.1 Nano (快速)', group: 'GPT 系列' },
+      { id: 'gpt-4o', label: 'GPT-4o', group: 'GPT 系列' },
+      { id: 'o3', label: 'o3 (最强推理)', group: '推理模型 (o 系列)' },
+      { id: 'o3-mini', label: 'o3 Mini', group: '推理模型 (o 系列)' },
+      { id: 'o4-mini', label: 'o4 Mini (高性价比)', group: '推理模型 (o 系列)' },
+    ],
+  },
+  {
+    id: 'claude',
+    name: 'Anthropic',
+    description: 'Claude 系列模型',
+    models: [
+      { id: 'claude-opus-4-6', label: 'Claude Opus 4.6 (最强)' },
+      { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (推荐)' },
+      { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (快速)' },
+      { id: 'claude-opus-4-5-20251124', label: 'Claude Opus 4.5' },
+      { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+    ],
+  },
+  {
+    id: 'gemini',
+    name: 'Gemini',
+    description: 'Google Gemini 2.5',
+    models: [
+      { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (推荐)' },
+      { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+      { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite (最便宜)' },
+      { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+    ],
+  },
+  // 国内梯队
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    description: '深度求索',
+    models: [
+      { id: 'deepseek-chat', label: 'DeepSeek V3.2 Chat (推荐)' },
+      { id: 'deepseek-reasoner', label: 'DeepSeek V3.2 Reasoner' },
+    ],
+  },
+  {
+    id: 'zhipu',
+    name: '智谱 AI',
+    description: 'GLM-4 系列模型',
+    models: [
+      { id: 'glm-5', label: 'GLM-5 (最新旗舰)' },
+      { id: 'glm-4.7', label: 'GLM-4.7' },
+      { id: 'glm-4.7-flash', label: 'GLM-4.7 Flash (快速)' },
+      { id: 'glm-4.6v', label: 'GLM-4.6V (视觉)' },
+    ],
+  },
+  {
+    id: 'qwen',
+    name: '通义千问',
+    description: '阿里云 Qwen 模型',
+    models: [
+      { id: 'qwen3-max', label: 'Qwen3 Max (推荐)' },
+      { id: 'qwen-max-latest', label: 'Qwen Max Latest' },
+      { id: 'qwen-plus-latest', label: 'Qwen Plus Latest' },
+      { id: 'qwen3-coder', label: 'Qwen3 Coder' },
+      { id: 'qwen-vl-max', label: 'Qwen VL Max (视觉)' },
+    ],
+  },
+  {
+    id: 'moonshot',
+    name: 'Kimi',
+    description: 'Moonshot AI 模型',
+    models: [
+      { id: 'kimi-k2-turbo-preview', label: 'Kimi K2 Turbo (推荐)' },
+      { id: 'kimi-k2-thinking', label: 'Kimi K2 Thinking' },
+      { id: 'moonshot-v1-auto', label: 'Moonshot V1 Auto' },
+      { id: 'moonshot-v1-128k', label: 'Moonshot V1 128K' },
+    ],
+  },
+  {
+    id: 'minimax',
+    name: 'MiniMax',
+    description: 'MiniMax 海螺 AI',
+    models: [
+      { id: 'MiniMax-M2', label: 'MiniMax M2 (推荐)' },
+      { id: 'MiniMax-M1', label: 'MiniMax M1' },
+      { id: 'MiniMax-Text-01', label: 'MiniMax Text-01' },
+      { id: 'abab7-preview', label: 'ABAB7 Preview' },
+    ],
+  },
+  // 第三方服务
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    description: '中转服务',
+    models: [
+      { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro', group: 'Google Gemini' },
+      { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash', group: 'Google Gemini' },
+      { id: 'google/gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash Lite', group: 'Google Gemini' },
+      { id: 'anthropic/claude-sonnet-4.5', label: 'Claude 4.5 Sonnet', group: 'Anthropic Claude' },
+      { id: 'anthropic/claude-haiku-4.5', label: 'Claude 4.5 Haiku', group: 'Anthropic Claude' },
+      { id: 'openai/gpt-4.1', label: 'GPT-4.1', group: 'OpenAI' },
+      { id: 'openai/gpt-4o', label: 'GPT-4o', group: 'OpenAI' },
+      { id: 'openai/o3-mini', label: 'o3 Mini', group: 'OpenAI' },
+      { id: 'deepseek/deepseek-chat', label: 'DeepSeek V3.2', group: 'DeepSeek' },
+      { id: 'deepseek/deepseek-reasoner', label: 'DeepSeek Reasoner', group: 'DeepSeek' },
+    ],
+  },
+  {
+    id: 'perplexity',
+    name: 'Perplexity',
+    description: 'AI 搜索服务',
+    models: [
+      { id: 'sonar-pro', label: 'Sonar Pro (推荐)' },
+      { id: 'sonar', label: 'Sonar' },
+      { id: 'sonar-reasoning-pro', label: 'Sonar Reasoning Pro' },
+      { id: 'sonar-reasoning', label: 'Sonar Reasoning' },
+    ],
+  },
+];
+
+/** 按 provider ID 快速查找 */
+export const PROVIDER_MODELS_MAP: Record<string, ProviderInfo> = Object.fromEntries(
+  PROVIDER_MODELS.map((p) => [p.id, p])
+);
+
 
 // ============================================================================
 // 默认模型配置

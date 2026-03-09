@@ -26,6 +26,8 @@ import {
 import { Button } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('MemoryKnowledgeGraph');
 
@@ -524,7 +526,7 @@ export const MemoryKnowledgeGraph: React.FC = () => {
     return (
       <div className="text-center py-8">
         <p className="text-sm text-zinc-500">{error}</p>
-        <Button variant="ghost" size="sm" onClick={loadInsights} className="mt-2">
+        <Button variant="ghost" size="sm" disabled={isWebMode()} onClick={loadInsights} className="mt-2">
           <RefreshCw className="w-4 h-4 mr-1" />
           重试
         </Button>
@@ -554,6 +556,7 @@ export const MemoryKnowledgeGraph: React.FC = () => {
     { id: 'patterns', label: '经验', icon: <Lightbulb className="w-4 h-4" />, count: insights.evolutionPatterns.length, disabled: !hasPatterns },
   ];
 
+      <WebModeBanner />
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -562,7 +565,7 @@ export const MemoryKnowledgeGraph: React.FC = () => {
           <Sparkles className="w-5 h-5 text-indigo-400" />
           <h3 className="text-sm font-medium text-zinc-200">协作学习图谱</h3>
         </div>
-        <Button variant="ghost" size="sm" onClick={loadInsights} className="p-1.5">
+        <Button variant="ghost" size="sm" disabled={isWebMode()} onClick={loadInsights} className="p-1.5">
           <RefreshCw className="w-4 h-4" />
         </Button>
       </div>

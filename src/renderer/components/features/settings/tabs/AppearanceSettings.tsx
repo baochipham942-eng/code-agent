@@ -10,6 +10,8 @@ import { useTheme, type Theme } from '../../../../hooks/useTheme';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Select } from '../../../primitives';
 import { createLogger } from '../../../../utils/logger';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('AppearanceSettings');
 
@@ -33,6 +35,23 @@ export const AppearanceSettings: React.FC = () => {
   const { t, language, setLanguage, availableLanguages } = useI18n();
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [fontSize, setFontSize] = useState<'small' | 'medium' | 'large'>('medium');
+
+  // 加载已保存的字体大小
+  useEffect(() => {
+    const loadFontSize = async () => {
+      try {
+        const settings = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET);
+        if (settings?.ui?.fontSize) {
+          const sizeMap: Record<number, 'small' | 'medium' | 'large'> = { 13: 'small', 14: 'medium', 16: 'large' };
+          const size = sizeMap[settings.ui.fontSize];
+          if (size) setFontSize(size);
+        }
+      } catch (error) {
+        logger.error('Failed to load font size', error);
+      }
+    };
+    loadFontSize();
+  }, []);
 
   // 主题选项
   const themeOptions: ThemeOption[] = [
@@ -117,6 +136,7 @@ export const AppearanceSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <WebModeBanner />
       {/* Theme Selection */}
       <div>
         <h3 className="text-sm font-medium text-zinc-200 mb-2">{t.appearance.theme}</h3>
@@ -130,6 +150,7 @@ export const AppearanceSettings: React.FC = () => {
             return (
               <button
                 key={option.id}
+                disabled={isWebMode()}
                 onClick={() => handleThemeChange(option.id)}
                 className={`relative p-3 rounded-lg border text-left transition-all ${
                   isActive
@@ -186,6 +207,7 @@ export const AppearanceSettings: React.FC = () => {
             return (
               <button
                 key={option.id}
+                disabled={isWebMode()}
                 onClick={() => handleFontSizeChange(option.id)}
                 className={`p-3 rounded-lg border text-center transition-all ${
                   isActive
@@ -218,6 +240,7 @@ export const AppearanceSettings: React.FC = () => {
           {availableLanguages.map((lang) => (
             <button
               key={lang.code}
+              disabled={isWebMode()}
               onClick={() => handleLanguageChange(lang.code as Language)}
               className={`w-full p-3 rounded-lg border text-left transition-all ${
                 language === lang.code

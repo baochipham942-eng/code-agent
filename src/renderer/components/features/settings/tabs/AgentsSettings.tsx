@@ -22,6 +22,8 @@ import { Button, Input } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { AgentRoutingConfig, AgentBinding } from '@shared/types/agentRouting';
 import { createLogger } from '../../../../utils/logger';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('AgentsSettings');
 
@@ -486,6 +488,7 @@ export const AgentsSettings: React.FC = () => {
     );
   }
 
+      <WebModeBanner />
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -499,6 +502,7 @@ export const AgentsSettings: React.FC = () => {
         <Button
           size="sm"
           variant="primary"
+          disabled={isWebMode()}
           onClick={handleCreateNew}
           leftIcon={<Plus className="w-4 h-4" />}
         >

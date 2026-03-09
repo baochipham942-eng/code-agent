@@ -6,6 +6,8 @@ import React from 'react';
 import { useI18n, type Language } from '../../../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('LanguageSettings');
 
@@ -31,6 +33,7 @@ export const LanguageSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <WebModeBanner />
       {/* Header */}
       <div>
         <h3 className="text-sm font-medium text-zinc-200 mb-2">{t.language.title}</h3>
@@ -44,6 +47,7 @@ export const LanguageSettings: React.FC = () => {
         {availableLanguages.map((lang) => (
           <button
             key={lang.code}
+            disabled={isWebMode()}
             onClick={() => handleLanguageChange(lang.code as Language)}
             className={`w-full p-4 rounded-lg border text-left transition-all ${
               language === lang.code

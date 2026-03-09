@@ -12,6 +12,7 @@ import { UpdateNotification } from '../../UpdateNotification';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/types';
 import { createLogger } from '../../../utils/logger';
+import { isElectronMode } from '../../../utils/platform';
 
 const logger = createLogger('SettingsModal');
 
@@ -52,6 +53,8 @@ export const SettingsModal: React.FC = () => {
 
   // Check for updates on mount (for badge display)
   useEffect(() => {
+    if (!isElectronMode()) return;
+
     const checkUpdate = async () => {
       try {
         const info = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_CHECK);
@@ -79,7 +82,7 @@ export const SettingsModal: React.FC = () => {
     { id: 'soul', label: '人格', icon: <Ghost className="w-4 h-4" /> },
     { id: 'cron', label: '定时', icon: <Clock className="w-4 h-4" /> },
     { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <Brain className="w-4 h-4" /> },
-    { id: 'update', label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: optionalUpdateInfo?.hasUpdate },
+    ...(isElectronMode() ? [{ id: 'update' as const, label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: optionalUpdateInfo?.hasUpdate }] : []),
     { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
   ];
 
@@ -144,7 +147,7 @@ export const SettingsModal: React.FC = () => {
             {activeTab === 'soul' && <SoulSettings />}
             {activeTab === 'cron' && <CronSettings />}
             {activeTab === 'memory' && <MemoryTab />}
-            {activeTab === 'update' && (
+            {isElectronMode() && activeTab === 'update' && (
               <UpdateSettings
                 updateInfo={optionalUpdateInfo}
                 onUpdateInfoChange={setOptionalUpdateInfo}
@@ -157,7 +160,7 @@ export const SettingsModal: React.FC = () => {
       </div>
 
       {/* Optional Update Modal */}
-      {showUpdateModal && optionalUpdateInfo && (
+      {isElectronMode() && showUpdateModal && optionalUpdateInfo && (
         <UpdateNotification
           updateInfo={optionalUpdateInfo}
           onClose={() => setShowUpdateModal(false)}

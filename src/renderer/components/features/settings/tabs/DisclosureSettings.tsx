@@ -8,6 +8,8 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { DisclosureLevel } from '../../../../stores/appStore';
 import { createLogger } from '../../../../utils/logger';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('DisclosureSettings');
 
@@ -79,6 +81,7 @@ export const DisclosureSettings: React.FC<DisclosureSettingsProps> = ({ level, o
 
   return (
     <div className="space-y-6">
+      <WebModeBanner />
       {/* Header */}
       <div>
         <h3 className="text-sm font-medium text-zinc-200 mb-2">{t.disclosure.title}</h3>
@@ -92,6 +95,7 @@ export const DisclosureSettings: React.FC<DisclosureSettingsProps> = ({ level, o
         {levels.map((item) => (
           <button
             key={item.id}
+            disabled={isWebMode()}
             onClick={() => handleLevelChange(item.id)}
             className={`w-full p-4 rounded-lg border text-left transition-all ${
               level === item.id

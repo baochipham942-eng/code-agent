@@ -8,6 +8,9 @@ import { CheckCircle, Shield, ShieldOff, ShieldAlert, Clock, Info } from 'lucide
 import { useI18n } from '../../../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { AppSettings } from '@shared/types';
+import { CLOUD, AGENT_TIMEOUTS } from '@shared/constants';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 // 权限模式类型
 type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions';
@@ -29,9 +32,9 @@ type TimeoutComplexity = 'simple' | 'medium' | 'complex';
 
 // 默认超时配置
 const DEFAULT_TIMEOUTS = {
-  simple: 30000,    // 30 秒
-  medium: 120000,   // 2 分钟
-  complex: 600000,  // 10 分钟
+  simple: CLOUD.DEFAULT_TIMEOUT,    // 30 秒
+  medium: CLOUD.CLOUD_EXECUTION_TIMEOUT,   // 2 分钟
+  complex: AGENT_TIMEOUTS.DOC_GENERATOR,  // 10 分钟
 };
 
 export const GeneralSettings: React.FC = () => {
@@ -146,6 +149,7 @@ export const GeneralSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <WebModeBanner />
       {/* Safety Mode Selection */}
       <div>
         <h3 className="text-sm font-medium text-zinc-200 mb-2">
@@ -171,6 +175,7 @@ export const GeneralSettings: React.FC = () => {
               return (
                 <button
                   key={option.id}
+                  disabled={isWebMode()}
                   onClick={() => handlePermissionModeChange(option.id)}
                   className={`relative p-3 rounded-lg border text-left transition-all duration-200 ${
                     isActive
@@ -251,6 +256,7 @@ export const GeneralSettings: React.FC = () => {
                 return (
                   <button
                     key={option.id}
+                    disabled={isWebMode()}
                     onClick={() => handleTimeoutChange(option.id)}
                     className={`p-3 rounded-lg border text-center transition-all duration-200 ${
                       isActive

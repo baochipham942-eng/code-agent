@@ -8,10 +8,42 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { ModelProvider, ModelConfig } from '@shared/types';
-import { UI } from '@shared/constants';
+import { UI, PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants';
+import type { ProviderModelEntry } from '@shared/constants';
 import { createLogger } from '../../../../utils/logger';
 
 const logger = createLogger('ModelSection');
+
+// ============================================================================
+// Helper: render model options with optional optgroup
+// ============================================================================
+
+function renderModelOptions(models: ProviderModelEntry[]): React.ReactNode {
+  const hasGroups = models.some((m) => m.group);
+  if (!hasGroups) {
+    return models.map((m) => (
+      <option key={m.id} value={m.id}>{m.label}</option>
+    ));
+  }
+  const groups: { label: string; items: ProviderModelEntry[] }[] = [];
+  const seen = new Set<string>();
+  for (const m of models) {
+    const g = m.group || '';
+    if (!seen.has(g)) {
+      seen.add(g);
+      groups.push({ label: g, items: [] });
+    }
+    groups.find((x) => x.label === g)!.items.push(m);
+  }
+  return groups.map((g) => (
+    <optgroup key={g.label} label={g.label}>
+      {g.items.map((m) => (
+        <option key={m.id} value={m.id}>{m.label}</option>
+      ))}
+    </optgroup>
+  ));
+}
+
 
 // ============================================================================
 // Types
@@ -141,18 +173,15 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
     }
   };
 
-  const providers: { id: ModelProvider; name: string; description: string }[] = [
-    // 国外御三家
-    { id: 'openai', name: t.model.providers.openai.name, description: t.model.providers.openai.description },
-    { id: 'claude', name: t.model.providers.anthropic.name, description: t.model.providers.anthropic.description },
-    { id: 'gemini', name: t.model.providers.gemini?.name || 'Gemini', description: t.model.providers.gemini?.description || 'Google Gemini 2.5' },
-    // 国内梯队
-    { id: 'deepseek', name: t.model.providers.deepseek.name, description: t.model.providers.deepseek.description },
-    { id: 'zhipu', name: t.model.providers.zhipu?.name || '智谱 AI', description: t.model.providers.zhipu?.description || 'GLM-4 系列' },
-    { id: 'qwen', name: t.model.providers.qwen?.name || '通义千问', description: t.model.providers.qwen?.description || 'Qwen 模型' },
-    { id: 'moonshot', name: t.model.providers.moonshot?.name || 'Kimi', description: t.model.providers.moonshot?.description || 'Moonshot AI' },
-    { id: 'minimax', name: t.model.providers.minimax?.name || 'MiniMax', description: t.model.providers.minimax?.description || '海螺 AI' },
-  ];
+  // ModelSection only shows primary providers (no openrouter/perplexity)
+  const primaryProviderIds = new Set(['openai', 'claude', 'gemini', 'deepseek', 'zhipu', 'qwen', 'moonshot', 'minimax']);
+  const providers = PROVIDER_MODELS
+    .filter((p) => primaryProviderIds.has(p.id))
+    .map((p) => ({
+      id: p.id,
+      name: (t.model.providers as Record<string, { name?: string }>)?.[p.id === 'claude' ? 'anthropic' : p.id]?.name || p.name,
+      description: (t.model.providers as Record<string, { description?: string }>)?.[p.id === 'claude' ? 'anthropic' : p.id]?.description || p.description,
+    }));
 
   const services: ServiceConfig[] = [
     {
@@ -230,77 +259,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
           value={config.model}
           onChange={(e) => onChange({ ...config, model: e.target.value })}
         >
-          {config.provider === 'deepseek' && (
-            <>
-              <option value="deepseek-chat">DeepSeek V3.2 Chat (推荐)</option>
-              <option value="deepseek-reasoner">DeepSeek V3.2 Reasoner</option>
-            </>
-          )}
-          {config.provider === 'claude' && (
-            <>
-              <option value="claude-opus-4-6">Claude Opus 4.6 (最强)</option>
-              <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (推荐)</option>
-              <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (快速)</option>
-              <option value="claude-opus-4-5-20251124">Claude Opus 4.5</option>
-              <option value="claude-sonnet-4-20250514">Claude Sonnet 4</option>
-            </>
-          )}
-          {config.provider === 'openai' && (
-            <>
-              <optgroup label="GPT 系列">
-                <option value="gpt-4.1">GPT-4.1 (推荐)</option>
-                <option value="gpt-4.1-mini">GPT-4.1 Mini</option>
-                <option value="gpt-4.1-nano">GPT-4.1 Nano (快速)</option>
-                <option value="gpt-4o">GPT-4o</option>
-              </optgroup>
-              <optgroup label="推理模型 (o 系列)">
-                <option value="o3">o3 (最强推理)</option>
-                <option value="o3-mini">o3 Mini</option>
-                <option value="o4-mini">o4 Mini (高性价比)</option>
-              </optgroup>
-            </>
-          )}
-          {config.provider === 'gemini' && (
-            <>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro (推荐)</option>
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-              <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (最便宜)</option>
-              <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-            </>
-          )}
-          {config.provider === 'zhipu' && (
-            <>
-              <option value="glm-5">GLM-5 (最新旗舰)</option>
-              <option value="glm-4.7">GLM-4.7</option>
-              <option value="glm-4.7-flash">GLM-4.7 Flash (快速)</option>
-              <option value="glm-4.6v">GLM-4.6V (视觉)</option>
-            </>
-          )}
-          {config.provider === 'qwen' && (
-            <>
-              <option value="qwen3-max">Qwen3 Max (推荐)</option>
-              <option value="qwen-max-latest">Qwen Max Latest</option>
-              <option value="qwen-plus-latest">Qwen Plus Latest</option>
-              <option value="qwen3-coder">Qwen3 Coder</option>
-              <option value="qwen-vl-max">Qwen VL Max (视觉)</option>
-            </>
-          )}
-          {config.provider === 'moonshot' && (
-            <>
-              <option value="kimi-k2-turbo-preview">Kimi K2 Turbo (推荐)</option>
-              <option value="kimi-k2-thinking">Kimi K2 Thinking</option>
-              <option value="moonshot-v1-auto">Moonshot V1 Auto</option>
-              <option value="moonshot-v1-128k">Moonshot V1 128K</option>
-            </>
-          )}
-          {config.provider === 'minimax' && (
-            <>
-              <option value="MiniMax-M2">MiniMax M2 (推荐)</option>
-              <option value="MiniMax-M1">MiniMax M1</option>
-              <option value="MiniMax-Text-01">MiniMax Text-01</option>
-              <option value="abab7-preview">ABAB7 Preview</option>
-            </>
-          )}
+          {renderModelOptions(PROVIDER_MODELS_MAP[config.provider]?.models || [])}
         </Select>
       </div>
 

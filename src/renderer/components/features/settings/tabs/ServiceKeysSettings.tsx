@@ -10,6 +10,8 @@ import { Button, Input } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { UI } from '@shared/constants';
 import { createLogger } from '../../../../utils/logger';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('ServiceKeysSettings');
 
@@ -173,6 +175,7 @@ export const ServiceKeysSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <WebModeBanner />
       <div>
         <h3 className="text-sm font-medium text-zinc-200 mb-2">服务 API Keys</h3>
         <p className="text-xs text-zinc-500 mb-4">
@@ -220,6 +223,7 @@ export const ServiceKeysSettings: React.FC = () => {
                 </button>
               </div>
               <Button
+                disabled={isWebMode()}
                 onClick={() => handleSave(service.id)}
                 loading={saving === service.id}
                 variant={saveStatus[service.id] === 'error' ? 'danger' : 'primary'}

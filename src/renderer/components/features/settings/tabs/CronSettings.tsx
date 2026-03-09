@@ -93,6 +93,7 @@ export const CronSettings: React.FC = () => {
     const date = new Date(lastRun);
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
+    if (diffMs < 0) return '刚刚';
     const diffMin = Math.floor(diffMs / 60000);
     if (diffMin < 1) return '刚刚';
     if (diffMin < 60) return `${diffMin}分钟前`;

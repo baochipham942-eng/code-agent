@@ -7,6 +7,7 @@ import { Cpu } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('AboutSettings');
 
@@ -32,6 +33,7 @@ export const AboutSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <WebModeBanner />
       {/* App Icon & Version */}
       <div className="text-center">
         <div className="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mb-4">

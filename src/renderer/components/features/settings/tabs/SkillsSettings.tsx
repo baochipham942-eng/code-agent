@@ -29,6 +29,8 @@ import type {
   SkillRepository,
 } from '@shared/types/skillRepository';
 import { createLogger } from '../../../../utils/logger';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 // ============================================================================
 // SkillsMP API Types
@@ -627,6 +629,7 @@ export const SkillsSettings: React.FC = () => {
     );
   }
 
+      <WebModeBanner />
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -729,10 +732,10 @@ export const SkillsSettings: React.FC = () => {
             <Button
               size="sm"
               variant="primary"
+              disabled={isWebMode() || !searchQuery.trim()}
               onClick={handleSearch}
               loading={isSearching}
               leftIcon={!isSearching ? <Search className="w-3 h-3" /> : undefined}
-              disabled={!searchQuery.trim()}
             >
               搜索
             </Button>
@@ -799,10 +802,10 @@ export const SkillsSettings: React.FC = () => {
             <Button
               size="sm"
               variant="secondary"
+              disabled={isWebMode() || !customUrl.trim()}
               onClick={handleAddCustom}
               loading={actionLoading === 'custom'}
               leftIcon={!actionLoading ? <Plus className="w-3 h-3" /> : undefined}
-              disabled={!customUrl.trim()}
             >
               添加仓库
             </Button>

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Code Agent",
+  "version": "0.16.50",
+  "identifier": "com.linchen.code-agent",
+  "build": {
+    "beforeDevCommand": "npm run build:web && node dist/web/webServer.cjs &",
+    "devUrl": "http://localhost:8080",
+    "frontendDist": "../dist/renderer"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Code Agent",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "resizable": true,
+        "visible": false,
+        "url": "http://localhost:8080"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' http://localhost:8080 https://localhost:8080 data: blob:; connect-src 'self' http://localhost:8080 ws://localhost:8080 https://localhost:8080 wss://localhost:8080; img-src 'self' data: blob: http://localhost:8080 https://localhost:8080; style-src 'self' 'unsafe-inline' http://localhost:8080 https://localhost:8080; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:8080 https://localhost:8080; font-src 'self' data: http://localhost:8080 https://localhost:8080; frame-src 'self' http://localhost:8080 https://localhost:8080"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns"
+    ],
+    "resources": [
+      "../dist/web/**/*",
+      "../node_modules/**/*",
+      "../package.json"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}

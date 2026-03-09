@@ -1,0 +1,20 @@
+[package]
+name = "code-agent-tauri"
+version = "0.16.50"
+description = "Code Agent desktop shell"
+authors = ["Lin Chen"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+ctrlc = "3.4"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+strip = true

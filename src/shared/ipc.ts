@@ -1277,7 +1277,7 @@ export interface ElectronAPI {
   ) => void;
 
   // Electron 33+ 获取文件的本地路径
-  getPathForFile: (file: File) => string;
+  getPathForFile: (file: File) => string | Promise<string>;
 
   // PDF 文本提取（在主进程处理）
   extractPdfText: (filePath: string) => Promise<{ text: string; pageCount: number }>;

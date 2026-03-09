@@ -18,6 +18,7 @@ import {
 import type { AttachmentDisplayProps, AttachmentIconConfig } from './types';
 import type { AttachmentCategory, MessageAttachment } from '@shared/types';
 import { formatFileSize, FOLDER_SUMMARY_THRESHOLD, categoryLabels } from './utils';
+import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 
 // Get attachment icon config based on category
 function getAttachmentIconConfig(category: AttachmentCategory | undefined): AttachmentIconConfig {
@@ -49,7 +50,7 @@ const AttachmentItem: React.FC<{
 
   if (category === 'image') {
     // 优先使用 data/thumbnail，否则回退到本地文件路径
-    const imageSrc = attachment.thumbnail || attachment.data || (attachment.path ? `file://${attachment.path}` : '');
+    const imageSrc = attachment.thumbnail || attachment.data || (attachment.path ? resolveFileUrl(attachment.path) : '');
     return (
       <div
         className="relative group cursor-pointer"

@@ -306,9 +306,31 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
       }
     }) as ElectronAPI['off'],
 
-    // 浏览器模式下不支持的功能，返回安全的默认值
-    getPathForFile: (_file: File) => {
-      return _file.name;
+    getPathForFile: async (_file: File) => {
+      const formData = new FormData();
+      formData.append('file', _file);
+
+      const relativePath = (_file as File & { relativePath?: string }).relativePath;
+      if (relativePath) {
+        formData.append('relativePath', relativePath);
+      }
+
+      const res = await fetch(`${baseUrl}/api/upload/temp`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        throw new Error(`Upload failed: ${res.status}`);
+      }
+
+      const json = await res.json() as { path?: string; data?: { path?: string } };
+      const uploadedPath = json.path ?? json.data?.path;
+      if (!uploadedPath) {
+        throw new Error('Upload response missing path');
+      }
+
+      return uploadedPath;
     },
 
     extractPdfText: async (_filePath: string) => {

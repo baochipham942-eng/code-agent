@@ -54,7 +54,9 @@
     "eval:setup-hooks": "bash scripts/setup-eval-hooks.sh",
     "build:web": "esbuild src/web/webServer.ts --bundle --platform=node --format=cjs --alias:electron=./src/web/electronMock.ts --external:better-sqlite3 --external:keytar --external:isolated-vm --external:tree-sitter --external:tree-sitter-typescript --external:playwright --external:playwright-core --external:pptxgenjs --external:mammoth --external:exceljs --external:qrcode --external:pdfkit --external:sharp --external:docx --external:node-pty --external:@ui-tars/sdk --outfile=dist/web/webServer.cjs --sourcemap",
     "dev:web:server": "npm run build:web && node dist/web/webServer.cjs",
-    "dev:web": "concurrently -k \"npm run dev:web:server\" \"sleep 2 && npm run dev:renderer\""
+    "dev:web": "concurrently -k \"npm run dev:web:server\" \"sleep 2 && npm run dev:renderer\"",
+    "tauri:dev": "npm run build:web && cargo tauri dev",
+    "tauri:build": "npm run build && npm run build:web && cargo tauri build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",

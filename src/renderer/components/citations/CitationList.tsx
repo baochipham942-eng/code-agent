@@ -6,6 +6,7 @@
 import React from 'react';
 import type { Citation } from '@shared/types/citation';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { isWebMode, copyPathToClipboard } from '../../utils/platform';
 
 interface CitationListProps {
   citations: Citation[];
@@ -62,8 +63,14 @@ function CitationChip({ citation, onClick }: CitationChipProps) {
       return;
     }
     // 默认行为：文件类型尝试打开
-    if (citation.type === 'file' && window.electronAPI?.invoke) {
-      window.electronAPI.invoke(IPC_CHANNELS.SHELL_OPEN_PATH, citation.source);
+    if (citation.type === 'file') {
+      if (isWebMode()) {
+        void copyPathToClipboard(citation.source);
+        return;
+      }
+      if (window.electronAPI?.invoke) {
+        window.electronAPI.invoke(IPC_CHANNELS.SHELL_OPEN_PATH, citation.source);
+      }
     }
     // URL 类型在浏览器打开
     if (citation.type === 'url') {

@@ -6,6 +6,7 @@ import React, { useState } from 'react';
 import {
   ExternalLink,
   Folder,
+  Copy,
   Image as ImageIcon,
   FileText,
   Play,
@@ -15,6 +16,8 @@ import {
 import type { ToolCall } from '@shared/types';
 import { DiffView } from '../../../../DiffView';
 import { useAppStore } from '../../../../../stores/appStore';
+import { isWebMode, copyPathToClipboard } from '../../../../../utils/platform';
+import { resolveFileUrl } from '../../../../../utils/resolveFileUrl';
 
 // ============================================================================
 // ANSI 转义码过滤 - 清理终端输出中的颜色和格式代码
@@ -349,7 +352,7 @@ function ImageResultDisplay({ imagePath, imageBase64 }: ImageResultDisplayProps)
   const [isExpanded, setIsExpanded] = useState(false);
 
   const imageSrc = imagePath
-    ? `file://${imagePath}`
+    ? resolveFileUrl(imagePath)
     : imageBase64
       ? imageBase64.startsWith('data:')
         ? imageBase64
@@ -363,6 +366,7 @@ function ImageResultDisplay({ imagePath, imageBase64 }: ImageResultDisplayProps)
   const handleOpenFile = async () => {
     if (imagePath) {
       try {
+        if (isWebMode()) { await copyPathToClipboard(imagePath); return; }
         await window.domainAPI?.invoke('workspace', 'openPath', {
           filePath: imagePath,
         });
@@ -375,6 +379,7 @@ function ImageResultDisplay({ imagePath, imageBase64 }: ImageResultDisplayProps)
   const handleShowInFolder = async () => {
     if (imagePath) {
       try {
+        if (isWebMode()) { await copyPathToClipboard(imagePath); return; }
         await window.domainAPI?.invoke('workspace', 'showItemInFolder', {
           filePath: imagePath,
         });
@@ -490,6 +495,7 @@ function FileResultDisplay({
 
   const handleOpenFile = async () => {
     try {
+      if (isWebMode()) { await copyPathToClipboard(filePath); return; }
       await window.domainAPI?.invoke('workspace', 'openPath', { filePath });
     } catch (error) {
       console.error('Failed to open file:', error);
@@ -498,6 +504,7 @@ function FileResultDisplay({
 
   const handleShowInFolder = async () => {
     try {
+      if (isWebMode()) { await copyPathToClipboard(filePath); return; }
       await window.domainAPI?.invoke('workspace', 'showItemInFolder', {
         filePath,
       });
@@ -572,6 +579,7 @@ function VideoResultDisplay({
   const handleOpenFile = async () => {
     if (videoPath) {
       try {
+        if (isWebMode()) { await copyPathToClipboard(videoPath); return; }
         await window.domainAPI?.invoke('workspace', 'openPath', {
           filePath: videoPath,
         });
@@ -584,6 +592,7 @@ function VideoResultDisplay({
   const handleShowInFolder = async () => {
     if (videoPath) {
       try {
+        if (isWebMode()) { await copyPathToClipboard(videoPath); return; }
         await window.domainAPI?.invoke('workspace', 'showItemInFolder', {
           filePath: videoPath,
         });
@@ -606,6 +615,7 @@ function VideoResultDisplay({
       const downloadResult = response?.data as { filePath?: string } | undefined;
       if (downloadResult?.filePath) {
         // 下载成功，在 Finder 中显示
+        if (isWebMode() && downloadResult?.filePath) { await copyPathToClipboard(downloadResult.filePath); return; }
         await window.domainAPI?.invoke('workspace', 'showItemInFolder', {
           filePath: downloadResult.filePath,
         });

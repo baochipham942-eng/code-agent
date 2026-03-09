@@ -39,7 +39,7 @@ export function useFileUpload() {
 
     let filePath: string | undefined;
     try {
-      filePath = window.electronAPI?.getPathForFile(file);
+      filePath = await window.electronAPI?.getPathForFile(file);
     } catch (e) {
       logger.warn('processFile - failed to get path', { error: e });
     }
@@ -122,7 +122,7 @@ export function useFileUpload() {
     let folderPath: string | undefined;
     try {
       const firstFile = files[0];
-      const firstFilePath = window.electronAPI?.getPathForFile(firstFile);
+      const firstFilePath = await window.electronAPI?.getPathForFile(firstFile);
       if (firstFilePath) {
         const relativePath = (firstFile as File & { relativePath?: string }).relativePath;
         if (relativePath) {

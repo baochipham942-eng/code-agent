@@ -438,7 +438,7 @@ export const contextBridge = {
 };
 
 export const webUtils = {
-  getPathForFile: (file: File) => (file as unknown as { path?: string }).path ?? file.name,
+  getPathForFile: async (file: File) => (file as unknown as { path?: string }).path ?? file.name,
 };
 
 // ── default export (full module) ──────────────────────────────────────
@@ -478,4 +478,3 @@ const electronModule = {
 };
 
 export default electronModule;
-

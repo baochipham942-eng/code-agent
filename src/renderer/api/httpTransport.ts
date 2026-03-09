@@ -105,14 +105,32 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
 
       // agent:send-message 特殊处理 — SSE 流式响应
       if (channel === 'agent:send-message') {
-        const arg = args[0];
+        const arg = args[0] as Record<string, unknown> | string;
         const prompt = typeof arg === 'string' ? arg : (arg as { content: string }).content;
         const sessionId = typeof arg === 'object' && arg !== null ? (arg as { sessionId?: string }).sessionId : undefined;
+        const attachments = typeof arg === 'object' && arg !== null ? (arg as { attachments?: unknown[] }).attachments : undefined;
         const response = await fetch(`${baseUrl}/api/run`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt, ...(sessionId ? { sessionId } : {}) }),
+          body: JSON.stringify({
+            prompt,
+            ...(sessionId ? { sessionId } : {}),
+            ...(attachments?.length ? { attachments } : {}),
+          }),
         });
+
+        // 非 2xx 响应：读取错误体并抛出，避免当 SSE 流解析
+        if (!response.ok) {
+          const errorBody = await response.text();
+          let errorMessage: string;
+          try {
+            const parsed = JSON.parse(errorBody);
+            errorMessage = parsed.error || parsed.message || errorBody;
+          } catch {
+            errorMessage = errorBody;
+          }
+          throw new Error(`云端代理请求失败 (${response.status}): ${errorMessage}`);
+        }
 
         // 读取 SSE 流并分发事件到 listeners
         if (response.body) {
@@ -121,16 +139,41 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
           let buffer = '';
 
           const processStream = async () => {
+            let currentEvent = '';  // 移到 while 外面，防止跨 chunk 时 event/data 分属不同 read() 导致丢失
             try {
               while (true) {
                 const { done, value } = await reader.read();
-                if (done) break;
+                if (done) {
+                  // 流结束前处理 buffer 中残留的数据（最后一行可能没有尾部换行）
+                  if (buffer.trim()) {
+                    const remainingLines = buffer.split('\n');
+                    for (const line of remainingLines) {
+                      if (line.startsWith('event: ')) {
+                        currentEvent = line.slice(7).trim();
+                      } else if (line.startsWith('data: ') && currentEvent) {
+                        try {
+                          const data = JSON.parse(line.slice(6));
+                          const sessionId = data?.sessionId;
+                          const cbs = listeners.get('agent:event');
+                          if (cbs) {
+                            cbs.forEach((cb) => cb({ type: currentEvent, data, sessionId }));
+                          }
+                        } catch { /* ignore */ }
+                        currentEvent = '';
+                      }
+                    }
+                  }
+                  // 流结束兜底：确保 agent_complete 被派发（防止后端异常退出时状态卡住）
+                  const completeCbs = listeners.get('agent:event');
+                  if (completeCbs) {
+                    completeCbs.forEach((cb) => cb({ type: 'stream_end', data: {} }));
+                  }
+                  break;
+                }
 
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
                 buffer = lines.pop() || '';
-
-                let currentEvent = '';
                 for (const line of lines) {
                   if (line.startsWith('event: ')) {
                     currentEvent = line.slice(7).trim();
@@ -138,7 +181,6 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
                     try {
                       const data = JSON.parse(line.slice(6));
                       // 将 SSE 事件转发到 agent:event listeners
-                      // sessionId 从 data 中提取到顶层，匹配 useAgent 的 event.sessionId 访问方式
                       const sessionId = data?.sessionId;
                       const cbs = listeners.get('agent:event');
                       if (currentEvent !== 'stream_chunk') {
@@ -146,8 +188,6 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
                       }
                       if (cbs) {
                         cbs.forEach((cb) => cb({ type: currentEvent, data, sessionId }));
-                      } else {
-                        console.warn('[HttpTransport] No listeners for agent:event, event dropped:', currentEvent);
                       }
                     } catch {
                       // 忽略解析错误
@@ -184,9 +224,12 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
       };
 
       if (method !== 'GET' && method !== 'HEAD' && bodyArgs.length > 0) {
-        fetchOptions.body = JSON.stringify(
-          bodyArgs.length === 1 ? bodyArgs[0] : bodyArgs
-        );
+        let bodyPayload: unknown = bodyArgs.length === 1 ? bodyArgs[0] : bodyArgs;
+        // session:create 传入的是字符串 title，后端期望 {title} 对象
+        if (channel === 'session:create' && typeof bodyPayload === 'string') {
+          bodyPayload = { title: bodyPayload };
+        }
+        fetchOptions.body = JSON.stringify(bodyPayload);
       } else if (method === 'GET' && bodyArgs.length > 0 && typeof bodyArgs[0] === 'object') {
         // GET 请求参数放到 query string
         const params = new URLSearchParams();
@@ -208,7 +251,13 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
 
         const contentType = response.headers.get('content-type');
         if (contentType?.includes('application/json')) {
-          return await response.json() as ReturnType<IpcInvokeHandlers[K]>;
+          const json = await response.json();
+          // 解包 IPCResponse 格式: webServer 返回 {success, data} 包装体
+          // 前端 store 期望的是裸数据（Session[], AppSettings 等）
+          if (json && typeof json === 'object' && 'success' in json && 'data' in json) {
+            return json.data as ReturnType<IpcInvokeHandlers[K]>;
+          }
+          return json as ReturnType<IpcInvokeHandlers[K]>;
         }
 
         return undefined as ReturnType<IpcInvokeHandlers[K]>;

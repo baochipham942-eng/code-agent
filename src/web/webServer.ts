@@ -15,7 +15,7 @@
 import './webEnvInit';
 
 // electron mock 通过 esbuild --alias:electron=./src/web/electronMock.ts 注入
-import { handlers, ipcMain as mockIpcMain } from './electronMock';
+import { handlers, ipcMain as mockIpcMain, BrowserWindow } from './electronMock';
 
 import http from 'http';
 import os from 'os';
@@ -33,6 +33,9 @@ const logger = createLogger('WebServer');
 // ============================================================================
 
 const sseClients = new Set<Response>();
+
+// 活跃 AgentLoop 实例追踪（用于 cancel）
+const activeAgentLoops = new Map<string, { cancel(): void }>();
 
 /**
  * 向所有 SSE 客户端推送事件
@@ -139,11 +142,14 @@ async function initializeServices(): Promise<void> {
 /**
  * 注册所有 IPC handler 到 mock ipcMain
  */
+// Web 模式的全局 BrowserWindow 实例（webContents.send → broadcastSSE）
+const webModeWindow = new BrowserWindow();
+
 function registerHandlers(): void {
   let currentSessionId: string | null = null;
 
   const deps: IpcDependencies = {
-    getMainWindow: () => null,
+    getMainWindow: () => webModeWindow as any,
     getOrchestrator: () => null, // Agent execution via /api/run
     getConfigService: () => {
       try {
@@ -273,10 +279,23 @@ function createApp(): express.Express {
 
       // Create initial messages array with user message
       // (AgentLoop expects the caller to add user message to messages before run())
+      const userContent: unknown[] = [{ type: 'text', text: prompt }];
+      // 附件支持：将 base64 图片转为 multipart content
+      if (req.body.attachments?.length) {
+        for (const att of req.body.attachments) {
+          if (att.category === 'image' && att.data) {
+            userContent.push({
+              type: 'image',
+              source: { type: 'base64', media_type: att.mimeType || 'image/png', data: att.data },
+            });
+          }
+        }
+      }
+
       const messages = [{
         id: `msg-${Date.now()}`,
         role: 'user' as const,
-        content: prompt,
+        content: userContent.length === 1 ? prompt : userContent,
         timestamp: Date.now(),
       }];
 
@@ -285,6 +304,9 @@ function createApp(): express.Express {
         const eventData = event.data ? { ...event.data, sessionId } : { sessionId };
         sendSSE(res, event.type, eventData);
       }, messages);
+
+      // 存储当前 agentLoop 引用，供 cancel 使用
+      activeAgentLoops.set(sessionId, agentLoop);
 
       await agentLoop.run(prompt);
 
@@ -296,14 +318,27 @@ function createApp(): express.Express {
         sessionId,
       });
     } finally {
+      activeAgentLoops.delete(sessionId);
       res.end();
     }
   });
 
   // ── Cancel ─────────────────────────────────────────────────────────
-  app.post('/api/cancel', (_req: Request, res: Response) => {
-    // TODO: Implement cancel via orchestrator
-    res.json({ message: 'Cancel requested' });
+  app.post('/api/cancel', (req: Request, res: Response) => {
+    const sessionId = req.body?.sessionId;
+    if (sessionId && activeAgentLoops.has(sessionId)) {
+      activeAgentLoops.get(sessionId)!.cancel();
+      activeAgentLoops.delete(sessionId);
+      res.json({ message: 'Cancelled', sessionId });
+    } else if (activeAgentLoops.size > 0) {
+      // 没指定 sessionId 时取消最后一个
+      const lastKey = [...activeAgentLoops.keys()].pop()!;
+      activeAgentLoops.get(lastKey)!.cancel();
+      activeAgentLoops.delete(lastKey);
+      res.json({ message: 'Cancelled', sessionId: lastKey });
+    } else {
+      res.json({ message: 'No active agent to cancel' });
+    }
   });
 
   // ── Sessions ───────────────────────────────────────────────────────

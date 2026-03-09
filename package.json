@@ -183,6 +183,12 @@
       "!node_modules/**/*.map",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": ".env",
+        "to": ".env"
+      }
+    ],
     "npmRebuild": false,
     "generateUpdatesFilesForAllChannels": false,
     "mac": {

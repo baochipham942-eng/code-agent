@@ -6,6 +6,7 @@
 import { create } from 'zustand';
 import type { Session, Message, TodoItem } from '@shared/types';
 import { IPC_CHANNELS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
+import { useStatusStore } from './statusStore';
 import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '@shared/types/sessionState';
 import { createLogger } from '../utils/logger';
 
@@ -65,6 +66,10 @@ interface SessionState {
   selectedSessionIds: Set<string>;
   // 待删除（软删除，可撤销）
   pendingDelete: PendingDelete | null;
+  // 是否还有更早的消息可加载
+  hasOlderMessages: boolean;
+  // 是否正在加载更早的消息
+  isLoadingOlder: boolean;
 }
 
 interface SessionActions {
@@ -90,6 +95,8 @@ interface SessionActions {
   setMessages: (messages: Message[]) => void;
   // 设置待办列表
   setTodos: (todos: TodoItem[]) => void;
+  // 加载更早的消息（分页）
+  loadOlderMessages: () => Promise<void>;
   // 清空当前会话
   clearCurrentSession: () => void;
   // 更新会话标题
@@ -185,6 +192,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     multiSelectMode: false,
     selectedSessionIds: new Set<string>(),
     pendingDelete: null,
+    hasOlderMessages: false,
+    isLoadingOlder: false,
 
     // 加载会话列表
     loadSessions: async () => {
@@ -261,12 +270,16 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           const newUnreadIds = new Set(unreadSessionIds);
           newUnreadIds.delete(sessionId);
 
+          const loadedMessages = session.messages || [];
+          const totalCount = (session as any).messageCount ?? loadedMessages.length;
           set({
             currentSessionId: sessionId,
-            messages: session.messages || [],
+            messages: loadedMessages,
             todos: session.todos || [],
             isLoading: false,
             unreadSessionIds: newUnreadIds,
+            hasOlderMessages: totalCount > loadedMessages.length,
+            isLoadingOlder: false,
           });
         }
       } catch (error) {
@@ -425,6 +438,35 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     },
 
     // 清空当前会话
+    loadOlderMessages: async () => {
+      const { isLoadingOlder, hasOlderMessages, messages, currentSessionId } = get();
+      if (isLoadingOlder || !hasOlderMessages || !currentSessionId || messages.length === 0) return;
+
+      set({ isLoadingOlder: true });
+      try {
+        const oldestTimestamp = messages[0].timestamp;
+        const result = await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_LOAD_OLDER_MESSAGES, {
+          sessionId: currentSessionId,
+          beforeTimestamp: oldestTimestamp,
+          limit: 30,
+        });
+        if (result && result.messages && result.messages.length > 0) {
+          const olderMessages = result.messages;
+          const hasMore = result.hasMore;
+          set(state => ({
+            messages: [...olderMessages, ...state.messages],
+            hasOlderMessages: hasMore,
+            isLoadingOlder: false,
+          }));
+        } else {
+          set({ hasOlderMessages: false, isLoadingOlder: false });
+        }
+      } catch (error) {
+        console.error('Failed to load older messages:', error);
+        set({ isLoadingOlder: false });
+      }
+    },
+
     clearCurrentSession: () => {
       set({
         messages: [],
@@ -831,6 +873,14 @@ export async function initializeSessionStore(): Promise<void> {
   // 监听后台任务更新事件
   window.electronAPI?.on(IPC_CHANNELS.BACKGROUND_TASK_UPDATE, (event: BackgroundTaskUpdateEvent) => {
     useSessionStore.getState().updateBackgroundTask(event);
+  });
+
+  // 监听 Token 和上下文使用率更新，驱动 ThinkingIndicator 显示
+  window.electronAPI?.on(IPC_CHANNELS.STATUS_TOKEN_UPDATE, (event: { inputTokens: number; outputTokens: number }) => {
+    useStatusStore.getState().updateTokens(event.inputTokens, event.outputTokens);
+  });
+  window.electronAPI?.on(IPC_CHANNELS.STATUS_CONTEXT_UPDATE, (event: { percent: number }) => {
+    useStatusStore.getState().setContextUsage(event.percent);
   });
 
   // 加载初始后台任务列表

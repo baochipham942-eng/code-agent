@@ -84,6 +84,19 @@ export interface TelemetryModelCall {
 // Tool Call Record
 // ----------------------------------------------------------------------------
 
+export type ErrorCategory =
+  | 'file_not_found'
+  | 'permission_denied'
+  | 'timeout'
+  | 'syntax_error'
+  | 'edit_not_unique'
+  | 'path_hallucination'
+  | 'rate_limit'
+  | 'network_error'
+  | 'command_failure'
+  | 'context_overflow'
+  | 'unknown';
+
 export interface TelemetryToolCall {
   id: string;
   toolCallId: string;
@@ -92,6 +105,7 @@ export interface TelemetryToolCall {
   resultSummary: string; // first 500 chars
   success: boolean;
   error?: string;
+  errorCategory?: ErrorCategory;
   durationMs: number;
   timestamp: number;
   index: number; // index within turn
@@ -165,6 +179,10 @@ export interface TelemetryTurn {
   compactionOccurred: boolean;
   compactionSavedTokens?: number;
   iterationCount: number;
+
+  // Turn granularity: distinguish user-initiated turns from agentic loop iterations
+  turnType: 'user' | 'iteration';   // 'user' = triggered by user message; 'iteration' = agentic loop step
+  parentTurnId?: string;             // set on 'iteration' turns, points to the parent 'user' turn id
 }
 
 // ----------------------------------------------------------------------------
@@ -200,7 +218,7 @@ export interface TelemetrySession {
 // ----------------------------------------------------------------------------
 
 export interface TelemetryAdapter {
-  onTurnStart(turnId: string, turnNumber: number, userPrompt: string): void;
+  onTurnStart(turnId: string, turnNumber: number, userPrompt: string, parentTurnId?: string): void;
   onModelCall(turnId: string, call: TelemetryModelCall): void;
   onToolCallStart(turnId: string, toolCallId: string, name: string, args: unknown, index: number, parallel: boolean): void;
   onToolCallEnd(turnId: string, toolCallId: string, success: boolean, error: string | undefined, durationMs: number, output: string | undefined): void;

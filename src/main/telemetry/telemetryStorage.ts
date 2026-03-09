@@ -201,8 +201,9 @@ export class TelemetryStorage {
           total_input_tokens, total_output_tokens,
           intent_primary, intent_secondary, intent_confidence, intent_method, intent_keywords,
           outcome_status, outcome_confidence, outcome_method, quality_signals,
-          compaction_occurred, compaction_saved_tokens, iteration_count, agent_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          compaction_occurred, compaction_saved_tokens, iteration_count, agent_id,
+          turn_type, parent_turn_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
       stmt.run(
         turn.id, turn.sessionId, turn.turnNumber,
@@ -222,7 +223,8 @@ export class TelemetryStorage {
         turn.outcome.status, turn.outcome.confidence, turn.outcome.method,
         JSON.stringify(turn.outcome.signals),
         turn.compactionOccurred ? 1 : 0, turn.compactionSavedTokens ?? null,
-        turn.iterationCount, turn.agentId || 'main'
+        turn.iterationCount, turn.agentId || 'main',
+        turn.turnType || 'user', turn.parentTurnId ?? null
       );
     } catch (error) {
       logger.error('Failed to insert telemetry turn:', error);
@@ -325,16 +327,18 @@ export class TelemetryStorage {
           const stmt = db.prepare(`
             INSERT OR IGNORE INTO telemetry_tool_calls (
               id, turn_id, session_id, tool_call_id, name, arguments,
-              result_summary, success, error, duration_ms,
+              result_summary, success, error, error_category, duration_ms,
               timestamp, idx, parallel
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
           for (const tc of data.toolCalls) {
             stmt.run(
               tc.id, tc.turnId, tc.sessionId, tc.toolCallId,
               tc.name, tc.arguments.substring(0, 2048),
               tc.resultSummary.substring(0, 500),
-              tc.success ? 1 : 0, tc.error ?? null, tc.durationMs,
+              tc.success ? 1 : 0, tc.error ?? null,
+              tc.errorCategory ?? null,
+              tc.durationMs,
               tc.timestamp, tc.index, tc.parallel ? 1 : 0
             );
           }
@@ -531,6 +535,8 @@ export class TelemetryStorage {
       compactionOccurred: !!(row.compaction_occurred as number),
       compactionSavedTokens: row.compaction_saved_tokens as number | undefined,
       iterationCount: row.iteration_count as number,
+      turnType: (row.turn_type as 'user' | 'iteration') ?? 'user',
+      parentTurnId: row.parent_turn_id as string | undefined,
     };
   }
 
@@ -564,6 +570,7 @@ export class TelemetryStorage {
       resultSummary: row.result_summary as string,
       success: !!(row.success as number),
       error: row.error as string | undefined,
+      errorCategory: row.error_category as TelemetryToolCall['errorCategory'],
       durationMs: row.duration_ms as number,
       timestamp: row.timestamp as number,
       index: row.idx as number,

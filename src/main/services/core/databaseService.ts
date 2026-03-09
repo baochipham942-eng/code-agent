@@ -188,6 +188,24 @@ export class DatabaseService {
       }
     }
 
+    // Add turn_type and parent_turn_id for turn granularity tracking
+    try {
+      this.db.exec("ALTER TABLE telemetry_turns ADD COLUMN turn_type TEXT NOT NULL DEFAULT 'user'");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+        logger.warn('[DB] Migration unexpected error:', msg);
+      }
+    }
+    try {
+      this.db.exec("ALTER TABLE telemetry_turns ADD COLUMN parent_turn_id TEXT");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+        logger.warn('[DB] Migration unexpected error:', msg);
+      }
+    }
+
     // telemetry_model_calls 新增 prompt/completion 列（用于评测系统重放）
     const modelCallMigrations = [
       'ALTER TABLE telemetry_model_calls ADD COLUMN prompt TEXT',
@@ -201,6 +219,16 @@ export class DatabaseService {
         if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
           logger.warn('[DB] Migration unexpected error:', msg);
         }
+      }
+    }
+
+    // telemetry_tool_calls 新增 error_category 列（错误分类）
+    try {
+      this.db.exec('ALTER TABLE telemetry_tool_calls ADD COLUMN error_category TEXT');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+        logger.warn('[DB] Migration unexpected error:', msg);
       }
     }
   }
@@ -496,6 +524,9 @@ export class DatabaseService {
         compaction_occurred INTEGER DEFAULT 0,
         compaction_saved_tokens INTEGER,
         iteration_count INTEGER DEFAULT 1
+,
+        turn_type TEXT NOT NULL DEFAULT 'user',
+        parent_turn_id TEXT
       )
     `);
 
@@ -533,6 +564,7 @@ export class DatabaseService {
         result_summary TEXT,
         success INTEGER DEFAULT 0,
         error TEXT,
+        error_category TEXT,
         duration_ms INTEGER DEFAULT 0,
         timestamp INTEGER NOT NULL,
         idx INTEGER DEFAULT 0,
@@ -582,6 +614,35 @@ export class DatabaseService {
         created_at INTEGER NOT NULL
       )
     `);
+
+    // Experiments 表 (统一评测数据)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS experiments (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        model TEXT,
+        provider TEXT,
+        scope TEXT DEFAULT 'full',
+        config_json TEXT,
+        summary_json TEXT NOT NULL,
+        source TEXT DEFAULT 'test-runner'
+      )
+    `);
+
+    // Experiment Cases 表 (评测用例结果)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS experiment_cases (
+        id TEXT PRIMARY KEY,
+        experiment_id TEXT NOT NULL,
+        case_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        score INTEGER NOT NULL,
+        duration_ms INTEGER,
+        data_json TEXT,
+        FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
+      )
+    `);
   }
 
   private createIndexes(): void {
@@ -610,6 +671,13 @@ export class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_entity_relations_source ON entity_relations(source_id);
       CREATE INDEX IF NOT EXISTS idx_entity_relations_target ON entity_relations(target_id);
       CREATE INDEX IF NOT EXISTS idx_entity_relations_type ON entity_relations(relation_type);
+    `);
+
+    // Experiment indexes
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_experiments_timestamp ON experiments(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_experiments_source ON experiments(source);
+      CREATE INDEX IF NOT EXISTS idx_experiment_cases_experiment ON experiment_cases(experiment_id);
     `);
 
     // 性能优化：复合索引（首轮响应加速）
@@ -1002,6 +1070,31 @@ export class DatabaseService {
     `);
 
     const rows = stmt.all(sessionId, count) as SQLiteRow[];
+
+    return rows.reverse().map((row): Message => ({
+      id: row.id as string,
+      role: row.role as Message['role'],
+      content: row.content as string,
+      timestamp: row.timestamp as number,
+      toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
+      toolResults: row.tool_results ? JSON.parse(row.tool_results as string) : undefined,
+    }));
+  }
+
+  /**
+   * 获取指定时间戳之前的消息（分页加载历史消息）
+   */
+  getMessagesBefore(sessionId: string, beforeTimestamp: number, limit: number = 30): Message[] {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare(`
+      SELECT * FROM messages
+      WHERE session_id = ? AND timestamp < ?
+      ORDER BY timestamp DESC
+      LIMIT ?
+    `);
+
+    const rows = stmt.all(sessionId, beforeTimestamp, limit) as SQLiteRow[];
 
     return rows.reverse().map((row): Message => ({
       id: row.id as string,
@@ -1957,6 +2050,157 @@ export class DatabaseService {
     this.db.prepare(
       'UPDATE entity_relations SET confidence = ?, evidence = COALESCE(?, evidence) WHERE id = ?'
     ).run(confidence, evidence ?? null, id);
+  }
+
+  // --------------------------------------------------------------------------
+  // Experiment CRUD (统一评测数据)
+  // --------------------------------------------------------------------------
+
+  insertExperiment(experiment: {
+    id: string;
+    name: string;
+    timestamp: number;
+    model?: string;
+    provider?: string;
+    scope?: string;
+    config_json?: string;
+    summary_json: string;
+    source?: string;
+  }): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.prepare(`
+      INSERT OR REPLACE INTO experiments (id, name, timestamp, model, provider, scope, config_json, summary_json, source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      experiment.id,
+      experiment.name,
+      experiment.timestamp,
+      experiment.model || null,
+      experiment.provider || null,
+      experiment.scope || 'full',
+      experiment.config_json || null,
+      experiment.summary_json,
+      experiment.source || 'test-runner',
+    );
+  }
+
+  insertExperimentCases(experimentId: string, cases: Array<{
+    id: string;
+    case_id: string;
+    status: string;
+    score: number;
+    duration_ms?: number;
+    data_json?: string;
+  }>): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO experiment_cases (id, experiment_id, case_id, status, score, duration_ms, data_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const insertMany = this.db.transaction((items: typeof cases) => {
+      for (const c of items) {
+        stmt.run(c.id, experimentId, c.case_id, c.status, c.score, c.duration_ms || null, c.data_json || null);
+      }
+    });
+
+    insertMany(cases);
+  }
+
+  listExperiments(limit: number = 50): Array<{
+    id: string;
+    name: string;
+    timestamp: number;
+    model: string | null;
+    provider: string | null;
+    scope: string;
+    config_json: string | null;
+    summary_json: string;
+    source: string;
+  }> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const rows = this.db.prepare(`
+      SELECT * FROM experiments ORDER BY timestamp DESC LIMIT ?
+    `).all(limit) as SQLiteRow[];
+
+    return rows.map(row => ({
+      id: row.id as string,
+      name: row.name as string,
+      timestamp: row.timestamp as number,
+      model: row.model as string | null,
+      provider: row.provider as string | null,
+      scope: (row.scope as string) || 'full',
+      config_json: row.config_json as string | null,
+      summary_json: row.summary_json as string,
+      source: (row.source as string) || 'test-runner',
+    }));
+  }
+
+  loadExperiment(id: string): {
+    experiment: {
+      id: string;
+      name: string;
+      timestamp: number;
+      model: string | null;
+      provider: string | null;
+      scope: string;
+      config_json: string | null;
+      summary_json: string;
+      source: string;
+    };
+    cases: Array<{
+      id: string;
+      experiment_id: string;
+      case_id: string;
+      status: string;
+      score: number;
+      duration_ms: number | null;
+      data_json: string | null;
+    }>;
+  } | undefined {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const expRow = this.db.prepare('SELECT * FROM experiments WHERE id = ?').get(id) as SQLiteRow | undefined;
+    if (!expRow) return undefined;
+
+    const caseRows = this.db.prepare(
+      'SELECT * FROM experiment_cases WHERE experiment_id = ?'
+    ).all(id) as SQLiteRow[];
+
+    return {
+      experiment: {
+        id: expRow.id as string,
+        name: expRow.name as string,
+        timestamp: expRow.timestamp as number,
+        model: expRow.model as string | null,
+        provider: expRow.provider as string | null,
+        scope: (expRow.scope as string) || 'full',
+        config_json: expRow.config_json as string | null,
+        summary_json: expRow.summary_json as string,
+        source: (expRow.source as string) || 'test-runner',
+      },
+      cases: caseRows.map(row => ({
+        id: row.id as string,
+        experiment_id: row.experiment_id as string,
+        case_id: row.case_id as string,
+        status: row.status as string,
+        score: row.score as number,
+        duration_ms: row.duration_ms as number | null,
+        data_json: row.data_json as string | null,
+      })),
+    };
+  }
+
+  deleteExperiment(id: string): boolean {
+    if (!this.db) throw new Error('Database not initialized');
+
+    // Delete cases first (cascade), then experiment
+    this.db.prepare('DELETE FROM experiment_cases WHERE experiment_id = ?').run(id);
+    const result = this.db.prepare('DELETE FROM experiments WHERE id = ?').run(id);
+    return result.changes > 0;
   }
 }
 

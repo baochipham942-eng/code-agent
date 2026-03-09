@@ -33,8 +33,10 @@ const logger = createLogger('Sidebar');
 
 // 获取相对时间
 function getRelativeTime(timestamp: number): string {
+  if (!timestamp || !Number.isFinite(timestamp)) return '';
   const now = Date.now();
   const diff = now - timestamp;
+  if (!Number.isFinite(diff) || diff < 0) return '';
   const minutes = Math.floor(diff / (1000 * 60));
   const hours = Math.floor(diff / (1000 * 60 * 60));
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -319,7 +321,7 @@ export const Sidebar: React.FC = () => {
                   isSelected ? 'text-zinc-200' : 'text-zinc-400'
                 }`}
               >
-                {session.title}
+                {session.title || '未命名会话'}
               </span>
             )}
 

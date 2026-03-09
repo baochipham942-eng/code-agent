@@ -265,8 +265,10 @@ export function createAgentLoop(
     throw new Error('CLI services not initialized');
   }
 
-  // System prompt
-  const systemPrompt = SYSTEM_PROMPT;
+  // System prompt (allow config-level override/append)
+  const systemPrompt = config.systemPrompt
+    ? SYSTEM_PROMPT + "\n\n" + config.systemPrompt
+    : SYSTEM_PROMPT;
 
   // 统一使用传入的 sessionId，或生成一个临时 ID
   const effectiveSessionId = sessionId || `cli-${Date.now()}`;

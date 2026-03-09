@@ -16,6 +16,7 @@ export const DATE_GROUP_LABELS: Record<DateGroup, string> = {
  * 根据时间戳判断所属日期分组
  */
 export function getDateGroup(timestamp: number): Exclude<DateGroup, 'pinned'> {
+  if (!timestamp || !Number.isFinite(timestamp)) return 'earlier';
   const now = new Date();
   const date = new Date(timestamp);
 

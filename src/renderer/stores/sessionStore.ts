@@ -207,6 +207,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         // 转换为 SessionWithMeta 格式并根据过滤器筛选
         let sessionsWithMeta: SessionWithMeta[] = (sessions || []).map((s: Session & { messageCount?: number }) => ({
           ...s,
+          title: s.title || '未命名会话',
+          updatedAt: Number.isFinite(s.updatedAt) ? s.updatedAt : (Number.isFinite(s.createdAt) ? s.createdAt : Date.now()),
+          createdAt: Number.isFinite(s.createdAt) ? s.createdAt : Date.now(),
           messageCount: s.messageCount || 0,
         }));
 
@@ -306,9 +309,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             set({ sessions: newSessions });
             await get().switchSession(newSessions[0].id);
           } else {
-            // 没有会话了，创建新的
-            set({ sessions: newSessions });
-            await get().createSession();
+            // 没有会话了，清空状态
+            set({ sessions: newSessions, currentSessionId: null, messages: [] });
           }
         } else {
           set({ sessions: newSessions });
@@ -338,8 +340,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
               set({ sessions: newSessions });
               await get().switchSession(newSessions[0].id);
             } else {
-              set({ sessions: newSessions });
-              await get().createSession();
+              // 没有会话了，清空状态
+              set({ sessions: newSessions, currentSessionId: null, messages: [] });
             }
           } else {
             set({ sessions: newSessions });
@@ -776,7 +778,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         if (remainingSessions.length > 0) {
           get().switchSession(remainingSessions[0].id);
         } else {
-          get().createSession('新对话');
+          // 没有会话了，清空状态
+          set({ currentSessionId: null, messages: [] });
         }
       }
 

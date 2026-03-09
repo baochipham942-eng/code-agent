@@ -22,6 +22,8 @@ import { KeyDecisionsPanel } from './KeyDecisionsPanel';
 import { useI18n } from '../../../../hooks/useI18n';
 import { createLogger } from '../../../../utils/logger';
 import type { MemoryItem, MemoryCategory, MemoryStats } from '@shared/types';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('MemoryTab');
 
@@ -283,6 +285,7 @@ export const MemoryTab: React.FC = () => {
     );
   }
 
+      <WebModeBanner />
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -332,6 +335,7 @@ export const MemoryTab: React.FC = () => {
         <Button
           variant="secondary"
           size="sm"
+          disabled={isWebMode()}
           onClick={handleExport}
           title="导出"
         >
@@ -340,6 +344,7 @@ export const MemoryTab: React.FC = () => {
         <Button
           variant="secondary"
           size="sm"
+          disabled={isWebMode()}
           onClick={handleImport}
           title="导入"
         >
@@ -443,6 +448,7 @@ export const MemoryTab: React.FC = () => {
               <Button
                 variant="danger"
                 size="sm"
+                disabled={isWebMode()}
                 onClick={() => handleClearCategory(clearingCategory)}
               >
                 清空

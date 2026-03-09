@@ -29,6 +29,8 @@ import type {
   FeishuChannelConfig,
   TelegramChannelConfig,
 } from '@shared/types/channel';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('ChannelsSettings');
 
@@ -144,6 +146,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
         allowedUserIds: userIds.length > 0 ? userIds : undefined,
       };
     } else {
+      console.warn('Unknown channel type:', type);
       return;
     }
 
@@ -411,6 +414,14 @@ export const ChannelsSettings: React.FC = () => {
   const [editingAccount, setEditingAccount] = useState<ChannelAccount | undefined>();
   const [connectingId, setConnectingId] = useState<string | null>(null);
 
+  // 自动清除成功消息
+  useEffect(() => {
+    if (message?.type === 'success') {
+      const timer = setTimeout(() => setMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [message]);
+
   const loadData = async () => {
     try {
       const [accountsResult, typesResult] = await Promise.all([
@@ -559,6 +570,7 @@ export const ChannelsSettings: React.FC = () => {
     );
   }
 
+      <WebModeBanner />
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -571,6 +583,7 @@ export const ChannelsSettings: React.FC = () => {
 
       {/* Add Button */}
       <Button
+        disabled={isWebMode()}
         onClick={handleAdd}
         variant="primary"
         leftIcon={<Plus className="w-4 h-4" />}
@@ -641,6 +654,7 @@ export const ChannelsSettings: React.FC = () => {
                   <Button
                     size="sm"
                     variant="ghost"
+                    disabled={isWebMode()}
                     onClick={() => handleToggleConnection(account)}
                     loading={connectingId === account.id}
                     leftIcon={
@@ -656,6 +670,7 @@ export const ChannelsSettings: React.FC = () => {
                   <Button
                     size="sm"
                     variant="ghost"
+                    disabled={isWebMode()}
                     onClick={() => handleEdit(account)}
                     leftIcon={<Edit className="w-3 h-3" />}
                   >
@@ -664,6 +679,7 @@ export const ChannelsSettings: React.FC = () => {
                   <Button
                     size="sm"
                     variant="ghost"
+                    disabled={isWebMode()}
                     onClick={() => handleDelete(account.id)}
                     leftIcon={<Trash2 className="w-3 h-3 text-red-400" />}
                   >

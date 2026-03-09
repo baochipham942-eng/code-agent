@@ -7,6 +7,8 @@ import { RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('DataSettings');
 
@@ -83,6 +85,7 @@ export const DataSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <WebModeBanner />
       {/* Header */}
       <div>
         <h3 className="text-sm font-medium text-zinc-200 mb-2">数据管理</h3>
@@ -133,6 +136,7 @@ export const DataSettings: React.FC = () => {
           工具调用的临时缓存（如文件读取、搜索结果）可以安全清理，不会影响您的会话和数据。
         </p>
         <Button
+          disabled={isWebMode()}
           onClick={handleClearToolCache}
           loading={isClearing}
           variant="secondary"

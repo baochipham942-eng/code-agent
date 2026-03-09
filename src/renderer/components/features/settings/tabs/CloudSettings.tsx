@@ -8,6 +8,8 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('CloudSettings');
 
@@ -32,6 +34,14 @@ export const CloudSettings: React.FC = () => {
   const [cloudConfigInfo, setCloudConfigInfo] = useState<CloudConfigInfo | null>(null);
   const [isRefreshingConfig, setIsRefreshingConfig] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // 自动清除成功消息
+  useEffect(() => {
+    if (message?.type === 'success') {
+      const timer = setTimeout(() => setMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [message]);
 
   const loadCloudConfigInfo = async () => {
     try {
@@ -78,6 +88,7 @@ export const CloudSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <WebModeBanner />
       {/* Header */}
       <div>
         <h3 className="text-sm font-medium text-zinc-200 mb-2">
@@ -131,6 +142,7 @@ export const CloudSettings: React.FC = () => {
 
       {/* Refresh Button */}
       <Button
+        disabled={isWebMode()}
         onClick={handleRefreshCloudConfig}
         loading={isRefreshingConfig}
         variant="primary"

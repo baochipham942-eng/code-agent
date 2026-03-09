@@ -19,6 +19,8 @@ import type { MemoryLearnedData } from '@shared/types';
 import { UI } from '@shared/constants';
 import { createLogger } from '../../../../utils/logger';
 import { useMemoryEvents } from '../../../../hooks/useMemoryEvents';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('MemorySettings');
 
@@ -104,6 +106,7 @@ export const MemorySettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <WebModeBanner />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -112,8 +115,8 @@ export const MemorySettings: React.FC = () => {
           <span className="text-xs text-zinc-500">Gen 5</span>
         </div>
         <button
+          disabled={isWebMode() || isLoading}
           onClick={loadStats}
-          disabled={isLoading}
           className="flex items-center gap-1.5 px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
@@ -195,8 +198,8 @@ export const MemorySettings: React.FC = () => {
             className="flex-1 px-3 py-2 text-sm bg-zinc-700 border border-zinc-700 rounded-lg focus:outline-none focus:border-cyan-500 text-zinc-200 placeholder-zinc-500"
           />
           <button
+            disabled={isWebMode() || isSearching || !searchQuery.trim()}
             onClick={handleSearch}
-            disabled={isSearching || !searchQuery.trim()}
             className="px-3 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-zinc-600 disabled:text-zinc-500 rounded-lg text-white text-sm transition-colors"
           >
             {isSearching ? <RefreshCw className="w-4 h-4 animate-spin" /> : '搜索'}

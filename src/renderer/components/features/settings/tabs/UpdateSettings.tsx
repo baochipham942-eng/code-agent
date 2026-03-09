@@ -9,6 +9,8 @@ import { Button } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/types';
 import { createLogger } from '../../../../utils/logger';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('UpdateSettings');
 
@@ -59,10 +61,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     setError(null);
     try {
       const info = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_CHECK);
-      // Only handle non-force updates (force updates handled by App.tsx)
-      if (info && !info.forceUpdate) {
-        onUpdateInfoChange(info);
-      } else if (info) {
+      if (info) {
         onUpdateInfoChange(info);
       }
     } catch (err) {
@@ -74,10 +73,11 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
   };
 
   useEffect(() => {
-    // Auto-check if no updateInfo
+    // Auto-check on mount if no updateInfo
     if (!updateInfo) {
       checkForUpdates();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Format file size
@@ -89,6 +89,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
 
   return (
     <div className="space-y-6">
+      <WebModeBanner />
       {/* Header */}
       <div>
         <h3 className="text-sm font-medium text-zinc-200 mb-2">{t.update?.title || '版本更新'}</h3>
@@ -105,6 +106,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
             <div className="text-lg font-semibold text-zinc-200">v{currentVersion}</div>
           </div>
           <Button
+            disabled={isWebMode()}
             onClick={checkForUpdates}
             loading={isChecking}
             variant="secondary"
@@ -144,6 +146,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
 
               {/* Update Now Button */}
               <Button
+                disabled={isWebMode()}
                 onClick={onShowUpdateModal}
                 variant="primary"
                 fullWidth

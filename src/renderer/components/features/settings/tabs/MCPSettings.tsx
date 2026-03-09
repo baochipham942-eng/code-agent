@@ -20,6 +20,8 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
 import { createLogger } from '../../../../utils/logger';
 import { IPC_DOMAINS, IPC_CHANNELS } from '@shared/ipc';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('MCPSettings');
 
@@ -60,6 +62,14 @@ export const MCPSettings: React.FC = () => {
   const [codexDetectedPath, setCodexDetectedPath] = useState<string | null>(null);
   const [codexSandboxEnabled, setCodexSandboxEnabled] = useState(false);
   const [codexCrossVerifyEnabled, setCodexCrossVerifyEnabled] = useState(false);
+
+  // 自动清除成功消息
+  useEffect(() => {
+    if (message?.type === 'success') {
+      const timer = setTimeout(() => setMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [message]);
 
   const loadCodexSettings = async () => {
     try {
@@ -215,6 +225,7 @@ export const MCPSettings: React.FC = () => {
     );
   }
 
+      <WebModeBanner />
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -276,6 +287,7 @@ export const MCPSettings: React.FC = () => {
                   <p className="text-xs text-zinc-500">非安全命令委托 Codex 沙箱执行</p>
                 </div>
                 <button
+                  disabled={isWebMode()}
                   onClick={() => handleCodexToggle('sandboxEnabled', !codexSandboxEnabled)}
                   className={`relative w-9 h-5 rounded-full transition-colors ${
                     codexSandboxEnabled ? 'bg-orange-500' : 'bg-zinc-600'
@@ -294,6 +306,7 @@ export const MCPSettings: React.FC = () => {
                   <p className="text-xs text-zinc-500">复杂代码任务双模型验证</p>
                 </div>
                 <button
+                  disabled={isWebMode()}
                   onClick={() => handleCodexToggle('crossVerifyEnabled', !codexCrossVerifyEnabled)}
                   className={`relative w-9 h-5 rounded-full transition-colors ${
                     codexCrossVerifyEnabled ? 'bg-orange-500' : 'bg-zinc-600'

@@ -8,6 +8,8 @@ import { Button } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { MemoryItem, MemoryCategory } from '@shared/types';
 import { createLogger } from '../../../../utils/logger';
+import { isWebMode } from '../../../../utils/platform';
+import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('MemoryConflictDetector');
 
@@ -228,6 +230,7 @@ export const MemoryConflictDetector: React.FC<MemoryConflictDetectorProps> = ({
     );
   }
 
+      <WebModeBanner />
   return (
     <div className="space-y-3">
       {/* 冲突统计 */}
@@ -329,8 +332,8 @@ export const MemoryConflictDetector: React.FC<MemoryConflictDetectorProps> = ({
                     <Button
                       variant="primary"
                       size="sm"
+                      disabled={isWebMode() || !selected}
                       onClick={() => handleMerge(conflict)}
-                      disabled={!selected}
                       className="flex items-center gap-1"
                     >
                       <Merge className="w-3.5 h-3.5" />
@@ -339,6 +342,7 @@ export const MemoryConflictDetector: React.FC<MemoryConflictDetectorProps> = ({
                     <Button
                       variant="secondary"
                       size="sm"
+                      disabled={isWebMode()}
                       onClick={() => handleDismiss(conflict)}
                       className="flex items-center gap-1"
                     >

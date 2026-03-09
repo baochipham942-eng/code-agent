@@ -469,6 +469,21 @@ export class TestRunner {
     await fs.writeFile(jsonPath, JSON.stringify(summary, null, 2));
 
     logger.info('Results saved', { path: jsonPath });
+
+    // Persist to unified experiment DB (best-effort)
+    try {
+      const { ExperimentAdapter } = await import('../evaluation/experimentAdapter');
+      const { getDatabase } = await import('../services/core/databaseService');
+      const db = getDatabase();
+      const adapter = new ExperimentAdapter(db);
+      await adapter.persistTestRun(summary);
+      logger.info('Test run persisted to experiment DB');
+    } catch (err) {
+      // DB persistence is best-effort, don't fail the test run
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn('Failed to persist test run to DB', { error: msg });
+      summary.persistenceWarning = `DB persistence failed: ${msg}`;
+    }
   }
 }
 

@@ -207,7 +207,10 @@ export type AgentEvent =
   | { type: 'task_stats'; data: TaskStatsData }
   // Context compaction events (Claude Code style)
   | { type: 'context_compacting'; data: { tokensBefore: number; messagesCount: number } }
-  | { type: 'context_compacted'; data: { tokensBefore: number; tokensAfter: number; messagesRemoved: number; duration_ms: number } };
+  | { type: 'context_compacted'; data: { tokensBefore: number; tokensAfter: number; messagesRemoved: number; duration_ms: number } }
+  // 实时 token 用量（SSE usage / token_estimate 事件）
+  | { type: 'stream_usage'; data: { inputTokens: number; outputTokens: number; turnId?: string } }
+  | { type: 'stream_token_estimate'; data: { inputTokens: number; outputTokens: number; turnId?: string } };
 
 // 上下文压缩事件数据
 export interface ContextCompressedData {

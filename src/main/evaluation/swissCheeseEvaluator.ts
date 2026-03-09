@@ -62,6 +62,12 @@ export interface SwissCheeseResult {
   layersCoverage: string[];
 }
 
+/** Scoring config entry for weight overrides */
+export interface ScoringConfigEntry {
+  dimension: string;
+  weight: number; // percentage (e.g. 35) or decimal (e.g. 0.35)
+}
+
 // ----------------------------------------------------------------------------
 // Forbidden patterns
 // ----------------------------------------------------------------------------
@@ -347,7 +353,7 @@ export class SwissCheeseEvaluator {
   /**
    * 执行自适应评测（v4: 根据对话类型选择评测策略）
    */
-  async evaluate(snapshot: SessionSnapshot): Promise<SwissCheeseResult | null> {
+  async evaluate(snapshot: SessionSnapshot, scoringConfig?: ScoringConfigEntry[]): Promise<SwissCheeseResult | null> {
     const transcript = this.buildStructuredTranscript(snapshot);
 
     if (!transcript) {
@@ -368,7 +374,7 @@ export class SwissCheeseEvaluator {
           return this.evaluateCreation(snapshot, transcript);
         case 'coding':
         default:
-          return this.evaluateCoding(snapshot, transcript);
+          return this.evaluateCoding(snapshot, transcript, scoringConfig);
       }
     } catch (error) {
       logger.error('Adaptive evaluation failed', { error, conversationType });
@@ -619,7 +625,8 @@ export class SwissCheeseEvaluator {
    */
   private async evaluateCoding(
     snapshot: SessionSnapshot,
-    transcript: string
+    transcript: string,
+    scoringConfig?: ScoringConfigEntry[]
   ): Promise<SwissCheeseResult> {
     logger.info('Running Coding evaluation (4 LLM calls)...');
 
@@ -636,7 +643,7 @@ export class SwissCheeseEvaluator {
     const codeVerification = await this.verifyCode(snapshot);
 
     // 4. 聚合结果
-    const aggregated = this.aggregateResults(reviewerResults, codeVerification, transcriptMetrics);
+    const aggregated = this.aggregateResults(reviewerResults, codeVerification, transcriptMetrics, scoringConfig);
 
     const result: SwissCheeseResult = {
       overallScore: aggregated.overallScore,
@@ -935,7 +942,8 @@ export class SwissCheeseEvaluator {
   private aggregateResults(
     reviewerResults: ReviewerResult[],
     codeVerification: CodeVerificationResult,
-    transcriptMetrics: TranscriptMetrics
+    transcriptMetrics: TranscriptMetrics,
+    scoringConfig?: ScoringConfigEntry[]
   ): {
     overallScore: number;
     metrics: SwissCheeseResult['aggregatedMetrics'];
@@ -1039,17 +1047,50 @@ export class SwissCheeseEvaluator {
       },
     };
 
-    // v3 加权综合得分
+    // v3 加权综合得分 (支持 scoringConfig 权重覆盖)
+    const defaultWeights: Record<string, number> = {
+      outcomeVerification: 0.35,
+      codeQuality: 0.20,
+      security: 0.15,
+      toolEfficiency: 0.08,
+      selfRepair: 0.05,
+      verificationQuality: 0.04,
+      forbiddenPatterns: 0.03,
+      buffer: 0.10,
+    };
+
+    // Apply scoringConfig overrides if provided, then normalize weights to sum to 1.0
+    const w = { ...defaultWeights };
+    if (scoringConfig && scoringConfig.length > 0) {
+      for (const entry of scoringConfig) {
+        if (entry.dimension in w) {
+          // Normalize: if weight > 1, treat as percentage; clamp negatives to 0
+          const raw = entry.weight > 1 ? entry.weight / 100 : entry.weight;
+          w[entry.dimension] = Math.max(0, raw);
+        }
+      }
+
+      // Normalize all weights so they sum to 1.0
+      const weightSum = Object.values(w).reduce((a, b) => a + b, 0);
+      if (weightSum > 0) {
+        for (const key of Object.keys(w)) {
+          w[key] = w[key] / weightSum;
+        }
+      } else {
+        // All weights are zero — fallback to defaults
+        Object.assign(w, defaultWeights);
+      }
+    }
+
     const overallScore = Math.round(
-      metrics.outcomeVerification.score * 0.35 +
-      metrics.codeQuality.score * 0.20 +
-      metrics.security.score * 0.15 +
-      metrics.toolEfficiency.score * 0.08 +
-      metrics.selfRepair.score * 0.05 +
-      metrics.verificationQuality.score * 0.04 +
-      metrics.forbiddenPatterns.score * 0.03 +
-      // 剩余 10% 作为加权缓冲
-      ((metrics.outcomeVerification.score + metrics.codeQuality.score) / 2) * 0.10
+      metrics.outcomeVerification.score * w.outcomeVerification +
+      metrics.codeQuality.score * w.codeQuality +
+      metrics.security.score * w.security +
+      metrics.toolEfficiency.score * w.toolEfficiency +
+      metrics.selfRepair.score * w.selfRepair +
+      metrics.verificationQuality.score * w.verificationQuality +
+      metrics.forbiddenPatterns.score * w.forbiddenPatterns +
+      ((metrics.outcomeVerification.score + metrics.codeQuality.score) / 2) * w.buffer
     );
 
     // 收集建议

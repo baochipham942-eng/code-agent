@@ -134,8 +134,13 @@
 | **混合 Agent 架构** | `src/main/agent/hybrid/` | 3 层混合架构：核心角色 + 动态扩展 + Swarm |
 | **统一 Identity** | `src/main/prompts/identity.ts` | 替代 constitution/ 的 6 文件，token -81% |
 | **上下文压缩** | `src/main/context/autoCompressor.ts` | 自动上下文压缩 |
-| **并行评估** | `src/main/evaluation/parallelEvaluator.ts` | 并行会话评估 |
+| **评测双管道** | `src/main/evaluation/` | Pipeline A: EvaluationService（会话评测）, Pipeline B: TestRunner（用例执行）, Bridge: ExperimentAdapter |
 | **Session Replay** | `src/main/evaluation/replayService.ts` | 评测中心第三模式：结构化会话回放（三表 JOIN + 工具分类 + 自修复链检测） |
+| **SwissCheese 评估器** | `src/main/evaluation/swissCheeseEvaluator.ts` | 多维评分 + 权重归一化 + 分数尺度统一（0-1 内部 → 0-100 展示） |
+| **评分配置** | `ScoringConfigPage.tsx` | 用户可自定义评分维度权重，前后端维度名对齐 |
+| **失败漏斗** | `ExperimentDetailPage.tsx` | 5 阶段失败分析（Setup → Tool → Logic → Output → Timeout） |
+| **实验管理** | DB: `experiments`, `experiment_cases` | 实验元数据 + 用例结果持久化 |
+| **Logger 文件落盘** | `src/main/services/infra/logger.ts` | NDJSON 格式 + 按日轮转 + async stream |
 
 ### v0.16.16+ 新增模块
 

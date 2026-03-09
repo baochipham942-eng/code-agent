@@ -410,6 +410,17 @@ export const webContents = {
   fromId: () => null,
 };
 
+// Preload API mocks
+export const contextBridge = {
+  exposeInMainWorld: (apiKey: string, api: Record<string, unknown>) => {
+    (globalThis as Record<string, unknown>)[apiKey] = api;
+  },
+};
+
+export const webUtils = {
+  getPathForFile: (file: File) => (file as unknown as { path?: string }).path ?? file.name,
+};
+
 // ── default export (full module) ──────────────────────────────────────
 // electron-store 等模块使用 `import electron from 'electron'` 然后
 // 解构 `{ app, ipcMain, shell } = electron`，所以 default export 必须
@@ -448,13 +459,3 @@ const electronModule = {
 
 export default electronModule;
 
-// Preload API mocks
-export const contextBridge = {
-  exposeInMainWorld: (apiKey: string, api: Record<string, unknown>) => {
-    (globalThis as Record<string, unknown>)[apiKey] = api;
-  },
-};
-
-export const webUtils = {
-  getPathForFile: (file: File) => (file as unknown as { path?: string }).path ?? file.name,
-};

@@ -282,10 +282,10 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-lg bg-deep rounded-xl border border-border-default shadow-2xl overflow-hidden animate-fadeIn">
+      <div className="relative w-full max-w-lg bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn">
         {/* Search input */}
-        <div className="flex items-center px-4 py-3 border-b border-border-default">
-          <Search className="w-5 h-5 text-text-tertiary shrink-0" />
+        <div className="flex items-center px-4 py-3 border-b border-zinc-700">
+          <Search className="w-5 h-5 text-zinc-500 shrink-0" />
           <input
             ref={inputRef}
             type="text"
@@ -293,13 +293,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="搜索命令..."
-            className="flex-1 ml-3 bg-transparent text-sm text-text-primary placeholder-text-tertiary focus:outline-none"
+            className="flex-1 ml-3 bg-transparent text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none"
           />
           <button
             onClick={onClose}
-            className="p-1 rounded hover:bg-hover transition-colors"
+            className="p-1 rounded hover:bg-zinc-700 transition-colors"
           >
-            <X className="w-4 h-4 text-text-tertiary" />
+            <X className="w-4 h-4 text-zinc-500" />
           </button>
         </div>
 
@@ -309,7 +309,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
           className="max-h-[50vh] overflow-y-auto py-2"
         >
           {filteredCommands.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-text-tertiary">
+            <div className="px-4 py-8 text-center text-sm text-zinc-500">
               没有找到匹配的命令
             </div>
           ) : (
@@ -318,7 +318,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
 
               return (
                 <div key={category}>
-                  <div className="px-4 py-1.5 text-xs font-medium text-text-tertiary uppercase tracking-wider">
+                  <div className="px-4 py-1.5 text-xs font-medium text-zinc-500 uppercase tracking-wider">
                     {categoryLabels[category]}
                   </div>
                   {commands.map(cmd => {
@@ -332,23 +332,23 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
                         onClick={() => executeCommand(cmd)}
                         className={`w-full flex items-center gap-3 px-4 py-2 text-left transition-colors ${
                           isSelected
-                            ? 'bg-elevated text-text-primary'
-                            : 'text-text-secondary hover:bg-surface'
+                            ? 'bg-zinc-700 text-zinc-200'
+                            : 'text-zinc-400 hover:bg-zinc-800'
                         }`}
                       >
-                        <span className={isSelected ? 'text-primary-400' : 'text-text-tertiary'}>
+                        <span className={isSelected ? 'text-primary-400' : 'text-zinc-500'}>
                           {cmd.icon}
                         </span>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm">{cmd.label}</div>
                           {cmd.description && (
-                            <div className="text-xs text-text-tertiary truncate">
+                            <div className="text-xs text-zinc-500 truncate">
                               {cmd.description}
                             </div>
                           )}
                         </div>
                         {cmd.shortcut && (
-                          <kbd className="px-1.5 py-0.5 text-xs bg-elevated rounded text-text-secondary border border-border-default">
+                          <kbd className="px-1.5 py-0.5 text-xs bg-zinc-700 rounded text-zinc-400 border border-zinc-700">
                             {cmd.shortcut}
                           </kbd>
                         )}
@@ -362,15 +362,15 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose 
         </div>
 
         {/* Footer hint */}
-        <div className="px-4 py-2 border-t border-border-default text-xs text-text-tertiary flex items-center gap-4">
+        <div className="px-4 py-2 border-t border-zinc-700 text-xs text-zinc-500 flex items-center gap-4">
           <span>
-            <kbd className="px-1 py-0.5 bg-elevated rounded">↑↓</kbd> 导航
+            <kbd className="px-1 py-0.5 bg-zinc-700 rounded">↑↓</kbd> 导航
           </span>
           <span>
-            <kbd className="px-1 py-0.5 bg-elevated rounded">Enter</kbd> 执行
+            <kbd className="px-1 py-0.5 bg-zinc-700 rounded">Enter</kbd> 执行
           </span>
           <span>
-            <kbd className="px-1 py-0.5 bg-elevated rounded">Esc</kbd> 关闭
+            <kbd className="px-1 py-0.5 bg-zinc-700 rounded">Esc</kbd> 关闭
           </span>
         </div>
       </div>

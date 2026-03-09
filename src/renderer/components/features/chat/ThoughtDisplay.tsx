@@ -109,8 +109,8 @@ export const ThoughtDisplay: React.FC<ThoughtDisplayProps> = ({
     <div
       className={`
         relative overflow-hidden rounded-xl
-        bg-gradient-to-br from-elevated/90 via-elevated/70 to-deep/90
-        border border-border-default
+        bg-gradient-to-br from-elevated/90 via-elevated/70 to-zinc-900/90
+        border border-zinc-700
         shadow-lg shadow-black/20
         animate-fade-in
         ${className}
@@ -153,14 +153,14 @@ export const ThoughtDisplay: React.FC<ThoughtDisplayProps> = ({
 
             {/* Loading spinner */}
             {isThinking && (
-              <Loader2 className="w-3.5 h-3.5 text-text-tertiary animate-spin ml-1" />
+              <Loader2 className="w-3.5 h-3.5 text-zinc-500 animate-spin ml-1" />
             )}
           </div>
 
           {/* Timer */}
           {isThinking && startTime && (
             <div className="flex items-center gap-2">
-              <span className="text-xs text-text-tertiary font-mono">
+              <span className="text-xs text-zinc-500 font-mono">
                 {formatTime(elapsed)}
               </span>
             </div>
@@ -170,12 +170,12 @@ export const ThoughtDisplay: React.FC<ThoughtDisplayProps> = ({
         {/* Thought content */}
         <div
           className={`
-            text-sm text-text-secondary leading-relaxed
+            text-sm text-zinc-400 leading-relaxed
             ${isThinking ? 'animate-fade-in' : ''}
           `}
         >
           {thought || (
-            <span className="text-text-tertiary italic">Processing...</span>
+            <span className="text-zinc-500 italic">Processing...</span>
           )}
 
           {/* Typing cursor when thinking */}
@@ -186,9 +186,9 @@ export const ThoughtDisplay: React.FC<ThoughtDisplayProps> = ({
 
         {/* ESC hint */}
         {isThinking && onCancel && (
-          <div className="mt-3 pt-3 border-t border-border-default">
-            <div className="flex items-center gap-2 text-xs text-text-tertiary">
-              <kbd className="px-1.5 py-0.5 rounded bg-hover border border-border-strong/50 font-mono text-text-secondary">
+          <div className="mt-3 pt-3 border-t border-zinc-700">
+            <div className="flex items-center gap-2 text-xs text-zinc-500">
+              <kbd className="px-1.5 py-0.5 rounded bg-zinc-700 border border-zinc-600/50 font-mono text-zinc-400">
                 ESC
               </kbd>
               <span>to cancel</span>
@@ -245,16 +245,16 @@ export const CompactThoughtDisplay: React.FC<CompactThoughtDisplayProps> = ({
         inline-flex items-center gap-2 px-3 py-1.5
         rounded-full
         bg-gradient-to-r from-elevated/80 to-elevated/60
-        border border-border-default
+        border border-zinc-700
         ${className}
       `}
     >
       <Brain className={`w-3.5 h-3.5 text-primary-400 ${isThinking ? 'animate-pulse' : ''}`} />
-      <span className="text-xs text-text-secondary max-w-[200px] truncate">
+      <span className="text-xs text-zinc-400 max-w-[200px] truncate">
         {thought || 'Thinking...'}
       </span>
       {isThinking && (
-        <Loader2 className="w-3 h-3 text-text-tertiary animate-spin" />
+        <Loader2 className="w-3 h-3 text-zinc-500 animate-spin" />
       )}
     </div>
   );

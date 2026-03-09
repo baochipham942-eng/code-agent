@@ -70,7 +70,7 @@ export const SemanticResearchIndicator: React.FC<SemanticResearchIndicatorProps>
 
   const intentLabel = INTENT_LABELS[intent] || intent;
   const depthLabel = DEPTH_LABELS[suggestedDepth] || suggestedDepth;
-  const depthColor = DEPTH_COLORS[suggestedDepth] || 'text-text-secondary bg-active/20';
+  const depthColor = DEPTH_COLORS[suggestedDepth] || 'text-zinc-400 bg-zinc-600/20';
 
   return (
     <div className="px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg animate-in slide-in-from-top-2 duration-200">
@@ -89,14 +89,14 @@ export const SemanticResearchIndicator: React.FC<SemanticResearchIndicatorProps>
             </span>
           </div>
 
-          <div className="flex items-center gap-2 mt-1 text-2xs text-text-tertiary">
+          <div className="flex items-center gap-2 mt-1 text-2xs text-zinc-500">
             <span>意图: {intentLabel}</span>
             <span>•</span>
             <span>置信度: {Math.round(confidence * 100)}%</span>
           </div>
 
           {reasoning && (
-            <div className="mt-1 text-2xs text-text-tertiary truncate">
+            <div className="mt-1 text-2xs text-zinc-500 truncate">
               {reasoning}
             </div>
           )}
@@ -106,7 +106,7 @@ export const SemanticResearchIndicator: React.FC<SemanticResearchIndicatorProps>
           <button
             type="button"
             onClick={onDismiss}
-            className="p-0.5 text-text-tertiary hover:text-text-secondary transition-colors"
+            className="p-0.5 text-zinc-500 hover:text-zinc-400 transition-colors"
           >
             <X className="w-3.5 h-3.5" />
           </button>

@@ -160,11 +160,11 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
                 <p className="text-lg font-medium text-white">
                   新版本 v{updateInfo.latestVersion} 可用
                 </p>
-                <p className="text-sm text-text-secondary mt-1">
+                <p className="text-sm text-zinc-400 mt-1">
                   当前版本: v{updateInfo.currentVersion}
                 </p>
                 {updateInfo.fileSize && (
-                  <p className="text-sm text-text-tertiary mt-0.5">
+                  <p className="text-sm text-zinc-500 mt-0.5">
                     文件大小: {formatSize(updateInfo.fileSize)}
                   </p>
                 )}
@@ -173,9 +173,9 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
 
             {/* Release Notes */}
             {updateInfo.releaseNotes && (
-              <div className="bg-surface rounded-lg p-4 max-h-40 overflow-y-auto">
-                <p className="text-xs font-medium text-text-secondary mb-2">更新内容</p>
-                <div className="text-sm text-text-secondary whitespace-pre-wrap">
+              <div className="bg-zinc-800 rounded-lg p-4 max-h-40 overflow-y-auto">
+                <p className="text-xs font-medium text-zinc-400 mb-2">更新内容</p>
+                <div className="text-sm text-zinc-400 whitespace-pre-wrap">
                   {updateInfo.releaseNotes}
                 </div>
               </div>
@@ -198,7 +198,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-lg font-medium text-white">正在下载更新</p>
-                <p className="text-sm text-text-secondary mt-1">
+                <p className="text-sm text-zinc-400 mt-1">
                   {formatSize(downloadProgress.transferred)} / {formatSize(downloadProgress.total)}
                   {downloadProgress.bytesPerSecond > 0 && ` • ${formatSpeed(downloadProgress.bytesPerSecond)}`}
                 </p>
@@ -209,14 +209,14 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
             </div>
 
             {/* Progress Bar */}
-            <div className="h-2 bg-elevated rounded-full overflow-hidden">
+            <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
               <div
                 className="h-full bg-gradient-to-r from-indigo-500 to-cyan-400 transition-all duration-300"
                 style={{ width: `${downloadProgress.percent}%` }}
               />
             </div>
 
-            <p className="text-xs text-text-tertiary text-center">
+            <p className="text-xs text-zinc-500 text-center">
               请勿关闭应用，下载完成后可安装更新
             </p>
           </div>
@@ -231,7 +231,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-lg font-medium text-white">下载完成</p>
-                <p className="text-sm text-text-secondary mt-1">
+                <p className="text-sm text-zinc-400 mt-1">
                   点击下方按钮启动安装程序
                 </p>
               </div>
@@ -248,7 +248,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-lg font-medium text-white">下载失败</p>
-                <p className="text-sm text-text-secondary mt-1">
+                <p className="text-sm text-zinc-400 mt-1">
                   {error || '发生未知错误，请稍后重试'}
                 </p>
               </div>

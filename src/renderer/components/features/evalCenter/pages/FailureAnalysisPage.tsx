@@ -97,7 +97,7 @@ export const FailureAnalysisPage: React.FC = () => {
   return (
     <div className="flex flex-col h-full">
       {/* Sub-nav */}
-      <div className="flex gap-1 px-4 pt-3 border-b border-border-subtle">
+      <div className="flex gap-1 px-4 pt-3 border-b border-zinc-800">
         {([
           { key: 'funnel' as const, label: '失败漏斗', icon: '\u{1F4CA}' },
           { key: 'coding' as const, label: '开放编码', icon: '\u{1F3F7}\uFE0F' },
@@ -109,8 +109,8 @@ export const FailureAnalysisPage: React.FC = () => {
             onClick={() => setView(tab.key)}
             className={`px-3 py-2 text-xs transition border-b-2 flex items-center gap-1.5 ${
               view === tab.key
-                ? 'text-text-primary border-blue-500'
-                : 'text-text-tertiary hover:text-text-secondary border-transparent'
+                ? 'text-zinc-200 border-blue-500'
+                : 'text-zinc-500 hover:text-zinc-400 border-transparent'
             }`}
           >
             <span>{tab.icon}</span>
@@ -126,11 +126,11 @@ export const FailureAnalysisPage: React.FC = () => {
               <FailureFunnel cases={allCases} />
             ) : (
               <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] flex flex-col items-center justify-center py-16 gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-elevated/60 border border-white/[0.04] flex items-center justify-center text-2xl">
+                <div className="w-14 h-14 rounded-2xl bg-zinc-700/60 border border-white/[0.04] flex items-center justify-center text-2xl">
                   {'\u{1F4CA}'}
                 </div>
-                <p className="text-sm text-text-secondary">运行评测后，失败漏斗数据将出现在此</p>
-                <p className="text-xs text-text-disabled max-w-sm text-center">
+                <p className="text-sm text-zinc-400">运行评测后，失败漏斗数据将出现在此</p>
+                <p className="text-xs text-zinc-600 max-w-sm text-center">
                   失败漏斗按阶段展示 Case 的通过/失败分布，帮助定位系统性问题
                 </p>
               </div>
@@ -143,11 +143,11 @@ export const FailureAnalysisPage: React.FC = () => {
           ) : (
             <div className="p-4">
               <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] flex flex-col items-center justify-center py-16 gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-elevated/60 border border-white/[0.04] flex items-center justify-center text-2xl">
+                <div className="w-14 h-14 rounded-2xl bg-zinc-700/60 border border-white/[0.04] flex items-center justify-center text-2xl">
                   {'\u{1F3F7}\uFE0F'}
                 </div>
-                <p className="text-sm text-text-secondary">暂无失败 Case</p>
-                <p className="text-xs text-text-disabled max-w-sm text-center">
+                <p className="text-sm text-zinc-400">暂无失败 Case</p>
+                <p className="text-xs text-zinc-600 max-w-sm text-center">
                   {allCases.length > 0
                     ? '当前所有 Case 均已通过，无需标注'
                     : '运行评测后，失败的 Case 将出现在此进行开放编码标注'}
@@ -159,7 +159,7 @@ export const FailureAnalysisPage: React.FC = () => {
         {view === 'axial' && (
           <div className="p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium text-text-primary">主轴编码聚类</h4>
+              <h4 className="text-sm font-medium text-zinc-200">主轴编码聚类</h4>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => alert('AI auto-clustering will analyze all annotated cases and suggest error pattern groupings. Coming soon.')}
@@ -171,14 +171,14 @@ export const FailureAnalysisPage: React.FC = () => {
                 {axialData.length > 0 && (
                   <button
                     onClick={loadAxialData}
-                    className="text-[10px] text-text-tertiary hover:text-text-secondary transition"
+                    className="text-[10px] text-zinc-500 hover:text-zinc-400 transition"
                   >
                     刷新
                   </button>
                 )}
               </div>
             </div>
-            <p className="text-xs text-text-tertiary">
+            <p className="text-xs text-zinc-500">
               根据开放编码标注结果自动聚类，识别高频错误模式
             </p>
 
@@ -188,17 +188,17 @@ export const FailureAnalysisPage: React.FC = () => {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                <span className="text-sm text-text-tertiary">加载聚类数据...</span>
+                <span className="text-sm text-zinc-500">加载聚类数据...</span>
               </div>
             )}
 
             {!axialLoading && axialData.length === 0 && (
               <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] flex flex-col items-center justify-center py-16 gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-elevated/60 border border-white/[0.04] flex items-center justify-center text-2xl">
+                <div className="w-14 h-14 rounded-2xl bg-zinc-700/60 border border-white/[0.04] flex items-center justify-center text-2xl">
                   {'\u{1F300}'}
                 </div>
-                <p className="text-sm text-text-secondary">暂无聚类数据</p>
-                <p className="text-xs text-text-disabled max-w-sm text-center">
+                <p className="text-sm text-zinc-400">暂无聚类数据</p>
+                <p className="text-xs text-zinc-600 max-w-sm text-center">
                   完成开放编码标注后，聚类结果将自动生成。请先在开放编码页面标注失败 Case。
                 </p>
               </div>
@@ -237,41 +237,41 @@ export const FailureAnalysisPage: React.FC = () => {
                     {axialData.map((entry, i) => {
                       const sev = getSeverityLabel(entry.avgSeverity);
                       return (
-                        <div key={i} className="bg-surface rounded-lg border border-border-subtle p-2.5">
+                        <div key={i} className="bg-zinc-800 rounded-lg border border-zinc-800 p-2.5">
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[11px] text-text-primary font-medium">{ERROR_LABELS[entry.errorType] || entry.errorType}</span>
+                            <span className="text-[11px] text-zinc-200 font-medium">{ERROR_LABELS[entry.errorType] || entry.errorType}</span>
                             <span className={`text-[9px] px-1 py-0.5 rounded-full ${SEVERITY_COLORS[sev.key] || SEVERITY_COLORS.medium}`}>
                               {sev.label}
                             </span>
                           </div>
-                          <span className="text-lg font-bold text-text-secondary">{entry.count}</span>
-                          <span className="text-[10px] text-text-tertiary ml-1">case{entry.count > 1 ? 's' : ''}</span>
+                          <span className="text-lg font-bold text-zinc-400">{entry.count}</span>
+                          <span className="text-[10px] text-zinc-500 ml-1">case{entry.count > 1 ? 's' : ''}</span>
                         </div>
                       );
                     })}
                   </div>
 
                   {/* Cross-tabulation matrix */}
-                  <div className="bg-surface rounded-lg border border-border-subtle overflow-hidden">
-                    <div className="px-3 py-2 border-b border-border-default/20">
-                      <span className="text-xs font-medium text-text-secondary">交叉分析矩阵</span>
-                      <span className="text-[10px] text-text-tertiary ml-2">
+                  <div className="bg-zinc-800 rounded-lg border border-zinc-800 overflow-hidden">
+                    <div className="px-3 py-2 border-b border-zinc-700/20">
+                      <span className="text-xs font-medium text-zinc-400">交叉分析矩阵</span>
+                      <span className="text-[10px] text-zinc-500 ml-2">
                         {errorTypes.length} 种错误类型 x {categories.length} 个用例分类
                       </span>
                     </div>
                     <div className="overflow-x-auto">
-                      <table className="text-[10px] text-text-secondary border-collapse w-full">
+                      <table className="text-[10px] text-zinc-400 border-collapse w-full">
                         <thead>
                           <tr>
-                            <th className="px-3 py-2 text-left font-medium text-text-tertiary bg-deep/30 sticky left-0 min-w-[120px]">
+                            <th className="px-3 py-2 text-left font-medium text-zinc-500 bg-zinc-900/30 sticky left-0 min-w-[120px]">
                               错误类型 \ 用例分类
                             </th>
                             {categories.map(cat => (
-                              <th key={cat} className="px-2 py-2 text-center font-medium text-text-secondary bg-deep/30 min-w-[60px]">
+                              <th key={cat} className="px-2 py-2 text-center font-medium text-zinc-400 bg-zinc-900/30 min-w-[60px]">
                                 {cat}
                               </th>
                             ))}
-                            <th className="px-2 py-2 text-center font-medium text-blue-400/80 bg-deep/30 min-w-[50px]">
+                            <th className="px-2 py-2 text-center font-medium text-blue-400/80 bg-zinc-900/30 min-w-[50px]">
                               合计
                             </th>
                           </tr>
@@ -281,8 +281,8 @@ export const FailureAnalysisPage: React.FC = () => {
                             const row = matrix.get(et) || new Map();
                             const rowTotal = [...row.values()].reduce((a, b) => a + b, 0);
                             return (
-                              <tr key={et} className="border-t border-border-default/10 hover:bg-surface">
-                                <td className="px-3 py-1.5 font-medium text-text-secondary sticky left-0 bg-deep/60 backdrop-blur">
+                              <tr key={et} className="border-t border-zinc-700/10 hover:bg-zinc-800">
+                                <td className="px-3 py-1.5 font-medium text-zinc-400 sticky left-0 bg-zinc-900/60 backdrop-blur">
                                   {ERROR_LABELS[et] || et}
                                 </td>
                                 {categories.map(cat => {
@@ -290,8 +290,8 @@ export const FailureAnalysisPage: React.FC = () => {
                                   return (
                                     <td key={cat} className={`px-2 py-1.5 text-center font-mono ${
                                       count > 0
-                                        ? count >= 3 ? 'text-red-400 bg-red-500/10' : count >= 2 ? 'text-amber-400 bg-amber-500/5' : 'text-text-secondary'
-                                        : 'text-text-disabled'
+                                        ? count >= 3 ? 'text-red-400 bg-red-500/10' : count >= 2 ? 'text-amber-400 bg-amber-500/5' : 'text-zinc-400'
+                                        : 'text-zinc-600'
                                     }`}>
                                       {count || '-'}
                                     </td>
@@ -304,8 +304,8 @@ export const FailureAnalysisPage: React.FC = () => {
                             );
                           })}
                           {/* Column totals */}
-                          <tr className="border-t border-border-subtle">
-                            <td className="px-3 py-1.5 font-medium text-blue-400/80 sticky left-0 bg-deep/60 backdrop-blur">
+                          <tr className="border-t border-zinc-800">
+                            <td className="px-3 py-1.5 font-medium text-blue-400/80 sticky left-0 bg-zinc-900/60 backdrop-blur">
                               合计
                             </td>
                             {categories.map(cat => {
@@ -333,7 +333,7 @@ export const FailureAnalysisPage: React.FC = () => {
         {view === 'report' && (
           <div className="p-4 space-y-4">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium text-text-primary">评测分析报告</h4>
+              <h4 className="text-sm font-medium text-zinc-200">评测分析报告</h4>
               <button
                 onClick={() => alert('Report export coming soon')}
                 className="px-3 py-1.5 rounded text-xs font-medium bg-blue-600 hover:bg-blue-500 text-white transition"
@@ -344,11 +344,11 @@ export const FailureAnalysisPage: React.FC = () => {
 
             {/* Overview Section */}
             <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
-              <h5 className="text-xs font-medium text-text-secondary mb-3 uppercase tracking-wide">概览</h5>
+              <h5 className="text-xs font-medium text-zinc-400 mb-3 uppercase tracking-wide">概览</h5>
               <div className="grid grid-cols-4 gap-3">
-                <div className="bg-surface rounded-lg p-3 text-center">
-                  <div className="text-lg font-bold text-text-primary">{allCases.length}</div>
-                  <div className="text-[10px] text-text-tertiary">总用例数</div>
+                <div className="bg-zinc-800 rounded-lg p-3 text-center">
+                  <div className="text-lg font-bold text-zinc-200">{allCases.length}</div>
+                  <div className="text-[10px] text-zinc-500">总用例数</div>
                 </div>
                 <div className="bg-emerald-500/10 rounded-lg p-3 text-center">
                   <div className="text-lg font-bold text-emerald-400">{allCases.filter(c => c.status === 'passed').length}</div>
@@ -367,7 +367,7 @@ export const FailureAnalysisPage: React.FC = () => {
 
             {/* Top Error Types */}
             <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
-              <h5 className="text-xs font-medium text-text-secondary mb-3 uppercase tracking-wide">高频错误类型</h5>
+              <h5 className="text-xs font-medium text-zinc-400 mb-3 uppercase tracking-wide">高频错误类型</h5>
               {axialData.length > 0 ? (() => {
                 const sorted = [...axialData].sort((a, b) => b.count - a.count);
                 const maxCount = sorted[0]?.count || 1;
@@ -382,8 +382,8 @@ export const FailureAnalysisPage: React.FC = () => {
                   <div className="space-y-2">
                     {sorted.map((entry, i) => (
                       <div key={i} className="flex items-center gap-3">
-                        <span className="text-[11px] text-text-secondary w-24 flex-shrink-0 truncate">{ERROR_LABELS_REPORT[entry.errorType] || entry.errorType}</span>
-                        <div className="flex-1 h-5 bg-elevated/60 rounded-full overflow-hidden">
+                        <span className="text-[11px] text-zinc-400 w-24 flex-shrink-0 truncate">{ERROR_LABELS_REPORT[entry.errorType] || entry.errorType}</span>
+                        <div className="flex-1 h-5 bg-zinc-700/60 rounded-full overflow-hidden">
                           <div
                             className="h-full bg-blue-500/60 rounded-full transition-all flex items-center justify-end pr-2"
                             style={{ width: `${Math.max((entry.count / maxCount) * 100, 8)}%` }}
@@ -396,18 +396,18 @@ export const FailureAnalysisPage: React.FC = () => {
                   </div>
                 );
               })() : (
-                <p className="text-xs text-text-tertiary">完成主轴编码后，错误类型统计将在此显示</p>
+                <p className="text-xs text-zinc-500">完成主轴编码后，错误类型统计将在此显示</p>
               )}
             </div>
 
             {/* Severity Distribution */}
             <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
-              <h5 className="text-xs font-medium text-text-secondary mb-3 uppercase tracking-wide">严重程度分布</h5>
+              <h5 className="text-xs font-medium text-zinc-400 mb-3 uppercase tracking-wide">严重程度分布</h5>
               {axialData.length > 0 ? (() => {
                 const sevCounts: Record<string, number> = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 };
                 const SEV_NAMES: Record<string, string> = { '1': '轻微', '2': '低', '3': '中', '4': '高', '5': '严重' };
                 const SEV_COLORS: Record<string, string> = {
-                  '1': 'bg-active/20 text-text-secondary',
+                  '1': 'bg-zinc-600/20 text-zinc-400',
                   '2': 'bg-blue-500/20 text-blue-400',
                   '3': 'bg-amber-500/20 text-amber-400',
                   '4': 'bg-orange-500/20 text-orange-400',
@@ -429,13 +429,13 @@ export const FailureAnalysisPage: React.FC = () => {
                   </div>
                 );
               })() : (
-                <p className="text-xs text-text-tertiary">完成主轴编码后，严重程度分布将在此显示</p>
+                <p className="text-xs text-zinc-500">完成主轴编码后，严重程度分布将在此显示</p>
               )}
             </div>
 
             {/* Recommendations */}
             <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
-              <h5 className="text-xs font-medium text-text-secondary mb-3 uppercase tracking-wide">改进建议</h5>
+              <h5 className="text-xs font-medium text-zinc-400 mb-3 uppercase tracking-wide">改进建议</h5>
               {axialData.length > 0 ? (() => {
                 const suggestions: string[] = [];
                 const sorted = [...axialData].sort((a, b) => b.count - a.count);
@@ -460,7 +460,7 @@ export const FailureAnalysisPage: React.FC = () => {
                 return (
                   <div className="space-y-2">
                     {suggestions.map((s, i) => (
-                      <div key={i} className="flex items-start gap-2 text-xs text-text-secondary">
+                      <div key={i} className="flex items-start gap-2 text-xs text-zinc-400">
                         <span className="text-blue-400 flex-shrink-0 mt-0.5">•</span>
                         <span>{s}</span>
                       </div>
@@ -468,7 +468,7 @@ export const FailureAnalysisPage: React.FC = () => {
                   </div>
                 );
               })() : (
-                <p className="text-xs text-text-tertiary">完成主轴编码后，系统将自动生成改进建议</p>
+                <p className="text-xs text-zinc-500">完成主轴编码后，系统将自动生成改进建议</p>
               )}
             </div>
           </div>

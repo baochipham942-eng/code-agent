@@ -97,7 +97,7 @@ export const GeneralSection: React.FC = () => {
     <div className="space-y-6">
       {/* Theme Selection */}
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-3">
+        <label className="block text-sm font-medium text-zinc-200 mb-3">
           {t.appearance?.theme || '主题'}
         </label>
         <div className="flex gap-2">
@@ -110,14 +110,14 @@ export const GeneralSection: React.FC = () => {
                 theme === item.id
                   ? 'border-teal-500/50 bg-teal-500/10 text-teal-400'
                   : item.available
-                    ? 'border-border-default hover:border-border-strong text-text-secondary hover:text-text-secondary'
-                    : 'border-border-default text-text-disabled cursor-not-allowed'
+                    ? 'border-zinc-700 hover:border-zinc-600 text-zinc-400 hover:text-zinc-400'
+                    : 'border-zinc-700 text-zinc-600 cursor-not-allowed'
               }`}
             >
               {item.icon}
               <span className="text-sm">{item.label}</span>
               {!item.available && (
-                <span className="text-xs text-text-disabled">Soon</span>
+                <span className="text-xs text-zinc-600">Soon</span>
               )}
             </button>
           ))}
@@ -126,7 +126,7 @@ export const GeneralSection: React.FC = () => {
 
       {/* Language Selection */}
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-3">
+        <label className="block text-sm font-medium text-zinc-200 mb-3">
           {t.settings?.tabs?.language || '语言'}
         </label>
         <Select
@@ -140,9 +140,9 @@ export const GeneralSection: React.FC = () => {
 
       {/* Font Size */}
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-3">
+        <label className="block text-sm font-medium text-zinc-200 mb-3">
           <div className="flex items-center gap-2">
-            <Type className="w-4 h-4 text-text-secondary" />
+            <Type className="w-4 h-4 text-zinc-400" />
             {t.appearance?.fontSize || '字体大小'}
           </div>
         </label>
@@ -154,7 +154,7 @@ export const GeneralSection: React.FC = () => {
               className={`flex-1 px-3 py-2 rounded-lg border text-sm transition-colors ${
                 fontSize === size
                   ? 'border-teal-500/50 bg-teal-500/10 text-teal-400'
-                  : 'border-border-default hover:border-border-strong text-text-secondary hover:text-text-secondary'
+                  : 'border-zinc-700 hover:border-zinc-600 text-zinc-400 hover:text-zinc-400'
               }`}
             >
               {size === 'small' && (t.appearance?.fontSizes?.small || '小')}

@@ -13,7 +13,7 @@ interface ApprovalOptionsCompactProps {
 
 export function ApprovalOptionsCompact({ onApproval, isDangerous }: ApprovalOptionsCompactProps) {
   return (
-    <div className="border-t border-border-default px-4 py-2.5">
+    <div className="border-t border-zinc-700 px-4 py-2.5">
       {/* 第一行: Allow once / Deny / Session */}
       <div className="flex items-center gap-2">
         <button
@@ -26,16 +26,16 @@ export function ApprovalOptionsCompact({ onApproval, isDangerous }: ApprovalOpti
         >
           <Check size={12} />
           <span>允许</span>
-          <kbd className="ml-1 px-1 py-0.5 rounded bg-active text-text-secondary text-2xs font-mono">y</kbd>
+          <kbd className="ml-1 px-1 py-0.5 rounded bg-zinc-600 text-zinc-400 text-2xs font-mono">y</kbd>
         </button>
 
         <button
           onClick={() => onApproval('deny')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium text-text-secondary hover:bg-active/20 transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium text-zinc-400 hover:bg-zinc-600/20 transition-colors"
         >
           <X size={12} />
           <span>拒绝</span>
-          <kbd className="ml-1 px-1 py-0.5 rounded bg-active text-text-secondary text-2xs font-mono">n</kbd>
+          <kbd className="ml-1 px-1 py-0.5 rounded bg-zinc-600 text-zinc-400 text-2xs font-mono">n</kbd>
         </button>
 
         {!isDangerous && (
@@ -45,7 +45,7 @@ export function ApprovalOptionsCompact({ onApproval, isDangerous }: ApprovalOpti
           >
             <Clock size={12} />
             <span>会话</span>
-            <kbd className="ml-1 px-1 py-0.5 rounded bg-active text-text-secondary text-2xs font-mono">s</kbd>
+            <kbd className="ml-1 px-1 py-0.5 rounded bg-zinc-600 text-zinc-400 text-2xs font-mono">s</kbd>
           </button>
         )}
 

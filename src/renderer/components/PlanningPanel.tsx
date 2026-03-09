@@ -35,9 +35,9 @@ const StepStatusIcon: React.FC<{ status: TaskStepStatus }> = ({ status }) => {
     case 'in_progress':
       return <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />;
     case 'skipped':
-      return <SkipForward className="w-4 h-4 text-text-tertiary" />;
+      return <SkipForward className="w-4 h-4 text-zinc-500" />;
     default:
-      return <Circle className="w-4 h-4 text-text-tertiary" />;
+      return <Circle className="w-4 h-4 text-zinc-500" />;
   }
 };
 
@@ -51,7 +51,7 @@ const PhaseStatusIcon: React.FC<{ status: TaskPhaseStatus }> = ({ status }) => {
     case 'blocked':
       return <XCircle className="w-4 h-4 text-red-400" />;
     default:
-      return <Circle className="w-4 h-4 text-text-tertiary" />;
+      return <Circle className="w-4 h-4 text-zinc-500" />;
   }
 };
 
@@ -60,13 +60,13 @@ const StepItem: React.FC<{ step: TaskStep }> = ({ step }) => {
   const getStatusStyles = () => {
     switch (step.status) {
       case 'completed':
-        return 'text-text-tertiary line-through';
+        return 'text-zinc-500 line-through';
       case 'in_progress':
-        return 'text-text-primary';
+        return 'text-zinc-200';
       case 'skipped':
-        return 'text-text-disabled line-through';
+        return 'text-zinc-600 line-through';
       default:
-        return 'text-text-secondary';
+        return 'text-zinc-400';
     }
   };
 
@@ -107,7 +107,7 @@ const PhaseItem: React.FC<{ phase: TaskPhase; defaultExpanded?: boolean }> = ({
       case 'blocked':
         return 'border-red-500/30 bg-red-500/5';
       default:
-        return 'border-border-default bg-surface';
+        return 'border-zinc-700 bg-zinc-800';
     }
   };
 
@@ -116,18 +116,18 @@ const PhaseItem: React.FC<{ phase: TaskPhase; defaultExpanded?: boolean }> = ({
       {/* Phase header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 p-2 hover:bg-active/20 transition-colors rounded-t-lg"
+        className="w-full flex items-center gap-2 p-2 hover:bg-zinc-600/20 transition-colors rounded-t-lg"
       >
         {expanded ? (
-          <ChevronDown className="w-4 h-4 text-text-secondary" />
+          <ChevronDown className="w-4 h-4 text-zinc-400" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-text-secondary" />
+          <ChevronRight className="w-4 h-4 text-zinc-400" />
         )}
         <PhaseStatusIcon status={phase.status} />
-        <span className="text-sm font-medium text-text-primary flex-1 text-left">
+        <span className="text-sm font-medium text-zinc-200 flex-1 text-left">
           {phase.title}
         </span>
-        <span className="text-xs text-text-tertiary">
+        <span className="text-xs text-zinc-500">
           {completedSteps}/{totalSteps}
         </span>
       </button>
@@ -139,7 +139,7 @@ const PhaseItem: React.FC<{ phase: TaskPhase; defaultExpanded?: boolean }> = ({
             <StepItem key={step.id} step={step} />
           ))}
           {phase.notes && (
-            <div className="mt-2 text-xs text-text-tertiary italic border-l-2 border-border-strong pl-2">
+            <div className="mt-2 text-xs text-zinc-500 italic border-l-2 border-zinc-600 pl-2">
               {phase.notes}
             </div>
           )}
@@ -152,9 +152,9 @@ const PhaseItem: React.FC<{ phase: TaskPhase; defaultExpanded?: boolean }> = ({
 // Empty state
 const EmptyState: React.FC = () => (
   <div className="flex flex-col items-center justify-center h-full text-center p-4">
-    <FileText className="w-12 h-12 text-text-disabled mb-3" />
-    <p className="text-sm text-text-secondary">No active plan</p>
-    <p className="text-xs text-text-tertiary mt-1">
+    <FileText className="w-12 h-12 text-zinc-600 mb-3" />
+    <p className="text-sm text-zinc-400">No active plan</p>
+    <p className="text-xs text-zinc-500 mt-1">
       Use todo_write with persist=true to create a plan
     </p>
   </div>
@@ -164,11 +164,11 @@ const EmptyState: React.FC = () => (
 export const PlanningPanel: React.FC<PlanningPanelProps> = ({ plan, onRefresh: _onRefresh }) => {
   if (!plan) {
     return (
-      <div className="w-80 border-l border-border-default bg-deep flex flex-col">
-        <div className="p-3 border-b border-border-default">
+      <div className="w-80 border-l border-zinc-700 bg-zinc-900 flex flex-col">
+        <div className="p-3 border-b border-zinc-700">
           <div className="flex items-center gap-2">
             <Target className="w-4 h-4 text-purple-400" />
-            <span className="text-sm font-medium text-text-primary">Task Plan</span>
+            <span className="text-sm font-medium text-zinc-200">Task Plan</span>
           </div>
         </div>
         <EmptyState />
@@ -183,28 +183,28 @@ export const PlanningPanel: React.FC<PlanningPanelProps> = ({ plan, onRefresh: _
       : 0;
 
   return (
-    <div className="w-80 border-l border-border-default bg-deep flex flex-col">
+    <div className="w-80 border-l border-zinc-700 bg-zinc-900 flex flex-col">
       {/* Header */}
-      <div className="p-3 border-b border-border-default">
+      <div className="p-3 border-b border-zinc-700">
         <div className="flex items-center gap-2 mb-1">
           <Target className="w-4 h-4 text-purple-400" />
-          <span className="text-sm font-medium text-text-primary flex-1 truncate">
+          <span className="text-sm font-medium text-zinc-200 flex-1 truncate">
             {plan.title}
           </span>
-          <span className="text-xs text-text-tertiary">
+          <span className="text-xs text-zinc-500">
             {metadata.completedSteps}/{metadata.totalSteps}
           </span>
         </div>
 
         {/* Objective */}
         {plan.objective && (
-          <p className="text-xs text-text-secondary mb-2 line-clamp-2">
+          <p className="text-xs text-zinc-400 mb-2 line-clamp-2">
             {plan.objective}
           </p>
         )}
 
         {/* Progress bar */}
-        <div className="h-1.5 bg-elevated rounded-full overflow-hidden">
+        <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
           <div
             className="h-full bg-purple-500 transition-all duration-300"
             style={{ width: `${progress}%` }}
@@ -232,7 +232,7 @@ export const PlanningPanel: React.FC<PlanningPanelProps> = ({ plan, onRefresh: _
       </div>
 
       {/* Footer with timestamp */}
-      <div className="p-2 border-t border-border-default text-xs text-text-tertiary text-center">
+      <div className="p-2 border-t border-zinc-700 text-xs text-zinc-500 text-center">
         Updated {new Date(plan.updatedAt).toLocaleTimeString()}
       </div>
     </div>

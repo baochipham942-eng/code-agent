@@ -37,7 +37,7 @@ const CompactionBlockDisplay: React.FC<{ message: MessageBubbleProps['message'] 
       </button>
       {expanded && (
         <div className="mt-2 px-3 py-2.5 rounded-md bg-amber-500/5 border border-amber-500/10">
-          <p className="text-xs text-text-secondary leading-relaxed whitespace-pre-wrap">
+          <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">
             {compaction.content}
           </p>
         </div>

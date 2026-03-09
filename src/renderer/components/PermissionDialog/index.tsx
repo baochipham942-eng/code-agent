@@ -218,7 +218,7 @@ export function PermissionDialog() {
         tabIndex={-1}
         className={`
           w-full max-w-lg mx-4
-          bg-deep rounded-lg shadow-2xl
+          bg-zinc-900 rounded-lg shadow-2xl
           border-2
           outline-none
           ${isDangerous ? 'border-red-500' : config.borderColor}
@@ -239,7 +239,7 @@ export function PermissionDialog() {
 
           {/* 请求原因 */}
           {request.reason && (
-            <p className="text-text-secondary text-sm">{request.reason}</p>
+            <p className="text-zinc-400 text-sm">{request.reason}</p>
           )}
 
           {/* 请求详情 */}

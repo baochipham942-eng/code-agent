@@ -27,7 +27,7 @@ export const UserMessage: React.FC<UserMessageProps> = ({ message }) => {
             backgroundColor: 'var(--cc-user-bg)',
           }}
         >
-          <div className="text-text-primary leading-relaxed">
+          <div className="text-zinc-200 leading-relaxed">
             <MessageContent content={message.content} isUser={true} />
           </div>
         </div>

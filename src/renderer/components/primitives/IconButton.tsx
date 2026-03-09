@@ -33,19 +33,19 @@ export interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonEl
 
 const variantStyles: Record<IconButtonVariant, string> = {
   default: [
-    'bg-transparent hover:bg-hover',
-    'text-text-secondary hover:text-text-primary',
-    'disabled:text-text-disabled',
+    'bg-transparent hover:bg-zinc-700',
+    'text-zinc-400 hover:text-zinc-200',
+    'disabled:text-zinc-600',
   ].join(' '),
   ghost: [
-    'bg-transparent hover:bg-hover',
-    'text-text-tertiary hover:text-text-secondary',
-    'disabled:text-text-disabled',
+    'bg-transparent hover:bg-zinc-700',
+    'text-zinc-500 hover:text-zinc-400',
+    'disabled:text-zinc-600',
   ].join(' '),
   danger: [
     'bg-transparent hover:bg-red-500/10',
-    'text-text-tertiary hover:text-red-400',
-    'disabled:text-text-disabled',
+    'text-zinc-500 hover:text-red-400',
+    'disabled:text-zinc-600',
   ].join(' '),
   active: [
     'bg-blue-500/20',
@@ -54,9 +54,9 @@ const variantStyles: Record<IconButtonVariant, string> = {
   ].join(' '),
   outline: [
     'bg-transparent hover:bg-white/5',
-    'text-text-secondary hover:text-text-primary',
+    'text-zinc-400 hover:text-zinc-200',
     'border border-white/10 hover:border-white/20',
-    'disabled:text-text-disabled',
+    'disabled:text-zinc-600',
   ].join(' '),
 };
 

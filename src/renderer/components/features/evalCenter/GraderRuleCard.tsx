@@ -21,14 +21,14 @@ export interface DimensionConfig {
 const GRADER_TYPE_BADGE: Record<GraderType, { label: string; className: string }> = {
   llm: { label: 'LLM', className: 'bg-amber-500/20 text-amber-400 border-amber-500/30' },
   rule: { label: 'Rule', className: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
-  code: { label: 'Code', className: 'bg-active/20 text-text-secondary border-border-strong/30' },
+  code: { label: 'Code', className: 'bg-zinc-600/20 text-zinc-400 border-zinc-600/30' },
 };
 
 const IMPORTANCE_BADGE: Record<Importance, { label: string; className: string }> = {
   critical: { label: 'CRITICAL', className: 'bg-red-500/20 text-red-400 border-red-500/30' },
   high: { label: 'HIGH', className: 'bg-orange-500/20 text-orange-400 border-orange-500/30' },
   medium: { label: 'MEDIUM', className: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
-  low: { label: 'LOW', className: 'bg-active/20 text-text-secondary border-border-strong/30' },
+  low: { label: 'LOW', className: 'bg-zinc-600/20 text-zinc-400 border-zinc-600/30' },
 };
 
 const IMPORTANCE_BORDER: Record<Importance, string> = {
@@ -61,12 +61,12 @@ export const GraderRuleCard: React.FC<GraderRuleCardProps> = ({
     : '';
 
   return (
-    <div className={`bg-surface rounded-lg border border-border-subtle border-l-2 ${borderClass} p-3 flex flex-col gap-2.5`}>
+    <div className={`bg-zinc-800 rounded-lg border border-zinc-800 border-l-2 ${borderClass} p-3 flex flex-col gap-2.5`}>
       {/* Header: name + badges */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium text-text-primary">{dimension.label}</span>
-          <p className="text-[11px] text-text-tertiary mt-0.5 leading-relaxed">{dimension.description}</p>
+          <span className="text-sm font-medium text-zinc-200">{dimension.label}</span>
+          <p className="text-[11px] text-zinc-500 mt-0.5 leading-relaxed">{dimension.description}</p>
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <span className={`text-[10px] px-1.5 py-0.5 rounded border ${graderBadge.className}`}>
@@ -80,7 +80,7 @@ export const GraderRuleCard: React.FC<GraderRuleCardProps> = ({
 
       {/* Weight slider */}
       <div className="flex items-center gap-2">
-        <span className="text-[10px] text-text-tertiary w-6">W:</span>
+        <span className="text-[10px] text-zinc-500 w-6">W:</span>
         <input
           type="range"
           min="0"
@@ -90,22 +90,22 @@ export const GraderRuleCard: React.FC<GraderRuleCardProps> = ({
             const v = parseInt(e.target.value);
             onWeightChange(Number.isFinite(v) ? v : 0);
           }}
-          className="flex-1 h-1 appearance-none bg-active rounded-full cursor-pointer"
+          className="flex-1 h-1 appearance-none bg-zinc-600 rounded-full cursor-pointer"
         />
-        <span className="text-xs text-text-secondary w-8 text-right font-mono">{dimension.weight}%</span>
+        <span className="text-xs text-zinc-400 w-8 text-right font-mono">{dimension.weight}%</span>
       </div>
 
       {/* Judge Prompt section (LLM type only) */}
       {dimension.graderType === 'llm' && (
-        <div className="border-t border-border-subtle pt-2">
+        <div className="border-t border-zinc-800 pt-2">
           <button
             onClick={() => setPromptExpanded(!promptExpanded)}
-            className="flex items-center gap-1.5 text-[11px] text-text-secondary hover:text-text-secondary transition w-full"
+            className="flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-400 transition w-full"
           >
             <ChevronDown className={`w-3 h-3 transition-transform ${promptExpanded ? '' : '-rotate-90'}`} />
             <span>Judge Prompt</span>
             {!promptExpanded && promptPreview && (
-              <span className="text-text-disabled truncate flex-1 text-left ml-1">{promptPreview}</span>
+              <span className="text-zinc-600 truncate flex-1 text-left ml-1">{promptPreview}</span>
             )}
           </button>
           {promptExpanded && (
@@ -114,7 +114,7 @@ export const GraderRuleCard: React.FC<GraderRuleCardProps> = ({
                 value={dimension.judgePrompt || ''}
                 onChange={(e) => onJudgePromptChange?.(e.target.value)}
                 rows={5}
-                className="w-full bg-deep/60 border border-border-default rounded-md p-2 text-[11px] text-text-secondary leading-relaxed resize-y focus:outline-none focus:border-border-strong placeholder-text-disabled"
+                className="w-full bg-zinc-900/60 border border-zinc-700 rounded-md p-2 text-[11px] text-zinc-400 leading-relaxed resize-y focus:outline-none focus:border-zinc-600 placeholder-zinc-600"
                 placeholder="输入自定义 Judge Prompt..."
               />
               <button

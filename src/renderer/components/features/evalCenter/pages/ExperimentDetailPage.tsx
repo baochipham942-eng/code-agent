@@ -17,7 +17,7 @@ const STATUS_STYLES: Record<string, { color: string; bg: string; label: string }
   passed: { color: 'text-emerald-400', bg: 'bg-emerald-500/10', label: '通过' },
   failed: { color: 'text-red-400', bg: 'bg-red-500/10', label: '失败' },
   partial: { color: 'text-amber-400', bg: 'bg-amber-500/10', label: '部分通过' },
-  skipped: { color: 'text-text-secondary', bg: 'bg-active/10', label: '跳过' },
+  skipped: { color: 'text-zinc-400', bg: 'bg-zinc-600/10', label: '跳过' },
 };
 
 export const ExperimentDetailPage: React.FC = () => {
@@ -81,11 +81,11 @@ export const ExperimentDetailPage: React.FC = () => {
 
   const EmptyGuide = ({ message }: { message: string }) => (
     <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] flex flex-col items-center justify-center py-16 gap-4">
-      <div className="w-14 h-14 rounded-2xl bg-elevated/60 border border-white/[0.04] flex items-center justify-center text-2xl">
+      <div className="w-14 h-14 rounded-2xl bg-zinc-700/60 border border-white/[0.04] flex items-center justify-center text-2xl">
         {'\u{1F9EA}'}
       </div>
-      <p className="text-sm text-text-secondary">{message}</p>
-      <p className="text-xs text-text-disabled max-w-sm text-center">
+      <p className="text-sm text-zinc-400">{message}</p>
+      <p className="text-xs text-zinc-600 max-w-sm text-center">
         运行评测后，实验数据将出现在此。可在「会话评测」页面选择会话并执行评测。
       </p>
     </div>
@@ -96,8 +96,8 @@ export const ExperimentDetailPage: React.FC = () => {
       {/* Git Commit Badge */}
       {!loading && hasData && report?.gitCommit && (
         <div className="flex items-center gap-2 px-4 pt-3">
-          <span className="text-[10px] text-text-tertiary">Git Commit:</span>
-          <code className="text-[11px] font-mono text-text-secondary bg-elevated/60 px-1.5 py-0.5 rounded border border-border-subtle">
+          <span className="text-[10px] text-zinc-500">Git Commit:</span>
+          <code className="text-[11px] font-mono text-zinc-400 bg-zinc-700/60 px-1.5 py-0.5 rounded border border-zinc-800">
             {report.gitCommit.length > 7 ? report.gitCommit.slice(0, 7) : report.gitCommit}
           </code>
         </div>
@@ -109,14 +109,14 @@ export const ExperimentDetailPage: React.FC = () => {
           {STAT_CARDS.map(card => (
             <div
               key={card.label}
-              className={`bg-surface rounded-lg border border-border-subtle border-l-4 ${card.border} p-4 shadow-sm`}
+              className={`bg-zinc-800 rounded-lg border border-zinc-800 border-l-4 ${card.border} p-4 shadow-sm`}
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-2xl font-bold text-text-primary tabular-nums">
+                  <div className="text-2xl font-bold text-zinc-200 tabular-nums">
                     {card.value}{card.suffix}
                   </div>
-                  <div className="text-xs text-text-tertiary mt-1">{card.label}</div>
+                  <div className="text-xs text-zinc-500 mt-1">{card.label}</div>
                 </div>
                 <div className={`w-10 h-10 rounded-lg ${card.iconBg} flex items-center justify-center`}>
                   <span className={`text-lg font-bold ${card.iconColor}`}>
@@ -129,15 +129,15 @@ export const ExperimentDetailPage: React.FC = () => {
         </div>
       )}
 
-      <div className="flex gap-1 px-4 pt-3 border-b border-border-subtle">
+      <div className="flex gap-1 px-4 pt-3 border-b border-zinc-800">
         {TABS.map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`px-3 py-2 text-xs transition border-b-2 flex items-center gap-1.5 ${
               activeTab === tab.key
-                ? 'text-text-primary border-blue-500'
-                : 'text-text-tertiary hover:text-text-secondary border-transparent'
+                ? 'text-zinc-200 border-blue-500'
+                : 'text-zinc-500 hover:text-zinc-400 border-transparent'
             }`}
           >
             <span>{tab.icon}</span>
@@ -166,7 +166,7 @@ export const ExperimentDetailPage: React.FC = () => {
               ) : (
                 <>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs text-text-tertiary">共 {report!.results.length} 个 Case</span>
+                    <span className="text-xs text-zinc-500">共 {report!.results.length} 个 Case</span>
                     {Object.entries(STATUS_STYLES).map(([status, style]) => {
                       const count = report!.results.filter(r => r.status === status).length;
                       if (count === 0) return null;
@@ -178,8 +178,8 @@ export const ExperimentDetailPage: React.FC = () => {
                     })}
                   </div>
 
-                  <div className="bg-surface rounded-lg border border-border-subtle overflow-hidden">
-                    <div className="grid grid-cols-[1fr_80px_80px_80px] gap-2 px-3 py-2 text-[10px] text-text-tertiary uppercase bg-deep/30 border-b border-border-subtle">
+                  <div className="bg-zinc-800 rounded-lg border border-zinc-800 overflow-hidden">
+                    <div className="grid grid-cols-[1fr_80px_80px_80px] gap-2 px-3 py-2 text-[10px] text-zinc-500 uppercase bg-zinc-900/30 border-b border-zinc-800">
                       <span>Test ID</span>
                       <span>状态</span>
                       <span>得分</span>
@@ -191,26 +191,26 @@ export const ExperimentDetailPage: React.FC = () => {
                         <button
                           key={tc.testId}
                           onClick={() => setSelectedCase(selectedCase?.testId === tc.testId ? null : tc)}
-                          className="w-full grid grid-cols-[1fr_80px_80px_80px] gap-2 px-3 py-2 text-[11px] border-t border-border-default/10 hover:bg-surface transition text-left"
+                          className="w-full grid grid-cols-[1fr_80px_80px_80px] gap-2 px-3 py-2 text-[11px] border-t border-zinc-700/10 hover:bg-zinc-800 transition text-left"
                         >
-                          <span className="text-text-secondary font-mono truncate">{tc.testId}</span>
+                          <span className="text-zinc-400 font-mono truncate">{tc.testId}</span>
                           <span className={`text-[10px] px-1.5 py-0.5 rounded-full w-fit ${st.bg} ${st.color}`}>
                             {st.label}
                           </span>
                           <span className={`font-mono ${tc.score * 100 >= 80 ? 'text-emerald-400' : tc.score * 100 >= 60 ? 'text-amber-400' : 'text-red-400'}`}>{Math.round(tc.score * 100)}%</span>
-                          <span className="text-text-tertiary">{(tc.duration / 1000).toFixed(1)}s</span>
+                          <span className="text-zinc-500">{(tc.duration / 1000).toFixed(1)}s</span>
                         </button>
                       );
                     })}
                   </div>
 
                   {selectedCase && (
-                    <div className="bg-surface rounded-lg border border-border-subtle p-4 space-y-3">
+                    <div className="bg-zinc-800 rounded-lg border border-zinc-800 p-4 space-y-3">
                       <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-medium text-text-primary">{selectedCase.testId}</h4>
-                        <button onClick={() => setSelectedCase(null)} className="text-text-tertiary hover:text-text-secondary text-xs">关闭</button>
+                        <h4 className="text-xs font-medium text-zinc-200">{selectedCase.testId}</h4>
+                        <button onClick={() => setSelectedCase(null)} className="text-zinc-500 hover:text-zinc-400 text-xs">关闭</button>
                       </div>
-                      <p className="text-xs text-text-secondary">{selectedCase.description}</p>
+                      <p className="text-xs text-zinc-400">{selectedCase.description}</p>
                       {selectedCase.errors.length > 0 && (
                         <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
                           {selectedCase.errors.map((err, i) => (
@@ -225,7 +225,7 @@ export const ExperimentDetailPage: React.FC = () => {
                       )}
                       {selectedCase.toolExecutions.length > 0 && (
                         <div>
-                          <p className="text-[10px] text-text-tertiary uppercase mb-1.5">工具调用 ({selectedCase.toolExecutions.length})</p>
+                          <p className="text-[10px] text-zinc-500 uppercase mb-1.5">工具调用 ({selectedCase.toolExecutions.length})</p>
                           <div className="flex gap-1 flex-wrap">
                             {selectedCase.toolExecutions.map((tool, i) => (
                               <span key={i} className={`text-[9px] px-1.5 py-0.5 rounded ${
@@ -237,7 +237,7 @@ export const ExperimentDetailPage: React.FC = () => {
                           </div>
                         </div>
                       )}
-                      <div className="flex gap-3 text-[10px] text-text-tertiary">
+                      <div className="flex gap-3 text-[10px] text-zinc-500">
                         <span>{selectedCase.turnCount} 轮</span>
                         <span>{(selectedCase.duration / 1000).toFixed(1)}s</span>
                         <span>得分: {Math.round(selectedCase.score * 100)}%</span>
@@ -256,8 +256,8 @@ export const ExperimentDetailPage: React.FC = () => {
               ) : (
                 <div className="space-y-1">
                   <div className="flex items-center gap-3 mb-3">
-                    <h4 className="text-xs font-medium text-text-secondary">Agent 执行时间线</h4>
-                    <span className="text-[10px] text-text-tertiary">共 {report!.results.length} 个 Case</span>
+                    <h4 className="text-xs font-medium text-zinc-400">Agent 执行时间线</h4>
+                    <span className="text-[10px] text-zinc-500">共 {report!.results.length} 个 Case</span>
                   </div>
 
                   {report!.results.map((tc, idx) => {
@@ -274,24 +274,24 @@ export const ExperimentDetailPage: React.FC = () => {
                             'border-amber-400 bg-amber-400/30'
                           }`} />
                           {idx < report!.results.length - 1 && (
-                            <div className="w-px flex-1 bg-hover my-1" />
+                            <div className="w-px flex-1 bg-zinc-700 my-1" />
                           )}
                         </div>
 
                         {/* Case card */}
-                        <div className="flex-1 bg-surface rounded-lg border border-border-subtle p-3 mb-2">
+                        <div className="flex-1 bg-zinc-800 rounded-lg border border-zinc-800 p-3 mb-2">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs text-text-primary font-mono">{tc.testId}</span>
+                            <span className="text-xs text-zinc-200 font-mono">{tc.testId}</span>
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${st.bg} ${st.color}`}>
                               {st.label}
                             </span>
-                            <span className="text-[10px] text-text-tertiary">
+                            <span className="text-[10px] text-zinc-500">
                               {tc.toolExecutions.length} 次调用
                             </span>
-                            <span className="text-[10px] text-text-tertiary">
+                            <span className="text-[10px] text-zinc-500">
                               {(tc.duration / 1000).toFixed(1)}s
                             </span>
-                            <span className="text-[10px] text-text-tertiary">
+                            <span className="text-[10px] text-zinc-500">
                               {tc.turnCount} 轮
                             </span>
                             {hasDeviation && (
@@ -307,12 +307,12 @@ export const ExperimentDetailPage: React.FC = () => {
                               {tc.toolExecutions.map((tool, i) => (
                                 <React.Fragment key={i}>
                                   <span className={`text-[9px] px-1.5 py-0.5 rounded ${
-                                    tool.success ? 'bg-hover text-text-secondary' : 'bg-red-500/10 text-red-400'
+                                    tool.success ? 'bg-zinc-700 text-zinc-400' : 'bg-red-500/10 text-red-400'
                                   }`}>
                                     {tool.tool}
                                   </span>
                                   {i < tc.toolExecutions.length - 1 && (
-                                    <span className="text-text-disabled text-[8px] self-center">{String.fromCharCode(8594)}</span>
+                                    <span className="text-zinc-600 text-[8px] self-center">{String.fromCharCode(8594)}</span>
                                   )}
                                 </React.Fragment>
                               ))}
@@ -338,14 +338,14 @@ export const ExperimentDetailPage: React.FC = () => {
               ) : (
                 <div className="space-y-4">
                   <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4">
-                    <h4 className="text-xs font-medium text-text-secondary uppercase tracking-wide mb-3">实验总览</h4>
+                    <h4 className="text-xs font-medium text-zinc-400 uppercase tracking-wide mb-3">实验总览</h4>
                     <div className="flex items-center gap-4">
                       <div className={`text-4xl font-bold tabular-nums ${
                         passRate >= 80 ? 'text-emerald-400' : passRate >= 60 ? 'text-amber-400' : 'text-red-400'
                       }`}>
                         {passRate}%
                       </div>
-                      <div className="text-xs text-text-tertiary space-y-1">
+                      <div className="text-xs text-zinc-500 space-y-1">
                         <p>通过率: {report!.passed}/{report!.total}</p>
                         <p>平均分: {Math.round(report!.averageScore * 100)}%</p>
                         <p>平均耗时: {(report!.performance.avgResponseTime / 1000).toFixed(1)}s</p>
@@ -353,18 +353,18 @@ export const ExperimentDetailPage: React.FC = () => {
                     </div>
                   </div>
 
-                  <h4 className="text-xs font-medium text-text-secondary uppercase tracking-wide">各 Case 得分</h4>
+                  <h4 className="text-xs font-medium text-zinc-400 uppercase tracking-wide">各 Case 得分</h4>
                   {report!.results.map(tc => (
-                    <div key={tc.testId} className="bg-surface rounded-lg border border-border-subtle p-3">
+                    <div key={tc.testId} className="bg-zinc-800 rounded-lg border border-zinc-800 p-3">
                       <div className="flex items-center gap-3 mb-1.5">
-                        <span className="text-xs text-text-secondary font-mono flex-1 truncate">{tc.testId}</span>
+                        <span className="text-xs text-zinc-400 font-mono flex-1 truncate">{tc.testId}</span>
                         <span className={`text-sm font-bold font-mono ${
                           tc.score * 100 >= 80 ? 'text-emerald-400' : tc.score * 100 >= 60 ? 'text-amber-400' : 'text-red-400'
                         }`}>
                           {Math.round(tc.score * 100)}%
                         </span>
                       </div>
-                      <div className="h-1.5 bg-hover rounded-full overflow-hidden">
+                      <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
                         <div
                           className={`h-full rounded-full ${
                             tc.score * 100 >= 80 ? 'bg-emerald-500' : tc.score * 100 >= 60 ? 'bg-amber-500' : 'bg-red-500'
@@ -451,17 +451,17 @@ export const ExperimentDetailPage: React.FC = () => {
                     <div className="space-y-4">
                       {/* Summary stats */}
                       <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4 space-y-3">
-                        <h4 className="text-xs font-medium text-text-secondary uppercase tracking-wide">实验统计摘要</h4>
+                        <h4 className="text-xs font-medium text-zinc-400 uppercase tracking-wide">实验统计摘要</h4>
                         <div className="grid grid-cols-4 gap-3">
                           {[
                             { label: '通过率', value: `${passRate}%`, color: passRate >= 80 ? 'text-emerald-400' : passRate >= 60 ? 'text-amber-400' : 'text-red-400' },
                             { label: '平均分', value: `${Math.round(avgScore * 100)}%`, color: avgScore * 100 >= 80 ? 'text-emerald-400' : avgScore * 100 >= 60 ? 'text-amber-400' : 'text-red-400' },
-                            { label: '平均耗时', value: `${(avgDuration / 1000).toFixed(1)}s`, color: 'text-text-secondary' },
-                            { label: '总耗时', value: `${(totalDuration / 1000).toFixed(0)}s`, color: 'text-text-secondary' },
+                            { label: '平均耗时', value: `${(avgDuration / 1000).toFixed(1)}s`, color: 'text-zinc-400' },
+                            { label: '总耗时', value: `${(totalDuration / 1000).toFixed(0)}s`, color: 'text-zinc-400' },
                           ].map(s => (
-                            <div key={s.label} className="bg-surface rounded-lg p-2.5">
+                            <div key={s.label} className="bg-zinc-800 rounded-lg p-2.5">
                               <div className={`text-lg font-bold ${s.color}`}>{s.value}</div>
-                              <div className="text-[10px] text-text-tertiary">{s.label}</div>
+                              <div className="text-[10px] text-zinc-500">{s.label}</div>
                             </div>
                           ))}
                         </div>
@@ -470,7 +470,7 @@ export const ExperimentDetailPage: React.FC = () => {
                       {/* Top failure reasons */}
                       {topReasons.length > 0 && (
                         <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4 space-y-3">
-                          <h4 className="text-xs font-medium text-text-secondary uppercase tracking-wide">
+                          <h4 className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
                             Top 失败原因（共 {failedCases.length} 个失败 Case）
                           </h4>
                           {topReasons.map(([reason, count], i) => (
@@ -478,7 +478,7 @@ export const ExperimentDetailPage: React.FC = () => {
                               <span className="text-xs font-bold text-red-400 bg-red-500/10 rounded-full w-5 h-5 flex items-center justify-center shrink-0">
                                 {count}
                               </span>
-                              <p className="text-xs text-text-secondary flex-1">{reason}</p>
+                              <p className="text-xs text-zinc-400 flex-1">{reason}</p>
                             </div>
                           ))}
                         </div>
@@ -486,7 +486,7 @@ export const ExperimentDetailPage: React.FC = () => {
 
                       {/* AI recommendations */}
                       <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] p-4 space-y-3">
-                        <h4 className="text-xs font-medium text-text-secondary uppercase tracking-wide">优化建议</h4>
+                        <h4 className="text-xs font-medium text-zinc-400 uppercase tracking-wide">优化建议</h4>
                         {recommendations.map((rec, i) => (
                           <div key={i} className={`border rounded-lg px-3 py-2 ${priorityStyle[rec.priority] || priorityStyle.low}`}>
                             <p className="text-xs">{rec.text}</p>

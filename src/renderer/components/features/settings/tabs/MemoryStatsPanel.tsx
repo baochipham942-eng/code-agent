@@ -72,7 +72,7 @@ const SimpleBarChart: React.FC<{ data: Array<{ period: string; count: number }> 
             style={{ height: `${(item.count / maxCount) * 100}%`, minHeight: item.count > 0 ? '4px' : '2px' }}
             title={`${item.period}: ${item.count} 条`}
           />
-          <span className="text-[10px] text-text-tertiary mt-1 truncate w-full text-center">
+          <span className="text-[10px] text-zinc-500 mt-1 truncate w-full text-center">
             {item.period.replace('月', '/')}
           </span>
         </div>
@@ -114,9 +114,9 @@ const SimplePieChart: React.FC<{ data: Record<MemoryCategory, number>; total: nu
               className="w-2 h-2 rounded-full"
               style={{ backgroundColor: CATEGORY_CONFIG[s.category].color }}
             />
-            <span className="text-text-secondary">{CATEGORY_CONFIG[s.category].label}</span>
-            <span className="text-text-secondary ml-auto">{data[s.category]}</span>
-            <span className="text-text-tertiary w-10 text-right">
+            <span className="text-zinc-400">{CATEGORY_CONFIG[s.category].label}</span>
+            <span className="text-zinc-400 ml-auto">{data[s.category]}</span>
+            <span className="text-zinc-500 w-10 text-right">
               {Math.round(s.percent)}%
             </span>
           </div>
@@ -173,7 +173,7 @@ export const MemoryStatsPanel: React.FC<MemoryStatsPanelProps> = ({
 
   if (!stats && memories.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-8 text-text-tertiary">
+      <div className="flex flex-col items-center justify-center py-8 text-zinc-500">
         <BarChart3 className="w-8 h-8 mb-2" />
         <p className="text-sm">暂无统计数据</p>
       </div>
@@ -184,29 +184,29 @@ export const MemoryStatsPanel: React.FC<MemoryStatsPanelProps> = ({
     <div className="space-y-4">
       {/* 概览卡片 */}
       <div className="grid grid-cols-4 gap-2">
-        <div className="bg-surface rounded-lg p-2">
-          <div className="flex items-center gap-1 text-text-secondary mb-1">
+        <div className="bg-zinc-800 rounded-lg p-2">
+          <div className="flex items-center gap-1 text-zinc-400 mb-1">
             <Brain className="w-3.5 h-3.5" />
             <span className="text-xs">总记忆</span>
           </div>
-          <div className="text-lg font-bold text-text-primary">{stats?.total || memories.length}</div>
+          <div className="text-lg font-bold text-zinc-200">{stats?.total || memories.length}</div>
         </div>
 
-        <div className="bg-surface rounded-lg p-2">
-          <div className="flex items-center gap-1 text-text-secondary mb-1">
+        <div className="bg-zinc-800 rounded-lg p-2">
+          <div className="flex items-center gap-1 text-zinc-400 mb-1">
             <Sparkles className="w-3.5 h-3.5" />
             <span className="text-xs">AI 学习</span>
           </div>
           <div className="text-lg font-bold text-purple-400">{sourceStats.learned}</div>
         </div>
 
-        <div className="bg-surface rounded-lg p-2">
-          <div className="flex items-center gap-1 text-text-secondary mb-1">
+        <div className="bg-zinc-800 rounded-lg p-2">
+          <div className="flex items-center gap-1 text-zinc-400 mb-1">
             <Calendar className="w-3.5 h-3.5" />
             <span className="text-xs">近 7 天</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-lg font-bold text-text-primary">{stats?.recentlyAdded || timeStats.reduce((a, b) => a + b.count, 0)}</span>
+            <span className="text-lg font-bold text-zinc-200">{stats?.recentlyAdded || timeStats.reduce((a, b) => a + b.count, 0)}</span>
             {weeklyComparison.direction !== 'same' && (
               <span className={`text-xs flex items-center ${
                 weeklyComparison.direction === 'up' ? 'text-green-400' : 'text-red-400'
@@ -222,8 +222,8 @@ export const MemoryStatsPanel: React.FC<MemoryStatsPanelProps> = ({
           </div>
         </div>
 
-        <div className="bg-surface rounded-lg p-2">
-          <div className="flex items-center gap-1 text-text-secondary mb-1">
+        <div className="bg-zinc-800 rounded-lg p-2">
+          <div className="flex items-center gap-1 text-zinc-400 mb-1">
             <Activity className="w-3.5 h-3.5" />
             <span className="text-xs">置信度</span>
           </div>
@@ -232,28 +232,28 @@ export const MemoryStatsPanel: React.FC<MemoryStatsPanelProps> = ({
       </div>
 
       {/* 每日趋势 */}
-      <div className="bg-surface rounded-lg p-3">
+      <div className="bg-zinc-800 rounded-lg p-3">
         <div className="flex items-center gap-2 mb-3">
-          <BarChart3 className="w-4 h-4 text-text-secondary" />
-          <span className="text-sm font-medium text-text-primary">近 7 天趋势</span>
+          <BarChart3 className="w-4 h-4 text-zinc-400" />
+          <span className="text-sm font-medium text-zinc-200">近 7 天趋势</span>
         </div>
         <SimpleBarChart data={timeStats} />
       </div>
 
       {/* 分类分布 */}
-      <div className="bg-surface rounded-lg p-3">
+      <div className="bg-zinc-800 rounded-lg p-3">
         <div className="flex items-center gap-2 mb-3">
-          <PieChart className="w-4 h-4 text-text-secondary" />
-          <span className="text-sm font-medium text-text-primary">分类分布</span>
+          <PieChart className="w-4 h-4 text-zinc-400" />
+          <span className="text-sm font-medium text-zinc-200">分类分布</span>
         </div>
         <SimplePieChart data={categoryStats} total={memories.length} />
       </div>
 
       {/* 来源对比 */}
-      <div className="bg-surface rounded-lg p-3">
-        <div className="text-sm font-medium text-text-primary mb-2">来源对比</div>
+      <div className="bg-zinc-800 rounded-lg p-3">
+        <div className="text-sm font-medium text-zinc-200 mb-2">来源对比</div>
         <div className="flex items-center gap-2">
-          <div className="flex-1 h-2 bg-active rounded-full overflow-hidden">
+          <div className="flex-1 h-2 bg-zinc-600 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-indigo-500 to-purple-500"
               style={{
@@ -270,7 +270,7 @@ export const MemoryStatsPanel: React.FC<MemoryStatsPanelProps> = ({
 
       {/* 洞察提示 */}
       {memories.length > 0 && (
-        <div className="text-xs text-text-tertiary bg-elevated/20 rounded-lg p-2">
+        <div className="text-xs text-zinc-500 bg-zinc-700/20 rounded-lg p-2">
           {sourceStats.learned > sourceStats.explicit ? (
             <p>💡 大部分记忆来自 AI 学习，AI 正在持续了解你的偏好和习惯。</p>
           ) : (

@@ -181,7 +181,7 @@ export const ScoringConfigPage: React.FC = () => {
     <div className="p-4 space-y-4">
       {/* Header: title + weight total + save */}
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-text-primary">评分维度配置</h3>
+        <h3 className="text-sm font-medium text-zinc-200">评分维度配置</h3>
         <div className="flex items-center gap-3">
           <div className={`text-xs ${totalWeight === 100 ? 'text-emerald-400' : 'text-red-400'}`}>
             权重总计: {totalWeight}%
@@ -195,7 +195,7 @@ export const ScoringConfigPage: React.FC = () => {
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg transition ${
               hasChanges
                 ? 'bg-blue-600 hover:bg-blue-500 text-white'
-                : 'bg-elevated text-text-tertiary cursor-not-allowed'
+                : 'bg-zinc-700 text-zinc-500 cursor-not-allowed'
             }`}
           >
             {saving ? (
@@ -217,7 +217,7 @@ export const ScoringConfigPage: React.FC = () => {
           {([
             ['llm', 'LLM Judge', 'bg-amber-500/20 text-amber-400 border-amber-500/30'],
             ['rule', 'Rule', 'bg-blue-500/20 text-blue-400 border-blue-500/30'],
-            ['code', 'Code', 'bg-active/20 text-text-secondary border-border-strong/30'],
+            ['code', 'Code', 'bg-zinc-600/20 text-zinc-400 border-zinc-600/30'],
           ] as const).map(([, label, cls]) => (
             <span key={label} className={`text-[10px] px-2 py-0.5 rounded border ${cls}`}>{label}</span>
           ))}
@@ -227,7 +227,7 @@ export const ScoringConfigPage: React.FC = () => {
             ['CRITICAL', 'bg-red-500/20 text-red-400 border-red-500/30'],
             ['HIGH', 'bg-orange-500/20 text-orange-400 border-orange-500/30'],
             ['MEDIUM', 'bg-blue-500/20 text-blue-400 border-blue-500/30'],
-            ['LOW', 'bg-active/20 text-text-secondary border-border-strong/30'],
+            ['LOW', 'bg-zinc-600/20 text-zinc-400 border-zinc-600/30'],
           ] as const).map(([label, cls]) => (
             <span key={label} className={`text-[10px] px-2 py-0.5 rounded border ${cls}`}>{label}</span>
           ))}
@@ -247,8 +247,8 @@ export const ScoringConfigPage: React.FC = () => {
       </div>
 
       {/* Presets */}
-      <div className="border-t border-border-subtle pt-3">
-        <p className="text-xs text-text-tertiary mb-2">预设方案</p>
+      <div className="border-t border-zinc-800 pt-3">
+        <p className="text-xs text-zinc-500 mb-2">预设方案</p>
         <div className="flex gap-2">
           {([
             { key: 'safety', label: '安全优先' },
@@ -259,7 +259,7 @@ export const ScoringConfigPage: React.FC = () => {
             <button
               key={preset.key}
               onClick={() => handlePreset(preset.key)}
-              className="text-xs px-3 py-1.5 bg-elevated hover:bg-active border border-border-subtle rounded transition"
+              className="text-xs px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 border border-zinc-800 rounded transition"
             >
               {preset.label}
             </button>

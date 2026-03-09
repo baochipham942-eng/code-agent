@@ -134,33 +134,33 @@ export const ServiceSection: React.FC = () => {
       <div>
         <button
           onClick={() => setShowMcpDetails(!showMcpDetails)}
-          className="w-full flex items-center justify-between p-3 rounded-lg border border-border-default bg-deep hover:border-border-default transition-colors"
+          className="w-full flex items-center justify-between p-3 rounded-lg border border-zinc-700 bg-zinc-900 hover:border-zinc-700 transition-colors"
         >
           <div className="flex items-center gap-3">
-            <Plug className="w-4 h-4 text-text-secondary" />
-            <span className="text-sm font-medium text-text-primary">MCP 服务器</span>
+            <Plug className="w-4 h-4 text-zinc-400" />
+            <span className="text-sm font-medium text-zinc-200">MCP 服务器</span>
             {mcpLoading ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-text-secondary" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-zinc-400" />
             ) : (
               <span className={`text-xs px-1.5 py-0.5 rounded ${
-                connectedMcpCount > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-active text-text-secondary'
+                connectedMcpCount > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-600 text-zinc-400'
               }`}>
                 {connectedMcpCount} 已连接
               </span>
             )}
           </div>
-          <ChevronDown className={`w-4 h-4 text-text-secondary transition-transform ${showMcpDetails ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform ${showMcpDetails ? 'rotate-180' : ''}`} />
         </button>
 
         {showMcpDetails && (
           <div className="mt-2 space-y-2">
             {mcpServers.length === 0 ? (
-              <p className="text-xs text-text-tertiary text-center py-3">无 MCP 服务器配置</p>
+              <p className="text-xs text-zinc-500 text-center py-3">无 MCP 服务器配置</p>
             ) : (
               mcpServers.map((server) => (
                 <div
                   key={server.config.name}
-                  className="flex items-center justify-between p-2 rounded bg-surface text-xs"
+                  className="flex items-center justify-between p-2 rounded bg-zinc-800 text-xs"
                 >
                   <div className="flex items-center gap-2">
                     {server.status === 'connected' ? (
@@ -168,13 +168,13 @@ export const ServiceSection: React.FC = () => {
                     ) : server.status === 'connecting' ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-yellow-400" />
                     ) : (
-                      <Plug className="w-3.5 h-3.5 text-text-tertiary" />
+                      <Plug className="w-3.5 h-3.5 text-zinc-500" />
                     )}
-                    <span className="text-text-primary">{server.config.name}</span>
-                    <span className="text-text-tertiary">{server.config.type}</span>
+                    <span className="text-zinc-200">{server.config.name}</span>
+                    <span className="text-zinc-500">{server.config.type}</span>
                   </div>
                   {server.status === 'connected' && (
-                    <span className="text-text-secondary">{server.toolCount} 工具</span>
+                    <span className="text-zinc-400">{server.toolCount} 工具</span>
                   )}
                 </div>
               ))
@@ -187,24 +187,24 @@ export const ServiceSection: React.FC = () => {
       <div>
         <button
           onClick={() => setShowJiraDetails(!showJiraDetails)}
-          className="w-full flex items-center justify-between p-3 rounded-lg border border-border-default bg-deep hover:border-border-default transition-colors"
+          className="w-full flex items-center justify-between p-3 rounded-lg border border-zinc-700 bg-zinc-900 hover:border-zinc-700 transition-colors"
         >
           <div className="flex items-center gap-3">
             <Link2 className="w-4 h-4 text-blue-400" />
-            <span className="text-sm font-medium text-text-primary">Jira</span>
+            <span className="text-sm font-medium text-zinc-200">Jira</span>
             {isJiraConfigured && (
               <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
                 已配置
               </span>
             )}
           </div>
-          <ChevronDown className={`w-4 h-4 text-text-secondary transition-transform ${showJiraDetails ? 'rotate-180' : ''}`} />
+          <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform ${showJiraDetails ? 'rotate-180' : ''}`} />
         </button>
 
         {showJiraDetails && (
-          <div className="mt-2 p-3 rounded-lg border border-border-default bg-deep/30 space-y-3">
+          <div className="mt-2 p-3 rounded-lg border border-zinc-700 bg-zinc-900/30 space-y-3">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs text-text-tertiary">用于 jira 工具查询和创建 Issue</p>
+              <p className="text-xs text-zinc-500">用于 jira 工具查询和创建 Issue</p>
               <a
                 href="https://id.atlassian.com/manage-profile/security/api-tokens"
                 target="_blank"
@@ -218,7 +218,7 @@ export const ServiceSection: React.FC = () => {
 
             {/* Jira URL */}
             <div>
-              <label className="block text-xs text-text-secondary mb-1">Jira URL</label>
+              <label className="block text-xs text-zinc-400 mb-1">Jira URL</label>
               <Input
                 value={jiraConfig.baseUrl}
                 onChange={(e) => setJiraConfig(prev => ({ ...prev, baseUrl: e.target.value }))}
@@ -229,7 +229,7 @@ export const ServiceSection: React.FC = () => {
 
             {/* Email */}
             <div>
-              <label className="block text-xs text-text-secondary mb-1">邮箱</label>
+              <label className="block text-xs text-zinc-400 mb-1">邮箱</label>
               <Input
                 type="email"
                 value={jiraConfig.email}
@@ -241,7 +241,7 @@ export const ServiceSection: React.FC = () => {
 
             {/* API Token */}
             <div>
-              <label className="block text-xs text-text-secondary mb-1">API Token</label>
+              <label className="block text-xs text-zinc-400 mb-1">API Token</label>
               <div className="relative">
                 <Input
                   type={showJiraToken ? 'text' : 'password'}
@@ -253,7 +253,7 @@ export const ServiceSection: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowJiraToken(!showJiraToken)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-text-tertiary hover:text-text-secondary"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-400"
                 >
                   {showJiraToken ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </button>

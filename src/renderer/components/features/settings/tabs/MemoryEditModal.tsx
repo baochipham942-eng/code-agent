@@ -85,30 +85,30 @@ export const MemoryEditModal: React.FC<MemoryEditModalProps> = ({
         />
 
         {/* Meta info */}
-        <div className="text-xs text-text-tertiary space-y-1">
+        <div className="text-xs text-zinc-500 space-y-1">
           <div className="flex justify-between">
             <span>来源</span>
-            <span className="text-text-secondary">
+            <span className="text-zinc-400">
               {memory.source === 'learned' ? 'AI 学习' : '手动添加'}
             </span>
           </div>
           {memory.source === 'learned' && (
             <div className="flex justify-between">
               <span>置信度</span>
-              <span className="text-text-secondary">
+              <span className="text-zinc-400">
                 {Math.round(memory.confidence * 100)}%
               </span>
             </div>
           )}
           <div className="flex justify-between">
             <span>创建时间</span>
-            <span className="text-text-secondary">
+            <span className="text-zinc-400">
               {new Date(memory.createdAt).toLocaleDateString('zh-CN')}
             </span>
           </div>
         </div>
 
-        <p className="text-xs text-text-tertiary">
+        <p className="text-xs text-zinc-500">
           提示: 按 Cmd/Ctrl + Enter 快速保存
         </p>
       </div>

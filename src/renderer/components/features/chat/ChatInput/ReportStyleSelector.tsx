@@ -81,23 +81,23 @@ export const ReportStyleSelector: React.FC<ReportStyleSelectorProps> = ({
         disabled={disabled}
         className={`
           flex items-center gap-2 px-3 py-1.5 rounded-md text-sm
-          bg-surface-800 border border-border-default hover:border-border-strong
+          bg-zinc-800-800 border border-zinc-700 hover:border-zinc-600
           transition-colors
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
         `}
       >
-        <FileText className="w-4 h-4 text-text-secondary" />
-        <span className="text-text-secondary">报告风格:</span>
+        <FileText className="w-4 h-4 text-zinc-400" />
+        <span className="text-zinc-400">报告风格:</span>
         <span className="text-white">{selectedOption?.label}</span>
         <ChevronDown
-          className={`w-4 h-4 text-text-secondary transition-transform duration-200 ${
+          className={`w-4 h-4 text-zinc-400 transition-transform duration-200 ${
             isOpen ? 'rotate-180' : ''
           }`}
         />
       </button>
 
       {isOpen && !disabled && (
-        <div className="absolute bottom-full left-0 mb-2 w-64 py-1 bg-surface-800 border border-border-default rounded-lg shadow-xl z-20">
+        <div className="absolute bottom-full left-0 mb-2 w-64 py-1 bg-zinc-800-800 border border-zinc-700 rounded-lg shadow-xl z-20">
           {STYLE_OPTIONS.map((option) => (
             <button
               key={option.value}
@@ -107,12 +107,12 @@ export const ReportStyleSelector: React.FC<ReportStyleSelectorProps> = ({
                 setIsOpen(false);
               }}
               className={`
-                w-full px-3 py-2 text-left hover:bg-surface-700 transition-colors
-                ${value === option.value ? 'bg-surface-700' : ''}
+                w-full px-3 py-2 text-left hover:bg-zinc-800-700 transition-colors
+                ${value === option.value ? 'bg-zinc-800-700' : ''}
               `}
             >
               <div className="text-sm text-white">{option.label}</div>
-              <div className="text-xs text-text-tertiary">{option.description}</div>
+              <div className="text-xs text-zinc-500">{option.description}</div>
             </button>
           ))}
         </div>

@@ -100,7 +100,7 @@ export const ServiceKeysSettings: React.FC = () => {
       id: 'github',
       name: 'GitHub',
       description: 'MCP GitHub 服务器访问',
-      icon: <Github className="w-4 h-4 text-text-secondary" />,
+      icon: <Github className="w-4 h-4 text-zinc-400" />,
       placeholder: 'ghp_...',
       helpUrl: 'https://github.com/settings/tokens',
     },
@@ -174,8 +174,8 @@ export const ServiceKeysSettings: React.FC = () => {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-sm font-medium text-text-primary mb-2">服务 API Keys</h3>
-        <p className="text-xs text-text-tertiary mb-4">
+        <h3 className="text-sm font-medium text-zinc-200 mb-2">服务 API Keys</h3>
+        <p className="text-xs text-zinc-500 mb-4">
           配置第三方服务的 API Key，用于启用对应功能
         </p>
       </div>
@@ -184,11 +184,11 @@ export const ServiceKeysSettings: React.FC = () => {
         {services.map((service) => (
           <div
             key={service.id}
-            className="p-4 rounded-lg border border-border-default bg-deep"
+            className="p-4 rounded-lg border border-zinc-700 bg-zinc-900"
           >
             <div className="flex items-center gap-2 mb-2">
               {service.icon}
-              <span className="text-sm font-medium text-text-primary">{service.name}</span>
+              <span className="text-sm font-medium text-zinc-200">{service.name}</span>
               {service.helpUrl && (
                 <a
                   href={service.helpUrl}
@@ -200,7 +200,7 @@ export const ServiceKeysSettings: React.FC = () => {
                 </a>
               )}
             </div>
-            <p className="text-xs text-text-tertiary mb-3">{service.description}</p>
+            <p className="text-xs text-zinc-500 mb-3">{service.description}</p>
 
             <div className="flex gap-2">
               <div className="flex-1 relative">
@@ -214,7 +214,7 @@ export const ServiceKeysSettings: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => toggleVisibility(service.id)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-text-tertiary hover:text-text-secondary"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-500 hover:text-zinc-400"
                 >
                   <Eye className="w-4 h-4" />
                 </button>
@@ -241,8 +241,8 @@ export const ServiceKeysSettings: React.FC = () => {
         ))}
       </div>
 
-      <div className="pt-4 border-t border-border-default">
-        <p className="text-xs text-text-tertiary">
+      <div className="pt-4 border-t border-zinc-700">
+        <p className="text-xs text-zinc-500">
           💡 API Keys 安全存储在系统 Keychain 中，不会上传到云端
         </p>
       </div>

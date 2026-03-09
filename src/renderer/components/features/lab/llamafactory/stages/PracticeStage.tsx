@@ -121,8 +121,8 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
         <div className="flex items-start gap-3">
           <Trophy className="w-5 h-5 text-orange-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-text-primary mb-2">🏆 综合实践</h3>
-            <p className="text-sm text-text-secondary">
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">🏆 综合实践</h3>
+            <p className="text-sm text-zinc-400">
               恭喜你学完了所有理论知识！现在来做几道选择题，检验一下学习成果，
               然后了解模型合并和部署流程。
             </p>
@@ -133,23 +133,23 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
       {/* Quiz Section */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
+          <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
             <HelpCircle className="w-4 h-4 text-orange-400" />
             场景选择测验
           </h3>
           {!quizCompleted && (
-            <span className="text-xs text-text-tertiary">
+            <span className="text-xs text-zinc-500">
               {currentQuestion + 1} / {scenarios.length}
             </span>
           )}
         </div>
 
-        <div className="bg-deep rounded-lg border border-border-default p-4">
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           {!quizCompleted ? (
             <>
               {/* Question */}
               <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                <p className="text-sm text-text-primary">{scenarios[currentQuestion].question}</p>
+                <p className="text-sm text-zinc-200">{scenarios[currentQuestion].question}</p>
               </div>
 
               {/* Options */}
@@ -158,7 +158,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
                   const isSelected = selectedAnswer === idx;
                   const isCorrect = option.correct;
 
-                  let bgClass = 'bg-surface border-border-subtle hover:border-border-strong';
+                  let bgClass = 'bg-zinc-800 border-zinc-800 hover:border-zinc-600';
                   if (showResult) {
                     if (isCorrect) {
                       bgClass = 'bg-emerald-500/20 border-emerald-500/30';
@@ -177,13 +177,13 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
                       className={`w-full p-3 rounded-lg border text-left transition-all ${bgClass}`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-sm text-text-secondary">{option.label}</span>
+                        <span className="text-sm text-zinc-400">{option.label}</span>
                         {showResult && isCorrect && (
                           <CheckCircle className="w-4 h-4 text-emerald-400" />
                         )}
                       </div>
                       {showResult && (
-                        <p className="text-xs text-text-tertiary mt-1">{option.reason}</p>
+                        <p className="text-xs text-zinc-500 mt-1">{option.reason}</p>
                       )}
                     </button>
                   );
@@ -206,10 +206,10 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
               <div className="text-4xl mb-4">
                 {correctCount === scenarios.length ? '🎉' : correctCount >= scenarios.length / 2 ? '👍' : '📚'}
               </div>
-              <div className="text-xl font-bold text-text-primary mb-2">
+              <div className="text-xl font-bold text-zinc-200 mb-2">
                 得分：{correctCount} / {scenarios.length}
               </div>
-              <p className="text-sm text-text-secondary mb-4">
+              <p className="text-sm text-zinc-400 mb-4">
                 {correctCount === scenarios.length
                   ? '完美！你已经掌握了微调的核心知识！'
                   : correctCount >= scenarios.length / 2
@@ -218,7 +218,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
               </p>
               <button
                 onClick={resetQuiz}
-                className="flex items-center gap-2 px-4 py-2 mx-auto rounded-lg bg-surface text-text-secondary border border-border-default hover:bg-hover transition-all text-sm"
+                className="flex items-center gap-2 px-4 py-2 mx-auto rounded-lg bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 transition-all text-sm"
               >
                 <RefreshCw className="w-4 h-4" />
                 重新测验
@@ -230,13 +230,13 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
 
       {/* Model Merge */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
+        <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <GitMerge className="w-4 h-4 text-orange-400" />
           模型合并
         </h3>
-        <div className="bg-deep rounded-lg border border-border-default p-4">
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="mb-4">
-            <p className="text-sm text-text-secondary mb-3">
+            <p className="text-sm text-zinc-400 mb-3">
               LoRA 训练后会得到一个小的权重文件（adapter）。要部署时，需要把它合并到基座模型中。
             </p>
             <button
@@ -258,14 +258,14 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
           <div className="flex items-center justify-center gap-4 py-4">
             <div className={`
               p-4 rounded-lg border text-center transition-all duration-500
-              ${showMergeAnimation ? 'opacity-50' : 'bg-surface border-border-subtle'}
+              ${showMergeAnimation ? 'opacity-50' : 'bg-zinc-800 border-zinc-800'}
             `}>
               <div className="text-2xl mb-1">🦙</div>
-              <div className="text-xs text-text-secondary">基座模型</div>
-              <div className="text-xs text-text-tertiary">7B 参数</div>
+              <div className="text-xs text-zinc-400">基座模型</div>
+              <div className="text-xs text-zinc-500">7B 参数</div>
             </div>
 
-            <div className="text-text-disabled">+</div>
+            <div className="text-zinc-600">+</div>
 
             <div className={`
               p-4 rounded-lg border text-center transition-all duration-500
@@ -273,25 +273,25 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
             `}>
               <div className="text-2xl mb-1">🎯</div>
               <div className="text-xs text-blue-400">LoRA 权重</div>
-              <div className="text-xs text-text-tertiary">~10MB</div>
+              <div className="text-xs text-zinc-500">~10MB</div>
             </div>
 
-            <ArrowRight className={`w-6 h-6 transition-all duration-500 ${showMergeAnimation ? 'text-emerald-400' : 'text-text-disabled'}`} />
+            <ArrowRight className={`w-6 h-6 transition-all duration-500 ${showMergeAnimation ? 'text-emerald-400' : 'text-zinc-600'}`} />
 
             <div className={`
               p-4 rounded-lg border text-center transition-all duration-500
               ${showMergeAnimation
                 ? 'bg-emerald-500/10 border-emerald-500/30 scale-110'
-                : 'bg-surface border-border-subtle'
+                : 'bg-zinc-800 border-zinc-800'
               }
             `}>
               <div className="text-2xl mb-1">✨</div>
-              <div className={`text-xs ${showMergeAnimation ? 'text-emerald-400' : 'text-text-secondary'}`}>合并后模型</div>
-              <div className="text-xs text-text-tertiary">7B 参数</div>
+              <div className={`text-xs ${showMergeAnimation ? 'text-emerald-400' : 'text-zinc-400'}`}>合并后模型</div>
+              <div className="text-xs text-zinc-500">7B 参数</div>
             </div>
           </div>
 
-          <div className="text-xs text-text-tertiary text-center">
+          <div className="text-xs text-zinc-500 text-center">
             合并公式：W_merged = W_base + B × A × scaling
           </div>
         </div>
@@ -299,16 +299,16 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
 
       {/* Export Formats */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
+        <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Rocket className="w-4 h-4 text-orange-400" />
           导出与部署
         </h3>
         <div className="grid grid-cols-4 gap-3">
           {exportFormats.map((format) => (
-            <div key={format.name} className="p-3 rounded-lg bg-deep border border-border-default text-center">
+            <div key={format.name} className="p-3 rounded-lg bg-zinc-900 border border-zinc-700 text-center">
               <div className="text-2xl mb-2">{format.icon}</div>
-              <div className="text-sm font-medium text-text-secondary">{format.name}</div>
-              <div className="text-xs text-text-tertiary mt-1">{format.desc}</div>
+              <div className="text-sm font-medium text-zinc-400">{format.name}</div>
+              <div className="text-xs text-zinc-500 mt-1">{format.desc}</div>
             </div>
           ))}
         </div>
@@ -316,16 +316,16 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
 
       {/* Complete Workflow */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary">📋 完整工作流总结</h3>
-        <div className="bg-deep rounded-lg border border-border-default p-4">
+        <h3 className="text-sm font-medium text-zinc-400">📋 完整工作流总结</h3>
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="grid grid-cols-3 gap-4">
             {workflowSummary.map((item) => (
-              <div key={item.step} className="p-3 rounded-lg bg-surface border border-border-subtle">
+              <div key={item.step} className="p-3 rounded-lg bg-zinc-800 border border-zinc-800">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-lg">{item.icon}</span>
-                  <span className="text-sm font-medium text-text-secondary">{item.step}. {item.title}</span>
+                  <span className="text-sm font-medium text-zinc-400">{item.step}. {item.title}</span>
                 </div>
-                <p className="text-xs text-text-tertiary">{item.desc}</p>
+                <p className="text-xs text-zinc-500">{item.desc}</p>
               </div>
             ))}
           </div>
@@ -336,7 +336,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
       <div className="bg-gradient-to-r from-emerald-500/10 to-teal-500/10 rounded-lg border border-emerald-500/20 p-6 text-center">
         <div className="text-4xl mb-3">🎓</div>
         <h3 className="text-lg font-bold text-emerald-400 mb-2">恭喜完成学习！</h3>
-        <p className="text-sm text-text-secondary mb-4">
+        <p className="text-sm text-zinc-400 mb-4">
           你已经了解了 LLaMA Factory 微调的完整流程：从 SFT 到 RLHF/DPO，从 LoRA 到部署。
           现在可以动手实践了！
         </p>
@@ -345,7 +345,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
             href="https://github.com/hiyouga/LLaMA-Factory"
             target="_blank"
             rel="noopener noreferrer"
-            className="px-4 py-2 rounded-lg bg-surface text-text-secondary border border-border-default hover:bg-hover transition-all text-sm"
+            className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 transition-all text-sm"
           >
             访问 LLaMA Factory
           </a>
@@ -353,7 +353,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
             href="https://platform.openai.com/docs/guides/fine-tuning"
             target="_blank"
             rel="noopener noreferrer"
-            className="px-4 py-2 rounded-lg bg-surface text-text-secondary border border-border-default hover:bg-hover transition-all text-sm"
+            className="px-4 py-2 rounded-lg bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 transition-all text-sm"
           >
             OpenAI 微调指南
           </a>
@@ -363,22 +363,22 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
       {/* Key Takeaways */}
       <div className="bg-orange-500/5 rounded-lg border border-orange-500/20 p-4">
         <h4 className="text-sm font-medium text-orange-400 mb-2">📌 全课程总结</h4>
-        <ul className="space-y-2 text-sm text-text-secondary">
+        <ul className="space-y-2 text-sm text-zinc-400">
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-text-secondary">微调是工具</strong>：先优化 prompt，实在不够再考虑微调</span>
+            <span><strong className="text-zinc-400">微调是工具</strong>：先优化 prompt，实在不够再考虑微调</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-text-secondary">数据决定上限</strong>：高质量数据比大量数据更重要</span>
+            <span><strong className="text-zinc-400">数据决定上限</strong>：高质量数据比大量数据更重要</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-text-secondary">选对方法</strong>：新能力用 SFT，调风格用 DPO，练推理用 RFT</span>
+            <span><strong className="text-zinc-400">选对方法</strong>：新能力用 SFT，调风格用 DPO，练推理用 RFT</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-text-secondary">资源高效</strong>：QLoRA 让消费级显卡也能微调大模型</span>
+            <span><strong className="text-zinc-400">资源高效</strong>：QLoRA 让消费级显卡也能微调大模型</span>
           </li>
         </ul>
       </div>
@@ -387,7 +387,7 @@ export const PracticeStage: React.FC<PracticeStageProps> = ({ onBack }) => {
       <div className="flex justify-start pt-4">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-5 py-2.5 bg-surface text-text-secondary rounded-lg hover:bg-hover border border-border-default transition-all"
+          className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800 text-zinc-400 rounded-lg hover:bg-zinc-700 border border-zinc-700 transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
           上一步

@@ -43,7 +43,7 @@ export const ExperimentColumns: React.FC<Props> = ({
 
   if (reports.length === 0) {
     return (
-      <div className="flex items-center gap-2 px-1 py-2 text-text-tertiary text-xs">
+      <div className="flex items-center gap-2 px-1 py-2 text-zinc-500 text-xs">
         暂无历史报告
       </div>
     );
@@ -68,19 +68,19 @@ export const ExperimentColumns: React.FC<Props> = ({
                   group relative flex flex-col gap-1.5 px-3 py-2.5 rounded-lg border transition-all min-w-[130px] max-w-[160px]
                   ${isSelected
                     ? `${colors.bg} ${colors.border} ring-1 ring-offset-1 ring-offset-deep ring-current`
-                    : 'bg-surface border-border-subtle hover:bg-hover hover:border-border-strong/50'
+                    : 'bg-zinc-800 border-zinc-800 hover:bg-zinc-700 hover:border-zinc-600/50'
                   }
                 `}
               >
                 {/* Round badge */}
                 <div className="flex items-center justify-between">
                   <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded ${
-                    isSelected ? colors.text : 'text-text-secondary'
-                  } bg-deep`}>
+                    isSelected ? colors.text : 'text-zinc-400'
+                  } bg-zinc-900`}>
                     R{r.roundNum}
                   </span>
                   {isLoading && isSelected && (
-                    <svg className="animate-spin w-3 h-3 text-text-tertiary" viewBox="0 0 24 24" fill="none">
+                    <svg className="animate-spin w-3 h-3 text-zinc-500" viewBox="0 0 24 24" fill="none">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
@@ -88,18 +88,18 @@ export const ExperimentColumns: React.FC<Props> = ({
                 </div>
 
                 {/* Score */}
-                <div className={`text-xl font-bold leading-none ${isSelected ? colors.text : 'text-text-secondary'}`}>
+                <div className={`text-xl font-bold leading-none ${isSelected ? colors.text : 'text-zinc-400'}`}>
                   {scorePercent}%
                 </div>
 
                 {/* Pass count */}
-                <div className="text-[10px] text-text-tertiary">
+                <div className="text-[10px] text-zinc-500">
                   {r.passed}/{r.total} 通过
                   {r.partial > 0 && <span className="text-amber-500/70"> +{r.partial}</span>}
                 </div>
 
                 {/* Progress bar */}
-                <div className="w-full h-1 bg-hover rounded-full overflow-hidden">
+                <div className="w-full h-1 bg-zinc-700 rounded-full overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${colors.bar}`}
                     style={{ width: `${scorePercent}%` }}
@@ -107,10 +107,10 @@ export const ExperimentColumns: React.FC<Props> = ({
                 </div>
 
                 {/* Metadata */}
-                <div className="text-[9px] text-text-disabled truncate leading-none">
+                <div className="text-[9px] text-zinc-600 truncate leading-none">
                   {r.model.split('/').pop() || r.model}
                 </div>
-                <div className="text-[9px] text-text-disabled leading-none">
+                <div className="text-[9px] text-zinc-600 leading-none">
                   {formatTime(r.timestamp)}
                 </div>
               </button>

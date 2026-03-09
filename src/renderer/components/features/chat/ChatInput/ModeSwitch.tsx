@@ -28,7 +28,7 @@ export const ModeSwitch: React.FC<ModeSwitchProps> = ({
   disabled,
 }) => {
   return (
-    <div className="flex items-center gap-1 p-1 bg-surface-800 rounded-lg">
+    <div className="flex items-center gap-1 p-1 bg-zinc-800-800 rounded-lg">
       {/* 正常模式 */}
       <button
         type="button"
@@ -38,8 +38,8 @@ export const ModeSwitch: React.FC<ModeSwitchProps> = ({
           flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium
           transition-all duration-200
           ${mode === 'normal'
-            ? 'bg-surface-700 text-white shadow-sm'
-            : 'text-text-secondary hover:text-text-secondary hover:bg-surface-700/50'
+            ? 'bg-zinc-800-700 text-white shadow-sm'
+            : 'text-zinc-400 hover:text-zinc-400 hover:bg-zinc-800-700/50'
           }
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
         `}
@@ -58,7 +58,7 @@ export const ModeSwitch: React.FC<ModeSwitchProps> = ({
           transition-all duration-200
           ${mode === 'deep-research'
             ? 'bg-primary-500/20 text-primary-400 shadow-sm'
-            : 'text-text-secondary hover:text-text-secondary hover:bg-surface-700/50'
+            : 'text-zinc-400 hover:text-zinc-400 hover:bg-zinc-800-700/50'
           }
           ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
         `}

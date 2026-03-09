@@ -89,40 +89,40 @@ export const TurnTimeline: React.FC<TurnTimelineProps> = ({ turns }) => {
           const statusColor = outcomeStatus === 'success' ? 'text-green-500'
             : outcomeStatus === 'failure' ? 'text-red-500'
             : outcomeStatus === 'partial' ? 'text-yellow-500'
-            : 'text-text-tertiary';
+            : 'text-zinc-500';
 
           return (
             <div
               key={turn.id}
-              className="bg-surface rounded-lg border border-border-default/20"
+              className="bg-zinc-800 rounded-lg border border-zinc-700/20"
             >
               <button
                 onClick={() => toggleTurn(turn)}
                 className="w-full flex items-center gap-2 px-3 py-2 text-left"
               >
-                <span className="text-[10px] text-text-tertiary font-mono shrink-0 w-12">
+                <span className="text-[10px] text-zinc-500 font-mono shrink-0 w-12">
                   Turn {displayTurnNumber}
                 </span>
-                {time && <span className="text-[10px] text-text-disabled shrink-0">{time}</span>}
-                <span className="text-[11px] text-text-secondary truncate flex-1">
+                {time && <span className="text-[10px] text-zinc-600 shrink-0">{time}</span>}
+                <span className="text-[11px] text-zinc-400 truncate flex-1">
                   {promptPreview || '(no prompt)'}
                 </span>
                 <span className={`text-[10px] shrink-0 ${statusColor}`}>●</span>
-                <span className="text-[10px] text-text-disabled shrink-0">{durationStr}</span>
+                <span className="text-[10px] text-zinc-600 shrink-0">{durationStr}</span>
                 <ChevronDown
-                  className={`w-3 h-3 text-text-disabled shrink-0 transition-transform ${
+                  className={`w-3 h-3 text-zinc-600 shrink-0 transition-transform ${
                     isExpanded ? '' : '-rotate-90'
                   }`}
                 />
               </button>
 
               {isExpanded && (
-                <div className="px-3 pb-2.5 border-t border-border-default/20 pt-2 space-y-2">
+                <div className="px-3 pb-2.5 border-t border-zinc-700/20 pt-2 space-y-2">
                   {/* User Prompt full */}
                   {turn.userPrompt && (
                     <div>
-                      <div className="text-[10px] text-text-disabled mb-0.5">USER</div>
-                      <div className="text-[11px] text-text-secondary whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto bg-deep/30 rounded p-2">
+                      <div className="text-[10px] text-zinc-600 mb-0.5">USER</div>
+                      <div className="text-[11px] text-zinc-400 whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto bg-zinc-900/30 rounded p-2">
                         {turn.userPrompt.length > 500
                           ? turn.userPrompt.substring(0, 500) + '...'
                           : turn.userPrompt}
@@ -132,10 +132,10 @@ export const TurnTimeline: React.FC<TurnTimelineProps> = ({ turns }) => {
 
                   {/* Tool calls */}
                   {isLoadingDetail ? (
-                    <div className="text-[11px] text-text-disabled">加载工具调用...</div>
+                    <div className="text-[11px] text-zinc-600">加载工具调用...</div>
                   ) : toolCalls && toolCalls.length > 0 ? (
                     <div>
-                      <div className="text-[10px] text-text-disabled mb-0.5">
+                      <div className="text-[10px] text-zinc-600 mb-0.5">
                         TOOLS ({toolCalls.length})
                       </div>
                       <div className="space-y-0.5">
@@ -144,8 +144,8 @@ export const TurnTimeline: React.FC<TurnTimelineProps> = ({ turns }) => {
                             <span className={tc.success ? 'text-green-500' : 'text-red-500'}>
                               {tc.success ? '✓' : '✗'}
                             </span>
-                            <span className="text-text-secondary font-mono">{tc.name}</span>
-                            <span className="text-text-disabled">{tc.durationMs}ms</span>
+                            <span className="text-zinc-400 font-mono">{tc.name}</span>
+                            <span className="text-zinc-600">{tc.durationMs}ms</span>
                             {tc.error && (
                               <span className="text-red-400 truncate text-[10px]">{tc.error}</span>
                             )}
@@ -154,14 +154,14 @@ export const TurnTimeline: React.FC<TurnTimelineProps> = ({ turns }) => {
                       </div>
                     </div>
                   ) : !isLoadingDetail && toolCalls ? (
-                    <div className="text-[11px] text-text-disabled">(无工具调用)</div>
+                    <div className="text-[11px] text-zinc-600">(无工具调用)</div>
                   ) : null}
 
                   {/* Assistant Response preview */}
                   {turn.assistantResponse && (
                     <div>
-                      <div className="text-[10px] text-text-disabled mb-0.5">ASSISTANT</div>
-                      <div className="text-[11px] text-text-tertiary whitespace-pre-wrap break-words max-h-[80px] overflow-y-auto bg-deep/30 rounded p-2">
+                      <div className="text-[10px] text-zinc-600 mb-0.5">ASSISTANT</div>
+                      <div className="text-[11px] text-zinc-500 whitespace-pre-wrap break-words max-h-[80px] overflow-y-auto bg-zinc-900/30 rounded p-2">
                         {turn.assistantResponse.length > 300
                           ? turn.assistantResponse.substring(0, 300) + '...'
                           : turn.assistantResponse}
@@ -170,7 +170,7 @@ export const TurnTimeline: React.FC<TurnTimelineProps> = ({ turns }) => {
                   )}
 
                   {/* Token usage */}
-                  <div className="flex items-center gap-3 text-[10px] text-text-disabled">
+                  <div className="flex items-center gap-3 text-[10px] text-zinc-600">
                     <span>输入: {turn.totalInputTokens.toLocaleString()}</span>
                     <span>输出: {turn.totalOutputTokens.toLocaleString()}</span>
                     {turn.iterationCount > 1 && (

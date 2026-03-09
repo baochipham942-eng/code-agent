@@ -37,8 +37,8 @@ export const FormField: React.FC<FormFieldProps> = ({
   htmlFor,
 }) => {
   const labelClasses = labelSize === 'sm'
-    ? 'text-sm text-text-secondary'
-    : 'text-sm font-medium text-text-primary';
+    ? 'text-sm text-zinc-400'
+    : 'text-sm font-medium text-zinc-200';
 
   // Clone child and inject error prop
   const enhancedChild = isValidElement(children)
@@ -61,7 +61,7 @@ export const FormField: React.FC<FormFieldProps> = ({
       </label>
       {enhancedChild}
       {hint && !error && (
-        <p className="mt-1 text-xs text-text-tertiary">{hint}</p>
+        <p className="mt-1 text-xs text-zinc-500">{hint}</p>
       )}
       {error && (
         <p className="mt-1 text-xs text-red-400">{error}</p>

@@ -278,7 +278,7 @@ export const MemoryTab: React.FC = () => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-48">
-        <Loader2 className="w-6 h-6 animate-spin text-text-secondary" />
+        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
       </div>
     );
   }
@@ -287,10 +287,10 @@ export const MemoryTab: React.FC = () => {
     <div className="space-y-4">
       {/* Header */}
       <div>
-        <h3 className="text-sm font-medium text-text-primary mb-1">
+        <h3 className="text-sm font-medium text-zinc-200 mb-1">
           {(t.memory as Record<string, string>)?.title || '记忆管理'}
         </h3>
-        <p className="text-xs text-text-secondary">
+        <p className="text-xs text-zinc-400">
           {(t.memory as Record<string, string>)?.description ||
             '查看和管理 AI 记住的关于你的信息'}
         </p>
@@ -299,21 +299,21 @@ export const MemoryTab: React.FC = () => {
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-4 gap-2">
-          <div className="bg-surface rounded-lg p-2 text-center">
-            <div className="text-lg font-bold text-text-primary">{stats.total}</div>
-            <div className="text-xs text-text-secondary">总计</div>
+          <div className="bg-zinc-800 rounded-lg p-2 text-center">
+            <div className="text-lg font-bold text-zinc-200">{stats.total}</div>
+            <div className="text-xs text-zinc-400">总计</div>
           </div>
-          <div className="bg-surface rounded-lg p-2 text-center">
+          <div className="bg-zinc-800 rounded-lg p-2 text-center">
             <div className="text-lg font-bold text-indigo-400">{stats.explicitCount}</div>
-            <div className="text-xs text-text-secondary">手动添加</div>
+            <div className="text-xs text-zinc-400">手动添加</div>
           </div>
-          <div className="bg-surface rounded-lg p-2 text-center">
+          <div className="bg-zinc-800 rounded-lg p-2 text-center">
             <div className="text-lg font-bold text-cyan-400">{stats.learnedCount}</div>
-            <div className="text-xs text-text-secondary">自动学习</div>
+            <div className="text-xs text-zinc-400">自动学习</div>
           </div>
-          <div className="bg-surface rounded-lg p-2 text-center">
+          <div className="bg-zinc-800 rounded-lg p-2 text-center">
             <div className="text-lg font-bold text-amber-400">{stats.recentlyAdded}</div>
-            <div className="text-xs text-text-secondary">近 7 天</div>
+            <div className="text-xs text-zinc-400">近 7 天</div>
           </div>
         </div>
       )}
@@ -321,7 +321,7 @@ export const MemoryTab: React.FC = () => {
       {/* Search & Actions */}
       <div className="flex items-center gap-2">
         <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
           <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -355,29 +355,29 @@ export const MemoryTab: React.FC = () => {
           const count = categoryMemories.length;
 
           return (
-            <div key={cat.key} className="bg-surface rounded-lg overflow-hidden">
+            <div key={cat.key} className="bg-zinc-800 rounded-lg overflow-hidden">
               {/* Category Header */}
               <button
                 onClick={() => toggleCategory(cat.key)}
-                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800 transition-colors"
               >
                 {isExpanded ? (
-                  <ChevronDown className="w-4 h-4 text-text-secondary" />
+                  <ChevronDown className="w-4 h-4 text-zinc-400" />
                 ) : (
-                  <ChevronRight className="w-4 h-4 text-text-secondary" />
+                  <ChevronRight className="w-4 h-4 text-zinc-400" />
                 )}
                 <span className="text-base">{cat.icon}</span>
-                <span className="text-sm font-medium text-text-primary flex-1 text-left">
+                <span className="text-sm font-medium text-zinc-200 flex-1 text-left">
                   {getCategoryLabel(cat.labelKey)}
                 </span>
-                <span className="text-xs text-text-tertiary">{count} 条</span>
+                <span className="text-xs text-zinc-500">{count} 条</span>
                 {count > 0 && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       setClearingCategory(cat.key);
                     }}
-                    className="p-1 hover:bg-active rounded text-text-tertiary hover:text-red-400 transition-colors"
+                    className="p-1 hover:bg-zinc-600 rounded text-zinc-500 hover:text-red-400 transition-colors"
                     title="清空分类"
                   >
                     <Trash2 className="w-3 h-3" />
@@ -389,7 +389,7 @@ export const MemoryTab: React.FC = () => {
               {isExpanded && (
                 <div className="px-3 pb-2 space-y-1">
                   {count === 0 ? (
-                    <p className="text-xs text-text-tertiary py-2 text-center">
+                    <p className="text-xs text-zinc-500 py-2 text-center">
                       暂无记忆
                     </p>
                   ) : (
@@ -422,9 +422,9 @@ export const MemoryTab: React.FC = () => {
             className="absolute inset-0 bg-black/60"
             onClick={() => setClearingCategory(null)}
           />
-          <div className="relative bg-deep rounded-lg p-4 max-w-sm border border-border-default">
-            <h4 className="text-sm font-medium text-text-primary mb-2">确认清空</h4>
-            <p className="text-xs text-text-secondary mb-4">
+          <div className="relative bg-zinc-900 rounded-lg p-4 max-w-sm border border-zinc-700">
+            <h4 className="text-sm font-medium text-zinc-200 mb-2">确认清空</h4>
+            <p className="text-xs text-zinc-400 mb-4">
               确定要清空「
               {CATEGORIES.find((c) => c.key === clearingCategory)?.icon}{' '}
               {getCategoryLabel(

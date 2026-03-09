@@ -64,15 +64,15 @@ export const PreviewPanel: React.FC = () => {
 
   return (
     <div
-      className={`flex flex-col bg-deep border-l border-border-default transition-all duration-300 ${
+      className={`flex flex-col bg-zinc-900 border-l border-zinc-700 transition-all duration-300 ${
         isMaximized ? 'fixed inset-0 z-50' : 'w-[500px]'
       }`}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border-default bg-surface">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700 bg-zinc-800">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-green-500" />
-          <span className="text-sm font-medium text-text-primary truncate max-w-[200px]">
+          <span className="text-sm font-medium text-zinc-200 truncate max-w-[200px]">
             {fileName}
           </span>
         </div>
@@ -80,21 +80,21 @@ export const PreviewPanel: React.FC = () => {
         <div className="flex items-center gap-1">
           <button
             onClick={handleRefresh}
-            className="p-1.5 rounded hover:bg-active text-text-secondary hover:text-text-primary transition-colors"
+            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
             title="刷新"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
           <button
             onClick={handleOpenInBrowser}
-            className="p-1.5 rounded hover:bg-active text-text-secondary hover:text-text-primary transition-colors"
+            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
             title="在浏览器中打开"
           >
             <ExternalLink className="w-4 h-4" />
           </button>
           <button
             onClick={() => setIsMaximized(!isMaximized)}
-            className="p-1.5 rounded hover:bg-active text-text-secondary hover:text-text-primary transition-colors"
+            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
             title={isMaximized ? '还原' : '最大化'}
           >
             {isMaximized ? (
@@ -105,7 +105,7 @@ export const PreviewPanel: React.FC = () => {
           </button>
           <button
             onClick={closePreview}
-            className="p-1.5 rounded hover:bg-active text-text-secondary hover:text-text-primary transition-colors"
+            className="p-1.5 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
             title="关闭"
           >
             <X className="w-4 h-4" />
@@ -116,14 +116,14 @@ export const PreviewPanel: React.FC = () => {
       {/* Content */}
       <div className="flex-1 overflow-hidden bg-white">
         {isLoading ? (
-          <div className="flex items-center justify-center h-full bg-elevated">
+          <div className="flex items-center justify-center h-full bg-zinc-700">
             <div className="flex flex-col items-center gap-3">
-              <RefreshCw className="w-8 h-8 text-text-secondary animate-spin" />
-              <span className="text-sm text-text-secondary">加载中...</span>
+              <RefreshCw className="w-8 h-8 text-zinc-400 animate-spin" />
+              <span className="text-sm text-zinc-400">加载中...</span>
             </div>
           </div>
         ) : error ? (
-          <div className="flex items-center justify-center h-full bg-elevated">
+          <div className="flex items-center justify-center h-full bg-zinc-700">
             <div className="flex flex-col items-center gap-3 text-center px-4">
               <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center">
                 <X className="w-6 h-6 text-red-400" />
@@ -131,7 +131,7 @@ export const PreviewPanel: React.FC = () => {
               <span className="text-sm text-red-400">{error}</span>
               <button
                 onClick={handleRefresh}
-                className="px-4 py-2 rounded-lg bg-active text-text-primary text-sm hover:bg-active transition-colors"
+                className="px-4 py-2 rounded-lg bg-zinc-600 text-zinc-200 text-sm hover:bg-zinc-600 transition-colors"
               >
                 重试
               </button>
@@ -148,8 +148,8 @@ export const PreviewPanel: React.FC = () => {
       </div>
 
       {/* Footer - File path */}
-      <div className="px-4 py-2 border-t border-border-default bg-surface">
-        <span className="text-xs text-text-tertiary truncate block">
+      <div className="px-4 py-2 border-t border-zinc-700 bg-zinc-800">
+        <span className="text-xs text-zinc-500 truncate block">
           {previewFilePath}
         </span>
       </div>

@@ -32,18 +32,18 @@ const CollapsibleSection: React.FC<{
     if (next && onToggle) onToggle();
   };
   return (
-    <div className="border border-border-default rounded-lg overflow-hidden">
+    <div className="border border-zinc-700 rounded-lg overflow-hidden">
       <button
         onClick={handleToggle}
-        className="w-full flex items-center justify-between p-2.5 bg-surface hover:bg-hover transition-colors"
+        className="w-full flex items-center justify-between p-2.5 bg-zinc-800 hover:bg-zinc-700 transition-colors"
       >
         <div className="flex items-center gap-2">
-          {open ? <ChevronDown className="w-3.5 h-3.5 text-text-secondary" /> : <ChevronRight className="w-3.5 h-3.5 text-text-secondary" />}
-          <span className="text-xs font-medium text-text-secondary">{title}</span>
+          {open ? <ChevronDown className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />}
+          <span className="text-xs font-medium text-zinc-400">{title}</span>
         </div>
-        {badge && <span className="text-[10px] text-text-tertiary">{badge}</span>}
+        {badge && <span className="text-[10px] text-zinc-500">{badge}</span>}
       </button>
-      {open && <div className="p-2.5 border-t border-border-default">{children}</div>}
+      {open && <div className="p-2.5 border-t border-zinc-700">{children}</div>}
     </div>
   );
 };
@@ -82,11 +82,11 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
           onToggle={loadSystemPrompt}
         >
           {systemPrompt ? (
-            <pre className="text-xs text-text-secondary whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
+            <pre className="text-xs text-zinc-400 whitespace-pre-wrap break-words max-h-64 overflow-y-auto">
               {systemPrompt}
             </pre>
           ) : (
-            <div className="text-xs text-text-tertiary text-center py-2">
+            <div className="text-xs text-zinc-500 text-center py-2">
               {systemPromptLoading ? '加载中...' : '点击展开加载系统提示词'}
             </div>
           )}
@@ -95,7 +95,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
 
       {/* User Prompt */}
       <CollapsibleSection title="用户输入" badge={`${turn.userPromptTokens} tokens`} defaultOpen>
-        <pre className="text-xs text-text-secondary whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+        <pre className="text-xs text-zinc-400 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
           {turn.userPrompt}
         </pre>
       </CollapsibleSection>
@@ -105,12 +105,12 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
         <CollapsibleSection title="模型调用" badge={`${modelCalls.length} 次`}>
           <div className="space-y-1">
             {modelCalls.map((mc) => (
-              <div key={mc.id} className="flex items-center justify-between text-xs p-1.5 bg-deep rounded">
+              <div key={mc.id} className="flex items-center justify-between text-xs p-1.5 bg-zinc-900 rounded">
                 <div className="flex items-center gap-2">
-                  <span className="text-text-secondary">{mc.provider}/{mc.model}</span>
-                  <span className="text-text-tertiary">{mc.responseType}</span>
+                  <span className="text-zinc-400">{mc.provider}/{mc.model}</span>
+                  <span className="text-zinc-500">{mc.responseType}</span>
                 </div>
-                <div className="flex items-center gap-3 text-text-tertiary">
+                <div className="flex items-center gap-3 text-zinc-500">
                   <span>{mc.latencyMs}ms</span>
                   <span>{mc.toolCallCount > 0 ? `${mc.toolCallCount} tools` : ''}</span>
                 </div>
@@ -125,17 +125,17 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
         <CollapsibleSection title="工具调用" badge={`${toolCalls.length} 次`} defaultOpen>
           <div className="space-y-1">
             {toolCalls.map((tc) => (
-              <div key={tc.id} className="flex items-center justify-between text-xs p-1.5 bg-deep rounded">
+              <div key={tc.id} className="flex items-center justify-between text-xs p-1.5 bg-zinc-900 rounded">
                 <div className="flex items-center gap-2">
                   {tc.success ? (
                     <CheckCircle className="w-3 h-3 text-green-400 shrink-0" />
                   ) : (
                     <XCircle className="w-3 h-3 text-red-400 shrink-0" />
                   )}
-                  <span className="text-text-secondary font-mono">{tc.name}</span>
+                  <span className="text-zinc-400 font-mono">{tc.name}</span>
                   {tc.parallel && <span className="text-[9px] bg-blue-500/20 text-blue-400 px-1 rounded">并行</span>}
                 </div>
-                <div className="flex items-center gap-2 text-text-tertiary">
+                <div className="flex items-center gap-2 text-zinc-500">
                   <span>{tc.durationMs}ms</span>
                 </div>
               </div>
@@ -147,7 +147,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
       {/* Assistant Response */}
       {turn.assistantResponse && (
         <CollapsibleSection title="助手回复" badge={`${turn.assistantResponseTokens} tokens`}>
-          <pre className="text-xs text-text-secondary whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+          <pre className="text-xs text-zinc-400 whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
             {turn.assistantResponse}
           </pre>
         </CollapsibleSection>
@@ -156,7 +156,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
       {/* Thinking */}
       {turn.thinkingContent && (
         <CollapsibleSection title="思考过程">
-          <pre className="text-xs text-text-secondary whitespace-pre-wrap break-words max-h-32 overflow-y-auto italic">
+          <pre className="text-xs text-zinc-400 whitespace-pre-wrap break-words max-h-32 overflow-y-auto italic">
             {turn.thinkingContent}
           </pre>
         </CollapsibleSection>
@@ -165,24 +165,24 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
       {/* Outcome */}
       <CollapsibleSection title="结果评判" defaultOpen>
         <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="bg-deep p-2 rounded">
-            <span className="text-text-tertiary">状态</span>
-            <p className="text-text-secondary font-medium mt-0.5">{turn.outcome.status}</p>
+          <div className="bg-zinc-900 p-2 rounded">
+            <span className="text-zinc-500">状态</span>
+            <p className="text-zinc-400 font-medium mt-0.5">{turn.outcome.status}</p>
           </div>
-          <div className="bg-deep p-2 rounded">
-            <span className="text-text-tertiary">置信度</span>
-            <p className="text-text-secondary font-medium mt-0.5">{(turn.outcome.confidence * 100).toFixed(0)}%</p>
+          <div className="bg-zinc-900 p-2 rounded">
+            <span className="text-zinc-500">置信度</span>
+            <p className="text-zinc-400 font-medium mt-0.5">{(turn.outcome.confidence * 100).toFixed(0)}%</p>
           </div>
-          <div className="bg-deep p-2 rounded">
-            <span className="text-text-tertiary">工具成功率</span>
-            <p className="text-text-secondary font-medium mt-0.5">
+          <div className="bg-zinc-900 p-2 rounded">
+            <span className="text-zinc-500">工具成功率</span>
+            <p className="text-zinc-400 font-medium mt-0.5">
               {(turn.outcome.signals.toolSuccessRate * 100).toFixed(0)}%
               ({turn.outcome.signals.toolCallCount} calls)
             </p>
           </div>
-          <div className="bg-deep p-2 rounded">
-            <span className="text-text-tertiary">错误/恢复</span>
-            <p className="text-text-secondary font-medium mt-0.5">
+          <div className="bg-zinc-900 p-2 rounded">
+            <span className="text-zinc-500">错误/恢复</span>
+            <p className="text-zinc-400 font-medium mt-0.5">
               {turn.outcome.signals.errorCount} / {turn.outcome.signals.errorRecovered}
             </p>
           </div>

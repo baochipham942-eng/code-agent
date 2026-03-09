@@ -47,7 +47,7 @@ function getWarningColors(level: ContextHealthWarningLevel) {
         iconColor: 'text-emerald-400',
         barColor: 'bg-emerald-500',
         bgColor: '',
-        textColor: 'text-text-secondary',
+        textColor: 'text-zinc-400',
       };
   }
 }
@@ -75,19 +75,19 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
   };
 
   return (
-    <div className={`border-b border-border-default ${colors.bgColor}`}>
+    <div className={`border-b border-zinc-700 ${colors.bgColor}`}>
       {/* 头部 - 可点击折叠 */}
       <button
         onClick={handleToggle}
-        className="w-full flex items-center gap-2 p-3 hover:bg-surface transition-colors"
+        className="w-full flex items-center gap-2 p-3 hover:bg-zinc-800 transition-colors"
       >
         {isExpanded ? (
-          <ChevronDown className="w-4 h-4 text-text-tertiary" />
+          <ChevronDown className="w-4 h-4 text-zinc-500" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-text-tertiary" />
+          <ChevronRight className="w-4 h-4 text-zinc-500" />
         )}
         <IconComponent className={`w-4 h-4 ${colors.iconColor}`} />
-        <span className="text-sm font-medium text-text-primary">上下文健康度</span>
+        <span className="text-sm font-medium text-zinc-200">上下文健康度</span>
         <span className={`ml-auto text-sm font-mono ${colors.textColor}`}>
           {health.usagePercent.toFixed(1)}%
         </span>
@@ -98,14 +98,14 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
         <div className="px-3 pb-3 space-y-3">
           {/* 进度条 */}
           <div className="space-y-1.5">
-            <div className="h-2 bg-elevated rounded-full overflow-hidden">
+            <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
               <div
                 className={`h-full ${colors.barColor} transition-all duration-300`}
                 style={{ width: `${Math.min(health.usagePercent, 100)}%` }}
               />
             </div>
             <div className="flex justify-between text-xs">
-              <span className="text-text-secondary font-mono">
+              <span className="text-zinc-400 font-mono">
                 {formatTokens(health.currentTokens)} / {formatTokens(health.maxTokens)} tokens
               </span>
             </div>
@@ -115,7 +115,7 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
           <div>
             <button
               onClick={() => setShowBreakdown(!showBreakdown)}
-              className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors"
+              className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-400 transition-colors"
             >
               {showBreakdown ? (
                 <ChevronDown className="w-3 h-3" />
@@ -147,11 +147,11 @@ export const ContextHealthPanel: React.FC<ContextHealthPanelProps> = ({
           </div>
 
           {/* 预估剩余轮数 */}
-          <div className="flex items-center gap-1.5 text-xs text-text-tertiary">
+          <div className="flex items-center gap-1.5 text-xs text-zinc-500">
             <Sparkles className="w-3 h-3" />
             <span>
               预估剩余:{' '}
-              <span className="text-text-secondary">~{health.estimatedTurnsRemaining} 轮</span>
+              <span className="text-zinc-400">~{health.estimatedTurnsRemaining} 轮</span>
             </span>
           </div>
 
@@ -191,8 +191,8 @@ const BreakdownItem: React.FC<{
 
   return (
     <div className="flex justify-between text-xs">
-      <span className="text-text-tertiary">{label}</span>
-      <span className="text-text-secondary font-mono">
+      <span className="text-zinc-500">{label}</span>
+      <span className="text-zinc-400 font-mono">
         {formatTokens(tokens)} ({percent}%)
       </span>
     </div>

@@ -90,7 +90,7 @@ export const ConfirmActionModal: React.FC<Props> = ({ request, onClose }) => {
       }
     >
       {/* Message with proper whitespace handling */}
-      <div className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">
+      <div className="text-sm text-zinc-400 leading-relaxed whitespace-pre-wrap">
         {request.message}
       </div>
     </Modal>

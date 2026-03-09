@@ -125,7 +125,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           className="
             absolute bottom-full left-0 mb-1
             w-48 py-1
-            bg-elevated border border-border-default rounded-lg
+            bg-zinc-700 border border-zinc-700 rounded-lg
             shadow-xl z-50
           "
         >
@@ -138,7 +138,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
               onClick={() => handleSelect(opt)}
               className={`
                 w-full text-left px-3 py-1.5 text-xs
-                hover:bg-hover transition-colors
+                hover:bg-zinc-700 transition-colors
                 ${displayModel === opt.model ? 'text-purple-400' : 'text-gray-300'}
               `}
             >
@@ -150,10 +150,10 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           ))}
           {isOverridden && (
             <>
-              <div className="border-t border-border-default my-1" />
+              <div className="border-t border-zinc-700 my-1" />
               <button
                 onClick={handleClear}
-                className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 hover:bg-hover"
+                className="w-full text-left px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 hover:bg-zinc-700"
               >
                 恢复默认模型
               </button>

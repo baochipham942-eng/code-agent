@@ -220,10 +220,10 @@ export const MemoryConflictDetector: React.FC<MemoryConflictDetectorProps> = ({
 
   if (conflicts.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-8 text-text-tertiary">
+      <div className="flex flex-col items-center justify-center py-8 text-zinc-500">
         <Check className="w-8 h-8 mb-2 text-green-500" />
         <p className="text-sm">没有检测到冲突</p>
-        <p className="text-xs text-text-disabled mt-1">所有记忆都是一致的</p>
+        <p className="text-xs text-zinc-600 mt-1">所有记忆都是一致的</p>
       </div>
     );
   }
@@ -231,9 +231,9 @@ export const MemoryConflictDetector: React.FC<MemoryConflictDetectorProps> = ({
   return (
     <div className="space-y-3">
       {/* 冲突统计 */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-surface rounded-lg">
+      <div className="flex items-center gap-2 px-3 py-2 bg-zinc-800 rounded-lg">
         <AlertTriangle className="w-4 h-4 text-amber-400" />
-        <span className="text-sm text-text-secondary">
+        <span className="text-sm text-zinc-400">
           检测到 {conflicts.length} 个潜在冲突
         </span>
         <div className="flex items-center gap-2 ml-auto text-xs">
@@ -253,30 +253,30 @@ export const MemoryConflictDetector: React.FC<MemoryConflictDetectorProps> = ({
           return (
             <div
               key={conflict.id}
-              className="bg-surface rounded-lg overflow-hidden"
+              className="bg-zinc-800 rounded-lg overflow-hidden"
             >
               {/* 冲突标题 */}
               <button
                 onClick={() => toggleConflict(conflict.id)}
-                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800 transition-colors"
               >
                 {isExpanded ? (
-                  <ChevronDown className="w-4 h-4 text-text-secondary" />
+                  <ChevronDown className="w-4 h-4 text-zinc-400" />
                 ) : (
-                  <ChevronRight className="w-4 h-4 text-text-secondary" />
+                  <ChevronRight className="w-4 h-4 text-zinc-400" />
                 )}
 
                 <span className={`text-xs px-1.5 py-0.5 rounded ${severityConfig.bgColor} ${severityConfig.color}`}>
                   {severityConfig.label}
                 </span>
 
-                <span className="text-sm text-text-secondary flex-1 text-left truncate">
+                <span className="text-sm text-zinc-400 flex-1 text-left truncate">
                   {conflict.type === 'duplicate' && '重复记忆'}
                   {conflict.type === 'contradiction' && '矛盾记忆'}
                   {conflict.type === 'update' && '可能过时'}
                 </span>
 
-                <span className="text-xs text-text-tertiary">
+                <span className="text-xs text-zinc-500">
                   {CATEGORY_ICONS[conflict.memories[0].category]}
                 </span>
               </button>
@@ -284,7 +284,7 @@ export const MemoryConflictDetector: React.FC<MemoryConflictDetectorProps> = ({
               {/* 冲突详情 */}
               {isExpanded && (
                 <div className="px-3 pb-3 space-y-2">
-                  <p className="text-xs text-text-secondary">{conflict.description}</p>
+                  <p className="text-xs text-zinc-400">{conflict.description}</p>
 
                   {/* 冲突的记忆 */}
                   <div className="space-y-1.5">
@@ -294,7 +294,7 @@ export const MemoryConflictDetector: React.FC<MemoryConflictDetectorProps> = ({
                         className={`flex items-start gap-2 p-2 rounded cursor-pointer transition-colors ${
                           selected === memory.id
                             ? 'bg-indigo-500/20 border border-indigo-500/50'
-                            : 'bg-deep hover:bg-deep'
+                            : 'bg-zinc-900 hover:bg-zinc-800'
                         }`}
                       >
                         <input
@@ -305,10 +305,10 @@ export const MemoryConflictDetector: React.FC<MemoryConflictDetectorProps> = ({
                           className="mt-1"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-text-primary line-clamp-2">
+                          <p className="text-sm text-zinc-200 line-clamp-2">
                             {memory.content}
                           </p>
-                          <div className="flex items-center gap-2 mt-1 text-xs text-text-tertiary">
+                          <div className="flex items-center gap-2 mt-1 text-xs text-zinc-500">
                             <span>
                               {new Date(memory.createdAt).toLocaleDateString('zh-CN')}
                             </span>

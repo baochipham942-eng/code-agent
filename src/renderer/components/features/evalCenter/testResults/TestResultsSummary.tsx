@@ -45,7 +45,7 @@ export const TestResultsSummary: React.FC<Props> = ({ report }) => {
           className={`${card.bg} border ${card.border} rounded-lg p-3 text-center`}
         >
           <div className={`text-2xl font-bold ${card.color}`}>{card.value}</div>
-          <div className="text-[11px] text-text-secondary mt-1">{card.label}</div>
+          <div className="text-[11px] text-zinc-400 mt-1">{card.label}</div>
         </div>
       ))}
     </div>

@@ -61,22 +61,22 @@ const FindingItem: React.FC<{ finding: Finding }> = ({ finding }) => {
   const Icon = config.icon;
 
   return (
-    <div className="border border-border-default rounded-lg mb-2 bg-surface">
+    <div className="border border-zinc-700 rounded-lg mb-2 bg-zinc-800">
       {/* Header */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-start gap-2 p-2 hover:bg-active/20 transition-colors rounded-lg"
+        className="w-full flex items-start gap-2 p-2 hover:bg-zinc-600/20 transition-colors rounded-lg"
       >
         {expanded ? (
-          <ChevronDown className="w-4 h-4 text-text-secondary mt-0.5 flex-shrink-0" />
+          <ChevronDown className="w-4 h-4 text-zinc-400 mt-0.5 flex-shrink-0" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-text-secondary mt-0.5 flex-shrink-0" />
+          <ChevronRight className="w-4 h-4 text-zinc-400 mt-0.5 flex-shrink-0" />
         )}
         <Icon className={`w-4 h-4 ${config.color} mt-0.5 flex-shrink-0`} />
         <div className="flex-1 text-left">
-          <span className="text-sm text-text-primary block">{finding.title}</span>
+          <span className="text-sm text-zinc-200 block">{finding.title}</span>
           {!expanded && (
-            <span className="text-xs text-text-tertiary line-clamp-1">
+            <span className="text-xs text-zinc-500 line-clamp-1">
               {finding.content}
             </span>
           )}
@@ -88,17 +88,17 @@ const FindingItem: React.FC<{ finding: Finding }> = ({ finding }) => {
 
       {/* Expanded content */}
       {expanded && (
-        <div className="px-3 pb-3 pt-1 border-t border-border-default">
-          <p className="text-sm text-text-secondary whitespace-pre-wrap">
+        <div className="px-3 pb-3 pt-1 border-t border-zinc-700">
+          <p className="text-sm text-zinc-400 whitespace-pre-wrap">
             {finding.content}
           </p>
           {finding.source && (
-            <div className="mt-2 flex items-center gap-1 text-xs text-text-tertiary">
+            <div className="mt-2 flex items-center gap-1 text-xs text-zinc-500">
               <ExternalLink className="w-3 h-3" />
               <span className="truncate">{finding.source}</span>
             </div>
           )}
-          <div className="mt-2 text-xs text-text-disabled">
+          <div className="mt-2 text-xs text-zinc-600">
             {new Date(finding.timestamp).toLocaleString()}
           </div>
         </div>
@@ -133,7 +133,7 @@ const CategoryTabs: React.FC<{
   ];
 
   return (
-    <div className="flex flex-wrap gap-1 p-2 border-b border-border-default">
+    <div className="flex flex-wrap gap-1 p-2 border-b border-zinc-700">
       {categories.map((cat) => {
         if (cat === 'all') {
           return (
@@ -142,8 +142,8 @@ const CategoryTabs: React.FC<{
               onClick={() => onChange(cat)}
               className={`px-2 py-1 text-xs rounded-md transition-colors ${
                 activeCategory === cat
-                  ? 'bg-active text-text-primary'
-                  : 'text-text-secondary hover:text-text-primary hover:bg-hover'
+                  ? 'bg-zinc-600 text-zinc-200'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700'
               }`}
             >
               All ({counts.all})
@@ -161,8 +161,8 @@ const CategoryTabs: React.FC<{
             onClick={() => onChange(cat)}
             className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
               activeCategory === cat
-                ? 'bg-active text-text-primary'
-                : 'text-text-secondary hover:text-text-primary hover:bg-hover'
+                ? 'bg-zinc-600 text-zinc-200'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700'
             }`}
           >
             <Icon className={`w-3 h-3 ${config.color}`} />
@@ -177,9 +177,9 @@ const CategoryTabs: React.FC<{
 // Empty state
 const EmptyState: React.FC = () => (
   <div className="flex flex-col items-center justify-center h-full text-center p-4">
-    <FileSearch className="w-12 h-12 text-text-disabled mb-3" />
-    <p className="text-sm text-text-secondary">No findings yet</p>
-    <p className="text-xs text-text-tertiary mt-1">
+    <FileSearch className="w-12 h-12 text-zinc-600 mb-3" />
+    <p className="text-sm text-zinc-400">No findings yet</p>
+    <p className="text-xs text-zinc-500 mt-1">
       Use findings_write to save research discoveries
     </p>
   </div>
@@ -205,13 +205,13 @@ export const FindingsPanel: React.FC<FindingsPanelProps> = ({
   );
 
   return (
-    <div className="w-80 border-l border-border-default bg-deep flex flex-col">
+    <div className="w-80 border-l border-zinc-700 bg-zinc-900 flex flex-col">
       {/* Header */}
-      <div className="p-3 border-b border-border-default">
+      <div className="p-3 border-b border-zinc-700">
         <div className="flex items-center gap-2">
           <Lightbulb className="w-4 h-4 text-yellow-400" />
-          <span className="text-sm font-medium text-text-primary">Findings</span>
-          <span className="ml-auto text-xs text-text-tertiary">
+          <span className="text-sm font-medium text-zinc-200">Findings</span>
+          <span className="ml-auto text-xs text-zinc-500">
             {findings.length} total
           </span>
         </div>

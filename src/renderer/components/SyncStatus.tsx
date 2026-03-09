@@ -19,7 +19,7 @@ export const SyncStatusIndicator: React.FC = () => {
       return <AlertCircle className="w-3.5 h-3.5 text-red-400" />;
     }
     if (!syncStatus.isEnabled) {
-      return <CloudOff className="w-3.5 h-3.5 text-text-tertiary" />;
+      return <CloudOff className="w-3.5 h-3.5 text-zinc-500" />;
     }
     return <Cloud className="w-3.5 h-3.5 text-green-400" />;
   };
@@ -57,7 +57,7 @@ export const SyncStatusIndicator: React.FC = () => {
 
   return (
     <div
-      className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-secondary"
+      className="flex items-center gap-1.5 px-2 py-1 text-xs text-zinc-400"
       title={getTooltip()}
     >
       {getStatusIcon()}

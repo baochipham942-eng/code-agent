@@ -164,7 +164,7 @@ const StageNode: React.FC<{
 }> = ({ stage, totalCount, isFirst }) => {
   const retentionRate = totalCount > 0 ? stage.count / totalCount : 1;
   const colors = isFirst
-    ? { border: 'border-border-strong/60', bg: 'bg-hover', text: 'text-text-secondary', countText: 'text-text-primary' }
+    ? { border: 'border-zinc-600/60', bg: 'bg-zinc-700', text: 'text-zinc-400', countText: 'text-zinc-200' }
     : getNodeColors(retentionRate);
 
   return (
@@ -178,7 +178,7 @@ const StageNode: React.FC<{
         <span className={`text-lg font-bold tabular-nums mt-1 ${colors.countText}`}>
           {stage.count}
         </span>
-        <span className="text-[9px] text-text-tertiary mt-0.5 leading-tight">
+        <span className="text-[9px] text-zinc-500 mt-0.5 leading-tight">
           {stage.sublabel}
         </span>
       </div>
@@ -246,7 +246,7 @@ export const FailureFunnel: React.FC<Props> = ({ cases }) => {
 
   if (cases.length === 0) {
     return (
-      <div className="flex items-center justify-center py-6 text-text-tertiary text-xs">
+      <div className="flex items-center justify-center py-6 text-zinc-500 text-xs">
         暂无数据
       </div>
     );
@@ -255,10 +255,10 @@ export const FailureFunnel: React.FC<Props> = ({ cases }) => {
   const total = cases.length;
 
   return (
-    <div className="bg-surface border border-border-default/20 rounded-lg overflow-hidden">
-      <div className="px-3 py-2 border-b border-border-default/20">
-        <span className="text-xs font-medium text-text-secondary">失败漏斗</span>
-        <span className="text-[10px] text-text-tertiary ml-2">{total} 用例 · 流程图</span>
+    <div className="bg-zinc-800 border border-zinc-700/20 rounded-lg overflow-hidden">
+      <div className="px-3 py-2 border-b border-zinc-700/20">
+        <span className="text-xs font-medium text-zinc-400">失败漏斗</span>
+        <span className="text-[10px] text-zinc-500 ml-2">{total} 用例 · 流程图</span>
       </div>
 
       <div className="p-4 overflow-x-auto">

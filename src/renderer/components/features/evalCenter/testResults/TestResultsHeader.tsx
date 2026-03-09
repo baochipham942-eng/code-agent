@@ -40,16 +40,16 @@ export const TestResultsHeader: React.FC<Props> = ({ report, reports, onSelectRe
           {scorePercent}%
         </div>
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-xs text-text-secondary">
-            <span className="font-medium text-text-secondary">{report.environment?.model || 'unknown'}</span>
-            <span className="text-text-disabled">·</span>
+          <div className="flex items-center gap-2 text-xs text-zinc-400">
+            <span className="font-medium text-zinc-400">{report.environment?.model || 'unknown'}</span>
+            <span className="text-zinc-600">·</span>
             <span>{report.environment?.generation || '-'}</span>
-            <span className="text-text-disabled">·</span>
+            <span className="text-zinc-600">·</span>
             <span>{formatTime(report.startTime)}</span>
-            <span className="text-text-disabled">·</span>
+            <span className="text-zinc-600">·</span>
             <span>{formatDuration(report.duration)}</span>
           </div>
-          <div className="text-[11px] text-text-tertiary mt-0.5">
+          <div className="text-[11px] text-zinc-500 mt-0.5">
             {report.total} 用例 · {report.performance?.totalToolCalls || 0} 工具调用 · {report.performance?.totalTurns || 0} 轮
           </div>
         </div>
@@ -58,13 +58,13 @@ export const TestResultsHeader: React.FC<Props> = ({ report, reports, onSelectRe
       {/* Report selector */}
       <div className="flex items-center gap-2">
         {isLoading && (
-          <svg className="animate-spin w-3.5 h-3.5 text-text-tertiary" viewBox="0 0 24 24" fill="none">
+          <svg className="animate-spin w-3.5 h-3.5 text-zinc-500" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
         )}
         <select
-          className="bg-elevated border border-border-default rounded-md px-2 py-1 text-xs text-text-secondary focus:outline-none focus:border-border-strong"
+          className="bg-zinc-700 border border-zinc-700 rounded-md px-2 py-1 text-xs text-zinc-400 focus:outline-none focus:border-zinc-600"
           value={reports.find(r => r.timestamp === report.startTime)?.filePath || ''}
           onChange={(e) => onSelectReport(e.target.value)}
         >

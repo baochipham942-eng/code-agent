@@ -130,12 +130,12 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
   };
 
   const selectClass =
-    'w-full bg-elevated border border-border-default rounded-lg px-3 py-2 text-sm text-text-primary ' +
+    'w-full bg-zinc-700 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 ' +
     'focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ' +
     'appearance-none cursor-pointer';
 
   const inputClass =
-    'w-full bg-elevated border border-border-default rounded-lg px-3 py-2 text-sm text-text-primary ' +
+    'w-full bg-zinc-700 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 ' +
     'focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500';
 
   return (
@@ -177,7 +177,7 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
 
         {/* Experiment Name */}
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-text-secondary">
+          <label className="block text-xs font-medium text-zinc-400">
             实验名称
           </label>
           <input
@@ -191,7 +191,7 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
 
         {/* Model Selection */}
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-text-secondary">
+          <label className="block text-xs font-medium text-zinc-400">
             模型选择
           </label>
           <select
@@ -209,11 +209,11 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
 
         {/* Dataset Selection — suites + subsets */}
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-text-secondary">
+          <label className="block text-xs font-medium text-zinc-400">
             测试集
           </label>
           {isLoadingCases ? (
-            <div className="flex items-center gap-2 px-3 py-2 text-xs text-text-tertiary">
+            <div className="flex items-center gap-2 px-3 py-2 text-xs text-zinc-500">
               <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -221,9 +221,9 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
               加载测试集...
             </div>
           ) : testCases.length === 0 && testSubsets.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-text-tertiary bg-surface rounded-lg border border-border-default">
+            <div className="px-3 py-2 text-xs text-zinc-500 bg-zinc-800 rounded-lg border border-zinc-700">
               未找到测试集。请在{' '}
-              <code className="bg-active px-1 rounded text-text-secondary">
+              <code className="bg-zinc-600 px-1 rounded text-zinc-400">
                 .code-agent/test-cases/
               </code>{' '}
               目录下创建测试用例。
@@ -258,7 +258,7 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
 
         {/* Trials Per Case */}
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-text-secondary">
+          <label className="block text-xs font-medium text-zinc-400">
             每用例重复次数
           </label>
           <input
@@ -272,20 +272,20 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
             }}
             className={inputClass}
           />
-          <p className="text-[10px] text-text-tertiary">范围 1-5，用于评估 pass@k 稳定性</p>
+          <p className="text-[10px] text-zinc-500">范围 1-5，用于评估 pass@k 稳定性</p>
         </div>
 
         {/* Git Commit */}
         <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-text-secondary">
+          <label className="block text-xs font-medium text-zinc-400">
             Git Commit
           </label>
-          <div className="flex items-center gap-2 px-3 py-2 bg-surface rounded-lg border border-border-default">
-            <svg className="w-3.5 h-3.5 text-text-tertiary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center gap-2 px-3 py-2 bg-zinc-800 rounded-lg border border-zinc-700">
+            <svg className="w-3.5 h-3.5 text-zinc-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                 d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
             </svg>
-            <span className="text-sm text-text-secondary font-mono truncate">
+            <span className="text-sm text-zinc-400 font-mono truncate">
               {gitCommit}
             </span>
           </div>

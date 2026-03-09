@@ -38,7 +38,7 @@ export const TodoBar: React.FC = () => {
     <div className="relative" ref={panelRef}>
       {/* Expanded Panel - grows upward */}
       {isExpanded && (
-        <div className="absolute bottom-full left-0 right-0 mb-2 bg-elevated/95 backdrop-blur-sm border border-border-default rounded-lg shadow-xl max-h-[40vh] overflow-y-auto animate-slideDown">
+        <div className="absolute bottom-full left-0 right-0 mb-2 bg-zinc-700/95 backdrop-blur-sm border border-zinc-700 rounded-lg shadow-xl max-h-[40vh] overflow-y-auto animate-slideDown">
           <div className="p-3 space-y-1.5">
             {todos.map((todo, index) => (
               <TodoItemRow key={index} todo={todo} />
@@ -50,14 +50,14 @@ export const TodoBar: React.FC = () => {
       {/* Compact Bar */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between px-4 py-2 bg-surface hover:bg-hover/70 border-t border-border-subtle transition-colors group"
+        className="w-full flex items-center justify-between px-4 py-2 bg-zinc-800 hover:bg-zinc-700/70 border-t border-zinc-800 transition-colors group"
       >
         {/* Left: Progress dots visualization */}
         <div className="flex items-center gap-3">
           <ProgressDots todos={todos} />
-          <span className="text-xs text-text-secondary">
-            <span className="text-text-primary font-medium">{completedCount}</span>
-            <span className="text-text-tertiary">/{totalCount}</span>
+          <span className="text-xs text-zinc-400">
+            <span className="text-zinc-200 font-medium">{completedCount}</span>
+            <span className="text-zinc-500">/{totalCount}</span>
             {' '}完成
             {inProgressCount > 0 && (
               <span className="ml-2 text-amber-400">
@@ -68,7 +68,7 @@ export const TodoBar: React.FC = () => {
         </div>
 
         {/* Right: Expand/collapse icon */}
-        <div className="flex items-center gap-1 text-text-tertiary group-hover:text-text-secondary transition-colors">
+        <div className="flex items-center gap-1 text-zinc-500 group-hover:text-zinc-400 transition-colors">
           <span className="text-xs">详情</span>
           {isExpanded ? (
             <ChevronDown className="w-3.5 h-3.5" />
@@ -94,14 +94,14 @@ const ProgressDots: React.FC<{ todos: TodoItem[] }> = ({ todos }) => {
         <React.Fragment key={index}>
           <TodoDot status={todo.status} />
           {index < showDots.length - 1 && (
-            <div className="w-1.5 h-px bg-active" />
+            <div className="w-1.5 h-px bg-zinc-600" />
           )}
         </React.Fragment>
       ))}
       {hasMore && (
         <>
-          <div className="w-1.5 h-px bg-active" />
-          <span className="text-xs text-text-tertiary ml-0.5">+{todos.length - maxDots}</span>
+          <div className="w-1.5 h-px bg-zinc-600" />
+          <span className="text-xs text-zinc-500 ml-0.5">+{todos.length - maxDots}</span>
         </>
       )}
     </div>
@@ -118,7 +118,7 @@ const TodoDot: React.FC<{ status: TodoItem['status'] }> = ({ status }) => {
         <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
       );
     default:
-      return <div className="w-2 h-2 rounded-full bg-active border border-border-strong" />;
+      return <div className="w-2 h-2 rounded-full bg-zinc-600 border border-zinc-600" />;
   }
 };
 
@@ -131,7 +131,7 @@ const TodoItemRow: React.FC<{ todo: TodoItem }> = ({ todo }) => {
       case 'in_progress':
         return <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />;
       default:
-        return <Circle className="w-4 h-4 text-text-tertiary" />;
+        return <Circle className="w-4 h-4 text-zinc-500" />;
     }
   };
 
@@ -144,10 +144,10 @@ const TodoItemRow: React.FC<{ todo: TodoItem }> = ({ todo }) => {
       </div>
       <span className={`text-sm leading-relaxed ${
         todo.status === 'completed'
-          ? 'text-text-tertiary line-through'
+          ? 'text-zinc-500 line-through'
           : todo.status === 'in_progress'
-          ? 'text-text-primary'
-          : 'text-text-secondary'
+          ? 'text-zinc-200'
+          : 'text-zinc-400'
       }`}>
         {todo.content}
       </span>

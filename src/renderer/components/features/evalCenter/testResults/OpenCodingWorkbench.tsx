@@ -27,7 +27,7 @@ const ERROR_TYPE_LABELS: Record<ErrorType, string> = {
 };
 
 const SEVERITY_LABELS: Record<number, { label: string; color: string }> = {
-  1: { label: '轻微', color: 'text-text-secondary' },
+  1: { label: '轻微', color: 'text-zinc-400' },
   2: { label: '低', color: 'text-blue-400' },
   3: { label: '中', color: 'text-amber-400' },
   4: { label: '高', color: 'text-orange-400' },
@@ -48,7 +48,7 @@ function getStatusColor(status: TestCaseResult['status']): string {
     case 'passed': return 'text-emerald-400';
     case 'partial': return 'text-amber-400';
     case 'failed': return 'text-red-400';
-    default: return 'text-text-tertiary';
+    default: return 'text-zinc-500';
   }
 }
 
@@ -145,7 +145,7 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
 
   if (cases.length === 0) {
     return (
-      <div className="flex items-center justify-center py-16 text-text-tertiary text-sm">
+      <div className="flex items-center justify-center py-16 text-zinc-500 text-sm">
         没有需要标注的用例
       </div>
     );
@@ -154,18 +154,18 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
   return (
     <div className="flex h-full min-h-0">
       {/* ── Left panel: case list ── */}
-      <div className="w-56 flex-shrink-0 border-r border-border-subtle flex flex-col">
+      <div className="w-56 flex-shrink-0 border-r border-zinc-800 flex flex-col">
         {/* Header */}
-        <div className="px-3 py-2 border-b border-border-default/20">
-          <span className="text-xs font-medium text-text-secondary mb-1.5 block">用例列表</span>
+        <div className="px-3 py-2 border-b border-zinc-700/20">
+          <span className="text-xs font-medium text-zinc-400 mb-1.5 block">用例列表</span>
           <div className="flex gap-1.5">
             <div className="flex-1 bg-emerald-500/10 rounded px-1.5 py-1 text-center">
               <div className="text-[10px] text-emerald-400 font-bold">{annotatedCount}</div>
               <div className="text-[8px] text-emerald-400/70">已编码</div>
             </div>
-            <div className="flex-1 bg-hover rounded px-1.5 py-1 text-center">
-              <div className="text-[10px] text-text-secondary font-bold">{cases.length - annotatedCount}</div>
-              <div className="text-[8px] text-text-tertiary">未编码</div>
+            <div className="flex-1 bg-zinc-700 rounded px-1.5 py-1 text-center">
+              <div className="text-[10px] text-zinc-400 font-bold">{cases.length - annotatedCount}</div>
+              <div className="text-[8px] text-zinc-500">未编码</div>
             </div>
             <div className="flex-1 bg-blue-500/10 rounded px-1.5 py-1 text-center">
               <div className="text-[10px] text-blue-400 font-bold">{cases.length > 0 ? Math.round((annotatedCount / cases.length) * 100) : 0}%</div>
@@ -175,7 +175,7 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
         </div>
 
         {/* Progress bar */}
-        <div className="h-0.5 bg-hover">
+        <div className="h-0.5 bg-zinc-700">
           <div
             className="h-full bg-blue-500 transition-all"
             style={{ width: `${(annotatedCount / cases.length) * 100}%` }}
@@ -191,14 +191,14 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
               <button
                 key={c.testId}
                 onClick={() => setSelectedIndex(i)}
-                className={`w-full text-left px-3 py-2 border-b border-border-default/10 transition ${
+                className={`w-full text-left px-3 py-2 border-b border-zinc-700/10 transition ${
                   isSelected
-                    ? 'bg-hover border-l-2 border-l-blue-500'
-                    : 'hover:bg-surface'
+                    ? 'bg-zinc-700 border-l-2 border-l-blue-500'
+                    : 'hover:bg-zinc-800'
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-[10px] text-text-secondary truncate">{c.testId}</span>
+                  <span className="font-mono text-[10px] text-zinc-400 truncate">{c.testId}</span>
                   <span className={`text-[10px] font-medium ${getStatusColor(c.status)}`}>
                     {Math.round(c.score * 100)}%
                   </span>
@@ -206,7 +206,7 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
                 {isAnnotated && (
                   <div className="mt-0.5 flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />
-                    <span className="text-[9px] text-text-tertiary">已标注</span>
+                    <span className="text-[9px] text-zinc-500">已标注</span>
                   </div>
                 )}
               </button>
@@ -215,7 +215,7 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
         </div>
 
         {/* Save all */}
-        <div className="p-2 border-t border-border-subtle">
+        <div className="p-2 border-t border-zinc-800">
           <button
             onClick={handleSaveAll}
             disabled={annotatedCount === 0}
@@ -230,10 +230,10 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
       {selectedCase ? (
         <div className="flex-1 overflow-y-auto flex flex-col min-h-0">
           {/* Case header */}
-          <div className="px-4 py-3 border-b border-border-default/20 flex items-start justify-between">
+          <div className="px-4 py-3 border-b border-zinc-700/20 flex items-start justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-mono text-sm text-text-primary">{selectedCase.testId}</span>
+                <span className="font-mono text-sm text-zinc-200">{selectedCase.testId}</span>
                 <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
                   selectedCase.status === 'passed' ? 'bg-emerald-500/15 text-emerald-400' :
                   selectedCase.status === 'partial' ? 'bg-amber-500/15 text-amber-400' :
@@ -241,11 +241,11 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
                 }`}>
                   {selectedCase.status}
                 </span>
-                <span className="text-xs text-text-tertiary">{Math.round(selectedCase.score * 100)}% · {formatDuration(selectedCase.duration)}</span>
+                <span className="text-xs text-zinc-500">{Math.round(selectedCase.score * 100)}% · {formatDuration(selectedCase.duration)}</span>
               </div>
-              <p className="text-xs text-text-secondary mt-0.5 line-clamp-2">{selectedCase.description}</p>
+              <p className="text-xs text-zinc-400 mt-0.5 line-clamp-2">{selectedCase.description}</p>
             </div>
-            <span className="text-[10px] text-text-disabled flex-shrink-0 ml-4">
+            <span className="text-[10px] text-zinc-600 flex-shrink-0 ml-4">
               {selectedIndex + 1} / {cases.length}
             </span>
           </div>
@@ -262,7 +262,7 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
             {/* Tool call chain */}
             {selectedCase.toolExecutions && selectedCase.toolExecutions.length > 0 && (
               <div>
-                <div className="text-[10px] text-text-tertiary mb-1.5 font-medium uppercase tracking-wide">
+                <div className="text-[10px] text-zinc-500 mb-1.5 font-medium uppercase tracking-wide">
                   工具调用链 ({selectedCase.toolExecutions.length})
                 </div>
                 <div className="space-y-1">
@@ -271,7 +271,7 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
                       key={i}
                       className={`flex items-start gap-2 px-2 py-1.5 rounded border text-[10px] ${
                         ex.success
-                          ? 'bg-surface border-border-default/20'
+                          ? 'bg-zinc-800 border-zinc-700/20'
                           : 'bg-red-900/15 border-red-700/20'
                       }`}
                     >
@@ -279,9 +279,9 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
                         {ex.success ? '✓' : '✗'}
                       </span>
                       <div className="min-w-0">
-                        <span className="font-mono font-medium text-text-secondary">{ex.tool}</span>
+                        <span className="font-mono font-medium text-zinc-400">{ex.tool}</span>
                         {Object.keys(ex.input).length > 0 && (
-                          <span className="text-text-tertiary ml-1 truncate">
+                          <span className="text-zinc-500 ml-1 truncate">
                             {Object.entries(ex.input)
                               .map(([k, v]) => `${k}=${JSON.stringify(v).slice(0, 20)}`)
                               .join(' ')
@@ -296,12 +296,12 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
             )}
 
             {/* ── Annotation form ── */}
-            <div className="border-t border-border-subtle pt-4 space-y-3">
-              <div className="text-[10px] text-text-tertiary font-medium uppercase tracking-wide">标注面板</div>
+            <div className="border-t border-zinc-800 pt-4 space-y-3">
+              <div className="text-[10px] text-zinc-500 font-medium uppercase tracking-wide">标注面板</div>
 
               {/* Error types */}
               <div>
-                <div className="text-xs text-text-secondary mb-1.5">错误类型（可多选）</div>
+                <div className="text-xs text-zinc-400 mb-1.5">错误类型（可多选）</div>
                 <div className="flex flex-wrap gap-1.5">
                   {(Object.keys(ERROR_TYPE_LABELS) as ErrorType[]).map((et) => {
                     const isChecked = currentAnnotation.errorTypes.includes(et);
@@ -317,7 +317,7 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
                         className={`px-2 py-1 rounded text-[10px] border transition ${
                           isChecked
                             ? 'bg-blue-500/20 border-blue-500/50 text-blue-300'
-                            : 'bg-surface border-border-subtle text-text-secondary hover:border-border-strong'
+                            : 'bg-zinc-800 border-zinc-800 text-zinc-400 hover:border-zinc-600'
                         }`}
                       >
                         {ERROR_TYPE_LABELS[et]}
@@ -329,21 +329,21 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
 
               {/* Root cause */}
               <div>
-                <div className="text-xs text-text-secondary mb-1.5">根因分析</div>
+                <div className="text-xs text-zinc-400 mb-1.5">根因分析</div>
                 <textarea
                   ref={rootCauseRef}
                   rows={3}
                   value={currentAnnotation.rootCause}
                   onChange={(e) => updateAnnotation({ rootCause: e.target.value })}
                   placeholder="描述根本原因..."
-                  className="w-full bg-elevated/60 border border-border-default rounded-lg px-2.5 py-2 text-xs text-text-primary placeholder-text-disabled resize-none focus:outline-none focus:border-border-strong"
+                  className="w-full bg-zinc-700/60 border border-zinc-700 rounded-lg px-2.5 py-2 text-xs text-zinc-200 placeholder-zinc-600 resize-none focus:outline-none focus:border-zinc-600"
                 />
               </div>
 
               {/* Severity */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <div className="text-xs text-text-secondary">严重程度</div>
+                  <div className="text-xs text-zinc-400">严重程度</div>
                   <div className={`text-xs font-medium ${SEVERITY_LABELS[currentAnnotation.severity].color}`}>
                     {currentAnnotation.severity} — {SEVERITY_LABELS[currentAnnotation.severity].label}
                   </div>
@@ -355,41 +355,41 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
                       onClick={() => updateAnnotation({ severity: n })}
                       className={`flex-1 py-1.5 rounded text-xs font-bold transition ${
                         currentAnnotation.severity === n
-                          ? `${SEVERITY_LABELS[n].color} bg-active`
-                          : 'text-text-disabled bg-elevated/60 hover:bg-hover'
+                          ? `${SEVERITY_LABELS[n].color} bg-zinc-600`
+                          : 'text-zinc-600 bg-zinc-700/60 hover:bg-zinc-700'
                       }`}
                     >
                       {n}
                     </button>
                   ))}
                 </div>
-                <div className="text-[9px] text-text-disabled mt-1">快捷键：数字键 1-5 设置等级</div>
+                <div className="text-[9px] text-zinc-600 mt-1">快捷键：数字键 1-5 设置等级</div>
               </div>
 
               {/* Notes */}
               <div>
-                <div className="text-xs text-text-secondary mb-1.5">备注（可选）</div>
+                <div className="text-xs text-zinc-400 mb-1.5">备注（可选）</div>
                 <textarea
                   rows={2}
                   value={currentAnnotation.notes ?? ''}
                   onChange={(e) => updateAnnotation({ notes: e.target.value })}
                   placeholder="其他备注..."
-                  className="w-full bg-elevated/60 border border-border-default rounded-lg px-2.5 py-2 text-xs text-text-primary placeholder-text-disabled resize-none focus:outline-none focus:border-border-strong"
+                  className="w-full bg-zinc-700/60 border border-zinc-700 rounded-lg px-2.5 py-2 text-xs text-zinc-200 placeholder-zinc-600 resize-none focus:outline-none focus:border-zinc-600"
                 />
               </div>
             </div>
           </div>
 
           {/* Bottom action bar */}
-          <div className="px-4 py-3 border-t border-border-subtle flex items-center justify-between">
-            <div className="text-[10px] text-text-disabled">
+          <div className="px-4 py-3 border-t border-zinc-800 flex items-center justify-between">
+            <div className="text-[10px] text-zinc-600">
               Enter 保存并下一条 · Ctrl+Enter（文本框内）· j/k 导航
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setSelectedIndex((i) => Math.max(i - 1, 0))}
                 disabled={selectedIndex === 0}
-                className="px-2.5 py-1 rounded text-xs text-text-secondary bg-elevated hover:bg-active disabled:opacity-30 transition"
+                className="px-2.5 py-1 rounded text-xs text-zinc-400 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-30 transition"
               >
                 ← 上一个
               </button>
@@ -404,7 +404,7 @@ export const OpenCodingWorkbench: React.FC<Props> = ({ cases, onSave }) => {
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center text-text-tertiary text-sm">
+        <div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">
           请从左侧选择用例
         </div>
       )}

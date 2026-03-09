@@ -80,7 +80,7 @@ const LocationOption: React.FC<{
         w-full p-4 rounded-lg border-2 text-left transition-all
         ${isSelected
           ? `border-${color}-500 bg-${color}-500/10`
-          : 'border-border-default bg-surface hover:border-border-strong'
+          : 'border-zinc-700 bg-zinc-800 hover:border-zinc-600'
         }
       `}
     >
@@ -91,7 +91,7 @@ const LocationOption: React.FC<{
 
         <div className="flex-1">
           <div className="flex items-center gap-2 mb-1">
-            <span className="font-medium text-text-primary">{title}</span>
+            <span className="font-medium text-zinc-200">{title}</span>
             {isRecommended && (
               <span className="text-xs px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded">
                 推荐
@@ -99,12 +99,12 @@ const LocationOption: React.FC<{
             )}
           </div>
 
-          <p className="text-sm text-text-secondary mb-2">{description}</p>
+          <p className="text-sm text-zinc-400 mb-2">{description}</p>
 
           {reasons.length > 0 && (
             <ul className="space-y-1">
               {reasons.map((reason, i) => (
-                <li key={i} className="text-xs text-text-tertiary flex items-center gap-1">
+                <li key={i} className="text-xs text-zinc-500 flex items-center gap-1">
                   <span className={`w-1 h-1 rounded-full bg-${color}-400`} />
                   {reason}
                 </li>
@@ -114,7 +114,7 @@ const LocationOption: React.FC<{
         </div>
 
         <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center
-          ${isSelected ? `border-${color}-500 bg-${color}-500` : 'border-border-strong'}
+          ${isSelected ? `border-${color}-500 bg-${color}-500` : 'border-zinc-600'}
         `}>
           {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
         </div>
@@ -217,37 +217,37 @@ export const LocalExecutionPrompt: React.FC<LocalExecutionPromptProps> = ({
       />
 
       {/* 对话框 */}
-      <div className="relative w-full max-w-2xl mx-4 bg-deep rounded-xl border border-border-default shadow-2xl">
+      <div className="relative w-full max-w-2xl mx-4 bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl">
         {/* 头部 */}
-        <div className="flex items-start justify-between p-4 border-b border-border-default">
+        <div className="flex items-start justify-between p-4 border-b border-zinc-700">
           <div>
-            <h2 className="text-lg font-semibold text-text-primary">
+            <h2 className="text-lg font-semibold text-zinc-200">
               选择执行位置
             </h2>
-            <p className="text-sm text-text-secondary mt-1">
+            <p className="text-sm text-zinc-400 mt-1">
               {taskTitle}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-text-secondary hover:text-text-primary rounded"
+            className="p-1 text-zinc-400 hover:text-zinc-200 rounded"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* 路由决策信息 */}
-        <div className="p-4 border-b border-border-default bg-surface">
+        <div className="p-4 border-b border-zinc-700 bg-zinc-800">
           <div className="flex items-start gap-3">
             <div className="p-2 rounded-lg bg-yellow-500/10">
               <AlertTriangle className="w-5 h-5 text-yellow-400" />
             </div>
             <div>
-              <p className="text-sm text-text-secondary mb-2">
+              <p className="text-sm text-zinc-400 mb-2">
                 {routingDecision.reason}
               </p>
               <div className="flex flex-wrap gap-2">
-                <span className="text-xs text-text-tertiary">
+                <span className="text-xs text-zinc-500">
                   置信度: {Math.round(routingDecision.confidence * 100)}%
                 </span>
               </div>
@@ -273,11 +273,11 @@ export const LocalExecutionPrompt: React.FC<LocalExecutionPromptProps> = ({
 
         {/* Prompt 预览（可折叠） */}
         {prompt && (
-          <details className="mx-4 mb-4 p-3 bg-surface rounded-lg">
-            <summary className="text-xs text-text-tertiary cursor-pointer hover:text-text-secondary">
+          <details className="mx-4 mb-4 p-3 bg-zinc-800 rounded-lg">
+            <summary className="text-xs text-zinc-500 cursor-pointer hover:text-zinc-400">
               查看任务内容
             </summary>
-            <pre className="mt-2 text-xs text-text-secondary whitespace-pre-wrap max-h-32 overflow-y-auto">
+            <pre className="mt-2 text-xs text-zinc-400 whitespace-pre-wrap max-h-32 overflow-y-auto">
               {prompt.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH)}
               {prompt.length > UI.PREVIEW_TEXT_MAX_LENGTH && '...'}
             </pre>
@@ -285,10 +285,10 @@ export const LocalExecutionPrompt: React.FC<LocalExecutionPromptProps> = ({
         )}
 
         {/* 底部按钮 */}
-        <div className="flex justify-end gap-3 p-4 border-t border-border-default">
+        <div className="flex justify-end gap-3 p-4 border-t border-zinc-700">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             取消
           </button>
@@ -332,21 +332,21 @@ export const SimpleLocalPrompt: React.FC<SimpleLocalPromptProps> = ({
         onClick={onClose}
       />
 
-      <div className="relative w-full max-w-md mx-4 bg-deep rounded-xl border border-border-default shadow-2xl p-6">
+      <div className="relative w-full max-w-md mx-4 bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl p-6">
         <div className="flex items-start gap-3 mb-4">
           <div className="p-2 rounded-lg bg-emerald-500/10">
             <Monitor className="w-6 h-6 text-emerald-400" />
           </div>
           <div>
-            <h3 className="font-medium text-text-primary">建议本地执行</h3>
-            <p className="text-sm text-text-secondary mt-1">{reason}</p>
+            <h3 className="font-medium text-zinc-200">建议本地执行</h3>
+            <p className="text-sm text-zinc-400 mt-1">{reason}</p>
           </div>
         </div>
 
         <div className="flex gap-3">
           <button
             onClick={onConfirmCloud}
-            className="flex-1 px-4 py-2 text-sm text-text-secondary border border-border-default hover:bg-hover rounded-lg transition-colors"
+            className="flex-1 px-4 py-2 text-sm text-zinc-400 border border-zinc-700 hover:bg-zinc-700 rounded-lg transition-colors"
           >
             <Cloud className="w-4 h-4 inline mr-1" />
             仍在云端执行

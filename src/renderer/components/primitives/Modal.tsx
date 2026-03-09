@@ -125,13 +125,13 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         ref={modalRef}
         tabIndex={-1}
-        className={`relative w-full ${sizeClasses[size]} bg-deep rounded-xl border border-border-default shadow-2xl overflow-hidden animate-fadeIn outline-none ${className}`}
+        className={`relative w-full ${sizeClasses[size]} bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn outline-none ${className}`}
         onClick={handleModalClick}
       >
         {/* Header */}
         {(header || title) && (
           <div
-            className={`flex items-center gap-3 px-6 py-4 border-b border-border-default ${headerBgClass || ''}`}
+            className={`flex items-center gap-3 px-6 py-4 border-b border-zinc-700 ${headerBgClass || ''}`}
           >
             {header ? (
               header
@@ -140,13 +140,13 @@ export const Modal: React.FC<ModalProps> = ({
                 {headerIcon && (
                   <div className="shrink-0">{headerIcon}</div>
                 )}
-                <h2 className="flex-1 text-lg font-semibold text-text-primary">
+                <h2 className="flex-1 text-lg font-semibold text-zinc-200">
                   {title}
                 </h2>
                 {showCloseButton && onClose && (
                   <button
                     onClick={onClose}
-                    className="p-1 rounded-lg hover:bg-hover text-text-secondary hover:text-text-primary transition-colors"
+                    className="p-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
                     aria-label="Close modal"
                   >
                     <X className="w-5 h-5" />
@@ -162,7 +162,7 @@ export const Modal: React.FC<ModalProps> = ({
 
         {/* Footer */}
         {footer && (
-          <div className="px-6 py-4 border-t border-border-default flex justify-end gap-3">
+          <div className="px-6 py-4 border-t border-zinc-700 flex justify-end gap-3">
             {footer}
           </div>
         )}
@@ -196,8 +196,8 @@ export interface ModalHeaderProps {
 
 export const ModalHeader: React.FC<ModalHeaderProps> = ({
   icon,
-  iconBgClass = 'bg-elevated',
-  iconColorClass = 'text-text-secondary',
+  iconBgClass = 'bg-zinc-700',
+  iconColorClass = 'text-zinc-400',
   title,
   subtitle,
   showCloseButton = true,
@@ -212,14 +212,14 @@ export const ModalHeader: React.FC<ModalHeaderProps> = ({
         </div>
       )}
       <div className="flex-1">
-        <h2 className="text-lg font-semibold text-text-primary">{title}</h2>
-        {subtitle && <p className="text-xs text-text-secondary">{subtitle}</p>}
+        <h2 className="text-lg font-semibold text-zinc-200">{title}</h2>
+        {subtitle && <p className="text-xs text-zinc-400">{subtitle}</p>}
         {children}
       </div>
       {showCloseButton && onClose && (
         <button
           onClick={onClose}
-          className="p-1 rounded-lg hover:bg-hover text-text-secondary hover:text-text-primary transition-colors"
+          className="p-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
           aria-label="Close modal"
         >
           <X className="w-5 h-5" />
@@ -271,7 +271,7 @@ export const ModalFooter: React.FC<ModalFooterProps> = ({
       {!hideCancel && onCancel && (
         <button
           onClick={onCancel}
-          className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-hover rounded-lg transition-colors"
+          className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded-lg transition-colors"
         >
           {cancelText}
         </button>
@@ -282,7 +282,7 @@ export const ModalFooter: React.FC<ModalFooterProps> = ({
           disabled={confirmDisabled}
           className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors ${
             confirmDisabled
-              ? 'bg-active text-text-tertiary cursor-not-allowed'
+              ? 'bg-zinc-600 text-zinc-500 cursor-not-allowed'
               : confirmColorClass
           }`}
         >

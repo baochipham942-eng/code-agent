@@ -129,8 +129,8 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
         <div className="flex items-start gap-3">
           <Zap className="w-5 h-5 text-emerald-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-text-primary mb-2">🚀 让 AI 越来越好</h3>
-            <p className="text-sm text-text-secondary">
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">🚀 让 AI 越来越好</h3>
+            <p className="text-sm text-zinc-400">
               现在 AI 学会了「打分」，接下来就让它<span className="text-emerald-400">不断练习、不断进步</span>！
               就像运动员看自己的比赛录像，找出问题，然后改进。这个过程叫「强化学习」。
             </p>
@@ -140,8 +140,8 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
 
       {/* 打个比方 */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary">💡 打个比方</h3>
-        <div className="bg-deep rounded-lg border border-border-default p-4">
+        <h3 className="text-sm font-medium text-zinc-400">💡 打个比方</h3>
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="grid grid-cols-4 gap-3 text-center">
             <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
               <div className="text-2xl mb-1">🎾</div>
@@ -160,8 +160,8 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
               <div className="text-xs text-emerald-400">越来越好</div>
             </div>
           </div>
-          <div className="mt-3 p-3 bg-surface rounded-lg text-center">
-            <p className="text-xs text-text-secondary">
+          <div className="mt-3 p-3 bg-zinc-800 rounded-lg text-center">
+            <p className="text-xs text-zinc-400">
               AI 也是这样：<span className="text-blue-400">写回答</span> →
               <span className="text-amber-400">打分</span> →
               <span className="text-purple-400">调整</span> →
@@ -174,11 +174,11 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
       {/* PPO Flow Animation */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-text-secondary">🔄 AI 进步的循环</h3>
+          <h3 className="text-sm font-medium text-zinc-400">🔄 AI 进步的循环</h3>
           <div className="flex items-center gap-2">
             <button
               onClick={resetAnimation}
-              className="p-2 rounded-lg bg-surface text-text-secondary hover:bg-hover border border-border-default"
+              className="p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:bg-zinc-700 border border-zinc-700"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
@@ -206,7 +206,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
         </div>
 
         {/* Flow Steps */}
-        <div className="bg-deep rounded-lg border border-border-default p-4">
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="flex items-center justify-between">
             {ppoSteps.map((step, idx) => (
               <React.Fragment key={step.id}>
@@ -214,14 +214,14 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
                   className={`flex-1 p-3 rounded-lg transition-all duration-500 ${
                     idx === currentStepIndex
                       ? 'bg-emerald-500/20 border border-emerald-500/30 scale-105'
-                      : 'bg-surface border border-border-subtle'
+                      : 'bg-zinc-800 border border-zinc-800'
                   }`}
                 >
                   <div className="text-center">
                     <div className="text-2xl mb-1">{step.icon}</div>
                     <div
                       className={`text-xs font-medium ${
-                        idx === currentStepIndex ? 'text-emerald-400' : 'text-text-secondary'
+                        idx === currentStepIndex ? 'text-emerald-400' : 'text-zinc-400'
                       }`}
                     >
                       {step.name}
@@ -231,7 +231,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
                 {idx < ppoSteps.length - 1 && (
                   <ArrowRight
                     className={`w-4 h-4 mx-1 ${
-                      idx === currentStepIndex ? 'text-emerald-400' : 'text-text-disabled'
+                      idx === currentStepIndex ? 'text-emerald-400' : 'text-zinc-600'
                     }`}
                   />
                 )}
@@ -240,40 +240,40 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
           </div>
 
           {/* Current Step Detail */}
-          <div className="mt-4 pt-4 border-t border-border-default">
+          <div className="mt-4 pt-4 border-t border-zinc-700">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-xl">{ppoSteps[currentStepIndex].icon}</span>
-              <span className="text-sm font-medium text-text-primary">
+              <span className="text-sm font-medium text-zinc-200">
                 {ppoSteps[currentStepIndex].name}
               </span>
               <span className="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
                 {ppoSteps[currentStepIndex].simpleExplain}
               </span>
             </div>
-            <p className="text-sm text-text-secondary">{ppoSteps[currentStepIndex].description}</p>
+            <p className="text-sm text-zinc-400">{ppoSteps[currentStepIndex].description}</p>
           </div>
         </div>
       </div>
 
       {/* Training Progress - Simplified */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary">📈 AI 的进步曲线</h3>
-        <div className="bg-deep rounded-lg border border-border-default p-4">
+        <h3 className="text-sm font-medium text-zinc-400">📈 AI 的进步曲线</h3>
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="grid grid-cols-3 gap-4 text-center mb-4">
             <div>
-              <div className="text-xs text-text-tertiary mb-1">学习轮次</div>
-              <div className="text-2xl font-bold text-text-primary">第 {currentTraining.step + 1} 轮</div>
+              <div className="text-xs text-zinc-500 mb-1">学习轮次</div>
+              <div className="text-2xl font-bold text-zinc-200">第 {currentTraining.step + 1} 轮</div>
             </div>
             <div>
-              <div className="text-xs text-text-tertiary mb-1">回答质量</div>
+              <div className="text-xs text-zinc-500 mb-1">回答质量</div>
               <div className="text-2xl font-bold text-emerald-400">{currentTraining.score} 分</div>
             </div>
             <div>
-              <div className="text-xs text-text-tertiary mb-1">状态</div>
+              <div className="text-xs text-zinc-500 mb-1">状态</div>
               <div className={`text-lg font-medium ${
                 currentTraining.score >= 90 ? 'text-emerald-400' :
                 currentTraining.score >= 70 ? 'text-blue-400' :
-                currentTraining.score >= 50 ? 'text-amber-400' : 'text-text-secondary'
+                currentTraining.score >= 50 ? 'text-amber-400' : 'text-zinc-400'
               }`}>
                 {currentTraining.improvement}
               </div>
@@ -282,17 +282,17 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
 
           {/* Progress Bar */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-text-tertiary">
+            <div className="flex items-center justify-between text-xs text-zinc-500">
               <span>回答质量进步</span>
               <span className="text-emerald-400">{currentTraining.score}%</span>
             </div>
-            <div className="h-4 bg-elevated rounded-full overflow-hidden">
+            <div className="h-4 bg-zinc-700 rounded-full overflow-hidden">
               <div
                 className="h-full bg-gradient-to-r from-amber-500 via-emerald-500 to-emerald-400 transition-all duration-500"
                 style={{ width: `${currentTraining.score}%` }}
               />
             </div>
-            <div className="flex justify-between text-xs text-text-disabled">
+            <div className="flex justify-between text-xs text-zinc-600">
               <span>0 分（很差）</span>
               <span>50 分（及格）</span>
               <span>100 分（满分）</span>
@@ -303,19 +303,19 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
 
       {/* Key concept: Balance */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary">⚖️ 一个重要的问题</h3>
-        <div className="bg-deep rounded-lg border border-border-default p-4">
+        <h3 className="text-sm font-medium text-zinc-400">⚖️ 一个重要的问题</h3>
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="p-4 bg-red-500/10 rounded-lg border border-red-500/20">
               <div className="text-lg mb-2">😰 如果只追求高分...</div>
-              <p className="text-sm text-text-secondary">
+              <p className="text-sm text-zinc-400">
                 AI 可能会「投机取巧」，只说一些讨好人的话，
                 变得很假、很无聊，忘了自己本来会的东西。
               </p>
             </div>
             <div className="p-4 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
               <div className="text-lg mb-2">😊 所以要平衡...</div>
-              <p className="text-sm text-text-secondary">
+              <p className="text-sm text-zinc-400">
                 既要追求高分，又不能变化太大。
                 就像学生要进步，但也要保持自己的特点，不能变成「考试机器」。
               </p>
@@ -327,25 +327,25 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
       {/* Key Points */}
       <div className="bg-emerald-500/5 rounded-lg border border-emerald-500/20 p-4">
         <h4 className="text-sm font-medium text-emerald-400 mb-2">📌 小结</h4>
-        <ul className="space-y-2 text-sm text-text-secondary">
+        <ul className="space-y-2 text-sm text-zinc-400">
           <li className="flex items-start gap-2">
             <span className="text-emerald-400">•</span>
-            <span><strong className="text-text-secondary">练习 → 打分 → 改进</strong>：AI 通过不断循环来进步</span>
+            <span><strong className="text-zinc-400">练习 → 打分 → 改进</strong>：AI 通过不断循环来进步</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-emerald-400">•</span>
-            <span><strong className="text-text-secondary">小步快跑</strong>：每次改进一点点，不能变化太大</span>
+            <span><strong className="text-zinc-400">小步快跑</strong>：每次改进一点点，不能变化太大</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-emerald-400">•</span>
-            <span><strong className="text-text-secondary">保持平衡</strong>：既要变好，又不能忘本</span>
+            <span><strong className="text-zinc-400">保持平衡</strong>：既要变好，又不能忘本</span>
           </li>
         </ul>
       </div>
 
       {/* 专有名词解释 */}
-      <div className="p-4 rounded-xl bg-deep border border-border-default">
-        <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+      <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
           本阶段专有名词
         </h3>
@@ -358,13 +358,13 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
             { en: 'Reward', zh: '奖励', desc: '奖励模型给回答的评分，指导模型进步' },
             { en: 'Clipping', zh: '裁剪', desc: '限制单次更新幅度，防止模型变化过大' },
           ].map((term) => (
-            <div key={term.en} className="p-3 rounded-lg bg-surface">
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
-                <span className="text-xs text-text-tertiary">|</span>
-                <span className="text-sm text-text-secondary">{term.zh}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>
-              <p className="text-xs text-text-tertiary">{term.desc}</p>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
           ))}
         </div>
@@ -374,7 +374,7 @@ export const PPOStage: React.FC<PPOStageProps> = ({ onComplete, onBack }) => {
       <div className="flex justify-between pt-4">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-5 py-2.5 bg-surface text-text-secondary rounded-lg hover:bg-hover border border-border-default transition-all"
+          className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800 text-zinc-400 rounded-lg hover:bg-zinc-700 border border-zinc-700 transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
           上一步

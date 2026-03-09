@@ -140,7 +140,7 @@ export function ToolCallDisplay({
     >
       {/* Main row: [StatusIndicator] [ToolName bold] [params muted] [duration right] */}
       <div
-        className="flex items-center gap-1.5 cursor-pointer hover:bg-surface rounded px-1 py-0.5 transition-colors"
+        className="flex items-center gap-1.5 cursor-pointer hover:bg-zinc-800 rounded px-1 py-0.5 transition-colors"
         onClick={() => {
           setExpanded(!expanded);
           setUserToggled(true);

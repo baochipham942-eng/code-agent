@@ -110,16 +110,16 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
       {/* Modal */}
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div
-          className="bg-deep border border-border-default rounded-xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200"
+          className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-full max-w-md animate-in fade-in zoom-in-95 duration-200"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-border-default">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
             <h2 className="text-lg font-semibold text-white">软件更新</h2>
             {canClose && (
               <button
                 onClick={onClose}
-                className="p-1.5 text-text-secondary hover:text-text-primary hover:bg-hover rounded-lg transition-colors"
+                className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -139,11 +139,11 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                     <p className="text-lg font-medium text-white">
                       新版本 v{updateInfo.latestVersion} 可用
                     </p>
-                    <p className="text-sm text-text-secondary mt-1">
+                    <p className="text-sm text-zinc-400 mt-1">
                       当前版本: v{updateInfo.currentVersion}
                     </p>
                     {updateInfo.fileSize && (
-                      <p className="text-sm text-text-tertiary mt-0.5">
+                      <p className="text-sm text-zinc-500 mt-0.5">
                         文件大小: {formatSize(updateInfo.fileSize)}
                       </p>
                     )}
@@ -152,9 +152,9 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
 
                 {/* Release Notes */}
                 {updateInfo.releaseNotes && (
-                  <div className="bg-surface rounded-lg p-4 max-h-40 overflow-y-auto">
-                    <p className="text-xs font-medium text-text-secondary mb-2">更新内容</p>
-                    <div className="text-sm text-text-secondary whitespace-pre-wrap">
+                  <div className="bg-zinc-800 rounded-lg p-4 max-h-40 overflow-y-auto">
+                    <p className="text-xs font-medium text-zinc-400 mb-2">更新内容</p>
+                    <div className="text-sm text-zinc-400 whitespace-pre-wrap">
                       {updateInfo.releaseNotes}
                     </div>
                   </div>
@@ -171,7 +171,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-lg font-medium text-white">正在下载更新</p>
-                    <p className="text-sm text-text-secondary mt-1">
+                    <p className="text-sm text-zinc-400 mt-1">
                       {formatSize(downloadProgress.transferred)} / {formatSize(downloadProgress.total)}
                       {downloadProgress.bytesPerSecond > 0 && ` • ${formatSpeed(downloadProgress.bytesPerSecond)}`}
                     </p>
@@ -182,14 +182,14 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                 </div>
 
                 {/* Progress Bar */}
-                <div className="h-2 bg-elevated rounded-full overflow-hidden">
+                <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-indigo-500 to-cyan-400 transition-all duration-300"
                     style={{ width: `${downloadProgress.percent}%` }}
                   />
                 </div>
 
-                <p className="text-xs text-text-tertiary text-center">
+                <p className="text-xs text-zinc-500 text-center">
                   请勿关闭此窗口，下载完成后可安装更新
                 </p>
               </div>
@@ -204,7 +204,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-lg font-medium text-white">下载完成</p>
-                    <p className="text-sm text-text-secondary mt-1">
+                    <p className="text-sm text-zinc-400 mt-1">
                       点击下方按钮启动安装程序
                     </p>
                   </div>
@@ -221,7 +221,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-lg font-medium text-white">下载失败</p>
-                    <p className="text-sm text-text-secondary mt-1">
+                    <p className="text-sm text-zinc-400 mt-1">
                       {error || '发生未知错误，请稍后重试'}
                     </p>
                   </div>
@@ -231,12 +231,12 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border-default bg-deep">
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-700 bg-zinc-900">
             {downloadState === 'idle' && (
               <>
                 <button
                   onClick={onClose}
-                  className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-hover rounded-lg transition-colors"
+                  className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded-lg transition-colors"
                 >
                   稍后提醒
                 </button>
@@ -253,7 +253,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
               <>
                 <button
                   onClick={onClose}
-                  className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-hover rounded-lg transition-colors"
+                  className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded-lg transition-colors"
                 >
                   稍后安装
                 </button>
@@ -270,7 +270,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
               <>
                 <button
                   onClick={onClose}
-                  className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-hover rounded-lg transition-colors"
+                  className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded-lg transition-colors"
                 >
                   关闭
                 </button>

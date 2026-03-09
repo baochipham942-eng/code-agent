@@ -349,22 +349,22 @@ export const KeyDecisionsPanel: React.FC = () => {
   }, []);
 
   return (
-    <div className="bg-surface rounded-lg overflow-hidden">
+    <div className="bg-zinc-800 rounded-lg overflow-hidden">
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-surface transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800 transition-colors"
       >
         {isExpanded ? (
-          <ChevronDown className="w-4 h-4 text-text-secondary" />
+          <ChevronDown className="w-4 h-4 text-zinc-400" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-text-secondary" />
+          <ChevronRight className="w-4 h-4 text-zinc-400" />
         )}
         <span className="text-base">📜</span>
-        <span className="text-sm font-medium text-text-primary flex-1 text-left">
+        <span className="text-sm font-medium text-zinc-200 flex-1 text-left">
           关键决策
         </span>
-        <span className="text-xs text-text-tertiary">{KEY_DECISIONS.length} 项</span>
+        <span className="text-xs text-zinc-500">{KEY_DECISIONS.length} 项</span>
       </button>
 
       {/* Expanded Content */}
@@ -372,7 +372,7 @@ export const KeyDecisionsPanel: React.FC = () => {
         <div className="px-3 pb-3 space-y-2">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-tertiary" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -387,8 +387,8 @@ export const KeyDecisionsPanel: React.FC = () => {
               onClick={() => setSelectedCategory('all')}
               className={`px-2 py-0.5 text-xs rounded-full transition-colors ${
                 selectedCategory === 'all'
-                  ? 'bg-active text-text-primary'
-                  : 'bg-surface text-text-tertiary hover:text-text-secondary'
+                  ? 'bg-zinc-600 text-zinc-200'
+                  : 'bg-zinc-800 text-zinc-500 hover:text-zinc-400'
               }`}
             >
               全部 {categoryCounts.all}
@@ -402,7 +402,7 @@ export const KeyDecisionsPanel: React.FC = () => {
                   className={`px-2 py-0.5 text-xs rounded-full transition-colors flex items-center gap-1 ${
                     selectedCategory === cat
                       ? `${config.bg} ${config.color}`
-                      : 'bg-surface text-text-tertiary hover:text-text-secondary'
+                      : 'bg-zinc-800 text-zinc-500 hover:text-zinc-400'
                   }`}
                 >
                   {config.icon}
@@ -415,7 +415,7 @@ export const KeyDecisionsPanel: React.FC = () => {
           {/* Decision List */}
           <div className="space-y-1.5 max-h-[320px] overflow-y-auto">
             {filteredDecisions.length === 0 ? (
-              <p className="text-xs text-text-tertiary py-3 text-center">
+              <p className="text-xs text-zinc-500 py-3 text-center">
                 无匹配的决策记录
               </p>
             ) : (
@@ -426,7 +426,7 @@ export const KeyDecisionsPanel: React.FC = () => {
           </div>
 
           {/* Stats */}
-          <div className="flex items-center justify-between text-xs text-text-tertiary pt-1 border-t border-border-default">
+          <div className="flex items-center justify-between text-xs text-zinc-500 pt-1 border-t border-zinc-700">
             <span>
               {KEY_DECISIONS.filter((d) => d.checkpoint).length} 项有 checkpoint
             </span>
@@ -450,11 +450,11 @@ const DecisionCard: React.FC<{ decision: KeyDecision }> = ({ decision }) => {
   const config = CATEGORY_CONFIG[decision.category];
 
   return (
-    <div className="bg-surface rounded-lg overflow-hidden">
+    <div className="bg-zinc-800 rounded-lg overflow-hidden">
       {/* Card Header */}
       <button
         onClick={() => setIsDetailOpen(!isDetailOpen)}
-        className="w-full px-2.5 py-2 text-left hover:bg-hover transition-colors"
+        className="w-full px-2.5 py-2 text-left hover:bg-zinc-700 transition-colors"
       >
         <div className="flex items-start gap-2">
           {/* Category Badge */}
@@ -468,21 +468,21 @@ const DecisionCard: React.FC<{ decision: KeyDecision }> = ({ decision }) => {
           {/* Title & Date */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-text-primary font-medium truncate">
+              <span className="text-sm text-zinc-200 font-medium truncate">
                 {decision.title}
               </span>
               {decision.checkpoint && (
                 <GitCommit className="w-3 h-3 text-emerald-400 shrink-0" />
               )}
             </div>
-            <span className="text-xs text-text-tertiary">{decision.date}</span>
+            <span className="text-xs text-zinc-500">{decision.date}</span>
           </div>
 
           {/* Expand icon */}
           {isDetailOpen ? (
-            <ChevronDown className="w-3.5 h-3.5 text-text-tertiary shrink-0 mt-1" />
+            <ChevronDown className="w-3.5 h-3.5 text-zinc-500 shrink-0 mt-1" />
           ) : (
-            <ChevronRight className="w-3.5 h-3.5 text-text-tertiary shrink-0 mt-1" />
+            <ChevronRight className="w-3.5 h-3.5 text-zinc-500 shrink-0 mt-1" />
           )}
         </div>
       </button>
@@ -491,13 +491,13 @@ const DecisionCard: React.FC<{ decision: KeyDecision }> = ({ decision }) => {
       {isDetailOpen && (
         <div className="px-2.5 pb-2.5 space-y-1.5">
           {/* Description */}
-          <p className="text-xs text-text-secondary leading-relaxed">{decision.description}</p>
+          <p className="text-xs text-zinc-400 leading-relaxed">{decision.description}</p>
 
           {/* Impact */}
           {decision.impact && (
             <div className="flex items-start gap-1.5">
               <span className="text-xs text-amber-400 shrink-0">影响:</span>
-              <span className="text-xs text-text-secondary">{decision.impact}</span>
+              <span className="text-xs text-zinc-400">{decision.impact}</span>
             </div>
           )}
 
@@ -514,9 +514,9 @@ const DecisionCard: React.FC<{ decision: KeyDecision }> = ({ decision }) => {
           {/* Files */}
           {decision.files && decision.files.length > 0 && (
             <div className="space-y-0.5">
-              <span className="text-xs text-text-tertiary">相关文件:</span>
+              <span className="text-xs text-zinc-500">相关文件:</span>
               {decision.files.map((f, i) => (
-                <div key={i} className="text-xs text-text-tertiary font-mono pl-2 truncate">
+                <div key={i} className="text-xs text-zinc-500 font-mono pl-2 truncate">
                   {f}
                 </div>
               ))}

@@ -87,11 +87,11 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center backdrop-blur-sm">
-      <div className="bg-deep border border-border-default rounded-xl shadow-2xl w-[520px] max-h-[600px] flex flex-col">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-[520px] max-h-[600px] flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b border-border-default flex items-center justify-between">
-          <h2 className="text-base font-semibold text-text-primary">Rewind to Checkpoint</h2>
-          <button onClick={onClose} className="text-text-tertiary hover:text-text-secondary transition-colors text-lg">
+        <div className="p-4 border-b border-zinc-700 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-zinc-200">Rewind to Checkpoint</h2>
+          <button onClick={onClose} className="text-zinc-500 hover:text-zinc-400 transition-colors text-lg">
             &times;
           </button>
         </div>
@@ -99,7 +99,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
         {/* Checkpoint list */}
         <div className="flex-1 overflow-y-auto p-3">
           {checkpoints.length === 0 ? (
-            <p className="text-text-tertiary text-center py-8 text-sm">No checkpoints available</p>
+            <p className="text-zinc-500 text-center py-8 text-sm">No checkpoints available</p>
           ) : (
             <div className="space-y-1.5">
               {checkpoints.map(cp => (
@@ -109,18 +109,18 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
                   className={`p-3 rounded-lg border cursor-pointer transition-colors ${
                     selectedMessageId === cp.messageId
                       ? 'border-blue-500/50 bg-blue-500/10'
-                      : 'border-border-default hover:border-border-strong'
+                      : 'border-zinc-700 hover:border-zinc-600'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-text-primary">
+                    <span className="text-sm font-medium text-zinc-200">
                       {cp.description || `Checkpoint ${cp.id.slice(0, 8)}`}
                     </span>
-                    <span className="text-xs text-text-tertiary">
+                    <span className="text-xs text-zinc-500">
                       {new Date(cp.timestamp).toLocaleTimeString()}
                     </span>
                   </div>
-                  <span className="text-xs text-text-tertiary mt-1 block">
+                  <span className="text-xs text-zinc-500 mt-1 block">
                     {cp.fileCount} file{cp.fileCount !== 1 ? 's' : ''}
                   </span>
                 </div>
@@ -131,8 +131,8 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
 
         {/* Preview section */}
         {preview.length > 0 && (
-          <div className="px-4 py-2 border-t border-border-default">
-            <p className="text-xs text-text-tertiary mb-1.5">Files affected:</p>
+          <div className="px-4 py-2 border-t border-zinc-700">
+            <p className="text-xs text-zinc-500 mb-1.5">Files affected:</p>
             <div className="space-y-0.5 max-h-[120px] overflow-y-auto">
               {preview.map((f, i) => (
                 <div key={i} className="flex items-center gap-2 text-xs">
@@ -143,7 +143,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
                   }>
                     {f.status === 'added' ? '+' : f.status === 'deleted' ? '-' : '~'}
                   </span>
-                  <span className="text-text-secondary font-mono truncate">{f.filePath}</span>
+                  <span className="text-zinc-400 font-mono truncate">{f.filePath}</span>
                 </div>
               ))}
             </div>
@@ -151,10 +151,10 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
         )}
 
         {/* Actions */}
-        <div className="p-4 border-t border-border-default flex justify-end gap-2">
+        <div className="p-4 border-t border-zinc-700 flex justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
           >
             Cancel
           </button>

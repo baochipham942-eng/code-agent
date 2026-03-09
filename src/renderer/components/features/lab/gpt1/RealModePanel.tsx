@@ -316,13 +316,13 @@ export const RealModePanel: React.FC = () => {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* 环境状态卡片 */}
         <div className={`p-4 rounded-xl border ${
-          checkingEnv ? 'bg-deep border-border-default' :
+          checkingEnv ? 'bg-zinc-900 border-zinc-700' :
           envReady ? 'bg-emerald-500/10 border-emerald-500/20' :
           'bg-amber-500/10 border-amber-500/20'
         }`}>
           <div className="flex items-start gap-3">
             {checkingEnv ? (
-              <Loader2 className="w-5 h-5 text-text-secondary animate-spin flex-shrink-0 mt-0.5" />
+              <Loader2 className="w-5 h-5 text-zinc-400 animate-spin flex-shrink-0 mt-0.5" />
             ) : envReady ? (
               <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
             ) : (
@@ -330,7 +330,7 @@ export const RealModePanel: React.FC = () => {
             )}
             <div className="flex-1">
               <h3 className={`text-sm font-medium mb-2 ${
-                checkingEnv ? 'text-text-primary' :
+                checkingEnv ? 'text-zinc-200' :
                 envReady ? 'text-emerald-200' : 'text-amber-200'
               }`}>
                 {checkingEnv ? '检查环境中...' :
@@ -345,7 +345,7 @@ export const RealModePanel: React.FC = () => {
                     ) : (
                       <XCircle className="w-3 h-3 text-red-400" />
                     )}
-                    <span className="text-text-secondary">
+                    <span className="text-zinc-400">
                       Python {pythonEnv.pythonVersion || '未安装'}
                     </span>
                   </div>
@@ -355,7 +355,7 @@ export const RealModePanel: React.FC = () => {
                     ) : (
                       <XCircle className="w-3 h-3 text-red-400" />
                     )}
-                    <span className="text-text-secondary">
+                    <span className="text-zinc-400">
                       PyTorch {pythonEnv.pytorchVersion || '未安装'}
                     </span>
                   </div>
@@ -365,7 +365,7 @@ export const RealModePanel: React.FC = () => {
                     ) : (
                       <XCircle className="w-3 h-3 text-red-400" />
                     )}
-                    <span className="text-text-secondary">SentencePiece</span>
+                    <span className="text-zinc-400">SentencePiece</span>
                   </div>
                 </div>
               )}
@@ -380,7 +380,7 @@ export const RealModePanel: React.FC = () => {
               <button
                 onClick={checkPythonEnv}
                 disabled={checkingEnv}
-                className="mt-2 text-xs text-text-secondary hover:text-text-primary flex items-center gap-1"
+                className="mt-2 text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
               >
                 <RefreshCw className={`w-3 h-3 ${checkingEnv ? 'animate-spin' : ''}`} />
                 重新检测
@@ -393,14 +393,14 @@ export const RealModePanel: React.FC = () => {
           {/* 左侧：项目和数据 */}
           <div className="space-y-6">
             {/* Step 1: 下载项目 */}
-            <div className="p-4 rounded-xl bg-deep border border-border-default">
+            <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
               <div className="flex items-center gap-2 mb-4">
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                  projectUIStatus === 'downloaded' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-active text-text-secondary'
+                  projectUIStatus === 'downloaded' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-600 text-zinc-400'
                 }`}>
                   {projectUIStatus === 'downloaded' ? <Check className="w-4 h-4" /> : '1'}
                 </div>
-                <h3 className="text-sm font-semibold text-text-primary">下载项目</h3>
+                <h3 className="text-sm font-semibold text-zinc-200">下载项目</h3>
               </div>
 
               <div className="space-y-3">
@@ -420,7 +420,7 @@ export const RealModePanel: React.FC = () => {
                       <Check className="w-4 h-4" />
                       <span>项目已就绪</span>
                     </div>
-                    <p className="text-xs text-text-tertiary mt-1 truncate">{projectPath}</p>
+                    <p className="text-xs text-zinc-500 mt-1 truncate">{projectPath}</p>
                     {projectStatus?.hasTrainedModel && (
                       <p className="text-xs text-emerald-400/70 mt-1">已有训练好的模型</p>
                     )}
@@ -442,7 +442,7 @@ export const RealModePanel: React.FC = () => {
                     <button
                       onClick={handleSelectProject}
                       disabled={!envReady}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-hover border border-border-strong/50 text-text-secondary text-sm font-medium hover:bg-active disabled:opacity-50 transition-colors"
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-700 border border-zinc-600/50 text-zinc-400 text-sm font-medium hover:bg-zinc-600 disabled:opacity-50 transition-colors"
                     >
                       <FolderOpen className="w-4 h-4" />
                       选择目录
@@ -453,19 +453,19 @@ export const RealModePanel: React.FC = () => {
             </div>
 
             {/* Step 2: 数据集 */}
-            <div className="p-4 rounded-xl bg-deep border border-border-default">
+            <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
               <div className="flex items-center gap-2 mb-4">
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                  projectUIStatus === 'downloaded' ? 'bg-active text-text-secondary' : 'bg-elevated text-text-tertiary'
+                  projectUIStatus === 'downloaded' ? 'bg-zinc-600 text-zinc-400' : 'bg-zinc-700 text-zinc-500'
                 }`}>
                   2
                 </div>
-                <h3 className="text-sm font-semibold text-text-primary">数据集</h3>
+                <h3 className="text-sm font-semibold text-zinc-200">数据集</h3>
               </div>
 
               <div className="space-y-3">
                 {/* 默认数据集 */}
-                <label className="flex items-center gap-3 p-3 rounded-lg bg-surface cursor-pointer hover:bg-hover transition-colors">
+                <label className="flex items-center gap-3 p-3 rounded-lg bg-zinc-800 cursor-pointer hover:bg-zinc-700 transition-colors">
                   <input
                     type="radio"
                     checked={!useCustomData}
@@ -473,14 +473,14 @@ export const RealModePanel: React.FC = () => {
                     className="text-emerald-500"
                   />
                   <div className="flex-1">
-                    <div className="text-sm text-text-primary">使用默认对话数据集</div>
-                    <div className="text-xs text-text-tertiary">27 种对话模式，约 130K tokens</div>
+                    <div className="text-sm text-zinc-200">使用默认对话数据集</div>
+                    <div className="text-xs text-zinc-500">27 种对话模式，约 130K tokens</div>
                   </div>
-                  <Database className="w-4 h-4 text-text-tertiary" />
+                  <Database className="w-4 h-4 text-zinc-500" />
                 </label>
 
                 {/* 自定义数据集 */}
-                <label className="flex items-center gap-3 p-3 rounded-lg bg-surface cursor-pointer hover:bg-hover transition-colors">
+                <label className="flex items-center gap-3 p-3 rounded-lg bg-zinc-800 cursor-pointer hover:bg-zinc-700 transition-colors">
                   <input
                     type="radio"
                     checked={useCustomData}
@@ -488,17 +488,17 @@ export const RealModePanel: React.FC = () => {
                     className="text-emerald-500"
                   />
                   <div className="flex-1">
-                    <div className="text-sm text-text-primary">上传自定义数据集</div>
+                    <div className="text-sm text-zinc-200">上传自定义数据集</div>
                     {customDataFile ? (
                       <div className="text-xs text-emerald-400">{customDataFile.name}</div>
                     ) : (
-                      <div className="text-xs text-text-tertiary">支持 .txt 格式</div>
+                      <div className="text-xs text-zinc-500">支持 .txt 格式</div>
                     )}
                   </div>
                   {uploadingData ? (
-                    <Loader2 className="w-4 h-4 text-text-tertiary animate-spin" />
+                    <Loader2 className="w-4 h-4 text-zinc-500 animate-spin" />
                   ) : (
-                    <Upload className="w-4 h-4 text-text-tertiary" />
+                    <Upload className="w-4 h-4 text-zinc-500" />
                   )}
                 </label>
 
@@ -514,7 +514,7 @@ export const RealModePanel: React.FC = () => {
                     <button
                       onClick={() => fileInputRef.current?.click()}
                       disabled={projectUIStatus !== 'downloaded' || uploadingData}
-                      className="w-full py-2 rounded-lg border border-dashed border-border-default text-text-secondary text-sm hover:border-border-strong hover:text-text-primary disabled:opacity-50 transition-colors"
+                      className="w-full py-2 rounded-lg border border-dashed border-zinc-700 text-zinc-400 text-sm hover:border-zinc-600 hover:text-zinc-200 disabled:opacity-50 transition-colors"
                     >
                       {uploadingData ? '上传中...' : '点击选择文件'}
                     </button>
@@ -524,31 +524,31 @@ export const RealModePanel: React.FC = () => {
             </div>
 
             {/* Step 3: 训练控制 */}
-            <div className="p-4 rounded-xl bg-deep border border-border-default">
+            <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
               <div className="flex items-center gap-2 mb-4">
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                  trainingUIStatus === 'completed' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-active text-text-secondary'
+                  trainingUIStatus === 'completed' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-zinc-600 text-zinc-400'
                 }`}>
                   {trainingUIStatus === 'completed' ? <Check className="w-4 h-4" /> : '3'}
                 </div>
-                <h3 className="text-sm font-semibold text-text-primary">训练模型</h3>
+                <h3 className="text-sm font-semibold text-zinc-200">训练模型</h3>
               </div>
 
               {/* 进度显示 */}
               {(trainingUIStatus === 'training' || trainingUIStatus === 'completed') && (
                 <div className="mb-4">
-                  <div className="flex justify-between text-xs text-text-tertiary mb-1">
+                  <div className="flex justify-between text-xs text-zinc-500 mb-1">
                     <span>Iter {currentIteration}/{totalIterations}</span>
                     <span>{trainingProgress.toFixed(0)}%</span>
                   </div>
-                  <div className="h-2 bg-elevated rounded-full overflow-hidden">
+                  <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-300"
                       style={{ width: `${trainingProgress}%` }}
                     />
                   </div>
                   {currentLoss > 0 && (
-                    <div className="text-xs text-text-tertiary mt-1">
+                    <div className="text-xs text-zinc-500 mt-1">
                       当前 Loss: <span className="text-emerald-400">{currentLoss.toFixed(4)}</span>
                     </div>
                   )}
@@ -586,7 +586,7 @@ export const RealModePanel: React.FC = () => {
                       setTrainingProgress(0);
                       setCurrentIteration(0);
                     }}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-hover border border-border-strong/50 text-text-secondary text-sm font-medium hover:bg-active transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-700 border border-zinc-600/50 text-zinc-400 text-sm font-medium hover:bg-zinc-600 transition-colors"
                   >
                     <RefreshCw className="w-4 h-4" />
                     重新训练
@@ -599,12 +599,12 @@ export const RealModePanel: React.FC = () => {
           {/* 右侧：日志和推理 */}
           <div className="space-y-6">
             {/* 训练日志 */}
-            <div className="p-4 rounded-xl bg-deep border border-border-default">
-              <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-text-secondary" />
+            <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
+              <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-zinc-400" />
                 训练日志
               </h3>
-              <div className="h-48 overflow-y-auto bg-void rounded-lg p-3 font-mono text-xs">
+              <div className="h-48 overflow-y-auto bg-zinc-950 rounded-lg p-3 font-mono text-xs">
                 {trainingLogs.length > 0 ? (
                   trainingLogs.map((log, i) => (
                     <div
@@ -613,26 +613,26 @@ export const RealModePanel: React.FC = () => {
                         log.type === 'error' ? 'text-red-400' :
                         log.type === 'success' ? 'text-emerald-400' :
                         log.type === 'progress' ? 'text-blue-400' :
-                        'text-text-secondary'
+                        'text-zinc-400'
                       }`}
                     >
-                      <span className="text-text-disabled">
+                      <span className="text-zinc-600">
                         [{new Date(log.timestamp).toLocaleTimeString()}]
                       </span>{' '}
                       {log.message}
                     </div>
                   ))
                 ) : (
-                  <div className="text-text-disabled">等待操作...</div>
+                  <div className="text-zinc-600">等待操作...</div>
                 )}
                 <div ref={logsEndRef} />
               </div>
             </div>
 
             {/* 推理测试 */}
-            <div className="p-4 rounded-xl bg-deep border border-border-default">
-              <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-text-secondary" />
+            <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
+              <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-zinc-400" />
                 推理测试
               </h3>
 
@@ -644,7 +644,7 @@ export const RealModePanel: React.FC = () => {
                     onChange={(e) => setInferenceInput(e.target.value)}
                     placeholder="输入测试文本..."
                     disabled={!projectStatus?.hasTrainedModel && trainingUIStatus !== 'completed'}
-                    className="flex-1 px-3 py-2 rounded-lg bg-elevated border border-border-default text-sm text-text-primary placeholder-text-tertiary focus:outline-none focus:border-emerald-500 disabled:opacity-50"
+                    className="flex-1 px-3 py-2 rounded-lg bg-zinc-700 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-emerald-500 disabled:opacity-50"
                   />
                   <button
                     onClick={handleInference}
@@ -656,14 +656,14 @@ export const RealModePanel: React.FC = () => {
                 </div>
 
                 {inferenceOutput && (
-                  <div className="p-3 rounded-lg bg-surface border border-border-default">
-                    <div className="text-xs text-text-tertiary mb-1">模型输出:</div>
-                    <div className="text-sm text-text-primary">{inferenceOutput}</div>
+                  <div className="p-3 rounded-lg bg-zinc-800 border border-zinc-700">
+                    <div className="text-xs text-zinc-500 mb-1">模型输出:</div>
+                    <div className="text-sm text-zinc-200">{inferenceOutput}</div>
                   </div>
                 )}
 
                 {!projectStatus?.hasTrainedModel && trainingUIStatus !== 'completed' && (
-                  <p className="text-xs text-text-disabled text-center">
+                  <p className="text-xs text-zinc-600 text-center">
                     训练完成后可以测试模型
                   </p>
                 )}

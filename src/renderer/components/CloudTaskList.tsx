@@ -68,9 +68,9 @@ const StatusIcon: React.FC<{ status: CloudTaskStatus }> = ({ status }) => {
     case 'paused':
       return <Pause className="w-4 h-4 text-orange-400" />;
     case 'cancelled':
-      return <X className="w-4 h-4 text-text-tertiary" />;
+      return <X className="w-4 h-4 text-zinc-500" />;
     default:
-      return <Clock className="w-4 h-4 text-text-tertiary" />;
+      return <Clock className="w-4 h-4 text-zinc-500" />;
   }
 };
 
@@ -105,13 +105,13 @@ const AgentIcon: React.FC<{ type: CloudAgentType }> = ({ type }) => {
 // 状态标签
 const StatusBadge: React.FC<{ status: CloudTaskStatus }> = ({ status }) => {
   const styles: Record<CloudTaskStatus, string> = {
-    pending: 'bg-active text-text-secondary',
+    pending: 'bg-zinc-600 text-zinc-400',
     queued: 'bg-yellow-900/50 text-yellow-300',
     running: 'bg-blue-900/50 text-blue-300',
     paused: 'bg-orange-900/50 text-orange-300',
     completed: 'bg-green-900/50 text-green-300',
     failed: 'bg-red-900/50 text-red-300',
-    cancelled: 'bg-elevated text-text-secondary',
+    cancelled: 'bg-zinc-700 text-zinc-400',
   };
 
   const labels: Record<CloudTaskStatus, string> = {
@@ -165,15 +165,15 @@ const TaskCard: React.FC<{
   };
 
   return (
-    <div className="bg-surface rounded-lg border border-border-default overflow-hidden">
+    <div className="bg-zinc-800 rounded-lg border border-zinc-700 overflow-hidden">
       {/* 任务头部 */}
       <div
-        className="p-3 cursor-pointer hover:bg-hover transition-colors"
+        className="p-3 cursor-pointer hover:bg-zinc-700 transition-colors"
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-start gap-3">
           {/* 展开图标 */}
-          <button className="mt-1 text-text-tertiary">
+          <button className="mt-1 text-zinc-500">
             {expanded ? (
               <ChevronDown className="w-4 h-4" />
             ) : (
@@ -190,12 +190,12 @@ const TaskCard: React.FC<{
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <AgentIcon type={task.type} />
-              <span className="text-sm font-medium text-text-primary truncate">
+              <span className="text-sm font-medium text-zinc-200 truncate">
                 {task.title}
               </span>
             </div>
 
-            <div className="flex items-center gap-3 text-xs text-text-tertiary">
+            <div className="flex items-center gap-3 text-xs text-zinc-500">
               <LocationIcon location={task.location} />
               <span>{task.location}</span>
               <span>•</span>
@@ -203,7 +203,7 @@ const TaskCard: React.FC<{
               {task.currentStep && (
                 <>
                   <span>•</span>
-                  <span className="text-text-secondary">{task.currentStep}</span>
+                  <span className="text-zinc-400">{task.currentStep}</span>
                 </>
               )}
             </div>
@@ -229,29 +229,29 @@ const TaskCard: React.FC<{
 
       {/* 展开内容 */}
       {expanded && (
-        <div className="border-t border-border-default p-3 bg-deep/30">
+        <div className="border-t border-zinc-700 p-3 bg-zinc-900/30">
           {/* 描述 */}
           {task.description && (
-            <p className="text-sm text-text-secondary mb-3">{task.description}</p>
+            <p className="text-sm text-zinc-400 mb-3">{task.description}</p>
           )}
 
           {/* 详细信息 */}
           <div className="grid grid-cols-2 gap-2 text-xs mb-3">
             <div>
-              <span className="text-text-tertiary">创建时间：</span>
-              <span className="text-text-secondary">{formatTime(task.createdAt)}</span>
+              <span className="text-zinc-500">创建时间：</span>
+              <span className="text-zinc-400">{formatTime(task.createdAt)}</span>
             </div>
             <div>
-              <span className="text-text-tertiary">开始时间：</span>
-              <span className="text-text-secondary">{formatTime(task.startedAt)}</span>
+              <span className="text-zinc-500">开始时间：</span>
+              <span className="text-zinc-400">{formatTime(task.startedAt)}</span>
             </div>
             <div>
-              <span className="text-text-tertiary">完成时间：</span>
-              <span className="text-text-secondary">{formatTime(task.completedAt)}</span>
+              <span className="text-zinc-500">完成时间：</span>
+              <span className="text-zinc-400">{formatTime(task.completedAt)}</span>
             </div>
             <div>
-              <span className="text-text-tertiary">耗时：</span>
-              <span className="text-text-secondary">
+              <span className="text-zinc-500">耗时：</span>
+              <span className="text-zinc-400">
                 {formatDuration(task.startedAt, task.completedAt)}
               </span>
             </div>
@@ -266,10 +266,10 @@ const TaskCard: React.FC<{
 
           {/* 结果预览 */}
           {task.result && (
-            <div className="mb-3 p-2 bg-elevated rounded text-xs text-text-secondary max-h-32 overflow-y-auto">
+            <div className="mb-3 p-2 bg-zinc-700 rounded text-xs text-zinc-400 max-h-32 overflow-y-auto">
               <pre className="whitespace-pre-wrap">{task.result.slice(0, UI.PREVIEW_TEXT_MAX_LENGTH)}</pre>
               {task.result.length > UI.PREVIEW_TEXT_MAX_LENGTH && (
-                <span className="text-text-tertiary">... ({task.result.length - UI.PREVIEW_TEXT_MAX_LENGTH} more chars)</span>
+                <span className="text-zinc-500">... ({task.result.length - UI.PREVIEW_TEXT_MAX_LENGTH} more chars)</span>
               )}
             </div>
           )}
@@ -315,7 +315,7 @@ const TaskCard: React.FC<{
             {canDelete && (
               <button
                 onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
-                className="flex items-center gap-1 px-2 py-1 text-xs bg-active hover:bg-active text-white rounded transition-colors"
+                className="flex items-center gap-1 px-2 py-1 text-xs bg-zinc-600 hover:bg-zinc-600 text-white rounded transition-colors"
               >
                 <Trash2 className="w-3 h-3" />
                 删除
@@ -331,9 +331,9 @@ const TaskCard: React.FC<{
 // 空状态
 const EmptyState: React.FC = () => (
   <div className="flex flex-col items-center justify-center py-12 text-center">
-    <Cloud className="w-12 h-12 text-text-disabled mb-3" />
-    <p className="text-sm text-text-secondary mb-1">暂无云端任务</p>
-    <p className="text-xs text-text-tertiary">
+    <Cloud className="w-12 h-12 text-zinc-600 mb-3" />
+    <p className="text-sm text-zinc-400 mb-1">暂无云端任务</p>
+    <p className="text-xs text-zinc-500">
       将任务提交到云端执行后会在这里显示
     </p>
   </div>
@@ -375,18 +375,18 @@ export const CloudTaskList: React.FC<CloudTaskListProps> = ({
   return (
     <div className="flex flex-col h-full">
       {/* 头部 */}
-      <div className="p-3 border-b border-border-default">
+      <div className="p-3 border-b border-zinc-700">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-sky-400" />
-            <span className="text-sm font-medium text-text-primary">云端任务</span>
-            <span className="text-xs text-text-tertiary">({stats.total})</span>
+            <span className="text-sm font-medium text-zinc-200">云端任务</span>
+            <span className="text-xs text-zinc-500">({stats.total})</span>
           </div>
 
           <button
             onClick={onRefresh}
             disabled={isLoading}
-            className="p-1.5 text-text-secondary hover:text-text-primary hover:bg-hover rounded transition-colors disabled:opacity-50"
+            className="p-1.5 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
@@ -405,7 +405,7 @@ export const CloudTaskList: React.FC<CloudTaskListProps> = ({
           <select
             value={filter}
             onChange={(e) => setFilter(e.target.value as CloudTaskStatus | 'all')}
-            className="text-xs bg-elevated border border-border-default rounded px-2 py-1 text-text-secondary"
+            className="text-xs bg-zinc-700 border border-zinc-700 rounded px-2 py-1 text-zinc-400"
           >
             <option value="all">全部状态</option>
             <option value="running">执行中</option>
@@ -419,7 +419,7 @@ export const CloudTaskList: React.FC<CloudTaskListProps> = ({
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value as CloudAgentType | 'all')}
-            className="text-xs bg-elevated border border-border-default rounded px-2 py-1 text-text-secondary"
+            className="text-xs bg-zinc-700 border border-zinc-700 rounded px-2 py-1 text-zinc-400"
           >
             <option value="all">全部类型</option>
             <option value="researcher">研究员</option>

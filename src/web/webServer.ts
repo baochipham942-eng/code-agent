@@ -11,9 +11,11 @@
 //
 // ============================================================================
 
-// ⚠️ 必须在任何其他 import 之前安装 electron mock
-import { installElectronMock, handlers, mockIpcMain } from './electronMock';
-installElectronMock();
+// ⚠️ webEnvInit 必须是第一个 import — 设置 CODE_AGENT_CLI_MODE 防止 keytar SIGSEGV
+import './webEnvInit';
+
+// electron mock 通过 esbuild --alias:electron=./src/web/electronMock.ts 注入
+import { handlers, ipcMain as mockIpcMain } from './electronMock';
 
 import http from 'http';
 import express from 'express';
@@ -209,7 +211,7 @@ function createApp(): express.Express {
   // ── Sessions ───────────────────────────────────────────────────────
   app.get('/api/sessions', async (_req: Request, res: Response) => {
     try {
-      const handler = handlers.get('session');
+      const handler = handlers.get('domain:session');
       if (handler) {
         const result = await handler(null, {
           action: 'list',
@@ -226,7 +228,7 @@ function createApp(): express.Express {
 
   app.post('/api/sessions', async (req: Request, res: Response) => {
     try {
-      const handler = handlers.get('session');
+      const handler = handlers.get('domain:session');
       if (handler) {
         const result = await handler(null, { action: 'create', payload: req.body });
         res.json(result);
@@ -240,7 +242,7 @@ function createApp(): express.Express {
 
   app.get('/api/sessions/:id', async (req: Request, res: Response) => {
     try {
-      const handler = handlers.get('session');
+      const handler = handlers.get('domain:session');
       if (handler) {
         const result = await handler(null, { action: 'load', payload: { sessionId: req.params.id } });
         res.json(result);
@@ -254,7 +256,7 @@ function createApp(): express.Express {
 
   app.get('/api/sessions/:id/messages', async (req: Request, res: Response) => {
     try {
-      const handler = handlers.get('session');
+      const handler = handlers.get('domain:session');
       if (handler) {
         const result = await handler(null, {
           action: 'getMessages',
@@ -275,7 +277,7 @@ function createApp(): express.Express {
 
   app.delete('/api/sessions/:id', async (req: Request, res: Response) => {
     try {
-      const handler = handlers.get('session');
+      const handler = handlers.get('domain:session');
       if (handler) {
         const result = await handler(null, { action: 'delete', payload: { sessionId: req.params.id } });
         res.json(result);
@@ -289,7 +291,7 @@ function createApp(): express.Express {
 
   app.post('/api/sessions/:id/archive', async (req: Request, res: Response) => {
     try {
-      const handler = handlers.get('session');
+      const handler = handlers.get('domain:session');
       if (handler) {
         const result = await handler(null, { action: 'archive', payload: { sessionId: req.params.id } });
         res.json(result);
@@ -303,7 +305,7 @@ function createApp(): express.Express {
 
   app.post('/api/sessions/:id/unarchive', async (req: Request, res: Response) => {
     try {
-      const handler = handlers.get('session');
+      const handler = handlers.get('domain:session');
       if (handler) {
         const result = await handler(null, { action: 'unarchive', payload: { sessionId: req.params.id } });
         res.json(result);
@@ -318,7 +320,7 @@ function createApp(): express.Express {
   // ── Settings ───────────────────────────────────────────────────────
   app.get('/api/settings', async (_req: Request, res: Response) => {
     try {
-      const handler = handlers.get('settings');
+      const handler = handlers.get('domain:settings');
       if (handler) {
         const result = await handler(null, { action: 'get', payload: undefined });
         res.json(result);
@@ -332,7 +334,7 @@ function createApp(): express.Express {
 
   app.put('/api/settings', async (req: Request, res: Response) => {
     try {
-      const handler = handlers.get('settings');
+      const handler = handlers.get('domain:settings');
       if (handler) {
         const result = await handler(null, { action: 'set', payload: { settings: req.body } });
         res.json(result);
@@ -409,7 +411,7 @@ function createApp(): express.Express {
   // ── Fallback for unmapped IPC channels ─────────────────────────────
   // httpTransport.ts's channelToEndpoint() maps some channels to
   // generic paths like /api/memory/search-code
-  app.all('/api/:channel/*', async (req: Request, res: Response) => {
+  app.all('/api/:channel/{*rest}', async (req: Request, res: Response) => {
     // Reconstruct channel name: /api/memory/search-code -> memory:search-code
     const pathParts = req.path.replace('/api/', '').split('/');
     const channel = pathParts.join(':');

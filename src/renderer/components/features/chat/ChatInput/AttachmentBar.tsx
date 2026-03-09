@@ -29,11 +29,11 @@ const AttachmentIcon: React.FC<{ category: AttachmentCategory }> = ({ category }
     case 'html':
       return <Globe className={`${iconClass} text-orange-400`} />;
     case 'text':
-      return <FileText className={`${iconClass} text-text-secondary`} />;
+      return <FileText className={`${iconClass} text-zinc-400`} />;
     case 'folder':
       return <Folder className={`${iconClass} text-yellow-400`} />;
     default:
-      return <File className={`${iconClass} text-text-tertiary`} />;
+      return <File className={`${iconClass} text-zinc-500`} />;
   }
 };
 
@@ -61,7 +61,7 @@ const AttachmentItem: React.FC<{
   };
 
   return (
-    <div className="relative group flex items-center gap-2 px-3 py-2 bg-elevated/60 rounded-lg border border-border-default">
+    <div className="relative group flex items-center gap-2 px-3 py-2 bg-zinc-700/60 rounded-lg border border-zinc-700">
       {att.category === 'image' ? (
         <>
           <img
@@ -70,10 +70,10 @@ const AttachmentItem: React.FC<{
             className="w-10 h-10 object-cover rounded"
           />
           <div className="flex flex-col">
-            <span className="text-xs text-text-secondary truncate max-w-[120px]">
+            <span className="text-xs text-zinc-400 truncate max-w-[120px]">
               {att.name}
             </span>
-            <span className="text-2xs text-text-tertiary">
+            <span className="text-2xs text-zinc-500">
               {(att.size / 1024).toFixed(1)} KB
             </span>
           </div>
@@ -82,10 +82,10 @@ const AttachmentItem: React.FC<{
         <>
           <AttachmentIcon category={att.category} />
           <div className="flex flex-col">
-            <span className="text-xs text-text-secondary truncate max-w-[120px]">
+            <span className="text-xs text-zinc-400 truncate max-w-[120px]">
               {att.name}
             </span>
-            <span className="text-2xs text-text-tertiary">{getDescription()}</span>
+            <span className="text-2xs text-zinc-500">{getDescription()}</span>
           </div>
         </>
       )}
@@ -95,7 +95,7 @@ const AttachmentItem: React.FC<{
         onClick={onRemove}
         variant="danger"
         size="sm"
-        className="absolute -top-1.5 -right-1.5 !p-0.5 !w-5 !h-5 bg-active hover:!bg-red-500 !rounded-full !text-white opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute -top-1.5 -right-1.5 !p-0.5 !w-5 !h-5 bg-zinc-600 hover:!bg-red-500 !rounded-full !text-white opacity-0 group-hover:opacity-100 transition-opacity"
       />
     </div>
   );

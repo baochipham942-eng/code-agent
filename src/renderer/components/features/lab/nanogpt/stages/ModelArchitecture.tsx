@@ -31,8 +31,8 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
         <div className="flex items-start gap-3">
           <Brain className="w-5 h-5 text-purple-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-text-primary mb-2">🧠 AI 的「大脑」长什么样？</h3>
-            <p className="text-sm text-text-secondary">
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">🧠 AI 的「大脑」长什么样？</h3>
+            <p className="text-sm text-zinc-400">
               AI 的大脑是由很多层「思考单元」堆叠起来的。层数越多，就像大脑越发达，
               能理解的东西就越复杂。我们可以选择不同「大小」的大脑！
             </p>
@@ -42,23 +42,23 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
 
       {/* 大脑工作原理 */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary">🔄 AI 大脑是怎么「思考」的？</h3>
-        <div className="bg-deep rounded-lg border border-border-default p-4">
+        <h3 className="text-sm font-medium text-zinc-400">🔄 AI 大脑是怎么「思考」的？</h3>
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="grid grid-cols-3 gap-4">
             <div className="text-center p-4 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
               <div className="text-3xl mb-2">👁️</div>
               <div className="text-sm font-medium text-emerald-400">看懂文字</div>
-              <div className="text-xs text-text-tertiary mt-1">把文字变成 AI 能理解的信号</div>
+              <div className="text-xs text-zinc-500 mt-1">把文字变成 AI 能理解的信号</div>
             </div>
             <div className="text-center p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
               <div className="text-3xl mb-2">🤔</div>
               <div className="text-sm font-medium text-blue-400">层层思考</div>
-              <div className="text-xs text-text-tertiary mt-1">每一层都会「琢磨」一遍，加深理解</div>
+              <div className="text-xs text-zinc-500 mt-1">每一层都会「琢磨」一遍，加深理解</div>
             </div>
             <div className="text-center p-4 bg-purple-500/10 rounded-lg border border-purple-500/20">
               <div className="text-3xl mb-2">💬</div>
               <div className="text-sm font-medium text-purple-400">说出答案</div>
-              <div className="text-xs text-text-tertiary mt-1">把理解转化成文字输出</div>
+              <div className="text-xs text-zinc-500 mt-1">把理解转化成文字输出</div>
             </div>
           </div>
 
@@ -73,7 +73,7 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
 
       {/* Model Size Selector */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary">📐 选择 AI 大脑的「尺寸」</h3>
+        <h3 className="text-sm font-medium text-zinc-400">📐 选择 AI 大脑的「尺寸」</h3>
         <div className="grid grid-cols-4 gap-3">
           {(Object.entries(modelSizes) as [ModelSize, typeof modelSizes.small][]).map(([key, size]) => (
             <button
@@ -82,12 +82,12 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
               className={`p-4 rounded-lg border text-left transition-all ${
                 selectedSize === key
                   ? 'bg-blue-500/10 border-blue-500/50'
-                  : 'bg-surface border-border-subtle hover:border-border-strong'
+                  : 'bg-zinc-800 border-zinc-800 hover:border-zinc-600'
               }`}
             >
-              <div className="text-sm font-medium text-text-primary mb-1">{size.name}大脑</div>
+              <div className="text-sm font-medium text-zinc-200 mb-1">{size.name}大脑</div>
               <div className="text-lg font-bold text-blue-400">{size.params} 个神经元</div>
-              <div className="text-xs text-text-tertiary mt-2">
+              <div className="text-xs text-zinc-500 mt-2">
                 {size.layers} 层思考 · {size.heads} 个关注点
               </div>
               <div className="text-xs text-emerald-400/70 mt-1">
@@ -96,15 +96,15 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
             </button>
           ))}
         </div>
-        <p className="text-xs text-text-tertiary text-center">
+        <p className="text-xs text-zinc-500 text-center">
           💡 神经元越多，AI 越聪明，但也需要更多计算资源
         </p>
       </div>
 
       {/* Architecture Visualization */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary">🎨 AI 大脑的「结构图」</h3>
-        <div className="bg-deep rounded-lg border border-border-default p-6">
+        <h3 className="text-sm font-medium text-zinc-400">🎨 AI 大脑的「结构图」</h3>
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-6">
           <div className="flex items-center justify-center gap-3">
             {/* Input Embedding */}
             <div className="flex flex-col items-center gap-2">
@@ -114,7 +114,7 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
               </div>
             </div>
 
-            <ArrowRight className="w-5 h-5 text-text-tertiary" />
+            <ArrowRight className="w-5 h-5 text-zinc-500" />
 
             {/* Transformer Blocks */}
             <div className="flex flex-col items-center gap-2">
@@ -129,7 +129,7 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
               </div>
             </div>
 
-            <ArrowRight className="w-5 h-5 text-text-tertiary" />
+            <ArrowRight className="w-5 h-5 text-zinc-500" />
 
             {/* Output */}
             <div className="flex flex-col items-center gap-2">
@@ -140,7 +140,7 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
             </div>
           </div>
 
-          <div className="mt-6 text-center text-xs text-text-tertiary">
+          <div className="mt-6 text-center text-xs text-zinc-500">
             选择的「{model.name}大脑」有 <span className="text-blue-400 font-bold">{model.layers}</span> 层思考，
             每层有 <span className="text-blue-400 font-bold">{model.heads}</span> 个「关注点」同时思考
           </div>
@@ -149,23 +149,23 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
 
       {/* 什么是「关注点」 */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary">🎯 什么是「关注点」？</h3>
-        <div className="bg-deep rounded-lg border border-border-default p-4">
-          <p className="text-sm text-text-secondary mb-4">
+        <h3 className="text-sm font-medium text-zinc-400">🎯 什么是「关注点」？</h3>
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
+          <p className="text-sm text-zinc-400 mb-4">
             当 AI 读一句话时，它会同时从多个角度「关注」不同的内容：
           </p>
           <div className="grid grid-cols-3 gap-3">
             <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
               <div className="text-sm text-blue-400 font-medium mb-1">关注点 1</div>
-              <div className="text-xs text-text-tertiary">可能在看「谁做的」</div>
+              <div className="text-xs text-zinc-500">可能在看「谁做的」</div>
             </div>
             <div className="p-3 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
               <div className="text-sm text-emerald-400 font-medium mb-1">关注点 2</div>
-              <div className="text-xs text-text-tertiary">可能在看「做了什么」</div>
+              <div className="text-xs text-zinc-500">可能在看「做了什么」</div>
             </div>
             <div className="p-3 bg-purple-500/10 rounded-lg border border-purple-500/20">
               <div className="text-sm text-purple-400 font-medium mb-1">关注点 3</div>
-              <div className="text-xs text-text-tertiary">可能在看「语气情感」</div>
+              <div className="text-xs text-zinc-500">可能在看「语气情感」</div>
             </div>
           </div>
           <div className="mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
@@ -178,32 +178,32 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
 
       {/* 总结 */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary">📊 你选择的 AI 大脑</h3>
+        <h3 className="text-sm font-medium text-zinc-400">📊 你选择的 AI 大脑</h3>
         <div className="bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-lg border border-blue-500/20 p-4">
           <div className="grid grid-cols-4 gap-4 text-center">
             <div>
               <div className="text-2xl font-bold text-blue-400">{model.params}</div>
-              <div className="text-xs text-text-tertiary mt-1">神经元数量</div>
+              <div className="text-xs text-zinc-500 mt-1">神经元数量</div>
             </div>
             <div>
               <div className="text-2xl font-bold text-emerald-400">{model.layers}</div>
-              <div className="text-xs text-text-tertiary mt-1">思考层数</div>
+              <div className="text-xs text-zinc-500 mt-1">思考层数</div>
             </div>
             <div>
               <div className="text-2xl font-bold text-purple-400">{model.heads}</div>
-              <div className="text-xs text-text-tertiary mt-1">关注点数</div>
+              <div className="text-xs text-zinc-500 mt-1">关注点数</div>
             </div>
             <div>
               <div className="text-lg font-medium text-amber-400">{model.analogy}</div>
-              <div className="text-xs text-text-tertiary mt-1">相当于</div>
+              <div className="text-xs text-zinc-500 mt-1">相当于</div>
             </div>
           </div>
         </div>
       </div>
 
       {/* 专有名词解释 */}
-      <div className="p-4 rounded-xl bg-deep border border-border-default">
-        <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+      <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
           本阶段专有名词
         </h3>
@@ -216,13 +216,13 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
             { en: 'Parameters', zh: '参数', desc: '模型中可学习的数值，决定模型的"知识容量"' },
             { en: 'Context Length', zh: '上下文长度', desc: '模型一次能看多少个词元，影响理解范围' },
           ].map((term) => (
-            <div key={term.en} className="p-3 rounded-lg bg-surface">
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
-                <span className="text-xs text-text-tertiary">|</span>
-                <span className="text-sm text-text-secondary">{term.zh}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>
-              <p className="text-xs text-text-tertiary">{term.desc}</p>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
           ))}
         </div>
@@ -232,7 +232,7 @@ export const ModelArchitecture: React.FC<ModelArchitectureProps> = ({ onComplete
       <div className="flex justify-between pt-4">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-5 py-2.5 bg-surface text-text-secondary rounded-lg hover:bg-hover border border-border-default transition-all"
+          className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800 text-zinc-400 rounded-lg hover:bg-zinc-700 border border-zinc-700 transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
           上一步

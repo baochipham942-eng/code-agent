@@ -112,7 +112,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
 
   const getColorClasses = (color: string, isActive: boolean) => {
     const colors: Record<string, { bg: string; border: string; text: string }> = {
-      zinc: { bg: 'bg-active/20', border: 'border-border-strong/30', text: 'text-text-secondary' },
+      zinc: { bg: 'bg-zinc-600/20', border: 'border-zinc-600/30', text: 'text-zinc-400' },
       blue: { bg: 'bg-blue-500/20', border: 'border-blue-500/30', text: 'text-blue-400' },
       purple: { bg: 'bg-purple-500/20', border: 'border-purple-500/30', text: 'text-purple-400' },
       emerald: { bg: 'bg-emerald-500/20', border: 'border-emerald-500/30', text: 'text-emerald-400' },
@@ -129,8 +129,8 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
         <div className="flex items-start gap-3">
           <Map className="w-5 h-5 text-orange-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-text-primary mb-2">🗺️ 微调全景图</h3>
-            <p className="text-sm text-text-secondary">
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">🗺️ 微调全景图</h3>
+            <p className="text-sm text-zinc-400">
               微调（Fine-tuning）是在预训练模型基础上，用特定数据进一步训练，让模型更好地完成目标任务。
               就像一个学过很多书的学生，再针对特定考试做专门练习。
             </p>
@@ -140,11 +140,11 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
 
       {/* Pipeline Overview */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
+        <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Layers className="w-4 h-4 text-orange-400" />
           微调技术栈流程
         </h3>
-        <div className="bg-deep rounded-lg border border-border-default p-4">
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="flex items-center justify-between gap-2">
             {pipelineSteps.map((step, index) => {
               const isSelected = selectedStep === step.id;
@@ -158,18 +158,18 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
                       flex-1 p-3 rounded-lg border transition-all text-center
                       ${isSelected
                         ? `${colors.bg} ${colors.border} ring-2 ring-${step.color}-500/30`
-                        : 'bg-surface border-border-subtle hover:border-border-strong'
+                        : 'bg-zinc-800 border-zinc-800 hover:border-zinc-600'
                       }
                     `}
                   >
                     <div className="text-2xl mb-2">{step.icon}</div>
-                    <div className={`text-sm font-medium ${isSelected ? colors.text : 'text-text-secondary'}`}>
+                    <div className={`text-sm font-medium ${isSelected ? colors.text : 'text-zinc-400'}`}>
                       {step.title}
                     </div>
-                    <div className="text-xs text-text-tertiary mt-1">{step.subtitle}</div>
+                    <div className="text-xs text-zinc-500 mt-1">{step.subtitle}</div>
                   </button>
                   {index < pipelineSteps.length - 1 && (
-                    <ArrowRight className="w-4 h-4 text-text-disabled flex-shrink-0" />
+                    <ArrowRight className="w-4 h-4 text-zinc-600 flex-shrink-0" />
                   )}
                 </React.Fragment>
               );
@@ -178,8 +178,8 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
 
           {/* Detail Panel */}
           {selectedStep && (
-            <div className="mt-4 p-3 rounded-lg bg-surface border border-border-subtle">
-              <p className="text-sm text-text-secondary">
+            <div className="mt-4 p-3 rounded-lg bg-zinc-800 border border-zinc-800">
+              <p className="text-sm text-zinc-400">
                 {pipelineSteps.find(s => s.id === selectedStep)?.detail}
               </p>
             </div>
@@ -189,7 +189,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
 
       {/* Fine-tuning Goals */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
+        <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Lightbulb className="w-4 h-4 text-orange-400" />
           微调目标 → 方法选择
         </h3>
@@ -205,11 +205,11 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
                   <span className="text-xl">{item.icon}</span>
                   <span className={`text-sm font-medium ${colors.text}`}>{item.goal}</span>
                 </div>
-                <div className="text-xs text-text-secondary mb-2">推荐方法：<span className="text-text-primary">{item.method}</span></div>
+                <div className="text-xs text-zinc-400 mb-2">推荐方法：<span className="text-zinc-200">{item.method}</span></div>
                 <ul className="space-y-1">
                   {item.examples.map((ex, idx) => (
-                    <li key={idx} className="text-xs text-text-tertiary flex items-center gap-1">
-                      <span className="text-text-disabled">•</span> {ex}
+                    <li key={idx} className="text-xs text-zinc-500 flex items-center gap-1">
+                      <span className="text-zinc-600">•</span> {ex}
                     </li>
                   ))}
                 </ul>
@@ -221,7 +221,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
 
       {/* Can / Cannot Do */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
+        <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Check className="w-4 h-4 text-orange-400" />
           微调能/不能做什么？
         </h3>
@@ -232,7 +232,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
               rounded-lg border transition-all cursor-pointer
               ${expandedDecision === 'can'
                 ? 'bg-emerald-500/10 border-emerald-500/30'
-                : 'bg-surface border-border-subtle hover:border-border-strong'
+                : 'bg-zinc-800 border-zinc-800 hover:border-zinc-600'
               }
             `}
             onClick={() => setExpandedDecision(expandedDecision === 'can' ? null : 'can')}
@@ -246,13 +246,13 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
               </div>
               <ul className="space-y-2">
                 {canDo.map((item, idx) => (
-                  <li key={idx} className="text-sm text-text-secondary">
+                  <li key={idx} className="text-sm text-zinc-400">
                     <div className="flex items-start gap-2">
                       <span className="text-emerald-400 mt-1">✓</span>
                       <div>
                         <span>{item.text}</span>
                         {expandedDecision === 'can' && (
-                          <div className="text-xs text-text-tertiary mt-0.5">例：{item.example}</div>
+                          <div className="text-xs text-zinc-500 mt-0.5">例：{item.example}</div>
                         )}
                       </div>
                     </div>
@@ -268,7 +268,7 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
               rounded-lg border transition-all cursor-pointer
               ${expandedDecision === 'cannot'
                 ? 'bg-red-500/10 border-red-500/30'
-                : 'bg-surface border-border-subtle hover:border-border-strong'
+                : 'bg-zinc-800 border-zinc-800 hover:border-zinc-600'
               }
             `}
             onClick={() => setExpandedDecision(expandedDecision === 'cannot' ? null : 'cannot')}
@@ -282,13 +282,13 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
               </div>
               <ul className="space-y-2">
                 {cannotDo.map((item, idx) => (
-                  <li key={idx} className="text-sm text-text-secondary">
+                  <li key={idx} className="text-sm text-zinc-400">
                     <div className="flex items-start gap-2">
                       <span className="text-red-400 mt-1">✗</span>
                       <div>
                         <span>{item.text}</span>
                         {expandedDecision === 'cannot' && (
-                          <div className="text-xs text-text-tertiary mt-0.5">例：{item.example}</div>
+                          <div className="text-xs text-zinc-500 mt-0.5">例：{item.example}</div>
                         )}
                       </div>
                     </div>
@@ -298,27 +298,27 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
             </div>
           </div>
         </div>
-        <div className="text-xs text-text-tertiary text-center">
+        <div className="text-xs text-zinc-500 text-center">
           点击卡片查看更多细节
         </div>
       </div>
 
       {/* LLaMA Factory Introduction */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
+        <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <span className="text-lg">🦙</span>
           LLaMA Factory 是什么？
         </h3>
-        <div className="bg-deep rounded-lg border border-border-default p-4">
-          <p className="text-sm text-text-secondary mb-4">
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
+          <p className="text-sm text-zinc-400 mb-4">
             LLaMA Factory 是一个开源的大模型微调框架，支持多种模型和训练方法，提供 Web UI 界面，让微调变得简单高效。
           </p>
           <div className="grid grid-cols-4 gap-3">
             {llamaFactoryFeatures.map((feature) => (
-              <div key={feature.title} className="p-3 rounded-lg bg-surface border border-border-subtle text-center">
+              <div key={feature.title} className="p-3 rounded-lg bg-zinc-800 border border-zinc-800 text-center">
                 <div className="text-2xl mb-2">{feature.icon}</div>
-                <div className="text-sm font-medium text-text-secondary">{feature.title}</div>
-                <div className="text-xs text-text-tertiary mt-1">{feature.desc}</div>
+                <div className="text-sm font-medium text-zinc-400">{feature.title}</div>
+                <div className="text-xs text-zinc-500 mt-1">{feature.desc}</div>
               </div>
             ))}
           </div>
@@ -328,25 +328,25 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
       {/* Key Takeaways */}
       <div className="bg-orange-500/5 rounded-lg border border-orange-500/20 p-4">
         <h4 className="text-sm font-medium text-orange-400 mb-2">📌 小结</h4>
-        <ul className="space-y-2 text-sm text-text-secondary">
+        <ul className="space-y-2 text-sm text-zinc-400">
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-text-secondary">微调流程</strong>：预训练 → SFT → 偏好对齐 → 评估部署</span>
+            <span><strong className="text-zinc-400">微调流程</strong>：预训练 → SFT → 偏好对齐 → 评估部署</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-text-secondary">目标决定方法</strong>：新增能力用 SFT，学偏好用 DPO，练推理用 RFT</span>
+            <span><strong className="text-zinc-400">目标决定方法</strong>：新增能力用 SFT，学偏好用 DPO，练推理用 RFT</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-text-secondary">先尝试 prompt</strong>：微调是最后手段，先优化提示词</span>
+            <span><strong className="text-zinc-400">先尝试 prompt</strong>：微调是最后手段，先优化提示词</span>
           </li>
         </ul>
       </div>
 
       {/* 专有名词 */}
-      <div className="p-4 rounded-xl bg-deep border border-border-default">
-        <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+      <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
           本阶段专有名词
         </h3>
@@ -357,13 +357,13 @@ export const IntroStage: React.FC<IntroStageProps> = ({ onComplete }) => {
             { en: 'RLHF', zh: '人类反馈强化学习', desc: '用人类偏好反馈通过强化学习优化模型' },
             { en: 'DPO', zh: '直接偏好优化', desc: 'Direct Preference Optimization，简化版 RLHF' },
           ].map((term) => (
-            <div key={term.en} className="p-3 rounded-lg bg-surface">
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
-                <span className="text-xs text-text-tertiary">|</span>
-                <span className="text-sm text-text-secondary">{term.zh}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>
-              <p className="text-xs text-text-tertiary">{term.desc}</p>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
           ))}
         </div>

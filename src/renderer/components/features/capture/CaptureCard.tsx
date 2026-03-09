@@ -8,7 +8,7 @@ import type { CaptureItem, CaptureSource } from '@shared/types/capture';
 
 const SOURCE_CONFIG: Record<CaptureSource, { icon: React.ReactNode; label: string; color: string }> = {
   browser_extension: { icon: <Globe className="w-3 h-3" />, label: '网页', color: 'text-blue-400 bg-blue-500/20' },
-  manual: { icon: <FileText className="w-3 h-3" />, label: '手动', color: 'text-text-secondary bg-active/20' },
+  manual: { icon: <FileText className="w-3 h-3" />, label: '手动', color: 'text-zinc-400 bg-zinc-600/20' },
   wechat: { icon: <MessageCircle className="w-3 h-3" />, label: '微信', color: 'text-green-400 bg-green-500/20' },
   local_file: { icon: <FolderOpen className="w-3 h-3" />, label: '本地文件', color: 'text-amber-400 bg-amber-500/20' },
 };
@@ -40,24 +40,24 @@ export const CaptureCard: React.FC<CaptureCardProps> = ({ item, isSelected, onSe
       onClick={() => onSelect(item.id)}
       className={`group relative px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 ${
         isSelected
-          ? 'bg-hover border border-border-strong'
-          : 'hover:bg-surface border border-transparent'
+          ? 'bg-zinc-700 border border-zinc-600'
+          : 'hover:bg-zinc-800 border border-transparent'
       }`}
     >
       {/* 标题行 */}
       <div className="flex items-center justify-between gap-2 mb-1">
         <span className={`text-sm font-medium truncate flex-1 ${
-          isSelected ? 'text-text-primary' : 'text-text-secondary'
+          isSelected ? 'text-zinc-200' : 'text-zinc-400'
         }`}>
           {item.title}
         </span>
-        <span className="text-xs text-text-tertiary shrink-0">
+        <span className="text-xs text-zinc-500 shrink-0">
           {getRelativeTime(item.createdAt)}
         </span>
       </div>
 
       {/* 摘要 */}
-      <p className="text-xs text-text-tertiary line-clamp-2 mb-2">
+      <p className="text-xs text-zinc-500 line-clamp-2 mb-2">
         {item.summary || item.content.substring(0, 120)}
       </p>
 
@@ -69,7 +69,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = ({ item, isSelected, onSe
             {sourceConfig.label}
           </span>
           {item.tags.slice(0, 2).map(tag => (
-            <span key={tag} className="px-1.5 py-0.5 rounded text-xs bg-hover text-text-secondary">
+            <span key={tag} className="px-1.5 py-0.5 rounded text-xs bg-zinc-700 text-zinc-400">
               {tag}
             </span>
           ))}
@@ -78,7 +78,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = ({ item, isSelected, onSe
           {item.url && (
             <button
               onClick={(e) => { e.stopPropagation(); window.open(item.url, '_blank'); }}
-              className="p-1 text-text-tertiary hover:text-text-secondary transition-colors"
+              className="p-1 text-zinc-500 hover:text-zinc-400 transition-colors"
               title="打开原始链接"
             >
               <ExternalLink className="w-3.5 h-3.5" />
@@ -86,7 +86,7 @@ export const CaptureCard: React.FC<CaptureCardProps> = ({ item, isSelected, onSe
           )}
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(item.id); }}
-            className="p-1 text-text-tertiary hover:text-red-400 transition-colors"
+            className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
             title="删除"
           >
             <Trash2 className="w-3.5 h-3.5" />

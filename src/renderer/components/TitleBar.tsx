@@ -64,7 +64,7 @@ export const TitleBar: React.FC = () => {
 
         {/* Workspace Path */}
         {workspaceName && (
-          <span className="text-xs text-text-tertiary hidden sm:inline" title={workingDirectory || ''}>
+          <span className="text-xs text-zinc-500 hidden sm:inline" title={workingDirectory || ''}>
             {workspaceName}
           </span>
         )}

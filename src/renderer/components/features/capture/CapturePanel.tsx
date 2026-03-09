@@ -83,22 +83,22 @@ export const CapturePanel: React.FC = () => {
   return (
     <div className="fixed inset-0 z-50 flex bg-black/60" onClick={() => setShowCapturePanel(false)}>
       <div
-        className="m-auto w-[900px] h-[600px] bg-[#1a1a1f] rounded-xl border border-border-default shadow-2xl flex flex-col overflow-hidden"
+        className="m-auto w-[900px] h-[600px] bg-[#1a1a1f] rounded-xl border border-zinc-700 shadow-2xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 顶栏 */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border-default">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
           <div className="flex items-center gap-2">
             <BookOpen className="w-4 h-4 text-cyan-400" />
-            <h2 className="text-sm font-medium text-text-primary">知识库</h2>
-            <span className="text-xs text-text-tertiary">
+            <h2 className="text-sm font-medium text-zinc-200">知识库</h2>
+            <span className="text-xs text-zinc-500">
               {stats?.total ?? displayItems.length} 项
             </span>
           </div>
           <div className="flex items-center gap-1">
             <button
               onClick={() => setAddDialogOpen(true)}
-              className="flex items-center gap-1 px-2 py-1 text-xs text-text-secondary hover:text-cyan-300 rounded-md hover:bg-hover transition-colors"
+              className="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-cyan-300 rounded-md hover:bg-zinc-700 transition-colors"
               title="手动添加"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -107,7 +107,7 @@ export const CapturePanel: React.FC = () => {
             <button
               onClick={importFiles}
               disabled={isImporting}
-              className="flex items-center gap-1 px-2 py-1 text-xs text-text-secondary hover:text-cyan-300 rounded-md hover:bg-hover transition-colors disabled:opacity-50"
+              className="flex items-center gap-1 px-2 py-1 text-xs text-zinc-400 hover:text-cyan-300 rounded-md hover:bg-zinc-700 transition-colors disabled:opacity-50"
               title="导入本地文件"
             >
               <Upload className="w-3.5 h-3.5" />
@@ -115,7 +115,7 @@ export const CapturePanel: React.FC = () => {
             </button>
             <button
               onClick={() => setShowCapturePanel(false)}
-              className="p-1 text-text-tertiary hover:text-text-secondary transition-colors ml-2"
+              className="p-1 text-zinc-500 hover:text-zinc-400 transition-colors ml-2"
             >
               <X className="w-4 h-4" />
             </button>
@@ -123,15 +123,15 @@ export const CapturePanel: React.FC = () => {
         </div>
 
         {/* 搜索 + 筛选 */}
-        <div className="px-4 py-2 border-b border-border-default flex items-center gap-3">
+        <div className="px-4 py-2 border-b border-zinc-700 flex items-center gap-3">
           <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-tertiary" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="搜索采集内容..."
-              className="w-full pl-8 pr-3 py-1.5 text-sm bg-surface border border-border-default rounded-md text-text-primary placeholder-text-tertiary focus:outline-none focus:border-border-strong"
+              className="w-full pl-8 pr-3 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-md text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-zinc-600"
             />
           </div>
           <div className="flex items-center gap-1">
@@ -142,7 +142,7 @@ export const CapturePanel: React.FC = () => {
                 className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
                   filterSource === f.key
                     ? 'bg-cyan-500/20 text-cyan-300'
-                    : 'text-text-tertiary hover:bg-hover'
+                    : 'text-zinc-500 hover:bg-zinc-700'
                 }`}
               >
                 {f.icon}
@@ -155,16 +155,16 @@ export const CapturePanel: React.FC = () => {
         {/* 内容区 */}
         <div className="flex-1 flex overflow-hidden">
           {/* 列表 */}
-          <div className="w-[360px] border-r border-border-default overflow-y-auto">
+          <div className="w-[360px] border-r border-zinc-700 overflow-y-auto">
             {isLoading ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-5 h-5 animate-spin text-text-tertiary" />
+                <Loader2 className="w-5 h-5 animate-spin text-zinc-500" />
               </div>
             ) : displayItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center px-4">
-                <BookOpen className="w-8 h-8 text-text-disabled mb-3" />
-                <p className="text-sm text-text-secondary mb-1">暂无采集内容</p>
-                <p className="text-xs text-text-tertiary">
+                <BookOpen className="w-8 h-8 text-zinc-600 mb-3" />
+                <p className="text-sm text-zinc-400 mb-1">暂无采集内容</p>
+                <p className="text-xs text-zinc-500">
                   点击上方"添加"手动添加，或"导入"导入本地文件
                 </p>
               </div>
@@ -191,7 +191,7 @@ export const CapturePanel: React.FC = () => {
                 onClose={() => setSelectedItemId(null)}
               />
             ) : (
-              <div className="flex items-center justify-center h-full text-text-disabled text-sm">
+              <div className="flex items-center justify-center h-full text-zinc-600 text-sm">
                 选择一项查看详情
               </div>
             )}

@@ -24,7 +24,7 @@ export const SuggestionBar: React.FC<SuggestionBarProps> = ({ suggestions, onSel
         <button
           key={s.id}
           onClick={() => onSelect(s.text)}
-          className="px-3 py-1.5 text-xs bg-elevated/60 text-text-secondary rounded-full hover:bg-hover hover:text-text-secondary transition-colors truncate max-w-[200px] border border-border-subtle"
+          className="px-3 py-1.5 text-xs bg-zinc-700/60 text-zinc-400 rounded-full hover:bg-zinc-700 hover:text-zinc-400 transition-colors truncate max-w-[200px] border border-zinc-800"
         >
           {s.text}
         </button>

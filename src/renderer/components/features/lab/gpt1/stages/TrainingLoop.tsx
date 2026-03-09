@@ -192,10 +192,10 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
         )}
 
         {/* Axis labels */}
-        <text x={padding} y={height - 8} className="text-xs fill-text-tertiary">Epoch 0</text>
-        <text x={width - padding - 40} y={height - 8} className="text-xs fill-text-tertiary">Epoch {config.epochs}</text>
-        <text x={8} y={padding + 10} className="text-xs fill-text-tertiary">{maxLoss.toFixed(1)}</text>
-        <text x={8} y={height - padding} className="text-xs fill-text-tertiary">{minLoss.toFixed(2)}</text>
+        <text x={padding} y={height - 8} className="text-xs fill-zinc-500">Epoch 0</text>
+        <text x={width - padding - 40} y={height - 8} className="text-xs fill-zinc-500">Epoch {config.epochs}</text>
+        <text x={8} y={padding + 10} className="text-xs fill-zinc-500">{maxLoss.toFixed(1)}</text>
+        <text x={8} y={height - padding} className="text-xs fill-zinc-500">{minLoss.toFixed(2)}</text>
       </svg>
     );
   };
@@ -206,12 +206,12 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
         {/* 左侧：说明和配置 */}
         <div className="space-y-6">
           {/* 概念说明 */}
-          <div className="p-4 rounded-xl bg-deep border border-border-default">
-            <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+          <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <RotateCcw className="w-4 h-4 text-blue-400" />
               AI 怎么「练习」？
             </h3>
-            <div className="space-y-3 text-sm text-text-secondary">
+            <div className="space-y-3 text-sm text-zinc-400">
               <p>就像学生做练习题一样，AI 的学习过程是：</p>
               <ol className="space-y-2">
                 <li className="flex items-start gap-2">
@@ -231,19 +231,19 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   <span><span className="text-blue-300 font-medium">改正：</span>调整自己的「思路」，下次争取做对</span>
                 </li>
               </ol>
-              <p className="text-xs text-text-tertiary mt-2">
+              <p className="text-xs text-zinc-500 mt-2">
                 💡 这个过程重复几万次，AI 就慢慢学会了！
               </p>
             </div>
           </div>
 
           {/* 学习设置 */}
-          <div className="p-4 rounded-xl bg-deep border border-border-default">
-            <h3 className="text-sm font-semibold text-text-primary mb-3">调整学习方式</h3>
+          <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">调整学习方式</h3>
             <div className="space-y-4">
               <div>
                 <div className="flex justify-between mb-1">
-                  <label className="text-xs text-text-secondary">📚 每次看几道题</label>
+                  <label className="text-xs text-zinc-400">📚 每次看几道题</label>
                   <span className="text-xs font-bold text-emerald-400">{config.batchSize} 道</span>
                 </div>
                 <input
@@ -254,14 +254,14 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   value={config.batchSize}
                   onChange={(e) => setConfig({ ...config, batchSize: Number(e.target.value) })}
                   disabled={isTraining}
-                  className="w-full h-1.5 rounded-lg appearance-none bg-active cursor-pointer disabled:opacity-50"
+                  className="w-full h-1.5 rounded-lg appearance-none bg-zinc-600 cursor-pointer disabled:opacity-50"
                 />
-                <p className="text-xs text-text-disabled mt-1">一次看太多会消化不良，太少则学得慢</p>
+                <p className="text-xs text-zinc-600 mt-1">一次看太多会消化不良，太少则学得慢</p>
               </div>
 
               <div>
                 <div className="flex justify-between mb-1">
-                  <label className="text-xs text-text-secondary">🏃 改正的幅度</label>
+                  <label className="text-xs text-zinc-400">🏃 改正的幅度</label>
                   <span className="text-xs font-bold text-blue-400">{config.learningRate > 0.001 ? '大步走' : config.learningRate > 0.0001 ? '中等' : '小碎步'}</span>
                 </div>
                 <input
@@ -272,14 +272,14 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   value={Math.log10(config.learningRate) + 5}
                   onChange={(e) => setConfig({ ...config, learningRate: Math.pow(10, Number(e.target.value) - 5) })}
                   disabled={isTraining}
-                  className="w-full h-1.5 rounded-lg appearance-none bg-active cursor-pointer disabled:opacity-50"
+                  className="w-full h-1.5 rounded-lg appearance-none bg-zinc-600 cursor-pointer disabled:opacity-50"
                 />
-                <p className="text-xs text-text-disabled mt-1">步子太大容易摔，太小则进步慢</p>
+                <p className="text-xs text-zinc-600 mt-1">步子太大容易摔，太小则进步慢</p>
               </div>
 
               <div>
                 <div className="flex justify-between mb-1">
-                  <label className="text-xs text-text-secondary">🔄 复习几遍</label>
+                  <label className="text-xs text-zinc-400">🔄 复习几遍</label>
                   <span className="text-xs font-bold text-purple-400">{config.epochs} 遍</span>
                 </div>
                 <input
@@ -290,34 +290,34 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
                   value={config.epochs}
                   onChange={(e) => setConfig({ ...config, epochs: Number(e.target.value) })}
                   disabled={isTraining}
-                  className="w-full h-1.5 rounded-lg appearance-none bg-active cursor-pointer disabled:opacity-50"
+                  className="w-full h-1.5 rounded-lg appearance-none bg-zinc-600 cursor-pointer disabled:opacity-50"
                 />
-                <p className="text-xs text-text-disabled mt-1">好记性不如烂笔头，多练几遍记得牢</p>
+                <p className="text-xs text-zinc-600 mt-1">好记性不如烂笔头，多练几遍记得牢</p>
               </div>
             </div>
           </div>
 
           {/* Loss 是什么 */}
-          <div className="p-4 rounded-xl bg-deep border border-border-default">
-            <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+          <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <TrendingDown className="w-4 h-4 text-amber-400" />
               Loss（错误率）是什么？
             </h3>
-            <div className="space-y-3 text-sm text-text-secondary">
+            <div className="space-y-3 text-sm text-zinc-400">
               <p>
                 <span className="text-amber-400 font-medium">Loss</span> 就是 AI 的「错误程度」：
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-center">
                   <div className="text-2xl font-bold text-red-400">5.8</div>
-                  <div className="text-xs text-text-tertiary">刚开始：错得很离谱</div>
+                  <div className="text-xs text-zinc-500">刚开始：错得很离谱</div>
                 </div>
                 <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-center">
                   <div className="text-2xl font-bold text-emerald-400">0.02</div>
-                  <div className="text-xs text-text-tertiary">训练后：几乎不出错</div>
+                  <div className="text-xs text-zinc-500">训练后：几乎不出错</div>
                 </div>
               </div>
-              <p className="text-xs text-text-tertiary">
+              <p className="text-xs text-zinc-500">
                 💡 Loss 越低越好！我们的目标就是让这个数字尽可能小
               </p>
             </div>
@@ -328,7 +328,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
         <div className="space-y-6">
           {/* 训练控制 */}
           <div className="p-4 rounded-xl bg-gradient-to-br from-blue-500/10 to-indigo-500/10 border border-blue-500/20">
-            <h3 className="text-sm font-semibold text-text-primary mb-4">训练控制</h3>
+            <h3 className="text-sm font-semibold text-zinc-200 mb-4">训练控制</h3>
 
             {/* 控制按钮 */}
             <div className="flex gap-2 mb-4">
@@ -361,7 +361,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
 
               <button
                 onClick={resetTraining}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-hover border border-border-strong/50 text-text-secondary text-sm font-medium hover:bg-active transition-colors"
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-700 border border-zinc-600/50 text-zinc-400 text-sm font-medium hover:bg-zinc-600 transition-colors"
               >
                 <RotateCcw className="w-4 h-4" />
                 重置
@@ -370,11 +370,11 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
 
             {/* 进度条 */}
             <div className="mb-4">
-              <div className="flex justify-between text-xs text-text-tertiary mb-1">
+              <div className="flex justify-between text-xs text-zinc-500 mb-1">
                 <span>Epoch {currentEpoch}/{config.epochs} | Step {stepInEpoch}/100</span>
                 <span>{progress.toFixed(1)}%</span>
               </div>
-              <div className="h-2 bg-elevated rounded-full overflow-hidden">
+              <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-100"
                   style={{ width: `${progress}%` }}
@@ -384,32 +384,32 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
 
             {/* 实时指标 */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 rounded-lg bg-deep">
+              <div className="p-3 rounded-lg bg-zinc-900">
                 <div className="text-2xl font-bold text-blue-400">{currentLoss.toFixed(4)}</div>
-                <div className="text-xs text-text-tertiary">当前错误率</div>
+                <div className="text-xs text-zinc-500">当前错误率</div>
               </div>
-              <div className="p-3 rounded-lg bg-deep">
+              <div className="p-3 rounded-lg bg-zinc-900">
                 <div className="text-2xl font-bold text-emerald-400">
                   {lossHistory.length > 1
                     ? ((1 - currentLoss / lossHistory[0]) * 100).toFixed(1)
                     : 0}%
                 </div>
-                <div className="text-xs text-text-tertiary">进步了多少</div>
+                <div className="text-xs text-zinc-500">进步了多少</div>
               </div>
             </div>
           </div>
 
           {/* 错误率变化图 */}
-          <div className="p-4 rounded-xl bg-deep border border-border-default">
-            <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+          <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
               <TrendingDown className="w-4 h-4 text-blue-400" />
               错误率变化（越低越好）
             </h3>
-            <div className="bg-void rounded-lg p-2">
+            <div className="bg-zinc-950 rounded-lg p-2">
               {lossHistory.length > 1 ? (
                 renderLossChart()
               ) : (
-                <div className="h-[150px] flex items-center justify-center text-sm text-text-disabled">
+                <div className="h-[150px] flex items-center justify-center text-sm text-zinc-600">
                   点击「开始训练」查看 AI 的进步过程 📈
                 </div>
               )}
@@ -417,19 +417,19 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
           </div>
 
           {/* 训练记录 */}
-          <div className="p-4 rounded-xl bg-deep border border-border-default">
-            <h3 className="text-sm font-semibold text-text-primary mb-3">📋 学习记录</h3>
+          <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-3">📋 学习记录</h3>
             <div className="space-y-1 max-h-40 overflow-y-auto text-xs">
               {logs.length > 0 ? (
                 logs.map((log, i) => (
-                  <div key={i} className="text-text-secondary p-1.5 rounded bg-surface">
+                  <div key={i} className="text-zinc-400 p-1.5 rounded bg-zinc-800">
                     第 <span className="text-blue-400 font-bold">{log.epoch}</span> 遍 |
                     {' '}做到第 <span className="text-purple-400">{log.step}</span> 题 |
                     {' '}错误率 <span className="text-emerald-400 font-bold">{log.loss.toFixed(4)}</span>
                   </div>
                 ))
               ) : (
-                <div className="text-text-disabled text-center py-4">等待开始训练...</div>
+                <div className="text-zinc-600 text-center py-4">等待开始训练...</div>
               )}
             </div>
           </div>
@@ -437,8 +437,8 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
       </div>
 
       {/* 专有名词解释 */}
-      <div className="mt-8 p-4 rounded-xl bg-deep border border-border-default">
-        <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+      <div className="mt-8 p-4 rounded-xl bg-zinc-900 border border-zinc-700">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
           本阶段专有名词
         </h3>
@@ -453,13 +453,13 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
             { en: 'Backpropagation', zh: '反向传播', desc: '从输出层往回计算梯度的算法，找出每个参数的责任' },
             { en: 'Optimizer', zh: '优化器', desc: '根据梯度更新参数的策略，常用 Adam、SGD 等' },
           ].map((term) => (
-            <div key={term.en} className="p-3 rounded-lg bg-surface">
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
-                <span className="text-xs text-text-tertiary">|</span>
-                <span className="text-sm text-text-secondary">{term.zh}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>
-              <p className="text-xs text-text-tertiary">{term.desc}</p>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
           ))}
         </div>
@@ -469,7 +469,7 @@ export const TrainingLoop: React.FC<Props> = ({ onComplete, onBack }) => {
       <div className="mt-8 flex justify-between">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-elevated text-text-secondary font-medium hover:bg-active transition-colors"
+          className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-zinc-700 text-zinc-400 font-medium hover:bg-zinc-600 transition-colors"
         >
           <ChevronLeft className="w-4 h-4" />
           上一步

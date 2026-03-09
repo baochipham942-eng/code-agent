@@ -183,7 +183,7 @@ const CapabilityRadar: React.FC<{
             fill="none"
             stroke="currentColor"
             strokeWidth="1"
-            className="text-text-disabled/40"
+            className="text-zinc-600/40"
           />
         ))}
 
@@ -197,7 +197,7 @@ const CapabilityRadar: React.FC<{
             y2={centerY + Math.sin(p.angle) * maxRadius}
             stroke="currentColor"
             strokeWidth="1"
-            className="text-text-disabled/40"
+            className="text-zinc-600/40"
           />
         ))}
 
@@ -258,7 +258,7 @@ const CapabilityRadar: React.FC<{
                 x={p.labelX + dx}
                 y={p.labelY + dy}
                 textAnchor={textAnchor}
-                className={`text-xs fill-text-secondary`}
+                className={`text-xs fill-zinc-400`}
                 style={{ fontSize: '11px' }}
               >
                 {p.item.category.name}
@@ -267,7 +267,7 @@ const CapabilityRadar: React.FC<{
                 x={p.labelX + dx}
                 y={p.labelY + dy + 14}
                 textAnchor={textAnchor}
-                className="fill-text-tertiary"
+                className="fill-zinc-500"
                 style={{ fontSize: '10px' }}
               >
                 ({p.item.count})
@@ -295,7 +295,7 @@ const CapabilityCard: React.FC<{
   const maxCount = Math.max(...tools.map(t => t.count), 1);
 
   return (
-    <div className={`border border-border-default rounded-lg overflow-hidden`}>
+    <div className={`border border-zinc-700 rounded-lg overflow-hidden`}>
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className={`w-full flex items-center gap-3 p-3 ${category.bgColor} hover:brightness-110 transition-all text-left`}
@@ -303,28 +303,28 @@ const CapabilityCard: React.FC<{
         <div className={category.color}>{category.icon}</div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-text-primary">{category.name}</span>
-            <span className="text-xs text-text-tertiary">{totalInCategory} 次调用</span>
+            <span className="text-sm font-medium text-zinc-200">{category.name}</span>
+            <span className="text-xs text-zinc-500">{totalInCategory} 次调用</span>
           </div>
-          <p className="text-xs text-text-tertiary truncate">{category.description}</p>
+          <p className="text-xs text-zinc-500 truncate">{category.description}</p>
         </div>
-        <ChevronRight className={`w-4 h-4 text-text-tertiary transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+        <ChevronRight className={`w-4 h-4 text-zinc-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
       </button>
 
       {isExpanded && (
-        <div className="p-3 space-y-2 bg-surface">
+        <div className="p-3 space-y-2 bg-zinc-800">
           {tools.map((tool) => (
             <div key={tool.name} className="flex items-center gap-2">
-              <span className="text-xs text-text-secondary w-20 truncate">
+              <span className="text-xs text-zinc-400 w-20 truncate">
                 {TOOL_DISPLAY_NAMES[tool.name] || tool.name}
               </span>
-              <div className="flex-1 h-1.5 bg-active rounded-full overflow-hidden">
+              <div className="flex-1 h-1.5 bg-zinc-600 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${category.bgColor.replace('/20', '/60')}`}
                   style={{ width: `${(tool.count / maxCount) * 100}%` }}
                 />
               </div>
-              <span className="text-xs text-text-tertiary w-8 text-right">{tool.count}</span>
+              <span className="text-xs text-zinc-500 w-8 text-right">{tool.count}</span>
             </div>
           ))}
         </div>
@@ -350,39 +350,39 @@ const PatternCard: React.FC<{ pattern: EvolutionPattern }> = ({ pattern }) => {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-text-primary">{pattern.name}</span>
+            <span className="text-sm font-medium text-zinc-200">{pattern.name}</span>
             <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300">
               成功经验
             </span>
           </div>
-          <p className="text-xs text-text-tertiary mt-0.5 line-clamp-1">{pattern.context}</p>
+          <p className="text-xs text-zinc-500 mt-0.5 line-clamp-1">{pattern.context}</p>
         </div>
-        <ChevronRight className={`w-4 h-4 text-text-tertiary transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+        <ChevronRight className={`w-4 h-4 text-zinc-500 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
       </button>
 
       {isExpanded && (
-        <div className="p-3 space-y-3 bg-surface">
+        <div className="p-3 space-y-3 bg-zinc-800">
           <div>
-            <div className="text-xs text-text-tertiary mb-1">场景</div>
-            <p className="text-sm text-text-secondary">{pattern.context}</p>
+            <div className="text-xs text-zinc-500 mb-1">场景</div>
+            <p className="text-sm text-zinc-400">{pattern.context}</p>
           </div>
           <div>
-            <div className="text-xs text-text-tertiary mb-1">方法</div>
-            <p className="text-sm text-text-secondary">{pattern.pattern}</p>
+            <div className="text-xs text-zinc-500 mb-1">方法</div>
+            <p className="text-sm text-zinc-400">{pattern.pattern}</p>
           </div>
           <div>
-            <div className="text-xs text-text-tertiary mb-1">步骤</div>
-            <p className="text-sm text-text-secondary whitespace-pre-line">{pattern.solution}</p>
+            <div className="text-xs text-zinc-500 mb-1">步骤</div>
+            <p className="text-sm text-zinc-400 whitespace-pre-line">{pattern.solution}</p>
           </div>
-          <div className="flex items-center gap-4 pt-2 border-t border-border-default">
-            <span className="text-xs text-text-tertiary">
+          <div className="flex items-center gap-4 pt-2 border-t border-zinc-700">
+            <span className="text-xs text-zinc-500">
               置信度 <span className="text-purple-400">{Math.round(pattern.confidence * 100)}%</span>
             </span>
           </div>
           {pattern.tags.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {pattern.tags.map((tag, i) => (
-                <span key={i} className="text-xs px-1.5 py-0.5 bg-hover text-text-secondary rounded">
+                <span key={i} className="text-xs px-1.5 py-0.5 bg-zinc-700 text-zinc-400 rounded">
                   #{tag}
                 </span>
               ))}
@@ -414,7 +414,7 @@ const CoworkGraphView: React.FC<{
           <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
             <Brain className="w-9 h-9 text-white" />
           </div>
-          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-elevated rounded text-xs text-text-secondary whitespace-nowrap">
+          <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 px-2 py-0.5 bg-zinc-700 rounded text-xs text-zinc-400 whitespace-nowrap">
             AI 协作
           </div>
         </div>
@@ -425,12 +425,12 @@ const CoworkGraphView: React.FC<{
         {topCategories.map((item) => (
           <div
             key={item.category.id}
-            className={`flex items-center gap-2 p-2.5 rounded-lg ${item.category.bgColor} border border-border-subtle`}
+            className={`flex items-center gap-2 p-2.5 rounded-lg ${item.category.bgColor} border border-zinc-800`}
           >
             <div className={item.category.color}>{item.category.icon}</div>
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium text-text-primary">{item.category.name}</div>
-              <div className="text-[10px] text-text-tertiary">{item.count} 次 · {Math.round(item.percentage)}%</div>
+              <div className="text-xs font-medium text-zinc-200">{item.category.name}</div>
+              <div className="text-[10px] text-zinc-500">{item.count} 次 · {Math.round(item.percentage)}%</div>
             </div>
           </div>
         ))}
@@ -438,17 +438,17 @@ const CoworkGraphView: React.FC<{
 
       {/* 统计摘要 */}
       <div className="mt-4 grid grid-cols-3 gap-2">
-        <div className="text-center p-2 bg-surface rounded-lg">
+        <div className="text-center p-2 bg-zinc-800 rounded-lg">
           <div className="text-lg font-bold text-indigo-400">{totalUsage}</div>
-          <div className="text-[10px] text-text-tertiary">总协作次数</div>
+          <div className="text-[10px] text-zinc-500">总协作次数</div>
         </div>
-        <div className="text-center p-2 bg-surface rounded-lg">
+        <div className="text-center p-2 bg-zinc-800 rounded-lg">
           <div className="text-lg font-bold text-emerald-400">{topCategories.length}</div>
-          <div className="text-[10px] text-text-tertiary">活跃能力</div>
+          <div className="text-[10px] text-zinc-500">活跃能力</div>
         </div>
-        <div className="text-center p-2 bg-surface rounded-lg">
+        <div className="text-center p-2 bg-zinc-800 rounded-lg">
           <div className="text-lg font-bold text-purple-400">{patternCount}</div>
-          <div className="text-[10px] text-text-tertiary">成功经验</div>
+          <div className="text-[10px] text-zinc-500">成功经验</div>
         </div>
       </div>
     </div>
@@ -514,7 +514,7 @@ export const MemoryKnowledgeGraph: React.FC = () => {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-text-secondary" />
+        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
       </div>
     );
   }
@@ -523,7 +523,7 @@ export const MemoryKnowledgeGraph: React.FC = () => {
   if (error) {
     return (
       <div className="text-center py-8">
-        <p className="text-sm text-text-tertiary">{error}</p>
+        <p className="text-sm text-zinc-500">{error}</p>
         <Button variant="ghost" size="sm" onClick={loadInsights} className="mt-2">
           <RefreshCw className="w-4 h-4 mr-1" />
           重试
@@ -536,11 +536,11 @@ export const MemoryKnowledgeGraph: React.FC = () => {
   if (!insights || insights.totalToolUsage === 0) {
     return (
       <div className="text-center py-12">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-surface flex items-center justify-center">
-          <Brain className="w-8 h-8 text-text-tertiary" />
+        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-zinc-800 flex items-center justify-center">
+          <Brain className="w-8 h-8 text-zinc-500" />
         </div>
-        <h4 className="text-text-primary font-medium mb-1">暂无协作数据</h4>
-        <p className="text-sm text-text-tertiary">
+        <h4 className="text-zinc-200 font-medium mb-1">暂无协作数据</h4>
+        <p className="text-sm text-zinc-500">
           开始与 AI 协作后，这里将展示学习成果
         </p>
       </div>
@@ -560,7 +560,7 @@ export const MemoryKnowledgeGraph: React.FC = () => {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Sparkles className="w-5 h-5 text-indigo-400" />
-          <h3 className="text-sm font-medium text-text-primary">协作学习图谱</h3>
+          <h3 className="text-sm font-medium text-zinc-200">协作学习图谱</h3>
         </div>
         <Button variant="ghost" size="sm" onClick={loadInsights} className="p-1.5">
           <RefreshCw className="w-4 h-4" />
@@ -568,7 +568,7 @@ export const MemoryKnowledgeGraph: React.FC = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-surface rounded-lg p-1">
+      <div className="flex gap-1 bg-zinc-800 rounded-lg p-1">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -576,23 +576,23 @@ export const MemoryKnowledgeGraph: React.FC = () => {
             disabled={tab.disabled}
             className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
               activeTab === tab.id
-                ? 'bg-active text-text-primary'
+                ? 'bg-zinc-600 text-zinc-200'
                 : tab.disabled
-                ? 'text-text-disabled cursor-not-allowed'
-                : 'text-text-secondary hover:text-text-primary hover:bg-hover'
+                ? 'text-zinc-600 cursor-not-allowed'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700'
             }`}
           >
             {tab.icon}
             {tab.label}
             {tab.count !== undefined && tab.count > 0 && (
-              <span className="text-[10px] text-text-tertiary">({tab.count})</span>
+              <span className="text-[10px] text-zinc-500">({tab.count})</span>
             )}
           </button>
         ))}
       </div>
 
       {/* Content */}
-      <div className="bg-surface rounded-lg p-4">
+      <div className="bg-zinc-800 rounded-lg p-4">
         {activeTab === 'overview' && (
           <div className="space-y-4">
             {/* 协作图谱 */}
@@ -604,7 +604,7 @@ export const MemoryKnowledgeGraph: React.FC = () => {
 
             {/* 洞察提示 */}
             {categoryStats.filter(c => c.count > 0).length > 0 && (
-              <div className="text-xs text-text-tertiary bg-surface rounded-lg p-3">
+              <div className="text-xs text-zinc-500 bg-zinc-800 rounded-lg p-3">
                 <div className="flex items-start gap-2">
                   <Lightbulb className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
                   <div>
@@ -651,7 +651,7 @@ export const MemoryKnowledgeGraph: React.FC = () => {
 
         {activeTab === 'patterns' && (
           <div className="space-y-3">
-            <div className="text-xs text-text-tertiary mb-2">
+            <div className="text-xs text-zinc-500 mb-2">
               AI 从成功协作中总结的经验，可复用于类似场景
             </div>
             {insights.evolutionPatterns.length > 0 ? (
@@ -659,7 +659,7 @@ export const MemoryKnowledgeGraph: React.FC = () => {
                 <PatternCard key={i} pattern={pattern} />
               ))
             ) : (
-              <p className="text-sm text-text-tertiary text-center py-8">暂无成功经验</p>
+              <p className="text-sm text-zinc-500 text-center py-8">暂无成功经验</p>
             )}
           </div>
         )}

@@ -93,6 +93,6 @@ export function getNameColor(status: ToolStatus): string {
     case 'interrupted':
       return 'text-[var(--cc-muted)]';
     default:
-      return 'text-text-secondary';
+      return 'text-zinc-400';
   }
 }

@@ -153,20 +153,20 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative w-full max-w-md bg-deep rounded-xl border border-border-default p-6">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">
+      <div className="relative w-full max-w-md bg-zinc-900 rounded-xl border border-zinc-700 p-6">
+        <h3 className="text-lg font-semibold text-zinc-200 mb-4">
           {account ? '编辑通道' : '添加通道'}
         </h3>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 名称 */}
           <div>
-            <label className="block text-sm text-text-secondary mb-1">名称</label>
+            <label className="block text-sm text-zinc-400 mb-1">名称</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-text-primary text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
               placeholder="例如: 测试 API"
               required
             />
@@ -175,11 +175,11 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
           {/* 类型 */}
           {!account && (
             <div>
-              <label className="block text-sm text-text-secondary mb-1">通道类型</label>
+              <label className="block text-sm text-zinc-400 mb-1">通道类型</label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value as ChannelType)}
-                className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-text-primary text-sm focus:outline-none focus:border-indigo-500"
+                className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
               >
                 {channelTypes.map((ct) => (
                   <option key={ct.type} value={ct.type}>
@@ -194,24 +194,24 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
           {type === 'http-api' && (
             <>
               <div>
-                <label className="block text-sm text-text-secondary mb-1">端口</label>
+                <label className="block text-sm text-zinc-400 mb-1">端口</label>
                 <input
                   type="number"
                   value={apiPort}
                   onChange={(e) => setApiPort(e.target.value)}
-                  className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-text-primary text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="8080"
                   min={1}
                   max={65535}
                 />
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-1">
+                <label className="block text-sm text-zinc-400 mb-1">
                   API Key
                   <button
                     type="button"
                     onClick={() => setShowSecrets(!showSecrets)}
-                    className="ml-2 text-text-tertiary hover:text-text-secondary"
+                    className="ml-2 text-zinc-500 hover:text-zinc-400"
                   >
                     {showSecrets ? <EyeOff className="w-3 h-3 inline" /> : <Eye className="w-3 h-3 inline" />}
                   </button>
@@ -220,7 +220,7 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   type={showSecrets ? 'text' : 'password'}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-text-primary text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="留空自动生成"
                 />
               </div>
@@ -230,9 +230,9 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   id="enableCors"
                   checked={enableCors}
                   onChange={(e) => setEnableCors(e.target.checked)}
-                  className="rounded border-border-strong"
+                  className="rounded border-zinc-600"
                 />
-                <label htmlFor="enableCors" className="text-sm text-text-secondary">
+                <label htmlFor="enableCors" className="text-sm text-zinc-400">
                   启用 CORS
                 </label>
               </div>
@@ -243,23 +243,23 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
           {type === 'feishu' && (
             <>
               <div>
-                <label className="block text-sm text-text-secondary mb-1">App ID</label>
+                <label className="block text-sm text-zinc-400 mb-1">App ID</label>
                 <input
                   type="text"
                   value={appId}
                   onChange={(e) => setAppId(e.target.value)}
-                  className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-text-primary text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="cli_xxxxxxxxxx"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-1">
+                <label className="block text-sm text-zinc-400 mb-1">
                   App Secret
                   <button
                     type="button"
                     onClick={() => setShowSecrets(!showSecrets)}
-                    className="ml-2 text-text-tertiary hover:text-text-secondary"
+                    className="ml-2 text-zinc-500 hover:text-zinc-400"
                   >
                     {showSecrets ? <EyeOff className="w-3 h-3 inline" /> : <Eye className="w-3 h-3 inline" />}
                   </button>
@@ -268,45 +268,45 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   type={showSecrets ? 'text' : 'password'}
                   value={appSecret}
                   onChange={(e) => setAppSecret(e.target.value)}
-                  className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-text-primary text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-1">Encrypt Key (可选)</label>
+                <label className="block text-sm text-zinc-400 mb-1">Encrypt Key (可选)</label>
                 <input
                   type={showSecrets ? 'text' : 'password'}
                   value={encryptKey}
                   onChange={(e) => setEncryptKey(e.target.value)}
-                  className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-text-primary text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
                 />
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-1">Verification Token (可选)</label>
+                <label className="block text-sm text-zinc-400 mb-1">Verification Token (可选)</label>
                 <input
                   type={showSecrets ? 'text' : 'password'}
                   value={verificationToken}
                   onChange={(e) => setVerificationToken(e.target.value)}
-                  className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-text-primary text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
                 />
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-1">Webhook 端口</label>
+                <label className="block text-sm text-zinc-400 mb-1">Webhook 端口</label>
                 <input
                   type="number"
                   value={webhookPort}
                   onChange={(e) => setWebhookPort(e.target.value)}
-                  className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-text-primary text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="3200"
                   min={1}
                   max={65535}
                 />
               </div>
-              <div className="p-3 bg-surface rounded-lg border border-border-default">
-                <p className="text-xs text-text-secondary">
-                  <strong className="text-text-secondary">配置提示：</strong>
+              <div className="p-3 bg-zinc-800 rounded-lg border border-zinc-700">
+                <p className="text-xs text-zinc-400">
+                  <strong className="text-zinc-400">配置提示：</strong>
                 </p>
-                <ol className="text-xs text-text-tertiary mt-1 space-y-1 list-decimal list-inside">
+                <ol className="text-xs text-zinc-500 mt-1 space-y-1 list-decimal list-inside">
                   <li>连接后本地 Webhook 地址：<code className="text-indigo-400">http://localhost:{webhookPort}/webhook/feishu</code></li>
                   <li>使用 ngrok 暴露公网：<code className="text-indigo-400">ngrok http {webhookPort}</code></li>
                   <li>将 ngrok URL 填入飞书开放平台「事件与回调」→「请求地址配置」</li>
@@ -319,12 +319,12 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
           {type === 'telegram' && (
             <>
               <div>
-                <label className="block text-sm text-text-secondary mb-1">
+                <label className="block text-sm text-zinc-400 mb-1">
                   Bot Token
                   <button
                     type="button"
                     onClick={() => setShowSecrets(!showSecrets)}
-                    className="ml-2 text-text-tertiary hover:text-text-secondary"
+                    className="ml-2 text-zinc-500 hover:text-zinc-400"
                   >
                     {showSecrets ? <EyeOff className="w-3 h-3 inline" /> : <Eye className="w-3 h-3 inline" />}
                   </button>
@@ -333,46 +333,46 @@ const ChannelModal: React.FC<ChannelModalProps> = ({
                   type={showSecrets ? 'text' : 'password'}
                   value={botToken}
                   onChange={(e) => setBotToken(e.target.value)}
-                  className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-text-primary text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="从 @BotFather 获取"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-1">代理 URL (可选)</label>
+                <label className="block text-sm text-zinc-400 mb-1">代理 URL (可选)</label>
                 <input
                   type="text"
                   value={tgProxyUrl}
                   onChange={(e) => setTgProxyUrl(e.target.value)}
-                  className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-text-primary text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="http://127.0.0.1:7897 (默认读 HTTPS_PROXY)"
                 />
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-1">备用代理 URL (可选)</label>
+                <label className="block text-sm text-zinc-400 mb-1">备用代理 URL (可选)</label>
                 <input
                   type="text"
                   value={tgFallbackProxy}
                   onChange={(e) => setTgFallbackProxy(e.target.value)}
-                  className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-text-primary text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="主代理不可用时自动切换"
                 />
               </div>
               <div>
-                <label className="block text-sm text-text-secondary mb-1">白名单用户 ID (可选)</label>
+                <label className="block text-sm text-zinc-400 mb-1">白名单用户 ID (可选)</label>
                 <input
                   type="text"
                   value={tgAllowedUserIds}
                   onChange={(e) => setTgAllowedUserIds(e.target.value)}
-                  className="w-full px-3 py-2 bg-elevated border border-border-default rounded-lg text-text-primary text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-2 bg-zinc-700 border border-zinc-700 rounded-lg text-zinc-200 text-sm focus:outline-none focus:border-indigo-500"
                   placeholder="逗号分隔，留空允许所有用户"
                 />
               </div>
-              <div className="p-3 bg-surface rounded-lg border border-border-default">
-                <p className="text-xs text-text-secondary">
-                  <strong className="text-text-secondary">配置提示：</strong>
+              <div className="p-3 bg-zinc-800 rounded-lg border border-zinc-700">
+                <p className="text-xs text-zinc-400">
+                  <strong className="text-zinc-400">配置提示：</strong>
                 </p>
-                <ol className="text-xs text-text-tertiary mt-1 space-y-1 list-decimal list-inside">
+                <ol className="text-xs text-zinc-500 mt-1 space-y-1 list-decimal list-inside">
                   <li>在 Telegram 中搜索 <code className="text-indigo-400">@BotFather</code> 创建 Bot</li>
                   <li>发送 <code className="text-indigo-400">/newbot</code> 并按提示操作获取 Token</li>
                   <li>国内环境需配置代理才能连接 Telegram API</li>
@@ -521,7 +521,7 @@ export const ChannelsSettings: React.FC = () => {
       case 'error':
         return 'text-red-400';
       default:
-        return 'text-text-secondary';
+        return 'text-zinc-400';
     }
   };
 
@@ -547,14 +547,14 @@ export const ChannelsSettings: React.FC = () => {
       case 'telegram':
         return <MessageSquare className="w-4 h-4 text-sky-400" />;
       default:
-        return <MessageSquare className="w-4 h-4 text-text-secondary" />;
+        return <MessageSquare className="w-4 h-4 text-zinc-400" />;
     }
   };
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-text-secondary" />
+        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
       </div>
     );
   }
@@ -563,8 +563,8 @@ export const ChannelsSettings: React.FC = () => {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h3 className="text-sm font-medium text-text-primary mb-2">多通道接入</h3>
-        <p className="text-xs text-text-secondary mb-4">
+        <h3 className="text-sm font-medium text-zinc-200 mb-2">多通道接入</h3>
+        <p className="text-xs text-zinc-400 mb-4">
           配置外部通道以通过 HTTP API、飞书等方式与 Agent 交互。
         </p>
       </div>
@@ -581,22 +581,22 @@ export const ChannelsSettings: React.FC = () => {
       {/* Account List */}
       <div className="space-y-3">
         {accounts.length === 0 ? (
-          <div className="bg-surface rounded-lg p-4 text-center text-text-secondary text-sm">
+          <div className="bg-zinc-800 rounded-lg p-4 text-center text-zinc-400 text-sm">
             还没有配置任何通道
           </div>
         ) : (
           accounts.map((account) => (
             <div
               key={account.id}
-              className="bg-surface rounded-lg p-4"
+              className="bg-zinc-800 rounded-lg p-4"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   {getTypeIcon(account.type)}
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-text-primary">{account.name}</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-active text-text-secondary">
+                      <span className="text-sm font-medium text-zinc-200">{account.name}</span>
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-600 text-zinc-400">
                         {channelTypes.find(t => t.type === account.type)?.name || account.type}
                       </span>
                     </div>
@@ -606,10 +606,10 @@ export const ChannelsSettings: React.FC = () => {
                       </span>
                       {account.type === 'http-api' && (
                         <>
-                          <span className="text-text-secondary">
+                          <span className="text-zinc-400">
                             端口: {(account.config as HttpApiChannelConfig).port}
                           </span>
-                          <span className="text-text-tertiary font-mono">
+                          <span className="text-zinc-500 font-mono">
                             Key: {(account.config as HttpApiChannelConfig).apiKey?.substring(0, 8)}...
                           </span>
                           <button
@@ -693,9 +693,9 @@ export const ChannelsSettings: React.FC = () => {
       )}
 
       {/* Info Box */}
-      <div className="bg-surface rounded-lg p-4">
-        <h4 className="text-sm font-medium text-text-primary mb-2">使用说明</h4>
-        <div className="text-xs text-text-secondary leading-relaxed space-y-2">
+      <div className="bg-zinc-800 rounded-lg p-4">
+        <h4 className="text-sm font-medium text-zinc-200 mb-2">使用说明</h4>
+        <div className="text-xs text-zinc-400 leading-relaxed space-y-2">
           <p>
             <strong>HTTP API:</strong> 创建本地 REST API 端点，支持同步和流式响应。
             使用 X-API-Key 头进行认证。

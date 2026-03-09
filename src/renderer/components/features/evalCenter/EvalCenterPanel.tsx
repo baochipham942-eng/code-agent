@@ -43,13 +43,13 @@ export const EvalCenterPanel: React.FC = () => {
   if (!showEvalCenter) return null;
 
   return (
-    <div className="w-full h-full flex flex-col bg-deep">
+    <div className="w-full h-full flex flex-col bg-zinc-900">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border-default shrink-0">
-          <h2 className="text-sm font-medium text-text-primary">评测中心</h2>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700 shrink-0">
+          <h2 className="text-sm font-medium text-zinc-200">评测中心</h2>
           <button
             onClick={handleClose}
-            className="p-1 text-text-tertiary hover:text-text-secondary hover:bg-hover rounded transition"
+            className="p-1 text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700 rounded transition"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -60,7 +60,7 @@ export const EvalCenterPanel: React.FC = () => {
         {/* Body: sidebar + main */}
         <div className="flex flex-1 min-h-0">
           {/* Left sidebar */}
-          <div className="w-[160px] shrink-0 bg-deep border-r border-border-default py-2 flex flex-col gap-0.5">
+          <div className="w-[160px] shrink-0 bg-zinc-900 border-r border-zinc-700 py-2 flex flex-col gap-0.5">
             {NAV_ITEMS.map((item) => (
               <button
                 key={item.key}
@@ -72,8 +72,8 @@ export const EvalCenterPanel: React.FC = () => {
                 }}
                 className={`flex items-center gap-2 px-3 py-2 mx-1 rounded text-xs transition ${
                   activeNav === item.key
-                    ? 'bg-hover text-text-primary'
-                    : 'text-text-tertiary hover:text-text-secondary hover:bg-surface'
+                    ? 'bg-zinc-700 text-zinc-200'
+                    : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-800'
                 }`}
               >
                 <span className="text-sm">{item.icon}</span>

@@ -129,13 +129,13 @@ export const AgentTaskProgress: React.FC<AgentTaskProgressProps> = ({
       {/* 进度条（仅工具执行时显示） */}
       {hasProgress && (
         <div className="flex items-center gap-2">
-          <div className="w-16 h-1.5 bg-active rounded-full overflow-hidden">
+          <div className="w-16 h-1.5 bg-zinc-600 rounded-full overflow-hidden">
             <div
               className="h-full bg-purple-500 rounded-full transition-all duration-300"
               style={{ width: `${progress.progress}%` }}
             />
           </div>
-          <span className="text-xs text-text-tertiary">
+          <span className="text-xs text-zinc-500">
             {progress.toolIndex !== undefined && progress.toolTotal
               ? `第${progress.toolIndex + 1}步 / 共${progress.toolTotal}步`
               : `${Math.round(progress.progress || 0)}%`}
@@ -166,7 +166,7 @@ export const CompactTaskProgress: React.FC<CompactProgressProps> = ({ progress }
   return (
     <div className="inline-flex items-center gap-1 text-xs">
       <span className={`${config.color} animate-pulse`}>{config.icon}</span>
-      <span className="text-text-tertiary">
+      <span className="text-zinc-500">
         {displayStep}
         {progress.progress !== undefined && ` (${Math.round(progress.progress)}%)`}
       </span>

@@ -35,7 +35,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   Web: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
   Agent: 'text-pink-400 bg-pink-500/10 border-pink-500/20',
   Skill: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20',
-  Other: 'text-text-secondary bg-active/10 border-border-strong/20',
+  Other: 'text-zinc-400 bg-zinc-600/10 border-zinc-600/20',
 };
 
 export const ReplayMessageBlock: React.FC<Props> = ({ block }) => {
@@ -58,7 +58,7 @@ export const ReplayMessageBlock: React.FC<Props> = ({ block }) => {
 const UserBlock: React.FC<{ content: string }> = ({ content }) => (
   <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3">
     <div className="text-[10px] text-blue-400/60 font-medium mb-1 uppercase tracking-wider">User</div>
-    <div className="text-sm text-text-primary whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto leading-relaxed">
+    <div className="text-sm text-zinc-200 whitespace-pre-wrap break-words max-h-[200px] overflow-y-auto leading-relaxed">
       {content}
     </div>
   </div>
@@ -69,20 +69,20 @@ const ThinkingBlock: React.FC<{ content: string }> = ({ content }) => {
   const preview = content.length > 150 ? content.slice(0, 150) + '...' : content;
 
   return (
-    <div className="border border-border-subtle rounded-lg overflow-hidden">
+    <div className="border border-zinc-800 rounded-lg overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left hover:bg-surface transition"
+        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-left hover:bg-zinc-800 transition"
       >
-        <span className="font-mono text-[10px] text-text-tertiary">{expanded ? '▼' : '▶'}</span>
-        <span className="text-[11px] text-text-tertiary">thinking</span>
+        <span className="font-mono text-[10px] text-zinc-500">{expanded ? '▼' : '▶'}</span>
+        <span className="text-[11px] text-zinc-500">thinking</span>
         {!expanded && (
-          <span className="text-[11px] text-text-disabled truncate ml-1">{preview}</span>
+          <span className="text-[11px] text-zinc-600 truncate ml-1">{preview}</span>
         )}
       </button>
       {expanded && (
-        <div className="px-3 pb-2.5 border-t border-border-default/20">
-          <div className="text-[11px] text-text-tertiary whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto leading-relaxed mt-1.5 font-mono">
+        <div className="px-3 pb-2.5 border-t border-zinc-700/20">
+          <div className="text-[11px] text-zinc-500 whitespace-pre-wrap break-words max-h-[300px] overflow-y-auto leading-relaxed mt-1.5 font-mono">
             {content}
           </div>
         </div>
@@ -93,7 +93,7 @@ const ThinkingBlock: React.FC<{ content: string }> = ({ content }) => {
 
 const TextBlock: React.FC<{ content: string }> = ({ content }) => (
   <div className="px-1">
-    <div className="text-sm text-text-secondary whitespace-pre-wrap break-words leading-relaxed">
+    <div className="text-sm text-zinc-400 whitespace-pre-wrap break-words leading-relaxed">
       {content}
     </div>
   </div>
@@ -118,26 +118,26 @@ const ToolCallBlock: React.FC<{ toolCall: ToolCallData }> = ({ toolCall }) => {
         <span className={`text-[11px] font-mono font-medium ${colorClass.split(' ')[0]}`}>
           {toolCall.name}
         </span>
-        <span className="text-[10px] text-text-disabled truncate flex-1">{argsPreview}</span>
-        <span className="text-[10px] text-text-disabled shrink-0">{toolCall.duration}ms</span>
+        <span className="text-[10px] text-zinc-600 truncate flex-1">{argsPreview}</span>
+        <span className="text-[10px] text-zinc-600 shrink-0">{toolCall.duration}ms</span>
         <ChevronDown
-          className={`w-3 h-3 text-text-disabled shrink-0 transition-transform ${expanded ? '' : '-rotate-90'}`}
+          className={`w-3 h-3 text-zinc-600 shrink-0 transition-transform ${expanded ? '' : '-rotate-90'}`}
         />
       </button>
       {expanded && (
-        <div className="px-3 pb-2.5 border-t border-border-default/20 pt-2 space-y-2">
+        <div className="px-3 pb-2.5 border-t border-zinc-700/20 pt-2 space-y-2">
           {/* Args */}
           <div>
-            <div className="text-[10px] text-text-disabled mb-0.5">ARGS</div>
-            <pre className="text-[11px] text-text-secondary whitespace-pre-wrap break-words max-h-[150px] overflow-y-auto bg-deep/30 rounded p-2 font-mono">
+            <div className="text-[10px] text-zinc-600 mb-0.5">ARGS</div>
+            <pre className="text-[11px] text-zinc-400 whitespace-pre-wrap break-words max-h-[150px] overflow-y-auto bg-zinc-900/30 rounded p-2 font-mono">
               {JSON.stringify(toolCall.args, null, 2)}
             </pre>
           </div>
           {/* Result */}
           {toolCall.result && (
             <div>
-              <div className="text-[10px] text-text-disabled mb-0.5">RESULT</div>
-              <pre className="text-[11px] text-text-tertiary whitespace-pre-wrap break-words max-h-[150px] overflow-y-auto bg-deep/30 rounded p-2 font-mono">
+              <div className="text-[10px] text-zinc-600 mb-0.5">RESULT</div>
+              <pre className="text-[11px] text-zinc-500 whitespace-pre-wrap break-words max-h-[150px] overflow-y-auto bg-zinc-900/30 rounded p-2 font-mono">
                 {toolCall.result}
               </pre>
             </div>

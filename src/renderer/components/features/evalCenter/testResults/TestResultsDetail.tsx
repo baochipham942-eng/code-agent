@@ -125,8 +125,8 @@ function getStatusBadge(status: string): { label: string; className: string } {
     case 'passed': return { label: 'PASS', className: 'bg-emerald-500/20 text-emerald-400' };
     case 'failed': return { label: 'FAIL', className: 'bg-red-500/20 text-red-400' };
     case 'partial': return { label: 'PARTIAL', className: 'bg-amber-500/20 text-amber-400' };
-    case 'skipped': return { label: 'SKIP', className: 'bg-active/20 text-text-secondary' };
-    default: return { label: status.toUpperCase(), className: 'bg-active/20 text-text-secondary' };
+    case 'skipped': return { label: 'SKIP', className: 'bg-zinc-600/20 text-zinc-400' };
+    default: return { label: status.toUpperCase(), className: 'bg-zinc-600/20 text-zinc-400' };
   }
 }
 
@@ -154,7 +154,7 @@ export const TestResultsDetail: React.FC<Props> = ({ result }) => {
   const statusBadge = getStatusBadge(result.status);
 
   return (
-    <div className="bg-deep border-t border-border-default/20 p-3">
+    <div className="bg-zinc-900 border-t border-zinc-700/20 p-3">
       {/* Error display */}
       {result.errors?.length > 0 && (
         <div className="mb-3 p-2 bg-red-500/10 border border-red-500/20 rounded text-[11px] text-red-400">
@@ -177,8 +177,8 @@ export const TestResultsDetail: React.FC<Props> = ({ result }) => {
             onClick={() => setActiveTab(tab.key)}
             className={`px-2 py-1 rounded text-[11px] transition ${
               activeTab === tab.key
-                ? 'bg-active text-text-primary'
-                : 'text-text-tertiary hover:text-text-secondary hover:bg-hover'
+                ? 'bg-zinc-600 text-zinc-200'
+                : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700'
             }`}
           >
             {tab.label}{tab.count !== undefined ? ` (${tab.count})` : ''}
@@ -201,24 +201,24 @@ export const TestResultsDetail: React.FC<Props> = ({ result }) => {
                   {er.passed ? '\u2713' : '\u2717'}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-text-secondary">
-                    <span className="font-mono text-text-tertiary">[{er.expectation.type}]</span>{' '}
+                  <div className="text-zinc-400">
+                    <span className="font-mono text-zinc-500">[{er.expectation.type}]</span>{' '}
                     {er.expectation.description}
                     {er.expectation.critical && (
                       <span className="ml-1 text-[10px] text-red-400 font-medium">CRITICAL</span>
                     )}
                   </div>
-                  <div className="text-text-tertiary mt-0.5">
+                  <div className="text-zinc-500 mt-0.5">
                     期望: {er.evidence.expected} · 实际: {er.evidence.actual}
                   </div>
                 </div>
                 {er.expectation.weight !== 1 && (
-                  <span className="text-[10px] text-text-disabled flex-shrink-0">w={er.expectation.weight}</span>
+                  <span className="text-[10px] text-zinc-600 flex-shrink-0">w={er.expectation.weight}</span>
                 )}
               </div>
             ))
           ) : (
-            <div className="text-text-disabled text-[11px]">无断言结果</div>
+            <div className="text-zinc-600 text-[11px]">无断言结果</div>
           )}
         </div>
       )}
@@ -228,20 +228,20 @@ export const TestResultsDetail: React.FC<Props> = ({ result }) => {
         <div className="space-y-1.5">
           {result.toolExecutions?.length ? (
             result.toolExecutions.map((te, i) => (
-              <div key={i} className="p-2 bg-surface border border-border-default/20 rounded text-[11px]">
+              <div key={i} className="p-2 bg-zinc-800 border border-zinc-700/20 rounded text-[11px]">
                 <div className="flex items-center gap-2">
                   <span className={`font-mono font-medium ${te.success ? 'text-emerald-400' : 'text-red-400'}`}>
                     {te.tool}
                   </span>
-                  <span className="text-text-disabled">{te.duration}ms</span>
+                  <span className="text-zinc-600">{te.duration}ms</span>
                 </div>
                 {te.input && (
-                  <pre className="mt-1 text-text-tertiary overflow-x-auto max-h-20 text-[10px]">
+                  <pre className="mt-1 text-zinc-500 overflow-x-auto max-h-20 text-[10px]">
                     {typeof te.input === 'string' ? te.input : JSON.stringify(te.input, null, 2)}
                   </pre>
                 )}
                 {te.output && (
-                  <pre className="mt-1 text-text-secondary overflow-x-auto max-h-20 text-[10px] whitespace-pre-wrap">
+                  <pre className="mt-1 text-zinc-400 overflow-x-auto max-h-20 text-[10px] whitespace-pre-wrap">
                     {typeof te.output === 'string' ? te.output.slice(0, 500) : JSON.stringify(te.output).slice(0, 500)}
                     {(typeof te.output === 'string' ? te.output.length : JSON.stringify(te.output).length) > 500 && '...'}
                   </pre>
@@ -249,7 +249,7 @@ export const TestResultsDetail: React.FC<Props> = ({ result }) => {
               </div>
             ))
           ) : (
-            <div className="text-text-disabled text-[11px]">无工具调用</div>
+            <div className="text-zinc-600 text-[11px]">无工具调用</div>
           )}
         </div>
       )}
@@ -259,12 +259,12 @@ export const TestResultsDetail: React.FC<Props> = ({ result }) => {
         <div className="space-y-1.5">
           {result.responses?.length ? (
             result.responses.map((resp, i) => (
-              <div key={i} className="p-2 bg-surface border border-border-default/20 rounded text-[11px] text-text-secondary whitespace-pre-wrap max-h-32 overflow-y-auto">
+              <div key={i} className="p-2 bg-zinc-800 border border-zinc-700/20 rounded text-[11px] text-zinc-400 whitespace-pre-wrap max-h-32 overflow-y-auto">
                 {resp}
               </div>
             ))
           ) : (
-            <div className="text-text-disabled text-[11px]">无响应</div>
+            <div className="text-zinc-600 text-[11px]">无响应</div>
           )}
         </div>
       )}
@@ -280,8 +280,8 @@ export const TestResultsDetail: React.FC<Props> = ({ result }) => {
                   {typeof result.score === 'number' ? (result.score * 100).toFixed(0) : '—'}
                 </span>
                 <div>
-                  <div className="text-[11px] text-text-secondary">综合得分</div>
-                  <div className="text-[10px] text-text-tertiary mt-0.5">
+                  <div className="text-[11px] text-zinc-400">综合得分</div>
+                  <div className="text-[10px] text-zinc-500 mt-0.5">
                     耗时 {(result.duration / 1000).toFixed(1)}s · {result.turnCount} 轮对话
                   </div>
                 </div>
@@ -295,27 +295,27 @@ export const TestResultsDetail: React.FC<Props> = ({ result }) => {
           {/* Expectation score breakdown */}
           {result.expectationResults && result.expectationResults.length > 0 && (
             <div>
-              <div className="text-[11px] text-text-secondary font-medium mb-2">断言评分明细</div>
+              <div className="text-[11px] text-zinc-400 font-medium mb-2">断言评分明细</div>
               <div className="grid grid-cols-2 gap-2">
                 {result.expectationResults.map((er, i) => {
                   const score = er.passed ? 1.0 : 0.0;
                   return (
                     <div
                       key={i}
-                      className={`bg-surface rounded-lg border border-border-subtle border-t-2 ${
+                      className={`bg-zinc-800 rounded-lg border border-zinc-800 border-t-2 ${
                         er.passed ? 'border-t-emerald-500/60' : 'border-t-red-500/60'
                       } p-3 flex flex-col justify-between min-h-[80px]`}
                     >
                       <div>
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-[11px] font-medium text-text-primary truncate max-w-[70%]">
+                          <span className="text-[11px] font-medium text-zinc-200 truncate max-w-[70%]">
                             {er.expectation.description}
                           </span>
                           {er.expectation.weight !== 1 && (
-                            <span className="text-[10px] text-text-tertiary">w={er.expectation.weight}</span>
+                            <span className="text-[10px] text-zinc-500">w={er.expectation.weight}</span>
                           )}
                         </div>
-                        <div className="text-[10px] text-text-tertiary">
+                        <div className="text-[10px] text-zinc-500">
                           <span className="font-mono">[{er.expectation.type}]</span>
                           {er.expectation.critical && (
                             <span className="ml-1 text-red-400 font-medium">CRITICAL</span>
@@ -345,11 +345,11 @@ export const TestResultsDetail: React.FC<Props> = ({ result }) => {
               { label: '通过', value: result.expectationResults?.filter(er => er.passed).length || 0, color: 'text-emerald-400' },
               { label: '失败', value: result.expectationResults?.filter(er => !er.passed).length || 0, color: 'text-red-400' },
               { label: '工具调用', value: result.toolExecutions?.length || 0, color: 'text-blue-400' },
-              { label: '对话轮次', value: result.turnCount, color: 'text-text-secondary' },
+              { label: '对话轮次', value: result.turnCount, color: 'text-zinc-400' },
             ].map(stat => (
-              <div key={stat.label} className="bg-surface rounded p-2 text-center">
+              <div key={stat.label} className="bg-zinc-800 rounded p-2 text-center">
                 <div className={`text-lg font-bold font-mono ${stat.color}`}>{stat.value}</div>
-                <div className="text-[10px] text-text-tertiary">{stat.label}</div>
+                <div className="text-[10px] text-zinc-500">{stat.label}</div>
               </div>
             ))}
           </div>
@@ -361,13 +361,13 @@ export const TestResultsDetail: React.FC<Props> = ({ result }) => {
         <div className="space-y-3">
           {/* Failure reasons */}
           {analysis.failureReasons.length > 0 && (
-            <div className="bg-surface rounded-lg border border-border-subtle p-3">
+            <div className="bg-zinc-800 rounded-lg border border-zinc-800 p-3">
               <div className="text-[11px] font-medium text-red-400 mb-2">失败原因分析</div>
               <div className="space-y-1.5">
                 {analysis.failureReasons.map((reason, i) => (
                   <div key={i} className="flex items-start gap-2 text-[11px]">
                     <span className="text-red-400/60 mt-0.5 flex-shrink-0">•</span>
-                    <span className="text-text-secondary">{reason}</span>
+                    <span className="text-zinc-400">{reason}</span>
                   </div>
                 ))}
               </div>
@@ -376,21 +376,21 @@ export const TestResultsDetail: React.FC<Props> = ({ result }) => {
 
           {/* Tool usage patterns */}
           {analysis.toolPatterns.length > 0 && (
-            <div className="bg-surface rounded-lg border border-border-subtle p-3">
+            <div className="bg-zinc-800 rounded-lg border border-zinc-800 p-3">
               <div className="text-[11px] font-medium text-blue-400 mb-2">工具调用模式</div>
               <div className="space-y-1">
                 {analysis.toolPatterns.map((tp, i) => (
-                  <div key={i} className="flex items-center justify-between text-[11px] py-1 border-b border-border-default/20 last:border-0">
-                    <span className="font-mono text-text-secondary">{tp.tool}</span>
+                  <div key={i} className="flex items-center justify-between text-[11px] py-1 border-b border-zinc-700/20 last:border-0">
+                    <span className="font-mono text-zinc-400">{tp.tool}</span>
                     <div className="flex items-center gap-3">
-                      <span className="text-text-tertiary">{tp.count}x</span>
+                      <span className="text-zinc-500">{tp.count}x</span>
                       {tp.successCount > 0 && (
                         <span className="text-emerald-400/80">{tp.successCount} ok</span>
                       )}
                       {tp.failCount > 0 && (
                         <span className="text-red-400/80">{tp.failCount} fail</span>
                       )}
-                      <span className="text-text-disabled text-[10px]">avg {tp.avgDuration}ms</span>
+                      <span className="text-zinc-600 text-[10px]">avg {tp.avgDuration}ms</span>
                     </div>
                   </div>
                 ))}
@@ -400,20 +400,20 @@ export const TestResultsDetail: React.FC<Props> = ({ result }) => {
 
           {/* No tool calls */}
           {analysis.toolPatterns.length === 0 && (
-            <div className="bg-surface rounded-lg border border-border-subtle p-3">
+            <div className="bg-zinc-800 rounded-lg border border-zinc-800 p-3">
               <div className="text-[11px] font-medium text-blue-400 mb-2">工具调用模式</div>
-              <div className="text-text-disabled text-[11px]">无工具调用记录</div>
+              <div className="text-zinc-600 text-[11px]">无工具调用记录</div>
             </div>
           )}
 
           {/* Suggestions */}
-          <div className="bg-surface rounded-lg border border-border-subtle p-3">
+          <div className="bg-zinc-800 rounded-lg border border-zinc-800 p-3">
             <div className="text-[11px] font-medium text-amber-400 mb-2">建议</div>
             <div className="space-y-1.5">
               {analysis.suggestions.map((suggestion, i) => (
                 <div key={i} className="flex items-start gap-2 text-[11px]">
                   <span className="text-amber-400/60 mt-0.5 flex-shrink-0">›</span>
-                  <span className="text-text-secondary">{suggestion}</span>
+                  <span className="text-zinc-400">{suggestion}</span>
                 </div>
               ))}
             </div>
@@ -422,7 +422,7 @@ export const TestResultsDetail: React.FC<Props> = ({ result }) => {
           {/* Deep AI analysis placeholder button */}
           <button
             onClick={() => alert('Coming soon: LLM-powered deep analysis')}
-            className="w-full py-2 rounded-lg border border-border-subtle bg-elevated/20 text-[11px] text-text-secondary hover:text-text-primary hover:bg-surface transition flex items-center justify-center gap-1.5"
+            className="w-full py-2 rounded-lg border border-zinc-800 bg-zinc-700/20 text-[11px] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition flex items-center justify-center gap-1.5"
           >
             <span className="text-sm">&#x2728;</span>
             深度 AI 分析
@@ -434,7 +434,7 @@ export const TestResultsDetail: React.FC<Props> = ({ result }) => {
       {result.reference_solution && (
         <div className="mt-3 p-2 bg-blue-500/5 border border-blue-500/10 rounded text-[11px]">
           <span className="text-blue-400 font-medium">参考方案:</span>{' '}
-          <span className="text-text-secondary">{result.reference_solution}</span>
+          <span className="text-zinc-400">{result.reference_solution}</span>
         </div>
       )}
     </div>

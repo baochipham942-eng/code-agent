@@ -73,7 +73,7 @@ export const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({
             ? 'bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/30'
             : isTranscribing
               ? 'bg-primary-500 text-white'
-              : 'text-text-tertiary hover:text-text-secondary hover:bg-hover'
+              : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700'
         } ${(disabled || isTranscribing) ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
         {isTranscribing ? (

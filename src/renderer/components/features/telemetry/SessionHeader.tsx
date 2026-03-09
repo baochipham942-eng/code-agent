@@ -21,25 +21,25 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({ session }) => {
 
   const statusColor = {
     recording: 'bg-green-500',
-    completed: 'bg-active',
+    completed: 'bg-zinc-600',
     error: 'bg-red-500',
-  }[session.status] ?? 'bg-active';
+  }[session.status] ?? 'bg-zinc-600';
 
   return (
-    <div className="flex items-center justify-between p-3 bg-surface rounded-lg border border-border-default">
+    <div className="flex items-center justify-between p-3 bg-zinc-800 rounded-lg border border-zinc-700">
       <div className="flex items-center gap-3">
         <div className={`w-2 h-2 rounded-full ${statusColor} ${session.status === 'recording' ? 'animate-pulse' : ''}`} />
         <div>
-          <h3 className="text-sm font-medium text-text-primary truncate max-w-[300px]">
+          <h3 className="text-sm font-medium text-zinc-200 truncate max-w-[300px]">
             {session.title}
           </h3>
-          <p className="text-xs text-text-tertiary">
+          <p className="text-xs text-zinc-500">
             {session.modelProvider}/{session.modelName} · {new Date(session.startTime).toLocaleString()}
           </p>
         </div>
       </div>
 
-      <div className="flex items-center gap-4 text-xs text-text-secondary">
+      <div className="flex items-center gap-4 text-xs text-zinc-400">
         <div className="flex items-center gap-1" title="轮次数">
           <Activity className="w-3.5 h-3.5" />
           <span>{session.turnCount}</span>

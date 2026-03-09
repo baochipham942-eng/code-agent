@@ -76,22 +76,22 @@ export const WorkspacePanel: React.FC = () => {
   };
 
   return (
-    <div className="w-64 border-l border-border-default bg-deep flex flex-col">
+    <div className="w-64 border-l border-zinc-700 bg-zinc-900 flex flex-col">
       {/* Header */}
-      <div className="p-3 border-b border-border-default flex items-center justify-between">
-        <span className="text-sm font-medium text-text-secondary">Workspace</span>
+      <div className="p-3 border-b border-zinc-700 flex items-center justify-between">
+        <span className="text-sm font-medium text-zinc-400">Workspace</span>
         <div className="flex items-center gap-1">
           <button
             onClick={loadWorkspace}
             disabled={loading}
-            className="p-1 rounded hover:bg-hover text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+            className="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
             title="Refresh"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
             onClick={selectWorkspace}
-            className="p-1 rounded hover:bg-hover text-text-secondary hover:text-text-primary transition-colors"
+            className="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
             title="Open folder"
           >
             <FolderPlus className="w-4 h-4" />
@@ -106,7 +106,7 @@ export const WorkspacePanel: React.FC = () => {
         ) : (
           <div>
             {/* Workspace path */}
-            <div className="text-xs text-text-tertiary px-2 py-1 truncate" title={workspacePath}>
+            <div className="text-xs text-zinc-500 px-2 py-1 truncate" title={workspacePath}>
               {workspacePath}
             </div>
 
@@ -127,11 +127,11 @@ export const WorkspacePanel: React.FC = () => {
 const EmptyWorkspace: React.FC<{ onSelect: () => void }> = ({ onSelect }) => {
   return (
     <div className="h-full flex flex-col items-center justify-center text-center px-4">
-      <Folder className="w-12 h-12 text-text-disabled mb-3" />
-      <p className="text-sm text-text-secondary mb-3">No workspace open</p>
+      <Folder className="w-12 h-12 text-zinc-600 mb-3" />
+      <p className="text-sm text-zinc-400 mb-3">No workspace open</p>
       <button
         onClick={onSelect}
-        className="px-3 py-1.5 rounded-lg bg-elevated hover:bg-active text-sm text-text-secondary transition-colors"
+        className="px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm text-zinc-400 transition-colors"
       >
         Open Folder
       </button>
@@ -160,12 +160,12 @@ const FileTreeNode: React.FC<{ item: FileTreeItem; level: number }> = ({
         return <FileCode className="w-4 h-4 text-yellow-400" />;
       case 'md':
       case 'txt':
-        return <FileText className="w-4 h-4 text-text-secondary" />;
+        return <FileText className="w-4 h-4 text-zinc-400" />;
       case 'css':
       case 'scss':
         return <FileCode className="w-4 h-4 text-pink-400" />;
       default:
-        return <File className="w-4 h-4 text-text-secondary" />;
+        return <File className="w-4 h-4 text-zinc-400" />;
     }
   };
 
@@ -182,15 +182,15 @@ const FileTreeNode: React.FC<{ item: FileTreeItem; level: number }> = ({
     <div>
       <button
         onClick={handleClick}
-        className="w-full flex items-center gap-1 px-2 py-1 rounded hover:bg-hover text-left transition-colors"
+        className="w-full flex items-center gap-1 px-2 py-1 rounded hover:bg-zinc-700 text-left transition-colors"
         style={{ paddingLeft: `${level * 12 + 8}px` }}
       >
         {/* Expand/collapse icon for directories */}
         {item.type === 'directory' ? (
           expanded ? (
-            <ChevronDown className="w-3.5 h-3.5 text-text-tertiary" />
+            <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />
           ) : (
-            <ChevronRight className="w-3.5 h-3.5 text-text-tertiary" />
+            <ChevronRight className="w-3.5 h-3.5 text-zinc-500" />
           )
         ) : (
           <span className="w-3.5" />
@@ -208,7 +208,7 @@ const FileTreeNode: React.FC<{ item: FileTreeItem; level: number }> = ({
         )}
 
         {/* Name */}
-        <span className="text-sm text-text-secondary truncate">{item.name}</span>
+        <span className="text-sm text-zinc-400 truncate">{item.name}</span>
       </button>
 
       {/* Children */}

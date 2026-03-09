@@ -14,26 +14,26 @@ interface CaptureDetailProps {
 
 export const CaptureDetail: React.FC<CaptureDetailProps> = ({ item, onClose }) => {
   return (
-    <div className="flex flex-col h-full bg-[#1c1c21] border-l border-border-default">
+    <div className="flex flex-col h-full bg-[#1c1c21] border-l border-zinc-700">
       {/* 头部 */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border-default">
-        <h3 className="text-sm font-medium text-text-primary truncate flex-1">{item.title}</h3>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
+        <h3 className="text-sm font-medium text-zinc-200 truncate flex-1">{item.title}</h3>
         <button
           onClick={onClose}
-          className="p-1 text-text-tertiary hover:text-text-secondary transition-colors"
+          className="p-1 text-zinc-500 hover:text-zinc-400 transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
       </div>
 
       {/* 元信息 */}
-      <div className="px-4 py-2 border-b border-border-default flex flex-wrap gap-3 text-xs text-text-tertiary">
+      <div className="px-4 py-2 border-b border-zinc-700 flex flex-wrap gap-3 text-xs text-zinc-500">
         {item.url && (
           <a
             href={item.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 hover:text-text-secondary transition-colors"
+            className="inline-flex items-center gap-1 hover:text-zinc-400 transition-colors"
           >
             <Globe className="w-3 h-3" />
             <span className="truncate max-w-[200px]">{new URL(item.url).hostname}</span>

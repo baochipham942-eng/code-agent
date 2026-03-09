@@ -121,7 +121,7 @@ export const AgentStatsBar: React.FC<AgentStatsBarProps> = ({
   const getUsageColor = (pct: number) => {
     if (pct >= 90) return 'text-red-400';
     if (pct >= 70) return 'text-amber-400';
-    return 'text-text-secondary';
+    return 'text-zinc-400';
   };
 
   return (
@@ -131,16 +131,16 @@ export const AgentStatsBar: React.FC<AgentStatsBarProps> = ({
 
       {/* Stats bar */}
       {taskStats && isProcessing && (
-        <div className="flex items-center gap-3 px-3 py-1 bg-surface border border-border-subtle rounded-lg text-xs">
+        <div className="flex items-center gap-3 px-3 py-1 bg-zinc-800 border border-zinc-800 rounded-lg text-xs">
           {/* Duration */}
-          <div className="flex items-center gap-1 text-text-secondary" title="Task duration">
+          <div className="flex items-center gap-1 text-zinc-400" title="Task duration">
             <span>{'\u23F1'}</span>
-            <span className="font-mono text-text-secondary">
+            <span className="font-mono text-zinc-400">
               {formatDuration(taskStats.elapsed_ms)}
             </span>
           </div>
 
-          <div className="w-px h-3 bg-hover" />
+          <div className="w-px h-3 bg-zinc-700" />
 
           {/* Context usage */}
           <div
@@ -151,23 +151,23 @@ export const AgentStatsBar: React.FC<AgentStatsBarProps> = ({
             <span className="font-mono">
               {formatTokens(taskStats.tokensUsed)} / {formatTokens(taskStats.contextWindow)}
             </span>
-            <span className="text-text-tertiary">({usagePercent}%)</span>
+            <span className="text-zinc-500">({usagePercent}%)</span>
           </div>
 
-          <div className="w-px h-3 bg-hover" />
+          <div className="w-px h-3 bg-zinc-700" />
 
           {/* Tool calls */}
-          <div className="flex items-center gap-1 text-text-secondary" title="Tool calls">
+          <div className="flex items-center gap-1 text-zinc-400" title="Tool calls">
             <span>{'\uD83D\uDD27'}</span>
-            <span className="font-mono text-text-secondary">{taskStats.toolCallCount} calls</span>
+            <span className="font-mono text-zinc-400">{taskStats.toolCallCount} calls</span>
           </div>
 
-          <div className="w-px h-3 bg-hover" />
+          <div className="w-px h-3 bg-zinc-700" />
 
           {/* Iterations */}
-          <div className="flex items-center gap-1 text-text-secondary" title="Iterations">
+          <div className="flex items-center gap-1 text-zinc-400" title="Iterations">
             <span>{'\uD83D\uDD04'}</span>
-            <span className="font-mono text-text-secondary">{taskStats.iterations} iterations</span>
+            <span className="font-mono text-zinc-400">{taskStats.iterations} iterations</span>
           </div>
         </div>
       )}

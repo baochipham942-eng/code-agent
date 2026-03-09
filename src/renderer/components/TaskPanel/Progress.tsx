@@ -111,17 +111,17 @@ export const Progress: React.FC = () => {
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <ListChecks className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-          <span className="text-xs font-medium text-text-secondary uppercase tracking-wide">
+          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
             {t.taskPanel.progress}
           </span>
           {totalCount > 0 && (
-            <span className="text-xs text-text-tertiary">{completedCount}/{totalCount}</span>
+            <span className="text-xs text-zinc-500">{completedCount}/{totalCount}</span>
           )}
         </div>
         {isExpanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
+          <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
+          <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
         )}
       </button>
 
@@ -145,8 +145,8 @@ export const Progress: React.FC = () => {
                   </span>
                 </div>
               ) : (
-                <div className="w-5 h-5 rounded-full bg-active flex items-center justify-center flex-shrink-0">
-                  <span className="text-xs font-medium text-text-secondary">
+                <div className="w-5 h-5 rounded-full bg-zinc-600 flex items-center justify-center flex-shrink-0">
+                  <span className="text-xs font-medium text-zinc-400">
                     {todos.findIndex(t => t === todo) + 1}
                   </span>
                 </div>
@@ -156,10 +156,10 @@ export const Progress: React.FC = () => {
               <span
                 className={`text-sm truncate ${
                   todo.status === 'completed'
-                    ? 'text-text-tertiary'
+                    ? 'text-zinc-500'
                     : todo.status === 'in_progress'
-                    ? 'text-text-primary'
-                    : 'text-text-secondary'
+                    ? 'text-zinc-200'
+                    : 'text-zinc-400'
                 }`}
               >
                 {todo.status === 'in_progress' ? todo.activeForm : todo.content}
@@ -171,7 +171,7 @@ export const Progress: React.FC = () => {
           {hiddenCount > 0 && !showAll && (
             <button
               onClick={() => setShowAll(true)}
-              className="text-xs text-text-tertiary hover:text-text-secondary py-1"
+              className="text-xs text-zinc-500 hover:text-zinc-400 py-1"
             >
               Show {hiddenCount} more
             </button>
@@ -185,11 +185,11 @@ export const Progress: React.FC = () => {
           <div className="flex items-center gap-3 py-1.5">
             <Loader2 className="w-4 h-4 text-primary-500 animate-spin flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <span className="text-sm text-text-primary">
+              <span className="text-sm text-zinc-200">
                 {taskProgress.step || PHASE_LABELS[taskProgress.phase] || taskProgress.phase}
               </span>
               {taskProgress.tool && (
-                <span className="text-xs text-text-tertiary ml-2">
+                <span className="text-xs text-zinc-500 ml-2">
                   {taskProgress.tool}
                   {taskProgress.toolTotal && taskProgress.toolTotal > 1 && (
                     <span className="ml-1">
@@ -202,7 +202,7 @@ export const Progress: React.FC = () => {
             {/* Tool elapsed time badge */}
             {showToolElapsed && (
               <span className={`flex items-center gap-1 text-xs shrink-0 ${
-                toolTimeout ? 'text-amber-400' : 'text-text-tertiary'
+                toolTimeout ? 'text-amber-400' : 'text-zinc-500'
               }`}>
                 <Clock className="w-3 h-3" />
                 {formatElapsed(toolProgress!.elapsedMs)}
@@ -211,7 +211,7 @@ export const Progress: React.FC = () => {
           </div>
           {/* Progress bar */}
           {taskProgress.progress !== undefined && taskProgress.progress > 0 && (
-            <div className="h-1 bg-elevated rounded-full overflow-hidden">
+            <div className="h-1 bg-zinc-700 rounded-full overflow-hidden">
               <div
                 className="h-full bg-primary-500 transition-all duration-300"
                 style={{ width: `${taskProgress.progress}%` }}
@@ -236,12 +236,12 @@ export const Progress: React.FC = () => {
           <div className="flex items-center gap-3 py-1.5">
             <Loader2 className="w-4 h-4 text-primary-500 animate-spin flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <span className="text-sm text-text-primary">
+              <span className="text-sm text-zinc-200">
                 {toolProgress!.toolName}
               </span>
             </div>
             <span className={`flex items-center gap-1 text-xs shrink-0 ${
-              toolTimeout ? 'text-amber-400' : 'text-text-tertiary'
+              toolTimeout ? 'text-amber-400' : 'text-zinc-500'
             }`}>
               <Clock className="w-3 h-3" />
               {formatElapsed(toolProgress!.elapsedMs)}

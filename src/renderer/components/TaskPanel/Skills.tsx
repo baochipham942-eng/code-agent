@@ -66,17 +66,17 @@ export const Skills: React.FC = () => {
       >
         <div className="flex items-center gap-2 flex-1 min-w-0">
           <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0" />
-          <span className="text-xs font-medium text-text-secondary uppercase tracking-wide">
+          <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
             {t.taskPanel.skills}
           </span>
           {mountedSkills.length > 0 && (
-            <span className="text-xs text-text-tertiary">({mountedSkills.length})</span>
+            <span className="text-xs text-zinc-500">({mountedSkills.length})</span>
           )}
         </div>
         {expanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
+          <ChevronDown className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
         ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
+          <ChevronRight className="w-3.5 h-3.5 text-zinc-500 flex-shrink-0" />
         )}
       </button>
 
@@ -84,7 +84,7 @@ export const Skills: React.FC = () => {
         <div className="mt-3 space-y-2">
           {/* 已挂载的 Skills */}
           {mountedSkills.length === 0 ? (
-            <div className="text-xs text-text-tertiary py-1">
+            <div className="text-xs text-zinc-500 py-1">
               {t.taskPanel.noSkills}
             </div>
           ) : (
@@ -92,16 +92,16 @@ export const Skills: React.FC = () => {
               {mountedSkills.map((mount) => (
                   <div
                     key={mount.skillName}
-                    className="flex items-center justify-between py-1 px-2 bg-surface rounded group"
+                    className="flex items-center justify-between py-1 px-2 bg-zinc-800 rounded group"
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <Sparkles className="w-3 h-3 text-purple-400/70 flex-shrink-0" />
-                      <span className="text-sm text-text-secondary truncate">{mount.skillName}</span>
+                      <span className="text-sm text-zinc-400 truncate">{mount.skillName}</span>
                     </div>
                     <button
                       onClick={() => unmountSkill(mount.skillName)}
                       disabled={loading}
-                      className="p-0.5 text-text-tertiary hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                      className="p-0.5 text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
                       title="卸载"
                     >
                       <Minus className="w-3 h-3" />
@@ -116,7 +116,7 @@ export const Skills: React.FC = () => {
             <div className="pt-1 border-t border-white/[0.04]">
               <button
                 onClick={() => setShowAvailable(!showAvailable)}
-                className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors"
+                className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-400 transition-colors"
               >
                 <Plus className="w-3 h-3" />
                 <span>添加 ({unmountedSkills.length})</span>
@@ -129,14 +129,14 @@ export const Skills: React.FC = () => {
                       key={skill.name}
                       onClick={() => handleMount(skill.name)}
                       disabled={loading}
-                      className="w-full flex items-center gap-2 py-1 px-2 text-left hover:bg-surface rounded transition-colors"
+                      className="w-full flex items-center gap-2 py-1 px-2 text-left hover:bg-zinc-800 rounded transition-colors"
                     >
-                      <Plus className="w-3 h-3 text-text-tertiary" />
-                      <span className="text-xs text-text-secondary truncate">{skill.name}</span>
+                      <Plus className="w-3 h-3 text-zinc-500" />
+                      <span className="text-xs text-zinc-400 truncate">{skill.name}</span>
                     </button>
                   ))}
                   {unmountedSkills.length > 8 && (
-                    <div className="text-xs text-text-tertiary text-center py-1">
+                    <div className="text-xs text-zinc-500 text-center py-1">
                       +{unmountedSkills.length - 8} 更多
                     </div>
                   )}
@@ -148,7 +148,7 @@ export const Skills: React.FC = () => {
           {/* 管理入口 */}
           <button
             onClick={handleOpenSettings}
-            className="flex items-center gap-1.5 text-xs text-text-tertiary hover:text-text-secondary transition-colors pt-1"
+            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-400 transition-colors pt-1"
           >
             <Settings className="w-3 h-3" />
             <span>{t.taskPanel.manageSkills}</span>

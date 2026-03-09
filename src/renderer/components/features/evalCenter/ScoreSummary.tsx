@@ -77,13 +77,13 @@ export const ScoreSummary: React.FC<ScoreSummaryProps> = ({
       disabled={isEvaluating}
       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition shrink-0 ${
         isEvaluating
-          ? 'bg-active text-text-secondary cursor-not-allowed'
+          ? 'bg-zinc-600 text-zinc-400 cursor-not-allowed'
           : 'bg-amber-600 hover:bg-amber-700 text-white'
       }`}
     >
       {isEvaluating ? (
         <>
-          <div className="animate-spin w-3 h-3 border-2 border-border-strong border-t-transparent rounded-full" />
+          <div className="animate-spin w-3 h-3 border-2 border-zinc-600 border-t-transparent rounded-full" />
           评测中...
         </>
       ) : (
@@ -98,14 +98,14 @@ export const ScoreSummary: React.FC<ScoreSummaryProps> = ({
   // No evaluation yet — show CTA
   if (!evaluation) {
     return (
-      <div className="bg-surface rounded-lg p-4">
+      <div className="bg-zinc-800 rounded-lg p-4">
         <div className="flex items-center gap-4">
           <div className="text-center min-w-[64px]">
-            <div className="text-3xl font-bold text-text-disabled">—</div>
+            <div className="text-3xl font-bold text-zinc-600">—</div>
           </div>
           <div className="flex-1">
             {sessionInfo && (
-              <div className="text-[11px] text-text-tertiary mb-2">
+              <div className="text-[11px] text-zinc-500 mb-2">
                 {sessionInfo.modelProvider}/{sessionInfo.modelName} · {sessionInfo.turnCount}轮 · {durationStr} · {tokensStr} tokens
               </div>
             )}
@@ -121,11 +121,11 @@ export const ScoreSummary: React.FC<ScoreSummaryProps> = ({
 
   const score = evaluation.overallScore;
   const grade = evaluation.grade || scoreToGrade(score);
-  const gradeColor = GRADE_COLORS[grade] || 'text-text-secondary';
-  const gradeBg = GRADE_BG_COLORS[grade] || 'bg-active/20';
+  const gradeColor = GRADE_COLORS[grade] || 'text-zinc-400';
+  const gradeBg = GRADE_BG_COLORS[grade] || 'bg-zinc-600/20';
 
   return (
-    <div className="bg-surface rounded-lg p-4">
+    <div className="bg-zinc-800 rounded-lg p-4">
       <div className="flex items-center gap-5">
         {/* Score + Grade + Delta */}
         <div className="text-center min-w-[64px]">
@@ -137,7 +137,7 @@ export const ScoreSummary: React.FC<ScoreSummaryProps> = ({
                   ? 'text-green-400'
                   : evaluation.baselineComparison.delta < 0
                     ? 'text-red-400'
-                    : 'text-text-tertiary'
+                    : 'text-zinc-500'
               }`}>
                 {evaluation.baselineComparison.delta > 0 ? '+' : ''}
                 {evaluation.baselineComparison.delta}
@@ -152,7 +152,7 @@ export const ScoreSummary: React.FC<ScoreSummaryProps> = ({
         {/* Meta + counts + progress */}
         <div className="flex-1 min-w-0">
           {sessionInfo && (
-            <div className="text-[11px] text-text-tertiary mb-1.5">
+            <div className="text-[11px] text-zinc-500 mb-1.5">
               {sessionInfo.modelProvider}/{sessionInfo.modelName} · {sessionInfo.turnCount}轮 · {durationStr} · {tokensStr} tokens
             </div>
           )}
@@ -162,7 +162,7 @@ export const ScoreSummary: React.FC<ScoreSummaryProps> = ({
             {counts.pass > 0 && <span className="text-green-400">通过: {counts.pass}</span>}
             {counts.fail > 0 && <span className="text-red-400">失败: {counts.fail}</span>}
             {counts.partial > 0 && <span className="text-yellow-400">部分: {counts.partial}</span>}
-            {counts.skip > 0 && <span className="text-text-tertiary">跳过: {counts.skip}</span>}
+            {counts.skip > 0 && <span className="text-zinc-500">跳过: {counts.skip}</span>}
             {counts.info > 0 && <span className="text-blue-400">信息: {counts.info}</span>}
           </div>
 
@@ -170,13 +170,13 @@ export const ScoreSummary: React.FC<ScoreSummaryProps> = ({
           {(() => {
             const total = counts.pass + counts.partial + counts.fail + counts.skip;
             return total > 0 ? (
-              <div className="h-1.5 bg-active rounded-full overflow-hidden flex">
+              <div className="h-1.5 bg-zinc-600 rounded-full overflow-hidden flex">
                 {counts.pass > 0 && <div className="h-full bg-green-500" style={{ width: `${counts.pass / total * 100}%` }} />}
                 {counts.partial > 0 && <div className="h-full bg-yellow-500" style={{ width: `${counts.partial / total * 100}%` }} />}
                 {counts.fail > 0 && <div className="h-full bg-red-500" style={{ width: `${counts.fail / total * 100}%` }} />}
               </div>
             ) : (
-              <div className="h-1.5 bg-active rounded-full overflow-hidden" />
+              <div className="h-1.5 bg-zinc-600 rounded-full overflow-hidden" />
             );
           })()}
         </div>

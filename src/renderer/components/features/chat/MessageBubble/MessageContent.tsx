@@ -43,8 +43,8 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   sql: { color: 'text-purple-400', name: 'SQL' },
   yaml: { color: 'text-red-400', name: 'YAML' },
   yml: { color: 'text-red-400', name: 'YAML' },
-  markdown: { color: 'text-text-secondary', name: 'Markdown' },
-  md: { color: 'text-text-secondary', name: 'Markdown' },
+  markdown: { color: 'text-zinc-400', name: 'Markdown' },
+  md: { color: 'text-zinc-400', name: 'Markdown' },
   java: { color: 'text-red-400', name: 'Java' },
   c: { color: 'text-blue-300', name: 'C' },
   cpp: { color: 'text-blue-300', name: 'C++' },
@@ -57,10 +57,10 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   kotlin: { color: 'text-purple-400', name: 'Kotlin' },
   kt: { color: 'text-purple-400', name: 'Kotlin' },
   dart: { color: 'text-cyan-400', name: 'Dart' },
-  diff: { color: 'text-text-secondary', name: 'Diff' },
+  diff: { color: 'text-zinc-400', name: 'Diff' },
   xml: { color: 'text-orange-400', name: 'XML' },
-  toml: { color: 'text-text-secondary', name: 'TOML' },
-  ini: { color: 'text-text-secondary', name: 'INI' },
+  toml: { color: 'text-zinc-400', name: 'TOML' },
+  ini: { color: 'text-zinc-400', name: 'INI' },
   dockerfile: { color: 'text-cyan-400', name: 'Dockerfile' },
   docker: { color: 'text-cyan-400', name: 'Docker' },
   graphql: { color: 'text-pink-400', name: 'GraphQL' },
@@ -83,26 +83,26 @@ const CodeBlock = memo(function CodeBlock({
     setTimeout(() => setCopied(false), UI.COPY_FEEDBACK_DURATION);
   }, [code]);
 
-  const config = languageConfig[language] || { color: 'text-text-secondary', name: language || 'code' };
+  const config = languageConfig[language] || { color: 'text-zinc-400', name: language || 'code' };
   const lines = code.split('\n');
   const showLineNumbers = lines.length > 3;
 
   return (
-    <div className="my-3 rounded-xl bg-surface-950 overflow-hidden border border-border-default shadow-lg">
+    <div className="my-3 rounded-xl bg-zinc-800-950 overflow-hidden border border-zinc-700 shadow-lg">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-surface border-b border-border-default">
+      <div className="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
         <div className="flex items-center gap-2">
           <Code2 className={`w-3.5 h-3.5 ${config.color}`} />
           <span className={`text-xs font-medium ${config.color}`}>
             {config.name}
           </span>
-          <span className="text-xs text-text-disabled">
+          <span className="text-xs text-zinc-600">
             {lines.length} line{lines.length > 1 ? 's' : ''}
           </span>
         </div>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-hover text-text-secondary hover:text-text-primary transition-all text-xs"
+          className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all text-xs"
         >
           {copied ? (
             <>
@@ -221,7 +221,7 @@ const InlineCode = memo(function InlineCode({
   // Regular inline code (not a file)
   if (!isFile) {
     return (
-      <code className="px-1.5 py-0.5 mx-0.5 rounded-md bg-deep text-primary-300 text-xs font-mono border border-border-default">
+      <code className="px-1.5 py-0.5 mx-0.5 rounded-md bg-zinc-900 text-primary-300 text-xs font-mono border border-zinc-700">
         {children}
       </code>
     );
@@ -232,7 +232,7 @@ const InlineCode = memo(function InlineCode({
 
   return (
     <code
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-deep text-primary-300 text-xs font-mono border border-border-default cursor-pointer hover:bg-hover hover:border-primary-500/50 hover:text-primary-200 transition-colors group"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-zinc-900 text-primary-300 text-xs font-mono border border-zinc-700 cursor-pointer hover:bg-zinc-700 hover:border-primary-500/50 hover:text-primary-200 transition-colors group"
       onClick={() => {
         if (isHtml && onPreviewHtml) {
           onPreviewHtml(filePath);
@@ -372,12 +372,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         );
       },
       thead({ children }) {
-        return <thead className="bg-surface">{children}</thead>;
+        return <thead className="bg-zinc-800">{children}</thead>;
       },
       th({ children, style }) {
         return (
           <th
-            className="px-3 py-2 text-left font-semibold text-text-primary border border-border-default"
+            className="px-3 py-2 text-left font-semibold text-zinc-200 border border-zinc-700"
             style={style}
           >
             {children}
@@ -388,12 +388,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         return <tbody>{children}</tbody>;
       },
       tr({ children }) {
-        return <tr className="even:bg-elevated/20 odd:bg-deep/30">{children}</tr>;
+        return <tr className="even:bg-zinc-700/20 odd:bg-zinc-900/30">{children}</tr>;
       },
       td({ children, style }) {
         return (
           <td
-            className="px-3 py-2 text-text-secondary border border-border-default"
+            className="px-3 py-2 text-zinc-400 border border-zinc-700"
             style={style}
           >
             {children}
@@ -403,22 +403,22 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
       // Headings
       h1({ children }) {
-        return <h1 className="text-xl font-bold text-text-primary mt-4 mb-2">{children}</h1>;
+        return <h1 className="text-xl font-bold text-zinc-200 mt-4 mb-2">{children}</h1>;
       },
       h2({ children }) {
-        return <h2 className="text-lg font-bold text-text-primary mt-3 mb-2">{children}</h2>;
+        return <h2 className="text-lg font-bold text-zinc-200 mt-3 mb-2">{children}</h2>;
       },
       h3({ children }) {
-        return <h3 className="text-base font-semibold text-text-primary mt-3 mb-1">{children}</h3>;
+        return <h3 className="text-base font-semibold text-zinc-200 mt-3 mb-1">{children}</h3>;
       },
       h4({ children }) {
-        return <h4 className="text-sm font-semibold text-text-primary mt-2 mb-1">{children}</h4>;
+        return <h4 className="text-sm font-semibold text-zinc-200 mt-2 mb-1">{children}</h4>;
       },
       h5({ children }) {
-        return <h5 className="text-sm font-medium text-text-secondary mt-2 mb-1">{children}</h5>;
+        return <h5 className="text-sm font-medium text-zinc-400 mt-2 mb-1">{children}</h5>;
       },
       h6({ children }) {
-        return <h6 className="text-xs font-medium text-text-secondary mt-2 mb-1">{children}</h6>;
+        return <h6 className="text-xs font-medium text-zinc-400 mt-2 mb-1">{children}</h6>;
       },
 
       // Paragraphs
@@ -434,13 +434,13 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         return <ol className="my-2 pl-5 space-y-1 list-decimal">{children}</ol>;
       },
       li({ children }) {
-        return <li className="text-text-secondary">{children}</li>;
+        return <li className="text-zinc-400">{children}</li>;
       },
 
       // Blockquote
       blockquote({ children }) {
         return (
-          <blockquote className="my-2 pl-4 border-l-2 border-primary-500/50 text-text-secondary italic">
+          <blockquote className="my-2 pl-4 border-l-2 border-primary-500/50 text-zinc-400 italic">
             {children}
           </blockquote>
         );
@@ -448,7 +448,7 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
       // Horizontal rule
       hr() {
-        return <hr className="my-4 border-border-default" />;
+        return <hr className="my-4 border-zinc-700" />;
       },
 
       // Links
@@ -467,13 +467,13 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
       // Text formatting
       strong({ children }) {
-        return <strong className="font-semibold text-text-primary">{children}</strong>;
+        return <strong className="font-semibold text-zinc-200">{children}</strong>;
       },
       em({ children }) {
-        return <em className="italic text-text-primary">{children}</em>;
+        return <em className="italic text-zinc-200">{children}</em>;
       },
       del({ children }) {
-        return <del className="line-through text-text-tertiary">{children}</del>;
+        return <del className="line-through text-zinc-500">{children}</del>;
       },
 
       // Images

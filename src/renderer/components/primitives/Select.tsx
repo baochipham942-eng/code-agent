@@ -65,10 +65,10 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     const hasError = error || !!errorMessage;
 
     const baseClasses = [
-      'bg-elevated',
+      'bg-zinc-700',
       'border',
       'rounded-lg',
-      'text-text-primary',
+      'text-zinc-200',
       'focus:outline-none',
       'transition-colors',
       'px-4',
@@ -84,7 +84,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     if (hasError) {
       baseClasses.push('border-red-500', 'focus:border-red-400', 'focus:ring-2', 'focus:ring-red-500/50');
     } else {
-      baseClasses.push('border-border-default', 'focus:border-border-strong', 'focus:ring-2', 'focus:ring-blue-500/50', 'focus:border-blue-500');
+      baseClasses.push('border-zinc-700', 'focus:border-zinc-600', 'focus:ring-2', 'focus:ring-blue-500/50', 'focus:border-blue-500');
     }
 
     // Disabled styles

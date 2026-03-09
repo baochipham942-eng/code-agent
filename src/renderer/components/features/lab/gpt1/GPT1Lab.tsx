@@ -119,16 +119,16 @@ export const GPT1Lab: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Mode Switcher */}
-      <div className="px-6 py-3 border-b border-border-default bg-deep/30">
+      <div className="px-6 py-3 border-b border-zinc-700 bg-zinc-900/30">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="flex rounded-lg bg-surface p-1">
+            <div className="flex rounded-lg bg-zinc-800 p-1">
               <button
                 onClick={() => setMode('simulation')}
                 className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
                   mode === 'simulation'
                     ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    : 'text-text-secondary hover:text-text-primary'
+                    : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
                 <Sparkles className="w-4 h-4" />
@@ -139,7 +139,7 @@ export const GPT1Lab: React.FC = () => {
                 className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
                   mode === 'real'
                     ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                    : 'text-text-secondary hover:text-text-primary'
+                    : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
                 <Cpu className="w-4 h-4" />
@@ -149,7 +149,7 @@ export const GPT1Lab: React.FC = () => {
           </div>
 
           {/* Mode Description */}
-          <div className="text-xs text-text-tertiary">
+          <div className="text-xs text-zinc-500">
             {mode === 'simulation' ? (
               <span>📚 可视化演示，帮助理解原理</span>
             ) : (
@@ -165,7 +165,7 @@ export const GPT1Lab: React.FC = () => {
       ) : (
         <>
           {/* Progress Bar */}
-          <div className="px-6 py-4 border-b border-border-default">
+          <div className="px-6 py-4 border-b border-zinc-700">
             <div className="flex items-center justify-between max-w-4xl mx-auto">
               {stages.map((stage, index) => {
                 const isCompleted = completedStages.has(stage.id);
@@ -189,7 +189,7 @@ export const GPT1Lab: React.FC = () => {
                           transition-all duration-300
                           ${isCompleted ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : ''}
                           ${isCurrent ? 'bg-blue-500/20 border-blue-500/50 text-blue-400 ring-2 ring-blue-500/30' : ''}
-                          ${!isCompleted && !isCurrent ? 'bg-surface border-border-default text-text-tertiary' : ''}
+                          ${!isCompleted && !isCurrent ? 'bg-zinc-800 border-zinc-700 text-zinc-500' : ''}
                           border
                         `}
                       >
@@ -198,7 +198,7 @@ export const GPT1Lab: React.FC = () => {
                       <span
                         className={`
                           text-xs font-medium
-                          ${isCurrent ? 'text-blue-400' : isCompleted ? 'text-emerald-400' : 'text-text-tertiary'}
+                          ${isCurrent ? 'text-blue-400' : isCompleted ? 'text-emerald-400' : 'text-zinc-500'}
                         `}
                       >
                         {stage.shortTitle}
@@ -211,7 +211,7 @@ export const GPT1Lab: React.FC = () => {
                         <div
                           className={`
                             h-0.5 rounded-full transition-colors duration-300
-                            ${isPast || isCompleted ? 'bg-emerald-500/50' : 'bg-elevated'}
+                            ${isPast || isCompleted ? 'bg-emerald-500/50' : 'bg-zinc-700'}
                           `}
                         />
                       </div>
@@ -223,17 +223,17 @@ export const GPT1Lab: React.FC = () => {
           </div>
 
           {/* Stage Header */}
-          <div className="px-6 py-4 bg-deep">
+          <div className="px-6 py-4 bg-zinc-900">
             <div className="max-w-4xl mx-auto">
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
                   {currentStageConfig.icon}
                 </div>
                 <div>
-                  <h2 className="text-lg font-semibold text-text-primary">
+                  <h2 className="text-lg font-semibold text-zinc-200">
                     阶段 {currentStageIndex + 1}: {currentStageConfig.title}
                   </h2>
-                  <p className="text-sm text-text-tertiary">{currentStageConfig.description}</p>
+                  <p className="text-sm text-zinc-500">{currentStageConfig.description}</p>
                 </div>
               </div>
             </div>
@@ -245,11 +245,11 @@ export const GPT1Lab: React.FC = () => {
           </div>
 
           {/* Learning Point Footer */}
-          <div className="px-6 py-3 border-t border-border-default bg-deep/30">
+          <div className="px-6 py-3 border-t border-zinc-700 bg-zinc-900/30">
             <div className="max-w-4xl mx-auto flex items-center gap-2">
               <span className="text-amber-400">💡</span>
-              <span className="text-sm text-text-secondary">
-                <span className="text-text-secondary font-medium">学习要点：</span>
+              <span className="text-sm text-zinc-400">
+                <span className="text-zinc-400 font-medium">学习要点：</span>
                 {currentStageConfig.learningPoint}
               </span>
             </div>

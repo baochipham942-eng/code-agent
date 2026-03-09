@@ -108,13 +108,13 @@ export const MemorySettings: React.FC = () => {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Brain className="w-5 h-5 text-cyan-400" />
-          <h3 className="text-lg font-medium text-text-primary">记忆管理</h3>
-          <span className="text-xs text-text-tertiary">Gen 5</span>
+          <h3 className="text-lg font-medium text-zinc-200">记忆管理</h3>
+          <span className="text-xs text-zinc-500">Gen 5</span>
         </div>
         <button
           onClick={loadStats}
           disabled={isLoading}
-          className="flex items-center gap-1.5 px-2 py-1 text-xs text-text-secondary hover:text-text-primary hover:bg-hover rounded transition-colors"
+          className="flex items-center gap-1.5 px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
           刷新
@@ -159,7 +159,7 @@ export const MemorySettings: React.FC = () => {
       <div>
         <div className="flex items-center gap-2 mb-3">
           <Sparkles className="w-4 h-4 text-amber-400" />
-          <span className="text-sm font-medium text-text-secondary">学习记录</span>
+          <span className="text-sm font-medium text-zinc-400">学习记录</span>
           {learningEvents.length > 0 && (
             <span className="px-1.5 py-0.5 text-xs rounded-full bg-amber-500/20 text-amber-300">
               {learningEvents.length}
@@ -168,7 +168,7 @@ export const MemorySettings: React.FC = () => {
         </div>
         <div className="space-y-2 max-h-40 overflow-y-auto">
           {learningEvents.length === 0 ? (
-            <p className="text-xs text-text-tertiary text-center py-3 bg-surface rounded">
+            <p className="text-xs text-zinc-500 text-center py-3 bg-zinc-800 rounded">
               暂无学习记录，会话结束后会自动学习
             </p>
           ) : (
@@ -182,8 +182,8 @@ export const MemorySettings: React.FC = () => {
       {/* Search */}
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <Search className="w-4 h-4 text-text-secondary" />
-          <span className="text-sm font-medium text-text-secondary">搜索记忆</span>
+          <Search className="w-4 h-4 text-zinc-400" />
+          <span className="text-sm font-medium text-zinc-400">搜索记忆</span>
         </div>
         <div className="flex gap-2">
           <input
@@ -192,12 +192,12 @@ export const MemorySettings: React.FC = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
             placeholder="搜索知识库..."
-            className="flex-1 px-3 py-2 text-sm bg-elevated border border-border-default rounded-lg focus:outline-none focus:border-cyan-500 text-text-primary placeholder-text-tertiary"
+            className="flex-1 px-3 py-2 text-sm bg-zinc-700 border border-zinc-700 rounded-lg focus:outline-none focus:border-cyan-500 text-zinc-200 placeholder-zinc-500"
           />
           <button
             onClick={handleSearch}
             disabled={isSearching || !searchQuery.trim()}
-            className="px-3 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-active disabled:text-text-tertiary rounded-lg text-white text-sm transition-colors"
+            className="px-3 py-2 bg-cyan-600 hover:bg-cyan-500 disabled:bg-zinc-600 disabled:text-zinc-500 rounded-lg text-white text-sm transition-colors"
           >
             {isSearching ? <RefreshCw className="w-4 h-4 animate-spin" /> : '搜索'}
           </button>
@@ -213,14 +213,14 @@ export const MemorySettings: React.FC = () => {
         )}
 
         {searchQuery && searchResults.length === 0 && !isSearching && (
-          <p className="text-xs text-text-tertiary text-center py-3 mt-2">
+          <p className="text-xs text-zinc-500 text-center py-3 mt-2">
             未找到结果
           </p>
         )}
       </div>
 
       {/* Info */}
-      <p className="text-xs text-text-tertiary">
+      <p className="text-xs text-zinc-500">
         记忆系统跨会话存储知识，使用 memory_store、memory_search 和 code_index 工具交互。
       </p>
     </div>
@@ -238,9 +238,9 @@ const StatCard: React.FC<{
   <div className={`p-3 rounded-lg ${bgColor}`}>
     <div className="flex items-center gap-2 mb-1">
       <span className={color}>{icon}</span>
-      <span className="text-xs text-text-secondary">{label}</span>
+      <span className="text-xs text-zinc-400">{label}</span>
     </div>
-    <span className="text-lg font-semibold text-text-primary">{value}</span>
+    <span className="text-lg font-semibold text-zinc-200">{value}</span>
   </div>
 );
 
@@ -252,11 +252,11 @@ const LearningEventItem: React.FC<{
   const totalLearned = event.knowledgeExtracted + event.codeStylesLearned + event.toolPreferencesUpdated;
 
   return (
-    <div className="p-2 bg-surface rounded text-xs">
+    <div className="p-2 bg-zinc-800 rounded text-xs">
       <div className="flex items-center gap-1 mb-1">
         <CheckCircle className="w-3 h-3 text-emerald-400" />
-        <span className="text-text-secondary font-medium">会话学习完成</span>
-        <span className="ml-auto text-text-tertiary">{formatTimeAgo(event.timestamp)}</span>
+        <span className="text-zinc-400 font-medium">会话学习完成</span>
+        <span className="ml-auto text-zinc-500">{formatTimeAgo(event.timestamp)}</span>
       </div>
       <div className="flex flex-wrap gap-2 mt-1">
         {event.knowledgeExtracted > 0 && (
@@ -275,7 +275,7 @@ const LearningEventItem: React.FC<{
           </span>
         )}
         {totalLearned === 0 && (
-          <span className="text-text-tertiary">无新内容</span>
+          <span className="text-zinc-500">无新内容</span>
         )}
       </div>
     </div>
@@ -293,7 +293,7 @@ const SearchResultItem: React.FC<{ result: SearchResult }> = ({ result }) => {
       case 'knowledge':
         return <Brain className="w-3 h-3 text-purple-400" />;
       default:
-        return <Database className="w-3 h-3 text-text-secondary" />;
+        return <Database className="w-3 h-3 text-zinc-400" />;
     }
   };
 
@@ -308,15 +308,15 @@ const SearchResultItem: React.FC<{ result: SearchResult }> = ({ result }) => {
   };
 
   return (
-    <div className="p-2 bg-surface rounded text-xs">
+    <div className="p-2 bg-zinc-800 rounded text-xs">
       <div className="flex items-center gap-1 mb-1">
         {getSourceIcon()}
-        <span className="text-text-secondary truncate">{getSourceLabel()}</span>
-        <span className="ml-auto text-text-tertiary">
+        <span className="text-zinc-400 truncate">{getSourceLabel()}</span>
+        <span className="ml-auto text-zinc-500">
           {Math.round(result.score * 100)}%
         </span>
       </div>
-      <p className="text-text-secondary line-clamp-2">{result.content}</p>
+      <p className="text-zinc-400 line-clamp-2">{result.content}</p>
     </div>
   );
 };

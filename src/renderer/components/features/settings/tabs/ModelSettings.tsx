@@ -85,7 +85,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     <div className="space-y-6">
       {/* Provider Selection */}
       <div>
-        <h3 className="text-sm font-medium text-text-primary mb-4">{t.model.title}</h3>
+        <h3 className="text-sm font-medium text-zinc-200 mb-4">{t.model.title}</h3>
         <div className="grid grid-cols-3 gap-3">
           {providers.map((provider) => (
             <button
@@ -94,13 +94,13 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
               className={`p-3 rounded-lg border text-left transition-colors ${
                 config.provider === provider.id
                   ? 'border-blue-500 bg-blue-500/10'
-                  : 'border-border-default hover:border-border-strong'
+                  : 'border-zinc-700 hover:border-zinc-600'
               }`}
             >
-              <div className="text-sm font-medium text-text-primary">
+              <div className="text-sm font-medium text-zinc-200">
                 {provider.name}
               </div>
-              <div className="text-xs text-text-tertiary mt-1">
+              <div className="text-xs text-zinc-500 mt-1">
                 {provider.description}
               </div>
             </button>
@@ -110,7 +110,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
 
       {/* API Key */}
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">
+        <label className="block text-sm font-medium text-zinc-200 mb-2">
           {t.model.apiKey}
         </label>
         <Input
@@ -120,14 +120,14 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           placeholder={t.model.apiKeyPlaceholder}
           leftIcon={<Key className="w-4 h-4" />}
         />
-        <p className="text-xs text-text-tertiary mt-2">
+        <p className="text-xs text-zinc-500 mt-2">
           {t.model.apiKeyHint}
         </p>
       </div>
 
       {/* Model Selection */}
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">
+        <label className="block text-sm font-medium text-zinc-200 mb-2">
           {t.model.modelSelect}
         </label>
         <Select
@@ -240,7 +240,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
 
       {/* Temperature */}
       <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">
+        <label className="block text-sm font-medium text-zinc-200 mb-2">
           {t.model.temperature}: {config.temperature ?? 0.7}
         </label>
         <input
@@ -254,14 +254,14 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           }
           className="w-full"
         />
-        <div className="flex justify-between text-xs text-text-tertiary">
+        <div className="flex justify-between text-xs text-zinc-500">
           <span>{t.model.temperaturePrecise}</span>
           <span>{t.model.temperatureCreative}</span>
         </div>
       </div>
 
       {/* Save Button */}
-      <div className="pt-4 border-t border-border-default">
+      <div className="pt-4 border-t border-zinc-700">
         <Button
           onClick={handleSave}
           loading={isSaving}

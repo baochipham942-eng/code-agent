@@ -196,7 +196,7 @@ export function PermissionCard() {
         tabIndex={-1}
         className={`
           w-full
-          bg-deep rounded-lg shadow-2xl
+          bg-zinc-900 rounded-lg shadow-2xl
           border-2 outline-none
           ${isDangerous ? 'border-red-500' : config.borderColor}
         `}
@@ -214,7 +214,7 @@ export function PermissionCard() {
           {isDangerous && <DangerWarning reason={dangerReason || undefined} />}
 
           {request.reason && (
-            <p className="text-text-secondary text-sm">{request.reason}</p>
+            <p className="text-zinc-400 text-sm">{request.reason}</p>
           )}
 
           <RequestDetails request={request} />

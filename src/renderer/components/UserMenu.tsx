@@ -51,7 +51,7 @@ export const UserMenu: React.FC = () => {
       {/* User button */}
       <button
         onClick={() => setShowMenu(!showMenu)}
-        className="window-no-drag flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-hover transition-colors"
+        className="window-no-drag flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-zinc-700 transition-colors"
       >
         {user.avatarUrl ? (
           <img
@@ -64,14 +64,14 @@ export const UserMenu: React.FC = () => {
             <User className="w-4 h-4 text-white" />
           </div>
         )}
-        <span className="text-sm text-text-secondary max-w-24 truncate">
+        <span className="text-sm text-zinc-400 max-w-24 truncate">
           {user.nickname || user.email?.split('@')[0]}
         </span>
       </button>
 
       {/* Dropdown menu */}
       {showMenu && (
-        <div className="absolute right-0 top-full mt-2 w-48 bg-deep border border-border-default rounded-lg shadow-xl z-50">
+        <div className="absolute right-0 top-full mt-2 w-48 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50">
           {/* Logout action */}
           <div className="p-2">
             <button
@@ -79,7 +79,7 @@ export const UserMenu: React.FC = () => {
                 signOut();
                 setShowMenu(false);
               }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-hover rounded-lg transition-colors"
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded-lg transition-colors"
             >
               <LogOut className="w-4 h-4" />
               退出登录

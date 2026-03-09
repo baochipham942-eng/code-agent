@@ -222,8 +222,8 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
         <div className="flex items-start gap-3">
           <GraduationCap className="w-5 h-5 text-orange-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-text-primary mb-2">📝 SFT 监督微调</h3>
-            <p className="text-sm text-text-secondary">
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">📝 SFT 监督微调</h3>
+            <p className="text-sm text-zinc-400">
               SFT (Supervised Fine-Tuning) 是让模型学习「问题 → 回答」模式的关键步骤。
               用高质量的指令数据集训练，让模型学会按格式回答问题。
               <span className="text-orange-400">数据质量决定效果上限</span>。
@@ -234,11 +234,11 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
 
       {/* Data Format */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
+        <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Database className="w-4 h-4 text-orange-400" />
           数据格式
         </h3>
-        <div className="bg-deep rounded-lg border border-border-default p-4">
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="flex gap-2 mb-4">
             {dataFormats.map((format, idx) => (
               <button
@@ -248,7 +248,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
                   px-4 py-2 rounded-lg text-sm transition-all
                   ${selectedFormat === idx
                     ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
-                    : 'bg-surface text-text-tertiary border border-border-subtle hover:border-border-strong'
+                    : 'bg-zinc-800 text-zinc-500 border border-zinc-800 hover:border-zinc-600'
                   }
                 `}
               >
@@ -259,13 +259,13 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <div className="text-xs text-text-tertiary mb-2">{dataFormats[selectedFormat].description}</div>
-              <pre className="p-3 rounded-lg bg-void text-sm text-text-secondary overflow-x-auto">
+              <div className="text-xs text-zinc-500 mb-2">{dataFormats[selectedFormat].description}</div>
+              <pre className="p-3 rounded-lg bg-zinc-950 text-sm text-zinc-400 overflow-x-auto">
                 <code>{dataFormats[selectedFormat].example}</code>
               </pre>
             </div>
-            <div className="p-3 rounded-lg bg-surface border border-border-subtle">
-              <div className="text-sm font-medium text-text-secondary mb-2">数据质量检查</div>
+            <div className="p-3 rounded-lg bg-zinc-800 border border-zinc-800">
+              <div className="text-sm font-medium text-zinc-400 mb-2">数据质量检查</div>
               <ul className="space-y-2">
                 {qualityChecks.map((check) => (
                   <li key={check.name} className="flex items-center justify-between">
@@ -275,9 +275,9 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
                       ) : (
                         <AlertTriangle className="w-4 h-4 text-amber-400" />
                       )}
-                      <span className="text-sm text-text-secondary">{check.name}</span>
+                      <span className="text-sm text-zinc-400">{check.name}</span>
                     </div>
-                    <span className="text-xs text-text-tertiary">{check.detail}</span>
+                    <span className="text-xs text-zinc-500">{check.detail}</span>
                   </li>
                 ))}
               </ul>
@@ -295,20 +295,20 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
 
       {/* Hyperparameters */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary">⚙️ 关键超参数</h3>
+        <h3 className="text-sm font-medium text-zinc-400">⚙️ 关键超参数</h3>
         <div className="grid grid-cols-2 gap-4">
           {hyperparams.map((param) => (
-            <div key={param.name} className="p-4 rounded-lg bg-deep border border-border-default">
+            <div key={param.name} className="p-4 rounded-lg bg-zinc-900 border border-zinc-700">
               <div className="flex items-center justify-between mb-2">
                 <div>
-                  <span className="text-sm font-medium text-text-secondary">{param.name}</span>
-                  <span className="text-xs text-text-tertiary ml-2">{param.zh}</span>
+                  <span className="text-sm font-medium text-zinc-400">{param.name}</span>
+                  <span className="text-xs text-zinc-500 ml-2">{param.zh}</span>
                 </div>
                 <span className="text-sm text-orange-400 font-mono">{param.default}</span>
               </div>
-              <p className="text-xs text-text-tertiary mb-2">{param.description}</p>
+              <p className="text-xs text-zinc-500 mb-2">{param.description}</p>
               <div className="flex items-center justify-between text-xs">
-                <span className="text-text-disabled">范围：{param.range}</span>
+                <span className="text-zinc-600">范围：{param.range}</span>
                 <span className="text-amber-400">💡 {param.tip}</span>
               </div>
             </div>
@@ -319,7 +319,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
       {/* Training Simulation */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium text-text-secondary">🏋️ 训练模拟</h3>
+          <h3 className="text-sm font-medium text-zinc-400">🏋️ 训练模拟</h3>
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
@@ -330,7 +330,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
                 px-3 py-1.5 rounded-lg text-xs transition-all
                 ${scenario === 'overfit'
                   ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                  : 'bg-surface text-text-tertiary border border-border-subtle'
+                  : 'bg-zinc-800 text-zinc-500 border border-zinc-800'
                 }
               `}
             >
@@ -338,7 +338,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
             </button>
             <button
               onClick={resetTraining}
-              className="p-2 rounded-lg bg-surface text-text-secondary hover:bg-hover border border-border-default"
+              className="p-2 rounded-lg bg-zinc-800 text-zinc-400 hover:bg-zinc-700 border border-zinc-700"
             >
               <RotateCcw className="w-4 h-4" />
             </button>
@@ -367,27 +367,27 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
           </div>
         </div>
 
-        <div className="bg-deep rounded-lg border border-border-default p-4">
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="grid grid-cols-4 gap-4 mb-4">
             <div className="text-center">
-              <div className="text-xs text-text-tertiary mb-1">训练进度</div>
+              <div className="text-xs text-zinc-500 mb-1">训练进度</div>
               <div className="text-xl font-bold text-orange-400">{trainingProgress}%</div>
             </div>
             <div className="text-center">
-              <div className="text-xs text-text-tertiary mb-1">当前 Loss</div>
+              <div className="text-xs text-zinc-500 mb-1">当前 Loss</div>
               <div className={`text-xl font-bold ${scenario === 'overfit' && trainingProgress > 30 ? 'text-amber-400' : 'text-emerald-400'}`}>
                 {lossHistory[lossHistory.length - 1]?.toFixed(3) || '2.500'}
               </div>
             </div>
             <div className="text-center">
-              <div className="text-xs text-text-tertiary mb-1">学习率</div>
+              <div className="text-xs text-zinc-500 mb-1">学习率</div>
               <div className="text-xl font-bold text-blue-400">2e-5</div>
             </div>
             <div className="text-center">
-              <div className="text-xs text-text-tertiary mb-1">状态</div>
+              <div className="text-xs text-zinc-500 mb-1">状态</div>
               <div className={`text-lg font-medium ${
                 isTraining ? 'text-amber-400' :
-                trainingProgress >= 100 ? 'text-emerald-400' : 'text-text-secondary'
+                trainingProgress >= 100 ? 'text-emerald-400' : 'text-zinc-400'
               }`}>
                 {isTraining ? '训练中...' : trainingProgress >= 100 ? '完成' : '就绪'}
               </div>
@@ -395,9 +395,9 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
           </div>
 
           {/* Loss Curve */}
-          <div className="p-3 rounded-lg bg-void">
+          <div className="p-3 rounded-lg bg-zinc-950">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-text-tertiary">Loss 曲线</span>
+              <span className="text-xs text-zinc-500">Loss 曲线</span>
               <span className={`text-xs ${scenario === 'overfit' ? 'text-amber-400' : 'text-emerald-400'}`}>
                 {scenario === 'overfit' ? '⚠️ 检测到过拟合' : '✓ 正常收敛'}
               </span>
@@ -408,7 +408,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
               height={150}
               className="w-full"
             />
-            <div className="flex justify-between text-xs text-text-disabled mt-1">
+            <div className="flex justify-between text-xs text-zinc-600 mt-1">
               <span>Step 0</span>
               <span>Step 100</span>
             </div>
@@ -421,7 +421,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
                 <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5" />
                 <div>
                   <div className="text-sm font-medium text-amber-400">过拟合警告</div>
-                  <p className="text-xs text-text-secondary mt-1">
+                  <p className="text-xs text-zinc-400 mt-1">
                     训练 Loss 下降后开始上升，说明模型在"死记硬背"训练数据，而不是学习通用规律。
                     解决方法：减少 Epochs、增加数据量、使用 Early Stopping。
                   </p>
@@ -435,25 +435,25 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
       {/* Key Takeaways */}
       <div className="bg-orange-500/5 rounded-lg border border-orange-500/20 p-4">
         <h4 className="text-sm font-medium text-orange-400 mb-2">📌 小结</h4>
-        <ul className="space-y-2 text-sm text-text-secondary">
+        <ul className="space-y-2 text-sm text-zinc-400">
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-text-secondary">数据质量是关键</strong>：50-100 个高质量样本开始，逐步扩展</span>
+            <span><strong className="text-zinc-400">数据质量是关键</strong>：50-100 个高质量样本开始，逐步扩展</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-text-secondary">监控 Loss 曲线</strong>：下降后上升 = 过拟合，需要及时停止</span>
+            <span><strong className="text-zinc-400">监控 Loss 曲线</strong>：下降后上升 = 过拟合，需要及时停止</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-text-secondary">超参数调优</strong>：从默认值开始，小步调整观察效果</span>
+            <span><strong className="text-zinc-400">超参数调优</strong>：从默认值开始，小步调整观察效果</span>
           </li>
         </ul>
       </div>
 
       {/* 专有名词 */}
-      <div className="p-4 rounded-xl bg-deep border border-border-default">
-        <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+      <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
           本阶段专有名词
         </h3>
@@ -464,13 +464,13 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
             { en: 'Batch Size', zh: '批次大小', desc: '每次更新参数使用的样本数量' },
             { en: 'Overfitting', zh: '过拟合', desc: '模型在训练集上表现好，但泛化能力差' },
           ].map((term) => (
-            <div key={term.en} className="p-3 rounded-lg bg-surface">
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
-                <span className="text-xs text-text-tertiary">|</span>
-                <span className="text-sm text-text-secondary">{term.zh}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>
-              <p className="text-xs text-text-tertiary">{term.desc}</p>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
           ))}
         </div>
@@ -480,7 +480,7 @@ export const SFTStage: React.FC<SFTStageProps> = ({ onComplete, onBack }) => {
       <div className="flex justify-between pt-4">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-5 py-2.5 bg-surface text-text-secondary rounded-lg hover:bg-hover border border-border-default transition-all"
+          className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800 text-zinc-400 rounded-lg hover:bg-zinc-700 border border-zinc-700 transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
           上一步

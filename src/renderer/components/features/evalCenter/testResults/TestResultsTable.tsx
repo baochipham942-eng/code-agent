@@ -15,7 +15,7 @@ const STATUS_ICON: Record<string, { icon: string; color: string }> = {
   passed: { icon: '\u2713', color: 'text-emerald-400' },
   failed: { icon: '\u2717', color: 'text-red-400' },
   partial: { icon: '\u25D0', color: 'text-amber-400' },
-  skipped: { icon: '\u25CB', color: 'text-text-tertiary' },
+  skipped: { icon: '\u25CB', color: 'text-zinc-500' },
 };
 
 function formatDuration(ms: number): string {
@@ -60,7 +60,7 @@ export const TestResultsTable: React.FC<Props> = ({ results }) => {
 
   const SortHeader: React.FC<{ label: string; field: SortKey; className?: string }> = ({ label, field, className }) => (
     <th
-      className={`px-2 py-1.5 text-left cursor-pointer hover:text-text-secondary select-none ${className || ''}`}
+      className={`px-2 py-1.5 text-left cursor-pointer hover:text-zinc-400 select-none ${className || ''}`}
       onClick={() => handleSort(field)}
     >
       <span className="inline-flex items-center gap-1">
@@ -73,34 +73,34 @@ export const TestResultsTable: React.FC<Props> = ({ results }) => {
   );
 
   return (
-    <div className="bg-surface border border-border-default/20 rounded-lg overflow-hidden">
+    <div className="bg-zinc-800 border border-zinc-700/20 rounded-lg overflow-hidden">
       {/* Filters */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border-default/20">
-        <span className="text-[11px] text-text-tertiary">筛选:</span>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700/20">
+        <span className="text-[11px] text-zinc-500">筛选:</span>
         {(['all', 'passed', 'failed', 'partial'] as StatusFilter[]).map((s) => (
           <button
             key={s}
             onClick={() => setStatusFilter(s)}
             className={`px-2 py-0.5 rounded text-[11px] transition ${
               statusFilter === s
-                ? 'bg-active text-text-primary'
-                : 'text-text-tertiary hover:text-text-secondary hover:bg-hover'
+                ? 'bg-zinc-600 text-zinc-200'
+                : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700'
             }`}
           >
             {s === 'all' ? '全部' : s === 'passed' ? '通过' : s === 'failed' ? '失败' : '部分'}
             {s !== 'all' && ` (${results.filter(r => r.status === s).length})`}
           </button>
         ))}
-        <span className="ml-auto text-[11px] text-text-disabled">
+        <span className="ml-auto text-[11px] text-zinc-600">
           {filtered.length} / {results.length}
         </span>
       </div>
 
       {/* Table */}
       <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-        <table className="w-full text-[11px] text-text-secondary">
-          <thead className="sticky top-0 bg-elevated backdrop-blur">
-            <tr className="border-b border-border-subtle">
+        <table className="w-full text-[11px] text-zinc-400">
+          <thead className="sticky top-0 bg-zinc-700 backdrop-blur">
+            <tr className="border-b border-zinc-800">
               <th className="w-6 px-2 py-1.5" />
               <th className="w-6 px-1 py-1.5" />
               <SortHeader label="用例" field="testId" className="min-w-[140px]" />
@@ -119,16 +119,16 @@ export const TestResultsTable: React.FC<Props> = ({ results }) => {
               return (
                 <React.Fragment key={r.testId}>
                   <tr
-                    className="border-b border-border-default/10 hover:bg-surface cursor-pointer transition"
+                    className="border-b border-zinc-700/10 hover:bg-zinc-800 cursor-pointer transition"
                     onClick={() => setExpandedId(isExpanded ? null : r.testId)}
                   >
-                    <td className="px-2 py-1.5 text-text-disabled">
+                    <td className="px-2 py-1.5 text-zinc-600">
                       {isExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                     </td>
                     <td className={`px-1 py-1.5 ${statusInfo.color} font-medium`}>
                       {statusInfo.icon}
                     </td>
-                    <td className="px-2 py-1.5 font-mono text-text-secondary">{r.testId}</td>
+                    <td className="px-2 py-1.5 font-mono text-zinc-400">{r.testId}</td>
                     <td className="px-2 py-1.5 truncate max-w-[200px]">{r.description}</td>
                     <td className={`px-2 py-1.5 font-medium ${
                       r.score >= 1 ? 'text-emerald-400' :

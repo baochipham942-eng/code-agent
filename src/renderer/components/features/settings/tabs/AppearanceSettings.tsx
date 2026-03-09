@@ -42,8 +42,8 @@ export const AppearanceSettings: React.FC = () => {
       icon: <Moon className="w-4 h-4" />,
       description: '深色背景，适合夜间使用',
       preview: (
-        <div className="w-full h-16 rounded bg-deep border border-border-default flex items-center justify-center">
-          <div className="w-8 h-3 bg-active rounded" />
+        <div className="w-full h-16 rounded bg-zinc-900 border border-zinc-700 flex items-center justify-center">
+          <div className="w-8 h-3 bg-zinc-600 rounded" />
         </div>
       ),
     },
@@ -53,8 +53,8 @@ export const AppearanceSettings: React.FC = () => {
       icon: <Sun className="w-4 h-4" />,
       description: '浅色背景，适合日间使用',
       preview: (
-        <div className="w-full h-16 rounded bg-white border border-border-default flex items-center justify-center">
-          <div className="w-8 h-3 bg-hover rounded" />
+        <div className="w-full h-16 rounded bg-white border border-zinc-700 flex items-center justify-center">
+          <div className="w-8 h-3 bg-zinc-700 rounded" />
         </div>
       ),
     },
@@ -64,8 +64,8 @@ export const AppearanceSettings: React.FC = () => {
       icon: <Monitor className="w-4 h-4" />,
       description: '跟随系统设置自动切换',
       preview: (
-        <div className="w-full h-16 rounded bg-gradient-to-r from-white to-deep border border-border-strong flex items-center justify-center">
-          <div className="w-8 h-3 bg-active rounded" />
+        <div className="w-full h-16 rounded bg-gradient-to-r from-white to-zinc-900 border border-zinc-600 flex items-center justify-center">
+          <div className="w-8 h-3 bg-zinc-600 rounded" />
         </div>
       ),
     },
@@ -119,8 +119,8 @@ export const AppearanceSettings: React.FC = () => {
     <div className="space-y-6">
       {/* Theme Selection */}
       <div>
-        <h3 className="text-sm font-medium text-text-primary mb-2">{t.appearance.theme}</h3>
-        <p className="text-xs text-text-tertiary mb-4">
+        <h3 className="text-sm font-medium text-zinc-200 mb-2">{t.appearance.theme}</h3>
+        <p className="text-xs text-zinc-500 mb-4">
           选择你偏好的界面主题
         </p>
         <div className="grid grid-cols-3 gap-3">
@@ -134,7 +134,7 @@ export const AppearanceSettings: React.FC = () => {
                 className={`relative p-3 rounded-lg border text-left transition-all ${
                   isActive
                     ? 'border-primary-500 bg-primary-500/10 ring-1 ring-primary-500/50'
-                    : 'border-border-default hover:border-border-strong hover:bg-surface'
+                    : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                 }`}
               >
                 {/* Preview */}
@@ -142,10 +142,10 @@ export const AppearanceSettings: React.FC = () => {
 
                 {/* Label */}
                 <div className="flex items-center gap-2">
-                  <span className={isActive ? 'text-primary-400' : 'text-text-secondary'}>
+                  <span className={isActive ? 'text-primary-400' : 'text-zinc-400'}>
                     {option.icon}
                   </span>
-                  <span className={`text-sm ${isActive ? 'text-text-primary' : 'text-text-secondary'}`}>
+                  <span className={`text-sm ${isActive ? 'text-zinc-200' : 'text-zinc-400'}`}>
                     {option.label}
                   </span>
                 </div>
@@ -163,16 +163,16 @@ export const AppearanceSettings: React.FC = () => {
 
         {/* Current theme indicator */}
         {theme === 'system' && (
-          <p className="mt-2 text-xs text-text-tertiary">
+          <p className="mt-2 text-xs text-zinc-500">
             当前系统主题：{resolvedTheme === 'dark' ? '深色' : '浅色'}
           </p>
         )}
       </div>
 
       {/* Font Size */}
-      <div className="pt-4 border-t border-border-default">
-        <h3 className="text-sm font-medium text-text-primary mb-2">{t.appearance.fontSize}</h3>
-        <p className="text-xs text-text-tertiary mb-4">
+      <div className="pt-4 border-t border-zinc-700">
+        <h3 className="text-sm font-medium text-zinc-200 mb-2">{t.appearance.fontSize}</h3>
+        <p className="text-xs text-zinc-500 mb-4">
           调整界面文字大小
         </p>
         <div className="grid grid-cols-3 gap-2">
@@ -190,16 +190,16 @@ export const AppearanceSettings: React.FC = () => {
                 className={`p-3 rounded-lg border text-center transition-all ${
                   isActive
                     ? 'border-primary-500/50 bg-primary-500/10'
-                    : 'border-border-default hover:border-border-strong hover:bg-surface'
+                    : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
                 }`}
               >
                 <span
-                  className={`block ${isActive ? 'text-text-primary' : 'text-text-secondary'}`}
+                  className={`block ${isActive ? 'text-zinc-200' : 'text-zinc-400'}`}
                   style={{ fontSize: option.size }}
                 >
                   Aa
                 </span>
-                <span className={`text-xs mt-1 ${isActive ? 'text-primary-400' : 'text-text-tertiary'}`}>
+                <span className={`text-xs mt-1 ${isActive ? 'text-primary-400' : 'text-zinc-500'}`}>
                   {option.label}
                 </span>
               </button>
@@ -209,9 +209,9 @@ export const AppearanceSettings: React.FC = () => {
       </div>
 
       {/* Language Selection */}
-      <div className="pt-4 border-t border-border-default">
-        <h3 className="text-sm font-medium text-text-primary mb-2">{t.language.title}</h3>
-        <p className="text-xs text-text-secondary mb-4">
+      <div className="pt-4 border-t border-zinc-700">
+        <h3 className="text-sm font-medium text-zinc-200 mb-2">{t.language.title}</h3>
+        <p className="text-xs text-zinc-400 mb-4">
           {t.language.description}
         </p>
         <div className="space-y-2">
@@ -222,7 +222,7 @@ export const AppearanceSettings: React.FC = () => {
               className={`w-full p-3 rounded-lg border text-left transition-all ${
                 language === lang.code
                   ? 'border-primary-500 bg-primary-500/10 ring-1 ring-primary-500/50'
-                  : 'border-border-default hover:border-border-strong hover:bg-surface'
+                  : 'border-zinc-700 hover:border-zinc-600 hover:bg-zinc-800'
               }`}
             >
               <div className="flex items-center justify-between">
@@ -231,14 +231,14 @@ export const AppearanceSettings: React.FC = () => {
                     className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-medium ${
                       language === lang.code
                         ? 'bg-primary-500/20 text-primary-400'
-                        : 'bg-elevated text-text-secondary'
+                        : 'bg-zinc-700 text-zinc-400'
                     }`}
                   >
                     {lang.code === 'zh' ? '中' : 'En'}
                   </div>
                   <div>
-                    <div className="font-medium text-text-primary text-sm">{lang.native}</div>
-                    <div className="text-xs text-text-secondary">{lang.name}</div>
+                    <div className="font-medium text-zinc-200 text-sm">{lang.native}</div>
+                    <div className="text-xs text-zinc-400">{lang.name}</div>
                   </div>
                 </div>
                 {language === lang.code && (

@@ -79,33 +79,33 @@ const LoRAVisualization: React.FC<{ rank: number }> = ({ rank }) => {
       {/* Original Matrix W */}
       <div className="flex flex-col items-center">
         <div
-          className="bg-active rounded border border-border-strong"
+          className="bg-zinc-600 rounded border border-zinc-600"
           style={{ width: originalDim, height: originalDim }}
         >
-          <div className="w-full h-full flex items-center justify-center text-xs text-text-secondary">
+          <div className="w-full h-full flex items-center justify-center text-xs text-zinc-400">
             W<sub>0</sub>
           </div>
         </div>
-        <span className="text-xs text-text-tertiary mt-1">原始权重</span>
-        <span className="text-xs text-text-disabled">d × d</span>
+        <span className="text-xs text-zinc-500 mt-1">原始权重</span>
+        <span className="text-xs text-zinc-600">d × d</span>
       </div>
 
-      <span className="text-text-tertiary text-xl">=</span>
+      <span className="text-zinc-500 text-xl">=</span>
 
       {/* Original + Delta */}
       <div className="flex flex-col items-center">
         <div
-          className="bg-active rounded border border-border-strong"
+          className="bg-zinc-600 rounded border border-zinc-600"
           style={{ width: originalDim, height: originalDim }}
         >
-          <div className="w-full h-full flex items-center justify-center text-xs text-text-secondary">
+          <div className="w-full h-full flex items-center justify-center text-xs text-zinc-400">
             W<sub>0</sub>
           </div>
         </div>
-        <span className="text-xs text-text-tertiary mt-1">冻结</span>
+        <span className="text-xs text-zinc-500 mt-1">冻结</span>
       </div>
 
-      <span className="text-text-tertiary text-xl">+</span>
+      <span className="text-zinc-500 text-xl">+</span>
 
       {/* B matrix */}
       <div className="flex flex-col items-center">
@@ -117,10 +117,10 @@ const LoRAVisualization: React.FC<{ rank: number }> = ({ rank }) => {
             B
           </div>
         </div>
-        <span className="text-xs text-text-tertiary mt-1">d × r</span>
+        <span className="text-xs text-zinc-500 mt-1">d × r</span>
       </div>
 
-      <span className="text-text-tertiary text-xl">×</span>
+      <span className="text-zinc-500 text-xl">×</span>
 
       {/* A matrix */}
       <div className="flex flex-col items-center">
@@ -132,7 +132,7 @@ const LoRAVisualization: React.FC<{ rank: number }> = ({ rank }) => {
             A
           </div>
         </div>
-        <span className="text-xs text-text-tertiary mt-1">r × d</span>
+        <span className="text-xs text-zinc-500 mt-1">r × d</span>
       </div>
     </div>
   );
@@ -178,8 +178,8 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
         <div className="flex items-start gap-3">
           <Layers className="w-5 h-5 text-orange-400 mt-0.5" />
           <div>
-            <h3 className="text-sm font-medium text-text-primary mb-2">⚙️ 参数高效微调 (PEFT)</h3>
-            <p className="text-sm text-text-secondary">
+            <h3 className="text-sm font-medium text-zinc-200 mb-2">⚙️ 参数高效微调 (PEFT)</h3>
+            <p className="text-sm text-zinc-400">
               微调大模型需要大量显存。<span className="text-orange-400">参数高效微调</span>只更新一小部分参数，
               用更少的资源达到接近全量微调的效果。就像只练习薄弱环节，而不是重学所有知识。
             </p>
@@ -189,7 +189,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
 
       {/* Method Comparison Cards */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
+        <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Cpu className="w-4 h-4 text-orange-400" />
           微调方法对比
         </h3>
@@ -206,27 +206,27 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
                   p-4 rounded-lg border text-left transition-all
                   ${isSelected
                     ? `${colors.bg} ${colors.border} ring-2 ring-${method.color}-500/30`
-                    : 'bg-surface border-border-subtle hover:border-border-strong'
+                    : 'bg-zinc-800 border-zinc-800 hover:border-zinc-600'
                   }
                 `}
               >
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-xl">{method.icon}</span>
                   <div>
-                    <div className={`text-sm font-medium ${isSelected ? colors.text : 'text-text-secondary'}`}>
+                    <div className={`text-sm font-medium ${isSelected ? colors.text : 'text-zinc-400'}`}>
                       {method.name}
                     </div>
-                    <div className="text-xs text-text-tertiary">{method.en}</div>
+                    <div className="text-xs text-zinc-500">{method.en}</div>
                   </div>
                 </div>
-                <p className="text-xs text-text-secondary mb-3">{method.description}</p>
+                <p className="text-xs text-zinc-400 mb-3">{method.description}</p>
 
                 <div className="space-y-2">
                   <div>
                     <div className="text-xs text-emerald-400 mb-1">优点</div>
                     <ul className="space-y-0.5">
                       {method.pros.map((pro, idx) => (
-                        <li key={idx} className="text-xs text-text-tertiary flex items-center gap-1">
+                        <li key={idx} className="text-xs text-zinc-500 flex items-center gap-1">
                           <span className="text-emerald-400">+</span> {pro}
                         </li>
                       ))}
@@ -236,7 +236,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
                     <div className="text-xs text-red-400 mb-1">缺点</div>
                     <ul className="space-y-0.5">
                       {method.cons.map((con, idx) => (
-                        <li key={idx} className="text-xs text-text-tertiary flex items-center gap-1">
+                        <li key={idx} className="text-xs text-zinc-500 flex items-center gap-1">
                           <span className="text-red-400">-</span> {con}
                         </li>
                       ))}
@@ -244,10 +244,10 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
                   </div>
                 </div>
 
-                <div className="mt-3 pt-3 border-t border-border-subtle">
+                <div className="mt-3 pt-3 border-t border-zinc-800">
                   <div className="flex justify-between text-xs">
-                    <span className="text-text-tertiary">可训练参数</span>
-                    <span className={isSelected ? colors.text : 'text-text-secondary'}>{method.trainableParams}</span>
+                    <span className="text-zinc-500">可训练参数</span>
+                    <span className={isSelected ? colors.text : 'text-zinc-400'}>{method.trainableParams}</span>
                   </div>
                 </div>
               </button>
@@ -258,17 +258,17 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
 
       {/* LoRA Visualization */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
+        <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Zap className="w-4 h-4 text-orange-400" />
           LoRA 原理可视化
         </h3>
-        <div className="bg-deep rounded-lg border border-border-default p-4">
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
-            <p className="text-sm text-text-secondary">
+            <p className="text-sm text-zinc-400">
               <span className="text-blue-400 font-medium">核心思想</span>：权重的变化量 ΔW 可以用两个小矩阵 B×A 近似。
               原本更新 d×d 个参数，现在只需更新 2×d×r 个参数（r 远小于 d）。
             </p>
-            <div className="mt-2 text-xs text-text-tertiary">
+            <div className="mt-2 text-xs text-zinc-500">
               公式：W = W<sub>0</sub> + ΔW ≈ W<sub>0</sub> + B × A
             </div>
           </div>
@@ -276,9 +276,9 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
           <LoRAVisualization rank={currentRank} />
 
           {/* Rank Slider */}
-          <div className="mt-4 p-3 rounded-lg bg-surface">
+          <div className="mt-4 p-3 rounded-lg bg-zinc-800">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-text-secondary">LoRA Rank (r)</span>
+              <span className="text-sm text-zinc-400">LoRA Rank (r)</span>
               <span className="text-sm font-medium text-orange-400">{currentRank}</span>
             </div>
             <input
@@ -287,14 +287,14 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
               max={loraRanks.length - 1}
               value={selectedRank}
               onChange={(e) => setSelectedRank(parseInt(e.target.value))}
-              className="w-full h-2 bg-active rounded-lg appearance-none cursor-pointer"
+              className="w-full h-2 bg-zinc-600 rounded-lg appearance-none cursor-pointer"
             />
-            <div className="flex justify-between text-xs text-text-disabled mt-1">
+            <div className="flex justify-between text-xs text-zinc-600 mt-1">
               {loraRanks.map((r) => (
                 <span key={r}>{r}</span>
               ))}
             </div>
-            <p className="text-xs text-text-tertiary mt-2">
+            <p className="text-xs text-zinc-500 mt-2">
               Rank 越大 → 表达能力越强，但参数量和显存消耗也越大。通常 8-64 就够用。
             </p>
           </div>
@@ -303,14 +303,14 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
 
       {/* VRAM Calculator */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium text-text-secondary flex items-center gap-2">
+        <h3 className="text-sm font-medium text-zinc-400 flex items-center gap-2">
           <Calculator className="w-4 h-4 text-orange-400" />
           显存估算器
         </h3>
-        <div className="bg-deep rounded-lg border border-border-default p-4">
+        <div className="bg-zinc-900 rounded-lg border border-zinc-700 p-4">
           {/* Model Size Selector */}
           <div className="mb-4">
-            <div className="text-sm text-text-secondary mb-2">选择模型规模</div>
+            <div className="text-sm text-zinc-400 mb-2">选择模型规模</div>
             <div className="flex gap-2">
               {modelSizes.map((model, idx) => (
                 <button
@@ -320,7 +320,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
                     px-4 py-2 rounded-lg text-sm transition-all
                     ${selectedModel === idx
                       ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
-                      : 'bg-surface text-text-tertiary border border-border-subtle hover:border-border-strong'
+                      : 'bg-zinc-800 text-zinc-500 border border-zinc-800 hover:border-zinc-600'
                     }
                   `}
                 >
@@ -344,10 +344,10 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
                     <span>{method.icon}</span>
                     <span className={`text-sm font-medium ${colors.text}`}>{method.name}</span>
                   </div>
-                  <div className="text-2xl font-bold text-text-primary mb-2">
+                  <div className="text-2xl font-bold text-zinc-200 mb-2">
                     {vram} GB
                   </div>
-                  <div className="h-2 bg-elevated rounded-full overflow-hidden">
+                  <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
                         method.id === 'full' ? 'bg-purple-500' :
@@ -356,7 +356,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
                       style={{ width: `${percentage}%` }}
                     />
                   </div>
-                  <div className="text-xs text-text-tertiary mt-2">
+                  <div className="text-xs text-zinc-500 mt-2">
                     {method.id === 'qlora' && '消费级显卡可用'}
                     {method.id === 'lora' && '专业显卡推荐'}
                     {method.id === 'full' && '需要高端设备'}
@@ -382,25 +382,25 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
       {/* Key Takeaways */}
       <div className="bg-orange-500/5 rounded-lg border border-orange-500/20 p-4">
         <h4 className="text-sm font-medium text-orange-400 mb-2">📌 小结</h4>
-        <ul className="space-y-2 text-sm text-text-secondary">
+        <ul className="space-y-2 text-sm text-zinc-400">
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-text-secondary">LoRA 是首选</strong>：效果好、显存省、训练快，适合大多数场景</span>
+            <span><strong className="text-zinc-400">LoRA 是首选</strong>：效果好、显存省、训练快，适合大多数场景</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-text-secondary">QLoRA 更省</strong>：消费级显卡可用，是个人开发者的福音</span>
+            <span><strong className="text-zinc-400">QLoRA 更省</strong>：消费级显卡可用，是个人开发者的福音</span>
           </li>
           <li className="flex items-start gap-2">
             <span className="text-orange-400">•</span>
-            <span><strong className="text-text-secondary">全量微调</strong>：效果最好但代价大，除非追求极致效果否则不推荐</span>
+            <span><strong className="text-zinc-400">全量微调</strong>：效果最好但代价大，除非追求极致效果否则不推荐</span>
           </li>
         </ul>
       </div>
 
       {/* 专有名词 */}
-      <div className="p-4 rounded-xl bg-deep border border-border-default">
-        <h3 className="text-sm font-semibold text-text-primary mb-3 flex items-center gap-2">
+      <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-700">
+        <h3 className="text-sm font-semibold text-zinc-200 mb-3 flex items-center gap-2">
           <span className="text-blue-400">📖</span>
           本阶段专有名词
         </h3>
@@ -411,13 +411,13 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
             { en: 'QLoRA', zh: '量化 LoRA', desc: '4-bit 量化基座 + LoRA，显存消耗最少' },
             { en: 'Rank', zh: '秩', desc: 'LoRA 矩阵的维度，控制表达能力和参数量' },
           ].map((term) => (
-            <div key={term.en} className="p-3 rounded-lg bg-surface">
+            <div key={term.en} className="p-3 rounded-lg bg-zinc-800">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm font-bold text-emerald-400">{term.en}</span>
-                <span className="text-xs text-text-tertiary">|</span>
-                <span className="text-sm text-text-secondary">{term.zh}</span>
+                <span className="text-xs text-zinc-500">|</span>
+                <span className="text-sm text-zinc-400">{term.zh}</span>
               </div>
-              <p className="text-xs text-text-tertiary">{term.desc}</p>
+              <p className="text-xs text-zinc-500">{term.desc}</p>
             </div>
           ))}
         </div>
@@ -427,7 +427,7 @@ export const MethodStage: React.FC<MethodStageProps> = ({ onComplete, onBack }) 
       <div className="flex justify-between pt-4">
         <button
           onClick={onBack}
-          className="flex items-center gap-2 px-5 py-2.5 bg-surface text-text-secondary rounded-lg hover:bg-hover border border-border-default transition-all"
+          className="flex items-center gap-2 px-5 py-2.5 bg-zinc-800 text-zinc-400 rounded-lg hover:bg-zinc-700 border border-zinc-700 transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
           上一步

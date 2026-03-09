@@ -25,7 +25,7 @@ export function PermissionHeader({
         flex items-center justify-between
         px-4 py-3
         ${isDangerous ? 'bg-red-900/30' : config.bgColor}
-        border-b border-border-default
+        border-b border-zinc-700
         rounded-t-lg
       `}
     >
@@ -50,14 +50,14 @@ export function PermissionHeader({
           >
             {isDangerous ? '危险操作' : config.title}
           </div>
-          <div className="text-xs text-text-secondary">{toolName}</div>
+          <div className="text-xs text-zinc-400">{toolName}</div>
         </div>
       </div>
 
       {/* 关闭按钮 */}
       <button
         onClick={onClose}
-        className="p-1 rounded hover:bg-active text-text-secondary hover:text-text-primary transition-colors"
+        className="p-1 rounded hover:bg-zinc-600 text-zinc-400 hover:text-zinc-200 transition-colors"
         aria-label="关闭"
       >
         <X size={18} />

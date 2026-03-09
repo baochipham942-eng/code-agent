@@ -94,7 +94,7 @@ export const MemoryTimeline: React.FC<MemoryTimelineProps> = ({
 
   if (memories.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-8 text-text-tertiary">
+      <div className="flex flex-col items-center justify-center py-8 text-zinc-500">
         <Calendar className="w-8 h-8 mb-2" />
         <p className="text-sm">暂无记忆</p>
       </div>
@@ -104,12 +104,12 @@ export const MemoryTimeline: React.FC<MemoryTimelineProps> = ({
   return (
     <div className="space-y-4">
       {/* 统计概览 */}
-      <div className="flex items-center gap-4 px-3 py-2 bg-surface rounded-lg">
-        <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+      <div className="flex items-center gap-4 px-3 py-2 bg-zinc-800 rounded-lg">
+        <div className="flex items-center gap-1.5 text-xs text-zinc-400">
           <Brain className="w-3.5 h-3.5" />
           <span>共 {memories.length} 条记忆</span>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+        <div className="flex items-center gap-1.5 text-xs text-zinc-400">
           <Sparkles className="w-3.5 h-3.5" />
           <span>{memories.filter(m => m.source === 'learned').length} 条自动学习</span>
         </div>
@@ -125,11 +125,11 @@ export const MemoryTimeline: React.FC<MemoryTimelineProps> = ({
           <div key={group} className="relative mb-4 last:mb-0">
             {/* 分组标题 */}
             <div className="flex items-center gap-2 mb-2 ml-8">
-              <div className="absolute left-[13px] w-2.5 h-2.5 rounded-full bg-active border-2 border-border-subtle" />
-              <span className="text-xs font-medium text-text-secondary uppercase tracking-wide">
+              <div className="absolute left-[13px] w-2.5 h-2.5 rounded-full bg-zinc-600 border-2 border-zinc-800" />
+              <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">
                 {TIME_GROUP_LABELS[group]}
               </span>
-              <span className="text-xs text-text-disabled">
+              <span className="text-xs text-zinc-600">
                 ({groupedMemories[group].length})
               </span>
             </div>
@@ -144,7 +144,7 @@ export const MemoryTimeline: React.FC<MemoryTimelineProps> = ({
                   <button
                     key={memory.id}
                     onClick={() => onSelectMemory?.(memory)}
-                    className="w-full flex items-start gap-2 p-2 rounded-lg bg-surface hover:bg-surface transition-colors text-left group"
+                    className="w-full flex items-start gap-2 p-2 rounded-lg bg-zinc-800 hover:bg-zinc-800 transition-colors text-left group"
                   >
                     {/* 分类图标 */}
                     <span className={`text-sm ${config.bgColor} rounded p-1`}>
@@ -153,11 +153,11 @@ export const MemoryTimeline: React.FC<MemoryTimelineProps> = ({
 
                     {/* 内容 */}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-text-primary line-clamp-2">
+                      <p className="text-sm text-zinc-200 line-clamp-2">
                         {memory.content}
                       </p>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-text-tertiary flex items-center gap-1">
+                        <span className="text-xs text-zinc-500 flex items-center gap-1">
                           <Clock className="w-3 h-3" />
                           {formatTime(memory.createdAt)}
                         </span>
@@ -167,7 +167,7 @@ export const MemoryTimeline: React.FC<MemoryTimelineProps> = ({
                           </span>
                         )}
                         {memory.confidence < 1 && (
-                          <span className="text-xs text-text-tertiary">
+                          <span className="text-xs text-zinc-500">
                             {Math.round(memory.confidence * 100)}%
                           </span>
                         )}
@@ -175,7 +175,7 @@ export const MemoryTimeline: React.FC<MemoryTimelineProps> = ({
                     </div>
 
                     {/* 箭头 */}
-                    <ArrowRight className="w-4 h-4 text-text-disabled group-hover:text-text-secondary transition-colors opacity-0 group-hover:opacity-100" />
+                    <ArrowRight className="w-4 h-4 text-zinc-600 group-hover:text-zinc-400 transition-colors opacity-0 group-hover:opacity-100" />
                   </button>
                 );
               })}

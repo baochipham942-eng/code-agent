@@ -119,7 +119,7 @@ export const AlignmentLab: React.FC = () => {
         {Array.from({ length: 4 }).map((_, i) => (
           <span
             key={i}
-            className={`text-[10px] ${i < level ? 'text-amber-400' : 'text-text-disabled'}`}
+            className={`text-[10px] ${i < level ? 'text-amber-400' : 'text-zinc-600'}`}
           >
             ★
           </span>
@@ -131,23 +131,23 @@ export const AlignmentLab: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="px-6 py-3 border-b border-border-default bg-deep/30">
+      <div className="px-6 py-3 border-b border-zinc-700 bg-zinc-900/30">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-purple-400" />
-            <span className="text-sm text-text-secondary">概念演示模式</span>
+            <span className="text-sm text-zinc-400">概念演示模式</span>
             <span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 border border-purple-500/30">
               无需真实训练
             </span>
           </div>
-          <div className="text-xs text-text-tertiary">
+          <div className="text-xs text-zinc-500">
             📚 了解 ChatGPT 是如何变得"听话"的
           </div>
         </div>
       </div>
 
       {/* Progress Bar */}
-      <div className="px-6 py-4 border-b border-border-default">
+      <div className="px-6 py-4 border-b border-zinc-700">
         <div className="flex items-center justify-between max-w-5xl mx-auto">
           {stages.map((stage, index) => {
             const isCompleted = completedStages.has(stage.id);
@@ -176,7 +176,7 @@ export const AlignmentLab: React.FC = () => {
                       transition-all duration-300
                       ${isCompleted ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : ''}
                       ${isCurrent ? 'bg-purple-500/20 border-purple-500/50 text-purple-400 ring-2 ring-purple-500/30' : ''}
-                      ${!isCompleted && !isCurrent ? 'bg-surface border-border-default text-text-tertiary' : ''}
+                      ${!isCompleted && !isCurrent ? 'bg-zinc-800 border-zinc-700 text-zinc-500' : ''}
                       border
                     `}
                   >
@@ -185,7 +185,7 @@ export const AlignmentLab: React.FC = () => {
                   <span
                     className={`
                       text-xs font-medium
-                      ${isCurrent ? 'text-purple-400' : isCompleted ? 'text-emerald-400' : 'text-text-tertiary'}
+                      ${isCurrent ? 'text-purple-400' : isCompleted ? 'text-emerald-400' : 'text-zinc-500'}
                     `}
                   >
                     {stage.shortTitle}
@@ -198,7 +198,7 @@ export const AlignmentLab: React.FC = () => {
                     <div
                       className={`
                         h-0.5 rounded-full transition-colors duration-300
-                        ${isPast || isCompleted ? 'bg-emerald-500/50' : 'bg-elevated'}
+                        ${isPast || isCompleted ? 'bg-emerald-500/50' : 'bg-zinc-700'}
                       `}
                     />
                   </div>
@@ -210,7 +210,7 @@ export const AlignmentLab: React.FC = () => {
       </div>
 
       {/* Stage Header */}
-      <div className="px-6 py-4 bg-deep">
+      <div className="px-6 py-4 bg-zinc-900">
         <div className="max-w-5xl mx-auto">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
@@ -218,12 +218,12 @@ export const AlignmentLab: React.FC = () => {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-semibold text-text-primary">
+                <h2 className="text-lg font-semibold text-zinc-200">
                   阶段 {currentStageIndex + 1}: {currentStageConfig.title}
                 </h2>
                 {renderDifficulty(currentStageConfig.difficulty)}
               </div>
-              <p className="text-sm text-text-tertiary">{currentStageConfig.description}</p>
+              <p className="text-sm text-zinc-500">{currentStageConfig.description}</p>
             </div>
           </div>
         </div>
@@ -233,11 +233,11 @@ export const AlignmentLab: React.FC = () => {
       <div className="flex-1 overflow-y-auto">{renderStageContent()}</div>
 
       {/* Learning Point Footer */}
-      <div className="px-6 py-3 border-t border-border-default bg-deep/30">
+      <div className="px-6 py-3 border-t border-zinc-700 bg-zinc-900/30">
         <div className="max-w-5xl mx-auto flex items-center gap-2">
           <span className="text-purple-400">💡</span>
-          <span className="text-sm text-text-secondary">
-            <span className="text-text-secondary font-medium">学习要点：</span>
+          <span className="text-sm text-zinc-400">
+            <span className="text-zinc-400 font-medium">学习要点：</span>
             {currentStageConfig.learningPoint}
           </span>
         </div>

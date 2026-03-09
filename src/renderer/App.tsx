@@ -296,7 +296,7 @@ export const App: React.FC = () => {
         className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
           showPlanningPanel
             ? 'bg-indigo-500/20 text-indigo-300'
-            : 'text-text-tertiary hover:bg-hover'
+            : 'text-zinc-500 hover:bg-zinc-700'
         }`}
         title="执行追踪面板"
       >
@@ -316,7 +316,7 @@ export const App: React.FC = () => {
         className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
           showDAGPanel
             ? 'bg-blue-500/20 text-blue-300'
-            : 'text-text-tertiary hover:bg-hover'
+            : 'text-zinc-500 hover:bg-zinc-700'
         }`}
         title="任务执行图"
       >
@@ -337,7 +337,7 @@ export const App: React.FC = () => {
         className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
           showCloudTaskPanel
             ? 'bg-sky-500/20 text-sky-300'
-            : 'text-text-tertiary hover:bg-hover'
+            : 'text-zinc-500 hover:bg-zinc-700'
         }`}
         title="云端任务"
       >
@@ -357,7 +357,7 @@ export const App: React.FC = () => {
         className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
           showTaskListPanel
             ? 'bg-yellow-500/20 text-yellow-300'
-            : 'text-text-tertiary hover:bg-hover'
+            : 'text-zinc-500 hover:bg-zinc-700'
         }`}
         title="多任务面板"
       >
@@ -377,7 +377,7 @@ export const App: React.FC = () => {
         className={`flex items-center gap-1.5 px-2 py-1 text-xs rounded-md transition-colors ${
           showSkillsPanel
             ? 'bg-purple-500/20 text-purple-300'
-            : 'text-text-tertiary hover:bg-hover'
+            : 'text-zinc-500 hover:bg-zinc-700'
         }`}
         title="Skills 面板"
       >
@@ -389,7 +389,7 @@ export const App: React.FC = () => {
 
   return (
     <ErrorBoundary>
-      <div className="h-screen flex flex-col bg-void text-text-primary">
+      <div className="h-screen flex flex-col bg-zinc-950 text-zinc-200">
         {/* Main Content - Three-column layout with integrated title bars */}
         <div className="flex-1 flex overflow-hidden">
           {/* Left Column: Sidebar with its own title bar - darker background */}

@@ -57,7 +57,7 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
     return {
       icon: <User className="w-3 h-3" />,
       label: '手动添加',
-      color: 'text-text-secondary',
+      color: 'text-zinc-400',
     };
   };
 
@@ -71,7 +71,7 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
         <div className="flex gap-2">
           <button
             onClick={onCancelDelete}
-            className="flex-1 px-2 py-1 text-xs bg-active hover:bg-active rounded transition-colors"
+            className="flex-1 px-2 py-1 text-xs bg-zinc-600 hover:bg-zinc-600 rounded transition-colors"
           >
             取消
           </button>
@@ -87,9 +87,9 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
   }
 
   return (
-    <div className="group bg-surface hover:bg-hover rounded-lg p-2 transition-colors">
+    <div className="group bg-zinc-800 hover:bg-zinc-700 rounded-lg p-2 transition-colors">
       {/* Content */}
-      <p className="text-sm text-text-primary mb-1.5 line-clamp-2">{memory.content}</p>
+      <p className="text-sm text-zinc-200 mb-1.5 line-clamp-2">{memory.content}</p>
 
       {/* Meta & Actions */}
       <div className="flex items-center justify-between">
@@ -100,14 +100,14 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
             {sourceInfo.icon}
             {sourceInfo.label}
             {memory.source === 'learned' && memory.confidence < 1 && (
-              <span className="text-text-tertiary">
+              <span className="text-zinc-500">
                 ({Math.round(memory.confidence * 100)}%)
               </span>
             )}
           </span>
 
           {/* Date */}
-          <span className="flex items-center gap-1 text-text-tertiary">
+          <span className="flex items-center gap-1 text-zinc-500">
             <Clock className="w-3 h-3" />
             {formatDate(memory.updatedAt)}
           </span>
@@ -117,14 +117,14 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={onEdit}
-            className="p-1 hover:bg-active rounded text-text-secondary hover:text-text-primary transition-colors"
+            className="p-1 hover:bg-zinc-600 rounded text-zinc-400 hover:text-zinc-200 transition-colors"
             title="编辑"
           >
             <Edit2 className="w-3 h-3" />
           </button>
           <button
             onClick={onDelete}
-            className="p-1 hover:bg-active rounded text-text-secondary hover:text-red-400 transition-colors"
+            className="p-1 hover:bg-zinc-600 rounded text-zinc-400 hover:text-red-400 transition-colors"
             title="删除"
           >
             <Trash2 className="w-3 h-3" />
@@ -138,7 +138,7 @@ export const MemoryCard: React.FC<MemoryCardProps> = ({
           {memory.tags.map((tag: string, index: number) => (
             <span
               key={index}
-              className="px-1.5 py-0.5 text-xs bg-hover text-text-secondary rounded"
+              className="px-1.5 py-0.5 text-xs bg-zinc-700 text-zinc-400 rounded"
             >
               {tag}
             </span>

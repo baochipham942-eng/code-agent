@@ -105,7 +105,7 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
       }
     >
       {typeof message === 'string' ? (
-        <p className="text-sm text-text-secondary leading-relaxed">{message}</p>
+        <p className="text-sm text-zinc-400 leading-relaxed">{message}</p>
       ) : (
         message
       )}

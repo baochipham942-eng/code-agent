@@ -3,11 +3,12 @@
 // ============================================================================
 
 import React, { useState, useMemo } from 'react';
-import { FileText, FolderOpen, ChevronDown, ChevronRight, Plus } from 'lucide-react';
+import { FileText, FolderOpen, ChevronDown, ChevronRight, Plus, Copy } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useI18n } from '../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
+import { isWebMode, copyPathToClipboard } from '../../utils/platform';
 
 interface FileInfo {
   path: string;
@@ -80,8 +81,14 @@ export const WorkingFolder: React.FC = () => {
     return files;
   }, [messages]);
 
-  const handleSelectDirectory = async () => {
+  const handleSelectDirectory = async (manualPath?: string) => {
     try {
+      if (isWebMode()) {
+        if (manualPath?.trim()) {
+          setWorkingDirectory(manualPath.trim());
+        }
+        return;
+      }
       const result = await window.electronAPI?.invoke(IPC_CHANNELS.WORKSPACE_SELECT_DIRECTORY);
       if (result) {
         setWorkingDirectory(result);
@@ -126,18 +133,22 @@ export const WorkingFolder: React.FC = () => {
             <div
               className="text-xs text-zinc-500 mb-2 truncate cursor-pointer hover:text-zinc-400 transition-colors"
               title={workingDirectory}
-              onClick={() => handleOpenInFinder(workingDirectory)}
+              onClick={isWebMode() ? undefined : () => handleOpenInFinder(workingDirectory)}
             >
               {workingDirectory.split('/').slice(-3).join('/')}
             </div>
           ) : (
-            <button
-              onClick={handleSelectDirectory}
-              className="flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-400 mb-2 transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>{t.taskPanel.noWorkspace}</span>
-            </button>
+            isWebMode() ? (
+              <WebDirInput onSubmit={(p) => handleSelectDirectory(p)} />
+            ) : (
+              <button
+                onClick={() => handleSelectDirectory()}
+                className="flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-400 mb-2 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{t.taskPanel.noWorkspace}</span>
+              </button>
+            )
           )}
 
           {/* Recent files */}
@@ -161,3 +172,25 @@ export const WorkingFolder: React.FC = () => {
     </div>
   );
 };
+
+/** Web mode: inline directory path input */
+function WebDirInput({ onSubmit }: { onSubmit: (path: string) => void }) {
+  const [value, setValue] = React.useState('');
+  return (
+    <div className="flex gap-2 mb-2">
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && onSubmit(value)}
+        placeholder="输入工作目录路径"
+        className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 outline-none"
+      />
+      <button
+        onClick={() => onSubmit(value)}
+        className="px-2 py-1.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-xs text-zinc-200"
+      >
+        确定
+      </button>
+    </div>
+  );
+}

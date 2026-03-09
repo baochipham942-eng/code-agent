@@ -10,7 +10,7 @@ import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Code2, Copy, Check, ExternalLink, Play } from 'lucide-react';
+import { Code2, Copy, Check, ExternalLink, Play, Clipboard } from 'lucide-react';
 import type { MessageContentProps } from './types';
 import { UI } from '@shared/constants';
 import 'katex/dist/katex.min.css';
@@ -18,6 +18,7 @@ import type { Components } from 'react-markdown';
 import type { Element } from 'hast';
 import { useAppStore } from '../../../../stores/appStore';
 import { wrapFilePathsInBackticks } from './filePathProcessor';
+import { isWebMode, copyPathToClipboard } from '../../../../utils/platform';
 
 // Language display names and colors
 const languageConfig: Record<string, { color: string; name: string }> = {
@@ -299,6 +300,10 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
       let fullPath = filePath;
       if (!filePath.startsWith('/') && !filePath.startsWith('~')) {
         fullPath = workingDirectory ? `${workingDirectory}/${filePath}` : filePath;
+      }
+      if (isWebMode()) {
+        await copyPathToClipboard(fullPath);
+        return;
       }
       await window.domainAPI?.invoke('workspace', 'openPath', { filePath: fullPath, lineNumber });
     } catch (error) {

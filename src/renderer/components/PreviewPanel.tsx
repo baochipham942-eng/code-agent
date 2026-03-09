@@ -3,9 +3,10 @@
 // ============================================================================
 
 import React, { useEffect, useState } from 'react';
-import { X, RefreshCw, ExternalLink, Maximize2, Minimize2 } from 'lucide-react';
+import { X, RefreshCw, ExternalLink, Maximize2, Minimize2, Copy } from 'lucide-react';
 import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
+import { isWebMode, copyPathToClipboard } from '../utils/platform';
 
 const logger = createLogger('PreviewPanel');
 
@@ -51,6 +52,10 @@ export const PreviewPanel: React.FC = () => {
   const handleOpenInBrowser = async () => {
     if (previewFilePath) {
       try {
+        if (isWebMode()) {
+          await copyPathToClipboard(previewFilePath);
+          return;
+        }
         await window.electronAPI?.invoke('shell:open-path', previewFilePath);
       } catch (err) {
         logger.error('Failed to open in browser', err);

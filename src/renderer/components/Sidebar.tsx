@@ -17,7 +17,6 @@ import {
   LogIn,
   LogOut,
   ChevronDown,
-  BookOpen,
   CheckSquare,
   Square,
   Trash2,
@@ -50,7 +49,7 @@ function getRelativeTime(timestamp: number): string {
 }
 
 export const Sidebar: React.FC = () => {
-  const { clearPlanningState, setShowSettings, setShowCapturePanel } = useAppStore();
+  const { clearPlanningState, setShowSettings } = useAppStore();
   const {
     sessions,
     currentSessionId,
@@ -376,30 +375,6 @@ export const Sidebar: React.FC = () => {
         </button>
 
         <div className="flex items-center gap-2">
-          {/* 多选模式切换 */}
-          {hasAnySessions && (
-            <button
-              onClick={toggleMultiSelect}
-              className={`p-1.5 transition-colors rounded-md ${
-                multiSelectMode
-                  ? 'text-blue-400 bg-blue-500/10'
-                  : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-800'
-              }`}
-              title={multiSelectMode ? '退出多选' : '多选'}
-            >
-              <CheckSquare className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {/* Knowledge Base */}
-          <button
-            onClick={() => setShowCapturePanel(true)}
-            className="p-1.5 text-zinc-500 hover:text-cyan-400 transition-colors rounded-md hover:bg-zinc-800"
-            title="知识库"
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-          </button>
-          {/* Filter Dropdown */}
           <button
             onClick={cycleFilter}
             className="flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"

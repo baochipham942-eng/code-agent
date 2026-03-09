@@ -4,7 +4,7 @@
 // ============================================================================
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { FileText, ExternalLink, Folder } from 'lucide-react';
+import { FileText, ExternalLink, Folder, Copy } from 'lucide-react';
 import type { ToolCall } from '@shared/types';
 import { useAppStore } from '../../../../../stores/appStore';
 import { useSessionStore } from '../../../../../stores/sessionStore';
@@ -12,6 +12,7 @@ import { ToolHeader } from './ToolHeader';
 import { ResultSummary } from './ResultSummary';
 import { ToolDetails } from './ToolDetails';
 import { getToolStatus, getStatusColor, type ToolStatus } from './styles';
+import { isWebMode, copyPathToClipboard } from '../../../../../utils/platform';
 
 // ============================================================================
 // StatusIndicator - Braille spinner for pending, symbols for final states
@@ -178,6 +179,10 @@ function QuickFileActions({ filePath }: { filePath: string | null }) {
 
   const handleOpenFile = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isWebMode()) {
+      await copyPathToClipboard(filePath);
+      return;
+    }
     try {
       await window.domainAPI?.invoke('workspace', 'openPath', { filePath });
     } catch (error) {
@@ -187,6 +192,10 @@ function QuickFileActions({ filePath }: { filePath: string | null }) {
 
   const handleShowInFolder = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isWebMode()) {
+      await copyPathToClipboard(filePath);
+      return;
+    }
     try {
       await window.domainAPI?.invoke('workspace', 'showItemInFolder', { filePath });
     } catch (error) {

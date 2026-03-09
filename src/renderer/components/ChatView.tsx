@@ -12,6 +12,8 @@ import { useAgent } from '../hooks/useAgent';
 import { useRequireAuth } from '../hooks/useRequireAuth';
 import { MessageBubble } from './features/chat/MessageBubble';
 import { ChatInput } from './features/chat/ChatInput';
+import type { ChatInputHandle } from './features/chat/ChatInput';
+import { useFileUpload } from './features/chat/ChatInput/useFileUpload';
 import { TaskStatusBar } from './features/chat/TaskStatusBar';
 
 import { PreviewPanel } from './PreviewPanel';
@@ -25,6 +27,7 @@ import {
   Bot,
   Code2,
   FileQuestion,
+  Image,
   Sparkles,
   Terminal,
   Zap,
@@ -96,6 +99,78 @@ export const ChatView: React.FC = () => {
   // 如果 taskStore 有状态，使用会话级别状态；否则回退到全局状态
   const effectiveIsProcessing = currentSessionState ? isCurrentSessionProcessing : isProcessing;
   const { requireAuthAsync } = useRequireAuth();
+
+  // Global drop zone state
+  const chatInputRef = useRef<ChatInputHandle>(null);
+  const [isGlobalDragOver, setIsGlobalDragOver] = useState(false);
+  const dragCounterRef = useRef(0);
+  const { processFile, processFolderEntry } = useFileUpload();
+
+  const handleGlobalDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsGlobalDragOver(true);
+    }
+  }, []);
+
+  const handleGlobalDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleGlobalDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0;
+      setIsGlobalDragOver(false);
+    }
+  }, []);
+
+  const handleGlobalDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsGlobalDragOver(false);
+
+    const items = e.dataTransfer.items;
+    const newAttachments: import('../../shared/types').MessageAttachment[] = [];
+
+    if (items) {
+      const entries: FileSystemEntry[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const entry = items[i].webkitGetAsEntry?.();
+        if (entry) entries.push(entry);
+      }
+      for (const entry of entries) {
+        if (entry.isFile) {
+          const fileEntry = entry as FileSystemFileEntry;
+          const file = await new Promise<File>((resolve, reject) => {
+            fileEntry.file(resolve, reject);
+          });
+          const attachment = await processFile(file);
+          if (attachment) newAttachments.push(attachment);
+        } else if (entry.isDirectory) {
+          const dirEntry = entry as FileSystemDirectoryEntry;
+          const folderAttachment = await processFolderEntry(dirEntry, entry.name);
+          if (folderAttachment) newAttachments.push(folderAttachment);
+        }
+      }
+    } else {
+      const files = Array.from(e.dataTransfer.files);
+      for (const file of files) {
+        const attachment = await processFile(file);
+        if (attachment) newAttachments.push(attachment);
+      }
+    }
+
+    if (newAttachments.length > 0) {
+      chatInputRef.current?.addAttachments(newAttachments);
+    }
+  }, [processFile, processFolderEntry]);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
 
   // Pagination: firstItemIndex for Virtuoso prepend support
@@ -182,7 +257,22 @@ export const ChatView: React.FC = () => {
   }, [effectiveIsProcessing, cancel]);
 
   return (
-    <div className="flex-1 flex overflow-hidden">
+    <div
+        className="flex-1 flex overflow-hidden relative"
+        onDragEnter={handleGlobalDragEnter}
+        onDragOver={handleGlobalDragOver}
+        onDragLeave={handleGlobalDragLeave}
+        onDrop={handleGlobalDrop}
+      >
+      {/* Global drag overlay */}
+      {isGlobalDragOver && (
+        <div className="absolute inset-0 flex items-center justify-center bg-zinc-900/80 backdrop-blur-sm z-50 border-2 border-dashed border-primary-500 rounded-xl pointer-events-none">
+          <div className="flex flex-col items-center gap-3 text-primary-400">
+            <Image className="w-12 h-12" />
+            <span className="text-lg font-medium">拖放文件或文件夹到这里</span>
+          </div>
+        </div>
+      )}
       {/* Main Chat */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Task Status Bar - 显示多任务状态 */}
@@ -237,6 +327,7 @@ export const ChatView: React.FC = () => {
 
         {/* Input */}
         <ChatInput
+          ref={chatInputRef}
           onSend={handleSendMessage}
           disabled={effectiveIsProcessing}
           isProcessing={effectiveIsProcessing}

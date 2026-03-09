@@ -6,7 +6,8 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
 import * as fs from 'fs';
 import * as path from 'path';
 import ExcelJS from 'exceljs';
-import { execSync } from 'child_process';
+import { execSync, execFileSync } from 'child_process';
+import * as os from 'os';
 import { createLogger } from '../../services/infra/logger';
 import { dataFingerprintStore } from '../dataFingerprint';
 
@@ -299,13 +300,28 @@ The output always includes column names, which you should reference exactly when
           const absPath = path.isAbsolute(file_path)
             ? file_path
             : path.join(context.workingDirectory, file_path);
-          const sheetArg = sheet !== undefined ? `, sheet_name='${sheet}'` : '';
-          const pyScript = `import pandas as pd; df = pd.read_excel('${absPath}'${sheetArg}); print(f'ROWS:{len(df)}'); print(f'COLS:{",".join(df.columns.tolist())}'); print('---DATA---'); print(df.head(${max_rows}).to_csv(index=False))`;
-          const pyResult = execSync(`python3 -c "${pyScript.replace(/"/g, '\\"')}"`, {
-            timeout: 30000,
-            encoding: 'utf-8',
-            maxBuffer: 10 * 1024 * 1024,
-          });
+          // Security: use temp script + execFileSync to avoid command injection
+          const pyScriptContent = [
+            'import sys, pandas as pd',
+            'file_path = sys.argv[1]',
+            'max_rows = int(sys.argv[2])',
+            'sheet_name = sys.argv[3] if len(sys.argv) > 3 else None',
+            'df = pd.read_excel(file_path, sheet_name=sheet_name)',
+            'print(f"ROWS:{len(df)}")',
+            'print(f"COLS:{\",\".join(str(c) for c in df.columns.tolist())}")',
+            'print("---DATA---")',
+            'print(df.head(max_rows).to_csv(index=False))',
+          ].join('\n');
+          const tmpScript = path.join(os.tmpdir(), `readxlsx_${Date.now()}_${Math.random().toString(36).slice(2)}.py`);
+          fs.writeFileSync(tmpScript, pyScriptContent, 'utf-8');
+          try {
+            const pyArgs = [tmpScript, absPath, String(max_rows)];
+            if (sheet !== undefined) pyArgs.push(String(sheet));
+            const pyResult = execFileSync('python3', pyArgs, {
+              timeout: 30000,
+              encoding: 'utf-8',
+              maxBuffer: 10 * 1024 * 1024,
+            });
 
           const rowMatch = pyResult.match(/ROWS:(\d+)/);
           const colMatch = pyResult.match(/COLS:(.+)/);
@@ -329,6 +345,9 @@ The output always includes column names, which you should reference exactly when
               fallback: 'pandas',
             },
           };
+          } finally {
+            try { fs.unlinkSync(tmpScript); } catch { /* ignore */ }
+          }
         } catch (pyError: unknown) {
           const message = pyError instanceof Error ? pyError.message : String(pyError);
           logger.error('Python pandas fallback also failed', { error: message });

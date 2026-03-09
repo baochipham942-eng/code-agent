@@ -4,7 +4,7 @@
 // 深度研究通过语义自动检测触发，无需手动切换
 // ============================================================================
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { Image, FileText } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/types';
 import { UI } from '@shared/constants';
@@ -38,11 +38,16 @@ export interface ChatInputProps {
   onPlanClick?: () => void;
 }
 
+// Imperative handle exposed to parent (e.g. ChatView drop zone)
+export interface ChatInputHandle {
+  addAttachments: (items: MessageAttachment[]) => void;
+}
+
 // ============================================================================
 // 主组件
 // ============================================================================
 
-export const ChatInput: React.FC<ChatInputProps> = ({
+export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   onSend,
   disabled,
   isProcessing,
@@ -50,7 +55,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   onStop,
   hasPlan,
   onPlanClick,
-}) => {
+}, ref) => {
   const [value, setValue] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -58,6 +63,15 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   const [suggestions, setSuggestions] = useState<Array<{ id: string; text: string; source: string }>>([]);
   const inputAreaRef = useRef<InputAreaRef>(null);
   const { processFile, processFolderEntry } = useFileUpload();
+
+  // Expose addAttachments to parent via ref (for global drop zone)
+  useImperativeHandle(ref, () => ({
+    addAttachments: (items: MessageAttachment[]) => {
+      if (items.length > 0) {
+        setAttachments((prev) => [...prev, ...items].slice(0, UI.MAX_ATTACHMENTS_DROP));
+      }
+    },
+  }), []);
 
   // Fetch suggestions when input is empty
   useEffect(() => {
@@ -324,6 +338,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
       </form>
     </div>
   );
-};
+});
+
+ChatInput.displayName = 'ChatInput';
 
 export default ChatInput;

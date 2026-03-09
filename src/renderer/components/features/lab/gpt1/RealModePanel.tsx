@@ -23,6 +23,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '../../../../../shared/ipc';
+import { isWebMode } from '../../../../utils/platform';
 import type {
   PythonEnvStatus,
   LabProjectStatus,
@@ -187,8 +188,15 @@ export const RealModePanel: React.FC = () => {
   };
 
   // 选择项目目录
-  const handleSelectProject = async () => {
+  const handleSelectProject = async (manualPath?: string) => {
     try {
+      if (isWebMode()) {
+        if (!manualPath?.trim()) return;
+        setProjectPath(manualPath.trim());
+        setProjectUIStatus('downloaded');
+        addLog('info', `已选择项目目录: ${manualPath.trim()}`);
+        return;
+      }
       const selectedPath = await window.electronAPI?.invoke(IPC_CHANNELS.WORKSPACE_SELECT_DIRECTORY);
       if (selectedPath) {
         setProjectPath(selectedPath);
@@ -439,14 +447,18 @@ export const RealModePanel: React.FC = () => {
                       )}
                       {projectUIStatus === 'downloading' ? '下载中...' : '自动下载'}
                     </button>
-                    <button
-                      onClick={handleSelectProject}
-                      disabled={!envReady}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-700 border border-zinc-600/50 text-zinc-400 text-sm font-medium hover:bg-zinc-600 disabled:opacity-50 transition-colors"
-                    >
-                      <FolderOpen className="w-4 h-4" />
-                      选择目录
-                    </button>
+{isWebMode() ? (
+                      <WebProjectPathInput onSubmit={(p) => handleSelectProject(p)} disabled={!envReady} />
+                    ) : (
+                      <button
+                        onClick={() => handleSelectProject()}
+                        disabled={!envReady}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-700 border border-zinc-600/50 text-zinc-400 text-sm font-medium hover:bg-zinc-600 disabled:opacity-50 transition-colors"
+                      >
+                        <FolderOpen className="w-4 h-4" />
+                        选择目录
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -675,3 +687,28 @@ export const RealModePanel: React.FC = () => {
     </div>
   );
 };
+
+/** Web mode: project directory path input */
+function WebProjectPathInput({ onSubmit, disabled }: { onSubmit: (path: string) => void; disabled: boolean }) {
+  const [value, setValue] = React.useState('');
+  return (
+    <div className="flex-1 flex gap-2">
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && !disabled && onSubmit(value)}
+        placeholder="输入项目目录路径"
+        className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none"
+        disabled={disabled}
+      />
+      <button
+        onClick={() => onSubmit(value)}
+        disabled={disabled}
+        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-700 border border-zinc-600/50 text-zinc-400 text-sm font-medium hover:bg-zinc-600 disabled:opacity-50 transition-colors"
+      >
+        <FolderOpen className="w-4 h-4" />
+        使用路径
+      </button>
+    </div>
+  );
+}

@@ -21,7 +21,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
-import { randomUUID } from 'crypto';
+import { randomUUID, timingSafeEqual } from 'crypto';
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { setupAllIpcHandlers, type IpcDependencies } from '../main/ipc';
@@ -39,6 +39,83 @@ const sseClients = new Set<Response>();
 const activeAgentLoops = new Map<string, { cancel(): void }>();
 const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
 const UPLOAD_ROOT_DIR = path.join(os.tmpdir(), 'code-agent-uploads');
+// ============================================================================
+// Security: Auth Token, CORS Restriction, Rate Limiting
+// ============================================================================
+
+/** Server auth token — generated on startup, printed to stdout for Tauri/frontend */
+const SERVER_AUTH_TOKEN = randomUUID();
+
+/** Allowed CORS origins */
+const ALLOWED_ORIGINS = new Set([
+  'http://localhost:8080',
+  'http://127.0.0.1:8080',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'tauri://localhost',
+  'https://tauri.localhost',
+]);
+
+/** Rate limit config: route pattern -> { max requests, window in ms } */
+const RATE_LIMITS: Array<{ pattern: string | RegExp; max: number; windowMs: number }> = [
+  { pattern: '/api/run', max: 10, windowMs: 60_000 },
+  { pattern: '/api/upload/temp', max: 20, windowMs: 60_000 },
+  { pattern: /^\/api\//, max: 100, windowMs: 60_000 },
+];
+
+/** In-memory rate limit store: key -> timestamps */
+const rateLimitStore = new Map<string, number[]>();
+
+function getRateLimitKey(ip: string, pattern: string | RegExp): string {
+  return `${ip}:${String(pattern)}`;
+}
+
+function checkRateLimit(ip: string, routePath: string): { allowed: boolean; retryAfterMs?: number } {
+  for (const rule of RATE_LIMITS) {
+    const matches = typeof rule.pattern === 'string'
+      ? routePath === rule.pattern
+      : rule.pattern.test(routePath);
+    if (!matches) continue;
+
+    const key = getRateLimitKey(ip, rule.pattern);
+    const now = Date.now();
+    const timestamps = rateLimitStore.get(key) || [];
+    const valid = timestamps.filter((t) => now - t < rule.windowMs);
+
+    if (valid.length >= rule.max) {
+      const oldestValid = valid[0];
+      const retryAfterMs = rule.windowMs - (now - oldestValid);
+      return { allowed: false, retryAfterMs };
+    }
+
+    valid.push(now);
+    rateLimitStore.set(key, valid);
+    return { allowed: true };
+  }
+  return { allowed: true };
+}
+
+/** Constant-time token comparison to prevent timing attacks */
+function verifyToken(provided: string): boolean {
+  const expected = Buffer.from(SERVER_AUTH_TOKEN, 'utf8');
+  const actual = Buffer.from(provided, 'utf8');
+  if (expected.length !== actual.length) return false;
+  return timingSafeEqual(expected, actual);
+}
+
+// Periodic cleanup of stale rate limit entries (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, timestamps] of rateLimitStore) {
+    const valid = timestamps.filter((t) => now - t < 120_000);
+    if (valid.length === 0) {
+      rateLimitStore.delete(key);
+    } else {
+      rateLimitStore.set(key, valid);
+    }
+  }
+}, 5 * 60_000).unref();
+
 
 /**
  * 向所有 SSE 客户端推送事件
@@ -378,13 +455,50 @@ function getContentType(filePath: string): string {
 function createApp(): express.Express {
   const app = express();
 
-  // CORS
-  app.use((_req: Request, res: Response, next: NextFunction) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
+  // CORS — restrict to known origins
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const origin = req.headers.origin;
+    if (origin && ALLOWED_ORIGINS.has(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+    }
+    // If no origin header (e.g. same-origin, curl), don't set the header at all
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    if (_req.method === 'OPTIONS') {
+    if (req.method === 'OPTIONS') {
       res.sendStatus(204);
+      return;
+    }
+    next();
+  });
+
+  // Rate limiting
+  app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const result = checkRateLimit(ip, req.path);
+    if (!result.allowed) {
+      res.setHeader('Retry-After', String(Math.ceil((result.retryAfterMs || 60_000) / 1000)));
+      res.status(429).json({ error: 'Too many requests. Please try again later.' });
+      return;
+    }
+    next();
+  });
+
+  // Auth — Bearer token required for all /api/* except /api/health
+  app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+    // Health endpoint is exempt from auth (used for liveness probes)
+    if (req.path === '/health') {
+      next();
+      return;
+    }
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      res.status(401).json({ error: 'Missing or invalid Authorization header' });
+      return;
+    }
+    const token = authHeader.slice(7);
+    if (!verifyToken(token)) {
+      res.status(403).json({ error: 'Invalid auth token' });
       return;
     }
     next();
@@ -966,9 +1080,13 @@ async function main(): Promise<void> {
 
   server.listen(port, host, () => {
     console.log();
+    // Machine-readable startup JSON (Tauri main.rs parses this)
+    console.log(JSON.stringify({ port, token: SERVER_AUTH_TOKEN }));
+    console.log();
     console.log(`  API server:  http://${host}:${port}`);
     console.log(`  Health:      http://${host}:${port}/api/health`);
     console.log(`  SSE Events:  http://${host}:${port}/api/events`);
+    console.log(`  Auth token:  ${SERVER_AUTH_TOKEN.slice(0, 8)}...`);
     console.log();
     console.log(`  Registered handlers: ${handlers.size}`);
     console.log(`  Channels: ${[...handlers.keys()].slice(0, 10).join(', ')}...`);

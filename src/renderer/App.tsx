@@ -16,6 +16,7 @@ import { UserQuestionModal } from './components/UserQuestionModal';
 import { AuthModal } from './components/AuthModal';
 import { PasswordResetModal } from './components/PasswordResetModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
+import { isElectronMode } from './utils/platform';
 // PermissionDialog moved to PermissionCard inline in ChatView
 import { TaskPanel } from './components/TaskPanel';
 import { SkillsPanel } from './components/SkillsPanel';
@@ -164,6 +165,8 @@ export const App: React.FC = () => {
 
   // 应用启动时检查更新（强制更新检查）
   useEffect(() => {
+    if (!isElectronMode()) return;
+
     const checkForUpdates = async () => {
       try {
         logger.info('Checking for updates on startup');
@@ -462,7 +465,7 @@ export const App: React.FC = () => {
       {showPasswordResetModal && <PasswordResetModal />}
 
       {/* Force Update Modal - 强制更新，不可关闭 */}
-      {forceUpdateInfo && <ForceUpdateModal updateInfo={forceUpdateInfo} />}
+      {isElectronMode() && forceUpdateInfo && <ForceUpdateModal updateInfo={forceUpdateInfo} />}
 
       {/* API Key Setup Modal - 首次启动引导 */}
       {showApiKeySetup && (

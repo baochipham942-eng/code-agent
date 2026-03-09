@@ -13,10 +13,12 @@ import {
   ChevronDown,
   RefreshCw,
   FolderPlus,
+  Edit3,
 } from 'lucide-react';
 
 import type { FileInfo } from '@shared/types';
 import { createLogger } from '../utils/logger';
+import { isWebMode } from '../utils/platform';
 
 const logger = createLogger('WorkspacePanel');
 
@@ -62,8 +64,15 @@ export const WorkspacePanel: React.FC = () => {
     }
   };
 
-  const selectWorkspace = async () => {
+  const selectWorkspace = async (manualPath?: string) => {
     try {
+      if (isWebMode()) {
+        if (!manualPath?.trim()) return;
+        setWorkspacePath(manualPath.trim());
+        const files = await window.electronAPI?.invoke('workspace:list-files', manualPath.trim());
+        setFileTree(files ? convertToFileTree(files as FileInfo[]) : []);
+        return;
+      }
       const path = await window.electronAPI?.invoke('workspace:select-directory');
       if (path) {
         setWorkspacePath(path as string);
@@ -89,20 +98,27 @@ export const WorkspacePanel: React.FC = () => {
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
-          <button
-            onClick={selectWorkspace}
-            className="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
-            title="Open folder"
-          >
-            <FolderPlus className="w-4 h-4" />
-          </button>
+{!isWebMode() && (
+            <button
+              onClick={() => selectWorkspace()}
+              className="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
+              title="Open folder"
+            >
+              <FolderPlus className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-2">
         {!workspacePath ? (
-          <EmptyWorkspace onSelect={selectWorkspace} />
+<>
+            {isWebMode() && (
+              <WebPathInput onSubmit={(p) => selectWorkspace(p)} />
+            )}
+            <EmptyWorkspace onSelect={() => selectWorkspace()} isWeb={isWebMode()} />
+          </>
         ) : (
           <div>
             {/* Workspace path */}
@@ -124,17 +140,19 @@ export const WorkspacePanel: React.FC = () => {
 };
 
 // Empty workspace state
-const EmptyWorkspace: React.FC<{ onSelect: () => void }> = ({ onSelect }) => {
+const EmptyWorkspace: React.FC<{ onSelect: () => void; isWeb?: boolean }> = ({ onSelect, isWeb }) => {
   return (
     <div className="h-full flex flex-col items-center justify-center text-center px-4">
       <Folder className="w-12 h-12 text-zinc-600 mb-3" />
       <p className="text-sm text-zinc-400 mb-3">No workspace open</p>
-      <button
-        onClick={onSelect}
-        className="px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm text-zinc-400 transition-colors"
-      >
-        Open Folder
-      </button>
+{!isWeb && (
+        <button
+          onClick={onSelect}
+          className="px-3 py-1.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm text-zinc-400 transition-colors"
+        >
+          Open Folder
+        </button>
+      )}
     </div>
   );
 };
@@ -222,3 +240,25 @@ const FileTreeNode: React.FC<{ item: FileTreeItem; level: number }> = ({
     </div>
   );
 };
+
+/** Web mode: manual path input */
+function WebPathInput({ onSubmit }: { onSubmit: (path: string) => void }) {
+  const [value, setValue] = React.useState('');
+  return (
+    <div className="mb-3 flex gap-2 px-2">
+      <input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && onSubmit(value)}
+        placeholder="输入工作目录路径"
+        className="flex-1 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-zinc-500"
+      />
+      <button
+        onClick={() => onSubmit(value)}
+        className="px-3 py-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-sm text-zinc-200 transition-colors"
+      >
+        打开
+      </button>
+    </div>
+  );
+}

@@ -21,6 +21,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
+import { randomUUID } from 'crypto';
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { setupAllIpcHandlers, type IpcDependencies } from '../main/ipc';
@@ -36,6 +37,8 @@ const sseClients = new Set<Response>();
 
 // 活跃 AgentLoop 实例追踪（用于 cancel）
 const activeAgentLoops = new Map<string, { cancel(): void }>();
+const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
+const UPLOAD_ROOT_DIR = path.join(os.tmpdir(), 'code-agent-uploads');
 
 /**
  * 向所有 SSE 客户端推送事件
@@ -49,6 +52,152 @@ export function broadcastSSE(channel: string, args: unknown): void {
       sseClients.delete(client);
     }
   }
+}
+
+function ensureUploadRootDir(): void {
+  fs.mkdirSync(UPLOAD_ROOT_DIR, { recursive: true });
+}
+
+function cleanupUploadDirs(): void {
+  try {
+    if (!fs.existsSync(UPLOAD_ROOT_DIR)) return;
+    for (const entry of fs.readdirSync(UPLOAD_ROOT_DIR)) {
+      fs.rmSync(path.join(UPLOAD_ROOT_DIR, entry), { recursive: true, force: true });
+    }
+  } catch (error) {
+    logger.warn('Failed to cleanup upload temp directories', error);
+  }
+}
+
+function sanitizePathSegment(segment: string): string {
+  const cleaned = segment
+    .replace(/[/\\]/g, '')
+    .replace(/\.\.+/g, '.')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return cleaned || 'file';
+}
+
+function sanitizeRelativePath(relativePath?: string): string[] {
+  if (!relativePath) return [];
+  return relativePath
+    .split(/[\\/]+/)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment && segment !== '.' && segment !== '..')
+    .map(sanitizePathSegment);
+}
+
+async function readRequestBuffer(req: Request, maxSize: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let total = 0;
+
+    req.on('data', (chunk: Buffer) => {
+      total += chunk.length;
+      if (total > maxSize) {
+        reject(new Error(`File exceeds ${Math.floor(maxSize / (1024 * 1024))}MB limit`));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+
+    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('error', reject);
+    req.on('aborted', () => reject(new Error('Upload aborted')));
+  });
+}
+
+function parseMultipartUpload(body: Buffer, boundary: string): {
+  filename: string;
+  data: Buffer;
+  fields: Record<string, string>;
+} {
+  const delimiter = Buffer.from(`--${boundary}`);
+  const headerSeparator = Buffer.from('\r\n\r\n');
+  const fields: Record<string, string> = {};
+  let filePart: { filename: string; data: Buffer } | null = null;
+  let cursor = body.indexOf(delimiter);
+
+  while (cursor !== -1) {
+    cursor += delimiter.length;
+    if (body.slice(cursor, cursor + 2).equals(Buffer.from('--'))) break;
+    if (body.slice(cursor, cursor + 2).equals(Buffer.from('\r\n'))) cursor += 2;
+
+    const nextBoundary = body.indexOf(delimiter, cursor);
+    if (nextBoundary === -1) break;
+
+    const part = body.slice(cursor, nextBoundary - 2);
+    const headerEnd = part.indexOf(headerSeparator);
+    if (headerEnd === -1) {
+      cursor = nextBoundary;
+      continue;
+    }
+
+    const rawHeaders = part.slice(0, headerEnd).toString('utf8');
+    const content = part.slice(headerEnd + headerSeparator.length);
+    const disposition = rawHeaders
+      .split('\r\n')
+      .find((line) => line.toLowerCase().startsWith('content-disposition:'));
+
+    if (!disposition) {
+      cursor = nextBoundary;
+      continue;
+    }
+
+    const nameMatch = disposition.match(/name="([^"]+)"/i);
+    const filenameMatch = disposition.match(/filename="([^"]*)"/i);
+    const fieldName = nameMatch?.[1];
+    if (!fieldName) {
+      cursor = nextBoundary;
+      continue;
+    }
+
+    if (filenameMatch) {
+      filePart = { filename: filenameMatch[1], data: content };
+    } else {
+      fields[fieldName] = content.toString('utf8');
+    }
+
+    cursor = nextBoundary;
+  }
+
+  if (!filePart) {
+    throw new Error('Missing file field');
+  }
+
+  return { ...filePart, fields };
+}
+
+async function handleTempUpload(req: Request, res: Response): Promise<void> {
+  const contentType = req.header('content-type') || '';
+  const boundaryMatch = contentType.match(/boundary=([^;]+)/i);
+  if (!contentType.toLowerCase().startsWith('multipart/form-data') || !boundaryMatch) {
+    res.status(400).json({ error: 'Expected multipart/form-data' });
+    return;
+  }
+
+  const body = await readRequestBuffer(req, MAX_UPLOAD_SIZE);
+  const boundary = boundaryMatch[1].trim().replace(/^"|"$/g, '');
+  const { filename, data, fields } = parseMultipartUpload(body, boundary);
+  const relativeSegments = sanitizeRelativePath(fields.relativePath);
+  const safeFileName = sanitizePathSegment(path.basename(filename));
+  const safeSegments = relativeSegments.length > 0
+    ? [...relativeSegments.slice(0, -1), sanitizePathSegment(relativeSegments[relativeSegments.length - 1])]
+    : [safeFileName];
+  const uploadDir = path.join(UPLOAD_ROOT_DIR, randomUUID());
+  const destinationPath = path.join(uploadDir, ...safeSegments);
+  const resolvedUploadDir = path.resolve(uploadDir);
+  const resolvedDestination = path.resolve(destinationPath);
+
+  if (!resolvedDestination.startsWith(`${resolvedUploadDir}${path.sep}`)) {
+    res.status(400).json({ error: 'Invalid upload path' });
+    return;
+  }
+
+  fs.mkdirSync(path.dirname(resolvedDestination), { recursive: true });
+  fs.writeFileSync(resolvedDestination, data);
+  res.json({ path: resolvedDestination });
 }
 
 // ============================================================================
@@ -82,6 +231,8 @@ async function initializeServices(): Promise<void> {
     fs.mkdirSync(dataDir, { recursive: true });
   }
   process.env.CODE_AGENT_DATA_DIR = dataDir;
+  cleanupUploadDirs();
+  ensureUploadRootDir();
 
   // 1. 初始化 ConfigService（main 模块的单例，IPC handler 通过 getConfigService() 获取）
   const { initConfigService } = await import('../main/services/core/configService');
@@ -176,6 +327,50 @@ function registerHandlers(): void {
   logger.info(`Registered ${handlers.size} IPC handlers`);
 }
 
+function isPathWithinBase(targetPath: string, basePath: string): boolean {
+  const relativePath = path.relative(basePath, targetPath);
+  return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
+}
+
+function isWorkspaceFileAllowed(targetPath: string): boolean {
+  const allowedRoots = [path.resolve(process.cwd()), path.resolve(os.tmpdir())];
+  return allowedRoots.some((root) => isPathWithinBase(targetPath, root));
+}
+
+function getContentType(filePath: string): string {
+  switch (path.extname(filePath).toLowerCase()) {
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.gif':
+      return 'image/gif';
+    case '.webp':
+      return 'image/webp';
+    case '.svg':
+      return 'image/svg+xml';
+    case '.pdf':
+      return 'application/pdf';
+    case '.txt':
+      return 'text/plain; charset=utf-8';
+    case '.json':
+      return 'application/json; charset=utf-8';
+    case '.html':
+      return 'text/html; charset=utf-8';
+    case '.css':
+      return 'text/css; charset=utf-8';
+    case '.js':
+      return 'text/javascript; charset=utf-8';
+    case '.ts':
+      return 'text/plain; charset=utf-8';
+    case '.md':
+      return 'text/markdown; charset=utf-8';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
 // ============================================================================
 // Express 应用
 // ============================================================================
@@ -224,6 +419,65 @@ function createApp(): express.Express {
     });
   });
 
+  app.post('/api/upload/temp', async (req: Request, res: Response) => {
+    try {
+      await handleTempUpload(req, res);
+    } catch (error) {
+      logger.error('Temporary upload failed', error);
+      const message = formatError(error);
+      const status = message.includes('50MB limit')
+        ? 413
+        : (message === 'Missing file field' || message === 'Upload aborted' ? 400 : 500);
+      res.status(status).json({ error: message });
+    }
+  });
+
+  app.get('/api/workspace/file', async (req: Request, res: Response) => {
+    const requestedPath = Array.isArray(req.query.path) ? req.query.path[0] : req.query.path;
+
+    if (typeof requestedPath !== 'string' || requestedPath.trim().length === 0) {
+      res.status(400).json({ error: 'Missing path query parameter' });
+      return;
+    }
+
+    const resolvedPath = path.resolve(requestedPath);
+    if (!isWorkspaceFileAllowed(resolvedPath)) {
+      res.status(403).json({ error: 'Access denied' });
+      return;
+    }
+
+    let stats: fs.Stats;
+    try {
+      stats = await fs.promises.stat(resolvedPath);
+    } catch (error) {
+      const nodeError = error as NodeJS.ErrnoException;
+      if (nodeError.code === 'ENOENT') {
+        res.status(404).json({ error: 'File not found' });
+        return;
+      }
+      throw error;
+    }
+
+    if (!stats.isFile()) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+
+    res.setHeader('Content-Type', getContentType(resolvedPath));
+    res.setHeader('Content-Length', String(stats.size));
+
+    const stream = fs.createReadStream(resolvedPath);
+    stream.on('error', (error) => {
+      logger.error(`Failed to read workspace file: ${resolvedPath}`, error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to read file' });
+        return;
+      }
+      res.destroy(error);
+    });
+    stream.pipe(res);
+  });
+
   // ── Agent Run (SSE streaming) ──────────────────────────────────────
   app.post('/api/run', async (req: Request, res: Response) => {
     const { prompt, project, model, provider, generation } = req.body;
@@ -258,6 +512,11 @@ function createApp(): express.Express {
       });
 
       const config = agent.getConfig();
+
+      // Bug 4 fix: 注入 Web 模式上下文，避免 Agent 默认以 CLI 模式自居
+      if (!config.systemPrompt) {
+        config.systemPrompt = 'You are running in Web UI mode (browser-based interface), not CLI/terminal mode. Users interact with you through a web chat interface with rich rendering support (markdown, code blocks, images). Respond accordingly.';
+      }
 
       // Fix: CLI config maps 'anthropic' but provider is 'claude'
       // Ensure apiKey is populated from env if missing
@@ -479,6 +738,90 @@ function createApp(): express.Express {
     }
   });
 
+  // ── File extraction & Speech routes ──────────────────────────────
+
+  app.post('/api/extract/pdf', async (req, res) => {
+    try {
+      const { filePath } = req.body ?? {};
+      if (!filePath || typeof filePath !== 'string') {
+        res.status(400).json({ error: 'Missing or invalid filePath' });
+        return;
+      }
+      if (filePath.includes('..')) {
+        res.status(403).json({ error: 'Path traversal not allowed' });
+        return;
+      }
+      const resolved = path.resolve(filePath);
+      if (!fs.existsSync(resolved)) {
+        res.status(404).json({ error: 'File not found: ' + filePath });
+        return;
+      }
+
+      const handler = handlers.get('extract-pdf-text');
+      if (handler) {
+        const result = await handler(null, resolved);
+        res.json(result);
+      } else {
+        res.status(501).json({ error: 'extract-pdf-text handler not registered' });
+      }
+    } catch (error) {
+      res.status(500).json({ error: formatError(error) });
+    }
+  });
+
+  app.post('/api/extract/excel', async (req, res) => {
+    try {
+      const { filePath } = req.body ?? {};
+      if (!filePath || typeof filePath !== 'string') {
+        res.status(400).json({ error: 'Missing or invalid filePath' });
+        return;
+      }
+      if (filePath.includes('..')) {
+        res.status(403).json({ error: 'Path traversal not allowed' });
+        return;
+      }
+      const resolved = path.resolve(filePath);
+      if (!fs.existsSync(resolved)) {
+        res.status(404).json({ error: 'File not found: ' + filePath });
+        return;
+      }
+
+      const handler = handlers.get('extract-excel-text');
+      if (handler) {
+        const result = await handler(null, resolved);
+        res.json(result);
+      } else {
+        res.status(501).json({ error: 'extract-excel-text handler not registered' });
+      }
+    } catch (error) {
+      res.status(500).json({ error: formatError(error) });
+    }
+  });
+
+  app.post('/api/speech/transcribe', async (req, res) => {
+    try {
+      const { audioData, mimeType } = req.body ?? {};
+      if (!audioData || typeof audioData !== 'string') {
+        res.status(400).json({ error: 'Missing or invalid audioData (base64 string)' });
+        return;
+      }
+      if (!mimeType || typeof mimeType !== 'string') {
+        res.status(400).json({ error: 'Missing or invalid mimeType' });
+        return;
+      }
+
+      const handler = handlers.get('speech:transcribe');
+      if (handler) {
+        const result = await handler(null, { audioData, mimeType });
+        res.json(result);
+      } else {
+        res.status(501).json({ error: 'speech:transcribe handler not registered' });
+      }
+    } catch (error) {
+      res.status(500).json({ error: formatError(error) });
+    }
+  });
+
   // ── Domain Router (universal) ──────────────────────────────────────
   // Matches what httpTransport.ts's createHttpDomainAPI() calls:
   //   POST /api/domain/:domain/:action
@@ -638,6 +981,7 @@ async function main(): Promise<void> {
   // 优雅退出
   const shutdown = () => {
     console.log('\nShutting down...');
+    cleanupUploadDirs();
     server.close();
     process.exit(0);
   };

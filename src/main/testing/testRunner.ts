@@ -22,7 +22,7 @@ import { runAssertions, runExpectations } from './assertionEngine';
 import { execSync } from 'child_process';
 import { createLogger } from '../services/infra/logger';
 import { getTestDirs } from '../config';
-import { TrajectoryBuilder } from '../evaluation/trajectory';
+// TrajectoryBuilder loaded dynamically — excluded from production bundle
 import { EvalCritic } from './evalCritic';
 import { loadAllTestSuites as loadSuitesForCritic } from './testCaseLoader';
 
@@ -364,6 +364,7 @@ export class TestRunner {
       // P3: Trajectory analysis (when enabled)
       if (this.config.enableTrajectoryAnalysis) {
         try {
+          const { TrajectoryBuilder } = await import('../evaluation/trajectory');
           const builder = new TrajectoryBuilder();
           result.trajectory = builder.buildFromTestResult(result, testCase);
         } catch (trajError: unknown) {

@@ -265,6 +265,13 @@ export class LearningPipeline {
       for (const { existingId, candidate } of toMerge) {
         db.updateRelationConfidence(existingId, candidate.confidence, candidate.evidence);
       }
+
+      // Notify frontend about learned patterns
+      if (toInsert.length > 0) {
+        const { notifyMemoryLearned } = await import('../../memory/memoryNotification');
+        const summary = `${result.patternsExtracted} patterns, ${toInsert.length} relations`;
+        notifyMemoryLearned(summary, 'learned', 'pattern', 0.9);
+      }
     } catch (err) {
       logger.debug('[AgentLoop] Entity relation writing failed:', { error: (err as Error).message });
     }

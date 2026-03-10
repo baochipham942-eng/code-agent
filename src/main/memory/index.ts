@@ -28,18 +28,6 @@ export {
   type LocalVectorStoreConfig,
 } from './localVectorStore';
 
-// Unified Vector Store (local + cloud + hybrid)
-export {
-  UnifiedVectorStore,
-  getUnifiedVectorStore,
-  initUnifiedVectorStore,
-  type StorageMode,
-  type UnifiedSearchResult,
-  type UnifiedDocument,
-  type UnifiedSearchOptions,
-  type UnifiedVectorStoreConfig,
-} from './unifiedVectorStore';
-
 // Hybrid Search (vector + FTS + RRF)
 export {
   HybridSearchService,
@@ -49,36 +37,6 @@ export {
   type HybridSearchOptions as HybridSearchServiceOptions,
   type SearchStats,
 } from './hybridSearch';
-
-// File Tracker (hash-based change detection)
-export {
-  FileTracker,
-  getFileTracker,
-  initFileTracker,
-  type TrackedFile,
-  type FileChange,
-  type FileTrackerConfig,
-} from './fileTracker';
-
-// File Watcher (chokidar-based)
-export {
-  FileWatcher,
-  getFileWatcher,
-  createFileWatcher,
-  type FileWatchEvent,
-  type FileWatcherConfig,
-  type FileChangeHandler,
-} from './fileWatcher';
-
-// Incremental Sync Service
-export {
-  IncrementalSyncService,
-  getIncrementalSyncService,
-  initIncrementalSyncService,
-  type SyncResult,
-  type SyncProgress,
-  type IncrementalSyncConfig,
-} from './incrementalSync';
 
 // Embedding Service (with fallback chain)
 export {
@@ -130,19 +88,9 @@ export {
   SessionSummarizer,
   getSessionSummarizer,
   initSessionSummarizer,
-  initSessionSummarizerWithLLM,
   type SessionSummary,
   type SummarizerConfig,
 } from './sessionSummarizer';
-
-// LLM Summarizer (Week 4 Enhancement)
-export {
-  LLMSummarizer,
-  getLLMSummarizer,
-  initLLMSummarizer,
-  createLLMSummarizer,
-  type LLMSummarizerConfig,
-} from './llmSummarizer';
 
 // Fork Detector (Smart Forking Phase 2)
 export {
@@ -209,3 +157,19 @@ export {
   type LearningConfig,
   type SkillRecommendation,
 } from './continuousLearningService';
+
+// Memory Notification (Phase 3 - learning notifications)
+export {
+  notifyMemoryLearned,
+  requestMemoryConfirmation,
+  handleMemoryConfirmResponse,
+  needsUserConfirmation,
+} from './memoryNotification';
+
+// Memory Deduplicator
+export {
+  MemoryDeduplicator,
+  getMemoryDeduplicator,
+  type DeduplicateResult,
+  type RelationCandidate,
+} from './memoryDeduplicator';

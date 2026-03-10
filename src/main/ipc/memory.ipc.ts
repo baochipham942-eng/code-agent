@@ -513,4 +513,10 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
 
   /** @deprecated Use IPC_DOMAINS.MEMORY with action: 'getStats' */
   ipcMain.handle(IPC_CHANNELS.MEMORY_GET_STATS, async () => handleGetStats());
+
+  // Memory confirm response handler (Phase 3)
+  ipcMain.handle(IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE, async (_, payload: { id: string; confirmed: boolean }) => {
+    const { handleMemoryConfirmResponse } = await import('../memory/memoryNotification');
+    handleMemoryConfirmResponse(payload.id, payload.confirmed);
+  });
 }

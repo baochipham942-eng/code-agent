@@ -55,7 +55,7 @@ export class CronService {
     await this.loadJobsFromDatabase();
 
     this.isInitialized = true;
-    console.log('[CronService] Initialized');
+    console.error('[CronService] Initialized');
   }
 
   async shutdown(): Promise<void> {
@@ -63,13 +63,13 @@ export class CronService {
     for (const [jobId, job] of this.jobs) {
       if (job.cronInstance) {
         job.cronInstance.stop();
-        console.log(`[CronService] Stopped job: ${jobId}`);
+        console.error(`[CronService] Stopped job: ${jobId}`);
       }
     }
 
     this.jobs.clear();
     this.isInitialized = false;
-    console.log('[CronService] Shutdown complete');
+    console.error('[CronService] Shutdown complete');
   }
 
   // --------------------------------------------------------------------------
@@ -354,7 +354,7 @@ export class CronService {
       nextRun: nextRun || undefined,
     });
 
-    console.log(`[CronService] Registered job: ${definition.name} (${definition.id})`);
+    console.error(`[CronService] Registered job: ${definition.name} (${definition.id})`);
   }
 
   private createCronInstance(definition: CronJobDefinition): Cron | undefined {
@@ -480,7 +480,7 @@ export class CronService {
       case 'tool': {
         // Tool execution would need to be integrated with the tool executor
         // For now, return a placeholder
-        console.log(`[CronService] Would execute tool: ${action.toolName}`);
+        console.error(`[CronService] Would execute tool: ${action.toolName}`);
         return { toolName: action.toolName, parameters: action.parameters };
       }
 
@@ -490,7 +490,7 @@ export class CronService {
         if (ctx?.heartbeatTask && ctx?.activeHours) {
           const { isWithinActiveHours } = await import('./heartbeatTaskLoader');
           if (!isWithinActiveHours(ctx.activeHours as string)) {
-            console.log(`[CronService] Heartbeat task skipped (outside active hours: ${ctx.activeHours})`);
+            console.error(`[CronService] Heartbeat task skipped (outside active hours: ${ctx.activeHours})`);
             return { skipped: true, reason: 'outside_active_hours' };
           }
         }
@@ -508,7 +508,7 @@ export class CronService {
           if (attempts >= maxAttempts) {
             throw new Error('Agent is busy after 3 retry attempts');
           }
-          console.log(`[CronService] Agent busy, retrying in 30s (attempt ${attempts}/${maxAttempts})`);
+          console.error(`[CronService] Agent busy, retrying in 30s (attempt ${attempts}/${maxAttempts})`);
           await new Promise(resolve => setTimeout(resolve, 30000));
         }
         const result = await orchestrator.sendMessage(action.prompt);
@@ -522,7 +522,7 @@ export class CronService {
             const targetAccount = accounts.find(a => a.type === ctx!.channel || a.name === ctx!.channel);
             if (targetAccount) {
               await channelManager.sendMessage(targetAccount.id, targetAccount.id, String(result));
-              console.log(`[CronService] Heartbeat result pushed to channel: ${ctx.channel}`);
+              console.error(`[CronService] Heartbeat result pushed to channel: ${ctx.channel}`);
             }
           } catch (pushError) {
             console.warn(`[CronService] Failed to push heartbeat result to channel: ${ctx.channel}`, pushError);
@@ -543,7 +543,7 @@ export class CronService {
 
       case 'ipc': {
         // IPC would need to be integrated with the IPC system
-        console.log(`[CronService] Would send IPC: ${action.channel}`);
+        console.error(`[CronService] Would send IPC: ${action.channel}`);
         return { channel: action.channel, payload: action.payload };
       }
 
@@ -587,7 +587,7 @@ export class CronService {
     try {
       const db = getDatabase().getDb();
       if (!db) {
-        console.log('[CronService] Database not available, starting with empty jobs');
+        console.error('[CronService] Database not available, starting with empty jobs');
         return;
       }
       const rows = db.prepare('SELECT * FROM cron_jobs').all() as any[];
@@ -614,7 +614,7 @@ export class CronService {
           this.jobs.set(job.id, { definition: job });
         }
       }
-      console.log(`[CronService] Loaded ${rows.length} jobs from database`);
+      console.error(`[CronService] Loaded ${rows.length} jobs from database`);
     } catch (error) {
       console.error('[CronService] Failed to load jobs from database:', error);
     }

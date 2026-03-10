@@ -61,7 +61,7 @@ let currentTelemetrySessionId: string | null = null;
 export async function initializeCLIServices(): Promise<void> {
   if (initialized) return;
 
-  console.log('Initializing CLI services...');
+  console.error('Initializing CLI services...');
 
   // 设置环境变量
   const dataDir = getCLIDataDir();
@@ -71,12 +71,12 @@ export async function initializeCLIServices(): Promise<void> {
   // 初始化配置服务
   configService = getCLIConfigService();
   await configService.initialize();
-  console.log('ConfigService initialized');
+  console.error('ConfigService initialized');
 
   // 初始化数据库
   try {
     databaseService = await initCLIDatabase();
-    console.log('Database initialized');
+    console.error('Database initialized');
   } catch (error) {
     // 数据库失败不阻止 CLI 运行，只是缓存和会话持久化不可用
     // 原生模块 ABI 不匹配时只打一行警告，不打完整堆栈
@@ -86,7 +86,7 @@ export async function initializeCLIServices(): Promise<void> {
 
   // 初始化会话管理器
   sessionManager = getCLISessionManager();
-  console.log('SessionManager initialized');
+  console.error('SessionManager initialized');
 
   // 动态导入核心模块
   try {
@@ -121,7 +121,7 @@ export async function initializeCLIServices(): Promise<void> {
     requestPermission: async () => true, // CLI 模式自动批准
     workingDirectory: process.cwd(),
   });
-  console.log('ToolRegistry & ToolExecutor initialized');
+  console.error('ToolRegistry & ToolExecutor initialized');
 
   // 初始化记忆服务
   try {
@@ -143,7 +143,7 @@ export async function initializeCLIServices(): Promise<void> {
     // 设置上下文（使用工作目录作为 projectPath）
     memoryService.setContext(`cli-${Date.now()}`, process.cwd());
 
-    console.log('Memory service initialized');
+    console.error('Memory service initialized');
   } catch (error) {
     console.error('Failed to initialize memory service:', error);
     // 不阻止 CLI 运行，记忆功能降级
@@ -153,14 +153,14 @@ export async function initializeCLIServices(): Promise<void> {
   try {
     const skillDiscoveryService = getSkillDiscoveryService();
     await skillDiscoveryService.initialize(process.cwd());
-    console.log('SkillDiscoveryService initialized');
+    console.error('SkillDiscoveryService initialized');
   } catch (error) {
     console.error('Failed to initialize SkillDiscoveryService:', error);
     // 不抛出错误，允许 CLI 继续运行（skills 功能降级）
   }
 
   initialized = true;
-  console.log('CLI services initialized');
+  console.error('CLI services initialized');
 }
 
 /**
@@ -287,7 +287,7 @@ export function createAgentLoop(
       console.error('Failed to initialize planning service:', err);
     });
     if (config.debug) {
-      console.log('[Planning] Planning mode enabled');
+      console.error('[Planning] Planning mode enabled');
     }
   }
 
@@ -327,7 +327,7 @@ export function createAgentLoop(
     messages,
     onEvent: (event: AgentEvent) => {
       if (config.debug) {
-        console.log('[AgentEvent]', event.type);
+        console.error('[AgentEvent]', event.type);
       }
       onEvent(event);
     },
@@ -358,7 +358,7 @@ export function createAgentLoop(
  * 清理资源
  */
 export async function cleanup(): Promise<void> {
-  console.log('Cleaning up CLI services...');
+  console.error('Cleaning up CLI services...');
 
   // Telemetry: 结束会话并同步 token 使用到 sessions 表
   if (currentTelemetrySessionId && getTelemetryCollector) {
@@ -390,5 +390,5 @@ export async function cleanup(): Promise<void> {
   }
 
   initialized = false;
-  console.log('CLI services cleaned up');
+  console.error('CLI services cleaned up');
 }

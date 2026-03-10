@@ -31,12 +31,13 @@ import { AgentsSettings } from './tabs/AgentsSettings';
 import { AboutSettings } from './tabs/AboutSettings';
 import { SoulSettings } from './tabs/SoulSettings';
 import { CronSettings } from './tabs/CronSettings';
+import { ProductMatrixSettings } from './tabs/ProductMatrixSettings';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'cloud' | 'mcp' | 'skills' | 'channels' | 'agents' | 'soul' | 'cron' | 'memory' | 'update' | 'about';
+type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'cloud' | 'mcp' | 'skills' | 'channels' | 'agents' | 'soul' | 'cron' | 'memory' | 'update' | 'products' | 'about';
 
 // ============================================================================
 // Component
@@ -50,6 +51,16 @@ export const SettingsModal: React.FC = () => {
   // Optional update state
   const [optionalUpdateInfo, setOptionalUpdateInfo] = useState<UpdateInfo | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+
+  // Listen for tab navigation events (e.g., from ProductMatrixSettings)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const tab = (e as CustomEvent).detail?.tab;
+      if (tab) setActiveTab(tab);
+    };
+    window.addEventListener('settings-navigate', handler);
+    return () => window.removeEventListener('settings-navigate', handler);
+  }, []);
 
   // Check for updates on mount (for badge display)
   useEffect(() => {
@@ -82,6 +93,7 @@ export const SettingsModal: React.FC = () => {
     { id: 'soul', label: '人格', icon: <Ghost className="w-4 h-4" /> },
     { id: 'cron', label: '定时', icon: <Clock className="w-4 h-4" /> },
     { id: 'memory', label: t.settings?.tabs?.memory || '记忆', icon: <Brain className="w-4 h-4" /> },
+    { id: 'products' as const, label: '产品矩阵', icon: <Download className="w-4 h-4" /> },
     ...(isElectronMode() ? [{ id: 'update' as const, label: t.settings.tabs.update || '更新', icon: <Download className="w-4 h-4" />, badge: optionalUpdateInfo?.hasUpdate }] : []),
     { id: 'about', label: t.settings.tabs.about, icon: <Info className="w-4 h-4" /> },
   ];
@@ -154,6 +166,7 @@ export const SettingsModal: React.FC = () => {
                 onShowUpdateModal={() => setShowUpdateModal(true)}
               />
             )}
+            {activeTab === 'products' && <ProductMatrixSettings />}
             {activeTab === 'about' && <AboutSettings />}
           </div>
         </div>

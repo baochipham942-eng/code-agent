@@ -183,6 +183,10 @@ export function getDatabaseService(): CLIDatabaseService | null {
 /**
  * 获取会话管理器
  */
+export function getToolExecutor(): InstanceType<typeof ToolExecutor> | null {
+  return toolExecutor;
+}
+
 export function getSessionManager(): CLISessionManager {
   if (!sessionManager) {
     throw new Error('CLI services not initialized. Call initializeCLIServices() first.');
@@ -259,7 +263,8 @@ export function createAgentLoop(
   onEvent: CLIEventHandler,
   messages: Message[] = [],
   sessionId?: string,
-  extraTelemetryAdapter?: TelemetryAdapter
+  extraTelemetryAdapter?: TelemetryAdapter,
+  toolExecutorOverride?: { execute: (toolName: string, params: Record<string, unknown>, options: import('../main/tools/toolExecutor').ExecuteOptions) => Promise<{ success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }> }
 ): InstanceType<typeof AgentLoop> {
   if (!toolRegistry || !toolExecutor || !AgentLoop) {
     throw new Error('CLI services not initialized');
@@ -318,7 +323,7 @@ export function createAgentLoop(
     systemPrompt,
     modelConfig: config.modelConfig,
     toolRegistry,
-    toolExecutor,
+    toolExecutor: (toolExecutorOverride || toolExecutor) as InstanceType<typeof ToolExecutor>,
     messages,
     onEvent: (event: AgentEvent) => {
       if (config.debug) {

@@ -26,6 +26,8 @@ import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { setupAllIpcHandlers, type IpcDependencies } from '../main/ipc';
 import { createLogger } from '../main/services/infra/logger';
+import { isLocalTool, mapToolName } from '../shared/localTools';
+import type { ExecuteOptions } from '../main/tools/toolExecutor';
 
 const logger = createLogger('WebServer');
 
@@ -37,6 +39,16 @@ const sseClients = new Set<Response>();
 
 // 活跃 AgentLoop 实例追踪（用于 cancel）
 const activeAgentLoops = new Map<string, { cancel(): void }>();
+
+// ── Local Tool Bridge: 待处理的本地工具调用 ──
+// key = toolCallId, value = { resolve, reject, sseResponse }
+interface PendingLocalToolCall {
+  resolve: (result: { success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+const pendingLocalToolCalls = new Map<string, PendingLocalToolCall>();
+const LOCAL_TOOL_TIMEOUT_MS = 120_000; // 2 分钟超时
 const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
 const UPLOAD_ROOT_DIR = path.join(os.tmpdir(), 'code-agent-uploads');
 // ============================================================================
@@ -672,11 +684,60 @@ function createApp(): express.Express {
         timestamp: Date.now(),
       }];
 
+      // ── Local Tool Proxy: 将本地工具调用代理到前端 Bridge ──
+      const localToolProxy = {
+        execute: async (toolName: string, params: Record<string, unknown>, options: ExecuteOptions) => {
+          if (!isLocalTool(toolName)) {
+            // 非本地工具，使用原始 toolExecutor（由 bootstrap 内部处理）
+            return null; // 返回 null 表示不拦截
+          }
+
+          const bridgeTool = mapToolName(toolName);
+          const toolCallId = `bridge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+          // 通过 SSE 推送 tool_call_local 事件给前端
+          sendSSE(res, 'tool_call_local', {
+            toolCallId,
+            tool: bridgeTool,
+            originalTool: toolName,
+            params,
+            permissionLevel: 'L1',
+            sessionId,
+          });
+
+          // 创建 Promise 等待前端回传结果
+          return new Promise<{ success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }>((resolve, reject) => {
+            const timer = setTimeout(() => {
+              pendingLocalToolCalls.delete(toolCallId);
+              resolve({
+                success: false,
+                error: `Local tool '${toolName}' timed out after ${LOCAL_TOOL_TIMEOUT_MS / 1000}s waiting for Bridge response`,
+              });
+            }, LOCAL_TOOL_TIMEOUT_MS);
+
+            pendingLocalToolCalls.set(toolCallId, { resolve, reject, timer });
+          });
+        },
+      };
+
+      // 创建包装 ToolExecutor：本地工具走 Bridge，其他工具走原始路径
+      const { getToolExecutor } = await import('../cli/bootstrap');
+      const originalExecutor = getToolExecutor();
+      const bridgeToolExecutor = originalExecutor ? {
+        execute: async (toolName: string, params: Record<string, unknown>, options: ExecuteOptions) => {
+          const proxyResult = await localToolProxy.execute(toolName, params, options);
+          if (proxyResult !== null) return proxyResult;
+          return originalExecutor.execute(toolName, params, options);
+        },
+        setWorkingDirectory: originalExecutor.setWorkingDirectory?.bind(originalExecutor),
+        setAuditEnabled: originalExecutor.setAuditEnabled?.bind(originalExecutor),
+      } : undefined;
+
       const agentLoop = createAgentLoop(config, (event) => {
         // 所有事件都附带 sessionId，确保前端会话隔离正常工作
         const eventData = event.data ? { ...event.data, sessionId } : { sessionId };
         sendSSE(res, event.type, eventData);
-      }, messages);
+      }, messages, undefined, undefined, bridgeToolExecutor);
 
       // 存储当前 agentLoop 引用，供 cancel 使用
       activeAgentLoops.set(sessionId, agentLoop);
@@ -712,6 +773,24 @@ function createApp(): express.Express {
     } else {
       res.json({ message: 'No active agent to cancel' });
     }
+  });
+
+  // ── Tool Result (Local Bridge 前端回传工具执行结果) ────────────────
+  app.post('/api/tool-result', (req: Request, res: Response) => {
+    const { toolCallId, success, output, error, metadata } = req.body;
+    if (!toolCallId) {
+      res.status(400).json({ error: 'Missing toolCallId' });
+      return;
+    }
+    const pending = pendingLocalToolCalls.get(toolCallId);
+    if (!pending) {
+      res.status(404).json({ error: `No pending tool call: ${toolCallId}` });
+      return;
+    }
+    clearTimeout(pending.timer);
+    pendingLocalToolCalls.delete(toolCallId);
+    pending.resolve({ success: !!success, output, error, metadata });
+    res.json({ message: 'Tool result received', toolCallId });
   });
 
   // ── Sessions ───────────────────────────────────────────────────────

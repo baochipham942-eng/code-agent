@@ -22,6 +22,7 @@ import { createLogger } from '../../../../utils/logger';
 import { IPC_DOMAINS, IPC_CHANNELS } from '@shared/ipc';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import { LocalBridgeSection } from '../sections/localBridge';
 
 const logger = createLogger('MCPSettings');
 
@@ -228,6 +229,9 @@ export const MCPSettings: React.FC = () => {
       <WebModeBanner />
   return (
     <div className="space-y-6">
+      {/* Local Bridge Service */}
+      <LocalBridgeSection />
+
       {/* Header */}
       <div>
         <h3 className="text-sm font-medium text-zinc-200 mb-2">MCP 服务器</h3>

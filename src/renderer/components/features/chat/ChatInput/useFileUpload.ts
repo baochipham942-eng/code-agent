@@ -14,6 +14,7 @@ import {
 } from './utils';
 import { useUIStore } from '../../../../stores/uiStore';
 import { createLogger } from '../../../../utils/logger';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('useFileUpload');
 
@@ -39,7 +40,7 @@ export function useFileUpload() {
 
     let filePath: string | undefined;
     try {
-      filePath = await window.electronAPI?.getPathForFile(file);
+      filePath = await ipcService.getPathForFile(file);
     } catch (e) {
       logger.warn('processFile - failed to get path', { error: e });
     }
@@ -67,7 +68,7 @@ export function useFileUpload() {
 
     // Excel 文件处理
     if (category === 'excel' && filePath) {
-      const result = await window.electronAPI?.extractExcelText(filePath);
+      const result = await ipcService.extractExcelText(filePath);
       if (result) {
         return {
           id, type: 'file', category: 'excel', name: displayName, size: file.size,
@@ -122,7 +123,7 @@ export function useFileUpload() {
     let folderPath: string | undefined;
     try {
       const firstFile = files[0];
-      const firstFilePath = await window.electronAPI?.getPathForFile(firstFile);
+      const firstFilePath = await ipcService.getPathForFile(firstFile);
       if (firstFilePath) {
         const relativePath = (firstFile as File & { relativePath?: string }).relativePath;
         if (relativePath) {

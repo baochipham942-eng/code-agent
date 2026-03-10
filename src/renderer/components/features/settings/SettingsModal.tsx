@@ -32,6 +32,7 @@ import { AboutSettings } from './tabs/AboutSettings';
 import { SoulSettings } from './tabs/SoulSettings';
 import { CronSettings } from './tabs/CronSettings';
 import { ProductMatrixSettings } from './tabs/ProductMatrixSettings';
+import ipcService from '../../../services/ipcService';
 
 // ============================================================================
 // Types
@@ -68,7 +69,7 @@ export const SettingsModal: React.FC = () => {
 
     const checkUpdate = async () => {
       try {
-        const info = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_CHECK);
+        const info = await ipcService.invoke(IPC_CHANNELS.UPDATE_CHECK);
         // Only handle non-force updates here
         if (info?.hasUpdate && !info?.forceUpdate) {
           setOptionalUpdateInfo(info);

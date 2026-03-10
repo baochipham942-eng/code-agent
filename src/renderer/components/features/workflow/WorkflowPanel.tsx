@@ -9,6 +9,7 @@ import { DAGViewer } from './DAGViewer';
 import { useDAGStore, useCurrentDAG, useDAGList } from '../../../stores/dagStore';
 import { DAG_CHANNELS } from '@shared/ipc/channels';
 import type { DAGVisualizationEvent } from '@shared/types/dagVisualization';
+import ipcService from '../../../services/ipcService';
 
 interface WorkflowPanelProps {
   /** 关闭回调 */
@@ -30,13 +31,13 @@ export const WorkflowPanel = memo(({ onClose }: WorkflowPanelProps) => {
     };
 
     // 订阅 IPC 事件
-    if (window.electronAPI?.on) {
-      window.electronAPI.on(DAG_CHANNELS.EVENT, handleDAGEvent);
+    if (ipcService.isAvailable()) {
+      ipcService.on(DAG_CHANNELS.EVENT, handleDAGEvent);
     }
 
     return () => {
-      if (window.electronAPI?.off) {
-        window.electronAPI.off(DAG_CHANNELS.EVENT, handleDAGEvent);
+      if (ipcService.isAvailable()) {
+        ipcService.off(DAG_CHANNELS.EVENT, handleDAGEvent);
       }
     };
   }, [handleEvent]);

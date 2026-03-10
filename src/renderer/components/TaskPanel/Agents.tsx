@@ -9,6 +9,7 @@ import { useMultiAgentDetection, type CollaborationPattern } from '../../hooks/u
 import { useI18n } from '../../hooks/useI18n';
 import { EVALUATION_CHANNELS } from '@shared/ipc';
 import type { TestReportListItem } from '@shared/ipc';
+import ipcService from '../../services/ipcService';
 
 // Agent 角色颜色映射
 const AGENT_COLORS: Record<string, string> = {
@@ -135,7 +136,7 @@ export const EvalAgentsView: React.FC = () => {
     const loadReports = async () => {
       setLoading(true);
       try {
-        const result = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS);
+        const result = await ipcService.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS);
         if (mounted) {
           setReports((result ?? []).slice(0, 5));
         }

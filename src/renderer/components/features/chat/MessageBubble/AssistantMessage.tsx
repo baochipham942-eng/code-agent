@@ -10,6 +10,7 @@ import { ToolCallDisplay } from './ToolCallDisplay/index';
 import { ToolCallGroup } from './ToolCallDisplay/ToolCallGroup';
 import { UI } from '@shared/constants';
 import { IPC_CHANNELS } from '@shared/ipc';
+import ipcService from '../../../../services/ipcService';
 
 export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) => {
   const [showReasoning, setShowReasoning] = useState(false);
@@ -40,7 +41,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
     setContextMenu(null);
     if (message.id) {
       try {
-        await window.electronAPI?.invoke(IPC_CHANNELS.CONTEXT_COMPACT_FROM, message.id);
+        await ipcService.invoke(IPC_CHANNELS.CONTEXT_COMPACT_FROM, message.id);
       } catch {
         // ignore
       }

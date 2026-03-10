@@ -2,7 +2,7 @@
 // Read DOCX Tool - 读取 Word 文档内容
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
 import mammoth from 'mammoth';

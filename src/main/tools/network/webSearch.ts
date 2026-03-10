@@ -5,7 +5,7 @@
 // P2: Auto-extract (search + fetch + AI extraction)
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getConfigService } from '../../services/core/configService';
 import { createLogger } from '../../services/infra/logger';
 import { CLOUD_ENDPOINTS, SEARCH_API_ENDPOINTS } from '../../../shared/constants';

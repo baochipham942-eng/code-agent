@@ -12,6 +12,7 @@ import { createLogger } from '../../../../utils/logger';
 import { isWebMode, isTauriMode } from '../../../../utils/platform';
 import { tauriCheckForUpdate, tauriInstallUpdate } from '../../../../utils/tauriUpdater';
 import { WebModeBanner } from '../WebModeBanner';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('UpdateSettings');
 
@@ -51,7 +52,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
           // (tauri.conf.json version). We'll populate it on first check.
           return;
         }
-        const version = await window.electronAPI?.invoke(IPC_CHANNELS.APP_GET_VERSION);
+        const version = await ipcService.invoke(IPC_CHANNELS.APP_GET_VERSION);
         if (version) {
           setLocalVersion(version);
         }
@@ -76,7 +77,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
           setLocalVersion(info.currentVersion);
         }
       } else {
-        const info = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_CHECK);
+        const info = await ipcService.invoke(IPC_CHANNELS.UPDATE_CHECK);
         if (info) {
           onUpdateInfoChange(info);
         }

@@ -6,7 +6,7 @@
 // ============================================================================
 
 import { ModelRouter } from '../model/modelRouter';
-import { getConfigService } from '../services';
+import { getConfigService } from '../services/core';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import type { Message } from '../../shared/types';

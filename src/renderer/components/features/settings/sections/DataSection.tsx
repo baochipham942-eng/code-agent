@@ -20,6 +20,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import type { MemoryStats, SearchResult } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import { MemoryKnowledgeGraph } from '../tabs/MemoryKnowledgeGraph';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('DataSection');
 
@@ -55,8 +56,8 @@ export const DataSection: React.FC = () => {
   const loadStats = async () => {
     try {
       const [dataStats, memStats] = await Promise.all([
-        window.electronAPI?.invoke(IPC_CHANNELS.DATA_GET_STATS),
-        window.electronAPI?.invoke(IPC_CHANNELS.MEMORY_GET_STATS),
+        ipcService.invoke(IPC_CHANNELS.DATA_GET_STATS),
+        ipcService.invoke(IPC_CHANNELS.MEMORY_GET_STATS),
       ]);
       if (dataStats) setStats(dataStats);
       if (memStats) setMemoryStats(memStats);
@@ -75,7 +76,7 @@ export const DataSection: React.FC = () => {
     setIsClearing(true);
     setMessage(null);
     try {
-      const cleared = await window.electronAPI?.invoke(IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE);
+      const cleared = await ipcService.invoke(IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE);
       if (cleared === 0) {
         setMessage({ type: 'success', text: '缓存已经是空的' });
       } else {
@@ -95,8 +96,8 @@ export const DataSection: React.FC = () => {
     setIsSearching(true);
     try {
       const [codeResults, convResults] = await Promise.all([
-        window.electronAPI?.invoke(IPC_CHANNELS.MEMORY_SEARCH_CODE, searchQuery, 3),
-        window.electronAPI?.invoke(IPC_CHANNELS.MEMORY_SEARCH_CONVERSATIONS, searchQuery, 3),
+        ipcService.invoke(IPC_CHANNELS.MEMORY_SEARCH_CODE, searchQuery, 3),
+        ipcService.invoke(IPC_CHANNELS.MEMORY_SEARCH_CONVERSATIONS, searchQuery, 3),
       ]);
 
       const combined = [

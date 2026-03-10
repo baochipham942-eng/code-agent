@@ -2,7 +2,7 @@
 // xlwings Execute Tool - Excel 自动化（通过 xlwings）
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { spawn } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';

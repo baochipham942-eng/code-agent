@@ -5,7 +5,7 @@
 // 实现 Smart Forking 的用户交互层。
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import {
   getForkDetector,
   type ForkDetectionResult,

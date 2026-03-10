@@ -3,7 +3,7 @@
 // Gen 8: Self-Evolution capability
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
@@ -750,7 +750,7 @@ function generateToolCode(tool: DynamicTool): string {
   return `// Auto-generated tool: ${tool.name}
 // Generated at: ${new Date().toISOString()}
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 
 export const ${tool.name}Tool: Tool = {
   name: '${tool.name}',

@@ -8,7 +8,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { Tool, Param, Description, type ITool } from '../decorators';
-import type { ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { ToolContext, ToolExecutionResult } from '../types';
 import { BASH } from '../../../shared/constants';
 
 const execAsync = promisify(exec);

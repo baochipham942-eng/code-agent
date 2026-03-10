@@ -4,7 +4,7 @@
 
 import fs from 'fs/promises';
 import { Tool, Param, Description, type ITool, buildToolFromClass } from '../decorators';
-import type { ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { ToolContext, ToolExecutionResult } from '../types';
 import { resolvePath } from './pathUtils';
 
 @Description(`Read the contents of a file from the local filesystem.

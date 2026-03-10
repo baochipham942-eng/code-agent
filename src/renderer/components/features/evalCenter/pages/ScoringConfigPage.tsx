@@ -3,6 +3,7 @@ import { EVALUATION_CHANNELS } from '@shared/ipc/channels';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { GraderRuleCard } from '../GraderRuleCard';
 import type { DimensionConfig, GraderType, Importance } from '../GraderRuleCard';
+import ipcService from '../../../../services/ipcService';
 
 // ============================================================================
 // Default judge prompts (extracted from swissCheeseEvaluator.ts)
@@ -72,7 +73,7 @@ export const ScoringConfigPage: React.FC = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        const config = await window.electronAPI?.invoke(
+        const config = await ipcService.invoke(
           EVALUATION_CHANNELS.GET_SCORING_CONFIG as typeof import('@shared/ipc').IPC_CHANNELS.EVALUATION_GET_SCORING_CONFIG
         );
         if (config && Array.isArray(config) && config.length > 0) {
@@ -126,7 +127,7 @@ export const ScoringConfigPage: React.FC = () => {
         importance: d.importance,
         ...(d.judgePrompt ? { judgePrompt: d.judgePrompt } : {}),
       }));
-      await window.electronAPI?.invoke(
+      await ipcService.invoke(
         IPC_CHANNELS.EVALUATION_UPDATE_SCORING_CONFIG,
         scoringEntries
       );

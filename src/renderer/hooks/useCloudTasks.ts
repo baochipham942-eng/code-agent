@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { UI } from '@shared/constants';
+import ipcService from '../services/ipcService';
 import type {
   CloudTask,
   CreateCloudTaskRequest,
@@ -86,8 +87,8 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
       setIsLoading(true);
       setError(null);
 
-      if (window.electronAPI?.invoke) {
-        const result = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_LIST, filter);
+      if (ipcService.isAvailable()) {
+        const result = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_LIST, filter);
         if (isMountedRef.current) {
           setTasks(result || []);
         }
@@ -106,8 +107,8 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
 
   const loadSyncState = useCallback(async () => {
     try {
-      if (window.electronAPI?.invoke) {
-        const result = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_SYNC_STATE);
+      if (ipcService.isAvailable()) {
+        const result = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_SYNC_STATE);
         if (isMountedRef.current) {
           setSyncState(result);
         }
@@ -119,8 +120,8 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
 
   const loadStats = useCallback(async () => {
     try {
-      if (window.electronAPI?.invoke) {
-        const result = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_STATS);
+      if (ipcService.isAvailable()) {
+        const result = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_STATS);
         if (isMountedRef.current) {
           setStats(result);
         }
@@ -137,8 +138,8 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
   const createTask = useCallback(async (request: CreateCloudTaskRequest): Promise<CloudTask | null> => {
     try {
       setError(null);
-      if (window.electronAPI?.invoke) {
-        const task = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_CREATE, request);
+      if (ipcService.isAvailable()) {
+        const task = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_CREATE, request);
         if (task) {
           setTasks((prev) => [task, ...prev]);
           return task;
@@ -153,8 +154,8 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
 
   const startTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
-      if (window.electronAPI?.invoke) {
-        const success = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_START, taskId);
+      if (ipcService.isAvailable()) {
+        const success = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_START, taskId);
         if (success) {
           setTasks((prev) =>
             prev.map((t) =>
@@ -173,8 +174,8 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
 
   const pauseTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
-      if (window.electronAPI?.invoke) {
-        const success = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_PAUSE, taskId);
+      if (ipcService.isAvailable()) {
+        const success = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_PAUSE, taskId);
         if (success) {
           setTasks((prev) =>
             prev.map((t) =>
@@ -193,8 +194,8 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
 
   const cancelTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
-      if (window.electronAPI?.invoke) {
-        const success = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_CANCEL, taskId);
+      if (ipcService.isAvailable()) {
+        const success = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_CANCEL, taskId);
         if (success) {
           setTasks((prev) =>
             prev.map((t) =>
@@ -213,8 +214,8 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
 
   const retryTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
-      if (window.electronAPI?.invoke) {
-        const success = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_RETRY, taskId);
+      if (ipcService.isAvailable()) {
+        const success = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_RETRY, taskId);
         if (success) {
           setTasks((prev) =>
             prev.map((t) =>
@@ -235,8 +236,8 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
 
   const deleteTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
-      if (window.electronAPI?.invoke) {
-        const success = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_DELETE, taskId);
+      if (ipcService.isAvailable()) {
+        const success = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_DELETE, taskId);
         if (success) {
           setTasks((prev) => prev.filter((t) => t.id !== taskId));
         }
@@ -265,9 +266,9 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
   // --------------------------------------------------------------------------
 
   useEffect(() => {
-    if (window.electronAPI?.on) {
+    if (ipcService.isAvailable()) {
       // 监听任务进度更新
-      const unsubProgress = window.electronAPI.on(
+      const unsubProgress = ipcService.on(
         IPC_CHANNELS.CLOUD_TASK_PROGRESS,
         (event: TaskProgressEvent) => {
           setTasks((prev) =>
@@ -286,7 +287,7 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
       );
 
       // 监听任务完成
-      const unsubCompleted = window.electronAPI.on(
+      const unsubCompleted = ipcService.on(
         IPC_CHANNELS.CLOUD_TASK_COMPLETED,
         (task: CloudTask) => {
           setTasks((prev) =>
@@ -296,7 +297,7 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
       );
 
       // 监听任务失败
-      const unsubFailed = window.electronAPI.on(
+      const unsubFailed = ipcService.on(
         IPC_CHANNELS.CLOUD_TASK_FAILED,
         (task: CloudTask) => {
           setTasks((prev) =>
@@ -393,8 +394,8 @@ export function useCloudTask(taskId: string | null) {
     const loadTask = async () => {
       setIsLoading(true);
       try {
-        if (window.electronAPI?.invoke) {
-          const result = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_GET, taskId);
+        if (ipcService.isAvailable()) {
+          const result = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_GET, taskId);
           setTask(result);
         }
       } catch (err) {
@@ -420,8 +421,8 @@ export function useCloudTaskStats() {
   useEffect(() => {
     const loadStats = async () => {
       try {
-        if (window.electronAPI?.invoke) {
-          const result = await window.electronAPI.invoke(IPC_CHANNELS.CLOUD_TASK_STATS);
+        if (ipcService.isAvailable()) {
+          const result = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_STATS);
           setStats(result);
         }
       } catch {

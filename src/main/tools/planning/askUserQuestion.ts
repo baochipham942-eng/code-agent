@@ -2,7 +2,7 @@
 // Ask User Question Tool - Interactive questions via IPC
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { UserQuestionRequest, UserQuestionResponse, UserQuestion } from '../../../shared/types';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { BrowserWindow, ipcMain } from 'electron';

@@ -8,7 +8,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { GREP, BASH } from '../../../shared/constants';
 
 /**

@@ -3,7 +3,7 @@
 // 整合 Exa AI 的学术搜索能力，支持 arXiv、Google Scholar 等来源
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('AcademicSearch');

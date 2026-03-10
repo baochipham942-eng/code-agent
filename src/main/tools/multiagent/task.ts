@@ -4,7 +4,7 @@
 // Wraps spawn_agent with simpler, SDK-compatible parameters
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { ModelConfig } from '../../../shared/types';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';
 import {

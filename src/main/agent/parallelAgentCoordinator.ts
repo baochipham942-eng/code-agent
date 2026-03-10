@@ -8,7 +8,7 @@
 
 import { EventEmitter } from 'events';
 import type { ModelConfig } from '../../shared/types';
-import type { Tool, ToolContext } from '../tools/toolRegistry';
+import type { Tool, ToolContext } from '../tools/types';
 import { getSubagentExecutor, type SubagentResult } from './subagentExecutor';
 import { createLogger } from '../services/infra/logger';
 import { withTimeout } from '../services/infra/timeoutController';

@@ -3,7 +3,7 @@
 // Merges: plan_read, plan_update
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { planReadTool } from './planRead';
 import { planUpdateTool } from './planUpdate';
 

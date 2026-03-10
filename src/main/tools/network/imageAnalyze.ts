@@ -6,7 +6,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { glob } from 'glob';
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getConfigService } from '../../services';
 import { createLogger } from '../../services/infra/logger';
 import { CLOUD_ENDPOINTS, MODEL_API_ENDPOINTS, ZHIPU_VISION_MODEL, MODEL_MAX_TOKENS } from '../../../shared/constants';

@@ -4,7 +4,7 @@
 //         process_submit, process_kill, kill_shell, task_output
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import {
   processListTool,
   processPollTool,

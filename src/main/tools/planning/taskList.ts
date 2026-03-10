@@ -2,7 +2,7 @@
 // Task List Tool - List all session tasks (Claude Code 2.x compatible)
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { listTasks } from './taskStore';
 
 export const taskListTool: Tool = {

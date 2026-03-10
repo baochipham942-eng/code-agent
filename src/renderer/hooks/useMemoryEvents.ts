@@ -6,6 +6,7 @@ import { useEffect, useCallback } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { AgentEvent, MemoryLearnedData } from '@shared/types';
 import { createLogger } from '../utils/logger';
+import ipcService from '../services/ipcService';
 
 const logger = createLogger('useMemoryEvents');
 
@@ -46,7 +47,7 @@ export function useMemoryEvents(callbacks: MemoryEventCallbacks = {}): void {
   );
 
   useEffect(() => {
-    const unsubscribe = window.electronAPI?.on(
+    const unsubscribe = ipcService.on(
       IPC_CHANNELS.AGENT_EVENT,
       handleAgentEvent
     );

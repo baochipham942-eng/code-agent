@@ -6,6 +6,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import { IPC_CHANNELS } from '../../../../shared/ipc';
 import type { EvaluationResult, EvaluationMetric } from '../../../../shared/types/evaluation';
 import { scoreToGrade, GRADE_COLORS, GRADE_BG_COLORS } from '../../../../shared/types/evaluation';
+import ipcService from '../../../services/ipcService';
 
 interface SessionInfo {
   title: string;
@@ -45,11 +46,11 @@ export const ScoreSummary: React.FC<ScoreSummaryProps> = ({
   }, [evaluation]);
 
   const runEvaluation = useCallback(async () => {
-    if (!window.electronAPI) return;
+    if (!ipcService.isAvailable()) return;
     try {
       setIsEvaluating(true);
       setError(null);
-      const result = await window.electronAPI.invoke(
+      const result = await ipcService.invoke(
         IPC_CHANNELS.EVALUATION_RUN_SUBJECTIVE,
         { sessionId, save: true }
       );

@@ -4,7 +4,7 @@
 // Auto-detects format from file extension, no action param needed.
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { readPdfTool } from './readPdf';
 import { readDocxTool } from './readDocx';
 import { readXlsxTool } from './readXlsx';

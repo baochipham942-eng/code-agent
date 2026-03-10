@@ -8,7 +8,7 @@
 
 import { glob as globLib } from 'glob';
 import { Tool, Param, Description, type ITool } from '../decorators';
-import type { ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { ToolContext, ToolExecutionResult } from '../types';
 import { resolvePath } from '../file/pathUtils';
 
 // ----------------------------------------------------------------------------

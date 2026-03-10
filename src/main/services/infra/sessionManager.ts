@@ -6,7 +6,7 @@
 import { BrowserWindow } from 'electron';
 import { getDatabase, type StoredSession } from '../core';
 import { getToolCache } from './toolCache';
-import { getAuthService } from '../auth';
+import { getAuthService } from '../auth/authService';
 import { getSupabase, isSupabaseInitialized } from './supabaseService';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type {

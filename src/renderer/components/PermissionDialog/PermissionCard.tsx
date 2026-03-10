@@ -14,6 +14,7 @@ import type { PermissionRequest, ApprovalLevel, PermissionType } from './types';
 import type { PermissionResponse } from '@shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { getPermissionConfig, isDangerousCommand, getDangerReason } from './utils';
+import ipcService from '../../services/ipcService';
 
 // 将共享类型的 PermissionRequest 转换为本地类型
 function normalizeRequest(
@@ -110,8 +111,8 @@ export function PermissionCard() {
       }
 
       const response = toPermissionResponse(level);
-      if (window.electronAPI?.invoke) {
-        window.electronAPI.invoke(
+      if (ipcService.isAvailable()) {
+        ipcService.invoke(
           IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
           request.id,
           response

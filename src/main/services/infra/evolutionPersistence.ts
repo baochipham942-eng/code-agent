@@ -8,7 +8,7 @@ import {
   getSupabase,
   isSupabaseInitialized,
 } from './supabaseService';
-import { getAuthService } from '../auth';
+import { getAuthService } from '../auth/authService';
 import { createLogger } from './logger';
 
 const logger = createLogger('EvolutionPersistence');

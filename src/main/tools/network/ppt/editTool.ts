@@ -2,7 +2,7 @@
 // PPT Edit Tool - 编辑已有 PPTX 文件
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../../types';
 import * as fs from 'fs';
 import * as path from 'path';
 

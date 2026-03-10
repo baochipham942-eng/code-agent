@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { EVALUATION_CHANNELS } from '@shared/ipc/channels';
 import type { TestRunReport } from '@shared/ipc';
+import ipcService from '../../../../services/ipcService';
 
 interface ReportSummary {
   filePath: string;
@@ -20,12 +21,12 @@ export const CrossExperimentPage: React.FC = () => {
     const load = async () => {
       setLoading(true);
       try {
-        const list = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS) as { filePath: string; timestamp?: number }[] | undefined;
+        const list = await ipcService.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS) as { filePath: string; timestamp?: number }[] | undefined;
         if (list && list.length > 0) {
           const summaries: ReportSummary[] = [];
           for (const item of list.slice(0, 20)) {
             try {
-              const report = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, item.filePath) as TestRunReport | null | undefined;
+              const report = await ipcService.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, item.filePath) as TestRunReport | null | undefined;
               if (report) {
                 summaries.push({
                   filePath: item.filePath,

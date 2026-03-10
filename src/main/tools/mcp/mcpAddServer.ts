@@ -3,7 +3,7 @@
 // Gen4: Runtime MCP server management
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import {
   getMCPClient,
   type MCPServerConfig,

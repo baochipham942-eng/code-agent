@@ -5,7 +5,7 @@
 // with an `action` parameter: "store" | "search".
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getMemoryService } from '../../memory/memoryService';
 import { getVectorStore } from '../../memory/vectorStore';
 

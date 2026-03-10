@@ -4,6 +4,7 @@
 
 import type { AttachmentCategory } from '../../../../../shared/types';
 import { createLogger } from '../../../../utils/logger';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('ChatInputUtils');
 
@@ -159,7 +160,7 @@ export async function readDirectoryEntry(
  */
 export async function extractPdfText(filePath: string): Promise<{ text: string; pageCount: number }> {
   try {
-    const result = await window.electronAPI?.extractPdfText(filePath);
+    const result = await ipcService.extractPdfText(filePath);
     if (result) return result;
     return { text: '[PDF 解析失败: IPC 调用失败]', pageCount: 0 };
   } catch (error) {

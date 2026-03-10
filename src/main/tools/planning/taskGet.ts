@@ -2,7 +2,7 @@
 // Task Get Tool - Get task details by ID (Claude Code 2.x compatible)
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getTask, listTasks } from './taskStore';
 
 export const taskGetTool: Tool = {

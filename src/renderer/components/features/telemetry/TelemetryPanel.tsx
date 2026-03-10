@@ -11,6 +11,7 @@ import { TimelineView } from './TimelineView';
 import { ToolStats } from './ToolStats';
 import { OverviewTab } from './OverviewTab';
 import { BarChart3, List, Clock, Wrench, Radio, CircleOff, ChevronLeft } from 'lucide-react';
+import ipcService from '../../../services/ipcService';
 
 interface TelemetryPanelProps {
   sessionId?: string;
@@ -51,7 +52,7 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({ sessionId: propS
 
   // Subscribe to IPC events
   useEffect(() => {
-    const unsubscribe = window.electronAPI?.on('telemetry:event' as 'telemetry:event', (event) => {
+    const unsubscribe = ipcService.on('telemetry:event' as 'telemetry:event', (event) => {
       handlePushEvent(event as Parameters<typeof handlePushEvent>[0]);
     });
     return () => {

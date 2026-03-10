@@ -29,6 +29,7 @@ import { generateMessageId } from '@shared/utils/id';
 import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData, ResearchDetectedData, ToolProgressData, ToolTimeoutData } from '@shared/types';
 import { createLogger } from '../utils/logger';
 import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
+import ipcService from '../services/ipcService';
 
 const logger = createLogger('useAgent');
 
@@ -104,7 +105,7 @@ export const useAgent = () => {
   // Listen for agent events from the main process
   // Only register once, use refs to access latest state
   useEffect(() => {
-    const unsubscribe = window.electronAPI?.on(
+    const unsubscribe = ipcService.on(
       'agent:event',
       (event: { type: string; data: any; sessionId?: string }) => {
         // 只对非流式事件打印日志，避免控制台刷屏
@@ -698,7 +699,7 @@ export const useAgent = () => {
         if (typeof messagePayload === 'object') {
           logger.debug('Attachments being sent', { attachments: attachments?.map(a => ({ name: a.name, category: a.category, hasData: !!a.data, dataLen: a.data?.length, path: a.path, hasPath: !!a.path })) });
         }
-        await window.electronAPI?.invoke('agent:send-message', messagePayload);
+        await ipcService.invoke('agent:send-message', messagePayload);
         logger.debug('invoke returned');
       } catch (error) {
         logger.error('Agent error', error);
@@ -720,7 +721,7 @@ export const useAgent = () => {
   // Cancel the current operation
   const cancel = useCallback(async () => {
     try {
-      await window.electronAPI?.invoke('agent:cancel');
+      await ipcService.invoke('agent:cancel');
       // 按会话清除处理状态
       if (currentSessionId) {
         setSessionProcessing(currentSessionId, false);

@@ -10,7 +10,7 @@ import {
   isSupabaseInitialized,
   type ProfileRow,
   type InviteCodeRow,
-} from '../infra';
+} from '../infra/supabaseService';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { getSecureStorage } from '../core';
 import type { AuthUser, AuthStatus } from '../../../shared/types';

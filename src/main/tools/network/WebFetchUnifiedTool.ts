@@ -3,7 +3,7 @@
 // Phase 2: Tool Schema Consolidation (Group 6: 2->1)
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { webFetchTool } from './webFetch';
 import { httpRequestTool } from './httpRequest';
 

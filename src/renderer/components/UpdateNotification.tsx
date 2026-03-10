@@ -8,6 +8,7 @@ import { X, Download, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type { UpdateInfo, DownloadProgress } from '../../shared/types';
 import { createLogger } from '../utils/logger';
+import ipcService from '../services/ipcService';
 
 const logger = createLogger('UpdateNotification');
 
@@ -52,7 +53,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
       }
     };
 
-    const unsubscribe = window.electronAPI?.on(IPC_CHANNELS.UPDATE_EVENT, handleUpdateEvent);
+    const unsubscribe = ipcService.on(IPC_CHANNELS.UPDATE_EVENT, handleUpdateEvent);
 
     return () => {
       unsubscribe?.();
@@ -65,7 +66,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
     try {
       setDownloadState('downloading');
       setDownloadProgress({ percent: 0, transferred: 0, total: 0, bytesPerSecond: 0 });
-      await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_DOWNLOAD, updateInfo.downloadUrl);
+      await ipcService.invoke(IPC_CHANNELS.UPDATE_DOWNLOAD, updateInfo.downloadUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : '下载失败');
       setDownloadState('error');
@@ -74,7 +75,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
 
   const handleOpenFile = useCallback(async () => {
     if (!downloadedFilePath) return;
-    await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_OPEN_FILE, downloadedFilePath);
+    await ipcService.invoke(IPC_CHANNELS.UPDATE_OPEN_FILE, downloadedFilePath);
   }, [downloadedFilePath]);
 
   const handleRetry = useCallback(() => {

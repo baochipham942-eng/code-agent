@@ -6,6 +6,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { EVALUATION_CHANNELS } from '@shared/ipc';
 import { SessionReplayView } from '../SessionReplayView';
 import { useEvalCenterStore } from '../../../../stores/evalCenterStore';
+import ipcService from '../../../../services/ipcService';
 
 // 9 维度颜色映射（借鉴 AGENT_COLORS 风格）
 const DIMENSION_COLORS: Record<string, { text: string; bar: string; bg: string }> = {
@@ -60,7 +61,7 @@ export const SessionEvalView: React.FC<Props> = ({ sessionId, onBack }) => {
   useEffect(() => {
     const load = async () => {
       try {
-        const results = await window.electronAPI?.invoke(
+        const results = await ipcService.invoke(
           EVALUATION_CHANNELS.LIST_HISTORY,
           { sessionId, limit: 1 }
         );
@@ -80,7 +81,7 @@ export const SessionEvalView: React.FC<Props> = ({ sessionId, onBack }) => {
     setError(null);
     setActiveTab('evaluation');
     try {
-      const result = await window.electronAPI?.invoke(
+      const result = await ipcService.invoke(
         EVALUATION_CHANNELS.RUN_SUBJECTIVE_EVALUATION,
         { sessionId, save: true }
       );

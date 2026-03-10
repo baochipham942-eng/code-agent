@@ -2,7 +2,7 @@
 // QR Code Generate Tool - 生成二维码
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
 import QRCode from 'qrcode';

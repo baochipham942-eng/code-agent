@@ -9,7 +9,7 @@
 // ============================================================================
 
 import { ModelRouter } from './modelRouter';
-import { getConfigService } from '../services';
+import { getConfigService } from '../services/core';
 import type { ModelConfig, ModelProvider } from '../../shared/types';
 import { createLogger } from '../services/infra/logger';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER } from '../../shared/constants';

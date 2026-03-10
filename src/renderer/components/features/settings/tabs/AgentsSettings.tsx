@@ -24,6 +24,7 @@ import type { AgentRoutingConfig, AgentBinding } from '@shared/types/agentRoutin
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('AgentsSettings');
 
@@ -31,7 +32,7 @@ const logger = createLogger('AgentsSettings');
 const invokeAgentIPC = async <T = unknown>(channel: string, ...args: unknown[]): Promise<T | undefined> => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return await (window.electronAPI?.invoke as any)(channel, ...args) as T;
+    return await (ipcService.invoke as any)(channel, ...args) as T;
   } catch (err) {
     logger.error(`IPC invoke failed for ${channel}`, err);
     return undefined;

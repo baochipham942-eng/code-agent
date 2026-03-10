@@ -9,6 +9,7 @@ import { Button } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/types';
 import { createLogger } from '../../../../utils/logger';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('AboutSection');
 
@@ -39,7 +40,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
   useEffect(() => {
     const loadVersion = async () => {
       try {
-        const v = await window.electronAPI?.invoke(IPC_CHANNELS.APP_GET_VERSION);
+        const v = await ipcService.invoke(IPC_CHANNELS.APP_GET_VERSION);
         if (v) setVersion(v);
       } catch (error) {
         logger.error('Failed to load version', error);
@@ -52,7 +53,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
     setIsChecking(true);
     setError(null);
     try {
-      const info = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_CHECK);
+      const info = await ipcService.invoke(IPC_CHANNELS.UPDATE_CHECK);
       if (info) {
         onUpdateInfoChange(info);
       }

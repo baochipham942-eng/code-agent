@@ -4,7 +4,7 @@
 // 支持智谱 GLM-4.6V-Flash 视觉分析
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';

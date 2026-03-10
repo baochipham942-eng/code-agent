@@ -3,7 +3,7 @@
 // 使用 Nitter 镜像站或 FxTwitter API 获取推文
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('TwitterFetch');

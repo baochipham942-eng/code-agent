@@ -11,7 +11,7 @@ import { createParallelErrorHandler, type ParallelErrorHandler } from './paralle
 import type { DynamicAgentDefinition } from './dynamicAgentFactory';
 import type { AgentRequirements, ExecutionStrategy } from './agentRequirementsAnalyzer';
 import type { ModelConfig } from '../../shared/types';
-import type { Tool, ToolContext } from '../tools/toolRegistry';
+import type { Tool, ToolContext } from '../tools/types';
 
 const logger = createLogger('AutoAgentCoordinator');
 

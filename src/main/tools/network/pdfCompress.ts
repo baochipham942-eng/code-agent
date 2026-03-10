@@ -3,7 +3,7 @@
 // 使用 Ghostscript 压缩 PDF 文件
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';

@@ -2,7 +2,7 @@
 // TaskOutput Tool - Get output from background tasks
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import {
   getTaskOutput,
   getAllBackgroundTasks,

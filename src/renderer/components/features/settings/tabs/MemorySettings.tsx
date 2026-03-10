@@ -21,6 +21,7 @@ import { createLogger } from '../../../../utils/logger';
 import { useMemoryEvents } from '../../../../hooks/useMemoryEvents';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('MemorySettings');
 
@@ -62,7 +63,7 @@ export const MemorySettings: React.FC = () => {
   const loadStats = async () => {
     setIsLoading(true);
     try {
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.MEMORY_GET_STATS);
+      const result = await ipcService.invoke(IPC_CHANNELS.MEMORY_GET_STATS);
       if (result) {
         setStats(result);
       }
@@ -79,8 +80,8 @@ export const MemorySettings: React.FC = () => {
     setIsSearching(true);
     try {
       const [codeResults, convResults] = await Promise.all([
-        window.electronAPI?.invoke(IPC_CHANNELS.MEMORY_SEARCH_CODE, searchQuery, 3),
-        window.electronAPI?.invoke(IPC_CHANNELS.MEMORY_SEARCH_CONVERSATIONS, searchQuery, 3),
+        ipcService.invoke(IPC_CHANNELS.MEMORY_SEARCH_CODE, searchQuery, 3),
+        ipcService.invoke(IPC_CHANNELS.MEMORY_SEARCH_CONVERSATIONS, searchQuery, 3),
       ]);
 
       const combined = [

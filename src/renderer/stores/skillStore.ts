@@ -11,6 +11,7 @@ import type {
 } from '@shared/types/skillRepository';
 import type { ParsedSkill } from '@shared/types/agentSkill';
 import { createLogger } from '../utils/logger';
+import ipcService from '../services/ipcService';
 
 // Skill IPC 通道常量（与 src/shared/ipc/channels.ts 保持一致）
 const SKILL_CHANNELS = {
@@ -25,8 +26,7 @@ const logger = createLogger('SkillStore');
 
 // 类型安全的 IPC 调用辅助函数（绕过未注册的通道类型检查）
 const invokeSkillChannel = async <T>(channel: string, ...args: unknown[]): Promise<T | undefined> => {
-  const invoke = window.electronAPI?.invoke as ((channel: string, ...args: unknown[]) => Promise<T>) | undefined;
-  return invoke?.(channel, ...args);
+  return (ipcService.invoke as any)(channel, ...args) as T | undefined;
 };
 
 // ----------------------------------------------------------------------------

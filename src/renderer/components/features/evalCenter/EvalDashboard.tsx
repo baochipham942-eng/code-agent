@@ -12,6 +12,7 @@ import { ErrorTags } from './ErrorTags';
 import { MetricStrip } from './MetricStrip';
 import { TurnTimeline } from './TurnTimeline';
 import { CollapsibleSection } from './CollapsibleSection';
+import ipcService from '../../../services/ipcService';
 
 interface EvalDashboardProps {
   sessionId: string;
@@ -33,8 +34,8 @@ export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId, onEnter
   useEffect(() => {
     setTurns([]);
     setSystemPrompt(null);
-    if (!sessionId || !window.electronAPI) return;
-    window.electronAPI.invoke(
+    if (!sessionId || !ipcService.isAvailable()) return;
+    ipcService.invoke(
       'telemetry:get-turns' as 'telemetry:get-turns',
       sessionId
     ).then((result: TelemetryTurn[]) => {
@@ -46,10 +47,10 @@ export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId, onEnter
   const systemPromptHash = firstTurn?.systemPromptHash;
 
   const loadSystemPrompt = useCallback(async () => {
-    if (!systemPromptHash || systemPrompt !== null || !window.electronAPI) return;
+    if (!systemPromptHash || systemPrompt !== null || !ipcService.isAvailable()) return;
     setSystemPromptLoading(true);
     try {
-      const result = await window.electronAPI.invoke(
+      const result = await ipcService.invoke(
         'telemetry:get-system-prompt' as 'telemetry:get-system-prompt',
         systemPromptHash
       );

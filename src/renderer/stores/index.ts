@@ -27,6 +27,9 @@ export {
   type SessionFilter,
 } from './sessionStore';
 
+export { useSelectionStore } from './selectionStore';
+export { useSessionUIStore, type PendingDelete } from './sessionUIStore';
+
 export { useAuthStore, initializeAuthStore } from './authStore';
 
 // -----------------------------------------------------------------------------

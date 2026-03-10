@@ -22,6 +22,7 @@ const logger = createLogger('ModelSettings');
 import type { ModelConfig } from '@shared/types';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import ipcService from '../../../../services/ipcService';
 export type { ModelConfig };
 
 export interface ModelSettingsProps {
@@ -90,7 +91,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     setIsSaving(true);
     setSaveStatus('idle');
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
         models: {
           default: config.provider,
           defaultProvider: config.provider,

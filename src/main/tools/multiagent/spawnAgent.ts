@@ -5,7 +5,7 @@
 // Refactored: Uses unified 4-layer agent types
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { ModelConfig } from '../../../shared/types';
 import type { FullAgentConfig } from '../../../shared/types/agentTypes';
 import { getSubagentExecutor } from '../../agent/subagentExecutor';

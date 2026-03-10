@@ -4,7 +4,7 @@
 // Refactored: Uses type-safe workflow types from shared/types
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { ModelConfig, ModelProvider } from '../../../shared/types';
 import type {
   WorkflowStage,

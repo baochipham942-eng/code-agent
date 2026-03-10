@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { EVALUATION_CHANNELS, SUBSET_CHANNELS } from '@shared/ipc/channels';
+import ipcService from '../../../../services/ipcService';
 
 interface TestCase {
   id: string;
@@ -59,7 +60,7 @@ export const TestCaseManager: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-        const data = await window.electronAPI?.invoke(
+        const data = await ipcService.invoke(
           EVALUATION_CHANNELS.LIST_TEST_CASES as 'evaluation:list-test-cases'
         );
         if (data && Array.isArray(data)) {
@@ -78,7 +79,7 @@ export const TestCaseManager: React.FC = () => {
   const loadSubsets = useCallback(async () => {
     setLoadingSubsets(true);
     try {
-      const data = await window.electronAPI?.invoke(
+      const data = await ipcService.invoke(
         SUBSET_CHANNELS.LIST as 'evaluation:list-test-subsets'
       );
       if (data && Array.isArray(data)) {
@@ -202,7 +203,7 @@ export const TestCaseManager: React.FC = () => {
     if (!subsetName.trim() || selectedCaseIds.size === 0) return;
     setSaving(true);
     try {
-      await window.electronAPI?.invoke(
+      await ipcService.invoke(
         SUBSET_CHANNELS.SAVE as 'evaluation:save-test-subset',
         {
           name: subsetName.trim(),
@@ -224,7 +225,7 @@ export const TestCaseManager: React.FC = () => {
 
   const handleDeleteSubset = async (fileName: string) => {
     try {
-      await window.electronAPI?.invoke(
+      await ipcService.invoke(
         SUBSET_CHANNELS.DELETE as 'evaluation:delete-test-subset',
         fileName
       );

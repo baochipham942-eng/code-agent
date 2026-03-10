@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getConfigService } from '../../services';
 import { createLogger } from '../../services/infra/logger';
 import { DEFAULT_MODELS } from '../../../shared/constants';

@@ -15,6 +15,7 @@ import {
 } from '../../../../shared/types/evaluation';
 import { IPC_CHANNELS } from '../../../../shared/ipc';
 import { formatDuration } from '../../../../shared/utils/format';
+import ipcService from '../../../services/ipcService';
 
 interface EvaluationPanelProps {
   sessionId: string;
@@ -29,7 +30,7 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
   const [started, setStarted] = useState(false);
 
   const runEvaluation = useCallback(async () => {
-    if (!window.electronAPI) {
+    if (!ipcService.isAvailable()) {
       setError('Electron API 不可用');
       return;
     }
@@ -37,7 +38,7 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
     setLoading(true);
     setError(null);
     try {
-      const evalResult = await window.electronAPI.invoke(
+      const evalResult = await ipcService.invoke(
         IPC_CHANNELS.EVALUATION_RUN,
         { sessionId, save: true }
       );
@@ -52,10 +53,10 @@ export function EvaluationPanel({ sessionId, onClose }: EvaluationPanelProps) {
   // 不再自动触发评测，改为用户点击按钮后触发
 
   const handleExport = async (format: EvaluationExportFormat) => {
-    if (!result || !window.electronAPI) return;
+    if (!result || !ipcService.isAvailable()) return;
     setExporting(true);
     try {
-      const content = await window.electronAPI.invoke(
+      const content = await ipcService.invoke(
         IPC_CHANNELS.EVALUATION_EXPORT,
         { result, format }
       );

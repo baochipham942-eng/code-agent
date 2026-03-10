@@ -8,6 +8,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import { WebModeBanner } from '../WebModeBanner';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('AboutSettings');
 
@@ -22,7 +23,7 @@ export const AboutSettings: React.FC = () => {
   useEffect(() => {
     const loadVersion = async () => {
       try {
-        const v = await window.electronAPI?.invoke(IPC_CHANNELS.APP_GET_VERSION);
+        const v = await ipcService.invoke(IPC_CHANNELS.APP_GET_VERSION);
         if (v) setVersion(v);
       } catch (error) {
         logger.error('Failed to load version', error);

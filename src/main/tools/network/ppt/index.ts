@@ -4,7 +4,7 @@
 //   → 大纲生成 → 资产生成 → 组装 PPT → 截图 → VLM 审查 → 自动修正
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../../types';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';

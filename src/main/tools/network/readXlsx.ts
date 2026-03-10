@@ -2,7 +2,7 @@
 // Read XLSX Tool - 读取 Excel 表格内容
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
 import ExcelJS from 'exceljs';

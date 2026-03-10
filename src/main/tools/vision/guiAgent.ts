@@ -3,7 +3,7 @@
 // Gen 6: 使用 doubao-seed-1-6-vision 视觉模型执行桌面 GUI 任务
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';

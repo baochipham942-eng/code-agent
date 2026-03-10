@@ -2,7 +2,7 @@
 // memory_search Tool - Search through stored memories and knowledge
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getMemoryService } from '../../memory/memoryService';
 
 export const memorySearchTool: Tool = {

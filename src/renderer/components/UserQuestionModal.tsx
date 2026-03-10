@@ -8,6 +8,7 @@ import type { UserQuestionRequest, UserQuestionResponse } from '@shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Modal, ModalFooter } from './primitives/Modal';
 import { createLogger } from '../utils/logger';
+import ipcService from '../services/ipcService';
 
 const logger = createLogger('UserQuestionModal');
 
@@ -71,7 +72,7 @@ export const UserQuestionModal: React.FC<Props> = ({ request, onClose }) => {
     };
 
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.USER_QUESTION_RESPONSE, response);
+      await ipcService.invoke(IPC_CHANNELS.USER_QUESTION_RESPONSE, response);
       onClose();
     } catch (error) {
       logger.error('Failed to submit response', error);

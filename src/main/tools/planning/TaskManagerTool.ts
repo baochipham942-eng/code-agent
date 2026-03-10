@@ -3,7 +3,7 @@
 // Phase 2: Tool Schema Consolidation (Group 3: 4->1)
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { taskCreateTool } from './taskCreate';
 import { taskGetTool } from './taskGet';
 import { taskListTool } from './taskList';

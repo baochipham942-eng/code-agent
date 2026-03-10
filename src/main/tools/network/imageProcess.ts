@@ -3,7 +3,7 @@
 // 支持格式转换、压缩、缩放
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
 import sharp from 'sharp';

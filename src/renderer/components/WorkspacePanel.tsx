@@ -19,6 +19,7 @@ import {
 import type { FileInfo } from '@shared/types';
 import { createLogger } from '../utils/logger';
 import { isWebMode } from '../utils/platform';
+import ipcService from '../services/ipcService';
 
 const logger = createLogger('WorkspacePanel');
 
@@ -51,10 +52,10 @@ export const WorkspacePanel: React.FC = () => {
   const loadWorkspace = async () => {
     setLoading(true);
     try {
-      const path = await window.electronAPI?.invoke('workspace:get-current');
+      const path = await ipcService.invoke('workspace:get-current');
       if (path) {
         setWorkspacePath(path as string);
-        const files = await window.electronAPI?.invoke('workspace:list-files', path as string);
+        const files = await ipcService.invoke('workspace:list-files', path as string);
         setFileTree(files ? convertToFileTree(files as FileInfo[]) : []);
       }
     } catch (error) {
@@ -69,14 +70,14 @@ export const WorkspacePanel: React.FC = () => {
       if (isWebMode()) {
         if (!manualPath?.trim()) return;
         setWorkspacePath(manualPath.trim());
-        const files = await window.electronAPI?.invoke('workspace:list-files', manualPath.trim());
+        const files = await ipcService.invoke('workspace:list-files', manualPath.trim());
         setFileTree(files ? convertToFileTree(files as FileInfo[]) : []);
         return;
       }
-      const path = await window.electronAPI?.invoke('workspace:select-directory');
+      const path = await ipcService.invoke('workspace:select-directory');
       if (path) {
         setWorkspacePath(path as string);
-        const files = await window.electronAPI?.invoke('workspace:list-files', path as string);
+        const files = await ipcService.invoke('workspace:list-files', path as string);
         setFileTree(files ? convertToFileTree(files as FileInfo[]) : []);
       }
     } catch (error) {

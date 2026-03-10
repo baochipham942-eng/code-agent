@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, ModalFooter } from '../../primitives';
 import { IPC_CHANNELS, SUBSET_CHANNELS } from '@shared/ipc';
+import ipcService from '../../../services/ipcService';
 
 interface TestCaseInfo {
   id: string;
@@ -74,10 +75,10 @@ export const CreateExperimentDialog: React.FC<CreateExperimentDialogProps> = ({
       setIsLoadingCases(true);
       try {
         const [cases, subsets] = await Promise.all([
-          window.electronAPI?.invoke(
+          ipcService.invoke(
             IPC_CHANNELS.EVALUATION_LIST_TEST_CASES
           ) as Promise<TestCaseInfo[] | undefined>,
-          window.electronAPI?.invoke(
+          ipcService.invoke(
             SUBSET_CHANNELS.LIST as 'evaluation:list-test-subsets'
           ) as Promise<TestSubsetInfo[] | undefined>,
         ]);

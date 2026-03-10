@@ -20,6 +20,7 @@ import { Button, Input } from '../../../primitives';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { UI } from '@shared/constants';
 import { createLogger } from '../../../../utils/logger';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('ServiceSection');
 
@@ -72,7 +73,7 @@ export const ServiceSection: React.FC = () => {
   useEffect(() => {
     const loadJiraConfig = async () => {
       try {
-        const result = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET_INTEGRATION, 'jira');
+        const result = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET_INTEGRATION, 'jira');
         if (result) {
           setJiraConfig({
             baseUrl: result.baseUrl || '',
@@ -111,7 +112,7 @@ export const ServiceSection: React.FC = () => {
     setJiraSaveStatus('idle');
 
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET_INTEGRATION, {
+      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET_INTEGRATION, {
         integration: 'jira',
         config: jiraConfig as unknown as Record<string, string>,
       });

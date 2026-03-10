@@ -28,7 +28,11 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "createUpdaterArtifacts": "v1Compatible",
     "category": "DeveloperTool",
     "icon": [
       "icons/32x32.png",
@@ -51,6 +55,14 @@
     ],
     "macOS": {
       "minimumSystemVersion": "11.0"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/anthropics/code-agent/releases/latest/download/latest.json"
+      ],
+      "pubkey": "PLACEHOLDER_KEY"
     }
   }
 }

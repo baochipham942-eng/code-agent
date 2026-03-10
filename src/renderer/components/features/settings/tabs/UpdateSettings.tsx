@@ -3,13 +3,14 @@
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
-import { Download, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
+import { Download, RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/types';
 import { createLogger } from '../../../../utils/logger';
-import { isWebMode } from '../../../../utils/platform';
+import { isWebMode, isTauriMode } from '../../../../utils/platform';
+import { tauriCheckForUpdate, tauriInstallUpdate } from '../../../../utils/tauriUpdater';
 import { WebModeBanner } from '../WebModeBanner';
 
 const logger = createLogger('UpdateSettings');
@@ -35,13 +36,21 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
 }) => {
   const { t } = useI18n();
   const [isChecking, setIsChecking] = useState(false);
+  const [isInstalling, setIsInstalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [localVersion, setLocalVersion] = useState<string | null>(null);
+
+  const runningInTauri = isTauriMode();
 
   // Load local version immediately on mount
   React.useEffect(() => {
     const loadLocalVersion = async () => {
       try {
+        if (runningInTauri) {
+          // In Tauri mode, version comes from the update check itself
+          // (tauri.conf.json version). We'll populate it on first check.
+          return;
+        }
         const version = await window.electronAPI?.invoke(IPC_CHANNELS.APP_GET_VERSION);
         if (version) {
           setLocalVersion(version);
@@ -51,7 +60,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
       }
     };
     loadLocalVersion();
-  }, []);
+  }, [runningInTauri]);
 
   // Get current version: prefer updateInfo, then local version, then placeholder
   const currentVersion = updateInfo?.currentVersion || localVersion || '...';
@@ -60,15 +69,38 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     setIsChecking(true);
     setError(null);
     try {
-      const info = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_CHECK);
-      if (info) {
+      if (runningInTauri) {
+        const info = await tauriCheckForUpdate();
         onUpdateInfoChange(info);
+        if (!localVersion && info.currentVersion) {
+          setLocalVersion(info.currentVersion);
+        }
+      } else {
+        const info = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_CHECK);
+        if (info) {
+          onUpdateInfoChange(info);
+        }
       }
     } catch (err) {
       setError(t.update?.checkError || '检查更新失败，请稍后重试');
       logger.error('Update check failed', err);
     } finally {
       setIsChecking(false);
+    }
+  };
+
+  const handleTauriInstall = async () => {
+    setIsInstalling(true);
+    setError(null);
+    try {
+      await tauriInstallUpdate();
+      // If we reach here, the app should have restarted.
+      // In case it doesn't, reset the state.
+      setIsInstalling(false);
+    } catch (err) {
+      setError('更新安装失败，请稍后重试');
+      logger.error('Tauri update install failed', err);
+      setIsInstalling(false);
     }
   };
 
@@ -86,6 +118,9 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
+
+  // Whether the check/update buttons should be disabled
+  const isDisabled = isWebMode();
 
   return (
     <div className="space-y-6">
@@ -106,7 +141,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
             <div className="text-lg font-semibold text-zinc-200">v{currentVersion}</div>
           </div>
           <Button
-            disabled={isWebMode()}
+            disabled={isDisabled}
             onClick={checkForUpdates}
             loading={isChecking}
             variant="secondary"
@@ -144,17 +179,30 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
                 </div>
               </div>
 
-              {/* Update Now Button */}
-              <Button
-                disabled={isWebMode()}
-                onClick={onShowUpdateModal}
-                variant="primary"
-                fullWidth
-                leftIcon={<Download className="w-4 h-4" />}
-                className="!bg-indigo-600 hover:!bg-indigo-500"
-              >
-                {t.update?.download || '立即更新'}
-              </Button>
+              {/* Update Now Button — Tauri uses direct install, Electron uses modal */}
+              {runningInTauri ? (
+                <Button
+                  disabled={isDisabled || isInstalling}
+                  onClick={handleTauriInstall}
+                  variant="primary"
+                  fullWidth
+                  leftIcon={isInstalling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                  className="!bg-indigo-600 hover:!bg-indigo-500"
+                >
+                  {isInstalling ? '正在下载并安装...' : (t.update?.download || '立即更新')}
+                </Button>
+              ) : (
+                <Button
+                  disabled={isDisabled}
+                  onClick={onShowUpdateModal}
+                  variant="primary"
+                  fullWidth
+                  leftIcon={<Download className="w-4 h-4" />}
+                  className="!bg-indigo-600 hover:!bg-indigo-500"
+                >
+                  {t.update?.download || '立即更新'}
+                </Button>
+              )}
             </div>
           ) : (
             <div className="flex items-center gap-3">

@@ -1,19 +1,29 @@
 /**
- * Platform detection utilities for Web/Electron mode UI degradation.
+ * Platform detection utilities for Web/Electron/Tauri mode UI degradation.
  *
  * Web mode is determined by the Vite build target injected in vite.web.config.ts:
  *   'import.meta.env.VITE_BUILD_TARGET': JSON.stringify('web')
  *
+ * Tauri mode is detected by checking for the __TAURI_INTERNALS__ global that
+ * Tauri 2.x injects into the webview at runtime.
+ *
  * This is more reliable than checking window.electronAPI because the Web build
  * injects an HTTP polyfill for electronAPI.
  */
+
+export function isTauriMode(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    '__TAURI_INTERNALS__' in window
+  );
+}
 
 export function isWebMode(): boolean {
   return import.meta.env.VITE_BUILD_TARGET === 'web';
 }
 
 export function isElectronMode(): boolean {
-  return !isWebMode();
+  return !isWebMode() && !isTauriMode();
 }
 
 /** Copy text to clipboard with fallback */

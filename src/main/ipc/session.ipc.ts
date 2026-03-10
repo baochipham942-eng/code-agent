@@ -46,7 +46,6 @@ async function handleCreate(
 ): Promise<Session> {
   const { getConfigService, getOrchestrator, setCurrentSessionId } = deps;
   const configService = getConfigService();
-  const orchestrator = getOrchestrator();
 
   if (!configService) {
     throw new Error('Services not initialized');
@@ -56,6 +55,9 @@ async function handleCreate(
   const memoryService = getMemoryService();
   const memoryTrigger = getMemoryTriggerService();
   const settings = configService.getSettings();
+
+  // Get working directory from current orchestrator (if any)
+  const orchestrator = getOrchestrator();
   const workingDirectory = orchestrator?.getWorkingDirectory();
 
   const session = await sessionManager.createSession({
@@ -73,10 +75,13 @@ async function handleCreate(
   sessionManager.setCurrentSession(session.id);
   setCurrentSessionId(session.id);
 
-  // 关键：创建新会话时必须清空 orchestrator 的消息历史，防止上下文污染
-  if (orchestrator) {
-    orchestrator.clearMessages();
-  }
+  // 关键：创建新会话时, TaskManager 会为新 session 创建新的 orchestrator
+  // 旧 orchestrator 的消息历史不会污染新会话（per-session 隔离）
+  // 确保新 session 的 orchestrator 被创建
+  const { getTaskManager } = await import('../task');
+  const taskManager = getTaskManager();
+  taskManager.cleanup(session.id); // Clean up any stale state
+  taskManager.setCurrentSessionId(session.id);
 
   memoryService.setContext(session.id, workingDirectory || undefined);
 
@@ -93,11 +98,10 @@ async function handleLoad(
   deps: SessionHandlerDeps,
   payload: { sessionId: string }
 ): Promise<Session> {
-  const { getOrchestrator, setCurrentSessionId } = deps;
+  const { setCurrentSessionId } = deps;
   const sessionManager = getSessionManager();
   const memoryService = getMemoryService();
   const memoryTrigger = getMemoryTriggerService();
-  const orchestrator = getOrchestrator();
 
   const session = await sessionManager.restoreSession(payload.sessionId);
   if (!session) {
@@ -108,17 +112,20 @@ async function handleLoad(
 
   memoryService.setContext(payload.sessionId, session.workingDirectory || undefined);
 
-  if (orchestrator) {
-    // 关键：同步消息历史到 orchestrator，否则模型看不到之前的对话上下文
-    if (session.messages && session.messages.length > 0) {
-      orchestrator.setMessages(session.messages);
-    } else {
-      orchestrator.clearMessages();
-    }
+  // 通过 TaskManager 管理 orchestrator 生命周期
+  const { getTaskManager } = await import('../task');
+  const taskManager = getTaskManager();
+  taskManager.setCurrentSessionId(payload.sessionId);
 
-    if (session.workingDirectory) {
-      orchestrator.setWorkingDirectory(session.workingDirectory);
-    }
+  // 同步消息历史到 orchestrator（TaskManager 会自动 getOrCreate）
+  if (session.messages && session.messages.length > 0) {
+    taskManager.setSessionContext(payload.sessionId, session.messages);
+  }
+
+  // 同步工作目录
+  const orchestrator = taskManager.getOrCreateCurrentOrchestrator(payload.sessionId);
+  if (orchestrator && session.workingDirectory) {
+    orchestrator.setWorkingDirectory(session.workingDirectory);
   }
 
   // Gen5: Trigger memory retrieval on session load (async, non-blocking)

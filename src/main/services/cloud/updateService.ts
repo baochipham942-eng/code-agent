@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { createLogger } from '../infra/logger';
 
+import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('UpdateService');
 
 // ----------------------------------------------------------------------------
@@ -51,7 +52,7 @@ type ErrorCallback = (error: Error) => void;
 // UpdateService Class
 // ----------------------------------------------------------------------------
 
-export class UpdateService {
+export class UpdateService implements Disposable {
   private static instance: UpdateService | null = null;
 
   private config: UpdateServiceConfig;
@@ -347,6 +348,10 @@ export class UpdateService {
   /**
    * Stop automatic update checking
    */
+  async dispose(): Promise<void> {
+    this.stopAutoCheck();
+  }
+
   stopAutoCheck(): void {
     if (this.checkTimer) {
       clearInterval(this.checkTimer);
@@ -559,3 +564,11 @@ export function getUpdateService(): UpdateService {
 export function isUpdateServiceInitialized(): boolean {
   return updateServiceInstance !== null;
 }
+
+
+// Dispose registration (conditional — only if initialized)
+try {
+  if (isUpdateServiceInitialized()) {
+    getServiceRegistry().register('UpdateService', getUpdateService());
+  }
+} catch { /* not yet initialized */ }

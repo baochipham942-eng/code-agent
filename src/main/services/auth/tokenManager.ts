@@ -4,6 +4,7 @@
 
 import type { Message } from '../../../shared/types';
 import { CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW } from '../../../shared/constants';
+import { Disposable, getServiceRegistry } from '../serviceRegistry';
 
 // ----------------------------------------------------------------------------
 // Types
@@ -91,7 +92,7 @@ function countMessageTokens(message: Message): number {
 // Token Manager
 // ----------------------------------------------------------------------------
 
-export class TokenManager {
+export class TokenManager implements Disposable {
   private model: string;
   private maxContextTokens: number;
   private reservedOutputTokens: number;
@@ -348,6 +349,10 @@ export class TokenManager {
   /**
    * 清空使用记录
    */
+  async dispose(): Promise<void> {
+    this.clearUsageHistory();
+  }
+
   clearUsageHistory(): void {
     this.usageHistory = [];
   }
@@ -399,3 +404,14 @@ export function getTokenManager(model: string = 'default'): TokenManager {
   }
   return tokenManagers.get(model)!;
 }
+
+// Register a disposable wrapper for all TokenManager instances
+const tokenManagerDisposable: Disposable = {
+  async dispose(): Promise<void> {
+    for (const tm of tokenManagers.values()) {
+      await tm.dispose();
+    }
+    tokenManagers.clear();
+  }
+};
+getServiceRegistry().register('TokenManager', tokenManagerDisposable);

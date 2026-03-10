@@ -26,6 +26,7 @@ import type {
 } from '../../../shared/types/lab';
 
 const execFileAsync = promisify(execFile);
+import { Disposable, getServiceRegistry } from '../serviceRegistry';
 
 // 项目 GitHub URL
 const PROJECT_URLS: Record<LabProjectType, string> = {
@@ -42,7 +43,7 @@ const DEFAULT_TRAINING_CONFIG: TrainingConfig = {
   device: 'cpu',
 };
 
-export class LabService {
+export class LabService implements Disposable {
   private labDir: string;
   private trainingProcesses: Map<LabProjectType, ChildProcess> = new Map();
   private mainWindow: BrowserWindow | null = null;
@@ -472,11 +473,12 @@ export class LabService {
   /**
    * 清理资源
    */
-  dispose(): void {
+  async dispose(): Promise<void> {
     // 停止所有训练进程
     for (const [projectType] of this.trainingProcesses) {
-      this.stopTraining(projectType);
+      await this.stopTraining(projectType);
     }
+    this.trainingProcesses.clear();
   }
 }
 
@@ -489,3 +491,5 @@ export function getLabService(): LabService {
   }
   return labServiceInstance;
 }
+
+getServiceRegistry().register('LabService', getLabService());

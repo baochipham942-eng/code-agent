@@ -30,6 +30,7 @@ import {
 } from './skillRepositories';
 import { createLogger } from '../infra/logger';
 
+import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SkillRepositoryService');
 
 // ============================================================================
@@ -40,12 +41,17 @@ const logger = createLogger('SkillRepositoryService');
  * Skill 仓库管理服务
  * 负责下载、更新、删除远程 Skill 仓库
  */
-class SkillRepositoryService {
+class SkillRepositoryService implements Disposable {
   private skillsDir: string; // ~/.code-agent/skills/
   private configPath: string; // ~/.code-agent/skill-config.json
   private config: SkillConfig;
   private libraries: Map<string, LocalSkillLibrary> = new Map();
   private initialized = false;
+
+  async dispose(): Promise<void> {
+    this.libraries.clear();
+    this.initialized = false;
+  }
 
   constructor() {
     const baseDir = path.join(os.homedir(), '.code-agent');
@@ -660,4 +666,5 @@ export function resetSkillRepositoryService(): void {
   globalInstance = null;
 }
 
+getServiceRegistry().register('SkillRepositoryService', getSkillRepositoryService());
 export { SkillRepositoryService };

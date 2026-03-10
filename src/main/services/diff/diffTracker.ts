@@ -9,6 +9,7 @@ import * as Diff from 'diff';
 import { createLogger } from '../infra/logger';
 import type { FileDiff, DiffSummary } from '../../../shared/types/diff';
 
+import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('DiffTracker');
 
 // 内存缓存：sessionId -> FileDiff[]
@@ -17,7 +18,7 @@ const sessionDiffs = new Map<string, FileDiff[]>();
 // 每个 session 最大保存 diff 数
 const MAX_DIFFS_PER_SESSION = 200;
 
-export class DiffTracker {
+export class DiffTracker implements Disposable {
   /**
    * 计算 diff 并存储
    */
@@ -130,6 +131,10 @@ export class DiffTracker {
   /**
    * 清理 session 数据
    */
+  async dispose(): Promise<void> {
+    sessionDiffs.clear();
+  }
+
   clearSession(sessionId: string): void {
     sessionDiffs.delete(sessionId);
   }
@@ -147,6 +152,8 @@ export function getDiffTracker(): DiffTracker {
   }
   return instance;
 }
+
+getServiceRegistry().register('DiffTracker', getDiffTracker());
 
 export function resetDiffTracker(): void {
   instance = null;

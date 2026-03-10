@@ -24,7 +24,7 @@ export {
 } from './deepResearchMode';
 
 // Semantic research components (new)
-export { IntentClassifier, type IntentClassifierConfig } from './intentClassifier';
+export { IntentClassifier, type IntentClassifierConfig } from '../routing/intentClassifier';
 export {
   DataSourceRouter,
   type DataSourceRouterConfig,

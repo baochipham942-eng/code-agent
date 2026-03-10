@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 5.8 (对应 v0.16.37)
-> 日期: 2026-02-19
+> 版本: 6.0 (对应 v0.16.44)
+> 日期: 2026-03-09
 > 作者: Lin Chen
 
 本文档已拆分为模块化的架构文档，便于维护和查阅。
@@ -177,13 +177,14 @@
 
 | 层级 | 技术选型 |
 |------|----------|
-| 桌面框架 | Electron 38+ |
+| 桌面框架 | Tauri 2.x (Rust) — 替代 Electron |
 | 前端框架 | React 18 + TypeScript 5.6 |
 | 状态管理 | Zustand 5 |
 | 样式 | Tailwind CSS 3.4 |
 | 本地存储 | SQLite (better-sqlite3) |
 | 云端存储 | Supabase + pgvector |
 | AI 模型 | Moonshot Kimi K2.5 (主要), 智谱/DeepSeek (备用) |
+| 本地桥接 | packages/bridge (localhost:9527) |
 
 ### 8 代工具演进
 
@@ -219,7 +220,7 @@ code-agent/
 │       └── 001-turn-based-messaging.md
 │
 ├── src/
-│   ├── main/                    # Electron 主进程
+│   ├── main/                    # 后端主进程 (Tauri/Node.js)
 │   │   ├── agent/              # AgentOrchestrator, AgentLoop
 │   │   ├── prompts/           # Prompt system
 │   │   ├── model/              # ModelRouter
@@ -238,6 +239,8 @@ code-agent/
 │   └── preload/                # Preload 脚本
 │
 ├── vercel-api/                 # 云端 API (Vercel)
+├── packages/bridge/              # Local Bridge 服务 (localhost:9527)
+
 └── supabase/                   # 数据库迁移
 ```
 
@@ -262,3 +265,101 @@ code-agent/
 
 - [Release Notes](./releases/) — 版本发布记录
 - [ADR-005: Eval Engineering Key Decisions](./decisions/005-eval-engineering.md) — Excel Agent Benchmark 优化的关键工程决策
+
+---
+
+## 平台架构（v0.16.44+ 三端产品）
+
+项目已从 Electron 迁移到 Tauri 2.x，并扩展为三端产品：
+
+```
+┌─ Web 端（浏览器）─────────────────────────────┐
+│  React 18 + Vite                              │
+│  ├── 云端功能 → webServer API                  │
+│  └── 本地功能 → Bridge (localhost:9527)         │
+└───────────────────────────────────────────────┘
+┌─ App 端（Tauri 2.x）─────────────────────────┐
+│  Rust Shell → spawn Node.js webServer         │
+│  ├── tauri-plugin-updater 原生自动更新          │
+│  ├── Tauri 2.x capabilities 权限模型           │
+│  └── 完整本地能力（文件/Shell/进程）             │
+└───────────────────────────────────────────────┘
+┌─ CLI 端 ─────────────────────────────────────┐
+│  Node.js 单文件 (esbuild)                     │
+│  ├── 适合极客和 Agent 调用                      │
+│  └── npm install -g code-agent-cli             │
+└───────────────────────────────────────────────┘
+```
+
+### 关键技术决策
+
+- **Tauri 2.x 替代 Electron**：DMG 从 742MB → 33MB（95% 缩减）
+- **Rust shell 启动 Node.js webServer 子进程**，health check 检测开发模式
+- **CSP 安全策略 + capabilities 权限模型**
+
+### 三端产品定位
+
+| 端 | 定位 | 用户画像 |
+|----|------|----------|
+| Web | 尝鲜体验 | 无需安装，浏览器即用 |
+| App (Tauri) | 完整体验 | 主力用户，完整本地能力 |
+| CLI | 极客/Agent 调用 | 开发者、自动化场景 |
+
+---
+
+## Local Bridge 服务
+
+为 Web 端提供本地能力的桥接服务，通过 HTTP + WebSocket 在 localhost:9527 运行。
+
+### 目录结构
+
+```
+packages/bridge/
+├── src/
+│   ├── server.ts         — HTTP + WebSocket 服务 (:9527)
+│   ├── security/         — 三级权限 + 沙箱 + 命令过滤
+│   └── tools/            — 12 个工具实现
+└── scripts/              — 平台安装/卸载脚本
+```
+
+### 工具清单（三级权限）
+
+| 级别 | 权限 | 工具 |
+|------|------|------|
+| L1 只读 | 自动执行 | file_read, file_glob, file_grep, directory_list, clipboard_read, system_info |
+| L2 写入 | 需确认 | file_write, file_edit, file_download, open_file |
+| L3 执行 | 白名单+确认 | shell_exec, process_manage |
+
+### 安全机制
+
+- **工作目录沙箱**：path.resolve 后检查是否在允许目录内
+- **命令黑名单**：rm -rf /, sudo, curl|bash 等
+- **Auth Token**：启动时生成，存储于 ~/.code-agent-bridge/token
+- **CORS**：仅允许 localhost
+
+### Web 端工具调用数据流
+
+```
+agentLoop.executeTool(Read)
+  → webServer 识别为本地工具 (isLocalTool)
+  → SSE 推送 tool_call_local 事件
+  → 前端 httpTransport 拦截
+  → LocalBridgeClient.invokeTool("file_read", params)
+  → Bridge localhost:9527 执行
+  → POST /api/tool-result 回传
+  → agentLoop 继续对话
+```
+
+### 关键文件
+
+| 文件 | 描述 |
+|------|------|
+| `packages/bridge/*` | Bridge 服务完整实现 |
+| `src/main/tools/localBridge.ts` | 本地工具识别 |
+| `src/renderer/stores/localBridgeStore.ts` | 前端 Bridge 状态管理 |
+| `src/renderer/services/localTools.ts` | 前端工具调用适配 |
+| `src/main/webServer.ts` | SSE tool_call_local 事件推送 |
+| `src/renderer/services/httpTransport.ts` | 前端 SSE 拦截层 |
+| `src/renderer/components/features/chat/ChatView.tsx` | 对话拦截集成 |
+| `src/renderer/components/features/settings/MCPSettings.tsx` | MCP 设置页 Bridge 手风琴 |
+| `src/renderer/components/features/settings/ProductMatrixSettings.tsx` | 产品矩阵设置页 |

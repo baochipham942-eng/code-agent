@@ -26,7 +26,7 @@ import { getConfigService, getAuthService, getLangfuseService, getBudgetService,
 import { logCollector } from '../mcp/logCollector.js';
 import { generateMessageId } from '../../shared/utils/id';
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
-import { classifyIntent } from './hybrid/intentClassifier';
+import { classifyIntent } from '../routing/intentClassifier';
 import { getTaskOrchestrator } from '../planning/taskOrchestrator';
 import { getMaxIterations } from '../services/cloud/featureFlagService';
 import { createLogger } from '../services/infra/logger';

@@ -189,7 +189,7 @@ curl "https://code-agent-beta.vercel.app/api/prompts?version=true"
 | 场景 | 路径 |
 |------|------|
 | 开发模式 | `/Users/linchen/Downloads/ai/code-agent/.env` |
-| Electron 打包 | `/Applications/Code Agent.app/Contents/Resources/.env` |
+| Tauri 打包 | 通过 tauri.conf.json resources 自动打包 |
 | Tauri 打包 | 通过 tauri.conf.json resources 自动打包，无需手动拷贝 |
 
 **注意**：修改 `.env` 后，Electron 打包应用需要手动同步（Tauri 不需要）：
@@ -234,3 +234,53 @@ HTTPS_PROXY=http://127.0.0.1:7897 cargo tauri dev
 | 构建命令 | `npm run dist:mac` | `cargo tauri build` |
 | 开发命令 | `npm run dev` | `cargo tauri dev` |
 | Auto-update | Electron updater | `tauri signer generate` + pubkey in tauri.conf.json |
+
+---
+
+## Bridge 服务部署
+
+Local Bridge 为 Web 端提供本地能力（文件读写、Shell 执行等），通过 localhost:9527 通信。
+
+### 安装
+
+**macOS:**
+```bash
+curl -fsSL https://code-agent.dev/install.sh | bash
+```
+
+**Windows:**
+```powershell
+irm https://code-agent.dev/install.ps1 | iex
+```
+
+### 构建
+
+```bash
+npm run build:bridge
+# 产物: dist/bridge/code-agent-bridge.cjs (1.8MB)
+```
+
+### 启动
+
+```bash
+node dist/bridge/code-agent-bridge.cjs --dir /path/to/project
+# 监听 localhost:9527
+```
+
+### 验证
+
+```bash
+# 健康检查
+curl http://localhost:9527/api/health
+
+# 带 Auth Token 调用
+TOKEN=$(cat ~/.code-agent-bridge/token)
+curl -H "Authorization: Bearer $TOKEN" http://localhost:9527/api/tools
+```
+
+### 安全说明
+
+- Auth Token 在首次启动时自动生成，存储于 `~/.code-agent-bridge/token`
+- CORS 仅允许 localhost 来源
+- 工作目录沙箱：所有文件操作限制在 `--dir` 指定的目录内
+- 命令黑名单：阻止 `rm -rf /`、`sudo`、`curl|bash` 等危险命令

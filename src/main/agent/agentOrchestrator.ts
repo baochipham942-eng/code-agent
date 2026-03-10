@@ -21,7 +21,7 @@ import { getSessionManager, getAuthService } from '../services';
 import type { PlanningService } from '../planning';
 import { DeepResearchMode, SemanticResearchOrchestrator } from '../research';
 import { analyzeTask } from './hybrid/taskRouter';
-import { classifyIntent } from './hybrid/intentClassifier';
+import { classifyIntent } from '../routing/intentClassifier';
 import { getSessionStateManager } from '../session/sessionStateManager';
 import { ModelRouter } from '../model/modelRouter';
 import { generateMessageId, generatePermissionRequestId } from '../../shared/utils/id';

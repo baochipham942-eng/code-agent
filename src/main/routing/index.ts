@@ -18,3 +18,11 @@ export type {
   AgentsConfigFile,
   AgentRoutingEvent,
 } from '../../shared/types/agentRouting';
+
+// Intent Classifier (unified — research + hybrid agent routing)
+export {
+  IntentClassifier,
+  type IntentClassifierConfig,
+  type TaskIntent,
+  classifyIntent,
+} from './intentClassifier';

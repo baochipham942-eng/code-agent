@@ -21,7 +21,7 @@ AI 编程助手桌面应用，复刻 Claude Code 架构来研究 AI Agent 能力
 
 ## 技术栈
 
-- **框架**: Electron 38 / Tauri 2.x + React 18 + TypeScript
+- **框架**: Tauri 2.x + React 18 + TypeScript
 - **构建**: esbuild (main/preload) + Vite (renderer)
 - **样式**: Tailwind CSS | **状态**: Zustand
 - **AI**: Kimi K2.5（主）, 智谱/DeepSeek/OpenAI（备）, Codex CLI（沙箱+交叉验证, MCP）
@@ -47,13 +47,12 @@ AI 编程助手桌面应用，复刻 Claude Code 架构来研究 AI Agent 能力
 ## 常用命令
 
 ```bash
-npm run dev          # 开发模式（Electron）
 npm run build        # 构建
+npm run build:web    # Web 构建（Tauri 前端）
 npm run build:cli    # CLI 构建（独立于 build）
-npm run dist:mac     # 打包 macOS（Electron, ~169MB DMG）
 npm run typecheck    # 类型检查
-cargo tauri dev      # 开发模式（Tauri，需 HTTPS_PROXY=http://127.0.0.1:7897）
-cargo tauri build    # 打包 macOS（Tauri, ~33MB DMG）
+cargo tauri dev      # 开发模式（需 HTTPS_PROXY=http://127.0.0.1:7897）
+cargo tauri build    # 打包 macOS（~33MB DMG）
 ```
 
 ## 开发规范
@@ -103,26 +102,18 @@ grep -rn "'300000\|300_000'" src/main/ --include="*.ts"
 
 ## 快速参考
 
-### 打包发布（Electron）
+### 打包发布
 ```bash
 npm run typecheck && npm version patch --no-git-tag-version
-git add package.json && git commit -m "chore: bump version" && git push
-npm run build && npm run rebuild-native && rm -rf release/ && npm run dist:mac
-cp .env "/Applications/Code Agent.app/Contents/Resources/.env"
+# 同步 src-tauri/tauri.conf.json 中的 version
+git add package.json package-lock.json src-tauri/tauri.conf.json
+git commit -m "chore: bump version to x.x.x" && git push
+npm run build && npm run build:web && HTTPS_PROXY=http://127.0.0.1:7897 cargo tauri build
+# 产物: src-tauri/target/release/bundle/dmg/Code Agent_*.dmg (~33MB)
 ```
 
-**⚠️ `rebuild-native` 不可跳过**：原生模块需用 Electron headers 重编译。
-
-### 打包发布（Tauri, ~33MB DMG）
-```bash
-npm run typecheck && npm version patch --no-git-tag-version
-git add package.json && git commit -m "chore: bump version" && git push
-npm run build && npm run build:web && cargo tauri build
-# 产物: src-tauri/target/release/bundle/dmg/Code Agent_*.dmg
-```
-
-**前置条件**: Rust 工具链（`rustup`, cargo in PATH）。
-**无需** `rebuild-native` 和 `.env` 手动拷贝（通过 tauri.conf.json resources 打包）。
+**前置条件**: Rust 工具链（`source ~/.cargo/env`）、代理（`HTTPS_PROXY=http://127.0.0.1:7897`）。
+`.env` 通过 tauri.conf.json resources 自动打包，无需手动拷贝。
 **Auto-update**: 首次发布前需 `tauri signer generate` 并将 pubkey 写入 tauri.conf.json。
 
 ### 本地数据库

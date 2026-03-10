@@ -1095,7 +1095,12 @@ function createApp(): express.Express {
     const handler = handlers.get(channel);
     if (handler) {
       try {
-        const result = await handler(null, req.method === 'GET' ? req.query : req.body);
+        const body = req.method === 'GET' ? req.query : req.body;
+        // Spread array bodies as positional args to match Electron IPC convention:
+        // ipcMain.handle(ch, (event, arg1, arg2, ...)) expects separate arguments
+        const result = Array.isArray(body)
+          ? await handler(null, ...body)
+          : await handler(null, body);
         res.json(result);
       } catch (error) {
         res.status(500).json({ error: formatError(error) });

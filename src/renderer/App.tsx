@@ -29,6 +29,7 @@ import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
 import { useMemoryEvents } from './hooks/useMemoryEvents';
+import { MemoryLearningProvider } from './components/features/memory';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { Activity, Cloud, Zap, Sparkles, GitBranch } from 'lucide-react';
@@ -393,6 +394,7 @@ export const App: React.FC = () => {
 
   return (
     <ErrorBoundary>
+      <MemoryLearningProvider>
       <div className="h-screen flex flex-col bg-zinc-950 text-zinc-200">
         {/* Main Content - Three-column layout with integrated title bars */}
         <div className="flex-1 flex overflow-hidden">
@@ -518,6 +520,7 @@ export const App: React.FC = () => {
 
 
       </div>
+      </MemoryLearningProvider>
     </ErrorBoundary>
   );
 };

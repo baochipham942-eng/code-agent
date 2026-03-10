@@ -503,12 +503,19 @@ function createApp(): express.Express {
       next();
       return;
     }
+    // Accept token from Authorization header or query param (for SSE EventSource)
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const queryToken = req.query.token as string | undefined;
+    let token: string | undefined;
+    if (authHeader?.startsWith('Bearer ')) {
+      token = authHeader.slice(7);
+    } else if (queryToken) {
+      token = queryToken;
+    }
+    if (!token) {
       res.status(401).json({ error: 'Missing or invalid Authorization header' });
       return;
     }
-    const token = authHeader.slice(7);
     if (!verifyToken(token)) {
       res.status(403).json({ error: 'Invalid auth token' });
       return;
@@ -1101,10 +1108,30 @@ function createApp(): express.Express {
 
   // ── Static file serving (production) ─────────────────────────────
   const staticDir = path.join(process.cwd(), 'dist', 'renderer');
-  app.use(express.static(staticDir));
-  // SPA fallback — serve index.html for non-API routes
+  app.use(express.static(staticDir, {
+    // Don't serve index.html via static middleware — we inject the auth token below
+    index: false,
+  }));
+
+  // SPA fallback — serve index.html with injected auth token
+  // This ensures only clients that load the page from this server can call APIs.
+  const indexPath = path.join(staticDir, 'index.html');
+  let cachedIndexHtml: string | null = null;
+
   app.get('/{*path}', (_req: Request, res: Response) => {
-    res.sendFile(path.join(staticDir, 'index.html'));
+    try {
+      if (!cachedIndexHtml) {
+        cachedIndexHtml = fs.readFileSync(indexPath, 'utf-8');
+      }
+      // Inject auth token into HTML so httpTransport can attach it to API requests
+      const injectedHtml = cachedIndexHtml.replace(
+        '<head>',
+        `<head><script>window.__CODE_AGENT_TOKEN__="${SERVER_AUTH_TOKEN}";</script>`
+      );
+      res.type('html').send(injectedHtml);
+    } catch {
+      res.status(404).send('index.html not found');
+    }
   });
 
   return app;

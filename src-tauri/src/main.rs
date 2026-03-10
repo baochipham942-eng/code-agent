@@ -1,4 +1,5 @@
 use reqwest::blocking::Client;
+use serde::Serialize;
 use std::{
     collections::HashSet,
     env,
@@ -168,9 +169,93 @@ fn install_signal_handler(app: &tauri::AppHandle) {
     });
 }
 
+// ============================================================================
+// Tauri Update Commands
+// ============================================================================
+
+#[derive(Serialize, Clone)]
+struct TauriUpdateInfo {
+    has_update: bool,
+    current_version: String,
+    latest_version: Option<String>,
+    release_notes: Option<String>,
+    date: Option<String>,
+}
+
+#[tauri::command]
+async fn check_for_update(app: tauri::AppHandle) -> Result<TauriUpdateInfo, String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let current_version = app.config().version.clone().unwrap_or_default();
+
+    let update = app
+        .updater()
+        .map_err(|e| format!("Failed to create updater: {e}"))?
+        .check()
+        .await
+        .map_err(|e| format!("Update check failed: {e}"))?;
+
+    match update {
+        Some(update) => Ok(TauriUpdateInfo {
+            has_update: true,
+            current_version,
+            latest_version: Some(update.version.clone()),
+            release_notes: update.body.clone(),
+            date: update.date.map(|d| d.to_string()),
+        }),
+        None => Ok(TauriUpdateInfo {
+            has_update: false,
+            current_version,
+            latest_version: None,
+            release_notes: None,
+            date: None,
+        }),
+    }
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let update = app
+        .updater()
+        .map_err(|e| format!("Failed to create updater: {e}"))?
+        .check()
+        .await
+        .map_err(|e| format!("Update check failed: {e}"))?;
+
+    if let Some(update) = update {
+        let mut started = false;
+        update
+            .download_and_install(
+                |chunk_length, content_length| {
+                    if !started {
+                        started = true;
+                        println!("Update download started, total size: {:?}", content_length);
+                    }
+                    println!("Downloaded {} bytes", chunk_length);
+                },
+                || {
+                    println!("Download finished, installing update...");
+                },
+            )
+            .await
+            .map_err(|e| format!("Failed to install update: {e}"))?;
+
+        // Restart the app after update
+        app.restart();
+    } else {
+        return Err("No update available".to_string());
+    }
+
+    Ok(())
+}
+
 fn main() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
+        .invoke_handler(tauri::generate_handler![check_for_update, install_update])
         .setup(|app| {
             if is_server_running() {
                 // Server already running (e.g. started by Tauri beforeDevCommand in dev mode)

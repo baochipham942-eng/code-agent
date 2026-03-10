@@ -84,18 +84,6 @@ export {
   extractIdentifiers,
 } from './crossVerify';
 
-// Review Loop (Harness Engineering: iterative quality cycle)
-export {
-  type ReviewLoopConfig,
-  type ReviewLoopResult,
-  type ReviewIteration,
-  type WorkerExecutor,
-  DEFAULT_REVIEW_LOOP_CONFIG,
-  shouldUseReviewLoop,
-  formatFeedbackForRevision,
-  executeReviewLoop,
-} from './reviewLoop';
-
 // Agent Swarm
 export {
   type AgentStatus,
@@ -105,10 +93,8 @@ export {
   type SwarmResult,
   type AgentExecutor,
   type ExtendedSwarmConfig,
-  type SwarmReviewResult,
   AgentSwarm,
   getAgentSwarm,
-  executeWithReviewLoop,
 } from './agentSwarm';
 
 // ============================================================================

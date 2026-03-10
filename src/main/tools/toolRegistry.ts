@@ -108,8 +108,6 @@ import {
   planReviewTool,
 } from './multiagent';
 
-// Evolution tools
-import { strategyOptimizeTool, toolCreateTool, selfEvaluateTool, learnPatternTool, codeExecuteTool, queryMetricsTool } from './evolution';
 
 // LSP tools
 import { lspTool, diagnosticsTool } from './lsp';
@@ -391,14 +389,6 @@ export class ToolRegistry {
     this.register(TeammateTool);
     // Plan review (cross-agent approval)
     this.register(planReviewTool);
-
-    // Gen 8 tools - Self-Evolution
-    this.register(strategyOptimizeTool);
-    this.register(toolCreateTool);
-    this.register(selfEvaluateTool);
-    this.register(learnPatternTool);
-    this.register(codeExecuteTool);
-    this.register(queryMetricsTool);
 
 
     // Phase 2: Unified tools (consolidated from multiple tools)

@@ -20,11 +20,7 @@ import {
   preCompactContextHook,
   type CompactionStrategy,
 } from './builtins/contextHooks';
-import {
-  sessionEndMetaLearningHook,
-  postToolUseFailureEvolutionHook,
-  type ToolExecutionRecord,
-} from './builtins/evolutionHooks';
+
 import {
   sessionStartAgentsInjectHook,
 } from './builtins/agentsHooks';
@@ -66,6 +62,7 @@ export interface BuiltinHookContext {
     success: boolean;
     timestamp: number;
   }>;
+  // Note: ToolExecutionRecord type removed with evolution module
   /** Token 信息（用于 PreCompact）*/
   tokenCount?: number;
   /** 目标 Token 数（用于 PreCompact）*/
@@ -222,10 +219,18 @@ export class BuiltinHookExecutor {
         return this.executeAutoCommitReminder(config, context, startTime);
 
       case 'session-end-meta-learning':
-        return this.executeSessionEndMetaLearning(config, context, startTime);
+        return {
+          action: 'allow',
+          message: 'Meta learning hook disabled (evolution module removed)',
+          duration: Date.now() - startTime,
+        };
 
       case 'tool-failure-learning':
-        return this.executeToolFailureLearning(config, context, startTime);
+        return {
+          action: 'continue',
+          message: 'Tool failure learning disabled (evolution module removed)',
+          duration: Date.now() - startTime,
+        };
 
       default:
         return {
@@ -427,72 +432,7 @@ export class BuiltinHookExecutor {
     };
   }
 
-  /**
-   * 执行会话结束元学习
-   */
-  private async executeSessionEndMetaLearning(
-    config: BuiltinHookConfig,
-    context: BuiltinHookContext,
-    startTime: number
-  ): Promise<BuiltinHookResult> {
-    if (!context.messages) {
-      return {
-        action: 'allow',
-        message: 'No messages for meta learning',
-        duration: Date.now() - startTime,
-      };
-    }
 
-    const sessionContext: SessionContext = {
-      event: 'SessionEnd',
-      sessionId: context.sessionId,
-      workingDirectory: context.workingDirectory,
-      timestamp: Date.now(),
-    };
-
-    // Convert tool executions to expected format
-    const toolExecutions: ToolExecutionRecord[] = (context.toolExecutions || []).map(te => ({
-      name: te.name,
-      input: te.input,
-      output: te.output,
-      success: te.success,
-      timestamp: te.timestamp,
-      errorMessage: !te.success ? String(te.output) : undefined,
-    }));
-
-    const result = await sessionEndMetaLearningHook(
-      sessionContext,
-      context.messages,
-      toolExecutions
-    );
-
-    return {
-      action: result.action,
-      message: result.message,
-      duration: Date.now() - startTime,
-      learnedCount: result.patternsLearned,
-    };
-  }
-
-  /**
-   * 执行工具失败学习
-   */
-  private async executeToolFailureLearning(
-    config: BuiltinHookConfig,
-    context: BuiltinHookContext,
-    startTime: number
-  ): Promise<BuiltinHookResult> {
-    // This hook is triggered via PostToolUseFailure event
-    // The actual tool failure info comes from the hook trigger context
-    // For now, just return success - the actual learning is done by
-    // the meta learning loop during session end
-
-    return {
-      action: 'continue',
-      message: 'Tool failure recorded for learning',
-      duration: Date.now() - startTime,
-    };
-  }
 
   /**
    * 获取模板的默认配置

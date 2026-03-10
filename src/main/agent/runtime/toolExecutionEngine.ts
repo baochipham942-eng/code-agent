@@ -89,17 +89,12 @@ import {
   estimateTokens,
 } from '../../context/tokenOptimizer';
 import { AutoContextCompressor, getAutoCompressor } from '../../context/autoCompressor';
-import { getTraceRecorder } from '../../evolution/traceRecorder';
-import { getOutcomeDetector } from '../../evolution/outcomeDetector';
 import { getInputSanitizer } from '../../security/inputSanitizer';
 import { getDiffTracker } from '../../services/diff/diffTracker';
 import { getCitationService } from '../../services/citation/citationService';
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
 import { createHash } from 'crypto';
-import { getVerifierRegistry, initializeVerifiers } from '../../agent/verifier';
-import type { VerificationContext, VerificationResult } from '../../agent/verifier';
-import { analyzeTask } from '../../agent/hybrid/taskRouter';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
@@ -511,40 +506,6 @@ export class ToolExecutionEngine {
         }
       }
 
-      // E7: 内容质量门禁 — Content Quality Gate
-      if (this.shouldRunContentVerification(toolCall, result)) {
-        try {
-          const verification = await this.runContentVerification(toolCall, result);
-          if (verification && !verification.passed) {
-            const retryKey = `${toolCall.name}:${toolCall.id}`;
-            const retryCount = this.ctx.contentVerificationRetries.get(retryKey) || 0;
-            if (retryCount < 2) {
-              this.ctx.contentVerificationRetries.set(retryKey, retryCount + 1);
-              const feedback = verification.checks
-                .filter(c => !c.passed)
-                .map(c => `- ${c.name}: ${c.message}`)
-                .join('\n');
-              this.contextAssembly.injectSystemMessage(
-                `<content-quality-warning>\n` +
-                `输出质量检查未通过（得分: ${verification.score.toFixed(2)}/1.0）:\n` +
-                `${feedback}\n` +
-                `${verification.suggestions?.join('\n') || ''}\n` +
-                `请检查并修正上述问题。\n` +
-                `</content-quality-warning>`
-              );
-              logger.info('Content quality gate triggered', {
-                taskType: verification.taskType,
-                score: verification.score.toFixed(2),
-                failedChecks: verification.checks.filter(c => !c.passed).map(c => c.name),
-                retryCount: retryCount + 1,
-              });
-            }
-          }
-        } catch (error) {
-          logger.debug('Content verification error:', error);
-        }
-      }
-
       // Circuit breaker tracking
       if (!result.success) {
         if (this.ctx.circuitBreaker.recordFailure(result.error)) {
@@ -749,23 +710,6 @@ export class ToolExecutionEngine {
         duration: toolResult.duration,
       });
 
-      // Gen8: Record tool call for self-evolution
-      const traceRecorder = getTraceRecorder();
-      if (traceRecorder.hasActiveTrace()) {
-        traceRecorder.recordToolCall({
-          id: toolCall.id,
-          name: toolCall.name,
-          args: toolCall.arguments as Record<string, unknown>,
-          result: {
-            success: result.success,
-            output: result.output?.substring(0, 1000), // 限制输出长度
-            error: result.error,
-          },
-          durationMs: toolResult.duration || 0,
-          timestamp: Date.now(),
-        });
-      }
-
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (success)`);
       this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, toolResult.success, toolResult.error, toolResult.duration || 0, toolResult.output?.substring(0, 500));
       this.ctx.onEvent({ type: 'tool_call_end', data: toolResult });
@@ -853,22 +797,6 @@ export class ToolExecutionEngine {
         duration: toolResult.duration,
       }, 'ERROR', toolResult.error);
 
-      // Gen8: Record failed tool call for self-evolution
-      const traceRecorder = getTraceRecorder();
-      if (traceRecorder.hasActiveTrace()) {
-        traceRecorder.recordToolCall({
-          id: toolCall.id,
-          name: toolCall.name,
-          args: toolCall.arguments as Record<string, unknown>,
-          result: {
-            success: false,
-            error: toolResult.error,
-          },
-          durationMs: toolResult.duration || 0,
-          timestamp: Date.now(),
-        });
-      }
-
       logger.debug(` Emitting tool_call_end for ${toolCall.name} (error)`);
       this.ctx.telemetryAdapter?.onToolCallEnd(this.ctx.currentTurnId, toolCall.id, false, toolResult.error, toolResult.duration || 0, undefined);
       this.ctx.onEvent({ type: 'tool_call_end', data: toolResult });
@@ -909,110 +837,4 @@ export class ToolExecutionEngine {
     };
   }
 
-  // Inference
-  // --------------------------------------------------------------------------
-
-  shouldRunContentVerification(
-    toolCall: ToolCall,
-    result: { success: boolean; output?: string; error?: string }
-  ): boolean {
-    if (!result.success) return false;
-
-    const contentFileExtensions = [
-      '.xlsx', '.xls', '.csv',   // data
-      '.pptx', '.ppt',           // ppt
-      '.md', '.txt', '.doc', '.docx', '.html', // document
-      '.png', '.jpg', '.jpeg', '.svg', '.gif', '.webp', // image
-    ];
-
-    // write_file with content file extension
-    if (toolCall.name === 'write_file' || toolCall.name === 'Write') {
-      const filePath = (toolCall.arguments?.file_path || toolCall.arguments?.path || '') as string;
-      const ext = filePath.toLowerCase().match(/\.[^.]+$/)?.[0] || '';
-      return contentFileExtensions.includes(ext);
-    }
-
-    // bash tool that produced content files (check output for file paths)
-    if ((toolCall.name === 'bash' || toolCall.name === 'Bash') && result.output) {
-      const output = result.output;
-      return contentFileExtensions.some(ext => {
-        const pattern = new RegExp(`[^\\s]+\\${ext}\\b`, 'i');
-        return pattern.test(output);
-      });
-    }
-
-    // ppt_generate tool
-    if (toolCall.name === 'ppt_generate') return true;
-
-    return false;
-  }
-
-  /**
-   * 构建 VerificationContext 并调用 verifierRegistry 运行验证
-   */
-
-  async runContentVerification(
-    toolCall: ToolCall,
-    result: { success: boolean; output?: string; error?: string }
-  ): Promise<VerificationResult | null> {
-    try {
-      // Initialize verifiers if not done
-      initializeVerifiers();
-
-      // Extract task description from first user message
-      const userMessage = this.ctx.messages.find(m => m.role === 'user');
-      const taskDescription = userMessage?.content || '';
-
-      // Analyze the task
-      const taskAnalysis = analyzeTask(taskDescription);
-
-      // Collect modified files
-      const modifiedFilesList = Array.from(this.ctx.nudgeManager.getModifiedFiles()) as string[];
-
-      // Collect tool calls history (last 20)
-      const recentToolCalls: VerificationContext['toolCalls'] = [];
-      for (const msg of this.ctx.messages.slice(-40)) {
-        if (msg.role === 'assistant' && msg.toolCalls) {
-          for (const tc of msg.toolCalls) {
-            recentToolCalls.push({
-              name: tc.name,
-              args: tc.arguments as Record<string, unknown> | undefined,
-              result: undefined,
-            });
-          }
-        }
-      }
-
-      // Add the current tool call with result
-      recentToolCalls.push({
-        name: toolCall.name,
-        args: toolCall.arguments as Record<string, unknown>,
-        result: { success: result.success, output: result.output, error: result.error },
-      });
-
-      // Build agent output (last assistant text messages)
-      let agentOutput = '';
-      for (const msg of this.ctx.messages.slice(-10)) {
-        if (msg.role === 'assistant' && msg.content) {
-          agentOutput += msg.content + '\n';
-        }
-      }
-
-      const verificationContext: VerificationContext = {
-        taskDescription,
-        taskAnalysis,
-        agentOutput,
-        toolCalls: recentToolCalls.slice(-20),
-        workingDirectory: this.ctx.workingDirectory || process.cwd(),
-        modifiedFiles: modifiedFilesList,
-        sessionId: this.ctx.sessionId,
-      };
-
-      const registry = getVerifierRegistry();
-      return await registry.verifyTask(verificationContext, taskAnalysis);
-    } catch (error) {
-      logger.debug('Content verification setup error:', error);
-      return null;
-    }
-  }
 }

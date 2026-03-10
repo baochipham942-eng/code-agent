@@ -25,11 +25,8 @@ import { getAgentWorkerManager, type AgentWorkerManager } from '../worker/agentW
 import { getPermissionProxy } from '../worker/permissionProxy';
 import { TeammateProxy } from '../worker/teammateProxy';
 import { WorkerMonitor } from '../worker/workerMonitor';
-import { getVerifierRegistry, initializeVerifiers } from '../verifier';
-import type { VerificationResult } from '../verifier/verifierRegistry';
 import { analyzeTask } from './taskRouter';
 import type { SwarmVerificationResult } from '../../../shared/types/swarm';
-import { executeReviewLoop, shouldUseReviewLoop, type ReviewLoopResult } from './reviewLoop';
 
 const logger = createLogger('AgentSwarm');
 
@@ -428,43 +425,7 @@ export class AgentSwarm {
     const statistics = this.calculateStatistics(runtimeList, parallelPeak);
     const aggregatedOutput = this.coordinator.aggregate(runtimeList);
 
-    // === 验证步骤：对聚合结果运行确定性检查 ===
     let verification: SwarmVerificationResult | undefined;
-    try {
-      initializeVerifiers();
-      const verifierRegistry = getVerifierRegistry();
-      // 从第一个 agent 的 prompt 推断任务类型
-      const firstPrompt = agents[0]?.prompt || '';
-      const taskAnalysis = analyzeTask(firstPrompt);
-      const verificationResult = await verifierRegistry.verifyTask({
-        taskDescription: firstPrompt,
-        taskAnalysis,
-        agentOutput: aggregatedOutput,
-        workingDirectory: process.cwd(),
-        modifiedFiles: [],
-      }, taskAnalysis);
-
-      verification = {
-        passed: verificationResult.passed,
-        score: verificationResult.score,
-        checks: verificationResult.checks.map(c => ({
-          name: c.name,
-          passed: c.passed,
-          score: c.score,
-          message: c.message,
-        })),
-        suggestions: verificationResult.suggestions,
-        taskType: verificationResult.taskType,
-        durationMs: verificationResult.durationMs,
-      };
-
-      logger.info('Swarm verification result', {
-        passed: verification.passed,
-        score: verification.score.toFixed(2),
-      });
-    } catch (err) {
-      logger.warn('Swarm verification failed (non-blocking):', err);
-    }
 
     // 清理
     this.cleanup();
@@ -477,28 +438,6 @@ export class AgentSwarm {
       statistics,
       verification,
     };
-
-    // === P2: 记录 agent 性能画像 ===
-    try {
-      const { getAgentProfiler } = await import('../profiling/agentProfiler');
-      const profiler = getAgentProfiler();
-      for (const runtime of runtimeList) {
-        if (runtime.status === 'completed' || runtime.status === 'failed') {
-          profiler.recordOutcome({
-            agentId: runtime.agent.id,
-            agentName: runtime.agent.name,
-            taskType: analyzeTask(runtime.agent.prompt || '').taskType,
-            success: runtime.status === 'completed',
-            verificationScore: verification?.score ?? (runtime.status === 'completed' ? 0.8 : 0),
-            durationMs: (runtime.endTime || Date.now()) - (runtime.startTime || Date.now()),
-            costUSD: 0, // TODO: actual cost tracking
-            timestamp: Date.now(),
-          });
-        }
-      }
-    } catch {
-      // Profiler not available
-    }
 
     logger.info('Agent Swarm completed', {
       success: result.success,
@@ -1025,79 +964,6 @@ export class AgentSwarm {
       statistics,
     };
   }
-}
-
-// ============================================================================
-// Review Loop Integration
-// ============================================================================
-
-/**
- * 带 Review Loop 的 Swarm 执行结果
- */
-export interface SwarmReviewResult extends SwarmResult {
-  reviewLoop?: ReviewLoopResult;
-}
-
-/**
- * 带 Review Loop 的 Swarm 执行
- *
- * 在 Swarm 执行完成后，如果任务需要 Review Loop，
- * 自动进入 verify→revise→re-verify 循环，提升产出质量。
- *
- * @param agents - Agent 配置列表
- * @param config - Swarm 配置
- * @param executor - Agent 执行器
- * @param workerExecutor - Review Loop 中的 Worker 修订函数
- * @param workingDirectory - 工作目录
- * @param sessionId - 会话 ID
- */
-export async function executeWithReviewLoop(
-  agents: DynamicAgentConfig[],
-  config: SwarmConfig,
-  executor: AgentExecutor,
-  workerExecutor: (feedback: string[], previousOutput: string, iteration: number) => Promise<{ output: string; modifiedFiles: string[] }>,
-  workingDirectory: string,
-  sessionId?: string,
-): Promise<SwarmReviewResult> {
-  const swarm = getAgentSwarm();
-
-  // 1. Execute the swarm normally
-  const swarmResult = await swarm.execute(agents, config, executor);
-
-  // 2. Analyze task to decide if Review Loop is needed
-  const firstPrompt = agents[0]?.prompt || '';
-  const taskAnalysis = analyzeTask(firstPrompt);
-
-  if (!shouldUseReviewLoop(taskAnalysis)) {
-    logger.info('[ReviewLoop] Skipping review loop (simple task or not reviewable)');
-    return swarmResult;
-  }
-
-  // 3. Run Review Loop on the aggregated output
-  const modifiedFiles = swarmResult.agents
-    .filter(a => a.status === 'completed')
-    .flatMap(a => (a.output || '').match(/(?:created|modified|updated)\s+(\S+\.ts)/gi) || []);
-
-  const reviewResult = await executeReviewLoop(
-    firstPrompt,
-    taskAnalysis,
-    swarmResult.aggregatedOutput,
-    modifiedFiles,
-    workerExecutor,
-    workingDirectory,
-    sessionId,
-  );
-
-  logger.info('[ReviewLoop] Review loop completed', {
-    passed: reviewResult.passed,
-    iterations: reviewResult.iterations.length,
-    exitReason: reviewResult.exitReason,
-  });
-
-  return {
-    ...swarmResult,
-    reviewLoop: reviewResult,
-  };
 }
 
 // ============================================================================

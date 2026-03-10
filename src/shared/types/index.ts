@@ -74,3 +74,6 @@ export * from './capture';
 
 // Error types (ErrorCode, ErrorSeverity, SerializedError)
 export * from './error';
+
+// Application Service interface (IPC 层窄接口)
+export * from './appService';

@@ -15,6 +15,7 @@ import {
   setCurrentSessionId,
   getPlanningServiceInstance,
   getTaskManagerInstance,
+  getAppServiceInstance,
 } from './app/bootstrap';
 import { createWindow, getMainWindow } from './app/window';
 import { setupAllIpcHandlers } from './ipc';
@@ -132,6 +133,7 @@ app.whenReady().then(async () => {
     setupAllIpcHandlers(ipcMain, {
       getMainWindow,
       getOrchestrator: getAgentOrchestrator,
+      getAppService: getAppServiceInstance,
       getConfigService: getConfigServiceInstance,
       getPlanningService: getPlanningServiceInstance,
       getTaskManager: getTaskManagerInstance,

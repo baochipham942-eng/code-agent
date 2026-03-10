@@ -1,12 +1,14 @@
 // ============================================================================
 // Phase 4: Session Restoration & Planning Service
+//
+// Uses TaskManager to manage orchestrator lifecycle (per-session model).
 // ============================================================================
 
 import { app } from 'electron';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager } from '../services';
 import { getMemoryService } from '../memory/memoryService';
-import { AgentOrchestrator } from '../agent/agentOrchestrator';
+import { getTaskManager } from '../task';
 import { createPlanningService, type PlanningService } from '../planning';
 import { getMainWindow } from './window';
 // Event channel constant (post-IPC_CHANNELS deprecation)
@@ -18,14 +20,15 @@ const logger = createLogger('Bootstrap:Session');
 
 /**
  * Auto-restore or create a new session.
+ * Uses TaskManager to manage the orchestrator for the session.
  * Returns the current session ID.
  */
 export async function initializeSession(
   settings: any,
-  agentOrchestrator: AgentOrchestrator,
 ): Promise<string> {
   const sessionManager = getSessionManager();
   const memoryService = getMemoryService();
+  const taskManager = getTaskManager();
 
   const recentSession = await sessionManager.getMostRecentSession();
 
@@ -36,12 +39,20 @@ export async function initializeSession(
     sessionId = recentSession.id;
     logger.info('Restored session', { sessionId });
 
-    // 同步消息历史到 orchestrator，否则模型看不到之前的对话上下文
+    // Set current session ID on TaskManager first (so getOrCreateOrchestrator works)
+    taskManager.setCurrentSessionId(sessionId);
+
+    // Sync message history via TaskManager's setSessionContext
     if (restoredSession?.messages?.length) {
-      agentOrchestrator.setMessages(restoredSession.messages);
-      logger.info('Synced messages to orchestrator', { count: restoredSession.messages.length });
+      taskManager.setSessionContext(sessionId, restoredSession.messages);
+      logger.info('Synced messages to orchestrator via TaskManager', { count: restoredSession.messages.length });
     }
   } else {
+    // Get working directory from a lazy-created orchestrator
+    taskManager.setCurrentSessionId('__bootstrap_pending__');
+    const bootstrapOrchestrator = taskManager.getOrCreateCurrentOrchestrator('__bootstrap_pending__');
+    const workingDirectory = bootstrapOrchestrator?.getWorkingDirectory();
+
     const session = await sessionManager.createSession({
       title: 'New Session',
       generationId: 'gen8',
@@ -51,17 +62,25 @@ export async function initializeSession(
         temperature: settings.model?.temperature || 0.7,
         maxTokens: settings.model?.maxTokens || MODEL_MAX_TOKENS.DEFAULT,
       },
-      workingDirectory: agentOrchestrator.getWorkingDirectory(),
+      workingDirectory,
     });
     sessionManager.setCurrentSession(session.id);
     sessionId = session.id;
+
+    // Clean up bootstrap placeholder and set real session ID
+    taskManager.cleanup('__bootstrap_pending__');
+    taskManager.setCurrentSessionId(sessionId);
+
     logger.info('Created new session', { sessionId });
   }
 
   // Set memory service context
+  const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId);
+  const workingDirectory = orchestrator?.getWorkingDirectory();
+
   memoryService.setContext(
     sessionId,
-    agentOrchestrator.getWorkingDirectory() || undefined
+    workingDirectory || undefined
   );
 
   return sessionId;
@@ -69,13 +88,21 @@ export async function initializeSession(
 
 /**
  * Initialize planning service and attach it to the orchestrator.
+ * Uses TaskManager to get the current session's orchestrator.
  * Returns the planning service instance, or null if not applicable.
  */
 export async function initializePlanningService(
-  agentOrchestrator: AgentOrchestrator,
   currentSessionId: string,
 ): Promise<PlanningService | null> {
-  const workingDir = agentOrchestrator.getWorkingDirectory();
+  const taskManager = getTaskManager();
+  const orchestrator = taskManager.getOrCreateCurrentOrchestrator(currentSessionId);
+
+  if (!orchestrator) {
+    logger.warn('No orchestrator available for planning service initialization');
+    return null;
+  }
+
+  const workingDir = orchestrator.getWorkingDirectory();
   logger.debug('initializePlanningService', { workingDir });
 
   // Fallback to app userData if workingDir is '/' (packaged Electron app issue)
@@ -91,7 +118,7 @@ export async function initializePlanningService(
   logger.info('Planning service initialized', { path: effectiveWorkingDir });
 
   // Pass planning service to agent orchestrator
-  agentOrchestrator.setPlanningService(planningService);
+  orchestrator.setPlanningService(planningService);
 
   // Send initial planning state to renderer
   await sendPlanningStateToRenderer(planningService);

@@ -4,7 +4,7 @@
 // 各阶段实现已拆分到独立模块：
 //   Phase 1: initCoreServices.ts — DB, config, logger, shell environment
 //   Phase 2: initBackgroundServices.ts — cron, telemetry, cloud, updates, MCP
-//   Phase 3: createAgentRuntime.ts — orchestrator, task manager, channels
+//   Phase 3: createAgentRuntime.ts — TaskManager (sole orchestrator owner), channels
 //   Phase 4: restoreSession.ts — session restoration, planning service
 // ============================================================================
 
@@ -21,10 +21,8 @@ import { initializeSession, initializePlanningService } from './restoreSession';
 
 const logger = createLogger('Bootstrap');
 
-// Global state
+// Global state (reduced: no more global agentOrchestrator)
 let configService: ConfigService | null = null;
-let agentOrchestrator: AgentOrchestrator | null = null;
-let currentSessionId: string | null = null;
 let planningService: PlanningService | null = null;
 
 // ── Getters / Setters (preserve existing export signatures) ─────────────
@@ -38,23 +36,27 @@ export function getConfigServiceInstance(): ConfigService | null {
 
 /**
  * 获取 Agent Orchestrator 实例
+ *
+ * Delegates to TaskManager — returns the orchestrator for the current
+ * active session. Returns null if no session is active yet.
  */
 export function getAgentOrchestrator(): AgentOrchestrator | null {
-  return agentOrchestrator;
+  const taskManager = getTaskManager();
+  return taskManager.getOrCreateCurrentOrchestrator() ?? null;
 }
 
 /**
  * 获取当前会话 ID
  */
 export function getCurrentSessionId(): string | null {
-  return currentSessionId;
+  return getTaskManager().getCurrentSessionId();
 }
 
 /**
  * 设置当前会话 ID
  */
 export function setCurrentSessionId(id: string): void {
-  currentSessionId = id;
+  getTaskManager().setCurrentSessionId(id);
 }
 
 /**
@@ -100,17 +102,17 @@ export async function initializeBackgroundServices(): Promise<void> {
   // Phase 2: Background infrastructure (cloud, MCP, cron, updates, etc.)
   await initializeBackgroundInfra(configService);
 
-  // Phase 3: Agent runtime (orchestrator, task manager, channels)
-  agentOrchestrator = createAgentRuntime(configService);
+  // Phase 3: Agent runtime (TaskManager as sole orchestrator owner, channels)
+  createAgentRuntime(configService);
 
-  // Phase 4a: Session restoration
+  // Phase 4a: Session restoration (uses TaskManager to manage orchestrator)
   logger.info('Initializing session...');
-  currentSessionId = await initializeSession(settings, agentOrchestrator);
-  logger.info('Session initialized');
+  const currentSessionId = await initializeSession(settings);
+  logger.info('Session initialized', { currentSessionId });
 
   // Phase 4b: Planning service
   logger.info('Initializing planning service...');
-  planningService = await initializePlanningService(agentOrchestrator, currentSessionId);
+  planningService = await initializePlanningService(currentSessionId);
   logger.info('Planning service initialized');
 
   logger.info('Background services initialization complete');

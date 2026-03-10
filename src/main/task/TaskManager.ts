@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import type { AgentEvent, Message } from '../../shared/types';
+import type { AgentEvent, Message, ToolCall } from '../../shared/types';
 import { AgentOrchestrator, type AgentOrchestratorConfig } from '../agent/agentOrchestrator';
 import type { ConfigService } from '../services/core/configService';
 import type { PlanningService } from '../planning';
@@ -125,6 +125,16 @@ export class TaskManager extends EventEmitter {
   private configService: ConfigService | null = null;
   private planningService: PlanningService | undefined;
   private onAgentEvent: ((sessionId: string, event: AgentEvent) => void) | null = null;
+
+  // 当前活跃会话 ID（用于 getAgentOrchestrator 兼容层）
+  private currentSessionId: string | null = null;
+
+  // Per-session turnState for message aggregation (moved from createAgentRuntime)
+  private turnStateBySession: Map<string, {
+    messageId: string;
+    toolCalls: ToolCall[];
+    content: string;
+  }> = new Map();
 
   constructor(config: Partial<TaskManagerConfig> = {}) {
     super();
@@ -349,11 +359,39 @@ export class TaskManager extends EventEmitter {
   /**
    * 获取会话的 Orchestrator（如果存在）
    *
-   * @param sessionId - 会话 ID
+   * @param sessionId - 会话 ID（可选，不传则返回当前活跃会话的 orchestrator）
    * @returns Orchestrator 实例或 undefined
    */
-  getOrchestrator(sessionId: string): AgentOrchestrator | undefined {
-    return this.activeOrchestrators.get(sessionId)?.orchestrator;
+  getOrchestrator(sessionId?: string): AgentOrchestrator | undefined {
+    const id = sessionId || this.currentSessionId;
+    if (!id) return undefined;
+    return this.activeOrchestrators.get(id)?.orchestrator;
+  }
+
+  /**
+   * 获取或创建当前会话的 Orchestrator（公开版本，供外部消费方使用）
+   *
+   * @param sessionId - 会话 ID（可选，不传则使用当前活跃会话）
+   * @returns Orchestrator 实例或 undefined（如果未初始化或无活跃会话）
+   */
+  getOrCreateCurrentOrchestrator(sessionId?: string): AgentOrchestrator | undefined {
+    const id = sessionId || this.currentSessionId;
+    if (!id || !this.configService || !this.onAgentEvent) return undefined;
+    return this.getOrCreateOrchestrator(id).orchestrator;
+  }
+
+  /**
+   * 获取当前活跃会话 ID
+   */
+  getCurrentSessionId(): string | null {
+    return this.currentSessionId;
+  }
+
+  /**
+   * 设置当前活跃会话 ID
+   */
+  setCurrentSessionId(id: string | null): void {
+    this.currentSessionId = id;
   }
 
   /**
@@ -573,9 +611,12 @@ export class TaskManager extends EventEmitter {
       const orchestrator = new AgentOrchestrator({
         configService: this.configService!,
         planningService: this.planningService,
-        onEvent: (event: AgentEvent) => {
-          // 事件携带 sessionId，确保前端能正确路由
+        onEvent: async (event: AgentEvent) => {
+          // 1. Forward to renderer (via onAgentEvent callback)
           this.onAgentEvent!(sessionId, event);
+
+          // 2. Persist messages via sessionManager
+          await this.persistEventToSession(sessionId, event);
         },
       });
 
@@ -590,6 +631,88 @@ export class TaskManager extends EventEmitter {
     }
 
     return wrapper;
+  }
+
+  /**
+   * Persist agent events to session storage (moved from createAgentRuntime.ts)
+   * Handles message aggregation, tool call results, and desktop notifications.
+   */
+  private async persistEventToSession(sessionId: string, event: AgentEvent): Promise<void> {
+    try {
+      const { getSessionManager, notificationService } = await import('../services');
+
+      const sessionManager = getSessionManager();
+
+      // Aggregate assistant messages within a single turn
+      if (event.type === 'message' && event.data?.role === 'assistant') {
+        const message = event.data;
+
+        let turnState = this.turnStateBySession.get(sessionId);
+        if (!turnState) {
+          turnState = { messageId: '', toolCalls: [], content: '' };
+          this.turnStateBySession.set(sessionId, turnState);
+        }
+
+        if (message.toolCalls && message.toolCalls.length > 0) {
+          turnState.toolCalls.push(...message.toolCalls);
+        }
+
+        if (message.content) {
+          turnState.content = message.content;
+        }
+
+        if (!turnState.messageId) {
+          turnState.messageId = message.id;
+          await sessionManager.addMessage({
+            ...message,
+            toolCalls: turnState.toolCalls.length > 0 ? [...turnState.toolCalls] : undefined,
+            content: turnState.content,
+          });
+        } else {
+          await sessionManager.updateMessage(turnState.messageId, {
+            toolCalls: turnState.toolCalls.length > 0 ? [...turnState.toolCalls] : undefined,
+            content: turnState.content,
+          });
+        }
+      }
+
+      // Update tool call results
+      if (event.type === 'tool_call_end' && event.data) {
+        const turnState = this.turnStateBySession.get(sessionId);
+        const toolCallId = event.data.toolCallId;
+
+        if (turnState?.messageId) {
+          const idx = turnState.toolCalls.findIndex((tc) => tc.id === toolCallId);
+          if (idx !== -1) {
+            turnState.toolCalls[idx] = { ...turnState.toolCalls[idx], result: event.data };
+          }
+          await sessionManager.updateMessage(turnState.messageId, {
+            toolCalls: [...turnState.toolCalls],
+          });
+        }
+      }
+
+      // Reset turn state when turn ends or agent completes
+      if (event.type === 'turn_end' || event.type === 'agent_complete') {
+        this.turnStateBySession.delete(sessionId);
+      }
+
+      // Send desktop notification on task complete
+      if (event.type === 'task_complete' && event.data) {
+        const session = await sessionManager.getSession(sessionId);
+        if (session) {
+          notificationService.notifyTaskComplete({
+            sessionId: session.id,
+            sessionTitle: session.title,
+            summary: event.data.summary,
+            duration: event.data.duration,
+            toolsUsed: event.data.toolsUsed || [],
+          });
+        }
+      }
+    } catch (error) {
+      logger.error(`Failed to persist event for session ${sessionId}`, error);
+    }
   }
 
   /**

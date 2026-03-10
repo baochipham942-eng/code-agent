@@ -508,12 +508,11 @@ export class CronService implements Disposable {
           }
         }
 
-        const { getAgentOrchestrator } = await import('../app/bootstrap');
-        let orchestrator = getAgentOrchestrator();
+        // 通过 TaskManager 获取 orchestrator（避免 cronService → bootstrap 循环依赖）
+        const { getTaskManager } = await import('../task');
+        const tm = getTaskManager();
+        let orchestrator = tm.getOrchestrator() ?? null;
         if (!orchestrator) {
-          // Pure getter returned null — explicitly create via TaskManager
-          const { getTaskManager } = await import('../task');
-          const tm = getTaskManager();
           orchestrator = tm.getOrCreateCurrentOrchestrator() ?? null;
           if (!orchestrator) {
             throw new Error('AgentOrchestrator not available (no active session)');

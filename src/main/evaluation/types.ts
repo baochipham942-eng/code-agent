@@ -4,6 +4,9 @@
 
 import type { EvaluationMetric, EvaluationDimension } from '../../shared/types/evaluation';
 
+// Re-export TranscriptMetrics from shared (canonical source) for backward compatibility
+export type { TranscriptMetrics } from '../../shared/types/evaluation';
+
 /**
  * 对话类型分类
  */
@@ -91,27 +94,8 @@ export interface ToolCallStats {
   redundantCalls: number;
 }
 
-/**
- * Transcript 分析结果（代码 Grader）
- */
-export interface TranscriptMetrics {
-  selfRepair: {
-    attempts: number;
-    successes: number;
-    rate: number;
-    chains: Array<{ toolName: string; failIndex: number; retryIndex: number; succeeded: boolean }>;
-  };
-  verificationQuality: {
-    editCount: number;
-    verifiedCount: number;
-    rate: number;
-  };
-  forbiddenPatterns: {
-    detected: string[];
-    count: number;
-  };
-  errorTaxonomy: Record<string, number>;
-}
+// TranscriptMetrics moved to shared/types/evaluation.ts (canonical source)
+// Re-exported above for backward compatibility
 
 /**
  * 维度评估器接口

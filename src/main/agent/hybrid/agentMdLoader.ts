@@ -7,7 +7,7 @@
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import type { CoreAgentConfig, CoreAgentId, ModelTier } from './coreAgents';
+import type { CoreAgentConfig, CoreAgentId, ModelTier } from './types';
 
 interface AgentMdFrontmatter {
   name: string;

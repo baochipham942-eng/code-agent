@@ -31,7 +31,6 @@ import { createLogger } from '../services/infra/logger';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { DAG_SCHEDULER } from '../../shared/constants';
-import { sendDAGInitEvent } from './dagEventBridge';
 
 const execAsync = promisify(exec);
 const logger = createLogger('DAGScheduler');
@@ -141,6 +140,9 @@ export class DAGScheduler extends EventEmitter {
   // 自定义任务执行器
   private customExecutors: Map<string, TaskExecutor> = new Map();
 
+  // DAG 初始化回调（由 dagEventBridge 注入，避免循环依赖）
+  private onDAGInit?: (dag: TaskDAG) => void;
+
   constructor(config: Partial<DAGSchedulerConfig> = {}) {
     super();
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -149,6 +151,16 @@ export class DAGScheduler extends EventEmitter {
   // ============================================================================
   // Configuration
   // ============================================================================
+
+  /**
+   * 更新配置
+   */
+  /**
+   * 注册 DAG 初始化回调（用于向渲染进程发送可视化状态）
+   */
+  setOnDAGInit(callback: (dag: TaskDAG) => void): void {
+    this.onDAGInit = callback;
+  }
 
   /**
    * 更新配置
@@ -203,7 +215,7 @@ export class DAGScheduler extends EventEmitter {
     this.forwardDAGEvents(dag);
 
     // 发送 DAG 初始化事件到渲染进程（用于可视化）
-    sendDAGInitEvent(dag);
+    this.onDAGInit?.(dag);
 
     logger.info(`Starting DAG execution: ${dag.getName()} (${dag.getAllTasks().length} tasks)`);
 

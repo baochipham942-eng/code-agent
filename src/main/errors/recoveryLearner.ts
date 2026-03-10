@@ -6,7 +6,8 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
-import { getRecoveryEngine, RecoveryAction, type ErrorRecoveryEvent, type RecoveryContext } from './recoveryEngine';
+import { RecoveryAction, type ErrorRecoveryEvent, type RecoveryContext } from './recoveryTypes';
+import { getRecoveryEngine } from './recoveryEngine';
 
 
 const logger = createLogger('RecoveryLearner');
@@ -114,6 +115,8 @@ let instance: RecoveryLearner | null = null;
 export function getRecoveryLearner(): RecoveryLearner {
   if (!instance) {
     instance = new RecoveryLearner();
+    // Auto-register with engine (one-directional: learner → engine)
+    getRecoveryEngine().setLearner(instance);
   }
   return instance;
 }

@@ -282,6 +282,9 @@ export function initDAGEventBridge(): void {
     'progress:update',
   ];
 
+  // 注册 DAG 初始化回调（依赖反转，避免 DAGScheduler → dagEventBridge 循环）
+  scheduler.setOnDAGInit((dag) => sendDAGInitEvent(dag));
+
   // 注册事件监听器
   for (const eventType of eventTypes) {
     scheduler.on(eventType, (event: DAGEvent) => {

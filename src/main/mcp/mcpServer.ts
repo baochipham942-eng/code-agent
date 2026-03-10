@@ -411,17 +411,17 @@ export class CodeAgentMCPServer {
 
   async start(): Promise<void> {
     if (this.isRunning) {
-      console.log('[MCPServer] Already running');
+      console.error('[MCPServer] Already running');
       return;
     }
 
-    console.log('[MCPServer] Starting Code Agent MCP Server...');
+    console.error('[MCPServer] Starting Code Agent MCP Server...');
 
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
 
     this.isRunning = true;
-    console.log('[MCPServer] Code Agent MCP Server started');
+    console.error('[MCPServer] Code Agent MCP Server started');
   }
 
   async stop(): Promise<void> {
@@ -429,10 +429,10 @@ export class CodeAgentMCPServer {
       return;
     }
 
-    console.log('[MCPServer] Stopping Code Agent MCP Server...');
+    console.error('[MCPServer] Stopping Code Agent MCP Server...');
     await this.server.close();
     this.isRunning = false;
-    console.log('[MCPServer] Code Agent MCP Server stopped');
+    console.error('[MCPServer] Code Agent MCP Server stopped');
   }
 }
 

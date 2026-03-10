@@ -24,7 +24,7 @@ class LogBridge {
    */
   async start(port: number = PORTS.logBridge): Promise<void> {
     if (this.server) {
-      console.log('[LogBridge] Already running');
+      console.error('[LogBridge] Already running');
       return;
     }
 
@@ -99,7 +99,7 @@ class LogBridge {
 
     return new Promise((resolve, reject) => {
       this.server!.listen(this.port, '127.0.0.1', () => {
-        console.log(`[LogBridge] HTTP log server started on http://127.0.0.1:${this.port}`);
+        console.error(`[LogBridge] HTTP log server started on http://127.0.0.1:${this.port}`);
         resolve();
       });
 
@@ -117,7 +117,7 @@ class LogBridge {
     if (this.server) {
       return new Promise((resolve) => {
         this.server!.close(() => {
-          console.log('[LogBridge] Server stopped');
+          console.error('[LogBridge] Server stopped');
           this.server = null;
           resolve();
         });
@@ -134,7 +134,7 @@ class LogBridge {
    */
   setCommandHandler(handler: CommandHandler): void {
     this.commandHandler = handler;
-    console.log('[LogBridge] Command handler registered');
+    console.error('[LogBridge] Command handler registered');
   }
 
   /**

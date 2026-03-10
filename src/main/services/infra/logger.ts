@@ -199,12 +199,7 @@ class Logger {
     const timestamp = new Date().toISOString();
     const ctx = this.context ? `[${this.context}]` : '';
 
-    const logFn =
-      level === 'ERROR'
-        ? console.error
-        : level === 'WARN'
-          ? console.warn
-          : console.log;
+    const logFn = console.error; // All log levels → stderr
 
     // 处理参数，对对象类型进行脱敏
     const sanitizedArgs = args.map((arg) => {

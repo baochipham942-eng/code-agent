@@ -52,7 +52,7 @@ export class HeartbeatService {
     await this.loadHeartbeatsFromDatabase();
 
     this.isInitialized = true;
-    console.log('[HeartbeatService] Initialized');
+    console.error('[HeartbeatService] Initialized');
   }
 
   async shutdown(): Promise<void> {
@@ -60,13 +60,13 @@ export class HeartbeatService {
     for (const [id, heartbeat] of this.heartbeats) {
       if (heartbeat.intervalId) {
         clearInterval(heartbeat.intervalId);
-        console.log(`[HeartbeatService] Stopped heartbeat: ${id}`);
+        console.error(`[HeartbeatService] Stopped heartbeat: ${id}`);
       }
     }
 
     this.heartbeats.clear();
     this.isInitialized = false;
-    console.log('[HeartbeatService] Shutdown complete');
+    console.error('[HeartbeatService] Shutdown complete');
   }
 
   // --------------------------------------------------------------------------
@@ -341,7 +341,7 @@ export class HeartbeatService {
       );
     }, config.interval);
 
-    console.log(
+    console.error(
       `[HeartbeatService] Started heartbeat: ${config.name} (every ${config.interval}ms)`
     );
   }
@@ -468,7 +468,7 @@ export class HeartbeatService {
 
       case 'tool': {
         // Tool-based health checks would integrate with the tool system
-        console.log(`[HeartbeatService] Tool check not fully implemented: ${check.toolName}`);
+        console.error(`[HeartbeatService] Tool check not fully implemented: ${check.toolName}`);
         return { success: true, output: 'Tool check placeholder' };
       }
 
@@ -511,12 +511,12 @@ export class HeartbeatService {
 
     if (alert.ipc) {
       // Would send IPC message to renderer
-      console.log('[HeartbeatService] Would send IPC alert');
+      console.error('[HeartbeatService] Would send IPC alert');
     }
 
     if (alert.notification) {
       // Would trigger system notification
-      console.log('[HeartbeatService] Would trigger system notification');
+      console.error('[HeartbeatService] Would trigger system notification');
     }
 
     if (alert.webhook) {
@@ -545,7 +545,7 @@ export class HeartbeatService {
   private async loadHeartbeatsFromDatabase(): Promise<void> {
     try {
       // Heartbeats would be loaded from database
-      console.log('[HeartbeatService] Database loading not implemented yet');
+      console.error('[HeartbeatService] Database loading not implemented yet');
     } catch (error) {
       console.error('[HeartbeatService] Failed to load heartbeats from database:', error);
     }
@@ -554,7 +554,7 @@ export class HeartbeatService {
   private async saveHeartbeatToDatabase(config: HeartbeatConfig): Promise<void> {
     try {
       // Save heartbeat to database
-      console.log('[HeartbeatService] Database saving not implemented yet');
+      console.error('[HeartbeatService] Database saving not implemented yet');
     } catch (error) {
       console.error('[HeartbeatService] Failed to save heartbeat to database:', error);
     }
@@ -563,7 +563,7 @@ export class HeartbeatService {
   private async deleteHeartbeatFromDatabase(id: string): Promise<void> {
     try {
       // Delete heartbeat from database
-      console.log('[HeartbeatService] Database deletion not implemented yet');
+      console.error('[HeartbeatService] Database deletion not implemented yet');
     } catch (error) {
       console.error('[HeartbeatService] Failed to delete heartbeat from database:', error);
     }

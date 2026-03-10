@@ -57,7 +57,7 @@ class LogCollector {
   private currentFileSize: number = 0;
 
   constructor(options?: LogCollectorOptions) {
-    console.log('[LogCollector] Initialized');
+    console.error('[LogCollector] Initialized');
 
     if (options?.enablePersistence) {
       this.enablePersistence(options);
@@ -95,7 +95,7 @@ class LogCollector {
       this.writeStream = fs.createWriteStream(this.logFilePath, { flags: 'a' });
       this.persistenceEnabled = true;
 
-      console.log(`[LogCollector] Persistence enabled: ${this.logFilePath}`);
+      console.error(`[LogCollector] Persistence enabled: ${this.logFilePath}`);
 
       // 清理旧日志文件
       this.cleanupOldLogFiles();
@@ -119,7 +119,7 @@ class LogCollector {
       for (const file of filesToDelete) {
         const filePath = path.join(this.logDir, file);
         fs.unlinkSync(filePath);
-        console.log(`[LogCollector] Deleted old log file: ${file}`);
+        console.error(`[LogCollector] Deleted old log file: ${file}`);
       }
     } catch (error) {
       console.error('[LogCollector] Failed to cleanup old log files:', error);
@@ -152,7 +152,7 @@ class LogCollector {
       this.writeStream = fs.createWriteStream(this.logFilePath, { flags: 'a' });
       this.currentFileSize = 0;
 
-      console.log(`[LogCollector] Log rotated: ${newPath}`);
+      console.error(`[LogCollector] Log rotated: ${newPath}`);
 
       // 清理旧文件
       this.cleanupOldLogFiles();
@@ -194,7 +194,7 @@ class LogCollector {
       this.writeStream = null;
     }
     this.persistenceEnabled = false;
-    console.log('[LogCollector] Closed');
+    console.error('[LogCollector] Closed');
   }
 
   // --------------------------------------------------------------------------
@@ -226,7 +226,7 @@ class LogCollector {
 
     // Also console log for debugging
     const timeStr = entry.timestamp.toISOString().split('T')[1].split('.')[0];
-    console.log(`[LogCollector][${source}][${level}] ${timeStr} - ${message}`);
+    console.error(`[LogCollector][${source}][${level}] ${timeStr} - ${message}`);
   }
 
   /**
@@ -332,7 +332,7 @@ class LogCollector {
         this.toolLogs = [];
         break;
     }
-    console.log(`[LogCollector] Cleared ${source} logs`);
+    console.error(`[LogCollector] Cleared ${source} logs`);
   }
 
   /**
@@ -342,7 +342,7 @@ class LogCollector {
     this.browserLogs = [];
     this.agentLogs = [];
     this.toolLogs = [];
-    console.log('[LogCollector] Cleared all logs');
+    console.error('[LogCollector] Cleared all logs');
   }
 
   // --------------------------------------------------------------------------

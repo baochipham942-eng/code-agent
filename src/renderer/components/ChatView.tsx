@@ -15,6 +15,11 @@ import { ChatInput } from './features/chat/ChatInput';
 import type { ChatInputHandle } from './features/chat/ChatInput';
 import { useFileUpload } from './features/chat/ChatInput/useFileUpload';
 import { TaskStatusBar } from './features/chat/TaskStatusBar';
+import { LocalBridgePrompt } from './features/chat/LocalBridgePrompt';
+import { BridgeUpdatePrompt } from './features/chat/BridgeUpdatePrompt';
+import { DirectoryPickerModal } from './features/chat/DirectoryPickerModal';
+import { useLocalBridgeStore } from '../stores/localBridgeStore';
+import { isWebMode } from '../utils/platform';
 
 import { PreviewPanel } from './PreviewPanel';
 import { PlanPanel } from './features/chat/PlanPanel';
@@ -98,6 +103,74 @@ export const ChatView: React.FC = () => {
   const isCurrentSessionProcessing = currentSessionState?.status === 'running' || currentSessionState?.status === 'queued';
   // 如果 taskStore 有状态，使用会话级别状态；否则回退到全局状态
   const effectiveIsProcessing = currentSessionState ? isCurrentSessionProcessing : isProcessing;
+  // Bridge 拦截状态 (Phase 4)
+  const [bridgePrompt, setBridgePrompt] = useState<{ toolName: string } | null>(null);
+  const [bridgeUpdatePrompt, setBridgeUpdatePrompt] = useState<{ currentVersion: string; requiredVersion: string } | null>(null);
+  const [showDirPicker, setShowDirPicker] = useState(false);
+  const { status: bridgeStatus, version: bridgeVersion, workingDirectory } = useLocalBridgeStore();
+  const { setShowSettings } = useAppStore();
+
+  // Bridge 最低版本要求
+  const MIN_BRIDGE_VERSION = '0.1.0';
+
+  // 简单 semver 比较
+  const compareVersions = useCallback((a: string, b: string): number => {
+    const pa = a.split('.').map(Number);
+    const pb = b.split('.').map(Number);
+    for (let i = 0; i < 3; i++) {
+      const diff = (pa[i] || 0) - (pb[i] || 0);
+      if (diff !== 0) return diff;
+    }
+    return 0;
+  }, []);
+
+  // 前往设置页 MCP tab
+  const handleGoToSettings = useCallback(() => {
+    setBridgePrompt(null);
+    setBridgeUpdatePrompt(null);
+    setShowSettings(true);
+    // 延迟派发导航事件，等 Modal 挂载
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('settings-navigate', { detail: { tab: 'mcp' } }));
+    }, 100);
+  }, [setShowSettings]);
+
+  // 监听 bridge-tool-call 事件（Web 模式下拦截本地工具调用）
+  useEffect(() => {
+    if (!isWebMode()) return;
+
+    const handler = (e: Event) => {
+      const data = (e as CustomEvent).detail;
+      const toolName = data?.tool || '未知工具';
+
+      // 1. Bridge 未连接
+      if (bridgeStatus !== 'connected') {
+        setBridgePrompt({ toolName });
+        return;
+      }
+
+      // 2. 版本过低
+      if (bridgeVersion && compareVersions(bridgeVersion, MIN_BRIDGE_VERSION) < 0) {
+        setBridgeUpdatePrompt({
+          currentVersion: bridgeVersion,
+          requiredVersion: MIN_BRIDGE_VERSION,
+        });
+        return;
+      }
+
+      // 3. 未选择工作目录
+      if (!workingDirectory) {
+        setShowDirPicker(true);
+        return;
+      }
+
+      // 4. 一切就绪 - 正常执行（后续 Phase 会实现实际调用）
+    };
+
+    window.addEventListener('bridge-tool-call', handler);
+    return () => window.removeEventListener('bridge-tool-call', handler);
+  }, [bridgeStatus, bridgeVersion, workingDirectory, compareVersions]);
+
   const { requireAuthAsync } = useRequireAuth();
 
   // Global drop zone state
@@ -321,6 +394,30 @@ export const ChatView: React.FC = () => {
             />
           </div>
         )}
+
+        {/* Bridge 拦截提示 (Phase 4) */}
+        {bridgePrompt && (
+          <LocalBridgePrompt
+            toolName={bridgePrompt.toolName}
+            onGoToSettings={handleGoToSettings}
+            onDismiss={() => setBridgePrompt(null)}
+          />
+        )}
+        {bridgeUpdatePrompt && (
+          <BridgeUpdatePrompt
+            currentVersion={bridgeUpdatePrompt.currentVersion}
+            requiredVersion={bridgeUpdatePrompt.requiredVersion}
+            onGoToSettings={handleGoToSettings}
+            onDismiss={() => setBridgeUpdatePrompt(null)}
+          />
+        )}
+
+        {/* 工作目录选择弹窗 (Phase 4) */}
+        <DirectoryPickerModal
+          isOpen={showDirPicker}
+          onSelect={() => setShowDirPicker(false)}
+          onClose={() => setShowDirPicker(false)}
+        />
 
         {/* Permission Card - 浮动在输入框上方 */}
         <PermissionCard />

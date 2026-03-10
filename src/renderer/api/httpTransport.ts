@@ -10,6 +10,8 @@
 /// <reference path="../types/electron.d.ts" />
 
 import type { ElectronAPI, DomainAPI, IPCResponse, IpcInvokeHandlers, IpcEventHandlers } from '../../shared/ipc';
+import { getLocalBridgeClient } from '../services/localBridge';
+import { useLocalBridgeStore } from '../stores/localBridgeStore';
 
 type EventCallback = (...args: unknown[]) => void;
 
@@ -19,6 +21,59 @@ type EventCallback = (...args: unknown[]) => void;
  * 将 IPC invoke 调用映射到 REST API 端点，
  * 将 IPC on/off 事件映射到 SSE EventSource。
  */
+/**
+ * 处理 tool_call_local 事件：调用本地 Bridge 执行工具，将结果 POST 回 webServer
+ */
+async function handleLocalToolCall(baseUrl: string, data: Record<string, unknown>): Promise<void> {
+  const bridgeStore = useLocalBridgeStore.getState();
+  if (bridgeStore.status !== 'connected') {
+    console.warn('[HttpTransport] Bridge not connected, cannot execute local tool:', data.tool);
+    // POST error result back
+    await fetch(`${baseUrl}/api/tool-result`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        toolCallId: data.toolCallId,
+        success: false,
+        error: 'Local Bridge is not connected. Please start the Bridge service on localhost:9527.',
+      }),
+    });
+    return;
+  }
+
+  try {
+    const client = getLocalBridgeClient();
+    const result = await client.invokeTool(
+      data.tool as string,
+      data.params as Record<string, unknown>
+    );
+
+    // POST result back to webServer
+    await fetch(`${baseUrl}/api/tool-result`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        toolCallId: data.toolCallId,
+        success: result.success,
+        output: result.output,
+        error: result.error,
+        metadata: result.metadata,
+      }),
+    });
+  } catch (err) {
+    console.error('[HttpTransport] Local tool execution failed:', err);
+    await fetch(`${baseUrl}/api/tool-result`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        toolCallId: data.toolCallId,
+        success: false,
+        error: `Bridge invocation failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      }),
+    });
+  }
+}
+
 export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
   // 事件监听器管理
   const listeners = new Map<string, Set<EventCallback>>();
@@ -180,6 +235,16 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
                   } else if (line.startsWith('data: ') && currentEvent) {
                     try {
                       const data = JSON.parse(line.slice(6));
+
+                      // ── Local Bridge 拦截: tool_call_local 事件 ──
+                      if (currentEvent === 'tool_call_local') {
+                        console.debug('[HttpTransport] Intercepted tool_call_local:', data.tool, data.toolCallId);
+                        handleLocalToolCall(baseUrl, data).catch((err) => {
+                          console.error('[HttpTransport] handleLocalToolCall error:', err);
+                        });
+                        // 仍然派发事件给 UI（用于显示工具执行状态）
+                      }
+
                       // 将 SSE 事件转发到 agent:event listeners
                       const sessionId = data?.sessionId;
                       const cbs = listeners.get('agent:event');

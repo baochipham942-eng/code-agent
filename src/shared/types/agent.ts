@@ -70,6 +70,15 @@ export interface ToolTimeoutData {
   threshold: number;       // 超时阈值 ms
 }
 
+// Web Bridge 本地工具调用请求数据
+export interface LocalToolCallData {
+  toolCallId: string;
+  tool: string;
+  params: Record<string, unknown>;
+  permissionLevel: 'L1' | 'L2' | 'L3';
+  sessionId?: string;
+}
+
 // Memory 学习完成事件数据
 export interface MemoryLearnedData {
   sessionId: string;
@@ -210,7 +219,9 @@ export type AgentEvent =
   | { type: 'context_compacted'; data: { tokensBefore: number; tokensAfter: number; messagesRemoved: number; duration_ms: number } }
   // 实时 token 用量（SSE usage / token_estimate 事件）
   | { type: 'stream_usage'; data: { inputTokens: number; outputTokens: number; turnId?: string } }
-  | { type: 'stream_token_estimate'; data: { inputTokens: number; outputTokens: number; turnId?: string } };
+  | { type: 'stream_token_estimate'; data: { inputTokens: number; outputTokens: number; turnId?: string } }
+  // Web Bridge: 本地工具调用请求（webServer → 前端 → Bridge）
+  | { type: 'tool_call_local'; data: LocalToolCallData };
 
 // 上下文压缩事件数据
 export interface ContextCompressedData {

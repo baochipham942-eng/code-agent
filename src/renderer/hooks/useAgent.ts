@@ -575,6 +575,11 @@ export const useAgent = () => {
             setIsInterrupting(false);
             break;
 
+          case 'tool_call_local':
+            // Bridge 本地工具调用请求 - 通知 ChatView 检查 Bridge 状态
+            window.dispatchEvent(new CustomEvent('bridge-tool-call', { detail: event.data }));
+            break;
+
           case 'stream_end':
             // SSE 流结束兜底（httpTransport 在流关闭时派发）
             // 如果 agent_complete 已经处理过则 processing 已清除，这里是安全的二次检查

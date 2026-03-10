@@ -89,17 +89,12 @@ import {
   estimateTokens,
 } from '../../context/tokenOptimizer';
 import { AutoContextCompressor, getAutoCompressor } from '../../context/autoCompressor';
-import { getTraceRecorder } from '../../evolution/traceRecorder';
-import { getOutcomeDetector } from '../../evolution/outcomeDetector';
 import { getInputSanitizer } from '../../security/inputSanitizer';
 import { getDiffTracker } from '../../services/diff/diffTracker';
 import { getCitationService } from '../../services/citation/citationService';
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
 import { createHash } from 'crypto';
-import { getVerifierRegistry, initializeVerifiers } from '../../agent/verifier';
-import type { VerificationContext, VerificationResult } from '../../agent/verifier';
-import { analyzeTask } from '../../agent/hybrid/taskRouter';
 import type { RuntimeContext } from './runtimeContext';
 import type { ToolExecutionEngine } from './toolExecutionEngine';
 import type { ContextAssembly } from './contextAssembly';
@@ -350,7 +345,7 @@ export class ConversationRuntime {
 
     const initResult = await this.initializeRun(userMessage);
     if (!initResult) return; // Early exit (step-by-step mode or hook blocked)
-    const { langfuse, evolutionTraceRecorder, isSimpleTask, shouldRunHooks, genNum } = initResult;
+    const { langfuse, isSimpleTask, shouldRunHooks, genNum } = initResult;
 
     let iterations = 0;
     let userTurnId: string | undefined;
@@ -608,7 +603,7 @@ export class ConversationRuntime {
       break;
     }
 
-    await this.runFinalizer.finalizeRun(iterations, userMessage, langfuse, evolutionTraceRecorder, genNum);
+    await this.runFinalizer.finalizeRun(iterations, userMessage, langfuse, genNum);
   }
 
 
@@ -834,17 +829,7 @@ export class ConversationRuntime {
           });
         }
 
-        // GC: async codebase health scan (non-blocking)
-        try {
-          const { getCodebaseHealthScanner } = require('./gc/codebaseHealthScanner');
-          const scanner = getCodebaseHealthScanner();
-          scanner.scan(iterations, this.ctx.workingDirectory, Array.from(this.ctx.nudgeManager.getModifiedFiles()))
-            .catch((err: unknown) => {
-              logger.debug('[AgentLoop] GC scan error (non-blocking):', err);
-            });
-        } catch {
-          // GC module not available, skip
-        }
+
 
         return 'break';
   }
@@ -1111,7 +1096,6 @@ export class ConversationRuntime {
 
   async initializeRun(userMessage: string): Promise<{
     langfuse: ReturnType<typeof getLangfuseService>;
-    evolutionTraceRecorder: ReturnType<typeof getTraceRecorder>;
     isSimpleTask: boolean;
     shouldRunHooks: boolean;
     genNum: number;
@@ -1133,10 +1117,6 @@ export class ConversationRuntime {
       modelProvider: this.ctx.modelConfig.provider,
       modelName: this.ctx.modelConfig.model,
     }, userMessage);
-
-    // Gen8: Start trace recording for self-evolution
-    const evolutionTraceRecorder = getTraceRecorder();
-    evolutionTraceRecorder.startTrace(this.ctx.sessionId, userMessage, this.ctx.workingDirectory);
 
     await this.initializeUserHooks();
 
@@ -1341,7 +1321,7 @@ export class ConversationRuntime {
       logger.warn('[AgentLoop] Seed memory injection failed, continuing without');
     }
 
-    return { langfuse, evolutionTraceRecorder, isSimpleTask, shouldRunHooks, genNum };
+    return { langfuse, isSimpleTask, shouldRunHooks, genNum };
   }
 
 

@@ -393,10 +393,7 @@ export function registerSettingsHandlers(
   /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'checkApiKeyConfigured' */
   ipcMain.handle(IPC_CHANNELS.SECURITY_CHECK_API_KEY_CONFIGURED, async () => handleCheckApiKeyConfigured());
 
-  ipcMain.handle(IPC_CHANNELS.SECURITY_TOOL_CREATE_RESPONSE, async (_, requestId: string, allowed: boolean) => {
-    const { handleToolCreateResponse } = await import('../tools/evolution/toolCreate');
-    handleToolCreateResponse(requestId, allowed);
-  });
+  // Tool create response handler removed (evolution module deleted)
 
   /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'getDevMode' */
   ipcMain.handle(IPC_CHANNELS.PERSISTENT_GET_DEV_MODE, async () => handleGetDevMode());

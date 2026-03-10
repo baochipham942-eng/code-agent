@@ -89,17 +89,12 @@ import {
   estimateTokens,
 } from '../../context/tokenOptimizer';
 import { AutoContextCompressor, getAutoCompressor } from '../../context/autoCompressor';
-import { getTraceRecorder } from '../../evolution/traceRecorder';
-import { getOutcomeDetector } from '../../evolution/outcomeDetector';
 import { getInputSanitizer } from '../../security/inputSanitizer';
 import { getDiffTracker } from '../../services/diff/diffTracker';
 import { getCitationService } from '../../services/citation/citationService';
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
 import { createHash } from 'crypto';
-import { getVerifierRegistry, initializeVerifiers } from '../../agent/verifier';
-import type { VerificationContext, VerificationResult } from '../../agent/verifier';
-import { analyzeTask } from '../../agent/hybrid/taskRouter';
 import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { LearningPipeline } from './learningPipeline';
@@ -148,7 +143,6 @@ export class RunFinalizer {
     iterations: number,
     userMessage: string,
     langfuse: ReturnType<typeof getLangfuseService>,
-    evolutionTraceRecorder: ReturnType<typeof getTraceRecorder>,
     genNum: number,
   ): Promise<void> {
     // Handle loop exit conditions
@@ -227,34 +221,6 @@ export class RunFinalizer {
           message: `⚠️ 任务可能未完成：${totalIncomplete} 个待办项未完成 (${allDetails})`,
         },
       });
-    }
-
-    // Gen8: End trace recording and determine outcome
-    if (evolutionTraceRecorder.hasActiveTrace()) {
-      try {
-        // 确定执行结果
-        const outcomeDetector = getOutcomeDetector();
-        const traceOutcome = this.determineTraceOutcome(iterations);
-
-        const trace = await evolutionTraceRecorder.endTrace(
-          traceOutcome.outcome,
-          traceOutcome.reason,
-          traceOutcome.confidence
-        );
-
-        // 如果有轨迹，持久化信号并触发学习
-        if (trace) {
-          const outcomeResult = await outcomeDetector.detectOutcome(trace);
-          await outcomeDetector.persistSignals(trace.id, outcomeResult.signals);
-
-          // 触发元学习（异步，不阻塞主流程）
-          this.triggerEvolutionLearning(trace, outcomeResult).catch((err) => {
-            logger.error('[AgentLoop] Evolution learning error:', err);
-          });
-        }
-      } catch (error) {
-        logger.error('[AgentLoop] Trace recording error:', error);
-      }
     }
 
     logger.debug('[AgentLoop] ========== run() END, emitting agent_complete ==========');
@@ -447,132 +413,6 @@ export class RunFinalizer {
         this.ctx.skillModelOverride = skillResult.contextModifier.modelOverride;
         logger.debug(`[AgentLoop] Model override set to: ${this.ctx.skillModelOverride}`);
       }
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  // Gen8 Self-Evolution Methods
-  // --------------------------------------------------------------------------
-
-  /**
-   * 根据执行状态确定轨迹结果
-   */
-
-  determineTraceOutcome(iterations: number): {
-    outcome: 'success' | 'failure' | 'partial';
-    reason: string;
-    confidence: number;
-  } {
-    // 检查是否被取消
-    if (this.ctx.isCancelled) {
-      return {
-        outcome: 'partial',
-        reason: '用户取消执行',
-        confidence: 0.9,
-      };
-    }
-
-    // 检查是否达到最大迭代次数
-    if (iterations >= this.ctx.maxIterations) {
-      return {
-        outcome: 'partial',
-        reason: '达到最大迭代次数',
-        confidence: 0.7,
-      };
-    }
-
-    // 检查 circuit breaker 是否触发
-    if (this.ctx.circuitBreaker.isTripped()) {
-      return {
-        outcome: 'failure',
-        reason: '连续工具调用失败',
-        confidence: 0.85,
-      };
-    }
-
-    // 检查未完成的任务
-    const incompleteTodos = getSessionTodos(this.ctx.sessionId).filter(t => t.status !== 'completed');
-    const incompleteTasks = getIncompleteTasks(this.ctx.sessionId);
-
-    if (incompleteTodos.length > 0 || incompleteTasks.length > 0) {
-      return {
-        outcome: 'partial',
-        reason: `${incompleteTodos.length + incompleteTasks.length} 个待办项未完成`,
-        confidence: 0.75,
-      };
-    }
-
-    // 检查工具使用情况
-    const hasWriteTools = this.ctx.toolsUsedInTurn.some(t =>
-      ['write_file', 'edit_file', 'bash'].includes(t)
-    );
-
-    if (!hasWriteTools && this.ctx.toolsUsedInTurn.length > 0) {
-      // 只有读取操作，可能是信息收集任务
-      return {
-        outcome: 'success',
-        reason: '信息收集任务完成',
-        confidence: 0.7,
-      };
-    }
-
-    // 正常完成
-    return {
-      outcome: 'success',
-      reason: '任务正常完成',
-      confidence: 0.8,
-    };
-  }
-
-  /**
-   * 触发进化学习（异步）
-   */
-
-  async triggerEvolutionLearning(
-    trace: import('../../evolution/traceRecorder').ExecutionTrace,
-    outcomeResult: import('../../evolution/outcomeDetector').OutcomeResult
-  ): Promise<void> {
-    // 只从成功案例学习
-    if (outcomeResult.outcome !== 'success' || outcomeResult.confidence < 0.7) {
-      logger.debug('[AgentLoop] Skipping evolution learning: not a confident success');
-      return;
-    }
-
-    const genNum = 8;
-    if (genNum < 8) {
-      logger.debug('[AgentLoop] Skipping evolution learning: requires Gen8+');
-      return;
-    }
-
-    try {
-      // 动态导入以避免循环依赖
-      const { getLLMInsightExtractor } = await import('../../evolution/llmInsightExtractor');
-      const { getSafeInjector } = await import('../../evolution/safeInjector');
-      const { getSkillEvolutionService } = await import('../../evolution/skillEvolutionService');
-
-      const extractor = getLLMInsightExtractor();
-      extractor.setModelRouter(this.ctx.modelRouter);
-
-      // 提取洞察
-      const insights = await extractor.extractFromSuccessfulTraces([trace]);
-
-      logger.info('[AgentLoop] Evolution learning completed', {
-        traceId: trace.id,
-        insightsExtracted: insights.length,
-      });
-
-      // 保存洞察
-      for (const insight of insights) {
-        const saved = await extractor.saveInsight(insight, trace.projectPath);
-
-        // 如果是 Skill 类型，创建提案
-        if (insight.type === 'skill') {
-          const skillService = getSkillEvolutionService();
-          await skillService.proposeSkill(insight);
-        }
-      }
-    } catch (error) {
-      logger.error('[AgentLoop] Evolution learning failed:', error);
     }
   }
 

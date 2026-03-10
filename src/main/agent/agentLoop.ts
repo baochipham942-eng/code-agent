@@ -84,16 +84,14 @@ import {
   estimateTokens,
 } from '../context/tokenOptimizer';
 import { AutoContextCompressor, getAutoCompressor } from '../context/autoCompressor';
-import { getTraceRecorder } from '../evolution/traceRecorder';
-import { getOutcomeDetector } from '../evolution/outcomeDetector';
+
 import { getInputSanitizer } from '../security/inputSanitizer';
 import { getDiffTracker } from '../services/diff/diffTracker';
 import { getCitationService } from '../services/citation/citationService';
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
 import { createHash } from 'crypto';
-import { getVerifierRegistry, initializeVerifiers } from './verifier';
-import type { VerificationContext, VerificationResult } from './verifier';
+
 import { analyzeTask } from './hybrid/taskRouter';
 
 const logger = createLogger('AgentLoop');

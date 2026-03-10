@@ -17,6 +17,7 @@ export {
   setCurrentSessionId,
   getPlanningServiceInstance,
   getTaskManagerInstance,
+  getAppServiceInstance,
 } from './bootstrap';
 
 export {

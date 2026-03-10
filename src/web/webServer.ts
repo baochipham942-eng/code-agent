@@ -391,6 +391,7 @@ function registerHandlers(): void {
   const deps: IpcDependencies = {
     getMainWindow: () => webModeWindow as any,
     getOrchestrator: () => null, // Agent execution via /api/run
+    getAppService: () => null, // Web mode uses HTTP API, not AppService
     getConfigService: () => {
       try {
         const { getConfigService } = require('../main/services/core/configService');

@@ -13,6 +13,8 @@ import { ConfigService } from '../services';
 import { AgentOrchestrator } from '../agent/agentOrchestrator';
 import { getTaskManager, type TaskManager } from '../task';
 import type { PlanningService } from '../planning';
+import type { AgentApplicationService } from '../../shared/types/appService';
+import { AgentAppServiceImpl } from './agentAppService';
 
 import { initializeCoreServices as initCoreServicesImpl } from './initCoreServices';
 import { initializeBackgroundInfra } from './initBackgroundServices';
@@ -24,6 +26,7 @@ const logger = createLogger('Bootstrap');
 // Global state (reduced: no more global agentOrchestrator)
 let configService: ConfigService | null = null;
 let planningService: PlanningService | null = null;
+let appService: AgentApplicationService | null = null;
 
 // ── Getters / Setters (preserve existing export signatures) ─────────────
 
@@ -73,6 +76,14 @@ export function getTaskManagerInstance(): TaskManager | null {
   return getTaskManager();
 }
 
+/**
+ * 获取 AgentApplicationService 实例
+ * IPC handler 的唯一业务依赖（替代直接 import AgentOrchestrator/TaskManager）
+ */
+export function getAppServiceInstance(): AgentApplicationService | null {
+  return appService;
+}
+
 // ── Phase 1: Core Services ─────────────────────────────────────────────
 
 /**
@@ -104,6 +115,14 @@ export async function initializeBackgroundServices(): Promise<void> {
 
   // Phase 3: Agent runtime (TaskManager as sole orchestrator owner, channels)
   createAgentRuntime(configService);
+
+  // Phase 3b: Create AgentApplicationService (facade for IPC layer)
+  appService = new AgentAppServiceImpl(
+    () => getTaskManager(),
+    () => configService,
+    () => getTaskManager().getCurrentSessionId(),
+    (id: string) => getTaskManager().setCurrentSessionId(id),
+  );
 
   // Phase 4a: Session restoration (uses TaskManager to manage orchestrator)
   logger.info('Initializing session...');

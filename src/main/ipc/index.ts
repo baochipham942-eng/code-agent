@@ -7,6 +7,7 @@ import type { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { ConfigService } from '../services';
 import type { PlanningService } from '../planning';
 import type { TaskManager } from '../task';
+import type { AgentApplicationService } from '../../shared/types/appService';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('IPC');
@@ -55,6 +56,7 @@ export * from './types';
 export interface IpcDependencies {
   getMainWindow: () => BrowserWindow | null;
   getOrchestrator: () => AgentOrchestrator | null;
+  getAppService: () => AgentApplicationService | null;
   getConfigService: () => ConfigService | null;
   getPlanningService: () => PlanningService | null;
   getTaskManager: () => TaskManager | null;
@@ -69,23 +71,17 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   const {
     getMainWindow,
     getOrchestrator,
+    getAppService,
     getConfigService,
     getPlanningService,
     getTaskManager,
-    getCurrentSessionId,
-    setCurrentSessionId,
   } = deps;
 
-  // Agent handlers
-  registerAgentHandlers(ipcMain, getOrchestrator);
+  // Agent handlers (via AgentApplicationService)
+  registerAgentHandlers(ipcMain, getAppService);
 
-  // Session handlers
-  registerSessionHandlers(ipcMain, {
-    getConfigService,
-    getOrchestrator,
-    getCurrentSessionId,
-    setCurrentSessionId,
-  });
+  // Session handlers (via AgentApplicationService)
+  registerSessionHandlers(ipcMain, getAppService);
 
   // Auth handlers
   registerAuthHandlers(ipcMain);

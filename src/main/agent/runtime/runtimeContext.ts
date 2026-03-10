@@ -5,43 +5,57 @@
 import type {
   Message,
   AgentEvent,
+  ToolResult,
 } from '../../../shared/types';
 import type { StructuredOutputConfig } from '../structuredOutput';
 import type { EffortLevel } from '../../../shared/types/agent';
+import type { ModelConfig } from '../../../shared/types/model';
+import type { ToolRegistryLike } from '../../tools/types';
+import type { ToolExecutor } from '../../tools/toolExecutor';
+import type { ModelRouter } from '../../model/modelRouter';
+import type { CircuitBreaker } from '../toolExecution/circuitBreaker';
+import type { AntiPatternDetector } from '../antiPattern/detector';
+import type { GoalTracker } from '../goalTracker';
+import type { NudgeManager } from '../nudgeManager';
+import type { HookManager } from '../../hooks/hookManager';
+import type { PlanningService } from '../../planning/planningService';
+import type { HookMessageBuffer, MessageHistoryCompressor } from '../../context/tokenOptimizer';
+import type { AutoContextCompressor } from '../../context/autoCompressor';
+import type { TelemetryAdapter } from '../../../shared/types/telemetry';
 
 /**
  * Mutable shared state. Single object, all modules share the same reference.
- * Uses `any` for complex service types to avoid circular import issues.
+ * All service types are strongly typed via `import type` (no runtime circular deps).
  */
 export interface RuntimeContext {
   // --- Configuration ---
   systemPrompt: string;
-  modelConfig: any;
-  toolRegistry: any;
-  toolExecutor: any;
+  modelConfig: ModelConfig;
+  toolRegistry: ToolRegistryLike;
+  toolExecutor: ToolExecutor;
   messages: Message[];
   onEvent: (event: AgentEvent) => void;
-  modelRouter: any;
+  modelRouter: ModelRouter;
   maxIterations: number;
   workingDirectory: string;
   isDefaultWorkingDirectory: boolean;
   sessionId: string;
   userId?: string;
   persistMessage?: (message: Message) => Promise<void>;
-  onToolExecutionLog?: any;
+  onToolExecutionLog?: (log: { sessionId: string; toolCallId: string; toolName: string; args: Record<string, unknown>; result: ToolResult }) => void;
 
   // --- Services / modules ---
-  circuitBreaker: any;
-  antiPatternDetector: any;
-  goalTracker: any;
-  nudgeManager: any;
-  hookManager?: any;
-  planningService?: any;
-  contentVerifier?: any;
-  hookMessageBuffer: any;
-  messageHistoryCompressor: any;
-  autoCompressor: any;
-  telemetryAdapter?: any;
+  circuitBreaker: CircuitBreaker;
+  antiPatternDetector: AntiPatternDetector;
+  goalTracker: GoalTracker;
+  nudgeManager: NudgeManager;
+  hookManager?: HookManager;
+  planningService?: PlanningService;
+  contentVerifier?: unknown;
+  hookMessageBuffer: HookMessageBuffer;
+  messageHistoryCompressor: MessageHistoryCompressor;
+  autoCompressor: AutoContextCompressor;
+  telemetryAdapter?: TelemetryAdapter;
 
   // --- Mutable run state ---
   isCancelled: boolean;
@@ -63,7 +77,7 @@ export interface RuntimeContext {
   userHooksInitialized: boolean;
   stopHookRetryCount: number;
   maxStopHookRetries: number;
-  userHooks?: any;
+  userHooks?: unknown;
 
   // --- Tool execution ---
   toolCallRetryCount: number;

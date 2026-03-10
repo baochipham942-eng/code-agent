@@ -1,5 +1,5 @@
 // ============================================================================
-// Database Service - SQLite 数据持久化层
+// Database Service - SQLite 数据持久化层（薄门面，委托给 Repository）
 // ============================================================================
 
 import path from 'path';
@@ -22,95 +22,32 @@ if (!process.env.CODE_AGENT_CLI_MODE || process.env.CODE_AGENT_WEB_MODE) {
 }
 import type {
   Session,
-  SessionStatus,
-  TokenUsage,
   Message,
   ToolResult,
   ModelProvider,
   TodoItem,
 } from '../../../shared/types';
 import type { CaptureItem, CaptureSource, CaptureStats } from '../../../shared/types/capture';
-import { MEMORY } from '../../../shared/constants';
 
-// ----------------------------------------------------------------------------
-// Types
-// ----------------------------------------------------------------------------
+// Re-export types from repositories（保持外部调用方零修改）
+export type {
+  StoredSession,
+  StoredMessage,
+  MemoryRecord,
+  RelationQueryOptions,
+  EntityRelation,
+  UserPreference,
+  ProjectKnowledge,
+  ToolExecution,
+} from './repositories';
 
-export interface StoredSession extends Session {
-  messageCount: number;
-}
-
-export interface StoredMessage extends Message {
-  sessionId: string;
-}
-
-export interface ToolExecution {
-  id: string;
-  sessionId: string;
-  messageId: string;
-  toolName: string;
-  arguments: string; // JSON
-  result: string; // JSON
-  success: boolean;
-  duration: number;
-  createdAt: number;
-}
-
-export interface UserPreference {
-  key: string;
-  value: string;
-  updatedAt: number;
-}
-
-export interface ProjectKnowledge {
-  id: string;
-  projectPath: string;
-  key: string;
-  value: string;
-  source: 'learned' | 'explicit' | 'inferred';
-  confidence: number;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface MemoryRecord {
-  id: string;
-  type: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage';
-  category: string;
-  content: string;
-  summary?: string;
-  source: 'auto_learned' | 'user_defined' | 'session_extracted';
-  projectPath?: string;
-  sessionId?: string;
-  confidence: number;
-  metadata: Record<string, unknown>;
-  accessCount: number;
-  createdAt: number;
-  updatedAt: number;
-  lastAccessedAt?: number;
-}
-
-// SQLite 行类型（better-sqlite3 返回的原始行结构）
-// 使用 Record<string, unknown> 代替 any，但具体字段访问仍需类型断言
-type SQLiteRow = Record<string, unknown>;
-
-
-export interface RelationQueryOptions {
-  /** Half-life in days for confidence decay (default: MEMORY.RELATION_DECAY_DAYS) */
-  decayDays?: number;
-  /** Minimum confidence threshold after decay (default: MEMORY.RELATION_MIN_CONFIDENCE) */
-  minConfidence?: number;
-}
-
-export interface EntityRelation {
-  id: string;
-  sourceId: string;
-  targetId: string;
-  relationType: string;
-  confidence: number;
-  evidence: string;
-  createdAt: number;
-}
+import {
+  SessionRepository,
+  MemoryRepository,
+  ConfigRepository,
+  CaptureRepository,
+  ExperimentRepository,
+} from './repositories';
 
 // ----------------------------------------------------------------------------
 // Database Service
@@ -119,6 +56,13 @@ export interface EntityRelation {
 export class DatabaseService {
   private db: BetterSqlite3.Database | null = null;
   private dbPath: string;
+
+  // Repositories
+  private sessionRepo!: SessionRepository;
+  private memoryRepo!: MemoryRepository;
+  private configRepo!: ConfigRepository;
+  private captureRepo!: CaptureRepository;
+  private experimentRepo!: ExperimentRepository;
 
   constructor() {
     const userDataPath = app?.getPath?.('userData') || process.cwd();
@@ -150,6 +94,13 @@ export class DatabaseService {
     this.migrateSessionsTable();
     this.migrateTelemetryTurnsTable();
     this.createIndexes();
+
+    // 初始化 Repositories
+    this.sessionRepo = new SessionRepository(this.db);
+    this.memoryRepo = new MemoryRepository(this.db);
+    this.configRepo = new ConfigRepository(this.db);
+    this.captureRepo = new CaptureRepository(this.db);
+    this.experimentRepo = new ExperimentRepository(this.db);
   }
 
   /**
@@ -691,9 +642,7 @@ export class DatabaseService {
     `);
 
     // 性能优化：复合索引（首轮响应加速）
-    // 会话列表查询：按状态过滤 + 按更新时间排序
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_status_updated ON sessions(status, updated_at DESC)`);
-    // 消息懒加载：按会话 + 时间戳排序（覆盖索引，避免回表）
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_messages_session_timestamp ON messages(session_id, timestamp DESC)`);
 
     // Cron 相关索引
@@ -743,753 +692,6 @@ export class DatabaseService {
   }
 
   // --------------------------------------------------------------------------
-  // Session CRUD
-  // --------------------------------------------------------------------------
-
-  createSession(session: Session): void {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      session.id,
-      session.title,
-      session.generationId,
-      session.modelConfig.provider,
-      session.modelConfig.model,
-      session.workingDirectory || null,
-      session.createdAt,
-      session.updatedAt,
-      session.workspace || null,
-      session.status || 'idle',
-      session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null
-    );
-  }
-
-  /**
-   * Create a session with a specific ID (for sync from cloud)
-   */
-  createSessionWithId(
-    id: string,
-    data: {
-      title: string;
-      generationId?: string;
-      modelConfig: { provider: ModelProvider; model: string };
-      workingDirectory?: string;
-    }
-  ): void {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const now = Date.now();
-    const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      id,
-      data.title,
-      data.generationId,
-      data.modelConfig.provider,
-      data.modelConfig.model,
-      data.workingDirectory || null,
-      now,
-      now
-    );
-  }
-
-  getSession(sessionId: string): StoredSession | null {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare(`
-      SELECT s.*, COUNT(m.id) as message_count
-      FROM sessions s
-      LEFT JOIN messages m ON s.id = m.session_id
-      WHERE s.id = ?
-      GROUP BY s.id
-    `);
-
-    // better-sqlite3 返回 unknown 类型的行数据
-    const row = stmt.get(sessionId) as SQLiteRow | undefined;
-    if (!row) return null;
-
-    return this.rowToSession(row);
-  }
-
-  listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false): StoredSession[] {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const statusCondition = includeArchived ? '' : "WHERE s.status != 'archived'";
-    const stmt = this.db.prepare(`
-      SELECT s.*, COUNT(m.id) as message_count
-      FROM sessions s
-      LEFT JOIN messages m ON s.id = m.session_id
-      ${statusCondition}
-      GROUP BY s.id
-      ORDER BY s.updated_at DESC
-      LIMIT ? OFFSET ?
-    `);
-
-    const rows = stmt.all(limit, offset) as SQLiteRow[];
-    return rows.map((row) => this.rowToSession(row));
-  }
-
-  updateSession(sessionId: string, updates: Partial<Session>): void {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const session = this.getSession(sessionId);
-    if (!session) throw new Error(`Session not found: ${sessionId}`);
-
-    const stmt = this.db.prepare(`
-      UPDATE sessions
-      SET title = ?, generation_id = ?, model_provider = ?, model_name = ?,
-          working_directory = ?, updated_at = ?, workspace = ?, status = ?, last_token_usage = ?
-      WHERE id = ?
-    `);
-
-    // 处理 lastTokenUsage：如果更新中有新值则使用，否则保留旧值
-    const lastTokenUsage = updates.lastTokenUsage !== undefined
-      ? JSON.stringify(updates.lastTokenUsage)
-      : (session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null);
-
-    stmt.run(
-      updates.title ?? session.title,
-      updates.generationId ?? session.generationId,
-      updates.modelConfig?.provider ?? session.modelConfig.provider,
-      updates.modelConfig?.model ?? session.modelConfig.model,
-      updates.workingDirectory ?? session.workingDirectory,
-      Date.now(),
-      updates.workspace !== undefined ? updates.workspace : session.workspace,
-      updates.status ?? session.status ?? 'idle',
-      lastTokenUsage,
-      sessionId
-    );
-  }
-
-  deleteSession(sessionId: string): void {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare('DELETE FROM sessions WHERE id = ?');
-    stmt.run(sessionId);
-  }
-
-  /**
-   * 清空所有本地会话缓存 (用于清空缓存操作)
-   * 会话数据可从云端重新拉取
-   */
-  clearAllSessions(): number {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare('DELETE FROM sessions');
-    const result = stmt.run();
-    return result.changes;
-  }
-
-  /**
-   * 清空所有本地消息缓存 (用于清空缓存操作)
-   * 消息数据可从云端重新拉取
-   */
-  clearAllMessages(): number {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare('DELETE FROM messages');
-    const result = stmt.run();
-    return result.changes;
-  }
-
-  /**
-   * 检查会话是否有本地缓存的消息
-   */
-  hasMessages(sessionId: string): boolean {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM messages WHERE session_id = ?');
-    const row = stmt.get(sessionId) as SQLiteRow | undefined;
-    return ((row?.count as number) || 0) > 0;
-  }
-
-  /**
-   * 获取本地会话和消息统计
-   */
-  getLocalCacheStats(): { sessionCount: number; messageCount: number } {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const sessionRow = this.db.prepare('SELECT COUNT(*) as c FROM sessions').get() as SQLiteRow;
-    const messageRow = this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as SQLiteRow;
-
-    return { sessionCount: sessionRow.c as number, messageCount: messageRow.c as number };
-  }
-
-  private rowToSession(row: SQLiteRow): StoredSession {
-    // 解析 lastTokenUsage JSON
-    let lastTokenUsage: TokenUsage | undefined;
-    if (row.last_token_usage) {
-      try {
-        lastTokenUsage = JSON.parse(row.last_token_usage as string);
-      } catch (err: unknown) {
-        logger.warn('[DB] Failed to parse last_token_usage JSON:', err instanceof Error ? err.message : String(err));
-      }
-    }
-
-    const isArchived = row.status === 'archived';
-
-    return {
-      id: row.id as string,
-      title: row.title as string,
-      generationId: row.generation_id as string,
-      modelConfig: {
-        provider: row.model_provider as ModelProvider,
-        model: row.model_name as string,
-      },
-      workingDirectory: row.working_directory as string | undefined,
-      createdAt: row.created_at as number,
-      updatedAt: row.updated_at as number,
-      messageCount: (row.message_count as number) || 0,
-      // Wave 3 新字段
-      workspace: row.workspace as string | undefined,
-      status: (row.status as SessionStatus) || 'idle',
-      lastTokenUsage,
-      // 归档状态：从 status 字段派生
-      isArchived,
-      archivedAt: isArchived ? (row.updated_at as number) : undefined,
-    };
-  }
-
-  // --------------------------------------------------------------------------
-  // Message CRUD
-  // --------------------------------------------------------------------------
-
-  addMessage(sessionId: string, message: Message): void {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, thinking, effort_level)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    // 保存附件元信息（不含 data 和 thumbnail，节省空间）
-    const attachmentsMeta = message.attachments?.map(a => ({
-      id: a.id,
-      type: a.type,
-      category: a.category,
-      name: a.name,
-      size: a.size,
-      mimeType: a.mimeType,
-      path: a.path,
-      pageCount: a.pageCount,
-      language: a.language,
-    }));
-
-    // thinking 和 reasoning 合并存储到 thinking 列
-    const thinkingContent = message.thinking || message.reasoning || null;
-
-    stmt.run(
-      message.id,
-      sessionId,
-      message.role,
-      message.content,
-      message.timestamp,
-      message.toolCalls ? JSON.stringify(message.toolCalls) : null,
-      message.toolResults ? JSON.stringify(message.toolResults) : null,
-      attachmentsMeta ? JSON.stringify(attachmentsMeta) : null,
-      thinkingContent,
-      message.effortLevel || null
-    );
-
-    // 更新 session 的 updated_at
-    this.db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(Date.now(), sessionId);
-  }
-
-  updateMessage(messageId: string, updates: Partial<Message>): void {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const setClauses: string[] = [];
-    const values: unknown[] = [];
-
-    if (updates.content !== undefined) {
-      setClauses.push('content = ?');
-      values.push(updates.content);
-    }
-    if (updates.toolCalls !== undefined) {
-      setClauses.push('tool_calls = ?');
-      values.push(JSON.stringify(updates.toolCalls));
-    }
-    if (updates.toolResults !== undefined) {
-      setClauses.push('tool_results = ?');
-      values.push(JSON.stringify(updates.toolResults));
-    }
-
-    if (setClauses.length === 0) return;
-
-    values.push(messageId);
-    const sql = `UPDATE messages SET ${setClauses.join(', ')} WHERE id = ?`;
-    this.db.prepare(sql).run(...values);
-  }
-
-  getMessages(sessionId: string, limit?: number, offset?: number): Message[] {
-    if (!this.db) throw new Error('Database not initialized');
-
-    let sql = `
-      SELECT * FROM messages
-      WHERE session_id = ?
-      ORDER BY timestamp ASC
-    `;
-
-    if (limit !== undefined) {
-      sql += ` LIMIT ${limit}`;
-      if (offset !== undefined) {
-        sql += ` OFFSET ${offset}`;
-      }
-    }
-
-    const stmt = this.db.prepare(sql);
-    const rows = stmt.all(sessionId) as SQLiteRow[];
-
-    return rows.map((row): Message => ({
-      id: row.id as string,
-      role: row.role as Message['role'],
-      content: row.content as string,
-      timestamp: row.timestamp as number,
-      toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
-      toolResults: row.tool_results ? JSON.parse(row.tool_results as string) : undefined,
-      attachments: row.attachments ? JSON.parse(row.attachments as string) : undefined,
-      thinking: (row.thinking as string) || undefined,
-      effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
-    }));
-  }
-
-  getMessageCount(sessionId: string): number {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM messages WHERE session_id = ?');
-    const row = stmt.get(sessionId) as SQLiteRow | undefined;
-    return (row?.count as number) || 0;
-  }
-
-  getRecentMessages(sessionId: string, count: number): Message[] {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare(`
-      SELECT * FROM messages
-      WHERE session_id = ?
-      ORDER BY timestamp DESC
-      LIMIT ?
-    `);
-
-    const rows = stmt.all(sessionId, count) as SQLiteRow[];
-
-    return rows.reverse().map((row): Message => ({
-      id: row.id as string,
-      role: row.role as Message['role'],
-      content: row.content as string,
-      timestamp: row.timestamp as number,
-      toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
-      toolResults: row.tool_results ? JSON.parse(row.tool_results as string) : undefined,
-    }));
-  }
-
-  /**
-   * 获取指定时间戳之前的消息（分页加载历史消息）
-   */
-  getMessagesBefore(sessionId: string, beforeTimestamp: number, limit: number = 30): Message[] {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare(`
-      SELECT * FROM messages
-      WHERE session_id = ? AND timestamp < ?
-      ORDER BY timestamp DESC
-      LIMIT ?
-    `);
-
-    const rows = stmt.all(sessionId, beforeTimestamp, limit) as SQLiteRow[];
-
-    return rows.reverse().map((row): Message => ({
-      id: row.id as string,
-      role: row.role as Message['role'],
-      content: row.content as string,
-      timestamp: row.timestamp as number,
-      toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
-      toolResults: row.tool_results ? JSON.parse(row.tool_results as string) : undefined,
-    }));
-  }
-
-  // --------------------------------------------------------------------------
-  // Tool Execution Cache
-  // --------------------------------------------------------------------------
-
-  /**
-   * 生成参数哈希用于缓存查找
-   */
-  private hashArguments(toolName: string, args: Record<string, unknown>): string {
-    const str = `${toolName}:${JSON.stringify(args)}`;
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return hash.toString(16);
-  }
-
-  saveToolExecution(
-    sessionId: string,
-    messageId: string | null,
-    toolName: string,
-    args: Record<string, unknown>,
-    result: ToolResult,
-    ttlMs?: number
-  ): void {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const now = Date.now();
-    const expiresAt = ttlMs ? now + ttlMs : null;
-
-    const stmt = this.db.prepare(`
-      INSERT INTO tool_executions (id, session_id, message_id, tool_name, arguments, arguments_hash, result, success, duration, created_at, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    stmt.run(
-      `te_${now}_${Math.random().toString(36).substr(2, 9)}`,
-      sessionId,
-      messageId,
-      toolName,
-      JSON.stringify(args),
-      this.hashArguments(toolName, args),
-      JSON.stringify(result),
-      result.success ? 1 : 0,
-      result.duration || 0,
-      now,
-      expiresAt
-    );
-  }
-
-  /**
-   * 从缓存获取工具执行结果
-   */
-  getCachedToolResult(
-    toolName: string,
-    args: Record<string, unknown>
-  ): ToolResult | null {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const hash = this.hashArguments(toolName, args);
-    const now = Date.now();
-
-    const stmt = this.db.prepare(`
-      SELECT result FROM tool_executions
-      WHERE arguments_hash = ? AND tool_name = ?
-        AND (expires_at IS NULL OR expires_at > ?)
-      ORDER BY created_at DESC
-      LIMIT 1
-    `);
-
-    const row = stmt.get(hash, toolName, now) as SQLiteRow | undefined;
-    if (!row) return null;
-
-    return JSON.parse(row.result as string);
-  }
-
-  /**
-   * 清理过期缓存
-   */
-  cleanExpiredCache(): number {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare(`
-      DELETE FROM tool_executions
-      WHERE expires_at IS NOT NULL AND expires_at < ?
-    `);
-
-    const result = stmt.run(Date.now());
-    return result.changes;
-  }
-
-  /**
-   * 清除所有工具执行缓存 (Level 1 缓存)
-   * 用于用户手动清空缓存操作
-   */
-  clearToolCache(): number {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare('DELETE FROM tool_executions');
-    const result = stmt.run();
-    return result.changes;
-  }
-
-  /**
-   * 获取工具缓存条目数
-   */
-  getToolCacheCount(): number {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare('SELECT COUNT(*) as count FROM tool_executions');
-    const row = stmt.get() as SQLiteRow | undefined;
-    return (row?.count as number) || 0;
-  }
-
-  // --------------------------------------------------------------------------
-  // User Preferences
-  // --------------------------------------------------------------------------
-
-  setPreference(key: string, value: unknown): void {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO user_preferences (key, value, updated_at)
-      VALUES (?, ?, ?)
-    `);
-
-    stmt.run(key, JSON.stringify(value), Date.now());
-  }
-
-  getPreference<T>(key: string, defaultValue?: T): T | undefined {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare('SELECT value FROM user_preferences WHERE key = ?');
-    const row = stmt.get(key) as SQLiteRow | undefined;
-
-    if (!row) return defaultValue;
-    return JSON.parse(row.value as string);
-  }
-
-  getAllPreferences(): Record<string, unknown> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare('SELECT key, value FROM user_preferences');
-    const rows = stmt.all() as SQLiteRow[];
-
-    const result: Record<string, unknown> = {};
-    for (const row of rows) {
-      result[row.key as string] = JSON.parse(row.value as string);
-    }
-    return result;
-  }
-
-  deletePreference(key: string): boolean {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare('DELETE FROM user_preferences WHERE key = ?');
-    const result = stmt.run(key);
-    return result.changes > 0;
-  }
-
-  // --------------------------------------------------------------------------
-  // Project Knowledge
-  // --------------------------------------------------------------------------
-
-  saveProjectKnowledge(
-    projectPath: string,
-    key: string,
-    value: unknown,
-    source: 'learned' | 'explicit' | 'inferred' = 'learned',
-    confidence: number = 1.0
-  ): void {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const now = Date.now();
-    const id = `pk_${now}_${Math.random().toString(36).substr(2, 9)}`;
-
-    const stmt = this.db.prepare(`
-      INSERT INTO project_knowledge (id, project_path, key, value, source, confidence, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(project_path, key) DO UPDATE SET
-        value = excluded.value,
-        source = excluded.source,
-        confidence = excluded.confidence,
-        updated_at = excluded.updated_at
-    `);
-
-    stmt.run(id, projectPath, key, JSON.stringify(value), source, confidence, now, now);
-  }
-
-  getProjectKnowledge(projectPath: string, key?: string): ProjectKnowledge[] {
-    if (!this.db) throw new Error('Database not initialized');
-
-    let sql = 'SELECT * FROM project_knowledge WHERE project_path = ?';
-    const params: unknown[] = [projectPath];
-
-    if (key) {
-      sql += ' AND key = ?';
-      params.push(key);
-    }
-
-    sql += ' ORDER BY confidence DESC, updated_at DESC';
-
-    const stmt = this.db.prepare(sql);
-    const rows = stmt.all(...params) as SQLiteRow[];
-
-    return rows.map((row): ProjectKnowledge => ({
-      id: row.id as string,
-      projectPath: row.project_path as string,
-      key: row.key as string,
-      value: JSON.parse(row.value as string),
-      source: row.source as ProjectKnowledge['source'],
-      confidence: row.confidence as number,
-      createdAt: row.created_at as number,
-      updatedAt: row.updated_at as number,
-    }));
-  }
-
-  getAllProjectKnowledge(): ProjectKnowledge[] {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare(
-      'SELECT * FROM project_knowledge ORDER BY updated_at DESC'
-    );
-    const rows = stmt.all() as SQLiteRow[];
-
-    return rows.map((row): ProjectKnowledge => ({
-      id: row.id as string,
-      projectPath: row.project_path as string,
-      key: row.key as string,
-      value: JSON.parse(row.value as string),
-      source: row.source as ProjectKnowledge['source'],
-      confidence: row.confidence as number,
-      createdAt: row.created_at as number,
-      updatedAt: row.updated_at as number,
-    }));
-  }
-
-  updateProjectKnowledge(id: string, content: string): boolean {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare(`
-      UPDATE project_knowledge
-      SET value = ?, updated_at = ?
-      WHERE id = ?
-    `);
-
-    const result = stmt.run(JSON.stringify(content), Date.now(), id);
-    return result.changes > 0;
-  }
-
-  deleteProjectKnowledge(id: string): boolean {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare('DELETE FROM project_knowledge WHERE id = ?');
-    const result = stmt.run(id);
-    return result.changes > 0;
-  }
-
-  deleteProjectKnowledgeBySource(source: string): number {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare('DELETE FROM project_knowledge WHERE source = ?');
-    const result = stmt.run(source);
-    return result.changes;
-  }
-
-  // --------------------------------------------------------------------------
-  // Todos
-  // --------------------------------------------------------------------------
-
-  saveTodos(sessionId: string, todos: TodoItem[]): void {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const now = Date.now();
-
-    // 删除旧的 todos
-    this.db.prepare('DELETE FROM todos WHERE session_id = ?').run(sessionId);
-
-    // 插入新的 todos
-    const stmt = this.db.prepare(`
-      INSERT INTO todos (session_id, content, status, active_form, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
-
-    for (const todo of todos) {
-      stmt.run(sessionId, todo.content, todo.status, todo.activeForm, now, now);
-    }
-  }
-
-  getTodos(sessionId: string): TodoItem[] {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare(`
-      SELECT content, status, active_form FROM todos
-      WHERE session_id = ?
-      ORDER BY id ASC
-    `);
-
-    const rows = stmt.all(sessionId) as SQLiteRow[];
-
-    return rows.map((row): TodoItem => ({
-      content: row.content as string,
-      status: row.status as TodoItem['status'],
-      activeForm: row.active_form as string,
-    }));
-  }
-
-  // --------------------------------------------------------------------------
-  // Audit Log
-  // --------------------------------------------------------------------------
-
-  logAuditEvent(
-    eventType: string,
-    eventData: Record<string, unknown>,
-    sessionId?: string
-  ): void {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const stmt = this.db.prepare(`
-      INSERT INTO audit_log (session_id, event_type, event_data, created_at)
-      VALUES (?, ?, ?, ?)
-    `);
-
-    stmt.run(sessionId || null, eventType, JSON.stringify(eventData), Date.now());
-  }
-
-  getAuditLog(
-    options: {
-      sessionId?: string;
-      eventType?: string;
-      limit?: number;
-      since?: number;
-    } = {}
-  ): Array<{ id: number; sessionId: string | null; eventType: string; eventData: Record<string, unknown>; createdAt: number }> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    let sql = 'SELECT * FROM audit_log WHERE 1=1';
-    const params: unknown[] = [];
-
-    if (options.sessionId) {
-      sql += ' AND session_id = ?';
-      params.push(options.sessionId);
-    }
-
-    if (options.eventType) {
-      sql += ' AND event_type = ?';
-      params.push(options.eventType);
-    }
-
-    if (options.since) {
-      sql += ' AND created_at > ?';
-      params.push(options.since);
-    }
-
-    sql += ' ORDER BY created_at DESC';
-
-    if (options.limit) {
-      sql += ` LIMIT ${options.limit}`;
-    }
-
-    const stmt = this.db.prepare(sql);
-    const rows = stmt.all(...params) as SQLiteRow[];
-
-    return rows.map((row) => ({
-      id: row.id as number,
-      sessionId: row.session_id as string | null,
-      eventType: row.event_type as string,
-      eventData: JSON.parse(row.event_data as string),
-      createdAt: row.created_at as number,
-    }));
-  }
-
-  // --------------------------------------------------------------------------
   // Utility
   // --------------------------------------------------------------------------
 
@@ -1515,10 +717,10 @@ export class DatabaseService {
   } {
     if (!this.db) throw new Error('Database not initialized');
 
-    const sessionRow = this.db.prepare('SELECT COUNT(*) as c FROM sessions').get() as SQLiteRow;
-    const messageRow = this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as SQLiteRow;
-    const toolRow = this.db.prepare('SELECT COUNT(*) as c FROM tool_executions').get() as SQLiteRow;
-    const knowledgeRow = this.db.prepare('SELECT COUNT(*) as c FROM project_knowledge').get() as SQLiteRow;
+    const sessionRow = this.db.prepare('SELECT COUNT(*) as c FROM sessions').get() as Record<string, unknown>;
+    const messageRow = this.db.prepare('SELECT COUNT(*) as c FROM messages').get() as Record<string, unknown>;
+    const toolRow = this.db.prepare('SELECT COUNT(*) as c FROM tool_executions').get() as Record<string, unknown>;
+    const knowledgeRow = this.db.prepare('SELECT COUNT(*) as c FROM project_knowledge').get() as Record<string, unknown>;
 
     return {
       sessionCount: sessionRow.c as number,
@@ -1528,704 +730,85 @@ export class DatabaseService {
     };
   }
 
-  // --------------------------------------------------------------------------
-  // Memory Methods (Phase 2/3)
-  // --------------------------------------------------------------------------
-
-  /**
-   * 创建记忆
-   */
-  createMemory(data: Omit<MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): MemoryRecord {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const id = `mem_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const now = Date.now();
-
-    this.db.prepare(`
-      INSERT INTO memories (id, type, category, content, summary, source, project_path, session_id, confidence, metadata, access_count, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-    `).run(
-      id,
-      data.type,
-      data.category,
-      data.content,
-      data.summary || null,
-      data.source,
-      data.projectPath || null,
-      data.sessionId || null,
-      data.confidence,
-      JSON.stringify(data.metadata || {}),
-      now,
-      now
-    );
-
-    return {
-      id,
-      ...data,
-      accessCount: 0,
-      createdAt: now,
-      updatedAt: now,
-    };
-  }
-
-  /**
-   * 获取单个记忆
-   */
-  getMemory(id: string): MemoryRecord | null {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const row = this.db.prepare('SELECT * FROM memories WHERE id = ?').get(id) as SQLiteRow | undefined;
-    if (!row) return null;
-
-    return this.rowToMemoryRecord(row);
-  }
-
-  /**
-   * 列出记忆
-   */
-  listMemories(options: {
-    type?: string;
-    category?: string;
-    source?: string;
-    projectPath?: string;
-    sessionId?: string;
-    limit?: number;
-    offset?: number;
-    orderBy?: string;
-    orderDir?: 'ASC' | 'DESC';
-  } = {}): MemoryRecord[] {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-
-    if (options.type) {
-      conditions.push('type = ?');
-      params.push(options.type);
-    }
-    if (options.category) {
-      conditions.push('category = ?');
-      params.push(options.category);
-    }
-    if (options.source) {
-      conditions.push('source = ?');
-      params.push(options.source);
-    }
-    if (options.projectPath) {
-      conditions.push('project_path = ?');
-      params.push(options.projectPath);
-    }
-    if (options.sessionId) {
-      conditions.push('session_id = ?');
-      params.push(options.sessionId);
-    }
-
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const orderBy = options.orderBy || 'created_at';
-    const orderDir = options.orderDir || 'DESC';
-    const limit = options.limit || 100;
-    const offset = options.offset || 0;
-
-    const rows = this.db.prepare(`
-      SELECT * FROM memories ${where}
-      ORDER BY ${orderBy} ${orderDir}
-      LIMIT ? OFFSET ?
-    `).all(...params, limit, offset) as SQLiteRow[];
-
-    return rows.map(row => this.rowToMemoryRecord(row));
-  }
-
-  /**
-   * 更新记忆
-   */
-  updateMemory(id: string, updates: Partial<MemoryRecord>): MemoryRecord | null {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const sets: string[] = ['updated_at = ?'];
-    const params: unknown[] = [Date.now()];
-
-    if (updates.category !== undefined) {
-      sets.push('category = ?');
-      params.push(updates.category);
-    }
-    if (updates.content !== undefined) {
-      sets.push('content = ?');
-      params.push(updates.content);
-    }
-    if (updates.summary !== undefined) {
-      sets.push('summary = ?');
-      params.push(updates.summary);
-    }
-    if (updates.confidence !== undefined) {
-      sets.push('confidence = ?');
-      params.push(updates.confidence);
-    }
-    if (updates.metadata !== undefined) {
-      sets.push('metadata = ?');
-      params.push(JSON.stringify(updates.metadata));
-    }
-
-    params.push(id);
-    this.db.prepare(`UPDATE memories SET ${sets.join(', ')} WHERE id = ?`).run(...params);
-
-    return this.getMemory(id);
-  }
-
-  /**
-   * 删除单个记忆
-   */
-  deleteMemory(id: string): boolean {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const result = this.db.prepare('DELETE FROM memories WHERE id = ?').run(id);
-    return result.changes > 0;
-  }
-
-  /**
-   * 批量删除记忆
-   */
-  deleteMemories(filter: {
-    type?: string;
-    category?: string;
-    source?: string;
-    projectPath?: string;
-    sessionId?: string;
-  }): number {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-
-    if (filter.type) {
-      conditions.push('type = ?');
-      params.push(filter.type);
-    }
-    if (filter.category) {
-      conditions.push('category = ?');
-      params.push(filter.category);
-    }
-    if (filter.source) {
-      conditions.push('source = ?');
-      params.push(filter.source);
-    }
-    if (filter.projectPath) {
-      conditions.push('project_path = ?');
-      params.push(filter.projectPath);
-    }
-    if (filter.sessionId) {
-      conditions.push('session_id = ?');
-      params.push(filter.sessionId);
-    }
-
-    if (conditions.length === 0) {
-      return 0; // 不允许无条件删除所有
-    }
-
-    const result = this.db.prepare(`DELETE FROM memories WHERE ${conditions.join(' AND ')}`).run(...params);
-    return result.changes;
-  }
-
-  /**
-   * 搜索记忆
-   */
-  searchMemories(query: string, options: { type?: string; category?: string; limit?: number } = {}): MemoryRecord[] {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const conditions: string[] = ['(content LIKE ? OR summary LIKE ?)'];
-    const params: unknown[] = [`%${query}%`, `%${query}%`];
-
-    if (options.type) {
-      conditions.push('type = ?');
-      params.push(options.type);
-    }
-    if (options.category) {
-      conditions.push('category = ?');
-      params.push(options.category);
-    }
-
-    const limit = options.limit || 20;
-
-    const rows = this.db.prepare(`
-      SELECT * FROM memories WHERE ${conditions.join(' AND ')}
-      ORDER BY access_count DESC, updated_at DESC
-      LIMIT ?
-    `).all(...params, limit) as SQLiteRow[];
-
-    return rows.map(row => this.rowToMemoryRecord(row));
-  }
-
-  /**
-   * 获取记忆统计
-   */
-  getMemoryStats(): {
-    total: number;
-    byType: Record<string, number>;
-    bySource: Record<string, number>;
-    byCategory: Record<string, number>;
-  } {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const totalRow = this.db.prepare('SELECT COUNT(*) as c FROM memories').get() as SQLiteRow;
-    const total = totalRow.c as number;
-
-    const byType: Record<string, number> = {};
-    const typeRows = this.db.prepare('SELECT type, COUNT(*) as c FROM memories GROUP BY type').all() as SQLiteRow[];
-    for (const row of typeRows) {
-      byType[row.type as string] = row.c as number;
-    }
-
-    const bySource: Record<string, number> = {};
-    const sourceRows = this.db.prepare('SELECT source, COUNT(*) as c FROM memories GROUP BY source').all() as SQLiteRow[];
-    for (const row of sourceRows) {
-      bySource[row.source as string] = row.c as number;
-    }
-
-    const byCategory: Record<string, number> = {};
-    const categoryRows = this.db.prepare('SELECT category, COUNT(*) as c FROM memories GROUP BY category').all() as SQLiteRow[];
-    for (const row of categoryRows) {
-      byCategory[row.category as string] = row.c as number;
-    }
-
-    return { total, byType, bySource, byCategory };
-  }
-
-  /**
-   * 记录记忆访问
-   */
-  recordMemoryAccess(id: string): void {
-    if (!this.db) throw new Error('Database not initialized');
-
-    this.db.prepare(`
-      UPDATE memories SET access_count = access_count + 1, last_accessed_at = ? WHERE id = ?
-    `).run(Date.now(), id);
-  }
-
-  /**
-   * 行数据转 MemoryRecord
-   */
-  private rowToMemoryRecord(row: SQLiteRow): MemoryRecord {
-    return {
-      id: row.id as string,
-      type: row.type as MemoryRecord['type'],
-      category: row.category as string,
-      content: row.content as string,
-      summary: row.summary as string | undefined,
-      source: row.source as MemoryRecord['source'],
-      projectPath: row.project_path as string | undefined,
-      sessionId: row.session_id as string | undefined,
-      confidence: row.confidence as number,
-      metadata: JSON.parse((row.metadata as string) || '{}'),
-      accessCount: row.access_count as number,
-      createdAt: row.created_at as number,
-      updatedAt: row.updated_at as number,
-      lastAccessedAt: row.last_accessed_at as number | undefined,
-    };
-  }
-
-  // --------------------------------------------------------------------------
-  // Capture CRUD (知识库采集内容)
-  // --------------------------------------------------------------------------
-
-  createCapture(item: CaptureItem): void {
-    if (!this.db) throw new Error('Database not initialized');
-
-    this.db.prepare(`
-      INSERT OR REPLACE INTO captures (id, url, title, content, summary, source, tags, metadata, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      item.id,
-      item.url || null,
-      item.title,
-      item.content,
-      item.summary || null,
-      item.source,
-      JSON.stringify(item.tags),
-      JSON.stringify(item.metadata),
-      item.createdAt,
-      item.updatedAt,
-    );
-  }
-
-  listCaptures(opts?: { source?: CaptureSource; limit?: number; offset?: number }): CaptureItem[] {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const conditions: string[] = [];
-    const params: unknown[] = [];
-
-    if (opts?.source) {
-      conditions.push('source = ?');
-      params.push(opts.source);
-    }
-
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const limit = opts?.limit || 50;
-    const offset = opts?.offset || 0;
-
-    const rows = this.db.prepare(`
-      SELECT * FROM captures ${where}
-      ORDER BY created_at DESC
-      LIMIT ? OFFSET ?
-    `).all(...params, limit, offset) as SQLiteRow[];
-
-    return rows.map(row => this.rowToCaptureItem(row));
-  }
-
-  getCapture(id: string): CaptureItem | undefined {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const row = this.db.prepare('SELECT * FROM captures WHERE id = ?').get(id) as SQLiteRow | undefined;
-    return row ? this.rowToCaptureItem(row) : undefined;
-  }
-
-  deleteCapture(id: string): boolean {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const result = this.db.prepare('DELETE FROM captures WHERE id = ?').run(id);
-    return result.changes > 0;
-  }
-
-  getCaptureStats(): CaptureStats {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const totalRow = this.db.prepare('SELECT COUNT(*) as c FROM captures').get() as SQLiteRow;
-    const total = totalRow.c as number;
-
-    const bySource: Record<CaptureSource, number> = {
-      browser_extension: 0,
-      manual: 0,
-      wechat: 0,
-      local_file: 0,
-    };
-    const sourceRows = this.db.prepare('SELECT source, COUNT(*) as c FROM captures GROUP BY source').all() as SQLiteRow[];
-    for (const row of sourceRows) {
-      bySource[row.source as CaptureSource] = row.c as number;
-    }
-
-    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const recentRow = this.db.prepare('SELECT COUNT(*) as c FROM captures WHERE created_at > ?').get(weekAgo) as SQLiteRow;
-
-    return {
-      total,
-      bySource,
-      recentlyAdded: recentRow.c as number,
-    };
-  }
-
-  searchCaptures(query: string, limit: number = 20): CaptureItem[] {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const pattern = `%${query}%`;
-    const rows = this.db.prepare(`
-      SELECT * FROM captures
-      WHERE title LIKE ? OR content LIKE ? OR tags LIKE ?
-      ORDER BY created_at DESC
-      LIMIT ?
-    `).all(pattern, pattern, pattern, limit) as SQLiteRow[];
-
-    return rows.map(row => this.rowToCaptureItem(row));
-  }
-
-  private rowToCaptureItem(row: SQLiteRow): CaptureItem {
-    return {
-      id: row.id as string,
-      url: (row.url as string) || undefined,
-      title: row.title as string,
-      content: row.content as string,
-      summary: (row.summary as string) || undefined,
-      source: row.source as CaptureSource,
-      tags: JSON.parse((row.tags as string) || '[]'),
-      metadata: JSON.parse((row.metadata as string) || '{}'),
-      createdAt: row.created_at as number,
-      updatedAt: row.updated_at as number,
-    };
-  }
-
-  // --------------------------------------------------------------------------
-  // Session Archive Methods
-  // --------------------------------------------------------------------------
-
-  /**
-   * 列出已归档会话
-   */
-  listArchivedSessions(limit: number = 50, offset: number = 0): StoredSession[] {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const rows = this.db.prepare(`
-      SELECT s.*, (SELECT COUNT(*) FROM messages WHERE session_id = s.id) as message_count
-      FROM sessions s
-      WHERE s.status = 'archived'
-      ORDER BY s.updated_at DESC
-      LIMIT ? OFFSET ?
-    `).all(limit, offset) as SQLiteRow[];
-
-    return rows.map(row => this.rowToSession(row));
-  }
-
-  /**
-   * 归档会话
-   */
-  archiveSession(sessionId: string): StoredSession | null {
-    if (!this.db) throw new Error('Database not initialized');
-
-    this.db.prepare(`UPDATE sessions SET status = 'archived', updated_at = ? WHERE id = ?`).run(Date.now(), sessionId);
-    return this.getSession(sessionId);
-  }
-
-  /**
-   * 取消归档会话
-   */
-  unarchiveSession(sessionId: string): StoredSession | null {
-    if (!this.db) throw new Error('Database not initialized');
-
-    this.db.prepare(`UPDATE sessions SET status = 'idle', updated_at = ? WHERE id = ?`).run(Date.now(), sessionId);
-    return this.getSession(sessionId);
-  }
-
   // ==========================================================================
-  // Entity Relations (sync, for proactive context)
+  // Facade Methods — 委托给 Repository
   // ==========================================================================
 
-  addRelation(params: {
-    sourceId: string;
-    targetId: string;
-    relationType: 'calls' | 'imports' | 'similar_to' | 'solves' | 'depends_on' | 'modifies' | 'references';
-    confidence: number;
-    evidence: string;
-    sessionId: string;
-  }): void {
-    if (!this.db) return;
-
-    const id = `rel_${params.sessionId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    this.db.prepare(`
-      INSERT INTO entity_relations (id, source_id, target_id, relation_type, confidence, evidence, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      params.sourceId,
-      params.targetId,
-      params.relationType,
-      params.confidence,
-      params.evidence,
-      Date.now(),
-    );
-  }
-
-  getRelationsFor(
-    entityId: string,
-    direction: 'source' | 'target' | 'both' = 'both',
-    options: RelationQueryOptions = {}
-  ): EntityRelation[] {
-    if (!this.db) return [];
-
-    const { decayDays = MEMORY.RELATION_DECAY_DAYS, minConfidence = MEMORY.RELATION_MIN_CONFIDENCE } = options;
-
-    let sql: string;
-    if (direction === 'source') {
-      sql = 'SELECT * FROM entity_relations WHERE source_id = ?';
-    } else if (direction === 'target') {
-      sql = 'SELECT * FROM entity_relations WHERE target_id = ?';
-    } else {
-      sql = 'SELECT * FROM entity_relations WHERE source_id = ? OR target_id = ?';
-    }
-
-    const params = direction === 'both' ? [entityId, entityId] : [entityId];
-    const rows = this.db.prepare(sql).all(...params) as SQLiteRow[];
-
-    const now = Date.now();
-    const halfLifeMs = decayDays * 24 * 60 * 60 * 1000;
-
-    const rawRelations = rows.map(row => ({
-      id: row.id as string,
-      sourceId: row.source_id as string,
-      targetId: row.target_id as string,
-      relationType: row.relation_type as string,
-      confidence: row.confidence as number,
-      evidence: row.evidence as string,
-      createdAt: row.created_at as number,
-    }));
-
-    return rawRelations
-      .map(r => {
-        const ageMs = now - (typeof r.createdAt === 'number' ? r.createdAt : new Date(r.createdAt).getTime());
-        const decayFactor = Math.pow(0.5, ageMs / halfLifeMs);
-        return { ...r, confidence: (r.confidence ?? 1.0) * decayFactor };
-      })
-      .filter(r => r.confidence >= minConfidence)
-      .sort((a, b) => b.confidence - a.confidence);
-  }
-
-  updateRelationConfidence(id: string, confidence: number, evidence?: string): void {
-    if (!this.db) return;
-
-    this.db.prepare(
-      'UPDATE entity_relations SET confidence = ?, evidence = COALESCE(?, evidence) WHERE id = ?'
-    ).run(confidence, evidence ?? null, id);
-  }
-
-  // --------------------------------------------------------------------------
-  // Experiment CRUD (统一评测数据)
-  // --------------------------------------------------------------------------
-
-  insertExperiment(experiment: {
-    id: string;
-    name: string;
-    timestamp: number;
-    model?: string;
-    provider?: string;
-    scope?: string;
-    config_json?: string;
-    summary_json: string;
-    source?: string;
-    git_commit?: string;
-  }): void {
+  private ensureDb(): void {
     if (!this.db) throw new Error('Database not initialized');
-
-    this.db.prepare(`
-      INSERT OR REPLACE INTO experiments (id, name, timestamp, model, provider, scope, config_json, summary_json, source, git_commit)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      experiment.id,
-      experiment.name,
-      experiment.timestamp,
-      experiment.model || null,
-      experiment.provider || null,
-      experiment.scope || 'full',
-      experiment.config_json || null,
-      experiment.summary_json,
-      experiment.source || 'test-runner',
-      experiment.git_commit || null,
-    );
   }
 
-  insertExperimentCases(experimentId: string, cases: Array<{
-    id: string;
-    case_id: string;
-    status: string;
-    score: number;
-    duration_ms?: number;
-    data_json?: string;
-  }>): void {
-    if (!this.db) throw new Error('Database not initialized');
+  // --- SessionRepository ---
+  createSession(session: Session): void { this.ensureDb(); this.sessionRepo.createSession(session); }
+  createSessionWithId(id: string, data: { title: string; generationId?: string; modelConfig: { provider: ModelProvider; model: string }; workingDirectory?: string }): void { this.ensureDb(); this.sessionRepo.createSessionWithId(id, data); }
+  getSession(sessionId: string): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.getSession(sessionId); }
+  listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.listSessions(limit, offset, includeArchived); }
+  updateSession(sessionId: string, updates: Partial<Session>): void { this.ensureDb(); this.sessionRepo.updateSession(sessionId, updates); }
+  deleteSession(sessionId: string): void { this.ensureDb(); this.sessionRepo.deleteSession(sessionId); }
+  clearAllSessions(): number { this.ensureDb(); return this.sessionRepo.clearAllSessions(); }
+  clearAllMessages(): number { this.ensureDb(); return this.sessionRepo.clearAllMessages(); }
+  hasMessages(sessionId: string): boolean { this.ensureDb(); return this.sessionRepo.hasMessages(sessionId); }
+  getLocalCacheStats(): { sessionCount: number; messageCount: number } { this.ensureDb(); return this.sessionRepo.getLocalCacheStats(); }
+  addMessage(sessionId: string, message: Message): void { this.ensureDb(); this.sessionRepo.addMessage(sessionId, message); }
+  updateMessage(messageId: string, updates: Partial<Message>): void { this.ensureDb(); this.sessionRepo.updateMessage(messageId, updates); }
+  getMessages(sessionId: string, limit?: number, offset?: number): Message[] { this.ensureDb(); return this.sessionRepo.getMessages(sessionId, limit, offset); }
+  getMessageCount(sessionId: string): number { this.ensureDb(); return this.sessionRepo.getMessageCount(sessionId); }
+  getRecentMessages(sessionId: string, count: number): Message[] { this.ensureDb(); return this.sessionRepo.getRecentMessages(sessionId, count); }
+  getMessagesBefore(sessionId: string, beforeTimestamp: number, limit: number = 30): Message[] { this.ensureDb(); return this.sessionRepo.getMessagesBefore(sessionId, beforeTimestamp, limit); }
+  saveTodos(sessionId: string, todos: TodoItem[]): void { this.ensureDb(); this.sessionRepo.saveTodos(sessionId, todos); }
+  getTodos(sessionId: string): TodoItem[] { this.ensureDb(); return this.sessionRepo.getTodos(sessionId); }
+  listArchivedSessions(limit: number = 50, offset: number = 0): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.listArchivedSessions(limit, offset); }
+  archiveSession(sessionId: string): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.archiveSession(sessionId); }
+  unarchiveSession(sessionId: string): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.unarchiveSession(sessionId); }
 
-    const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO experiment_cases (id, experiment_id, case_id, status, score, duration_ms, data_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
+  // --- MemoryRepository ---
+  createMemory(data: Omit<import('./repositories').MemoryRecord, 'id' | 'accessCount' | 'createdAt' | 'updatedAt'>): import('./repositories').MemoryRecord { this.ensureDb(); return this.memoryRepo.createMemory(data); }
+  getMemory(id: string): import('./repositories').MemoryRecord | null { this.ensureDb(); return this.memoryRepo.getMemory(id); }
+  listMemories(options?: { type?: string; category?: string; source?: string; projectPath?: string; sessionId?: string; limit?: number; offset?: number; orderBy?: string; orderDir?: 'ASC' | 'DESC' }): import('./repositories').MemoryRecord[] { this.ensureDb(); return this.memoryRepo.listMemories(options); }
+  updateMemory(id: string, updates: Partial<import('./repositories').MemoryRecord>): import('./repositories').MemoryRecord | null { this.ensureDb(); return this.memoryRepo.updateMemory(id, updates); }
+  deleteMemory(id: string): boolean { this.ensureDb(); return this.memoryRepo.deleteMemory(id); }
+  deleteMemories(filter: { type?: string; category?: string; source?: string; projectPath?: string; sessionId?: string }): number { this.ensureDb(); return this.memoryRepo.deleteMemories(filter); }
+  searchMemories(query: string, options?: { type?: string; category?: string; limit?: number }): import('./repositories').MemoryRecord[] { this.ensureDb(); return this.memoryRepo.searchMemories(query, options); }
+  getMemoryStats(): { total: number; byType: Record<string, number>; bySource: Record<string, number>; byCategory: Record<string, number> } { this.ensureDb(); return this.memoryRepo.getMemoryStats(); }
+  recordMemoryAccess(id: string): void { this.ensureDb(); this.memoryRepo.recordMemoryAccess(id); }
+  addRelation(params: { sourceId: string; targetId: string; relationType: 'calls' | 'imports' | 'similar_to' | 'solves' | 'depends_on' | 'modifies' | 'references'; confidence: number; evidence: string; sessionId: string }): void { if (!this.db) return; this.memoryRepo.addRelation(params); }
+  getRelationsFor(entityId: string, direction?: 'source' | 'target' | 'both', options?: import('./repositories').RelationQueryOptions): import('./repositories').EntityRelation[] { if (!this.db) return []; return this.memoryRepo.getRelationsFor(entityId, direction, options); }
+  updateRelationConfidence(id: string, confidence: number, evidence?: string): void { if (!this.db) return; this.memoryRepo.updateRelationConfidence(id, confidence, evidence); }
 
-    const insertMany = this.db.transaction((items: typeof cases) => {
-      for (const c of items) {
-        stmt.run(c.id, experimentId, c.case_id, c.status, c.score, c.duration_ms || null, c.data_json || null);
-      }
-    });
+  // --- ConfigRepository ---
+  setPreference(key: string, value: unknown): void { this.ensureDb(); this.configRepo.setPreference(key, value); }
+  getPreference<T>(key: string, defaultValue?: T): T | undefined { this.ensureDb(); return this.configRepo.getPreference(key, defaultValue); }
+  getAllPreferences(): Record<string, unknown> { this.ensureDb(); return this.configRepo.getAllPreferences(); }
+  deletePreference(key: string): boolean { this.ensureDb(); return this.configRepo.deletePreference(key); }
+  saveProjectKnowledge(projectPath: string, key: string, value: unknown, source?: 'learned' | 'explicit' | 'inferred', confidence?: number): void { this.ensureDb(); this.configRepo.saveProjectKnowledge(projectPath, key, value, source, confidence); }
+  getProjectKnowledge(projectPath: string, key?: string): import('./repositories').ProjectKnowledge[] { this.ensureDb(); return this.configRepo.getProjectKnowledge(projectPath, key); }
+  getAllProjectKnowledge(): import('./repositories').ProjectKnowledge[] { this.ensureDb(); return this.configRepo.getAllProjectKnowledge(); }
+  updateProjectKnowledge(id: string, content: string): boolean { this.ensureDb(); return this.configRepo.updateProjectKnowledge(id, content); }
+  deleteProjectKnowledge(id: string): boolean { this.ensureDb(); return this.configRepo.deleteProjectKnowledge(id); }
+  deleteProjectKnowledgeBySource(source: string): number { this.ensureDb(); return this.configRepo.deleteProjectKnowledgeBySource(source); }
+  logAuditEvent(eventType: string, eventData: Record<string, unknown>, sessionId?: string): void { this.ensureDb(); this.configRepo.logAuditEvent(eventType, eventData, sessionId); }
+  getAuditLog(options?: { sessionId?: string; eventType?: string; limit?: number; since?: number }): Array<{ id: number; sessionId: string | null; eventType: string; eventData: Record<string, unknown>; createdAt: number }> { this.ensureDb(); return this.configRepo.getAuditLog(options); }
+  saveToolExecution(sessionId: string, messageId: string | null, toolName: string, args: Record<string, unknown>, result: ToolResult, ttlMs?: number): void { this.ensureDb(); this.configRepo.saveToolExecution(sessionId, messageId, toolName, args, result, ttlMs); }
+  getCachedToolResult(toolName: string, args: Record<string, unknown>): ToolResult | null { this.ensureDb(); return this.configRepo.getCachedToolResult(toolName, args); }
+  cleanExpiredCache(): number { this.ensureDb(); return this.configRepo.cleanExpiredCache(); }
+  clearToolCache(): number { this.ensureDb(); return this.configRepo.clearToolCache(); }
+  getToolCacheCount(): number { this.ensureDb(); return this.configRepo.getToolCacheCount(); }
 
-    insertMany(cases);
-  }
+  // --- CaptureRepository ---
+  createCapture(item: CaptureItem): void { this.ensureDb(); this.captureRepo.createCapture(item); }
+  listCaptures(opts?: { source?: CaptureSource; limit?: number; offset?: number }): CaptureItem[] { this.ensureDb(); return this.captureRepo.listCaptures(opts); }
+  getCapture(id: string): CaptureItem | undefined { this.ensureDb(); return this.captureRepo.getCapture(id); }
+  deleteCapture(id: string): boolean { this.ensureDb(); return this.captureRepo.deleteCapture(id); }
+  getCaptureStats(): CaptureStats { this.ensureDb(); return this.captureRepo.getCaptureStats(); }
+  searchCaptures(query: string, limit?: number): CaptureItem[] { this.ensureDb(); return this.captureRepo.searchCaptures(query, limit); }
 
-  listExperiments(limit: number = 50): Array<{
-    id: string;
-    name: string;
-    timestamp: number;
-    model: string | null;
-    provider: string | null;
-    scope: string;
-    config_json: string | null;
-    summary_json: string;
-    source: string;
-    git_commit: string | null;
-  }> {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const rows = this.db.prepare(`
-      SELECT * FROM experiments ORDER BY timestamp DESC LIMIT ?
-    `).all(limit) as SQLiteRow[];
-
-    return rows.map(row => ({
-      id: row.id as string,
-      name: row.name as string,
-      timestamp: row.timestamp as number,
-      model: row.model as string | null,
-      provider: row.provider as string | null,
-      scope: (row.scope as string) || 'full',
-      config_json: row.config_json as string | null,
-      summary_json: row.summary_json as string,
-      source: (row.source as string) || 'test-runner',
-      git_commit: (row.git_commit as string) || null,
-    }));
-  }
-
-  loadExperiment(id: string): {
-    experiment: {
-      id: string;
-      name: string;
-      timestamp: number;
-      model: string | null;
-      provider: string | null;
-      scope: string;
-      config_json: string | null;
-      summary_json: string;
-      source: string;
-      git_commit: string | null;
-    };
-    cases: Array<{
-      id: string;
-      experiment_id: string;
-      case_id: string;
-      status: string;
-      score: number;
-      duration_ms: number | null;
-      data_json: string | null;
-    }>;
-  } | undefined {
-    if (!this.db) throw new Error('Database not initialized');
-
-    const expRow = this.db.prepare('SELECT * FROM experiments WHERE id = ?').get(id) as SQLiteRow | undefined;
-    if (!expRow) return undefined;
-
-    const caseRows = this.db.prepare(
-      'SELECT * FROM experiment_cases WHERE experiment_id = ?'
-    ).all(id) as SQLiteRow[];
-
-    return {
-      experiment: {
-        id: expRow.id as string,
-        name: expRow.name as string,
-        timestamp: expRow.timestamp as number,
-        model: expRow.model as string | null,
-        provider: expRow.provider as string | null,
-        scope: (expRow.scope as string) || 'full',
-        config_json: expRow.config_json as string | null,
-        summary_json: expRow.summary_json as string,
-        source: (expRow.source as string) || 'test-runner',
-        git_commit: (expRow.git_commit as string) || null,
-      },
-      cases: caseRows.map(row => ({
-        id: row.id as string,
-        experiment_id: row.experiment_id as string,
-        case_id: row.case_id as string,
-        status: row.status as string,
-        score: row.score as number,
-        duration_ms: row.duration_ms as number | null,
-        data_json: row.data_json as string | null,
-      })),
-    };
-  }
-
-  /**
-   * Update an experiment's summary_json (used to track status transitions: pending -> running -> completed/failed)
-   */
-  updateExperimentSummary(id: string, summaryJson: string): void {
-    if (!this.db) throw new Error('Database not initialized');
-    this.db.prepare('UPDATE experiments SET summary_json = ? WHERE id = ?').run(summaryJson, id);
-  }
-
-  deleteExperiment(id: string): boolean {
-    if (!this.db) throw new Error('Database not initialized');
-
-    // Delete cases first (cascade), then experiment
-    this.db.prepare('DELETE FROM experiment_cases WHERE experiment_id = ?').run(id);
-    const result = this.db.prepare('DELETE FROM experiments WHERE id = ?').run(id);
-    return result.changes > 0;
-  }
+  // --- ExperimentRepository ---
+  insertExperiment(experiment: { id: string; name: string; timestamp: number; model?: string; provider?: string; scope?: string; config_json?: string; summary_json: string; source?: string; git_commit?: string }): void { this.ensureDb(); this.experimentRepo.insertExperiment(experiment); }
+  insertExperimentCases(experimentId: string, cases: Array<{ id: string; case_id: string; status: string; score: number; duration_ms?: number; data_json?: string }>): void { this.ensureDb(); this.experimentRepo.insertExperimentCases(experimentId, cases); }
+  listExperiments(limit?: number): Array<{ id: string; name: string; timestamp: number; model: string | null; provider: string | null; scope: string; config_json: string | null; summary_json: string; source: string; git_commit: string | null }> { this.ensureDb(); return this.experimentRepo.listExperiments(limit); }
+  loadExperiment(id: string): { experiment: { id: string; name: string; timestamp: number; model: string | null; provider: string | null; scope: string; config_json: string | null; summary_json: string; source: string; git_commit: string | null }; cases: Array<{ id: string; experiment_id: string; case_id: string; status: string; score: number; duration_ms: number | null; data_json: string | null }> } | undefined { this.ensureDb(); return this.experimentRepo.loadExperiment(id); }
+  updateExperimentSummary(id: string, summaryJson: string): void { this.ensureDb(); this.experimentRepo.updateExperimentSummary(id, summaryJson); }
+  deleteExperiment(id: string): boolean { this.ensureDb(); return this.experimentRepo.deleteExperiment(id); }
 }
 
 // ----------------------------------------------------------------------------

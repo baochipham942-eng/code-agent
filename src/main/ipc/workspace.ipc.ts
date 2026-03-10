@@ -6,7 +6,7 @@ import type { IpcMain, BrowserWindow } from 'electron';
 import { dialog } from 'electron';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { FileInfo } from '../../shared/types';
-import type { AgentOrchestrator } from '../agent/agentOrchestrator';
+import type { AgentApplicationService } from '../../shared/types/appService';
 
 // ----------------------------------------------------------------------------
 // Internal Handlers
@@ -14,7 +14,7 @@ import type { AgentOrchestrator } from '../agent/agentOrchestrator';
 
 async function handleSelectDirectory(
   getMainWindow: () => BrowserWindow | null,
-  getOrchestrator: () => AgentOrchestrator | null
+  getAppService: () => AgentApplicationService | null
 ): Promise<string | null> {
   const mainWindow = getMainWindow();
   if (!mainWindow) return null;
@@ -27,14 +27,14 @@ async function handleSelectDirectory(
   if (result.canceled || result.filePaths.length === 0) return null;
 
   const selectedPath = result.filePaths[0];
-  const orchestrator = getOrchestrator();
-  if (orchestrator) orchestrator.setWorkingDirectory(selectedPath);
+  const appService = getAppService();
+  if (appService) appService.setWorkingDirectory(selectedPath);
 
   return selectedPath;
 }
 
-async function handleGetCurrent(getOrchestrator: () => AgentOrchestrator | null): Promise<string | null> {
-  return getOrchestrator()?.getWorkingDirectory() ?? null;
+async function handleGetCurrent(getAppService: () => AgentApplicationService | null): Promise<string | null> {
+  return getAppService()?.getWorkingDirectory() ?? null;
 }
 
 async function handleListFiles(payload: { dirPath: string }): Promise<FileInfo[]> {
@@ -60,7 +60,7 @@ async function handleReadFile(payload: { filePath: string }): Promise<string> {
 
 async function handleOpenPath(
   payload: { filePath: string },
-  getOrchestrator: () => AgentOrchestrator | null
+  getAppService: () => AgentApplicationService | null
 ): Promise<string> {
   const { shell } = await import('electron');
   const pathModule = await import('path');
@@ -69,7 +69,7 @@ async function handleOpenPath(
 
   // If path is relative, resolve it against working directory
   if (!pathModule.isAbsolute(resolvedPath)) {
-    const workingDir = getOrchestrator()?.getWorkingDirectory();
+    const workingDir = getAppService()?.getWorkingDirectory();
     if (workingDir) {
       resolvedPath = pathModule.join(workingDir, resolvedPath);
     }
@@ -80,7 +80,7 @@ async function handleOpenPath(
 
 async function handleShowItemInFolder(
   payload: { filePath: string },
-  getOrchestrator: () => AgentOrchestrator | null
+  getAppService: () => AgentApplicationService | null
 ): Promise<void> {
   const { shell } = await import('electron');
   const pathModule = await import('path');
@@ -89,7 +89,7 @@ async function handleShowItemInFolder(
 
   // If path is relative, resolve it against working directory
   if (!pathModule.isAbsolute(resolvedPath)) {
-    const workingDir = getOrchestrator()?.getWorkingDirectory();
+    const workingDir = getAppService()?.getWorkingDirectory();
     if (workingDir) {
       resolvedPath = pathModule.join(workingDir, resolvedPath);
     }
@@ -132,7 +132,7 @@ async function handleDownloadFile(
 export function registerWorkspaceHandlers(
   ipcMain: IpcMain,
   getMainWindow: () => BrowserWindow | null,
-  getOrchestrator: () => AgentOrchestrator | null
+  getAppService: () => AgentApplicationService | null
 ): void {
   // ========== New Domain Handler (TASK-04) ==========
   ipcMain.handle(IPC_DOMAINS.WORKSPACE, async (_, request: IPCRequest): Promise<IPCResponse> => {
@@ -143,10 +143,10 @@ export function registerWorkspaceHandlers(
 
       switch (action) {
         case 'selectDirectory':
-          data = await handleSelectDirectory(getMainWindow, getOrchestrator);
+          data = await handleSelectDirectory(getMainWindow, getAppService);
           break;
         case 'getCurrent':
-          data = await handleGetCurrent(getOrchestrator);
+          data = await handleGetCurrent(getAppService);
           break;
         case 'listFiles':
           data = await handleListFiles(payload as { dirPath: string });
@@ -155,10 +155,10 @@ export function registerWorkspaceHandlers(
           data = await handleReadFile(payload as { filePath: string });
           break;
         case 'openPath':
-          data = await handleOpenPath(payload as { filePath: string }, getOrchestrator);
+          data = await handleOpenPath(payload as { filePath: string }, getAppService);
           break;
         case 'showItemInFolder':
-          data = await handleShowItemInFolder(payload as { filePath: string }, getOrchestrator);
+          data = await handleShowItemInFolder(payload as { filePath: string }, getAppService);
           break;
         case 'downloadFile':
           data = await handleDownloadFile(payload as { url: string; filename?: string });
@@ -177,11 +177,11 @@ export function registerWorkspaceHandlers(
 
   /** @deprecated Use IPC_DOMAINS.WORKSPACE with action: 'selectDirectory' */
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_SELECT_DIRECTORY, async () =>
-    handleSelectDirectory(getMainWindow, getOrchestrator)
+    handleSelectDirectory(getMainWindow, getAppService)
   );
 
   /** @deprecated Use IPC_DOMAINS.WORKSPACE with action: 'getCurrent' */
-  ipcMain.handle(IPC_CHANNELS.WORKSPACE_GET_CURRENT, async () => handleGetCurrent(getOrchestrator));
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_GET_CURRENT, async () => handleGetCurrent(getAppService));
 
   /** @deprecated Use IPC_DOMAINS.WORKSPACE with action: 'listFiles' */
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_LIST_FILES, async (_, dirPath: string) =>
@@ -195,6 +195,6 @@ export function registerWorkspaceHandlers(
 
   /** @deprecated Use IPC_DOMAINS.WORKSPACE with action: 'openPath' */
   ipcMain.handle(IPC_CHANNELS.SHELL_OPEN_PATH, async (_, filePath: string) =>
-    handleOpenPath({ filePath }, getOrchestrator)
+    handleOpenPath({ filePath }, getAppService)
   );
 }

@@ -3,7 +3,6 @@
 // ============================================================================
 
 import type { IpcMain, BrowserWindow } from 'electron';
-import type { AgentOrchestrator } from '../agent/agentOrchestrator';
 import type { ConfigService } from '../services';
 import type { PlanningService } from '../planning';
 import type { TaskManager } from '../task';
@@ -55,7 +54,6 @@ export * from './types';
  */
 export interface IpcDependencies {
   getMainWindow: () => BrowserWindow | null;
-  getOrchestrator: () => AgentOrchestrator | null;
   getAppService: () => AgentApplicationService | null;
   getConfigService: () => ConfigService | null;
   getPlanningService: () => PlanningService | null;
@@ -70,7 +68,6 @@ export interface IpcDependencies {
 export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): void {
   const {
     getMainWindow,
-    getOrchestrator,
     getAppService,
     getConfigService,
     getPlanningService,
@@ -93,7 +90,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerCloudHandlers(ipcMain);
 
   // Workspace handlers
-  registerWorkspaceHandlers(ipcMain, getMainWindow, getOrchestrator);
+  registerWorkspaceHandlers(ipcMain, getMainWindow, getAppService);
 
   // Settings handlers
   registerSettingsHandlers(ipcMain, getConfigService);
@@ -165,7 +162,7 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
   registerDiffHandlers();
 
   // Swarm handlers (Agent Teams P2P 通信)
-  registerSwarmHandlers(getOrchestrator);
+  registerSwarmHandlers(getAppService);
 
   // TaskList handlers (任务列表可视化与管理)
   registerTaskListHandlers();
@@ -184,8 +181,8 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Suggestions handlers (智能提示)
   registerSuggestionsHandlers(() => {
-    const orchestrator = getOrchestrator();
-    return (orchestrator as any)?.workingDirectory || process.cwd();
+    const appService = getAppService();
+    return appService?.getWorkingDirectory() || process.cwd();
   });
 
   // VoicePaste handlers (全局语音粘贴 Cmd+`)

@@ -821,6 +821,9 @@ export const IPC_CHANNELS = {
   VOICE_PASTE_TOGGLE: 'voice-paste:toggle',
 } as const;
 
+/** Union type of all IPC channel string literals */
+export type AllChannels = typeof IPC_CHANNELS[keyof typeof IPC_CHANNELS];
+
 // ----------------------------------------------------------------------------
 // Renderer -> Main: Invoke handlers (request/response)
 // ----------------------------------------------------------------------------

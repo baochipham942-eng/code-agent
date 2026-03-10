@@ -8,6 +8,7 @@ import http from 'http';
 import { StringDecoder } from 'string_decoder';
 import { type ModelResponse, type StreamCallback, ContextLengthExceededError } from '../types';
 import { logger, httpsAgent, safeJsonParse, parseContextLengthError } from './shared';
+import { PROVIDER_TIMEOUT } from '../../../shared/constants';
 
 export interface StreamSnapshot {
   /** Accumulated text content so far */
@@ -64,7 +65,7 @@ export function openAISSEStream(options: SSEStreamOptions): Promise<ModelRespons
     signal,
     agent,
     extraHeaders,
-    timeout = 300000,
+    timeout = PROVIDER_TIMEOUT,
     firstByteTimeout = 60000,
     endpoint = '/chat/completions',
     onSnapshot,

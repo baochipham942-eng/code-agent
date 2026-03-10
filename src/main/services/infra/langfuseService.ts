@@ -5,6 +5,8 @@
 
 import { Langfuse, LangfuseTraceClient, LangfuseSpanClient, LangfuseGenerationClient } from 'langfuse';
 import { createLogger } from './logger';
+import type { Disposable } from '../serviceRegistry';
+import { getServiceRegistry } from '../serviceRegistry';
 
 const logger = createLogger('Langfuse');
 
@@ -59,9 +61,10 @@ export interface SpanInput {
 // Langfuse Service
 // ----------------------------------------------------------------------------
 
-class LangfuseService {
+class LangfuseService implements Disposable {
   private client: Langfuse | null = null;
   private enabled: boolean = false;
+  private disposed = false;
   private activeTraces: Map<string, LangfuseTraceClient> = new Map();
   private activeSpans: Map<string, LangfuseSpanClient> = new Map();
   private activeGenerations: Map<string, LangfuseGenerationClient> = new Map();
@@ -120,6 +123,21 @@ class LangfuseService {
   async flush(): Promise<void> {
     if (this.client) {
       await this.client.flushAsync();
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  /**
+   * Disposable implementation for ServiceRegistry
+   */
+  async dispose(): Promise<void> {
+    if (this.disposed) return;
+    this.disposed = true;
+    try {
+      await this.cleanupAll();
+      await this.shutdown();
+    } catch (error) {
+      logger.error(' Failed to dispose:', error);
     }
   }
 
@@ -523,6 +541,7 @@ let langfuseService: LangfuseService | null = null;
 export function getLangfuseService(): LangfuseService {
   if (!langfuseService) {
     langfuseService = new LangfuseService();
+    getServiceRegistry().register('LangfuseService', langfuseService);
   }
   return langfuseService;
 }

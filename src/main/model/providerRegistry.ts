@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { ProviderConfig } from '../../shared/types';
+import { MODEL_API_ENDPOINTS } from '../../shared/constants';
 
 /**
  * E4: 获取所有可用模型（provider + model 列表）
@@ -238,7 +239,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     id: 'local',
     name: 'Local (Ollama)',
     requiresApiKey: false,
-    baseUrl: 'http://localhost:11434/v1',
+    baseUrl: MODEL_API_ENDPOINTS.ollama,
     models: [
       {
         id: 'qwen2.5-coder:7b',

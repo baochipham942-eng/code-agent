@@ -13,7 +13,7 @@ import {
   parseOpenAIResponse,
   normalizeJsonSchema,
 } from './shared';
-import { MODEL_API_ENDPOINTS, getModelMaxOutputTokens } from '../../../shared/constants';
+import { MODEL_API_ENDPOINTS, getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
 import { openAISSEStream } from './sseStream';
 
 /**
@@ -105,7 +105,7 @@ export async function callOpenRouter(
   try {
     const response = await axios.post(`${baseUrl}/chat/completions`, requestBody, {
       headers,
-      timeout: 300000,
+      timeout: PROVIDER_TIMEOUT,
       httpsAgent,
       maxContentLength: Infinity,
       maxBodyLength: Infinity,

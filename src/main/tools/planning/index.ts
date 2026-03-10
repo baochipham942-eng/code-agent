@@ -3,7 +3,7 @@
 // ============================================================================
 
 export { taskTool } from './task';
-export { todoWriteTool } from './todoWrite';
+// todoWriteTool removed — agentLoop auto-parses task lists
 export { askUserQuestionTool } from './askUserQuestion';
 export { confirmActionTool } from './confirmAction';
 export { planReadTool } from './planRead';

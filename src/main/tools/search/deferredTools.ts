@@ -311,17 +311,10 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   // Gen 5: 记忆系统
   // ============================================================================
   {
-    name: 'memory_store',
-    shortDescription: '存储信息到长期记忆',
-    tags: ['memory'],
-    aliases: ['remember', 'store', 'save'],
-    source: 'builtin',
-  },
-  {
-    name: 'memory_search',
-    shortDescription: '搜索长期记忆',
+    name: 'memory',
+    shortDescription: '统一记忆工具：存储和搜索长期记忆',
     tags: ['memory', 'search'],
-    aliases: ['recall', 'memory'],
+    aliases: ['remember', 'store', 'save', 'recall', 'memory_store', 'memory_search'],
     source: 'builtin',
   },
   {

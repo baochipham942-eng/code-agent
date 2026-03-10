@@ -31,7 +31,7 @@ async function handleLocalToolCall(baseUrl: string, data: Record<string, unknown
     // POST error result back
     await fetch(`${baseUrl}/api/tool-result`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify({
         toolCallId: data.toolCallId,
         success: false,
@@ -51,7 +51,7 @@ async function handleLocalToolCall(baseUrl: string, data: Record<string, unknown
     // POST result back to webServer
     await fetch(`${baseUrl}/api/tool-result`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify({
         toolCallId: data.toolCallId,
         success: result.success,
@@ -64,7 +64,7 @@ async function handleLocalToolCall(baseUrl: string, data: Record<string, unknown
     console.error('[HttpTransport] Local tool execution failed:', err);
     await fetch(`${baseUrl}/api/tool-result`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       body: JSON.stringify({
         toolCallId: data.toolCallId,
         success: false,
@@ -72,6 +72,15 @@ async function handleLocalToolCall(baseUrl: string, data: Record<string, unknown
       }),
     });
   }
+}
+
+/** Get auth headers for API requests. Token is injected into HTML by webServer. */
+function getAuthHeaders(): Record<string, string> {
+  const token = (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ as string | undefined;
+  if (token) {
+    return { 'Authorization': `Bearer ${token}` };
+  }
+  return {};
 }
 
 export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
@@ -86,7 +95,9 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
   function ensureSSE(): void {
     if (eventSource && eventSource.readyState !== EventSource.CLOSED) return;
 
-    eventSource = new EventSource(`${baseUrl}/api/events`);
+    const token = (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ as string | undefined;
+    const sseUrl = token ? `${baseUrl}/api/events?token=${encodeURIComponent(token)}` : `${baseUrl}/api/events`;
+    eventSource = new EventSource(sseUrl);
 
     eventSource.onmessage = (event) => {
       try {
@@ -166,7 +177,7 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
         const attachments = typeof arg === 'object' && arg !== null ? (arg as { attachments?: unknown[] }).attachments : undefined;
         const response = await fetch(`${baseUrl}/api/run`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({
             prompt,
             ...(sessionId ? { sessionId } : {}),
@@ -285,7 +296,7 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
       // 通用 HTTP 调用
       const fetchOptions: RequestInit = {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
       };
 
       if (method !== 'GET' && method !== 'HEAD' && bodyArgs.length > 0) {
@@ -382,6 +393,7 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
 
       const res = await fetch(`${baseUrl}/api/upload/temp`, {
         method: 'POST',
+        headers: { ...getAuthHeaders() },
         body: formData,
       });
 
@@ -402,7 +414,7 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
       try {
         const res = await fetch(`${baseUrl}/api/extract/pdf`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ filePath: _filePath }),
         });
         if (res.ok) return await res.json();
@@ -414,7 +426,7 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
       try {
         const res = await fetch(`${baseUrl}/api/extract/excel`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ filePath: _filePath }),
         });
         if (res.ok) return await res.json();
@@ -426,7 +438,7 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
       try {
         const res = await fetch(`${baseUrl}/api/speech/transcribe`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ audioData: _audioData, mimeType: _mimeType }),
         });
         if (res.ok) return await res.json();
@@ -454,7 +466,7 @@ export function createHttpDomainAPI(baseUrl: string): DomainAPI {
       try {
         const res = await fetch(`${baseUrl}/api/domain/${cleanDomain}/${action}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({
             action,
             payload,

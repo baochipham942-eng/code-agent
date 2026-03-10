@@ -114,18 +114,62 @@ fn is_server_running() -> bool {
     matches!(client.get(HEALTH_URL).send(), Ok(resp) if resp.status().as_u16() == 200)
 }
 
+fn resolve_node_binary() -> String {
+    if let Ok(bin) = env::var("NODE_BINARY") {
+        return bin;
+    }
+
+    // macOS GUI apps launched from Finder have a minimal PATH that excludes
+    // common Node.js installation directories. Search them explicitly.
+    let candidates = [
+        "/usr/local/bin/node",      // Homebrew (Intel Mac)
+        "/opt/homebrew/bin/node",    // Homebrew (Apple Silicon)
+    ];
+
+    for candidate in &candidates {
+        if Path::new(candidate).exists() {
+            return candidate.to_string();
+        }
+    }
+
+    // Fallback: check ~/.nvm/current symlink
+    if let Ok(home) = env::var("HOME") {
+        let nvm_current = format!("{home}/.nvm/versions/node");
+        if let Ok(entries) = std::fs::read_dir(&nvm_current) {
+            // Pick the latest version directory
+            let mut versions: Vec<_> = entries.filter_map(|e| e.ok()).collect();
+            versions.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+            if let Some(latest) = versions.first() {
+                let bin = latest.path().join("bin/node");
+                if bin.exists() {
+                    return bin.to_string_lossy().to_string();
+                }
+            }
+        }
+    }
+
+    "node".to_string()
+}
+
 fn spawn_web_server(app: &tauri::AppHandle) -> Result<Child, String> {
     let (script_path, working_dir) = resolve_server_script(app)?;
-    let node_binary = env::var("NODE_BINARY").unwrap_or_else(|_| "node".to_string());
+    let node_binary = resolve_node_binary();
 
-    Command::new(node_binary)
+    Command::new(&node_binary)
         .arg(&script_path)
         .current_dir(&working_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
-        .map_err(|error| format!("Failed to start web server at {}: {}", script_path.display(), error))
+        .map_err(|error| {
+            format!(
+                "Failed to start web server at {} (node: {}): {}",
+                script_path.display(),
+                node_binary,
+                error
+            )
+        })
 }
 
 fn wait_for_healthcheck() -> Result<(), String> {

@@ -10,9 +10,9 @@
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌──────────────┐                                               │
-│  │   客户端      │ Electron 桌面应用                             │
-│  │  (macOS)     │ - 打包: npm run dist:mac                      │
-│  └──────┬───────┘ - 产物: release/*.dmg                         │
+│  │   客户端      │ Electron / Tauri 桌面应用                     │
+│  │  (macOS)     │ - Electron: npm run dist:mac (~169MB DMG)     │
+│  └──────┬───────┘ - Tauri: cargo tauri build (~33MB DMG)        │
 │         │                                                       │
 │         │ HTTPS                                                 │
 │         ▼                                                       │
@@ -189,9 +189,48 @@ curl "https://code-agent-beta.vercel.app/api/prompts?version=true"
 | 场景 | 路径 |
 |------|------|
 | 开发模式 | `/Users/linchen/Downloads/ai/code-agent/.env` |
-| 打包应用 | `/Applications/Code Agent.app/Contents/Resources/.env` |
+| Electron 打包 | `/Applications/Code Agent.app/Contents/Resources/.env` |
+| Tauri 打包 | 通过 tauri.conf.json resources 自动打包，无需手动拷贝 |
 
-**注意**：修改 `.env` 后，打包应用需要手动同步：
+**注意**：修改 `.env` 后，Electron 打包应用需要手动同步（Tauri 不需要）：
 ```bash
 cp /Users/linchen/Downloads/ai/code-agent/.env "/Applications/Code Agent.app/Contents/Resources/.env"
 ```
+
+---
+
+## Tauri 打包
+
+Tauri 2.x 作为 Electron 的轻量替代方案，产物体积约 33MB（Electron ~169MB）。
+
+### 前置条件
+
+- Rust 工具链: `rustup`（安装后确保 `cargo` 在 PATH 中）
+- Xcode Command Line Tools（macOS 编译需要）
+
+### 打包流程
+
+```bash
+npm run typecheck && npm version patch --no-git-tag-version
+git add package.json && git commit -m "chore: bump version" && git push
+npm run build && npm run build:web && cargo tauri build
+# 产物位置: src-tauri/target/release/bundle/dmg/Code Agent_*.dmg
+```
+
+### 开发模式
+
+```bash
+# 需要代理访问国际 API
+HTTPS_PROXY=http://127.0.0.1:7897 cargo tauri dev
+```
+
+### 与 Electron 的关键差异
+
+| 项目 | Electron | Tauri |
+|------|----------|-------|
+| DMG 体积 | ~169MB | ~33MB |
+| 原生模块 | `npm run rebuild-native` 必需 | 不需要 |
+| .env 部署 | 手动 `cp` 到 Resources | tauri.conf.json resources 自动打包 |
+| 构建命令 | `npm run dist:mac` | `cargo tauri build` |
+| 开发命令 | `npm run dev` | `cargo tauri dev` |
+| Auto-update | Electron updater | `tauri signer generate` + pubkey in tauri.conf.json |

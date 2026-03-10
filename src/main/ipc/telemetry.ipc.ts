@@ -5,7 +5,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { TELEMETRY_CHANNELS } from '../../shared/ipc/channels';
 import { getTelemetryStorage } from '../telemetry/telemetryStorage';
-import { extractStructuredReplay } from '../evaluation/replayService';
+// extractStructuredReplay loaded dynamically — excluded from production bundle
 import { getTelemetryCollector } from '../telemetry/telemetryCollector';
 import { createLogger } from '../services/infra/logger';
 
@@ -92,6 +92,8 @@ export function registerTelemetryHandlers(
   ipcMain.handle(
     TELEMETRY_CHANNELS.GET_STRUCTURED_REPLAY,
     async (_event, sessionId: string) => {
+      if (process.env.EVAL_DISABLED === 'true') return null;
+      const { extractStructuredReplay } = await import('../evaluation/replayService');
       return extractStructuredReplay(sessionId);
     }
   );

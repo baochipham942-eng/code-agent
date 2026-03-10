@@ -88,4 +88,7 @@ export interface AgentApplicationService {
   switchModel(params: SwitchModelParams): void;
   getModelOverride(sessionId: string): ModelOverride | undefined;
   clearModelOverride(sessionId: string): void;
+
+  // === Delegate Mode ===
+  setDelegateMode(enabled: boolean): void;
 }

@@ -45,7 +45,7 @@ export function getConfigServiceInstance(): ConfigService | null {
  */
 export function getAgentOrchestrator(): AgentOrchestrator | null {
   const taskManager = getTaskManager();
-  return taskManager.getOrCreateCurrentOrchestrator() ?? null;
+  return taskManager.getOrchestrator() ?? null;
 }
 
 /**
@@ -132,6 +132,10 @@ export async function initializeBackgroundServices(): Promise<void> {
   // Phase 4b: Planning service
   logger.info('Initializing planning service...');
   planningService = await initializePlanningService(currentSessionId);
+  if (planningService) {
+    // Pass planningService to TaskManager so subsequent sessions also get it
+    getTaskManager().setPlanningService(planningService);
+  }
   logger.info('Planning service initialized');
 
   logger.info('Background services initialization complete');

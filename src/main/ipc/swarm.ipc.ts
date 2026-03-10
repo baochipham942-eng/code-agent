@@ -4,7 +4,7 @@
 
 import { BrowserWindow, ipcMain } from 'electron';
 import type { SwarmEvent, AgentStatus } from '../../shared/types/swarm';
-import type { AgentOrchestrator } from '../agent/agentOrchestrator';
+import type { AgentApplicationService } from '../../shared/types/appService';
 
 // ============================================================================
 // Swarm 事件回调注册（CLI 模式使用）
@@ -302,7 +302,7 @@ export function getSwarmEventEmitter(): SwarmEventEmitter {
 // ============================================================================
 
 export function registerSwarmHandlers(
-  getOrchestrator: () => AgentOrchestrator | null
+  getAppService: () => AgentApplicationService | null
 ): void {
   const { getTeammateService } = require('../agent/teammate/teammateService');
 
@@ -331,9 +331,9 @@ export function registerSwarmHandlers(
 
   // 切换 delegate 模式
   ipcMain.handle('swarm:set-delegate-mode', async (_, enabled: boolean) => {
-    const orchestrator = getOrchestrator();
-    if (orchestrator) {
-      orchestrator.setDelegateMode(enabled);
+    const appService = getAppService();
+    if (appService) {
+      appService.setDelegateMode(enabled);
     }
   });
 }

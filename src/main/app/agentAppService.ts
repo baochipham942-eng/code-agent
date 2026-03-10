@@ -239,4 +239,12 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     const modelState = getModelSessionState();
     modelState.clearOverride(sessionId);
   }
+
+  // === Delegate Mode ===
+
+  setDelegateMode(enabled: boolean): void {
+    const tm = this.getTaskManager();
+    const orchestrator = tm.getOrCreateCurrentOrchestrator();
+    if (orchestrator) orchestrator.setDelegateMode(enabled);
+  }
 }

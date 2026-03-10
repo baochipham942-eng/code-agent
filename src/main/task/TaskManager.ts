@@ -161,6 +161,19 @@ export class TaskManager extends EventEmitter {
     logger.info('TaskManager dependencies initialized');
   }
 
+  /**
+   * 设置 PlanningService（在 bootstrap Phase 4b 初始化后调用）
+   * 同时更新已存在的 orchestrator 实例
+   */
+  setPlanningService(service: PlanningService): void {
+    this.planningService = service;
+    // Update existing orchestrators with the new planning service
+    for (const [sessionId, wrapper] of this.activeOrchestrators) {
+      wrapper.orchestrator.setPlanningService(service);
+      logger.debug(`Updated planningService for session ${sessionId}`);
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Public Methods
   // --------------------------------------------------------------------------

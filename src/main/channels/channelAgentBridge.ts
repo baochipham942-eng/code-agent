@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { AgentOrchestrator } from '../agent/agentOrchestrator';
+import { getTaskManager } from '../task';
 import type { ConfigService } from '../services/core/configService';
 import { getChannelManager } from './channelManager';
 import type { ChannelMessage, ChannelAttachment } from '../../shared/types/channel';
@@ -21,6 +22,23 @@ const logger = createLogger('ChannelAgentBridge');
 export interface ChannelAgentBridgeConfig {
   getOrchestrator: () => AgentOrchestrator | null;
   configService: ConfigService;
+}
+
+/**
+ * Session-aware orchestrator lookup.
+ * Prefers per-session orchestrator from TaskManager; falls back to config getter.
+ */
+function getSessionAwareOrchestrator(
+  config: ChannelAgentBridgeConfig,
+): AgentOrchestrator | null {
+  try {
+    const tm = getTaskManager();
+    const orchestrator = tm.getOrchestrator();
+    if (orchestrator) return orchestrator;
+  } catch {
+    // TaskManager not yet initialized — fall through
+  }
+  return config.getOrchestrator();
 }
 
 /**
@@ -119,7 +137,7 @@ export class ChannelAgentBridge {
       (message.raw as Record<string, unknown>).streaming === true;
 
     if (isStreamingRequest) {
-      const orchestrator = this.config.getOrchestrator();
+      const orchestrator = getSessionAwareOrchestrator(this.config);
       if (!orchestrator) {
         await this.sendErrorResponse(accountId, message, 'Agent not available');
         return;
@@ -179,7 +197,7 @@ export class ChannelAgentBridge {
     // 使用合并后的内容（可能是多条消息 debounce 合并的）
     const processMessage: ChannelMessage = { ...message, content: msg.content };
 
-    const orchestrator = this.config.getOrchestrator();
+    const orchestrator = getSessionAwareOrchestrator(this.config);
     if (!orchestrator) {
       logger.error('Orchestrator not available');
       await this.sendErrorResponse(accountId, processMessage, 'Agent not available');

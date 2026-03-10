@@ -9,6 +9,7 @@ import { createLogger } from '../infra/logger';
 import { getSkillDiscoveryService } from './skillDiscoveryService';
 import { getSkillsDir, getUserConfigDir } from '../../config';
 
+import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SkillWatcher');
 
 /**
@@ -38,7 +39,7 @@ export interface SkillWatcherConfig {
  *
  * 变化后自动调用 SkillDiscoveryService.reload()
  */
-class SkillWatcher extends EventEmitter {
+class SkillWatcher extends EventEmitter implements Disposable {
   private watchers: fs.FSWatcher[] = [];
   private workingDirectory = '';
   private debounceMs: number;
@@ -180,6 +181,11 @@ class SkillWatcher extends EventEmitter {
   /**
    * 停止所有监听器
    */
+  async dispose(): Promise<void> {
+    this.stop();
+    this.removeAllListeners();
+  }
+
   stop(): void {
     if (this.reloadTimer) {
       clearTimeout(this.reloadTimer);
@@ -246,4 +252,5 @@ export function resetSkillWatcher(): void {
   }
 }
 
+getServiceRegistry().register('SkillWatcher', getSkillWatcher());
 export { SkillWatcher };

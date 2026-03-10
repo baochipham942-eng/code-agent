@@ -6,6 +6,7 @@ import { getDatabase, type StoredSession } from '../core';
 import { createLogger } from '../infra/logger';
 import type { Message } from '../../../shared/types';
 
+import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('CloudStorageService');
 
 // ----------------------------------------------------------------------------
@@ -52,7 +53,7 @@ export interface ExportData {
 // Cloud Storage Service
 // ----------------------------------------------------------------------------
 
-export class CloudStorageService {
+export class CloudStorageService implements Disposable {
   private config: CloudStorageConfig;
   private syncStatus: SyncStatus;
   private syncTimer: ReturnType<typeof setInterval> | null = null;
@@ -452,6 +453,10 @@ export class CloudStorageService {
   /**
    * 停止服务
    */
+  async dispose(): Promise<void> {
+    this.stop();
+  }
+
   stop(): void {
     if (this.syncTimer) {
       clearInterval(this.syncTimer);
@@ -472,3 +477,5 @@ export function getCloudStorage(): CloudStorageService {
   }
   return cloudStorageInstance;
 }
+
+getServiceRegistry().register('CloudStorageService', getCloudStorage());

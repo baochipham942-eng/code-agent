@@ -19,6 +19,7 @@ import { createLogger } from './logger';
 import { getSessionSummarizer } from '../../memory/sessionSummarizer';
 import { getCoreMemoryService } from '../../memory/coreMemory';
 
+import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('SessionManager');
 
 // ----------------------------------------------------------------------------
@@ -49,7 +50,12 @@ export interface SessionListOptions {
 // Session Manager
 // ----------------------------------------------------------------------------
 
-export class SessionManager {
+export class SessionManager implements Disposable {
+  async dispose(): Promise<void> {
+    this.sessionCache.clear();
+    this.currentSessionId = null;
+  }
+
   private currentSessionId: string | null = null;
   private sessionCache: Map<string, SessionWithMessages> = new Map();
 
@@ -799,3 +805,5 @@ export function getSessionManager(): SessionManager {
   }
   return sessionManagerInstance;
 }
+
+getServiceRegistry().register('SessionManager', getSessionManager());

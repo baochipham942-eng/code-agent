@@ -20,6 +20,7 @@ import type { SyncStatus, SyncConflict, DeviceInfo, ModelProvider, Message } fro
 import type { StoredSession } from '../core';
 import { createLogger } from '../infra/logger';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../../shared/constants';
+import { Disposable, getServiceRegistry } from '../serviceRegistry';
 
 const logger = createLogger('SyncService');
 
@@ -33,7 +34,7 @@ export interface SyncResult {
 
 type SyncStatusCallback = (status: SyncStatus) => void;
 
-class SyncService {
+class SyncService implements Disposable {
   private deviceId: string;
   private deviceName: string;
   private syncCursor: number = 0;
@@ -688,6 +689,12 @@ class SyncService {
     this.notifyStatusChange();
   }
 
+  async dispose(): Promise<void> {
+    this.stopAutoSync();
+    this.onStatusChangeCallbacks = [];
+    this.conflicts = [];
+  }
+
   incrementPendingChanges(): void {
     this.pendingChanges++;
     this.notifyStatusChange();
@@ -704,4 +711,5 @@ export function getSyncService(): SyncService {
   return syncServiceInstance;
 }
 
+getServiceRegistry().register('SyncService', getSyncService());
 export type { SyncService };

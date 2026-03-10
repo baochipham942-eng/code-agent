@@ -8,6 +8,7 @@ import os from 'os';
 import { execFile } from 'child_process';
 import { createLogger } from './infra/logger';
 
+import { Disposable, getServiceRegistry } from './serviceRegistry';
 const logger = createLogger('WeChatWatcher');
 
 // 微信在 macOS 上的文件存储基础路径
@@ -28,7 +29,7 @@ interface WatcherStatus {
   processedCount: number;
 }
 
-export class WeChatWatcher {
+export class WeChatWatcher implements Disposable {
   private watcher: ReturnType<typeof import('chokidar')['watch']> | null = null;
   private processedPaths: Set<string> = new Set();
   private watchPath: string | null = null;
@@ -92,6 +93,11 @@ export class WeChatWatcher {
   /**
    * 停止监控
    */
+  async dispose(): Promise<void> {
+    await this.stop();
+    this.processedPaths.clear();
+  }
+
   async stop(): Promise<void> {
     if (this.watcher) {
       await this.watcher.close();
@@ -255,3 +261,5 @@ export function getWeChatWatcher(): WeChatWatcher {
   }
   return instance;
 }
+
+getServiceRegistry().register('WeChatWatcher', getWeChatWatcher());

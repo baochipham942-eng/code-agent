@@ -6,6 +6,7 @@ import { getDatabase } from '../core';
 import type { ToolResult } from '../../../shared/types';
 import { createLogger } from './logger';
 
+import { Disposable, getServiceRegistry } from '../serviceRegistry';
 const logger = createLogger('ToolCache');
 
 // ----------------------------------------------------------------------------
@@ -75,7 +76,7 @@ const TOOL_CACHE_POLICIES: Record<string, { ttl: number; cacheable: boolean }> =
 // Tool Cache Service
 // ----------------------------------------------------------------------------
 
-export class ToolCache {
+export class ToolCache implements Disposable {
   private config: ToolCacheConfig;
   private memoryCache: Map<string, CacheEntry> = new Map();
   private stats: { hits: number; misses: number } = { hits: 0, misses: 0 };
@@ -337,6 +338,11 @@ export class ToolCache {
     };
   }
 
+  async dispose(): Promise<void> {
+    this.clear();
+    this.resetStats();
+  }
+
   resetStats(): void {
     this.stats = { hits: 0, misses: 0 };
   }
@@ -359,3 +365,5 @@ export function initToolCache(config?: Partial<ToolCacheConfig>): ToolCache {
   cacheInstance = new ToolCache(config);
   return cacheInstance;
 }
+
+getServiceRegistry().register('ToolCache', getToolCache());

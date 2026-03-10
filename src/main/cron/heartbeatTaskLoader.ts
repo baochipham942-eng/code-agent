@@ -9,13 +9,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { getProjectConfigDir } from '../config/configPaths';
-import type { CronService } from './cronService';
-
 const logger = createLogger('HeartbeatTaskLoader');
 
 // ----------------------------------------------------------------------------
 // Types
 // ----------------------------------------------------------------------------
+
+/** Minimal CronService interface (avoids circular dep with cronService.ts) */
+interface CronServiceLike {
+  scheduleCron(cron: string, action: unknown, options: unknown): Promise<{ id: string }>;
+  deleteJob(jobId: string): Promise<boolean>;
+}
 
 interface HeartbeatTask {
   name: string;
@@ -28,7 +32,7 @@ interface HeartbeatTask {
 
 interface HeartbeatTaskLoaderConfig {
   workingDirectory: string;
-  cronService: CronService;
+  cronService: CronServiceLike;
 }
 
 // ----------------------------------------------------------------------------

@@ -18,33 +18,9 @@ import { DEFAULT_PROVIDER, DEFAULT_MODEL, DEFAULT_MODELS } from '../../../shared
 import { loadAgentMdFiles } from './agentMdLoader';
 import { getAgentsMdDir } from '../../config/configPaths';
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/**
- * 核心角色 ID（4 个）
- */
-export type CoreAgentId = 'coder' | 'reviewer' | 'explore' | 'plan';
-
-/**
- * 模型层级（3 级）
- */
-export type ModelTier = 'fast' | 'balanced' | 'powerful';
-
-/**
- * 核心角色配置（扁平化）
- */
-export interface CoreAgentConfig {
-  id: CoreAgentId;
-  name: string;
-  description: string;
-  prompt: string;
-  tools: string[];
-  model: ModelTier;
-  maxIterations: number;
-  readonly: boolean;
-}
+// Re-export types from canonical source for backward compatibility
+export type { CoreAgentId, ModelTier, CoreAgentConfig } from './types';
+import type { CoreAgentId, ModelTier, CoreAgentConfig } from './types';
 
 // ============================================================================
 // Model Configuration

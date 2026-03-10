@@ -207,6 +207,28 @@ export interface BaselineComparison {
 }
 
 /**
+ * Transcript 分析结果（代码 Grader）
+ */
+export interface TranscriptMetrics {
+  selfRepair: {
+    attempts: number;
+    successes: number;
+    rate: number;
+    chains: Array<{ toolName: string; failIndex: number; retryIndex: number; succeeded: boolean }>;
+  };
+  verificationQuality: {
+    editCount: number;
+    verifiedCount: number;
+    rate: number;
+  };
+  forbiddenPatterns: {
+    detected: string[];
+    count: number;
+  };
+  errorTaxonomy: Record<string, number>;
+}
+
+/**
  * 评测结果
  */
 export interface EvaluationResult {
@@ -219,7 +241,7 @@ export interface EvaluationResult {
   statistics: EvaluationStatistics;
   topSuggestions: string[];
   aiSummary?: string;
-  transcriptMetrics?: import('../../main/evaluation/types').TranscriptMetrics;
+  transcriptMetrics?: TranscriptMetrics;
   baselineComparison?: BaselineComparison;
   trajectoryAnalysis?: {
     deviations: Array<{

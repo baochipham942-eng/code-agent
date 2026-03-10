@@ -71,6 +71,20 @@ export interface ChartSlotData {
   title?: string;
 }
 
+/**
+ * 结构化幻灯片输入（用于 PPTGenerateParams.slides 参数）
+ * 完整类型定义在 slideSchemas.ts 的 StructuredSlide 中，此处避免循环依赖
+ */
+export interface StructuredSlideInput {
+  layout: LayoutType;
+  title: string;
+  subtitle?: string;
+  content: Record<string, unknown>;
+  isTitle?: boolean;
+  isEnd?: boolean;
+  speakerNotes?: string;
+}
+
 // PPT 生成参数
 export interface PPTGenerateParams {
   topic: string;
@@ -87,7 +101,7 @@ export interface PPTGenerateParams {
   placeholders?: Record<string, string>; // D1: 占位符替换（Phase 2）
   data_source?: string;          // D2: 数据源文件路径（Phase 2）
   preview?: boolean;             // D5: 仅预览不生成（Phase 3）
-  slides?: import('./slideSchemas').StructuredSlide[]; // 结构化 JSON 输入（优先于 content）
+  slides?: StructuredSlideInput[]; // 结构化 JSON 输入（优先于 content）
   // v7 新工作流参数
   research?: boolean;            // 启用深度搜索（默认 true）
   review?: boolean;              // 启用 VLM 视觉审查（默认 true）

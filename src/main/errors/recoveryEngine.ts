@@ -3,31 +3,12 @@
 // ============================================================================
 
 import { createLogger } from '../services/infra/logger';
+import { RecoveryAction, type ErrorRecoveryEvent, type RecoveryContext } from './recoveryTypes';
+
+// Re-export shared types for backward compatibility
+export { RecoveryAction, type ErrorRecoveryEvent, type RecoveryContext } from './recoveryTypes';
 
 const logger = createLogger('RecoveryEngine');
-
-export enum RecoveryAction {
-  AUTO_RETRY = 'auto_retry',
-  OPEN_SETTINGS = 'open_settings',
-  AUTO_COMPACT = 'auto_compact',
-  AUTO_SWITCH_PROVIDER = 'auto_switch_provider',
-  NOTIFY_ONLY = 'notify_only',
-}
-
-export interface ErrorRecoveryEvent {
-  errorCode: string;
-  userMessage: string;
-  recoveryAction: RecoveryAction;
-  recoveryStatus: 'pending' | 'in_progress' | 'succeeded' | 'failed';
-  metadata?: Record<string, unknown>;
-  timestamp: number;
-}
-
-export interface RecoveryContext {
-  onRetry?: () => Promise<void>;
-  onCompact?: () => Promise<void>;
-  onSwitchProvider?: (fallbackProvider: string) => Promise<void>;
-}
 
 interface ErrorPattern {
   test: (error: Error) => boolean;
@@ -78,24 +59,37 @@ const ERROR_PATTERNS: ErrorPattern[] = [
   },
 ];
 
+/** Learner interface — injected via setLearner() to avoid circular dependency */
+interface RecoveryLearnerLike {
+  handleError(error: Error, context?: RecoveryContext): Promise<ErrorRecoveryEvent | null>;
+}
+
 export class RecoveryEngine {
   private retryCounts = new Map<string, number>();
+  private learner: RecoveryLearnerLike | null = null;
+
+  /**
+   * 注入学习器（由外部初始化时调用，避免 recoveryEngine ↔ recoveryLearner 循环依赖）
+   */
+  setLearner(learner: RecoveryLearnerLike): void {
+    this.learner = learner;
+  }
 
   async handleError(error: Error, context?: RecoveryContext): Promise<ErrorRecoveryEvent> {
     // 尝试使用学习策略推荐（confidence > 0.6 时优先使用）
-    try {
-      const { getRecoveryLearner } = await import('./recoveryLearner');
-      const learner = getRecoveryLearner();
-      const learnedEvent = await learner.handleError(error, context);
-      if (learnedEvent && learnedEvent.recoveryStatus === 'succeeded') {
-        logger.info('[RecoveryEngine] Used learned recovery strategy', {
-          errorCode: learnedEvent.errorCode,
-          action: learnedEvent.recoveryAction,
-        });
-        return learnedEvent;
+    if (this.learner) {
+      try {
+        const learnedEvent = await this.learner.handleError(error, context);
+        if (learnedEvent && learnedEvent.recoveryStatus === 'succeeded') {
+          logger.info('[RecoveryEngine] Used learned recovery strategy', {
+            errorCode: learnedEvent.errorCode,
+            action: learnedEvent.recoveryAction,
+          });
+          return learnedEvent;
+        }
+      } catch {
+        // Recovery learner not available or failed, fall through to static patterns
       }
-    } catch {
-      // Recovery learner not available or failed, fall through to static patterns
     }
 
     const pattern = ERROR_PATTERNS.find(p => p.test(error));

@@ -435,7 +435,7 @@ export const pptGenerateTool: Tool = {
 
       if (rawSlides && Array.isArray(rawSlides) && rawSlides.length > 0) {
         // 通道 A：结构化 JSON 输入
-        const { validSlides, errors } = validateStructuredSlides(rawSlides as StructuredSlide[]);
+        const { validSlides, errors } = validateStructuredSlides(rawSlides as unknown as StructuredSlide[]);
         if (validSlides.length > 0) {
           structuredSlides = validSlides;
           if (errors.length > 0) {

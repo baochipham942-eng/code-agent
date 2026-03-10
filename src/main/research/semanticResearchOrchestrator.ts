@@ -16,7 +16,7 @@ import type {
 import type { AgentEvent } from '../../shared/types';
 import type { ModelRouter } from '../model/modelRouter';
 import type { ToolExecutor } from '../tools/toolExecutor';
-import { IntentClassifier } from './intentClassifier';
+import { IntentClassifier } from '../routing/intentClassifier';
 import { DataSourceRouter } from './dataSourceRouter';
 import { AdaptiveConfigGenerator } from './adaptiveConfig';
 import { ProgressiveResearchLoop } from './progressiveLoop';

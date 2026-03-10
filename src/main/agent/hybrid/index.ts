@@ -72,7 +72,7 @@ export {
 export {
   type TaskIntent,
   classifyIntent,
-} from './intentClassifier';
+} from '../../routing/intentClassifier';
 
 // Cross Verify (P2: 双模型交叉验证)
 export {

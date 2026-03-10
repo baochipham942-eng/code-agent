@@ -725,3 +725,28 @@ This version of Node.js requires NODE_MODULE_VERSION 139.
 - `postinstall` 不可靠：`npm rebuild`（CLI 测试）、手动操作都会覆盖 Electron 编译的原生模块
 - 崩溃报告的 native 栈帧可能指向"陪葬"模块而非根因 — 永远从终端运行一次看 JS 层报错
 - NODE_MODULE_VERSION 速查：127=Node 22.x（系统），139=Electron 38
+
+### 2026-03-10: CLI stdout 日志污染 + Claude provider 名称映射缺失 ✅ 已修复
+
+**症状 1**: CLI `--json` 模式 stdout 混入大量 debug 日志，管道和程序化调用被污染
+
+**根因**: Logger/LogCollector/bootstrap 等 40+ 处 `console.log()` 写到 stdout，违反 Unix 惯例（日志应走 stderr）
+
+**修复**: 7 个文件中所有非结构化输出的 `console.log` → `console.error`
+- logger.ts: logFn 统一用 `console.error`（所有级别）
+- logCollector.ts / bootstrap.ts / logBridge.ts / mcpServer.ts / heartbeatService.ts / cronService.ts
+
+**原则**: stdout = 结构化数据（JSON/JSONL/text reply），stderr = 日志/debug/进度
+
+---
+
+**症状 2**: CLI 使用 Claude 模型时 401 认证失败，即使 `.env` 中 `ANTHROPIC_API_KEY` 配置正确
+
+**根因**: `src/cli/config.ts` 的 `getApiKey()` 中 `envKeys` 映射表只有 `anthropic: 'ANTHROPIC_API_KEY'`，但 `DEFAULT_PROVIDER = 'claude'`（不是 `'anthropic'`）。调用 `getApiKey('claude')` 时找不到映射 → 返回空字符串 → 401
+
+**修复**: envKeys 加上 `claude: 'ANTHROPIC_API_KEY'`
+
+**教训**:
+- provider 名称 ≠ 厂商名称：code-agent 内部用 `'claude'` 不用 `'anthropic'`，新增 provider 映射时必须和 `DEFAULT_PROVIDER` / constants 对齐
+- 401 不一定是 Key 无效：先 curl 直测 API 确认 Key 有效，再排查应用层是否真的把 Key 发出去了
+- 三级 fallback（SecureStorage → config.json → env）中任一层返回空字符串，要确保 fall through 而不是当"找到了"

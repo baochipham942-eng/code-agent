@@ -9,8 +9,10 @@ import {
   convertToGeminiMessages,
   parseGeminiResponse,
   handleGeminiStream,
+  parseContextLengthError,
 } from './shared';
-import { MODEL_API_ENDPOINTS } from '../../../shared/constants';
+import { MODEL_API_ENDPOINTS, getModelMaxOutputTokens } from '../../../shared/constants';
+import { isFallbackEligible } from './retryStrategy';
 
 /**
  * Call Google Gemini API
@@ -38,11 +40,13 @@ export async function callGemini(
     })),
   }] : undefined;
 
+  const recommendedMaxTokens = getModelMaxOutputTokens(config.model || 'gemini-2.5-flash');
+
   const requestBody: Record<string, unknown> = {
     contents: geminiContents,
     generationConfig: {
       temperature: config.temperature ?? 0.7,
-      maxOutputTokens: config.maxTokens ?? 8192,
+      maxOutputTokens: config.maxTokens ?? recommendedMaxTokens,
     },
   };
 
@@ -56,26 +60,57 @@ export async function callGemini(
   }
 
   const endpoint = onStream ? 'streamGenerateContent' : 'generateContent';
-  const url = `${baseUrl}/models/${model}:${endpoint}?key=${config.apiKey}`;
+  const url = `${baseUrl}/models/${model}:${endpoint}`;
 
-  const response = await electronFetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(requestBody),
-    signal,
-  });
+  try {
+    const response = await electronFetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': config.apiKey!,
+      },
+      body: JSON.stringify(requestBody),
+      signal,
+    });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Gemini API error: ${response.status} - ${error}`);
+    if (!response.ok) {
+      const error = await response.text();
+
+      const contextError = parseContextLengthError(error, 'gemini');
+      if (contextError) {
+        throw contextError;
+      }
+
+      throw new Error(`Gemini API error: ${response.status} - ${error}`);
+    }
+
+    if (onStream && response.body) {
+      return handleGeminiStream(response.body, onStream, signal);
+    }
+
+    const data = await response.json();
+    return parseGeminiResponse(data);
+  } catch (error: unknown) {
+    // Re-throw cancellation errors directly
+    if (error instanceof Error && (error.name === 'AbortError' || error.message === 'Request was cancelled before starting')) {
+      throw error;
+    }
+
+    const errMsg = error instanceof Error ? error.message : String(error);
+
+    // Check for context length errors
+    const contextError = parseContextLengthError(errMsg, 'gemini');
+    if (contextError) {
+      throw contextError;
+    }
+
+    // Mark fallback-eligible errors
+    if (isFallbackEligible(errMsg)) {
+      const fallbackError = new Error(`Gemini request failed: ${errMsg}`);
+      (fallbackError as unknown as Record<string, unknown>).fallbackEligible = true;
+      throw fallbackError;
+    }
+
+    throw error;
   }
-
-  if (onStream && response.body) {
-    return handleGeminiStream(response.body, onStream, signal);
-  }
-
-  const data = await response.json();
-  return parseGeminiResponse(data);
 }

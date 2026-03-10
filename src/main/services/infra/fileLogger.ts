@@ -4,6 +4,8 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import type { Disposable } from '../serviceRegistry';
+import { getServiceRegistry } from '../serviceRegistry';
 import { app } from 'electron';
 
 // ============================================================================
@@ -56,7 +58,7 @@ export interface FileLoggerConfig {
  * logger.close();
  * ```
  */
-export class FileLogger {
+export class FileLogger implements Disposable {
   private config: Required<FileLoggerConfig>;
   private currentDate: string;
   private writeStream: fs.WriteStream | null = null;
@@ -305,6 +307,14 @@ export class FileLogger {
   /**
    * 获取日志目录路径
    */
+  /**
+   * Disposable implementation for ServiceRegistry
+   */
+  async dispose(): Promise<void> {
+    if (this.isClosing) return;
+    this.close();
+  }
+
   getLogDir(): string {
     return this.logDir;
   }
@@ -329,6 +339,7 @@ let fileLoggerInstance: FileLogger | null = null;
 export function getFileLogger(config?: FileLoggerConfig): FileLogger {
   if (!fileLoggerInstance) {
     fileLoggerInstance = new FileLogger(config);
+    getServiceRegistry().register('FileLogger', fileLoggerInstance);
   }
   return fileLoggerInstance;
 }

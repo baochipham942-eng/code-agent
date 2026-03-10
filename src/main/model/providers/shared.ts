@@ -8,6 +8,7 @@ import type { ToolDefinition, ToolCall } from '../../../shared/types';
 import type { ModelMessage, ModelResponse, StreamCallback } from '../types';
 import { ContextLengthExceededError } from '../types';
 import { createLogger } from '../../services/infra/logger';
+import { PROVIDER_TIMEOUT } from '../../../shared/constants';
 
 export const logger = createLogger('ModelRouter');
 
@@ -110,7 +111,7 @@ export async function electronFetch(url: string, options: {
       method: options.method || 'GET',
       headers: options.headers,
       data: options.body ? JSON.parse(options.body) : undefined,
-      timeout: 300000,
+      timeout: PROVIDER_TIMEOUT,
       httpsAgent,
       validateStatus: () => true,
       maxContentLength: Infinity,

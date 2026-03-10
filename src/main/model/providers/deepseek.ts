@@ -14,7 +14,7 @@ import {
   parseOpenAIResponse,
   parseContextLengthError,
 } from './shared';
-import { MODEL_API_ENDPOINTS, DEFAULT_MODELS, getModelMaxOutputTokens } from '../../../shared/constants';
+import { MODEL_API_ENDPOINTS, DEFAULT_MODELS, getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
 import { openAISSEStream } from './sseStream';
 import { withTransientRetry } from './retryStrategy';
 
@@ -89,7 +89,7 @@ export async function callDeepSeek(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${config.apiKey}`,
       },
-      timeout: 300000,
+      timeout: PROVIDER_TIMEOUT,
       httpsAgent,
       maxContentLength: Infinity,
       maxBodyLength: Infinity,

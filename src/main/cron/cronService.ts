@@ -16,6 +16,8 @@ import type {
   CronServiceStats,
 } from '../../shared/types/cron';
 import { getDatabase } from '../services/core/databaseService';
+import type { Disposable } from '../services/serviceRegistry';
+import { getServiceRegistry } from '../services/serviceRegistry';
 import { getAgentOrchestrator } from '../app/bootstrap';
 
 const execAsync = promisify(exec);
@@ -39,10 +41,11 @@ interface JobExecutionContext {
 // CronService
 // ============================================================================
 
-export class CronService {
+export class CronService implements Disposable {
   private jobs: Map<string, ActiveJob> = new Map();
   private executions: Map<string, CronJobExecution[]> = new Map();
   private isInitialized = false;
+  private disposed = false;
 
   // --------------------------------------------------------------------------
   // Initialization
@@ -70,6 +73,17 @@ export class CronService {
     this.jobs.clear();
     this.isInitialized = false;
     console.error('[CronService] Shutdown complete');
+  }
+
+  // --------------------------------------------------------------------------
+  async dispose(): Promise<void> {
+    if (this.disposed) return;
+    this.disposed = true;
+    try {
+      await this.shutdown();
+    } catch (error) {
+      console.error('[CronService] Error during dispose:', error);
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -682,6 +696,7 @@ let cronServiceInstance: CronService | null = null;
 export function getCronService(): CronService {
   if (!cronServiceInstance) {
     cronServiceInstance = new CronService();
+    getServiceRegistry().register('CronService', cronServiceInstance);
   }
   return cronServiceInstance;
 }

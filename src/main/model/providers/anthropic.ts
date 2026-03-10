@@ -16,7 +16,7 @@ import {
   convertToClaudeMessages,
   parseClaudeResponse,
 } from './shared';
-import { MODEL_API_ENDPOINTS, API_VERSIONS, getModelMaxOutputTokens } from '../../../shared/constants';
+import { MODEL_API_ENDPOINTS, API_VERSIONS, getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
 
 /**
  * Claude SSE 流式请求处理
@@ -59,7 +59,7 @@ function claudeSSEStream(options: {
         Accept: 'text/event-stream',
       },
       agent: isHttps ? httpsAgent : undefined,
-      timeout: 300000,
+      timeout: PROVIDER_TIMEOUT,
     };
 
     const req = httpModule.request(reqOptions, (res) => {
@@ -414,7 +414,6 @@ export async function callClaude(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'x-api-key': config.apiKey || '',
-    'Authorization': `Bearer ${config.apiKey || ''}`,
     'anthropic-version': API_VERSIONS.ANTHROPIC,
   };
 

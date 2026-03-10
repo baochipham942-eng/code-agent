@@ -10,6 +10,8 @@ import * as fs from 'fs';
 import { app } from 'electron';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from './logger';
+import type { Disposable } from '../serviceRegistry';
+import { getServiceRegistry } from '../serviceRegistry';
 
 // Lazy-load playwright to avoid hard dependency at module load time
 // (e.g., when bundled for test runner where playwright is not installed)
@@ -86,11 +88,12 @@ export interface ElementInfo {
   rect: { x: number; y: number; width: number; height: number };
 }
 
-class BrowserService {
+class BrowserService implements Disposable {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private tabs: Map<string, BrowserTab> = new Map();
   private activeTabId: string | null = null;
+  private disposed = false;
   private screenshotDir: string;
   public logger: BrowserLogger = new BrowserLogger();
 
@@ -474,6 +477,20 @@ class BrowserService {
   // Private Helpers
   // --------------------------------------------------------------------------
 
+  // --------------------------------------------------------------------------
+  // Disposable
+  // --------------------------------------------------------------------------
+
+  async dispose(): Promise<void> {
+    if (this.disposed) return;
+    this.disposed = true;
+    try {
+      await this.close();
+    } catch (error) {
+      this.logger.log('WARN', `Error during dispose: ${error}`);
+    }
+  }
+
   private async ensureBrowser(): Promise<void> {
     if (!this.browser) {
       await this.launch();
@@ -494,4 +511,6 @@ class BrowserService {
 }
 
 // Singleton instance
-export const browserService = new BrowserService();
+const browserServiceInstance = new BrowserService();
+getServiceRegistry().register('BrowserService', browserServiceInstance);
+export const browserService = browserServiceInstance;

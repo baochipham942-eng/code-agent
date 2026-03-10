@@ -1,4 +1,7 @@
 import type { ModelProvider } from './types';
+
+/** Provider HTTP request timeout (ms) */
+export const PROVIDER_TIMEOUT = 300000;
 /**
  * 全局常量定义
  * 消除魔法数字，集中管理配置值
@@ -651,6 +654,8 @@ export const MODEL_API_ENDPOINTS = {
   gemini: 'https://generativelanguage.googleapis.com/v1beta',
   /** 火山引擎 Ark (豆包 GUI 自动化) */
   volcengine: 'https://ark.cn-beijing.volces.com/api/v3',
+  /** Local Ollama */
+  ollama: 'http://localhost:11434/v1',
 } as const;
 
 // ============================================================================

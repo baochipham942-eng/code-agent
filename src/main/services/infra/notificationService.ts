@@ -6,6 +6,8 @@
 import { Notification, BrowserWindow, app } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { createLogger } from './logger';
+import type { Disposable } from '../serviceRegistry';
+import { getServiceRegistry } from '../serviceRegistry';
 
 const logger = createLogger('NotificationService');
 
@@ -17,8 +19,9 @@ export interface TaskNotificationData {
   toolsUsed: string[];
 }
 
-class NotificationService {
+class NotificationService implements Disposable {
   private enabled: boolean = true;
+  private disposed = false;
 
   /**
    * 检查是否应该发送通知
@@ -99,6 +102,15 @@ class NotificationService {
   /**
    * 启用/禁用通知
    */
+  /**
+   * Disposable implementation for ServiceRegistry
+   */
+  async dispose(): Promise<void> {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.enabled = false;
+  }
+
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
     logger.info('Notifications', { enabled });
@@ -113,4 +125,6 @@ class NotificationService {
 }
 
 // 单例导出
-export const notificationService = new NotificationService();
+const notificationServiceInstance = new NotificationService();
+getServiceRegistry().register('NotificationService', notificationServiceInstance);
+export const notificationService = notificationServiceInstance;

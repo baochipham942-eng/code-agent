@@ -17,12 +17,6 @@ import {
   grepTool,
   killShellTool,
   taskOutputTool,
-  processListTool,
-  processPollTool,
-  processLogTool,
-  processWriteTool,
-  processSubmitTool,
-  processKillTool,
 } from './shell';
 
 // File tools
@@ -78,7 +72,6 @@ import {
   imageProcessTool,
   screenshotPageTool,
   academicSearchTool,
-  httpRequestTool,
   speechToTextTool,
   localSpeechToTextTool,
   textToSpeechTool,
@@ -86,15 +79,6 @@ import {
   xlwingsExecuteTool,
 } from './network';
 
-// MCP tools
-import {
-  mcpTool,
-  mcpListToolsTool,
-  mcpListResourcesTool,
-  mcpReadResourceTool,
-  mcpGetStatusTool,
-} from './mcp';
-import { mcpAddServerTool } from './mcp';
 
 // Memory tools
 import { memoryTool, codeIndexTool, autoLearnTool, forkSessionTool } from './memory';
@@ -406,14 +390,6 @@ export class ToolRegistry {
     this.register(taskOutputTool);
     this.register(notebookEditTool);
 
-    // Process management tools (PTY support)
-    this.register(processListTool);
-    this.register(processPollTool);
-    this.register(processLogTool);
-    this.register(processWriteTool);
-    this.register(processSubmitTool);
-    this.register(processKillTool);
-
     // Gen 2 tools
     this.register(globTool);
     this.register(grepTool);
@@ -471,16 +447,6 @@ export class ToolRegistry {
     this.register(imageAnnotateTool);
     this.register(xlwingsExecuteTool);
 
-    // Gen 4 tools - HTTP API
-    this.register(httpRequestTool);
-
-    // MCP tools (Gen 4+)
-    this.register(mcpTool);
-    this.register(mcpListToolsTool);
-    this.register(mcpListResourcesTool);
-    this.register(mcpReadResourceTool);
-    this.register(mcpGetStatusTool);
-    this.register(mcpAddServerTool);
 
     // Gen 5 tools
     this.register(memoryTool); // unified store + search (replaces memory_store & memory_search)

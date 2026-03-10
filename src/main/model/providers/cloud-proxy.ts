@@ -15,7 +15,7 @@ import {
   parseContextLengthError,
   normalizeJsonSchema,
 } from './shared';
-import { getModelMaxOutputTokens } from '../../../shared/constants';
+import { getModelMaxOutputTokens, PROVIDER_TIMEOUT } from '../../../shared/constants';
 
 /**
  * Get cloud API URL
@@ -104,7 +104,7 @@ export async function callViaCloudProxy(
       headers: {
         'Content-Type': 'application/json',
       },
-      timeout: 300000,
+      timeout: PROVIDER_TIMEOUT,
       httpsAgent,
       maxContentLength: Infinity,
       maxBodyLength: Infinity,

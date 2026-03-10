@@ -7,7 +7,7 @@
 
 import { fork, type ChildProcess } from 'child_process';
 import * as path from 'path';
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { ToolExecutor } from '../toolExecutor';
 import { validateCodeSafety } from './codeValidator';
 import { createLogger } from '../../services/infra/logger';

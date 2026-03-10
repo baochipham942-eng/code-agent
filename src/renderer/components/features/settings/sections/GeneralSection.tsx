@@ -8,6 +8,7 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { Select } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('GeneralSection');
 
@@ -44,7 +45,7 @@ export const GeneralSection: React.FC = () => {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const settings = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET);
+        const settings = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET);
         if (settings?.ui) {
           setTheme(settings.ui.theme || 'dark');
           setFontSize(reverseFontSizeMap[settings.ui.fontSize] || 'medium');
@@ -61,7 +62,7 @@ export const GeneralSection: React.FC = () => {
     setTheme(newTheme);
     try {
       // Backend merges partial updates
-      await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
         ui: { theme: newTheme }
       } as Record<string, unknown>);
     } catch (error) {
@@ -74,7 +75,7 @@ export const GeneralSection: React.FC = () => {
     setFontSize(size);
     try {
       // Backend merges partial updates
-      await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
         ui: { fontSize: fontSizeMap[size] }
       } as Record<string, unknown>);
     } catch (error) {

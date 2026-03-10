@@ -2,7 +2,7 @@
 // Web Fetch Tool - Fetch content from URLs with AI-powered extraction
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import {
   smartHtmlToText,
   smartTruncate,

@@ -4,7 +4,7 @@
 
 import { pathToFileURL } from 'url';
 import * as path from 'path';
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getLSPManager, type LSPDiagnostic } from '../../lsp';
 
 export const diagnosticsTool: Tool = {

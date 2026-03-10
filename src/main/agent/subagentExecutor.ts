@@ -4,7 +4,7 @@
 // ============================================================================
 
 import type { ModelConfig } from '../../shared/types';
-import type { Tool, ToolContext } from '../tools/toolRegistry';
+import type { Tool, ToolContext } from '../tools/types';
 import { ModelRouter } from '../model/modelRouter';
 import { createLogger } from '../services/infra/logger';
 import {

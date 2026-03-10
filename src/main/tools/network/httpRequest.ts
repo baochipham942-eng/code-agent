@@ -3,7 +3,7 @@
 // Gen4: Network request capability with security controls
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { createLogger } from '../../services/infra/logger';
 import { NETWORK_TOOL_TIMEOUTS } from '../../../shared/constants';
 

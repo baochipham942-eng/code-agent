@@ -1,0 +1,173 @@
+import { create } from 'zustand';
+import { IPC_CHANNELS } from '@shared/ipc';
+import { useSessionStore, type SessionFilter } from './sessionStore';
+import { createLogger } from '../utils/logger';
+import ipcService from '../services/ipcService';
+
+const logger = createLogger('SessionUIStore');
+
+export type { SessionFilter };
+
+export interface PendingDelete {
+  ids: string[];
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+interface SessionUIState {
+  pendingDelete: PendingDelete | null;
+  filter: SessionFilter;
+  inputHistory: string[];
+  inputHistoryIndex: number;
+  inputHistoryDraft: string;
+}
+
+interface SessionUIActions {
+  setFilter: (filter: SessionFilter) => void;
+  softDelete: (ids: string[]) => void;
+  undoDelete: () => void;
+  confirmDelete: () => Promise<void>;
+  addToInputHistory: (input: string) => void;
+  getPreviousInput: (currentInput: string) => string | null;
+  getNextInput: () => string | null;
+  resetInputHistoryIndex: () => void;
+}
+
+type SessionUIStore = SessionUIState & SessionUIActions;
+
+export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
+  pendingDelete: null,
+  filter: 'active' as SessionFilter,
+  inputHistory: [],
+  inputHistoryIndex: -1,
+  inputHistoryDraft: '',
+
+  setFilter: (filter: SessionFilter) => {
+    set({ filter });
+    useSessionStore.getState().loadSessions();
+  },
+
+  softDelete: (ids: string[]) => {
+    const sessionStore = useSessionStore.getState();
+    const { sessions } = sessionStore;
+    const { pendingDelete } = get();
+
+    if (pendingDelete) {
+      if (pendingDelete.timer) clearTimeout(pendingDelete.timer);
+      const prevIds = pendingDelete.ids;
+      (async () => {
+        for (const id of prevIds) {
+          try {
+            await ipcService.invoke(IPC_CHANNELS.SESSION_DELETE, id);
+          } catch (error) {
+            logger.error('Failed to delete session in previous batch', error);
+          }
+        }
+      })();
+    }
+
+    const idsSet = new Set(ids);
+    const remainingSessions = sessions.filter((s) => !idsSet.has(s.id));
+
+    const timer = setTimeout(() => {
+      get().confirmDelete();
+    }, 5000);
+
+    useSessionStore.setState({ sessions: remainingSessions });
+    set({ pendingDelete: { ids, timer } });
+
+    const { currentSessionId } = useSessionStore.getState();
+    if (currentSessionId && idsSet.has(currentSessionId)) {
+      if (remainingSessions.length > 0) {
+        sessionStore.switchSession(remainingSessions[0].id);
+      } else {
+        useSessionStore.setState({ currentSessionId: null, messages: [] });
+      }
+    }
+
+    logger.info('Sessions soft deleted', { count: ids.length });
+  },
+
+  undoDelete: () => {
+    const { pendingDelete } = get();
+    if (!pendingDelete) return;
+
+    if (pendingDelete.timer) clearTimeout(pendingDelete.timer);
+
+    set({ pendingDelete: null });
+    useSessionStore.getState().loadSessions();
+    logger.info('Delete undone', { count: pendingDelete.ids.length });
+  },
+
+  confirmDelete: async () => {
+    const { pendingDelete } = get();
+    if (!pendingDelete) return;
+
+    if (pendingDelete.timer) clearTimeout(pendingDelete.timer);
+
+    for (const id of pendingDelete.ids) {
+      try {
+        await ipcService.invoke(IPC_CHANNELS.SESSION_DELETE, id);
+      } catch (error) {
+        logger.error('Failed to confirm delete session', error);
+      }
+    }
+
+    set({ pendingDelete: null });
+    logger.info('Sessions permanently deleted', { count: pendingDelete.ids.length });
+  },
+
+  addToInputHistory: (input: string) => {
+    const trimmed = input.trim();
+    if (!trimmed) return;
+
+    const { inputHistory } = get();
+    if (inputHistory.length > 0 && inputHistory[0] === trimmed) {
+      return;
+    }
+
+    const newHistory = [trimmed, ...inputHistory].slice(0, 100);
+    set({
+      inputHistory: newHistory,
+      inputHistoryIndex: -1,
+      inputHistoryDraft: '',
+    });
+  },
+
+  getPreviousInput: (currentInput: string) => {
+    const { inputHistory, inputHistoryIndex } = get();
+
+    if (inputHistory.length === 0) return null;
+
+    if (inputHistoryIndex === -1) {
+      set({ inputHistoryDraft: currentInput });
+    }
+
+    const newIndex = Math.min(inputHistoryIndex + 1, inputHistory.length - 1);
+    if (newIndex === inputHistoryIndex) return null;
+
+    set({ inputHistoryIndex: newIndex });
+    return inputHistory[newIndex];
+  },
+
+  getNextInput: () => {
+    const { inputHistory, inputHistoryIndex, inputHistoryDraft } = get();
+
+    if (inputHistoryIndex === -1) return null;
+
+    const newIndex = inputHistoryIndex - 1;
+    set({ inputHistoryIndex: newIndex });
+
+    if (newIndex === -1) {
+      return inputHistoryDraft;
+    }
+
+    return inputHistory[newIndex];
+  },
+
+  resetInputHistoryIndex: () => {
+    set({
+      inputHistoryIndex: -1,
+      inputHistoryDraft: '',
+    });
+  },
+}));

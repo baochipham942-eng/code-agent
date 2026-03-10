@@ -10,6 +10,7 @@ import type { MemoryItem, MemoryCategory } from '@shared/types';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('MemoryConflictDetector');
 
@@ -199,7 +200,7 @@ export const MemoryConflictDetector: React.FC<MemoryConflictDetectorProps> = ({
     try {
       // 删除不保留的记忆
       for (const id of deleteIds) {
-        await window.electronAPI?.invoke(IPC_CHANNELS.MEMORY, {
+        await ipcService.invoke(IPC_CHANNELS.MEMORY, {
           action: 'delete',
           id,
         });

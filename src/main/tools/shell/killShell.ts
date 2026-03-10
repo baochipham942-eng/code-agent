@@ -2,7 +2,7 @@
 // KillShell Tool - Terminates background shell processes
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { killBackgroundTask, isTaskId, getAllBackgroundTasks } from './backgroundTasks';
 
 export const killShellTool: Tool = {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TestResultsDashboard } from '../testResults/TestResultsDashboard';
 import { EVALUATION_CHANNELS } from '@shared/ipc/channels';
 import type { TestRunReport, TestCaseResult } from '@shared/ipc';
+import ipcService from '../../../../services/ipcService';
 
 type DetailTab = 'overview' | 'cases' | 'trace' | 'scoring' | 'ai-analysis';
 
@@ -30,9 +31,9 @@ export const ExperimentDetailPage: React.FC = () => {
     const load = async () => {
       setLoading(true);
       try {
-        const list = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS) as { filePath: string }[] | undefined;
+        const list = await ipcService.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS) as { filePath: string }[] | undefined;
         if (list && list.length > 0) {
-          const data = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, list[0].filePath) as TestRunReport | null | undefined;
+          const data = await ipcService.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, list[0].filePath) as TestRunReport | null | undefined;
           if (data) setReport(data);
         }
       } catch { /* best-effort */ }

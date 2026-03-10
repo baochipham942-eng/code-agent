@@ -8,6 +8,7 @@ import type { ConfirmActionRequest } from '@shared/ipc';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { Modal, ModalFooter } from './primitives/Modal';
 import { createLogger } from '../utils/logger';
+import ipcService from '../services/ipcService';
 
 const logger = createLogger('ConfirmActionModal');
 
@@ -45,7 +46,7 @@ export const ConfirmActionModal: React.FC<Props> = ({ request, onClose }) => {
 
   const handleConfirm = async () => {
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.CONFIRM_ACTION_RESPONSE, {
+      await ipcService.invoke(IPC_CHANNELS.CONFIRM_ACTION_RESPONSE, {
         requestId: request.id,
         confirmed: true,
       });
@@ -57,7 +58,7 @@ export const ConfirmActionModal: React.FC<Props> = ({ request, onClose }) => {
 
   const handleCancel = async () => {
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.CONFIRM_ACTION_RESPONSE, {
+      await ipcService.invoke(IPC_CHANNELS.CONFIRM_ACTION_RESPONSE, {
         requestId: request.id,
         confirmed: false,
       });

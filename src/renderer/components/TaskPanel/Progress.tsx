@@ -12,6 +12,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { Check, ChevronDown, ChevronRight, ListChecks, Loader2, Clock, AlertTriangle } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import type { TaskProgressData, ToolProgressData, ToolTimeoutData, AgentEvent } from '@shared/types';
+import ipcService from '../../services/ipcService';
 
 // Phase 到中文的映射
 const PHASE_LABELS: Record<string, string> = {
@@ -81,7 +82,7 @@ export const Progress: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = window.electronAPI?.on?.('agent:event', handleAgentEvent);
+    const unsubscribe = ipcService.on('agent:event' as any, handleAgentEvent);
     return () => {
       unsubscribe?.();
     };

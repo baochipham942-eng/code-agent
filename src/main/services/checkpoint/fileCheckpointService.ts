@@ -3,7 +3,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
-import { getDatabase } from '../index';
+import { getDatabase } from '../core';
 import { createLogger } from '../infra/logger';
 import type { FileCheckpoint, RewindResult, FileCheckpointConfig } from '../../../shared/types';
 

@@ -3,7 +3,7 @@
 // Gen 7: Multi-Agent capability
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getSpawnedAgent, listSpawnedAgents } from './spawnAgent';
 
 type MessageAction = 'status' | 'list' | 'result' | 'cancel';

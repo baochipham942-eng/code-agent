@@ -18,7 +18,6 @@ import type {
 import { getDatabase } from '../services/core/databaseService';
 import type { Disposable } from '../services/serviceRegistry';
 import { getServiceRegistry } from '../services/serviceRegistry';
-import { getAgentOrchestrator } from '../app/bootstrap';
 
 const execAsync = promisify(exec);
 
@@ -509,6 +508,7 @@ export class CronService implements Disposable {
           }
         }
 
+        const { getAgentOrchestrator } = await import('../app/bootstrap');
         const orchestrator = getAgentOrchestrator();
         if (!orchestrator) {
           throw new Error('AgentOrchestrator not available');

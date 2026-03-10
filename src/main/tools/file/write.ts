@@ -4,7 +4,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { createLogger } from '../../services/infra/logger';
 import { resolvePath } from './pathUtils';
 import { atomicWriteFile } from '../utils/atomicWrite';

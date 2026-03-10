@@ -4,6 +4,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
+import ipcService from '../services/ipcService';
 
 export interface FileMatch {
   path: string;
@@ -32,7 +33,7 @@ export function useFileAutocomplete() {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        const files = await window.electronAPI?.invoke(
+        const files = await ipcService.invoke(
           IPC_CHANNELS.WORKSPACE_LIST_FILES,
           searchQuery || '.'
         );

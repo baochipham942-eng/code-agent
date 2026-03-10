@@ -18,6 +18,8 @@ import { VoiceInputButton } from './VoiceInputButton';
 import { useFileUpload } from './useFileUpload';
 import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
 import { useSessionStore } from '../../../../stores/sessionStore';
+import { useSessionUIStore } from '../../../../stores/sessionUIStore';
+import ipcService from '../../../../services/ipcService';
 
 // ============================================================================
 // 类型定义
@@ -76,7 +78,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // Fetch suggestions when input is empty
   useEffect(() => {
     if (value.trim().length === 0 && !disabled) {
-      window.electronAPI?.invoke(IPC_CHANNELS.SUGGESTIONS_GET)
+      ipcService.invoke(IPC_CHANNELS.SUGGESTIONS_GET)
         .then(s => setSuggestions(s || []))
         .catch(() => setSuggestions([]));
     } else {
@@ -115,7 +117,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     getPreviousInput,
     getNextInput,
     resetInputHistoryIndex,
-  } = useSessionStore();
+  } = useSessionUIStore();
 
   // 处理提交
   // Claude Code 风格：即使正在处理也允许提交（触发中断）

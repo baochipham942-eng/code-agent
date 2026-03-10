@@ -18,7 +18,7 @@ import type {
 } from '../../shared/types/taskDAG';
 import { isTaskTerminal } from '../../shared/types/taskDAG';
 import { TaskDAG } from './TaskDAG';
-import type { Tool, ToolContext } from '../tools/toolRegistry';
+import type { Tool, ToolContext } from '../tools/types';
 import { getSubagentExecutor } from '../agent/subagentExecutor';
 import {
   getPredefinedAgent,

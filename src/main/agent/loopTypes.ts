@@ -12,7 +12,7 @@ import type {
 } from '../../shared/types';
 import type { TelemetryAdapter } from '../../shared/types/telemetry';
 import type { StructuredOutputConfig } from './structuredOutput';
-import type { ToolRegistry } from '../tools/toolRegistry';
+import type { ToolRegistryLike } from '../tools/types';
 import type { ToolExecutor } from '../tools/toolExecutor';
 import type { PlanningService } from '../planning';
 import type { HookManager } from '../hooks';
@@ -27,7 +27,7 @@ import type { HookManager } from '../hooks';
 export interface AgentLoopConfig {
   systemPrompt?: string;
   modelConfig: ModelConfig;
-  toolRegistry: ToolRegistry;
+  toolRegistry: ToolRegistryLike;
   toolExecutor: ToolExecutor;
   messages: Message[];
   onEvent: (event: AgentEvent) => void;

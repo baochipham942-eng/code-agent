@@ -2,7 +2,7 @@
 // Plan Review Tool - Coordinator 用来审批/拒绝子 Agent 的 plan
 // ============================================================================
 
-import type { Tool, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolExecutionResult } from '../types';
 import { getPlanApprovalGate } from '../../agent/planApproval';
 
 export const planReviewTool: Tool = {

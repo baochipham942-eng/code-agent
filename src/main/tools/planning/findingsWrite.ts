@@ -2,7 +2,7 @@
 // Findings Write Tool - Save research findings and notes
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { PlanningService, FindingCategory } from '../../planning';
 
 // Valid categories

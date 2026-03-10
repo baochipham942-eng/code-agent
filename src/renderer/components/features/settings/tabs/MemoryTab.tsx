@@ -24,6 +24,7 @@ import { createLogger } from '../../../../utils/logger';
 import type { MemoryItem, MemoryCategory, MemoryStats } from '@shared/types';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('MemoryTab');
 
@@ -68,8 +69,8 @@ export const MemoryTab: React.FC = () => {
     try {
       setIsLoading(true);
       const [memoriesResult, statsResult] = await Promise.all([
-        window.electronAPI?.invoke(IPC_CHANNELS.MEMORY, { action: 'list' }) as Promise<{ success: boolean; data?: MemoryItem[] }>,
-        window.electronAPI?.invoke(IPC_CHANNELS.MEMORY, { action: 'getStats' }) as Promise<{ success: boolean; data?: MemoryStats }>,
+        ipcService.invoke(IPC_CHANNELS.MEMORY, { action: 'list' }) as Promise<{ success: boolean; data?: MemoryItem[] }>,
+        ipcService.invoke(IPC_CHANNELS.MEMORY, { action: 'getStats' }) as Promise<{ success: boolean; data?: MemoryStats }>,
       ]);
       if (memoriesResult?.success && memoriesResult.data) {
         setMemories(memoriesResult.data);
@@ -138,7 +139,7 @@ export const MemoryTab: React.FC = () => {
   // Handle save edit
   const handleSaveEdit = async (id: string, content: string) => {
     try {
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.MEMORY, {
+      const result = await ipcService.invoke(IPC_CHANNELS.MEMORY, {
         action: 'update',
         id,
         content,
@@ -160,7 +161,7 @@ export const MemoryTab: React.FC = () => {
   // Handle delete
   const handleDelete = async (id: string) => {
     try {
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.MEMORY, {
+      const result = await ipcService.invoke(IPC_CHANNELS.MEMORY, {
         action: 'delete',
         id,
       });
@@ -180,7 +181,7 @@ export const MemoryTab: React.FC = () => {
   // Handle clear category
   const handleClearCategory = async (category: MemoryCategory) => {
     try {
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.MEMORY, {
+      const result = await ipcService.invoke(IPC_CHANNELS.MEMORY, {
         action: 'deleteByCategory',
         category,
       }) as { success: boolean; data?: { deleted: number }; error?: string } | undefined;
@@ -200,7 +201,7 @@ export const MemoryTab: React.FC = () => {
   // Handle export
   const handleExport = async () => {
     try {
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.MEMORY, {
+      const result = await ipcService.invoke(IPC_CHANNELS.MEMORY, {
         action: 'export',
       });
       if (result?.success && result.data) {
@@ -239,7 +240,7 @@ export const MemoryTab: React.FC = () => {
         reader.onload = async (event) => {
           try {
             const data = JSON.parse(event.target?.result as string);
-            const result = await window.electronAPI?.invoke(IPC_CHANNELS.MEMORY, {
+            const result = await ipcService.invoke(IPC_CHANNELS.MEMORY, {
               action: 'import',
               data,
             }) as { success: boolean; data?: { imported: number }; error?: string } | undefined;

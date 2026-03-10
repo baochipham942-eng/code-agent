@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { create } from 'zustand';
+import ipcService from '../services/ipcService';
 import type {
   TelemetrySession,
   TelemetryTurn,
@@ -66,7 +67,7 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
   loadSessions: async () => {
     set({ isLoading: true });
     try {
-      const sessions = await window.electronAPI?.invoke('telemetry:list-sessions', { limit: 100 });
+      const sessions = await ipcService.invoke('telemetry:list-sessions', { limit: 100 });
       if (sessions) set({ sessions });
     } catch (error) {
       console.error('Failed to load telemetry sessions:', error);
@@ -78,7 +79,7 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
   loadSession: async (sessionId: string) => {
     set({ isLoading: true });
     try {
-      const session = await window.electronAPI?.invoke('telemetry:get-session', sessionId);
+      const session = await ipcService.invoke('telemetry:get-session', sessionId);
       if (session) set({ currentSession: session });
     } catch (error) {
       console.error('Failed to load telemetry session:', error);
@@ -89,7 +90,7 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
 
   loadTurns: async (sessionId: string) => {
     try {
-      const turns = await window.electronAPI?.invoke('telemetry:get-turns', sessionId);
+      const turns = await ipcService.invoke('telemetry:get-turns', sessionId);
       if (turns) set({ turns });
     } catch (error) {
       console.error('Failed to load telemetry turns:', error);
@@ -98,7 +99,7 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
 
   loadEvents: async (sessionId: string) => {
     try {
-      const events = await window.electronAPI?.invoke('telemetry:get-events' as 'telemetry:get-events', sessionId);
+      const events = await ipcService.invoke('telemetry:get-events' as 'telemetry:get-events', sessionId);
       if (events) set({ events });
     } catch (error) {
       console.error('Failed to load telemetry events:', error);
@@ -107,7 +108,7 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
 
   loadTurnDetail: async (turnId: string) => {
     try {
-      const detail = await window.electronAPI?.invoke('telemetry:get-turn-detail', turnId);
+      const detail = await ipcService.invoke('telemetry:get-turn-detail', turnId);
       if (detail) set({ selectedTurnDetail: detail });
     } catch (error) {
       console.error('Failed to load turn detail:', error);
@@ -116,7 +117,7 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
 
   loadToolStats: async (sessionId: string) => {
     try {
-      const stats = await window.electronAPI?.invoke('telemetry:get-tool-stats', sessionId);
+      const stats = await ipcService.invoke('telemetry:get-tool-stats', sessionId);
       if (stats) set({ toolStats: stats });
     } catch (error) {
       console.error('Failed to load tool stats:', error);
@@ -125,7 +126,7 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
 
   loadIntentDistribution: async (sessionId: string) => {
     try {
-      const dist = await window.electronAPI?.invoke('telemetry:get-intent-dist', sessionId);
+      const dist = await ipcService.invoke('telemetry:get-intent-dist', sessionId);
       if (dist) set({ intentDistribution: dist });
     } catch (error) {
       console.error('Failed to load intent distribution:', error);
@@ -134,7 +135,7 @@ export const useTelemetryStore = create<TelemetryStore>((set, get) => ({
 
   deleteSession: async (sessionId: string) => {
     try {
-      await window.electronAPI?.invoke('telemetry:delete-session', sessionId);
+      await ipcService.invoke('telemetry:delete-session', sessionId);
       set((state) => ({
         sessions: state.sessions.filter(s => s.id !== sessionId),
         currentSession: state.currentSession?.id === sessionId ? null : state.currentSession,

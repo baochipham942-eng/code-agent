@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import type { SwarmAgentState, SwarmVerificationResult } from '@shared/types/swarm';
+import ipcService from '../../../services/ipcService';
 
 // Agent 状态颜色映射
 const statusColors: Record<string, { bg: string; text: string; border: string }> = {
@@ -213,11 +214,11 @@ export const SwarmMonitor: React.FC<SwarmMonitorProps> = ({ onClose }) => {
 
   // 监听 IPC 事件
   useEffect(() => {
-    if (!window.electronAPI) return;
-    const unsubscribe = window.electronAPI.on('swarm:event', (event) => {
+    if (!ipcService.isAvailable()) return;
+    const unsubscribe = ipcService.on('swarm:event', (event) => {
       useSwarmStore.getState().handleEvent(event);
     });
-    return () => unsubscribe();
+    return () => unsubscribe?.();
   }, []);
 
   // 计算运行时间

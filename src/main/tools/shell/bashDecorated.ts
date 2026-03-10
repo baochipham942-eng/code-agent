@@ -5,7 +5,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { Tool, Param, Description, type ITool, buildToolFromClass } from '../decorators';
-import type { ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { ToolContext, ToolExecutionResult } from '../types';
 import { BASH } from '../../../shared/constants';
 import { getShellPath } from '../../services/infra/shellEnvironment';
 

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import 'reflect-metadata';
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { JSONSchema, JSONSchemaProperty } from '../../../shared/types';
 import { getToolMetadata } from './tool';
 import { getParamMetadata } from './param';

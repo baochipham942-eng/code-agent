@@ -2,7 +2,7 @@
 // Task Create Tool - Create a new session task (Claude Code 2.x compatible)
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { SessionTaskPriority } from '../../../shared/types/planning';
 import { createTask, listTasks } from './taskStore';
 

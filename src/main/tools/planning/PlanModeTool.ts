@@ -3,7 +3,7 @@
 // Merges: enter_plan_mode, exit_plan_mode
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { enterPlanModeTool } from './enterPlanMode';
 import { exitPlanModeTool } from './exitPlanMode';
 

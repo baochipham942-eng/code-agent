@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { useSessionStore } from '../stores/sessionStore';
+import ipcService from '../services/ipcService';
 
 interface Checkpoint {
   id: string;
@@ -40,7 +41,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
   const loadCheckpoints = async () => {
     if (!currentSessionId) return;
     try {
-      const list = await window.electronAPI?.invoke(IPC_CHANNELS.CHECKPOINT_LIST, currentSessionId);
+      const list = await ipcService.invoke(IPC_CHANNELS.CHECKPOINT_LIST, currentSessionId);
       setCheckpoints(list || []);
     } catch {
       setCheckpoints([]);
@@ -51,7 +52,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
     setSelectedMessageId(messageId);
     if (!currentSessionId) return;
     try {
-      const files = await window.electronAPI?.invoke(IPC_CHANNELS.CHECKPOINT_PREVIEW, currentSessionId, messageId);
+      const files = await ipcService.invoke(IPC_CHANNELS.CHECKPOINT_PREVIEW, currentSessionId, messageId);
       setPreview(files || []);
     } catch {
       setPreview([]);
@@ -62,7 +63,7 @@ export const RewindPanel: React.FC<RewindPanelProps> = ({ isOpen, onClose }) => 
     if (!selectedMessageId || !currentSessionId) return;
     setIsRewinding(true);
     try {
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.CHECKPOINT_REWIND, currentSessionId, selectedMessageId);
+      const result = await ipcService.invoke(IPC_CHANNELS.CHECKPOINT_REWIND, currentSessionId, selectedMessageId);
       if (result?.success) {
         onClose();
       }

@@ -4,7 +4,7 @@
 // Now with persistent storage via EvolutionPersistence service
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getMemoryService } from '../../memory/memoryService';
 import { getVectorStore } from '../../memory/vectorStore';
 import { getEvolutionPersistence } from '../../services';

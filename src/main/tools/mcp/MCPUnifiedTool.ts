@@ -3,7 +3,7 @@
 // Phase 2: Tool Schema Consolidation (Group 2: 6->1)
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { mcpTool, mcpListToolsTool, mcpListResourcesTool, mcpReadResourceTool, mcpGetStatusTool } from './mcpTool';
 import { mcpAddServerTool } from './mcpAddServer';
 

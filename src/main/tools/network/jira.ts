@@ -2,7 +2,7 @@
 // Jira Tool - Jira 查询和创建
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getConfigService } from '../../services';
 import { createLogger } from '../../services/infra/logger';
 

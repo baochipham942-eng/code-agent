@@ -7,7 +7,7 @@
 
 import fs from 'fs/promises';
 import { Tool, Param, Description, type ITool } from '../decorators';
-import type { ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { ToolContext, ToolExecutionResult } from '../types';
 import { resolvePath } from '../file/pathUtils';
 
 // ----------------------------------------------------------------------------

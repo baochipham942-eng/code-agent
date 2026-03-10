@@ -4,7 +4,7 @@
 
 import { glob as globLib } from 'glob';
 import { Tool, Param, Description, type ITool, buildToolFromClass } from '../decorators';
-import type { ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { ToolContext, ToolExecutionResult } from '../types';
 import { resolvePath } from './pathUtils';
 
 @Description(`Fast file pattern matching tool that works with any codebase size.

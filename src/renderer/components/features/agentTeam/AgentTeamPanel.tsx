@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useSwarmStore } from '../../../stores/swarmStore';
 import type { SwarmAgentState } from '@shared/types/swarm';
+import ipcService from '../../../services/ipcService';
 
 // ============================================================================
 // Types
@@ -213,8 +214,8 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ onClose }) => {
 
   // 监听 swarm 事件中的消息
   useEffect(() => {
-    if (!window.electronAPI) return;
-    const unsubscribe = window.electronAPI.on('swarm:event', (event) => {
+    if (!ipcService.isAvailable()) return;
+    const unsubscribe = ipcService.on('swarm:event', (event) => {
       // 转发到 swarmStore 处理基础状态
       useSwarmStore.getState().handleEvent(event);
 
@@ -233,7 +234,7 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ onClose }) => {
         }
       }
     });
-    return () => unsubscribe();
+    return () => unsubscribe?.();
   }, []);
 
   // 发送消息给选中的 agent
@@ -254,7 +255,7 @@ export const AgentTeamPanel: React.FC<AgentTeamPanelProps> = ({ onClose }) => {
 
     // 通过 IPC 发送给主进程
     try {
-      await window.electronAPI?.invoke('swarm:send-user-message', {
+      await ipcService.invoke('swarm:send-user-message', {
         agentId: selectedAgentId,
         message: inputValue.trim(),
       });

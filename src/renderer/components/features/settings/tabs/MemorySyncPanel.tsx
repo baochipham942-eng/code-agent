@@ -21,6 +21,7 @@ import { Button } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
 import type { SyncStatus, DeviceInfo } from '@shared/types';
 import { createLogger } from '../../../../utils/logger';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('MemorySyncPanel');
 
@@ -66,8 +67,8 @@ export const MemorySyncPanel: React.FC<MemorySyncPanelProps> = ({
   const loadSyncStatus = async () => {
     try {
       const [status, deviceList] = await Promise.all([
-        window.electronAPI?.invoke(IPC_CHANNELS.SYNC_GET_STATUS) as Promise<SyncStatus>,
-        window.electronAPI?.invoke(IPC_CHANNELS.DEVICE_LIST) as Promise<DeviceInfo[]>,
+        ipcService.invoke(IPC_CHANNELS.SYNC_GET_STATUS) as Promise<SyncStatus>,
+        ipcService.invoke(IPC_CHANNELS.DEVICE_LIST) as Promise<DeviceInfo[]>,
       ]);
       setSyncStatus(status);
       setDevices(deviceList || []);
@@ -82,7 +83,7 @@ export const MemorySyncPanel: React.FC<MemorySyncPanelProps> = ({
     loadSyncStatus();
 
     // 监听同步事件
-    const unsubscribe = window.electronAPI?.on(IPC_CHANNELS.SYNC_EVENT, (status: SyncStatus) => {
+    const unsubscribe = ipcService.on(IPC_CHANNELS.SYNC_EVENT, (status: SyncStatus) => {
       setSyncStatus(status);
       if (!status.isSyncing && isSyncing) {
         setIsSyncing(false);
@@ -105,7 +106,7 @@ export const MemorySyncPanel: React.FC<MemorySyncPanelProps> = ({
     setIsSyncing(true);
     setMessage(null);
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.SYNC_START);
+      await ipcService.invoke(IPC_CHANNELS.SYNC_START);
     } catch (error) {
       logger.error('Sync failed', error);
       setMessage({ type: 'error', text: '同步失败' });
@@ -118,7 +119,7 @@ export const MemorySyncPanel: React.FC<MemorySyncPanelProps> = ({
     setIsSyncing(true);
     setMessage(null);
     try {
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.SYNC_FORCE_FULL);
+      const result = await ipcService.invoke(IPC_CHANNELS.SYNC_FORCE_FULL);
       if (result?.success) {
         setMessage({ type: 'success', text: '全量同步完成' });
         onSyncComplete?.();

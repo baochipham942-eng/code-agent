@@ -3,7 +3,7 @@
 // Gen 6: Computer Use capability enhanced with Playwright integration
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { isComputerUseEnabled } from '../../services/cloud/featureFlagService';

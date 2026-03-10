@@ -3,7 +3,7 @@
 // Gen 6: Computer Use capability
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 

@@ -8,6 +8,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import type { MemoryLearnedEvent, MemoryConfirmRequest } from '@shared/types/memory';
 import { useUIStore } from '../stores/uiStore';
 import { createLogger } from '../utils/logger';
+import ipcService from '../services/ipcService';
 
 const logger = createLogger('useMemoryLearning');
 
@@ -105,7 +106,7 @@ export function useMemoryLearning() {
     logger.info('Responding to memory confirm', { id, confirmed });
 
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE, { id, confirmed });
+      await ipcService.invoke(IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE, { id, confirmed });
 
       // 从待确认列表中移除
       setPendingConfirms((prev) => prev.filter((p) => p.id !== id));
@@ -142,19 +143,19 @@ export function useMemoryLearning() {
    * 设置事件监听器
    */
   useEffect(() => {
-    if (!window.electronAPI) {
+    if (!ipcService.isAvailable()) {
       logger.warn('electronAPI not available');
       return;
     }
 
     // 监听学习完成事件
-    const unsubscribeLearned = window.electronAPI.on(
+    const unsubscribeLearned = ipcService.on(
       IPC_CHANNELS.MEMORY_LEARNED,
       handleMemoryLearned
     );
 
     // 监听确认请求事件
-    const unsubscribeConfirm = window.electronAPI.on(
+    const unsubscribeConfirm = ipcService.on(
       IPC_CHANNELS.MEMORY_CONFIRM_REQUEST,
       handleConfirmRequest
     );
@@ -162,8 +163,8 @@ export function useMemoryLearning() {
     logger.info('Memory learning listeners registered');
 
     return () => {
-      unsubscribeLearned();
-      unsubscribeConfirm();
+      unsubscribeLearned?.();
+      unsubscribeConfirm?.();
       logger.info('Memory learning listeners unregistered');
     };
   }, [handleMemoryLearned, handleConfirmRequest]);

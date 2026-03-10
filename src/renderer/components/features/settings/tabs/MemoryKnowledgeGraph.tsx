@@ -28,6 +28,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('MemoryKnowledgeGraph');
 
@@ -473,7 +474,7 @@ export const MemoryKnowledgeGraph: React.FC = () => {
       setIsLoading(true);
       setError(null);
 
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.MEMORY, {
+      const result = await ipcService.invoke(IPC_CHANNELS.MEMORY, {
         action: 'getLearningInsights',
       }) as { success: boolean; data?: LearningInsights; error?: string };
 

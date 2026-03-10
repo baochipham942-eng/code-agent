@@ -17,8 +17,8 @@ import {
   getSupabase,
   isSupabaseInitialized,
   type VectorMatchResult,
-  getAuthService,
-} from '../services';
+} from '../services/infra/supabaseService';
+import { getAuthService } from '../services/auth/authService';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('VectorStore');

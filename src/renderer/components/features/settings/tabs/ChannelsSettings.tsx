@@ -31,6 +31,7 @@ import type {
 } from '@shared/types/channel';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('ChannelsSettings');
 
@@ -425,8 +426,8 @@ export const ChannelsSettings: React.FC = () => {
   const loadData = async () => {
     try {
       const [accountsResult, typesResult] = await Promise.all([
-        window.electronAPI?.invoke(IPC_CHANNELS.CHANNEL_LIST_ACCOUNTS),
-        window.electronAPI?.invoke(IPC_CHANNELS.CHANNEL_GET_TYPES),
+        ipcService.invoke(IPC_CHANNELS.CHANNEL_LIST_ACCOUNTS),
+        ipcService.invoke(IPC_CHANNELS.CHANNEL_GET_TYPES),
       ]);
       setAccounts(accountsResult || []);
       setChannelTypes(typesResult || []);
@@ -441,7 +442,7 @@ export const ChannelsSettings: React.FC = () => {
     loadData();
 
     // 监听账号变化
-    const removeAccountsListener = window.electronAPI?.on(
+    const removeAccountsListener = ipcService.on(
       IPC_CHANNELS.CHANNEL_ACCOUNTS_CHANGED,
       (newAccounts: ChannelAccount[]) => {
         setAccounts(newAccounts);
@@ -449,7 +450,7 @@ export const ChannelsSettings: React.FC = () => {
     );
 
     // 监听状态变化
-    const removeStatusListener = window.electronAPI?.on(
+    const removeStatusListener = ipcService.on(
       IPC_CHANNELS.CHANNEL_ACCOUNT_STATUS_CHANGED,
       ({ accountId, status, error }) => {
         setAccounts((prev) =>
@@ -480,14 +481,14 @@ export const ChannelsSettings: React.FC = () => {
   const handleSave = async (data: { name: string; type: ChannelType; config: ChannelAccountConfig }) => {
     try {
       if (editingAccount) {
-        await window.electronAPI?.invoke(IPC_CHANNELS.CHANNEL_UPDATE_ACCOUNT, {
+        await ipcService.invoke(IPC_CHANNELS.CHANNEL_UPDATE_ACCOUNT, {
           id: editingAccount.id,
           name: data.name,
           config: data.config,
         });
         setMessage({ type: 'success', text: '通道已更新' });
       } else {
-        await window.electronAPI?.invoke(IPC_CHANNELS.CHANNEL_ADD_ACCOUNT, data);
+        await ipcService.invoke(IPC_CHANNELS.CHANNEL_ADD_ACCOUNT, data);
         setMessage({ type: 'success', text: '通道已添加' });
       }
       setShowModal(false);
@@ -501,7 +502,7 @@ export const ChannelsSettings: React.FC = () => {
     if (!confirm('确定要删除这个通道吗？')) return;
 
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.CHANNEL_DELETE_ACCOUNT, accountId);
+      await ipcService.invoke(IPC_CHANNELS.CHANNEL_DELETE_ACCOUNT, accountId);
       setMessage({ type: 'success', text: '通道已删除' });
       await loadData();
     } catch (error) {
@@ -513,9 +514,9 @@ export const ChannelsSettings: React.FC = () => {
     setConnectingId(account.id);
     try {
       if (account.status === 'connected') {
-        await window.electronAPI?.invoke(IPC_CHANNELS.CHANNEL_DISCONNECT_ACCOUNT, account.id);
+        await ipcService.invoke(IPC_CHANNELS.CHANNEL_DISCONNECT_ACCOUNT, account.id);
       } else {
-        await window.electronAPI?.invoke(IPC_CHANNELS.CHANNEL_CONNECT_ACCOUNT, account.id);
+        await ipcService.invoke(IPC_CHANNELS.CHANNEL_CONNECT_ACCOUNT, account.id);
       }
     } catch (error) {
       setMessage({ type: 'error', text: '操作失败' });

@@ -1,179 +1,64 @@
-// ============================================================================
-// Session Store - 会话状态管理
-// 借鉴 Zustand 最佳实践，实现会话的 CRUD 和持久化
-// ============================================================================
-
 import { create } from 'zustand';
 import type { Session, Message, TodoItem } from '@shared/types';
 import { IPC_CHANNELS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
 import { useStatusStore } from './statusStore';
 import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '@shared/types/sessionState';
 import { createLogger } from '../utils/logger';
+import ipcService from '../services/ipcService';
 
 const logger = createLogger('SessionStore');
-
-// ----------------------------------------------------------------------------
-// Types
-// ----------------------------------------------------------------------------
 
 export interface SessionWithMeta extends Session {
   messageCount: number;
 }
 
-// 会话过滤器类型
 export type SessionFilter = 'active' | 'archived' | 'all';
 
-// 待删除（用于撤销）
-export interface PendingDelete {
-  ids: string[];
-  timer: ReturnType<typeof setTimeout> | null;
-}
-
 interface SessionState {
-  // 会话列表
   sessions: SessionWithMeta[];
-  // 当前选中的会话 ID
   currentSessionId: string | null;
-  // 当前会话的消息
   messages: Message[];
-  // 当前会话的待办
   todos: TodoItem[];
-  // 加载状态
   isLoading: boolean;
-  // 错误信息
   error: string | null;
-  // 未读会话集合（用于跨会话通知）
   unreadSessionIds: Set<string>;
-  // 当前过滤器
-  filter: SessionFilter;
-  // 运行中的会话 ID 集合（多会话并行支持）
   runningSessionIds: Set<string>;
-  // 会话运行时状态（多会话并行支持）
   sessionRuntimes: Map<string, SessionRuntimeSummary>;
-  // 后台任务列表
   backgroundTasks: BackgroundTaskInfo[];
-  // 输入历史（用户命令历史）
-  inputHistory: string[];
-  // 输入历史索引（-1 表示当前输入）
-  inputHistoryIndex: number;
-  // 临时保存的当前输入（浏览历史时保存）
-  inputHistoryDraft: string;
-  // 置顶会话 ID 集合
-  pinnedSessionIds: Set<string>;
-  // 多选模式
-  multiSelectMode: boolean;
-  // 多选中的会话 ID 集合
-  selectedSessionIds: Set<string>;
-  // 待删除（软删除，可撤销）
-  pendingDelete: PendingDelete | null;
-  // 是否还有更早的消息可加载
   hasOlderMessages: boolean;
-  // 是否正在加载更早的消息
   isLoadingOlder: boolean;
 }
 
 interface SessionActions {
-  // 加载会话列表
   loadSessions: () => Promise<void>;
-  // 创建新会话
   createSession: (title?: string) => Promise<Session | null>;
-  // 切换会话
   switchSession: (sessionId: string) => Promise<void>;
-  // 删除会话
   deleteSession: (sessionId: string) => Promise<void>;
-  // 归档会话
   archiveSession: (sessionId: string) => Promise<void>;
-  // 取消归档
   unarchiveSession: (sessionId: string) => Promise<void>;
-  // 设置过滤器
-  setFilter: (filter: SessionFilter) => void;
-  // 添加消息到当前会话
   addMessage: (message: Message) => void;
-  // 更新消息
   updateMessage: (id: string, updates: Partial<Message>) => void;
-  // 设置消息列表
   setMessages: (messages: Message[]) => void;
-  // 设置待办列表
   setTodos: (todos: TodoItem[]) => void;
-  // 加载更早的消息（分页）
   loadOlderMessages: () => Promise<void>;
-  // 清空当前会话
   clearCurrentSession: () => void;
-  // 更新会话标题
   updateSessionTitle: (sessionId: string, title: string) => void;
-  // 标记会话为未读
   markSessionUnread: (sessionId: string) => void;
-  // 标记会话为已读（切换到该会话时自动调用）
   markSessionRead: (sessionId: string) => void;
-  // 检查会话是否未读
   isSessionUnread: (sessionId: string) => boolean;
-  // 更新会话运行状态（多会话并行支持）
   updateSessionRuntime: (event: SessionStatusUpdateEvent) => void;
-  // 检查会话是否在运行
   isSessionRunning: (sessionId: string) => boolean;
-  // 获取运行中的会话数量
   getRunningSessionCount: () => number;
-  // 后台任务管理
   moveToBackground: (sessionId: string) => Promise<boolean>;
   moveToForeground: (sessionId: string) => Promise<void>;
   updateBackgroundTask: (event: BackgroundTaskUpdateEvent) => void;
   getBackgroundTaskCount: () => number;
-  // 输入历史管理
-  addToInputHistory: (input: string) => void;
-  getPreviousInput: (currentInput: string) => string | null;
-  getNextInput: () => string | null;
-  resetInputHistoryIndex: () => void;
-  // 置顶管理
-  togglePin: (id: string) => void;
-  isPinned: (id: string) => boolean;
-  // 多选管理
-  toggleMultiSelect: () => void;
-  toggleSelection: (id: string) => void;
-  clearSelection: () => void;
-  batchDelete: () => void;
-  // 软删除 & 撤销
-  softDelete: (ids: string[]) => void;
-  undoDelete: () => void;
-  confirmDelete: () => Promise<void>;
-  // 重命名
   renameSession: (id: string, title: string) => Promise<void>;
 }
 
 type SessionStore = SessionState & SessionActions;
 
-// ----------------------------------------------------------------------------
-// localStorage helpers for pinned sessions
-// ----------------------------------------------------------------------------
-
-const PINNED_STORAGE_KEY = 'pinned-sessions';
-
-function loadPinnedIds(): Set<string> {
-  try {
-    const raw = localStorage.getItem(PINNED_STORAGE_KEY);
-    if (raw) {
-      const arr = JSON.parse(raw);
-      if (Array.isArray(arr)) return new Set<string>(arr);
-    }
-  } catch {
-    // 忽略解析错误
-  }
-  return new Set<string>();
-}
-
-function savePinnedIds(ids: Set<string>): void {
-  try {
-    localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify([...ids]));
-  } catch {
-    // 忽略写入错误
-  }
-}
-
-// ----------------------------------------------------------------------------
-// Store
-// ----------------------------------------------------------------------------
-
 export const useSessionStore = create<SessionStore>()((set, get) => ({
-    // 初始状态
     sessions: [],
     currentSessionId: null,
     messages: [],
@@ -181,30 +66,20 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     isLoading: false,
     error: null,
     unreadSessionIds: new Set<string>(),
-    filter: 'active' as SessionFilter,
     runningSessionIds: new Set<string>(),
     sessionRuntimes: new Map<string, SessionRuntimeSummary>(),
     backgroundTasks: [],
-    inputHistory: [],
-    inputHistoryIndex: -1,
-    inputHistoryDraft: '',
-    pinnedSessionIds: loadPinnedIds(),
-    multiSelectMode: false,
-    selectedSessionIds: new Set<string>(),
-    pendingDelete: null,
     hasOlderMessages: false,
     isLoadingOlder: false,
 
-    // 加载会话列表
     loadSessions: async () => {
-      const { filter } = get();
+      const { useSessionUIStore } = await import('./sessionUIStore');
+      const { filter } = useSessionUIStore.getState();
       set({ isLoading: true, error: null });
       try {
-        // 根据过滤器决定是否包含归档会话
         const includeArchived = filter === 'archived' || filter === 'all';
-        const sessions = await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_LIST, { includeArchived });
+        const sessions = await ipcService.invoke(IPC_CHANNELS.SESSION_LIST, { includeArchived });
 
-        // 转换为 SessionWithMeta 格式并根据过滤器筛选
         let sessionsWithMeta: SessionWithMeta[] = (sessions || []).map((s: Session & { messageCount?: number }) => ({
           ...s,
           title: s.title || '未命名会话',
@@ -213,7 +88,6 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
           messageCount: s.messageCount || 0,
         }));
 
-        // 客户端过滤：active 只显示未归档，archived 只显示已归档，all 显示全部
         if (filter === 'active') {
           sessionsWithMeta = sessionsWithMeta.filter(s => !s.isArchived);
         } else if (filter === 'archived') {
@@ -230,11 +104,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    // 创建新会话
     createSession: async (title?: string) => {
       set({ isLoading: true, error: null });
       try {
-        const session = await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_CREATE, title);
+        const session = await ipcService.invoke(IPC_CHANNELS.SESSION_CREATE, title);
         if (session) {
           const newSessionWithMeta: SessionWithMeta = {
             ...session,
@@ -260,16 +133,14 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    // 切换会话
     switchSession: async (sessionId: string) => {
       const { currentSessionId, unreadSessionIds } = get();
       if (currentSessionId === sessionId) return;
 
       set({ isLoading: true, error: null });
       try {
-        const session = await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_LOAD, sessionId) as Session & { messages?: Message[]; todos?: TodoItem[] };
+        const session = await ipcService.invoke(IPC_CHANNELS.SESSION_LOAD, sessionId) as Session & { messages?: Message[]; todos?: TodoItem[] };
         if (session) {
-          // 切换时自动标记为已读
           const newUnreadIds = new Set(unreadSessionIds);
           newUnreadIds.delete(sessionId);
 
@@ -294,22 +165,18 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    // 删除会话
     deleteSession: async (sessionId: string) => {
       try {
-        await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_DELETE, sessionId);
+        await ipcService.invoke(IPC_CHANNELS.SESSION_DELETE, sessionId);
 
         const { currentSessionId, sessions } = get();
         const newSessions = sessions.filter((s) => s.id !== sessionId);
 
-        // 如果删除的是当前会话，切换到第一个会话或清空
         if (currentSessionId === sessionId) {
           if (newSessions.length > 0) {
-            // 切换到第一个会话
             set({ sessions: newSessions });
             await get().switchSession(newSessions[0].id);
           } else {
-            // 没有会话了，清空状态
             set({ sessions: newSessions, currentSessionId: null, messages: [] });
           }
         } else {
@@ -323,31 +190,28 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    // 归档会话
     archiveSession: async (sessionId: string) => {
       try {
-        await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_ARCHIVE, sessionId);
+        await ipcService.invoke(IPC_CHANNELS.SESSION_ARCHIVE, sessionId);
 
-        const { currentSessionId, sessions, filter } = get();
+        const { useSessionUIStore } = await import('./sessionUIStore');
+        const { filter } = useSessionUIStore.getState();
+        const { currentSessionId, sessions } = get();
 
-        // 如果当前过滤器是 active，从列表中移除
         if (filter === 'active') {
           const newSessions = sessions.filter((s) => s.id !== sessionId);
 
-          // 如果归档的是当前会话，切换到第一个
           if (currentSessionId === sessionId) {
             if (newSessions.length > 0) {
               set({ sessions: newSessions });
               await get().switchSession(newSessions[0].id);
             } else {
-              // 没有会话了，清空状态
               set({ sessions: newSessions, currentSessionId: null, messages: [] });
             }
           } else {
             set({ sessions: newSessions });
           }
         } else {
-          // 如果是 all 过滤器，更新会话状态
           set({
             sessions: sessions.map((s) =>
               s.id === sessionId ? { ...s, isArchived: true, archivedAt: Date.now() } : s
@@ -364,20 +228,19 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    // 取消归档
     unarchiveSession: async (sessionId: string) => {
       try {
-        await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_UNARCHIVE, sessionId);
+        await ipcService.invoke(IPC_CHANNELS.SESSION_UNARCHIVE, sessionId);
 
-        const { sessions, filter } = get();
+        const { useSessionUIStore } = await import('./sessionUIStore');
+        const { filter } = useSessionUIStore.getState();
+        const { sessions } = get();
 
-        // 如果当前过滤器是 archived，从列表中移除
         if (filter === 'archived') {
           set({
             sessions: sessions.filter((s) => s.id !== sessionId),
           });
         } else {
-          // 如果是 all 或 active 过滤器，更新会话状态
           set({
             sessions: sessions.map((s) =>
               s.id === sessionId ? { ...s, isArchived: false, archivedAt: undefined } : s
@@ -394,20 +257,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    // 设置过滤器
-    setFilter: (filter: SessionFilter) => {
-      set({ filter });
-      // 切换过滤器后重新加载会话列表
-      get().loadSessions();
-    },
-
-    // 添加消息
     addMessage: (message: Message) => {
       set((state) => ({
         messages: [...state.messages, message],
       }));
 
-      // 更新会话的消息计数
       const { currentSessionId, sessions } = get();
       if (currentSessionId) {
         set({
@@ -420,7 +274,6 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    // 更新消息
     updateMessage: (id: string, updates: Partial<Message>) => {
       set((state) => ({
         messages: state.messages.map((msg) =>
@@ -429,17 +282,14 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }));
     },
 
-    // 设置消息列表
     setMessages: (messages: Message[]) => {
       set({ messages });
     },
 
-    // 设置待办列表
     setTodos: (todos: TodoItem[]) => {
       set({ todos });
     },
 
-    // 清空当前会话
     loadOlderMessages: async () => {
       const { isLoadingOlder, hasOlderMessages, messages, currentSessionId } = get();
       if (isLoadingOlder || !hasOlderMessages || !currentSessionId || messages.length === 0) return;
@@ -447,7 +297,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       set({ isLoadingOlder: true });
       try {
         const oldestTimestamp = messages[0].timestamp;
-        const result = await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_LOAD_OLDER_MESSAGES, {
+        const result = await ipcService.invoke(IPC_CHANNELS.SESSION_LOAD_OLDER_MESSAGES, {
           sessionId: currentSessionId,
           beforeTimestamp: oldestTimestamp,
           limit: 30,
@@ -476,7 +326,6 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       });
     },
 
-    // 更新会话标题
     updateSessionTitle: (sessionId: string, title: string) => {
       set((state) => ({
         sessions: state.sessions.map((s) =>
@@ -485,10 +334,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }));
     },
 
-    // 标记会话为未读
     markSessionUnread: (sessionId: string) => {
       const { currentSessionId, unreadSessionIds } = get();
-      // 不标记当前会话为未读
       if (currentSessionId === sessionId) return;
 
       const newUnreadIds = new Set(unreadSessionIds);
@@ -496,7 +343,6 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       set({ unreadSessionIds: newUnreadIds });
     },
 
-    // 标记会话为已读
     markSessionRead: (sessionId: string) => {
       const { unreadSessionIds } = get();
       const newUnreadIds = new Set(unreadSessionIds);
@@ -504,16 +350,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       set({ unreadSessionIds: newUnreadIds });
     },
 
-    // 检查会话是否未读
     isSessionUnread: (sessionId: string) => {
       return get().unreadSessionIds.has(sessionId);
     },
 
-    // 更新会话运行状态（多会话并行支持）
     updateSessionRuntime: (event: SessionStatusUpdateEvent) => {
       const { runningSessionIds, sessionRuntimes } = get();
 
-      // 更新运行状态
       const newRunningIds = new Set(runningSessionIds);
       if (event.status === 'running') {
         newRunningIds.add(event.sessionId);
@@ -521,7 +364,6 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
         newRunningIds.delete(event.sessionId);
       }
 
-      // 更新运行时摘要
       const newRuntimes = new Map(sessionRuntimes);
       newRuntimes.set(event.sessionId, {
         sessionId: event.sessionId,
@@ -543,20 +385,17 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       });
     },
 
-    // 检查会话是否在运行
     isSessionRunning: (sessionId: string) => {
       return get().runningSessionIds.has(sessionId);
     },
 
-    // 获取运行中的会话数量
     getRunningSessionCount: () => {
       return get().runningSessionIds.size;
     },
 
-    // 将当前会话移至后台
     moveToBackground: async (sessionId: string) => {
       try {
-        const result = await window.electronAPI?.invoke(
+        const result = await ipcService.invoke(
           IPC_CHANNELS.BACKGROUND_MOVE_TO_BACKGROUND,
           sessionId
         );
@@ -570,15 +409,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    // 将后台会话恢复到前台
     moveToForeground: async (sessionId: string) => {
       try {
-        const task = await window.electronAPI?.invoke(
+        const task = await ipcService.invoke(
           IPC_CHANNELS.BACKGROUND_MOVE_TO_FOREGROUND,
           sessionId
         );
         if (task) {
-          // 切换到该会话
           await get().switchSession(sessionId);
           logger.info('Session moved to foreground', { sessionId });
         }
@@ -587,7 +424,6 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    // 更新后台任务状态
     updateBackgroundTask: (event: BackgroundTaskUpdateEvent) => {
       const { backgroundTasks } = get();
 
@@ -614,225 +450,17 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       }
     },
 
-    // 获取后台任务数量
     getBackgroundTaskCount: () => {
       return get().backgroundTasks.length;
     },
 
-    // 添加到输入历史
-    addToInputHistory: (input: string) => {
-      const trimmed = input.trim();
-      if (!trimmed) return;
-
-      const { inputHistory } = get();
-      // 避免重复添加相同的最近输入
-      if (inputHistory.length > 0 && inputHistory[0] === trimmed) {
-        return;
-      }
-
-      // 限制历史记录数量为 100 条
-      const newHistory = [trimmed, ...inputHistory].slice(0, 100);
-      set({
-        inputHistory: newHistory,
-        inputHistoryIndex: -1,
-        inputHistoryDraft: '',
-      });
-    },
-
-    // 获取上一条历史输入（向上箭头）
-    getPreviousInput: (currentInput: string) => {
-      const { inputHistory, inputHistoryIndex, inputHistoryDraft } = get();
-
-      if (inputHistory.length === 0) return null;
-
-      // 第一次按上箭头，保存当前输入
-      if (inputHistoryIndex === -1) {
-        set({ inputHistoryDraft: currentInput });
-      }
-
-      const newIndex = Math.min(inputHistoryIndex + 1, inputHistory.length - 1);
-      if (newIndex === inputHistoryIndex) return null; // 已经是最早的记录
-
-      set({ inputHistoryIndex: newIndex });
-      return inputHistory[newIndex];
-    },
-
-    // 获取下一条历史输入（向下箭头）
-    getNextInput: () => {
-      const { inputHistory, inputHistoryIndex, inputHistoryDraft } = get();
-
-      if (inputHistoryIndex === -1) return null; // 已经是当前输入
-
-      const newIndex = inputHistoryIndex - 1;
-      set({ inputHistoryIndex: newIndex });
-
-      // 如果回到当前输入，返回之前保存的草稿
-      if (newIndex === -1) {
-        return inputHistoryDraft;
-      }
-
-      return inputHistory[newIndex];
-    },
-
-    // 重置历史索引（当用户开始新输入时）
-    resetInputHistoryIndex: () => {
-      set({
-        inputHistoryIndex: -1,
-        inputHistoryDraft: '',
-      });
-    },
-
-    // 置顶/取消置顶
-    togglePin: (id: string) => {
-      const { pinnedSessionIds } = get();
-      const newPinned = new Set(pinnedSessionIds);
-      if (newPinned.has(id)) {
-        newPinned.delete(id);
-      } else {
-        newPinned.add(id);
-      }
-      savePinnedIds(newPinned);
-      set({ pinnedSessionIds: newPinned });
-    },
-
-    // 检查是否置顶
-    isPinned: (id: string) => {
-      return get().pinnedSessionIds.has(id);
-    },
-
-    // 切换多选模式
-    toggleMultiSelect: () => {
-      const { multiSelectMode } = get();
-      if (multiSelectMode) {
-        // 关闭时清空选择
-        set({ multiSelectMode: false, selectedSessionIds: new Set<string>() });
-      } else {
-        set({ multiSelectMode: true });
-      }
-    },
-
-    // 切换单个选择
-    toggleSelection: (id: string) => {
-      const { selectedSessionIds } = get();
-      const newSelected = new Set(selectedSessionIds);
-      if (newSelected.has(id)) {
-        newSelected.delete(id);
-      } else {
-        newSelected.add(id);
-      }
-      set({ selectedSessionIds: newSelected });
-    },
-
-    // 清空所有选择
-    clearSelection: () => {
-      set({ selectedSessionIds: new Set<string>() });
-    },
-
-    // 批量删除（软删除所有选中的）
-    batchDelete: () => {
-      const { selectedSessionIds } = get();
-      if (selectedSessionIds.size === 0) return;
-      get().softDelete([...selectedSessionIds]);
-      // 退出多选模式
-      set({ multiSelectMode: false, selectedSessionIds: new Set<string>() });
-    },
-
-    // 软删除：从列表移除，设 5 秒定时器后真正删除
-    softDelete: (ids: string[]) => {
-      const { sessions, pendingDelete } = get();
-
-      // 如果已有待删除项，先执行确认删除
-      if (pendingDelete) {
-        if (pendingDelete.timer) clearTimeout(pendingDelete.timer);
-        // 立即确认之前的待删除
-        const prevIds = pendingDelete.ids;
-        (async () => {
-          for (const id of prevIds) {
-            try {
-              await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_DELETE, id);
-            } catch (error) {
-              logger.error('Failed to delete session in previous batch', error);
-            }
-          }
-        })();
-      }
-
-      // 从列表中移除
-      const idsSet = new Set(ids);
-      const removedSessions = sessions.filter((s) => idsSet.has(s.id));
-      const remainingSessions = sessions.filter((s) => !idsSet.has(s.id));
-
-      // 设置 5 秒定时器
-      const timer = setTimeout(() => {
-        get().confirmDelete();
-      }, 5000);
-
-      set({
-        sessions: remainingSessions,
-        pendingDelete: { ids, timer },
-      });
-
-      // 如果删除的包含当前会话，切换到第一个可用的
-      const { currentSessionId } = get();
-      if (currentSessionId && idsSet.has(currentSessionId)) {
-        if (remainingSessions.length > 0) {
-          get().switchSession(remainingSessions[0].id);
-        } else {
-          // 没有会话了，清空状态
-          set({ currentSessionId: null, messages: [] });
-        }
-      }
-
-      logger.info('Sessions soft deleted', { count: ids.length });
-    },
-
-    // 撤销删除：恢复会话到列表
-    undoDelete: () => {
-      const { pendingDelete } = get();
-      if (!pendingDelete) return;
-
-      if (pendingDelete.timer) clearTimeout(pendingDelete.timer);
-
-      // 重新加载会话列表来恢复
-      set({ pendingDelete: null });
-      get().loadSessions();
-      logger.info('Delete undone', { count: pendingDelete.ids.length });
-    },
-
-    // 确认删除：真正通过 IPC 删除
-    confirmDelete: async () => {
-      const { pendingDelete } = get();
-      if (!pendingDelete) return;
-
-      if (pendingDelete.timer) clearTimeout(pendingDelete.timer);
-
-      for (const id of pendingDelete.ids) {
-        try {
-          await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_DELETE, id);
-        } catch (error) {
-          logger.error('Failed to confirm delete session', error);
-        }
-      }
-
-      set({ pendingDelete: null });
-      logger.info('Sessions permanently deleted', { count: pendingDelete.ids.length });
-    },
-
-    // 重命名会话：更新标题通过 IPC + 本地状态
     renameSession: async (id: string, title: string) => {
       const trimmed = title.trim();
       if (!trimmed) return;
 
-      // 先更新本地状态（乐观更新）
       get().updateSessionTitle(id, trimmed);
 
-      // 通过 SESSION_UPDATED 事件模式，直接用 SESSION_LOAD 保存不太合适
-      // 使用已有的 updateSessionTitle 来更新本地，后端会通过 SESSION_UPDATED 事件同步
-      // 注意：当前项目没有专门的 rename IPC，复用 SESSION_UPDATED 推送机制
-      // 后端收到标题更新会自动持久化
       try {
-        // 尝试通过加载+保存来持久化标题变更
-        // 如果后端支持 session:update-title，可以替换这里
         logger.info('Session renamed', { sessionId: id, newTitle: trimmed });
       } catch (error) {
         logger.error('Failed to rename session', error);
@@ -840,59 +468,47 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     },
   }));
 
-// ----------------------------------------------------------------------------
-// 初始化 Hook - 在应用启动时调用
-// ----------------------------------------------------------------------------
-
 export async function initializeSessionStore(): Promise<void> {
   const store = useSessionStore.getState();
 
-  // 加载会话列表
   await store.loadSessions();
 
   const { sessions } = useSessionStore.getState();
 
-  // 如果有会话，加载最近的一个
   if (sessions.length > 0) {
     await store.switchSession(sessions[0].id);
   } else {
-    // 没有会话，创建一个新的
     await store.createSession('新对话');
   }
 
-  // 监听会话更新事件（如标题更新）
-  window.electronAPI?.on(IPC_CHANNELS.SESSION_UPDATED, (event) => {
+  ipcService.on(IPC_CHANNELS.SESSION_UPDATED, (event) => {
     const { sessionId, updates } = event;
     if (updates.title) {
       useSessionStore.getState().updateSessionTitle(sessionId, updates.title);
     }
   });
 
-  // 监听会话状态更新事件（多会话并行支持）
-  window.electronAPI?.on(IPC_CHANNELS.SESSION_STATUS_UPDATE, (event: SessionStatusUpdateEvent) => {
+  ipcService.on(IPC_CHANNELS.SESSION_STATUS_UPDATE, (event: SessionStatusUpdateEvent) => {
     useSessionStore.getState().updateSessionRuntime(event);
   });
 
-  // 监听后台任务更新事件
-  window.electronAPI?.on(IPC_CHANNELS.BACKGROUND_TASK_UPDATE, (event: BackgroundTaskUpdateEvent) => {
+  ipcService.on(IPC_CHANNELS.BACKGROUND_TASK_UPDATE, (event: BackgroundTaskUpdateEvent) => {
     useSessionStore.getState().updateBackgroundTask(event);
   });
 
-  // 监听 Token 和上下文使用率更新，驱动 ThinkingIndicator 显示
-  window.electronAPI?.on(IPC_CHANNELS.STATUS_TOKEN_UPDATE, (event: { inputTokens: number; outputTokens: number }) => {
+  ipcService.on(IPC_CHANNELS.STATUS_TOKEN_UPDATE, (event: { inputTokens: number; outputTokens: number }) => {
     useStatusStore.getState().updateTokens(event.inputTokens, event.outputTokens);
   });
-  window.electronAPI?.on(IPC_CHANNELS.STATUS_CONTEXT_UPDATE, (event: { percent: number }) => {
+  ipcService.on(IPC_CHANNELS.STATUS_CONTEXT_UPDATE, (event: { percent: number }) => {
     useStatusStore.getState().setContextUsage(event.percent);
   });
 
-  // 加载初始后台任务列表
   try {
-    const tasks = await window.electronAPI?.invoke(IPC_CHANNELS.BACKGROUND_GET_TASKS);
+    const tasks = await ipcService.invoke(IPC_CHANNELS.BACKGROUND_GET_TASKS);
     if (tasks && tasks.length > 0) {
       useSessionStore.setState({ backgroundTasks: tasks });
     }
   } catch {
-    // 忽略错误
+    // ignore
   }
 }

@@ -28,6 +28,7 @@ import { RewindPanel } from './RewindPanel';
 import { PermissionCard } from './PermissionDialog/PermissionCard';
 import type { Message, MessageAttachment, TaskPlan } from '../../shared/types';
 import { IPC_CHANNELS } from '@shared/ipc';
+import ipcService from '../services/ipcService';
 import {
   Bot,
   Code2,
@@ -77,7 +78,7 @@ export const ChatView: React.FC = () => {
       }
 
       try {
-        const planData = await window.electronAPI?.invoke(IPC_CHANNELS.PLANNING_GET_PLAN);
+        const planData = await ipcService.invoke(IPC_CHANNELS.PLANNING_GET_PLAN);
         setPlan(planData || null);
       } catch (error) {
         console.error('Failed to fetch plan:', error);
@@ -88,7 +89,7 @@ export const ChatView: React.FC = () => {
     fetchPlan();
 
     // 监听 Plan 更新事件
-    const unsubscribe = window.electronAPI?.on(IPC_CHANNELS.PLANNING_EVENT, () => {
+    const unsubscribe = ipcService.on(IPC_CHANNELS.PLANNING_EVENT, () => {
       fetchPlan();
     });
 

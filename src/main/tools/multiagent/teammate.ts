@@ -6,7 +6,7 @@
 // 支持 Agent 之间发送协调消息、任务交接、查询等
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getTeammateService } from '../../agent/teammate';
 import type { TeammateMessageType } from '../../agent/teammate';
 

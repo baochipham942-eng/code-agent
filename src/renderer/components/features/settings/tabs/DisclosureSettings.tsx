@@ -10,6 +10,7 @@ import type { DisclosureLevel } from '../../../../stores/appStore';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('DisclosureSettings');
 
@@ -33,7 +34,7 @@ export const DisclosureSettings: React.FC<DisclosureSettingsProps> = ({ level, o
   const handleLevelChange = async (newLevel: DisclosureLevel) => {
     onChange(newLevel);
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
         ui: { disclosureLevel: newLevel },
       } as Partial<import('@shared/types').AppSettings>);
       logger.info('Disclosure level saved', { level: newLevel });

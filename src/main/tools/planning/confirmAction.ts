@@ -2,7 +2,7 @@
 // Confirm Action Tool - 弹窗确认危险操作
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { BrowserWindow, ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { createLogger } from '../../services/infra/logger';

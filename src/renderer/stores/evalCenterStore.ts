@@ -6,6 +6,7 @@
 
 import { create } from 'zustand';
 import type { ObjectiveMetrics } from '@shared/types/sessionAnalytics';
+import ipcService from '../services/ipcService';
 
 interface SessionInfo {
   title: string;
@@ -143,7 +144,7 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
   loadSession: async (sessionId: string) => {
     set({ isLoading: true, error: null });
     try {
-      const analysis = await window.electronAPI?.invoke(
+      const analysis = await ipcService.invoke(
         'evaluation:get-session-analysis' as 'evaluation:get-session-analysis',
         sessionId
       );
@@ -170,7 +171,7 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
   loadReplay: async (sessionId: string) => {
     set({ replayLoading: true });
     try {
-      const data = await window.electronAPI?.invoke(
+      const data = await ipcService.invoke(
         'replay:get-structured-data' as 'replay:get-structured-data',
         sessionId
       );
@@ -183,7 +184,7 @@ export const useEvalCenterStore = create<EvalCenterStore>((set) => ({
   loadSessionList: async () => {
     set({ sessionListLoading: true });
     try {
-      const sessions = await window.electronAPI?.invoke(
+      const sessions = await ipcService.invoke(
         'telemetry:list-sessions' as 'telemetry:list-sessions',
         { limit: 200 }
       );

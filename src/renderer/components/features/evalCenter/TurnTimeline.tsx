@@ -6,6 +6,7 @@ import React, { useState, useCallback } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { CollapsibleSection } from './CollapsibleSection';
 import type { TelemetryTurn, TelemetryToolCall } from '../../../../shared/types/telemetry';
+import ipcService from '../../../services/ipcService';
 
 interface TurnTimelineProps {
   turns: TelemetryTurn[];
@@ -22,10 +23,10 @@ export const TurnTimeline: React.FC<TurnTimelineProps> = ({ turns }) => {
   const [loadingTurns, setLoadingTurns] = useState<Set<string>>(new Set());
 
   const loadTurnDetail = useCallback(async (turnId: string) => {
-    if (turnDetails[turnId] || loadingTurns.has(turnId) || !window.electronAPI) return;
+    if (turnDetails[turnId] || loadingTurns.has(turnId) || !ipcService.isAvailable()) return;
     setLoadingTurns(prev => new Set(prev).add(turnId));
     try {
-      const result = await window.electronAPI.invoke(
+      const result = await ipcService.invoke(
         'telemetry:get-turn-detail' as 'telemetry:get-turn-detail',
         turnId
       );

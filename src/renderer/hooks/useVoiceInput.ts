@@ -5,6 +5,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { createLogger } from '../utils/logger';
+import ipcService from '../services/ipcService';
 
 const logger = createLogger('VoiceInput');
 
@@ -69,7 +70,7 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
     if (!navigator.mediaDevices?.getUserMedia) return false;
     if (!window.MediaRecorder) return false;
     // 检查 Electron API 是否可用
-    if (!window.electronAPI?.transcribeSpeech) return false;
+    if (!ipcService.isAvailable()) return false;
     return true;
   }, []);
 
@@ -149,7 +150,8 @@ export function useVoiceInput(options: UseVoiceInputOptions = {}): UseVoiceInput
             logger.debug('Uploading audio', { mimeType, size: audioBlob.size });
 
             // 调用主进程转写
-            const result = await window.electronAPI!.transcribeSpeech(audioData, mimeType);
+            const result = await ipcService.transcribeSpeech(audioData, mimeType);
+            if (!result) throw new Error('转写服务不可用');
 
             if (result.success && result.text) {
               onTranscript?.(result.text);

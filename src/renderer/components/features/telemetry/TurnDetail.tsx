@@ -10,6 +10,7 @@ import type {
   TelemetryTimelineEvent,
 } from '@shared/types/telemetry';
 import { ChevronDown, ChevronRight, CheckCircle, XCircle } from 'lucide-react';
+import ipcService from '../../../services/ipcService';
 
 interface TurnDetailProps {
   turn: TelemetryTurn;
@@ -56,7 +57,7 @@ export const TurnDetail: React.FC<TurnDetailProps> = ({ turn, modelCalls, toolCa
     if (!turn.systemPromptHash || systemPrompt !== null) return;
     setSystemPromptLoading(true);
     try {
-      const result = await window.electronAPI?.invoke(
+      const result = await ipcService.invoke(
         'telemetry:get-system-prompt' as 'telemetry:get-system-prompt',
         turn.systemPromptHash
       );

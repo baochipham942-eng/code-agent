@@ -3,7 +3,7 @@
 // 支持 Markdown 内容转换为 PDF
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
 import PDFDocument from 'pdfkit';

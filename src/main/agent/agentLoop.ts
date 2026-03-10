@@ -13,7 +13,7 @@ import type {
 } from '../../shared/types';
 import type { StructuredOutputConfig, StructuredOutputResult } from './structuredOutput';
 import { parseStructuredOutput, generateFormatCorrectionPrompt } from './structuredOutput';
-import type { ToolRegistry } from '../tools/toolRegistry';
+import type { ToolRegistryLike } from '../tools/types';
 import type { ToolExecutor } from '../tools/toolExecutor';
 import { getToolSearchService } from '../tools/search';
 import { ModelRouter, ContextLengthExceededError } from '../model/modelRouter';
@@ -63,7 +63,7 @@ import { cleanXmlResidues } from './antiPattern/cleanXml';
 import { GoalTracker } from './goalTracker';
 import { NudgeManager } from './nudgeManager';
 import { getSessionRecoveryService } from './sessionRecovery';
-import { getIncompleteTasks } from '../tools/planning';
+import { getIncompleteTasks } from '../tools/planning/taskStore';
 import {
   parseTodos,
   mergeTodos,
@@ -118,7 +118,7 @@ export type { AgentLoopConfig };
 export class AgentLoop {
   private systemPrompt: string;
   private modelConfig: ModelConfig;
-  private toolRegistry: ToolRegistry;
+  private toolRegistry: ToolRegistryLike;
   private toolExecutor: ToolExecutor;
   private messages: Message[];
   private onEvent: (event: AgentEvent) => void;

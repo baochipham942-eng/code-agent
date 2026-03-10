@@ -2,7 +2,7 @@
 // Task Update Tool - Update or delete a task (Claude Code 2.x compatible)
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { updateTask, getTask, listTasks } from './taskStore';
 
 export const taskUpdateTool: Tool = {

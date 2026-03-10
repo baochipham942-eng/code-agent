@@ -23,6 +23,7 @@ import { IPC_DOMAINS, IPC_CHANNELS } from '@shared/ipc';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import { LocalBridgeSection } from '../sections/localBridge';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('MCPSettings');
 
@@ -74,7 +75,7 @@ export const MCPSettings: React.FC = () => {
 
   const loadCodexSettings = async () => {
     try {
-      const settings = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET);
+      const settings = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET);
       if (settings?.codex) {
         setCodexDetectedPath(settings.codex.detectedPath ?? null);
         setCodexSandboxEnabled(settings.codex.sandboxEnabled ?? false);
@@ -87,9 +88,9 @@ export const MCPSettings: React.FC = () => {
 
   const handleCodexToggle = async (field: 'sandboxEnabled' | 'crossVerifyEnabled', value: boolean) => {
     try {
-      const settings = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET);
+      const settings = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET);
       const codex = settings?.codex || { sandboxEnabled: false, crossVerifyEnabled: false };
-      await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
         codex: { ...codex, [field]: value },
       });
       if (field === 'sandboxEnabled') setCodexSandboxEnabled(value);

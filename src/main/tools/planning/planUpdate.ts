@@ -2,7 +2,7 @@
 // Plan Update Tool - Update task plan status
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { PlanningService, TaskStepStatus, TaskPhaseStatus } from '../../planning';
 
 export const planUpdateTool: Tool = {

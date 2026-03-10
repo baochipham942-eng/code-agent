@@ -10,6 +10,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('CloudSettings');
 
@@ -45,7 +46,7 @@ export const CloudSettings: React.FC = () => {
 
   const loadCloudConfigInfo = async () => {
     try {
-      const info = await window.electronAPI?.invoke(IPC_CHANNELS.CLOUD_CONFIG_GET_INFO);
+      const info = await ipcService.invoke(IPC_CHANNELS.CLOUD_CONFIG_GET_INFO);
       if (info) setCloudConfigInfo(info);
     } catch (error) {
       logger.error('Failed to load cloud config info', error);
@@ -60,7 +61,7 @@ export const CloudSettings: React.FC = () => {
     setIsRefreshingConfig(true);
     setMessage(null);
     try {
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.CLOUD_CONFIG_REFRESH);
+      const result = await ipcService.invoke(IPC_CHANNELS.CLOUD_CONFIG_REFRESH);
       if (result?.success) {
         setMessage({ type: 'success', text: `配置已更新到 v${result.version}` });
         await loadCloudConfigInfo();

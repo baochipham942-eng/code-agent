@@ -9,6 +9,7 @@ import { useSessionStore } from '../../stores/sessionStore';
 import { useI18n } from '../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { isWebMode, copyPathToClipboard } from '../../utils/platform';
+import ipcService from '../../services/ipcService';
 
 interface FileInfo {
   path: string;
@@ -89,7 +90,7 @@ export const WorkingFolder: React.FC = () => {
         }
         return;
       }
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.WORKSPACE_SELECT_DIRECTORY);
+      const result = await ipcService.invoke(IPC_CHANNELS.WORKSPACE_SELECT_DIRECTORY);
       if (result) {
         setWorkingDirectory(result);
       }
@@ -101,7 +102,7 @@ export const WorkingFolder: React.FC = () => {
   const handleOpenInFinder = async (filePath: string) => {
     try {
       // Use showItemInFolder to reveal the file in Finder
-      await window.electronAPI?.invoke(IPC_CHANNELS.SHELL_OPEN_PATH, filePath);
+      await ipcService.invoke(IPC_CHANNELS.SHELL_OPEN_PATH, filePath);
     } catch (error) {
       console.error('Failed to open in Finder:', error);
     }

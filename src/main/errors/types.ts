@@ -308,4 +308,3 @@ export class ConfigError extends CodeAgentError {
 }
 
 // Re-export detailed error types for convenience
-export { DetailedErrorType, type ErrorClassification } from './errorClassifier';

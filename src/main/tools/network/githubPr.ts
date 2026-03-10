@@ -2,7 +2,7 @@
 // GitHub PR Tool - GitHub Pull Request 管理
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getPRLinkService } from '../../services/github/prLinkService';
 import { createLogger } from '../../services/infra/logger';
 import { NETWORK_TOOL_TIMEOUTS } from '../../../shared/constants';

@@ -20,6 +20,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { IPC_CHANNELS } from '../../../../../shared/ipc';
+import ipcService from '../../../../services/ipcService';
 import type {
   PythonEnvStatus,
   LabProjectStatus,
@@ -62,13 +63,13 @@ export const RealModePanel: React.FC = () => {
 
   // 检查 Python 环境
   const checkPythonEnv = useCallback(async () => {
-    const result = await window.electronAPI?.invoke(IPC_CHANNELS.LAB_CHECK_PYTHON_ENV);
+    const result = await ipcService.invoke(IPC_CHANNELS.LAB_CHECK_PYTHON_ENV);
     setPythonEnv(result ?? null);
   }, []);
 
   // 获取项目状态
   const getProjectStatus = useCallback(async () => {
-    const result = await window.electronAPI?.invoke(IPC_CHANNELS.LAB_GET_PROJECT_STATUS, 'nanogpt');
+    const result = await ipcService.invoke(IPC_CHANNELS.LAB_GET_PROJECT_STATUS, 'nanogpt');
     setProjectStatus(result ?? null);
   }, []);
 
@@ -77,7 +78,7 @@ export const RealModePanel: React.FC = () => {
     setIsDownloading(true);
     setTrainingLogs((prev) => [...prev, '📦 开始下载 nanoGPT 项目...']);
 
-    const result = await window.electronAPI?.invoke(IPC_CHANNELS.LAB_DOWNLOAD_PROJECT, {
+    const result = await ipcService.invoke(IPC_CHANNELS.LAB_DOWNLOAD_PROJECT, {
       projectType: 'nanogpt',
     });
 
@@ -109,7 +110,7 @@ export const RealModePanel: React.FC = () => {
       dataset: config.dataset,
     };
 
-    const result = await window.electronAPI?.invoke(IPC_CHANNELS.LAB_START_TRAINING, {
+    const result = await ipcService.invoke(IPC_CHANNELS.LAB_START_TRAINING, {
       projectType: 'nanogpt',
       config: trainingConfig,
     });
@@ -123,14 +124,14 @@ export const RealModePanel: React.FC = () => {
   // 停止训练
   const stopTraining = useCallback(async () => {
     setTrainingLogs((prev) => [...prev, '⏹️ 正在停止训练...']);
-    await window.electronAPI?.invoke(IPC_CHANNELS.LAB_STOP_TRAINING, 'nanogpt');
+    await ipcService.invoke(IPC_CHANNELS.LAB_STOP_TRAINING, 'nanogpt');
     setIsTraining(false);
     setTrainingLogs((prev) => [...prev, '✅ 训练已停止']);
   }, []);
 
   // 监听训练进度事件
   useEffect(() => {
-    const unsubscribe = window.electronAPI?.on(
+    const unsubscribe = ipcService.on(
       IPC_CHANNELS.LAB_TRAINING_PROGRESS,
       (event: TrainingProgressEvent) => {
         if (event.projectType !== 'nanogpt') return;

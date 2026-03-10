@@ -2,7 +2,7 @@
 // DOCX Generate Tool - 生成 Word 文档 (.docx)
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
 import { formatFileSize } from './utils';

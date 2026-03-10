@@ -11,6 +11,7 @@ import type { AppSettings } from '@shared/types';
 import { CLOUD, AGENT_TIMEOUTS } from '@shared/constants';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import ipcService from '../../../../services/ipcService';
 
 // 权限模式类型
 type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions';
@@ -53,7 +54,7 @@ export const GeneralSettings: React.FC = () => {
   useEffect(() => {
     const loadPermissionMode = async () => {
       try {
-        const currentMode = await window.electronAPI?.invoke(IPC_CHANNELS.PERMISSION_GET_MODE);
+        const currentMode = await ipcService.invoke(IPC_CHANNELS.PERMISSION_GET_MODE);
         if (currentMode && ['default', 'acceptEdits', 'bypassPermissions'].includes(currentMode)) {
           setPermissionMode(currentMode as PermissionMode);
         }
@@ -70,7 +71,7 @@ export const GeneralSettings: React.FC = () => {
   useEffect(() => {
     const loadTimeoutConfig = async () => {
       try {
-        const settings = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET) as AppSettings;
+        const settings = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET) as AppSettings;
         if (settings?.timeouts) {
           setTimeoutComplexity(settings.timeouts.complexity || 'medium');
           if (settings.timeouts.custom) {
@@ -89,7 +90,7 @@ export const GeneralSettings: React.FC = () => {
   // 更改权限模式
   const handlePermissionModeChange = async (newMode: PermissionMode) => {
     try {
-      const success = await window.electronAPI?.invoke(IPC_CHANNELS.PERMISSION_SET_MODE, newMode);
+      const success = await ipcService.invoke(IPC_CHANNELS.PERMISSION_SET_MODE, newMode);
       if (success) {
         setPermissionMode(newMode);
       }
@@ -101,7 +102,7 @@ export const GeneralSettings: React.FC = () => {
   // 更改超时复杂度
   const handleTimeoutChange = async (complexity: TimeoutComplexity) => {
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
         timeouts: {
           complexity,
           simple: DEFAULT_TIMEOUTS.simple,

@@ -3,13 +3,13 @@
 // ============================================================================
 
 import type {
-  ToolRegistry,
   Tool,
   ToolContext,
   ToolExecutionResult,
   PermissionRequestData,
-} from './toolRegistry';
-import { getToolCache } from '../services';
+  ToolRegistryLike,
+} from './types';
+import { getToolCache } from '../services/infra/toolCache';
 import { createLogger } from '../services/infra/logger';
 import {
   getCommandMonitor,
@@ -33,7 +33,7 @@ const logger = createLogger('ToolExecutor');
  * @internal
  */
 export interface ToolExecutorConfig {
-  toolRegistry: ToolRegistry;
+  toolRegistry: ToolRegistryLike;
   requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   workingDirectory: string;
 }
@@ -98,7 +98,7 @@ export interface ExecuteOptions {
  * @see ToolCache - 工具结果缓存
  */
 export class ToolExecutor {
-  private toolRegistry: ToolRegistry;
+  private toolRegistry: ToolRegistryLike;
   private requestPermission: (request: PermissionRequestData) => Promise<boolean>;
   private workingDirectory: string;
   private auditEnabled = true;

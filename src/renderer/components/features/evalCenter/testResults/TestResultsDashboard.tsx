@@ -8,6 +8,7 @@ import { ExperimentColumns } from './ExperimentColumns';
 import { ScoreHeatmap } from './ScoreHeatmap';
 import { FailureFunnel } from './FailureFunnel';
 import { CreateExperimentDialog } from '../CreateExperimentDialog';
+import ipcService from '../../../../services/ipcService';
 
 interface ExperimentSummary {
   id: string;
@@ -35,7 +36,7 @@ export const TestResultsDashboard: React.FC = () => {
   useEffect(() => {
     const loadReports = async () => {
       try {
-        const list = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS) as TestReportListItem[] | undefined;
+        const list = await ipcService.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS) as TestReportListItem[] | undefined;
         const safeList = list || [];
         setReports(safeList);
 
@@ -46,7 +47,7 @@ export const TestResultsDashboard: React.FC = () => {
 
         // Auto-load latest report
         const latestPath = safeList[0].filePath;
-        const latest = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, latestPath) as TestRunReport | null | undefined;
+        const latest = await ipcService.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, latestPath) as TestRunReport | null | undefined;
         if (latest) {
           reportCache.current.set(latestPath, latest);
           setCurrentReport(latest);
@@ -58,7 +59,7 @@ export const TestResultsDashboard: React.FC = () => {
         await Promise.allSettled(
           toLoad.map(async (item) => {
             try {
-              const r = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, item.filePath) as TestRunReport | null | undefined;
+              const r = await ipcService.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, item.filePath) as TestRunReport | null | undefined;
               if (r) {
                 reportCache.current.set(item.filePath, r);
                 loaded.push(r);
@@ -83,7 +84,7 @@ export const TestResultsDashboard: React.FC = () => {
   const loadExperiments = useCallback(async () => {
     setExperimentsLoading(true);
     try {
-      const list = await window.electronAPI?.invoke(
+      const list = await ipcService.invoke(
         IPC_CHANNELS.EVALUATION_LIST_EXPERIMENTS, 50
       ) as ExperimentSummary[] | undefined;
       setExperiments(list || []);
@@ -104,7 +105,7 @@ export const TestResultsDashboard: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const report = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, filePath) as TestRunReport | null | undefined;
+      const report = await ipcService.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, filePath) as TestRunReport | null | undefined;
       if (report) {
         reportCache.current.set(filePath, report);
         setCurrentReport(report);
@@ -257,12 +258,12 @@ ${currentReport.results.map(r => {
         onClose={() => setShowCreateExperiment(false)}
         onSubmit={async (config) => {
           try {
-            await window.electronAPI?.invoke(EVALUATION_CHANNELS.CREATE_EXPERIMENT, config);
+            await ipcService.invoke(EVALUATION_CHANNELS.CREATE_EXPERIMENT, config);
             // Refresh the experiment/report list after creating a new experiment
             // Refresh both report list and experiment list
             setTimeout(async () => {
               try {
-                const refreshedReports = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS);
+                const refreshedReports = await ipcService.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS);
                 if (refreshedReports && Array.isArray(refreshedReports)) {
                   setReports(refreshedReports);
                 }

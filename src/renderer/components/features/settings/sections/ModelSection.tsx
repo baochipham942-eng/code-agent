@@ -11,6 +11,7 @@ import type { ModelProvider, ModelConfig } from '@shared/types';
 import { UI, PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants';
 import type { ProviderModelEntry } from '@shared/constants';
 import { createLogger } from '../../../../utils/logger';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('ModelSection');
 
@@ -103,7 +104,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
   useEffect(() => {
     const loadKeys = async () => {
       try {
-        const result = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET_SERVICE_KEYS);
+        const result = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET_SERVICE_KEYS);
         if (result) {
           setServiceKeys(prev => ({
             ...prev,
@@ -125,7 +126,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
     setIsSaving(true);
     setSaveStatus('idle');
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
         models: {
           default: config.provider,
           defaultProvider: config.provider,
@@ -156,7 +157,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
     setKeySaveStatus(prev => ({ ...prev, [serviceId]: 'idle' }));
 
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY, {
+      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY, {
         service: serviceId,
         apiKey: serviceKeys[serviceId],
       });

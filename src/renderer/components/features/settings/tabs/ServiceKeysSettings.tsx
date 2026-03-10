@@ -12,6 +12,7 @@ import { UI } from '@shared/constants';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('ServiceKeysSettings');
 
@@ -69,7 +70,7 @@ export const ServiceKeysSettings: React.FC = () => {
   useEffect(() => {
     const loadKeys = async () => {
       try {
-        const result = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET_SERVICE_KEYS);
+        const result = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET_SERVICE_KEYS);
         if (result) {
           setKeys(prev => ({
             ...prev,
@@ -152,7 +153,7 @@ export const ServiceKeysSettings: React.FC = () => {
     setSaveStatus(prev => ({ ...prev, [serviceId]: 'idle' }));
 
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY, {
+      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY, {
         service: serviceId,
         apiKey: keys[serviceId],
       });

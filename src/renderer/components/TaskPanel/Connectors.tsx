@@ -8,6 +8,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
+import ipcService from '../../services/ipcService';
 
 interface McpServer {
   name: string;
@@ -84,7 +85,7 @@ export const Connectors: React.FC = () => {
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const status = await window.electronAPI?.invoke(IPC_CHANNELS.MCP_GET_STATUS);
+        const status = await ipcService.invoke(IPC_CHANNELS.MCP_GET_STATUS);
         if (status && status.connectedServers) {
           // Transform connectedServers array to McpServer format
           setServers(status.connectedServers.map((name: string) => ({
@@ -101,7 +102,7 @@ export const Connectors: React.FC = () => {
     fetchStatus();
 
     // Listen for MCP events
-    const unsubscribe = window.electronAPI?.on(
+    const unsubscribe = ipcService.on(
       IPC_CHANNELS.MCP_EVENT,
       () => {
         fetchStatus();

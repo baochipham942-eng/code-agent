@@ -2,7 +2,7 @@
 // Process Tool - Unified process management for background tasks and PTY sessions
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import {
   getAllBackgroundTasks,
   getTaskOutput,

@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import type { AuthUser, SyncStatus } from '../../shared/types';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { createLogger } from '../utils/logger';
+import ipcService from '../services/ipcService';
 
 const logger = createLogger('AuthStore');
 
@@ -89,7 +90,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   signInWithEmail: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
-      const result = await window.electronAPI?.invoke(
+      const result = await ipcService.invoke(
         IPC_CHANNELS.AUTH_SIGN_IN_EMAIL,
         email,
         password
@@ -114,7 +115,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   signUpWithEmail: async (email, password, inviteCode) => {
     set({ isLoading: true, error: null });
     try {
-      const result = await window.electronAPI?.invoke(
+      const result = await ipcService.invoke(
         IPC_CHANNELS.AUTH_SIGN_UP_EMAIL,
         email,
         password,
@@ -140,7 +141,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   signInWithOAuth: async (provider) => {
     set({ isLoading: true, error: null });
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.AUTH_SIGN_IN_OAUTH, provider);
+      await ipcService.invoke(IPC_CHANNELS.AUTH_SIGN_IN_OAUTH, provider);
       // OAuth flow opens external browser, auth state will be updated via event
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false });
@@ -150,7 +151,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   signInWithToken: async (token) => {
     set({ isLoading: true, error: null });
     try {
-      const result = await window.electronAPI?.invoke(
+      const result = await ipcService.invoke(
         IPC_CHANNELS.AUTH_SIGN_IN_TOKEN,
         token
       );
@@ -173,7 +174,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   signOut: async () => {
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.AUTH_SIGN_OUT);
+      await ipcService.invoke(IPC_CHANNELS.AUTH_SIGN_OUT);
       set({
         user: null,
         isAuthenticated: false,
@@ -186,7 +187,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   updateProfile: async (updates) => {
     try {
-      const result = await window.electronAPI?.invoke(
+      const result = await ipcService.invoke(
         IPC_CHANNELS.AUTH_UPDATE_PROFILE,
         updates
       );
@@ -203,7 +204,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   generateQuickToken: async () => {
     try {
-      const token = await window.electronAPI?.invoke(
+      const token = await ipcService.invoke(
         IPC_CHANNELS.AUTH_GENERATE_QUICK_TOKEN
       );
       return token ?? null;
@@ -216,7 +217,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   resetPassword: async (email) => {
     set({ isLoading: true, error: null });
     try {
-      const result = await window.electronAPI?.invoke(
+      const result = await ipcService.invoke(
         IPC_CHANNELS.AUTH_RESET_PASSWORD,
         email
       );
@@ -235,7 +236,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   updatePassword: async (newPassword) => {
     set({ isLoading: true, error: null });
     try {
-      const result = await window.electronAPI?.invoke(
+      const result = await ipcService.invoke(
         IPC_CHANNELS.AUTH_UPDATE_PASSWORD,
         newPassword
       );
@@ -282,7 +283,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   // Sync actions
   startSync: async () => {
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.SYNC_START);
+      await ipcService.invoke(IPC_CHANNELS.SYNC_START);
       set((state) => ({
         syncStatus: { ...state.syncStatus, isEnabled: true },
       }));
@@ -293,7 +294,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   stopSync: async () => {
     try {
-      await window.electronAPI?.invoke(IPC_CHANNELS.SYNC_STOP);
+      await ipcService.invoke(IPC_CHANNELS.SYNC_STOP);
       set((state) => ({
         syncStatus: { ...state.syncStatus, isEnabled: false },
       }));
@@ -304,7 +305,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   forceFullSync: async () => {
     try {
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.SYNC_FORCE_FULL);
+      const result = await ipcService.invoke(IPC_CHANNELS.SYNC_FORCE_FULL);
       return result?.success ?? false;
     } catch (error) {
       logger.error('Force full sync failed', error);
@@ -319,7 +320,7 @@ export async function initializeAuthStore(): Promise<void> {
 
   // Load current auth status
   try {
-    const status = await window.electronAPI?.invoke(IPC_CHANNELS.AUTH_GET_STATUS);
+    const status = await ipcService.invoke(IPC_CHANNELS.AUTH_GET_STATUS);
     if (status) {
       store.setUser(status.user);
     }
@@ -331,7 +332,7 @@ export async function initializeAuthStore(): Promise<void> {
 
   // Load sync status
   try {
-    const syncStatus = await window.electronAPI?.invoke(IPC_CHANNELS.SYNC_GET_STATUS);
+    const syncStatus = await ipcService.invoke(IPC_CHANNELS.SYNC_GET_STATUS);
     if (syncStatus) {
       store.setSyncStatus(syncStatus);
     }
@@ -340,7 +341,7 @@ export async function initializeAuthStore(): Promise<void> {
   }
 
   // Listen for auth events
-  window.electronAPI?.on(IPC_CHANNELS.AUTH_EVENT, (event) => {
+  ipcService.on(IPC_CHANNELS.AUTH_EVENT, (event) => {
     if (event.type === 'signed_in' && event.user) {
       store.setUser(event.user);
       store.setLoading(false);
@@ -353,12 +354,12 @@ export async function initializeAuthStore(): Promise<void> {
   });
 
   // Listen for sync events
-  window.electronAPI?.on(IPC_CHANNELS.SYNC_EVENT, (status) => {
+  ipcService.on(IPC_CHANNELS.SYNC_EVENT, (status) => {
     store.setSyncStatus(status);
   });
 
   // Listen for password reset callback (from deep link)
-  window.electronAPI?.on(
+  ipcService.on(
     IPC_CHANNELS.AUTH_PASSWORD_RESET_CALLBACK,
     (data: { accessToken: string; refreshToken: string }) => {
       logger.info('Received password reset callback');

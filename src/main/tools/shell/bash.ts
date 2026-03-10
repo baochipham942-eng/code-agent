@@ -4,7 +4,7 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { BASH } from '../../../shared/constants';
 import { startBackgroundTask } from './backgroundTasks';
 import { createPtySession, getPtySessionOutput } from './ptyExecutor';

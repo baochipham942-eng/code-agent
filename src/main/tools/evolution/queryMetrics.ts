@@ -10,7 +10,7 @@
 // - capability_gaps: 从错误模式检测的能力缺口
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getTelemetryCollector } from '../../telemetry/telemetryCollector';
 import { getTelemetryStorage } from '../../telemetry/telemetryStorage';
 import { createLogger } from '../../services/infra/logger';

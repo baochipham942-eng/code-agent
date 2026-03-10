@@ -2,7 +2,7 @@
 // Skill Meta Tool - Agent Skills Standard
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type {
   ParsedSkill,
   SkillMessage,

@@ -7,6 +7,7 @@ import { X, RefreshCw, ExternalLink, Maximize2, Minimize2, Copy } from 'lucide-r
 import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
 import { isWebMode, copyPathToClipboard } from '../utils/platform';
+import ipcService from '../services/ipcService';
 
 const logger = createLogger('PreviewPanel');
 
@@ -31,7 +32,7 @@ export const PreviewPanel: React.FC = () => {
     setError(null);
 
     try {
-      const content = await window.electronAPI?.invoke('workspace:read-file', previewFilePath);
+      const content = await ipcService.invoke('workspace:read-file', previewFilePath);
       if (content) {
         setHtmlContent(content);
       } else {
@@ -56,7 +57,7 @@ export const PreviewPanel: React.FC = () => {
           await copyPathToClipboard(previewFilePath);
           return;
         }
-        await window.electronAPI?.invoke('shell:open-path', previewFilePath);
+        await ipcService.invoke('shell:open-path', previewFilePath);
       } catch (err) {
         logger.error('Failed to open in browser', err);
       }

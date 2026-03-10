@@ -2,7 +2,7 @@
 // Excel Generate Tool - 生成 Excel 表格 (.xlsx)
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
 import ExcelJS from 'exceljs';

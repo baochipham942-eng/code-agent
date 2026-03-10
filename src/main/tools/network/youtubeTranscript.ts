@@ -3,7 +3,7 @@
 // 主要使用 Supadata API，备用公开 API
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { createLogger } from '../../services/infra/logger';
 
 const logger = createLogger('YouTubeTranscript');

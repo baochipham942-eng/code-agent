@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { clipboard, nativeImage } from 'electron';
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 
 export const readClipboardTool: Tool = {
   name: 'read_clipboard',

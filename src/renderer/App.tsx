@@ -36,6 +36,7 @@ import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEven
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL } from '@shared/constants';
 import { createLogger } from './utils/logger';
+import ipcService from './services/ipcService';
 
 const logger = createLogger('App');
 
@@ -105,9 +106,9 @@ export const App: React.FC = () => {
 
   // Debug: Check if electronAPI is available on mount
   useEffect(() => {
-    logger.debug('Mount - electronAPI available', { available: !!window.electronAPI });
-    if (window.electronAPI) {
-      logger.debug('electronAPI methods', { methods: Object.keys(window.electronAPI) });
+    logger.debug('Mount - electronAPI available', { available: ipcService.isAvailable() });
+    if (ipcService.isAvailable()) {
+      logger.debug('electronAPI available');
     }
   }, []);
 
@@ -124,7 +125,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const settings = await window.electronAPI?.invoke(IPC_CHANNELS.SETTINGS_GET);
+        const settings = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET);
 
         // 加载语言设置
         if (settings?.ui?.language) {
@@ -170,7 +171,7 @@ export const App: React.FC = () => {
     const checkForUpdates = async () => {
       try {
         logger.info('Checking for updates on startup');
-        const updateInfo = await window.electronAPI?.invoke(IPC_CHANNELS.UPDATE_CHECK);
+        const updateInfo = await ipcService.invoke(IPC_CHANNELS.UPDATE_CHECK);
 
         if (updateInfo?.hasUpdate && updateInfo?.forceUpdate) {
           logger.info('Force update required', { latestVersion: updateInfo.latestVersion });
@@ -195,7 +196,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const checkApiKeyConfigured = async () => {
       try {
-        const configured = await window.electronAPI?.invoke(IPC_CHANNELS.SECURITY_CHECK_API_KEY_CONFIGURED);
+        const configured = await ipcService.invoke(IPC_CHANNELS.SECURITY_CHECK_API_KEY_CONFIGURED);
         if (!configured) {
           logger.info('No API Key configured, showing setup modal');
           setShowApiKeySetup(true);
@@ -212,7 +213,7 @@ export const App: React.FC = () => {
 
   // 监听工具创建确认请求
   useEffect(() => {
-    const unsubscribe = window.electronAPI?.on(
+    const unsubscribe = ipcService.on(
       IPC_CHANNELS.SECURITY_TOOL_CREATE_REQUEST,
       (request: ToolCreateRequestEvent) => {
         logger.info('Received tool create request', { name: request.name });
@@ -227,7 +228,7 @@ export const App: React.FC = () => {
 
   // Listen for user question events (Gen 3+)
   useEffect(() => {
-    const unsubscribe = window.electronAPI?.on(
+    const unsubscribe = ipcService.on(
       IPC_CHANNELS.USER_QUESTION_ASK,
       (request: UserQuestionRequest) => {
         logger.info('Received user question', { id: request.id });
@@ -242,7 +243,7 @@ export const App: React.FC = () => {
 
   // Listen for notification click events (切换到对应会话)
   useEffect(() => {
-    const unsubscribe = window.electronAPI?.on(
+    const unsubscribe = ipcService.on(
       IPC_CHANNELS.NOTIFICATION_CLICKED,
       (event: NotificationClickedEvent) => {
         logger.info('Notification clicked, switching to session', { sessionId: event.sessionId });
@@ -257,7 +258,7 @@ export const App: React.FC = () => {
 
   // Listen for confirm_action events (Gen 3+)
   useEffect(() => {
-    const unsubscribe = window.electronAPI?.on(
+    const unsubscribe = ipcService.on(
       IPC_CHANNELS.CONFIRM_ACTION_ASK,
       (request: ConfirmActionRequest) => {
         logger.info('Received confirm action request', { id: request.id, title: request.title });
@@ -273,7 +274,7 @@ export const App: React.FC = () => {
   // Listen for context health updates
   const { setContextHealth } = useAppStore();
   useEffect(() => {
-    const unsubscribe = window.electronAPI?.on(
+    const unsubscribe = ipcService.on(
       IPC_CHANNELS.CONTEXT_HEALTH_EVENT,
       (event: ContextHealthUpdateEvent) => {
         // 只更新当前会话的健康状态
@@ -483,7 +484,7 @@ export const App: React.FC = () => {
         <ToolCreateConfirmModal
           request={toolCreateRequest}
           onAllow={() => {
-            window.electronAPI?.invoke(
+            ipcService.invoke(
               IPC_CHANNELS.SECURITY_TOOL_CREATE_RESPONSE,
               toolCreateRequest.id,
               true
@@ -491,7 +492,7 @@ export const App: React.FC = () => {
             setToolCreateRequest(null);
           }}
           onDeny={() => {
-            window.electronAPI?.invoke(
+            ipcService.invoke(
               IPC_CHANNELS.SECURITY_TOOL_CREATE_RESPONSE,
               toolCreateRequest.id,
               false

@@ -9,6 +9,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import ipcService from '../../../../services/ipcService';
 
 const logger = createLogger('DataSettings');
 
@@ -37,7 +38,7 @@ export const DataSettings: React.FC = () => {
 
   const loadStats = async () => {
     try {
-      const dataStats = await window.electronAPI?.invoke(IPC_CHANNELS.DATA_GET_STATS);
+      const dataStats = await ipcService.invoke(IPC_CHANNELS.DATA_GET_STATS);
       if (dataStats) setStats(dataStats);
     } catch (error) {
       logger.error('Failed to load data stats', error);
@@ -54,7 +55,7 @@ export const DataSettings: React.FC = () => {
     setIsClearing(true);
     setMessage(null);
     try {
-      const cleared = await window.electronAPI?.invoke(IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE);
+      const cleared = await ipcService.invoke(IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE);
       if (cleared === 0) {
         setMessage({ type: 'success', text: '缓存已经是空的' });
       } else {

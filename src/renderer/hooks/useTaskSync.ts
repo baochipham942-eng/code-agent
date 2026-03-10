@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTaskStore, type SessionState, type TaskStats } from '../stores/taskStore';
 import { createLogger } from '../utils/logger';
+import ipcService from '../services/ipcService';
 
 const logger = createLogger('useTaskSync');
 
@@ -207,13 +208,13 @@ export function useTaskSync(options: UseTaskSyncOptions = {}): UseTaskSyncReturn
     if (!enabled) return;
 
     // Try to register IPC event listener if available
-    if (window.electronAPI?.on) {
+    if (ipcService.isAvailable()) {
       logger.debug('Registering task event listener');
 
       // Note: The IPC event channel may not exist yet
       // We attempt to listen, but fall back to polling if events aren't received
       try {
-        const unsubscribe = window.electronAPI.on(
+        const unsubscribe = ipcService.on(
           IPC_TASK_EVENT as keyof import('@shared/ipc').IpcEventHandlers,
           handleTaskEvent as never
         );

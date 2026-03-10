@@ -5,7 +5,7 @@
 // with an `action` parameter dispatching to the original implementations.
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { screenshotTool } from './screenshot';
 import { computerUseTool } from './computerUse';
 

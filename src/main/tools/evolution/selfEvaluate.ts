@@ -3,7 +3,7 @@
 // Gen 8: Self-Evolution capability
 // ============================================================================
 
-import type { Tool, ToolContext, ToolExecutionResult } from '../toolRegistry';
+import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getMemoryService } from '../../memory/memoryService';
 import { createLogger } from '../../services/infra/logger';
 

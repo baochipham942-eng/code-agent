@@ -2,7 +2,7 @@
 // tool_search - 工具搜索和延迟加载
 // ============================================================================
 
-import type { Tool, ToolExecutionResult, ToolContext } from '../toolRegistry';
+import type { Tool, ToolExecutionResult, ToolContext } from '../types';
 import { getToolSearchService } from './toolSearchService';
 import { createLogger } from '../../services/infra/logger';
 

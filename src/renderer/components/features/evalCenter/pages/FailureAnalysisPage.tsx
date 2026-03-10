@@ -4,6 +4,7 @@ import { OpenCodingWorkbench } from '../testResults/OpenCodingWorkbench';
 import type { CaseAnnotation } from '../testResults/OpenCodingWorkbench';
 import type { TestRunReport, TestCaseResult, EvalAnnotationErrorType, AxialCodingEntryIpc } from '@shared/ipc';
 import { EVALUATION_CHANNELS } from '@shared/ipc';
+import ipcService from '../../../../services/ipcService';
 
 type FailureView = 'funnel' | 'coding' | 'axial' | 'report';
 
@@ -16,9 +17,9 @@ export const FailureAnalysisPage: React.FC = () => {
 
   const loadFailedCases = useCallback(async () => {
     try {
-      const list = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS) as { filePath: string }[] | undefined;
+      const list = await ipcService.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS) as { filePath: string }[] | undefined;
       if (list && list.length > 0) {
-        const report = await window.electronAPI?.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, list[0].filePath) as TestRunReport | null | undefined;
+        const report = await ipcService.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, list[0].filePath) as TestRunReport | null | undefined;
         if (report) {
           setAllCases(report.results);
           setCases(report.results.filter((r: TestCaseResult) => r.status !== 'passed'));
@@ -33,7 +34,7 @@ export const FailureAnalysisPage: React.FC = () => {
   const loadAxialData = useCallback(async () => {
     setAxialLoading(true);
     try {
-      const result = await window.electronAPI?.invoke(
+      const result = await ipcService.invoke(
         EVALUATION_CHANNELS.GET_AXIAL_CODING as 'evaluation:get-axial-coding'
       );
       if (result && Array.isArray(result)) {
@@ -56,7 +57,7 @@ export const FailureAnalysisPage: React.FC = () => {
     try {
       await Promise.all(
         annotations.map((ann, i) =>
-          window.electronAPI?.invoke(EVALUATION_CHANNELS.SAVE_ANNOTATIONS, {
+          ipcService.invoke(EVALUATION_CHANNELS.SAVE_ANNOTATIONS, {
             id: `${ann.caseId}-${Date.now()}-${i}`,
             caseId: ann.caseId,
             round: 1,

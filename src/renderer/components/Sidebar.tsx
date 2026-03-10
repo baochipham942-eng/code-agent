@@ -3,7 +3,9 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { useSessionStore, initializeSessionStore, type SessionWithMeta, type SessionFilter } from '../stores/sessionStore';
+import { useSessionStore, initializeSessionStore, type SessionWithMeta } from '../stores/sessionStore';
+import { useSelectionStore } from '../stores/selectionStore';
+import { useSessionUIStore, type SessionFilter } from '../stores/sessionUIStore';
 import { useAppStore } from '../stores/appStore';
 import { useAuthStore } from '../stores/authStore';
 import {
@@ -27,6 +29,7 @@ import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
 import { groupSessions, type DateGroup } from '../utils/dateGrouping';
 import { SessionContextMenu, type ContextMenuItem } from './features/sidebar/SessionContextMenu';
+import ipcService from '../services/ipcService';
 
 const logger = createLogger('Sidebar');
 
@@ -59,8 +62,10 @@ export const Sidebar: React.FC = () => {
     archiveSession,
     unarchiveSession,
     unreadSessionIds,
-    filter,
-    setFilter,
+    renameSession,
+  } = useSessionStore();
+
+  const {
     pinnedSessionIds,
     togglePin,
     multiSelectMode,
@@ -69,11 +74,15 @@ export const Sidebar: React.FC = () => {
     toggleSelection,
     clearSelection,
     batchDelete,
+  } = useSelectionStore();
+
+  const {
+    filter,
+    setFilter,
     softDelete,
     undoDelete,
     pendingDelete,
-    renameSession,
-  } = useSessionStore();
+  } = useSessionUIStore();
 
   const { user, isAuthenticated, setShowAuthModal, signOut } = useAuthStore();
 
@@ -103,7 +112,7 @@ export const Sidebar: React.FC = () => {
   useEffect(() => {
     const loadVersion = async () => {
       try {
-        const version = await window.electronAPI?.invoke(IPC_CHANNELS.APP_GET_VERSION);
+        const version = await ipcService.invoke(IPC_CHANNELS.APP_GET_VERSION);
         if (version) {
           setAppVersion(version);
         }
@@ -198,7 +207,7 @@ export const Sidebar: React.FC = () => {
         icon: '📤',
         onClick: async () => {
           try {
-            const data = await window.electronAPI?.invoke(IPC_CHANNELS.SESSION_EXPORT, session.id);
+            const data = await ipcService.invoke(IPC_CHANNELS.SESSION_EXPORT, session.id);
             if (data) {
               const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
               const url = URL.createObjectURL(blob);

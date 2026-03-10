@@ -7,6 +7,7 @@ import React from 'react';
 import type { Citation } from '@shared/types/citation';
 import { IPC_CHANNELS } from '@shared/ipc';
 import { isWebMode, copyPathToClipboard } from '../../utils/platform';
+import ipcService from '../../services/ipcService';
 
 interface CitationListProps {
   citations: Citation[];
@@ -68,8 +69,8 @@ function CitationChip({ citation, onClick }: CitationChipProps) {
         void copyPathToClipboard(citation.source);
         return;
       }
-      if (window.electronAPI?.invoke) {
-        window.electronAPI.invoke(IPC_CHANNELS.SHELL_OPEN_PATH, citation.source);
+      if (ipcService.isAvailable()) {
+        ipcService.invoke(IPC_CHANNELS.SHELL_OPEN_PATH, citation.source);
       }
     }
     // URL 类型在浏览器打开

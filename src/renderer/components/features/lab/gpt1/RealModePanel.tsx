@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { IPC_CHANNELS } from '../../../../../shared/ipc';
 import { isWebMode } from '../../../../utils/platform';
+import ipcService from '../../../../services/ipcService';
 import type {
   PythonEnvStatus,
   LabProjectStatus,
@@ -84,7 +85,7 @@ export const RealModePanel: React.FC = () => {
   const checkPythonEnv = useCallback(async () => {
     setCheckingEnv(true);
     try {
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.LAB_CHECK_PYTHON_ENV);
+      const result = await ipcService.invoke(IPC_CHANNELS.LAB_CHECK_PYTHON_ENV);
       setPythonEnv(result ?? null);
     } catch (error) {
       console.error('检查 Python 环境失败:', error);
@@ -97,7 +98,7 @@ export const RealModePanel: React.FC = () => {
   // 获取项目状态
   const fetchProjectStatus = useCallback(async () => {
     try {
-      const status = await window.electronAPI?.invoke(IPC_CHANNELS.LAB_GET_PROJECT_STATUS, 'gpt1');
+      const status = await ipcService.invoke(IPC_CHANNELS.LAB_GET_PROJECT_STATUS, 'gpt1');
       if (status) {
         setProjectStatus(status);
         if (status.downloaded) {
@@ -118,7 +119,7 @@ export const RealModePanel: React.FC = () => {
 
   // 监听训练进度事件
   useEffect(() => {
-    const unsubscribe = window.electronAPI?.on(
+    const unsubscribe = ipcService.on(
       IPC_CHANNELS.LAB_TRAINING_PROGRESS,
       (event: TrainingProgressEvent) => {
         switch (event.type) {
@@ -167,7 +168,7 @@ export const RealModePanel: React.FC = () => {
     addLog('info', '正在克隆 minimal-gpt1-pytorch 项目...');
 
     try {
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.LAB_DOWNLOAD_PROJECT, {
+      const result = await ipcService.invoke(IPC_CHANNELS.LAB_DOWNLOAD_PROJECT, {
         projectType: 'gpt1',
         targetDirectory: '', // 使用默认目录
       });
@@ -197,7 +198,7 @@ export const RealModePanel: React.FC = () => {
         addLog('info', `已选择项目目录: ${manualPath.trim()}`);
         return;
       }
-      const selectedPath = await window.electronAPI?.invoke(IPC_CHANNELS.WORKSPACE_SELECT_DIRECTORY);
+      const selectedPath = await ipcService.invoke(IPC_CHANNELS.WORKSPACE_SELECT_DIRECTORY);
       if (selectedPath) {
         setProjectPath(selectedPath);
         setProjectUIStatus('downloaded');
@@ -220,7 +221,7 @@ export const RealModePanel: React.FC = () => {
       setUploadingData(true);
       try {
         const content = await file.text();
-        const result = await window.electronAPI?.invoke(IPC_CHANNELS.LAB_UPLOAD_DATA, {
+        const result = await ipcService.invoke(IPC_CHANNELS.LAB_UPLOAD_DATA, {
           projectType: 'gpt1',
           data: content,
           filename: file.name,
@@ -253,7 +254,7 @@ export const RealModePanel: React.FC = () => {
     addLog('info', '准备训练环境...');
 
     try {
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.LAB_START_TRAINING, {
+      const result = await ipcService.invoke(IPC_CHANNELS.LAB_START_TRAINING, {
         projectType: 'gpt1',
         config: {
           batchSize: 32,
@@ -280,7 +281,7 @@ export const RealModePanel: React.FC = () => {
   // 停止训练
   const handleStopTraining = async () => {
     try {
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.LAB_STOP_TRAINING, 'gpt1');
+      const result = await ipcService.invoke(IPC_CHANNELS.LAB_STOP_TRAINING, 'gpt1');
       if (result?.success) {
         setTrainingUIStatus('idle');
         addLog('info', '训练已停止');
@@ -300,7 +301,7 @@ export const RealModePanel: React.FC = () => {
     setInferenceOutput('');
 
     try {
-      const result = await window.electronAPI?.invoke(IPC_CHANNELS.LAB_INFERENCE, {
+      const result = await ipcService.invoke(IPC_CHANNELS.LAB_INFERENCE, {
         projectType: 'gpt1',
         prompt: inferenceInput,
         temperature: 0.8,

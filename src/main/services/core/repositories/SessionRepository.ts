@@ -61,9 +61,11 @@ export class SessionRepository {
       generationId?: string;
       modelConfig: { provider: ModelProvider; model: string };
       workingDirectory?: string;
+      createdAt?: number;
+      updatedAt?: number;
     }
   ): void {
-    const now = Date.now();
+    const now = data.createdAt ?? Date.now();
     const stmt = this.db.prepare(`
       INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -77,7 +79,7 @@ export class SessionRepository {
       data.modelConfig.model,
       data.workingDirectory || null,
       now,
-      now
+      data.updatedAt ?? now
     );
   }
 
@@ -133,7 +135,7 @@ export class SessionRepository {
       updates.modelConfig?.provider ?? session.modelConfig.provider,
       updates.modelConfig?.model ?? session.modelConfig.model,
       updates.workingDirectory ?? session.workingDirectory,
-      Date.now(),
+      updates.updatedAt ?? Date.now(),
       updates.workspace !== undefined ? updates.workspace : session.workspace,
       updates.status ?? session.status ?? 'idle',
       lastTokenUsage,
@@ -142,8 +144,9 @@ export class SessionRepository {
   }
 
   deleteSession(sessionId: string): void {
-    const stmt = this.db.prepare('DELETE FROM sessions WHERE id = ?');
-    stmt.run(sessionId);
+    this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId);
+    this.db.prepare('DELETE FROM todos WHERE session_id = ?').run(sessionId);
+    this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
   }
 
   clearAllSessions(): number {
@@ -175,7 +178,7 @@ export class SessionRepository {
   // Message CRUD
   // --------------------------------------------------------------------------
 
-  addMessage(sessionId: string, message: Message): void {
+  addMessage(sessionId: string, message: Message, options?: { skipTimestampUpdate?: boolean }): void {
     const stmt = this.db.prepare(`
       INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, thinking, effort_level)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -208,7 +211,9 @@ export class SessionRepository {
       message.effortLevel || null
     );
 
-    this.db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(Date.now(), sessionId);
+    if (!options?.skipTimestampUpdate) {
+      this.db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(Date.now(), sessionId);
+    }
   }
 
   updateMessage(messageId: string, updates: Partial<Message>): void {
@@ -252,17 +257,7 @@ export class SessionRepository {
     const stmt = this.db.prepare(sql);
     const rows = stmt.all(sessionId) as SQLiteRow[];
 
-    return rows.map((row): Message => ({
-      id: row.id as string,
-      role: row.role as Message['role'],
-      content: row.content as string,
-      timestamp: row.timestamp as number,
-      toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
-      toolResults: row.tool_results ? JSON.parse(row.tool_results as string) : undefined,
-      attachments: row.attachments ? JSON.parse(row.attachments as string) : undefined,
-      thinking: (row.thinking as string) || undefined,
-      effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
-    }));
+    return rows.map((row) => this.rowToMessage(row));
   }
 
   getMessageCount(sessionId: string): number {
@@ -281,14 +276,7 @@ export class SessionRepository {
 
     const rows = stmt.all(sessionId, count) as SQLiteRow[];
 
-    return rows.reverse().map((row): Message => ({
-      id: row.id as string,
-      role: row.role as Message['role'],
-      content: row.content as string,
-      timestamp: row.timestamp as number,
-      toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
-      toolResults: row.tool_results ? JSON.parse(row.tool_results as string) : undefined,
-    }));
+    return rows.reverse().map((row) => this.rowToMessage(row));
   }
 
   getMessagesBefore(sessionId: string, beforeTimestamp: number, limit: number = 30): Message[] {
@@ -301,14 +289,21 @@ export class SessionRepository {
 
     const rows = stmt.all(sessionId, beforeTimestamp, limit) as SQLiteRow[];
 
-    return rows.reverse().map((row): Message => ({
+    return rows.reverse().map((row) => this.rowToMessage(row));
+  }
+
+  private rowToMessage(row: SQLiteRow): Message {
+    return {
       id: row.id as string,
       role: row.role as Message['role'],
       content: row.content as string,
       timestamp: row.timestamp as number,
       toolCalls: row.tool_calls ? JSON.parse(row.tool_calls as string) : undefined,
       toolResults: row.tool_results ? JSON.parse(row.tool_results as string) : undefined,
-    }));
+      attachments: row.attachments ? JSON.parse(row.attachments as string) : undefined,
+      thinking: (row.thinking as string) || undefined,
+      effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
+    };
   }
 
   // --------------------------------------------------------------------------
@@ -362,13 +357,13 @@ export class SessionRepository {
     return rows.map(row => this.rowToSession(row));
   }
 
-  archiveSession(sessionId: string): StoredSession | null {
-    this.db.prepare(`UPDATE sessions SET status = 'archived', updated_at = ? WHERE id = ?`).run(Date.now(), sessionId);
+  archiveSession(sessionId: string, updatedAt?: number): StoredSession | null {
+    this.db.prepare(`UPDATE sessions SET status = 'archived', updated_at = ? WHERE id = ?`).run(updatedAt ?? Date.now(), sessionId);
     return this.getSession(sessionId);
   }
 
-  unarchiveSession(sessionId: string): StoredSession | null {
-    this.db.prepare(`UPDATE sessions SET status = 'idle', updated_at = ? WHERE id = ?`).run(Date.now(), sessionId);
+  unarchiveSession(sessionId: string, updatedAt?: number): StoredSession | null {
+    this.db.prepare(`UPDATE sessions SET status = 'idle', updated_at = ? WHERE id = ?`).run(updatedAt ?? Date.now(), sessionId);
     return this.getSession(sessionId);
   }
 

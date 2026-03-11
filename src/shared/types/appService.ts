@@ -70,6 +70,7 @@ export interface AgentApplicationService {
   loadSession(sessionId: string): Promise<Session>;
   deleteSession(sessionId: string): Promise<void>;
   listSessions(options?: { includeArchived?: boolean }): Promise<Session[]>;
+  updateSession(sessionId: string, updates: Partial<Session>): Promise<void>;
   archiveSession(sessionId: string): Promise<Session | null>;
   unarchiveSession(sessionId: string): Promise<Session | null>;
   getMessages(sessionId: string): Promise<Message[]>;

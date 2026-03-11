@@ -177,6 +177,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     return getSessionManager().listSessions({ includeArchived: options?.includeArchived });
   }
 
+  async updateSession(sessionId: string, updates: Partial<Session>): Promise<void> {
+    await getSessionManager().updateSession(sessionId, updates);
+  }
+
   async archiveSession(sessionId: string): Promise<Session | null> {
     return getSessionManager().archiveSession(sessionId);
   }

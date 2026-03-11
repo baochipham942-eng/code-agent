@@ -59,6 +59,12 @@ export function registerSessionHandlers(
           data = await requireAppService().getMemoryContext(p.sessionId, p.workingDirectory, p.query) as SessionMemoryContext;
           break;
         }
+        case 'update': {
+          const p = payload as { sessionId: string; updates: Partial<import('../../shared/types/session').Session> };
+          await requireAppService().updateSession(p.sessionId, p.updates);
+          data = null;
+          break;
+        }
         case 'archive':
           data = await requireAppService().archiveSession((payload as { sessionId: string }).sessionId);
           break;

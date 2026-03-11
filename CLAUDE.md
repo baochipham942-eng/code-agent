@@ -63,6 +63,7 @@ cargo tauri build    # 打包 macOS（~33MB DMG）
 
 ### 提交纪律
 - 每完成一个功能点立即提交，不要积攒
+- **后台 Agent 产物必须 review**：commit 前用 `git diff --stat` 检查每个文件的变更行数，行数异常的必须 `git diff <file>` 逐行确认，尤其是 SSE/IPC 协议文件（webServer.ts、electronMock.ts）和共享类型文件
 
 ### 代码品味
 - 避免过度工程，只做必要的事
@@ -90,6 +91,7 @@ cargo tauri build    # 打包 macOS（~33MB DMG）
 | 交叉验证 | `CROSS_VERIFY.*` | 禁止写 `0.7`、`60000` 等阈值 |
 | Codex 会话 | `CODEX_SESSION.*` | 禁止写 `'~/.codex/sessions'` 等路径 |
 | 降级链 | `PROVIDER_FALLBACK_CHAIN` | 禁止在 modelRouter 中硬编码降级目标 |
+| 时间戳更新 | 参数传入或 `?? Date.now()` | **禁止在 DB 操作中直接写 `Date.now()`**。所有写入 `updated_at` 的方法必须支持可选时间戳参数，未传时才 fallback `Date.now()`。云端同步场景必须保留远程原始时间戳 |
 
 **新增 provider/模型/超时/价格时**，只在 `shared/constants.ts` 添加，然后引用。
 
@@ -98,6 +100,7 @@ cargo tauri build    # 打包 macOS（~33MB DMG）
 grep -rn "|| 'deepseek'" src/main/ --include="*.ts"
 grep -rn "|| 'gen3'" src/main/ --include="*.ts"
 grep -rn "'300000\|300_000'" src/main/ --include="*.ts"
+grep -rn "Date.now()" src/main/services/core/repositories/ --include="*.ts"
 ```
 
 ## 快速参考

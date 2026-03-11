@@ -56,6 +56,7 @@ export class SessionManager implements Disposable {
     this.currentSessionId = null;
   }
 
+  private static readonly MAX_CACHE_SIZE = 50;
   private currentSessionId: string | null = null;
   private sessionCache: Map<string, SessionWithMessages> = new Map();
 
@@ -113,7 +114,7 @@ export class SessionManager implements Disposable {
       if (cloudMessages.length > 0) {
         // 缓存到本地
         for (const msg of cloudMessages) {
-          db.addMessage(sessionId, msg);
+          db.addMessage(sessionId, msg, { skipTimestampUpdate: true });
         }
         // 云端拉取后也只取最近 N 条
         messages = cloudMessages.slice(-messageLimit);
@@ -128,7 +129,11 @@ export class SessionManager implements Disposable {
       todos,
     };
 
-    // 缓存
+    // 缓存（LRU: 超过上限时淘汰最早的条目）
+    if (this.sessionCache.size >= SessionManager.MAX_CACHE_SIZE) {
+      const oldestKey = this.sessionCache.keys().next().value;
+      if (oldestKey) this.sessionCache.delete(oldestKey);
+    }
     this.sessionCache.set(sessionId, sessionWithMessages);
 
     return sessionWithMessages;
@@ -272,9 +277,11 @@ export class SessionManager implements Disposable {
               model: cloudSession.model_name,
             },
             workingDirectory: cloudSession.working_directory,
+            createdAt: cloudSession.created_at as unknown as number,
+            updatedAt: cloudSession.updated_at,
           });
         } else if (cloudSession.updated_at > localSession.updatedAt) {
-          // 云端更新，更新本地元数据
+          // 云端更新，更新本地元数据（保留云端原始时间戳）
           db.updateSession(cloudSession.id, {
             title: cloudSession.title,
             generationId: cloudSession.generation_id,
@@ -282,7 +289,10 @@ export class SessionManager implements Disposable {
               provider: cloudSession.model_provider as ModelConfig['provider'],
               model: cloudSession.model_name,
             },
+            updatedAt: cloudSession.updated_at,
           });
+          // 清除缓存，避免返回过期数据
+          this.sessionCache.delete(cloudSession.id);
         }
       }
 
@@ -313,7 +323,7 @@ export class SessionManager implements Disposable {
     // 更新缓存
     if (this.sessionCache.has(sessionId)) {
       const cached = this.sessionCache.get(sessionId)!;
-      Object.assign(cached, updates, { updatedAt: Date.now() });
+      Object.assign(cached, updates, { updatedAt: updates.updatedAt ?? Date.now() });
     }
 
     // 通知前端
@@ -447,20 +457,27 @@ export class SessionManager implements Disposable {
       throw new Error('No current session');
     }
 
-    const db = getDatabase();
-    db.addMessage(this.currentSessionId, message);
-
-    // 更新缓存
-    if (this.sessionCache.has(this.currentSessionId)) {
-      const cached = this.sessionCache.get(this.currentSessionId)!;
-      cached.messages.push(message);
-      cached.messageCount++;
-      cached.updatedAt = Date.now();
-    }
+    await this.addMessageToSession(this.currentSessionId, message);
 
     // 自动更新会话标题（如果是第一条用户消息）
     if (message.role === 'user') {
       await this.maybeUpdateTitle(message.content);
+    }
+  }
+
+  /**
+   * 添加消息到指定会话（支持多会话并发）
+   */
+  async addMessageToSession(sessionId: string, message: Message): Promise<void> {
+    const db = getDatabase();
+    db.addMessage(sessionId, message);
+
+    // 更新缓存
+    if (this.sessionCache.has(sessionId)) {
+      const cached = this.sessionCache.get(sessionId)!;
+      cached.messages.push(message);
+      cached.messageCount++;
+      cached.updatedAt = Date.now();
     }
   }
 

@@ -379,6 +379,11 @@ export async function callClaude(
 
   // Thinking support
   if (config.thinkingBudget) {
+    // Anthropic requires max_tokens > thinking.budget_tokens
+    // If maxTokens is too small, auto-increase it
+    if ((requestBody.max_tokens as number) <= config.thinkingBudget) {
+      requestBody.max_tokens = config.thinkingBudget + 16384;
+    }
     requestBody.thinking = {
       type: 'enabled',
       budget_tokens: config.thinkingBudget,

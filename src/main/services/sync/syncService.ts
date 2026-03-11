@@ -267,8 +267,10 @@ class SyncService implements Disposable {
       // Push to cloud
       const pushResult = await this.pushToCloud(user.id);
 
-      // Update sync cursor
-      await this.updateSyncCursor(user.id);
+      // Only update sync cursor (used for sessions + pull) if push succeeded
+      if (pushResult.success) {
+        await this.updateSyncCursor(user.id);
+      }
 
       this.lastSyncAt = Date.now();
       this.pendingChanges = 0;
@@ -429,10 +431,11 @@ class SyncService implements Disposable {
     return { count, conflicts };
   }
 
-  private async pushToCloud(userId: string): Promise<{ count: number }> {
+  private async pushToCloud(userId: string): Promise<{ count: number; success: boolean }> {
     const supabase = getSupabase();
     const db = getDatabase();
     let count = 0;
+    let sessionPushFailed = false;
 
     // Get all local sessions (not just modified ones)
     const sessions = db.listSessions(1000, 0);
@@ -460,27 +463,30 @@ class SyncService implements Disposable {
         count += pendingSessions.length;
       } else {
         logger.error('Error pushing sessions', { error });
+        sessionPushFailed = true;
       }
     }
 
-    // Push messages from ALL sessions (not just pending ones)
-    // This ensures messages added after session was synced are still pushed
-    for (const session of sessions) {
-      const messages = db.getMessages(session.id);
-      const pendingMessages = messages.filter((m) => m.timestamp > this.syncCursor);
+    // Push unsynced messages (synced_at IS NULL)
+    const unsyncedMessages = db.getUnsyncedMessages(1000);
 
-      if (pendingMessages.length > 0) {
+    if (unsyncedMessages.length > 0) {
+      // Batch upsert in chunks of 200
+      const batchSize = 200;
+      for (let i = 0; i < unsyncedMessages.length; i += batchSize) {
+        const batch = unsyncedMessages.slice(i, i + batchSize);
+
         const { error } = await supabase.from('messages').upsert(
-          pendingMessages.map((m) => ({
+          batch.map((m) => ({
             id: m.id,
-            session_id: session.id,
+            session_id: m.sessionId,
             user_id: userId,
             role: m.role,
             content: m.content,
             timestamp: m.timestamp,
             tool_calls: m.toolCalls || null,
             tool_results: m.toolResults || null,
-            updated_at: m.timestamp,
+            updated_at: Date.now(),
             source_device_id: this.deviceId,
             // TODO: Supabase upsert 类型限制
           })) as any,
@@ -488,9 +494,12 @@ class SyncService implements Disposable {
         );
 
         if (!error) {
-          count += pendingMessages.length;
+          // Only mark as synced after successful push
+          db.markMessagesSynced(batch.map((m) => m.id));
+          count += batch.length;
         } else {
           logger.error('Error pushing messages', { error });
+          // Failed messages retain synced_at = NULL, will be retried next sync
         }
       }
     }
@@ -499,7 +508,7 @@ class SyncService implements Disposable {
     const vectorCount = await this.pushVectorDocuments(userId);
     count += vectorCount;
 
-    return { count };
+    return { count, success: !sessionPushFailed };
   }
 
   // --------------------------------------------------------------------------

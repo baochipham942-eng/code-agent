@@ -180,8 +180,8 @@ export class SessionRepository {
 
   addMessage(sessionId: string, message: Message, options?: { skipTimestampUpdate?: boolean }): void {
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, thinking, effort_level)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, thinking, effort_level, synced_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
     `);
 
     const attachmentsMeta = message.attachments?.map(a => ({
@@ -234,6 +234,9 @@ export class SessionRepository {
     }
 
     if (setClauses.length === 0) return;
+
+    // Mark as unsynced so pushToCloud picks up the update
+    setClauses.push('synced_at = NULL');
 
     values.push(messageId);
     const sql = `UPDATE messages SET ${setClauses.join(', ')} WHERE id = ?`;
@@ -290,6 +293,28 @@ export class SessionRepository {
     const rows = stmt.all(sessionId, beforeTimestamp, limit) as SQLiteRow[];
 
     return rows.reverse().map((row) => this.rowToMessage(row));
+  }
+
+  getUnsyncedMessages(limit: number = 1000): Array<Message & { sessionId: string }> {
+    const stmt = this.db.prepare(`
+      SELECT * FROM messages
+      WHERE synced_at IS NULL
+      ORDER BY timestamp ASC
+      LIMIT ?
+    `);
+
+    const rows = stmt.all(limit) as SQLiteRow[];
+    return rows.map((row) => ({
+      ...this.rowToMessage(row),
+      sessionId: row.session_id as string,
+    }));
+  }
+
+  markMessagesSynced(messageIds: string[]): void {
+    if (messageIds.length === 0) return;
+    const now = Date.now();
+    const placeholders = messageIds.map(() => '?').join(',');
+    this.db.prepare(`UPDATE messages SET synced_at = ? WHERE id IN (${placeholders})`).run(now, ...messageIds);
   }
 
   private rowToMessage(row: SQLiteRow): Message {

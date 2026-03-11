@@ -298,6 +298,16 @@ export class DatabaseService {
       }
     }
 
+    // Messages 表: 添加 synced_at 列（同步追踪，NULL 表示待同步）
+    try {
+      this.db.exec(`ALTER TABLE messages ADD COLUMN synced_at INTEGER`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+        logger.warn('[DB] Migration unexpected error:', msg);
+      }
+    }
+
     // Experiments 表: 添加 git_commit 列
     try {
       this.db.exec("ALTER TABLE experiments ADD COLUMN git_commit TEXT");
@@ -816,6 +826,8 @@ export class DatabaseService {
   getMessageCount(sessionId: string): number { this.ensureDb(); return this.sessionRepo.getMessageCount(sessionId); }
   getRecentMessages(sessionId: string, count: number): Message[] { this.ensureDb(); return this.sessionRepo.getRecentMessages(sessionId, count); }
   getMessagesBefore(sessionId: string, beforeTimestamp: number, limit: number = 30): Message[] { this.ensureDb(); return this.sessionRepo.getMessagesBefore(sessionId, beforeTimestamp, limit); }
+  getUnsyncedMessages(limit: number = 1000): Array<Message & { sessionId: string }> { this.ensureDb(); return this.sessionRepo.getUnsyncedMessages(limit); }
+  markMessagesSynced(messageIds: string[]): void { this.ensureDb(); this.sessionRepo.markMessagesSynced(messageIds); }
   saveTodos(sessionId: string, todos: TodoItem[]): void { this.ensureDb(); this.sessionRepo.saveTodos(sessionId, todos); }
   getTodos(sessionId: string): TodoItem[] { this.ensureDb(); return this.sessionRepo.getTodos(sessionId); }
   listArchivedSessions(limit: number = 50, offset: number = 0): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.listArchivedSessions(limit, offset); }

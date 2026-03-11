@@ -130,37 +130,41 @@ export class MessageProcessor {
     }
 
     // Planning stop hook
-    if (shouldRunHooks) {
-      const stopResult = await this.ctx.planningService!.hooks.onStop();
+    if (shouldRunHooks && this.ctx.planningService) {
+      try {
+        const stopResult = await this.ctx.planningService.hooks.onStop();
 
-      if (!stopResult.shouldContinue && stopResult.injectContext) {
-        this.ctx.stopHookRetryCount++;
+        if (!stopResult.shouldContinue && stopResult.injectContext) {
+          this.ctx.stopHookRetryCount++;
 
-        if (this.ctx.stopHookRetryCount <= this.ctx.maxStopHookRetries) {
-          this.contextAssembly.injectSystemMessage(stopResult.injectContext);
-          if (stopResult.notification) {
+          if (this.ctx.stopHookRetryCount <= this.ctx.maxStopHookRetries) {
+            this.contextAssembly.injectSystemMessage(stopResult.injectContext);
+            if (stopResult.notification) {
+              this.ctx.onEvent({
+                type: 'notification',
+                data: { message: stopResult.notification },
+              });
+            }
+            logger.debug(` Stop hook retry ${this.ctx.stopHookRetryCount}/${this.ctx.maxStopHookRetries}`);
+            return 'continue';
+          } else {
+            logger.debug('[AgentLoop] Stop hook max retries reached, allowing stop');
+            logCollector.agent('WARN', `Stop hook max retries (${this.ctx.maxStopHookRetries}) reached`);
             this.ctx.onEvent({
               type: 'notification',
-              data: { message: stopResult.notification },
+              data: { message: 'Plan may be incomplete - max verification retries reached' },
             });
           }
-          logger.debug(` Stop hook retry ${this.ctx.stopHookRetryCount}/${this.ctx.maxStopHookRetries}`);
-          return 'continue';
-        } else {
-          logger.debug('[AgentLoop] Stop hook max retries reached, allowing stop');
-          logCollector.agent('WARN', `Stop hook max retries (${this.ctx.maxStopHookRetries}) reached`);
+        }
+
+        if (stopResult.notification && stopResult.shouldContinue) {
           this.ctx.onEvent({
             type: 'notification',
-            data: { message: 'Plan may be incomplete - max verification retries reached' },
+            data: { message: stopResult.notification },
           });
         }
-      }
-
-      if (stopResult.notification && stopResult.shouldContinue) {
-        this.ctx.onEvent({
-          type: 'notification',
-          data: { message: stopResult.notification },
-        });
+      } catch (error) {
+        logger.error('[AgentLoop] Planning stop hook error:', error);
       }
     }
 

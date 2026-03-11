@@ -63,7 +63,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 export function buildSeedMemoryBlock(projectPath?: string): string | null {
   try {
     const db = getDatabase();
-    if (!db) {
+    if (!db || !db.isReady) {
       return null;
     }
 

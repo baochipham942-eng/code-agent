@@ -153,13 +153,16 @@ describe('AgentDefinition - Hybrid Architecture', () => {
     describe('plan agent', () => {
       const agent = PREDEFINED_AGENTS['plan'];
 
-      it('should have planning tools (read-only + write for plans)', () => {
+      it('should have planning tools (read-only + write for plans + task management)', () => {
         expect(agent.tools).toContain('glob');
         expect(agent.tools).toContain('grep');
         expect(agent.tools).toContain('read_file');
         expect(agent.tools).toContain('list_directory');
         expect(agent.tools).toContain('write_file'); // Can write plan documents
-        expect(agent.tools).toContain('todo_write');
+        expect(agent.tools).toContain('task_list');
+        expect(agent.tools).toContain('task_get');
+        expect(agent.tools).toContain('task_update');
+        expect(agent.tools).toContain('task_create');
       });
 
       it('should be in exploration layer (primarily read-only)', () => {

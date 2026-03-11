@@ -35,22 +35,38 @@ export interface SessionCreateOptions {
 export class CLISessionManager {
   private currentSessionId: string | null = null;
   private sessionCache: Map<string, SessionWithMessages> = new Map();
-  private db: CLIDatabaseService | null = null;
+  private _db: CLIDatabaseService | null = null;
+  private _dbChecked = false;
 
   constructor() {
-    try {
-      this.db = getCLIDatabase();
-    } catch {
-      // 数据库不可用时，使用内存模式
-      console.warn('[SessionManager] Database not available, using memory mode');
+    // 不在构造函数中获取 DB 引用，避免在 DB 初始化完成前创建竞态
+    // DB 引用在首次使用时懒加载
+  }
+
+  /**
+   * 获取数据库实例（懒加载）
+   */
+  private getDb(): CLIDatabaseService | null {
+    if (!this._dbChecked || !this._db) {
+      try {
+        this._db = getCLIDatabase();
+        this._dbChecked = true;
+      } catch {
+        if (!this._dbChecked) {
+          this._dbChecked = true;
+          console.warn('[SessionManager] Database not available, using memory mode');
+        }
+      }
     }
+    return this._db;
   }
 
   /**
    * 检查数据库是否可用
    */
   private isDatabaseAvailable(): boolean {
-    return this.db !== null && this.db.isInitialized;
+    const db = this.getDb();
+    return db !== null && db.isInitialized;
   }
 
   // --------------------------------------------------------------------------
@@ -76,7 +92,7 @@ export class CLISessionManager {
     // 数据库可用时持久化，否则只存内存
     if (this.isDatabaseAvailable()) {
       try {
-        this.db!.createSession(session);
+        this.getDb()!.createSession(session);
       } catch (error) {
         console.warn('[SessionManager] Failed to persist session:', (error as Error).message);
       }
@@ -98,17 +114,18 @@ export class CLISessionManager {
       return null;
     }
 
-    const storedSession = this.db!.getSession(sessionId);
+    const storedSession = this.getDb()!.getSession(sessionId);
     if (!storedSession) return null;
 
     // 加载消息
-    const messages = this.db!.getRecentMessages(sessionId, messageLimit);
-    const todos = this.db!.getTodos(sessionId);
+    const messages = this.getDb()!.getRecentMessages(sessionId, messageLimit);
+    const todos = this.getDb()!.getTodos(sessionId);
 
     const sessionWithMessages: SessionWithMessages = {
       ...storedSession,
       messages,
       todos,
+      messageCount: messages.length,
     };
 
     // 缓存
@@ -124,7 +141,7 @@ export class CLISessionManager {
     if (!this.isDatabaseAvailable()) {
       return [];
     }
-    return this.db!.listSessions(limit, offset);
+    return this.getDb()!.listSessions(limit, offset);
   }
 
   /**
@@ -133,7 +150,7 @@ export class CLISessionManager {
   async updateSession(sessionId: string, updates: Partial<Session>): Promise<void> {
     if (this.isDatabaseAvailable()) {
       try {
-        this.db!.updateSession(sessionId, updates);
+        this.getDb()!.updateSession(sessionId, updates);
       } catch (error) {
         console.warn('[SessionManager] Failed to update session:', (error as Error).message);
       }
@@ -152,7 +169,7 @@ export class CLISessionManager {
   async deleteSession(sessionId: string): Promise<void> {
     if (this.isDatabaseAvailable()) {
       try {
-        this.db!.deleteSession(sessionId);
+        this.getDb()!.deleteSession(sessionId);
       } catch (error) {
         console.warn('[SessionManager] Failed to delete session:', (error as Error).message);
       }
@@ -219,7 +236,7 @@ export class CLISessionManager {
     // 数据库可用时持久化
     if (this.isDatabaseAvailable()) {
       try {
-        this.db!.addMessage(this.currentSessionId, message);
+        this.getDb()!.addMessage(this.currentSessionId, message);
       } catch (error) {
         console.warn('[SessionManager] Failed to persist message:', (error as Error).message);
       }
@@ -246,7 +263,7 @@ export class CLISessionManager {
     if (!this.isDatabaseAvailable()) {
       return [];
     }
-    return this.db!.getMessages(sessionId, limit);
+    return this.getDb()!.getMessages(sessionId, limit);
   }
 
   /**
@@ -256,7 +273,7 @@ export class CLISessionManager {
     if (!this.isDatabaseAvailable()) {
       return [];
     }
-    return this.db!.getRecentMessages(sessionId, count);
+    return this.getDb()!.getRecentMessages(sessionId, count);
   }
 
   // --------------------------------------------------------------------------
@@ -271,7 +288,7 @@ export class CLISessionManager {
 
     if (this.isDatabaseAvailable()) {
       try {
-        this.db!.saveTodos(this.currentSessionId, todos);
+        this.getDb()!.saveTodos(this.currentSessionId, todos);
       } catch (error) {
         console.warn('[SessionManager] Failed to save todos:', (error as Error).message);
       }
@@ -291,7 +308,7 @@ export class CLISessionManager {
     if (!this.isDatabaseAvailable()) {
       return [];
     }
-    return this.db!.getTodos(sessionId);
+    return this.getDb()!.getTodos(sessionId);
   }
 
   // --------------------------------------------------------------------------

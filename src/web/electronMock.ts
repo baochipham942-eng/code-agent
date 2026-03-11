@@ -8,7 +8,8 @@
 //
 // ============================================================================
 
-export type HandlerFn = (event: unknown, ...args: unknown[]) => Promise<unknown> | unknown;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type HandlerFn = (event: any, ...args: any[]) => any;
 
 /** 所有通过 ipcMain.handle() 注册的 handler */
 export const handlers = new Map<string, HandlerFn>();
@@ -39,6 +40,31 @@ export const ipcMain = {
     }
   },
 };
+
+// ── Type exports (IpcMain, IpcMainInvokeEvent, etc.) ─────────────────
+
+/** Type alias so `import type { IpcMain } from 'electron'` works */
+export type IpcMain = typeof ipcMain;
+
+/** Stub for Electron.IpcMainInvokeEvent — used as first arg in ipcMain.handle callbacks */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type IpcMainInvokeEvent = any;
+
+/** Stub for Electron.IpcMainEvent */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type IpcMainEvent = any;
+
+// ── Electron namespace (for `Electron.BrowserWindow`, `Electron.IpcMainInvokeEvent`, etc.) ──
+
+// eslint-disable-next-line @typescript-eslint/no-namespace
+export namespace Electron {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type IpcMainInvokeEvent = any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type IpcMainEvent = any;
+  // Re-export BrowserWindow type under namespace
+  export type BrowserWindow = InstanceType<typeof import('./electronMock').BrowserWindow>;
+}
 
 // ── ipcRenderer ──────────────────────────────────────────────────────
 
@@ -71,18 +97,19 @@ export const app = {
   getName: () => 'code-agent-web',
   isReady: () => true,
   isPackaged: false,
-  commandLine: { appendSwitch: () => {} },
-  on: () => app,
-  once: () => app,
-  off: () => app,
-  removeListener: () => app,
-  removeAllListeners: () => app,
-  emit: () => false,
+  commandLine: { appendSwitch: (..._args: any[]) => {} },
+  on: (..._args: any[]) => app,
+  once: (..._args: any[]) => app,
+  off: (..._args: any[]) => app,
+  removeListener: (..._args: any[]) => app,
+  removeAllListeners: (..._args: any[]) => app,
+  emit: (..._args: any[]) => false,
   quit: () => {},
   exit: () => {},
   requestSingleInstanceLock: () => true,
-  setAppUserModelId: () => {},
-  setPath: () => {},
+  setAppUserModelId: (..._args: any[]) => {},
+  setAsDefaultProtocolClient: (..._args: any[]) => false as boolean,
+  setPath: (..._args: any[]) => {},
   getAppPath: () => process.cwd(),
   getLocale: () => 'en-US',
   whenReady: () => Promise.resolve(),
@@ -114,16 +141,19 @@ export class BrowserWindow {
       // 将 Electron IPC 事件转发到 SSE 客户端
       getBroadcastSSE()(channel, args.length === 1 ? args[0] : args);
     },
-    on: () => {},
-    once: () => {},
-    openDevTools: () => {},
+    on: (..._args: any[]) => {},
+    once: (..._args: any[]) => {},
+    openDevTools: (..._args: any[]) => {},
     session: { clearCache: async () => {} },
     getURL: () => '',
     isDestroyed: () => false, // Web 模式下窗口始终"存在"
+    setWindowOpenHandler: (..._args: any[]) => {},
   };
 
-  loadURL() { return Promise.resolve(); }
-  loadFile() { return Promise.resolve(); }
+  constructor(_options?: Record<string, any>) {}
+
+  loadURL(..._args: any[]) { return Promise.resolve(); }
+  loadFile(..._args: any[]) { return Promise.resolve(); }
   show() {}
   hide() {}
   close() {}
@@ -132,70 +162,71 @@ export class BrowserWindow {
   blur() {}
   minimize() {}
   maximize() {}
+  unmaximize() {}
   restore() {}
   isMinimized() { return false; }
   isMaximized() { return false; }
   isVisible() { return false; }
   isDestroyed() { return true; }
-  setTitle() {}
+  setTitle(..._args: any[]) {}
   getTitle() { return ''; }
-  setBounds() {}
+  setBounds(..._args: any[]) {}
   getBounds() { return { x: 0, y: 0, width: 800, height: 600 }; }
-  setSize() {}
+  setSize(..._args: any[]) {}
   getSize() { return [800, 600]; }
-  on() { return this; }
-  once() { return this; }
-  removeListener() { return this; }
+  on(..._args: any[]) { return this; }
+  once(..._args: any[]) { return this; }
+  removeListener(..._args: any[]) { return this; }
 
-  static getAllWindows() { return []; }
-  static getFocusedWindow() { return null; }
-  static fromWebContents() { return null; }
-  static fromId() { return null; }
+  static getAllWindows(): BrowserWindow[] { return []; }
+  static getFocusedWindow(): BrowserWindow | null { return null; }
+  static fromWebContents(..._args: any[]): BrowserWindow | null { return null; }
+  static fromId(..._args: any[]): BrowserWindow | null { return null; }
 }
 
 // ── dialog ───────────────────────────────────────────────────────────
 
 export const dialog = {
-  showOpenDialog: async () => ({ canceled: true, filePaths: [] as string[] }),
-  showSaveDialog: async () => ({ canceled: true, filePath: undefined }),
-  showMessageBox: async () => ({ response: 0, checkboxChecked: false }),
-  showErrorBox: () => {},
-  showOpenDialogSync: () => undefined,
-  showSaveDialogSync: () => undefined,
-  showMessageBoxSync: () => 0,
+  showOpenDialog: async (..._args: any[]) => ({ canceled: true, filePaths: [] as string[] }),
+  showSaveDialog: async (..._args: any[]) => ({ canceled: true, filePath: undefined }),
+  showMessageBox: async (..._args: any[]) => ({ response: 0, checkboxChecked: false }),
+  showErrorBox: (..._args: any[]) => {},
+  showOpenDialogSync: (..._args: any[]) => undefined,
+  showSaveDialogSync: (..._args: any[]) => undefined,
+  showMessageBoxSync: (..._args: any[]) => 0,
 };
 
 // ── shell ────────────────────────────────────────────────────────────
 
 export const shell = {
-  openExternal: async () => {},
-  openPath: async () => '',
-  showItemInFolder: () => {},
+  openExternal: async (..._args: any[]) => {},
+  openPath: async (..._args: any[]) => '',
+  showItemInFolder: (..._args: any[]) => {},
   beep: () => {},
-  moveItemToTrash: () => false,
-  readShortcutLink: () => ({}),
-  writeShortcutLink: () => false,
+  moveItemToTrash: (..._args: any[]) => false,
+  readShortcutLink: (..._args: any[]) => ({}),
+  writeShortcutLink: (..._args: any[]) => false,
 };
 
 // ── clipboard ────────────────────────────────────────────────────────
 
 export const clipboard = {
   readText: () => '',
-  writeText: () => {},
+  writeText: (..._args: any[]) => {},
   readHTML: () => '',
-  writeHTML: () => {},
+  writeHTML: (..._args: any[]) => {},
   readImage: () => nativeImage.createEmpty(),
-  writeImage: () => {},
+  writeImage: (..._args: any[]) => {},
   readRTF: () => '',
-  writeRTF: () => {},
+  writeRTF: (..._args: any[]) => {},
   clear: () => {},
   availableFormats: () => [] as string[],
-  has: () => false,
-  read: () => '',
+  has: (..._args: any[]) => false,
+  read: (..._args: any[]) => '',
   readBookmark: () => ({ title: '', url: '' }),
   readFindText: () => '',
-  writeFindText: () => {},
-  writeBookmark: () => {},
+  writeFindText: (..._args: any[]) => {},
+  writeBookmark: (..._args: any[]) => {},
 };
 
 // ── nativeTheme ──────────────────────────────────────────────────────
@@ -203,11 +234,11 @@ export const clipboard = {
 export const nativeTheme = {
   themeSource: 'system' as string,
   shouldUseDarkColors: false,
-  on: () => nativeTheme,
-  once: () => nativeTheme,
-  off: () => nativeTheme,
-  removeListener: () => nativeTheme,
-  removeAllListeners: () => nativeTheme,
+  on: (..._args: any[]) => nativeTheme,
+  once: (..._args: any[]) => nativeTheme,
+  off: (..._args: any[]) => nativeTheme,
+  removeListener: (..._args: any[]) => nativeTheme,
+  removeAllListeners: (..._args: any[]) => nativeTheme,
 };
 
 // ── screen ───────────────────────────────────────────────────────────
@@ -221,7 +252,7 @@ export const screen = {
   }),
   getAllDisplays: () => [],
   getCursorScreenPoint: () => ({ x: 0, y: 0 }),
-  on: () => screen,
+  on: (..._args: any[]) => screen,
 };
 
 // ── safeStorage ──────────────────────────────────────────────────────
@@ -236,18 +267,18 @@ export const safeStorage = {
 
 const emptyImage = {
   toPNG: () => Buffer.alloc(0),
-  toJPEG: () => Buffer.alloc(0),
+  toJPEG: (_quality?: number) => Buffer.alloc(0),
   toBitmap: () => Buffer.alloc(0),
   toDataURL: () => '',
   getSize: () => ({ width: 0, height: 0 }),
   isEmpty: () => true,
-  resize: () => emptyImage,
-  crop: () => emptyImage,
+  resize: (..._args: any[]) => emptyImage,
+  crop: (..._args: any[]) => emptyImage,
   getBitmap: () => Buffer.alloc(0),
   getNativeHandle: () => Buffer.alloc(0),
   isTemplateImage: () => false,
-  setTemplateImage: () => {},
-  addRepresentation: () => {},
+  setTemplateImage: (..._args: any[]) => {},
+  addRepresentation: (..._args: any[]) => {},
   getAspectRatio: () => 1,
   getScaleFactors: () => [1],
   toRGBA: () => ({ data: Buffer.alloc(0), width: 0, height: 0 }),
@@ -255,60 +286,60 @@ const emptyImage = {
 
 export const nativeImage = {
   createEmpty: () => ({ ...emptyImage }),
-  createFromPath: () => ({ ...emptyImage }),
-  createFromBuffer: () => ({ ...emptyImage }),
-  createFromDataURL: () => ({ ...emptyImage }),
-  createThumbnailFromPath: async () => ({ ...emptyImage }),
+  createFromPath: (..._args: any[]) => ({ ...emptyImage }),
+  createFromBuffer: (..._args: any[]) => ({ ...emptyImage }),
+  createFromDataURL: (..._args: any[]) => ({ ...emptyImage }),
+  createThumbnailFromPath: async (..._args: any[]) => ({ ...emptyImage }),
 };
 
 // ── desktopCapturer ──────────────────────────────────────────────────
 
 export const desktopCapturer = {
-  getSources: async () => [] as Array<{ id: string; name: string; thumbnail: unknown }>,
+  getSources: async (..._args: any[]) => [] as Array<{ id: string; name: string; thumbnail: ReturnType<typeof nativeImage.createEmpty> }>,
 };
 
 // ── globalShortcut ───────────────────────────────────────────────────
 
 export const globalShortcut = {
-  register: () => false,
-  registerAll: () => {},
-  unregister: () => {},
+  register: (..._args: any[]) => false,
+  registerAll: (..._args: any[]) => {},
+  unregister: (..._args: any[]) => {},
   unregisterAll: () => {},
-  isRegistered: () => false,
+  isRegistered: (..._args: any[]) => false,
 };
 
 // ── Menu / MenuItem / Tray ───────────────────────────────────────────
 
 export class Menu {
   items: unknown[] = [];
-  static setApplicationMenu() {}
+  static setApplicationMenu(..._args: any[]) {}
   static getApplicationMenu() { return null; }
-  static buildFromTemplate() { return new Menu(); }
-  popup() {}
+  static buildFromTemplate(..._args: any[]) { return new Menu(); }
+  popup(..._args: any[]) {}
   closePopup() {}
-  append() {}
-  insert() {}
+  append(..._args: any[]) {}
+  insert(..._args: any[]) {}
 }
 
 export class MenuItem {
-  constructor(_options?: unknown) {}
+  constructor(_options?: any) {}
 }
 
 export class Tray {
-  constructor(_image?: unknown) {}
-  setToolTip() {}
-  setContextMenu() {}
-  on() { return this; }
+  constructor(_image?: any) {}
+  setToolTip(..._args: any[]) {}
+  setContextMenu(..._args: any[]) {}
+  on(..._args: any[]) { return this; }
   destroy() {}
 }
 
 // ── Notification ─────────────────────────────────────────────────────
 
 export class Notification {
-  constructor(_options?: unknown) {}
+  constructor(_options?: { title?: string; body?: string; icon?: any; [key: string]: any }) {}
   show() {}
   close() {}
-  on() { return this; }
+  on(..._args: any[]) { return this; }
   static isSupported() { return false; }
 }
 
@@ -317,40 +348,40 @@ export class Notification {
 const mockSession = {
   clearCache: async () => {},
   clearStorageData: async () => {},
-  setProxy: async () => {},
-  resolveProxy: async () => 'DIRECT',
-  on: () => mockSession,
+  setProxy: async (..._args: any[]) => {},
+  resolveProxy: async (..._args: any[]) => 'DIRECT',
+  on: (..._args: any[]) => mockSession,
   webRequest: {
-    onBeforeRequest: () => {},
-    onBeforeSendHeaders: () => {},
-    onHeadersReceived: () => {},
-    onCompleted: () => {},
+    onBeforeRequest: (..._args: any[]) => {},
+    onBeforeSendHeaders: (..._args: any[]) => {},
+    onHeadersReceived: (..._args: any[]) => {},
+    onCompleted: (..._args: any[]) => {},
   },
   protocol: {
-    registerFileProtocol: () => false,
-    registerStringProtocol: () => false,
-    registerHttpProtocol: () => false,
-    interceptFileProtocol: () => false,
+    registerFileProtocol: (..._args: any[]) => false,
+    registerStringProtocol: (..._args: any[]) => false,
+    registerHttpProtocol: (..._args: any[]) => false,
+    interceptFileProtocol: (..._args: any[]) => false,
   },
   cookies: {
-    get: async () => [],
-    set: async () => {},
-    remove: async () => {},
+    get: async (..._args: any[]) => [],
+    set: async (..._args: any[]) => {},
+    remove: async (..._args: any[]) => {},
   },
 };
 
 export const session = {
   defaultSession: mockSession,
-  fromPartition: () => mockSession,
+  fromPartition: (..._args: any[]) => mockSession,
 };
 
 // ── net ──────────────────────────────────────────────────────────────
 
 export const net = {
-  request: () => ({
-    on: () => {},
+  request: (..._args: any[]) => ({
+    on: (..._args2: any[]) => {},
     end: () => {},
-    write: () => {},
+    write: (..._args2: any[]) => {},
     abort: () => {},
   }),
   isOnline: () => true,
@@ -362,11 +393,11 @@ export const autoUpdater = {
   checkForUpdates: () => {},
   checkForUpdatesAndNotify: async () => null,
   downloadUpdate: async () => {},
-  quitAndInstall: () => {},
-  on: () => autoUpdater,
-  once: () => autoUpdater,
-  removeListener: () => autoUpdater,
-  setFeedURL: () => {},
+  quitAndInstall: (..._args: any[]) => {},
+  on: (..._args: any[]) => autoUpdater,
+  once: (..._args: any[]) => autoUpdater,
+  removeListener: (..._args: any[]) => autoUpdater,
+  setFeedURL: (..._args: any[]) => {},
   getFeedURL: () => '',
   currentVersion: { version: '0.0.0-web' },
 };
@@ -374,12 +405,12 @@ export const autoUpdater = {
 // ── powerMonitor ─────────────────────────────────────────────────────
 
 export const powerMonitor = {
-  getSystemIdleState: () => 'active',
+  getSystemIdleState: (..._args: any[]) => 'active',
   getSystemIdleTime: () => 0,
   isOnBatteryPower: () => false,
-  on: () => powerMonitor,
-  once: () => powerMonitor,
-  removeListener: () => powerMonitor,
+  on: (..._args: any[]) => powerMonitor,
+  once: (..._args: any[]) => powerMonitor,
+  removeListener: (..._args: any[]) => powerMonitor,
 };
 
 // ── systemPreferences ────────────────────────────────────────────────
@@ -388,16 +419,16 @@ export const systemPreferences = {
   isDarkMode: () => false,
   getAccentColor: () => '0078d7',
   isSwipeTrackingFromScrollEventsEnabled: () => false,
-  getMediaAccessStatus: () => 'not-determined',
-  askForMediaAccess: async () => false,
-  on: () => systemPreferences,
+  getMediaAccessStatus: (..._args: any[]) => 'not-determined',
+  askForMediaAccess: async (..._args: any[]) => false,
+  on: (..._args: any[]) => systemPreferences,
 };
 
 // ── contentTracing ───────────────────────────────────────────────────
 
 export const contentTracing = {
-  startRecording: async () => {},
-  stopRecording: async () => '',
+  startRecording: async (..._args: any[]) => {},
+  stopRecording: async (..._args: any[]) => '',
   getCategories: async () => [],
   getTraceBufferUsage: async () => ({ value: 0, percentage: 0 }),
 };
@@ -405,21 +436,21 @@ export const contentTracing = {
 // ── protocol ─────────────────────────────────────────────────────────
 
 export const protocol = {
-  registerSchemesAsPrivileged: () => {},
-  registerFileProtocol: () => false,
-  registerStringProtocol: () => false,
-  registerHttpProtocol: () => false,
-  interceptFileProtocol: () => false,
+  registerSchemesAsPrivileged: (..._args: any[]) => {},
+  registerFileProtocol: (..._args: any[]) => false,
+  registerStringProtocol: (..._args: any[]) => false,
+  registerHttpProtocol: (..._args: any[]) => false,
+  interceptFileProtocol: (..._args: any[]) => false,
 };
 
 // ── crashReporter ────────────────────────────────────────────────────
 
 export const crashReporter = {
-  start: () => {},
+  start: (..._args: any[]) => {},
   getLastCrashReport: () => null,
   getUploadedReports: () => [],
   getUploadToServer: () => false,
-  setUploadToServer: () => {},
+  setUploadToServer: (..._args: any[]) => {},
 };
 
 // ── webContents ──────────────────────────────────────────────────────
@@ -427,7 +458,7 @@ export const crashReporter = {
 export const webContents = {
   getAllWebContents: () => [],
   getFocusedWebContents: () => null,
-  fromId: () => null,
+  fromId: (..._args: any[]) => null,
 };
 
 // Preload API mocks

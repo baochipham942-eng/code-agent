@@ -49,7 +49,12 @@ export class TelemetryStorage {
   private isDbAvailable(): boolean {
     if (this.dbUnavailable) return false;
     try {
-      const db = getDatabase().getDb();
+      const dbService = getDatabase();
+      if (!dbService.isReady) {
+        // 不设 dbUnavailable，DB 可能正在初始化中，下次再试
+        return false;
+      }
+      const db = dbService.getDb();
       if (!db) {
         this.dbUnavailable = true;
         logger.debug('TelemetryStorage: DB not available, telemetry will be in-memory only');

@@ -66,7 +66,6 @@ import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../../pr
 import { AntiPatternDetector } from '../../agent/antiPattern/detector';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { GoalTracker } from '../../agent/goalTracker';
-import { NudgeManager } from '../../agent/nudgeManager';
 import { getSessionRecoveryService } from '../../agent/sessionRecovery';
 import { getIncompleteTasks } from '../../tools/planning/taskStore';
 import {
@@ -175,10 +174,6 @@ export class RunFinalizer {
 
     // === Mechanism Stats (observability) ===
     logger.info(`[AgentLoop] === Mechanism Stats ===`);
-    logger.info(`[AgentLoop] P5(output): nudges=${this.ctx.nudgeManager.currentOutputFileNudgeCount}/${this.ctx.nudgeManager.maxOutputFileNudgeCount}`);
-    logger.info(`[AgentLoop] P7(structure): ${this.ctx.nudgeManager.outputValidationDone ? 'triggered' : 'skipped'}`);
-    // P0 stats now internal to NudgeManager
-    logger.info(`[AgentLoop] expectedFiles: [${this.ctx.nudgeManager.getExpectedOutputFiles().map((f: any) => basename(f)).join(', ')}]`);
 
     // Session end learning (Gen5+)
     // genNum already declared above in dynamic mode detection
@@ -197,28 +192,25 @@ export class RunFinalizer {
       }
     }
 
-    // Pre-completion Hook: Check for incomplete todos AND tasks
-    const finalTodos = getSessionTodos(this.ctx.sessionId);
-    const incompleteFinalTodos = finalTodos.filter(t => t.status !== 'completed');
+    // Pre-completion Hook: Only check explicit Tasks (persistent), not auto-parsed todos
+    // 对标 Claude Code：模型返回 text response 即视为完成，不覆盖模型的判断
+    // auto-parsed todos 误报率高（编号列表/建议性文本被误识别），不作为完成度依据
     const incompleteFinalTasks = getIncompleteTasks(this.ctx.sessionId);
-    const totalIncomplete = incompleteFinalTodos.length + incompleteFinalTasks.length;
 
-    if (totalIncomplete > 0) {
-      const todoDetails = incompleteFinalTodos.map(t => t.content);
+    if (incompleteFinalTasks.length > 0) {
       const taskDetails = incompleteFinalTasks.map(t => `#${t.id}: ${t.subject}`);
-      const allDetails = [...todoDetails, ...taskDetails].join(', ');
+      const allDetails = taskDetails.join(', ');
 
-      logger.warn(`[AgentLoop] Agent completing with ${totalIncomplete} incomplete item(s): ${allDetails}`);
-      logCollector.agent('WARN', `Agent completing with incomplete items`, {
-        incompleteCount: totalIncomplete,
-        incompleteTodos: incompleteFinalTodos.map(t => ({ content: t.content, status: t.status })),
+      logger.warn(`[AgentLoop] Agent completing with ${incompleteFinalTasks.length} incomplete task(s): ${allDetails}`);
+      logCollector.agent('WARN', `Agent completing with incomplete tasks`, {
+        incompleteCount: incompleteFinalTasks.length,
         incompleteTasks: incompleteFinalTasks.map(t => ({ id: t.id, subject: t.subject, status: t.status })),
       });
 
       this.ctx.onEvent({
         type: 'notification',
         data: {
-          message: `⚠️ 任务可能未完成：${totalIncomplete} 个待办项未完成 (${allDetails})`,
+          message: `⚠️ ${incompleteFinalTasks.length} 个显式任务未完成 (${allDetails})`,
         },
       });
     }

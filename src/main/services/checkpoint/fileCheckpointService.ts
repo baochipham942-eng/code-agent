@@ -32,11 +32,10 @@ export class FileCheckpointService {
     filePath: string
   ): Promise<string | null> {
     const dbService = getDatabase();
-    const db = dbService.getDb();
-    if (!db) {
-      logger.warn('Database not initialized');
+    if (!dbService.isReady) {
       return null;
     }
+    const db = dbService.getDb()!;
 
     try {
       // 解析绝对路径
@@ -93,10 +92,10 @@ export class FileCheckpointService {
    */
   async rewindFiles(sessionId: string, messageId: string): Promise<RewindResult> {
     const dbService = getDatabase();
-    const db = dbService.getDb();
-    if (!db) {
+    if (!dbService.isReady) {
       return { success: false, restoredFiles: [], deletedFiles: [], errors: [{ filePath: '', error: 'Database not initialized' }] };
     }
+    const db = dbService.getDb()!;
 
     const result: RewindResult = {
       success: true,
@@ -198,8 +197,8 @@ export class FileCheckpointService {
    */
   async getCheckpoints(sessionId: string): Promise<FileCheckpoint[]> {
     const dbService = getDatabase();
-    const db = dbService.getDb();
-    if (!db) return [];
+    if (!dbService.isReady) return [];
+    const db = dbService.getDb()!;
 
     try {
       const rows = db.prepare(`
@@ -237,8 +236,8 @@ export class FileCheckpointService {
    */
   async cleanup(): Promise<number> {
     const dbService = getDatabase();
-    const db = dbService.getDb();
-    if (!db) return 0;
+    if (!dbService.isReady) return 0;
+    const db = dbService.getDb()!;
 
     try {
       const expiryTime = Date.now() - this.config.retentionDays * 24 * 60 * 60 * 1000;
@@ -268,8 +267,8 @@ export class FileCheckpointService {
    */
   private async enforceLimit(sessionId: string): Promise<void> {
     const dbService = getDatabase();
-    const db = dbService.getDb();
-    if (!db) return;
+    if (!dbService.isReady) return;
+    const db = dbService.getDb()!;
 
     try {
       const countResult = db.prepare(`

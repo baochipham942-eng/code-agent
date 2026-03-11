@@ -326,7 +326,7 @@ export function registerEvaluationHandlers(): void {
     }
   });
 
-  ipcMain.handle(EVALUATION_CHANNELS.UPDATE_SCORING_CONFIG, async (_event: Electron.IpcMainInvokeEvent, config: ScoringConfigEntry[]) => {
+  ipcMain.handle(EVALUATION_CHANNELS.UPDATE_SCORING_CONFIG, async (_event: any, config: ScoringConfigEntry[]) => {
     try {
       fs.writeFileSync(scoringConfigPath, JSON.stringify(config, null, 2), 'utf-8');
       return { success: true };

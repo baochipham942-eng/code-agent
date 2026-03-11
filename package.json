@@ -3,28 +3,18 @@
   "version": "0.16.51",
   "description": "AI Coding Assistant with Generation Comparison",
   "type": "module",
-  "main": "dist/main/index.cjs",
+  "main": "dist/web/webServer.cjs",
   "bin": {
     "code-agent": "./dist/cli/index.cjs"
   },
   "author": "Lin Chen",
   "license": "MIT",
   "scripts": {
-    "dev": "npm run dev:cleanup && concurrently -k --kill-others-on-fail \"npm run dev:main\" \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "dev": "npm run dev:cleanup && concurrently -k --kill-others-on-fail \"npm run dev:web:server\" \"npm run dev:renderer\"",
     "dev:cleanup": "lsof -ti:5173 | xargs kill -9 2>/dev/null || true",
-    "dev:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:playwright --external:playwright-core --external:keytar --external:isolated-vm --external:pptxgenjs --external:tree-sitter --external:tree-sitter-typescript --external:mammoth --external:exceljs --external:qrcode --external:pdfkit --external:sharp --external:docx --external:node-pty --external:@ui-tars/sdk --outfile=dist/main/index.cjs --sourcemap --watch",
-    "dev:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/preload/index.cjs --sourcemap",
     "dev:renderer": "vite",
-    "dev:electron": "sleep 3 && electron .",
-    "build": "npm run build:main && npm run build:worker && npm run build:preload && npm run build:renderer",
-    "build:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:better-sqlite3 --external:playwright --external:playwright-core --external:keytar --external:isolated-vm --external:pptxgenjs --external:tree-sitter --external:tree-sitter-typescript --external:mammoth --external:exceljs --external:qrcode --external:pdfkit --external:sharp --external:docx --external:node-pty --external:@ui-tars/sdk --define:process.env.EVAL_DISABLED='\"true\"' --outfile=dist/main/index.cjs --minify",
-    "build:preload": "esbuild src/preload/index.ts --bundle --platform=node --format=cjs --external:electron --outfile=dist/preload/index.cjs --minify",
+    "build": "npm run build:worker && npm run build:web && npm run build:renderer",
     "build:renderer": "vite build",
-    "start": "npm run build:main && npm run build:preload && electron .",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
-    "dist:mac": "electron-builder --mac",
-    "dist:mac:signed": "CSC_LINK=$CSC_LINK CSC_KEY_PASSWORD=$CSC_KEY_PASSWORD electron-builder --mac",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -43,9 +33,9 @@
     "cli": "node dist/cli/index.cjs",
     "mcp-server": "node dist/mcp-server.js",
     "docs": "typedoc",
-    "rebuild-native": "bash scripts/rebuild-native.sh",
+    "rebuild-native:system": "bash scripts/rebuild-native-system.sh",
     "check:hardcoded": "bash scripts/check-hardcoded-models.sh --all",
-    "postinstall": "npm run rebuild-native",
+    "postinstall": "npm run rebuild-native:system",
     "eval": "npx tsx scripts/eval-ci.ts",
     "eval:smoke": "npx tsx scripts/eval-ci.ts --scope smoke",
     "eval:full": "npx tsx scripts/eval-ci.ts --scope full",
@@ -56,8 +46,8 @@
     "build:web": "esbuild src/web/webServer.ts --bundle --platform=node --format=cjs --alias:electron=./src/web/electronMock.ts --external:better-sqlite3 --external:keytar --external:isolated-vm --external:tree-sitter --external:tree-sitter-typescript --external:playwright --external:playwright-core --external:pptxgenjs --external:mammoth --external:exceljs --external:qrcode --external:pdfkit --external:sharp --external:docx --external:node-pty --external:@ui-tars/sdk --outfile=dist/web/webServer.cjs --sourcemap",
     "dev:web:server": "npm run build:web && node dist/web/webServer.cjs",
     "dev:web": "concurrently -k \"npm run dev:web:server\" \"sleep 2 && npm run dev:renderer\"",
-    "tauri:dev": "npm run build:web && cargo tauri dev",
-    "tauri:build": "npm run build && npm run build:web && cargo tauri build"
+    "tauri:dev": "npm run rebuild-native:system && npm run build:web && cargo tauri dev",
+    "tauri:build": "npm run rebuild-native:system && npm run build && cargo tauri build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
@@ -77,7 +67,6 @@
     "dagre": "^0.8.5",
     "diff": "^7.0.0",
     "docx": "^9.5.1",
-    "electron-store": "^10.0.0",
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "glob": "^11.0.0",
@@ -114,7 +103,6 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@electron/notarize": "^2.5.0",
     "@eslint/js": "^9.39.2",
     "@playwright/test": "^1.57.0",
     "@radix-ui/react-dialog": "^1.1.0",
@@ -140,8 +128,6 @@
     "autoprefixer": "^10.4.0",
     "clsx": "^2.1.0",
     "concurrently": "^9.0.0",
-    "electron": "^38.8.0",
-    "electron-builder": "^25.0.0",
     "esbuild": "^0.24.0",
     "eslint": "^9.0.0",
     "lucide-react": "^0.468.0",
@@ -162,71 +148,5 @@
     "vite": "^6.0.0",
     "vitest": "^4.0.17",
     "xlsx": "^0.18.5"
-  },
-  "build": {
-    "appId": "com.codeagent.app",
-    "productName": "Code Agent",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "node_modules/**/*",
-      "!node_modules/tree-sitter/**/*",
-      "!node_modules/tree-sitter-typescript/**/*",
-      "!node_modules/kuzu/kuzu-source/**/*",
-      "!node_modules/kuzu/prebuilt/**/*",
-      "!node_modules/kuzu/build/**/*",
-      "!node_modules/kuzu/**/*.md",
-      "!node_modules/kuzu/**/*.txt",
-      "!node_modules/playwright/.local-browsers/**/*",
-      "!node_modules/playwright-core/.local-browsers/**/*",
-      "!node_modules/**/test/**/*",
-      "!node_modules/**/tests/**/*",
-      "!node_modules/**/*.map",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": ".env",
-        "to": ".env"
-      }
-    ],
-    "npmRebuild": false,
-    "generateUpdatesFilesForAllChannels": false,
-    "mac": {
-      "category": "public.app-category.developer-tools",
-      "target": [
-        "dmg",
-        "zip"
-      ],
-      "icon": "resources/icon.icns",
-      "hardenedRuntime": false,
-      "gatekeeperAssess": false,
-      "extendInfo": {
-        "NSScreenCaptureUsageDescription": "Code Agent 需要屏幕录制权限来实现 GUI Agent 功能",
-        "NSAppleEventsUsageDescription": "Code Agent 需要自动化权限来控制其他应用程序",
-        "NSCameraUsageDescription": "Code Agent 需要相机权限用于屏幕截图功能",
-        "NSMicrophoneUsageDescription": "Code Agent 需要麦克风权限来实现语音输入功能"
-      }
-    },
-    "win": {
-      "target": [
-        "nsis",
-        "zip"
-      ],
-      "icon": "resources/icon.ico"
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "icon": "resources/icon.png"
-    },
-    "dmg": {
-      "writeUpdateInfo": false
-    },
-    "publish": null
   }
 }

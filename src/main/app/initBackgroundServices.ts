@@ -2,7 +2,7 @@
 // Phase 2: Background Services - 窗口创建后异步执行，不阻塞用户交互
 // ============================================================================
 
-import { app } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { createLogger } from '../services/infra/logger';
 import {
   ConfigService,
@@ -42,7 +42,7 @@ const logger = createLogger('Bootstrap:Background');
  * Initialize cloud config, skills discovery, MCP, and codex detection.
  * These are chained because skills and MCP depend on CloudConfig.
  */
-async function initializeCloudAndMCP(configService: ConfigService, mainWindow: Electron.BrowserWindow | null): Promise<void> {
+async function initializeCloudAndMCP(configService: ConfigService, mainWindow: BrowserWindow | null): Promise<void> {
   await initCloudConfigService();
 
   const info = getCloudConfigService().getInfo();
@@ -158,7 +158,7 @@ async function initializeCloudAndMCP(configService: ConfigService, mainWindow: E
 /**
  * Initialize Supabase-dependent services: auth, sync, cloud orchestrator, cloud tasks
  */
-function initializeSupabaseServices(configService: ConfigService, mainWindow: Electron.BrowserWindow | null): void {
+function initializeSupabaseServices(configService: ConfigService, mainWindow: BrowserWindow | null): void {
   if (!isSupabaseInitialized()) {
     logger.info('Supabase not configured (offline mode)');
     return;
@@ -236,7 +236,7 @@ function initializeSupabaseServices(configService: ConfigService, mainWindow: El
 /**
  * Initialize update service and auto-check for updates
  */
-function initializeUpdateService(configService: ConfigService, mainWindow: Electron.BrowserWindow | null): void {
+function initializeUpdateService(configService: ConfigService, mainWindow: BrowserWindow | null): void {
   const settings = configService.getSettings();
 
   try {

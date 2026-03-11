@@ -37,6 +37,7 @@ export class CLIDatabaseService {
   private db: import('better-sqlite3').Database | null = null;
   private dbPath: string;
   private _initialized = false;
+  private _initPromise: Promise<void> | null = null;
 
   constructor() {
     const dataDir = this.getDataDir();
@@ -45,6 +46,22 @@ export class CLIDatabaseService {
 
   get isInitialized(): boolean {
     return this._initialized;
+  }
+
+  /**
+   * 等待数据库初始化完成（供 SessionManager 等在需要时等待）
+   */
+  async waitForInit(): Promise<boolean> {
+    if (this._initialized) return true;
+    if (this._initPromise) {
+      try {
+        await this._initPromise;
+        return this._initialized;
+      } catch {
+        return false;
+      }
+    }
+    return false;
   }
 
   /**
@@ -63,6 +80,13 @@ export class CLIDatabaseService {
   // --------------------------------------------------------------------------
 
   async initialize(): Promise<void> {
+    // 防止重复初始化
+    if (this._initPromise) return this._initPromise;
+    this._initPromise = this._doInitialize();
+    return this._initPromise;
+  }
+
+  private async _doInitialize(): Promise<void> {
     // 延迟加载 better-sqlite3
     if (!Database) {
       try {

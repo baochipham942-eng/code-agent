@@ -131,8 +131,8 @@ describe('IPC Handlers', () => {
     });
 
     it('returns INTERNAL_ERROR when orchestrator is null and action is send', async () => {
-      const getOrchestrator = () => null;
-      registerAgentHandlers(ipc.mock, getOrchestrator);
+      const getAppService = () => null;
+      registerAgentHandlers(ipc.mock, getAppService as any);
 
       const request: IPCRequest = {
         action: 'send',
@@ -147,8 +147,8 @@ describe('IPC Handlers', () => {
     });
 
     it('returns INTERNAL_ERROR when orchestrator is null and action is cancel', async () => {
-      const getOrchestrator = () => null;
-      registerAgentHandlers(ipc.mock, getOrchestrator);
+      const getAppService = () => null;
+      registerAgentHandlers(ipc.mock, getAppService as any);
 
       const request: IPCRequest = { action: 'cancel' };
       const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, request);
@@ -158,8 +158,8 @@ describe('IPC Handlers', () => {
     });
 
     it('returns INVALID_ACTION for unknown action', async () => {
-      const getOrchestrator = () => null;
-      registerAgentHandlers(ipc.mock, getOrchestrator);
+      const getAppService = () => null;
+      registerAgentHandlers(ipc.mock, getAppService as any);
 
       const request: IPCRequest = { action: 'nonexistent_action' };
       const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, request);
@@ -170,10 +170,10 @@ describe('IPC Handlers', () => {
     });
 
     it('returns success when orchestrator is available and action is send', async () => {
-      const mockOrchestrator = {
+      const mockAppService = {
         sendMessage: vi.fn().mockResolvedValue(undefined),
       };
-      registerAgentHandlers(ipc.mock, () => mockOrchestrator as any);
+      registerAgentHandlers(ipc.mock, () => mockAppService as any);
 
       const request: IPCRequest = {
         action: 'send',
@@ -182,7 +182,7 @@ describe('IPC Handlers', () => {
       const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, request);
 
       expect(response.success).toBe(true);
-      expect(mockOrchestrator.sendMessage).toHaveBeenCalledWith('test message', undefined, undefined);
+      expect(mockAppService.sendMessage).toHaveBeenCalledWith('test message', undefined, undefined);
     });
   });
 
@@ -195,22 +195,16 @@ describe('IPC Handlers', () => {
     });
 
     it('creates a session and returns it in IPCResponse format', async () => {
-      const deps = {
-        getConfigService: () => ({
-          getSettings: () => ({ model: { provider: 'openai', model: 'gpt-4', temperature: 0.7, maxTokens: 4096 } }),
+      const mockAppService = {
+        createSession: vi.fn().mockResolvedValue({
+          id: 'new-session-id',
+          title: 'My Test Session',
+          createdAt: Date.now(),
+          messages: [],
         }),
-        getGenerationManager: () => ({
-          getCurrentGeneration: () => ({ id: 'gen-1' }),
-        }),
-        getOrchestrator: () => ({
-          getWorkingDirectory: () => '/tmp/test',
-          clearMessages: vi.fn(),
-        }),
-        getCurrentSessionId: () => null,
-        setCurrentSessionId: vi.fn(),
       };
 
-      registerSessionHandlers(ipc.mock, deps as any);
+      registerSessionHandlers(ipc.mock, () => mockAppService as any);
 
       const request: IPCRequest = {
         action: 'create',
@@ -221,19 +215,10 @@ describe('IPC Handlers', () => {
       expect(response.success).toBe(true);
       expect(response.data).toBeDefined();
       expect((response.data as any).id).toBe('new-session-id');
-      expect(deps.setCurrentSessionId).toHaveBeenCalledWith('new-session-id');
     });
 
     it('returns error when services not initialized', async () => {
-      const deps = {
-        getConfigService: () => null,
-        getGenerationManager: () => null,
-        getOrchestrator: () => null,
-        getCurrentSessionId: () => null,
-        setCurrentSessionId: vi.fn(),
-      };
-
-      registerSessionHandlers(ipc.mock, deps as any);
+      registerSessionHandlers(ipc.mock, () => null as any);
 
       const request: IPCRequest = { action: 'create', payload: { title: 'Test' } };
       const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, request);
@@ -310,7 +295,7 @@ describe('IPC Handlers', () => {
     });
 
     it('agent: unknown action returns INVALID_ACTION, not crash', async () => {
-      registerAgentHandlers(ipc.mock, () => null);
+      registerAgentHandlers(ipc.mock, () => null as any);
 
       const request: IPCRequest = { action: 'destroy_everything' };
       const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, request);
@@ -321,14 +306,8 @@ describe('IPC Handlers', () => {
     });
 
     it('session: unknown action returns INVALID_ACTION', async () => {
-      const deps = {
-        getConfigService: () => null,
-        getGenerationManager: () => null,
-        getOrchestrator: () => null,
-        getCurrentSessionId: () => null,
-        setCurrentSessionId: vi.fn(),
-      };
-      registerSessionHandlers(ipc.mock, deps as any);
+      const mockAppService = { listSessions: vi.fn() };
+      registerSessionHandlers(ipc.mock, () => mockAppService as any);
 
       const request: IPCRequest = { action: 'teleport' };
       const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.SESSION, request);
@@ -348,14 +327,10 @@ describe('IPC Handlers', () => {
     });
 
     it('session: load with nonexistent sessionId returns error', async () => {
-      const deps = {
-        getConfigService: () => null,
-        getGenerationManager: () => null,
-        getOrchestrator: () => null,
-        getCurrentSessionId: () => null,
-        setCurrentSessionId: vi.fn(),
+      const mockAppService = {
+        loadSession: vi.fn().mockRejectedValue(new Error('Session not found')),
       };
-      registerSessionHandlers(ipc.mock, deps as any);
+      registerSessionHandlers(ipc.mock, () => mockAppService as any);
 
       const request: IPCRequest = {
         action: 'load',
@@ -375,21 +350,14 @@ describe('IPC Handlers', () => {
   describe('all registered channels match type definitions', () => {
     it('agent handler registers domain channel', () => {
       ipc = createMockIpcMain();
-      registerAgentHandlers(ipc.mock, () => null);
+      registerAgentHandlers(ipc.mock, () => null as any);
 
       expect(ipc.handlers.has(IPC_DOMAINS.AGENT)).toBe(true);
     });
 
     it('session handler registers domain channel', () => {
       ipc = createMockIpcMain();
-      const deps = {
-        getConfigService: () => null,
-        getGenerationManager: () => null,
-        getOrchestrator: () => null,
-        getCurrentSessionId: () => null,
-        setCurrentSessionId: vi.fn(),
-      };
-      registerSessionHandlers(ipc.mock, deps as any);
+      registerSessionHandlers(ipc.mock, () => null as any);
 
       expect(ipc.handlers.has(IPC_DOMAINS.SESSION)).toBe(true);
     });
@@ -411,15 +379,8 @@ describe('IPC Handlers', () => {
 
     it('IPCResponse shape is consistent across handlers', async () => {
       ipc = createMockIpcMain();
-      registerAgentHandlers(ipc.mock, () => null);
-      const deps = {
-        getConfigService: () => null,
-        getGenerationManager: () => null,
-        getOrchestrator: () => null,
-        getCurrentSessionId: () => null,
-        setCurrentSessionId: vi.fn(),
-      };
-      registerSessionHandlers(ipc.mock, deps as any);
+      registerAgentHandlers(ipc.mock, () => null as any);
+      registerSessionHandlers(ipc.mock, () => null as any);
       registerSettingsHandlers(ipc.mock, () => null);
 
       // Invoke all three with invalid actions and verify response shape

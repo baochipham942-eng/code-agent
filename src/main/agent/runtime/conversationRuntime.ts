@@ -66,7 +66,6 @@ import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../../pr
 import { AntiPatternDetector } from '../../agent/antiPattern/detector';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { GoalTracker } from '../../agent/goalTracker';
-import { NudgeManager } from '../../agent/nudgeManager';
 import { getSessionRecoveryService } from '../../agent/sessionRecovery';
 import { getIncompleteTasks } from '../../tools/planning/taskStore';
 import {
@@ -92,15 +91,13 @@ import { AutoContextCompressor, getAutoCompressor } from '../../context/autoComp
 import { getInputSanitizer } from '../../security/inputSanitizer';
 import { getDiffTracker } from '../../services/diff/diffTracker';
 import { getCitationService } from '../../services/citation/citationService';
-import { existsSync, readdirSync, readFileSync } from 'fs';
-import { join, basename } from 'path';
 import { createHash } from 'crypto';
 import type { RuntimeContext } from './runtimeContext';
 import type { ToolExecutionEngine } from './toolExecutionEngine';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
 import type { LearningPipeline } from './learningPipeline';
-import { MessageProcessor, extractAbsoluteFilePaths } from './messageProcessor';
+import { MessageProcessor } from './messageProcessor';
 import { StreamHandler } from './streamHandler';
 
 
@@ -269,7 +266,7 @@ export class ConversationRuntime {
 
     const initResult = await this.initializeRun(userMessage);
     if (!initResult) return; // Early exit (step-by-step mode or hook blocked)
-    const { langfuse, isSimpleTask, shouldRunHooks, genNum } = initResult;
+    const { langfuse, isSimpleTask, genNum } = initResult;
 
     let iterations = 0;
     let userTurnId: string | undefined;
@@ -355,7 +352,7 @@ export class ConversationRuntime {
 
       // 2b. Handle actual text response
       if (response.type === 'text' && response.content) {
-        const textAction = await this.messageProcessor.handleTextResponse(response, isSimpleTask, iterations, shouldRunHooks, langfuse);
+        const textAction = await this.messageProcessor.handleTextResponse(response, isSimpleTask, iterations, true, langfuse);
         if (textAction === 'break') break;
         if (textAction === 'continue') continue;
       }
@@ -379,14 +376,13 @@ export class ConversationRuntime {
   async initializeRun(userMessage: string): Promise<{
     langfuse: ReturnType<typeof getLangfuseService>;
     isSimpleTask: boolean;
-    shouldRunHooks: boolean;
     genNum: number;
   } | null> {
     
     logger.debug('[AgentLoop] ========== run() START ==========');
     logger.debug('[AgentLoop] Message:', userMessage.substring(0, 100));
 
-    logCollector.agent('INFO', `Agent run started: "${userMessage.substring(0, 80)}..."`);
+    logCollector.agent('INFO', `Agent run started: "${userMessage.substring(0, 200)}${userMessage.length > 200 ? '...' : ''}"`);
     logCollector.agent('DEBUG', `Model: ${this.ctx.modelConfig.provider}`);
 
     // Langfuse: Start trace
@@ -407,46 +403,27 @@ export class ConversationRuntime {
     const isSimpleTask = complexityAnalysis.complexity === 'simple';
     this.ctx.isSimpleTaskMode = isSimpleTask;
 
-    // P5: Extract expected output file paths from user prompt (existence diff)
-    const allPaths = extractAbsoluteFilePaths(userMessage);
-    const expectedOutputFiles = allPaths.filter((f: any) => !existsSync(f));
-
-    // Reset all nudge state via NudgeManager
-    this.ctx.nudgeManager.reset(
-      complexityAnalysis.targetFiles || [],
-      userMessage,
-      this.ctx.workingDirectory,
-      expectedOutputFiles,
-    );
 
     this.ctx.externalDataCallCount = 0;
     this.ctx.runStartTime = Date.now();
     this.ctx.totalIterations = 0;
     this.ctx.totalTokensUsed = 0;
     this.ctx.totalToolCallCount = 0;
-    this.ctx._consecutiveTruncations = 0;
 
-    // P8: Task-specific prompt hardening
-    const taskHints = this.contextAssembly._detectTaskPatterns(userMessage);
-    if (taskHints.length > 0) {
-      this.contextAssembly.injectSystemMessage(
-        `<task-specific-hints>\n${taskHints.join('\n')}\n</task-specific-hints>`
-      );
-      logger.debug(`[AgentLoop] P8: Injected ${taskHints.length} task-specific hints`);
-    }
+
 
     // F1: Goal Re-Injection
     this.ctx.goalTracker.initialize(userMessage);
 
     logger.debug(` Task complexity: ${complexityAnalysis.complexity} (${Math.round(complexityAnalysis.confidence * 100)}%)`);
-    if (this.ctx.nudgeManager.getTargetFiles().length > 0) {
-      logger.debug(` Target files: ${this.ctx.nudgeManager.getTargetFiles().join(', ')}`);
+    if ((complexityAnalysis.targetFiles || []).length > 0) {
+      logger.debug(` Target files: ${(complexityAnalysis.targetFiles || []).join(', ')}`);
     }
     logCollector.agent('INFO', `Task complexity: ${complexityAnalysis.complexity}`, {
       confidence: complexityAnalysis.confidence,
       reasons: complexityAnalysis.reasons,
       fastPath: isSimpleTask,
-      targetFiles: this.ctx.nudgeManager.getTargetFiles(),
+      targetFiles: complexityAnalysis.targetFiles || [],
     });
 
     if (!isSimpleTask) {
@@ -557,11 +534,6 @@ export class ConversationRuntime {
     }
 
     // Session start hooks
-    const shouldRunHooks = !!(this.ctx.enableHooks && this.ctx.planningService && !isSimpleTask);
-    if (shouldRunHooks) {
-      await this.toolEngine.runSessionStartHook();
-    }
-
     if (this.ctx.hookManager && !isSimpleTask) {
       const sessionResult = await this.ctx.hookManager.triggerSessionStart(this.ctx.sessionId);
       if (sessionResult.message) {
@@ -596,7 +568,7 @@ export class ConversationRuntime {
       logger.warn('[AgentLoop] Seed memory injection failed, continuing without');
     }
 
-    return { langfuse, isSimpleTask, shouldRunHooks, genNum };
+    return { langfuse, isSimpleTask, genNum };
   }
 
   // ========================================================================

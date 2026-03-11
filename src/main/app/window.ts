@@ -64,7 +64,7 @@ export async function createWindow(): Promise<void> {
   });
 
   // Log web contents events
-  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+  mainWindow.webContents.on('did-fail-load', (event: any, errorCode: any, errorDescription: any) => {
     logger.error('Failed to load', new Error(errorDescription), { errorCode });
   });
 
@@ -73,7 +73,7 @@ export async function createWindow(): Promise<void> {
   });
 
   // Handle external links - open in default browser instead of new Electron window
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+  mainWindow.webContents.setWindowOpenHandler(({ url }: { url: string }) => {
     // Check if it's an external URL (http/https)
     if (url.startsWith('http://') || url.startsWith('https://')) {
       logger.info('Opening external URL in browser', { url: url.substring(0, 100) });

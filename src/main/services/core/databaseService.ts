@@ -14,10 +14,31 @@ const logger = createLogger('DatabaseService');
 import type BetterSqlite3 from 'better-sqlite3';
 let Database: typeof BetterSqlite3 | null = null;
 if (!process.env.CODE_AGENT_CLI_MODE || process.env.CODE_AGENT_WEB_MODE) {
-  try {
-    Database = require('better-sqlite3');
-  } catch (error) {
-    console.warn('[DatabaseService] better-sqlite3 not available:', (error as Error).message?.split('\n')[0]);
+  // Web/Tauri 模式: 系统 Node.js 运行，Electron ABI 的 .node 文件不兼容
+  // 优先从 dist/native/ 加载为系统 Node 编译的版本
+  const nativePaths = [
+    path.join(__dirname, '../../native/better-sqlite3'),    // dist/web/ → dist/native/
+    path.join(process.cwd(), 'dist/native/better-sqlite3'), // cwd fallback
+  ];
+  for (const nativePath of nativePaths) {
+    if (!Database) {
+      try {
+        Database = require(nativePath);
+        logger.info(`[DatabaseService] Loaded better-sqlite3 from ${nativePath}`);
+      } catch {
+        // 继续尝试下一个路径
+      }
+    }
+  }
+  // 回退到默认路径（Electron 模式或 node_modules）
+  if (!Database) {
+    try {
+      Database = require('better-sqlite3');
+    } catch (error) {
+      const err = error as Error;
+      console.warn('[DatabaseService] better-sqlite3 not available:', err.message?.split('\n')[0]);
+      if (err.stack) console.warn('[DatabaseService] Stack:', err.stack);
+    }
   }
 }
 import type {
@@ -56,6 +77,7 @@ import {
 export class DatabaseService {
   private db: BetterSqlite3.Database | null = null;
   private dbPath: string;
+  private _initPromise: Promise<void> | null = null;
 
   // Repositories
   private sessionRepo!: SessionRepository;
@@ -73,7 +95,39 @@ export class DatabaseService {
   // Initialization
   // --------------------------------------------------------------------------
 
+  /**
+   * 是否已初始化完成
+   */
+  get isReady(): boolean {
+    return this.db !== null;
+  }
+
+  /**
+   * 等待数据库初始化完成（供其他服务在启动时等待）
+   * 如果尚未开始初始化，返回立即 resolve 的 Promise（不会自动触发初始化）
+   */
+  async waitForInit(): Promise<boolean> {
+    if (this.db) return true;
+    if (this._initPromise) {
+      try {
+        await this._initPromise;
+        return this.db !== null;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
   async initialize(): Promise<void> {
+    // 防止重复初始化
+    if (this._initPromise) return this._initPromise;
+
+    this._initPromise = this._doInitialize();
+    return this._initPromise;
+  }
+
+  private async _doInitialize(): Promise<void> {
     // 确保目录存在（异步，性能优化）
     const dir = path.dirname(this.dbPath);
     await fs.promises.mkdir(dir, { recursive: true }).catch((err) => {
@@ -734,8 +788,15 @@ export class DatabaseService {
   // Facade Methods — 委托给 Repository
   // ==========================================================================
 
+  private _ensureDbWarned = false;
   private ensureDb(): void {
-    if (!this.db) throw new Error('Database not initialized');
+    if (!this.db) {
+      if (!this._ensureDbWarned) {
+        this._ensureDbWarned = true;
+        logger.warn('Database not initialized — operations will be skipped until init completes');
+      }
+      throw new Error('Database not initialized');
+    }
   }
 
   // --- SessionRepository ---

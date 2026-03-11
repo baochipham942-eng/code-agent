@@ -25,7 +25,7 @@ import { getPostEditDiagnostics } from '../lsp/diagnosticsHelper';
 
 export const editFileTool: Tool = {
   name: 'Edit',
-  description: `Performs exact string replacements in files. IMPORTANT: Prefer this over Write for modifying existing files — it only sends the diff. The edit will FAIL if old_text is not unique in the file — provide more surrounding context to make it unique, or use replace_all for global replacements.`,
+  description: `Performs exact string replacements in files. ALWAYS prefer this over Write for modifying existing files — it only sends the diff. NEVER write new files unless explicitly required. The edit will FAIL if old_text is not unique in the file — provide more surrounding context to make it unique, or use replace_all for global replacements. You must read the file with Read before editing.`,
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {

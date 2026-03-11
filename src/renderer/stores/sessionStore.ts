@@ -469,7 +469,12 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     },
   }));
 
+let _initialized = false;
+
 export async function initializeSessionStore(): Promise<void> {
+  if (_initialized) return;
+  _initialized = true;
+
   const store = useSessionStore.getState();
 
   await store.loadSessions();

@@ -640,8 +640,10 @@ export class SessionManager implements Disposable {
       logger.error('Failed to generate session summary', { error, sessionId: targetSessionId });
     }
 
-    // 如果结束的是当前会话，清除 current session
-    if (targetSessionId === this.currentSessionId) {
+    // 仅当调用方未指定 sessionId（即"结束当前会话"语义）时才清除 currentSessionId
+    // 当从 setCurrentSession 传入明确 sessionId 时，调用方已设置了新的 currentSessionId，
+    // 此处不应覆盖，防止快速切换 A→B→A 时 endSession(A) 延迟完成后误清
+    if (!sessionId && targetSessionId === this.currentSessionId) {
       this.currentSessionId = null;
     }
   }

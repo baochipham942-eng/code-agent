@@ -53,7 +53,9 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
 
     if (pendingDelete) {
       if (pendingDelete.timer) clearTimeout(pendingDelete.timer);
-      const prevIds = pendingDelete.ids;
+      // Snapshot IDs and clear pendingDelete first to prevent double deletion
+      const prevIds = [...pendingDelete.ids];
+      set({ pendingDelete: null });
       (async () => {
         for (const id of prevIds) {
           try {
@@ -104,7 +106,11 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
 
     if (pendingDelete.timer) clearTimeout(pendingDelete.timer);
 
-    for (const id of pendingDelete.ids) {
+    // Snapshot and clear atomically to prevent race with concurrent softDelete
+    const idsToDelete = [...pendingDelete.ids];
+    set({ pendingDelete: null });
+
+    for (const id of idsToDelete) {
       try {
         await ipcService.invoke(IPC_CHANNELS.SESSION_DELETE, id);
       } catch (error) {
@@ -112,8 +118,7 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
       }
     }
 
-    set({ pendingDelete: null });
-    logger.info('Sessions permanently deleted', { count: pendingDelete.ids.length });
+    logger.info('Sessions permanently deleted', { count: idsToDelete.length });
   },
 
   addToInputHistory: (input: string) => {

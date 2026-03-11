@@ -87,11 +87,10 @@ export class EvaluationService {
    */
   private getDbInstance() {
     const db = getDatabase();
-    const dbInstance = db.getDb();
-    if (!dbInstance) {
+    if (!db.isReady) {
       throw new Error('Database not initialized');
     }
-    return dbInstance;
+    return db.getDb()!;
   }
 
   /**

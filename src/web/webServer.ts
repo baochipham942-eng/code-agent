@@ -40,6 +40,36 @@ const sseClients = new Set<Response>();
 // 活跃 AgentLoop 实例追踪（用于 cancel）
 const activeAgentLoops = new Map<string, { cancel(): void }>();
 
+// ── 会话消息缓存（Web 模式下 DB 不可用，用内存缓存维持多轮上下文）──
+interface CachedToolCall {
+  id: string;
+  name: string;
+  arguments?: Record<string, unknown>;
+}
+interface CachedMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'tool';
+  content: string;
+  timestamp: number;
+  toolCalls?: CachedToolCall[];
+  thinking?: string;
+}
+const sessionMessages = new Map<string, CachedMessage[]>();
+const SESSION_CACHE_MAX = 50; // 最多缓存 50 个会话
+
+// ── 内存会话存储（better-sqlite3 native module 不可用时的降级方案）──
+interface InMemorySession {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  isArchived?: boolean;
+  archivedAt?: number;
+  messageCount: number;
+}
+const inMemorySessions = new Map<string, InMemorySession>();
+let dbAvailable = false; // 在 initializeServices 中设置
+
 // ── Local Tool Bridge: 待处理的本地工具调用 ──
 // key = toolCallId, value = { resolve, reject, sseResponse }
 interface PendingLocalToolCall {
@@ -355,10 +385,15 @@ async function initializeServices(): Promise<void> {
   try {
     const { initDatabase } = await import('../main/services/core/databaseService');
     await initDatabase();
+    dbAvailable = true;
     logger.info('Database initialized');
   } catch (error) {
-    const msg = error instanceof Error ? error.message.split('\n')[0] : String(error);
-    logger.warn('Database not available:', msg);
+    if (error instanceof Error) {
+      logger.warn('Database not available (using in-memory sessions):', error.message);
+      logger.warn('Database init stack:', error.stack);
+    } else {
+      logger.warn('Database not available (using in-memory sessions):', String(error));
+    }
   }
 
   // 5. 初始化 MemoryService（session handler 的 handleCreate 会调用 getMemoryService）
@@ -669,10 +704,8 @@ function createApp(): express.Express {
         }
       }
 
-      // Create initial messages array with user message
-      // (AgentLoop expects the caller to add user message to messages before run())
+      // ── 构建消息历史（多轮上下文）──
       const userContent: unknown[] = [{ type: 'text', text: prompt }];
-      // 附件支持：将 base64 图片转为 multipart content
       if (req.body.attachments?.length) {
         for (const att of req.body.attachments) {
           if (att.category === 'image' && att.data) {
@@ -684,72 +717,282 @@ function createApp(): express.Express {
         }
       }
 
-      const messages = [{
-        id: `msg-${Date.now()}`,
+      const msgId = `msg-${Date.now()}`;
+      const userMsg: CachedMessage = {
+        id: msgId,
         role: 'user' as const,
-        content: userContent.length === 1 ? prompt : userContent,
+        content: prompt,
         timestamp: Date.now(),
-      }];
-
-      // ── Local Tool Proxy: 将本地工具调用代理到前端 Bridge ──
-      const localToolProxy = {
-        execute: async (toolName: string, params: Record<string, unknown>, options: ExecuteOptions) => {
-          if (!isLocalTool(toolName)) {
-            // 非本地工具，使用原始 toolExecutor（由 bootstrap 内部处理）
-            return null; // 返回 null 表示不拦截
-          }
-
-          const bridgeTool = mapToolName(toolName);
-          const toolCallId = `bridge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-          // 通过 SSE 推送 tool_call_local 事件给前端
-          sendSSE(res, 'tool_call_local', {
-            toolCallId,
-            tool: bridgeTool,
-            originalTool: toolName,
-            params,
-            permissionLevel: 'L1',
-            sessionId,
-          });
-
-          // 创建 Promise 等待前端回传结果
-          return new Promise<{ success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }>((resolve, reject) => {
-            const timer = setTimeout(() => {
-              pendingLocalToolCalls.delete(toolCallId);
-              resolve({
-                success: false,
-                error: `Local tool '${toolName}' timed out after ${LOCAL_TOOL_TIMEOUT_MS / 1000}s waiting for Bridge response`,
-              });
-            }, LOCAL_TOOL_TIMEOUT_MS);
-
-            pendingLocalToolCalls.set(toolCallId, { resolve, reject, timer });
-          });
-        },
       };
 
-      // 创建包装 ToolExecutor：本地工具走 Bridge，其他工具走原始路径
+      // 加载历史消息 + 当前用户消息
+      // 只传 role/content/timestamp 给 agentLoop，toolCalls/thinking 仅用于持久化
+      const history = (sessionMessages.get(sessionId) || []).map(({ id, role, content, timestamp }) => ({
+        id, role: role as 'user' | 'assistant', content, timestamp,
+      }));
+      const messages = [...history, userMsg] as import('../shared/types').Message[];
+
+      // ── Tool Executor 选择 ──
+      // webServer 本身是 Node.js 进程，默认直接用 originalExecutor 执行本地工具。
+      // 仅当 BRIDGE_MODE=true（远程部署）时才走 Bridge 代理路径。
+      const useBridge = process.env.BRIDGE_MODE === 'true';
       const { getToolExecutor } = await import('../cli/bootstrap');
       const originalExecutor = getToolExecutor();
-      const bridgeToolExecutor = originalExecutor ? {
-        execute: async (toolName: string, params: Record<string, unknown>, options: ExecuteOptions) => {
-          const proxyResult = await localToolProxy.execute(toolName, params, options);
-          if (proxyResult !== null) return proxyResult;
-          return originalExecutor.execute(toolName, params, options);
-        },
+
+      let bridgeToolExecutor = originalExecutor ? {
+        execute: originalExecutor.execute.bind(originalExecutor),
         setWorkingDirectory: originalExecutor.setWorkingDirectory?.bind(originalExecutor),
         setAuditEnabled: originalExecutor.setAuditEnabled?.bind(originalExecutor),
       } : undefined;
 
+      if (useBridge && originalExecutor) {
+        // 远程部署模式：本地工具通过 Bridge 代理到用户机器执行
+        const localToolProxy = {
+          execute: async (toolName: string, params: Record<string, unknown>, _options: ExecuteOptions) => {
+            if (!isLocalTool(toolName)) return null;
+
+            const bridgeTool = mapToolName(toolName);
+            const toolCallId = `bridge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+            sendSSE(res, 'tool_call_local', {
+              toolCallId,
+              tool: bridgeTool,
+              originalTool: toolName,
+              params,
+              permissionLevel: 'L1',
+              sessionId,
+            });
+
+            return new Promise<{ success: boolean; output?: string; error?: string; metadata?: Record<string, unknown> }>((resolve) => {
+              const timer = setTimeout(() => {
+                pendingLocalToolCalls.delete(toolCallId);
+                resolve({
+                  success: false,
+                  error: `Local tool '${toolName}' timed out after ${LOCAL_TOOL_TIMEOUT_MS / 1000}s waiting for Bridge response`,
+                });
+              }, LOCAL_TOOL_TIMEOUT_MS);
+
+              pendingLocalToolCalls.set(toolCallId, { resolve, reject: () => { clearTimeout(timer); }, timer });
+            });
+          },
+        };
+
+        bridgeToolExecutor = {
+          execute: async (toolName: string, params: Record<string, unknown>, options: ExecuteOptions) => {
+            const proxyResult = await localToolProxy.execute(toolName, params, options);
+            if (proxyResult === null) return originalExecutor.execute(toolName, params, options);
+            // Bridge 连接失败时降级到本地执行
+            if (!proxyResult.success && proxyResult.error?.includes('Bridge is not connected')) {
+              logger.warn(`[BridgeProxy] Bridge down, falling back to local executor for: ${toolName}`);
+              return originalExecutor.execute(toolName, params, options);
+            }
+            return proxyResult;
+          },
+          setWorkingDirectory: originalExecutor.setWorkingDirectory?.bind(originalExecutor),
+          setAuditEnabled: originalExecutor.setAuditEnabled?.bind(originalExecutor),
+        };
+      }
+
+      // 收集助手回复（文本 + 工具调用 + 思考过程）
+      let assistantText = '';
+      let assistantThinking = '';
+      let consecutiveToolFailures = 0;
+      const assistantToolCalls: CachedToolCall[] = [];
+      const toolResultMessages: CachedMessage[] = [];
+
       const agentLoop = createAgentLoop(config, (event) => {
-        // 所有事件都附带 sessionId，确保前端会话隔离正常工作
-        const eventData = event.data ? { ...event.data, sessionId } : { sessionId };
-        sendSSE(res, event.type, eventData);
+        // SSE envelope: { data, sessionId } — 与 Electron IPC 保持一致
+        // 不 spread event.data，避免数组（如 todo_update 的 TodoItem[]）被展开为对象
+        sendSSE(res, event.type, { data: event.data, sessionId });
+
+        // 收集 stream_chunk 中的文本
+        if (event.type === 'stream_chunk' && event.data?.content) {
+          assistantText += event.data.content;
+        }
+        // 收集 reasoning/thinking
+        if (event.type === 'stream_reasoning' && event.data?.content) {
+          assistantThinking += event.data.content;
+        }
+        // 收集工具调用开始
+        if (event.type === 'tool_call_start' && event.data) {
+          assistantToolCalls.push({
+            id: event.data.id || `tool-${assistantToolCalls.length}`,
+            name: event.data.name || 'unknown',
+          });
+        }
+        // 收集工具调用结果 + 连续失败检测
+        if (event.type === 'tool_call_end' && event.data) {
+          const output = event.data.success
+            ? String(event.data.output || '').substring(0, 500)
+            : `Error: ${event.data.error || 'unknown'}`;
+          toolResultMessages.push({
+            id: `toolres-${Date.now()}-${toolResultMessages.length}`,
+            role: 'tool',
+            content: output,
+            timestamp: Date.now(),
+          });
+          // 工具失败时通知前端
+          if (!event.data.success) {
+            consecutiveToolFailures++;
+            if (consecutiveToolFailures >= 2) {
+              sendSSE(res, 'error', {
+                data: { message: `工具连续 ${consecutiveToolFailures} 次失败: ${event.data.error || 'unknown'}`, level: 'warning' },
+                sessionId,
+              });
+            }
+          } else {
+            consecutiveToolFailures = 0;
+          }
+        }
       }, messages, undefined, undefined, bridgeToolExecutor);
 
       // 存储当前 agentLoop 引用，供 cancel 使用
       activeAgentLoops.set(sessionId, agentLoop);
 
       await agentLoop.run(prompt);
+
+      // ── 缓存会话消息（维持多轮上下文）──
+      // 无论 assistantText 是否为空都要缓存 userMsg，否则工具-only 轮次会丢失上下文
+      const assistantMsgId = `msg-${Date.now()}-a`;
+      const cached = [...(sessionMessages.get(sessionId) || []), userMsg];
+      if (assistantText || assistantToolCalls.length > 0) {
+        cached.push({
+          id: assistantMsgId,
+          role: 'assistant',
+          content: assistantText,
+          timestamp: Date.now(),
+          toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : undefined,
+          thinking: assistantThinking || undefined,
+        });
+        // 注意：toolResultMessages 不存入 sessionMessages，避免 role:'tool' 消息
+        // 被传入 createAgentLoop 导致类型不匹配。工具结果只存到 DB/Supabase。
+      }
+      sessionMessages.set(sessionId, cached);
+
+      // LRU 清理：超过上限时移除最旧的会话
+      if (sessionMessages.size > SESSION_CACHE_MAX) {
+        const oldestKey = sessionMessages.keys().next().value;
+        if (oldestKey) sessionMessages.delete(oldestKey);
+      }
+
+      // ── 更新内存会话元数据 ──
+      {
+        const title = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
+        const existing = inMemorySessions.get(sessionId);
+        if (existing) {
+          existing.updatedAt = Date.now();
+          existing.messageCount = (sessionMessages.get(sessionId) || []).length;
+          if (history.length === 0) existing.title = title;
+        } else {
+          inMemorySessions.set(sessionId, {
+            id: sessionId,
+            title,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            messageCount: (sessionMessages.get(sessionId) || []).length,
+          });
+        }
+      }
+
+      // ── 持久化到数据库（如果可用）──
+      if (dbAvailable) {
+        try {
+          const { getDatabase } = await import('../main/services/core/databaseService');
+          const db = getDatabase();
+          const existingSession = db.getSession(sessionId);
+          if (!existingSession) {
+            const { DEFAULT_PROVIDER, DEFAULT_MODELS } = await import('../shared/constants');
+            db.createSessionWithId(sessionId, {
+              title: prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt,
+              generationId: 'gen8',
+              modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.chat },
+            });
+          }
+          db.addMessage(sessionId, {
+            id: msgId,
+            role: 'user',
+            content: prompt,
+            timestamp: userMsg.timestamp,
+          } as import('../shared/types').Message);
+          if (assistantText || assistantToolCalls.length > 0) {
+            db.addMessage(sessionId, {
+              id: assistantMsgId,
+              role: 'assistant',
+              content: assistantText,
+              timestamp: Date.now(),
+              toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : undefined,
+              thinking: assistantThinking || undefined,
+            } as import('../shared/types').Message);
+          }
+          if (history.length === 0) {
+            const title = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
+            db.updateSession(sessionId, { title, updatedAt: Date.now() });
+          } else {
+            db.updateSession(sessionId, { updatedAt: Date.now() });
+          }
+        } catch (dbErr) {
+          logger.warn('Failed to persist messages to DB:', (dbErr as Error).message);
+        }
+      }
+
+      // ── 持久化到 Supabase（Web 模式云端同步）──
+      try {
+        const sb = await getSupabaseForSession();
+        if (sb) {
+          const { DEFAULT_PROVIDER, DEFAULT_MODELS } = await import('../shared/constants');
+          const title = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
+          // Upsert session
+          await sb.supabase.from('sessions').upsert({
+            id: sessionId,
+            user_id: sb.userId,
+            title,
+            generation_id: 'gen8',
+            model_provider: DEFAULT_PROVIDER,
+            model_name: DEFAULT_MODELS.chat,
+            created_at: Date.now(),
+            updated_at: Date.now(),
+            source_device_id: 'web',
+          }, { onConflict: 'id' });
+          // Insert user message
+          await sb.supabase.from('messages').insert({
+            id: msgId,
+            session_id: sessionId,
+            user_id: sb.userId,
+            role: 'user',
+            content: prompt,
+            timestamp: userMsg.timestamp,
+            updated_at: Date.now(),
+            source_device_id: 'web',
+          });
+          // Insert assistant message
+          if (assistantText || assistantToolCalls.length > 0) {
+            await sb.supabase.from('messages').insert({
+              id: assistantMsgId,
+              session_id: sessionId,
+              user_id: sb.userId,
+              role: 'assistant',
+              content: assistantText,
+              tool_calls: assistantToolCalls.length > 0 ? JSON.stringify(assistantToolCalls) : null,
+              thinking: assistantThinking || null,
+              timestamp: Date.now(),
+              updated_at: Date.now(),
+              source_device_id: 'web',
+            });
+          }
+          // 更新会话标题（第一轮消息时）
+          if (history.length === 0) {
+            await sb.supabase.from('sessions').update({ title, updated_at: Date.now() }).eq('id', sessionId);
+          }
+        }
+      } catch (sbErr) {
+        logger.warn('Failed to persist messages to Supabase:', (sbErr as Error).message);
+      }
+
+      // 通知前端更新会话标题（第一轮消息时）
+      if (history.length === 0) {
+        const title = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
+        broadcastSSE('session:updated', { sessionId, updates: { title } });
+      }
 
       // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
       sendSSE(res, 'agent_complete', { sessionId });
@@ -800,112 +1043,316 @@ function createApp(): express.Express {
     res.json({ message: 'Tool result received', toolCallId });
   });
 
-  // ── Sessions ───────────────────────────────────────────────────────
+  // ── Sessions ────────────────────────────────────────────────────────
+  // Web 模式下 better-sqlite3 native module 不可用，AppService 为 null。
+  // 使用 DB 优先 + 内存降级 的双轨策略。
+
+  /**
+   * 获取 SessionManager（仅在 DB 可用时）
+   * @returns SessionManager 或 null（DB 不可用时）
+   */
+  async function tryGetSessionManager() {
+    if (!dbAvailable) return null;
+    try {
+      const { getSessionManager } = await import('../main/services/infra/sessionManager');
+      return getSessionManager();
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 获取 Supabase client + user_id（用于 Web 模式云端持久化）
+   * @returns { supabase, userId } 或 null（Supabase 不可用时）
+   */
+  async function getSupabaseForSession(): Promise<{ supabase: any; userId: string } | null> {
+    try {
+      const { getSupabase, isSupabaseInitialized } = await import('../main/services/infra/supabaseService');
+      if (!isSupabaseInitialized()) return null;
+      const { getAuthService } = await import('../main/services/auth/authService');
+      const user = getAuthService().getCurrentUser();
+      if (!user?.id) return null;
+      return { supabase: getSupabase(), userId: user.id };
+    } catch {
+      return null;
+    }
+  }
+
   app.get('/api/sessions', async (_req: Request, res: Response) => {
     try {
-      const handler = handlers.get('domain:session');
-      if (handler) {
-        const result = await handler(null, {
-          action: 'list',
-          payload: { includeArchived: _req.query.includeArchived === 'true' },
-        });
-        res.json(result);
+      const sm = await tryGetSessionManager();
+      if (sm) {
+        const includeArchived = _req.query.includeArchived === 'true';
+        const sessions = await sm.listSessions({ includeArchived });
+        res.json({ success: true, data: sessions });
         return;
       }
-      res.status(501).json({ error: 'Session handler not registered' });
+      // Supabase 降级：从云端读取会话列表
+      const sb = await getSupabaseForSession();
+      if (sb) {
+        const { data, error } = await sb.supabase
+          .from('sessions')
+          .select('*')
+          .eq('user_id', sb.userId)
+          .eq('is_deleted', false)
+          .order('updated_at', { ascending: false });
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+        return;
+      }
+      // 内存降级（最后兜底）：返回内存中的会话列表
+      const includeArchived = _req.query.includeArchived === 'true';
+      const sessions = [...inMemorySessions.values()]
+        .filter(s => includeArchived || !s.isArchived)
+        .sort((a, b) => b.updatedAt - a.updatedAt);
+      res.json({ success: true, data: sessions });
     } catch (error) {
-      res.status(500).json({ error: formatError(error) });
+      logger.error('GET /api/sessions failed:', error);
+      res.json({ success: false, error: { code: 'DB_ERROR', message: formatError(error) } });
     }
   });
 
   app.post('/api/sessions', async (req: Request, res: Response) => {
     try {
-      const handler = handlers.get('domain:session');
-      if (handler) {
-        const result = await handler(null, { action: 'create', payload: req.body });
-        res.json(result);
+      const sm = await tryGetSessionManager();
+      if (sm) {
+        const { DEFAULT_PROVIDER, DEFAULT_MODELS, MODEL_MAX_TOKENS } = await import('../shared/constants');
+        const title = req.body?.title || 'New Session';
+        const session = await sm.createSession({
+          title,
+          generationId: 'gen8',
+          modelConfig: {
+            provider: DEFAULT_PROVIDER,
+            model: DEFAULT_MODELS.chat,
+            temperature: 0.7,
+            maxTokens: MODEL_MAX_TOKENS.DEFAULT,
+          },
+        });
+        sm.setCurrentSession(session.id);
+        res.json({ success: true, data: session });
         return;
       }
-      res.status(501).json({ error: 'Session handler not registered' });
+      // Supabase 降级：创建云端会话
+      const sb = await getSupabaseForSession();
+      if (sb) {
+        const now = Date.now();
+        const sessionId = `session_${now}_${Math.random().toString(36).slice(2, 8)}`;
+        const { DEFAULT_PROVIDER, DEFAULT_MODELS } = await import('../shared/constants');
+        const newSession = {
+          id: sessionId,
+          user_id: sb.userId,
+          title: req.body?.title || 'New Session',
+          generation_id: 'gen8',
+          model_provider: DEFAULT_PROVIDER,
+          model_name: DEFAULT_MODELS.chat,
+          created_at: now,
+          updated_at: now,
+          source_device_id: 'web',
+        };
+        const { data, error } = await sb.supabase.from('sessions').insert(newSession).select().single();
+        if (error) throw error;
+        res.json({ success: true, data });
+        return;
+      }
+      // 内存降级（最后兜底）：创建内存会话
+      const now = Date.now();
+      const session: InMemorySession = {
+        id: `session_${now}_${Math.random().toString(36).slice(2, 8)}`,
+        title: req.body?.title || 'New Session',
+        createdAt: now,
+        updatedAt: now,
+        messageCount: 0,
+      };
+      inMemorySessions.set(session.id, session);
+      res.json({ success: true, data: session });
     } catch (error) {
-      res.status(500).json({ error: formatError(error) });
+      logger.error('POST /api/sessions failed:', error);
+      res.json({ success: false, error: { code: 'DB_ERROR', message: formatError(error) } });
     }
   });
 
   app.get('/api/sessions/:id', async (req: Request, res: Response) => {
     try {
-      const handler = handlers.get('domain:session');
-      if (handler) {
-        const result = await handler(null, { action: 'load', payload: { sessionId: req.params.id } });
-        res.json(result);
+      const sessionId = req.params.id as string;
+      const sm = await tryGetSessionManager();
+      if (sm) {
+        const session = await sm.restoreSession(sessionId);
+        if (!session) {
+          res.json({ success: false, error: { code: 'NOT_FOUND', message: `Session ${sessionId} not found` } });
+          return;
+        }
+        res.json({ success: true, data: session });
         return;
       }
-      res.status(501).json({ error: 'Session handler not registered' });
+      // Supabase 降级：从云端读取会话 + 消息
+      const sb = await getSupabaseForSession();
+      if (sb) {
+        const { data: sessionData, error: sessionErr } = await sb.supabase
+          .from('sessions')
+          .select('*')
+          .eq('id', sessionId)
+          .eq('user_id', sb.userId)
+          .eq('is_deleted', false)
+          .single();
+        if (sessionErr || !sessionData) {
+          res.json({ success: false, error: { code: 'NOT_FOUND', message: `Session ${sessionId} not found` } });
+          return;
+        }
+        const { data: msgData } = await sb.supabase
+          .from('messages')
+          .select('*')
+          .eq('session_id', sessionId)
+          .eq('is_deleted', false)
+          .order('timestamp', { ascending: true });
+        const messages = (msgData || []).map((m: any) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp,
+          toolCalls: m.tool_calls || [],
+        }));
+        res.json({ success: true, data: { ...sessionData, messages, todos: [] } });
+        return;
+      }
+      // 内存降级（最后兜底）：返回内存会话 + 缓存的消息
+      const session = inMemorySessions.get(sessionId);
+      if (!session) {
+        res.json({ success: false, error: { code: 'NOT_FOUND', message: `Session ${sessionId} not found` } });
+        return;
+      }
+      const messages = (sessionMessages.get(sessionId) || []).map(m => ({
+        ...m,
+        toolCalls: [],
+      }));
+      res.json({ success: true, data: { ...session, messages, todos: [] } });
     } catch (error) {
-      res.status(500).json({ error: formatError(error) });
+      logger.error('GET /api/sessions/:id failed:', error);
+      res.json({ success: false, error: { code: 'DB_ERROR', message: formatError(error) } });
     }
   });
 
   app.get('/api/sessions/:id/messages', async (req: Request, res: Response) => {
     try {
-      const handler = handlers.get('domain:session');
-      if (handler) {
-        const result = await handler(null, {
-          action: 'getMessages',
-          payload: {
-            sessionId: req.params.id,
-            limit: req.query.limit ? Number(req.query.limit) : undefined,
-            before: req.query.before as string | undefined,
-          },
-        });
-        res.json(result);
+      const sessionId = req.params.id as string;
+      const sm = await tryGetSessionManager();
+      if (sm) {
+        const limit = req.query.limit ? Number(req.query.limit) : undefined;
+        const messages = await sm.getMessages(sessionId, limit);
+        res.json({ success: true, data: messages });
         return;
       }
-      res.status(501).json({ error: 'Session handler not registered' });
+      // Supabase 降级：从云端读取消息
+      const sb = await getSupabaseForSession();
+      if (sb) {
+        let query = sb.supabase
+          .from('messages')
+          .select('*')
+          .eq('session_id', sessionId)
+          .eq('is_deleted', false)
+          .order('timestamp', { ascending: true });
+        const limit = req.query.limit ? Number(req.query.limit) : undefined;
+        if (limit) query = query.limit(limit);
+        const { data, error } = await query;
+        if (error) throw error;
+        const messages = (data || []).map((m: any) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp,
+          toolCalls: m.tool_calls || [],
+        }));
+        res.json({ success: true, data: messages });
+        return;
+      }
+      // 内存降级（最后兜底）
+      const messages = (sessionMessages.get(sessionId) || []).map(m => ({
+        ...m,
+        toolCalls: [],
+      }));
+      res.json({ success: true, data: messages });
     } catch (error) {
-      res.status(500).json({ error: formatError(error) });
+      logger.error('GET /api/sessions/:id/messages failed:', error);
+      res.json({ success: false, error: { code: 'DB_ERROR', message: formatError(error) } });
     }
   });
 
   app.delete('/api/sessions/:id', async (req: Request, res: Response) => {
     try {
-      const handler = handlers.get('domain:session');
-      if (handler) {
-        const result = await handler(null, { action: 'delete', payload: { sessionId: req.params.id } });
-        res.json(result);
-        return;
+      const sessionId = req.params.id as string;
+      const sm = await tryGetSessionManager();
+      if (sm) {
+        await sm.deleteSession(sessionId);
+      } else {
+        // Supabase 降级：软删除（设置 is_deleted = true）
+        const sb = await getSupabaseForSession();
+        if (sb) {
+          const now = Date.now();
+          await sb.supabase.from('sessions').update({ is_deleted: true, updated_at: now }).eq('id', sessionId).eq('user_id', sb.userId);
+          await sb.supabase.from('messages').update({ is_deleted: true, updated_at: now }).eq('session_id', sessionId).eq('user_id', sb.userId);
+        }
       }
-      res.status(501).json({ error: 'Session handler not registered' });
+      inMemorySessions.delete(sessionId);
+      sessionMessages.delete(sessionId);
+      res.json({ success: true, data: null });
     } catch (error) {
-      res.status(500).json({ error: formatError(error) });
+      logger.error('DELETE /api/sessions/:id failed:', error);
+      res.json({ success: false, error: { code: 'DB_ERROR', message: formatError(error) } });
     }
   });
 
   app.post('/api/sessions/:id/archive', async (req: Request, res: Response) => {
     try {
-      const handler = handlers.get('domain:session');
-      if (handler) {
-        const result = await handler(null, { action: 'archive', payload: { sessionId: req.params.id } });
-        res.json(result);
+      const sessionId = req.params.id as string;
+      const sm = await tryGetSessionManager();
+      if (sm) {
+        const result = await sm.archiveSession(sessionId);
+        res.json({ success: true, data: result });
         return;
       }
-      res.status(501).json({ error: 'Session handler not registered' });
+      // Supabase 降级：无 is_archived 列，直接返回成功
+      const sb = await getSupabaseForSession();
+      if (sb) {
+        res.json({ success: true, data: null });
+        return;
+      }
+      // 内存降级（最后兜底）
+      const session = inMemorySessions.get(sessionId);
+      if (session) {
+        session.isArchived = true;
+        session.archivedAt = Date.now();
+      }
+      res.json({ success: true, data: session || null });
     } catch (error) {
-      res.status(500).json({ error: formatError(error) });
+      logger.error('POST /api/sessions/:id/archive failed:', error);
+      res.json({ success: false, error: { code: 'DB_ERROR', message: formatError(error) } });
     }
   });
 
   app.post('/api/sessions/:id/unarchive', async (req: Request, res: Response) => {
     try {
-      const handler = handlers.get('domain:session');
-      if (handler) {
-        const result = await handler(null, { action: 'unarchive', payload: { sessionId: req.params.id } });
-        res.json(result);
+      const sessionId = req.params.id as string;
+      const sm = await tryGetSessionManager();
+      if (sm) {
+        const result = await sm.unarchiveSession(sessionId);
+        res.json({ success: true, data: result });
         return;
       }
-      res.status(501).json({ error: 'Session handler not registered' });
+      // Supabase 降级：无 is_archived 列，直接返回成功
+      const sb = await getSupabaseForSession();
+      if (sb) {
+        res.json({ success: true, data: null });
+        return;
+      }
+      // 内存降级（最后兜底）
+      const session = inMemorySessions.get(sessionId);
+      if (session) {
+        session.isArchived = false;
+        session.archivedAt = undefined;
+      }
+      res.json({ success: true, data: session || null });
     } catch (error) {
-      res.status(500).json({ error: formatError(error) });
+      logger.error('POST /api/sessions/:id/unarchive failed:', error);
+      res.json({ success: false, error: { code: 'DB_ERROR', message: formatError(error) } });
     }
   });
 
@@ -1152,7 +1599,9 @@ function sendSSE(res: http.ServerResponse, event: string, data: unknown): void {
 }
 
 function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  try { return JSON.stringify(error); } catch { return String(error); }
 }
 
 // ============================================================================
@@ -1179,13 +1628,6 @@ async function main(): Promise<void> {
   // 3. 启动 HTTP 服务
   console.log('[3/3] Starting HTTP server...');
   const app = createApp();
-
-  // ── Static files (production) ─────────────────────────────────────
-  const staticDir = path.join(process.cwd(), 'dist/renderer');
-  app.use(express.static(staticDir));
-  app.get('/{*path}', (_req: any, res: any) => {
-    res.sendFile(path.join(staticDir, 'index.html'));
-  });
 
   const server = http.createServer(app);
 

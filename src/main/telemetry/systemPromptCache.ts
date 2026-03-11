@@ -21,9 +21,9 @@ export class SystemPromptCache {
   }
 
   private getDb() {
-    const db = getDatabase().getDb();
-    if (!db) throw new Error('Database not initialized');
-    return db;
+    const dbService = getDatabase();
+    if (!dbService.isReady) return null;
+    return dbService.getDb();
   }
 
   /**
@@ -31,7 +31,9 @@ export class SystemPromptCache {
    */
   ensureTable(): void {
     try {
-      this.getDb().exec(`
+      const db = this.getDb();
+      if (!db) return;
+      db.exec(`
         CREATE TABLE IF NOT EXISTS system_prompt_cache (
           hash TEXT PRIMARY KEY,
           content TEXT NOT NULL,
@@ -50,7 +52,9 @@ export class SystemPromptCache {
    */
   store(hash: string, content: string, tokens?: number, generationId?: string): void {
     try {
-      this.getDb().prepare(`
+      const db = this.getDb();
+      if (!db) return;
+      db.prepare(`
         INSERT OR IGNORE INTO system_prompt_cache (hash, content, tokens, generation_id, created_at)
         VALUES (?, ?, ?, ?, ?)
       `).run(hash, content, tokens ?? null, generationId ?? null, Date.now());
@@ -64,7 +68,9 @@ export class SystemPromptCache {
    */
   get(hash: string): { content: string; tokens: number | null; generationId: string | null } | null {
     try {
-      const row = this.getDb().prepare(`
+      const db = this.getDb();
+      if (!db) return null;
+      const row = db.prepare(`
         SELECT content, tokens, generation_id FROM system_prompt_cache WHERE hash = ?
       `).get(hash) as { content: string; tokens: number | null; generation_id: string | null } | undefined;
 

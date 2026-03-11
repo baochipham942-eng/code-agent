@@ -26,7 +26,7 @@ import { setupAllIpcHandlers } from './ipc';
 const PROTOCOL = 'code-agent';
 
 // Register deep link protocol (must be before app.whenReady)
-if (process.defaultApp) {
+if ((process as any).defaultApp) {
   // Development: need to pass the script path
   if (process.argv.length >= 2) {
     app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [process.argv[1]]);
@@ -75,7 +75,7 @@ function handleDeepLink(url: string): void {
 }
 
 // macOS: Handle open-url event
-app.on('open-url', (event, url) => {
+app.on('open-url', (event: any, url: any) => {
   event.preventDefault();
   handleDeepLink(url);
 });
@@ -86,7 +86,7 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', (_event, argv) => {
+  app.on('second-instance', (_event: any, argv: any) => {
     // Someone tried to run a second instance, focus our window
     const mainWindow = getMainWindow();
     if (mainWindow) {
@@ -95,7 +95,7 @@ if (!gotTheLock) {
     }
 
     // Handle deep link from argv (Windows/Linux)
-    const url = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
+    const url = argv.find((arg: any) => arg.startsWith(`${PROTOCOL}://`));
     if (url) {
       handleDeepLink(url);
     }

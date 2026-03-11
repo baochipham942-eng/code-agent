@@ -111,69 +111,11 @@ function parseCheckboxTodos(content: string): TodoItem[] | null {
 }
 
 // ============================================================================
-// 解析器：编号列表格式
+// 编号列表解析已移除
 // ============================================================================
-
-/**
- * 解析编号列表格式的任务列表
- * 格式：1. xxx  /  2. xxx  /  3. xxx
- * 支持中文序号：第一步、第二步 等
- */
-function parseNumberedTodos(content: string): TodoItem[] | null {
-  const lines = content.split('\n');
-  const items: TodoItem[] = [];
-  let consecutiveCount = 0;
-  let lastNumber = 0;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    // 匹配编号列表：1. xxx / 1) xxx / 1、xxx
-    const match = trimmed.match(/^(\d+)[.)\uff09\u3001]\s+(.+)$/);
-    if (match) {
-      const num = parseInt(match[1], 10);
-      const taskContent = match[2].trim();
-
-      // 编号必须是递增的（允许从任意数字开始，但必须连续或递增）
-      if (consecutiveCount === 0 || num > lastNumber) {
-        consecutiveCount++;
-        lastNumber = num;
-
-        items.push({
-          content: taskContent,
-          status: 'pending',
-          activeForm: taskContent.slice(0, 30) + (taskContent.length > 30 ? '...' : ''),
-        });
-      } else {
-        // 编号不递增，重置
-        if (consecutiveCount >= 3) break;
-        consecutiveCount = 1;
-        lastNumber = num;
-        items.length = 0;
-        items.push({
-          content: taskContent,
-          status: 'pending',
-          activeForm: taskContent.slice(0, 30) + (taskContent.length > 30 ? '...' : ''),
-        });
-      }
-    } else if (trimmed === '') {
-      // 空行不中断
-      continue;
-    } else {
-      // 非编号行
-      if (consecutiveCount >= 3) {
-        break;
-      }
-      consecutiveCount = 0;
-      lastNumber = 0;
-      items.length = 0;
-    }
-  }
-
-  if (items.length >= 3) {
-    return items;
-  }
-  return null;
-}
+// 编号列表（1. xxx / 2. xxx）在普通文本中太常见，容易将模型的建议性内容
+// 误解析为待办任务，导致 "Agent completing with incomplete items" 假警告。
+// 对标 Claude Code：只通过显式 checkbox 格式（- [ ] / - [x]）识别任务。
 
 // ============================================================================
 // 主解析函数
@@ -190,18 +132,12 @@ export function parseTodos(content: string): TodoItem[] | null {
   // 先剥离代码块，避免误识别
   const cleaned = stripCodeBlocks(content);
 
-  // 优先尝试 checkbox 格式（更结构化，误识别率低）
+  // 只解析显式 checkbox 格式（- [ ] / - [x]），不解析编号列表
+  // 对标 Claude Code：任务必须是显式标记的，不从普通文本推断
   const checkboxResult = parseCheckboxTodos(cleaned);
   if (checkboxResult) {
     logger.debug(`[TodoParser] 从 checkbox 格式解析到 ${checkboxResult.length} 个任务`);
     return checkboxResult;
-  }
-
-  // 再尝试编号列表格式
-  const numberedResult = parseNumberedTodos(cleaned);
-  if (numberedResult) {
-    logger.debug(`[TodoParser] 从编号列表解析到 ${numberedResult.length} 个任务`);
-    return numberedResult;
   }
 
   return null;

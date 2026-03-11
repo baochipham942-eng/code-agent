@@ -55,7 +55,7 @@ function getPythonScriptPath(): string {
   }
 
   // 资源目录
-  const resourcePath = path.join(process.resourcesPath || '', 'scripts/xlwings_bridge.py');
+  const resourcePath = path.join((process as any).resourcesPath || '', 'scripts/xlwings_bridge.py');
   if (fs.existsSync(resourcePath)) {
     return resourcePath;
   }

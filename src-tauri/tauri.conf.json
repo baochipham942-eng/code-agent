@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Code Agent",
-  "version": "0.16.51",
+  "version": "0.16.52",
   "identifier": "com.linchen.code-agent",
   "build": {
     "beforeDevCommand": "npm run build:web && node dist/web/webServer.cjs &",

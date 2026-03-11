@@ -22,12 +22,14 @@ export const bashTool: Tool = {
   name: 'Bash',
   description: `Executes a bash command and returns its output. Use for system commands, running scripts, git operations, and terminal tasks. Working directory persists between calls.
 
-IMPORTANT: Do NOT use Bash when a dedicated tool exists:
-- Read files: Use Read (NOT cat, head, tail)
-- Edit files: Use Edit (NOT sed, awk, or echo/cat redirection)
-- Create files: Use Write (NOT cat with heredoc or echo redirection)
-- Search files: Use Glob (NOT find or ls)
-- Search content: Use Grep (NOT grep or rg)
+IMPORTANT: Avoid using this tool to run \`find\`, \`grep\`, \`cat\`, \`head\`, \`tail\`, \`sed\`, \`awk\`, or \`echo\` commands. Instead, use the appropriate dedicated tool as this will be much faster and more reliable:
+- File search: Use Glob (NOT find or ls)
+- Content search: Use Grep (NOT grep or rg)
+- Read files: Use Read (NOT cat/head/tail/sed -n/awk/python3 file reads)
+- Edit files: Use Edit (NOT sed/awk)
+- Write files: Use Write (NOT echo >/cat <<EOF)
+
+Reserve Bash exclusively for: running scripts, git commands, installing packages, compilation, and other system operations that genuinely require shell execution. If you are unsure, default to the dedicated tool.
 
 Git: NEVER --force push or --no-verify unless explicitly requested.`,
 
@@ -231,58 +233,6 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
         error: `❌ 工具混淆: "${toolName}(...)" 不是 shell 命令。请直接使用 ${toolName} 工具，而不是在 bash 中调用。\n\n` +
           `正确用法: 调用 ${toolName} 工具并传入 JSON 参数\n` +
           `错误用法: bash(command="${toolName}({...})")`,
-      };
-    }
-
-    // File-reading anti-pattern detection (multi-layer)
-    // Layer 1: Simple commands — cat/head/tail/awk/sed on a single file (no pipes)
-    const simpleFileReadMatch = command.match(
-      /^\s*(cat|sed\s+-n|head(?!\s+-f)|tail(?!\s+-f)|awk)\s+(?!.*[|&*])(['"]?)([^\s'";&|<>*]+\.[^\s'";&|<>*]+)\2\s*$/
-    );
-    // Layer 2: Piped file reads — cat file | sed/head/tail, grep file | head
-    const pipedFileReadMatch = !simpleFileReadMatch && command.match(
-      /^\s*(cat(?:\s+-n)?|grep\s+.*?)\s+(['"]?)([^\s'";&|<>*]+\.\w+)\2\s*\|\s*(sed|head|tail|awk|grep|wc)/
-    );
-    // Layer 3: awk/sed with inline patterns on a file (includes sed -n 'range' file)
-    const awkSedPatternMatch = !simpleFileReadMatch && !pipedFileReadMatch && command.match(
-      /^\s*(awk|sed)\s+(?:-\w+\s+)?['"].*?['"]\s+(['"]?)([^\s'";&|<>*]+\.\w+)\2\s*$/
-    );
-    // Layer 4: python3 reading files — python3 -c "...open('file')..." or python3 << heredoc with open()
-    const pythonFileReadMatch = !simpleFileReadMatch && !pipedFileReadMatch && !awkSedPatternMatch && command.match(
-      /python3?\s+[\s\S]*?open\s*\(\s*['"]([^'"]+\.\w+)['"]\s*\)/
-    );
-
-    const fileReadDetected = simpleFileReadMatch || pipedFileReadMatch || awkSedPatternMatch || pythonFileReadMatch;
-    if (fileReadDetected) {
-      const filePath = (simpleFileReadMatch && simpleFileReadMatch[3]) || (pipedFileReadMatch && pipedFileReadMatch[3]) || (awkSedPatternMatch && awkSedPatternMatch[3]) || (pythonFileReadMatch && pythonFileReadMatch[1]) || 'unknown';
-      const detectedCmd = command.length > 80 ? command.substring(0, 80) + '...' : command;
-      return {
-        success: false,
-        error:
-          `⚠️ 文件读取应使用 Read 工具，而非 Bash。\n\n` +
-          `检测到: \`${detectedCmd}\`\n\n` +
-          `请改用:\n` +
-          `- 读取整个文件: Read(file_path="${filePath}")\n` +
-          `- 读取指定行段: Read(file_path="${filePath}", offset=100, limit=50)\n` +
-          `- 搜索文件内容: Grep(pattern="关键词", path="${filePath}")\n\n` +
-          `Read 工具平均 25ms，Bash 读文件平均 21s。`,
-      };
-    }
-
-    // Grep-in-bash anti-pattern: grep/rg on a file should use Grep tool
-    const grepInBashMatch = command.match(
-      /^\s*(grep|rg)\s+(?:-[a-zA-Z]*\s+)*(['"]?)(.+?)\2\s+(['"]?)([^\s'";&|<>*]+\.\w+)\4\s*(?:\|.*)?$/
-    );
-    if (grepInBashMatch) {
-      const pattern = grepInBashMatch[3];
-      const filePath = grepInBashMatch[5];
-      return {
-        success: false,
-        error:
-          `⚠️ 内容搜索应使用 Grep 工具，而非 Bash。\n\n` +
-          `检测到: \`${command.length > 80 ? command.substring(0, 80) + '...' : command}\`\n\n` +
-          `请改用: Grep(pattern="${pattern}", path="${filePath}", output_mode="content")\n\n` +
-          `Grep 工具更快，支持正则、行号、上下文。`,
       };
     }
 

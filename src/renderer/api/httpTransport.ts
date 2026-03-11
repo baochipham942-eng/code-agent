@@ -330,8 +330,15 @@ export function createHttpElectronAPI(baseUrl: string): ElectronAPI {
           const json = await response.json();
           // 解包 IPCResponse 格式: webServer 返回 {success, data} 包装体
           // 前端 store 期望的是裸数据（Session[], AppSettings 等）
-          if (json && typeof json === 'object' && 'success' in json && 'data' in json) {
-            return json.data as ReturnType<IpcInvokeHandlers[K]>;
+          if (json && typeof json === 'object' && 'success' in json) {
+            if (json.success === false) {
+              // 错误响应（如 NOT_FOUND）不应作为有效数据透传到前端
+              console.warn(`[HttpTransport] ${channel} returned error:`, json.error);
+              return undefined as ReturnType<IpcInvokeHandlers[K]>;
+            }
+            if ('data' in json) {
+              return json.data as ReturnType<IpcInvokeHandlers[K]>;
+            }
           }
           return json as ReturnType<IpcInvokeHandlers[K]>;
         }

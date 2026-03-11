@@ -898,36 +898,61 @@ function createApp(): express.Express {
         }
       }
 
-      // ── 持久化到数据库（如果可用）──
+      // ── 持久化到数据库（优先走 SM 保持缓存一致）──
       if (dbAvailable) {
         try {
-          const { getDatabase } = await import('../main/services/core/databaseService');
-          const db = getDatabase();
-          const existingSession = db.getSession(sessionId);
-          if (!existingSession) {
-            const { DEFAULT_PROVIDER, DEFAULT_MODELS } = await import('../shared/constants');
-            db.createSessionWithId(sessionId, {
-              title: prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt,
-              generationId: 'gen8',
-              modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.chat },
-            });
-          }
-          db.addMessage(sessionId, {
-            id: msgId,
-            role: 'user',
-            content: prompt,
-            timestamp: userMsg.timestamp,
-          } as import('../shared/types').Message);
-          if (assistantText || assistantToolCalls.length > 0) {
-            db.addMessage(sessionId, {
-              id: assistantMsgId,
-              role: 'assistant',
-              content: assistantText,
-              timestamp: Date.now(),
-              toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : undefined,
-              thinking: assistantThinking || undefined,
+          const sm = await tryGetSessionManager();
+          if (sm) {
+            // 通过 SM 写入，同时更新 DB 和 sessionCache
+            await sm.addMessageToSession(sessionId, {
+              id: msgId,
+              role: 'user',
+              content: prompt,
+              timestamp: userMsg.timestamp,
             } as import('../shared/types').Message);
+            if (assistantText || assistantToolCalls.length > 0) {
+              await sm.addMessageToSession(sessionId, {
+                id: assistantMsgId,
+                role: 'assistant',
+                content: assistantText,
+                timestamp: Date.now(),
+                toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : undefined,
+                thinking: assistantThinking || undefined,
+              } as import('../shared/types').Message);
+            }
+          } else {
+            // SM 不可用时降级为直写 DB
+            const { getDatabase } = await import('../main/services/core/databaseService');
+            const db = getDatabase();
+            const existingSession = db.getSession(sessionId);
+            if (!existingSession) {
+              const { DEFAULT_PROVIDER, DEFAULT_MODELS } = await import('../shared/constants');
+              db.createSessionWithId(sessionId, {
+                title: prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt,
+                generationId: 'gen8',
+                modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.chat },
+              });
+            }
+            db.addMessage(sessionId, {
+              id: msgId,
+              role: 'user',
+              content: prompt,
+              timestamp: userMsg.timestamp,
+            } as import('../shared/types').Message);
+            if (assistantText || assistantToolCalls.length > 0) {
+              db.addMessage(sessionId, {
+                id: assistantMsgId,
+                role: 'assistant',
+                content: assistantText,
+                timestamp: Date.now(),
+                toolCalls: assistantToolCalls.length > 0 ? assistantToolCalls : undefined,
+                thinking: assistantThinking || undefined,
+              } as import('../shared/types').Message);
+            }
           }
+          // 更新会话标题/时间戳
+          const { getDatabase: getDb } = await import('../main/services/core/databaseService');
+          const db = getDb();
           if (history.length === 0) {
             const title = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
             db.updateSession(sessionId, { title, updatedAt: Date.now() });
@@ -1181,12 +1206,23 @@ function createApp(): express.Express {
       const sm = await tryGetSessionManager();
       if (sm) {
         const session = await sm.restoreSession(sessionId);
-        if (!session) {
-          res.json({ success: false, error: { code: 'NOT_FOUND', message: `Session ${sessionId} not found` } });
+        if (session) {
+          // DB 路径找到了会话但消息可能为空 — 用内存缓存补充
+          if (session.messages.length === 0 && sessionMessages.has(sessionId)) {
+            const memMessages = (sessionMessages.get(sessionId) || []).map(m => ({
+              ...m,
+              toolCalls: (m as CachedMessage & { toolCalls?: CachedToolCall[] }).toolCalls || [],
+            }));
+            if (memMessages.length > 0) {
+              logger.info('GET /api/sessions/:id — DB messages empty, falling back to in-memory cache', { sessionId, memCount: memMessages.length });
+              session.messages = memMessages as import('../shared/types').Message[];
+            }
+          }
+          res.json({ success: true, data: session });
           return;
         }
-        res.json({ success: true, data: session });
-        return;
+        // SM 找不到会话 — 不要直接返回 NOT_FOUND，继续尝试内存/Supabase 降级
+        logger.info('GET /api/sessions/:id — SM returned null, trying fallback', { sessionId });
       }
       // Supabase 降级：从云端读取会话 + 消息
       const sb = await getSupabaseForSession();
@@ -1226,7 +1262,8 @@ function createApp(): express.Express {
       }
       const messages = (sessionMessages.get(sessionId) || []).map(m => ({
         ...m,
-        toolCalls: [],
+        // 保留已缓存的 toolCalls，不覆盖为空数组（否则 tool-only 助手消息会被前端过滤掉）
+        toolCalls: (m as CachedMessage & { toolCalls?: CachedToolCall[] }).toolCalls || [],
       }));
       res.json({ success: true, data: { ...session, messages, todos: [] } });
     } catch (error) {

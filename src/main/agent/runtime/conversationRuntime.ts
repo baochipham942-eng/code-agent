@@ -428,7 +428,8 @@ export class ConversationRuntime {
 
     if (!isSimpleTask) {
       const complexityHint = taskComplexityAnalyzer.generateComplexityHint(complexityAnalysis);
-      this.contextAssembly.injectSystemMessage(complexityHint);
+      // 持久化到 system context，确保每轮推理都可见（而非注入消息历史后被淹没）
+      this.ctx.persistentSystemContext.push(complexityHint);
 
       // Parallel Judgment via small model (Groq)
       try {
@@ -437,7 +438,7 @@ export class ConversationRuntime {
 
         if (judgment.shouldParallel && judgment.confidence >= 0.7) {
           const parallelHint = orchestrator.generateParallelHint(judgment);
-          this.contextAssembly.injectSystemMessage(parallelHint);
+          this.ctx.persistentSystemContext.push(parallelHint);
 
           logger.info('[AgentLoop] Parallel execution suggested', {
             dimensions: judgment.parallelDimensions,
@@ -461,7 +462,8 @@ export class ConversationRuntime {
         logger.info('Intent classified', { intent, message: userMessage.substring(0, 50) });
 
         if (intent === 'research') {
-          this.contextAssembly.injectResearchModePrompt(userMessage);
+          // 研究模式 prompt 持久化到 system context
+          this.contextAssembly.injectResearchModePrompt(userMessage, this.ctx.persistentSystemContext);
         }
       } catch (error) {
         logger.warn('Intent classification failed, continuing with normal mode', { error: String(error) });
@@ -498,8 +500,9 @@ export class ConversationRuntime {
         if (dynamicResult.userMessage !== userMessage) {
           const reminder = dynamicResult.userMessage.substring(userMessage.length).trim();
           if (reminder) {
-            logger.info(`[AgentLoop] Injecting mode reminder (${reminder.length} chars, ${dynamicResult.tokensUsed} tokens)`);
-            this.contextAssembly.injectSystemMessage(reminder);
+            logger.info(`[AgentLoop] Injecting mode reminder (${reminder.length} chars, ${dynamicResult.tokensUsed} tokens) to persistent context`);
+            // 任务模式 reminder（含 DATA_PROCESSING 等）持久化到 system context
+            this.ctx.persistentSystemContext.push(reminder);
           }
         }
       } catch (error) {

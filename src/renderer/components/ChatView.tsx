@@ -365,7 +365,12 @@ export const ChatView: React.FC = () => {
               firstItemIndex={firstItemIndex}
               itemContent={renderMessageItem}
               startReached={handleStartReached}
-              followOutput="smooth"
+              followOutput={(isAtBottom) => {
+                // 流式输出时强制跟随：assistant 消息从 empty→有内容 时进入 filteredMessages，
+                // 此时用户可能不在底部（因为空消息被 filter 掉了），需要强制滚动
+                if (effectiveIsProcessing) return 'smooth';
+                return isAtBottom ? 'smooth' : false;
+              }}
               defaultItemHeight={100}
               overscan={400}
               className="h-full"

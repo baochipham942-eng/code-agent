@@ -226,6 +226,9 @@ export class AgentLoop {
       effortLevel: 'high' as any,
       thinkingStepCount: 0,
 
+      // Persistent system context
+      persistentSystemContext: [],
+
       // Task stats
       runStartTime: 0,
       totalIterations: 0,

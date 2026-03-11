@@ -137,6 +137,11 @@ export interface RuntimeContext {
   // --- Content verification ---
   contentVerificationRetries: Map<string, number>;
 
+  // --- Persistent system context ---
+  // 任务指导类信息（复杂度提示、并行建议、任务模式 reminder 等）
+  // 存在此处而非 ctx.messages，确保每轮推理都作为 system prompt 的一部分可见
+  persistentSystemContext: string[];
+
   // --- Context health ---
   contextHealthy: boolean;
   autoCompressThreshold: number;

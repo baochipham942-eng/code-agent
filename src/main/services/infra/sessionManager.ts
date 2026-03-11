@@ -83,6 +83,14 @@ export class SessionManager implements Disposable {
 
     db.createSession(session);
 
+    // 初始化缓存条目，确保后续 addMessageToSession 能正确更新缓存
+    this.sessionCache.set(session.id, {
+      ...session,
+      messages: [],
+      todos: [],
+      messageCount: 0,
+    } as SessionWithMessages);
+
     // 记录审计日志
     db.logAuditEvent('session_created', { sessionId: session.id }, session.id);
 

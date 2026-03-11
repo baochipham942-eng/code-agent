@@ -579,6 +579,12 @@ ${deferredToolsSummary}
       }
     }
 
+    // 拼接持久化系统上下文（任务指导、模式 reminder 等）
+    // 这些信息每轮推理都需要可见，而非作为消息历史被淹没
+    if (this.ctx.persistentSystemContext.length > 0) {
+      systemPrompt += '\n\n' + this.ctx.persistentSystemContext.join('\n\n');
+    }
+
     // Check system prompt length and warn if too long
     const systemPromptTokens = estimateTokens(systemPrompt);
     const MAX_SYSTEM_PROMPT_TOKENS = 4000;
@@ -818,16 +824,16 @@ ${deferredToolsSummary}
     return null;
   }
 
-  injectResearchModePrompt(_userMessage: string): void {
+  injectResearchModePrompt(_userMessage: string, persistentContext?: string[]): void {
     // Try loading from skill file
     const skillPrompt = this.loadResearchSkillPrompt();
+    const prompt = skillPrompt || `## 研究模式已激活\n\n用户的请求需要深入调研。请制定研究计划，从多个角度搜索，使用 web_fetch 深入抓取关键结果，最终形成结构化报告。\n\n报告要求：数据标注来源编号 [S1][S2]...，区分实证数据与趋势推断，至少执行 4 次不同角度的搜索。`;
 
-    if (skillPrompt) {
-      this.injectSystemMessage(skillPrompt);
+    if (persistentContext) {
+      // 持久化到 system context，确保每轮推理都可见
+      persistentContext.push(prompt);
     } else {
-      // Fallback: minimal research prompt (full version lives in .code-agent/skills/research/SKILL.md)
-      const fallbackPrompt = `## 研究模式已激活\n\n用户的请求需要深入调研。请制定研究计划，从多个角度搜索，使用 web_fetch 深入抓取关键结果，最终形成结构化报告。\n\n报告要求：数据标注来源编号 [S1][S2]...，区分实证数据与趋势推断，至少执行 4 次不同角度的搜索。`;
-      this.injectSystemMessage(fallbackPrompt);
+      this.injectSystemMessage(prompt);
     }
 
     // Engineering logic

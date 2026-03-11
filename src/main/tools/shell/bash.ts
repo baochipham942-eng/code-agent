@@ -234,23 +234,55 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       };
     }
 
-    // File-reading anti-pattern: cat/sed/head/tail on a single file
-    // These should use the Read tool (25ms avg vs Bash 21s avg)
-    const fileReadMatch = command.match(
+    // File-reading anti-pattern detection (multi-layer)
+    // Layer 1: Simple commands — cat/head/tail/awk/sed on a single file (no pipes)
+    const simpleFileReadMatch = command.match(
       /^\s*(cat|sed\s+-n|head(?!\s+-f)|tail(?!\s+-f)|awk)\s+(?!.*[|&*])(['"]?)([^\s'";&|<>*]+\.[^\s'";&|<>*]+)\2\s*$/
     );
-    if (fileReadMatch) {
-      const cmd = fileReadMatch[1].split(/\s+/)[0];
-      const filePath = fileReadMatch[3];
+    // Layer 2: Piped file reads — cat file | sed/head/tail, grep file | head
+    const pipedFileReadMatch = !simpleFileReadMatch && command.match(
+      /^\s*(cat(?:\s+-n)?|grep\s+.*?)\s+(['"]?)([^\s'";&|<>*]+\.\w+)\2\s*\|\s*(sed|head|tail|awk|grep|wc)/
+    );
+    // Layer 3: awk/sed with inline patterns on a file (includes sed -n 'range' file)
+    const awkSedPatternMatch = !simpleFileReadMatch && !pipedFileReadMatch && command.match(
+      /^\s*(awk|sed)\s+(?:-\w+\s+)?['"].*?['"]\s+(['"]?)([^\s'";&|<>*]+\.\w+)\2\s*$/
+    );
+    // Layer 4: python3 reading files — python3 -c "...open('file')..." or python3 << heredoc with open()
+    const pythonFileReadMatch = !simpleFileReadMatch && !pipedFileReadMatch && !awkSedPatternMatch && command.match(
+      /python3?\s+[\s\S]*?open\s*\(\s*['"]([^'"]+\.\w+)['"]\s*\)/
+    );
+
+    const fileReadDetected = simpleFileReadMatch || pipedFileReadMatch || awkSedPatternMatch || pythonFileReadMatch;
+    if (fileReadDetected) {
+      const filePath = (simpleFileReadMatch && simpleFileReadMatch[3]) || (pipedFileReadMatch && pipedFileReadMatch[3]) || (awkSedPatternMatch && awkSedPatternMatch[3]) || (pythonFileReadMatch && pythonFileReadMatch[1]) || 'unknown';
+      const detectedCmd = command.length > 80 ? command.substring(0, 80) + '...' : command;
       return {
         success: false,
         error:
           `⚠️ 文件读取应使用 Read 工具，而非 Bash。\n\n` +
-          `检测到: \`${cmd} ${filePath}\`\n\n` +
+          `检测到: \`${detectedCmd}\`\n\n` +
           `请改用:\n` +
           `- 读取整个文件: Read(file_path="${filePath}")\n` +
-          `- 读取指定行段: Read(file_path="${filePath}", offset=100, limit=50)\n\n` +
+          `- 读取指定行段: Read(file_path="${filePath}", offset=100, limit=50)\n` +
+          `- 搜索文件内容: Grep(pattern="关键词", path="${filePath}")\n\n` +
           `Read 工具平均 25ms，Bash 读文件平均 21s。`,
+      };
+    }
+
+    // Grep-in-bash anti-pattern: grep/rg on a file should use Grep tool
+    const grepInBashMatch = command.match(
+      /^\s*(grep|rg)\s+(?:-[a-zA-Z]*\s+)*(['"]?)(.+?)\2\s+(['"]?)([^\s'";&|<>*]+\.\w+)\4\s*(?:\|.*)?$/
+    );
+    if (grepInBashMatch) {
+      const pattern = grepInBashMatch[3];
+      const filePath = grepInBashMatch[5];
+      return {
+        success: false,
+        error:
+          `⚠️ 内容搜索应使用 Grep 工具，而非 Bash。\n\n` +
+          `检测到: \`${command.length > 80 ? command.substring(0, 80) + '...' : command}\`\n\n` +
+          `请改用: Grep(pattern="${pattern}", path="${filePath}", output_mode="content")\n\n` +
+          `Grep 工具更快，支持正则、行号、上下文。`,
       };
     }
 

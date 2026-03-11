@@ -62,66 +62,51 @@ function generateTimeStats(memories: MemoryItem[]): Array<{ period: string; coun
 // 简单柱状图组件
 const SimpleBarChart: React.FC<{ data: Array<{ period: string; count: number }> }> = ({ data }) => {
   const maxCount = Math.max(...data.map(d => d.count), 1);
+  const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
 
   return (
     <div className="flex items-end gap-1 h-20">
-      {data.map((item, index) => (
-        <div key={index} className="flex-1 flex flex-col items-center">
+      {data.map((item, idx) => {
+        const heightPercent = (item.count / maxCount) * 100;
+        return (
           <div
-            className="w-full bg-indigo-500/50 rounded-t transition-all hover:bg-indigo-500/70"
-            style={{ height: `${(item.count / maxCount) * 100}%`, minHeight: item.count > 0 ? '4px' : '2px' }}
-            title={`${item.period}: ${item.count} 条`}
-          />
-          <span className="text-[10px] text-zinc-500 mt-1 truncate w-full text-center">
-            {item.period.replace('月', '/')}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-// 简单饼图组件（使用 CSS 渐变）
-const SimplePieChart: React.FC<{ data: Record<MemoryCategory, number>; total: number }> = ({ data, total }) => {
-  const categories = Object.keys(data) as MemoryCategory[];
-  let cumulativePercent = 0;
-
-  const gradientStops = categories.map(cat => {
-    const percent = total > 0 ? (data[cat] / total) * 100 : 0;
-    const start = cumulativePercent;
-    cumulativePercent += percent;
-    return { category: cat, start, end: cumulativePercent, percent };
-  });
-
-  const conicGradient = gradientStops
-    .map(s => `${CATEGORY_CONFIG[s.category].color} ${s.start}% ${s.end}%`)
-    .join(', ');
-
-  return (
-    <div className="flex items-center gap-4">
-      <div
-        className="w-16 h-16 rounded-full"
-        style={{
-          background: total > 0
-            ? `conic-gradient(${conicGradient})`
-            : '#27272a',
-        }}
-      />
-      <div className="flex-1 space-y-1">
-        {gradientStops.map(s => (
-          <div key={s.category} className="flex items-center gap-2 text-xs">
-            <span
-              className="w-2 h-2 rounded-full"
-              style={{ backgroundColor: CATEGORY_CONFIG[s.category].color }}
-            />
-            <span className="text-zinc-400">{CATEGORY_CONFIG[s.category].label}</span>
-            <span className="text-zinc-400 ml-auto">{data[s.category]}</span>
-            <span className="text-zinc-500 w-10 text-right">
-              {Math.round(s.percent)}%
-            </span>
+            key={idx}
+            className="flex-1 flex flex-col items-center gap-1 group relative"
+            onMouseEnter={() => setHoveredIndex(idx)}
+            onMouseLeave={() => setHoveredIndex(null)}
+          >
+            {/* 悬停提示 */}
+            {hoveredIndex === idx && (
+              <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-zinc-800 text-amber-400 text-xs px-2 py-1 rounded whitespace-nowrap z-10 shadow-lg border border-amber-700/30">
+                ¥{item.count.toLocaleString()}
+              </div>
+            )}
+            <div className="w-full bg-zinc-700/30 rounded-t-sm relative overflow-hidden h-16">
+              <div
+                className="absolute bottom-0 left-0 right-0 rounded-t-sm transition-all duration-700 ease-out hover:brightness-110"
+                style={{
+                  height: `${heightPercent}%`,
+                  background: 'linear-gradient(to top, #8B4513 0%, #D2691E 100%)',
+                  animation: `growUp 0.6s ease-out ${idx * 0.1}s both`
+                }}
+              />
+            </div>
+            <span className="text-[10px] text-zinc-500">{item.period}</span>
           </div>
-        ))}
-      </div>
+        );
+      })}
+      <style>{`
+        @keyframes growUp {
+          from {
+            transform: scaleY(0);
+            transform-origin: bottom;
+          }
+          to {
+            transform: scaleY(1);
+            transform-origin: bottom;
+          }
+        }
+      `}</style>
     </div>
   );
 };

@@ -223,9 +223,25 @@ export const useAgent = () => {
                 const existingContent = targetMessage.content || '';
                 const newContent = event.data.content || '';
 
+                // message 事件的 toolCalls 来自模型 API 响应，只有调用请求（name+args），
+                // 没有执行结果（result）。前端 toolCalls 已通过 tool_call_end 事件积累了 result。
+                // 必须合并而非覆盖，否则已完成的工具调用会丢失 result 变成"幽灵 pending"。
+                let mergedToolCalls = targetMessage.toolCalls;
+                if (event.data.toolCalls && event.data.toolCalls.length > 0) {
+                  const existingToolCalls = targetMessage.toolCalls || [];
+                  if (existingToolCalls.length > 0) {
+                    // 保留前端已有的 toolCalls（含 result），仅补充新增的
+                    const existingIds = new Set(existingToolCalls.map((tc: ToolCall) => tc.id));
+                    const newOnes = event.data.toolCalls.filter((tc: ToolCall) => !existingIds.has(tc.id));
+                    mergedToolCalls = [...existingToolCalls, ...newOnes];
+                  } else {
+                    mergedToolCalls = event.data.toolCalls;
+                  }
+                }
+
                 updateMessage(targetMessage.id, {
                   content: existingContent.length >= newContent.length ? existingContent : newContent,
-                  toolCalls: event.data.toolCalls || targetMessage.toolCalls,
+                  toolCalls: mergedToolCalls,
                 });
               }
               // 纯文本消息（无工具调用）表示本轮结束

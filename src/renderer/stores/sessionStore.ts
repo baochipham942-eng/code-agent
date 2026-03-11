@@ -8,6 +8,9 @@ import ipcService from '../services/ipcService';
 
 const logger = createLogger('SessionStore');
 
+// switchSession 竞态保护计数器
+let _switchCounter = 0;
+
 export interface SessionWithMeta extends Session {
   messageCount: number;
 }
@@ -137,9 +140,19 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       const { currentSessionId, unreadSessionIds } = get();
       if (currentSessionId === sessionId) return;
 
+      // 竞态保护：记录本次切换的版本号，异步完成后检查是否过期
+      const switchVersion = ++_switchCounter;
+
       set({ isLoading: true, error: null });
       try {
         const session = await ipcService.invoke(IPC_CHANNELS.SESSION_LOAD, sessionId) as Session & { messages?: Message[]; todos?: TodoItem[] };
+
+        // 竞态检查：如果在等待期间又发起了新的切换，丢弃本次结果
+        if (switchVersion !== _switchCounter) {
+          logger.debug('switchSession stale response discarded', { sessionId, switchVersion, current: _switchCounter });
+          return;
+        }
+
         if (session) {
           const newUnreadIds = new Set(unreadSessionIds);
           newUnreadIds.delete(sessionId);
@@ -155,13 +168,24 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
             hasOlderMessages: totalCount > loadedMessages.length,
             isLoadingOlder: false,
           });
+        } else {
+          // 后端返回 null/undefined — 仍然切换到该会话（显示空状态）
+          logger.warn('switchSession: backend returned null session', { sessionId });
+          set({
+            currentSessionId: sessionId,
+            messages: [],
+            todos: [],
+            isLoading: false,
+          });
         }
       } catch (error) {
         logger.error('Failed to switch session', error);
-        set({
-          error: error instanceof Error ? error.message : 'Failed to switch session',
-          isLoading: false
-        });
+        if (switchVersion === _switchCounter) {
+          set({
+            error: error instanceof Error ? error.message : 'Failed to switch session',
+            isLoading: false
+          });
+        }
       }
     },
 

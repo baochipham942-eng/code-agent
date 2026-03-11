@@ -88,7 +88,7 @@ The system auto-compresses context when it grows large. Do not stop a task early
 export const TOOL_DISCIPLINE = `
 <tool_discipline>
 - Parameters are SEPARATE fields (never combine path+offset into one string)
-- Read first, then Edit. After 2 failed retries, switch strategy (Edit->Write, Read->Bash)
+- Read first, then Edit. If Edit fails, re-Read the target file and retry. After 3 consecutive Edit failures on the same file, switch to Write (full rewrite). NEVER use Bash to read files — adjust Read offset/limit instead
 - Before calling a tool, check if the result already exists in conversation context
 </tool_discipline>
 

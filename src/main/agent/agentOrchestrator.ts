@@ -26,8 +26,6 @@ import { getSessionStateManager } from '../session/sessionStateManager';
 import { ModelRouter } from '../model/modelRouter';
 import { generateMessageId, generatePermissionRequestId } from '../../shared/utils/id';
 import { app } from 'electron';
-import * as fs from 'fs';
-import * as path from 'path';
 import { createLogger } from '../services/infra/logger';
 // Auto Agent Generation
 import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
@@ -159,30 +157,19 @@ export class AgentOrchestrator {
 
   /**
    * 初始化工作目录
-   * 默认使用 app 数据目录下的 work 文件夹，确保有写入权限
+   * 默认使用用户主目录，避免回退到 app 内部目录或 process.cwd()（可能是项目源码目录）
    *
    * 性能优化：目录创建延迟到后台执行，构造函数不阻塞
    */
   private initializeWorkDirectory(): string {
     try {
-      // 使用 Electron 的 userData 目录（有写入权限）
-      const userDataPath = app.getPath('userData');
-      const workDir = path.join(userDataPath, 'work');
-
-      // 异步确保目录存在（不阻塞构造函数）
-      fs.promises.mkdir(workDir, { recursive: true })
-        .then(() => logger.debug('Work directory ensured:', workDir))
-        .catch((err) => {
-          // EEXIST 表示目录已存在，不是错误
-          if ((err as NodeJS.ErrnoException).code !== 'EEXIST') {
-            logger.warn('Failed to create work directory:', err);
-          }
-        });
-
-      return workDir;
+      // 优先使用用户主目录（安全、可预测）
+      const homeDir = app.getPath('home');
+      logger.debug('Default working directory set to home:', homeDir);
+      return homeDir;
     } catch (error) {
-      // 如果获取 app 路径失败（如在测试环境），回退到当前目录
-      logger.warn('Failed to get userData path, falling back to cwd:', error);
+      // 如果获取 home 路径失败（如在测试环境），回退到当前目录
+      logger.warn('Failed to get home path, falling back to cwd:', error);
       return process.cwd();
     }
   }

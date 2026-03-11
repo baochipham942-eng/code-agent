@@ -133,9 +133,10 @@ export class AgentAppServiceImpl implements AgentApplicationService {
     }
 
     const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId);
-    if (orchestrator && session.workingDirectory) {
+    if (orchestrator && session.workingDirectory && session.workingDirectory.trim()) {
       orchestrator.setWorkingDirectory(session.workingDirectory);
     }
+    // NOTE: 当 session.workingDirectory 为空时，orchestrator 使用默认值（用户主目录）
 
     memoryTrigger.onSessionStart(sessionId, session.workingDirectory).catch((err) => {
       console.warn('Memory trigger failed:', err);

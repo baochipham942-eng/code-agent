@@ -20,7 +20,14 @@ const execAsync = promisify(exec);
 
 export const bashTool: Tool = {
   name: 'Bash',
-  description: `Executes a bash command and returns its output. Use for system commands, running scripts, git operations, and terminal tasks. IMPORTANT: Do NOT use Bash for file reading (use Read), file searching (use Glob/Grep), or file editing (use Edit). Working directory persists between calls.
+  description: `Executes a bash command and returns its output. Use for system commands, running scripts, git operations, and terminal tasks. Working directory persists between calls.
+
+IMPORTANT: Do NOT use Bash when a dedicated tool exists:
+- Read files: Use Read (NOT cat, head, tail)
+- Edit files: Use Edit (NOT sed, awk, or echo/cat redirection)
+- Create files: Use Write (NOT cat with heredoc or echo redirection)
+- Search files: Use Glob (NOT find or ls)
+- Search content: Use Grep (NOT grep or rg)
 
 Git: NEVER --force push or --no-verify unless explicitly requested.`,
 
@@ -136,7 +143,9 @@ Git: NEVER --force push or --no-verify unless explicitly requested.`,
 
         let outputText = output.output;
         if (outputText.length > BASH.MAX_OUTPUT_LENGTH) {
+          const originalLength = outputText.length;
           outputText = truncateMiddle(outputText, BASH.MAX_OUTPUT_LENGTH);
+          outputText += `\n\n[Guidance: Output was ${originalLength} chars, truncated to ${BASH.MAX_OUTPUT_LENGTH}. Use Read tool with offset/limit to read specific sections, or use Edit tool to make targeted changes without reading the entire file.]`;
         }
 
         return {
@@ -282,7 +291,9 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
       if (codexResult.success) {
         let output = codexResult.output;
         if (output.length > BASH.MAX_OUTPUT_LENGTH) {
+          const originalLength = output.length;
           output = truncateMiddle(output, BASH.MAX_OUTPUT_LENGTH);
+          output += `\n\n[Guidance: Output was ${originalLength} chars, truncated to ${BASH.MAX_OUTPUT_LENGTH}. Use Read tool with offset/limit to read specific sections, or use Edit tool to make targeted changes without reading the entire file.]`;
         }
         const cwdPrefix = `[cwd: ${workingDirectory}] [codex-sandbox]\n`;
         return {
@@ -313,9 +324,11 @@ Use kill_shell tool with task_id="${result.taskId}" to terminate if needed.`;
         output += `\n[stderr]: ${stderr}`;
       }
 
-      // Truncate if too long
+      // Truncate if too long, with guidance to prevent retry loops
       if (output.length > BASH.MAX_OUTPUT_LENGTH) {
+        const originalLength = output.length;
         output = truncateMiddle(output, BASH.MAX_OUTPUT_LENGTH);
+        output += `\n\n[Guidance: Output was ${originalLength} chars, truncated to ${BASH.MAX_OUTPUT_LENGTH}. Use Read tool with offset/limit to read specific sections, or use Edit tool to make targeted changes without reading the entire file.]`;
       }
 
       const dynamicDesc = await descriptionPromise;

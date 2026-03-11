@@ -37,35 +37,31 @@
 **问题**: 修改代码后直接打包，忘记更新版本号
 **正确做法**: 每次修改客户端代码必须递增 package.json 版本号
 
-### 原生模块 NODE_MODULE_VERSION 不匹配
-**问题**: 打包后启动报错 `was compiled against a different Node.js version using NODE_MODULE_VERSION 127. This version of Node.js requires NODE_MODULE_VERSION 130`
-**原因**: 原生模块（isolated-vm, better-sqlite3, keytar）是用系统 Node.js 编译的，而非 Electron 的 Node.js
-**错误做法**:
-- `electron-rebuild` 不可靠，会说 "Rebuild Complete" 但实际没重编译
-- `npm rebuild` 也不行，用的是系统 Node.js
+### Tauri 模式 better-sqlite3 ABI 不匹配 (2026-03-11)
+**问题**: Tauri app 启动后 `Database not initialized`，ToolCache/SystemPromptCache/ContextBuilder 全部受影响
+**根因**: `postinstall` 用 Electron ABI 编译 better-sqlite3，但 Tauri 通过系统 Node.js 运行 webServer.cjs，ABI 不匹配导致 `.node` 文件加载失败
+**修复**:
+- `scripts/rebuild-native-system.sh` — 在临时目录为系统 Node 单独编译，产物放 `dist/native/`
+- `databaseService.ts` — 优先从 `dist/native/better-sqlite3` 加载，回退到 `node_modules`
+- `tauri:build` / `tauri:dev` 自动执行 `rebuild-native:system`
+**教训**:
+- Electron 和 Tauri 的 Node.js 运行时不同，native module 必须分别编译
+- 现已移除 Electron 依赖，`postinstall` 改为 `rebuild-native:system`
 
-**正确做法**:
-```bash
-# 使用 rebuild-native.sh 自动检测 Electron 版本
-npm run rebuild-native
+### Tauri 打包后 Spotlight 出现多个 Code Agent
+**问题**: Spotlight 搜索出 3 个 Code Agent（Applications + bundle/macos + release/mac-arm64）
+**原因**: `cargo tauri build` 在 `bundle/macos/` 生成 `.app`，旧 Electron 打包在 `release/` 也有残留
+**修复**: `scripts/tauri-install.sh` — 构建后自动复制到 `/Applications/` 并删除 bundle 内的 `.app`
+**教训**: macOS Spotlight 会索引所有目录的 `.app`，构建产物必须在安装后清理
 
-# 或手动指定版本
-npm cache clean --force
-rm -rf node_modules/isolated-vm node_modules/better-sqlite3 node_modules/keytar
-npm install isolated-vm better-sqlite3 keytar \
-  --build-from-source \
-  --runtime=electron \
-  --target=38.8.0 \
-  --disturl=https://electronjs.org/headers
-```
-
-**验证方法**:
-```bash
-# 检查模块时间戳，应该是今天的日期
-ls -la node_modules/isolated-vm/out/isolated_vm.node
-ls -la node_modules/better-sqlite3/build/Release/better_sqlite3.node
-ls -la node_modules/keytar/build/Release/keytar.node
-```
+### 后台 Agent 改动 SSE 协议导致 401
+**问题**: 后台测试修复 agent 重构了 webServer.ts 的 SSE 事件格式，从 `{ ...event.data, sessionId }` 改为 `{ data: event.data, sessionId }`，前端解析数据结构变了导致 API 调用异常
+**根因**: agent 为了防止数组型 event.data 被 spread 展开（如 `TodoItem[]` 变成 `{0: ..., 1: ...}`），但改变了前端依赖的协议格式
+**修复**: 区分处理 — 数组用 `{ items: event.data, sessionId }`，对象照旧 spread
+**教训（通用规则）**:
+1. **后台 Agent 的改动必须逐文件 review** — agent 可能顺手"优化"不相关的代码，引入协议破坏性变更
+2. **SSE/IPC 协议是前后端契约** — 改 event.data 结构等于改 API，必须前后端同步
+3. **commit 前检查非预期文件** — `git diff --stat` 看到 674 行变更但只改了 3 行时，必须追问为什么
 
 ---
 

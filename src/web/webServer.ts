@@ -801,9 +801,13 @@ function createApp(): express.Express {
       const toolResultMessages: CachedMessage[] = [];
 
       const agentLoop = createAgentLoop(config, (event) => {
-        // SSE envelope: { data, sessionId } — 与 Electron IPC 保持一致
-        // 不 spread event.data，避免数组（如 todo_update 的 TodoItem[]）被展开为对象
-        sendSSE(res, event.type, { data: event.data, sessionId });
+        // 附带 sessionId 确保前端会话隔离。
+        // event.data 可能是对象或数组（如 todo_update 的 TodoItem[]），
+        // 数组不能 spread 进对象，需要区分处理。
+        const eventData = Array.isArray(event.data)
+          ? { items: event.data, sessionId }
+          : event.data ? { ...event.data, sessionId } : { sessionId };
+        sendSSE(res, event.type, eventData);
 
         // 收集 stream_chunk 中的文本
         if (event.type === 'stream_chunk' && event.data?.content) {

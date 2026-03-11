@@ -654,6 +654,8 @@ export const useAgent = () => {
         } catch (error) {
           logger.error('Interrupt error', error);
           setIsInterrupting(false);
+          // 清除 processing 状态，避免永久卡死
+          setSessionProcessing(effectiveSessionId!, false);
           // 错误时创建一条错误消息
           const errorMessage: Message = {
             id: generateMessageId(),

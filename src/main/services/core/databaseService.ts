@@ -801,7 +801,7 @@ export class DatabaseService {
 
   // --- SessionRepository ---
   createSession(session: Session): void { this.ensureDb(); this.sessionRepo.createSession(session); }
-  createSessionWithId(id: string, data: { title: string; generationId?: string; modelConfig: { provider: ModelProvider; model: string }; workingDirectory?: string }): void { this.ensureDb(); this.sessionRepo.createSessionWithId(id, data); }
+  createSessionWithId(id: string, data: { title: string; generationId?: string; modelConfig: { provider: ModelProvider; model: string }; workingDirectory?: string; createdAt?: number; updatedAt?: number }): void { this.ensureDb(); this.sessionRepo.createSessionWithId(id, data); }
   getSession(sessionId: string): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.getSession(sessionId); }
   listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.listSessions(limit, offset, includeArchived); }
   updateSession(sessionId: string, updates: Partial<Session>): void { this.ensureDb(); this.sessionRepo.updateSession(sessionId, updates); }
@@ -810,7 +810,7 @@ export class DatabaseService {
   clearAllMessages(): number { this.ensureDb(); return this.sessionRepo.clearAllMessages(); }
   hasMessages(sessionId: string): boolean { this.ensureDb(); return this.sessionRepo.hasMessages(sessionId); }
   getLocalCacheStats(): { sessionCount: number; messageCount: number } { this.ensureDb(); return this.sessionRepo.getLocalCacheStats(); }
-  addMessage(sessionId: string, message: Message): void { this.ensureDb(); this.sessionRepo.addMessage(sessionId, message); }
+  addMessage(sessionId: string, message: Message, options?: { skipTimestampUpdate?: boolean }): void { this.ensureDb(); this.sessionRepo.addMessage(sessionId, message, options); }
   updateMessage(messageId: string, updates: Partial<Message>): void { this.ensureDb(); this.sessionRepo.updateMessage(messageId, updates); }
   getMessages(sessionId: string, limit?: number, offset?: number): Message[] { this.ensureDb(); return this.sessionRepo.getMessages(sessionId, limit, offset); }
   getMessageCount(sessionId: string): number { this.ensureDb(); return this.sessionRepo.getMessageCount(sessionId); }

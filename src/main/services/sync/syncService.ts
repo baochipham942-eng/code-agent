@@ -350,10 +350,11 @@ class SyncService implements Disposable {
                 conflictType: 'update',
               });
             } else {
-              // No conflict, update local
+              // No conflict, update local (preserve remote timestamp)
               db.updateSession(remote.id, {
                 title: remote.title,
                 generationId: remote.generation_id as string,
+                updatedAt: remote.updated_at as number,
               });
               count++;
             }
@@ -395,7 +396,7 @@ class SyncService implements Disposable {
             timestamp: remote.timestamp,
             toolCalls: remote.tool_calls as Message['toolCalls'],
             toolResults: remote.tool_results as Message['toolResults'],
-          });
+          }, { skipTimestampUpdate: true });
           count++;
         }
       } catch (err) {
@@ -680,6 +681,7 @@ class SyncService implements Disposable {
         db.updateSession(conflict.id, {
           title: remote.title,
           generationId: remote.generation_id as string,
+          updatedAt: remote.updated_at as number,
         });
       }
     }

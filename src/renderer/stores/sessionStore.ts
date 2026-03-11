@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { Session, Message, TodoItem } from '@shared/types';
-import { IPC_CHANNELS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS, type SessionStatusUpdateEvent, type SessionRuntimeSummary } from '@shared/ipc';
 import { useStatusStore } from './statusStore';
 import type { BackgroundTaskInfo, BackgroundTaskUpdateEvent } from '@shared/types/sessionState';
 import { createLogger } from '../utils/logger';
@@ -461,6 +461,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       get().updateSessionTitle(id, trimmed);
 
       try {
+        await window.domainAPI!.invoke(IPC_DOMAINS.SESSION, 'update', { sessionId: id, updates: { title: trimmed } });
         logger.info('Session renamed', { sessionId: id, newTitle: trimmed });
       } catch (error) {
         logger.error('Failed to rename session', error);
@@ -486,6 +487,10 @@ export async function initializeSessionStore(): Promise<void> {
     if (updates.title) {
       useSessionStore.getState().updateSessionTitle(sessionId, updates.title);
     }
+  });
+
+  ipcService.on(IPC_CHANNELS.SESSION_LIST_UPDATED, () => {
+    useSessionStore.getState().loadSessions();
   });
 
   ipcService.on(IPC_CHANNELS.SESSION_STATUS_UPDATE, (event: SessionStatusUpdateEvent) => {

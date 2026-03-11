@@ -676,7 +676,7 @@ export class TaskManager extends EventEmitter {
 
         if (!turnState.messageId) {
           turnState.messageId = message.id;
-          await sessionManager.addMessage({
+          await sessionManager.addMessageToSession(sessionId, {
             ...message,
             toolCalls: turnState.toolCalls.length > 0 ? [...turnState.toolCalls] : undefined,
             content: turnState.content,
@@ -763,6 +763,9 @@ export class TaskManager extends EventEmitter {
 
     // 从队列移除
     this.removeFromQueue(sessionId);
+
+    // 清理 turn state，防止内存泄漏
+    this.turnStateBySession.delete(sessionId);
 
     // 更新状态
     this.updateSessionState(sessionId, { status: 'idle' });

@@ -111,7 +111,6 @@ export class NudgeManager {
     this._outputValidationDone = false;
     this._originalUserPrompt = userMessage;
     this._requirementVerificationDone = false;
-
     this._userExpectsOutput = /保存|导出|生成.*文件|输出.*文件|写入|\.xlsx|\.csv|\.png|\.pdf|export|save/i.test(userMessage);
 
     // P5-3: snapshot initial data files

@@ -24,7 +24,7 @@ import {
   Trash2,
   Pin,
 } from 'lucide-react';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { IconButton, UndoToast } from './primitives';
 import { createLogger } from '../utils/logger';
 import { groupSessions, type DateGroup } from '../utils/dateGrouping';
@@ -207,7 +207,13 @@ export const Sidebar: React.FC = () => {
         icon: '📤',
         onClick: async () => {
           try {
-            const data = await ipcService.invoke(IPC_CHANNELS.SESSION_EXPORT, session.id);
+            const response = await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'export', {
+              sessionId: session.id,
+            });
+            if (!response?.success) {
+              throw new Error(response?.error?.message || 'Failed to export session');
+            }
+            const data = response.data;
             if (data) {
               const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
               const url = URL.createObjectURL(blob);

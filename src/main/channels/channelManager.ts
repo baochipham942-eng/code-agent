@@ -427,6 +427,31 @@ export class ChannelManager extends EventEmitter {
     };
   }
 
+  /**
+   * 发送错误响应
+   */
+  async sendErrorResponse(
+    accountId: string,
+    message: ChannelMessage,
+    errorMessage: string
+  ): Promise<void> {
+    const channel = this.activeChannels.get(accountId);
+    if (!channel) {
+      throw new Error(`Account not connected: ${accountId}`);
+    }
+
+    if (channel instanceof ApiChannel) {
+      (channel as ApiChannel).rejectRequest(message.id, new Error(errorMessage));
+      return;
+    }
+
+    await channel.sendMessage({
+      chatId: message.context.chatId,
+      content: `错误: ${errorMessage}`,
+      replyToMessageId: message.id,
+    });
+  }
+
   // ========== Private Methods ==========
 
   private registerBuiltinPlugins(): void {

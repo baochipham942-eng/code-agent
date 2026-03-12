@@ -6,7 +6,7 @@ import React, { useState, useMemo } from 'react';
 import { Key } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 import type { ModelProvider } from '@shared/types';
 import { UI, MODEL, PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants';
 import type { ProviderModelEntry } from '@shared/constants';
@@ -91,7 +91,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
     setIsSaving(true);
     setSaveStatus('idle');
     try {
-      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         models: {
           default: config.provider,
           defaultProvider: config.provider,

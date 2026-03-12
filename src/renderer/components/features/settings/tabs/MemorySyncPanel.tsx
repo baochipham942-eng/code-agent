@@ -18,7 +18,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { Button } from '../../../primitives';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { SyncStatus, DeviceInfo } from '@shared/types';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
@@ -67,8 +67,8 @@ export const MemorySyncPanel: React.FC<MemorySyncPanelProps> = ({
   const loadSyncStatus = async () => {
     try {
       const [status, deviceList] = await Promise.all([
-        ipcService.invoke(IPC_CHANNELS.SYNC_GET_STATUS) as Promise<SyncStatus>,
-        ipcService.invoke(IPC_CHANNELS.DEVICE_LIST) as Promise<DeviceInfo[]>,
+        ipcService.invokeDomain<SyncStatus>(IPC_DOMAINS.SYNC, 'getStatus'),
+        ipcService.invokeDomain<DeviceInfo[]>(IPC_DOMAINS.DEVICE, 'list'),
       ]);
       setSyncStatus(status);
       setDevices(deviceList || []);
@@ -106,7 +106,7 @@ export const MemorySyncPanel: React.FC<MemorySyncPanelProps> = ({
     setIsSyncing(true);
     setMessage(null);
     try {
-      await ipcService.invoke(IPC_CHANNELS.SYNC_START);
+      await ipcService.invokeDomain(IPC_DOMAINS.SYNC, 'start');
     } catch (error) {
       logger.error('Sync failed', error);
       setMessage({ type: 'error', text: '同步失败' });
@@ -119,7 +119,7 @@ export const MemorySyncPanel: React.FC<MemorySyncPanelProps> = ({
     setIsSyncing(true);
     setMessage(null);
     try {
-      const result = await ipcService.invoke(IPC_CHANNELS.SYNC_FORCE_FULL);
+      const result = await ipcService.invokeDomain<{ success: boolean; error?: string }>(IPC_DOMAINS.SYNC, 'forceFull');
       if (result?.success) {
         setMessage({ type: 'success', text: '全量同步完成' });
         onSyncComplete?.();

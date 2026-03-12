@@ -258,27 +258,6 @@ export function registerSettingsHandlers(
 
   // ========== Legacy Handlers (Deprecated) ==========
 
-  /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'get' */
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, async () => handleGet(getConfigService));
-
-  /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'set' */
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_SET, async (_, settings) => handleSet(getConfigService, { settings }));
-
-  /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'testApiKey' */
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_TEST_API_KEY, async (_, provider: string, apiKey: string) =>
-    handleTestApiKey({ provider, apiKey })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'getAllServiceKeys' */
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_SERVICE_KEYS, async () =>
-    handleGetAllServiceKeys(getConfigService)
-  );
-
-  /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'setServiceApiKey' */
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY, async (_, payload: { service: 'brave' | 'github' | 'openrouter' | 'langfuse_public' | 'langfuse_secret'; apiKey: string }) =>
-    handleSetServiceApiKey(getConfigService, payload)
-  );
-
   /** Integration config handlers */
   ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_INTEGRATION, async (_, integration: string) =>
     handleGetIntegration(getConfigService, integration)
@@ -390,18 +369,7 @@ export function registerSettingsHandlers(
     }
   });
 
-  /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'checkApiKeyConfigured' */
-  ipcMain.handle(IPC_CHANNELS.SECURITY_CHECK_API_KEY_CONFIGURED, async () => handleCheckApiKeyConfigured());
-
   // Tool create response handler removed (evolution module deleted)
-
-  /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'getDevMode' */
-  ipcMain.handle(IPC_CHANNELS.PERSISTENT_GET_DEV_MODE, async () => handleGetDevMode());
-
-  /** @deprecated Use IPC_DOMAINS.SETTINGS with action: 'setDevMode' */
-  ipcMain.handle(IPC_CHANNELS.PERSISTENT_SET_DEV_MODE, async (_, enabled: boolean) =>
-    handleSetDevMode(getConfigService, { enabled })
-  );
 
   // Permission mode handlers
   ipcMain.handle(IPC_CHANNELS.PERMISSION_GET_MODE, async () => {

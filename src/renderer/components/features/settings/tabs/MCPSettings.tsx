@@ -75,7 +75,7 @@ export const MCPSettings: React.FC = () => {
 
   const loadCodexSettings = async () => {
     try {
-      const settings = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET);
+      const settings = await ipcService.invokeDomain<any>(IPC_DOMAINS.SETTINGS, 'get');
       if (settings?.codex) {
         setCodexDetectedPath(settings.codex.detectedPath ?? null);
         setCodexSandboxEnabled(settings.codex.sandboxEnabled ?? false);
@@ -88,9 +88,9 @@ export const MCPSettings: React.FC = () => {
 
   const handleCodexToggle = async (field: 'sandboxEnabled' | 'crossVerifyEnabled', value: boolean) => {
     try {
-      const settings = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET);
+      const settings = await ipcService.invokeDomain<any>(IPC_DOMAINS.SETTINGS, 'get');
       const codex = settings?.codex || { sandboxEnabled: false, crossVerifyEnabled: false };
-      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         codex: { ...codex, [field]: value },
       });
       if (field === 'sandboxEnabled') setCodexSandboxEnabled(value);

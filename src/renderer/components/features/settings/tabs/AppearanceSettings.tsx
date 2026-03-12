@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { Moon, Sun, Monitor, Check } from 'lucide-react';
 import { useI18n, type Language } from '../../../../hooks/useI18n';
 import { useTheme, type Theme } from '../../../../hooks/useTheme';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { Select } from '../../../primitives';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
@@ -41,7 +41,7 @@ export const AppearanceSettings: React.FC = () => {
   useEffect(() => {
     const loadFontSize = async () => {
       try {
-        const settings = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET);
+        const settings = await ipcService.invokeDomain<any>(IPC_DOMAINS.SETTINGS, 'get');
         if (settings?.ui?.fontSize) {
           const sizeMap: Record<number, 'small' | 'medium' | 'large'> = { 13: 'small', 14: 'medium', 16: 'large' };
           const size = sizeMap[settings.ui.fontSize];
@@ -96,7 +96,7 @@ export const AppearanceSettings: React.FC = () => {
     setTheme(newTheme);
     // 保存到后端
     try {
-      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         ui: { theme: newTheme },
       } as Partial<import('@shared/types').AppSettings>);
       logger.info('Theme saved', { theme: newTheme });
@@ -109,7 +109,7 @@ export const AppearanceSettings: React.FC = () => {
   const handleLanguageChange = async (lang: Language) => {
     setLanguage(lang);
     try {
-      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         ui: { language: lang },
       } as Partial<import('@shared/types').AppSettings>);
       logger.info('Language saved', { lang });
@@ -126,7 +126,7 @@ export const AppearanceSettings: React.FC = () => {
     document.documentElement.style.setProperty('--font-size-base', `${sizeMap[size]}px`);
 
     try {
-      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         ui: { fontSize: sizeMap[size] },
       } as Partial<import('@shared/types').AppSettings>);
       logger.info('Font size saved', { size });

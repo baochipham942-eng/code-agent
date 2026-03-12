@@ -3,12 +3,23 @@
 // ============================================================================
 
 import { useState, useCallback, useRef } from 'react';
-import { IPC_CHANNELS } from '@shared/ipc';
-import ipcService from '../services/ipcService';
+import { IPC_DOMAINS } from '@shared/ipc';
 
 export interface FileMatch {
   path: string;
   name: string;
+}
+
+async function listWorkspaceFiles(query: string) {
+  const response = await window.domainAPI?.invoke<Array<{ name: string; path?: string }>>(
+    IPC_DOMAINS.WORKSPACE,
+    'listFiles',
+    { dirPath: query }
+  );
+  if (!response?.success) {
+    throw new Error(response?.error?.message || 'Failed to list workspace files');
+  }
+  return response.data ?? [];
 }
 
 export function useFileAutocomplete() {
@@ -33,16 +44,13 @@ export function useFileAutocomplete() {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        const files = await ipcService.invoke(
-          IPC_CHANNELS.WORKSPACE_LIST_FILES,
-          searchQuery || '.'
-        );
+        const files = await listWorkspaceFiles(searchQuery || '.');
         if (!files) {
           setIsOpen(false);
           return;
         }
         setMatches(
-          (files as Array<{ name: string; path?: string }>)
+          files
             .filter((f) => !searchQuery || f.name.toLowerCase().includes(searchQuery.toLowerCase()))
             .slice(0, 8)
             .map((f) => ({ path: f.path || f.name, name: f.name }))

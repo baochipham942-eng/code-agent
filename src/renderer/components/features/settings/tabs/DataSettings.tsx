@@ -5,7 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '../../../primitives';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
@@ -38,7 +38,7 @@ export const DataSettings: React.FC = () => {
 
   const loadStats = async () => {
     try {
-      const dataStats = await ipcService.invoke(IPC_CHANNELS.DATA_GET_STATS);
+      const dataStats = await ipcService.invokeDomain<DataStats>(IPC_DOMAINS.DATA, 'getStats');
       if (dataStats) setStats(dataStats);
     } catch (error) {
       logger.error('Failed to load data stats', error);
@@ -55,7 +55,7 @@ export const DataSettings: React.FC = () => {
     setIsClearing(true);
     setMessage(null);
     try {
-      const cleared = await ipcService.invoke(IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE);
+      const cleared = await ipcService.invokeDomain<number>(IPC_DOMAINS.DATA, 'clearToolCache');
       if (cleared === 0) {
         setMessage({ type: 'success', text: '缓存已经是空的' });
       } else {

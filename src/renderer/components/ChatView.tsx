@@ -20,6 +20,7 @@ import { BridgeUpdatePrompt } from './features/chat/BridgeUpdatePrompt';
 import { DirectoryPickerModal } from './features/chat/DirectoryPickerModal';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { isWebMode } from '../utils/platform';
+import { getModelDisplayLabel } from '@shared/constants';
 
 import { PreviewPanel } from './PreviewPanel';
 import { PlanPanel } from './features/chat/PlanPanel';
@@ -27,7 +28,7 @@ import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndic
 import { RewindPanel } from './RewindPanel';
 import { PermissionCard } from './PermissionDialog/PermissionCard';
 import type { Message, MessageAttachment, TaskPlan } from '../../shared/types';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import {
   Bot,
@@ -78,8 +79,11 @@ export const ChatView: React.FC = () => {
       }
 
       try {
-        const planData = await ipcService.invoke(IPC_CHANNELS.PLANNING_GET_PLAN);
-        setPlan(planData || null);
+        const response = await window.domainAPI?.invoke<TaskPlan | null>(IPC_DOMAINS.PLANNING, 'getPlan');
+        if (!response?.success) {
+          throw new Error(response?.error?.message || 'Failed to fetch plan');
+        }
+        setPlan(response.data || null);
       } catch (error) {
         console.error('Failed to fetch plan:', error);
         setPlan(null);
@@ -467,15 +471,7 @@ function formatElapsed(ms: number): string {
 
 // 模型名称简写
 function shortModelName(model: string): string {
-  return model
-    .replace('claude-opus-4-6', 'Opus 4.6')
-    .replace('claude-sonnet-4-6', 'Sonnet 4.6')
-    .replace('claude-haiku-4-5-20251001', 'Haiku 4.5')
-    .replace('claude-opus-4-5-20251124', 'Opus 4.5')
-    .replace('claude-sonnet-4-20250514', 'Sonnet 4')
-    .replace('kimi-k2.5', 'Kimi K2.5')
-    .replace('deepseek-chat', 'DeepSeek V3')
-    .replace('gpt-4o', 'GPT-4o');
+  return getModelDisplayLabel(model).replace(/\s*\([^)]*\)\s*$/, '');
 }
 
 // Thinking indicator - Claude/ChatGPT style, left-aligned, no avatar

@@ -5,6 +5,7 @@
 
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useAppStore } from '../../stores/appStore';
+import { useSessionStore } from '../../stores/sessionStore';
 import { usePermissionStore, type PermissionRequestForMemory } from '../../stores/permissionStore';
 import { PermissionHeader } from './PermissionHeader';
 import { DangerWarning } from './DangerWarning';
@@ -54,13 +55,17 @@ function toMemoryRequest(request: PermissionRequest): PermissionRequestForMemory
 }
 
 export function PermissionCard() {
-  const { pendingPermissionRequest, setPendingPermissionRequest } = useAppStore();
+  const { pendingPermissionRequest, pendingPermissionSessionId, setPendingPermissionRequest } = useAppStore();
+  const currentSessionId = useSessionStore((state) => state.currentSessionId);
   const { checkMemory, saveMemory } = usePermissionStore();
   const cardRef = useRef<HTMLDivElement>(null);
   const processedRequestRef = useRef<string | null>(null);
 
   // 如果没有待处理的权限请求，不渲染
   if (!pendingPermissionRequest) return null;
+  if (pendingPermissionSessionId && currentSessionId && pendingPermissionSessionId !== currentSessionId) {
+    return null;
+  }
 
   const request = normalizeRequest(pendingPermissionRequest);
   const config = getPermissionConfig(request.type);
@@ -115,7 +120,8 @@ export function PermissionCard() {
         ipcService.invoke(
           IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
           request.id,
-          response
+          response,
+          request.sessionId
         );
       }
       setPendingPermissionRequest(null);

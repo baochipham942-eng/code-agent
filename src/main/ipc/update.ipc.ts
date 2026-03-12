@@ -4,7 +4,7 @@
 
 import type { IpcMain } from 'electron';
 import { app } from 'electron';
-import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { UpdateInfo } from '../../shared/types';
 import { getUpdateService, isUpdateServiceInitialized } from '../services/cloud/updateService';
 
@@ -100,28 +100,4 @@ export function registerUpdateHandlers(ipcMain: IpcMain): void {
 
   // ========== Legacy Handlers (Deprecated) ==========
 
-  /** @deprecated Use IPC_DOMAINS.UPDATE with action: 'check' */
-  ipcMain.handle(IPC_CHANNELS.UPDATE_CHECK, async () => handleCheck());
-
-  /** @deprecated Use IPC_DOMAINS.UPDATE with action: 'getInfo' */
-  ipcMain.handle(IPC_CHANNELS.UPDATE_GET_INFO, async () => handleGetInfo());
-
-  /** @deprecated Use IPC_DOMAINS.UPDATE with action: 'download' */
-  ipcMain.handle(IPC_CHANNELS.UPDATE_DOWNLOAD, async (_, downloadUrl: string) =>
-    handleDownload({ downloadUrl })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.UPDATE with action: 'openFile' */
-  ipcMain.handle(IPC_CHANNELS.UPDATE_OPEN_FILE, async (_, filePath: string) =>
-    handleOpenFile({ filePath })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.UPDATE with action: 'openUrl' */
-  ipcMain.handle(IPC_CHANNELS.UPDATE_OPEN_URL, async (_, url: string) => handleOpenUrl({ url }));
-
-  /** @deprecated Use IPC_DOMAINS.UPDATE with action: 'startAutoCheck' */
-  ipcMain.handle(IPC_CHANNELS.UPDATE_START_AUTO_CHECK, async () => handleStartAutoCheck());
-
-  /** @deprecated Use IPC_DOMAINS.UPDATE with action: 'stopAutoCheck' */
-  ipcMain.handle(IPC_CHANNELS.UPDATE_STOP_AUTO_CHECK, async () => handleStopAutoCheck());
 }

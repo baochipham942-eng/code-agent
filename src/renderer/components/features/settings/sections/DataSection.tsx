@@ -16,7 +16,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Button, Input } from '../../../primitives';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { MemoryStats, SearchResult } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import { MemoryKnowledgeGraph } from '../tabs/MemoryKnowledgeGraph';
@@ -56,7 +56,7 @@ export const DataSection: React.FC = () => {
   const loadStats = async () => {
     try {
       const [dataStats, memStats] = await Promise.all([
-        ipcService.invoke(IPC_CHANNELS.DATA_GET_STATS),
+        ipcService.invokeDomain<DataStats>(IPC_DOMAINS.DATA, 'getStats'),
         ipcService.invoke(IPC_CHANNELS.MEMORY_GET_STATS),
       ]);
       if (dataStats) setStats(dataStats);
@@ -76,7 +76,7 @@ export const DataSection: React.FC = () => {
     setIsClearing(true);
     setMessage(null);
     try {
-      const cleared = await ipcService.invoke(IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE);
+      const cleared = await ipcService.invokeDomain<number>(IPC_DOMAINS.DATA, 'clearToolCache');
       if (cleared === 0) {
         setMessage({ type: 'success', text: '缓存已经是空的' });
       } else {

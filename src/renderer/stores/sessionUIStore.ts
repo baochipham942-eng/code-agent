@@ -1,10 +1,17 @@
 import { create } from 'zustand';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { useSessionStore, type SessionFilter } from './sessionStore';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 
 const logger = createLogger('SessionUIStore');
+
+async function deleteSession(id: string): Promise<void> {
+  const response = await window.domainAPI?.invoke(IPC_DOMAINS.SESSION, 'delete', { sessionId: id });
+  if (!response?.success) {
+    throw new Error(response?.error?.message || 'Failed to delete session');
+  }
+}
 
 export type { SessionFilter };
 
@@ -59,7 +66,7 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
       (async () => {
         for (const id of prevIds) {
           try {
-            await ipcService.invoke(IPC_CHANNELS.SESSION_DELETE, id);
+            await deleteSession(id);
           } catch (error) {
             logger.error('Failed to delete session in previous batch', error);
           }
@@ -112,7 +119,7 @@ export const useSessionUIStore = create<SessionUIStore>()((set, get) => ({
 
     for (const id of idsToDelete) {
       try {
-        await ipcService.invoke(IPC_CHANNELS.SESSION_DELETE, id);
+        await deleteSession(id);
       } catch (error) {
         logger.error('Failed to confirm delete session', error);
       }

@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { Download, RefreshCw, CheckCircle, AlertCircle, Cpu } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_DOMAINS, IPC_CHANNELS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/types';
 import { createLogger } from '../../../../utils/logger';
 import ipcService from '../../../../services/ipcService';
@@ -53,7 +53,7 @@ export const AboutSection: React.FC<AboutSectionProps> = ({
     setIsChecking(true);
     setError(null);
     try {
-      const info = await ipcService.invoke(IPC_CHANNELS.UPDATE_CHECK);
+      const info = await ipcService.invokeDomain<UpdateInfo>(IPC_DOMAINS.UPDATE, 'check');
       if (info) {
         onUpdateInfoChange(info);
       }

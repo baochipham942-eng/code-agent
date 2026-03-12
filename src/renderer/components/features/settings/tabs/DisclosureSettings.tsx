@@ -5,7 +5,7 @@
 import React from 'react';
 import { Eye, EyeOff, Sparkles, Zap } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 import type { DisclosureLevel } from '../../../../stores/appStore';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
@@ -34,7 +34,7 @@ export const DisclosureSettings: React.FC<DisclosureSettingsProps> = ({ level, o
   const handleLevelChange = async (newLevel: DisclosureLevel) => {
     onChange(newLevel);
     try {
-      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         ui: { disclosureLevel: newLevel },
       } as Partial<import('@shared/types').AppSettings>);
       logger.info('Disclosure level saved', { level: newLevel });

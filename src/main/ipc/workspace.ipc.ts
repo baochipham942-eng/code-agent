@@ -5,15 +5,6 @@
 import type { IpcMain, BrowserWindow } from 'electron';
 import { dialog } from 'electron';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-
-// Legacy channel constants (post-IPC_CHANNELS deprecation)
-const LEGACY_CHANNELS = {
-  WORKSPACE_SELECT_DIRECTORY: 'workspace:select-directory',
-  WORKSPACE_GET_CURRENT: 'workspace:get-current',
-  WORKSPACE_LIST_FILES: 'workspace:list-files',
-  WORKSPACE_READ_FILE: 'workspace:read-file',
-  SHELL_OPEN_PATH: 'shell:open-path',
-} as const;
 import type { FileInfo } from '../../shared/types';
 import type { AgentApplicationService } from '../../shared/types/appService';
 
@@ -182,28 +173,4 @@ export function registerWorkspaceHandlers(
     }
   });
 
-  // ========== Legacy Handlers (Deprecated) ==========
-
-  /** @deprecated Use IPC_DOMAINS.WORKSPACE with action: 'selectDirectory' */
-  ipcMain.handle(LEGACY_CHANNELS.WORKSPACE_SELECT_DIRECTORY, async () =>
-    handleSelectDirectory(getMainWindow, getAppService)
-  );
-
-  /** @deprecated Use IPC_DOMAINS.WORKSPACE with action: 'getCurrent' */
-  ipcMain.handle(LEGACY_CHANNELS.WORKSPACE_GET_CURRENT, async () => handleGetCurrent(getAppService));
-
-  /** @deprecated Use IPC_DOMAINS.WORKSPACE with action: 'listFiles' */
-  ipcMain.handle(LEGACY_CHANNELS.WORKSPACE_LIST_FILES, async (_, dirPath: string) =>
-    handleListFiles({ dirPath })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.WORKSPACE with action: 'readFile' */
-  ipcMain.handle(LEGACY_CHANNELS.WORKSPACE_READ_FILE, async (_, filePath: string) =>
-    handleReadFile({ filePath })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.WORKSPACE with action: 'openPath' */
-  ipcMain.handle(LEGACY_CHANNELS.SHELL_OPEN_PATH, async (_, filePath: string) =>
-    handleOpenPath({ filePath }, getAppService)
-  );
 }

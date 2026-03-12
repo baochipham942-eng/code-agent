@@ -4,7 +4,7 @@
 
 import type { IpcMain } from 'electron';
 import { app } from 'electron';
-import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('DataIPC');
@@ -138,18 +138,4 @@ export function registerDataHandlers(ipcMain: IpcMain): void {
 
   // ========== Legacy Handlers (Deprecated) ==========
 
-  /** @deprecated Use IPC_DOMAINS.DATA with action: 'cacheGetStats' */
-  ipcMain.handle(IPC_CHANNELS.CACHE_GET_STATS, async () => handleCacheGetStats());
-
-  /** @deprecated Use IPC_DOMAINS.DATA with action: 'cacheClear' */
-  ipcMain.handle(IPC_CHANNELS.CACHE_CLEAR, async () => handleCacheClear());
-
-  /** @deprecated Use IPC_DOMAINS.DATA with action: 'cacheCleanExpired' */
-  ipcMain.handle(IPC_CHANNELS.CACHE_CLEAN_EXPIRED, async () => handleCacheCleanExpired());
-
-  /** @deprecated Use IPC_DOMAINS.DATA with action: 'getStats' */
-  ipcMain.handle(IPC_CHANNELS.DATA_GET_STATS, async () => handleDataGetStats());
-
-  /** @deprecated Use IPC_DOMAINS.DATA with action: 'clearToolCache' */
-  ipcMain.handle(IPC_CHANNELS.DATA_CLEAR_TOOL_CACHE, async () => handleDataClearToolCache());
 }

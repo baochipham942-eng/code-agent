@@ -9,10 +9,17 @@ import type {
   Finding,
   ErrorRecord,
   PermissionRequest,
+  TaskProgressData,
+  TaskCompleteData,
 } from '@shared/types';
 import type { ContextHealthState } from '@shared/types/contextHealth';
 import { defaultLanguage, type Language } from '../i18n';
-import { DEFAULT_PROVIDER, DEFAULT_MODEL, MODEL_API_ENDPOINTS, MODEL_MAX_TOKENS } from '@shared/constants';
+import {
+  DEFAULT_PROVIDER,
+  DEFAULT_MODEL,
+  MODEL_MAX_TOKENS,
+  getProviderEndpoint,
+} from '@shared/constants';
 
 // 渐进披露级别
 export type DisclosureLevel = 'simple' | 'standard' | 'advanced' | 'expert';
@@ -75,6 +82,10 @@ interface AppState {
 
   // Permission Request State
   pendingPermissionRequest: PermissionRequest | null;
+  pendingPermissionSessionId: string | null;
+  queuedPermissionRequests: Record<string, PermissionRequest[]>;
+  sessionTaskProgress: Record<string, TaskProgressData | null | undefined>;
+  sessionTaskComplete: Record<string, TaskCompleteData | null | undefined>;
 
   // Model Config
   modelConfig: ModelConfig;
@@ -116,7 +127,15 @@ interface AppState {
   setShowPreviewPanel: (show: boolean) => void;
   openPreview: (filePath: string) => void;
   closePreview: () => void;
-  setPendingPermissionRequest: (request: PermissionRequest | null) => void;
+  setPendingPermissionRequest: (request: PermissionRequest | null, sessionId?: string | null) => void;
+  enqueuePermissionRequest: (
+    sessionId: string,
+    request: PermissionRequest,
+    options?: { front?: boolean }
+  ) => void;
+  shiftQueuedPermissionRequest: (sessionId: string) => PermissionRequest | null;
+  setSessionTaskProgress: (sessionId: string, progress: TaskProgressData | null) => void;
+  setSessionTaskComplete: (sessionId: string, complete: TaskCompleteData | null) => void;
   setModelConfig: (config: ModelConfig) => void;
   // clearChat 简化：只清除 planning 相关状态（messages/todos 由 sessionStore 管理）
   clearPlanningState: () => void;
@@ -130,7 +149,7 @@ const defaultModelConfig: ModelConfig = {
   provider: DEFAULT_PROVIDER,
   model: DEFAULT_MODEL,
   apiKey: '',
-  baseUrl: MODEL_API_ENDPOINTS.kimiK25,
+  baseUrl: getProviderEndpoint(DEFAULT_PROVIDER),
   temperature: 0.7,
   maxTokens: MODEL_MAX_TOKENS.DEFAULT,
 };
@@ -182,6 +201,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Initial Permission Request State
   pendingPermissionRequest: null,
+  pendingPermissionSessionId: null,
+  queuedPermissionRequests: {},
+  sessionTaskProgress: {},
+  sessionTaskComplete: {},
 
   // Initial Model Config
   modelConfig: defaultModelConfig,
@@ -250,7 +273,67 @@ export const useAppStore = create<AppState>((set, get) => ({
   openPreview: (filePath) => set({ previewFilePath: filePath, showPreviewPanel: true }),
   closePreview: () => set({ previewFilePath: null, showPreviewPanel: false }),
 
-  setPendingPermissionRequest: (request) => set({ pendingPermissionRequest: request }),
+  setPendingPermissionRequest: (request, sessionId = null) =>
+    set({
+      pendingPermissionRequest: request,
+      pendingPermissionSessionId: request ? sessionId : null,
+    }),
+
+  enqueuePermissionRequest: (sessionId, request, options) =>
+    set((state) => {
+      const existingQueue = state.queuedPermissionRequests[sessionId] || [];
+      const nextQueue = options?.front
+        ? [request, ...existingQueue]
+        : [...existingQueue, request];
+
+      return {
+        queuedPermissionRequests: {
+          ...state.queuedPermissionRequests,
+          [sessionId]: nextQueue,
+        },
+      };
+    }),
+
+  shiftQueuedPermissionRequest: (sessionId) => {
+    let nextRequest: PermissionRequest | null = null;
+
+    set((state) => {
+      const queue = state.queuedPermissionRequests[sessionId] || [];
+      if (queue.length === 0) {
+        return state;
+      }
+
+      nextRequest = queue[0];
+      const remaining = queue.slice(1);
+      const nextQueues = { ...state.queuedPermissionRequests };
+
+      if (remaining.length > 0) {
+        nextQueues[sessionId] = remaining;
+      } else {
+        delete nextQueues[sessionId];
+      }
+
+      return { queuedPermissionRequests: nextQueues };
+    });
+
+    return nextRequest;
+  },
+
+  setSessionTaskProgress: (sessionId, progress) =>
+    set((state) => ({
+      sessionTaskProgress: {
+        ...state.sessionTaskProgress,
+        [sessionId]: progress,
+      },
+    })),
+
+  setSessionTaskComplete: (sessionId, complete) =>
+    set((state) => ({
+      sessionTaskComplete: {
+        ...state.sessionTaskComplete,
+        [sessionId]: complete,
+      },
+    })),
 
   setModelConfig: (config) => set({ modelConfig: config }),
 

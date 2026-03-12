@@ -57,6 +57,7 @@ export interface Session {
   generation: number;
   workspace_path: string | null;
   config: Record<string, unknown>;
+  is_deleted: boolean;
   created_at: Date;
   updated_at: Date;
 }
@@ -126,9 +127,15 @@ export async function initializeSchema() {
       generation INTEGER DEFAULT 1,
       workspace_path TEXT,
       config JSONB DEFAULT '{}',
+      is_deleted BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW()
     );
+  `;
+
+  await sql`
+    ALTER TABLE code_agent.sessions
+    ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN DEFAULT FALSE;
   `;
 
   await sql`

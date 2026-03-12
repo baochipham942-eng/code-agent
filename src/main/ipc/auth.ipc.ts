@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { IpcMain } from 'electron';
-import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { AuthUser, AuthStatus } from '../../shared/types';
 import { getAuthService } from '../services';
 import { getSecureStorage } from '../services/core/secureStorage';
@@ -159,50 +159,4 @@ export function registerAuthHandlers(ipcMain: IpcMain): void {
 
   // ========== Legacy Handlers (Deprecated) ==========
 
-  /** @deprecated Use IPC_DOMAINS.AUTH with action: 'getStatus' */
-  ipcMain.handle(IPC_CHANNELS.AUTH_GET_STATUS, async () => handleGetStatus());
-
-  /** @deprecated Use IPC_DOMAINS.AUTH with action: 'signInEmail' */
-  ipcMain.handle(IPC_CHANNELS.AUTH_SIGN_IN_EMAIL, async (_, email: string, password: string) =>
-    handleSignInEmail({ email, password })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.AUTH with action: 'signUpEmail' */
-  ipcMain.handle(IPC_CHANNELS.AUTH_SIGN_UP_EMAIL, async (_, email: string, password: string, inviteCode?: string) =>
-    handleSignUpEmail({ email, password, inviteCode })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.AUTH with action: 'signInOAuth' */
-  ipcMain.handle(IPC_CHANNELS.AUTH_SIGN_IN_OAUTH, async (_, provider: 'github' | 'google') =>
-    handleSignInOAuth({ provider })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.AUTH with action: 'signInToken' */
-  ipcMain.handle(IPC_CHANNELS.AUTH_SIGN_IN_TOKEN, async (_, token: string) =>
-    handleSignInToken({ token })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.AUTH with action: 'signOut' */
-  ipcMain.handle(IPC_CHANNELS.AUTH_SIGN_OUT, async () => handleSignOut());
-
-  /** @deprecated Use IPC_DOMAINS.AUTH with action: 'getUser' */
-  ipcMain.handle(IPC_CHANNELS.AUTH_GET_USER, async () => handleGetUser());
-
-  /** @deprecated Use IPC_DOMAINS.AUTH with action: 'updateProfile' */
-  ipcMain.handle(IPC_CHANNELS.AUTH_UPDATE_PROFILE, async (_, updates: Partial<AuthUser>) =>
-    handleUpdateProfile({ updates })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.AUTH with action: 'generateQuickToken' */
-  ipcMain.handle(IPC_CHANNELS.AUTH_GENERATE_QUICK_TOKEN, async () => handleGenerateQuickToken());
-
-  /** @deprecated Use IPC_DOMAINS.AUTH with action: 'resetPassword' */
-  ipcMain.handle(IPC_CHANNELS.AUTH_RESET_PASSWORD, async (_, email: string) =>
-    handleResetPassword({ email })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.AUTH with action: 'updatePassword' */
-  ipcMain.handle(IPC_CHANNELS.AUTH_UPDATE_PASSWORD, async (_, password: string) =>
-    handleUpdatePassword({ password })
-  );
 }

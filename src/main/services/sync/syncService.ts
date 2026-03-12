@@ -315,7 +315,6 @@ class SyncService implements Disposable {
       .from('sessions')
       .select('*')
       .eq('user_id', userId)
-      .eq('is_deleted', false)
       .gt('updated_at', this.syncCursor)
       .order('updated_at', { ascending: true });
 
@@ -323,7 +322,18 @@ class SyncService implements Disposable {
 
     for (const remote of remoteSessions) {
       try {
-        const local = db.getSession(remote.id);
+        const local = db.getSession(remote.id, { includeDeleted: true });
+
+        if (remote.is_deleted) {
+          if (local && remote.updated_at > local.updatedAt) {
+            db.deleteSession(remote.id, {
+              deletedAt: remote.updated_at,
+              syncOrigin: 'remote',
+            });
+            count++;
+          }
+          continue;
+        }
 
         if (!local) {
           // New record from cloud
@@ -336,6 +346,11 @@ class SyncService implements Disposable {
               model: remote.model_name || DEFAULT_MODEL,
             },
             workingDirectory: remote.working_directory || undefined,
+            createdAt: remote.created_at,
+            updatedAt: remote.updated_at,
+            isDeleted: false,
+          }, {
+            syncOrigin: 'remote',
           });
           count++;
         } else if (remote.updated_at > local.updatedAt) {
@@ -356,7 +371,16 @@ class SyncService implements Disposable {
               db.updateSession(remote.id, {
                 title: remote.title,
                 generationId: remote.generation_id as string,
+                modelConfig: {
+                  provider: (remote.model_provider as ModelProvider) || DEFAULT_PROVIDER,
+                  model: remote.model_name || DEFAULT_MODEL,
+                },
+                workingDirectory: remote.working_directory || undefined,
+                createdAt: remote.created_at as number,
                 updatedAt: remote.updated_at as number,
+              }, {
+                syncOrigin: 'remote',
+                isDeleted: false,
               });
               count++;
             }
@@ -398,7 +422,10 @@ class SyncService implements Disposable {
             timestamp: remote.timestamp,
             toolCalls: remote.tool_calls as Message['toolCalls'],
             toolResults: remote.tool_results as Message['toolResults'],
-          }, { skipTimestampUpdate: true });
+          }, {
+            skipTimestampUpdate: true,
+            syncOrigin: 'remote',
+          });
           count++;
         }
       } catch (err) {
@@ -437,9 +464,7 @@ class SyncService implements Disposable {
     let count = 0;
     let sessionPushFailed = false;
 
-    // Get all local sessions (not just modified ones)
-    const sessions = db.listSessions(1000, 0);
-    const pendingSessions = sessions.filter((s) => s.updatedAt > this.syncCursor);
+    const pendingSessions = db.getUnsyncedSessions(1000);
 
     if (pendingSessions.length > 0) {
       const { error } = await supabase.from('sessions').upsert(
@@ -453,6 +478,7 @@ class SyncService implements Disposable {
           working_directory: s.workingDirectory || null,
           created_at: s.createdAt,
           updated_at: s.updatedAt,
+          is_deleted: s.isDeleted ?? false,
           source_device_id: this.deviceId,
           // TODO: Supabase upsert 类型限制
         })) as any,
@@ -460,6 +486,7 @@ class SyncService implements Disposable {
       );
 
       if (!error) {
+        db.markSessionsSynced(pendingSessions.map((s) => s.id));
         count += pendingSessions.length;
       } else {
         logger.error('Error pushing sessions', { error });
@@ -691,6 +718,9 @@ class SyncService implements Disposable {
           title: remote.title,
           generationId: remote.generation_id as string,
           updatedAt: remote.updated_at as number,
+        }, {
+          syncOrigin: 'remote',
+          isDeleted: remote.is_deleted,
         });
       }
     }

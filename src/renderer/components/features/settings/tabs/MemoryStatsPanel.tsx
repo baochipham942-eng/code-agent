@@ -111,6 +111,68 @@ const SimpleBarChart: React.FC<{ data: Array<{ period: string; count: number }> 
   );
 };
 
+const SimplePieChart: React.FC<{
+  data: Record<MemoryCategory, number>;
+  total: number;
+}> = ({ data, total }) => {
+  const categories = Object.entries(data) as Array<[MemoryCategory, number]>;
+  let startAngle = 0;
+
+  return (
+    <div className="flex items-center gap-4">
+      <svg viewBox="0 0 120 120" className="w-24 h-24 shrink-0 -rotate-90">
+        <circle cx="60" cy="60" r="42" fill="none" stroke="rgba(63,63,70,0.45)" strokeWidth="16" />
+        {categories.map(([category, count]) => {
+          if (count <= 0 || total <= 0) {
+            return null;
+          }
+
+          const ratio = count / total;
+          const circumference = 2 * Math.PI * 42;
+          const strokeDasharray = `${ratio * circumference} ${circumference}`;
+          const strokeDashoffset = -startAngle * circumference;
+          startAngle += ratio;
+
+          return (
+            <circle
+              key={category}
+              cx="60"
+              cy="60"
+              r="42"
+              fill="none"
+              stroke={CATEGORY_CONFIG[category].color}
+              strokeWidth="16"
+              strokeDasharray={strokeDasharray}
+              strokeDashoffset={strokeDashoffset}
+              strokeLinecap="butt"
+            />
+          );
+        })}
+      </svg>
+
+      <div className="flex-1 space-y-1.5">
+        {categories.map(([category, count]) => (
+          <div key={category} className="flex items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: CATEGORY_CONFIG[category].color }}
+              />
+              <span className="text-zinc-300 truncate">
+                {CATEGORY_CONFIG[category].icon} {CATEGORY_CONFIG[category].label}
+              </span>
+            </div>
+            <span className="text-zinc-500 shrink-0">
+              {count}
+              {total > 0 ? ` (${Math.round((count / total) * 100)}%)` : ''}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export const MemoryStatsPanel: React.FC<MemoryStatsPanelProps> = ({
   memories,
   stats,

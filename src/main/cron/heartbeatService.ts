@@ -4,13 +4,18 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { BrowserWindow } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
+import { IPC_CHANNELS } from '../../shared/ipc';
 import type {
   HeartbeatConfig,
   HeartbeatStatus,
   HeartbeatCheck,
   HeartbeatExpectation,
 } from '../../shared/types/cron';
+import { getDatabase } from '../services/core/databaseService';
+import { notificationService } from '../services/infra/notificationService';
+import { getToolRegistry } from '../tools/toolRegistry';
 
 const execAsync = promisify(exec);
 
@@ -31,6 +36,19 @@ interface HeartbeatCheckResult {
   duration: number;
   output?: string;
   error?: string;
+}
+
+interface HeartbeatRow {
+  id: string;
+  name: string;
+  interval: number;
+  check_config: string;
+  expectation: string | null;
+  alert: string | null;
+  enabled: number;
+  failure_threshold: number | null;
+  created_at: number;
+  updated_at: number;
 }
 
 // ============================================================================
@@ -467,9 +485,26 @@ export class HeartbeatService {
       }
 
       case 'tool': {
-        // Tool-based health checks would integrate with the tool system
-        console.error(`[HeartbeatService] Tool check not fully implemented: ${check.toolName}`);
-        return { success: true, output: 'Tool check placeholder' };
+        const registry = getToolRegistry();
+        const tool = registry.get(check.toolName);
+
+        if (!tool) {
+          return {
+            success: false,
+            output: `Tool "${check.toolName}" is not registered`,
+          };
+        }
+
+        return {
+          success: true,
+          output: JSON.stringify({
+            toolName: check.toolName,
+            registered: true,
+            description: tool.description,
+            requiresPermission: tool.requiresPermission,
+            parameters: check.parameters ?? {},
+          }),
+        };
       }
 
       default:
@@ -510,13 +545,39 @@ export class HeartbeatService {
     );
 
     if (alert.ipc) {
-      // Would send IPC message to renderer
-      console.error('[HeartbeatService] Would send IPC alert');
+      const event = {
+        type: 'notification' as const,
+        data: {
+          message: `[Heartbeat] ${config.name}: ${checkResult.error || 'Check failed'}`,
+          heartbeatId: config.id,
+          status: status.status,
+          consecutiveFailures: status.consecutiveFailures,
+        },
+      };
+
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send(IPC_CHANNELS.AGENT_EVENT, event);
+      }
     }
 
     if (alert.notification) {
-      // Would trigger system notification
-      console.error('[HeartbeatService] Would trigger system notification');
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.webContents.send(IPC_CHANNELS.AGENT_EVENT, {
+          type: 'notification',
+          data: {
+            message: `[Heartbeat Alert] ${config.name} is ${status.status}`,
+            heartbeatId: config.id,
+          },
+        });
+      }
+
+      notificationService.notifyTaskComplete({
+        sessionId: config.id,
+        sessionTitle: `Heartbeat Alert: ${config.name}`,
+        summary: checkResult.error || `Heartbeat is ${status.status}`,
+        duration: checkResult.duration,
+        toolsUsed: config.check.type === 'tool' ? [config.check.toolName] : [],
+      });
     }
 
     if (alert.webhook) {
@@ -544,8 +605,54 @@ export class HeartbeatService {
 
   private async loadHeartbeatsFromDatabase(): Promise<void> {
     try {
-      // Heartbeats would be loaded from database
-      console.error('[HeartbeatService] Database loading not implemented yet');
+      const db = await this.getRawDatabase();
+      const rows = db
+        .prepare(`
+          SELECT
+            id,
+            name,
+            interval,
+            check_config,
+            expectation,
+            alert,
+            enabled,
+            failure_threshold,
+            created_at,
+            updated_at
+          FROM heartbeats
+        `)
+        .all() as HeartbeatRow[];
+
+      for (const row of rows) {
+        const config: HeartbeatConfig = {
+          id: row.id,
+          name: row.name,
+          interval: row.interval,
+          check: JSON.parse(row.check_config) as HeartbeatCheck,
+          expectation: row.expectation ? JSON.parse(row.expectation) as HeartbeatExpectation : undefined,
+          alert: row.alert ? JSON.parse(row.alert) : undefined,
+          enabled: row.enabled === 1,
+          failureThreshold: row.failure_threshold ?? 3,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        };
+
+        const activeHeartbeat: ActiveHeartbeat = {
+          config,
+          status: {
+            heartbeatId: config.id,
+            status: 'unknown',
+            consecutiveFailures: 0,
+          },
+          checkHistory: [],
+        };
+
+        if (config.enabled) {
+          this.startHeartbeat(activeHeartbeat);
+        }
+
+        this.heartbeats.set(config.id, activeHeartbeat);
+      }
     } catch (error) {
       console.error('[HeartbeatService] Failed to load heartbeats from database:', error);
     }
@@ -553,8 +660,52 @@ export class HeartbeatService {
 
   private async saveHeartbeatToDatabase(config: HeartbeatConfig): Promise<void> {
     try {
-      // Save heartbeat to database
-      console.error('[HeartbeatService] Database saving not implemented yet');
+      const db = await this.getRawDatabase();
+      db.prepare(`
+        INSERT INTO heartbeats (
+          id,
+          name,
+          interval,
+          check_config,
+          expectation,
+          alert,
+          enabled,
+          failure_threshold,
+          created_at,
+          updated_at
+        ) VALUES (
+          @id,
+          @name,
+          @interval,
+          @check_config,
+          @expectation,
+          @alert,
+          @enabled,
+          @failure_threshold,
+          @created_at,
+          @updated_at
+        )
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          interval = excluded.interval,
+          check_config = excluded.check_config,
+          expectation = excluded.expectation,
+          alert = excluded.alert,
+          enabled = excluded.enabled,
+          failure_threshold = excluded.failure_threshold,
+          updated_at = excluded.updated_at
+      `).run({
+        id: config.id,
+        name: config.name,
+        interval: config.interval,
+        check_config: JSON.stringify(config.check),
+        expectation: config.expectation ? JSON.stringify(config.expectation) : null,
+        alert: config.alert ? JSON.stringify(config.alert) : null,
+        enabled: config.enabled ? 1 : 0,
+        failure_threshold: config.failureThreshold ?? 3,
+        created_at: config.createdAt,
+        updated_at: config.updatedAt,
+      });
     } catch (error) {
       console.error('[HeartbeatService] Failed to save heartbeat to database:', error);
     }
@@ -562,11 +713,25 @@ export class HeartbeatService {
 
   private async deleteHeartbeatFromDatabase(id: string): Promise<void> {
     try {
-      // Delete heartbeat from database
-      console.error('[HeartbeatService] Database deletion not implemented yet');
+      const db = await this.getRawDatabase();
+      db.prepare('DELETE FROM heartbeats WHERE id = ?').run(id);
     } catch (error) {
       console.error('[HeartbeatService] Failed to delete heartbeat from database:', error);
     }
+  }
+
+  private async getRawDatabase() {
+    const databaseService = getDatabase();
+    if (!databaseService.isReady) {
+      await databaseService.initialize();
+    }
+
+    const db = databaseService.getDb();
+    if (!db) {
+      throw new Error('Database not initialized');
+    }
+
+    return db;
   }
 }
 

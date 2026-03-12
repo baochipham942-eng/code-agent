@@ -4,13 +4,21 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { Download, CheckCircle, AlertCircle, Loader2, ShieldAlert } from 'lucide-react';
-import { IPC_CHANNELS } from '../../shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '../../shared/ipc';
 import type { UpdateInfo, DownloadProgress } from '../../shared/types';
 import { Modal, ModalHeader } from './primitives/Modal';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 
 const logger = createLogger('ForceUpdateModal');
+
+async function invokeUpdate<T>(action: string, payload?: unknown): Promise<T> {
+  const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.UPDATE, action, payload);
+  if (!response?.success) {
+    throw new Error(response?.error?.message || `Update action failed: ${action}`);
+  }
+  return response.data as T;
+}
 
 interface ForceUpdateModalProps {
   updateInfo: UpdateInfo;
@@ -61,7 +69,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
       setDownloadState('downloading');
       setDownloadProgress({ percent: 0, transferred: 0, total: 0, bytesPerSecond: 0 });
       setError(null);
-      await ipcService.invoke(IPC_CHANNELS.UPDATE_DOWNLOAD, updateInfo.downloadUrl);
+      await invokeUpdate<string>('download', { downloadUrl: updateInfo.downloadUrl });
     } catch (err) {
       setError(err instanceof Error ? err.message : '下载失败');
       setDownloadState('error');
@@ -70,7 +78,7 @@ export const ForceUpdateModal: React.FC<ForceUpdateModalProps> = ({ updateInfo }
 
   const handleOpenFile = useCallback(async () => {
     if (!downloadedFilePath) return;
-    await ipcService.invoke(IPC_CHANNELS.UPDATE_OPEN_FILE, downloadedFilePath);
+    await invokeUpdate('openFile', { filePath: downloadedFilePath });
   }, [downloadedFilePath]);
 
   const handleRetry = useCallback(() => {

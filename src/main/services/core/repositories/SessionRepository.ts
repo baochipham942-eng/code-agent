@@ -20,14 +20,49 @@ type SQLiteRow = Record<string, unknown>;
 
 export interface StoredSession extends Session {
   messageCount: number;
+  isDeleted?: boolean;
 }
 
 export interface StoredMessage extends Message {
   sessionId: string;
 }
 
+type SyncOrigin = 'local' | 'remote';
+
+interface SessionWriteOptions {
+  syncOrigin?: SyncOrigin;
+}
+
+interface MessageWriteOptions {
+  skipTimestampUpdate?: boolean;
+  syncOrigin?: SyncOrigin;
+  syncedAt?: number | null;
+}
+
 export class SessionRepository {
   constructor(private db: BetterSqlite3.Database) {}
+
+  private normalizeTimestamp(value: number | string | undefined, fallback: number): number {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      const parsed = Date.parse(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+
+    return fallback;
+  }
+
+  private resolveSyncedAt(options?: SessionWriteOptions | MessageWriteOptions): number | null {
+    if (options && 'syncedAt' in options && options.syncedAt !== undefined) {
+      return options.syncedAt;
+    }
+    return options?.syncOrigin === 'remote' ? Date.now() : null;
+  }
 
   // --------------------------------------------------------------------------
   // Session CRUD
@@ -35,8 +70,8 @@ export class SessionRepository {
 
   createSession(session: Session): void {
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, workspace, status, last_token_usage, is_deleted, synced_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL)
     `);
 
     stmt.run(
@@ -61,14 +96,18 @@ export class SessionRepository {
       generationId?: string;
       modelConfig: { provider: ModelProvider; model: string };
       workingDirectory?: string;
-      createdAt?: number;
-      updatedAt?: number;
-    }
+      createdAt?: number | string;
+      updatedAt?: number | string;
+      isDeleted?: boolean;
+    },
+    options?: SessionWriteOptions
   ): void {
-    const now = data.createdAt ?? Date.now();
+    const now = Date.now();
+    const createdAt = this.normalizeTimestamp(data.createdAt, now);
+    const updatedAt = this.normalizeTimestamp(data.updatedAt, createdAt);
     const stmt = this.db.prepare(`
-      INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, is_deleted, synced_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -78,33 +117,39 @@ export class SessionRepository {
       data.modelConfig.provider,
       data.modelConfig.model,
       data.workingDirectory || null,
-      now,
-      data.updatedAt ?? now
+      createdAt,
+      updatedAt,
+      data.isDeleted ? 1 : 0,
+      this.resolveSyncedAt(options)
     );
   }
 
-  getSession(sessionId: string): StoredSession | null {
+  getSession(sessionId: string, options?: { includeDeleted?: boolean }): StoredSession | null {
     const stmt = this.db.prepare(`
       SELECT s.*, COUNT(m.id) as message_count
       FROM sessions s
       LEFT JOIN messages m ON s.id = m.session_id
-      WHERE s.id = ?
+      WHERE s.id = ? AND (? = 1 OR s.is_deleted = 0)
       GROUP BY s.id
     `);
 
-    const row = stmt.get(sessionId) as SQLiteRow | undefined;
+    const row = stmt.get(sessionId, options?.includeDeleted ? 1 : 0) as SQLiteRow | undefined;
     if (!row) return null;
 
     return this.rowToSession(row);
   }
 
   listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false): StoredSession[] {
-    const statusCondition = includeArchived ? '' : "WHERE s.status != 'archived'";
+    const filters = ['s.is_deleted = 0'];
+    if (!includeArchived) {
+      filters.push("s.status != 'archived'");
+    }
+    const whereClause = `WHERE ${filters.join(' AND ')}`;
     const stmt = this.db.prepare(`
       SELECT s.*, COUNT(m.id) as message_count
       FROM sessions s
       LEFT JOIN messages m ON s.id = m.session_id
-      ${statusCondition}
+      ${whereClause}
       GROUP BY s.id
       ORDER BY s.updated_at DESC
       LIMIT ? OFFSET ?
@@ -114,14 +159,14 @@ export class SessionRepository {
     return rows.map((row) => this.rowToSession(row));
   }
 
-  updateSession(sessionId: string, updates: Partial<Session>): void {
-    const session = this.getSession(sessionId);
+  updateSession(sessionId: string, updates: Partial<Session>, options?: SessionWriteOptions & { isDeleted?: boolean }): void {
+    const session = this.getSession(sessionId, { includeDeleted: true });
     if (!session) throw new Error(`Session not found: ${sessionId}`);
 
     const stmt = this.db.prepare(`
       UPDATE sessions
       SET title = ?, generation_id = ?, model_provider = ?, model_name = ?,
-          working_directory = ?, updated_at = ?, workspace = ?, status = ?, last_token_usage = ?
+          working_directory = ?, updated_at = ?, workspace = ?, status = ?, last_token_usage = ?, is_deleted = ?, synced_at = ?
       WHERE id = ?
     `);
 
@@ -139,14 +184,19 @@ export class SessionRepository {
       updates.workspace !== undefined ? updates.workspace : session.workspace,
       updates.status ?? session.status ?? 'idle',
       lastTokenUsage,
+      (options?.isDeleted ?? session.isDeleted) ? 1 : 0,
+      this.resolveSyncedAt(options),
       sessionId
     );
   }
 
-  deleteSession(sessionId: string): void {
-    this.db.prepare('DELETE FROM messages WHERE session_id = ?').run(sessionId);
-    this.db.prepare('DELETE FROM todos WHERE session_id = ?').run(sessionId);
-    this.db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
+  deleteSession(sessionId: string, options?: SessionWriteOptions & { deletedAt?: number }): void {
+    const deletedAt = options?.deletedAt ?? Date.now();
+    this.db.prepare(`
+      UPDATE sessions
+      SET is_deleted = 1, updated_at = ?, synced_at = ?
+      WHERE id = ?
+    `).run(deletedAt, this.resolveSyncedAt(options), sessionId);
   }
 
   clearAllSessions(): number {
@@ -178,10 +228,10 @@ export class SessionRepository {
   // Message CRUD
   // --------------------------------------------------------------------------
 
-  addMessage(sessionId: string, message: Message, options?: { skipTimestampUpdate?: boolean }): void {
+  addMessage(sessionId: string, message: Message, options?: MessageWriteOptions): void {
     const stmt = this.db.prepare(`
       INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, thinking, effort_level, synced_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const attachmentsMeta = message.attachments?.map(a => ({
@@ -208,11 +258,12 @@ export class SessionRepository {
       message.toolResults ? JSON.stringify(message.toolResults) : null,
       attachmentsMeta ? JSON.stringify(attachmentsMeta) : null,
       thinkingContent,
-      message.effortLevel || null
+      message.effortLevel || null,
+      this.resolveSyncedAt(options)
     );
 
     if (!options?.skipTimestampUpdate) {
-      this.db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(Date.now(), sessionId);
+      this.db.prepare('UPDATE sessions SET updated_at = ?, synced_at = NULL WHERE id = ?').run(Date.now(), sessionId);
     }
   }
 
@@ -295,11 +346,35 @@ export class SessionRepository {
     return rows.reverse().map((row) => this.rowToMessage(row));
   }
 
+  getUnsyncedSessions(limit: number = 1000): StoredSession[] {
+    const stmt = this.db.prepare(`
+      SELECT s.*, COUNT(m.id) as message_count
+      FROM sessions s
+      LEFT JOIN messages m ON s.id = m.session_id
+      WHERE s.synced_at IS NULL
+      GROUP BY s.id
+      ORDER BY s.updated_at ASC
+      LIMIT ?
+    `);
+
+    const rows = stmt.all(limit) as SQLiteRow[];
+    return rows.map((row) => this.rowToSession(row));
+  }
+
+  markSessionsSynced(sessionIds: string[]): void {
+    if (sessionIds.length === 0) return;
+    const now = Date.now();
+    const placeholders = sessionIds.map(() => '?').join(',');
+    this.db.prepare(`UPDATE sessions SET synced_at = ? WHERE id IN (${placeholders})`).run(now, ...sessionIds);
+  }
+
   getUnsyncedMessages(limit: number = 1000): Array<Message & { sessionId: string }> {
     const stmt = this.db.prepare(`
-      SELECT * FROM messages
-      WHERE synced_at IS NULL
-      ORDER BY timestamp ASC
+      SELECT m.*
+      FROM messages m
+      JOIN sessions s ON s.id = m.session_id
+      WHERE m.synced_at IS NULL AND s.is_deleted = 0
+      ORDER BY m.timestamp ASC
       LIMIT ?
     `);
 
@@ -374,7 +449,7 @@ export class SessionRepository {
     const rows = this.db.prepare(`
       SELECT s.*, (SELECT COUNT(*) FROM messages WHERE session_id = s.id) as message_count
       FROM sessions s
-      WHERE s.status = 'archived'
+      WHERE s.status = 'archived' AND s.is_deleted = 0
       ORDER BY s.updated_at DESC
       LIMIT ? OFFSET ?
     `).all(limit, offset) as SQLiteRow[];
@@ -413,6 +488,7 @@ export class SessionRepository {
     }
 
     const isArchived = row.status === 'archived';
+    const isDeleted = Boolean(row.is_deleted);
 
     return {
       id: row.id as string,
@@ -431,6 +507,7 @@ export class SessionRepository {
       lastTokenUsage,
       isArchived,
       archivedAt: isArchived ? (row.updated_at as number) : undefined,
+      isDeleted,
     };
   }
 }

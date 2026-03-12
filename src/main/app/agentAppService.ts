@@ -30,33 +30,39 @@ export class AgentAppServiceImpl implements AgentApplicationService {
   ) {}
 
   // === Helper: get orchestrator or throw ===
-  private getOrchestratorOrThrow() {
+  private resolveSessionId(sessionId?: string): string | null {
+    return sessionId ?? this._getCurrentSessionId();
+  }
+
+  private getOrchestratorOrThrow(sessionId?: string) {
     const tm = this.getTaskManager();
-    const orchestrator = tm.getOrCreateCurrentOrchestrator();
+    const resolvedSessionId = this.resolveSessionId(sessionId);
+    if (!resolvedSessionId) throw new Error('No active session');
+    const orchestrator = tm.getOrCreateCurrentOrchestrator(resolvedSessionId);
     if (!orchestrator) throw new Error('Agent not initialized');
     return orchestrator;
   }
 
   // === Agent Operations ===
 
-  async sendMessage(content: string, attachments?: unknown[], options?: AppServiceRunOptions): Promise<void> {
-    const orchestrator = this.getOrchestratorOrThrow();
+  async sendMessage(content: string, attachments?: unknown[], options?: AppServiceRunOptions, sessionId?: string): Promise<void> {
+    const orchestrator = this.getOrchestratorOrThrow(sessionId);
     // Cast to concrete AgentRunOptions — AppServiceRunOptions is a superset via index signature
     await orchestrator.sendMessage(content, attachments, options as any);
   }
 
-  async cancel(): Promise<void> {
-    const orchestrator = this.getOrchestratorOrThrow();
+  async cancel(sessionId?: string): Promise<void> {
+    const orchestrator = this.getOrchestratorOrThrow(sessionId);
     await orchestrator.cancel();
   }
 
-  handlePermissionResponse(requestId: string, response: PermissionResponse): void {
-    const orchestrator = this.getOrchestratorOrThrow();
+  handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string): void {
+    const orchestrator = this.getOrchestratorOrThrow(sessionId);
     orchestrator.handlePermissionResponse(requestId, response);
   }
 
-  async interruptAndContinue(content: string, attachments?: unknown[]): Promise<void> {
-    const orchestrator = this.getOrchestratorOrThrow();
+  async interruptAndContinue(content: string, attachments?: unknown[], sessionId?: string): Promise<void> {
+    const orchestrator = this.getOrchestratorOrThrow(sessionId);
     await orchestrator.interruptAndContinue(content, attachments);
   }
 

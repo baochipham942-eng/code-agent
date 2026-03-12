@@ -56,10 +56,10 @@ export interface ModelOverride {
  */
 export interface AgentApplicationService {
   // === Agent Operations ===
-  sendMessage(content: string, attachments?: unknown[], options?: AppServiceRunOptions): Promise<void>;
-  cancel(): Promise<void>;
-  handlePermissionResponse(requestId: string, response: PermissionResponse): void;
-  interruptAndContinue(content: string, attachments?: unknown[]): Promise<void>;
+  sendMessage(content: string, attachments?: unknown[], options?: AppServiceRunOptions, sessionId?: string): Promise<void>;
+  cancel(sessionId?: string): Promise<void>;
+  handlePermissionResponse(requestId: string, response: PermissionResponse, sessionId?: string): void;
+  interruptAndContinue(content: string, attachments?: unknown[], sessionId?: string): Promise<void>;
 
   // === Workspace ===
   getWorkingDirectory(): string | undefined;

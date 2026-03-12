@@ -46,8 +46,21 @@ export function isAvailable(): boolean {
   return !!window.electronAPI;
 }
 
+export async function invokeDomain<T = unknown>(
+  domain: string,
+  action: string,
+  payload?: unknown
+): Promise<T> {
+  const response = await window.domainAPI?.invoke<T>(domain, action, payload);
+  if (!response?.success) {
+    throw new Error(response?.error?.message || `${domain}:${action} failed`);
+  }
+  return response.data as T;
+}
+
 export const ipcService = {
   invoke,
+  invokeDomain,
   on,
   off,
   getPathForFile,

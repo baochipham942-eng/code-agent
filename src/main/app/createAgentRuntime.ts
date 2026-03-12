@@ -40,9 +40,7 @@ export function createAgentRuntime(configService: ConfigService): void {
   logger.info('TaskManager initialized (sole orchestrator owner)');
 
   // Initialize Channel Agent Bridge (multi-channel access: HTTP API, Feishu, etc.)
-  // Channel bridge gets orchestrator from TaskManager's current session
   const channelBridge = initChannelAgentBridge({
-    getOrchestrator: () => taskManager.getOrchestrator() ?? null,
     configService,
   });
   channelBridge.initialize()

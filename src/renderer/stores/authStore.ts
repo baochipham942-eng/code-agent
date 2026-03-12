@@ -4,11 +4,19 @@
 
 import { create } from 'zustand';
 import type { AuthUser, SyncStatus } from '../../shared/types';
-import { IPC_CHANNELS } from '../../shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '../../shared/ipc';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 
 const logger = createLogger('AuthStore');
+
+async function invokeDomain<T>(domain: string, action: string, payload?: unknown): Promise<T> {
+  const response = await window.domainAPI?.invoke<T>(domain, action, payload);
+  if (!response?.success) {
+    throw new Error(response?.error?.message || `${domain}:${action} failed`);
+  }
+  return response.data as T;
+}
 
 interface AuthState {
   // Auth state
@@ -90,11 +98,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   signInWithEmail: async (email, password) => {
     set({ isLoading: true, error: null });
     try {
-      const result = await ipcService.invoke(
-        IPC_CHANNELS.AUTH_SIGN_IN_EMAIL,
-        email,
-        password
-      );
+      const result = await invokeDomain<any>(IPC_DOMAINS.AUTH, 'signInEmail', { email, password });
       if (result?.success && result.user) {
         set({
           user: result.user,
@@ -115,12 +119,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   signUpWithEmail: async (email, password, inviteCode) => {
     set({ isLoading: true, error: null });
     try {
-      const result = await ipcService.invoke(
-        IPC_CHANNELS.AUTH_SIGN_UP_EMAIL,
-        email,
-        password,
-        inviteCode
-      );
+      const result = await invokeDomain<any>(IPC_DOMAINS.AUTH, 'signUpEmail', { email, password, inviteCode });
       if (result?.success && result.user) {
         set({
           user: result.user,
@@ -141,7 +140,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   signInWithOAuth: async (provider) => {
     set({ isLoading: true, error: null });
     try {
-      await ipcService.invoke(IPC_CHANNELS.AUTH_SIGN_IN_OAUTH, provider);
+      await invokeDomain(IPC_DOMAINS.AUTH, 'signInOAuth', { provider });
       // OAuth flow opens external browser, auth state will be updated via event
     } catch (error) {
       set({ error: (error as Error).message, isLoading: false });
@@ -151,10 +150,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   signInWithToken: async (token) => {
     set({ isLoading: true, error: null });
     try {
-      const result = await ipcService.invoke(
-        IPC_CHANNELS.AUTH_SIGN_IN_TOKEN,
-        token
-      );
+      const result = await invokeDomain<any>(IPC_DOMAINS.AUTH, 'signInToken', { token });
       if (result?.success && result.user) {
         set({
           user: result.user,
@@ -174,7 +170,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   signOut: async () => {
     try {
-      await ipcService.invoke(IPC_CHANNELS.AUTH_SIGN_OUT);
+      await invokeDomain(IPC_DOMAINS.AUTH, 'signOut');
       set({
         user: null,
         isAuthenticated: false,
@@ -187,10 +183,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   updateProfile: async (updates) => {
     try {
-      const result = await ipcService.invoke(
-        IPC_CHANNELS.AUTH_UPDATE_PROFILE,
-        updates
-      );
+      const result = await invokeDomain<any>(IPC_DOMAINS.AUTH, 'updateProfile', { updates });
       if (result?.success && result.user) {
         set({ user: result.user });
         return true;
@@ -204,9 +197,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   generateQuickToken: async () => {
     try {
-      const token = await ipcService.invoke(
-        IPC_CHANNELS.AUTH_GENERATE_QUICK_TOKEN
-      );
+      const token = await invokeDomain<string | null>(IPC_DOMAINS.AUTH, 'generateQuickToken');
       return token ?? null;
     } catch (error) {
       logger.error('Generate quick token failed', error);
@@ -217,10 +208,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   resetPassword: async (email) => {
     set({ isLoading: true, error: null });
     try {
-      const result = await ipcService.invoke(
-        IPC_CHANNELS.AUTH_RESET_PASSWORD,
-        email
-      );
+      const result = await invokeDomain<any>(IPC_DOMAINS.AUTH, 'resetPassword', { email });
       set({ isLoading: false });
       if (result?.success) {
         return true;
@@ -236,10 +224,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   updatePassword: async (newPassword) => {
     set({ isLoading: true, error: null });
     try {
-      const result = await ipcService.invoke(
-        IPC_CHANNELS.AUTH_UPDATE_PASSWORD,
-        newPassword
-      );
+      const result = await invokeDomain<any>(IPC_DOMAINS.AUTH, 'updatePassword', { password: newPassword });
       if (result?.success) {
         set({
           isLoading: false,
@@ -283,7 +268,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
   // Sync actions
   startSync: async () => {
     try {
-      await ipcService.invoke(IPC_CHANNELS.SYNC_START);
+      await invokeDomain(IPC_DOMAINS.SYNC, 'start');
       set((state) => ({
         syncStatus: { ...state.syncStatus, isEnabled: true },
       }));
@@ -294,7 +279,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   stopSync: async () => {
     try {
-      await ipcService.invoke(IPC_CHANNELS.SYNC_STOP);
+      await invokeDomain(IPC_DOMAINS.SYNC, 'stop');
       set((state) => ({
         syncStatus: { ...state.syncStatus, isEnabled: false },
       }));
@@ -305,7 +290,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
 
   forceFullSync: async () => {
     try {
-      const result = await ipcService.invoke(IPC_CHANNELS.SYNC_FORCE_FULL);
+      const result = await invokeDomain<{ success: boolean; error?: string }>(IPC_DOMAINS.SYNC, 'forceFull');
       return result?.success ?? false;
     } catch (error) {
       logger.error('Force full sync failed', error);
@@ -320,7 +305,7 @@ export async function initializeAuthStore(): Promise<void> {
 
   // Load current auth status
   try {
-    const status = await ipcService.invoke(IPC_CHANNELS.AUTH_GET_STATUS);
+    const status = await invokeDomain<any>(IPC_DOMAINS.AUTH, 'getStatus');
     if (status) {
       store.setUser(status.user);
     }
@@ -332,7 +317,7 @@ export async function initializeAuthStore(): Promise<void> {
 
   // Load sync status
   try {
-    const syncStatus = await ipcService.invoke(IPC_CHANNELS.SYNC_GET_STATUS);
+    const syncStatus = await invokeDomain<SyncStatus>(IPC_DOMAINS.SYNC, 'getStatus');
     if (syncStatus) {
       store.setSyncStatus(syncStatus);
     }

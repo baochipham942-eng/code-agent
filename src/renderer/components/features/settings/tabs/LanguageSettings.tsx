@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { useI18n, type Language } from '../../../../hooks/useI18n';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
@@ -23,7 +23,7 @@ export const LanguageSettings: React.FC = () => {
     setLanguage(lang);
     // Persist to backend
     try {
-      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         ui: { language: lang },
       } as Partial<import('@shared/types').AppSettings>);
       logger.info('Language saved', { lang });

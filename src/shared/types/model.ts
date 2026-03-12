@@ -16,6 +16,12 @@ export type ModelProvider =
   | 'perplexity' // 联网搜索
   | 'openrouter'; // OpenRouter 中转（Gemini、Claude、GPT 等）
 
+/**
+ * Provider 输入别名。
+ * `anthropic` 会被规范化为内部 canonical provider `claude`。
+ */
+export type ModelProviderAlias = ModelProvider | 'anthropic';
+
 // 模型能力标签
 // - compact: 上下文压缩、摘要生成（便宜快速的模型）
 // - quick: 简单操作、格式化、快速判断（最便宜的模型）

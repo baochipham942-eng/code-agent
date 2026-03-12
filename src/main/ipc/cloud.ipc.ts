@@ -3,14 +3,8 @@
 // ============================================================================
 
 import type { IpcMain } from 'electron';
-import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
-import type {
-  CloudTask,
-  CreateCloudTaskRequest,
-  CloudTaskFilter,
-  TaskSyncState,
-  CloudExecutionStats,
-} from '../../shared/types/cloud';
+import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import type { CloudTask, CreateCloudTaskRequest, CloudTaskFilter, TaskSyncState, CloudExecutionStats } from '../../shared/types/cloud';
 import {
   getCloudTaskService,
   isCloudTaskServiceInitialized,
@@ -150,55 +144,4 @@ export function registerCloudHandlers(ipcMain: IpcMain): void {
 
   // ========== Legacy Handlers (Deprecated) ==========
 
-  /** @deprecated Use IPC_DOMAINS.CLOUD with action: 'configRefresh' */
-  ipcMain.handle(IPC_CHANNELS.CLOUD_CONFIG_REFRESH, async () => handleConfigRefresh());
-
-  /** @deprecated Use IPC_DOMAINS.CLOUD with action: 'configGetInfo' */
-  ipcMain.handle(IPC_CHANNELS.CLOUD_CONFIG_GET_INFO, async () => handleConfigGetInfo());
-
-  /** @deprecated Use IPC_DOMAINS.CLOUD with action: 'taskCreate' */
-  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_CREATE, async (_, request: CreateCloudTaskRequest) =>
-    handleTaskCreate({ request })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.CLOUD with action: 'taskGet' */
-  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_GET, async (_, taskId: string) =>
-    handleTaskGet({ taskId })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.CLOUD with action: 'taskList' */
-  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_LIST, async (_, filter?: CloudTaskFilter) =>
-    handleTaskList({ filter })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.CLOUD with action: 'taskStart' */
-  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_START, async (_, taskId: string) =>
-    handleTaskStart({ taskId })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.CLOUD with action: 'taskPause' */
-  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_PAUSE, async (_, taskId: string) =>
-    handleTaskPause({ taskId })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.CLOUD with action: 'taskCancel' */
-  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_CANCEL, async (_, taskId: string) =>
-    handleTaskCancel({ taskId })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.CLOUD with action: 'taskRetry' */
-  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_RETRY, async (_, taskId: string) =>
-    handleTaskRetry({ taskId })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.CLOUD with action: 'taskDelete' */
-  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_DELETE, async (_, taskId: string) =>
-    handleTaskDelete({ taskId })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.CLOUD with action: 'taskSyncState' */
-  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_SYNC_STATE, async () => handleTaskSyncState());
-
-  /** @deprecated Use IPC_DOMAINS.CLOUD with action: 'taskStats' */
-  ipcMain.handle(IPC_CHANNELS.CLOUD_TASK_STATS, async () => handleTaskStats());
 }

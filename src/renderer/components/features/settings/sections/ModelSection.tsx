@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { Key, Check, AlertCircle, ChevronDown, Eye, Search, Zap } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input, Select } from '../../../primitives';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 import type { ModelProvider, ModelConfig } from '@shared/types';
 import { UI, PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants';
 import type { ProviderModelEntry } from '@shared/constants';
@@ -104,7 +104,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
   useEffect(() => {
     const loadKeys = async () => {
       try {
-        const result = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET_SERVICE_KEYS);
+        const result = await ipcService.invokeDomain<any>(IPC_DOMAINS.SETTINGS, 'getAllServiceKeys');
         if (result) {
           setServiceKeys(prev => ({
             ...prev,
@@ -126,7 +126,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
     setIsSaving(true);
     setSaveStatus('idle');
     try {
-      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         models: {
           default: config.provider,
           defaultProvider: config.provider,
@@ -157,7 +157,7 @@ export const ModelSection: React.FC<ModelSectionProps> = ({ config, onChange }) 
     setKeySaveStatus(prev => ({ ...prev, [serviceId]: 'idle' }));
 
     try {
-      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY, {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'setServiceApiKey', {
         service: serviceId,
         apiKey: serviceKeys[serviceId],
       });

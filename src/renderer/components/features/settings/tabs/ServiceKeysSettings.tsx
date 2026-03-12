@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { Key, Search, Github, Eye, Zap, Check, AlertCircle } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button, Input } from '../../../primitives';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { UI } from '@shared/constants';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
@@ -70,7 +70,7 @@ export const ServiceKeysSettings: React.FC = () => {
   useEffect(() => {
     const loadKeys = async () => {
       try {
-        const result = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET_SERVICE_KEYS);
+        const result = await ipcService.invokeDomain<any>(IPC_DOMAINS.SETTINGS, 'getAllServiceKeys');
         if (result) {
           setKeys(prev => ({
             ...prev,
@@ -153,7 +153,7 @@ export const ServiceKeysSettings: React.FC = () => {
     setSaveStatus(prev => ({ ...prev, [serviceId]: 'idle' }));
 
     try {
-      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET_SERVICE_KEY, {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'setServiceApiKey', {
         service: serviceId,
         apiKey: keys[serviceId],
       });

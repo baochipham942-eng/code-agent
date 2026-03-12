@@ -207,6 +207,11 @@ export const EVALUATION_CHANNELS = {
   GET_CROSS_EXPERIMENT: 'evaluation:get-cross-experiment',
   GET_GIT_COMMIT: 'evaluation:get-git-commit',
   CREATE_EXPERIMENT: 'evaluation:create-experiment',
+
+  // Snapshot + Case Detail (Phase 1+3)
+  GET_SNAPSHOT: 'evaluation:get-snapshot',
+  BUILD_SNAPSHOT: 'evaluation:build-snapshot',
+  GET_CASE_DETAIL: 'evaluation:get-case-detail',
 } as const;
 
 /**

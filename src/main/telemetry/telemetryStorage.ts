@@ -14,9 +14,14 @@ import type {
   TelemetryToolStat,
   TelemetryIntentStat,
 } from '../../shared/types/telemetry';
+import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 import type Database from 'better-sqlite3';
 
 const logger = createLogger('TelemetryStorage');
+const truncate = (value: string | undefined | null, limit: number): string | null => {
+  if (typeof value !== 'string') return null;
+  return value.substring(0, limit);
+};
 
 export class TelemetryStorage {
   private static instance: TelemetryStorage | null = null;
@@ -213,14 +218,14 @@ export class TelemetryStorage {
       stmt.run(
         turn.id, turn.sessionId, turn.turnNumber,
         turn.startTime, turn.endTime, turn.durationMs,
-        turn.userPrompt.substring(0, 10000), // truncate for storage
+        truncate(turn.userPrompt, TELEMETRY_TRUNCATION.USER_PROMPT),
         turn.userPromptTokens, turn.hasAttachments ? 1 : 0, turn.attachmentCount,
         turn.systemPromptHash ?? null, turn.agentMode,
         JSON.stringify(turn.activeSkills ?? []),
         JSON.stringify(turn.activeMcpServers ?? []),
         turn.effortLevel,
-        turn.assistantResponse.substring(0, 10000), // truncate for storage
-        turn.assistantResponseTokens, turn.thinkingContent?.substring(0, 5000) ?? null,
+        truncate(turn.assistantResponse, TELEMETRY_TRUNCATION.ASSISTANT_RESPONSE),
+        turn.assistantResponseTokens, truncate(turn.thinkingContent, TELEMETRY_TRUNCATION.THINKING_CONTENT),
         turn.totalInputTokens, turn.totalOutputTokens,
         turn.intent.primary, turn.intent.secondary ?? null,
         turn.intent.confidence, turn.intent.method,
@@ -339,8 +344,8 @@ export class TelemetryStorage {
           for (const tc of data.toolCalls) {
             stmt.run(
               tc.id, tc.turnId, tc.sessionId, tc.toolCallId,
-              tc.name, tc.arguments.substring(0, 2048),
-              tc.resultSummary.substring(0, 500),
+              tc.name, truncate(tc.arguments, TELEMETRY_TRUNCATION.TOOL_ARGUMENTS),
+              truncate(tc.resultSummary, TELEMETRY_TRUNCATION.TOOL_RESULT_SUMMARY),
               tc.success ? 1 : 0, tc.error ?? null,
               tc.errorCategory ?? null,
               tc.durationMs,
@@ -359,7 +364,7 @@ export class TelemetryStorage {
           for (const ev of data.events) {
             stmt.run(
               ev.id, ev.turnId, ev.sessionId, ev.timestamp,
-              ev.eventType, ev.summary.substring(0, 200),
+              ev.eventType, truncate(ev.summary, TELEMETRY_TRUNCATION.EVENT_SUMMARY),
               ev.data ?? null, ev.durationMs ?? null
             );
           }

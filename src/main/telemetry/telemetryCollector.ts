@@ -20,6 +20,7 @@ import type {
   ErrorCategory,
 } from '../../shared/types/telemetry';
 import type { AgentEvent } from '../../shared/types';
+import { TELEMETRY_TRUNCATION } from '../../shared/constants';
 
 
 // ----------------------------------------------------------------------------
@@ -285,9 +286,9 @@ export class TelemetryCollector {
       endTime: now,
       durationMs: now - startTime,
       systemPromptHash: systemPromptHash || (this.activeTurn as TelemetryTurn).systemPromptHash,
-      assistantResponse: assistantResponse.substring(0, 10000),
+      assistantResponse,
       assistantResponseTokens: Math.ceil(assistantResponse.length / 3.5),
-      thinkingContent: thinking?.substring(0, 5000),
+      thinkingContent: thinking,
       totalInputTokens: totalInput,
       totalOutputTokens: totalOutput,
       modelCalls: [],
@@ -379,7 +380,7 @@ export class TelemetryCollector {
       id: generateMessageId(),
       toolCallId,
       name,
-      arguments: JSON.stringify(args ?? {}).substring(0, 2048),
+      arguments: JSON.stringify(args ?? {}),
       timestamp: Date.now(),
       index,
       parallel,
@@ -409,7 +410,7 @@ export class TelemetryCollector {
       toolCallId,
       name: pending.name,
       arguments: pending.arguments,
-      resultSummary: (output ?? error ?? '').substring(0, 500),
+      resultSummary: output ?? error ?? '',
       success,
       error,
       errorCategory,
@@ -637,7 +638,7 @@ export class TelemetryCollector {
       if (key in data) {
         const val = data[key];
         if (typeof val === 'string') {
-          extracted[key] = val.substring(0, 200);
+          extracted[key] = val.substring(0, TELEMETRY_TRUNCATION.EVENT_SUMMARY);
         } else {
           extracted[key] = val;
         }

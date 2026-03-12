@@ -321,6 +321,33 @@ export class DatabaseService {
         logger.warn('[DB] Migration unexpected error:', msg);
       }
     }
+    try {
+      this.db.exec('ALTER TABLE experiment_cases ADD COLUMN session_id TEXT');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+        logger.warn('[DB] Migration unexpected error:', msg);
+      }
+    }
+
+    // Evaluations 表版本化扩展
+    const evalMigrations = [
+      'ALTER TABLE evaluations ADD COLUMN snapshot_id TEXT',
+      "ALTER TABLE evaluations ADD COLUMN eval_version TEXT DEFAULT 'legacy'",
+      'ALTER TABLE evaluations ADD COLUMN rubric_version TEXT',
+      'ALTER TABLE evaluations ADD COLUMN judge_model TEXT',
+      'ALTER TABLE evaluations ADD COLUMN judge_prompt_hash TEXT',
+    ];
+    for (const sql of evalMigrations) {
+      try {
+        this.db.exec(sql);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+          logger.warn('[DB] Migration unexpected error:', msg);
+        }
+      }
+    }
 
     // Tool Executions 表 (用于缓存和审计)
     this.db.exec(`
@@ -644,6 +671,30 @@ export class DatabaseService {
       )
     `);
 
+    // Eval Snapshots 表 (统一评测快照)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS eval_snapshots (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        schema_version INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        data_json TEXT NOT NULL,
+        hash TEXT NOT NULL
+      )
+    `);
+
+    // Evaluations 表 (评测结果)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS evaluations (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        score INTEGER NOT NULL,
+        grade TEXT NOT NULL,
+        data TEXT NOT NULL
+      )
+    `);
+
     // Experiments 表 (统一评测数据)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS experiments (
@@ -665,6 +716,7 @@ export class DatabaseService {
         id TEXT PRIMARY KEY,
         experiment_id TEXT NOT NULL,
         case_id TEXT NOT NULL,
+        session_id TEXT,
         status TEXT NOT NULL,
         score INTEGER NOT NULL,
         duration_ms INTEGER,
@@ -741,6 +793,13 @@ export class DatabaseService {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_tool_calls_name ON telemetry_tool_calls(name)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_events_turn ON telemetry_events(turn_id)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_telemetry_events_session ON telemetry_events(session_id)`);
+
+    // Eval snapshots indexes
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_eval_snapshots_session ON eval_snapshots(session_id)`);
+
+    // Evaluations indexes
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_evaluations_session ON evaluations(session_id)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_evaluations_timestamp ON evaluations(timestamp DESC)`);
 
     // Captures indexes
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_captures_source ON captures(source)`);
@@ -883,9 +942,9 @@ export class DatabaseService {
 
   // --- ExperimentRepository ---
   insertExperiment(experiment: { id: string; name: string; timestamp: number; model?: string; provider?: string; scope?: string; config_json?: string; summary_json: string; source?: string; git_commit?: string }): void { this.ensureDb(); this.experimentRepo.insertExperiment(experiment); }
-  insertExperimentCases(experimentId: string, cases: Array<{ id: string; case_id: string; status: string; score: number; duration_ms?: number; data_json?: string }>): void { this.ensureDb(); this.experimentRepo.insertExperimentCases(experimentId, cases); }
+  insertExperimentCases(experimentId: string, cases: Array<{ id: string; case_id: string; session_id?: string; status: string; score: number; duration_ms?: number; data_json?: string }>): void { this.ensureDb(); this.experimentRepo.insertExperimentCases(experimentId, cases); }
   listExperiments(limit?: number): Array<{ id: string; name: string; timestamp: number; model: string | null; provider: string | null; scope: string; config_json: string | null; summary_json: string; source: string; git_commit: string | null }> { this.ensureDb(); return this.experimentRepo.listExperiments(limit); }
-  loadExperiment(id: string): { experiment: { id: string; name: string; timestamp: number; model: string | null; provider: string | null; scope: string; config_json: string | null; summary_json: string; source: string; git_commit: string | null }; cases: Array<{ id: string; experiment_id: string; case_id: string; status: string; score: number; duration_ms: number | null; data_json: string | null }> } | undefined { this.ensureDb(); return this.experimentRepo.loadExperiment(id); }
+  loadExperiment(id: string): { experiment: { id: string; name: string; timestamp: number; model: string | null; provider: string | null; scope: string; config_json: string | null; summary_json: string; source: string; git_commit: string | null }; cases: Array<{ id: string; experiment_id: string; case_id: string; session_id: string | null; status: string; score: number; duration_ms: number | null; data_json: string | null }> } | undefined { this.ensureDb(); return this.experimentRepo.loadExperiment(id); }
   updateExperimentSummary(id: string, summaryJson: string): void { this.ensureDb(); this.experimentRepo.updateExperimentSummary(id, summaryJson); }
   deleteExperiment(id: string): boolean { this.ensureDb(); return this.experimentRepo.deleteExperiment(id); }
 }

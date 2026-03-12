@@ -163,6 +163,27 @@ export const EvalDashboard: React.FC<EvalDashboardProps> = ({ sessionId, onEnter
           {evaluation.aiSummary}
         </div>
       )}
+
+      {/* Version Badge */}
+      {evaluation && (
+        <div className="flex items-center gap-2 mt-1">
+          {evaluation.evalVersion === 'legacy' && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-600/30 text-zinc-400 border border-zinc-600/20">
+              Legacy score — 不可跨版本比较
+            </span>
+          )}
+          {evaluation.evalVersion === 'v1' && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              v1
+            </span>
+          )}
+          {evaluation.snapshotId && (
+            <span className="text-[10px] font-mono text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded cursor-default" title={evaluation.snapshotId}>
+              {evaluation.snapshotId.slice(0, 8)}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 };
@@ -198,6 +219,7 @@ function extractEvaluation(raw: unknown): EvaluationResult | null {
         },
         topSuggestions: (sub.suggestions as string[]) || [],
         aiSummary: sub.summary as string | undefined,
+        evalVersion: (sub.evalVersion as string) || 'legacy',
       };
     }
   }

@@ -764,6 +764,9 @@ export const IPC_CHANNELS = {
   EVALUATION_GET_CROSS_EXPERIMENT: EVALUATION_CHANNELS.GET_CROSS_EXPERIMENT,
   EVALUATION_CREATE_EXPERIMENT: EVALUATION_CHANNELS.CREATE_EXPERIMENT,
   EVALUATION_GET_GIT_COMMIT: EVALUATION_CHANNELS.GET_GIT_COMMIT,
+  EVALUATION_GET_SNAPSHOT: EVALUATION_CHANNELS.GET_SNAPSHOT,
+  EVALUATION_BUILD_SNAPSHOT: EVALUATION_CHANNELS.BUILD_SNAPSHOT,
+  EVALUATION_GET_CASE_DETAIL: EVALUATION_CHANNELS.GET_CASE_DETAIL,
 
   // Test Subset channels (数据集子集管理)
   SUBSET_SAVE: SUBSET_CHANNELS.SAVE,
@@ -1097,6 +1100,9 @@ export interface IpcInvokeHandlers {
   [IPC_CHANNELS.EVALUATION_GET_CROSS_EXPERIMENT]: (experimentIds: string[]) => Promise<unknown[]>;
   [IPC_CHANNELS.EVALUATION_CREATE_EXPERIMENT]: (config: { name: string; model: string; testSetId: string; trialsPerCase: number; gitCommit: string }) => Promise<{ experimentId: string; status: string }>;
   [IPC_CHANNELS.EVALUATION_GET_GIT_COMMIT]: () => Promise<{ hash: string; short: string }>;
+  [IPC_CHANNELS.EVALUATION_GET_SNAPSHOT]: (sessionId: string) => Promise<unknown>;
+  [IPC_CHANNELS.EVALUATION_BUILD_SNAPSHOT]: (sessionId: string) => Promise<unknown>;
+  [IPC_CHANNELS.EVALUATION_GET_CASE_DETAIL]: (experimentId: string, caseId: string) => Promise<unknown>;
 
   // Test Subset (数据集子集管理)
   [IPC_CHANNELS.SUBSET_SAVE]: (subset: { name: string; description?: string; caseIds: string[] }) => Promise<{ success: boolean; path: string }>;

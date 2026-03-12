@@ -186,6 +186,15 @@ export const CACHE = {
   PROMPT_TTL: 3600000,
 } as const;
 
+export const TELEMETRY_TRUNCATION = {
+  USER_PROMPT: 50000,
+  ASSISTANT_RESPONSE: 50000,
+  THINKING_CONTENT: 20000,
+  TOOL_ARGUMENTS: 10000,
+  TOOL_RESULT_SUMMARY: 2000,
+  EVENT_SUMMARY: 500,
+} as const;
+
 /** 文件配置 */
 export const FILE = {
   /** 最大文件大小 (10MB) */

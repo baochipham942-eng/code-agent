@@ -4,7 +4,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { EVALUATION_CHANNELS } from '@shared/ipc';
-import { SessionReplayView } from '../SessionReplayView';
+import { TraceView } from '../TraceView';
 import { useEvalCenterStore } from '../../../../stores/evalCenterStore';
 import ipcService from '../../../../services/ipcService';
 
@@ -205,7 +205,7 @@ export const SessionEvalView: React.FC<Props> = ({ sessionId, onBack }) => {
       <div className="flex-1 min-h-0 overflow-hidden">
         {/* Trace Tab - SessionReplayView */}
         {activeTab === 'trace' && (
-          <SessionReplayView
+          <TraceView
             sessionId={sessionId}
             onRunEvaluation={handleRunEval}
           />

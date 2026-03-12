@@ -229,6 +229,8 @@ export function registerEvaluationHandlers(): void {
           topSuggestions: result.suggestions,
           aiSummary: result.summary,
           transcriptMetrics: result.transcriptMetrics,
+          evalVersion: 'v1',
+          judgeModel: DEFAULT_MODEL,
         });
       }
 
@@ -630,6 +632,54 @@ export function registerEvaluationHandlers(): void {
     }
   });
 
+
+  // Snapshot handlers
+  ipcMain.handle(EVALUATION_CHANNELS.GET_SNAPSHOT, async (_event, sessionId: string) => {
+    try {
+      const { getOrBuildSnapshot } = await import('../evaluation/snapshotBuilder');
+      return getOrBuildSnapshot(sessionId);
+    } catch (error) {
+      logger.error('Failed to get snapshot:', error);
+      return null;
+    }
+  });
+
+  ipcMain.handle(EVALUATION_CHANNELS.BUILD_SNAPSHOT, async (_event, sessionId: string) => {
+    try {
+      const { buildSnapshot } = await import('../evaluation/snapshotBuilder');
+      return buildSnapshot(sessionId);
+    } catch (error) {
+      logger.error('Failed to build snapshot:', error);
+      return null;
+    }
+  });
+
+  // Case detail handler (for CaseDetailPage)
+  ipcMain.handle(EVALUATION_CHANNELS.GET_CASE_DETAIL, async (_event, payload: { experimentId: string; caseId: string }) => {
+    try {
+      const { getDatabase } = await import('../services/core/databaseService');
+      const db = getDatabase();
+      const data = db.loadExperiment(payload.experimentId);
+      if (!data) return null;
+
+      const caseData = data.cases.find(c => c.case_id === payload.caseId);
+      if (!caseData) return null;
+
+      // If case has session_id, try to get snapshot
+      let snapshot = null;
+      if (caseData.session_id) {
+        try {
+          const { getOrBuildSnapshot } = await import('../evaluation/snapshotBuilder');
+          snapshot = getOrBuildSnapshot(caseData.session_id);
+        } catch { /* best effort */ }
+      }
+
+      return { case: caseData, snapshot };
+    } catch (error) {
+      logger.error('Failed to get case detail:', error);
+      return null;
+    }
+  });
 
   // Get current git commit hash
   ipcMain.handle(EVALUATION_CHANNELS.GET_GIT_COMMIT, async () => {

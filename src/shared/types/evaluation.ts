@@ -243,6 +243,12 @@ export interface EvaluationResult {
   aiSummary?: string;
   transcriptMetrics?: TranscriptMetrics;
   baselineComparison?: BaselineComparison;
+  // 版本化追溯 (Phase 2)
+  snapshotId?: string;
+  evalVersion?: string;       // 'v1' | 'legacy'
+  rubricVersion?: string;
+  judgeModel?: string;
+  judgePromptHash?: string;
   trajectoryAnalysis?: {
     deviations: Array<{
       stepIndex: number;
@@ -265,6 +271,77 @@ export interface EvaluationResult {
       successful: boolean;
     }>;
     outcome: 'success' | 'partial' | 'failure';
+  };
+}
+
+// ============================================================================
+// EvalSnapshot - 统一评测输入快照
+// ============================================================================
+
+/**
+ * 快照工具调用记录
+ */
+export interface SnapshotToolCall {
+  name: string;
+  args: Record<string, unknown>;
+  result?: string;
+  success: boolean;
+  durationMs: number;
+  timestamp: number;
+  turnIndex: number;
+}
+
+/**
+ * 快照文件变更记录
+ */
+export interface SnapshotFileDiff {
+  filePath: string;
+  action: 'create' | 'edit' | 'delete';
+  oldText?: string;
+  newText?: string;
+}
+
+/**
+ * 快照验证动作记录
+ */
+export interface SnapshotVerification {
+  type: 'bash_test' | 'typecheck' | 'manual_check' | 'read_verify';
+  command?: string;
+  success: boolean;
+  output?: string;
+  timestamp: number;
+}
+
+/**
+ * EvalSnapshot — 统一评测输入数据结构
+ * 所有评分基于同一份快照，解决"数据平面分裂"根因
+ */
+export interface EvalSnapshot {
+  schema_version: 1;
+  // 身份
+  session_id: string;
+  snapshot_id: string;
+  created_at: number;
+  // 任务
+  task_text: string;
+  task_type?: string;
+  // 产出
+  final_answer: string;
+  tool_calls: SnapshotToolCall[];
+  file_diffs: SnapshotFileDiff[];
+  outcome_artifacts: string[];
+  // 验证
+  verification_actions: SnapshotVerification[];
+  // 成本
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_tool_calls: number;
+  duration_ms: number;
+  estimated_cost: number;
+  // 环境
+  code_context?: {
+    stderr_output?: string;
+    exit_codes?: number[];
   };
 }
 

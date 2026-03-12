@@ -42,19 +42,20 @@ export class ExperimentRepository {
   insertExperimentCases(experimentId: string, cases: Array<{
     id: string;
     case_id: string;
+    session_id?: string;
     status: string;
     score: number;
     duration_ms?: number;
     data_json?: string;
   }>): void {
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO experiment_cases (id, experiment_id, case_id, status, score, duration_ms, data_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT OR REPLACE INTO experiment_cases (id, experiment_id, case_id, session_id, status, score, duration_ms, data_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertMany = this.db.transaction((items: typeof cases) => {
       for (const c of items) {
-        stmt.run(c.id, experimentId, c.case_id, c.status, c.score, c.duration_ms || null, c.data_json || null);
+        stmt.run(c.id, experimentId, c.case_id, c.session_id || null, c.status, c.score, c.duration_ms || null, c.data_json || null);
       }
     });
 
@@ -108,6 +109,7 @@ export class ExperimentRepository {
       id: string;
       experiment_id: string;
       case_id: string;
+      session_id: string | null;
       status: string;
       score: number;
       duration_ms: number | null;
@@ -138,6 +140,7 @@ export class ExperimentRepository {
         id: row.id as string,
         experiment_id: row.experiment_id as string,
         case_id: row.case_id as string,
+        session_id: (row.session_id as string) || null,
         status: row.status as string,
         score: row.score as number,
         duration_ms: row.duration_ms as number | null,

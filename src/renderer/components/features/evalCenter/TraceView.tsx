@@ -1,5 +1,5 @@
 // ============================================================================
-// SessionReplayView - 结构化会话回放（三栏布局）
+// TraceView - 结构化会话回放（三栏布局 + 增强信息面板）
 // ============================================================================
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -12,7 +12,7 @@ interface Props {
   onRunEvaluation?: () => void;
 }
 
-export const SessionReplayView: React.FC<Props> = ({ sessionId, onRunEvaluation }) => {
+export const TraceView: React.FC<Props> = ({ sessionId, onRunEvaluation }) => {
   const { replayData, replayLoading, objective, loadReplay } = useEvalCenterStore();
   const [activeTurn, setActiveTurn] = useState(0);
   const turnRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -48,6 +48,19 @@ export const SessionReplayView: React.FC<Props> = ({ sessionId, onRunEvaluation 
   }
 
   const turns = replayData.turns;
+  const activeTurnData = turns[activeTurn];
+
+  // Collect tool calls from the active turn
+  const activeToolCalls = activeTurnData
+    ? activeTurnData.blocks
+        .filter(b => b.type === 'tool_call' && b.toolCall)
+        .map(b => b.toolCall!)
+    : [];
+
+  // Find max duration for waterfall scaling
+  const maxDuration = activeToolCalls.length > 0
+    ? Math.max(...activeToolCalls.map(tc => tc.duration || 0), 1)
+    : 1;
 
   return (
     <div className="flex h-full min-h-0">
@@ -149,9 +162,95 @@ export const SessionReplayView: React.FC<Props> = ({ sessionId, onRunEvaluation 
         </div>
       </div>
 
-      {/* Right: Analytics Sidebar */}
-      <div className="w-[200px] shrink-0 border-l border-zinc-800 overflow-y-auto">
+      {/* Right: Analytics Sidebar + Enhanced Info Panels */}
+      <div className="w-[220px] shrink-0 border-l border-zinc-800 overflow-y-auto">
         <ReplayAnalyticsSidebar summary={replayData.summary} objective={objective} />
+
+        {/* Per-turn Token Distribution */}
+        <div className="border-t border-zinc-800 p-3">
+          <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2 font-medium">
+            Token 分布 (每轮)
+          </div>
+          <div className="space-y-1">
+            {turns.map((turn, idx) => {
+              const total = turn.inputTokens + turn.outputTokens;
+              const inputPct = total > 0 ? (turn.inputTokens / total) * 100 : 50;
+              return (
+                <button
+                  key={idx}
+                  onClick={() => scrollToTurn(idx)}
+                  className={`w-full text-left rounded px-1.5 py-1 transition ${
+                    idx === activeTurn ? 'bg-amber-500/10' : 'hover:bg-zinc-800'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-[10px] mb-0.5">
+                    <span className={`font-mono ${idx === activeTurn ? 'text-amber-300' : 'text-zinc-400'}`}>
+                      T{turn.turnNumber}
+                    </span>
+                    <span className="text-zinc-500 tabular-nums">
+                      {total > 1000 ? `${(total / 1000).toFixed(1)}K` : total}
+                    </span>
+                  </div>
+                  <div className="h-1 bg-zinc-700 rounded-full overflow-hidden flex">
+                    <div
+                      className="h-full bg-blue-500/70"
+                      style={{ width: `${inputPct}%` }}
+                      title={`Input: ${turn.inputTokens}`}
+                    />
+                    <div
+                      className="h-full bg-emerald-500/70"
+                      style={{ width: `${100 - inputPct}%` }}
+                      title={`Output: ${turn.outputTokens}`}
+                    />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-3 mt-2 text-[9px] text-zinc-600">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-blue-500/70" /> Input
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500/70" /> Output
+            </span>
+          </div>
+        </div>
+
+        {/* Tool Call Duration Waterfall */}
+        {activeToolCalls.length > 0 && (
+          <div className="border-t border-zinc-800 p-3">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-2 font-medium">
+              工具耗时 (T{activeTurnData.turnNumber})
+            </div>
+            <div className="space-y-1.5">
+              {activeToolCalls.map((tc, i) => {
+                const dur = tc.duration || 0;
+                const widthPct = maxDuration > 0 ? Math.max(2, (dur / maxDuration) * 100) : 2;
+                return (
+                  <div key={i}>
+                    <div className="flex items-center justify-between text-[10px] mb-0.5">
+                      <span className="text-zinc-400 truncate max-w-[120px]" title={tc.name}>
+                        {tc.name}
+                      </span>
+                      <span className="text-zinc-500 tabular-nums font-mono">
+                        {dur >= 1000 ? `${(dur / 1000).toFixed(1)}s` : `${dur}ms`}
+                      </span>
+                    </div>
+                    <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          tc.success ? 'bg-cyan-500/60' : 'bg-red-500/60'
+                        }`}
+                        style={{ width: `${widthPct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -38,10 +38,6 @@ export type {
   TestEvent,
   TestEventListener,
   TestStatus,
-  // P0: Statistical Evaluation
-  StatisticalConfig,
-  StatisticalCaseResult,
-  StatisticalRunSummary,
   // P1: Expectation-Based Assertions
   TestDifficulty,
   TestCategory,
@@ -110,11 +106,6 @@ export {
   generateConsoleReport,
   saveReport,
 } from './reportGenerator';
-
-// Statistical runner
-export {
-  StatisticalRunner,
-} from './statisticalRunner';
 
 // Auto-test hook
 export {

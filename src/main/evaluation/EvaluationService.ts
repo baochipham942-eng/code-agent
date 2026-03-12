@@ -21,7 +21,7 @@ import {
   scoreToGrade,
 } from '../../shared/types/evaluation';
 import type { TestReportListItem, TestRunReport } from '../../shared/ipc';
-import type { SessionSnapshot, DimensionEvaluator, TurnSnapshot, QualitySignals } from './types';
+import type { SessionSnapshot, DimensionEvaluator } from './types';
 import {
   TaskCompletionEvaluator,
   ToolEfficiencyEvaluator,
@@ -30,8 +30,9 @@ import {
   PerformanceEvaluator,
   SecurityEvaluator,
 } from './metrics';
-import { getAIEvaluator } from './aiEvaluator';
 import { getSwissCheeseEvaluator } from './swissCheeseEvaluator';
+import { getTelemetryQueryService } from './telemetryQueryService';
+import { getOrBuildSnapshot } from './snapshotBuilder';
 
 const logger = createLogger('EvaluationService');
 
@@ -103,7 +104,16 @@ export class EvaluationService {
   ): Promise<EvaluationResult> {
     logger.info(`Evaluating session: ${sessionId}`);
 
-    // 收集会话数据
+    // Phase 1: 先构建/获取 EvalSnapshot
+    const evalSnapshot = getOrBuildSnapshot(sessionId);
+    if (evalSnapshot) {
+      logger.info('EvalSnapshot ready', {
+        snapshotId: evalSnapshot.snapshot_id,
+        toolCalls: evalSnapshot.total_tool_calls,
+      });
+    }
+
+    // 收集会话数据（用于评测引擎）
     const snapshot = await this.collectSessionData(sessionId);
 
     let metrics: EvaluationMetric[] = [];
@@ -115,14 +125,13 @@ export class EvaluationService {
     const useAI = options.useAI !== false;
 
     if (useAI) {
-      // 优先尝试瑞士奶酪多层评测
+      // 瑞士奶酪多层评测，失败直接走规则
       try {
         logger.info('Attempting Swiss Cheese multi-agent evaluation...');
         const swissCheeseEvaluator = getSwissCheeseEvaluator();
         const scResult = await swissCheeseEvaluator.evaluate(snapshot);
 
         if (scResult) {
-          // 瑞士奶酪评测成功
           metrics = swissCheeseEvaluator.convertToMetrics(scResult);
           overallScore = scResult.overallScore;
           allSuggestions = scResult.suggestions || [];
@@ -136,30 +145,12 @@ export class EvaluationService {
           throw new Error('Swiss Cheese evaluation returned null');
         }
       } catch (scError) {
-        // 瑞士奶酪评测失败，回退到简单 AI 评测
-        logger.warn('Swiss Cheese evaluation failed, trying simple AI evaluation', { error: scError });
-
-        try {
-          const aiEvaluator = getAIEvaluator();
-          const aiResult = await aiEvaluator.evaluate(snapshot);
-
-          if (aiResult) {
-            metrics = aiEvaluator.convertToMetrics(aiResult);
-            overallScore = aiResult.overallScore;
-            allSuggestions = aiResult.suggestions || [];
-            aiSummary = aiResult.summary;
-            logger.info('AI evaluation succeeded', { overallScore });
-          } else {
-            throw new Error('AI evaluation returned null');
-          }
-        } catch (aiError) {
-          // AI 评测也失败，回退到规则评测
-          logger.warn('AI evaluation failed, falling back to rule-based', { error: aiError });
-          const ruleResult = await this.runRuleBasedEvaluation(snapshot);
-          metrics = ruleResult.metrics;
-          overallScore = ruleResult.overallScore;
-          allSuggestions = ruleResult.suggestions;
-        }
+        // 瑞士奶酪评测失败，直接回退到规则评测（移除 AIEvaluator 中间层）
+        logger.warn('Swiss Cheese evaluation failed, falling back to rule-based', { error: scError });
+        const ruleResult = await this.runRuleBasedEvaluation(snapshot);
+        metrics = ruleResult.metrics;
+        overallScore = ruleResult.overallScore;
+        allSuggestions = ruleResult.suggestions;
       }
     } else {
       // 使用规则评测
@@ -186,6 +177,9 @@ export class EvaluationService {
       },
       topSuggestions: allSuggestions.slice(0, 5),
       aiSummary,
+      // 版本化字段
+      snapshotId: evalSnapshot?.snapshot_id,
+      evalVersion: evalSnapshot ? 'v1' : 'legacy',
     };
 
     // 基线对比
@@ -481,167 +475,10 @@ export class EvaluationService {
    * 从 telemetry 表收集结构化数据
    */
   private collectFromTelemetry(
-    db: ReturnType<typeof this.getDbInstance>,
+    _db: ReturnType<typeof this.getDbInstance>,
     sessionId: string
   ): SessionSnapshot | null {
-    try {
-      // 检查 telemetry_turns 表是否存在且有数据
-      const tableExists = db
-        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='telemetry_turns'`)
-        .get();
-      if (!tableExists) return null;
-
-      const turnCount = db
-        .prepare(`SELECT COUNT(*) as cnt FROM telemetry_turns WHERE session_id = ?`)
-        .get(sessionId) as { cnt: number };
-      if (!turnCount || turnCount.cnt === 0) return null;
-
-      // 获取 telemetry_session 级聚合数据
-      const sessionRow = db
-        .prepare(`SELECT * FROM telemetry_sessions WHERE id = ?`)
-        .get(sessionId) as Record<string, unknown> | undefined;
-
-      // 获取所有 turns
-      const turnRows = db
-        .prepare(`SELECT * FROM telemetry_turns WHERE session_id = ? ORDER BY turn_number ASC`)
-        .all(sessionId) as Record<string, unknown>[];
-
-      // 获取所有 tool_calls
-      const toolCallRows = db
-        .prepare(`SELECT * FROM telemetry_tool_calls WHERE session_id = ? ORDER BY timestamp ASC`)
-        .all(sessionId) as Record<string, unknown>[];
-
-      // 构建 TurnSnapshot[]
-      const turns: TurnSnapshot[] = turnRows.map(row => {
-        const qualitySignalsStr = row.quality_signals as string | null;
-        let qualitySignals: Record<string, unknown> = {};
-        try {
-          if (qualitySignalsStr) qualitySignals = JSON.parse(qualitySignalsStr);
-        } catch { /* ignore */ }
-
-        const turnToolCalls = toolCallRows
-          .filter(tc => tc.turn_id === row.id)
-          .map(tc => ({
-            id: tc.id as string,
-            name: tc.name as string,
-            args: {},
-            result: (tc.result_summary as string) || undefined,
-            success: (tc.success as number) === 1,
-            duration: (tc.duration_ms as number) || 0,
-            timestamp: tc.timestamp as number,
-            turnId: tc.turn_id as string,
-            index: (tc.idx as number) || 0,
-            parallel: (tc.parallel as number) === 1,
-          }));
-
-        return {
-          turnNumber: row.turn_number as number,
-          userPrompt: (row.user_prompt as string) || '',
-          assistantResponse: (row.assistant_response as string) || '',
-          toolCalls: turnToolCalls,
-          intentPrimary: (row.intent_primary as string) || 'unknown',
-          outcomeStatus: (row.outcome_status as string) || 'unknown',
-          thinkingContent: (row.thinking_content as string) || undefined,
-          durationMs: (row.duration_ms as number) || 0,
-          inputTokens: (row.total_input_tokens as number) || 0,
-          outputTokens: (row.total_output_tokens as number) || 0,
-        };
-      });
-
-      // 构建 messages（从 turns 重建，保持兼容）
-      const messages = turns.flatMap(turn => {
-        const msgs = [];
-        if (turn.userPrompt) {
-          msgs.push({
-            id: `turn-${turn.turnNumber}-user`,
-            role: 'user' as const,
-            content: turn.userPrompt,
-            timestamp: 0,
-          });
-        }
-        if (turn.assistantResponse) {
-          msgs.push({
-            id: `turn-${turn.turnNumber}-assistant`,
-            role: 'assistant' as const,
-            content: turn.assistantResponse,
-            timestamp: 0,
-          });
-        }
-        return msgs;
-      });
-
-      // 构建 toolCalls（扁平列表，保持兼容）
-      const toolCalls = toolCallRows.map(tc => ({
-        id: tc.id as string,
-        name: tc.name as string,
-        args: {},
-        result: (tc.result_summary as string) || undefined,
-        success: (tc.success as number) === 1,
-        duration: (tc.duration_ms as number) || 0,
-        timestamp: tc.timestamp as number,
-        turnId: tc.turn_id as string,
-        index: (tc.idx as number) || 0,
-        parallel: (tc.parallel as number) === 1,
-      }));
-
-      // 聚合 quality signals
-      const qualitySignals = this.aggregateQualitySignals(turnRows);
-
-      const inputTokens = (sessionRow?.total_input_tokens as number) || turns.reduce((sum, t) => sum + t.inputTokens, 0);
-      const outputTokens = (sessionRow?.total_output_tokens as number) || turns.reduce((sum, t) => sum + t.outputTokens, 0);
-      const estimatedCost = (sessionRow?.estimated_cost as number) || 0;
-
-      const startTime = (sessionRow?.start_time as number) || (turnRows[0]?.start_time as number) || Date.now();
-      const endTime = (sessionRow?.end_time as number) || (turnRows[turnRows.length - 1]?.end_time as number) || Date.now();
-
-      return {
-        sessionId,
-        messages,
-        toolCalls,
-        turns,
-        startTime,
-        endTime,
-        inputTokens,
-        outputTokens,
-        totalCost: estimatedCost,
-        qualitySignals,
-      };
-    } catch (error) {
-      logger.warn('Failed to collect from telemetry tables', { error });
-      return null;
-    }
-  }
-
-  /**
-   * 从 turns 行聚合质量信号
-   */
-  private aggregateQualitySignals(turnRows: Record<string, unknown>[]): QualitySignals {
-    let totalRetries = 0;
-    let errorRecoveries = 0;
-    let compactionCount = 0;
-    let circuitBreakerTrips = 0;
-
-    for (const row of turnRows) {
-      const qsStr = row.quality_signals as string | null;
-      if (!qsStr) continue;
-      try {
-        const qs = JSON.parse(qsStr);
-        totalRetries += qs.retryCount || 0;
-        errorRecoveries += qs.errorRecovered || 0;
-        if (qs.compactionTriggered) compactionCount++;
-        if (qs.circuitBreakerTripped) circuitBreakerTrips++;
-      } catch { /* ignore */ }
-    }
-
-    return {
-      totalRetries,
-      errorRecoveries,
-      compactionCount,
-      circuitBreakerTrips,
-      selfRepairAttempts: 0, // 由 analyzeTranscript 计算
-      selfRepairSuccesses: 0,
-      verificationActions: 0,
-    };
+    return getTelemetryQueryService().getSessionSnapshot(sessionId);
   }
 
   /**
@@ -781,27 +618,20 @@ export class EvaluationService {
   }
 
   /**
-   * 保存评测结果
+   * 保存评测结果（含版本化元数据）
    */
   async saveResult(result: EvaluationResult): Promise<void> {
     const dbInstance = this.getDbInstance();
 
-    // 确保表存在
-    dbInstance.exec(`
-      CREATE TABLE IF NOT EXISTS evaluations (
-        id TEXT PRIMARY KEY,
-        session_id TEXT NOT NULL,
-        timestamp INTEGER NOT NULL,
-        score INTEGER NOT NULL,
-        grade TEXT NOT NULL,
-        data TEXT NOT NULL
-      )
-    `);
+    // 自动填充版本化字段
+    if (!result.evalVersion) {
+      result.evalVersion = result.snapshotId ? 'v1' : 'legacy';
+    }
 
     dbInstance
       .prepare(
-        `INSERT INTO evaluations (id, session_id, timestamp, score, grade, data)
-         VALUES (?, ?, ?, ?, ?, ?)`
+        `INSERT INTO evaluations (id, session_id, timestamp, score, grade, data, snapshot_id, eval_version, rubric_version, judge_model, judge_prompt_hash)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         result.id,
@@ -809,7 +639,12 @@ export class EvaluationService {
         result.timestamp,
         result.overallScore,
         result.grade,
-        JSON.stringify(result)
+        JSON.stringify(result),
+        result.snapshotId || null,
+        result.evalVersion,
+        result.rubricVersion || null,
+        result.judgeModel || null,
+        result.judgePromptHash || null,
       );
   }
 }

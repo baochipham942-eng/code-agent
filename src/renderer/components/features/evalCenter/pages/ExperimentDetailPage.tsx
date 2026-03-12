@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TestResultsDashboard } from '../testResults/TestResultsDashboard';
 import { EVALUATION_CHANNELS } from '@shared/ipc/channels';
 import type { TestRunReport, TestCaseResult } from '@shared/ipc';
+import { CaseDetailPage } from './CaseDetailPage';
 import ipcService from '../../../../services/ipcService';
 
 type DetailTab = 'overview' | 'cases' | 'trace' | 'scoring' | 'ai-analysis';
@@ -21,12 +22,63 @@ const STATUS_STYLES: Record<string, { color: string; bg: string; label: string }
   skipped: { color: 'text-zinc-400', bg: 'bg-zinc-600/10', label: '跳过' },
 };
 
+interface ExperimentData {
+  id: string;
+  name: string;
+  model: string;
+  status: string;
+  created_at: number;
+  cases: ExperimentCase[];
+}
+
+interface ExperimentCase {
+  id: string;
+  case_id: string;
+  status: string;
+  score: number;
+  duration_ms: number;
+  data_json: string;
+}
+
 export const ExperimentDetailPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [report, setReport] = useState<TestRunReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedCase, setSelectedCase] = useState<TestCaseResult | null>(null);
 
+  // DB-based experiment data
+  const [experiment, setExperiment] = useState<ExperimentData | null>(null);
+  const [experimentLoading, setExperimentLoading] = useState(true);
+
+  // Case detail navigation
+  const [selectedCaseForDetail, setSelectedCaseForDetail] = useState<{ experimentId: string; caseId: string } | null>(null);
+
+  // Load experiment from DB
+  useEffect(() => {
+    const loadExperiment = async () => {
+      setExperimentLoading(true);
+      try {
+        const experiments = await ipcService.invoke(
+          EVALUATION_CHANNELS.LIST_EXPERIMENTS as 'evaluation:list-experiments',
+          10
+        ) as Array<{ id: string }> | undefined;
+        if (experiments && experiments.length > 0) {
+          const latest = experiments[0];
+          const data = await ipcService.invoke(
+            EVALUATION_CHANNELS.LOAD_EXPERIMENT as 'evaluation:load-experiment',
+            latest.id
+          ) as ExperimentData | null | undefined;
+          if (data) {
+            setExperiment(data);
+          }
+        }
+      } catch { /* best-effort */ }
+      finally { setExperimentLoading(false); }
+    };
+    loadExperiment();
+  }, []);
+
+  // Also load file-based report as fallback
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -42,7 +94,19 @@ export const ExperimentDetailPage: React.FC = () => {
     load();
   }, []);
 
+  // If navigating to CaseDetail, render it instead
+  if (selectedCaseForDetail) {
+    return (
+      <CaseDetailPage
+        experimentId={selectedCaseForDetail.experimentId}
+        caseId={selectedCaseForDetail.caseId}
+        onBack={() => setSelectedCaseForDetail(null)}
+      />
+    );
+  }
+
   const hasData = report && report.results && report.results.length > 0;
+  const hasExperimentCases = experiment && experiment.cases && experiment.cases.length > 0;
   const passRate = report ? Math.round((report.passed / Math.max(report.total, 1)) * 100) : 0;
 
   const STAT_CARDS = [
@@ -80,6 +144,8 @@ export const ExperimentDetailPage: React.FC = () => {
     },
   ];
 
+  const isLoading = loading || experimentLoading;
+
   const EmptyGuide = ({ message }: { message: string }) => (
     <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl border border-white/[0.04] flex flex-col items-center justify-center py-16 gap-4">
       <div className="w-14 h-14 rounded-2xl bg-zinc-700/60 border border-white/[0.04] flex items-center justify-center text-2xl">
@@ -95,7 +161,7 @@ export const ExperimentDetailPage: React.FC = () => {
   return (
     <div className="flex flex-col h-full">
       {/* Git Commit Badge */}
-      {!loading && hasData && report?.gitCommit && (
+      {!isLoading && hasData && report?.gitCommit && (
         <div className="flex items-center gap-2 px-4 pt-3">
           <span className="text-[10px] text-zinc-500">Git Commit:</span>
           <code className="text-[11px] font-mono text-zinc-400 bg-zinc-700/60 px-1.5 py-0.5 rounded border border-zinc-800">
@@ -104,8 +170,17 @@ export const ExperimentDetailPage: React.FC = () => {
         </div>
       )}
 
+      {/* Experiment Name Badge */}
+      {!isLoading && experiment && (
+        <div className="flex items-center gap-2 px-4 pt-2">
+          <span className="text-[10px] text-zinc-500">实验:</span>
+          <span className="text-[11px] text-zinc-300">{experiment.name}</span>
+          <span className="text-[10px] text-zinc-600 font-mono">{experiment.id.slice(0, 8)}</span>
+        </div>
+      )}
+
       {/* Stats Cards Header */}
-      {!loading && hasData && (
+      {!isLoading && hasData && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 px-4 pt-4">
           {STAT_CARDS.map(card => (
             <div
@@ -147,7 +222,7 @@ export const ExperimentDetailPage: React.FC = () => {
         ))}
       </div>
 
-      {loading && (
+      {isLoading && (
         <div className="flex-1 flex items-center justify-center">
           <svg className="animate-spin w-6 h-6 text-blue-400" viewBox="0 0 24 24" fill="none">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
@@ -156,15 +231,61 @@ export const ExperimentDetailPage: React.FC = () => {
         </div>
       )}
 
-      {!loading && (
+      {!isLoading && (
         <div className="flex-1 overflow-y-auto">
           {activeTab === 'overview' && <TestResultsDashboard />}
 
           {activeTab === 'cases' && (
             <div className="p-4 space-y-3">
-              {!hasData ? (
+              {/* DB-based experiment cases */}
+              {hasExperimentCases && (
+                <>
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className="text-xs text-zinc-500">DB 实验 Case ({experiment!.cases.length})</span>
+                  </div>
+                  <div className="bg-zinc-800 rounded-lg border border-zinc-800 overflow-hidden mb-4">
+                    <div className="grid grid-cols-[1fr_80px_80px_80px_60px] gap-2 px-3 py-2 text-[10px] text-zinc-500 uppercase bg-zinc-900/30 border-b border-zinc-800">
+                      <span>Case ID</span>
+                      <span>状态</span>
+                      <span>得分</span>
+                      <span>耗时</span>
+                      <span>操作</span>
+                    </div>
+                    {experiment!.cases.map(ec => {
+                      const st = STATUS_STYLES[ec.status] || STATUS_STYLES.failed;
+                      return (
+                        <div
+                          key={ec.id}
+                          className="grid grid-cols-[1fr_80px_80px_80px_60px] gap-2 px-3 py-2 text-[11px] border-t border-zinc-700/10 hover:bg-zinc-800 transition"
+                        >
+                          <span className="text-zinc-400 font-mono truncate">{ec.case_id}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full w-fit ${st.bg} ${st.color}`}>
+                            {st.label}
+                          </span>
+                          <span className={`font-mono ${ec.score >= 80 ? 'text-emerald-400' : ec.score >= 60 ? 'text-amber-400' : 'text-red-400'}`}>
+                            {Math.round(ec.score)}
+                          </span>
+                          <span className="text-zinc-500">
+                            {ec.duration_ms >= 1000 ? `${(ec.duration_ms / 1000).toFixed(1)}s` : `${ec.duration_ms}ms`}
+                          </span>
+                          <button
+                            onClick={() => setSelectedCaseForDetail({ experimentId: experiment!.id, caseId: ec.case_id })}
+                            className="text-[10px] text-blue-400 hover:text-blue-300 transition"
+                          >
+                            详情
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {/* File-based report cases (fallback) */}
+              {!hasExperimentCases && !hasData && (
                 <EmptyGuide message="暂无 Case 评测数据" />
-              ) : (
+              )}
+              {!hasExperimentCases && hasData && (
                 <>
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-zinc-500">共 {report!.results.length} 个 Case</span>

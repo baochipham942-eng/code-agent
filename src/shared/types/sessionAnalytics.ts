@@ -78,6 +78,7 @@ export interface ObjectiveMetrics {
 
 /**
  * 主观评测维度 (v3)
+ * @deprecated 未来将统一到 EvaluationDimension
  */
 export enum SubjectiveDimension {
   // v3 计分维度

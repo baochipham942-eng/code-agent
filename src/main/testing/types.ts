@@ -223,6 +223,10 @@ export interface TestResult {
   expectationResults?: ExpectationResult[];
   /** Trajectory analysis data (P3) */
   trajectory?: Trajectory;
+  /** Trial results when trialsPerCase > 1 */
+  trials?: Array<{ score: number; status: TestStatus; duration_ms: number }>;
+  /** Session ID from the agent that ran this test */
+  sessionId?: string;
 }
 
 /**
@@ -305,6 +309,8 @@ export interface TestRunnerConfig {
   evalCriticUseLLM?: boolean;
   /** 工具加载模式：'all' 全量 | 'deferred' 延迟加载（默认） */
   toolMode?: 'all' | 'deferred';
+  /** Number of trials per test case (default 1). When >1, each case runs multiple times for stability measurement */
+  trialsPerCase?: number;
 }
 
 /**

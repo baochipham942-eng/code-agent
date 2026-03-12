@@ -17,6 +17,42 @@ export const FailureAnalysisPage: React.FC = () => {
 
   const loadFailedCases = useCallback(async () => {
     try {
+      // Load from DB (preferred)
+      const experiments = await ipcService.invoke(
+        EVALUATION_CHANNELS.LIST_EXPERIMENTS as 'evaluation:list-experiments',
+        10
+      ) as Array<{ id: string }> | undefined;
+      if (experiments && experiments.length > 0) {
+        const data = await ipcService.invoke(
+          EVALUATION_CHANNELS.LOAD_EXPERIMENT as 'evaluation:load-experiment',
+          experiments[0].id
+        ) as { cases: Array<{ case_id: string; status: string; score: number; duration_ms: number; data_json: string }> } | null | undefined;
+        if (data && data.cases) {
+          // Convert experiment cases to TestCaseResult format
+          const converted: TestCaseResult[] = data.cases.map(ec => {
+            let parsed: Record<string, unknown> = {};
+            try { parsed = ec.data_json ? JSON.parse(ec.data_json) : {}; } catch { /* ignore */ }
+            return {
+              testId: ec.case_id,
+              description: (parsed.description as string) || ec.case_id,
+              status: ec.status as TestCaseResult['status'],
+              score: ec.score / 100,
+              duration: ec.duration_ms,
+              startTime: 0,
+              endTime: 0,
+              toolExecutions: [],
+              responses: [],
+              errors: (parsed.errors as string[]) || [],
+              turnCount: (parsed.turnCount as number) || 0,
+              failureReason: parsed.failureReason as string | undefined,
+            };
+          });
+          setAllCases(converted);
+          setCases(converted.filter(r => r.status !== 'passed'));
+          return;
+        }
+      }
+      // Fallback to file-based reports (deprecated)
       const list = await ipcService.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS) as { filePath: string }[] | undefined;
       if (list && list.length > 0) {
         const report = await ipcService.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, list[0].filePath) as TestRunReport | null | undefined;

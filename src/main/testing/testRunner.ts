@@ -45,6 +45,8 @@ export interface AgentInterface {
   reset(): Promise<void>;
   /** Get current agent info */
   getAgentInfo(): { name: string; model: string; provider: string };
+  /** Get the current session ID (optional) */
+  getSessionId?(): string | undefined;
 }
 
 /**
@@ -130,6 +132,8 @@ export class TestRunner {
     // Track passed tests for dependency checking
     const passedTests = new Set<string>();
 
+    const trialsPerCase = this.config.trialsPerCase ?? 1;
+
     // Run each test case
     for (const testCase of sortedCases) {
       if (this.aborted) {
@@ -151,16 +155,44 @@ export class TestRunner {
         }
       }
 
-      // Run the test
-      const result = await this.runSingleTest(testCase);
-      results.push(result);
+      if (trialsPerCase <= 1) {
+        // Single trial (default behavior)
+        const result = await this.runSingleTest(testCase);
+        results.push(result);
 
-      if (result.status === 'passed' || result.status === 'partial') {
-        passedTests.add(testCase.id);
+        if (result.status === 'passed' || result.status === 'partial') {
+          passedTests.add(testCase.id);
+        }
+      } else {
+        // Multiple trials: run each case trialsPerCase times, take best score (pass@k)
+        const trialResults: Array<{ score: number; status: TestResult['status']; duration_ms: number }> = [];
+        let bestResult: TestResult | null = null;
+
+        for (let trial = 0; trial < trialsPerCase; trial++) {
+          if (this.aborted) break;
+          logger.info(`Running trial ${trial + 1}/${trialsPerCase} for case ${testCase.id}`);
+          const result = await this.runSingleTest(testCase);
+          trialResults.push({ score: result.score, status: result.status, duration_ms: result.duration });
+
+          if (!bestResult || result.score > bestResult.score) {
+            bestResult = result;
+          }
+        }
+
+        if (bestResult) {
+          // Attach trial data to best result
+          bestResult.trials = trialResults;
+          results.push(bestResult);
+
+          if (bestResult.status === 'passed' || bestResult.status === 'partial') {
+            passedTests.add(testCase.id);
+          }
+        }
       }
 
       // Stop on first failure if configured
-      if (this.config.stopOnFailure && result.status === 'failed') {
+      const lastResult = results[results.length - 1];
+      if (this.config.stopOnFailure && lastResult && lastResult.status === 'failed') {
         logger.info('Stopping on first failure');
         break;
       }
@@ -263,6 +295,7 @@ export class TestRunner {
       result.toolExecutions = agentResult.toolExecutions;
       result.turnCount = agentResult.turnCount;
       result.errors = agentResult.errors;
+      result.sessionId = this.agent.getSessionId?.();
 
       // Multi-turn: send follow-up prompts sequentially
       if (testCase.follow_up_prompts && testCase.follow_up_prompts.length > 0) {

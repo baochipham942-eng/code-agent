@@ -1,10 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { EVALUATION_CHANNELS } from '@shared/ipc/channels';
-import type { TestRunReport } from '@shared/ipc';
 import ipcService from '../../../../services/ipcService';
 
 interface ReportSummary {
-  filePath: string;
+  id: string;
   timestamp: number;
   total: number;
   passed: number;
@@ -21,24 +20,31 @@ export const CrossExperimentPage: React.FC = () => {
     const load = async () => {
       setLoading(true);
       try {
-        const list = await ipcService.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS) as { filePath: string; timestamp?: number }[] | undefined;
-        if (list && list.length > 0) {
+        // Load from DB via LIST_EXPERIMENTS
+        const experiments = await ipcService.invoke(
+          EVALUATION_CHANNELS.LIST_EXPERIMENTS as 'evaluation:list-experiments',
+          20
+        ) as Array<{ id: string; name: string; timestamp: number; summary_json: string }> | undefined;
+
+        if (experiments && experiments.length > 0) {
           const summaries: ReportSummary[] = [];
-          for (const item of list.slice(0, 20)) {
+          for (const exp of experiments) {
             try {
-              const report = await ipcService.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, item.filePath) as TestRunReport | null | undefined;
-              if (report) {
-                summaries.push({
-                  filePath: item.filePath,
-                  timestamp: report.startTime || item.timestamp || 0,
-                  total: report.total,
-                  passed: report.passed,
-                  failed: report.failed,
-                  passRate: report.total > 0 ? Math.round((report.passed / report.total) * 100) : 0,
-                  averageScore: report.averageScore,
-                });
-              }
-            } catch { /* skip broken reports */ }
+              let summary: Record<string, number> = {};
+              try { summary = JSON.parse(exp.summary_json || '{}'); } catch { /* skip */ }
+              const total = summary.total || 0;
+              const passed = summary.passed || 0;
+              const failed = summary.failed || 0;
+              summaries.push({
+                id: exp.id,
+                timestamp: exp.timestamp || 0,
+                total,
+                passed,
+                failed,
+                passRate: total > 0 ? Math.round((passed / total) * 100) : 0,
+                averageScore: summary.avgScore || 0,
+              });
+            } catch { /* skip broken experiments */ }
           }
           summaries.sort((a, b) => b.timestamp - a.timestamp);
           setReports(summaries);
@@ -104,7 +110,7 @@ export const CrossExperimentPage: React.FC = () => {
               const prevRate = i < reports.length - 1 ? reports[i + 1].passRate : null;
               const delta = prevRate !== null ? r.passRate - prevRate : null;
               return (
-                <div key={r.filePath} className="grid grid-cols-[1fr_80px_80px_80px_100px] gap-2 px-3 py-2 text-[11px] border-t border-zinc-700/10 hover:bg-zinc-800 transition">
+                <div key={r.id} className="grid grid-cols-[1fr_80px_80px_80px_100px] gap-2 px-3 py-2 text-[11px] border-t border-zinc-700/10 hover:bg-zinc-800 transition">
                   <span className="text-zinc-400">{formatDate(r.timestamp)}</span>
                   <span className="text-zinc-400 font-mono">{r.total}</span>
                   <span className="text-emerald-400 font-mono">{r.passed}</span>
@@ -176,7 +182,7 @@ export const CrossExperimentPage: React.FC = () => {
                   const significant = delta !== null && Math.abs(delta) >= 5;
                   const expLabel = formatDate(r.timestamp);
                   return (
-                    <div key={r.filePath} className="flex items-center gap-2 group">
+                    <div key={r.id} className="flex items-center gap-2 group">
                       {/* Experiment label */}
                       <span className="text-[11px] text-zinc-400 w-[110px] truncate flex-shrink-0 font-mono" title={expLabel}>
                         {expLabel}

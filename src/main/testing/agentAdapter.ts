@@ -222,7 +222,8 @@ export class StandaloneAgentAdapter implements AgentInterface {
 
   private workingDirectory: string;
   private generation: string;
-  private toolMode: 'all' | 'deferred';  
+  private toolMode: 'all' | 'deferred';
+  private currentSessionId?: string;
   private modelConfig: {
     provider: string;
     model: string;
@@ -283,8 +284,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
       const messages: import('../../shared/types').Message[] = [];
 
       // 4. Create AgentLoop with correct event handlers
+      this.currentSessionId = `test-${Date.now()}`;
       const loop = new AgentLoop({
-        sessionId: `test-${Date.now()}`,
+        sessionId: this.currentSessionId,
         workingDirectory: this.workingDirectory,
         systemPrompt: SYSTEM_PROMPT,
         modelConfig: {
@@ -367,5 +369,9 @@ export class StandaloneAgentAdapter implements AgentInterface {
       model: this.modelConfig.model,
       provider: this.modelConfig.provider,
     };
+  }
+
+  getSessionId(): string | undefined {
+    return this.currentSessionId;
   }
 }

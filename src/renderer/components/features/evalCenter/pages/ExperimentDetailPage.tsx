@@ -34,6 +34,7 @@ interface ExperimentData {
 interface ExperimentCase {
   id: string;
   case_id: string;
+  session_id?: string;
   status: string;
   score: number;
   duration_ms: number;
@@ -78,21 +79,52 @@ export const ExperimentDetailPage: React.FC = () => {
     loadExperiment();
   }, []);
 
-  // Also load file-based report as fallback
+  // Populate report from experiment DB data (replaces file-based fallback)
   useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const list = await ipcService.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS) as { filePath: string }[] | undefined;
-        if (list && list.length > 0) {
-          const data = await ipcService.invoke(EVALUATION_CHANNELS.LOAD_TEST_REPORT, list[0].filePath) as TestRunReport | null | undefined;
-          if (data) setReport(data);
-        }
-      } catch { /* best-effort */ }
-      finally { setLoading(false); }
-    };
-    load();
-  }, []);
+    if (experiment && experiment.cases.length > 0) {
+      const cases: TestCaseResult[] = experiment.cases.map(ec => {
+        let parsed: Record<string, unknown> = {};
+        try { parsed = ec.data_json ? JSON.parse(ec.data_json) : {}; } catch { /* ignore */ }
+        return {
+          testId: ec.case_id,
+          description: (parsed.description as string) || ec.case_id,
+          status: ec.status as TestCaseResult['status'],
+          score: ec.score / 100,
+          duration: ec.duration_ms,
+          startTime: 0,
+          endTime: 0,
+          toolExecutions: [],
+          responses: [],
+          errors: (parsed.errors as string[]) || [],
+          turnCount: (parsed.turnCount as number) || 0,
+          failureReason: parsed.failureReason as string | undefined,
+        };
+      });
+      const passed = cases.filter(c => c.status === 'passed').length;
+      const failed = cases.filter(c => c.status === 'failed').length;
+      const nonSkipped = cases.filter(c => c.status !== 'skipped');
+      const avgScore = nonSkipped.length > 0
+        ? nonSkipped.reduce((sum, c) => sum + c.score, 0) / nonSkipped.length
+        : 0;
+      setReport({
+        total: cases.length,
+        passed,
+        failed,
+        skipped: cases.filter(c => c.status === 'skipped').length,
+        averageScore: avgScore,
+        results: cases,
+        startTime: experiment.created_at,
+        duration: cases.reduce((sum, c) => sum + c.duration, 0),
+        performance: {
+          avgResponseTime: cases.length > 0 ? cases.reduce((sum, c) => sum + c.duration, 0) / cases.length : 0,
+          maxResponseTime: Math.max(...cases.map(c => c.duration), 0),
+          totalToolCalls: 0,
+          totalTurns: cases.reduce((sum, c) => sum + c.turnCount, 0),
+        },
+      } as TestRunReport);
+    }
+    setLoading(false);
+  }, [experiment]);
 
   // If navigating to CaseDetail, render it instead
   if (selectedCaseForDetail) {
@@ -244,19 +276,20 @@ export const ExperimentDetailPage: React.FC = () => {
                     <span className="text-xs text-zinc-500">DB 实验 Case ({experiment!.cases.length})</span>
                   </div>
                   <div className="bg-zinc-800 rounded-lg border border-zinc-800 overflow-hidden mb-4">
-                    <div className="grid grid-cols-[1fr_80px_80px_80px_60px] gap-2 px-3 py-2 text-[10px] text-zinc-500 uppercase bg-zinc-900/30 border-b border-zinc-800">
+                    <div className="grid grid-cols-[1fr_80px_80px_80px_60px_60px] gap-2 px-3 py-2 text-[10px] text-zinc-500 uppercase bg-zinc-900/30 border-b border-zinc-800">
                       <span>Case ID</span>
                       <span>状态</span>
                       <span>得分</span>
                       <span>耗时</span>
                       <span>操作</span>
+                      <span>会话</span>
                     </div>
                     {experiment!.cases.map(ec => {
                       const st = STATUS_STYLES[ec.status] || STATUS_STYLES.failed;
                       return (
                         <div
                           key={ec.id}
-                          className="grid grid-cols-[1fr_80px_80px_80px_60px] gap-2 px-3 py-2 text-[11px] border-t border-zinc-700/10 hover:bg-zinc-800 transition"
+                          className="grid grid-cols-[1fr_80px_80px_80px_60px_60px] gap-2 px-3 py-2 text-[11px] border-t border-zinc-700/10 hover:bg-zinc-800 transition"
                         >
                           <span className="text-zinc-400 font-mono truncate">{ec.case_id}</span>
                           <span className={`text-[10px] px-1.5 py-0.5 rounded-full w-fit ${st.bg} ${st.color}`}>
@@ -274,6 +307,20 @@ export const ExperimentDetailPage: React.FC = () => {
                           >
                             详情
                           </button>
+                          {ec.session_id ? (
+                            <button
+                              onClick={() => {
+                                // Navigate to session replay
+                                window.dispatchEvent(new CustomEvent('navigate-session', { detail: { sessionId: ec.session_id } }));
+                              }}
+                              className="text-[10px] text-purple-400 hover:text-purple-300 transition"
+                              title={ec.session_id}
+                            >
+                              查看
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-zinc-600">-</span>
+                          )}
                         </div>
                       );
                     })}

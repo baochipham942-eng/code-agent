@@ -51,6 +51,10 @@ export class ExperimentAdapter {
         avgScore: summary.averageScore || 0,
         duration: summary.duration || 0,
         performance: summary.performance,
+        ...(summary.results?.some(r => r.trials) ? {
+          trialsPerCase: summary.results.find(r => r.trials)?.trials?.length || 1,
+          flakyCount: summary.results.filter(r => r.trials && r.trials.some(t => t.status === 'passed') && r.trials.some(t => t.status !== 'passed')).length,
+        } : {}),
       }),
       source: 'test-runner',
       git_commit: this.getGitCommit(),
@@ -59,6 +63,7 @@ export class ExperimentAdapter {
     const cases = (summary.results || []).map((r: TestResult) => ({
       id: crypto.randomUUID(),
       case_id: r.testId,
+      session_id: r.sessionId,
       status: r.status,
       score: Math.round((r.score ?? (r.status === 'passed' ? 1 : 0)) * 100),
       duration_ms: r.duration || 0,
@@ -71,6 +76,7 @@ export class ExperimentAdapter {
         turnCount: r.turnCount,
         toolExecutions: r.toolExecutions?.length || 0,
         expectationResults: r.expectationResults,
+        ...(r.trials ? { trials: r.trials } : {}),
       }),
     }));
 

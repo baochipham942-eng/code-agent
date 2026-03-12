@@ -254,12 +254,12 @@ export function registerEvaluationHandlers(): void {
     }
   );
 
-  // List test reports
+  // @deprecated — Use LIST_EXPERIMENTS + LOAD_EXPERIMENT instead. Kept for backward compatibility.
   ipcMain.handle(EVALUATION_CHANNELS.LIST_TEST_REPORTS, async () => {
     return service.listTestReports();
   });
 
-  // Load single test report by path
+  // @deprecated — Use LOAD_EXPERIMENT instead. Kept for backward compatibility.
   ipcMain.handle(EVALUATION_CHANNELS.LOAD_TEST_REPORT, async (_event, filePath: string) => {
     return service.loadTestReport(filePath);
   });
@@ -531,12 +531,30 @@ export function registerEvaluationHandlers(): void {
             throw new Error('No test suites found in any known directory');
           }
 
-          // Filter by testSetId if specified (match suite name)
+          // Filter by testSetId if specified
           let testCases = suites.flatMap(s => s.cases);
           if (config.testSetId && config.testSetId !== 'all') {
-            const matchingSuite = suites.find(s => s.name === config.testSetId);
-            if (matchingSuite) {
-              testCases = matchingSuite.cases;
+            if (config.testSetId.startsWith('subset:')) {
+              // Load subset file and filter by caseIds
+              const subsetFileName = config.testSetId.slice('subset:'.length);
+              const subsetDir = path.join(app.getPath('userData'), 'test-subsets');
+              const subsetPath = path.join(subsetDir, subsetFileName);
+              try {
+                const subsetContent = JSON.parse(fs.readFileSync(subsetPath, 'utf-8'));
+                const subsetCaseIds = new Set<string>(subsetContent.caseIds || []);
+                if (subsetCaseIds.size > 0) {
+                  testCases = testCases.filter(tc => subsetCaseIds.has(tc.id));
+                  logger.info('Filtered by subset', { subset: subsetFileName, filtered: testCases.length, total: suites.flatMap(s => s.cases).length });
+                }
+              } catch (subsetErr) {
+                logger.warn('Failed to load subset file, running all cases', { subsetFileName, error: subsetErr instanceof Error ? subsetErr.message : String(subsetErr) });
+              }
+            } else {
+              // Match suite name
+              const matchingSuite = suites.find(s => s.name === config.testSetId);
+              if (matchingSuite) {
+                testCases = matchingSuite.cases;
+              }
             }
           }
 
@@ -566,6 +584,7 @@ export function registerEvaluationHandlers(): void {
             stopOnFailure: false,
             enableEvalCritic: false,
             enableTrajectoryAnalysis: false,
+            trialsPerCase: config.trialsPerCase > 1 ? config.trialsPerCase : undefined,
           });
 
           const runner = new TestRunner(testConfig, agent);

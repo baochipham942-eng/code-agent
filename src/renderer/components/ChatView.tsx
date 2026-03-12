@@ -2,15 +2,14 @@
 // ChatView - Main Chat Interface (Enhanced UI/UX - Terminal Noir)
 // ============================================================================
 
-import React, { useMemo, useCallback, useRef, useState, useEffect } from 'react';
-import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
+import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useTaskStore } from '../stores/taskStore';
-import { useStatusStore } from '../stores/statusStore';
 import { useAgent } from '../hooks/useAgent';
 import { useRequireAuth } from '../hooks/useRequireAuth';
-import { MessageBubble } from './features/chat/MessageBubble';
+import { useTurnProjection } from '../hooks/useTurnProjection';
+import { TurnBasedTraceView } from './features/chat/TurnBasedTraceView';
 import { ChatInput } from './features/chat/ChatInput';
 import type { ChatInputHandle } from './features/chat/ChatInput';
 import { useFileUpload } from './features/chat/ChatInput/useFileUpload';
@@ -20,14 +19,13 @@ import { BridgeUpdatePrompt } from './features/chat/BridgeUpdatePrompt';
 import { DirectoryPickerModal } from './features/chat/DirectoryPickerModal';
 import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { isWebMode } from '../utils/platform';
-import { getModelDisplayLabel } from '@shared/constants';
 
 import { PreviewPanel } from './PreviewPanel';
 import { PlanPanel } from './features/chat/PlanPanel';
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
 import { PermissionCard } from './PermissionDialog/PermissionCard';
-import type { Message, MessageAttachment, TaskPlan } from '../../shared/types';
+import type { MessageAttachment, TaskPlan } from '../../shared/types';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
 import {
@@ -178,6 +176,9 @@ export const ChatView: React.FC = () => {
 
   const { requireAuthAsync } = useRequireAuth();
 
+  // Turn-based trace projection
+  const projection = useTurnProjection(messages, currentSessionId, effectiveIsProcessing);
+
   // Global drop zone state
   const chatInputRef = useRef<ChatInputHandle>(null);
   const [isGlobalDragOver, setIsGlobalDragOver] = useState(false);
@@ -249,90 +250,12 @@ export const ChatView: React.FC = () => {
       chatInputRef.current?.addAttachments(newAttachments);
     }
   }, [processFile, processFolderEntry]);
-  const virtuosoRef = useRef<VirtuosoHandle>(null);
-
-  // Pagination: firstItemIndex for Virtuoso prepend support
-  const START_INDEX = 100000;
-  const [firstItemIndex, setFirstItemIndex] = useState(START_INDEX);
-  const prevMessagesRef = useRef<Message[]>([]);
-
-  // Detect when older messages are prepended
-  useEffect(() => {
-    const prev = prevMessagesRef.current;
-    if (
-      messages.length > prev.length &&
-      prev.length > 0 &&
-      messages[messages.length - 1]?.id === prev[prev.length - 1]?.id
-    ) {
-      // Messages were prepended (last message same, but more messages at start)
-      const delta = messages.length - prev.length;
-      setFirstItemIndex(i => i - delta);
-    } else if (prev.length > 0 && messages.length > 0 && messages[0]?.id !== prev[0]?.id && messages[messages.length - 1]?.id !== prev[prev.length - 1]?.id) {
-      // Session switched - reset
-      setFirstItemIndex(START_INDEX);
-    }
-    prevMessagesRef.current = messages;
-  }, [messages]);
-
-  // Handle scroll to top - load older messages
-  const handleStartReached = useCallback(() => {
-    if (hasOlderMessages && !isLoadingOlder) {
-      loadOlderMessages();
-    }
-  }, [hasOlderMessages, isLoadingOlder, loadOlderMessages]);
-
-  // Filter empty assistant placeholder messages and isMeta messages (Skill system)
-  const filteredMessages = useMemo(() => {
-    return messages.filter((message) => {
-      // Compaction 消息始终显示（折叠摘要卡片）
-      if (message.compaction) {
-        return true;
-      }
-
-      // Skill 系统：isMeta 消息不渲染到 UI（仅发送给模型）
-      if (message.isMeta) {
-        return false;
-      }
-
-      // 过滤 tool 消息：工具结果已在 assistant 消息的 toolCalls[].result 中展示
-      // tool 消息的 content 是原始 JSON，不应显示给用户
-      if (message.role === 'tool') {
-        return false;
-      }
-
-      if (message.role === 'assistant') {
-        const hasContent = message.content && message.content.trim().length > 0;
-        const hasToolCalls = message.toolCalls && message.toolCalls.length > 0;
-        return hasContent || hasToolCalls;
-      }
-      return true;
-    });
-  }, [messages]);
-
   // 发送消息需要登录
   const handleSendMessage = useCallback(async (content: string, attachments?: MessageAttachment[]) => {
     await requireAuthAsync(async () => {
       await sendMessage(content, attachments);
     });
   }, [requireAuthAsync, sendMessage]);
-
-  // Render individual message item
-  const renderMessageItem = useCallback((_index: number, message: Message) => (
-    <div className="px-6 py-1 w-full">
-      <MessageBubble message={message} />
-    </div>
-  ), []);
-
-  // Footer component for processing indicator
-  const Footer = useCallback(() => {
-    if (!effectiveIsProcessing) return null;
-
-    return (
-      <div className="px-6 py-1 w-full">
-        <ThinkingIndicator />
-      </div>
-    );
-  }, [effectiveIsProcessing, cancel]);
 
   return (
     <div
@@ -358,35 +281,16 @@ export const ChatView: React.FC = () => {
 
         {/* Todo Progress Panel 已移至右侧 TaskInfo 面板 */}
 
-        {/* Messages */}
+        {/* Messages - Turn-based trace view */}
         <div className="flex-1 overflow-hidden">
-          {filteredMessages.length === 0 ? (
+          {projection.turns.length === 0 ? (
             <EmptyState onSend={handleSendMessage} />
           ) : (
-            <Virtuoso
-              ref={virtuosoRef}
-              data={filteredMessages}
-              firstItemIndex={firstItemIndex}
-              itemContent={renderMessageItem}
-              startReached={handleStartReached}
-              followOutput={(isAtBottom) => {
-                // 流式输出时强制跟随：assistant 消息从 empty→有内容 时进入 filteredMessages，
-                // 此时用户可能不在底部（因为空消息被 filter 掉了），需要强制滚动
-                if (effectiveIsProcessing) return 'smooth';
-                return isAtBottom ? 'smooth' : false;
-              }}
-              defaultItemHeight={100}
-              overscan={400}
-              className="h-full"
-              components={{
-                Header: () => hasOlderMessages ? (
-                  <div className="flex justify-center py-3 text-gray-400 text-sm">
-                    {isLoadingOlder ? '加载更早的消息...' : '↑ 滚动加载更多'}
-                  </div>
-                ) : null,
-                Footer,
-              }}
-              increaseViewportBy={{ top: 200, bottom: 200 }}
+            <TurnBasedTraceView
+              projection={projection}
+              hasOlderMessages={hasOlderMessages}
+              isLoadingOlder={isLoadingOlder}
+              onLoadOlder={loadOlderMessages}
             />
           )}
         </div>
@@ -459,76 +363,6 @@ export const ChatView: React.FC = () => {
   );
 };
 
-// 格式化会话耗时
-function formatElapsed(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  const h = Math.floor(m / 60);
-  if (h > 0) return `${h}h ${m % 60}m`;
-  if (m > 0) return `${m}m ${s % 60}s`;
-  return `${s}s`;
-}
-
-// 模型名称简写
-function shortModelName(model: string): string {
-  return getModelDisplayLabel(model).replace(/\s*\([^)]*\)\s*$/, '');
-}
-
-// Thinking indicator - Claude/ChatGPT style, left-aligned, no avatar
-const ThinkingIndicator: React.FC = () => {
-  const { inputTokens, outputTokens, contextUsagePercent, sessionStartTime } = useStatusStore();
-  const { modelConfig } = useAppStore();
-  const [elapsed, setElapsed] = useState(Date.now() - sessionStartTime);
-  const totalTokens = inputTokens + outputTokens;
-
-  useEffect(() => {
-    const interval = setInterval(() => setElapsed(Date.now() - sessionStartTime), 1000);
-    return () => clearInterval(interval);
-  }, [sessionStartTime]);
-
-  // 格式化 token 数
-  const formatTokens = (n: number): string => {
-    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
-    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-    return n.toString();
-  };
-
-  // 上下文百分比颜色
-  const ctxColor =
-    contextUsagePercent >= 85 ? 'text-red-400' :
-    contextUsagePercent >= 60 ? 'text-amber-400' :
-    'text-zinc-500';
-
-  const modelName = modelConfig?.model ? shortModelName(modelConfig.model) : null;
-
-  return (
-    <div className="animate-slideUp">
-      <div className="inline-flex items-center gap-2">
-        {/* Typing dots */}
-        <div className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '0ms' }} />
-          <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '150ms' }} />
-          <span className="w-1.5 h-1.5 rounded-full bg-primary-400 typing-dot" style={{ animationDelay: '300ms' }} />
-        </div>
-        <span className="text-sm text-zinc-400">思考中</span>
-        {modelName && (
-          <span className="text-xs text-zinc-500 font-mono">· {modelName}</span>
-        )}
-        {contextUsagePercent > 0 && (
-          <span className={`text-xs font-mono ${ctxColor}`}>
-            · ctx {contextUsagePercent.toFixed(1)}%
-          </span>
-        )}
-        {totalTokens > 0 && (
-          <span className="text-xs text-zinc-500 font-mono">
-            · {formatTokens(totalTokens)} tok
-          </span>
-        )}
-        <span className="text-xs text-zinc-600 font-mono">· {formatElapsed(elapsed)}</span>
-      </div>
-    </div>
-  );
-};
 
 
 // 建议卡片类型

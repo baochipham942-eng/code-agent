@@ -77,3 +77,6 @@ export * from './error';
 
 // Application Service interface (IPC 层窄接口)
 export * from './appService';
+
+// Trace types (Turn-based trace view)
+export * from './trace';

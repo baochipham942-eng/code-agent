@@ -22,6 +22,7 @@ export interface SyncSessionRequest {
   generation: number;
   workspacePath?: string;
   config?: Record<string, unknown>;
+  isDeleted?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -71,7 +72,7 @@ export async function syncSessions(
 
     try {
       await sql`
-        INSERT INTO code_agent.sessions (id, user_id, title, generation, workspace_path, config, created_at, updated_at)
+        INSERT INTO code_agent.sessions (id, user_id, title, generation, workspace_path, config, is_deleted, created_at, updated_at)
         VALUES (
           ${session.id},
           ${userId},
@@ -79,6 +80,7 @@ export async function syncSessions(
           ${session.generation},
           ${session.workspacePath || null},
           ${JSON.stringify(session.config || {})},
+          ${session.isDeleted || false},
           ${session.createdAt},
           ${session.updatedAt}
         )
@@ -87,6 +89,7 @@ export async function syncSessions(
           generation = EXCLUDED.generation,
           workspace_path = EXCLUDED.workspace_path,
           config = EXCLUDED.config,
+          is_deleted = EXCLUDED.is_deleted,
           updated_at = EXCLUDED.updated_at
         WHERE code_agent.sessions.updated_at < EXCLUDED.updated_at
       `;
@@ -137,7 +140,7 @@ export async function syncMessages(
       // 验证 session 属于当前用户
       const sessionCheck = await sql`
         SELECT id FROM code_agent.sessions
-        WHERE id = ${message.sessionId} AND user_id = ${userId}
+        WHERE id = ${message.sessionId} AND user_id = ${userId} AND is_deleted = FALSE
       `;
 
       if ((sessionCheck as any[]).length === 0) {
@@ -175,14 +178,20 @@ export async function pullUserData(
 
   let sessions: Session[];
   let messages: Message[];
+  let deletedSessionIds: string[];
 
   if (since) {
     // 增量同步：只获取指定时间之后更新的数据
-    sessions = (await sql`
+    const changedSessions = (await sql`
       SELECT * FROM code_agent.sessions
       WHERE user_id = ${userId} AND updated_at > ${since}
       ORDER BY updated_at DESC
     `) as Session[];
+
+    sessions = changedSessions.filter((session) => !session.is_deleted);
+    deletedSessionIds = changedSessions
+      .filter((session) => session.is_deleted)
+      .map((session) => session.id);
 
     const sessionIds = sessions.map((s) => s.id);
 
@@ -197,11 +206,16 @@ export async function pullUserData(
     }
   } else {
     // 全量同步
-    sessions = (await sql`
+    const allSessions = (await sql`
       SELECT * FROM code_agent.sessions
       WHERE user_id = ${userId}
       ORDER BY updated_at DESC
     `) as Session[];
+
+    sessions = allSessions.filter((session) => !session.is_deleted);
+    deletedSessionIds = allSessions
+      .filter((session) => session.is_deleted)
+      .map((session) => session.id);
 
     const sessionIds = sessions.map((s) => s.id);
 
@@ -219,7 +233,7 @@ export async function pullUserData(
   return {
     sessions,
     messages,
-    deletedSessionIds: [], // TODO: 实现软删除追踪
+    deletedSessionIds,
     serverTime: new Date().toISOString(),
   };
 }
@@ -230,9 +244,11 @@ export async function deleteSession(
   sessionId: string
 ): Promise<boolean> {
   const sql = getDb();
+  const now = new Date().toISOString();
 
   const result = await sql`
-    DELETE FROM code_agent.sessions
+    UPDATE code_agent.sessions
+    SET is_deleted = TRUE, updated_at = ${now}
     WHERE id = ${sessionId} AND user_id = ${userId}
     RETURNING id
   `;

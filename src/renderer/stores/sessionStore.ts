@@ -8,6 +8,14 @@ import ipcService from '../services/ipcService';
 
 const logger = createLogger('SessionStore');
 
+async function invokeSession<T>(action: string, payload?: unknown): Promise<T> {
+  const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.SESSION, action, payload);
+  if (!response?.success) {
+    throw new Error(response?.error?.message || `Session action failed: ${action}`);
+  }
+  return response.data as T;
+}
+
 // switchSession 竞态保护计数器
 let _switchCounter = 0;
 
@@ -81,7 +89,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
       set({ isLoading: true, error: null });
       try {
         const includeArchived = filter === 'archived' || filter === 'all';
-        const sessions = await ipcService.invoke(IPC_CHANNELS.SESSION_LIST, { includeArchived });
+        const sessions = await invokeSession<Session[]>('list', { includeArchived });
 
         let sessionsWithMeta: SessionWithMeta[] = (sessions || []).map((s: Session & { messageCount?: number }) => ({
           ...s,
@@ -110,7 +118,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
     createSession: async (title?: string) => {
       set({ isLoading: true, error: null });
       try {
-        const session = await ipcService.invoke(IPC_CHANNELS.SESSION_CREATE, title);
+        const session = await invokeSession<Session | null>('create', { title });
         if (session) {
           const newSessionWithMeta: SessionWithMeta = {
             ...session,
@@ -145,7 +153,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
       set({ isLoading: true, error: null });
       try {
-        const session = await ipcService.invoke(IPC_CHANNELS.SESSION_LOAD, sessionId) as Session & { messages?: Message[]; todos?: TodoItem[] };
+        const session = await invokeSession<Session & { messages?: Message[]; todos?: TodoItem[] } | null>('load', { sessionId });
 
         // 竞态检查：如果在等待期间又发起了新的切换，丢弃本次结果
         if (switchVersion !== _switchCounter) {
@@ -191,7 +199,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
     deleteSession: async (sessionId: string) => {
       try {
-        await ipcService.invoke(IPC_CHANNELS.SESSION_DELETE, sessionId);
+        await invokeSession('delete', { sessionId });
 
         const { currentSessionId, sessions } = get();
         const newSessions = sessions.filter((s) => s.id !== sessionId);
@@ -216,7 +224,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
     archiveSession: async (sessionId: string) => {
       try {
-        await ipcService.invoke(IPC_CHANNELS.SESSION_ARCHIVE, sessionId);
+        await invokeSession('archive', { sessionId });
 
         const { useSessionUIStore } = await import('./sessionUIStore');
         const { filter } = useSessionUIStore.getState();
@@ -254,7 +262,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
     unarchiveSession: async (sessionId: string) => {
       try {
-        await ipcService.invoke(IPC_CHANNELS.SESSION_UNARCHIVE, sessionId);
+        await invokeSession('unarchive', { sessionId });
 
         const { useSessionUIStore } = await import('./sessionUIStore');
         const { filter } = useSessionUIStore.getState();

@@ -33,13 +33,21 @@ import { MemoryLearningProvider } from './components/features/memory';
 import { useTheme } from './hooks/useTheme';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { Activity, Cloud, Zap, Sparkles, GitBranch } from 'lucide-react';
-import { IPC_CHANNELS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS, type NotificationClickedEvent, type ToolCreateRequestEvent, type ConfirmActionRequest, type ContextHealthUpdateEvent } from '@shared/ipc';
 import type { UserQuestionRequest, UpdateInfo } from '@shared/types';
 import { UI, DEFAULT_PROVIDER, DEFAULT_MODEL } from '@shared/constants';
 import { createLogger } from './utils/logger';
 import ipcService from './services/ipcService';
 
 const logger = createLogger('App');
+
+async function invokeDomain<T>(domain: string, action: string, payload?: unknown): Promise<T> {
+  const response = await window.domainAPI?.invoke<T>(domain, action, payload);
+  if (!response?.success) {
+    throw new Error(response?.error?.message || `${domain}:${action} failed`);
+  }
+  return response.data as T;
+}
 
 export const App: React.FC = () => {
   const {
@@ -126,7 +134,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const settings = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET);
+        const settings = await invokeDomain<any>(IPC_DOMAINS.SETTINGS, 'get');
 
         // 加载语言设置
         if (settings?.ui?.language) {
@@ -172,7 +180,7 @@ export const App: React.FC = () => {
     const checkForUpdates = async () => {
       try {
         logger.info('Checking for updates on startup');
-        const updateInfo = await ipcService.invoke(IPC_CHANNELS.UPDATE_CHECK);
+        const updateInfo = await invokeDomain<UpdateInfo>(IPC_DOMAINS.UPDATE, 'check');
 
         if (updateInfo?.hasUpdate && updateInfo?.forceUpdate) {
           logger.info('Force update required', { latestVersion: updateInfo.latestVersion });
@@ -197,7 +205,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const checkApiKeyConfigured = async () => {
       try {
-        const configured = await ipcService.invoke(IPC_CHANNELS.SECURITY_CHECK_API_KEY_CONFIGURED);
+        const configured = await invokeDomain<boolean>(IPC_DOMAINS.SETTINGS, 'checkApiKeyConfigured');
         if (!configured) {
           logger.info('No API Key configured, showing setup modal');
           setShowApiKeySetup(true);

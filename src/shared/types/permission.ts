@@ -33,6 +33,7 @@ export type ApprovalLevel =
 // 权限请求
 export interface PermissionRequest {
   id: string;
+  sessionId?: string;
   type: PermissionType;
   tool: string;
   details: {

@@ -632,6 +632,7 @@ export class TaskManager extends EventEmitter {
           await this.persistEventToSession(sessionId, event);
         },
       });
+      orchestrator.setSessionId(sessionId);
 
       wrapper = {
         orchestrator,

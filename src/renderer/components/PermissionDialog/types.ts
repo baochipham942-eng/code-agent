@@ -50,6 +50,7 @@ export interface PermissionRequestDetails {
 // 权限请求
 export interface PermissionRequest {
   id: string;
+  sessionId?: string;
   tool: string;
   type: PermissionType;
   reason?: string;

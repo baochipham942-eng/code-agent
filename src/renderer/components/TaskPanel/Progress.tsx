@@ -9,9 +9,10 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSessionStore } from '../../stores/sessionStore';
+import { useAppStore } from '../../stores/appStore';
 import { Check, ChevronDown, ChevronRight, ListChecks, Loader2, Clock, AlertTriangle } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
-import type { TaskProgressData, ToolProgressData, ToolTimeoutData, AgentEvent } from '@shared/types';
+import type { ToolProgressData, ToolTimeoutData, AgentEvent } from '@shared/types';
 import ipcService from '../../services/ipcService';
 
 // Phase 到中文的映射
@@ -36,24 +37,21 @@ function formatElapsed(ms: number): string {
 }
 
 export const Progress: React.FC = () => {
-  const { todos } = useSessionStore();
+  const { todos, currentSessionId } = useSessionStore();
+  const sessionTaskProgress = useAppStore((state) => state.sessionTaskProgress);
   const { t } = useI18n();
   const [isExpanded, setIsExpanded] = useState(true);
-  const [taskProgress, setTaskProgress] = useState<TaskProgressData | null>(null);
   const [toolProgress, setToolProgress] = useState<ToolProgressData | null>(null);
   const [toolTimeout, setToolTimeout] = useState<ToolTimeoutData | null>(null);
+  const taskProgress = currentSessionId ? sessionTaskProgress[currentSessionId] ?? null : null;
 
   // 订阅 IPC 事件获取实时进度
-  const handleAgentEvent = useCallback((event: AgentEvent) => {
+  const handleAgentEvent = useCallback((event: AgentEvent & { sessionId?: string }) => {
+    if (event.sessionId && currentSessionId && event.sessionId !== currentSessionId) {
+      return;
+    }
+
     switch (event.type) {
-      case 'task_progress':
-        if (event.data) {
-          setTaskProgress(event.data as TaskProgressData);
-        }
-        break;
-      case 'task_complete':
-        setTaskProgress(null);
-        break;
       case 'tool_progress':
         if (event.data) {
           setToolProgress(event.data as ToolProgressData);
@@ -74,12 +72,16 @@ export const Progress: React.FC = () => {
         break;
       case 'agent_complete':
         // Agent 完成时清除所有状态（包括任务进度）
-        setTaskProgress(null);
         setToolProgress(null);
         setToolTimeout(null);
         break;
     }
-  }, []);
+  }, [currentSessionId]);
+
+  useEffect(() => {
+    setToolProgress(null);
+    setToolTimeout(null);
+  }, [currentSessionId]);
 
   useEffect(() => {
     const unsubscribe = ipcService.on('agent:event' as any, handleAgentEvent);

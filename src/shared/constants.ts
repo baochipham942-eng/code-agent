@@ -1,4 +1,4 @@
-import type { ModelProvider } from './types';
+import type { ModelProvider, ModelProviderAlias } from './types';
 
 /** Provider HTTP request timeout (ms) */
 export const PROVIDER_TIMEOUT = 300000;
@@ -564,8 +564,11 @@ export const STRATEGY_SYNC = {
 // 云端 API 端点配置
 // ============================================================================
 
+/** 当前生产环境云端 API 基础 URL */
+export const PRODUCTION_CLOUD_API_URL = 'https://code-agent-beta.vercel.app';
+
 /** 默认云端 API 基础 URL */
-const DEFAULT_CLOUD_API_URL = 'https://code-agent-beta.vercel.app';
+const DEFAULT_CLOUD_API_URL = PRODUCTION_CLOUD_API_URL;
 
 /** 获取云端 API URL（支持环境变量覆盖） */
 export function getCloudApiUrl(): string {
@@ -657,6 +660,138 @@ export const MODEL_API_ENDPOINTS = {
   /** Local Ollama */
   ollama: 'http://localhost:11434/v1',
 } as const;
+
+export interface CanonicalProviderInfo {
+  aliases: readonly ModelProviderAlias[];
+  defaultModel: string;
+  endpoint: string;
+  cloudProxySupported: boolean;
+  displayName: string;
+}
+
+/**
+ * Canonical provider registry.
+ * 所有 provider 级别元数据统一从这里读取，避免 renderer / main / cloud 漂移。
+ */
+export const PROVIDER_REGISTRY: Record<ModelProvider, CanonicalProviderInfo> = {
+  deepseek: {
+    aliases: ['deepseek'],
+    defaultModel: 'deepseek-chat',
+    endpoint: MODEL_API_ENDPOINTS.deepseek,
+    cloudProxySupported: true,
+    displayName: 'DeepSeek',
+  },
+  claude: {
+    aliases: ['claude', 'anthropic'],
+    defaultModel: DEFAULT_MODEL,
+    endpoint: MODEL_API_ENDPOINTS.claude,
+    cloudProxySupported: true,
+    displayName: 'Anthropic Claude',
+  },
+  openai: {
+    aliases: ['openai'],
+    defaultModel: 'gpt-4o',
+    endpoint: MODEL_API_ENDPOINTS.openai,
+    cloudProxySupported: true,
+    displayName: 'OpenAI',
+  },
+  gemini: {
+    aliases: ['gemini'],
+    defaultModel: 'gemini-2.5-pro',
+    endpoint: MODEL_API_ENDPOINTS.gemini,
+    cloudProxySupported: false,
+    displayName: 'Google Gemini',
+  },
+  groq: {
+    aliases: ['groq'],
+    defaultModel: 'llama-3.3-70b-versatile',
+    endpoint: MODEL_API_ENDPOINTS.groq,
+    cloudProxySupported: true,
+    displayName: 'Groq',
+  },
+  local: {
+    aliases: ['local'],
+    defaultModel: 'qwen2.5-coder:7b',
+    endpoint: MODEL_API_ENDPOINTS.ollama,
+    cloudProxySupported: false,
+    displayName: 'Local (Ollama)',
+  },
+  zhipu: {
+    aliases: ['zhipu'],
+    defaultModel: 'glm-5',
+    endpoint: MODEL_API_ENDPOINTS.zhipu,
+    cloudProxySupported: true,
+    displayName: 'Zhipu GLM',
+  },
+  qwen: {
+    aliases: ['qwen'],
+    defaultModel: 'qwen3-max',
+    endpoint: MODEL_API_ENDPOINTS.qwen,
+    cloudProxySupported: true,
+    displayName: 'Qwen',
+  },
+  moonshot: {
+    aliases: ['moonshot'],
+    defaultModel: 'kimi-k2.5',
+    endpoint: MODEL_API_ENDPOINTS.moonshot,
+    cloudProxySupported: true,
+    displayName: 'Kimi',
+  },
+  minimax: {
+    aliases: ['minimax'],
+    defaultModel: 'MiniMax-M2',
+    endpoint: MODEL_API_ENDPOINTS.minimax,
+    cloudProxySupported: false,
+    displayName: 'MiniMax',
+  },
+  perplexity: {
+    aliases: ['perplexity'],
+    defaultModel: 'sonar-pro',
+    endpoint: MODEL_API_ENDPOINTS.perplexity,
+    cloudProxySupported: false,
+    displayName: 'Perplexity',
+  },
+  openrouter: {
+    aliases: ['openrouter'],
+    defaultModel: 'google/gemini-2.5-flash',
+    endpoint: MODEL_API_ENDPOINTS.openrouter,
+    cloudProxySupported: true,
+    displayName: 'OpenRouter',
+  },
+};
+
+export const PROVIDER_ALIAS_MAP: Record<ModelProviderAlias, ModelProvider> = Object.freeze(
+  Object.entries(PROVIDER_REGISTRY).reduce((acc, [provider, config]) => {
+    for (const alias of config.aliases) {
+      acc[alias] = provider as ModelProvider;
+    }
+    return acc;
+  }, {} as Record<ModelProviderAlias, ModelProvider>)
+);
+
+export function normalizeProviderId(provider: string | null | undefined): ModelProvider | undefined {
+  if (!provider) {
+    return undefined;
+  }
+  return PROVIDER_ALIAS_MAP[provider as ModelProviderAlias];
+}
+
+export function getProviderInfo(provider: string | null | undefined): CanonicalProviderInfo | undefined {
+  const normalizedProvider = normalizeProviderId(provider);
+  return normalizedProvider ? PROVIDER_REGISTRY[normalizedProvider] : undefined;
+}
+
+export function getDefaultModelForProvider(provider: string | null | undefined): string {
+  return getProviderInfo(provider)?.defaultModel ?? DEFAULT_MODELS.chat;
+}
+
+export function getProviderEndpoint(provider: string | null | undefined): string | undefined {
+  return getProviderInfo(provider)?.endpoint;
+}
+
+export function getProviderDisplayName(provider: string | null | undefined): string | undefined {
+  return getProviderInfo(provider)?.displayName;
+}
 
 // ============================================================================
 // 搜索 API 端点
@@ -771,6 +906,7 @@ export const PROVIDER_MODELS: ProviderInfo[] = [
     name: 'Kimi',
     description: 'Moonshot AI 模型',
     models: [
+      { id: 'kimi-k2.5', label: 'Kimi K2.5 (推荐)' },
       { id: 'kimi-k2-turbo-preview', label: 'Kimi K2 Turbo (推荐)' },
       { id: 'kimi-k2-thinking', label: 'Kimi K2 Thinking' },
       { id: 'moonshot-v1-auto', label: 'Moonshot V1 Auto' },
@@ -823,6 +959,16 @@ export const PROVIDER_MODELS: ProviderInfo[] = [
 export const PROVIDER_MODELS_MAP: Record<string, ProviderInfo> = Object.fromEntries(
   PROVIDER_MODELS.map((p) => [p.id, p])
 );
+
+export const MODEL_LABELS: Record<string, string> = Object.fromEntries(
+  PROVIDER_MODELS.flatMap((provider) =>
+    provider.models.map((model) => [model.id, model.label] as const)
+  )
+);
+
+export function getModelDisplayLabel(modelId: string): string {
+  return MODEL_LABELS[modelId] ?? modelId;
+}
 
 
 // ============================================================================

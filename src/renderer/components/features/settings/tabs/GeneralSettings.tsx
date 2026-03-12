@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle, Shield, ShieldOff, ShieldAlert, Clock, Info } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/types';
 import { CLOUD, AGENT_TIMEOUTS } from '@shared/constants';
 import { isWebMode } from '../../../../utils/platform';
@@ -71,7 +71,7 @@ export const GeneralSettings: React.FC = () => {
   useEffect(() => {
     const loadTimeoutConfig = async () => {
       try {
-        const settings = await ipcService.invoke(IPC_CHANNELS.SETTINGS_GET) as AppSettings;
+        const settings = await ipcService.invokeDomain<AppSettings>(IPC_DOMAINS.SETTINGS, 'get');
         if (settings?.timeouts) {
           setTimeoutComplexity(settings.timeouts.complexity || 'medium');
           if (settings.timeouts.custom) {
@@ -102,7 +102,7 @@ export const GeneralSettings: React.FC = () => {
   // 更改超时复杂度
   const handleTimeoutChange = async (complexity: TimeoutComplexity) => {
     try {
-      await ipcService.invoke(IPC_CHANNELS.SETTINGS_SET, {
+      await ipcService.invokeDomain(IPC_DOMAINS.SETTINGS, 'set', {
         timeouts: {
           complexity,
           simple: DEFAULT_TIMEOUTS.simple,

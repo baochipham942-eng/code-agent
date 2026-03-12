@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { Download, RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/types';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode, isTauriMode } from '../../../../utils/platform';
@@ -77,7 +77,7 @@ export const UpdateSettings: React.FC<UpdateSettingsProps> = ({
           setLocalVersion(info.currentVersion);
         }
       } else {
-        const info = await ipcService.invoke(IPC_CHANNELS.UPDATE_CHECK);
+        const info = await ipcService.invokeDomain<UpdateInfo>(IPC_DOMAINS.UPDATE, 'check');
         if (info) {
           onUpdateInfoChange(info);
         }

@@ -6,6 +6,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { IPC_DOMAINS } from '@shared/ipc';
+import {
+  PROVIDER_MODELS_MAP,
+  getProviderDisplayName,
+  getModelDisplayLabel,
+} from '@shared/constants';
 
 interface ModelOption {
   provider: string;
@@ -13,16 +18,20 @@ interface ModelOption {
   label: string;
 }
 
-// 常用模型列表
-const MODEL_OPTIONS: ModelOption[] = [
-  { provider: 'moonshot', model: 'kimi-k2.5', label: 'Kimi K2.5' },
-  { provider: 'deepseek', model: 'deepseek-chat', label: 'DeepSeek V3' },
-  { provider: 'zhipu', model: 'glm-5', label: 'GLM-5' },
-  { provider: 'zhipu', model: 'glm-4.7', label: 'GLM-4.7' },
-  { provider: 'zhipu', model: 'glm-4.7-flash', label: 'GLM-4.7 Flash' },
-  { provider: 'openai', model: 'gpt-4o', label: 'GPT-4o' },
-  { provider: 'claude', model: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
-];
+const QUICK_SWITCH_PROVIDERS = ['moonshot', 'deepseek', 'zhipu', 'openai', 'claude'] as const;
+
+const MODEL_OPTIONS: ModelOption[] = QUICK_SWITCH_PROVIDERS.flatMap((providerId) => {
+  const providerModels = PROVIDER_MODELS_MAP[providerId];
+  if (!providerModels) {
+    return [];
+  }
+
+  return providerModels.models.map((model) => ({
+    provider: providerId,
+    model: model.id,
+    label: getModelDisplayLabel(model.id),
+  }));
+});
 
 interface ModelSwitcherProps {
   currentModel: string;
@@ -144,7 +153,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
             >
               <span className="font-medium">{opt.label}</span>
               <span className="text-gray-500 ml-1 text-[10px]">
-                {opt.provider}
+                {getProviderDisplayName(opt.provider) ?? opt.provider}
               </span>
             </button>
           ))}

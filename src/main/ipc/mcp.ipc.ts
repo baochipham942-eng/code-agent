@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { IpcMain } from 'electron';
-import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getMCPClient, refreshMCPServersFromCloud } from '../mcp/mcpClient';
 
 // ----------------------------------------------------------------------------
@@ -93,12 +93,4 @@ export function registerMcpHandlers(ipcMain: IpcMain): void {
 
   // ========== Legacy Handlers (Deprecated) ==========
 
-  /** @deprecated Use IPC_DOMAINS.MCP with action: 'getStatus' */
-  ipcMain.handle(IPC_CHANNELS.MCP_GET_STATUS, async () => handleGetStatus());
-
-  /** @deprecated Use IPC_DOMAINS.MCP with action: 'listTools' */
-  ipcMain.handle(IPC_CHANNELS.MCP_LIST_TOOLS, async () => handleListTools());
-
-  /** @deprecated Use IPC_DOMAINS.MCP with action: 'listResources' */
-  ipcMain.handle(IPC_CHANNELS.MCP_LIST_RESOURCES, async () => handleListResources());
 }

@@ -6,7 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { RefreshCw, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useI18n } from '../../../../hooks/useI18n';
 import { Button } from '../../../primitives';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { createLogger } from '../../../../utils/logger';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
@@ -46,7 +46,7 @@ export const CloudSettings: React.FC = () => {
 
   const loadCloudConfigInfo = async () => {
     try {
-      const info = await ipcService.invoke(IPC_CHANNELS.CLOUD_CONFIG_GET_INFO);
+      const info = await ipcService.invokeDomain<CloudConfigInfo>(IPC_DOMAINS.CLOUD, 'configGetInfo');
       if (info) setCloudConfigInfo(info);
     } catch (error) {
       logger.error('Failed to load cloud config info', error);
@@ -61,7 +61,7 @@ export const CloudSettings: React.FC = () => {
     setIsRefreshingConfig(true);
     setMessage(null);
     try {
-      const result = await ipcService.invoke(IPC_CHANNELS.CLOUD_CONFIG_REFRESH);
+      const result = await ipcService.invokeDomain<any>(IPC_DOMAINS.CLOUD, 'configRefresh');
       if (result?.success) {
         setMessage({ type: 'success', text: `配置已更新到 v${result.version}` });
         await loadCloudConfigInfo();

@@ -26,7 +26,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { generateMessageId } from '@shared/utils/id';
-import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, TaskProgressData, TaskCompleteData, ResearchDetectedData, ToolProgressData, ToolTimeoutData } from '@shared/types';
+import type { Message, MessageAttachment, ToolCall, ToolResult, PermissionRequest, ResearchDetectedData, ToolProgressData, ToolTimeoutData } from '@shared/types';
 import { createLogger } from '../utils/logger';
 import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 import ipcService from '../services/ipcService';
@@ -39,6 +39,14 @@ export const useAgent = () => {
     setSessionProcessing,
     isProcessing,
     setPendingPermissionRequest,
+    pendingPermissionRequest,
+    pendingPermissionSessionId,
+    enqueuePermissionRequest,
+    shiftQueuedPermissionRequest,
+    setSessionTaskProgress,
+    setSessionTaskComplete,
+    sessionTaskProgress,
+    sessionTaskComplete,
   } = useAppStore();
 
   const {
@@ -55,13 +63,6 @@ export const useAgent = () => {
 
   // Track current turn's message ID for proper event routing
   const currentTurnMessageIdRef = useRef<string | null>(null);
-
-  // 追踪任务开始时的会话 ID（用于跨会话未读通知）
-  const taskSessionIdRef = useRef<string | null>(null);
-
-  // 任务进度状态（长时任务反馈）
-  const [taskProgress, setTaskProgress] = useState<TaskProgressData | null>(null);
-  const [lastTaskComplete, setLastTaskComplete] = useState<TaskCompleteData | null>(null);
 
   // 工具执行进度追踪（实时耗时 + 超时警告）
   const [activeToolProgress, setActiveToolProgress] = useState<ToolProgressData | null>(null);
@@ -102,6 +103,43 @@ export const useAgent = () => {
   const flushRef = useRef(flush);
   flushRef.current = flush;
 
+  const taskProgress = currentSessionId
+    ? sessionTaskProgress[currentSessionId] ?? null
+    : null;
+  const lastTaskComplete = currentSessionId
+    ? sessionTaskComplete[currentSessionId] ?? null
+    : null;
+
+  useEffect(() => {
+    if (!currentSessionId) {
+      return;
+    }
+
+    if (
+      pendingPermissionRequest &&
+      pendingPermissionSessionId &&
+      pendingPermissionSessionId !== currentSessionId
+    ) {
+      enqueuePermissionRequest(pendingPermissionSessionId, pendingPermissionRequest, { front: true });
+      setPendingPermissionRequest(null);
+      return;
+    }
+
+    if (!pendingPermissionRequest) {
+      const nextRequest = shiftQueuedPermissionRequest(currentSessionId);
+      if (nextRequest) {
+        setPendingPermissionRequest(nextRequest, currentSessionId);
+      }
+    }
+  }, [
+    currentSessionId,
+    pendingPermissionRequest,
+    pendingPermissionSessionId,
+    enqueuePermissionRequest,
+    shiftQueuedPermissionRequest,
+    setPendingPermissionRequest,
+  ]);
+
   // Listen for agent events from the main process
   // Only register once, use refs to access latest state
   useEffect(() => {
@@ -114,18 +152,13 @@ export const useAgent = () => {
           logger.debug('Received event', { type: event.type, sessionId: event.sessionId });
         }
 
-        // 会话隔离：只处理属于当前会话的事件
-        // 但完成类事件需要跨会话处理（清除处理状态）
         const currentSessionId = useSessionStore.getState().currentSessionId;
-        const isCompletionEvent = ['agent_complete', 'error'].includes(event.type);
-
-        if (event.sessionId && currentSessionId && event.sessionId !== currentSessionId && !isCompletionEvent) {
-          return;
-        }
+        const eventSessionId = event.sessionId || currentSessionId || null;
+        const isCurrentSessionEvent = !eventSessionId || eventSessionId === currentSessionId;
 
         // 辅助函数：清除会话处理状态
         const clearSessionProcessing = () => {
-          const sessionId = event.sessionId || currentSessionId;
+          const sessionId = eventSessionId;
           if (sessionId) {
             useAppStore.getState().setSessionProcessing(sessionId, false);
           } else {
@@ -146,6 +179,9 @@ export const useAgent = () => {
             // 新一轮 Agent Loop 开始 - 创建新的 assistant 消息
             // 这是后端驱动的消息创建，确保每轮对应一条消息
             {
+              if (!isCurrentSessionEvent) {
+                break;
+              }
               const turnId = event.data?.turnId || generateMessageId();
               const newMessage: Message = {
                 id: turnId,
@@ -156,14 +192,15 @@ export const useAgent = () => {
               };
               addMessage(newMessage);
               currentTurnMessageIdRef.current = turnId;
-              // 记录任务开始时的会话 ID
-              taskSessionIdRef.current = useSessionStore.getState().currentSessionId;
-              logger.debug('turn_start - created message', { turnId, sessionId: taskSessionIdRef.current });
+              logger.debug('turn_start - created message', { turnId, sessionId: eventSessionId });
             }
             break;
 
           case 'stream_chunk':
             // 流式文本内容 - 追加到当前 turn 的消息（使用批处理优化）
+            if (!isCurrentSessionEvent) {
+              break;
+            }
             if (event.data?.content) {
               // 优先使用 turnId 定位消息，fallback 到最后一条 assistant 消息
               const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
@@ -212,6 +249,9 @@ export const useAgent = () => {
           case 'message':
             // 完整消息事件（非流式或流式结束）
             // 主要用于更新工具调用信息
+            if (!isCurrentSessionEvent) {
+              break;
+            }
             if (event.data) {
               const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
               const targetMessage = targetMessageId
@@ -254,12 +294,18 @@ export const useAgent = () => {
           case 'turn_end':
             // 本轮 Agent Loop 结束
             // 刷新所有待处理的流式更新，确保内容完整显示
+            if (!isCurrentSessionEvent) {
+              break;
+            }
             flushRef.current();
             logger.debug('turn_end', { turnId: event.data?.turnId });
             break;
 
           case 'stream_reasoning':
             // 推理模型的思考过程 (glm-4.7 等) - 存储到单独的 reasoning 字段
+            if (!isCurrentSessionEvent) {
+              break;
+            }
             if (event.data?.content) {
               const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
               const targetMessage = targetMessageId
@@ -278,6 +324,9 @@ export const useAgent = () => {
 
           case 'stream_tool_call_start':
             // 流式工具调用开始 - 立即显示工具调用（带 streaming 标记）
+            if (!isCurrentSessionEvent) {
+              break;
+            }
             if (event.data) {
               // 使用 turnId 定位目标消息
               const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
@@ -303,6 +352,9 @@ export const useAgent = () => {
 
           case 'stream_tool_call_delta':
             // 流式工具调用增量更新
+            if (!isCurrentSessionEvent) {
+              break;
+            }
             if (event.data) {
               // 使用 turnId 定位目标消息
               const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
@@ -341,6 +393,9 @@ export const useAgent = () => {
             // 工具调用开始（来自 AgentLoop，表示工具即将执行）
             // 此时需要用后端的真实 ID 更新前端的临时 ID
             // event.data 包含: id, name, arguments, _index (工具在数组中的索引)
+            if (!isCurrentSessionEvent) {
+              break;
+            }
             if (event.data) {
               // 使用 turnId 定位目标消息
               const targetMessageId = event.data.turnId || currentTurnMessageIdRef.current;
@@ -395,6 +450,9 @@ export const useAgent = () => {
 
           case 'tool_call_end':
             // Update tool call result - search all messages to handle race conditions
+            if (!isCurrentSessionEvent) {
+              break;
+            }
             if (event.data) {
               const toolResult = event.data as ToolResult;
 
@@ -442,15 +500,8 @@ export const useAgent = () => {
           case 'todo_update':
             // Update todos - only for current session (fix cross-session pollution)
             // Events from other sessions should be ignored
-            if (event.data) {
-              if (!event.sessionId || event.sessionId === useSessionStore.getState().currentSessionId) {
-                setTodos(event.data);
-              } else {
-                logger.debug('Ignoring todo_update from different session', {
-                  eventSessionId: event.sessionId,
-                  currentSessionId: useSessionStore.getState().currentSessionId
-                });
-              }
+            if (event.data && isCurrentSessionEvent) {
+              setTodos(event.data);
             }
             break;
 
@@ -458,7 +509,7 @@ export const useAgent = () => {
             // Handle error - display it in the chat
             logger.error('Agent error', { message: event.data?.message, code: event.data?.code });
             // 只有当前会话的错误才更新消息
-            if (!event.sessionId || event.sessionId === useSessionStore.getState().currentSessionId) {
+            if (isCurrentSessionEvent) {
               const lastMessage = getFreshMessages()[getFreshMessages().length - 1];
               if (lastMessage?.role === 'assistant') {
                 // 根据错误类型生成友好的提示
@@ -486,23 +537,28 @@ export const useAgent = () => {
           case 'agent_complete':
             // Agent has finished processing
             // 只有当前会话才刷新流式更新
-            if (!event.sessionId || event.sessionId === useSessionStore.getState().currentSessionId) {
+            if (isCurrentSessionEvent) {
               flushRef.current();
+              setActiveToolProgress(null);
+              setToolTimeoutWarning(null);
             }
             clearSessionProcessing();
-            // Clear tool progress/timeout state (including task progress)
-            setTaskProgress(null);
-            setActiveToolProgress(null);
-            setToolTimeoutWarning(null);
+            if (eventSessionId) {
+              setSessionTaskProgress(eventSessionId, null);
+            }
             break;
 
           case 'permission_request':
             // Handle permission request from tools
             // Show permission dialog to user for approval
             logger.debug('Permission request received', { data: event.data });
-            if (event.data?.id) {
-              // Set the pending permission request to show the modal
-              setPendingPermissionRequest(event.data as PermissionRequest);
+            if (event.data?.id && eventSessionId) {
+              if (isCurrentSessionEvent && !useAppStore.getState().pendingPermissionRequest) {
+                setPendingPermissionRequest(event.data as PermissionRequest, eventSessionId);
+              } else {
+                enqueuePermissionRequest(eventSessionId, event.data as PermissionRequest);
+                useSessionStore.getState().markSessionUnread(eventSessionId);
+              }
             }
             break;
 
@@ -512,28 +568,24 @@ export const useAgent = () => {
 
           case 'task_progress':
             // 更新任务进度状态
-            if (event.data) {
+            if (event.data && eventSessionId) {
               logger.debug('task_progress', { data: event.data });
-              setTaskProgress(event.data as TaskProgressData);
+              setSessionTaskProgress(eventSessionId, event.data);
+              setSessionTaskComplete(eventSessionId, null);
             }
             break;
 
           case 'task_complete':
             // 任务完成
-            if (event.data) {
+            if (event.data && eventSessionId) {
               logger.debug('task_complete', { data: event.data });
-              setLastTaskComplete(event.data as TaskCompleteData);
-              // 清除进度状态
-              setTaskProgress(null);
+              setSessionTaskComplete(eventSessionId, event.data);
+              setSessionTaskProgress(eventSessionId, null);
 
-              // 跨会话未读通知：如果任务完成时用户已切换到其他会话，标记原会话为未读
-              const taskSessionId = taskSessionIdRef.current;
-              const currentSession = useSessionStore.getState().currentSessionId;
-              if (taskSessionId && taskSessionId !== currentSession) {
-                logger.debug('Task completed in different session, marking as unread', { taskSessionId });
-                useSessionStore.getState().markSessionUnread(taskSessionId);
+              if (!isCurrentSessionEvent) {
+                logger.debug('Task completed in different session, marking as unread', { eventSessionId });
+                useSessionStore.getState().markSessionUnread(eventSessionId);
               }
-              taskSessionIdRef.current = null;
             }
             break;
 
@@ -543,6 +595,9 @@ export const useAgent = () => {
 
           case 'research_detected':
             // 语义检测到需要深度研究
+            if (!isCurrentSessionEvent) {
+              break;
+            }
             if (event.data) {
               logger.debug('research_detected', { data: event.data });
               setResearchDetected(event.data as ResearchDetectedData);
@@ -551,6 +606,9 @@ export const useAgent = () => {
 
           case 'research_mode_started':
             // 研究模式开始，清除检测状态
+            if (!isCurrentSessionEvent) {
+              break;
+            }
             setResearchDetected(null);
             break;
 
@@ -560,12 +618,18 @@ export const useAgent = () => {
 
           case 'tool_progress':
             if (event.data) {
+              if (!isCurrentSessionEvent) {
+                break;
+              }
               setActiveToolProgress(event.data as ToolProgressData);
             }
             break;
 
           case 'tool_timeout':
             if (event.data) {
+              if (!isCurrentSessionEvent) {
+                break;
+              }
               logger.debug('tool_timeout', { data: event.data });
               setToolTimeoutWarning(event.data as ToolTimeoutData);
             }
@@ -577,29 +641,45 @@ export const useAgent = () => {
 
           case 'interrupt_start':
             // 中断开始
+            if (!isCurrentSessionEvent) {
+              break;
+            }
             logger.debug('interrupt_start', { data: event.data });
             setIsInterrupting(true);
             break;
 
           case 'interrupt_acknowledged':
             // 中断已确认，当前任务正在停止
+            if (!isCurrentSessionEvent) {
+              break;
+            }
             logger.debug('interrupt_acknowledged', { data: event.data });
             break;
 
           case 'interrupt_complete':
             // 中断完成，新任务即将开始
+            if (!isCurrentSessionEvent) {
+              break;
+            }
             logger.debug('interrupt_complete', { data: event.data });
             setIsInterrupting(false);
             break;
 
           case 'tool_call_local':
             // Bridge 本地工具调用请求 - 通知 ChatView 检查 Bridge 状态
+            if (!isCurrentSessionEvent) {
+              break;
+            }
             window.dispatchEvent(new CustomEvent('bridge-tool-call', { detail: event.data }));
             break;
 
           case 'stream_end':
             // SSE 流结束兜底（httpTransport 在流关闭时派发）
             // 如果 agent_complete 已经处理过则 processing 已清除，这里是安全的二次检查
+            if (!isCurrentSessionEvent) {
+              clearSessionProcessing();
+              break;
+            }
             logger.debug('stream_end - ensuring processing state is cleared');
             flushRef.current();
             clearSessionProcessing();
@@ -611,7 +691,15 @@ export const useAgent = () => {
     return () => {
       unsubscribe?.();
     };
-  }, [updateMessage, setTodos, setIsProcessing, setPendingPermissionRequest]); // Remove messages from deps to avoid re-registering
+  }, [
+    updateMessage,
+    setTodos,
+    setIsProcessing,
+    setPendingPermissionRequest,
+    enqueuePermissionRequest,
+    setSessionTaskProgress,
+    setSessionTaskComplete,
+  ]); // Remove messages from deps to avoid re-registering
 
   // Send a message to the agent
   // Turn-based model: 不再预创建 placeholder，等待后端 turn_start 事件
@@ -665,7 +753,11 @@ export const useAgent = () => {
         setIsInterrupting(true);
         try {
           // 调用 interrupt action，后端会中断当前任务并继续新消息
-          await window.domainAPI?.invoke('agent', 'interrupt', { content, attachments });
+          await window.domainAPI?.invoke('agent', 'interrupt', {
+            content,
+            attachments,
+            sessionId: effectiveSessionId,
+          });
           logger.debug('interrupt invoke returned');
         } catch (error) {
           logger.error('Interrupt error', error);
@@ -739,7 +831,7 @@ export const useAgent = () => {
   // Cancel the current operation
   const cancel = useCallback(async () => {
     try {
-      await ipcService.invoke('agent:cancel');
+      await ipcService.invoke('agent:cancel', currentSessionId ? { sessionId: currentSessionId } : undefined);
       // 按会话清除处理状态
       if (currentSessionId) {
         setSessionProcessing(currentSessionId, false);

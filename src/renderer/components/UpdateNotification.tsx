@@ -5,12 +5,20 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Download, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { IPC_CHANNELS } from '../../shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '../../shared/ipc';
 import type { UpdateInfo, DownloadProgress } from '../../shared/types';
 import { createLogger } from '../utils/logger';
 import ipcService from '../services/ipcService';
 
 const logger = createLogger('UpdateNotification');
+
+async function invokeUpdate<T>(action: string, payload?: unknown): Promise<T> {
+  const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.UPDATE, action, payload);
+  if (!response?.success) {
+    throw new Error(response?.error?.message || `Update action failed: ${action}`);
+  }
+  return response.data as T;
+}
 
 interface UpdateNotificationProps {
   /** 更新信息 */
@@ -66,7 +74,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
     try {
       setDownloadState('downloading');
       setDownloadProgress({ percent: 0, transferred: 0, total: 0, bytesPerSecond: 0 });
-      await ipcService.invoke(IPC_CHANNELS.UPDATE_DOWNLOAD, updateInfo.downloadUrl);
+      await invokeUpdate<string>('download', { downloadUrl: updateInfo.downloadUrl });
     } catch (err) {
       setError(err instanceof Error ? err.message : '下载失败');
       setDownloadState('error');
@@ -75,7 +83,7 @@ export const UpdateNotification: React.FC<UpdateNotificationProps> = ({
 
   const handleOpenFile = useCallback(async () => {
     if (!downloadedFilePath) return;
-    await ipcService.invoke(IPC_CHANNELS.UPDATE_OPEN_FILE, downloadedFilePath);
+    await invokeUpdate('openFile', { filePath: downloadedFilePath });
   }, [downloadedFilePath]);
 
   const handleRetry = useCallback(() => {

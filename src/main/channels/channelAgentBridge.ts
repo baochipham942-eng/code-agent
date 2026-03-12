@@ -5,14 +5,15 @@
 import type { AgentOrchestrator } from '../agent/agentOrchestrator';
 import { getTaskManager } from '../task';
 import type { ConfigService } from '../services/core/configService';
+import { getSessionManager } from '../services';
 import { getChannelManager } from './channelManager';
 import type { ChannelMessage, ChannelAttachment } from '../../shared/types/channel';
-import type { MessageAttachment, Message, AgentEvent } from '../../shared/types';
-import { ApiChannel } from './api/apiChannel';
+import type { MessageAttachment, Message, AgentEvent, ModelConfig } from '../../shared/types';
 import { createLogger } from '../services/infra/logger';
 import { logCollector } from '../mcp/logCollector';
 import { v4 as uuidv4 } from 'uuid';
 import { IngressPipeline, type IngressMessage } from './ingressPipeline';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
 
 const logger = createLogger('ChannelAgentBridge');
 
@@ -20,25 +21,7 @@ const logger = createLogger('ChannelAgentBridge');
  * 通道 Agent 桥接配置
  */
 export interface ChannelAgentBridgeConfig {
-  getOrchestrator: () => AgentOrchestrator | null;
   configService: ConfigService;
-}
-
-/**
- * Session-aware orchestrator lookup.
- * Prefers per-session orchestrator from TaskManager; falls back to config getter.
- */
-function getSessionAwareOrchestrator(
-  config: ChannelAgentBridgeConfig,
-): AgentOrchestrator | null {
-  try {
-    const tm = getTaskManager();
-    const orchestrator = tm.getOrchestrator();
-    if (orchestrator) return orchestrator;
-  } catch {
-    // TaskManager not yet initialized — fall through
-  }
-  return config.getOrchestrator();
 }
 
 /**
@@ -51,6 +34,7 @@ export class ChannelAgentBridge {
   private config: ChannelAgentBridgeConfig;
   private channelManager = getChannelManager();
   private pipeline: IngressPipeline;
+  private channelSessions: Map<string, string> = new Map();
 
   // 追踪正在处理的消息
   private processingMessages: Map<string, {
@@ -105,6 +89,7 @@ export class ChannelAgentBridge {
    */
   async shutdown(): Promise<void> {
     this.pipeline.shutdown();
+    this.channelSessions.clear();
     this.pendingChannelMessages.clear();
     await this.channelManager.disconnectAll();
     this.processingMessages.clear();
@@ -131,13 +116,15 @@ export class ChannelAgentBridge {
       content: message.content.substring(0, 50),
     });
 
+    const sessionKey = this.getSessionKey(accountId, message);
+
     // 流式请求直接处理，不走 pipeline（需要保持 HTTP 连接）
     const isStreamingRequest = message.raw &&
       typeof message.raw === 'object' &&
       (message.raw as Record<string, unknown>).streaming === true;
 
     if (isStreamingRequest) {
-      const orchestrator = getSessionAwareOrchestrator(this.config);
+      const orchestrator = await this.getOrCreateChannelOrchestrator(sessionKey, accountId, message);
       if (!orchestrator) {
         await this.sendErrorResponse(accountId, message, 'Agent not available');
         return;
@@ -148,7 +135,6 @@ export class ChannelAgentBridge {
     }
 
     // 非流式消息走 Ingress Pipeline
-    const sessionKey = `${accountId}:${message.context.chatId}`;
     const ingressKey = `${sessionKey}:${message.id}`;
 
     // 暂存原始消息供回调时使用
@@ -197,7 +183,8 @@ export class ChannelAgentBridge {
     // 使用合并后的内容（可能是多条消息 debounce 合并的）
     const processMessage: ChannelMessage = { ...message, content: msg.content };
 
-    const orchestrator = getSessionAwareOrchestrator(this.config);
+    const sessionKey = this.getSessionKey(accountId, processMessage);
+    const orchestrator = await this.getOrCreateChannelOrchestrator(sessionKey, accountId, processMessage);
     if (!orchestrator) {
       logger.error('Orchestrator not available');
       await this.sendErrorResponse(accountId, processMessage, 'Agent not available');
@@ -424,20 +411,100 @@ export class ChannelAgentBridge {
     errorMessage: string
   ): Promise<void> {
     try {
-      const channel = this.channelManager['activeChannels'].get(accountId);
-      if (channel instanceof ApiChannel) {
-        (channel as ApiChannel).rejectRequest(message.id, new Error(errorMessage));
-      } else {
-        await this.channelManager.sendMessage(
-          accountId,
-          message.context.chatId,
-          `错误: ${errorMessage}`,
-          { replyToMessageId: message.id }
-        );
-      }
+      await this.channelManager.sendErrorResponse(accountId, message, errorMessage);
     } catch (e) {
       logger.error('Failed to send error response', { error: e });
     }
+  }
+
+  private getSessionKey(accountId: string, message: ChannelMessage): string {
+    return `${accountId}:${message.context.chatId}`;
+  }
+
+  private async getOrCreateChannelSessionId(
+    sessionKey: string,
+    accountId: string,
+    message: ChannelMessage
+  ): Promise<string> {
+    const sessionManager = getSessionManager();
+    const mappedSessionId = this.channelSessions.get(sessionKey);
+
+    if (mappedSessionId) {
+      const existingSession = await sessionManager.getSession(mappedSessionId, 1);
+      if (existingSession) {
+        return mappedSessionId;
+      }
+      this.channelSessions.delete(sessionKey);
+    }
+
+    const session = await sessionManager.createSession({
+      title: this.buildChannelSessionTitle(accountId, message),
+      generationId: 'gen8',
+      modelConfig: this.getChannelModelConfig(),
+    });
+
+    this.channelSessions.set(sessionKey, session.id);
+    logger.info('Created dedicated channel session', {
+      sessionKey,
+      sessionId: session.id,
+      accountId,
+      chatId: message.context.chatId,
+    });
+
+    return session.id;
+  }
+
+  private async getOrCreateChannelOrchestrator(
+    sessionKey: string,
+    accountId: string,
+    message: ChannelMessage
+  ): Promise<AgentOrchestrator | null> {
+    const taskManager = getTaskManager();
+    const sessionId = await this.getOrCreateChannelSessionId(sessionKey, accountId, message);
+
+    const existing = taskManager.getOrchestrator(sessionId);
+    if (existing) {
+      return existing;
+    }
+
+    const session = await getSessionManager().getSession(sessionId);
+    if (!session) {
+      logger.error('Channel session disappeared before orchestrator creation', {
+        sessionKey,
+        sessionId,
+      });
+      this.channelSessions.delete(sessionKey);
+      return null;
+    }
+
+    taskManager.setSessionContext(sessionId, session.messages);
+    const orchestrator = taskManager.getOrCreateCurrentOrchestrator(sessionId);
+    if (!orchestrator) {
+      return null;
+    }
+
+    if (session.workingDirectory && session.workingDirectory.trim()) {
+      orchestrator.setWorkingDirectory(session.workingDirectory);
+    }
+
+    return orchestrator;
+  }
+
+  private buildChannelSessionTitle(accountId: string, message: ChannelMessage): string {
+    const account = this.channelManager.getAccount(accountId);
+    const accountLabel = account?.name || account?.type || accountId;
+    const chatLabel = message.context.chatName || message.context.chatId;
+    return `[Channel] ${accountLabel} · ${chatLabel}`;
+  }
+
+  private getChannelModelConfig(): ModelConfig {
+    const settings = this.config.configService.getSettings();
+    return {
+      provider: settings.model?.provider || DEFAULT_PROVIDER,
+      model: settings.model?.model || DEFAULT_MODELS.chat,
+      temperature: settings.model?.temperature || 0.7,
+      maxTokens: settings.model?.maxTokens || MODEL_MAX_TOKENS.DEFAULT,
+    };
   }
 
   /**

@@ -6,6 +6,7 @@ import { Cron } from 'croner';
 import { v4 as uuidv4 } from 'uuid';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
 import type {
   CronJobDefinition,
   CronJobExecution,
@@ -452,7 +453,7 @@ export class CronService implements Disposable {
     }
 
     try {
-      const result = await this.executeAction(definition.action, definition.timeout);
+      const result = await this.executeAction(definition, definition.action, definition.timeout);
       execution.status = 'completed';
       execution.result = result;
     } catch (error) {
@@ -479,7 +480,11 @@ export class CronService implements Disposable {
     return execution;
   }
 
-  private async executeAction(action: CronJobAction, timeout?: number): Promise<unknown> {
+  private async executeAction(
+    definition: CronJobDefinition,
+    action: CronJobAction,
+    timeout?: number
+  ): Promise<unknown> {
     switch (action.type) {
       case 'shell': {
         const { stdout, stderr } = await execAsync(action.command, {
@@ -511,26 +516,21 @@ export class CronService implements Disposable {
         // 通过 TaskManager 获取 orchestrator（避免 cronService → bootstrap 循环依赖）
         const { getTaskManager } = await import('../task');
         const tm = getTaskManager();
-        let orchestrator = tm.getOrchestrator() ?? null;
+        const cronSession = await this.createCronAgentSession(definition);
+        const orchestrator = tm.getOrCreateCurrentOrchestrator(cronSession.id) ?? null;
         if (!orchestrator) {
-          orchestrator = tm.getOrCreateCurrentOrchestrator() ?? null;
-          if (!orchestrator) {
-            throw new Error('AgentOrchestrator not available (no active session)');
-          }
+          throw new Error(`AgentOrchestrator not available for cron session ${cronSession.id}`);
         }
-        // Busy guard: retry up to 3 times with 30s interval
-        let attempts = 0;
-        const maxAttempts = 3;
-        while (attempts < maxAttempts) {
-          if (!orchestrator.isProcessing()) break;
-          attempts++;
-          if (attempts >= maxAttempts) {
-            throw new Error('Agent is busy after 3 retry attempts');
-          }
-          console.error(`[CronService] Agent busy, retrying in 30s (attempt ${attempts}/${maxAttempts})`);
-          await new Promise(resolve => setTimeout(resolve, 30000));
+        if (cronSession.workingDirectory) {
+          tm.setWorkingDirectory(cronSession.id, cronSession.workingDirectory);
         }
-        const result = await orchestrator.sendMessage(action.prompt);
+
+        let result: unknown;
+        try {
+          result = await orchestrator.sendMessage(action.prompt);
+        } finally {
+          tm.cleanup(cronSession.id);
+        }
 
         // Heartbeat 任务: channel 推送
         if (ctx?.heartbeatTask && ctx?.channel && result) {
@@ -571,6 +571,30 @@ export class CronService implements Disposable {
     }
   }
 
+  private async createCronAgentSession(definition: CronJobDefinition) {
+    const { getConfigService, getSessionManager } = await import('../services');
+
+    const configService = getConfigService();
+    const sessionManager = getSessionManager();
+    const currentSessionId = sessionManager.getCurrentSessionId();
+    const currentSession = currentSessionId
+      ? await sessionManager.getSession(currentSessionId)
+      : null;
+    const settings = configService.getSettings();
+
+    return sessionManager.createSession({
+      title: `[Cron] ${definition.name}`,
+      generationId: 'gen8',
+      modelConfig: {
+        provider: settings.model?.provider || currentSession?.modelConfig.provider || DEFAULT_PROVIDER,
+        model: settings.model?.model || currentSession?.modelConfig.model || DEFAULT_MODELS.chat,
+        temperature: settings.model?.temperature ?? currentSession?.modelConfig.temperature ?? 0.7,
+        maxTokens: settings.model?.maxTokens ?? currentSession?.modelConfig.maxTokens ?? MODEL_MAX_TOKENS.DEFAULT,
+      },
+      workingDirectory: currentSession?.workingDirectory,
+    });
+  }
+
   private async retryExecution(
     definition: CronJobDefinition,
     execution: CronJobExecution
@@ -584,7 +608,7 @@ export class CronService implements Disposable {
     execution.startedAt = Date.now();
 
     try {
-      const result = await this.executeAction(definition.action, definition.timeout);
+      const result = await this.executeAction(definition, definition.action, definition.timeout);
       execution.status = 'completed';
       execution.result = result;
     } catch (error) {

@@ -168,6 +168,8 @@ export class DatabaseService {
       { column: 'status', sql: "ALTER TABLE sessions ADD COLUMN status TEXT DEFAULT 'idle'" },
       { column: 'workspace', sql: 'ALTER TABLE sessions ADD COLUMN workspace TEXT' },
       { column: 'last_token_usage', sql: 'ALTER TABLE sessions ADD COLUMN last_token_usage TEXT' },
+      { column: 'is_deleted', sql: 'ALTER TABLE sessions ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0' },
+      { column: 'synced_at', sql: 'ALTER TABLE sessions ADD COLUMN synced_at INTEGER' },
     ];
 
     for (const migration of migrations) {
@@ -251,7 +253,9 @@ export class DatabaseService {
         model_name TEXT NOT NULL,
         working_directory TEXT,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        is_deleted INTEGER NOT NULL DEFAULT 0,
+        synced_at INTEGER
       )
     `);
 
@@ -811,21 +815,23 @@ export class DatabaseService {
 
   // --- SessionRepository ---
   createSession(session: Session): void { this.ensureDb(); this.sessionRepo.createSession(session); }
-  createSessionWithId(id: string, data: { title: string; generationId?: string; modelConfig: { provider: ModelProvider; model: string }; workingDirectory?: string; createdAt?: number; updatedAt?: number }): void { this.ensureDb(); this.sessionRepo.createSessionWithId(id, data); }
-  getSession(sessionId: string): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.getSession(sessionId); }
+  createSessionWithId(id: string, data: { title: string; generationId?: string; modelConfig: { provider: ModelProvider; model: string }; workingDirectory?: string; createdAt?: number | string; updatedAt?: number | string; isDeleted?: boolean }, options?: { syncOrigin?: 'local' | 'remote' }): void { this.ensureDb(); this.sessionRepo.createSessionWithId(id, data, options); }
+  getSession(sessionId: string, options?: { includeDeleted?: boolean }): import('./repositories').StoredSession | null { this.ensureDb(); return this.sessionRepo.getSession(sessionId, options); }
   listSessions(limit: number = 50, offset: number = 0, includeArchived: boolean = false): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.listSessions(limit, offset, includeArchived); }
-  updateSession(sessionId: string, updates: Partial<Session>): void { this.ensureDb(); this.sessionRepo.updateSession(sessionId, updates); }
-  deleteSession(sessionId: string): void { this.ensureDb(); this.sessionRepo.deleteSession(sessionId); }
+  updateSession(sessionId: string, updates: Partial<Session>, options?: { syncOrigin?: 'local' | 'remote'; isDeleted?: boolean }): void { this.ensureDb(); this.sessionRepo.updateSession(sessionId, updates, options); }
+  deleteSession(sessionId: string, options?: { syncOrigin?: 'local' | 'remote'; deletedAt?: number }): void { this.ensureDb(); this.sessionRepo.deleteSession(sessionId, options); }
   clearAllSessions(): number { this.ensureDb(); return this.sessionRepo.clearAllSessions(); }
   clearAllMessages(): number { this.ensureDb(); return this.sessionRepo.clearAllMessages(); }
   hasMessages(sessionId: string): boolean { this.ensureDb(); return this.sessionRepo.hasMessages(sessionId); }
   getLocalCacheStats(): { sessionCount: number; messageCount: number } { this.ensureDb(); return this.sessionRepo.getLocalCacheStats(); }
-  addMessage(sessionId: string, message: Message, options?: { skipTimestampUpdate?: boolean }): void { this.ensureDb(); this.sessionRepo.addMessage(sessionId, message, options); }
+  addMessage(sessionId: string, message: Message, options?: { skipTimestampUpdate?: boolean; syncOrigin?: 'local' | 'remote'; syncedAt?: number | null }): void { this.ensureDb(); this.sessionRepo.addMessage(sessionId, message, options); }
   updateMessage(messageId: string, updates: Partial<Message>): void { this.ensureDb(); this.sessionRepo.updateMessage(messageId, updates); }
   getMessages(sessionId: string, limit?: number, offset?: number): Message[] { this.ensureDb(); return this.sessionRepo.getMessages(sessionId, limit, offset); }
   getMessageCount(sessionId: string): number { this.ensureDb(); return this.sessionRepo.getMessageCount(sessionId); }
   getRecentMessages(sessionId: string, count: number): Message[] { this.ensureDb(); return this.sessionRepo.getRecentMessages(sessionId, count); }
   getMessagesBefore(sessionId: string, beforeTimestamp: number, limit: number = 30): Message[] { this.ensureDb(); return this.sessionRepo.getMessagesBefore(sessionId, beforeTimestamp, limit); }
+  getUnsyncedSessions(limit: number = 1000): import('./repositories').StoredSession[] { this.ensureDb(); return this.sessionRepo.getUnsyncedSessions(limit); }
+  markSessionsSynced(sessionIds: string[]): void { this.ensureDb(); this.sessionRepo.markSessionsSynced(sessionIds); }
   getUnsyncedMessages(limit: number = 1000): Array<Message & { sessionId: string }> { this.ensureDb(); return this.sessionRepo.getUnsyncedMessages(limit); }
   markMessagesSynced(messageIds: string[]): void { this.ensureDb(); this.sessionRepo.markMessagesSynced(messageIds); }
   saveTodos(sessionId: string, todos: TodoItem[]): void { this.ensureDb(); this.sessionRepo.saveTodos(sessionId, todos); }

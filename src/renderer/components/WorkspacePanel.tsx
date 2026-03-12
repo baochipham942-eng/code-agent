@@ -17,11 +17,19 @@ import {
 } from 'lucide-react';
 
 import type { FileInfo } from '@shared/types';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { createLogger } from '../utils/logger';
 import { isWebMode } from '../utils/platform';
-import ipcService from '../services/ipcService';
 
 const logger = createLogger('WorkspacePanel');
+
+async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T> {
+  const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.WORKSPACE, action, payload);
+  if (!response?.success) {
+    throw new Error(response?.error?.message || `Workspace action failed: ${action}`);
+  }
+  return response.data as T;
+}
 
 interface FileTreeItem {
   name: string;
@@ -52,11 +60,11 @@ export const WorkspacePanel: React.FC = () => {
   const loadWorkspace = async () => {
     setLoading(true);
     try {
-      const path = await ipcService.invoke('workspace:get-current');
+      const path = await invokeWorkspace<string | null>('getCurrent');
       if (path) {
-        setWorkspacePath(path as string);
-        const files = await ipcService.invoke('workspace:list-files', path as string);
-        setFileTree(files ? convertToFileTree(files as FileInfo[]) : []);
+        setWorkspacePath(path);
+        const files = await invokeWorkspace<FileInfo[]>('listFiles', { dirPath: path });
+        setFileTree(files ? convertToFileTree(files) : []);
       }
     } catch (error) {
       logger.error('Failed to load workspace', error);
@@ -70,15 +78,15 @@ export const WorkspacePanel: React.FC = () => {
       if (isWebMode()) {
         if (!manualPath?.trim()) return;
         setWorkspacePath(manualPath.trim());
-        const files = await ipcService.invoke('workspace:list-files', manualPath.trim());
-        setFileTree(files ? convertToFileTree(files as FileInfo[]) : []);
+        const files = await invokeWorkspace<FileInfo[]>('listFiles', { dirPath: manualPath.trim() });
+        setFileTree(files ? convertToFileTree(files) : []);
         return;
       }
-      const path = await ipcService.invoke('workspace:select-directory');
+      const path = await invokeWorkspace<string | null>('selectDirectory');
       if (path) {
-        setWorkspacePath(path as string);
-        const files = await ipcService.invoke('workspace:list-files', path as string);
-        setFileTree(files ? convertToFileTree(files as FileInfo[]) : []);
+        setWorkspacePath(path);
+        const files = await invokeWorkspace<FileInfo[]>('listFiles', { dirPath: path });
+        setFileTree(files ? convertToFileTree(files) : []);
       }
     } catch (error) {
       logger.error('Failed to select workspace', error);

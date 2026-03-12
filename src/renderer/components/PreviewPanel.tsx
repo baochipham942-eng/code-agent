@@ -4,12 +4,20 @@
 
 import React, { useEffect, useState } from 'react';
 import { X, RefreshCw, ExternalLink, Maximize2, Minimize2, Copy } from 'lucide-react';
+import { IPC_DOMAINS } from '@shared/ipc';
 import { useAppStore } from '../stores/appStore';
 import { createLogger } from '../utils/logger';
 import { isWebMode, copyPathToClipboard } from '../utils/platform';
-import ipcService from '../services/ipcService';
 
 const logger = createLogger('PreviewPanel');
+
+async function invokeWorkspace<T>(action: string, payload?: unknown): Promise<T> {
+  const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.WORKSPACE, action, payload);
+  if (!response?.success) {
+    throw new Error(response?.error?.message || `Workspace action failed: ${action}`);
+  }
+  return response.data as T;
+}
 
 export const PreviewPanel: React.FC = () => {
   const { previewFilePath, showPreviewPanel, closePreview } = useAppStore();
@@ -32,7 +40,7 @@ export const PreviewPanel: React.FC = () => {
     setError(null);
 
     try {
-      const content = await ipcService.invoke('workspace:read-file', previewFilePath);
+      const content = await invokeWorkspace<string>('readFile', { filePath: previewFilePath });
       if (content) {
         setHtmlContent(content);
       } else {
@@ -57,7 +65,7 @@ export const PreviewPanel: React.FC = () => {
           await copyPathToClipboard(previewFilePath);
           return;
         }
-        await ipcService.invoke('shell:open-path', previewFilePath);
+        await invokeWorkspace('openPath', { filePath: previewFilePath });
       } catch (err) {
         logger.error('Failed to open in browser', err);
       }

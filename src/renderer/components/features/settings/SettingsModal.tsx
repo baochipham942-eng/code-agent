@@ -9,7 +9,7 @@ import { useAppStore } from '../../../stores/appStore';
 import { useI18n } from '../../../hooks/useI18n';
 import { IconButton } from '../../primitives';
 import { UpdateNotification } from '../../UpdateNotification';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_DOMAINS } from '@shared/ipc';
 import type { UpdateInfo } from '@shared/types';
 import { createLogger } from '../../../utils/logger';
 import { isElectronMode } from '../../../utils/platform';
@@ -69,7 +69,7 @@ export const SettingsModal: React.FC = () => {
 
     const checkUpdate = async () => {
       try {
-        const info = await ipcService.invoke(IPC_CHANNELS.UPDATE_CHECK);
+        const info = await ipcService.invokeDomain<UpdateInfo>(IPC_DOMAINS.UPDATE, 'check');
         // Only handle non-force updates here
         if (info?.hasUpdate && !info?.forceUpdate) {
           setOptionalUpdateInfo(info);

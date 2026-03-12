@@ -31,7 +31,14 @@ import { createLogger } from '../services/infra/logger';
 import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
 import { getDynamicAgentFactory } from './dynamicAgentFactory';
 import { getAutoAgentCoordinator } from './autoAgentCoordinator';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
+import {
+  DEFAULT_MODELS,
+  DEFAULT_PROVIDER,
+  MODEL_MAX_TOKENS,
+  getDefaultModelForProvider,
+  getProviderInfo,
+  normalizeProviderId,
+} from '../../shared/constants';
 import { PROVIDER_REGISTRY } from '../model/providerRegistry';
 import { getModelSessionState } from '../session/modelSessionState';
 // Agent Routing
@@ -132,6 +139,7 @@ export class AgentOrchestrator {
 
   // TaskList: 可视化任务管理
   private taskListManager: TaskListManager;
+  private sessionId: string | null = null;
 
   constructor(config: AgentOrchestratorConfig) {
     this.configService = config.configService;
@@ -203,10 +211,7 @@ export class AgentOrchestrator {
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
 
-    // 获取当前会话 ID（在创建 AgentLoop 之前）
-    // 这样事件就会关联到正确的会话，即使用户在执行过程中切换会话
-    const currentSession = await sessionManager.getCurrentSession();
-    const sessionId = currentSession?.id;
+    const sessionId = await this.resolveSessionId();
 
     // Create user message
     const userMessage: Message = {
@@ -223,7 +228,11 @@ export class AgentOrchestrator {
 
     // 持久化保存用户消息
     try {
-      await sessionManager.addMessage(userMessage);
+      if (sessionId) {
+        await sessionManager.addMessageToSession(sessionId, userMessage);
+      } else {
+        await sessionManager.addMessage(userMessage);
+      }
     } catch (error) {
       logger.error('Failed to save user message:', error);
     }
@@ -291,20 +300,20 @@ export class AgentOrchestrator {
             logger.info('Auto-detected research task (LLM classification), routing to deep research pipeline');
             await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig);
           } else {
-            await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId);
+            await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined);
           }
         } catch (error) {
           logger.warn('LLM intent classification failed, falling back to normal mode', { error: String(error) });
-          await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId);
+          await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined);
         }
       } else {
         // Obvious non-research task type (code/data/ppt/image/video)
-        await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId);
+        await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined);
       }
     } else {
       // Normal Mode: 指挥家统一处理任务分类和执行
       // 不再前置 LLM 调用做意图分析，由 AgentLoop 在第一轮直接判断
-      await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId);
+      await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined);
     }
   }
 
@@ -842,7 +851,11 @@ export class AgentOrchestrator {
       // Save and emit message
       const sessionManager = getSessionManager();
       try {
-        await sessionManager.addMessage(assistantMessage);
+        if (this.sessionId) {
+          await sessionManager.addMessageToSession(this.sessionId, assistantMessage);
+        } else {
+          await sessionManager.addMessage(assistantMessage);
+        }
       } catch (error) {
         logger.error('Failed to save auto agent result:', error);
       }
@@ -875,7 +888,7 @@ export class AgentOrchestrator {
     logger.info('Cancel requested');
 
     // 获取当前会话 ID 用于事件
-    const sessionId = getSessionManager().getCurrentSessionId();
+    const sessionId = this.sessionId ?? getSessionManager().getCurrentSessionId();
 
     // 清除中断排队状态
     this.isInterrupting = false;
@@ -921,7 +934,7 @@ export class AgentOrchestrator {
   ): Promise<void> {
     logger.info('Interrupt and continue requested');
     const sessionManager = getSessionManager();
-    const sessionId = sessionManager.getCurrentSessionId();
+    const sessionId = this.sessionId ?? sessionManager.getCurrentSessionId();
 
     // P3: 消息排队 — 如果正在处理另一个中断，排队等待
     if (this.isInterrupting) {
@@ -1140,6 +1153,10 @@ export class AgentOrchestrator {
     this.planningService = service;
   }
 
+  setSessionId(sessionId: string | null): void {
+    this.sessionId = sessionId;
+  }
+
   /**
    * 设置消息历史
    *
@@ -1194,6 +1211,15 @@ export class AgentOrchestrator {
   // --------------------------------------------------------------------------
   // Private Methods
   // --------------------------------------------------------------------------
+
+  private async resolveSessionId(): Promise<string | null> {
+    if (this.sessionId) {
+      return this.sessionId;
+    }
+
+    const currentSession = await getSessionManager().getCurrentSession();
+    return currentSession?.id || null;
+  }
 
   private async requestPermission(request: Omit<PermissionRequest, 'id' | 'timestamp'>): Promise<boolean> {
     const fullRequest: PermissionRequest = {
@@ -1268,13 +1294,16 @@ export class AgentOrchestrator {
 
     // 从用户配置获取选择的 provider 和 model
     const userProviderStr = settings.models?.default || settings.models?.defaultProvider || DEFAULT_PROVIDER;
-    const providerConfig = settings.models?.providers?.[userProviderStr as keyof typeof settings.models.providers];
-    const userModel = providerConfig?.model || this.getDefaultModel(userProviderStr);
+    const normalizedProvider = normalizeProviderId(userProviderStr) ?? DEFAULT_PROVIDER;
+    const providerConfig =
+      settings.models?.providers?.[normalizedProvider as keyof typeof settings.models.providers]
+      ?? settings.models?.providers?.[userProviderStr as keyof typeof settings.models.providers];
+    const userModel = providerConfig?.model || this.getDefaultModel(normalizedProvider);
 
     // 获取对应的 API Key
-    const selectedApiKey = this.configService.getApiKey(userProviderStr as ModelProvider);
+    const selectedApiKey = this.configService.getApiKey(normalizedProvider);
 
-    let selectedProvider: ModelProvider = userProviderStr as ModelProvider;
+    let selectedProvider: ModelProvider = normalizedProvider;
     let selectedModel = userModel;
 
     logger.info(`[模型选择] 用户配置: provider=${selectedProvider}, model=${selectedModel}`);
@@ -1296,13 +1325,14 @@ export class AgentOrchestrator {
 
     // 没有本地 Key，管理员走云端代理
     if (isAdmin) {
-      // 云端代理支持的 provider（需要在 Vercel 环境变量中配置对应的 API Key）
-      const cloudSupportedProviders = ['deepseek', 'openrouter', 'openai', 'anthropic', 'zhipu', 'groq', 'qwen', 'moonshot'];
-      if (!cloudSupportedProviders.includes(selectedProvider)) {
-        // 不支持的 provider，回退到 deepseek
-        logger.warn(`[模型选择] 云端代理不支持 ${selectedProvider}，回退到 deepseek`);
-        selectedProvider = DEFAULT_PROVIDER as ModelProvider;
-        selectedModel = DEFAULT_MODELS.chat;
+      const providerInfo = getProviderInfo(selectedProvider);
+      if (!providerInfo?.cloudProxySupported) {
+        const fallbackProvider = DEFAULT_PROVIDER as ModelProvider;
+        logger.warn(
+          `[模型选择] 云端代理不支持 ${selectedProvider}，回退到默认 provider ${fallbackProvider}`
+        );
+        selectedProvider = fallbackProvider;
+        selectedModel = this.getDefaultModel(fallbackProvider);
       }
       logger.info(`[模型选择] 管理员使用云端代理: ${selectedProvider}`);
       return {
@@ -1331,8 +1361,14 @@ export class AgentOrchestrator {
   }
 
   private getDefaultModel(provider: string): string {
+    const normalizedProvider = normalizeProviderId(provider) ?? provider;
+    const sharedDefaultModel = getDefaultModelForProvider(normalizedProvider);
+    if (sharedDefaultModel) {
+      return sharedDefaultModel;
+    }
+
     // 从 PROVIDER_REGISTRY 获取每个 provider 的第一个模型作为默认
-    const reg = PROVIDER_REGISTRY[provider];
+    const reg = PROVIDER_REGISTRY[normalizedProvider];
     if (reg && reg.models.length > 0) {
       return reg.models[0].id;
     }

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { IpcMain } from 'electron';
-import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { SyncStatus, DeviceInfo } from '../../shared/types';
 import { getAuthService, getSyncService } from '../services';
 
@@ -120,29 +120,4 @@ export function registerSyncHandlers(ipcMain: IpcMain): void {
 
   // ========== Legacy Handlers (Deprecated) ==========
 
-  /** @deprecated Use IPC_DOMAINS.SYNC with action: 'getStatus' */
-  ipcMain.handle(IPC_CHANNELS.SYNC_GET_STATUS, async () => handleGetStatus());
-
-  /** @deprecated Use IPC_DOMAINS.SYNC with action: 'start' */
-  ipcMain.handle(IPC_CHANNELS.SYNC_START, async () => handleStart());
-
-  /** @deprecated Use IPC_DOMAINS.SYNC with action: 'stop' */
-  ipcMain.handle(IPC_CHANNELS.SYNC_STOP, async () => handleStop());
-
-  /** @deprecated Use IPC_DOMAINS.SYNC with action: 'forceFull' */
-  ipcMain.handle(IPC_CHANNELS.SYNC_FORCE_FULL, async () => handleForceFull());
-
-  /** @deprecated Use IPC_DOMAINS.SYNC with action: 'resolveConflict' */
-  ipcMain.handle(IPC_CHANNELS.SYNC_RESOLVE_CONFLICT, async (_, conflictId: string, resolution: 'local' | 'remote' | 'merge') =>
-    handleResolveConflict({ conflictId, resolution })
-  );
-
-  /** @deprecated Use IPC_DOMAINS.DEVICE with action: 'register' */
-  ipcMain.handle(IPC_CHANNELS.DEVICE_REGISTER, async () => handleDeviceRegister());
-
-  /** @deprecated Use IPC_DOMAINS.DEVICE with action: 'list' */
-  ipcMain.handle(IPC_CHANNELS.DEVICE_LIST, async () => handleDeviceList());
-
-  /** @deprecated Use IPC_DOMAINS.DEVICE with action: 'remove' */
-  ipcMain.handle(IPC_CHANNELS.DEVICE_REMOVE, async (_, deviceId: string) => handleDeviceRemove({ deviceId }));
 }

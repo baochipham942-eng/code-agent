@@ -13,6 +13,7 @@ import {
   type StreamEvent,
 } from './ModelClient.js';
 import { CLOUD_TOOL_SCHEMAS } from '../tools/CloudToolRegistry.js';
+import { PRODUCTION_CLOUD_API_URL } from '../../../src/shared/constants.js';
 
 export interface AgentMessage {
   role: 'user' | 'assistant' | 'system';
@@ -336,7 +337,7 @@ export class CloudAgentLoop {
     input: Record<string, unknown>
   ): Promise<string> {
     try {
-      const baseUrl = process.env.CLOUD_API_URL || 'https://code-agent-beta.vercel.app';
+      const baseUrl = process.env.CLOUD_API_URL || PRODUCTION_CLOUD_API_URL;
       const url = `${baseUrl}/api/tools/${endpoint}`;
 
       const response = await fetch(url, {

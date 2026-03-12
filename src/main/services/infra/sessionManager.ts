@@ -122,7 +122,10 @@ export class SessionManager implements Disposable {
       if (cloudMessages.length > 0) {
         // 缓存到本地
         for (const msg of cloudMessages) {
-          db.addMessage(sessionId, msg, { skipTimestampUpdate: true });
+          db.addMessage(sessionId, msg, {
+            skipTimestampUpdate: true,
+            syncOrigin: 'remote',
+          });
         }
         // 云端拉取后也只取最近 N 条
         messages = cloudMessages.slice(-messageLimit);
@@ -161,6 +164,7 @@ export class SessionManager implements Disposable {
       const { data: cloudMessages, error } = await (supabase.from('messages') as any)
         .select('*')
         .eq('session_id', sessionId)
+        .eq('is_deleted', false)
         .order('timestamp', { ascending: true });
 
       if (error) {
@@ -244,7 +248,7 @@ export class SessionManager implements Disposable {
       const supabase = getSupabase();
       // TODO: Supabase 类型系统限制，需要 as any 绕过 PostgrestFilterBuilder 泛型约束
       const { data: cloudSessions, error } = await (supabase.from('sessions') as any)
-        .select('id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at')
+        .select('id, title, generation_id, model_provider, model_name, working_directory, created_at, updated_at, is_deleted')
         .eq('user_id', user.id)
         .order('updated_at', { ascending: false })
         .limit(100);
@@ -266,13 +270,25 @@ export class SessionManager implements Disposable {
         model_provider: string;
         model_name: string;
         working_directory?: string;
-        created_at: string;
+        created_at: string | number;
         updated_at: number;
+        is_deleted: boolean;
       }
 
       // 更新本地缓存（只更新元数据，不拉取消息）
       for (const cloudSession of cloudSessions as CloudSession[]) {
-        const localSession = db.getSession(cloudSession.id);
+        const localSession = db.getSession(cloudSession.id, { includeDeleted: true });
+
+        if (cloudSession.is_deleted) {
+          if (localSession && cloudSession.updated_at > localSession.updatedAt) {
+            db.deleteSession(cloudSession.id, {
+              deletedAt: cloudSession.updated_at,
+              syncOrigin: 'remote',
+            });
+            this.sessionCache.delete(cloudSession.id);
+          }
+          continue;
+        }
 
         if (!localSession) {
           // 本地不存在，创建会话元数据（消息稍后按需拉取）
@@ -285,8 +301,10 @@ export class SessionManager implements Disposable {
               model: cloudSession.model_name,
             },
             workingDirectory: cloudSession.working_directory,
-            createdAt: cloudSession.created_at as unknown as number,
+            createdAt: cloudSession.created_at,
             updatedAt: cloudSession.updated_at,
+          }, {
+            syncOrigin: 'remote',
           });
         } else if (cloudSession.updated_at > localSession.updatedAt) {
           // 云端更新，更新本地元数据（保留云端原始时间戳）
@@ -297,7 +315,11 @@ export class SessionManager implements Disposable {
               provider: cloudSession.model_provider as ModelConfig['provider'],
               model: cloudSession.model_name,
             },
+            workingDirectory: cloudSession.working_directory,
             updatedAt: cloudSession.updated_at,
+          }, {
+            syncOrigin: 'remote',
+            isDeleted: false,
           });
           // 清除缓存，避免返回过期数据
           this.sessionCache.delete(cloudSession.id);
@@ -360,6 +382,12 @@ export class SessionManager implements Disposable {
 
     // 清除缓存
     this.sessionCache.delete(sessionId);
+    if (this.currentSessionId === sessionId) {
+      this.currentSessionId = null;
+    }
+
+    // 通知前端
+    this.notifySessionListUpdated();
 
     // 记录审计日志
     db.logAuditEvent('session_deleted', { sessionId });

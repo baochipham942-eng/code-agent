@@ -3,7 +3,10 @@
 // 支持 DeepSeek、OpenAI、Anthropic 等多个 Provider
 // ============================================================================
 
-export type ModelProvider = 'deepseek' | 'openai' | 'anthropic';
+import { API_VERSIONS, getDefaultModelForProvider, getProviderEndpoint, normalizeProviderId } from '../../../src/shared/constants.js';
+import type { ModelProvider as SharedModelProvider, ModelProviderAlias } from '../../../src/shared/types/model.js';
+
+export type ModelProvider = SharedModelProvider | ModelProviderAlias;
 
 export interface ModelConfig {
   provider: ModelProvider;
@@ -47,31 +50,19 @@ export interface StreamEvent {
   error?: string;
 }
 
-// Provider API 端点
-const PROVIDER_ENDPOINTS: Record<ModelProvider, string> = {
-  deepseek: 'https://api.deepseek.com/v1/chat/completions',
-  openai: 'https://api.openai.com/v1/chat/completions',
-  anthropic: 'https://api.anthropic.com/v1/messages',
-};
-
-// 默认模型
-const DEFAULT_MODELS: Record<ModelProvider, string> = {
-  deepseek: 'deepseek-chat',
-  openai: 'gpt-4o',
-  anthropic: 'claude-sonnet-4-20250514',
-};
-
 /**
  * 统一的模型客户端
  */
 export class ModelClient {
-  private config: ModelConfig;
+  private config: Omit<ModelConfig, 'provider'> & { provider: SharedModelProvider };
 
   constructor(config: ModelConfig) {
+    const provider = normalizeProviderId(config.provider) ?? 'deepseek';
     this.config = {
       maxTokens: 4096,
       temperature: 0.7,
       ...config,
+      provider,
     };
   }
 
@@ -89,7 +80,7 @@ export class ModelClient {
   ): Promise<ModelResponse> {
     const { provider } = this.config;
 
-    if (provider === 'anthropic') {
+    if (provider === 'claude') {
       return this.chatAnthropic(messages, options);
     } else {
       // DeepSeek 和 OpenAI 使用相同的 API 格式
@@ -111,7 +102,7 @@ export class ModelClient {
   ): AsyncGenerator<StreamEvent> {
     const { provider } = this.config;
 
-    if (provider === 'anthropic') {
+    if (provider === 'claude') {
       yield* this.streamAnthropic(messages, options);
     } else {
       yield* this.streamOpenAICompatible(messages, options);
@@ -132,7 +123,7 @@ export class ModelClient {
     }
   ): Promise<ModelResponse> {
     const { provider, model, apiKey, maxTokens, temperature } = this.config;
-    const endpoint = PROVIDER_ENDPOINTS[provider];
+    const endpoint = `${getProviderEndpoint(provider)}/chat/completions`;
 
     // 构建消息数组
     const apiMessages: Array<{ role: string; content: string }> = [];
@@ -224,7 +215,7 @@ export class ModelClient {
     }
   ): AsyncGenerator<StreamEvent> {
     const { provider, model, apiKey, maxTokens, temperature } = this.config;
-    const endpoint = PROVIDER_ENDPOINTS[provider];
+    const endpoint = `${getProviderEndpoint(provider)}/chat/completions`;
 
     const apiMessages: Array<{ role: string; content: string }> = [];
     if (options?.systemPrompt) {
@@ -388,12 +379,12 @@ export class ModelClient {
       }));
     }
 
-    const response = await fetch(PROVIDER_ENDPOINTS.anthropic, {
+    const response = await fetch(`${getProviderEndpoint('claude')}/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+        'anthropic-version': API_VERSIONS.ANTHROPIC,
       },
       body: JSON.stringify(body),
     });
@@ -480,12 +471,12 @@ export class ModelClient {
     }
 
     try {
-      const response = await fetch(PROVIDER_ENDPOINTS.anthropic, {
+      const response = await fetch(`${getProviderEndpoint('claude')}/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
+          'anthropic-version': API_VERSIONS.ANTHROPIC,
         },
         body: JSON.stringify(body),
       });
@@ -576,9 +567,10 @@ export function createModelClient(
   apiKey: string,
   model?: string
 ): ModelClient {
+  const normalizedProvider = normalizeProviderId(provider) ?? 'deepseek';
   return new ModelClient({
-    provider,
+    provider: normalizedProvider,
     apiKey,
-    model: model || DEFAULT_MODELS[provider],
+    model: model || getDefaultModelForProvider(normalizedProvider),
   });
 }

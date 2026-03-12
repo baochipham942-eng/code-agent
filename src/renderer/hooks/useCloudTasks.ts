@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { UI } from '@shared/constants';
 import ipcService from '../services/ipcService';
 import type {
@@ -16,6 +16,14 @@ import type {
   TaskSyncState,
   CloudExecutionStats,
 } from '@shared/types/cloud';
+
+async function invokeCloud<T>(action: string, payload?: unknown): Promise<T> {
+  const response = await window.domainAPI?.invoke<T>(IPC_DOMAINS.CLOUD, action, payload);
+  if (!response?.success) {
+    throw new Error(response?.error?.message || `Cloud action failed: ${action}`);
+  }
+  return response.data as T;
+}
 
 // ============================================================================
 // 类型定义
@@ -88,7 +96,7 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
       setError(null);
 
       if (ipcService.isAvailable()) {
-        const result = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_LIST, filter);
+        const result = await invokeCloud<CloudTask[]>('taskList', { filter });
         if (isMountedRef.current) {
           setTasks(result || []);
         }
@@ -108,7 +116,7 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
   const loadSyncState = useCallback(async () => {
     try {
       if (ipcService.isAvailable()) {
-        const result = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_SYNC_STATE);
+        const result = await invokeCloud<TaskSyncState | null>('taskSyncState');
         if (isMountedRef.current) {
           setSyncState(result);
         }
@@ -121,7 +129,7 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
   const loadStats = useCallback(async () => {
     try {
       if (ipcService.isAvailable()) {
-        const result = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_STATS);
+        const result = await invokeCloud<CloudExecutionStats | null>('taskStats');
         if (isMountedRef.current) {
           setStats(result);
         }
@@ -139,7 +147,7 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
     try {
       setError(null);
       if (ipcService.isAvailable()) {
-        const task = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_CREATE, request);
+        const task = await invokeCloud<CloudTask | null>('taskCreate', { request });
         if (task) {
           setTasks((prev) => [task, ...prev]);
           return task;
@@ -155,7 +163,7 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
   const startTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
       if (ipcService.isAvailable()) {
-        const success = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_START, taskId);
+        const success = await invokeCloud<boolean>('taskStart', { taskId });
         if (success) {
           setTasks((prev) =>
             prev.map((t) =>
@@ -175,7 +183,7 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
   const pauseTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
       if (ipcService.isAvailable()) {
-        const success = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_PAUSE, taskId);
+        const success = await invokeCloud<boolean>('taskPause', { taskId });
         if (success) {
           setTasks((prev) =>
             prev.map((t) =>
@@ -195,7 +203,7 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
   const cancelTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
       if (ipcService.isAvailable()) {
-        const success = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_CANCEL, taskId);
+        const success = await invokeCloud<boolean>('taskCancel', { taskId });
         if (success) {
           setTasks((prev) =>
             prev.map((t) =>
@@ -215,7 +223,7 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
   const retryTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
       if (ipcService.isAvailable()) {
-        const success = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_RETRY, taskId);
+        const success = await invokeCloud<boolean>('taskRetry', { taskId });
         if (success) {
           setTasks((prev) =>
             prev.map((t) =>
@@ -237,7 +245,7 @@ export function useCloudTasks(options: UseCloudTasksOptions = {}): UseCloudTasks
   const deleteTask = useCallback(async (taskId: string): Promise<boolean> => {
     try {
       if (ipcService.isAvailable()) {
-        const success = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_DELETE, taskId);
+        const success = await invokeCloud<boolean>('taskDelete', { taskId });
         if (success) {
           setTasks((prev) => prev.filter((t) => t.id !== taskId));
         }
@@ -395,7 +403,7 @@ export function useCloudTask(taskId: string | null) {
       setIsLoading(true);
       try {
         if (ipcService.isAvailable()) {
-          const result = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_GET, taskId);
+          const result = await invokeCloud<CloudTask | null>('taskGet', { taskId });
           setTask(result);
         }
       } catch (err) {
@@ -422,7 +430,7 @@ export function useCloudTaskStats() {
     const loadStats = async () => {
       try {
         if (ipcService.isAvailable()) {
-          const result = await ipcService.invoke(IPC_CHANNELS.CLOUD_TASK_STATS);
+          const result = await invokeCloud<CloudExecutionStats | null>('taskStats');
           setStats(result);
         }
       } catch {

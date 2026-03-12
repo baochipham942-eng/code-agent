@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { IpcMain } from 'electron';
-import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
+import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { PlanningState } from '../../shared/types';
 import type { PlanningService } from '../planning';
 import { createLogger } from '../services/infra/logger';
@@ -103,15 +103,4 @@ export function registerPlanningHandlers(
 
   // ========== Legacy Handlers (Deprecated) ==========
 
-  /** @deprecated Use IPC_DOMAINS.PLANNING with action: 'getState' */
-  ipcMain.handle(IPC_CHANNELS.PLANNING_GET_STATE, async () => handleGetState(getPlanningService));
-
-  /** @deprecated Use IPC_DOMAINS.PLANNING with action: 'getPlan' */
-  ipcMain.handle(IPC_CHANNELS.PLANNING_GET_PLAN, async () => handleGetPlan(getPlanningService));
-
-  /** @deprecated Use IPC_DOMAINS.PLANNING with action: 'getFindings' */
-  ipcMain.handle(IPC_CHANNELS.PLANNING_GET_FINDINGS, async () => handleGetFindings(getPlanningService));
-
-  /** @deprecated Use IPC_DOMAINS.PLANNING with action: 'getErrors' */
-  ipcMain.handle(IPC_CHANNELS.PLANNING_GET_ERRORS, async () => handleGetErrors(getPlanningService));
 }

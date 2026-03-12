@@ -112,51 +112,6 @@ export function registerSessionHandlers(
 
   // ========== Legacy Handlers (Deprecated) ==========
 
-  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'list' */
-  ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async (_, options?: { includeArchived?: boolean }) => {
-    return requireAppService().listSessions(options);
-  });
-
-  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'archive' */
-  ipcMain.handle(IPC_CHANNELS.SESSION_ARCHIVE, async (_, sessionId: string) => {
-    return requireAppService().archiveSession(sessionId);
-  });
-
-  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'unarchive' */
-  ipcMain.handle(IPC_CHANNELS.SESSION_UNARCHIVE, async (_, sessionId: string) => {
-    return requireAppService().unarchiveSession(sessionId);
-  });
-
-  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'create' */
-  ipcMain.handle(IPC_CHANNELS.SESSION_CREATE, async (_, title?: string) => {
-    return requireAppService().createSession({ title });
-  });
-
-  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'load' */
-  ipcMain.handle(IPC_CHANNELS.SESSION_LOAD, async (_, sessionId: string) => {
-    return requireAppService().loadSession(sessionId);
-  });
-
-  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'delete' */
-  ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, async (_, sessionId: string) => {
-    return requireAppService().deleteSession(sessionId);
-  });
-
-  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'getMessages' */
-  ipcMain.handle(IPC_CHANNELS.SESSION_GET_MESSAGES, async (_, sessionId: string) => {
-    return requireAppService().getMessages(sessionId);
-  });
-
-  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'export' */
-  ipcMain.handle(IPC_CHANNELS.SESSION_EXPORT, async (_, sessionId: string) => {
-    return requireAppService().exportSession(sessionId);
-  });
-
-  /** @deprecated Use IPC_DOMAINS.SESSION with action: 'import' */
-  ipcMain.handle(IPC_CHANNELS.SESSION_IMPORT, async (_, data: unknown) => {
-    return requireAppService().importSession(data);
-  });
-
   // Load older messages (pagination)
   ipcMain.handle(IPC_CHANNELS.SESSION_LOAD_OLDER_MESSAGES, async (_, payload: { sessionId: string; beforeTimestamp: number; limit?: number }) => {
     return requireAppService().loadOlderMessages(payload.sessionId, payload.beforeTimestamp, payload.limit ?? 30);

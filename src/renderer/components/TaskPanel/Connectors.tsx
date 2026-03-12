@@ -4,11 +4,19 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plug, ChevronRight, ChevronDown, CheckCircle2, AlertCircle, Loader2, Sparkles, Wrench, Settings } from 'lucide-react';
-import { IPC_CHANNELS } from '@shared/ipc';
+import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import { useI18n } from '../../hooks/useI18n';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import ipcService from '../../services/ipcService';
+
+async function getMcpStatus() {
+  const response = await window.domainAPI?.invoke<any>(IPC_DOMAINS.MCP, 'getStatus');
+  if (!response?.success) {
+    throw new Error(response?.error?.message || 'Failed to get MCP status');
+  }
+  return response.data;
+}
 
 interface McpServer {
   name: string;
@@ -85,7 +93,7 @@ export const Connectors: React.FC = () => {
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const status = await ipcService.invoke(IPC_CHANNELS.MCP_GET_STATUS);
+        const status = await getMcpStatus();
         if (status && status.connectedServers) {
           // Transform connectedServers array to McpServer format
           setServers(status.connectedServers.map((name: string) => ({

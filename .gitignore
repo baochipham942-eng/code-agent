@@ -55,6 +55,9 @@ ai-daily-*.md
 .vercel/
 .vercel
 .env*.local
+/cloud-api/**
+!/cloud-api/
+!/cloud-api/ARCHIVED.md
 
 CLAUDE.local.md
 env.txt

@@ -182,7 +182,7 @@ describe('IPC Handlers', () => {
       const response = await ipc.invoke<IPCResponse>(IPC_DOMAINS.AGENT, request);
 
       expect(response.success).toBe(true);
-      expect(mockAppService.sendMessage).toHaveBeenCalledWith('test message', undefined, undefined);
+      expect(mockAppService.sendMessage).toHaveBeenCalledWith('test message', undefined, undefined, undefined);
     });
   });
 

@@ -448,6 +448,70 @@ function registerHandlers(): void {
   // 由于 installElectronMock() 已将 'electron' 模块替换为 mock，两种方式最终都注册到同一个 handlers Map
   setupAllIpcHandlers(mockIpcMain as any, deps);
 
+  // Override domain:session handler — session.ipc.ts requires AppService which is null in web mode.
+  // Re-route to SessionManager (same logic as the REST /api/sessions endpoints).
+  handlers.set('domain:session', async (_event: unknown, request: { action: string; payload?: any }) => {
+    const { action, payload } = request;
+    try {
+      let sm: Awaited<ReturnType<typeof import('../main/services/infra/sessionManager').getSessionManager>> | null = null;
+      if (dbAvailable) {
+        try {
+          const { getSessionManager } = await import('../main/services/infra/sessionManager');
+          sm = getSessionManager();
+        } catch { /* DB not available */ }
+      }
+      if (!sm) {
+        return { success: false, error: { code: 'SERVICE_UNAVAILABLE', message: 'SessionManager not available' } };
+      }
+      let data: unknown;
+      switch (action) {
+        case 'list':
+          data = await sm.listSessions(payload as { includeArchived?: boolean } | undefined);
+          break;
+        case 'create':
+          data = await sm.createSession({
+            title: payload?.title || 'New Session',
+            generationId: 'gen8',
+            modelConfig: {
+              provider: 'moonshot',
+              model: 'kimi-k2.5',
+              temperature: 0.7,
+              maxTokens: 8192,
+            },
+          });
+          break;
+        case 'load':
+          data = await sm.restoreSession(payload?.sessionId);
+          break;
+        case 'delete':
+          await sm.deleteSession(payload?.sessionId);
+          data = null;
+          break;
+        case 'getMessages':
+          data = await sm.getMessages(payload?.sessionId);
+          break;
+        case 'export':
+          data = await sm.exportSession(payload?.sessionId);
+          break;
+        case 'update':
+          await sm.updateSession(payload?.sessionId, payload?.updates || {});
+          data = null;
+          break;
+        case 'archive':
+          data = await sm.archiveSession(payload?.sessionId);
+          break;
+        case 'unarchive':
+          data = await sm.unarchiveSession(payload?.sessionId);
+          break;
+        default:
+          return { success: false, error: { code: 'INVALID_ACTION', message: `Unknown session action: ${action}` } };
+      }
+      return { success: true, data };
+    } catch (error) {
+      return { success: false, error: { code: 'INTERNAL_ERROR', message: error instanceof Error ? error.message : String(error) } };
+    }
+  });
+
   logger.info(`Registered ${handlers.size} IPC handlers`);
 }
 

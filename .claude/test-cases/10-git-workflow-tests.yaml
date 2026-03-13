@@ -55,7 +55,7 @@ cases:
     type: task
     description: "查看 Git 提交历史"
     setup:
-      - "mkdir -p test-git-repo && cd test-git-repo && git init && echo 'v1' > file.txt && git add . && git commit -m 'first commit' && echo 'v2' > file.txt && git add . && git commit -m 'second commit'"
+      - "mkdir -p test-git-repo && git -C test-git-repo init && git -C test-git-repo config user.email 'test@test.com' && git -C test-git-repo config user.name 'Test' && echo 'v1' > test-git-repo/file.txt && git -C test-git-repo add . && git -C test-git-repo commit -m 'first commit' && echo 'v2' > test-git-repo/file.txt && git -C test-git-repo add . && git -C test-git-repo commit -m 'second commit'"
     prompt: "查看 test-git-repo 的最近 git 提交记录"
     expect:
       min_tool_calls: 1
@@ -89,14 +89,14 @@ cases:
     description: "分析 Git diff 并解释变更"
     setup:
       - |
-        mkdir -p test-git-repo && cd test-git-repo && git init
-        cat > app.js << 'EOF'
+        mkdir -p test-git-repo && git -C test-git-repo init && git -C test-git-repo config user.email "test@test.com" && git -C test-git-repo config user.name "Test"
+        cat > test-git-repo/app.js << 'EOF'
         function greet(name) {
           return 'Hello, ' + name;
         }
         EOF
-        git add . && git commit -m 'init'
-        cat > app.js << 'EOF'
+        git -C test-git-repo add . && git -C test-git-repo commit -m 'init'
+        cat > test-git-repo/app.js << 'EOF'
         function greet(name) {
           if (!name) throw new Error('Name is required');
           return `Hello, ${name}!`;

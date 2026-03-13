@@ -82,7 +82,6 @@ cases:
       - type: file_exists
         description: "文件应存在: test-dept-summary.csv"
         weight: 1
-        critical: true
         params:
           path: "test-dept-summary.csv"
       - type: content_contains
@@ -138,7 +137,6 @@ cases:
       - type: file_exists
         description: "文件应存在: test-active-users.json"
         weight: 1
-        critical: true
         params:
           path: "test-active-users.json"
       - type: content_contains

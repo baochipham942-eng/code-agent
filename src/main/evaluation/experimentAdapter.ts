@@ -55,6 +55,10 @@ export class ExperimentAdapter {
           trialsPerCase: summary.results.find(r => r.trials)?.trials?.length || 1,
           flakyCount: summary.results.filter(r => r.trials && r.trials.some(t => t.status === 'passed') && r.trials.some(t => t.status !== 'passed')).length,
         } : {}),
+        ...(summary.unstableCaseCount !== undefined ? {
+          unstableCaseCount: summary.unstableCaseCount,
+          averageStdDev: summary.averageStdDev,
+        } : {}),
       }),
       source: 'test-runner',
       git_commit: this.getGitCommit(),
@@ -77,6 +81,7 @@ export class ExperimentAdapter {
         toolExecutions: r.toolExecutions?.length || 0,
         expectationResults: r.expectationResults,
         ...(r.trials ? { trials: r.trials } : {}),
+        ...(r.variance !== undefined ? { variance: r.variance, stdDev: r.stdDev, unstable: r.unstable } : {}),
       }),
     }));
 

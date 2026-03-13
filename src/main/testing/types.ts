@@ -225,6 +225,12 @@ export interface TestResult {
   trajectory?: Trajectory;
   /** Trial results when trialsPerCase > 1 */
   trials?: Array<{ score: number; status: TestStatus; duration_ms: number }>;
+  /** Statistical variance of trial scores (when trialsPerCase > 1) */
+  variance?: number;
+  /** Standard deviation of trial scores (when trialsPerCase > 1) */
+  stdDev?: number;
+  /** Whether the case is unstable (stdDev > threshold) */
+  unstable?: boolean;
   /** Session ID from the agent that ran this test */
   sessionId?: string;
 }
@@ -275,6 +281,10 @@ export interface TestRunSummary {
   gitCommit?: string;
   /** Warning message if DB persistence failed (best-effort save) */
   persistenceWarning?: string;
+  /** Number of cases with stdDev > threshold (stability metric) */
+  unstableCaseCount?: number;
+  /** Mean stdDev across all cases with trials (stability metric) */
+  averageStdDev?: number;
 }
 
 /**

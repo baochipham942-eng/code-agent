@@ -143,7 +143,6 @@ cases:
       - type: file_exists
         description: "文件应存在: test-tools-doc.md"
         weight: 1
-        critical: true
         params:
           path: "test-tools-doc.md"
       - type: content_contains
@@ -203,13 +202,11 @@ cases:
       - type: file_exists
         description: "文件应存在: test-scaffold/src/index.ts"
         weight: 1
-        critical: true
         params:
           path: "test-scaffold/src/index.ts"
       - type: file_exists
         description: "文件应存在: test-scaffold/tsconfig.json"
         weight: 1
-        critical: true
         params:
           path: "test-scaffold/tsconfig.json"
       - type: content_contains

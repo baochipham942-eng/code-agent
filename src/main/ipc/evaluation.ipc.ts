@@ -231,6 +231,7 @@ export function registerEvaluationHandlers(): void {
           transcriptMetrics: result.transcriptMetrics,
           evalVersion: 'v1',
           judgeModel: DEFAULT_MODEL,
+          judgePromptHash: result.promptHash,
         });
       }
 

@@ -1,6 +1,6 @@
 # Code Agent 评测系统架构文档
 
-> 最后更新：2026-03-09
+> 最后更新：2026-03-12
 > 源码位置：`src/main/evaluation/` + `src/renderer/components/features/evaluation/`
 
 ---
@@ -14,7 +14,7 @@
 5. [数据流](#5-数据流)
 6. [评测维度与评分算法](#6-评测维度与评分算法)
 7. [评分配置](#7-评分配置)
-8. [三层评测引擎](#8-三层评测引擎)
+8. [两层评测引擎](#8-两层评测引擎)
 9. [失败漏斗分析](#9-失败漏斗分析)
 10. [IPC 通道定义](#10-ipc-通道定义)
 11. [CLI 批量评测](#11-cli-批量评测)
@@ -27,12 +27,10 @@
 
 ## 1. 系统概览
 
-评测系统对 Code Agent 的每次会话进行多维度打分，支持三层 fallback 评估引擎：
+评测系统对 Code Agent 的每次会话进行多维度打分，支持两层 fallback 评估引擎：
 
 ```
 SwissCheeseEvaluator（4 个 LLM 评审员并发）
-    ↓ 失败
-AIEvaluator（单次 LLM 调用）
     ↓ 失败
 RuleBasedEvaluation（6 个规则评估器，无 LLM）
 ```
@@ -126,7 +124,7 @@ RuleBasedEvaluation（6 个规则评估器，无 LLM）
 
 主编排服务，单例模式。负责：
 - 会话数据收集（messages + tool_uses 表）
-- 三层 fallback 评估调度
+- 两层 fallback 评估调度
 - 结果持久化到 SQLite
 - 导出报告（Markdown / JSON）
 
@@ -134,7 +132,6 @@ RuleBasedEvaluation（6 个规则评估器，无 LLM）
 evaluateSession(sessionId, options)
   1. collectSessionData(sessionId) → SessionSnapshot
   2. try SwissCheeseEvaluator
-     catch → try AIEvaluator
      catch → runRuleBasedEvaluation()
   3. 组装 EvaluationResult（综合得分、等级、建议）
   4. 可选保存到数据库
@@ -327,9 +324,8 @@ currentSessionId: string | null;
 │      ├─→ SessionAnalyticsService (客观，无 LLM)          │
 │      │     └─ DB: messages, tool_uses, session_events    │
 │      │                                                   │
-│      └─→ EvaluationService (主观，三层 fallback)         │
+│      └─→ EvaluationService (主观，两层 fallback)         │
 │            ├─ SwissCheeseEvaluator (4 评审员并发)        │
-│            ├─ AIEvaluator (单次 LLM)                     │
 │            └─ RuleBasedEvaluation (6 个 DimensionEval)   │
 │                  ├─ TaskCompletionEvaluator               │
 │                  ├─ ToolEfficiencyEvaluator               │
@@ -442,7 +438,7 @@ currentSessionId: string | null;
 
 ---
 
-## 8. 三层评测引擎
+## 8. 两层评测引擎
 
 ### 8.1 第一层：SwissCheeseEvaluator（588 行）
 
@@ -473,16 +469,7 @@ currentSessionId: string | null;
 
 附加代码验证：正则括号匹配检查语法有效性（不执行代码）。
 
-### 8.2 第二层：AIEvaluator（308 行）
-
-单次 LLM 调用的快速评估：
-- 5 个维度：任务完成、响应质量、代码质量、效率、沟通
-- 评分标准：90-100 优秀 / 70-89 良好 / 50-69 一般 / 0-49 差
-- 无代码场景默认 80 分
-- 对话截断：12000 字符，单消息 2000 字符
-- LLM 最大输出 Token：2000
-
-### 8.3 第三层：RuleBasedEvaluation（6 个 DimensionEvaluator）
+### 8.2 第二层：RuleBasedEvaluation（6 个 DimensionEvaluator）
 
 纯规则评估，无 LLM 依赖：
 - 6 个独立评估器实现 `DimensionEvaluator` 接口
@@ -490,7 +477,7 @@ currentSessionId: string | null;
 - 加权平均得到综合分
 - 详见第 5 节各维度算法
 
-### 8.4 ParallelEvaluator（494 行，独立模块）
+### 8.3 ParallelEvaluator（494 行，独立模块）
 
 多候选方案选择引擎，用于比较多个代码方案的优劣：
 
@@ -533,7 +520,7 @@ Stage 5: LLM Scoring       → LLM 评分低于阈值（概率性判断）
 
 | 通道 | 方向 | 用途 |
 |------|------|------|
-| `evaluation:run` | renderer → main | 执行完整评测（三层 fallback） |
+| `evaluation:run` | renderer → main | 执行完整评测（两层 fallback） |
 | `evaluation:get-result` | renderer → main | 获取单次评测结果 |
 | `evaluation:list-history` | renderer → main | 获取评测历史列表 |
 | `evaluation:export` | renderer → main | 导出报告（JSON / Markdown） |
@@ -679,9 +666,8 @@ CREATE TABLE experiment_cases (
 
 | 文件 | 行数 | 职责 |
 |------|------|------|
-| `src/main/evaluation/EvaluationService.ts` | 448 | 主编排服务，三层 fallback |
+| `src/main/evaluation/EvaluationService.ts` | 448 | 主编排服务，两层 fallback |
 | `src/main/evaluation/swissCheeseEvaluator.ts` | 588 | 瑞士奶酪多评审员引擎 |
-| `src/main/evaluation/aiEvaluator.ts` | 308 | 单次 LLM 评估 |
 | `src/main/evaluation/parallelEvaluator.ts` | 494 | 多候选方案选择 |
 | `src/main/evaluation/sessionAnalyticsService.ts` | 399 | 客观指标计算 |
 | `src/main/evaluation/sessionEventService.ts` | 299 | SSE 事件持久化 |
@@ -726,12 +712,57 @@ CREATE TABLE experiment_cases (
 
 ---
 
+## 2026-03-12 更新：评测系统四项修复 + 架构收敛
+
+### 修复项
+
+| 修复 | 文件 | 说明 |
+|------|------|------|
+| **subset 过滤** | `evaluation.ipc.ts` | 检测 `subset:` 前缀，从 test-subsets JSON 加载 caseIds 过滤 |
+| **trialsPerCase** | `testRunner.ts` | runAll() 内层循环多试次，最高分取胜（pass@k 语义），trials 数组写入 data_json |
+| **数据源迁移** | 3 个页面 | FailureAnalysis/CrossExperiment/ExperimentDetail 从 LIST_TEST_REPORTS 改为 DB |
+| **会话关联** | `agentAdapter.ts` | session_id 写入 experiment_cases，实验详情可跳转会话 |
+
+### 架构收敛
+
+| 改动 | 说明 |
+|------|------|
+| **EvalSnapshot** | `snapshotBuilder.ts` 构建会话评测快照 + `telemetryQueryService.ts` 遥测查询 |
+| **TraceView** | SessionReplayView → 通用 TraceView，支持实验和会话入口 |
+| **Turn-based trace** | ChatView 从 Virtuoso 平铺列表改为分组卡片视图 |
+| **CaseDetailPage** | 新增用例详情页（EvalSnapshot + 版本化轨迹） |
+| **aiEvaluator 移除** | AI 单次评估器已从代码库删除（commit 49416746），运行时仅保留 SwissCheese + Rules 两层 fallback |
+| **statisticalRunner 移除** | 统计运行器不再需要，trialsPerCase 内嵌到 testRunner |
+| **生产包隔离** | evaluation 模块 dynamic import + EVAL_DISABLED define |
+
+### 新增后端文件
+
+| 文件 | 行数 | 职责 |
+|------|------|------|
+| `src/main/evaluation/snapshotBuilder.ts` | ~279 | 会话评测快照构建 |
+| `src/main/evaluation/telemetryQueryService.ts` | ~546 | 遥测数据查询服务 |
+| `src/shared/types/evaluation.ts` | +77 | EvalSnapshot 类型 |
+| `src/shared/types/trace.ts` | +39 | Trace 类型 |
+
+### 新增前端文件
+
+| 文件 | 职责 |
+|------|------|
+| `evalCenter/pages/CaseDetailPage.tsx` | 用例详情（EvalSnapshot + 轨迹） |
+| `evalCenter/TraceView.tsx` | 通用轨迹回放（重构自 SessionReplayView） |
+| `chat/TurnBasedTraceView.tsx` | Turn 分组卡片视图 |
+| `chat/TurnCard.tsx` | 单轮卡片组件 |
+| `chat/TraceNodeRenderer.tsx` | Trace 节点渲染器 |
+| `hooks/useTurnProjection.ts` | Turn 投影 Hook |
+
+---
+
 ## 设计模式总结
 
 | 模式 | 应用 |
 |------|------|
 | **Singleton** | 所有 Service 类（EvaluationService, SessionAnalyticsService 等） |
-| **Fallback/Cascade** | 三层评测引擎自动降级 |
+| **Fallback/Cascade** | 两层评测引擎自动降级 |
 | **Strategy** | `DimensionEvaluator` 接口，可插拔维度评估器 |
 | **Parallel Execution** | SwissCheeseEvaluator 4 个评审员并发 |
 | **Adapter** | `convertToMetrics()` 统一不同引擎的输出格式 |

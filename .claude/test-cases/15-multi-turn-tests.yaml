@@ -30,8 +30,13 @@ cases:
 
     expectations:
       - type: response_contains
-        description: "响应应包含 'version'"
+        description: "响应应包含版本号模式 '0.'"
         weight: 0.8
+        params:
+          text: "0."
+      - type: response_contains
+        description: "响应应包含 'version'"
+        weight: 0.5
         params:
           text: "version"
       - type: min_tool_calls

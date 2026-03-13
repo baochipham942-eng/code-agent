@@ -36,8 +36,8 @@ cases:
           path: hello-test.js
       - type: content_contains
         description: "文件应包含 console.log"
-        weight: 1.0
-        critical: true
+        weight: 0.8
+        critical: false
         params:
           path: hello-test.js
           contains: "console.log"

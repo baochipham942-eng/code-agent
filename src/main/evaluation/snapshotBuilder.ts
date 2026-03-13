@@ -158,6 +158,7 @@ interface ToolCallWithArgs {
   args: Record<string, unknown>;
   result?: string;
   success: boolean;
+  timestamp?: number;
 }
 
 function extractFileDiffs(
@@ -240,7 +241,7 @@ function extractVerifications(rawCalls: ToolCallWithArgs[]): SnapshotVerificatio
           command,
           success: tc.success,
           output: tc.result?.slice(0, 500),
-          timestamp: 0, // timestamp not available from raw calls
+          timestamp: tc.timestamp || 0,
         });
       }
     } else if (name === 'read' || name === 'read_file') {

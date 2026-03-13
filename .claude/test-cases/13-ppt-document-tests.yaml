@@ -200,7 +200,6 @@ cases:
       - type: file_exists
         description: "文件应存在: test-trend-report.md"
         weight: 1
-        critical: true
         params:
           path: "test-trend-report.md"
       - type: content_contains

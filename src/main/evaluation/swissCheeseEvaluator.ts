@@ -8,6 +8,7 @@
 // - LLM 评审员仍用于 outcome_verification, code_quality, security, tool_efficiency
 // ============================================================================
 
+import { createHash } from 'crypto';
 import { ModelRouter } from '../model/modelRouter';
 import { getConfigService } from '../services';
 import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '../../shared/constants';
@@ -60,6 +61,7 @@ export interface SwissCheeseResult {
   suggestions: string[];
   summary: string;
   layersCoverage: string[];
+  promptHash: string;
 }
 
 /** Scoring config entry for weight overrides */
@@ -279,6 +281,27 @@ const CREATION_OUTPUT_FORMAT = `
 
 const SEARCH_TOOLS = ['web_search', 'web_fetch', 'grep', 'glob', 'memory_search'];
 
+/**
+ * Compute SHA256 hash of all prompt templates used by evaluators.
+ * This allows tracking when prompts change across evaluation runs.
+ */
+function computePromptHash(): string {
+  const allPrompts = [
+    ...REVIEWER_CONFIGS.map(r => r.prompt),
+    EVALUATION_OUTPUT_FORMAT,
+    QA_REVIEWER_PROMPT,
+    QA_OUTPUT_FORMAT,
+    RESEARCH_TASK_ANALYST_PROMPT,
+    RESEARCH_INFO_QUALITY_PROMPT,
+    RESEARCH_OUTPUT_FORMAT,
+    CREATION_TASK_ANALYST_PROMPT,
+    CREATION_OUTPUT_QUALITY_PROMPT,
+    CREATION_OUTPUT_FORMAT,
+  ].join('\n---\n');
+
+  return createHash('sha256').update(allPrompts).digest('hex');
+}
+
 // ----------------------------------------------------------------------------
 // Swiss Cheese Evaluator Class
 // ----------------------------------------------------------------------------
@@ -455,6 +478,7 @@ export class SwissCheeseEvaluator {
       suggestions,
       summary: `QA 评测：综合得分 ${overallScore}。${summary}`,
       layersCoverage: ['回答正确性层', '推理质量层', '表达质量层'],
+      promptHash: computePromptHash(),
     };
   }
 
@@ -538,6 +562,7 @@ export class SwissCheeseEvaluator {
       suggestions: allConcerns.slice(0, 5),
       summary: `研究评测：综合得分 ${overallScore}。${taskResult.summary || ''} ${infoResult.summary || ''}`.trim(),
       layersCoverage: ['结果验证层', '信息质量层', '表达质量层'],
+      promptHash: computePromptHash(),
     };
   }
 
@@ -620,6 +645,7 @@ export class SwissCheeseEvaluator {
       suggestions: allConcerns.slice(0, 5),
       summary: `创作评测：综合得分 ${overallScore}。${taskResult.summary || ''} ${outputResult.summary || ''}`.trim(),
       layersCoverage: ['结果验证层', '产出质量层', '需求符合度层'],
+      promptHash: computePromptHash(),
     };
   }
 
@@ -673,6 +699,7 @@ export class SwissCheeseEvaluator {
         '工具效率评估层',
         '代码 Grader 层（self-repair, verification, forbidden）',
       ],
+      promptHash: computePromptHash(),
     };
 
     logger.info('Coding evaluation completed', {

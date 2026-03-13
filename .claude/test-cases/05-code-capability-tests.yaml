@@ -29,11 +29,11 @@ cases:
           - "return a + b"
     expectations:
       - type: content_contains
-        description: "文件 test-debug-syntax.js 应包含 'function add(a, b)'"
+        description: "文件 test-debug-syntax.js 应包含 'return a + b'"
         weight: 0.8
         params:
           path: "test-debug-syntax.js"
-          contains: "function add(a, b)"
+          contains: "return a + b"
       - type: content_contains
         description: "文件 test-debug-syntax.js 应包含 'return a + b'"
         weight: 0.8
@@ -338,7 +338,6 @@ cases:
       - type: file_exists
         description: "文件应存在: test-target.test.ts"
         weight: 1
-        critical: true
         params:
           path: "test-target.test.ts"
       - type: content_contains

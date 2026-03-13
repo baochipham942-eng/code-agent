@@ -29,6 +29,9 @@ import { loadAllTestSuites as loadSuitesForCritic } from './testCaseLoader';
 const execAsync = promisify(exec);
 const logger = createLogger('TestRunner');
 
+/** Cases with stdDev above this threshold are marked unstable */
+const UNSTABLE_STDDEV_THRESHOLD = 0.2;
+
 /**
  * Interface for agent interaction
  * This abstracts away the actual agent implementation
@@ -182,6 +185,16 @@ export class TestRunner {
         if (bestResult) {
           // Attach trial data to best result
           bestResult.trials = trialResults;
+
+          // Compute variance and stdDev of trial scores
+          const scores = trialResults.map(t => t.score);
+          const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+          const variance = scores.reduce((sum, s) => sum + (s - mean) ** 2, 0) / scores.length;
+          const stdDev = Math.sqrt(variance);
+          bestResult.variance = variance;
+          bestResult.stdDev = stdDev;
+          bestResult.unstable = stdDev > UNSTABLE_STDDEV_THRESHOLD;
+
           results.push(bestResult);
 
           if (bestResult.status === 'passed' || bestResult.status === 'partial') {
@@ -207,6 +220,13 @@ export class TestRunner {
       ? nonSkipped.reduce((sum, r) => sum + r.score, 0) / nonSkipped.length
       : 0;
 
+    // Compute stability metrics for cases with trials
+    const casesWithTrials = results.filter(r => r.stdDev !== undefined);
+    const unstableCaseCount = casesWithTrials.filter(r => r.unstable).length;
+    const averageStdDev = casesWithTrials.length > 0
+      ? casesWithTrials.reduce((sum, r) => sum + (r.stdDev ?? 0), 0) / casesWithTrials.length
+      : undefined;
+
     const summary: TestRunSummary = {
       runId,
       startTime,
@@ -227,6 +247,7 @@ export class TestRunner {
       },
       performance: this.calculatePerformanceStats(results),
       gitCommit: (() => { try { return execSync('git rev-parse HEAD', { encoding: 'utf8', timeout: 5000 }).trim(); } catch { return 'unknown'; } })(),
+      ...(casesWithTrials.length > 0 ? { unstableCaseCount, averageStdDev } : {}),
     };
 
     this.emit({ type: 'suite_end', summary });

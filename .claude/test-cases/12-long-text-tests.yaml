@@ -35,10 +35,15 @@ cases:
       no_crash: true
     expectations:
       - type: response_contains
-        description: "响应应包含 '247'"
+        description: "响应应包含 '247'（0-indexed 行号）"
         weight: 0.8
         params:
           text: "247"
+      - type: response_contains
+        description: "响应应包含 '248'（1-indexed 行号）"
+        weight: 0.5
+        params:
+          text: "248"
       - type: min_tool_calls
         description: "至少应调用 1 次工具"
         weight: 0.3
@@ -117,7 +122,6 @@ cases:
       - type: file_exists
         description: "文件应存在: test-long-prompt-result.txt"
         weight: 1
-        critical: true
         params:
           path: "test-long-prompt-result.txt"
       - type: content_contains

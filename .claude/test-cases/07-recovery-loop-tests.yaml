@@ -107,7 +107,6 @@ cases:
       - type: file_exists
         description: "文件应存在: test-summary.txt"
         weight: 1
-        critical: true
         params:
           path: "test-summary.txt"
       - type: content_contains

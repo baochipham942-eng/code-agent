@@ -27,6 +27,7 @@ interface StatusState {
   // Git
   gitBranch: string | null;
   workingDirectory: string | null;
+  gitChanges: { staged: number; unstaged: number; untracked: number } | null;
 
   // Streaming
   isStreaming: boolean;
@@ -38,6 +39,7 @@ interface StatusState {
   setContextUsage: (percent: number) => void;
   setNetworkStatus: (status: NetworkStatus) => void;
   setGitInfo: (branch: string | null, dir: string | null) => void;
+  setGitChanges: (changes: { staged: number; unstaged: number; untracked: number } | null) => void;
   setStreaming: (streaming: boolean) => void;
 }
 
@@ -50,6 +52,7 @@ export const useStatusStore = create<StatusState>((set) => ({
   networkStatus: 'online',
   gitBranch: null,
   workingDirectory: null,
+  gitChanges: null,
   isStreaming: false,
 
   updateTokens: (input, output) =>
@@ -80,6 +83,9 @@ export const useStatusStore = create<StatusState>((set) => ({
 
   setGitInfo: (branch, dir) =>
     set({ gitBranch: branch, workingDirectory: dir }),
+
+  setGitChanges: (changes) =>
+    set({ gitChanges: changes }),
 
   setStreaming: (streaming) =>
     set({ isStreaming: streaming }),

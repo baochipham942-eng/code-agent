@@ -243,8 +243,13 @@ function notifyRenderer(event: string, data?: any): void {
 }
 
 export function registerVoicePasteHandlers(ipcMain_: typeof ipcMain): void {
+  const isWebMode = process.env.CODE_AGENT_WEB_MODE === 'true' || !process.versions.electron;
+
   // Register global shortcut Cmd+`
-  const registered = globalShortcut.register('CommandOrControl+`', async () => {
+  if (isWebMode) {
+    console.log('[VoicePaste] Global shortcut registration skipped in web mode');
+  }
+  const registered = isWebMode ? false : globalShortcut.register('CommandOrControl+`', async () => {
     if (!isRecording) {
       // Start recording
       isRecording = true;
@@ -303,9 +308,9 @@ export function registerVoicePasteHandlers(ipcMain_: typeof ipcMain): void {
     }
   });
 
-  if (!registered) {
+  if (!registered && !isWebMode) {
     console.error('[VoicePaste] Failed to register global shortcut Cmd+`');
-  } else {
+  } else if (registered) {
     console.log('[VoicePaste] Global shortcut Cmd+` registered');
   }
 

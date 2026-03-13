@@ -99,8 +99,7 @@ import type { RuntimeContext } from './runtimeContext';
 import type { ContextAssembly } from './contextAssembly';
 import type { RunFinalizer } from './runFinalizer';
 import type { ConversationRuntime } from './conversationRuntime';
-
-
+import { detectStructuredToolFailure } from './toolResultNormalization';
 
 const logger = createLogger('AgentLoop');
 
@@ -425,20 +424,38 @@ export class ToolExecutionEngine {
       clearInterval(progressInterval);
       logger.debug(` toolExecutor.execute returned for ${toolCall.name}: success=${result.success}`);
 
+      const structuredFailure = result.success
+        ? detectStructuredToolFailure(result.output)
+        : null;
+
+      const normalizedResult = structuredFailure
+        ? {
+            ...result,
+            success: false,
+            output: undefined,
+            error: structuredFailure,
+            metadata: {
+              ...result.metadata,
+              rawOutput: result.output,
+              normalizedStructuredError: true,
+            },
+          }
+        : result;
+
       const toolResult: ToolResult = {
         toolCallId: toolCall.id,
-        success: result.success,
-        output: result.output,
-        error: result.error,
+        success: normalizedResult.success,
+        output: normalizedResult.output,
+        error: normalizedResult.error,
         duration: Date.now() - startTime,
-        metadata: result.metadata,
+        metadata: normalizedResult.metadata,
       };
 
       logger.debug(` Tool ${toolCall.name} completed in ${toolResult.duration}ms`);
 
       // E6: 外部数据源安全校验 - 检测 prompt injection
       const EXTERNAL_DATA_TOOLS = ['web_fetch', 'web_search', 'mcp', 'read_pdf', 'read_xlsx', 'read_docx', 'mcp_read_resource'];
-      if (EXTERNAL_DATA_TOOLS.some(t => toolCall.name.startsWith(t)) && result.success && toolResult.output) {
+      if (EXTERNAL_DATA_TOOLS.some(t => toolCall.name.startsWith(t)) && normalizedResult.success && toolResult.output) {
         try {
           const sanitizer = getInputSanitizer();
           const sanitized = sanitizer.sanitize(toolResult.output, toolCall.name);
@@ -466,7 +483,7 @@ export class ToolExecutionEngine {
       }
 
       // F3: 外部数据摘要提醒 — 每 2 次外部数据查询后提示总结关键发现
-      if (EXTERNAL_DATA_TOOLS.some(t => toolCall.name.startsWith(t)) && result.success) {
+      if (EXTERNAL_DATA_TOOLS.some(t => toolCall.name.startsWith(t)) && normalizedResult.success) {
         this.ctx.externalDataCallCount++;
         if (this.ctx.externalDataCallCount % 2 === 0) {
           this.contextAssembly.injectSystemMessage(
@@ -480,7 +497,7 @@ export class ToolExecutionEngine {
       }
 
       // E1: 引用溯源 - 从工具结果中提取引用
-      if (this.ctx.sessionId && result.success && toolResult.output) {
+      if (this.ctx.sessionId && normalizedResult.success && toolResult.output) {
         try {
           const citationService = getCitationService();
           const newCitations = citationService.extractAndStore(
@@ -507,13 +524,13 @@ export class ToolExecutionEngine {
       }
 
       // Circuit breaker tracking
-      if (!result.success) {
-        if (this.ctx.circuitBreaker.recordFailure(result.error)) {
-          this.contextAssembly.injectSystemMessage(this.ctx.circuitBreaker.generateWarningMessage(result.error));
+      if (!normalizedResult.success) {
+        if (this.ctx.circuitBreaker.recordFailure(normalizedResult.error)) {
+          this.contextAssembly.injectSystemMessage(this.ctx.circuitBreaker.generateWarningMessage(normalizedResult.error));
           this.ctx.onEvent({
             type: 'error',
             data: {
-              message: this.ctx.circuitBreaker.generateUserErrorMessage(result.error),
+              message: this.ctx.circuitBreaker.generateUserErrorMessage(normalizedResult.error),
               code: 'CIRCUIT_BREAKER_TRIPPED',
             },
           });
@@ -523,11 +540,11 @@ export class ToolExecutionEngine {
       }
 
       // F1: Goal Tracker — 记录工具执行动作
-      this.ctx.goalTracker.recordAction(toolCall.name, result.success);
+      this.ctx.goalTracker.recordAction(toolCall.name, normalizedResult.success);
 
       // Anti-pattern tracking for tool failures (F2: 4-level escalation)
-      if (!result.success && result.error) {
-        const failureWarning = this.ctx.antiPatternDetector.trackToolFailure(toolCall, result.error);
+      if (!normalizedResult.success && normalizedResult.error) {
+        const failureWarning = this.ctx.antiPatternDetector.trackToolFailure(toolCall, normalizedResult.error);
         if (failureWarning === 'ESCALATE_TO_USER') {
           this.contextAssembly.injectSystemMessage(
             `<escalation>\n` +
@@ -537,7 +554,7 @@ export class ToolExecutionEngine {
         } else if (failureWarning) {
           this.contextAssembly.injectSystemMessage(failureWarning);
         }
-      } else if (result.success) {
+      } else if (normalizedResult.success) {
         this.ctx.antiPatternDetector.clearToolFailure(toolCall);
 
         // Track duplicate calls
@@ -548,8 +565,8 @@ export class ToolExecutionEngine {
       }
 
       // Auto-continuation detection for truncated files
-      if ((toolCall.name === 'write_file' || toolCall.name === 'Write') && result.success && result.output) {
-        const outputStr = result.output;
+      if ((toolCall.name === 'write_file' || toolCall.name === 'Write') && normalizedResult.success && toolResult.output) {
+        const outputStr = toolResult.output;
         if (outputStr.includes('⚠️ **代码完整性警告**') || outputStr.includes('代码完整性警告')) {
           logger.debug('[AgentLoop] ⚠️ Detected truncated file! Injecting auto-continuation prompt');
           this.contextAssembly.injectSystemMessage(this.conversationRuntime.generateAutoContinuationPrompt());
@@ -557,7 +574,7 @@ export class ToolExecutionEngine {
       }
 
       // P3 Nudge: Track modified files for completion checking
-      if ((toolCall.name === 'edit_file' || toolCall.name === 'Edit' || toolCall.name === 'write_file' || toolCall.name === 'Write') && result.success) {
+      if ((toolCall.name === 'edit_file' || toolCall.name === 'Edit' || toolCall.name === 'write_file' || toolCall.name === 'Write') && normalizedResult.success) {
         const filePath = (toolCall.arguments?.file_path || toolCall.arguments?.path) as string;
         if (filePath) {
           this.ctx.nudgeManager.trackModifiedFile(filePath);
@@ -598,7 +615,7 @@ export class ToolExecutionEngine {
       }
 
       // Track read vs write operations
-      const readWriteWarning = this.ctx.antiPatternDetector.trackToolExecution(toolCall.name, result.success);
+      const readWriteWarning = this.ctx.antiPatternDetector.trackToolExecution(toolCall.name, normalizedResult.success);
       if (readWriteWarning === 'HARD_LIMIT') {
         return {
           toolCallId: toolCall.id,
@@ -614,7 +631,7 @@ export class ToolExecutionEngine {
       if (this.ctx.hookManager) {
         try {
           const toolInput = JSON.stringify(toolCall.arguments);
-          const toolOutput = result.output || '';
+          const toolOutput = toolResult.output || '';
           const userPostResult = await this.ctx.hookManager.triggerPostToolUse(
             toolCall.name,
             toolInput,
@@ -633,22 +650,22 @@ export class ToolExecutionEngine {
       // Skill system support
       if (
         toolCall.name === 'skill' &&
-        result.success &&
-        result.metadata?.isSkillActivation &&
-        result.metadata?.skillResult
+        normalizedResult.success &&
+        normalizedResult.metadata?.isSkillActivation &&
+        normalizedResult.metadata?.skillResult
       ) {
         this.runFinalizer.processSkillActivation(
-          result.metadata.skillResult as import('../../../shared/types/agentSkill').SkillToolResult
+          normalizedResult.metadata.skillResult as import('../../../shared/types/agentSkill').SkillToolResult
         );
       }
 
       // Plan Mode context restoration on exit
       if (
         (toolCall.name === 'exit_plan_mode' || (toolCall.name === 'PlanMode' && (toolCall.arguments as Record<string, unknown>)?.action === 'exit')) &&
-        result.success &&
+        normalizedResult.success &&
         this.ctx.savedMessages
       ) {
-        const planText = result.metadata?.plan as string || '';
+        const planText = normalizedResult.metadata?.plan as string || '';
         // Restore saved messages
         this.ctx.messages.length = 0;
         for (const msg of this.ctx.savedMessages) {
@@ -675,8 +692,8 @@ export class ToolExecutionEngine {
       if (
         this.ctx.autoApprovePlan &&
         (toolCall.name === 'exit_plan_mode' || (toolCall.name === 'PlanMode' && (toolCall.arguments as Record<string, unknown>)?.action === 'exit')) &&
-        result.success &&
-        result.metadata?.requiresUserConfirmation
+        normalizedResult.success &&
+        normalizedResult.metadata?.requiresUserConfirmation
       ) {
         logger.info('[AgentLoop] Auto-approving plan (autoApprovePlan enabled)');
         this.ctx.messages.push({
@@ -693,7 +710,7 @@ export class ToolExecutionEngine {
           const postResult = await this.ctx.planningService.hooks.postToolUse({
             toolName: toolCall.name,
             toolParams: toolCall.arguments,
-            toolResult: result,
+            toolResult: normalizedResult,
           });
 
           if (postResult.injectContext) {
@@ -705,7 +722,7 @@ export class ToolExecutionEngine {
       }
 
       langfuse.endSpan(toolSpanId, {
-        success: result.success,
+        success: normalizedResult.success,
         outputLength: result.output?.length || 0,
         duration: toolResult.duration,
       });

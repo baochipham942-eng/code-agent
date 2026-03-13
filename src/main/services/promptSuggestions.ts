@@ -2,7 +2,6 @@
 // Prompt Suggestions Service - 智能提示建议
 // ============================================================================
 
-import { execSync } from 'child_process';
 import { createLogger } from './infra/logger';
 
 const logger = createLogger('PromptSuggestions');
@@ -10,79 +9,54 @@ const logger = createLogger('PromptSuggestions');
 export interface PromptSuggestion {
   id: string;
   text: string;
-  source: 'git' | 'history' | 'files';
+  source: 'context' | 'git' | 'history' | 'files';
 }
 
-export async function getPromptSuggestions(
-  workingDirectory: string,
+/**
+ * Generate context-aware follow-up suggestions using LLM
+ * Called after each assistant turn completes
+ */
+export async function generateContextSuggestions(
+  messages: Array<{ role: string; content?: string }>,
 ): Promise<PromptSuggestion[]> {
-  const suggestions: PromptSuggestion[] = [];
-
-  // Source 1: Git status
   try {
-    const gitStatus = execSync('git status --porcelain', {
-      cwd: workingDirectory,
-      timeout: 3000,
-      encoding: 'utf-8',
-    }).trim();
+    // Extract recent conversation context (last 3 turns max)
+    const recentMessages = messages
+      .filter(m => (m.role === 'user' || m.role === 'assistant') && m.content)
+      .slice(-6) // last 3 pairs
+      .map(m => `${m.role === 'user' ? '用户' : '助手'}: ${(m.content || '').slice(0, 300)}`)
+      .join('\n');
 
-    if (gitStatus) {
-      const changedFiles = gitStatus.split('\n').length;
-      suggestions.push({
-        id: 'git-commit',
-        text: `提交当前 ${changedFiles} 个文件的修改`,
-        source: 'git',
-      });
-    }
+    if (!recentMessages) return [];
 
-    const gitLog = execSync('git log --oneline -3 2>/dev/null', {
-      cwd: workingDirectory,
-      timeout: 3000,
-      encoding: 'utf-8',
-    }).trim();
+    const { quickTask } = await import('../model/quickModel');
 
-    if (gitLog) {
-      suggestions.push({
-        id: 'git-review',
-        text: '检查最近的代码变更',
-        source: 'git',
-      });
-    }
-  } catch {
-    // not a git repo or git not available
+    const prompt = `根据以下对话，生成 2-3 个用户可能的后续提问或指令。要求：
+- 每行一个建议，不要编号
+- 简短（15 字以内），以动词开头
+- 基于对话上下文，是合理的下一步操作
+- 不要重复已经完成的事情
+
+对话：
+${recentMessages}
+
+后续建议：`;
+
+    const result = await quickTask(prompt);
+    if (!result.success || !result.content) return [];
+
+    const lines = result.content
+      .split('\n')
+      .map(l => l.replace(/^[-•\d.]\s*/, '').trim())
+      .filter(l => l.length > 2 && l.length < 50);
+
+    return lines.slice(0, 3).map((text, i) => ({
+      id: `ctx-${i}`,
+      text,
+      source: 'context' as const,
+    }));
+  } catch (error) {
+    logger.debug('Failed to generate context suggestions', { error });
+    return [];
   }
-
-  // Source 2: Recently modified files
-  try {
-    const recentFiles = execSync(
-      'find . -maxdepth 3 \\( -name "*.ts" -o -name "*.tsx" \\) -newer . -not -path "*/node_modules/*" 2>/dev/null | head -5',
-      {
-        cwd: workingDirectory,
-        timeout: 3000,
-        encoding: 'utf-8',
-      }
-    ).trim();
-
-    if (recentFiles) {
-      const firstFile = recentFiles.split('\n')[0]?.replace('./', '');
-      if (firstFile) {
-        suggestions.push({
-          id: 'file-review',
-          text: `检查 ${firstFile} 的实现`,
-          source: 'files',
-        });
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  // Source 3: Common suggestions
-  suggestions.push({
-    id: 'explain',
-    text: '解释这个项目的结构',
-    source: 'history',
-  });
-
-  return suggestions.slice(0, 5);
 }

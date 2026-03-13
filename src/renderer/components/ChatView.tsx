@@ -462,11 +462,7 @@ const EmptyState: React.FC<{
         ))}
       </div>
 
-      {/* Footer hint */}
-      <div className="flex items-center gap-2 mt-10 text-xs text-zinc-600 animate-fade-in" style={{ animationDelay: '600ms' }}>
-        <Zap className="w-3.5 h-3.5 text-primary-500/50" />
-        <span>小提示：按 <kbd className="px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-400 font-mono text-2xs">/</kbd> 可访问命令</span>
-      </div>
+      {/* Footer hint - slash command not yet implemented, hidden */}
     </div>
   );
 };

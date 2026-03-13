@@ -1,7 +1,7 @@
 # Code Agent - 架构设计文档
 
-> 版本: 6.0 (对应 v0.16.44)
-> 日期: 2026-03-09
+> 版本: 7.0 (对应 v0.16.52)
+> 日期: 2026-03-12
 > 作者: Lin Chen
 
 本文档已拆分为模块化的架构文档，便于维护和查阅。
@@ -35,6 +35,27 @@
 | **CLI 接口** | `src/main/cli/` | 命令行交互模式 |
 | **多渠道接入** | `src/main/channels/` | 飞书 Webhook 等渠道支持 |
 | **Skills 系统** | `src/main/skills/` | 用户可定义技能 |
+
+### v0.16.52+ 架构清理与评测修复（2026-03-09 ~ 03-12）
+
+| 改动 | 描述 |
+|------|------|
+| **AgentApplicationService** | IPC facade 解耦（`agentAppService.ts`），所有 IPC handler 不再直接依赖具体实现 |
+| **agentLoop 拆分** | 4350 行单文件拆为 5 个 runtime 模块（`conversationRuntime.ts` 等），agentLoop 变为 thin wrapper |
+| **循环依赖清零** | 114→15→9→0（madge 验证），sessionStore 拆分、IPC facade、bootstrap 4 模块拆分 |
+| **死代码清理** | -13,654 行 agent 子系统 + -2,497 行 memory 模块，净减 ~16K 行 |
+| **Disposable 扩展** | 11 个资源持有服务实现 Disposable 接口，gracefulShutdown 统一释放 |
+| **Session 边界加固** | per-session IPC facade + Bridge session-aware + getter 副作用移除 |
+| **评测生产隔离** | evaluation 模块 dynamic import + `EVAL_DISABLED` define，生产包不含评测代码 |
+| **EvalSnapshot** | `snapshotBuilder.ts` + `telemetryQueryService.ts`，会话评测数据快照与版本化 |
+| **TraceView** | SessionReplayView 重构为通用 TraceView，支持实验和会话两种入口 |
+| **Turn-based trace** | ChatView 从平铺列表改为分组卡片（`TurnBasedTraceView.tsx` + `useTurnProjection.ts`） |
+| **评测四项修复** | subset 过滤、trialsPerCase 多试次、3 页面数据源迁移到 DB、session_id 关联 |
+| **Web session 修复** | webServer.ts 覆盖 `domain:session` handler，绕过 null AppService |
+| **Codex 审计修复** | heartbeatService 重写、cronService 竞态、channelAgentBridge 改造等 14 项 |
+| **工具描述对齐 CC** | 移除 Bash 5 层硬编码检测，改为纯工具描述引导 |
+| **Opus maxTokens** | thinking budget 与 maxTokens 冲突自动调大 |
+| **esbuild 统一** | 6 个独立 esbuild 命令合并为单一 `esbuild.config.ts` |
 
 ### v0.16.37+ 多 Agent 协作增强（持久化团队 + 优雅关闭 + 任务自管理 + 审批流）
 

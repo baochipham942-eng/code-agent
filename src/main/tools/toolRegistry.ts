@@ -19,6 +19,9 @@ import {
   grepTool,
   killShellTool,
   taskOutputTool,
+  gitCommitTool,
+  gitDiffTool,
+  gitWorktreeTool,
 } from './shell';
 
 // File tools
@@ -307,6 +310,11 @@ export class ToolRegistry {
     this.register(killShellTool);
     this.register(taskOutputTool);
     this.register(notebookEditTool);
+
+    // Git tools (CodePilot parity)
+    this.register(gitCommitTool);
+    this.register(gitDiffTool);
+    this.register(gitWorktreeTool);
 
     // Gen 2 tools
     this.register(globTool);

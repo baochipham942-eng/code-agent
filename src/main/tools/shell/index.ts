@@ -17,5 +17,10 @@ export {
   processKillTool,
 } from './process';
 
+// Git tools
+export { gitCommitTool } from './gitCommit';
+export { gitDiffTool } from './gitDiff';
+export { gitWorktreeTool } from './gitWorktree';
+
 // Unified tool (Phase 2)
 export { ProcessTool } from './ProcessTool';

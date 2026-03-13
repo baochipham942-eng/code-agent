@@ -2,7 +2,7 @@
 // MessageContent - Markdown rendering using react-markdown
 // ============================================================================
 
-import React, { useState, useMemo, useCallback, memo } from 'react';
+import React, { useState, useMemo, useCallback, memo, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -10,7 +10,8 @@ import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Code2, Copy, Check, ExternalLink, Play, Clipboard } from 'lucide-react';
+import { Code2, Copy, Check, ExternalLink, Play, ZoomIn, ZoomOut } from 'lucide-react';
+import mermaid from 'mermaid';
 import type { MessageContentProps } from './types';
 import { UI } from '@shared/constants';
 import 'katex/dist/katex.min.css';
@@ -66,7 +67,136 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   docker: { color: 'text-cyan-400', name: 'Docker' },
   graphql: { color: 'text-pink-400', name: 'GraphQL' },
   gql: { color: 'text-pink-400', name: 'GraphQL' },
+  mermaid: { color: 'text-pink-300', name: 'Mermaid' },
 };
+
+// Initialize mermaid once
+let mermaidInitialized = false;
+function ensureMermaidInit() {
+  if (!mermaidInitialized) {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'dark',
+      themeVariables: {
+        darkMode: true,
+        background: '#18181b',
+        primaryColor: '#3b82f6',
+        primaryTextColor: '#e4e4e7',
+        primaryBorderColor: '#3f3f46',
+        lineColor: '#71717a',
+        secondaryColor: '#27272a',
+        tertiaryColor: '#1f1f23',
+      },
+    });
+    mermaidInitialized = true;
+  }
+}
+
+// Unique ID counter for mermaid diagrams
+let mermaidIdCounter = 0;
+
+// Mermaid diagram renderer
+const MermaidDiagram = memo(function MermaidDiagram({ code }: { code: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [scale, setScale] = useState(1);
+  const [copied, setCopiedState] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    ensureMermaidInit();
+
+    const id = `mermaid-${++mermaidIdCounter}`;
+    mermaid.render(id, code).then(({ svg }) => {
+      if (!cancelled && containerRef.current) {
+        containerRef.current.innerHTML = svg;
+        // Make SVG responsive
+        const svgEl = containerRef.current.querySelector('svg');
+        if (svgEl) {
+          svgEl.style.maxWidth = '100%';
+          svgEl.style.height = 'auto';
+        }
+        setError(null);
+      }
+    }).catch((err) => {
+      if (!cancelled) {
+        setError(err?.message || 'Failed to render diagram');
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, [code]);
+
+  const handleCopyCode = useCallback(async () => {
+    await navigator.clipboard.writeText(code);
+    setCopiedState(true);
+    setTimeout(() => setCopiedState(false), UI.COPY_FEEDBACK_DURATION);
+  }, [code]);
+
+  if (error) {
+    return <CodeBlock language="mermaid" code={code} />;
+  }
+
+  return (
+    <div className="my-3 rounded-xl bg-zinc-900 overflow-hidden border border-zinc-700 shadow-lg">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
+        <div className="flex items-center gap-2">
+          <Code2 className="w-3.5 h-3.5 text-pink-300" />
+          <span className="text-xs font-medium text-pink-300">Mermaid</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setScale(s => Math.max(0.5, s - 0.25))}
+            className="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
+            title="缩小"
+          >
+            <ZoomOut className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setScale(1)}
+            className="px-1.5 py-0.5 rounded hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200 transition-colors text-xs"
+            title="重置"
+          >
+            {Math.round(scale * 100)}%
+          </button>
+          <button
+            onClick={() => setScale(s => Math.min(3, s + 0.25))}
+            className="p-1 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
+            title="放大"
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+          </button>
+          <div className="w-px h-4 bg-zinc-700 mx-1" />
+          <button
+            onClick={handleCopyCode}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all text-xs"
+          >
+            {copied ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-green-400" />
+                <span className="text-green-400">Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5" />
+                <span>Code</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+      {/* Diagram */}
+      <div className="overflow-auto p-4">
+        <div
+          ref={containerRef}
+          style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}
+          className="transition-transform duration-150"
+        />
+      </div>
+    </div>
+  );
+});
 
 // Code block with copy button and syntax highlighting
 const CodeBlock = memo(function CodeBlock({
@@ -346,6 +476,9 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
 
         if (isCodeBlock && className) {
           const language = className.replace('language-', '');
+          if (language === 'mermaid') {
+            return <MermaidDiagram code={codeContent} />;
+          }
           return <CodeBlock language={language} code={codeContent} />;
         }
 

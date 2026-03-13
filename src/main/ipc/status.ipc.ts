@@ -18,6 +18,7 @@ export const STATUS_CHANNELS = {
   TOKEN_UPDATE: 'status:token-update',
   COST_UPDATE: 'status:cost-update',
   CONTEXT_UPDATE: 'status:context-update',
+  GIT_CHANGES_UPDATE: 'status:git-changes-update',
 } as const;
 
 /**
@@ -100,6 +101,82 @@ export function sendCostUpdate(window: BrowserWindow | null, cost: number): void
 export function sendContextUpdate(window: BrowserWindow | null, percent: number): void {
   if (window && !window.isDestroyed()) {
     window.webContents.send(STATUS_CHANNELS.CONTEXT_UPDATE, { percent });
+  }
+}
+
+/**
+ * 获取 Git 变更统计（非阻塞）
+ */
+export async function getGitChanges(workingDir: string): Promise<{ staged: number; unstaged: number; untracked: number } | null> {
+  try {
+    const { stdout } = await execAsync('git status --porcelain', {
+      cwd: workingDir,
+      timeout: 5000,
+    });
+
+    const lines = stdout.trim().split('\n').filter(Boolean);
+    if (lines.length === 0) return { staged: 0, unstaged: 0, untracked: 0 };
+
+    let staged = 0;
+    let unstaged = 0;
+    let untracked = 0;
+
+    for (const line of lines) {
+      const index = line[0];
+      const worktree = line[1];
+      if (index === '?' && worktree === '?') {
+        untracked++;
+      } else {
+        if (index !== ' ' && index !== '?') staged++;
+        if (worktree !== ' ' && worktree !== '?') unstaged++;
+      }
+    }
+
+    return { staged, unstaged, untracked };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 发送 Git 变更统计到渲染进程
+ */
+export function sendGitChangesUpdate(
+  window: BrowserWindow | null,
+  changes: { staged: number; unstaged: number; untracked: number } | null
+): void {
+  if (window && !window.isDestroyed()) {
+    window.webContents.send(STATUS_CHANNELS.GIT_CHANGES_UPDATE, { changes });
+  }
+}
+
+/**
+ * 发送完整 Git 信息（branch + changes）到渲染进程
+ */
+export async function refreshGitStatus(
+  window: BrowserWindow | null,
+  workingDir: string
+): Promise<void> {
+  if (!window || window.isDestroyed()) return;
+
+  try {
+    const [branchResult, changes] = await Promise.all([
+      execAsync('git rev-parse --abbrev-ref HEAD', { cwd: workingDir, timeout: 5000 })
+        .then(({ stdout }) => stdout.trim())
+        .catch(() => null),
+      getGitChanges(workingDir),
+    ]);
+
+    // Send branch info
+    window.webContents.send(STATUS_CHANNELS.GET_GIT_INFO, {
+      branch: branchResult,
+      workingDir,
+    });
+
+    // Send changes
+    sendGitChangesUpdate(window, changes);
+  } catch (error) {
+    logger.debug('Failed to refresh git status', { error });
   }
 }
 

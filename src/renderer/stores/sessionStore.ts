@@ -544,6 +544,10 @@ export async function initializeSessionStore(): Promise<void> {
   ipcService.on(IPC_CHANNELS.STATUS_CONTEXT_UPDATE, (event: { percent: number }) => {
     useStatusStore.getState().setContextUsage(event.percent);
   });
+  ipcService.on(IPC_CHANNELS.STATUS_GIT_UPDATE, (event: { branch: string | null; changes: { staged: number; unstaged: number; untracked: number } | null }) => {
+    useStatusStore.getState().setGitInfo(event.branch, useStatusStore.getState().workingDirectory);
+    useStatusStore.getState().setGitChanges(event.changes);
+  });
 
   try {
     const tasks = await ipcService.invoke(IPC_CHANNELS.BACKGROUND_GET_TASKS);

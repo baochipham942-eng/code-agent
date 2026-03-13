@@ -495,6 +495,7 @@ export const IPC_DOMAINS = {
   ERROR: 'domain:error',
   CRON: 'domain:cron',
   CAPTURE: 'domain:capture', // 浏览器采集
+  DESKTOP: 'domain:desktop', // 原生桌面活动
   SOUL: 'domain:soul',
 } as const;
 
@@ -696,6 +697,7 @@ export const IPC_CHANNELS = {
   // Status bar update channels
   STATUS_TOKEN_UPDATE: 'status:token-update',
   STATUS_CONTEXT_UPDATE: 'status:context-update',
+  STATUS_GIT_UPDATE: 'status:git-update',
 
   // Session status channels (multi-session parallel support)
   SESSION_STATUS_UPDATE: 'session:status:update',
@@ -1264,6 +1266,7 @@ export interface IpcEventHandlers {
   [IPC_CHANNELS.SESSION_STATUS_UPDATE]: (event: SessionStatusUpdateEvent) => void;
   [IPC_CHANNELS.STATUS_TOKEN_UPDATE]: (event: { inputTokens: number; outputTokens: number }) => void;
   [IPC_CHANNELS.STATUS_CONTEXT_UPDATE]: (event: { percent: number }) => void;
+  [IPC_CHANNELS.STATUS_GIT_UPDATE]: (event: { branch: string | null; changes: { staged: number; unstaged: number; untracked: number } | null }) => void;
   // Background task events
   [IPC_CHANNELS.BACKGROUND_TASK_UPDATE]: (event: BackgroundTaskUpdateEvent) => void;
   // DAG Visualization events

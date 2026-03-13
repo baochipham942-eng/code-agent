@@ -402,6 +402,10 @@ export interface TestCaseResult {
   /** Pipeline failure stage (from failure funnel analysis) */
   failureStage?: string;
   reference_solution?: string;
+  /** Stability metrics (present when trialsPerCase > 1) */
+  variance?: number;
+  stdDev?: number;
+  unstable?: boolean;
   expectationResults?: TestExpectationResult[];
   category?: string;
   difficulty?: string;
@@ -433,6 +437,9 @@ export interface TestRunReport {
   };
   evalFeedback?: unknown;
   gitCommit?: string;
+  /** Stability metrics (present when trialsPerCase > 1) */
+  unstableCaseCount?: number;
+  averageStdDev?: number;
 }
 
 export type EvalAnnotationErrorType =

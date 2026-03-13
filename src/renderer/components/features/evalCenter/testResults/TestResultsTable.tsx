@@ -9,7 +9,7 @@ interface Props {
 
 type SortKey = 'testId' | 'status' | 'score' | 'duration' | 'turnCount';
 type SortDir = 'asc' | 'desc';
-type StatusFilter = 'all' | 'passed' | 'failed' | 'partial';
+type StatusFilter = 'all' | 'passed' | 'failed' | 'partial' | 'unstable';
 
 const STATUS_ICON: Record<string, { icon: string; color: string }> = {
   passed: { icon: '\u2713', color: 'text-emerald-400' },
@@ -39,9 +39,14 @@ export const TestResultsTable: React.FC<Props> = ({ results }) => {
     }
   };
 
+  const hasStabilityData = results.some(r => r.unstable != null);
+  const unstableCount = results.filter(r => r.unstable).length;
+
   const filtered = useMemo(() => {
     let items = [...results];
-    if (statusFilter !== 'all') {
+    if (statusFilter === 'unstable') {
+      items = items.filter(r => r.unstable);
+    } else if (statusFilter !== 'all') {
       items = items.filter(r => r.status === statusFilter);
     }
     items.sort((a, b) => {
@@ -77,7 +82,7 @@ export const TestResultsTable: React.FC<Props> = ({ results }) => {
       {/* Filters */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700/20">
         <span className="text-[11px] text-zinc-500">筛选:</span>
-        {(['all', 'passed', 'failed', 'partial'] as StatusFilter[]).map((s) => (
+        {(['all', 'passed', 'failed', 'partial', ...(hasStabilityData ? ['unstable'] : [])] as StatusFilter[]).map((s) => (
           <button
             key={s}
             onClick={() => setStatusFilter(s)}
@@ -87,8 +92,8 @@ export const TestResultsTable: React.FC<Props> = ({ results }) => {
                 : 'text-zinc-500 hover:text-zinc-400 hover:bg-zinc-700'
             }`}
           >
-            {s === 'all' ? '全部' : s === 'passed' ? '通过' : s === 'failed' ? '失败' : '部分'}
-            {s !== 'all' && ` (${results.filter(r => r.status === s).length})`}
+            {s === 'all' ? '全部' : s === 'passed' ? '通过' : s === 'failed' ? '失败' : s === 'unstable' ? '不稳定' : '部分'}
+            {s !== 'all' && ` (${s === 'unstable' ? unstableCount : results.filter(r => r.status === s).length})`}
           </button>
         ))}
         <span className="ml-auto text-[11px] text-zinc-600">
@@ -109,6 +114,7 @@ export const TestResultsTable: React.FC<Props> = ({ results }) => {
               <SortHeader label="耗时" field="duration" className="w-20" />
               <SortHeader label="轮次" field="turnCount" className="w-14" />
               <th className="px-2 py-1.5 text-left w-14">工具</th>
+              {hasStabilityData && <th className="px-2 py-1.5 text-left w-20">稳定性</th>}
             </tr>
           </thead>
           <tbody>
@@ -140,10 +146,23 @@ export const TestResultsTable: React.FC<Props> = ({ results }) => {
                     <td className="px-2 py-1.5">{formatDuration(r.duration)}</td>
                     <td className="px-2 py-1.5">{r.turnCount}</td>
                     <td className="px-2 py-1.5">{r.toolExecutions?.length || 0}</td>
+                    {hasStabilityData && (
+                      <td className="px-2 py-1.5">
+                        {r.unstable ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 text-[10px] font-medium">
+                            ~ {r.stdDev?.toFixed(2)}
+                          </span>
+                        ) : r.stdDev != null ? (
+                          <span className="text-zinc-600">{r.stdDev.toFixed(2)}</span>
+                        ) : (
+                          <span className="text-zinc-700">-</span>
+                        )}
+                      </td>
+                    )}
                   </tr>
                   {isExpanded && (
                     <tr>
-                      <td colSpan={8} className="p-0">
+                      <td colSpan={hasStabilityData ? 9 : 8} className="p-0">
                         <TestResultsDetail result={r} />
                       </td>
                     </tr>

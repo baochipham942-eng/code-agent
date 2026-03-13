@@ -9,8 +9,9 @@ import { useI18n } from '../../../../hooks/useI18n';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import type { AppSettings } from '@shared/types';
 import { CLOUD, AGENT_TIMEOUTS } from '@shared/constants';
-import { isWebMode } from '../../../../utils/platform';
+import { isTauriMode, isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
+import { NativeDesktopSection } from '../sections/NativeDesktopSection';
 import ipcService from '../../../../services/ipcService';
 
 // 权限模式类型
@@ -40,6 +41,7 @@ const DEFAULT_TIMEOUTS = {
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useI18n();
+  const runningInTauri = isTauriMode();
 
   // 权限模式状态
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
@@ -297,6 +299,7 @@ export const GeneralSettings: React.FC = () => {
         )}
       </div>
 
+      {runningInTauri && <NativeDesktopSection />}
     </div>
   );
 };

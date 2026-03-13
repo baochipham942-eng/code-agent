@@ -11,6 +11,15 @@ use std::{
 };
 use tauri::{Manager, RunEvent};
 
+mod native_desktop;
+
+use native_desktop::{
+    desktop_capture_screenshot, desktop_get_capabilities, desktop_get_collector_status,
+    desktop_get_frontmost_context, desktop_get_permission_status, desktop_list_recent_events,
+    desktop_open_system_settings, desktop_start_collector, desktop_stop_collector,
+    NativeDesktopState,
+};
+
 const SERVER_URL: &str = "http://localhost:8080";
 const HEALTH_URL: &str = "http://localhost:8080/api/health";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(30);
@@ -299,7 +308,20 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(AppState::default())
-        .invoke_handler(tauri::generate_handler![check_for_update, install_update])
+        .manage(NativeDesktopState::default())
+        .invoke_handler(tauri::generate_handler![
+            check_for_update,
+            install_update,
+            desktop_get_capabilities,
+            desktop_get_permission_status,
+            desktop_get_frontmost_context,
+            desktop_capture_screenshot,
+            desktop_get_collector_status,
+            desktop_start_collector,
+            desktop_stop_collector,
+            desktop_list_recent_events,
+            desktop_open_system_settings
+        ])
         .setup(|app| {
             if is_server_running() {
                 // Server already running (e.g. started by Tauri beforeDevCommand in dev mode)

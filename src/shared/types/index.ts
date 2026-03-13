@@ -72,6 +72,9 @@ export * from './confirmation';
 // Capture types (浏览器采集)
 export * from './capture';
 
+// Desktop activity types (原生桌面采集)
+export * from './desktop';
+
 // Error types (ErrorCode, ErrorSeverity, SerializedError)
 export * from './error';
 

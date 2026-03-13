@@ -168,6 +168,7 @@ export const IPC_DOMAINS = {
   DATA: 'data',
   DEVICE: 'device',
   DAG: 'dag',
+  DESKTOP: 'desktop',
 } as const;
 
 // ----------------------------------------------------------------------------

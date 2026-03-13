@@ -8,3 +8,11 @@ export { memorySearchTool } from './search';
 export { codeIndexTool } from './codeIndex';
 export { autoLearnTool } from './autoLearn';
 export { forkSessionTool } from '../gen5/forkSession';
+export {
+  desktopContextNowTool,
+  desktopActivityRecentTool,
+  desktopActivityStatsTool,
+  desktopActivityByAppTool,
+  desktopActivityTimelineTool,
+  desktopActivitySearchTool,
+} from './desktopActivity';

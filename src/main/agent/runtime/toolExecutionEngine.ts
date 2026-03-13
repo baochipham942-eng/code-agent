@@ -171,6 +171,23 @@ export class ToolExecutionEngine {
   async executeToolsWithHooks(toolCalls: ToolCall[]): Promise<ToolResult[]> {
     logger.debug(` executeToolsWithHooks called with ${toolCalls.length} tool calls`);
 
+    // Check for external file changes before executing tools
+    try {
+      const { getFileWatcherService } = await import('../../services/git/fileWatcherService');
+      const externalChanges = getFileWatcherService().getRecentExternalChanges();
+      if (externalChanges.length > 0) {
+        const changedFiles = externalChanges.map(c => `${c.type}: ${c.path}`).slice(0, 10);
+        this.contextAssembly.injectSystemMessage(
+          `<external-file-changes>\n` +
+          `以下文件在 Agent 外部被修改，请注意内容可能已变更：\n` +
+          changedFiles.join('\n') +
+          (externalChanges.length > 10 ? `\n...及另外 ${externalChanges.length - 10} 个文件` : '') +
+          `\n如需操作这些文件，建议先重新读取最新内容。\n` +
+          `</external-file-changes>`
+        );
+      }
+    } catch { /* ignore in non-Electron environments */ }
+
     const { parallelGroup, sequentialGroup } = classifyToolCalls(toolCalls);
     logger.debug(` Tool classification: ${parallelGroup.length} parallel-safe, ${sequentialGroup.length} sequential`);
 
@@ -579,6 +596,16 @@ export class ToolExecutionEngine {
         if (filePath) {
           this.ctx.nudgeManager.trackModifiedFile(filePath);
 
+          // Mark as agent-modified to avoid false external change alerts
+          try {
+            const { getFileWatcherService } = await import('../../services/git/fileWatcherService');
+            const path = await import('path');
+            const absolutePath = path.default.isAbsolute(filePath)
+              ? filePath
+              : path.default.resolve(this.ctx.workingDirectory || process.cwd(), filePath);
+            getFileWatcherService().markAsAgentModified(absolutePath);
+          } catch { /* ignore */ }
+
           // E3: Diff tracking - compute and emit diff_computed event
           if (this.ctx.sessionId) {
             try {
@@ -646,6 +673,12 @@ export class ToolExecutionEngine {
           logger.error('[AgentLoop] User post-tool hook error:', error);
         }
       }
+
+      // Auto-refresh git status after file-modifying tools (non-blocking)
+      try {
+        const { getGitStatusService } = await import('../../services/git/gitStatusService');
+        getGitStatusService().onPostToolUse(toolCall.name, this.ctx.workingDirectory);
+      } catch { /* ignore in non-Electron environments */ }
 
       // Skill system support
       if (

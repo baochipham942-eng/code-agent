@@ -83,6 +83,7 @@
     "langfuse": "^3.38.6",
     "mammoth": "^1.11.0",
     "marked": "^15.0.0",
+    "mermaid": "^11.13.0",
     "minimatch": "^10.1.1",
     "node-fetch": "^3.3.2",
     "node-pty": "^1.1.0",

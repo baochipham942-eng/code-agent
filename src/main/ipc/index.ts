@@ -43,6 +43,7 @@ import { registerTaskListHandlers } from '../agent/taskList/taskList.ipc';
 import { registerTelemetryHandlers } from './telemetry.ipc';
 import { registerCronHandlers } from './cron.ipc';
 import { registerCaptureHandlers } from './capture.ipc';
+import { registerDesktopHandlers } from './desktop.ipc';
 import { registerSuggestionsHandlers } from './suggestions.ipc';
 import { registerSoulHandlers } from './soul.ipc';
 import { registerVoicePasteHandlers } from './voicePaste.ipc';
@@ -175,6 +176,9 @@ export function setupAllIpcHandlers(ipcMain: IpcMain, deps: IpcDependencies): vo
 
   // Capture handlers (浏览器采集)
   registerCaptureHandlers(ipcMain);
+
+  // Desktop handlers (原生桌面活动)
+  registerDesktopHandlers(ipcMain);
 
   // Soul handlers (人格)
   registerSoulHandlers();

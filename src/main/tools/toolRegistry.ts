@@ -83,10 +83,28 @@ import {
   imageAnnotateTool,
   xlwingsExecuteTool,
 } from './network';
+import {
+  calendarTool,
+  calendarCreateEventTool,
+  mailTool,
+  remindersTool,
+  remindersCreateTool,
+} from './connectors';
 
 
 // Memory tools
-import { memoryTool, codeIndexTool, autoLearnTool, forkSessionTool } from './memory';
+import {
+  memoryTool,
+  codeIndexTool,
+  autoLearnTool,
+  forkSessionTool,
+  desktopContextNowTool,
+  desktopActivityRecentTool,
+  desktopActivityStatsTool,
+  desktopActivityByAppTool,
+  desktopActivityTimelineTool,
+  desktopActivitySearchTool,
+} from './memory';
 
 // Vision tools
 import {
@@ -359,6 +377,11 @@ export class ToolRegistry {
     this.register(readXlsxTool);
     this.register(jiraTool);
     this.register(githubPrTool);
+    this.register(calendarTool);
+    this.register(calendarCreateEventTool);
+    this.register(mailTool);
+    this.register(remindersTool);
+    this.register(remindersCreateTool);
     this.register(youtubeTranscriptTool);
     this.register(twitterFetchTool);
     this.register(mermaidExportTool);
@@ -379,6 +402,12 @@ export class ToolRegistry {
     this.register(codeIndexTool);
     this.register(autoLearnTool);
     this.register(forkSessionTool);
+    this.register(desktopContextNowTool);
+    this.register(desktopActivityRecentTool);
+    this.register(desktopActivityStatsTool);
+    this.register(desktopActivityByAppTool);
+    this.register(desktopActivityTimelineTool);
+    this.register(desktopActivitySearchTool);
 
     // Gen 6 tools - Computer Use
     this.register(screenshotTool);

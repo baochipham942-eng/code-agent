@@ -34,5 +34,8 @@ export * from './types/gui';
 // Memory types
 export * from './types/memory';
 
+// Desktop activity types
+export * from './types/desktop';
+
 // Checkpoint types (文件检查点)
 export * from './types/checkpoint';

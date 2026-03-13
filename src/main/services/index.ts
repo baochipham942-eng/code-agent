@@ -22,3 +22,6 @@ export * from './lab';
 
 // Checkpoint Services - 检查点服务
 export * from './checkpoint';
+
+// Native desktop services - 原生桌面活动
+export * from './nativeDesktopService';

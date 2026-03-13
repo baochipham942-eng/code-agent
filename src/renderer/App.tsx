@@ -409,10 +409,6 @@ export const App: React.FC = () => {
           {/* Left Column: Sidebar with its own title bar - darker background */}
           {isStandard && !sidebarCollapsed && (
             <div className="flex flex-col w-60 bg-zinc-950">
-              {/* Sidebar Title Bar - macOS traffic lights space */}
-              <div className="h-12 flex items-center px-3 window-drag">
-                <div className="w-[68px]" /> {/* Space for macOS traffic lights */}
-              </div>
               <Sidebar />
             </div>
           )}

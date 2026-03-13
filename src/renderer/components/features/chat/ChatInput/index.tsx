@@ -8,7 +8,6 @@ import React, { useState, useRef, useCallback, useEffect, useImperativeHandle, f
 import { Image, FileText } from 'lucide-react';
 import type { MessageAttachment } from '../../../../../shared/types';
 import { UI } from '@shared/constants';
-import { IPC_CHANNELS } from '@shared/ipc';
 
 import { InputArea, InputAreaRef } from './InputArea';
 import { AttachmentBar } from './AttachmentBar';
@@ -17,7 +16,6 @@ import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
 import { useFileUpload } from './useFileUpload';
 import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
-import { useSessionStore } from '../../../../stores/sessionStore';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
 import ipcService from '../../../../services/ipcService';
 
@@ -75,16 +73,22 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     },
   }), []);
 
-  // Fetch suggestions when input is empty
+  // Listen for context-aware suggestions from agent (pushed after each turn)
   useEffect(() => {
-    if (value.trim().length === 0 && !disabled) {
-      ipcService.invoke(IPC_CHANNELS.SUGGESTIONS_GET)
-        .then(s => setSuggestions(s || []))
-        .catch(() => setSuggestions([]));
-    } else {
+    const unsubscribe = ipcService.on('agent:event', (event: { type: string; data: unknown }) => {
+      if (event.type === 'suggestions_update' && Array.isArray(event.data)) {
+        setSuggestions(event.data as Array<{ id: string; text: string; source: string }>);
+      }
+    });
+    return () => { unsubscribe?.(); };
+  }, []);
+
+  // Clear suggestions when user starts typing
+  useEffect(() => {
+    if (value.trim().length > 0) {
       setSuggestions([]);
     }
-  }, [value, disabled]);
+  }, [value]);
 
   // Handle suggestion selection
   const handleSuggestionSelect = useCallback((text: string) => {

@@ -39,6 +39,8 @@ export interface ModelMessage {
   toolCalls?: ModelToolCall[];
   /** tool 消息关联的 tool_call_id（OpenAI 协议要求） */
   toolCallId?: string;
+  /** tool 消息是否为失败结果（Claude tool_result 需要 is_error） */
+  toolError?: boolean;
   /** 文本回退（给不支持 tool calling 的模型用） */
   toolCallText?: string;
   /** 推理/思考内容（Kimi reasoning / DeepSeek reasoning_content） */

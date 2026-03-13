@@ -371,13 +371,13 @@ export const Sidebar: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col bg-transparent overflow-hidden">
-      {/* Header: New Chat + Multi-select + Filter */}
-      <div className="px-3 py-3 flex items-center justify-between flex-shrink-0">
+      {/* Header: h-12 to align with TitleBar on the right */}
+      <div className="h-12 px-3 flex items-center justify-between flex-shrink-0 window-drag">
         {/* New Chat */}
         <button
           onClick={handleNewChat}
           disabled={isLoading}
-          className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
+          className="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50 window-no-drag"
         >
           <span className="w-6 h-6 rounded-full bg-zinc-600 flex items-center justify-center">
             {isLoading ? (
@@ -389,7 +389,7 @@ export const Sidebar: React.FC = () => {
           <span className="text-sm font-normal">新会话</span>
         </button>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 window-no-drag">
           <button
             onClick={cycleFilter}
             className="flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
@@ -408,7 +408,7 @@ export const Sidebar: React.FC = () => {
             <span className="text-xs text-zinc-500">加载中...</span>
           </div>
         ) : !hasAnySessions ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center px-4">
+          <div className="flex flex-col items-center justify-center h-full text-center px-4">
             <div className="w-12 h-12 rounded-2xl bg-zinc-800 flex items-center justify-center mb-3">
               <MessageSquare className="w-6 h-6 text-zinc-500" />
             </div>

@@ -46,11 +46,12 @@ function makeAssistantWithToolCalls(
   };
 }
 
-function makeToolResult(toolCallId: string, content: string): ModelMessage {
+function makeToolResult(toolCallId: string, content: string, toolError = false): ModelMessage {
   return {
     role: 'tool',
     content,
     toolCallId,
+    toolError,
   };
 }
 
@@ -257,6 +258,26 @@ describe('convertToClaudeMessages', () => {
       type: 'tool_result',
       tool_use_id: 'tu_b',
       content: 'file b content',
+    });
+  });
+
+  it('marks failed tool_result blocks with is_error for Claude', () => {
+    const messages: ModelMessage[] = [
+      makeAssistantWithToolCalls('', [
+        { id: 'tu_err', name: 'web_search', arguments: '{"query":"latest ai"}' },
+      ]),
+      makeToolResult('tu_err', 'Brave Search API error (429)', true),
+    ];
+    const result = convertToClaudeMessages(messages);
+
+    expect(result).toHaveLength(2);
+    expect(result[1].role).toBe('user');
+    expect(Array.isArray(result[1].content)).toBe(true);
+    expect(result[1].content[0]).toEqual({
+      type: 'tool_result',
+      tool_use_id: 'tu_err',
+      content: 'Brave Search API error (429)',
+      is_error: true,
     });
   });
 });

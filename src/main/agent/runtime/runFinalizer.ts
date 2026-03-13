@@ -219,6 +219,9 @@ export class RunFinalizer {
     logCollector.agent('INFO', `Agent run completed, ${iterations} iterations`);
     this.ctx.onEvent({ type: 'agent_complete', data: null });
 
+    // Async: generate context-aware follow-up suggestions (non-blocking)
+    this.generateFollowUpSuggestions();
+
     langfuse.flush().catch((err) => logger.error('[Langfuse] Flush error:', err));
   }
 
@@ -411,4 +414,23 @@ export class RunFinalizer {
   // --------------------------------------------------------------------------
   // Warning Message Generators
   // --------------------------------------------------------------------------
+
+  // --------------------------------------------------------------------------
+  // Context-Aware Follow-Up Suggestions
+  // --------------------------------------------------------------------------
+
+  private generateFollowUpSuggestions(): void {
+    // Fire-and-forget: don't block agent completion
+    (async () => {
+      try {
+        const { generateContextSuggestions } = await import('../../services/promptSuggestions');
+        const suggestions = await generateContextSuggestions(this.ctx.messages);
+        if (suggestions.length > 0) {
+          this.ctx.onEvent({ type: 'suggestions_update', data: suggestions });
+        }
+      } catch (error) {
+        logger.debug('[RunFinalizer] Failed to generate follow-up suggestions', { error });
+      }
+    })();
+  }
 }

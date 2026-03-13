@@ -331,22 +331,26 @@ export class DatabaseService {
     }
 
     // Evaluations 表版本化扩展
-    const evalMigrations = [
-      'ALTER TABLE evaluations ADD COLUMN snapshot_id TEXT',
-      "ALTER TABLE evaluations ADD COLUMN eval_version TEXT DEFAULT 'legacy'",
-      'ALTER TABLE evaluations ADD COLUMN rubric_version TEXT',
-      'ALTER TABLE evaluations ADD COLUMN judge_model TEXT',
-      'ALTER TABLE evaluations ADD COLUMN judge_prompt_hash TEXT',
-    ];
-    for (const sql of evalMigrations) {
-      try {
-        this.db.exec(sql);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
-          logger.warn('[DB] Migration unexpected error:', msg);
+    if (this.tableExists('evaluations')) {
+      const evalMigrations = [
+        'ALTER TABLE evaluations ADD COLUMN snapshot_id TEXT',
+        "ALTER TABLE evaluations ADD COLUMN eval_version TEXT DEFAULT 'legacy'",
+        'ALTER TABLE evaluations ADD COLUMN rubric_version TEXT',
+        'ALTER TABLE evaluations ADD COLUMN judge_model TEXT',
+        'ALTER TABLE evaluations ADD COLUMN judge_prompt_hash TEXT',
+      ];
+      for (const sql of evalMigrations) {
+        try {
+          this.db.exec(sql);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!msg.includes('duplicate column') && !msg.includes('already exists')) {
+            logger.warn('[DB] Migration unexpected error:', msg);
+          }
         }
       }
+    } else {
+      logger.debug('[DB] Skipping evaluation migrations because evaluations table does not exist yet');
     }
 
     // Tool Executions 表 (用于缓存和审计)
@@ -816,6 +820,14 @@ export class DatabaseService {
    */
   getDb(): BetterSqlite3.Database | null {
     return this.db;
+  }
+
+  private tableExists(tableName: string): boolean {
+    if (!this.db) return false;
+    const row = this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?")
+      .get(tableName) as { name?: string } | undefined;
+    return row?.name === tableName;
   }
 
   // --------------------------------------------------------------------------

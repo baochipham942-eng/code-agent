@@ -18,7 +18,7 @@ export const PROVIDER_TIMEOUT = 300000;
 export const DEFAULT_PROVIDER = 'claude' as const;
 
 /** 默认模型（主力对话） */
-export const DEFAULT_MODEL = 'claude-sonnet-4-6' as const;
+export const DEFAULT_MODEL = 'claude-opus-4-6' as const;
 
 // ============================================================================
 // 模型输出 Token 上限 — providerRegistry / compactModel 等引用

@@ -221,7 +221,9 @@ export type AgentEvent =
   | { type: 'stream_usage'; data: { inputTokens: number; outputTokens: number; turnId?: string } }
   | { type: 'stream_token_estimate'; data: { inputTokens: number; outputTokens: number; turnId?: string } }
   // Web Bridge: 本地工具调用请求（webServer → 前端 → Bridge）
-  | { type: 'tool_call_local'; data: LocalToolCallData };
+  | { type: 'tool_call_local'; data: LocalToolCallData }
+  // Context-aware follow-up suggestions
+  | { type: 'suggestions_update'; data: Array<{ id: string; text: string; source: string }> };
 
 // 上下文压缩事件数据
 export interface ContextCompressedData {

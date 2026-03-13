@@ -661,6 +661,7 @@ ${deferredToolsSummary}
             role: 'tool',
             content: result.output || result.error || '',
             toolCallId: result.toolCallId,
+            toolError: !result.success,
           });
         }
       } else if (message.role === 'tool') {

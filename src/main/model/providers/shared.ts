@@ -61,6 +61,7 @@ interface ClaudeToolResultBlock {
   type: 'tool_result';
   tool_use_id: string;
   content: string;
+  is_error?: boolean;
 }
 
 type ClaudeContentBlock = ClaudeTextBlock | ClaudeToolUseBlock | ClaudeToolResultBlock;
@@ -450,6 +451,7 @@ export function convertToClaudeMessages(messages: ModelMessage[]): ClaudeMessage
         type: 'tool_result',
         tool_use_id: m.toolCallId,
         content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+        ...(m.toolError ? { is_error: true } : {}),
       };
       // 合并到前一个 user 消息（如果也是 tool_result）
       if (lastMsg?.role === 'user' && Array.isArray(lastMsg.content) && lastMsg.content[0]?.type === 'tool_result') {
@@ -978,4 +980,3 @@ export async function handleGeminiStream(
 
   return { type: 'text', content: fullContent, toolCalls: [] };
 }
-

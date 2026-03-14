@@ -78,9 +78,12 @@ export interface NativeDesktopCollectorStatus {
   phase: string;
   intervalSecs: number;
   captureScreenshots: boolean;
+  redactSensitiveContexts?: boolean | null;
+  retentionDays?: number | null;
   dedupeWindowSecs: number;
   maxRecentEvents: number;
   lastEventAtMs?: number | null;
+  lastCleanupAtMs?: number | null;
   lastError?: string | null;
   lastFingerprint?: string | null;
   totalEventsWritten: number;
@@ -93,6 +96,8 @@ export interface NativeDesktopCollectorStatus {
 export interface NativeDesktopCollectorRequest {
   intervalSecs?: number;
   captureScreenshots?: boolean;
+  redactSensitiveContexts?: boolean;
+  retentionDays?: number;
   dedupeWindowSecs?: number;
   maxRecentEvents?: number;
 }

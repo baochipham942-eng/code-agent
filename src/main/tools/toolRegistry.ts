@@ -86,11 +86,14 @@ import {
 import {
   calendarTool,
   calendarCreateEventTool,
+  calendarDeleteEventTool,
   calendarUpdateEventTool,
   mailTool,
   mailDraftTool,
+  mailSendTool,
   remindersTool,
   remindersCreateTool,
+  remindersDeleteTool,
   remindersUpdateTool,
 } from './connectors';
 
@@ -382,11 +385,14 @@ export class ToolRegistry {
     this.register(githubPrTool);
     this.register(calendarTool);
     this.register(calendarCreateEventTool);
+    this.register(calendarDeleteEventTool);
     this.register(calendarUpdateEventTool);
     this.register(mailTool);
     this.register(mailDraftTool);
+    this.register(mailSendTool);
     this.register(remindersTool);
     this.register(remindersCreateTool);
+    this.register(remindersDeleteTool);
     this.register(remindersUpdateTool);
     this.register(youtubeTranscriptTool);
     this.register(twitterFetchTool);

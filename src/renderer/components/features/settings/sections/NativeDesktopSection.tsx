@@ -63,6 +63,8 @@ export const NativeDesktopSection: React.FC = () => {
   const [recentEvents, setRecentEvents] = useState<DesktopActivityEvent[]>([]);
   const [collectorIntervalSecs, setCollectorIntervalSecs] = useState(30);
   const [collectorCaptureScreenshots, setCollectorCaptureScreenshots] = useState(true);
+  const [collectorRedactSensitive, setCollectorRedactSensitive] = useState(true);
+  const [collectorRetentionDays, setCollectorRetentionDays] = useState(7);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [capturing, setCapturing] = useState(false);
@@ -99,6 +101,8 @@ export const NativeDesktopSection: React.FC = () => {
       setCollectorStatus(collectorStatusResult.value);
       setCollectorIntervalSecs(collectorStatusResult.value.intervalSecs || 30);
       setCollectorCaptureScreenshots(collectorStatusResult.value.captureScreenshots);
+      setCollectorRedactSensitive(collectorStatusResult.value.redactSensitiveContexts ?? true);
+      setCollectorRetentionDays(collectorStatusResult.value.retentionDays || 7);
     }
     if (recentEventsResult.status === 'fulfilled') {
       setRecentEvents(recentEventsResult.value);
@@ -148,6 +152,8 @@ export const NativeDesktopSection: React.FC = () => {
       const status = await startNativeDesktopCollector({
         intervalSecs: Math.max(5, collectorIntervalSecs || 30),
         captureScreenshots: collectorCaptureScreenshots,
+        redactSensitiveContexts: collectorRedactSensitive,
+        retentionDays: Math.max(1, collectorRetentionDays || 7),
         dedupeWindowSecs: 60,
         maxRecentEvents: 20,
       });
@@ -326,6 +332,38 @@ export const NativeDesktopSection: React.FC = () => {
               </div>
             </div>
           </label>
+
+          <label className="p-3 rounded-lg border border-zinc-700 bg-zinc-900/40 flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={collectorRedactSensitive}
+              onChange={(event) => setCollectorRedactSensitive(event.target.checked)}
+              className="mt-1"
+            />
+            <div>
+              <div className="text-sm text-zinc-200">Redact sensitive contexts</div>
+              <div className="text-xs text-zinc-500 mt-1">
+                对密码管理器、验证码等敏感窗口自动脱敏，并跳过截图落盘。
+              </div>
+            </div>
+          </label>
+
+          <label className="p-3 rounded-lg border border-zinc-700 bg-zinc-900/40">
+            <div className="text-xs text-zinc-500 mb-2 flex items-center gap-1.5">
+              <Database className="w-3.5 h-3.5" />
+              Retention days
+            </div>
+            <input
+              type="number"
+              min={1}
+              max={90}
+              step={1}
+              value={collectorRetentionDays}
+              onChange={(event) => setCollectorRetentionDays(Number(event.target.value || 7))}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100"
+            />
+            <div className="mt-1 text-xs text-zinc-500">自动清理超期 JSONL、截图和 SQLite 记录。</div>
+          </label>
         </div>
 
         <div className="flex items-center gap-2">
@@ -351,6 +389,7 @@ export const NativeDesktopSection: React.FC = () => {
           <div className="p-3 rounded-lg border border-zinc-700 bg-zinc-900/40 space-y-1.5">
             <div>Total events: <span className="text-zinc-100">{collectorStatus?.totalEventsWritten ?? 0}</span></div>
             <div>Last event: <span className="text-zinc-100">{formatTimestamp(collectorStatus?.lastEventAtMs)}</span></div>
+            <div>Last cleanup: <span className="text-zinc-100">{formatTimestamp(collectorStatus?.lastCleanupAtMs)}</span></div>
             <div>Dedupe: <span className="text-zinc-100">{collectorStatus?.dedupeWindowSecs ?? 0}s</span></div>
             <div>Last error: <span className="text-zinc-100 break-all">{collectorStatus?.lastError || 'none'}</span></div>
           </div>
@@ -363,6 +402,8 @@ export const NativeDesktopSection: React.FC = () => {
             <div>Screenshots: <span className="text-zinc-100 break-all">{collectorStatus?.screenshotDir || 'N/A'}</span></div>
             <div>Current log: <span className="text-zinc-100 break-all">{collectorStatus?.eventsFile || 'N/A'}</span></div>
             <div>SQLite: <span className="text-zinc-100 break-all">{collectorStatus?.sqliteDbPath || 'N/A'}</span></div>
+            <div>Retention: <span className="text-zinc-100">{collectorStatus?.retentionDays ?? collectorRetentionDays} days</span></div>
+            <div>Privacy: <span className="text-zinc-100">{collectorStatus?.redactSensitiveContexts ? 'redact sensitive' : 'capture raw'}</span></div>
           </div>
         </div>
       </div>

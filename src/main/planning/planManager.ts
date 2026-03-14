@@ -158,6 +158,27 @@ export class PlanManager {
   }
 
   /**
+   * Update phase notes
+   */
+  async updatePhaseNotes(
+    phaseId: string,
+    notes: string | undefined
+  ): Promise<void> {
+    if (!this.currentPlan) await this.read();
+    if (!this.currentPlan) throw new Error('No plan exists');
+
+    const phase = this.currentPlan.phases.find((p) => p.id === phaseId);
+    if (!phase) throw new Error(`Phase ${phaseId} not found`);
+
+    const normalized = typeof notes === 'string' ? notes.trim() : '';
+    phase.notes = normalized || undefined;
+    this.currentPlan.updatedAt = Date.now();
+    this.currentPlan.metadata = this.calculateMetadata(this.currentPlan.phases);
+
+    await this.savePlanToFile();
+  }
+
+  /**
    * Add a step to a phase
    */
   async addStep(

@@ -14,7 +14,9 @@ import {
   publishPlanningStateToRenderer,
   type PlanningService,
 } from '../planning';
+import { buildRecoveredWorkSuggestions } from '../planning/recoveredWorkOrchestrator';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
+import { getMainWindow } from './window';
 
 const logger = createLogger('Bootstrap:Session');
 
@@ -122,6 +124,26 @@ export async function initializePlanningService(
 
   // Send initial planning state to renderer
   await publishPlanningStateToRenderer(planningService);
+
+  const suggestions = await buildRecoveredWorkSuggestions({
+    sessionId: currentSessionId,
+    planningService,
+  }).catch((error) => {
+    logger.debug('Failed to build recovered-work suggestions on session restore', {
+      error: String(error),
+      sessionId: currentSessionId,
+    });
+    return [];
+  });
+
+  const mainWindow = getMainWindow();
+  if (mainWindow && suggestions.length > 0) {
+    mainWindow.webContents.send('agent:event', {
+      type: 'suggestions_update',
+      data: suggestions,
+      sessionId: currentSessionId,
+    });
+  }
 
   return planningService;
 }

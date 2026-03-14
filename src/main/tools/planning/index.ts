@@ -8,6 +8,7 @@ export { askUserQuestionTool } from './askUserQuestion';
 export { confirmActionTool } from './confirmAction';
 export { planReadTool } from './planRead';
 export { planUpdateTool } from './planUpdate';
+export { planRecoverRecentWorkTool } from './planRecoverRecentWork';
 export { enterPlanModeTool } from './enterPlanMode';
 export { exitPlanModeTool } from './exitPlanMode';
 export { findingsWriteTool } from './findingsWrite';

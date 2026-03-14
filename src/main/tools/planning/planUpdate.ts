@@ -17,6 +17,16 @@ function getDesktopTodoKeyFromStep(step: { metadata?: Record<string, unknown> })
     : null;
 }
 
+function mergePhaseNotes(existing: string | undefined, next: string | undefined): string | undefined {
+  if (!next) return existing;
+  const normalizedNext = next.trim();
+  if (!normalizedNext) return existing;
+  const current = existing?.trim();
+  if (!current) return normalizedNext;
+  if (current.includes(normalizedNext)) return current;
+  return `${current} | ${normalizedNext}`;
+}
+
 export const planUpdateTool: Tool = {
   name: 'plan_update',
   description:
@@ -116,6 +126,11 @@ export const planUpdateTool: Tool = {
       // Update the step status
       await planningService.plan.updateStepStatus(foundPhase.id, foundStep.id, status);
 
+      const mergedNotes = mergePhaseNotes(foundPhase.notes, addNote);
+      if (mergedNotes !== foundPhase.notes) {
+        await planningService.plan.updatePhaseNotes(foundPhase.id, mergedNotes);
+      }
+
       const sessionId = (context as unknown as { sessionId?: string }).sessionId || 'default';
       const stepTodoKey = getDesktopTodoKeyFromStep(foundStep);
       const matchingDesktopTask = listTasks(sessionId).find((task) =>
@@ -183,6 +198,9 @@ export const planUpdateTool: Tool = {
       let output = `Step updated: ${statusIcon} ${foundStep.content}\n`;
       output += `Phase: ${foundPhase.title}\n`;
       output += `New status: ${status}\n\n`;
+      if (mergedNotes && addNote) {
+        output += `Phase note updated.\n\n`;
+      }
       output += `Plan progress: ${updatedPlan?.metadata.completedSteps}/${updatedPlan?.metadata.totalSteps} completed`;
 
       return { success: true, output };

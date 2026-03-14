@@ -65,3 +65,18 @@ Important scope clarification as of 2026-03-14:
 2. Use the app-host smoke bridge as the primary read-path acceptance entry for desktop host validation.
 3. Use the app-host office write script in two modes: default connector write-path validation, or `--real-approval` for the web-host SSE approval loop.
 4. If stricter parity is still required, replace the C1b-lite loop with a real desktop `AppService / AgentOrchestrator` approval chain.
+
+## Product / Orchestration Follow-up Validation
+
+This round did not re-run the real-machine collector or app-host office acceptance matrix above. The focus here was the next layer up: wiring recovered memory/understanding signals into product/orchestration.
+
+Code-level validation completed locally:
+
+- `npx vitest run tests/unit/planning/recoveredWorkOrchestrator.test.ts tests/unit/tools/planning/planRecoverRecentWork.test.ts tests/unit/tools/planning/desktopTaskLifecycle.test.ts tests/unit/memory/desktopActivityPlanningBridge.test.ts`
+- `npm run typecheck`
+
+Validated scope for this round:
+
+- session-restore recovered-work suggestions
+- continuation-time recovered-work orchestration hint
+- `Plan.recover_recent_work` bridging desktop-derived tasks + merged workspace activity into plan/task orchestration

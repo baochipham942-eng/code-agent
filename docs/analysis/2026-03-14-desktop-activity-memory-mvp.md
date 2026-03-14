@@ -67,21 +67,25 @@
 - mail artifacts 已开始写入 `attachmentCount / attachmentNames / threadKey / threadSubject`，为后续按邮件线程和附件线索做 merge / dedupe 留出最小结构
 - `workspaceActivitySearchService` 已开始在检索层对相关 office artifacts 做最小 `cross-artifact dedupe / merge`，把同一 query / thread 下的 mail、calendar、reminder 线索压成单条结果，同时保留底层来源统计
 
-### 已开始触到：产品/编排层输入
+### 已推进到：产品/编排层最小闭环
 
-这次仍然不是完整产品编排层，但已经不只是“理解产物可读”：
+这次已经不只是“理解产物可读”，而是把一条最小恢复闭环接进了产品和编排链路：
 
 - desktop 推断待办可以进入 `taskStore`
 - 并且能继续落到 `PlanningService` 的恢复 phase/steps
-- 现有 plan context 注入链路可以直接消费这批恢复步骤
+- agent 在 continuation / resume 类复杂请求里，会收到一段更明确的 `recovered-work-orchestration` 指令，优先复用已有 recovered tasks / plan，而不是把 desktop/workspace 线索只当被动上下文
+- `Plan` 工具已新增 `action = recover_recent_work`，可以把 desktop-derived tasks + merged workspace activity 显式恢复进当前 plan：
+  - desktop candidates 会继续同步到 plan steps
+  - workspace activity 会生成最小 `Recovered Workspace Activity` phase / review step / phase notes
+- session restore 时会直接向输入框推送一组 recovered-work suggestions，形成最小“继续上次工作”产品入口
 
 ### 还没补：产品/编排层
 
-本次没有做：
+当前仍然没做：
 
-- 把 desktop-derived tasks 进一步并入完整的 plan DAG / 生命周期管理
-- 日报/周报生成
-- 跨 desktop + office connector 的统一工作流编排
+- recovered workspace activity 到 plan step 的更强语义转化，目前仍是轻量 review step + phase notes，不是完整 DAG 级编排
+- desktop + workspace + connector write actions 的统一 workflow orchestration
+- 日报/周报生成、跨天目标恢复、长期优先级治理
 
 ## 3. 和记忆/理解层还差什么
 
@@ -100,7 +104,7 @@
 - 之前：只能查 raw timeline / keyword search
 - 现在：能查时间片摘要、待办候选、语义检索，并把候选事项同步成 session task 和 planning steps；同时能把 mail/calendar/reminders 以 `workspace_activity` 形式统一落库、写入最小向量索引，通过统一入口检索 desktop + office artifacts，并在 session start 按用户请求自动注入相关工作线索
 
-也就是说，能力从“采集层 MVP”推进到了“理解层 MVP 的第一条真实链路”。
+也就是说，能力已经从“采集层 MVP”推进到了“理解层 MVP 的第一条真实链路”，并且进一步补出了一条最小可交付的产品/编排闭环：恢复建议 -> recovered work sync -> plan/task 可消费入口。
 
 ## 5. 相关代码
 
@@ -110,6 +114,9 @@
 - `src/main/memory/workspaceActivitySearchService.ts`
 - `src/main/memory/workspaceArtifactIndexService.ts`
 - `src/main/agent/runtime/conversationRuntime.ts`
+- `src/main/planning/recoveredWorkOrchestrator.ts`
+- `src/main/tools/planning/planRecoverRecentWork.ts`
+- `src/main/app/restoreSession.ts`
 - `src/shared/types/desktop.ts`
 - `src/main/app/initBackgroundServices.ts`
 - `src/main/tools/toolRegistry.ts`
@@ -128,4 +135,4 @@
 - 原生上下文层：MVP 已有
 - 办公连接层：MVP 已有
 - 记忆/理解层：已补上一条 desktop activity -> summary/todo/search/task-sync 的 MVP 闭环
-- 产品/编排层：已接入最小 planning 输入桥接，但完整编排仍待后续接入
+- 产品/编排层：已补一条最小 recovered-work 闭环，完整编排仍待后续接入

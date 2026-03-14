@@ -2,20 +2,33 @@
 
 ## Summary
 
-- `npm run acceptance:native-desktop -- --json --skip-sqlite` failed because the default root `/Users/linchen/.code-agent/native-desktop` does not exist on this machine yet.
+- `npm run acceptance:native-desktop -- --json --require-running true --freshness-minutes 30` still fails on this machine because the default collector root `/Users/linchen/.code-agent/native-desktop` does not exist and no desktop collector is running.
 - `npm run acceptance:mail -- status --json`
 - `npm run acceptance:calendar -- status --json`
 - `npm run acceptance:reminders -- status --json`
 
-The three office connector smoke scripts start correctly, but on this machine they are currently blocked when executed from a plain Node host process.
+The three standalone Node-host office status scripts still reproduce the same host-process / TCC problem on this machine.
 
 - `npm run acceptance:app-host-office -- smoke --base-url http://127.0.0.1:8091 --token "<token>" --json`
 
-The new app-host smoke passes from the desktop host web server path:
+The app-host office smoke passes from the local desktop host web server path:
 
 - Mail: connected, 2 accounts, 19 mailboxes
 - Calendar: connected, 8 calendars
 - Reminders: connected, 4 lists
+
+Additional app-host deep read-path validation now also passes:
+
+- `mail.list_messages(QQ/INBOX, limit=3)` returns real messages.
+- `mail.read_message(#34226)` returns `attachmentCount=1` and the attachment name list.
+- `calendar.list_events(limit=5)` returns real events without timing out.
+- `reminders.list_reminders(limit=5)` returns successfully without timing out.
+
+Stability closure from this round:
+
+- `calendar.list_events` was previously timing out after the recent notes/url enrichment because it scanned every event before JS-side filtering.
+- `reminders.list_reminders` had the same issue for full-list reminder scans.
+- Both connectors now push filtering and `limit` down into AppleScript and sanitize optional fields after reading raw values, which restored the app-host deep read path.
 
 Important scope clarification as of 2026-03-14:
 
@@ -39,6 +52,12 @@ Important scope clarification as of 2026-03-14:
 - This looks like a host-process / automation / TCC issue specific to Node-hosted execution on this machine, not a TypeScript packaging issue.
 - Because office connectors are intended to run from the desktop app host, the next validation step should happen inside the Electron/Tauri runtime, not only from standalone Node smoke scripts.
 - However, web-mode host execution still does not prove the desktop main-process approval round-trip, because it bypasses the desktop `AgentAppService / AgentOrchestrator` approval chain and uses a web-host SSE approval loop instead.
+
+## Real-Machine Result
+
+- `desktop activity` acceptance is blocked by environment state, not by the new memory/understanding code path: the local collector is absent, so there is no raw desktop root, status file, JSONL event stream, or SQLite to validate against.
+- `office read-path` acceptance is green through the app-host path after the connector stability fixes above.
+- `standalone Node-host office status` remains red and should continue to be treated as an environment limitation on this machine rather than a regression in the app-host connector path.
 
 ## Next Step
 

@@ -142,11 +142,16 @@ For list_messages and read_message, provide mailbox. Account is optional but rec
           receivedAtMs: number | null;
           read: boolean;
           content: string;
+          attachments?: string[];
+          attachmentCount?: number;
         };
         const received = message.receivedAtMs ? new Date(message.receivedAtMs).toLocaleString('zh-CN') : '未知时间';
+        const attachmentCount = typeof message.attachmentCount === 'number'
+          ? message.attachmentCount
+          : (message.attachments?.length || 0);
         return {
           success: true,
-          output: `邮件 #${message.id}\n主题：${message.subject}\n发件人：${message.sender}\n时间：${received}\n状态：${message.read ? '已读' : '未读'}\n\n内容：\n${message.content}`,
+          output: `邮件 #${message.id}\n主题：${message.subject}\n发件人：${message.sender}\n时间：${received}\n状态：${message.read ? '已读' : '未读'}${attachmentCount > 0 ? `\n附件：${attachmentCount} 个${message.attachments && message.attachments.length > 0 ? ` (${message.attachments.join(', ')})` : ''}` : ''}\n\n内容：\n${message.content}`,
           result: message,
         };
       }

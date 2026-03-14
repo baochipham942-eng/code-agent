@@ -16,3 +16,9 @@ export {
   desktopActivityTimelineTool,
   desktopActivitySearchTool,
 } from './desktopActivity';
+export {
+  desktopActivitySummaryTool,
+  desktopActivityTodoCandidatesTool,
+  desktopActivitySemanticSearchTool,
+} from './desktopActivityDerived';
+export { workspaceActivitySearchTool } from './workspaceActivitySearch';

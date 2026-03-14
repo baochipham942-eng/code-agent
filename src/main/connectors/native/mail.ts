@@ -32,6 +32,8 @@ interface MailMessageSummary {
 
 interface MailMessageDetail extends MailMessageSummary {
   content: string;
+  attachments?: string[];
+  attachmentCount?: number;
 }
 
 interface MailDraftItem {
@@ -77,6 +79,13 @@ function normalizeAttachmentList(value: unknown): string[] {
   return value
     .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
     .map((item) => item.trim());
+}
+
+function parseAttachmentNames(value: string): string[] {
+  return value
+    .split(/\s*;\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 async function listAccounts(): Promise<MailAccountItem[]> {
@@ -218,12 +227,23 @@ async function readMessage(payload: Record<string, unknown>): Promise<MailMessag
 
   lines.push(
     `set msgRef to first message of targetMailbox whose id is ${Math.floor(messageId)}`,
-    'return (id of msgRef as text) & "|" & (my sanitizeText(subject of msgRef)) & "|" & (my sanitizeText(sender of msgRef)) & "|" & (my sanitizeText((date received of msgRef) as text)) & "|" & (read status of msgRef as text) & "|" & (my sanitizeText(content of msgRef))',
+    'set attachmentNames to {}',
+    'try',
+    'repeat with attachmentItem in mail attachments of msgRef',
+    'set end of attachmentNames to my sanitizeText(name of attachmentItem)',
+    'end repeat',
+    'end try',
+    'set {oldTID, AppleScript\'s text item delimiters} to {AppleScript\'s text item delimiters, "; "}',
+    'set attachmentText to attachmentNames as text',
+    'set AppleScript\'s text item delimiters to oldTID',
+    'return (id of msgRef as text) & "|" & (my sanitizeText(subject of msgRef)) & "|" & (my sanitizeText(sender of msgRef)) & "|" & (my sanitizeText((date received of msgRef) as text)) & "|" & (read status of msgRef as text) & "|" & (my sanitizeText(content of msgRef)) & "|" & (count of attachmentNames as text) & "|" & (my sanitizeText(attachmentText))',
     'end tell'
   );
 
   const output = await runAppleScript(lines);
-  const [idRaw, subject, sender, receivedRaw, readRaw, content] = parseLine(output);
+  const [idRaw, subject, sender, receivedRaw, readRaw, content, attachmentCountRaw, attachmentNamesRaw] = parseLine(output);
+  const attachmentCount = Number(attachmentCountRaw);
+  const attachments = parseAttachmentNames(attachmentNamesRaw || '');
   return {
     id: Number(idRaw),
     account: accountName || undefined,
@@ -233,6 +253,8 @@ async function readMessage(payload: Record<string, unknown>): Promise<MailMessag
     receivedAtMs: parseAppleScriptDate(receivedRaw),
     read: readRaw === 'true',
     content,
+    attachmentCount: Number.isFinite(attachmentCount) ? attachmentCount : attachments.length,
+    attachments,
   };
 }
 

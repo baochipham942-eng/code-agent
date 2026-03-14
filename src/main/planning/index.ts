@@ -13,6 +13,10 @@ export {
   type PlanningServiceOptions,
 } from './planningService';
 export {
+  PLANNING_EVENT_CHANNEL,
+  publishPlanningStateToRenderer,
+} from './planningStatePublisher';
+export {
   TaskComplexityAnalyzer,
   taskComplexityAnalyzer,
   type TaskComplexity,

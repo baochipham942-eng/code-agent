@@ -9,12 +9,12 @@ import { createLogger } from '../services/infra/logger';
 import { getSessionManager } from '../services';
 import { getMemoryService } from '../memory/memoryService';
 import { getTaskManager } from '../task';
-import { createPlanningService, type PlanningService } from '../planning';
-import { getMainWindow } from './window';
-// Event channel constant (post-IPC_CHANNELS deprecation)
-const PLANNING_EVENT_CHANNEL = 'planning:event';
+import {
+  createPlanningService,
+  publishPlanningStateToRenderer,
+  type PlanningService,
+} from '../planning';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
-import type { PlanningState } from '../../shared/types';
 
 const logger = createLogger('Bootstrap:Session');
 
@@ -121,34 +121,7 @@ export async function initializePlanningService(
   orchestrator.setPlanningService(planningService);
 
   // Send initial planning state to renderer
-  await sendPlanningStateToRenderer(planningService);
+  await publishPlanningStateToRenderer(planningService);
 
   return planningService;
-}
-
-/**
- * 发送规划状态到渲染进程
- */
-async function sendPlanningStateToRenderer(planningService: PlanningService): Promise<void> {
-  const mainWindow = getMainWindow();
-  if (!mainWindow) return;
-
-  try {
-    const plan = await planningService.plan.read();
-    const findings = await planningService.findings.getAll();
-    const errors = await planningService.errors.getAll();
-
-    const state: PlanningState = {
-      plan,
-      findings,
-      errors,
-    };
-
-    mainWindow.webContents.send(PLANNING_EVENT_CHANNEL, {
-      type: 'plan_updated',
-      data: state,
-    });
-  } catch (error) {
-    logger.error('Failed to send planning state', error);
-  }
 }

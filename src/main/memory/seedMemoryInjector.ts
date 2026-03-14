@@ -47,6 +47,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   project_knowledge: 'Knowledge',
   conversation: 'Context',
   tool_usage: 'Tool',
+  desktop_activity: 'Desktop',
 };
 
 // ----------------------------------------------------------------------------
@@ -73,7 +74,7 @@ export function buildSeedMemoryBlock(projectPath?: string): string | null {
       limit: MAX_SEED_MEMORIES,
       orderBy: 'updated_at',
       orderDir: 'DESC',
-    });
+    }).filter((memory) => memory.type !== 'desktop_activity');
 
     if (!memories || memories.length === 0) {
       logger.debug('[SeedMemory] No memories found, skipping injection');

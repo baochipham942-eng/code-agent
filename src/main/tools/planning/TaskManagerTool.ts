@@ -17,7 +17,7 @@ Actions:
 - create: Create a new task (requires subject, description; optional activeForm, priority, metadata)
 - get: Get full details of a task by ID (requires taskId)
 - list: List all tasks in the current session (no params needed)
-- update: Update a task's status, details, or dependencies (requires taskId; optional status, subject, description, activeForm, owner, addBlockedBy, addBlocks, metadata). Set status="deleted" to remove a task.
+- update: Update a task's status, details, or dependencies (requires taskId; optional status, subject, description, activeForm, owner, addBlockedBy, addBlocks, metadata, desktopAction, desktopSnoozeHours). Set status="deleted" to remove a task.
 
 Examples:
 - Create: { "action": "create", "subject": "Implement login", "description": "Add OAuth login flow" }
@@ -25,6 +25,7 @@ Examples:
 - List: { "action": "list" }
 - Update status: { "action": "update", "taskId": "1", "status": "in_progress" }
 - Add dependency: { "action": "update", "taskId": "2", "addBlockedBy": ["1"] }
+- Snooze desktop task: { "action": "update", "taskId": "3", "desktopAction": "snooze", "desktopSnoozeHours": 24 }
 - Delete: { "action": "update", "taskId": "1", "status": "deleted" }`,
 
   inputSchema: {
@@ -83,6 +84,15 @@ Examples:
       metadata: {
         type: 'object',
         description: '[create, update] Arbitrary metadata. On update, keys are merged; set a key to null to delete it.',
+      },
+      desktopAction: {
+        type: 'string',
+        enum: ['accept', 'dismiss', 'snooze', 'reopen', 'supersede'],
+        description: '[update] Optional lifecycle action for desktop-derived tasks.',
+      },
+      desktopSnoozeHours: {
+        type: 'number',
+        description: '[update] When desktopAction="snooze", suppress recovery for this many hours.',
       },
     },
     required: ['action'],

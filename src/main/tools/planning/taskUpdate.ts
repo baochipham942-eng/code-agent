@@ -3,6 +3,7 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
+import { getDesktopActivityUnderstandingService, isDesktopDerivedSessionTask } from '../../memory/desktopActivityUnderstandingService';
 import { updateTask, getTask, listTasks } from './taskStore';
 
 export const taskUpdateTool: Tool = {
@@ -56,6 +57,15 @@ export const taskUpdateTool: Tool = {
         type: 'object',
         description: 'Metadata keys to merge into the task. Set a key to null to delete it.',
       },
+      desktopAction: {
+        type: 'string',
+        enum: ['accept', 'dismiss', 'snooze', 'reopen', 'supersede'],
+        description: 'Optional lifecycle action for desktop-derived tasks.',
+      },
+      desktopSnoozeHours: {
+        type: 'number',
+        description: 'When desktopAction="snooze", suppress recovery for this many hours (default: 24).',
+      },
     },
     required: ['taskId'],
   },
@@ -84,6 +94,21 @@ export const taskUpdateTool: Tool = {
       return {
         success: false,
         error: `Task #${taskId} not found. Available task IDs: ${availableIds}`,
+      };
+    }
+
+    const desktopAction = params.desktopAction as string | undefined;
+    const validDesktopActions = ['accept', 'dismiss', 'snooze', 'reopen', 'supersede'];
+    if (desktopAction && !validDesktopActions.includes(desktopAction)) {
+      return {
+        success: false,
+        error: `Invalid desktopAction: ${desktopAction}. Must be one of: ${validDesktopActions.join(', ')}`,
+      };
+    }
+    if (desktopAction && !isDesktopDerivedSessionTask(existingTask)) {
+      return {
+        success: false,
+        error: 'desktopAction can only be used with desktop-derived tasks',
       };
     }
 
@@ -137,6 +162,63 @@ export const taskUpdateTool: Tool = {
       };
     }
 
+    try {
+      const desktopActivity = getDesktopActivityUnderstandingService();
+      const lifecycleTask = isDelete ? existingTask : updatedTask;
+
+      if (desktopAction && isDesktopDerivedSessionTask(lifecycleTask)) {
+        const snoozeHours = Math.max(1, Number(params.desktopSnoozeHours || 24));
+        if (desktopAction === 'reopen') {
+          desktopActivity.clearTodoFeedbackForTask(lifecycleTask);
+        } else {
+          const statusByAction = {
+            accept: 'accepted',
+            dismiss: 'dismissed',
+            snooze: 'snoozed',
+            supersede: 'superseded',
+          } as const;
+          const feedbackStatus = statusByAction[desktopAction as keyof typeof statusByAction];
+          if (feedbackStatus) {
+            desktopActivity.recordTodoFeedbackForTask(
+              lifecycleTask,
+              feedbackStatus,
+              {
+                sessionId,
+                source: 'task',
+                ...(desktopAction === 'snooze'
+                  ? {
+                      resumeAtMs: Date.now() + snoozeHours * 60 * 60 * 1000,
+                      reason: `task_update:snooze:${snoozeHours}h`,
+                    }
+                  : undefined),
+                ...(desktopAction === 'supersede'
+                  ? {
+                      reason: 'task_update:supersede',
+                    }
+                  : undefined),
+              },
+            );
+          }
+        }
+      } else if ((params.status === 'completed' || params.status === 'deleted') && isDesktopDerivedSessionTask(lifecycleTask)) {
+        desktopActivity.recordTodoFeedbackForTask(
+          lifecycleTask,
+          params.status === 'completed' ? 'completed' : 'dismissed',
+          { sessionId, source: 'task' },
+        );
+      } else if (params.status === 'in_progress' && isDesktopDerivedSessionTask(updatedTask)) {
+        desktopActivity.recordTodoFeedbackForTask(
+          updatedTask,
+          'accepted',
+          { sessionId, source: 'task' },
+        );
+      } else if (params.status === 'pending' && isDesktopDerivedSessionTask(updatedTask)) {
+        desktopActivity.clearTodoFeedbackForTask(updatedTask);
+      }
+    } catch {
+      // Lifecycle feedback is best-effort and should not block task updates.
+    }
+
     // Emit task update event
     if (context.emit) {
       context.emit('task_update', {
@@ -166,6 +248,7 @@ export const taskUpdateTool: Tool = {
     if (params.addBlocks !== undefined)
       changes.push(`added blocks: ${(params.addBlocks as string[]).join(', ')}`);
     if (params.metadata !== undefined) changes.push(`metadata merged`);
+    if (desktopAction !== undefined) changes.push(`desktopAction → ${desktopAction}`);
 
     return {
       success: true,

@@ -776,7 +776,7 @@ export class MemoryService {
    * 创建记忆记录
    */
   createMemory(memory: {
-    type: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage';
+    type: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage' | 'desktop_activity' | 'workspace_activity';
     category: string;
     content: string;
     summary: string;
@@ -810,7 +810,7 @@ export class MemoryService {
    * 列出记忆（支持过滤）
    */
   listMemories(options: {
-    type?: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage';
+    type?: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage' | 'desktop_activity' | 'workspace_activity';
     category?: string;
     source?: 'auto_learned' | 'user_defined' | 'session_extracted';
     currentProjectOnly?: boolean;
@@ -863,7 +863,7 @@ export class MemoryService {
    * 批量删除记忆
    */
   deleteMemories(filter: {
-    type?: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage';
+    type?: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage' | 'desktop_activity';
     category?: string;
     source?: 'auto_learned' | 'user_defined' | 'session_extracted';
     currentProjectOnly?: boolean;
@@ -885,7 +885,7 @@ export class MemoryService {
   searchMemories(
     query: string,
     options: {
-      type?: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage';
+      type?: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage' | 'desktop_activity';
       category?: string;
       limit?: number;
     } = {}
@@ -944,7 +944,7 @@ export class MemoryService {
    * 列出记忆（带衰减置信度）
    */
   listMemoriesWithDecay(options: {
-    type?: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage';
+    type?: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage' | 'desktop_activity';
     category?: string;
     source?: 'auto_learned' | 'user_defined' | 'session_extracted';
     currentProjectOnly?: boolean;

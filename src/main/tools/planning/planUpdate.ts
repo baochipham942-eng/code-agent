@@ -3,7 +3,19 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
+import { getDesktopActivityUnderstandingService, isDesktopDerivedSessionTask } from '../../memory/desktopActivityUnderstandingService';
 import type { PlanningService, TaskStepStatus, TaskPhaseStatus } from '../../planning';
+import { listTasks } from './taskStore';
+
+function normalizeStepContent(content: string): string {
+  return content.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function getDesktopTodoKeyFromStep(step: { metadata?: Record<string, unknown> }): string | null {
+  return typeof step.metadata?.desktopTodoKey === 'string'
+    ? step.metadata.desktopTodoKey
+    : null;
+}
 
 export const planUpdateTool: Tool = {
   name: 'plan_update',
@@ -103,6 +115,59 @@ export const planUpdateTool: Tool = {
 
       // Update the step status
       await planningService.plan.updateStepStatus(foundPhase.id, foundStep.id, status);
+
+      const sessionId = (context as unknown as { sessionId?: string }).sessionId || 'default';
+      const stepTodoKey = getDesktopTodoKeyFromStep(foundStep);
+      const matchingDesktopTask = listTasks(sessionId).find((task) =>
+        isDesktopDerivedSessionTask(task)
+        && (
+          task.metadata?.desktopTodoKey === stepTodoKey
+          || normalizeStepContent(task.subject) === normalizeStepContent(foundStep.content)
+        )
+      );
+
+      try {
+        const desktopActivity = getDesktopActivityUnderstandingService();
+        if (matchingDesktopTask) {
+          if (status === 'completed' || status === 'skipped') {
+            desktopActivity.recordTodoFeedbackForTask(
+              matchingDesktopTask,
+              status === 'completed' ? 'completed' : 'dismissed',
+              { sessionId, source: 'plan' },
+            );
+          } else if (status === 'in_progress') {
+            desktopActivity.recordTodoFeedbackForTask(
+              matchingDesktopTask,
+              'accepted',
+              { sessionId, source: 'plan' },
+            );
+          } else if (status === 'pending') {
+            desktopActivity.clearTodoFeedbackForTask(matchingDesktopTask);
+          }
+        } else if (stepTodoKey) {
+          if (status === 'completed' || status === 'skipped') {
+            desktopActivity.recordTodoFeedback({
+              todoKey: stepTodoKey,
+              status: status === 'completed' ? 'completed' : 'dismissed',
+              sessionId,
+              source: 'plan',
+              reason: 'plan_step_metadata',
+            });
+          } else if (status === 'in_progress') {
+            desktopActivity.recordTodoFeedback({
+              todoKey: stepTodoKey,
+              status: 'accepted',
+              sessionId,
+              source: 'plan',
+              reason: 'plan_step_metadata',
+            });
+          } else if (status === 'pending') {
+            desktopActivity.clearTodoFeedback(stepTodoKey);
+          }
+        }
+      } catch {
+        // Feedback sync is best-effort and should not block plan updates.
+      }
 
       // Read updated plan
       const updatedPlan = await planningService.plan.read();

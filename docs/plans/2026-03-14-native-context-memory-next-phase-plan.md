@@ -1,5 +1,12 @@
 # 原生上下文 + 办公连接之后的下一阶段计划
 
+> 实施进展：桌面活动记忆/理解层 MVP 已继续落地，现已具备
+> `desktop raw events -> summary / todo candidate / semantic search / session task sync / planning bridge / lifecycle feedback / plan step metadata / snooze-supersede controls / unified workspace retrieval / session-start workspace context injection / basic relevance-budget gating / office artifacts persisted as workspace_activity memories / workspace_artifact vector index / mail body + attachment + thread enrichment / reminder notes enrichment / calendar description enrichment / retrieval-layer cross-artifact merge`
+> 的最小闭环，见
+> `docs/analysis/2026-03-14-desktop-activity-memory-mvp.md`
+
+> 新增说明：这意味着“统一落库/统一索引”的最小版已经补上，并且 mail 正文摘要、attachments、thread metadata、reminder notes、calendar description/url 已开始进入索引；检索层也有了最小 cross-artifact merge，但范围仍然只到轻量 artifact 层，还没有文档级索引和更强的实体级 merge。
+
 ## 1. 结论
 
 当前阶段的主线不应是先做一轮“大而全”的原生层稳定化，而应按下面顺序推进：
@@ -59,7 +66,11 @@
 #### 记忆基础设施
 
 - 已有 embedding、vector store、hybrid search、session summary、memory service。
-- 但这套能力还没有真正接上 native desktop collector 的事件流。
+- native desktop collector 已接入这套能力，能够产出 summary / todo candidate / semantic search。
+- mail / calendar / reminders 也已补上最小统一落库/统一索引：
+  - `workspace_activity` memories
+  - `workspace_artifact` vector index
+  - `workspace_activity_search` / `workspace-activity-context`
 
 相关实现：
 
@@ -97,15 +108,13 @@
 
 #### 记忆/理解层缺口
 
-当前还没有把 native desktop raw events 变成以下产物：
+native desktop raw events 的最小闭环已经补上，office artifacts 也已有轻量索引层；当前仍然缺的是：
 
-- 时间片摘要
-- 待办提取
-- 活动语义搜索索引
-- 日报
-- 基于上下文的工作流建议
-
-另外，当前 desktop activity 搜索仍是关键词匹配，不是语义搜索。
+- 文档级索引
+- 更强的 desktop + office cross-artifact entity resolution / persistent merge
+- daily report / focus trend / 跨天聚合
+- 更系统的 prompt budget orchestration
+- 真机端到端验收与索引治理
 
 ---
 
@@ -133,6 +142,12 @@ MVP 应基于现有 raw events 增加 app-side 派生处理层：
 - extract
 - index
 - report
+
+当前这条原则已验证可行：
+
+- desktop 走 `desktop_activity`
+- office artifacts 走 `workspace_activity`
+- 两者都复用现有 `memories + vectorStore + runtime context` 结构
 
 ### 原则 D：所有“会真实发出/删除”的动作一律视为高风险
 

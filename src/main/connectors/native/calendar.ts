@@ -18,6 +18,8 @@ interface CalendarEventItem {
   startAtMs: number | null;
   endAtMs: number | null;
   location?: string;
+  notes?: string;
+  url?: string;
 }
 
 function parseLine(line: string): string[] {
@@ -50,8 +52,12 @@ async function listEvents(payload: Record<string, unknown>): Promise<CalendarEve
 
   const lines = [
     ...sharedAppleScriptHandlers(),
+    ...buildAppleScriptDateVar('fromDate', fromMs),
+    ...buildAppleScriptDateVar('toDate', toMs),
     'tell application "Calendar"',
     'set outputLines to {}',
+    `set eventLimit to ${Math.max(1, Math.min(limit, 200))}`,
+    'set emittedCount to 0',
   ];
 
   if (calendarName) {
@@ -62,10 +68,29 @@ async function listEvents(payload: Record<string, unknown>): Promise<CalendarEve
 
   lines.push(
     'repeat with cal in targetCalendars',
-    'repeat with ev in every event of cal',
-    'set eventLine to (uid of ev as text) & "|" & (my sanitizeText(name of cal)) & "|" & (my sanitizeText(summary of ev)) & "|" & (my sanitizeText((start date of ev) as text)) & "|" & (my sanitizeText((end date of ev) as text)) & "|" & (my sanitizeText(location of ev))',
+    'set matchingEvents to every event of cal whose end date >= fromDate and start date <= toDate',
+    'repeat with ev in matchingEvents',
+    'set rawLocation to ""',
+    'try',
+    'set rawLocation to location of ev',
+    'end try',
+    'set eventLocation to my sanitizeText(rawLocation)',
+    'set rawNotes to ""',
+    'try',
+    'set rawNotes to description of ev',
+    'end try',
+    'set eventNotes to my sanitizeText(rawNotes)',
+    'set rawUrl to ""',
+    'try',
+    'set rawUrl to url of ev',
+    'end try',
+    'set eventUrl to my sanitizeText(rawUrl)',
+    'set eventLine to (uid of ev as text) & "|" & (my sanitizeText(name of cal)) & "|" & (my sanitizeText(summary of ev)) & "|" & (my sanitizeText((start date of ev) as text)) & "|" & (my sanitizeText((end date of ev) as text)) & "|" & eventLocation & "|" & eventNotes & "|" & eventUrl',
     'set end of outputLines to eventLine',
+    'set emittedCount to emittedCount + 1',
+    'if emittedCount >= eventLimit then exit repeat',
     'end repeat',
+    'if emittedCount >= eventLimit then exit repeat',
     'end repeat',
     'return my joinLines(outputLines)',
     'end tell'
@@ -77,7 +102,7 @@ async function listEvents(payload: Record<string, unknown>): Promise<CalendarEve
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const [uid, calendar, title, startRaw, endRaw, location] = parseLine(line);
+      const [uid, calendar, title, startRaw, endRaw, location, notes, url] = parseLine(line);
       return {
         uid,
         calendar,
@@ -85,6 +110,8 @@ async function listEvents(payload: Record<string, unknown>): Promise<CalendarEve
         startAtMs: parseAppleScriptDate(startRaw),
         endAtMs: parseAppleScriptDate(endRaw),
         location: location || undefined,
+        notes: notes || undefined,
+        url: url || undefined,
       } satisfies CalendarEventItem;
     })
     .filter((event) => {

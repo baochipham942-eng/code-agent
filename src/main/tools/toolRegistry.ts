@@ -110,6 +110,10 @@ import {
   desktopActivityByAppTool,
   desktopActivityTimelineTool,
   desktopActivitySearchTool,
+  desktopActivitySummaryTool,
+  desktopActivityTodoCandidatesTool,
+  desktopActivitySemanticSearchTool,
+  workspaceActivitySearchTool,
 } from './memory';
 
 // Vision tools
@@ -420,6 +424,10 @@ export class ToolRegistry {
     this.register(desktopActivityByAppTool);
     this.register(desktopActivityTimelineTool);
     this.register(desktopActivitySearchTool);
+    this.register(desktopActivitySummaryTool);
+    this.register(desktopActivityTodoCandidatesTool);
+    this.register(desktopActivitySemanticSearchTool);
+    this.register(workspaceActivitySearchTool);
 
     // Gen 6 tools - Computer Use
     this.register(screenshotTool);

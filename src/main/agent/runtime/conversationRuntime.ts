@@ -23,8 +23,12 @@ import type { ToolExecutor } from '../../tools/toolExecutor';
 import { getToolSearchService } from '../../tools/search';
 import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
 import type { PlanningService } from '../../planning';
+import { publishPlanningStateToRenderer } from '../../planning';
 import { getMemoryService } from '../../memory/memoryService';
 import { getContinuousLearningService } from '../../memory/continuousLearningService';
+import { syncDesktopTasksToPlanningService } from '../../memory/desktopActivityPlanningBridge';
+import { getDesktopActivityUnderstandingService } from '../../memory/desktopActivityUnderstandingService';
+import { buildWorkspaceActivityContextBlock } from '../../memory/workspaceActivitySearchService';
 import { sanitizeMemoryContent } from '../../memory/sanitizeMemoryContent';
 import { buildSeedMemoryBlock } from '../../memory/seedMemoryInjector';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
@@ -162,6 +166,143 @@ export class ConversationRuntime {
     if (this.ctx.hookManager) {
       await this.ctx.hookManager.initialize();
       this.ctx.userHooksInitialized = true;
+    }
+  }
+
+  private async bootstrapDesktopDerivedContext(userMessage?: string): Promise<void> {
+    try {
+      const desktopActivity = getDesktopActivityUnderstandingService();
+      await desktopActivity.ensureFreshData(2 * 60 * 1000);
+
+      const existingTodos = getSessionTodos(this.ctx.sessionId);
+      const persistedTodos = await getSessionManager().getTodos(this.ctx.sessionId);
+      const desktopTodos = desktopActivity.listTodoItems({
+        limit: 3,
+        sinceHours: 6,
+      });
+
+      let mergedTodos = desktopTodos;
+      if (persistedTodos.length > 0) {
+        mergedTodos = mergedTodos.length > 0
+          ? mergeTodos(mergedTodos, persistedTodos)
+          : persistedTodos;
+      }
+      if (existingTodos.length > 0) {
+        mergedTodos = mergedTodos.length > 0
+          ? mergeTodos(mergedTodos, existingTodos)
+          : existingTodos;
+      }
+
+      if (mergedTodos.length > 0) {
+        const { todos: advancedTodos } = advanceTodoStatus(mergedTodos);
+        const changed = JSON.stringify(existingTodos) !== JSON.stringify(advancedTodos);
+        if (changed) {
+          setSessionTodos(this.ctx.sessionId, advancedTodos);
+          this.ctx.onEvent({ type: 'todo_update', data: advancedTodos });
+          logger.info('[AgentLoop] Desktop-derived todos merged into session todos', {
+            count: advancedTodos.length,
+          });
+        }
+      }
+
+      const taskSync = desktopActivity.syncTodoCandidatesToTasks(this.ctx.sessionId, {
+        limit: 3,
+        sinceHours: 6,
+      });
+      if (taskSync.created.length > 0 || taskSync.updated.length > 0) {
+        this.ctx.onEvent({
+          type: 'task_update',
+          data: {
+            tasks: taskSync.tasks,
+            action: 'sync',
+            taskIds: [
+              ...taskSync.created.map((task) => task.id),
+              ...taskSync.updated.map((task) => task.id),
+            ],
+            source: 'desktop_activity',
+          },
+        });
+        logger.info('[AgentLoop] Desktop-derived tasks synced into task store', {
+          created: taskSync.created.length,
+          updated: taskSync.updated.length,
+          total: taskSync.tasks.length,
+        });
+      }
+
+      if (this.ctx.planningService) {
+        const planningSync = await syncDesktopTasksToPlanningService(
+          this.ctx.planningService,
+          taskSync.tasks,
+        );
+        if (
+          planningSync.createdPlan
+          || planningSync.createdPhase
+          || planningSync.addedSteps.length > 0
+          || planningSync.updatedSteps.length > 0
+        ) {
+          await publishPlanningStateToRenderer(this.ctx.planningService);
+          logger.info('[AgentLoop] Desktop-derived tasks synced into planning service', {
+            createdPlan: planningSync.createdPlan,
+            createdPhase: planningSync.createdPhase,
+            addedSteps: planningSync.addedSteps.length,
+            updatedSteps: planningSync.updatedSteps.length,
+          });
+        }
+      }
+
+      const desktopContextBlock = desktopActivity.buildContextBlock({
+        summaryLimit: 3,
+        todoLimit: 3,
+        sinceHours: 6,
+      });
+      if (desktopContextBlock) {
+        this.contextAssembly.injectSystemMessage(
+          `<desktop-activity-context>\n${desktopContextBlock}\n</desktop-activity-context>`
+        );
+        logger.info('[AgentLoop] Desktop activity context injected');
+      }
+
+      const existingSystemContextTokens =
+        estimateTokens(this.ctx.systemPrompt)
+        + estimateTokens(this.ctx.persistentSystemContext.join('\n\n'))
+        + this.ctx.messages
+          .filter((message) => message.role === 'system')
+          .reduce((sum, message) => sum + estimateTokens(message.content || ''), 0);
+      const contextWindowSize = CONTEXT_WINDOWS[this.ctx.modelConfig.model] || DEFAULT_CONTEXT_WINDOW;
+      const contextPressure = existingSystemContextTokens / contextWindowSize;
+      const workspaceContextMaxTokens =
+        contextPressure >= 0.12 ? 120
+          : contextPressure >= 0.08 ? 160
+            : 220;
+      const workspaceContextMaxItems =
+        contextPressure >= 0.12 ? 1
+          : contextPressure >= 0.08 ? 2
+            : 3;
+
+      const workspaceContextBlock = userMessage
+        ? await buildWorkspaceActivityContextBlock(userMessage, {
+          sinceHours: 24,
+          limit: 5,
+          refreshDesktop: false,
+          minScore: 0.52,
+          contextMaxTokens: workspaceContextMaxTokens,
+          contextMaxItems: workspaceContextMaxItems,
+        })
+        : null;
+      if (workspaceContextBlock) {
+        this.contextAssembly.injectSystemMessage(
+          `<workspace-activity-context>\n${workspaceContextBlock}\n</workspace-activity-context>`
+        );
+        logger.info('[AgentLoop] Workspace activity context injected', {
+          maxTokens: workspaceContextMaxTokens,
+          maxItems: workspaceContextMaxItems,
+          contextPressure: Number(contextPressure.toFixed(4)),
+        });
+      }
+    } catch (error) {
+      logger.warn('[AgentLoop] Desktop-derived context bootstrap failed, continuing without it', {
+        error: String(error),
+      });
     }
   }
 
@@ -569,6 +710,10 @@ export class ConversationRuntime {
       }
     } catch {
       logger.warn('[AgentLoop] Seed memory injection failed, continuing without');
+    }
+
+    if (!isSimpleTask) {
+      await this.bootstrapDesktopDerivedContext(userMessage);
     }
 
     return { langfuse, isSimpleTask, genNum };

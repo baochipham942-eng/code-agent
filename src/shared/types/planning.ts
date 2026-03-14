@@ -66,6 +66,7 @@ export interface TaskStep {
   content: string;
   status: TaskStepStatus;
   activeForm?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface TaskPhase {

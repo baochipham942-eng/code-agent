@@ -6,7 +6,7 @@ import type { ModelConfig } from './model';
 import type { Message } from './message';
 import type { ToolCall, ToolResult } from './tool';
 import type { PermissionRequest } from './permission';
-import type { TodoItem } from './planning';
+import type { SessionTask, TodoItem } from './planning';
 import type { FileDiff } from './diff';
 
 // Adaptive Thinking: 思考深度级别
@@ -68,6 +68,14 @@ export interface ToolTimeoutData {
   toolName: string;
   elapsedMs: number;       // 已耗时 ms
   threshold: number;       // 超时阈值 ms
+}
+
+export interface TaskUpdateEventData {
+  tasks: SessionTask[];
+  action: 'create' | 'update' | 'delete' | 'sync';
+  taskId?: string;
+  taskIds?: string[];
+  source?: string;
 }
 
 // Web Bridge 本地工具调用请求数据
@@ -166,6 +174,7 @@ export type AgentEvent =
   | { type: 'stream_tool_call_start'; data: { index?: number; id?: string; name?: string; turnId?: string; parentToolUseId?: string } }
   | { type: 'stream_tool_call_delta'; data: { index?: number; name?: string; argumentsDelta?: string; turnId?: string; parentToolUseId?: string } }
   | { type: 'todo_update'; data: TodoItem[] }
+  | { type: 'task_update'; data: TaskUpdateEventData }
   | { type: 'notification'; data: { message: string; parentToolUseId?: string } }
   | { type: 'agent_complete'; data: null }
   // Auto Agent 思考/规划事件

@@ -309,6 +309,13 @@ export class PlanManager {
         const checked = step.status === 'completed' ? 'x' : ' ';
         const stepIcon = STATUS_ICONS[step.status];
         md += `- [${checked}] ${stepIcon} ${step.content}\n`;
+        if (step.activeForm || step.metadata) {
+          md += `  <!-- StepMeta: ${JSON.stringify({
+            id: step.id,
+            activeForm: step.activeForm,
+            metadata: step.metadata,
+          })} -->\n`;
+        }
       }
 
       md += '\n';
@@ -334,6 +341,7 @@ export class PlanManager {
     let createdAt = Date.now();
     const phases: TaskPhase[] = [];
     let currentPhase: TaskPhase | null = null;
+    let currentStep: TaskStep | null = null;
 
     for (const line of lines) {
       // Parse title
@@ -382,6 +390,7 @@ export class PlanManager {
             status: this.parsePhaseStatus(line),
             steps: [],
           };
+          currentStep = null;
         }
         continue;
       }
@@ -394,11 +403,31 @@ export class PlanManager {
           const statusIcon = stepMatch[2];
           const stepContent = stepMatch[3].trim();
 
-          currentPhase.steps.push({
+          currentStep = {
             id: this.generateId(),
             content: stepContent,
             status: this.parseStepStatus(statusIcon, isCompleted),
-          });
+          };
+          currentPhase.steps.push(currentStep);
+        }
+        continue;
+      }
+
+      if (line.trim().startsWith('<!-- StepMeta:') && currentStep) {
+        const stepMetaMatch = line.trim().match(/<!-- StepMeta: (.+) -->/);
+        if (stepMetaMatch) {
+          try {
+            const parsed = JSON.parse(stepMetaMatch[1]) as {
+              id?: string;
+              activeForm?: string;
+              metadata?: Record<string, unknown>;
+            };
+            if (parsed.id) currentStep.id = parsed.id;
+            if (parsed.activeForm) currentStep.activeForm = parsed.activeForm;
+            if (parsed.metadata) currentStep.metadata = parsed.metadata;
+          } catch {
+            // Ignore malformed step metadata comments.
+          }
         }
         continue;
       }

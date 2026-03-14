@@ -14,6 +14,7 @@ export interface TaskStep {
   content: string;
   status: TaskStepStatus;
   activeForm?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface TaskPhase {
@@ -120,4 +121,3 @@ export interface PlanningRulesConfig {
   actionThreshold: number;  // 2-Action Rule
   errorStrikeLimit: number; // 3-Strike Rule
 }
-

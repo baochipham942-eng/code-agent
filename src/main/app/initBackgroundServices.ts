@@ -18,6 +18,7 @@ import { initPromptService, getPromptsInfo } from '../services/cloud/promptServi
 import { initCloudConfigService, getCloudConfigService } from '../services/cloud';
 import { initCloudTaskService } from '../cloud/cloudTaskService';
 import { initUnifiedOrchestrator } from '../orchestrator';
+import { initDesktopActivityUnderstandingService, initWorkspaceArtifactIndexService } from '../memory';
 import { logBridge } from '../mcp/logBridge.js';
 import { initPluginSystem } from '../plugins';
 import { initDAGEventBridge } from '../scheduler';
@@ -469,6 +470,18 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
   } catch (error) {
     logger.warn('EventBus initialization failed (non-blocking)', { error: String(error) });
   }
+
+  initDesktopActivityUnderstandingService()
+    .then(() => logger.info('DesktopActivityUnderstandingService initialized'))
+    .catch((error) => logger.warn('DesktopActivityUnderstandingService initialization failed (non-blocking)', {
+      error: String(error),
+    }));
+
+  initWorkspaceArtifactIndexService()
+    .then(() => logger.info('WorkspaceArtifactIndexService initialized'))
+    .catch((error) => logger.warn('WorkspaceArtifactIndexService initialization failed (non-blocking)', {
+      error: String(error),
+    }));
 
   // Initialize DAG Event Bridge
   try {

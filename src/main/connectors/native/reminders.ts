@@ -6,6 +6,7 @@ import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../ba
 import {
   buildAppleScriptDateVar,
   escapeAppleScriptString,
+  parseAppleScriptDate,
   runAppleScript,
   sharedAppleScriptHandlers,
 } from './osascript';
@@ -15,6 +16,8 @@ interface ReminderItem {
   list: string;
   title: string;
   completed: boolean;
+  notes?: string;
+  remindAtMs?: number | null;
 }
 
 function parseLine(line: string): string[] {
@@ -48,6 +51,8 @@ async function listReminders(payload: Record<string, unknown>): Promise<Reminder
     ...sharedAppleScriptHandlers(),
     'tell application "Reminders"',
     'set outputLines to {}',
+    `set reminderLimit to ${Math.max(1, Math.min(limit, 200))}`,
+    'set emittedCount to 0',
   ];
 
   if (listName) {
@@ -58,10 +63,26 @@ async function listReminders(payload: Record<string, unknown>): Promise<Reminder
 
   lines.push(
     'repeat with reminderList in targetLists',
-    'repeat with reminderItem in every reminder of reminderList',
-    'set reminderLine to (id of reminderItem as text) & "|" & (my sanitizeText(name of reminderList)) & "|" & (my sanitizeText(name of reminderItem)) & "|" & (completed of reminderItem as text)',
+    includeCompleted
+      ? 'set matchingReminders to every reminder of reminderList'
+      : 'set matchingReminders to every reminder of reminderList whose completed is false',
+    'repeat with reminderItem in matchingReminders',
+    'set rawNotes to ""',
+    'try',
+    'set rawNotes to body of reminderItem',
+    'end try',
+    'set reminderNotes to my sanitizeText(rawNotes)',
+    'set rawRemindDate to ""',
+    'try',
+    'set rawRemindDate to remind me date of reminderItem',
+    'end try',
+    'set remindDateText to my sanitizeText(rawRemindDate)',
+    'set reminderLine to (id of reminderItem as text) & "|" & (my sanitizeText(name of reminderList)) & "|" & (my sanitizeText(name of reminderItem)) & "|" & (completed of reminderItem as text) & "|" & reminderNotes & "|" & remindDateText',
     'set end of outputLines to reminderLine',
+    'set emittedCount to emittedCount + 1',
+    'if emittedCount >= reminderLimit then exit repeat',
     'end repeat',
+    'if emittedCount >= reminderLimit then exit repeat',
     'end repeat',
     'return my joinLines(outputLines)',
     'end tell'
@@ -73,16 +94,16 @@ async function listReminders(payload: Record<string, unknown>): Promise<Reminder
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const [id, list, title, completedRaw] = parseLine(line);
+      const [id, list, title, completedRaw, notes, remindAtRaw] = parseLine(line);
       return {
         id,
         list,
         title,
         completed: completedRaw === 'true',
+        notes: notes || undefined,
+        remindAtMs: parseAppleScriptDate(remindAtRaw),
       } satisfies ReminderItem;
-    })
-    .filter((item) => includeCompleted || !item.completed)
-    .slice(0, limit);
+    });
 }
 
 async function createReminder(payload: Record<string, unknown>): Promise<ReminderItem> {

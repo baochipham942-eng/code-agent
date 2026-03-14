@@ -69,3 +69,35 @@ export interface DesktopActivityStats {
     count: number;
   }>;
 }
+
+export interface DesktopActivitySliceSummary {
+  sliceKey: string;
+  fromMs: number;
+  toMs: number;
+  eventCount: number;
+  lastCapturedAtMs: number;
+  summary: string;
+  salientSubjects: string[];
+  topApps: Array<{
+    appName: string;
+    count: number;
+  }>;
+  domains: string[];
+}
+
+export interface DesktopActivityTodoCandidate {
+  id: string;
+  sliceKey: string;
+  content: string;
+  activeForm: string;
+  status: 'pending';
+  confidence: number;
+  evidence: string[];
+  createdAtMs: number;
+}
+
+export interface DesktopActivitySemanticMatch {
+  summary: DesktopActivitySliceSummary;
+  score: number;
+  snippet: string;
+}

@@ -158,6 +158,42 @@ export {
   type SkillRecommendation,
 } from './continuousLearningService';
 
+// Desktop Activity Understanding
+export {
+  DesktopActivityUnderstandingService,
+  getDesktopActivityUnderstandingService,
+  initDesktopActivityUnderstandingService,
+  buildDesktopActivitySlices,
+  summarizeDesktopActivitySlice,
+  deriveTodoCandidatesFromSlice,
+  type DesktopActivityUnderstandingConfig,
+  type DesktopActivitySlice,
+  type DesktopActivityDerivationRun,
+} from './desktopActivityUnderstandingService';
+
+// Workspace Activity Search
+export {
+  searchWorkspaceActivity,
+  buildWorkspaceActivityContextBlock,
+  formatWorkspaceActivitySearchItem,
+  formatWorkspaceActivityTimestamp,
+  normalizeWorkspaceSearchQuery,
+  type WorkspaceActivitySource,
+  type WorkspaceActivitySearchItem,
+  type WorkspaceActivitySearchOptions,
+  type WorkspaceActivitySearchResult,
+} from './workspaceActivitySearchService';
+export {
+  WorkspaceArtifactIndexService,
+  getWorkspaceArtifactIndexService,
+  initWorkspaceArtifactIndexService,
+  type WorkspaceArtifactIndexConfig,
+  type WorkspaceArtifactIndexRun,
+  type IndexedWorkspaceArtifact,
+  type WorkspaceArtifactSearchOptions,
+  type WorkspaceArtifactSearchResult,
+} from './workspaceArtifactIndexService';
+
 // Memory Notification (Phase 3 - learning notifications)
 export {
   notifyMemoryLearned,

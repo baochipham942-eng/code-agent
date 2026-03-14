@@ -10,7 +10,7 @@ type SQLiteRow = Record<string, unknown>;
 
 export interface MemoryRecord {
   id: string;
-  type: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage';
+  type: 'user_preference' | 'code_pattern' | 'project_knowledge' | 'conversation' | 'tool_usage' | 'desktop_activity' | 'workspace_activity';
   category: string;
   content: string;
   summary?: string;

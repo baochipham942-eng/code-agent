@@ -23,6 +23,8 @@ function normalizeRequest(
 ): PermissionRequest {
   return {
     id: request.id,
+    sessionId: request.sessionId,
+    forceConfirm: request.forceConfirm,
     tool: request.tool,
     type: request.type as PermissionType,
     reason: request.reason,
@@ -71,6 +73,7 @@ export function PermissionCard() {
   const config = getPermissionConfig(request.type);
 
   const isDangerous =
+    request.forceConfirm === true ||
     request.type === 'dangerous_command' ||
     (request.type === 'command' && isDangerousCommand(request.details.command));
 
@@ -78,7 +81,7 @@ export function PermissionCard() {
 
   const memoryRequest = toMemoryRequest(request);
   const isNewRequest = processedRequestRef.current !== request.id;
-  const memoryResult = isNewRequest ? checkMemory(memoryRequest) : null;
+  const memoryResult = isNewRequest && request.forceConfirm !== true ? checkMemory(memoryRequest) : null;
 
   const toPermissionResponse = (level: ApprovalLevel): PermissionResponse => {
     switch (level) {
@@ -99,7 +102,7 @@ export function PermissionCard() {
       if (processedRequestRef.current === request.id) return;
       processedRequestRef.current = request.id;
 
-      if (level === 'session' || level === 'always' || level === 'never') {
+      if ((level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
         const memoryReq: PermissionRequestForMemory = {
           id: request.id,
           tool: request.tool,

@@ -51,6 +51,7 @@ export interface PermissionRequestDetails {
 export interface PermissionRequest {
   id: string;
   sessionId?: string;
+  forceConfirm?: boolean;
   tool: string;
   type: PermissionType;
   reason?: string;

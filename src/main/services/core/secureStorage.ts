@@ -4,10 +4,11 @@
 // Uses Electron safeStorage for OS-level encryption
 // ============================================================================
 
-import Store from 'electron-store';
 import crypto from 'crypto';
 import { app, safeStorage } from 'electron';
+import fs from 'fs';
 import os from 'os';
+import path from 'path';
 // 延迟加载 keytar，处理 native 模块版本不匹配的情况
 // CLI 模式下 keytar 为 Electron headers 编译，系统 Node.js 加载会 segfault（不是 JS 异常，try-catch 无法捕获）
 // 必须在 require 之前用环境变量判断，CLI 模式直接跳过
@@ -103,14 +104,129 @@ function generateEncryptionKey(): string {
   return crypto.createHash('sha256').update(machineId).digest('hex').slice(0, 32);
 }
 
+interface LocalEncryptedStoreOptions {
+  name: string;
+  encryptionKey: string;
+  clearInvalidConfig?: boolean;
+}
+
+interface EncryptedStorePayload {
+  iv: string;
+  tag: string;
+  data: string;
+}
+
+function resolveStoreBaseDir(): string {
+  try {
+    const userDataPath = app?.getPath?.('userData');
+    if (userDataPath) return userDataPath;
+  } catch {
+    // Electron app path is unavailable in CLI mode.
+  }
+
+  const dataDir = process.env.CODE_AGENT_DATA_DIR || path.join(os.homedir(), '.code-agent');
+  fs.mkdirSync(dataDir, { recursive: true });
+  return dataDir;
+}
+
+class LocalEncryptedStore<T extends object> {
+  private filePath: string;
+  private key: Buffer;
+  private data: Partial<T>;
+  private clearInvalidConfig: boolean;
+
+  constructor(options: LocalEncryptedStoreOptions) {
+    this.filePath = path.join(resolveStoreBaseDir(), `${options.name}.json`);
+    this.key = crypto.createHash('sha256').update(options.encryptionKey).digest();
+    this.clearInvalidConfig = options.clearInvalidConfig === true;
+    this.data = this.load();
+  }
+
+  get<K extends keyof T>(key: K): T[K] | undefined {
+    return this.data[key] as T[K] | undefined;
+  }
+
+  set<K extends keyof T>(key: K, value: T[K]): void {
+    this.data[key] = value;
+    this.save();
+  }
+
+  delete<K extends keyof T>(key: K): void {
+    delete this.data[key];
+    this.save();
+  }
+
+  has<K extends keyof T>(key: K): boolean {
+    return this.data[key] !== undefined;
+  }
+
+  private load(): Partial<T> {
+    if (!fs.existsSync(this.filePath)) {
+      return {};
+    }
+
+    try {
+      const encrypted = fs.readFileSync(this.filePath, 'utf-8').trim();
+      if (!encrypted) return {};
+      const decrypted = this.decrypt(encrypted);
+      return JSON.parse(decrypted) as Partial<T>;
+    } catch (error) {
+      logger.warn('Failed to load secure storage file, falling back to empty store', { error });
+      if (this.clearInvalidConfig) {
+        this.data = {};
+        this.save();
+      }
+      return {};
+    }
+  }
+
+  private save(): void {
+    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
+    const encrypted = this.encrypt(JSON.stringify(this.data));
+    fs.writeFileSync(this.filePath, encrypted, { encoding: 'utf-8', mode: 0o600 });
+  }
+
+  private encrypt(value: string): string {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', this.key, iv);
+    const data = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+
+    const payload: EncryptedStorePayload = {
+      iv: iv.toString('base64'),
+      tag: tag.toString('base64'),
+      data: data.toString('base64'),
+    };
+
+    return JSON.stringify(payload);
+  }
+
+  private decrypt(value: string): string {
+    const payload = JSON.parse(value) as EncryptedStorePayload;
+    const decipher = crypto.createDecipheriv(
+      'aes-256-gcm',
+      this.key,
+      Buffer.from(payload.iv, 'base64')
+    );
+    decipher.setAuthTag(Buffer.from(payload.tag, 'base64'));
+
+    const decrypted = Buffer.concat([
+      decipher.update(Buffer.from(payload.data, 'base64')),
+      decipher.final(),
+    ]);
+
+    return decrypted.toString('utf-8');
+  }
+}
+
 class SecureStorageService {
-  private store: Store<SecureStorageData>;
+  private store: LocalEncryptedStore<SecureStorageData>;
   private encryptionKey: string;
 
   constructor() {
     this.encryptionKey = generateEncryptionKey();
 
-    this.store = new Store<SecureStorageData>({
+    this.store = new LocalEncryptedStore<SecureStorageData>({
       name: 'secure-storage',
       encryptionKey: this.encryptionKey,
       clearInvalidConfig: true,

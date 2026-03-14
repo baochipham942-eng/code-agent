@@ -285,13 +285,31 @@ export class ToolExecutor {
 
     if (tool.requiresPermission && !isPreApproved && !isSafeCommand) {
       const permissionRequest = this.buildPermissionRequest(tool, params);
+      permissionRequest.sessionId = options.sessionId;
 
-      // E2: 确认门控 - 为写操作附加预览信息
+      // E2: 确认门控 - 为高风险写操作附加预览并强制确认
       try {
         const gate = getConfirmationGate();
         const preview = gate.buildPreview(toolName, params);
+        const riskLevel = gate.assessRiskLevel(toolName, params);
+        const shouldForceConfirm = gate.shouldConfirm(
+          {
+            toolName,
+            params,
+            preview,
+            riskLevel,
+          },
+          options.sessionId || 'global'
+        );
+
         if (preview) {
           permissionRequest.details.preview = preview;
+        }
+        if (shouldForceConfirm) {
+          permissionRequest.forceConfirm = true;
+          permissionRequest.dangerLevel = riskLevel === 'high'
+            ? 'danger'
+            : (riskLevel === 'medium' ? 'warning' : 'normal');
         }
       } catch (error) {
         logger.debug('ConfirmationGate preview error:', error);

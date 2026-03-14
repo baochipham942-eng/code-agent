@@ -30,6 +30,7 @@ Optional parameters:
 - content
 - cc
 - bcc
+- attachments
 
 Use this when the user wants a real email draft prepared locally, but not sent yet.`,
   requiresPermission: true,
@@ -60,6 +61,11 @@ Use this when the user wants a real email draft prepared locally, but not sent y
         type: 'string',
         description: 'Draft body content.',
       },
+      attachments: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'Optional attachment file paths.',
+      },
     },
     required: ['subject', 'to'],
   },
@@ -79,6 +85,7 @@ Use this when the user wants a real email draft prepared locally, but not sent y
         to: string[];
         cc: string[];
         bcc: string[];
+        attachments: string[];
         saved: boolean;
       };
 
@@ -93,6 +100,7 @@ Use this when the user wants a real email draft prepared locally, but not sent y
           `To: ${to.join(', ')}`,
           cc.length > 0 ? `CC: ${cc.join(', ')}` : null,
           bcc.length > 0 ? `BCC: ${bcc.join(', ')}` : null,
+          draft.attachments.length > 0 ? `Attachments: ${draft.attachments.join(', ')}` : null,
           `状态：${draft.saved ? '已保存到草稿' : '未保存'}`,
         ].filter(Boolean).join('\n'),
         result: draft,

@@ -6,7 +6,7 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getConnectorRegistry } from '../../connectors';
 
 function formatReminder(reminder: any): string {
-  return `- [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`;
+  return `- #${reminder.id} [${reminder.list}] ${reminder.title}${reminder.completed ? ' (completed)' : ''}`;
 }
 
 export const remindersTool: Tool = {

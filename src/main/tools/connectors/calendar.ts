@@ -9,7 +9,8 @@ function formatEvent(event: any): string {
   const start = event.startAtMs ? new Date(event.startAtMs).toLocaleString('zh-CN') : '未知开始时间';
   const end = event.endAtMs ? new Date(event.endAtMs).toLocaleString('zh-CN') : '未知结束时间';
   const location = event.location ? ` | ${event.location}` : '';
-  return `- [${event.calendar}] ${event.title}\n  ${start} -> ${end}${location}`;
+  const uid = event.uid ? `\n  uid: ${event.uid}` : '';
+  return `- [${event.calendar}] ${event.title}\n  ${start} -> ${end}${location}${uid}`;
 }
 
 export const calendarTool: Tool = {

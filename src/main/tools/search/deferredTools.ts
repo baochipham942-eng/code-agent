@@ -219,10 +219,24 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    name: 'calendar_update_event',
+    shortDescription: '在 macOS 日历中更新本地事件',
+    tags: ['planning'],
+    aliases: ['update calendar event', 'edit calendar event'],
+    source: 'builtin',
+  },
+  {
     name: 'mail',
     shortDescription: '读取 macOS Mail 中的本地邮件账户、邮箱和邮件内容',
     tags: ['planning', 'search'],
     aliases: ['mail', 'email', 'mailbox', 'read email'],
+    source: 'builtin',
+  },
+  {
+    name: 'mail_draft',
+    shortDescription: '在 macOS Mail 中创建本地邮件草稿',
+    tags: ['planning'],
+    aliases: ['draft email', 'mail draft', 'create draft'],
     source: 'builtin',
   },
   {
@@ -237,6 +251,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     shortDescription: '在 macOS 提醒事项中创建本地待办',
     tags: ['planning'],
     aliases: ['create reminder', 'new reminder'],
+    source: 'builtin',
+  },
+  {
+    name: 'reminders_update',
+    shortDescription: '在 macOS 提醒事项中更新或完成本地待办',
+    tags: ['planning'],
+    aliases: ['update reminder', 'complete reminder', 'edit reminder'],
     source: 'builtin',
   },
 

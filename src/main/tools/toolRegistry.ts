@@ -197,6 +197,7 @@ const ALIAS_DEFAULT_PARAMS: Record<string, Record<string, unknown>> = {
   // Plan tool
   plan_read:   { action: 'read' },
   plan_update: { action: 'update' },
+  plan_recover_recent_work: { action: 'recover_recent_work' },
 
   // PlanMode tool
   enter_plan_mode: { action: 'enter' },
@@ -272,6 +273,7 @@ const TOOL_ALIASES: Record<string, string> = {
 
   plan_read: 'Plan',
   plan_update: 'Plan',
+  plan_recover_recent_work: 'Plan',
   enter_plan_mode: 'PlanMode',
   exit_plan_mode: 'PlanMode',
 

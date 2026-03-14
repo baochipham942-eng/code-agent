@@ -9,10 +9,10 @@ import type {
 } from '../planning';
 import { getDesktopTaskKey } from './desktopActivityUnderstandingService';
 
-const DESKTOP_RECOVERY_PLAN_TITLE = 'Recovered Session Plan';
-const DESKTOP_RECOVERY_OBJECTIVE = 'Continue recent work inferred from recent desktop activity.';
-const DESKTOP_RECOVERY_PHASE_TITLE = 'Recovered From Desktop Activity';
-const DESKTOP_RECOVERY_PHASE_NOTES =
+export const DESKTOP_RECOVERY_PLAN_TITLE = 'Recovered Session Plan';
+export const DESKTOP_RECOVERY_OBJECTIVE = 'Continue recent work inferred from recent desktop activity.';
+export const DESKTOP_RECOVERY_PHASE_TITLE = 'Recovered From Desktop Activity';
+export const DESKTOP_RECOVERY_PHASE_NOTES =
   'Auto-generated from recent desktop activity. Treat as inferred work context until confirmed by the user.';
 
 export interface DesktopPlanningSyncResult {

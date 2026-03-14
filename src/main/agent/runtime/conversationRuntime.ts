@@ -24,6 +24,7 @@ import { getToolSearchService } from '../../tools/search';
 import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
 import type { PlanningService } from '../../planning';
 import { publishPlanningStateToRenderer } from '../../planning';
+import { buildRecoveredWorkOrchestrationHint } from '../../planning/recoveredWorkOrchestrator';
 import { getMemoryService } from '../../memory/memoryService';
 import { getContinuousLearningService } from '../../memory/continuousLearningService';
 import { syncDesktopTasksToPlanningService } from '../../memory/desktopActivityPlanningBridge';
@@ -298,6 +299,21 @@ export class ConversationRuntime {
           maxItems: workspaceContextMaxItems,
           contextPressure: Number(contextPressure.toFixed(4)),
         });
+      }
+
+      const recoveredWorkHint = userMessage
+        ? await buildRecoveredWorkOrchestrationHint({
+          userMessage,
+          planningService: this.ctx.planningService,
+          recoveredTaskCount: taskSync.totalCandidates,
+          hasWorkspaceContext: Boolean(workspaceContextBlock),
+        })
+        : null;
+      if (recoveredWorkHint) {
+        this.contextAssembly.injectSystemMessage(
+          `<recovered-work-orchestration>\n${recoveredWorkHint}\n</recovered-work-orchestration>`
+        );
+        logger.info('[AgentLoop] Recovered work orchestration hint injected');
       }
     } catch (error) {
       logger.warn('[AgentLoop] Desktop-derived context bootstrap failed, continuing without it', {

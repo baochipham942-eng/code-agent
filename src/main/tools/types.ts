@@ -74,10 +74,13 @@ export interface ToolContext {
 }
 
 export interface PermissionRequestData {
+  sessionId?: string;
+  forceConfirm?: boolean;
   type: 'file_read' | 'file_write' | 'file_edit' | 'command' | 'network' | 'dangerous_command';
   tool: string;
   details: Record<string, unknown>;
   reason?: string;
+  dangerLevel?: 'normal' | 'warning' | 'danger';
 }
 
 export interface ToolExecutionResult {

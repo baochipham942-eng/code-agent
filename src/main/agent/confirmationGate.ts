@@ -21,6 +21,9 @@ const DANGEROUS_TOOLS = new Set([
   'bash', 'Bash',
   'write_file', 'Write',
   'edit_file', 'Edit',
+  'mail_send',
+  'calendar_delete_event',
+  'reminders_delete',
 ]);
 
 // 高风险 bash 命令模式
@@ -35,6 +38,37 @@ const HIGH_RISK_PATTERNS = [
   /npm\s+(publish|deprecate)/,
   /docker\s+(rm|rmi|stop|kill)/,
 ];
+
+function normalizeString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[,\n;]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function formatTimestamp(value: unknown): string | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  return new Date(value).toLocaleString('zh-CN');
+}
+
+function pushDetail(lines: string[], label: string, value: string | null | undefined): void {
+  if (!value) return;
+  lines.push(`${label}: ${value}`);
+}
 
 const DEFAULT_CONFIG: ToolConfirmationConfig = {
   policy: 'ask_if_dangerous',
@@ -133,6 +167,75 @@ export class ConfirmationGate {
         };
       }
 
+      case 'mail_draft':
+      case 'mail_send': {
+        const to = normalizeStringList(params.to).join(', ');
+        const cc = normalizeStringList(params.cc).join(', ');
+        const bcc = normalizeStringList(params.bcc).join(', ');
+        const attachments = normalizeStringList(params.attachments).join(', ');
+        const summary = [
+          toolName === 'mail_send' ? '发送邮件' : '创建邮件草稿',
+          normalizeString(params.subject) || '(无主题)',
+        ].join('：');
+        const details = [summary];
+        pushDetail(details, 'To', to);
+        pushDetail(details, 'CC', cc);
+        pushDetail(details, 'BCC', bcc);
+        pushDetail(details, 'Attachments', attachments);
+        return {
+          type: 'generic',
+          summary,
+          diff: details.join('\n'),
+        };
+      }
+
+      case 'calendar_create_event':
+      case 'calendar_update_event':
+      case 'calendar_delete_event': {
+        const summaryMap: Record<string, string> = {
+          calendar_create_event: '创建日历事件',
+          calendar_update_event: '更新日历事件',
+          calendar_delete_event: '删除日历事件',
+        };
+        const summary = summaryMap[toolName];
+        const details = [summary];
+        pushDetail(details, 'Calendar', normalizeString(params.calendar));
+        pushDetail(details, 'Title', normalizeString(params.title));
+        pushDetail(details, 'UID', normalizeString(params.event_uid));
+        pushDetail(details, 'Start', formatTimestamp(params.start_ms));
+        pushDetail(details, 'End', formatTimestamp(params.end_ms));
+        pushDetail(details, 'Location', normalizeString(params.location));
+        return {
+          type: 'generic',
+          summary,
+          diff: details.join('\n'),
+        };
+      }
+
+      case 'reminders_create':
+      case 'reminders_update':
+      case 'reminders_delete': {
+        const summaryMap: Record<string, string> = {
+          reminders_create: '创建提醒',
+          reminders_update: '更新提醒',
+          reminders_delete: '删除提醒',
+        };
+        const summary = summaryMap[toolName];
+        const details = [summary];
+        pushDetail(details, 'List', normalizeString(params.list));
+        pushDetail(details, 'Title', normalizeString(params.title));
+        pushDetail(details, 'Reminder ID', normalizeString(params.reminder_id));
+        if (typeof params.completed === 'boolean') {
+          pushDetail(details, 'Completed', params.completed ? 'true' : 'false');
+        }
+        pushDetail(details, 'Remind At', formatTimestamp(params.remind_at_ms));
+        return {
+          type: 'generic',
+          summary,
+          diff: details.join('\n'),
+        };
+      }
+
       default:
         return {
           type: 'generic',
@@ -154,6 +257,20 @@ export class ConfirmationGate {
       if (HIGH_RISK_PATTERNS.some(p => p.test(command))) {
         return 'high';
       }
+      return 'medium';
+    }
+
+    if (toolName === 'mail_send' || toolName === 'calendar_delete_event' || toolName === 'reminders_delete') {
+      return 'high';
+    }
+
+    if (
+      toolName === 'mail_draft' ||
+      toolName === 'calendar_create_event' ||
+      toolName === 'calendar_update_event' ||
+      toolName === 'reminders_create' ||
+      toolName === 'reminders_update'
+    ) {
       return 'medium';
     }
 

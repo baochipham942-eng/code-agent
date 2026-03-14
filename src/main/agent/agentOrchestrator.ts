@@ -16,6 +16,7 @@ import { AgentLoop } from './agentLoop';
 import { SYSTEM_PROMPT } from '../prompts/builder';
 import { ToolRegistry } from '../tools/toolRegistry';
 import { ToolExecutor } from '../tools/toolExecutor';
+import { getConfirmationGate } from './confirmationGate';
 import type { ConfigService } from '../services/core/configService';
 import { getSessionManager, getAuthService } from '../services';
 import type { PlanningService } from '../planning';
@@ -1237,14 +1238,15 @@ export class AgentOrchestrator {
     // Check auto-approve settings
     const settings = this.configService.getSettings();
     const permissionLevel = this.getPermissionLevel(request.type);
+    const forceConfirm = request.forceConfirm === true;
 
     // Dev mode: auto-approve all permissions (configurable)
-    if (settings.permissions.devModeAutoApprove) {
+    if (!forceConfirm && settings.permissions.devModeAutoApprove) {
       logger.info(`[DevMode] Auto-approving permission: ${request.type} for ${request.tool}`);
       return true;
     }
 
-    if (settings.permissions.autoApprove[permissionLevel]) {
+    if (!forceConfirm && settings.permissions.autoApprove[permissionLevel]) {
       return true;
     }
 
@@ -1262,6 +1264,9 @@ export class AgentOrchestrator {
       this.pendingPermissions.set(fullRequest.id, {
         resolve: (response) => {
           clearTimeout(timeoutId);
+          if (response === 'allow_session' && fullRequest.sessionId) {
+            getConfirmationGate().recordApproval(fullRequest.sessionId, fullRequest.tool);
+          }
           resolve(response === 'allow' || response === 'allow_session');
         },
         request: fullRequest,

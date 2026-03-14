@@ -81,6 +81,77 @@ const pendingLocalToolCalls = new Map<string, PendingLocalToolCall>();
 const LOCAL_TOOL_TIMEOUT_MS = 120_000; // 2 分钟超时
 const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
 const UPLOAD_ROOT_DIR = path.join(os.tmpdir(), 'code-agent-uploads');
+const DEV_EXEC_ALLOWED_TOOLS = new Set([
+  'desktop_activity_recent',
+  'desktop_activity_stats',
+  'mail',
+  'mail_draft',
+  'mail_send',
+  'calendar',
+  'calendar_create_event',
+  'calendar_update_event',
+  'calendar_delete_event',
+  'reminders',
+  'reminders_create',
+  'reminders_update',
+  'reminders_delete',
+]);
+const DEV_WRITE_TOOLS = new Set([
+  'mail_draft',
+  'mail_send',
+  'calendar_create_event',
+  'calendar_update_event',
+  'calendar_delete_event',
+  'reminders_create',
+  'reminders_update',
+  'reminders_delete',
+]);
+
+interface DevToolExecutionRequest {
+  tool?: unknown;
+  params?: unknown;
+  project?: unknown;
+  sessionId?: unknown;
+  allowWrite?: unknown;
+}
+
+interface DevToolExecutionResponse {
+  tool: string;
+  params: Record<string, unknown>;
+  project: string;
+  sessionId: string;
+  success: boolean;
+  output?: string;
+  error?: string;
+  metadata?: Record<string, unknown>;
+  result?: unknown;
+}
+
+interface OfficeSmokeStep {
+  id: string;
+  tool: string;
+  params: Record<string, unknown>;
+  check: 'connected' | 'array';
+}
+
+class DevApiError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const OFFICE_SMOKE_STEPS: OfficeSmokeStep[] = [
+  { id: 'mail-status', tool: 'mail', params: { action: 'get_status' }, check: 'connected' },
+  { id: 'mail-accounts', tool: 'mail', params: { action: 'list_accounts' }, check: 'array' },
+  { id: 'mail-mailboxes', tool: 'mail', params: { action: 'list_mailboxes' }, check: 'array' },
+  { id: 'calendar-status', tool: 'calendar', params: { action: 'get_status' }, check: 'connected' },
+  { id: 'calendar-list', tool: 'calendar', params: { action: 'list_calendars' }, check: 'array' },
+  { id: 'reminders-status', tool: 'reminders', params: { action: 'get_status' }, check: 'connected' },
+  { id: 'reminders-list', tool: 'reminders', params: { action: 'list_lists' }, check: 'array' },
+];
 // ============================================================================
 // Security: Auth Token, CORS Restriction, Rate Limiting
 // ============================================================================
@@ -559,6 +630,102 @@ function getContentType(filePath: string): string {
   }
 }
 
+function isDevApiEnabled(): boolean {
+  return process.env.CODE_AGENT_ENABLE_DEV_API === 'true' || process.env.NODE_ENV !== 'production';
+}
+
+function ensureDevApiEnabled(res: Response): boolean {
+  if (isDevApiEnabled()) return true;
+  res.status(404).json({ error: 'Dev API is not available in production mode.' });
+  return false;
+}
+
+function normalizeDevParams(params: unknown): Record<string, unknown> {
+  if (params === undefined || params === null) return {};
+  if (typeof params !== 'object' || Array.isArray(params)) {
+    throw new DevApiError(400, 'params must be a JSON object.');
+  }
+  return params as Record<string, unknown>;
+}
+
+async function getDevToolExecutor(workingDirectory?: string) {
+  const { initializeCLIServices, getToolExecutor } = await import('../cli/bootstrap');
+  await initializeCLIServices();
+
+  const executor = getToolExecutor();
+  if (!executor) {
+    throw new DevApiError(500, 'ToolExecutor is not available.');
+  }
+
+  executor.setWorkingDirectory(workingDirectory ? path.resolve(workingDirectory) : process.cwd());
+  return executor;
+}
+
+async function executeDevTool(request: DevToolExecutionRequest): Promise<DevToolExecutionResponse> {
+  const tool = typeof request.tool === 'string' ? request.tool.trim() : '';
+  if (!tool) {
+    throw new DevApiError(400, 'Missing tool.');
+  }
+  if (!DEV_EXEC_ALLOWED_TOOLS.has(tool)) {
+    throw new DevApiError(403, `Tool is not allowed in dev host exec: ${tool}`);
+  }
+  if (DEV_WRITE_TOOLS.has(tool) && request.allowWrite !== true) {
+    throw new DevApiError(400, `Tool ${tool} requires allowWrite=true.`);
+  }
+
+  const params = normalizeDevParams(request.params);
+  const project = typeof request.project === 'string' && request.project.trim()
+    ? path.resolve(request.project)
+    : process.cwd();
+  const sessionId = typeof request.sessionId === 'string' && request.sessionId.trim()
+    ? request.sessionId
+    : `web-dev-${Date.now()}`;
+  const executor = await getDevToolExecutor(project);
+  const result = await executor.execute(tool, params, { sessionId });
+
+  return {
+    tool,
+    params,
+    project,
+    sessionId,
+    success: result.success,
+    output: result.output,
+    error: result.error,
+    metadata: result.metadata,
+    result: result.result,
+  };
+}
+
+function evaluateOfficeSmokeStep(
+  step: OfficeSmokeStep,
+  response: DevToolExecutionResponse
+): { passed: boolean; detail: string } {
+  if (!response.success) {
+    return {
+      passed: false,
+      detail: response.error || 'Tool execution failed.',
+    };
+  }
+
+  if (step.check === 'connected') {
+    const connected = Boolean((response.result as { connected?: boolean } | undefined)?.connected);
+    return {
+      passed: connected,
+      detail: connected
+        ? 'connected'
+        : String((response.result as { detail?: string } | undefined)?.detail || 'Connector reported disconnected'),
+    };
+  }
+
+  const isArrayResult = Array.isArray(response.result);
+  return {
+    passed: isArrayResult,
+    detail: isArrayResult
+      ? `count=${(response.result as unknown[]).length}`
+      : 'Expected array result',
+  };
+}
+
 // ============================================================================
 // Express 应用
 // ============================================================================
@@ -708,6 +875,74 @@ function createApp(): express.Express {
       res.destroy(error);
     });
     stream.pipe(res);
+  });
+
+  app.post('/api/dev/exec-tool', async (req: Request, res: Response) => {
+    if (!ensureDevApiEnabled(res)) return;
+
+    try {
+      const response = await executeDevTool(req.body as DevToolExecutionRequest);
+      res.json(response);
+    } catch (error) {
+      const status = error instanceof DevApiError ? error.status : 500;
+      const message = formatError(error);
+      logger.error('Dev exec-tool request failed', error);
+      res.status(status).json({
+        success: false,
+        error: message,
+      });
+    }
+  });
+
+  app.post('/api/dev/smoke/office', async (req: Request, res: Response) => {
+    if (!ensureDevApiEnabled(res)) return;
+
+    try {
+      const project = typeof req.body?.project === 'string' && req.body.project.trim()
+        ? req.body.project
+        : process.cwd();
+      const sessionId = typeof req.body?.sessionId === 'string' && req.body.sessionId.trim()
+        ? req.body.sessionId
+        : `web-office-smoke-${Date.now()}`;
+
+      const results = [];
+      for (const step of OFFICE_SMOKE_STEPS) {
+        const response = await executeDevTool({
+          tool: step.tool,
+          params: step.params,
+          project,
+          sessionId,
+        });
+        const evaluation = evaluateOfficeSmokeStep(step, response);
+        results.push({
+          id: step.id,
+          tool: step.tool,
+          params: step.params,
+          success: response.success,
+          passed: evaluation.passed,
+          detail: evaluation.detail,
+          output: response.output,
+          error: response.error,
+          result: response.result,
+        });
+      }
+
+      res.json({
+        ok: results.every((result) => result.passed),
+        project: path.resolve(project),
+        sessionId,
+        timestamp: Date.now(),
+        steps: results,
+      });
+    } catch (error) {
+      const status = error instanceof DevApiError ? error.status : 500;
+      const message = formatError(error);
+      logger.error('Dev office smoke request failed', error);
+      res.status(status).json({
+        ok: false,
+        error: message,
+      });
+    }
   });
 
   // ── Agent Run (SSE streaming) ──────────────────────────────────────

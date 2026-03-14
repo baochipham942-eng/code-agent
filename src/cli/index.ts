@@ -13,6 +13,7 @@ import { serveCommand } from './commands/serve';
 import { exportCommand } from './commands/export';
 import { listToolsCommand } from './commands/listTools';
 import { listAgentsCommand } from './commands/listAgents';
+import { execToolCommand } from './commands/execTool';
 import { version } from '../../package.json';
 
 const program = new Command();
@@ -42,6 +43,7 @@ program.addCommand(serveCommand);
 program.addCommand(exportCommand);
 program.addCommand(listToolsCommand);
 program.addCommand(listAgentsCommand);
+program.addCommand(execToolCommand);
 
 // Parse and run
 program.parse();

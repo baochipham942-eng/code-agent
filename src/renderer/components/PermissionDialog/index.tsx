@@ -23,6 +23,8 @@ function normalizeRequest(
 ): PermissionRequest {
   return {
     id: request.id,
+    sessionId: request.sessionId,
+    forceConfirm: request.forceConfirm,
     tool: request.tool,
     type: request.type as PermissionType,
     reason: request.reason,
@@ -74,6 +76,7 @@ export function PermissionDialog() {
 
   // 检测是否为危险命令
   const isDangerous =
+    request.forceConfirm === true ||
     request.type === 'dangerous_command' ||
     (request.type === 'command' && isDangerousCommand(request.details.command));
 
@@ -84,7 +87,7 @@ export function PermissionDialog() {
   const memoryRequest = toMemoryRequest(request);
   // 只有当这是一个新请求时才检查记忆
   const isNewRequest = processedRequestRef.current !== request.id;
-  const memoryResult = isNewRequest ? checkMemory(memoryRequest) : null;
+  const memoryResult = isNewRequest && request.forceConfirm !== true ? checkMemory(memoryRequest) : null;
 
   // 将 ApprovalLevel 转换为 PermissionResponse
   const toPermissionResponse = (level: ApprovalLevel): PermissionResponse => {
@@ -111,7 +114,7 @@ export function PermissionDialog() {
       processedRequestRef.current = request.id;
 
       // 保存记忆（如果是 session/always/never）
-      if (level === 'session' || level === 'always' || level === 'never') {
+      if ((level === 'session' || level === 'always' || level === 'never') && request.forceConfirm !== true) {
         // 在回调内部构建 memoryRequest，避免闭包问题
         const memoryReq: PermissionRequestForMemory = {
           id: request.id,

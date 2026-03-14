@@ -34,6 +34,7 @@ export type ApprovalLevel =
 export interface PermissionRequest {
   id: string;
   sessionId?: string;
+  forceConfirm?: boolean;
   type: PermissionType;
   tool: string;
   details: {

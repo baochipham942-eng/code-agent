@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import {
   finishWithError,
+  getBooleanOption,
   getNumberOption,
   getStringArrayOption,
   getStringOption,
@@ -39,6 +40,7 @@ Options:
   --token <token>    Optional auth token. If omitted, try CODE_AGENT_TOKEN env, then page HTML.
   --project <path>   Optional project root passed to the host executor.
   --session <id>     Optional session id.
+  --real-approval    Require real permission approval E2E. In current web mode this fails fast with REAL_APPROVAL_UNAVAILABLE_IN_WEB_MODE.
   --json             Print JSON only.
   --help             Show this help.
 `);
@@ -87,7 +89,10 @@ async function postJson<T>(
     const message = typeof data?.error === 'string'
       ? data.error
       : `HTTP ${response.status}`;
-    throw new Error(message);
+    const code = typeof data?.code === 'string' ? data.code : undefined;
+    const error = new Error(code ? `${code}: ${message}` : message) as Error & { code?: string };
+    error.code = code;
+    throw error;
   }
 
   return data as T;
@@ -101,6 +106,7 @@ async function execHostTool<T>(
     params: Record<string, unknown>;
     project?: string;
     sessionId?: string;
+    requireRealApproval?: boolean;
   }
 ): Promise<HostExecResult<T>> {
   const result = await postJson<HostExecResult<T>>(baseUrl, token, '/api/dev/exec-tool', {
@@ -109,6 +115,7 @@ async function execHostTool<T>(
     project: payload.project,
     sessionId: payload.sessionId,
     allowWrite: true,
+    requireRealApproval: payload.requireRealApproval === true,
   });
 
   if (!result.success) {
@@ -128,6 +135,10 @@ function ensureExistingAttachmentPaths(paths: string[]): string[] {
     .filter((item) => fs.existsSync(item));
 }
 
+function requireRealApproval(args: ReturnType<typeof parseArgs>): boolean {
+  return getBooleanOption(args, 'real-approval') ?? hasFlag(args, 'real-approval');
+}
+
 async function runCalendarCycle(baseUrl: string, token: string, args: ReturnType<typeof parseArgs>, json: boolean): Promise<void> {
   const calendar = getStringOption(args, 'calendar');
   if (!calendar) {
@@ -140,6 +151,7 @@ async function runCalendarCycle(baseUrl: string, token: string, args: ReturnType
   const durationMinutes = getNumberOption(args, 'duration-minutes') ?? 30;
   const project = getStringOption(args, 'project');
   const sessionId = getStringOption(args, 'session');
+  const realApproval = requireRealApproval(args);
   const startMs = Date.now() + startMinutesFromNow * 60_000;
   const endMs = startMs + durationMinutes * 60_000;
   const createTitle = buildUniqueTitle(titlePrefix);
@@ -161,6 +173,7 @@ async function runCalendarCycle(baseUrl: string, token: string, args: ReturnType
         },
         project,
         sessionId,
+        requireRealApproval: realApproval,
       }
     );
     createdUid = created.result?.uid || null;
@@ -183,6 +196,7 @@ async function runCalendarCycle(baseUrl: string, token: string, args: ReturnType
         },
         project,
         sessionId,
+        requireRealApproval: realApproval,
       }
     );
 
@@ -197,6 +211,7 @@ async function runCalendarCycle(baseUrl: string, token: string, args: ReturnType
         },
         project,
         sessionId,
+        requireRealApproval: realApproval,
       }
     );
     deleted = true;
@@ -231,6 +246,7 @@ async function runCalendarCycle(baseUrl: string, token: string, args: ReturnType
             params: { calendar, event_uid: createdUid },
             project,
             sessionId,
+            requireRealApproval: realApproval,
           }
         );
       } catch {
@@ -250,6 +266,7 @@ async function runRemindersCycle(baseUrl: string, token: string, args: ReturnTyp
   const notes = getStringOption(args, 'notes') || 'created by app-host acceptance';
   const project = getStringOption(args, 'project');
   const sessionId = getStringOption(args, 'session');
+  const realApproval = requireRealApproval(args);
   const createTitle = buildUniqueTitle(titlePrefix);
   let reminderId: string | null = null;
   let deleted = false;
@@ -267,6 +284,7 @@ async function runRemindersCycle(baseUrl: string, token: string, args: ReturnTyp
         },
         project,
         sessionId,
+        requireRealApproval: realApproval,
       }
     );
     reminderId = created.result?.id || null;
@@ -288,6 +306,7 @@ async function runRemindersCycle(baseUrl: string, token: string, args: ReturnTyp
         },
         project,
         sessionId,
+        requireRealApproval: realApproval,
       }
     );
 
@@ -302,6 +321,7 @@ async function runRemindersCycle(baseUrl: string, token: string, args: ReturnTyp
         },
         project,
         sessionId,
+        requireRealApproval: realApproval,
       }
     );
     deleted = true;
@@ -336,6 +356,7 @@ async function runRemindersCycle(baseUrl: string, token: string, args: ReturnTyp
             params: { list, reminder_id: reminderId },
             project,
             sessionId,
+            requireRealApproval: realApproval,
           }
         );
       } catch {
@@ -353,6 +374,7 @@ async function runMailDraft(baseUrl: string, token: string, args: ReturnType<typ
 
   const project = getStringOption(args, 'project');
   const sessionId = getStringOption(args, 'session');
+  const realApproval = requireRealApproval(args);
   const attachments = ensureExistingAttachmentPaths(getStringArrayOption(args, 'attachments'));
   const result = await execHostTool<{
     subject: string;
@@ -376,6 +398,7 @@ async function runMailDraft(baseUrl: string, token: string, args: ReturnType<typ
       },
       project,
       sessionId,
+      requireRealApproval: realApproval,
     }
   );
 
@@ -402,6 +425,7 @@ async function runMailSend(baseUrl: string, token: string, args: ReturnType<type
 
   const project = getStringOption(args, 'project');
   const sessionId = getStringOption(args, 'session');
+  const realApproval = requireRealApproval(args);
   const attachments = ensureExistingAttachmentPaths(getStringArrayOption(args, 'attachments'));
   const result = await execHostTool<{
     subject: string;
@@ -425,6 +449,7 @@ async function runMailSend(baseUrl: string, token: string, args: ReturnType<type
       },
       project,
       sessionId,
+      requireRealApproval: realApproval,
     }
   );
 

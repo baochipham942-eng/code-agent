@@ -26,9 +26,12 @@ export interface DesktopCollectorStatus {
   phase: string;
   intervalSecs: number;
   captureScreenshots: boolean;
+  redactSensitiveContexts?: boolean | null;
+  retentionDays?: number | null;
   dedupeWindowSecs: number;
   maxRecentEvents: number;
   lastEventAtMs?: number | null;
+  lastCleanupAtMs?: number | null;
   lastError?: string | null;
   lastFingerprint?: string | null;
   totalEventsWritten: number;

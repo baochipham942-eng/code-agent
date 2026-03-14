@@ -99,9 +99,12 @@ pub struct NativeDesktopCollectorStatus {
     phase: String,
     interval_secs: u64,
     capture_screenshots: bool,
+    redact_sensitive_contexts: bool,
+    retention_days: u64,
     dedupe_window_secs: u64,
     max_recent_events: usize,
     last_event_at_ms: Option<u128>,
+    last_cleanup_at_ms: Option<u128>,
     last_error: Option<String>,
     last_fingerprint: Option<String>,
     total_events_written: u64,
@@ -118,9 +121,12 @@ impl Default for NativeDesktopCollectorStatus {
             phase: "p1_background_collector".to_string(),
             interval_secs: 30,
             capture_screenshots: true,
+            redact_sensitive_contexts: true,
+            retention_days: 7,
             dedupe_window_secs: 60,
             max_recent_events: 20,
             last_event_at_ms: None,
+            last_cleanup_at_ms: None,
             last_error: None,
             last_fingerprint: None,
             total_events_written: 0,
@@ -150,6 +156,8 @@ pub struct OpenSystemSettingsRequest {
 pub struct CollectorStartRequest {
     interval_secs: Option<u64>,
     capture_screenshots: Option<bool>,
+    redact_sensitive_contexts: Option<bool>,
+    retention_days: Option<u64>,
     dedupe_window_secs: Option<u64>,
     max_recent_events: Option<usize>,
 }
@@ -159,6 +167,8 @@ impl Default for CollectorStartRequest {
         Self {
             interval_secs: Some(30),
             capture_screenshots: Some(true),
+            redact_sensitive_contexts: Some(true),
+            retention_days: Some(7),
             dedupe_window_secs: Some(60),
             max_recent_events: Some(20),
         }
@@ -671,6 +681,165 @@ fn power_snapshot() -> Result<PowerSnapshot, String> {
     })
 }
 
+fn contains_ignore_case(value: &str, needle: &str) -> bool {
+    value.to_ascii_lowercase().contains(&needle.to_ascii_lowercase())
+}
+
+fn is_sensitive_app(app_name: &str, bundle_id: Option<&str>) -> bool {
+    let sensitive_apps = [
+        "1Password",
+        "Passwords",
+        "Keychain Access",
+        "Authy Desktop",
+        "Bitwarden",
+        "Dashlane",
+        "LastPass",
+        "Keeper Password Manager",
+        "Proton Pass",
+        "Secrets",
+    ];
+    if sensitive_apps.iter().any(|candidate| app_name.eq_ignore_ascii_case(candidate)) {
+        return true;
+    }
+
+    if let Some(bundle_id) = bundle_id {
+        let lowered = bundle_id.to_ascii_lowercase();
+        return [
+            "1password",
+            "passwords",
+            "keychain",
+            "authy",
+            "bitwarden",
+            "dashlane",
+            "lastpass",
+            "keeper",
+            "protonpass",
+            "secrets",
+        ]
+        .iter()
+        .any(|needle| lowered.contains(needle));
+    }
+
+    false
+}
+
+fn is_sensitive_window_title(title: Option<&str>) -> bool {
+    let Some(title) = title else {
+        return false;
+    };
+
+    [
+        "password",
+        "passkey",
+        "one-time code",
+        "verification code",
+        "security code",
+        "private key",
+        "secret key",
+        "recovery code",
+        "two-factor",
+        "otp",
+        "2fa",
+    ]
+    .iter()
+    .any(|needle| contains_ignore_case(title, needle))
+}
+
+fn is_sensitive_context(snapshot: &FrontmostContextSnapshot) -> bool {
+    is_sensitive_app(&snapshot.app_name, snapshot.bundle_id.as_deref())
+        || is_sensitive_window_title(snapshot.window_title.as_deref())
+}
+
+fn redact_sensitive_snapshot(snapshot: FrontmostContextSnapshot) -> FrontmostContextSnapshot {
+    FrontmostContextSnapshot {
+        window_title: Some("[redacted sensitive window]".to_string()),
+        browser_url: None,
+        browser_title: None,
+        document_path: None,
+        ..snapshot
+    }
+}
+
+fn cleanup_path_if_older_than(path: &PathBuf, cutoff: SystemTime) -> Result<bool, String> {
+    let metadata = fs::metadata(path)
+        .map_err(|error| format!("Failed to stat {}: {error}", path.display()))?;
+    let modified = metadata
+        .modified()
+        .map_err(|error| format!("Failed to read modified time for {}: {error}", path.display()))?;
+
+    if modified >= cutoff {
+        return Ok(false);
+    }
+
+    if metadata.is_dir() {
+        fs::remove_dir_all(path)
+            .map_err(|error| format!("Failed to remove directory {}: {error}", path.display()))?;
+    } else {
+        fs::remove_file(path)
+            .map_err(|error| format!("Failed to remove file {}: {error}", path.display()))?;
+    }
+
+    Ok(true)
+}
+
+fn cleanup_native_desktop_storage(
+    event_dir: &PathBuf,
+    screenshot_dir: &PathBuf,
+    sqlite_path: &PathBuf,
+    retention_days: u64,
+) -> Result<(), String> {
+    let cutoff = SystemTime::now()
+        .checked_sub(Duration::from_secs(retention_days.max(1).saturating_mul(86_400)))
+        .unwrap_or(UNIX_EPOCH);
+    let cutoff_ms = now_ms().saturating_sub((retention_days.max(1) as u128) * 86_400_000);
+
+    let mut errors = Vec::new();
+
+    if event_dir.exists() {
+        match fs::read_dir(event_dir) {
+            Ok(entries) => {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if let Err(error) = cleanup_path_if_older_than(&path, cutoff) {
+                        errors.push(error);
+                    }
+                }
+            }
+            Err(error) => errors.push(format!("Failed to read event directory: {error}")),
+        }
+    }
+
+    if screenshot_dir.exists() {
+        match fs::read_dir(screenshot_dir) {
+            Ok(entries) => {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if let Err(error) = cleanup_path_if_older_than(&path, cutoff) {
+                        errors.push(error);
+                    }
+                }
+            }
+            Err(error) => errors.push(format!("Failed to read screenshot directory: {error}")),
+        }
+    }
+
+    if sqlite_path.exists() {
+        let sql = format!(
+            "DELETE FROM desktop_activity_events WHERE captured_at_ms < {}; VACUUM;",
+            cutoff_ms
+        );
+        if let Err(error) = run_sqlite(sqlite_path, &sql) {
+            errors.push(format!("Failed to clean sqlite activity log: {error}"));
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join(" | "))
+    }
+}
+
 fn capture_frontmost_context_snapshot() -> Result<FrontmostContextSnapshot, String> {
     let (app_name, bundle_id, window_title) = frontmost_app_triplet()?;
     let (browser_url, browser_title) = browser_context(&app_name).unwrap_or((None, None));
@@ -899,6 +1068,8 @@ fn normalize_collector_request(request: CollectorStartRequest) -> CollectorStart
     CollectorStartRequest {
         interval_secs: Some(request.interval_secs.unwrap_or(30).clamp(5, 3600)),
         capture_screenshots: Some(request.capture_screenshots.unwrap_or(true)),
+        redact_sensitive_contexts: Some(request.redact_sensitive_contexts.unwrap_or(true)),
+        retention_days: Some(request.retention_days.unwrap_or(7).clamp(1, 90)),
         dedupe_window_secs: Some(request.dedupe_window_secs.unwrap_or(60).clamp(5, 3600)),
         max_recent_events: Some(request.max_recent_events.unwrap_or(20).clamp(5, 100)),
     }
@@ -1072,6 +1243,8 @@ pub fn desktop_start_collector(
     let request = normalize_collector_request(request.unwrap_or_default());
     let interval_secs = request.interval_secs.unwrap_or(30);
     let capture_screenshots = request.capture_screenshots.unwrap_or(true);
+    let redact_sensitive_contexts = request.redact_sensitive_contexts.unwrap_or(true);
+    let retention_days = request.retention_days.unwrap_or(7);
     let dedupe_window_secs = request.dedupe_window_secs.unwrap_or(60);
     let max_recent_events = request.max_recent_events.unwrap_or(20);
     let event_dir = native_events_dir(&app)?;
@@ -1088,9 +1261,12 @@ pub fn desktop_start_collector(
             phase: "p1_background_collector".to_string(),
             interval_secs,
             capture_screenshots,
+            redact_sensitive_contexts,
+            retention_days,
             dedupe_window_secs,
             max_recent_events,
             last_event_at_ms: shared.status.last_event_at_ms,
+            last_cleanup_at_ms: shared.status.last_cleanup_at_ms,
             last_error: None,
             last_fingerprint: shared.status.last_fingerprint.clone(),
             total_events_written: shared.status.total_events_written,
@@ -1120,6 +1296,34 @@ pub fn desktop_start_collector(
         }
 
         while !stop_flag_for_thread.load(Ordering::SeqCst) {
+            let should_cleanup = {
+                if let Ok(shared) = shared.lock() {
+                    shared
+                        .status
+                        .last_cleanup_at_ms
+                        .map(|previous| now_ms().saturating_sub(previous) >= 3_600_000)
+                        .unwrap_or(true)
+                } else {
+                    false
+                }
+            };
+
+            if should_cleanup {
+                let cleanup_result = cleanup_native_desktop_storage(
+                    &event_dir_for_thread,
+                    &screenshot_dir_for_thread,
+                    &sqlite_db_path_for_thread,
+                    retention_days,
+                );
+                if let Ok(mut shared) = shared.lock() {
+                    shared.status.last_cleanup_at_ms = Some(now_ms());
+                    if let Err(error) = cleanup_result {
+                        shared.status.last_error = Some(error);
+                    }
+                    let _ = persist_collector_status(&native_root_for_thread, &shared.status);
+                }
+            }
+
             let snapshot = match capture_frontmost_context_snapshot() {
                 Ok(snapshot) => snapshot,
                 Err(error) => {
@@ -1130,6 +1334,13 @@ pub fn desktop_start_collector(
                     sleep_with_stop(&stop_flag_for_thread, interval_secs);
                     continue;
                 }
+            };
+
+            let is_sensitive = redact_sensitive_contexts && is_sensitive_context(&snapshot);
+            let snapshot = if is_sensitive {
+                redact_sensitive_snapshot(snapshot)
+            } else {
+                snapshot
             };
 
             let fingerprint = fingerprint_for_context(&snapshot);
@@ -1153,7 +1364,7 @@ pub fn desktop_start_collector(
             };
 
             if should_persist {
-                let screenshot_path = if capture_screenshots {
+                let screenshot_path = if capture_screenshots && !is_sensitive {
                     match collector_screenshot_path(&screenshot_dir_for_thread)
                         .and_then(|path| capture_screenshot_to_path(&path, true))
                     {

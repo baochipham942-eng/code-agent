@@ -24,6 +24,8 @@ const DEFAULT_STATUS: DesktopCollectorStatus = {
   phase: 'p1_background_collector',
   intervalSecs: 30,
   captureScreenshots: true,
+  redactSensitiveContexts: true,
+  retentionDays: 7,
   dedupeWindowSecs: 60,
   maxRecentEvents: 20,
   totalEventsWritten: 0,

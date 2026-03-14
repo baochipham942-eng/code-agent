@@ -2,6 +2,7 @@
 // Native Mail Connector - macOS Mail via AppleScript
 // ============================================================================
 
+import fs from 'fs';
 import type { Connector, ConnectorExecutionResult, ConnectorStatus } from '../base';
 import {
   escapeAppleScriptString,
@@ -38,7 +39,12 @@ interface MailDraftItem {
   to: string[];
   cc: string[];
   bcc: string[];
+  attachments: string[];
   saved: boolean;
+}
+
+interface MailSentItem extends MailDraftItem {
+  sent: boolean;
 }
 
 function parseLine(line: string): string[] {
@@ -64,6 +70,13 @@ function normalizeAddressList(value: unknown): string[] {
 
 function appleScriptAddressList(addresses: string[]): string {
   return `{${addresses.map((item) => `"${escapeAppleScriptString(item)}"`).join(', ')}}`;
+}
+
+function normalizeAttachmentList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map((item) => item.trim());
 }
 
 async function listAccounts(): Promise<MailAccountItem[]> {
@@ -229,6 +242,8 @@ async function draftMessage(payload: Record<string, unknown>): Promise<MailDraft
   const to = normalizeAddressList(payload.to);
   const cc = normalizeAddressList(payload.cc);
   const bcc = normalizeAddressList(payload.bcc);
+  const attachments = normalizeAttachmentList(payload.attachments)
+    .filter((item) => fs.existsSync(item));
 
   if (!subject) {
     throw new Error('subject is required for draft_message');
@@ -242,6 +257,7 @@ async function draftMessage(payload: Record<string, unknown>): Promise<MailDraft
     `set toAddresses to ${appleScriptAddressList(to)}`,
     `set ccAddresses to ${appleScriptAddressList(cc)}`,
     `set bccAddresses to ${appleScriptAddressList(bcc)}`,
+    `set attachmentPaths to ${appleScriptAddressList(attachments)}`,
     'tell application "Mail"',
     `set newMessage to make new outgoing message with properties {visible:false, subject:"${escapeAppleScriptString(subject)}", content:"${escapeAppleScriptString(content)}"}`,
     'tell newMessage',
@@ -253,6 +269,9 @@ async function draftMessage(payload: Record<string, unknown>): Promise<MailDraft
     'end repeat',
     'repeat with addr in bccAddresses',
     'make new bcc recipient at end of bcc recipients with properties {address:addr}',
+    'end repeat',
+    'repeat with attachmentPath in attachmentPaths',
+    'make new attachment with properties {file name:(POSIX file attachmentPath as alias)} at after the last paragraph',
     'end repeat',
     'save',
     'end tell',
@@ -266,14 +285,68 @@ async function draftMessage(payload: Record<string, unknown>): Promise<MailDraft
     to,
     cc,
     bcc,
+    attachments,
     saved: true,
+  };
+}
+
+async function sendMessage(payload: Record<string, unknown>): Promise<MailSentItem> {
+  const subject = typeof payload.subject === 'string' ? payload.subject.trim() : '';
+  const content = typeof payload.content === 'string' ? payload.content : '';
+  const to = normalizeAddressList(payload.to);
+  const cc = normalizeAddressList(payload.cc);
+  const bcc = normalizeAddressList(payload.bcc);
+  const attachments = normalizeAttachmentList(payload.attachments)
+    .filter((item) => fs.existsSync(item));
+
+  if (!subject) {
+    throw new Error('subject is required for send_message');
+  }
+  if (to.length === 0) {
+    throw new Error('to is required for send_message');
+  }
+
+  await runAppleScript([
+    ...sharedAppleScriptHandlers(),
+    `set toAddresses to ${appleScriptAddressList(to)}`,
+    `set ccAddresses to ${appleScriptAddressList(cc)}`,
+    `set bccAddresses to ${appleScriptAddressList(bcc)}`,
+    `set attachmentPaths to ${appleScriptAddressList(attachments)}`,
+    'tell application "Mail"',
+    `set newMessage to make new outgoing message with properties {visible:false, subject:"${escapeAppleScriptString(subject)}", content:"${escapeAppleScriptString(content)}"}`,
+    'tell newMessage',
+    'repeat with addr in toAddresses',
+    'make new to recipient at end of to recipients with properties {address:addr}',
+    'end repeat',
+    'repeat with addr in ccAddresses',
+    'make new cc recipient at end of cc recipients with properties {address:addr}',
+    'end repeat',
+    'repeat with addr in bccAddresses',
+    'make new bcc recipient at end of bcc recipients with properties {address:addr}',
+    'end repeat',
+    'repeat with attachmentPath in attachmentPaths',
+    'make new attachment with properties {file name:(POSIX file attachmentPath as alias)} at after the last paragraph',
+    'end repeat',
+    'send',
+    'end tell',
+    'end tell',
+  ]);
+
+  return {
+    subject,
+    to,
+    cc,
+    bcc,
+    attachments,
+    saved: false,
+    sent: true,
   };
 }
 
 export const mailConnector: Connector = {
   id: 'mail',
   label: 'Mail',
-  capabilities: ['get_status', 'list_accounts', 'list_mailboxes', 'list_messages', 'read_message', 'draft_message'],
+  capabilities: ['get_status', 'list_accounts', 'list_mailboxes', 'list_messages', 'read_message', 'draft_message', 'send_message'],
   async getStatus(): Promise<ConnectorStatus> {
     try {
       const accounts = await listAccounts();
@@ -327,6 +400,13 @@ export const mailConnector: Connector = {
         return {
           data: draft,
           summary: `已创建邮件草稿：${draft.subject}`,
+        };
+      }
+      case 'send_message': {
+        const message = await sendMessage(payload);
+        return {
+          data: message,
+          summary: `已发送邮件：${message.subject}`,
         };
       }
       default:

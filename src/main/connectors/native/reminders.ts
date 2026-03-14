@@ -204,10 +204,46 @@ async function updateReminder(payload: Record<string, unknown>): Promise<Reminde
   };
 }
 
+async function deleteReminder(payload: Record<string, unknown>): Promise<{
+  id: string;
+  list: string;
+  title: string;
+  deleted: boolean;
+}> {
+  const listName = typeof payload.list === 'string' ? payload.list.trim() : '';
+  const reminderId = typeof payload.reminder_id === 'string' ? payload.reminder_id.trim() : '';
+
+  if (!listName) {
+    throw new Error('list is required for delete_reminder');
+  }
+  if (!reminderId) {
+    throw new Error('reminder_id is required for delete_reminder');
+  }
+
+  const output = await runAppleScript([
+    ...sharedAppleScriptHandlers(),
+    'tell application "Reminders"',
+    `tell list "${escapeAppleScriptString(listName)}"`,
+    `set targetReminder to first reminder whose id is "${escapeAppleScriptString(reminderId)}"`,
+    'set reminderTitle to my sanitizeText(name of targetReminder)',
+    'delete targetReminder',
+    'return reminderTitle',
+    'end tell',
+    'end tell',
+  ]);
+
+  return {
+    id: reminderId,
+    list: listName,
+    title: output,
+    deleted: true,
+  };
+}
+
 export const remindersConnector: Connector = {
   id: 'reminders',
   label: 'Reminders',
-  capabilities: ['get_status', 'list_lists', 'list_reminders', 'create_reminder', 'update_reminder'],
+  capabilities: ['get_status', 'list_lists', 'list_reminders', 'create_reminder', 'update_reminder', 'delete_reminder'],
   async getStatus(): Promise<ConnectorStatus> {
     try {
       const lists = await listReminderLists();
@@ -254,6 +290,13 @@ export const remindersConnector: Connector = {
         return {
           data: reminder,
           summary: `已更新提醒：${reminder.title}`,
+        };
+      }
+      case 'delete_reminder': {
+        const reminder = await deleteReminder(payload);
+        return {
+          data: reminder,
+          summary: `已删除提醒：${reminder.title}`,
         };
       }
       default:

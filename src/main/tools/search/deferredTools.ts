@@ -219,6 +219,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    name: 'calendar_delete_event',
+    shortDescription: '在 macOS 日历中删除本地事件',
+    tags: ['planning'],
+    aliases: ['delete calendar event', 'remove calendar event'],
+    source: 'builtin',
+  },
+  {
     name: 'calendar_update_event',
     shortDescription: '在 macOS 日历中更新本地事件',
     tags: ['planning'],
@@ -240,6 +247,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    name: 'mail_send',
+    shortDescription: '通过 macOS Mail 发送真实邮件',
+    tags: ['planning'],
+    aliases: ['send email', 'mail send', 'send mail'],
+    source: 'builtin',
+  },
+  {
     name: 'reminders',
     shortDescription: '读取 macOS 提醒事项中的本地待办信息',
     tags: ['planning'],
@@ -251,6 +265,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     shortDescription: '在 macOS 提醒事项中创建本地待办',
     tags: ['planning'],
     aliases: ['create reminder', 'new reminder'],
+    source: 'builtin',
+  },
+  {
+    name: 'reminders_delete',
+    shortDescription: '在 macOS 提醒事项中删除本地待办',
+    tags: ['planning'],
+    aliases: ['delete reminder', 'remove reminder'],
     source: 'builtin',
   },
   {

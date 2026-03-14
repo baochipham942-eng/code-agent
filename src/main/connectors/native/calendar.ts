@@ -232,10 +232,46 @@ async function updateEvent(payload: Record<string, unknown>): Promise<CalendarEv
   };
 }
 
+async function deleteEvent(payload: Record<string, unknown>): Promise<{
+  uid: string;
+  calendar: string;
+  title: string;
+  deleted: boolean;
+}> {
+  const calendarName = typeof payload.calendar === 'string' ? payload.calendar.trim() : '';
+  const eventUid = typeof payload.event_uid === 'string' ? payload.event_uid.trim() : '';
+
+  if (!calendarName) {
+    throw new Error('calendar is required for delete_event');
+  }
+  if (!eventUid) {
+    throw new Error('event_uid is required for delete_event');
+  }
+
+  const output = await runAppleScript([
+    ...sharedAppleScriptHandlers(),
+    'tell application "Calendar"',
+    `tell calendar "${escapeAppleScriptString(calendarName)}"`,
+    `set targetEvent to first event whose uid is "${escapeAppleScriptString(eventUid)}"`,
+    'set eventTitle to my sanitizeText(summary of targetEvent)',
+    'delete targetEvent',
+    'return eventTitle',
+    'end tell',
+    'end tell',
+  ]);
+
+  return {
+    uid: eventUid,
+    calendar: calendarName,
+    title: output,
+    deleted: true,
+  };
+}
+
 export const calendarConnector: Connector = {
   id: 'calendar',
   label: 'Calendar',
-  capabilities: ['get_status', 'list_calendars', 'list_events', 'create_event', 'update_event'],
+  capabilities: ['get_status', 'list_calendars', 'list_events', 'create_event', 'update_event', 'delete_event'],
   async getStatus(): Promise<ConnectorStatus> {
     try {
       const calendars = await listCalendars();
@@ -282,6 +318,13 @@ export const calendarConnector: Connector = {
         return {
           data: event,
           summary: `已更新日历事件：${event.title}`,
+        };
+      }
+      case 'delete_event': {
+        const event = await deleteEvent(payload);
+        return {
+          data: event,
+          summary: `已删除日历事件：${event.title}`,
         };
       }
       default:

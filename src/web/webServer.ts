@@ -27,6 +27,9 @@ import type { Request, Response, NextFunction } from 'express';
 import { setupAllIpcHandlers, type IpcDependencies } from '../main/ipc';
 import { createLogger } from '../main/services/infra/logger';
 import { isLocalTool, mapToolName } from '../shared/localTools';
+import { IPC_CHANNELS } from '../shared/ipc';
+import type { PermissionRequest, PermissionResponse } from '../shared/types';
+import { generatePermissionRequestId } from '../shared/utils/id';
 import type { ExecuteOptions } from '../main/tools/toolExecutor';
 
 const logger = createLogger('WebServer');
@@ -78,6 +81,13 @@ interface PendingLocalToolCall {
   timer: ReturnType<typeof setTimeout>;
 }
 const pendingLocalToolCalls = new Map<string, PendingLocalToolCall>();
+interface PendingDevPermissionRequest {
+  request: PermissionRequest;
+  resolve: (response: PermissionResponse) => void;
+  reject: (error: DevApiError) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+const pendingDevPermissions = new Map<string, PendingDevPermissionRequest>();
 const LOCAL_TOOL_TIMEOUT_MS = 120_000; // 2 分钟超时
 const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
 const UPLOAD_ROOT_DIR = path.join(os.tmpdir(), 'code-agent-uploads');
@@ -106,6 +116,8 @@ const DEV_WRITE_TOOLS = new Set([
   'reminders_update',
   'reminders_delete',
 ]);
+const DEV_REAL_APPROVAL_TIMEOUT_MS = 60_000;
+const GLOBAL_PERMISSION_REQUEST_SESSION_ID = 'global';
 
 interface DevToolExecutionRequest {
   tool?: unknown;
@@ -113,6 +125,7 @@ interface DevToolExecutionRequest {
   project?: unknown;
   sessionId?: unknown;
   allowWrite?: unknown;
+  requireRealApproval?: unknown;
 }
 
 interface DevToolExecutionResponse {
@@ -134,12 +147,21 @@ interface OfficeSmokeStep {
   check: 'connected' | 'array';
 }
 
+const DEV_REAL_APPROVAL_ERROR_CODES = {
+  unavailableInWebMode: 'REAL_APPROVAL_UNAVAILABLE_IN_WEB_MODE',
+  noApprovalClientConnected: 'NO_APPROVAL_CLIENT_CONNECTED',
+  timeout: 'REAL_APPROVAL_TIMEOUT',
+  denied: 'REAL_APPROVAL_DENIED',
+} as const;
+
 class DevApiError extends Error {
   status: number;
+  code?: string;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -152,6 +174,8 @@ const OFFICE_SMOKE_STEPS: OfficeSmokeStep[] = [
   { id: 'reminders-status', tool: 'reminders', params: { action: 'get_status' }, check: 'connected' },
   { id: 'reminders-list', tool: 'reminders', params: { action: 'list_lists' }, check: 'array' },
 ];
+
+let devRealApprovalToolExecutor: import('../main/tools/toolExecutor').ToolExecutor | null = null;
 // ============================================================================
 // Security: Auth Token, CORS Restriction, Rate Limiting
 // ============================================================================
@@ -519,6 +543,37 @@ function registerHandlers(): void {
   // 由于 installElectronMock() 已将 'electron' 模块替换为 mock，两种方式最终都注册到同一个 handlers Map
   setupAllIpcHandlers(mockIpcMain as any, deps);
 
+  const originalPermissionResponseHandler = handlers.get(IPC_CHANNELS.AGENT_PERMISSION_RESPONSE);
+  handlers.set(
+    IPC_CHANNELS.AGENT_PERMISSION_RESPONSE,
+    async (_event: unknown, requestId: string, response: PermissionResponse, sessionId?: string) => {
+      const pending = pendingDevPermissions.get(requestId);
+      if (pending) {
+        pending.resolve(response);
+        return {
+          success: true,
+          data: {
+            requestId,
+            sessionId: sessionId || pending.request.sessionId,
+            source: 'web-dev-real-approval',
+          },
+        };
+      }
+
+      if (originalPermissionResponseHandler) {
+        return originalPermissionResponseHandler(_event as never, requestId, response, sessionId);
+      }
+
+      return {
+        success: false,
+        error: {
+          code: 'PENDING_PERMISSION_NOT_FOUND',
+          message: `No pending permission request found for ${requestId}`,
+        },
+      };
+    }
+  );
+
   // Override domain:session handler — session.ipc.ts requires AppService which is null in web mode.
   // Re-route to SessionManager (same logic as the REST /api/sessions endpoints).
   handlers.set('domain:session', async (_event: unknown, request: { action: string; payload?: any }) => {
@@ -648,7 +703,115 @@ function normalizeDevParams(params: unknown): Record<string, unknown> {
   return params as Record<string, unknown>;
 }
 
-async function getDevToolExecutor(workingDirectory?: string) {
+function normalizeRequireRealApproval(requireRealApproval: unknown): boolean {
+  if (requireRealApproval === undefined) return false;
+  if (typeof requireRealApproval !== 'boolean') {
+    throw new DevApiError(400, 'requireRealApproval must be a boolean when provided.');
+  }
+  return requireRealApproval;
+}
+
+function normalizePermissionRequestSessionId(sessionId?: string): string {
+  if (typeof sessionId === 'string' && sessionId.trim()) {
+    return sessionId.trim();
+  }
+  return GLOBAL_PERMISSION_REQUEST_SESSION_ID;
+}
+
+async function requestDevToolPermission(
+  request: import('../main/tools/types').PermissionRequestData,
+): Promise<boolean> {
+  if (sseClients.size === 0) {
+    throw new DevApiError(
+      503,
+      'Real approval requires an active web client subscribed to `/api/events`, but no approval client is connected.',
+      DEV_REAL_APPROVAL_ERROR_CODES.noApprovalClientConnected,
+    );
+  }
+
+  const sessionId = normalizePermissionRequestSessionId(request.sessionId);
+  const fullRequest: PermissionRequest = {
+    id: generatePermissionRequestId(),
+    sessionId,
+    forceConfirm: request.forceConfirm,
+    type: request.type,
+    tool: request.tool,
+    details: request.details as PermissionRequest['details'],
+    reason: request.reason,
+    timestamp: Date.now(),
+    dangerLevel: request.dangerLevel,
+  };
+
+  return new Promise<boolean>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingDevPermissions.delete(fullRequest.id);
+      reject(new DevApiError(
+        504,
+        `Timed out after ${DEV_REAL_APPROVAL_TIMEOUT_MS / 1000}s waiting for real approval response.`,
+        DEV_REAL_APPROVAL_ERROR_CODES.timeout,
+      ));
+    }, DEV_REAL_APPROVAL_TIMEOUT_MS);
+
+    pendingDevPermissions.set(fullRequest.id, {
+      request: fullRequest,
+      resolve: (response) => {
+        clearTimeout(timer);
+        pendingDevPermissions.delete(fullRequest.id);
+        if (response === 'allow' || response === 'allow_session') {
+          resolve(true);
+          return;
+        }
+        reject(new DevApiError(
+          403,
+          'Real approval denied by user.',
+          DEV_REAL_APPROVAL_ERROR_CODES.denied,
+        ));
+      },
+      reject: (error) => {
+        clearTimeout(timer);
+        pendingDevPermissions.delete(fullRequest.id);
+        reject(error);
+      },
+      timer,
+    });
+
+    broadcastSSE('agent:event', {
+      type: 'permission_request',
+      data: fullRequest,
+      sessionId,
+    });
+  });
+}
+
+async function getRealApprovalDevToolExecutor(workingDirectory?: string) {
+  const { initializeCLIServices } = await import('../cli/bootstrap');
+  await initializeCLIServices();
+
+  if (!devRealApprovalToolExecutor) {
+    const [{ ToolExecutor }, { getToolRegistry }] = await Promise.all([
+      import('../main/tools/toolExecutor'),
+      import('../main/tools/toolRegistry'),
+    ]);
+
+    devRealApprovalToolExecutor = new ToolExecutor({
+      toolRegistry: getToolRegistry(),
+      requestPermission: requestDevToolPermission,
+      workingDirectory: process.cwd(),
+    });
+  }
+
+  devRealApprovalToolExecutor.setWorkingDirectory(workingDirectory ? path.resolve(workingDirectory) : process.cwd());
+  return devRealApprovalToolExecutor;
+}
+
+async function getDevToolExecutor(options?: {
+  workingDirectory?: string;
+  requireRealApproval?: boolean;
+}) {
+  if (options?.requireRealApproval === true) {
+    return getRealApprovalDevToolExecutor(options.workingDirectory);
+  }
+
   const { initializeCLIServices, getToolExecutor } = await import('../cli/bootstrap');
   await initializeCLIServices();
 
@@ -657,7 +820,7 @@ async function getDevToolExecutor(workingDirectory?: string) {
     throw new DevApiError(500, 'ToolExecutor is not available.');
   }
 
-  executor.setWorkingDirectory(workingDirectory ? path.resolve(workingDirectory) : process.cwd());
+  executor.setWorkingDirectory(options?.workingDirectory ? path.resolve(options.workingDirectory) : process.cwd());
   return executor;
 }
 
@@ -674,13 +837,14 @@ async function executeDevTool(request: DevToolExecutionRequest): Promise<DevTool
   }
 
   const params = normalizeDevParams(request.params);
+  const requireRealApproval = normalizeRequireRealApproval(request.requireRealApproval);
   const project = typeof request.project === 'string' && request.project.trim()
     ? path.resolve(request.project)
     : process.cwd();
   const sessionId = typeof request.sessionId === 'string' && request.sessionId.trim()
     ? request.sessionId
     : `web-dev-${Date.now()}`;
-  const executor = await getDevToolExecutor(project);
+  const executor = await getDevToolExecutor({ workingDirectory: project, requireRealApproval });
   const result = await executor.execute(tool, params, { sessionId });
 
   return {
@@ -890,6 +1054,7 @@ function createApp(): express.Express {
       res.status(status).json({
         success: false,
         error: message,
+        code: error instanceof DevApiError ? error.code : undefined,
       });
     }
   });

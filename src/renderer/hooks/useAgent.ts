@@ -32,6 +32,7 @@ import { useMessageBatcher, type MessageUpdate } from './useMessageBatcher';
 import ipcService from '../services/ipcService';
 
 const logger = createLogger('useAgent');
+const GLOBAL_PERMISSION_REQUEST_SESSION_ID = 'global';
 
 export const useAgent = () => {
   const {
@@ -111,13 +112,11 @@ export const useAgent = () => {
     : null;
 
   useEffect(() => {
-    if (!currentSessionId) {
-      return;
-    }
-
     if (
       pendingPermissionRequest &&
       pendingPermissionSessionId &&
+      pendingPermissionSessionId !== GLOBAL_PERMISSION_REQUEST_SESSION_ID &&
+      currentSessionId &&
       pendingPermissionSessionId !== currentSessionId
     ) {
       enqueuePermissionRequest(pendingPermissionSessionId, pendingPermissionRequest, { front: true });
@@ -126,9 +125,14 @@ export const useAgent = () => {
     }
 
     if (!pendingPermissionRequest) {
-      const nextRequest = shiftQueuedPermissionRequest(currentSessionId);
+      const nextCurrentRequest = currentSessionId
+        ? shiftQueuedPermissionRequest(currentSessionId)
+        : null;
+      const nextGlobalRequest = shiftQueuedPermissionRequest(GLOBAL_PERMISSION_REQUEST_SESSION_ID);
+      const nextRequest = nextCurrentRequest || nextGlobalRequest;
+
       if (nextRequest) {
-        setPendingPermissionRequest(nextRequest, currentSessionId);
+        setPendingPermissionRequest(nextRequest, nextCurrentRequest ? currentSessionId : null);
       }
     }
   }, [
@@ -552,12 +556,29 @@ export const useAgent = () => {
             // Handle permission request from tools
             // Show permission dialog to user for approval
             logger.debug('Permission request received', { data: event.data });
-            if (event.data?.id && eventSessionId) {
+            if (event.data?.id) {
+              const rawPermissionSessionId = event.sessionId;
+              const isGlobalPermissionRequest =
+                !rawPermissionSessionId ||
+                rawPermissionSessionId === GLOBAL_PERMISSION_REQUEST_SESSION_ID;
+
+              if (isGlobalPermissionRequest) {
+                if (!useAppStore.getState().pendingPermissionRequest) {
+                  setPendingPermissionRequest(event.data as PermissionRequest, null);
+                } else {
+                  enqueuePermissionRequest(
+                    GLOBAL_PERMISSION_REQUEST_SESSION_ID,
+                    event.data as PermissionRequest
+                  );
+                }
+                break;
+              }
+
               if (isCurrentSessionEvent && !useAppStore.getState().pendingPermissionRequest) {
-                setPendingPermissionRequest(event.data as PermissionRequest, eventSessionId);
+                setPendingPermissionRequest(event.data as PermissionRequest, rawPermissionSessionId);
               } else {
-                enqueuePermissionRequest(eventSessionId, event.data as PermissionRequest);
-                useSessionStore.getState().markSessionUnread(eventSessionId);
+                enqueuePermissionRequest(rawPermissionSessionId, event.data as PermissionRequest);
+                useSessionStore.getState().markSessionUnread(rawPermissionSessionId);
               }
             }
             break;

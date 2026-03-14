@@ -33,8 +33,37 @@ interface MailMessageDetail extends MailMessageSummary {
   content: string;
 }
 
+interface MailDraftItem {
+  subject: string;
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  saved: boolean;
+}
+
 function parseLine(line: string): string[] {
   return line.split('|').map((part) => part.trim());
+}
+
+function normalizeAddressList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(/[,\n;]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function appleScriptAddressList(addresses: string[]): string {
+  return `{${addresses.map((item) => `"${escapeAppleScriptString(item)}"`).join(', ')}}`;
 }
 
 async function listAccounts(): Promise<MailAccountItem[]> {
@@ -194,10 +223,57 @@ async function readMessage(payload: Record<string, unknown>): Promise<MailMessag
   };
 }
 
+async function draftMessage(payload: Record<string, unknown>): Promise<MailDraftItem> {
+  const subject = typeof payload.subject === 'string' ? payload.subject.trim() : '';
+  const content = typeof payload.content === 'string' ? payload.content : '';
+  const to = normalizeAddressList(payload.to);
+  const cc = normalizeAddressList(payload.cc);
+  const bcc = normalizeAddressList(payload.bcc);
+
+  if (!subject) {
+    throw new Error('subject is required for draft_message');
+  }
+  if (to.length === 0) {
+    throw new Error('to is required for draft_message');
+  }
+
+  const lines = [
+    ...sharedAppleScriptHandlers(),
+    `set toAddresses to ${appleScriptAddressList(to)}`,
+    `set ccAddresses to ${appleScriptAddressList(cc)}`,
+    `set bccAddresses to ${appleScriptAddressList(bcc)}`,
+    'tell application "Mail"',
+    `set newMessage to make new outgoing message with properties {visible:false, subject:"${escapeAppleScriptString(subject)}", content:"${escapeAppleScriptString(content)}"}`,
+    'tell newMessage',
+    'repeat with addr in toAddresses',
+    'make new to recipient at end of to recipients with properties {address:addr}',
+    'end repeat',
+    'repeat with addr in ccAddresses',
+    'make new cc recipient at end of cc recipients with properties {address:addr}',
+    'end repeat',
+    'repeat with addr in bccAddresses',
+    'make new bcc recipient at end of bcc recipients with properties {address:addr}',
+    'end repeat',
+    'save',
+    'end tell',
+    'return my sanitizeText(subject of newMessage)',
+    'end tell',
+  ];
+
+  const output = await runAppleScript(lines);
+  return {
+    subject: output || subject,
+    to,
+    cc,
+    bcc,
+    saved: true,
+  };
+}
+
 export const mailConnector: Connector = {
   id: 'mail',
   label: 'Mail',
-  capabilities: ['get_status', 'list_accounts', 'list_mailboxes', 'list_messages', 'read_message'],
+  capabilities: ['get_status', 'list_accounts', 'list_mailboxes', 'list_messages', 'read_message', 'draft_message'],
   async getStatus(): Promise<ConnectorStatus> {
     try {
       const accounts = await listAccounts();
@@ -244,6 +320,13 @@ export const mailConnector: Connector = {
         return {
           data: message,
           summary: `读取邮件：${message.subject}`,
+        };
+      }
+      case 'draft_message': {
+        const draft = await draftMessage(payload);
+        return {
+          data: draft,
+          summary: `已创建邮件草稿：${draft.subject}`,
         };
       }
       default:

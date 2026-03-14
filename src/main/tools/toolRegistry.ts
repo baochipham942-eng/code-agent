@@ -86,9 +86,12 @@ import {
 import {
   calendarTool,
   calendarCreateEventTool,
+  calendarUpdateEventTool,
   mailTool,
+  mailDraftTool,
   remindersTool,
   remindersCreateTool,
+  remindersUpdateTool,
 } from './connectors';
 
 
@@ -379,9 +382,12 @@ export class ToolRegistry {
     this.register(githubPrTool);
     this.register(calendarTool);
     this.register(calendarCreateEventTool);
+    this.register(calendarUpdateEventTool);
     this.register(mailTool);
+    this.register(mailDraftTool);
     this.register(remindersTool);
     this.register(remindersCreateTool);
+    this.register(remindersUpdateTool);
     this.register(youtubeTranscriptTool);
     this.register(twitterFetchTool);
     this.register(mermaidExportTool);

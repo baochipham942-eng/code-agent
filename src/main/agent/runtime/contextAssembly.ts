@@ -62,6 +62,9 @@ import {
   buildEnhancedSystemPrompt,
   buildRuntimeModeBlock,
 } from '../../agent/messageHandling/contextBuilder';
+import { loadMemoryIndex } from '../../lightMemory/indexLoader';
+import { buildSessionMetadataBlock } from '../../lightMemory/sessionMetadata';
+import { buildRecentConversationsBlock } from '../../lightMemory/recentConversations';
 import { getPromptForTask, buildDynamicPromptV2, type AgentMode } from '../../prompts/builder';
 import { AntiPatternDetector } from '../../agent/antiPattern/detector';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
@@ -560,6 +563,24 @@ export class ContextAssembly {
 
     systemPrompt = injectWorkingDirectoryContext(systemPrompt, this.ctx.workingDirectory, this.ctx.isDefaultWorkingDirectory);
     systemPrompt += buildRuntimeModeBlock();
+
+    // 注入 Session Metadata（使用频率/行为模式，借鉴 ChatGPT Layer 2）
+    const sessionMeta = await buildSessionMetadataBlock();
+    if (sessionMeta) {
+      systemPrompt += `\n\n${sessionMeta}`;
+    }
+
+    // 注入轻量记忆索引（File-as-Memory）
+    const memoryIndex = await loadMemoryIndex();
+    if (memoryIndex) {
+      systemPrompt += `\n\n<memory_index>\n${memoryIndex}\n</memory_index>`;
+    }
+
+    // 注入近期对话摘要（跨会话连续性，借鉴 ChatGPT Layer 4）
+    const recentConvs = await buildRecentConversationsBlock();
+    if (recentConvs) {
+      systemPrompt += `\n\n${recentConvs}`;
+    }
 
     // 注入延迟工具提示
     if (this.ctx.enableToolDeferredLoading) {

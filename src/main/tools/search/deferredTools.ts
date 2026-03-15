@@ -29,6 +29,10 @@ export const CORE_TOOLS: string[] = [
   // Gen 4: 网络搜索
   'WebSearch',
 
+  // Light Memory (File-as-Memory)
+  'MemoryWrite',
+  'MemoryRead',
+
   // 工具发现
   'ToolSearch',
 

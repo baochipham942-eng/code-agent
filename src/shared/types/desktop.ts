@@ -18,6 +18,7 @@ export interface DesktopActivityEvent {
   batteryPercent?: number | null;
   batteryCharging?: boolean | null;
   screenshotPath?: string | null;
+  analyzeText?: string | null;
   fingerprint: string;
 }
 

@@ -411,17 +411,30 @@ export const NativeDesktopSection: React.FC = () => {
                 );
               })()}
 
-              {/* Description */}
-              <div className="text-sm text-zinc-400 leading-relaxed">
-                在 <span className="text-zinc-200">{displaySegment.appName}</span> 中
-                {displaySegment.events[0]?.browserUrl
-                  ? `浏览了 ${displaySegment.events[0].browserUrl}`
-                  : displaySegment.events[0]?.documentPath
-                    ? `编辑了 ${displaySegment.events[0].documentPath}`
-                    : `使用了「${displaySegment.title}」`
+              {/* Description - prefer analyzeText from vision analysis */}
+              {(() => {
+                // Find the first event with analyzeText
+                const analyzed = displaySegment.events.find((e) => e.analyzeText);
+                if (analyzed?.analyzeText) {
+                  return (
+                    <div className="text-sm text-zinc-300 leading-relaxed">
+                      {analyzed.analyzeText}
+                    </div>
+                  );
                 }
-                {displaySegment.events.length > 1 && `，共记录 ${displaySegment.events.length} 个活动点`}。
-              </div>
+                return (
+                  <div className="text-sm text-zinc-400 leading-relaxed">
+                    在 <span className="text-zinc-200">{displaySegment.appName}</span> 中
+                    {displaySegment.events[0]?.browserUrl
+                      ? `浏览了 ${displaySegment.events[0].browserUrl}`
+                      : displaySegment.events[0]?.documentPath
+                        ? `编辑了 ${displaySegment.events[0].documentPath}`
+                        : `使用了「${displaySegment.title}」`
+                    }
+                    {displaySegment.events.length > 1 && `，共记录 ${displaySegment.events.length} 个活动点`}。
+                  </div>
+                );
+              })()}
 
               {/* Action timeline */}
               <div>
@@ -454,6 +467,11 @@ export const NativeDesktopSection: React.FC = () => {
                         {event.documentPath && (
                           <div className="text-[11px] text-zinc-600 truncate mt-0.5 pl-[52px]">
                             {event.documentPath}
+                          </div>
+                        )}
+                        {event.analyzeText && (
+                          <div className="text-[11px] text-zinc-400 mt-1 pl-[52px] line-clamp-2">
+                            {event.analyzeText}
                           </div>
                         )}
                       </div>

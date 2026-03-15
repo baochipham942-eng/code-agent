@@ -60,6 +60,16 @@
 
 **设计原则**: 模型本身就是最好的记忆引擎。~700 行代码（含前端+IPC）+ prompt 替代旧 13K+ 行 vector/embedding 系统。
 
+### v0.16.52+ 桌面活动视觉分析（2026-03-15）
+
+| 模块 | 位置 | 描述 |
+|------|------|------|
+| **视觉分析器** | `src/main/services/desktopVisionAnalyzer.ts` | 后台轮询截图，调用智谱 GLM-4V-Plus 生成语义描述 |
+| **Rust 采集增强** | `src-tauri/src/native_desktop.rs` | 截图 PNG→JPG（~80% 空间节省）、`analyze_text` 字段、SQLite 自动迁移 |
+| **Tauri 命令** | `desktop_update_analyze_text` | Node 侧写回视觉分析结果到 Rust 管理的 SQLite |
+
+**对标 StepFun（阶跃AI）全局记忆**：每次截图后由视觉模型生成"用户正在做什么"的自然语言描述（`analyzeText`），类似 StepFun 的 `analyze_text` 字段。UI 详情面板优先展示 AI 分析文本，搜索范围纳入分析结果。
+
 ### v0.16.52+ 架构清理与评测修复（2026-03-09 ~ 03-12）
 
 | 改动 | 描述 |

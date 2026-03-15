@@ -43,6 +43,44 @@ export interface WorkspaceActivitySearchResult {
   countsBySource: Record<string, number>;
 }
 
+// ---- Workspace Activity Feedback ----
+
+export type WorkspaceActivityFeedbackStatus = 'accepted' | 'completed' | 'dismissed';
+
+interface WorkspaceActivityFeedbackEntry {
+  status: WorkspaceActivityFeedbackStatus;
+  sessionId: string;
+  source: string;
+  updatedAtMs: number;
+}
+
+const workspaceActivityFeedbackMap = new Map<string, WorkspaceActivityFeedbackEntry>();
+
+export function recordWorkspaceActivityFeedback(
+  itemId: string,
+  status: WorkspaceActivityFeedbackStatus,
+  meta?: { sessionId?: string; source?: string },
+): void {
+  workspaceActivityFeedbackMap.set(itemId, {
+    status,
+    sessionId: meta?.sessionId || 'default',
+    source: meta?.source || 'unknown',
+    updatedAtMs: Date.now(),
+  });
+}
+
+export function getWorkspaceActivityFeedback(
+  itemId: string,
+): WorkspaceActivityFeedbackEntry | null {
+  return workspaceActivityFeedbackMap.get(itemId) || null;
+}
+
+export function clearWorkspaceActivityFeedback(itemId: string): void {
+  workspaceActivityFeedbackMap.delete(itemId);
+}
+
+// ---- Constants ----
+
 const ALL_SOURCES: WorkspaceActivitySource[] = ['desktop', 'mail', 'calendar', 'reminders'];
 const OFFICE_SOURCES: WorkspaceActivitySource[] = ['mail', 'calendar', 'reminders'];
 const DEFAULT_LIMIT = 8;

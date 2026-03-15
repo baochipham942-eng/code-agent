@@ -4,8 +4,17 @@
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getDesktopActivityUnderstandingService, isDesktopDerivedSessionTask } from '../../memory/desktopActivityUnderstandingService';
-import type { PlanningService, TaskStepStatus, TaskPhaseStatus } from '../../planning';
+import { recordWorkspaceActivityFeedback, clearWorkspaceActivityFeedback } from '../../memory/workspaceActivitySearchService';
+import type { PlanningService, TaskStep, TaskStepStatus, TaskPhaseStatus } from '../../planning';
+import { WORKSPACE_RECOVERY_PHASE_TITLE } from '../../planning/recoveredWorkOrchestrator';
 import { listTasks } from './taskStore';
+
+function computeWorkspacePhaseStatus(steps: TaskStep[]): TaskPhaseStatus {
+  if (steps.length === 0) return 'pending';
+  if (steps.every((s) => s.status === 'completed' || s.status === 'skipped')) return 'completed';
+  if (steps.some((s) => s.status === 'in_progress')) return 'in_progress';
+  return 'pending';
+}
 
 function normalizeStepContent(content: string): string {
   return content.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -182,6 +191,46 @@ export const planUpdateTool: Tool = {
         }
       } catch {
         // Feedback sync is best-effort and should not block plan updates.
+      }
+
+      // Workspace activity feedback: write back status for workspace-derived steps
+      try {
+        if (foundStep.metadata?.sourceKind === 'workspace_activity_search') {
+          const itemIds = Array.isArray(foundStep.metadata.workspaceItemIds)
+            ? (foundStep.metadata.workspaceItemIds as string[])
+            : [];
+          if (status === 'completed' || status === 'skipped') {
+            for (const id of itemIds) {
+              recordWorkspaceActivityFeedback(id, status === 'completed' ? 'completed' : 'dismissed', { sessionId, source: 'plan' });
+            }
+          } else if (status === 'in_progress') {
+            for (const id of itemIds) {
+              recordWorkspaceActivityFeedback(id, 'accepted', { sessionId, source: 'plan' });
+            }
+          } else if (status === 'pending') {
+            for (const id of itemIds) {
+              clearWorkspaceActivityFeedback(id);
+            }
+          }
+        }
+      } catch {
+        // Workspace activity feedback is best-effort.
+      }
+
+      // Auto-recompute phase status for workspace recovery phase
+      if (foundPhase.title === WORKSPACE_RECOVERY_PHASE_TITLE) {
+        try {
+          const refreshedPlan = await planningService.plan.read();
+          const refreshedPhase = refreshedPlan?.phases.find((p) => p.id === foundPhase.id);
+          if (refreshedPhase) {
+            const desired = computeWorkspacePhaseStatus(refreshedPhase.steps);
+            if (refreshedPhase.status !== desired) {
+              await planningService.plan.updatePhaseStatus(refreshedPhase.id, desired);
+            }
+          }
+        } catch {
+          // Phase status recomputation is best-effort.
+        }
       }
 
       // Read updated plan

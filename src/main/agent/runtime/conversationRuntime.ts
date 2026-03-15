@@ -24,7 +24,7 @@ import { getToolSearchService } from '../../tools/search';
 import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
 import type { PlanningService } from '../../planning';
 import { publishPlanningStateToRenderer } from '../../planning';
-import { buildRecoveredWorkOrchestrationHint } from '../../planning/recoveredWorkOrchestrator';
+import { buildRecoveredWorkOrchestrationHint, isContinuationLikeRequest, recoverRecentWorkIntoPlanning } from '../../planning/recoveredWorkOrchestrator';
 import { getMemoryService } from '../../memory/memoryService';
 import { getContinuousLearningService } from '../../memory/continuousLearningService';
 import { syncDesktopTasksToPlanningService } from '../../memory/desktopActivityPlanningBridge';
@@ -314,6 +314,35 @@ export class ConversationRuntime {
           `<recovered-work-orchestration>\n${recoveredWorkHint}\n</recovered-work-orchestration>`
         );
         logger.info('[AgentLoop] Recovered work orchestration hint injected');
+      }
+
+      // Auto-trigger recovery for continuation-like requests
+      if (
+        userMessage
+        && isContinuationLikeRequest(userMessage)
+        && this.ctx.planningService
+        && taskSync.totalCandidates > 0
+      ) {
+        try {
+          const recoveryResult = await recoverRecentWorkIntoPlanning({
+            planningService: this.ctx.planningService,
+            sessionId: this.ctx.sessionId,
+            query: userMessage,
+            sinceHours: 24,
+            refreshDesktop: false,
+          });
+          if (recoveryResult.planChanged) {
+            await publishPlanningStateToRenderer(this.ctx.planningService);
+            logger.info('[AgentLoop] Auto-recovery triggered for continuation request', {
+              addedSteps: recoveryResult.planningSync.addedSteps.length,
+              workspaceItems: recoveryResult.workspaceResult?.items.length || 0,
+            });
+          }
+        } catch (autoRecoveryError) {
+          logger.warn('[AgentLoop] Auto-recovery for continuation failed', {
+            error: String(autoRecoveryError),
+          });
+        }
       }
     } catch (error) {
       logger.warn('[AgentLoop] Desktop-derived context bootstrap failed, continuing without it', {

@@ -1,164 +1,229 @@
-import React, { useEffect, useState } from 'react';
+// ============================================================================
+// NativeDesktopSection - 桌面活动时间线（StepFun 全局记忆风格）
+// 左侧活动时间线 + 右侧详情面板
+// ============================================================================
+
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
-  Camera,
-  Clock,
-  Database,
-  ExternalLink,
-  Monitor,
   Play,
-  RefreshCw,
-  Shield,
   Square,
+  Monitor,
+  ChevronLeft,
+  ChevronRight,
+  Image as ImageIcon,
 } from 'lucide-react';
 import {
-  captureNativeDesktopScreenshot,
-  getFrontmostDesktopContext,
-  getNativeDesktopCapabilities,
   getNativeDesktopCollectorStatus,
-  getNativeDesktopPermissionStatus,
   listRecentNativeDesktopEvents,
-  openNativeDesktopSystemSettings,
   startNativeDesktopCollector,
   stopNativeDesktopCollector,
   type DesktopActivityEvent,
-  type FrontmostContextSnapshot,
-  type NativeDesktopCapabilities,
   type NativeDesktopCollectorStatus,
-  type NativePermissionSnapshot,
-  type NativePermissionStatus,
-  type ScreenshotCaptureResult,
 } from '../../../../services/nativeDesktop';
 
-function statusPill(permission: NativePermissionStatus): string {
-  switch (permission.status) {
-    case 'granted':
-      return 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20';
-    case 'denied':
-      return 'bg-rose-500/10 text-rose-300 border-rose-500/20';
-    case 'unsupported':
-      return 'bg-zinc-700/40 text-zinc-400 border-zinc-600/40';
-    default:
-      return 'bg-amber-500/10 text-amber-300 border-amber-500/20';
+// ============================================================================
+// Types
+// ============================================================================
+
+interface ActivitySegment {
+  appName: string;
+  bundleId?: string | null;
+  startMs: number;
+  endMs: number;
+  events: DesktopActivityEvent[];
+  title: string; // derived from most common windowTitle
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function groupEventsIntoSegments(events: DesktopActivityEvent[]): ActivitySegment[] {
+  if (events.length === 0) return [];
+
+  // Sort by time ascending
+  const sorted = [...events].sort((a, b) => a.capturedAtMs - b.capturedAtMs);
+  const segments: ActivitySegment[] = [];
+  let current: ActivitySegment | null = null;
+
+  for (const event of sorted) {
+    // Same app and within 10 minutes gap → merge into segment
+    if (
+      current &&
+      current.appName === event.appName &&
+      event.capturedAtMs - current.endMs < 10 * 60 * 1000
+    ) {
+      current.endMs = event.capturedAtMs;
+      current.events.push(event);
+    } else {
+      current = {
+        appName: event.appName,
+        bundleId: event.bundleId,
+        startMs: event.capturedAtMs,
+        endMs: event.capturedAtMs,
+        events: [event],
+        title: '',
+      };
+      segments.push(current);
+    }
   }
+
+  // Derive title from most common windowTitle in each segment
+  for (const seg of segments) {
+    const titleCounts = new Map<string, number>();
+    for (const ev of seg.events) {
+      const t = ev.windowTitle || ev.browserTitle || '';
+      if (t) titleCounts.set(t, (titleCounts.get(t) || 0) + 1);
+    }
+    let best = '';
+    let bestCount = 0;
+    for (const [t, c] of titleCounts) {
+      if (c > bestCount) { best = t; bestCount = c; }
+    }
+    seg.title = best || seg.appName;
+  }
+
+  // Reverse so newest first
+  return segments.reverse();
 }
 
-function formatTimestamp(timestamp?: number | null): string {
-  if (!timestamp) return '未采集';
-  return new Date(timestamp).toLocaleString();
+function formatTime(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-function formatBytes(bytes?: number | null): string {
-  if (!bytes) return '0 B';
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+function formatTimeRange(startMs: number, endMs: number): string {
+  if (startMs === endMs) return formatTime(startMs);
+  return `${formatTime(startMs)} - ${formatTime(endMs)}`;
 }
+
+function formatDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  return `${y}-${m}-${d} ${weekdays[date.getDay()]}`;
+}
+
+function durationText(startMs: number, endMs: number): string {
+  const diffMin = Math.round((endMs - startMs) / 60000);
+  if (diffMin < 1) return '< 1 分钟';
+  if (diffMin < 60) return `${diffMin} 分钟`;
+  const h = Math.floor(diffMin / 60);
+  const m = diffMin % 60;
+  return m > 0 ? `${h} 小时 ${m} 分钟` : `${h} 小时`;
+}
+
+// Generate a deterministic color from app name
+function appColor(appName: string): string {
+  const colors = [
+    'bg-blue-500', 'bg-emerald-500', 'bg-purple-500', 'bg-amber-500',
+    'bg-rose-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-teal-500',
+    'bg-orange-500', 'bg-pink-500',
+  ];
+  let hash = 0;
+  for (let i = 0; i < appName.length; i++) {
+    hash = ((hash << 5) - hash + appName.charCodeAt(i)) | 0;
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
+function appInitial(appName: string): string {
+  // Get first meaningful character
+  const clean = appName.replace(/\.app$/, '').trim();
+  return clean.charAt(0).toUpperCase();
+}
+
+// ============================================================================
+// Screenshot component (loads via file:// or asset protocol)
+// ============================================================================
+
+const ScreenshotImage: React.FC<{ path: string; className?: string }> = ({ path, className }) => {
+  const [error, setError] = useState(false);
+
+  if (error || !path) {
+    return (
+      <div className={`flex items-center justify-center bg-zinc-800 text-zinc-600 ${className || ''}`}>
+        <ImageIcon className="w-8 h-8" />
+      </div>
+    );
+  }
+
+  // Convert local path to file:// URL for Tauri/web
+  const src = path.startsWith('file://') ? path : `file://${path}`;
+
+  return (
+    <img
+      src={src}
+      alt="Screenshot"
+      className={`object-cover ${className || ''}`}
+      onError={() => setError(true)}
+    />
+  );
+};
+
+// ============================================================================
+// Component
+// ============================================================================
 
 export const NativeDesktopSection: React.FC = () => {
-  const [capabilities, setCapabilities] = useState<NativeDesktopCapabilities | null>(null);
-  const [permissions, setPermissions] = useState<NativePermissionSnapshot | null>(null);
-  const [context, setContext] = useState<FrontmostContextSnapshot | null>(null);
-  const [screenshot, setScreenshot] = useState<ScreenshotCaptureResult | null>(null);
   const [collectorStatus, setCollectorStatus] = useState<NativeDesktopCollectorStatus | null>(null);
   const [recentEvents, setRecentEvents] = useState<DesktopActivityEvent[]>([]);
-  const [collectorIntervalSecs, setCollectorIntervalSecs] = useState(30);
-  const [collectorCaptureScreenshots, setCollectorCaptureScreenshots] = useState(true);
-  const [collectorRedactSensitive, setCollectorRedactSensitive] = useState(true);
-  const [collectorRetentionDays, setCollectorRetentionDays] = useState(7);
+  const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [capturing, setCapturing] = useState(false);
   const [collectorBusy, setCollectorBusy] = useState(false);
+  const [currentDate, setCurrentDate] = useState(new Date());
 
-  const loadSnapshot = async () => {
-    setLoading(true);
-    setError(null);
-
-    const results = await Promise.allSettled([
-      getNativeDesktopCapabilities(),
-      getNativeDesktopPermissionStatus(),
-      getFrontmostDesktopContext(),
-      getNativeDesktopCollectorStatus(),
-      listRecentNativeDesktopEvents(8),
-    ]);
-
-    const [capabilitiesResult, permissionsResult, contextResult, collectorStatusResult, recentEventsResult] = results;
-    const errors = results
-      .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
-      .map((result) => (result.reason instanceof Error ? result.reason.message : String(result.reason)))
-      .filter(Boolean);
-
-    if (capabilitiesResult.status === 'fulfilled') {
-      setCapabilities(capabilitiesResult.value);
-    }
-    if (permissionsResult.status === 'fulfilled') {
-      setPermissions(permissionsResult.value);
-    }
-    if (contextResult.status === 'fulfilled') {
-      setContext(contextResult.value);
-    }
-    if (collectorStatusResult.status === 'fulfilled') {
-      setCollectorStatus(collectorStatusResult.value);
-      setCollectorIntervalSecs(collectorStatusResult.value.intervalSecs || 30);
-      setCollectorCaptureScreenshots(collectorStatusResult.value.captureScreenshots);
-      setCollectorRedactSensitive(collectorStatusResult.value.redactSensitiveContexts ?? true);
-      setCollectorRetentionDays(collectorStatusResult.value.retentionDays || 7);
-    }
-    if (recentEventsResult.status === 'fulfilled') {
-      setRecentEvents(recentEventsResult.value);
-    }
-
-    setError(errors.length > 0 ? errors[0] : null);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    loadSnapshot().catch((err) => {
+  // Group events into activity segments
+  const segments = useMemo(() => groupEventsIntoSegments(recentEvents), [recentEvents]);
+  const loadData = useCallback(async () => {
+    try {
+      const [status, events] = await Promise.all([
+        getNativeDesktopCollectorStatus(),
+        listRecentNativeDesktopEvents(50),
+      ]);
+      setCollectorStatus(status);
+      setRecentEvents(events);
+    } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
       setLoading(false);
-    });
+    }
   }, []);
 
   useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Auto-refresh when collector is running
+  useEffect(() => {
     if (!collectorStatus?.running) return;
-
     const timer = window.setInterval(() => {
-      loadSnapshot().catch((err) => {
-        setError(err instanceof Error ? err.message : String(err));
-      });
+      loadData();
     }, 5000);
-
     return () => window.clearInterval(timer);
-  }, [collectorStatus?.running]);
+  }, [collectorStatus?.running, loadData]);
 
-  const handleCapture = async () => {
-    setCapturing(true);
-    setError(null);
-    try {
-      const result = await captureNativeDesktopScreenshot();
-      setScreenshot(result);
-      await loadSnapshot();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCapturing(false);
-    }
-  };
-
-  const handleStartCollector = async () => {
+  const handleToggleCollector = async () => {
     setCollectorBusy(true);
     setError(null);
     try {
-      const status = await startNativeDesktopCollector({
-        intervalSecs: Math.max(5, collectorIntervalSecs || 30),
-        captureScreenshots: collectorCaptureScreenshots,
-        redactSensitiveContexts: collectorRedactSensitive,
-        retentionDays: Math.max(1, collectorRetentionDays || 7),
-        dedupeWindowSecs: 60,
-        maxRecentEvents: 20,
-      });
-      setCollectorStatus(status);
-      await loadSnapshot();
+      if (collectorStatus?.running) {
+        const status = await stopNativeDesktopCollector();
+        setCollectorStatus(status);
+      } else {
+        const status = await startNativeDesktopCollector({
+          intervalSecs: 30,
+          captureScreenshots: true,
+          redactSensitiveContexts: true,
+          retentionDays: 7,
+          dedupeWindowSecs: 60,
+          maxRecentEvents: 50,
+        });
+        setCollectorStatus(status);
+      }
+      await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -166,309 +231,254 @@ export const NativeDesktopSection: React.FC = () => {
     }
   };
 
-  const handleStopCollector = async () => {
-    setCollectorBusy(true);
-    setError(null);
-    try {
-      const status = await stopNativeDesktopCollector();
-      setCollectorStatus(status);
-      await loadSnapshot();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCollectorBusy(false);
-    }
+  const navigateDate = (delta: number) => {
+    const d = new Date(currentDate);
+    d.setDate(d.getDate() + delta);
+    setCurrentDate(d);
+    // TODO: load events for specific date from SQLite
   };
+
+  // Filter segments to current date
+  const filteredSegments = useMemo(() => {
+    const dayStart = new Date(currentDate);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(currentDate);
+    dayEnd.setHours(23, 59, 59, 999);
+    return segments.filter(
+      (s) => s.startMs >= dayStart.getTime() && s.startMs <= dayEnd.getTime()
+    );
+  }, [segments, currentDate]);
+
+  const displaySegment = filteredSegments[selectedSegmentIndex] || null;
 
   return (
-    <div className="pt-4 border-t border-zinc-700 space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-medium text-zinc-200 flex items-center gap-2">
-            <Monitor className="w-4 h-4" />
-            原生桌面底座
-          </h3>
-          <p className="text-xs text-zinc-500 mt-1">
-            P1 已经从单次快照进到后台 collector：持续轮询、去重、文件/会话/电源上下文采集，JSONL + SQLite 落盘。
-          </p>
+    <div className="flex flex-col h-full">
+      {/* Top bar: collector controls */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700/50">
+        <div className="flex items-center gap-3">
+          <Monitor className="w-4 h-4 text-cyan-400" />
+          <span className="text-sm font-medium text-zinc-200">桌面活动</span>
+          <div className={`px-2 py-0.5 rounded-full text-[11px] ${
+            collectorStatus?.running
+              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+              : 'bg-zinc-700/40 text-zinc-500 border border-zinc-600/30'
+          }`}>
+            {collectorStatus?.running ? '采集中' : '已停止'}
+          </div>
+          {collectorStatus?.running && (
+            <span className="text-[11px] text-zinc-500">
+              已采集 {collectorStatus.totalEventsWritten} 条
+            </span>
+          )}
         </div>
+
         <button
-          onClick={() => loadSnapshot()}
-          disabled={loading}
-          className="px-3 py-1.5 rounded-lg text-xs border border-zinc-700 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50 inline-flex items-center gap-1.5"
+          onClick={handleToggleCollector}
+          disabled={collectorBusy}
+          className={`px-3 py-1.5 rounded-lg text-xs inline-flex items-center gap-1.5 transition-colors ${
+            collectorStatus?.running
+              ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+              : 'bg-cyan-600 text-white hover:bg-cyan-500'
+          } disabled:opacity-50`}
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          刷新
+          {collectorStatus?.running ? (
+            <><Square className="w-3 h-3" /> 停止</>
+          ) : (
+            <><Play className="w-3 h-3" /> 启动采集</>
+          )}
         </button>
       </div>
 
       {error && (
-        <div className="p-3 rounded-lg border border-rose-500/20 bg-rose-500/10 text-xs text-rose-200">
+        <div className="mx-4 mt-2 p-2 rounded-lg border border-rose-500/20 bg-rose-500/10 text-xs text-rose-300">
           {error}
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="p-3 rounded-lg border border-zinc-700 bg-zinc-800/60">
-          <div className="text-xs uppercase tracking-wide text-zinc-500 mb-2">Capabilities</div>
-          <div className="space-y-1.5 text-sm text-zinc-300">
-            <div>Platform: <span className="text-zinc-100">{capabilities?.platform || 'unknown'}</span></div>
-            <div>Phase: <span className="text-zinc-100">{capabilities?.phase || 'unknown'}</span></div>
-            <div>Frontmost context: <span className="text-zinc-100">{capabilities?.supportsFrontmostContext ? 'yes' : 'no'}</span></div>
-            <div>Browser context: <span className="text-zinc-100">{capabilities?.supportsBrowserContext ? 'yes' : 'no'}</span></div>
-            <div>Background collection: <span className="text-zinc-100">{capabilities?.supportsBackgroundCollection ? 'yes' : 'not yet'}</span></div>
-          </div>
-        </div>
-
-        <div className="p-3 rounded-lg border border-zinc-700 bg-zinc-800/60">
-          <div className="text-xs uppercase tracking-wide text-zinc-500 mb-2">Latest Context</div>
-          <div className="space-y-1.5 text-sm text-zinc-300">
-            <div>Captured: <span className="text-zinc-100">{formatTimestamp(context?.capturedAtMs)}</span></div>
-            <div>App: <span className="text-zinc-100">{context?.appName || 'unknown'}</span></div>
-            <div>Window: <span className="text-zinc-100 break-all">{context?.windowTitle || 'N/A'}</span></div>
-            <div>URL: <span className="text-zinc-100 break-all">{context?.browserUrl || 'N/A'}</span></div>
-            <div>Document: <span className="text-zinc-100 break-all">{context?.documentPath || 'N/A'}</span></div>
-            <div>Session: <span className="text-zinc-100">{context?.sessionState || 'N/A'}</span></div>
-            <div>
-              Power: <span className="text-zinc-100">
-                {context?.powerSource || 'N/A'}
-                {typeof context?.batteryPercent === 'number' ? ` ${context.batteryPercent}%` : ''}
-              </span>
-            </div>
-          </div>
-        </div>
+      {/* Date navigation */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-700/30">
+        <button
+          onClick={() => navigateDate(-1)}
+          className="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <span className="text-xs text-zinc-400">{formatDate(currentDate)}</span>
+        <button
+          onClick={() => navigateDate(1)}
+          className="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
 
-      <div className="p-3 rounded-lg border border-zinc-700 bg-zinc-800/60">
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <div className="text-xs uppercase tracking-wide text-zinc-500">Permissions</div>
-          <div className="text-xs text-zinc-500">
-            Last checked: {formatTimestamp(permissions?.checkedAtMs)}
-          </div>
-        </div>
+      {/* Main content: two-column layout */}
+      <div className="flex flex-1 min-h-0">
+        {/* Left: activity timeline */}
+        <div className="w-[280px] border-r border-zinc-700/30 overflow-y-auto">
+          {loading && filteredSegments.length === 0 && (
+            <div className="p-4 text-xs text-zinc-500 text-center">加载中...</div>
+          )}
 
-        <div className="space-y-2">
-          {(permissions?.permissions || []).map((permission: NativePermissionStatus) => (
-            <div
-              key={permission.kind}
-              className="flex items-start justify-between gap-3 p-2 rounded-lg border border-zinc-700/80 bg-zinc-900/40"
+          {!loading && filteredSegments.length === 0 && (
+            <div className="p-6 text-center">
+              <Monitor className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
+              <div className="text-xs text-zinc-500">
+                {collectorStatus?.running ? '等待活动数据...' : '启动采集以记录桌面活动'}
+              </div>
+            </div>
+          )}
+
+          {filteredSegments.map((segment, index) => (
+            <button
+              key={`${segment.appName}-${segment.startMs}`}
+              onClick={() => setSelectedSegmentIndex(index)}
+              className={`w-full text-left px-4 py-3 border-b border-zinc-800/50 transition-colors ${
+                selectedSegmentIndex === index
+                  ? 'bg-zinc-700/50'
+                  : 'hover:bg-zinc-800/50'
+              }`}
             >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <Shield className="w-3.5 h-3.5 text-zinc-400" />
-                  <span className="text-sm text-zinc-200">{permission.kind}</span>
-                  <span className={`px-2 py-0.5 rounded-full border text-[11px] ${statusPill(permission)}`}>
-                    {permission.status}
-                  </span>
+              <div className="flex items-start gap-3">
+                {/* App icon placeholder */}
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-medium shrink-0 mt-0.5 ${appColor(segment.appName)}`}>
+                  {appInitial(segment.appName)}
                 </div>
-                {permission.detail && (
-                  <div className="mt-1 text-xs text-zinc-500 break-all">{permission.detail}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm text-zinc-200 truncate">
+                    {segment.title}
+                  </div>
+                  <div className="text-[11px] text-zinc-500 mt-0.5">
+                    {segment.appName}
+                  </div>
+                  <div className="text-[11px] text-zinc-500 mt-0.5 flex items-center gap-2">
+                    <span>{formatTimeRange(segment.startMs, segment.endMs)}</span>
+                    {segment.events.length > 1 && (
+                      <span className="text-zinc-600">
+                        {durationText(segment.startMs, segment.endMs)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {/* Screenshot indicator */}
+                {segment.events.some((e) => e.screenshotPath) && (
+                  <ImageIcon className="w-3 h-3 text-zinc-600 shrink-0 mt-1" />
                 )}
               </div>
-
-              {(permission.kind === 'screenCapture' || permission.kind === 'accessibility') && permission.status !== 'granted' && (
-                <button
-                  onClick={() => openNativeDesktopSystemSettings(permission.kind as 'screenCapture' | 'accessibility')}
-                  className="shrink-0 px-2.5 py-1 rounded-lg text-xs border border-zinc-700 text-zinc-300 hover:bg-zinc-800 inline-flex items-center gap-1.5"
-                >
-                  <ExternalLink className="w-3 h-3" />
-                  打开设置
-                </button>
-              )}
-            </div>
+            </button>
           ))}
 
-          {!permissions && !loading && (
-            <div className="text-xs text-zinc-500">暂无权限状态。</div>
+          {/* Daily summary */}
+          {filteredSegments.length > 0 && (
+            <div className="px-4 py-3 text-[11px] text-zinc-600 border-t border-zinc-800/50">
+              今日共 {filteredSegments.length} 个活动片段，
+              涉及 {new Set(filteredSegments.map((s) => s.appName)).size} 个应用
+            </div>
           )}
         </div>
-      </div>
 
-      <div className="p-3 rounded-lg border border-zinc-700 bg-zinc-800/60 space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-xs uppercase tracking-wide text-zinc-500">Background Collector</div>
-            <div className="text-xs text-zinc-500 mt-1">
-              原生层定时采集前台应用、窗口标题、浏览器 URL、文件路径、会话状态和电源状态，并按时间写入本地事件日志。
-            </div>
-          </div>
-          <div className={`px-2.5 py-1 rounded-full border text-[11px] ${
-            collectorStatus?.running
-              ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
-              : 'border-zinc-700 bg-zinc-900/60 text-zinc-400'
-          }`}>
-            {collectorStatus?.running ? 'running' : 'stopped'}
-          </div>
-        </div>
+        {/* Right: detail panel */}
+        <div className="flex-1 overflow-y-auto">
+          {displaySegment ? (
+            <div className="p-5 space-y-4">
+              {/* Header */}
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white text-lg font-medium ${appColor(displaySegment.appName)}`}>
+                  {appInitial(displaySegment.appName)}
+                </div>
+                <div>
+                  <h3 className="text-base font-medium text-zinc-200">
+                    {displaySegment.title}
+                  </h3>
+                  <div className="text-xs text-zinc-500 mt-0.5">
+                    {displaySegment.appName} · {formatTimeRange(displaySegment.startMs, displaySegment.endMs)}
+                    {displaySegment.events.length > 1 && ` · ${durationText(displaySegment.startMs, displaySegment.endMs)}`}
+                  </div>
+                </div>
+              </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="p-3 rounded-lg border border-zinc-700 bg-zinc-900/40">
-            <div className="text-xs text-zinc-500 mb-2 flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5" />
-              Interval
-            </div>
-            <input
-              type="number"
-              min={5}
-              step={5}
-              value={collectorIntervalSecs}
-              onChange={(event) => setCollectorIntervalSecs(Number(event.target.value || 30))}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100"
-            />
-            <div className="mt-1 text-xs text-zinc-500">单位：秒，最小 5 秒。</div>
-          </label>
+              {/* Screenshot preview */}
+              {(() => {
+                const screenshotEvent = displaySegment.events.find((e) => e.screenshotPath);
+                if (!screenshotEvent?.screenshotPath) return null;
+                return (
+                  <div className="rounded-lg overflow-hidden border border-zinc-700/50">
+                    <ScreenshotImage
+                      path={screenshotEvent.screenshotPath}
+                      className="w-full h-auto max-h-[300px] rounded-lg"
+                    />
+                  </div>
+                );
+              })()}
 
-          <label className="p-3 rounded-lg border border-zinc-700 bg-zinc-900/40 flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={collectorCaptureScreenshots}
-              onChange={(event) => setCollectorCaptureScreenshots(event.target.checked)}
-              className="mt-1"
-            />
-            <div>
-              <div className="text-sm text-zinc-200">Capture screenshots</div>
-              <div className="text-xs text-zinc-500 mt-1">
-                开启后每次落盘事件都会尝试保存一张系统截图。没有屏幕权限时会自动降级成元数据采集。
+              {/* Description */}
+              <div className="text-sm text-zinc-400 leading-relaxed">
+                在 <span className="text-zinc-200">{displaySegment.appName}</span> 中
+                {displaySegment.events[0]?.browserUrl
+                  ? `浏览了 ${displaySegment.events[0].browserUrl}`
+                  : displaySegment.events[0]?.documentPath
+                    ? `编辑了 ${displaySegment.events[0].documentPath}`
+                    : `使用了「${displaySegment.title}」`
+                }
+                {displaySegment.events.length > 1 && `，共记录 ${displaySegment.events.length} 个活动点`}。
+              </div>
+
+              {/* Action timeline */}
+              <div>
+                <h4 className="text-xs font-medium text-zinc-400 mb-3">行动时间线</h4>
+                <div className="space-y-0">
+                  {displaySegment.events.map((event, i) => (
+                    <div key={event.id} className="flex items-start gap-3 relative">
+                      {/* Timeline line */}
+                      <div className="flex flex-col items-center">
+                        <div className="w-2 h-2 rounded-full bg-zinc-600 mt-1.5 shrink-0" />
+                        {i < displaySegment.events.length - 1 && (
+                          <div className="w-px flex-1 bg-zinc-700/50 min-h-[24px]" />
+                        )}
+                      </div>
+                      {/* Event content */}
+                      <div className="pb-3 min-w-0 flex-1">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-[11px] text-zinc-500 font-mono shrink-0">
+                            {formatTime(event.capturedAtMs)}
+                          </span>
+                          <span className="text-xs text-zinc-300 truncate">
+                            {event.windowTitle || event.browserTitle || event.appName}
+                          </span>
+                        </div>
+                        {event.browserUrl && (
+                          <div className="text-[11px] text-zinc-600 truncate mt-0.5 pl-[52px]">
+                            {event.browserUrl}
+                          </div>
+                        )}
+                        {event.documentPath && (
+                          <div className="text-[11px] text-zinc-600 truncate mt-0.5 pl-[52px]">
+                            {event.documentPath}
+                          </div>
+                        )}
+                      </div>
+                      {/* Mini screenshot */}
+                      {event.screenshotPath && (
+                        <div className="w-12 h-8 rounded overflow-hidden border border-zinc-700/50 shrink-0 mt-0.5">
+                          <ScreenshotImage
+                            path={event.screenshotPath}
+                            className="w-full h-full"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-          </label>
-
-          <label className="p-3 rounded-lg border border-zinc-700 bg-zinc-900/40 flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={collectorRedactSensitive}
-              onChange={(event) => setCollectorRedactSensitive(event.target.checked)}
-              className="mt-1"
-            />
-            <div>
-              <div className="text-sm text-zinc-200">Redact sensitive contexts</div>
-              <div className="text-xs text-zinc-500 mt-1">
-                对密码管理器、验证码等敏感窗口自动脱敏，并跳过截图落盘。
+          ) : (
+            <div className="flex items-center justify-center h-full text-zinc-600">
+              <div className="text-center">
+                <Monitor className="w-10 h-10 mx-auto mb-2 text-zinc-700" />
+                <div className="text-sm">选择左侧活动查看详情</div>
               </div>
             </div>
-          </label>
-
-          <label className="p-3 rounded-lg border border-zinc-700 bg-zinc-900/40">
-            <div className="text-xs text-zinc-500 mb-2 flex items-center gap-1.5">
-              <Database className="w-3.5 h-3.5" />
-              Retention days
-            </div>
-            <input
-              type="number"
-              min={1}
-              max={90}
-              step={1}
-              value={collectorRetentionDays}
-              onChange={(event) => setCollectorRetentionDays(Number(event.target.value || 7))}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100"
-            />
-            <div className="mt-1 text-xs text-zinc-500">自动清理超期 JSONL、截图和 SQLite 记录。</div>
-          </label>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleStartCollector}
-            disabled={collectorBusy}
-            className="px-3 py-1.5 rounded-lg text-xs border border-zinc-700 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50 inline-flex items-center gap-1.5"
-          >
-            <Play className="w-3.5 h-3.5" />
-            {collectorBusy ? '处理中...' : '启动采集'}
-          </button>
-          <button
-            onClick={handleStopCollector}
-            disabled={collectorBusy}
-            className="px-3 py-1.5 rounded-lg text-xs border border-zinc-700 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50 inline-flex items-center gap-1.5"
-          >
-            <Square className="w-3.5 h-3.5" />
-            停止采集
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-zinc-300">
-          <div className="p-3 rounded-lg border border-zinc-700 bg-zinc-900/40 space-y-1.5">
-            <div>Total events: <span className="text-zinc-100">{collectorStatus?.totalEventsWritten ?? 0}</span></div>
-            <div>Last event: <span className="text-zinc-100">{formatTimestamp(collectorStatus?.lastEventAtMs)}</span></div>
-            <div>Last cleanup: <span className="text-zinc-100">{formatTimestamp(collectorStatus?.lastCleanupAtMs)}</span></div>
-            <div>Dedupe: <span className="text-zinc-100">{collectorStatus?.dedupeWindowSecs ?? 0}s</span></div>
-            <div>Last error: <span className="text-zinc-100 break-all">{collectorStatus?.lastError || 'none'}</span></div>
-          </div>
-          <div className="p-3 rounded-lg border border-zinc-700 bg-zinc-900/40 space-y-1.5">
-            <div className="flex items-center gap-1.5 text-zinc-400">
-              <Database className="w-3.5 h-3.5" />
-              Persisted paths
-            </div>
-            <div>Events: <span className="text-zinc-100 break-all">{collectorStatus?.eventDir || 'N/A'}</span></div>
-            <div>Screenshots: <span className="text-zinc-100 break-all">{collectorStatus?.screenshotDir || 'N/A'}</span></div>
-            <div>Current log: <span className="text-zinc-100 break-all">{collectorStatus?.eventsFile || 'N/A'}</span></div>
-            <div>SQLite: <span className="text-zinc-100 break-all">{collectorStatus?.sqliteDbPath || 'N/A'}</span></div>
-            <div>Retention: <span className="text-zinc-100">{collectorStatus?.retentionDays ?? collectorRetentionDays} days</span></div>
-            <div>Privacy: <span className="text-zinc-100">{collectorStatus?.redactSensitiveContexts ? 'redact sensitive' : 'capture raw'}</span></div>
-          </div>
-        </div>
-      </div>
-
-      <div className="p-3 rounded-lg border border-zinc-700 bg-zinc-800/60 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-xs uppercase tracking-wide text-zinc-500">Recent Events</div>
-            <div className="text-xs text-zinc-500 mt-1">
-              最近落盘的前台活动。这里就是后续时间线、日报、待办提取的原始输入。
-            </div>
-          </div>
-          <div className="text-xs text-zinc-500">{recentEvents.length} items</div>
-        </div>
-
-        <div className="space-y-2">
-          {recentEvents.map((event) => (
-            <div
-              key={event.id}
-              className="p-3 rounded-lg border border-zinc-700 bg-zinc-900/40 space-y-1.5"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm text-zinc-100">{event.appName}</div>
-                <div className="text-xs text-zinc-500">{formatTimestamp(event.capturedAtMs)}</div>
-              </div>
-              <div className="text-xs text-zinc-400 break-all">Window: {event.windowTitle || 'N/A'}</div>
-              <div className="text-xs text-zinc-400 break-all">URL: {event.browserUrl || 'N/A'}</div>
-              <div className="text-xs text-zinc-400 break-all">Document: {event.documentPath || 'N/A'}</div>
-              <div className="text-xs text-zinc-400">Session: {event.sessionState || 'N/A'}</div>
-              <div className="text-xs text-zinc-400">
-                Power: {event.powerSource || 'N/A'}
-                {typeof event.batteryPercent === 'number' ? ` ${event.batteryPercent}%` : ''}
-              </div>
-              <div className="text-xs text-zinc-400 break-all">Screenshot: {event.screenshotPath || 'none'}</div>
-            </div>
-          ))}
-
-          {recentEvents.length === 0 && !loading && (
-            <div className="text-xs text-zinc-500">暂无事件。启动 collector 后这里会开始累积。</div>
           )}
-        </div>
-      </div>
-
-      <div className="p-3 rounded-lg border border-zinc-700 bg-zinc-800/60 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-xs uppercase tracking-wide text-zinc-500">Native Screenshot</div>
-            <div className="text-xs text-zinc-500 mt-1">
-              直接调用系统截图能力，为 collector 和 GUI Agent 复用。
-            </div>
-          </div>
-          <button
-            onClick={handleCapture}
-            disabled={capturing}
-            className="px-3 py-1.5 rounded-lg text-xs border border-zinc-700 text-zinc-300 hover:bg-zinc-800 disabled:opacity-50 inline-flex items-center gap-1.5"
-          >
-            <Camera className="w-3.5 h-3.5" />
-            {capturing ? '截图中...' : '截一张'}
-          </button>
-        </div>
-
-        <div className="text-sm text-zinc-300 space-y-1.5">
-          <div>Latest file: <span className="text-zinc-100 break-all">{screenshot?.path || 'N/A'}</span></div>
-          <div>Size: <span className="text-zinc-100">{formatBytes(screenshot?.bytes)}</span></div>
-          <div>Captured: <span className="text-zinc-100">{formatTimestamp(screenshot?.capturedAtMs)}</span></div>
         </div>
       </div>
     </div>

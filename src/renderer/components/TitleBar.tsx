@@ -4,7 +4,8 @@
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useDisclosure } from '../hooks/useDisclosure';
-import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, GitBranch, FlaskConical } from 'lucide-react';
+import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, GitBranch, FlaskConical, Monitor } from 'lucide-react';
+import { isTauriMode } from '../utils/platform';
 import { IconButton } from './primitives';
 // 奶酪图标组件
 const CheeseIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -26,6 +27,8 @@ export const TitleBar: React.FC = () => {
     setShowDAGPanel,
     setShowLab,
     setShowEvalCenter,
+    showDesktopPanel,
+    setShowDesktopPanel,
     workingDirectory,
   } = useAppStore();
   // 获取当前会话 ID
@@ -92,6 +95,16 @@ export const TitleBar: React.FC = () => {
             className={showDAGPanel ? 'text-blue-400' : ''}
           />
         )}
+        {/* Desktop Collector Toggle */}
+        <IconButton
+          icon={<Monitor className="w-4 h-4" />}
+          aria-label={showDesktopPanel ? '隐藏桌面采集' : '桌面采集'}
+          onClick={() => setShowDesktopPanel(!showDesktopPanel)}
+          variant="ghost"
+          size="md"
+          windowNoDrag
+          className={showDesktopPanel ? 'text-cyan-400' : ''}
+        />
         {/* Task Panel Toggle */}
         <IconButton
           icon={showTaskPanel ? <PanelRightClose className="w-4 h-4" /> : <PanelRight className="w-4 h-4" />}

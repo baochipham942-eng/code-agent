@@ -41,6 +41,7 @@ interface AppState {
   showTaskPanel: boolean;
   showSkillsPanel: boolean;
   showCapturePanel: boolean;
+  showDesktopPanel: boolean;
   voicePasteStatus: 'idle' | 'recording' | 'transcribing' | 'processing';
   sidebarCollapsed: boolean;
 
@@ -105,6 +106,7 @@ interface AppState {
   setShowTaskPanel: (show: boolean) => void;
   setShowSkillsPanel: (show: boolean) => void;
   setShowCapturePanel: (show: boolean) => void;
+  setShowDesktopPanel: (show: boolean) => void;
   setVoicePasteStatus: (status: 'idle' | 'recording' | 'transcribing' | 'processing') => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setLanguage: (language: Language) => void;
@@ -162,6 +164,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   showTaskPanel: true, // Task panel shown by default
   showSkillsPanel: false, // Skills panel hidden by default
   showCapturePanel: false, // Capture panel hidden by default
+  showDesktopPanel: false,
   voicePasteStatus: 'idle' as const,
   sidebarCollapsed: false,
 
@@ -224,6 +227,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowTaskPanel: (show) => set({ showTaskPanel: show }),
   setShowSkillsPanel: (show) => set({ showSkillsPanel: show }),
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
+  setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
   setVoicePasteStatus: (status) => set({ voicePasteStatus: status }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setLanguage: (language) => set({ language }),

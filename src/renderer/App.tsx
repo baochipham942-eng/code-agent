@@ -25,6 +25,8 @@ import { LabPage } from './components/features/lab/LabPage';
 import { EvalCenterPanel } from './components/features/evalCenter';
 import { BackgroundTaskPanel } from './components/features/background';
 import { CapturePanel } from './components/features/capture';
+import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
+import { isTauriMode } from './utils/platform';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
 import { ConfirmActionModal } from './components/ConfirmActionModal';
 import { useDisclosure } from './hooks/useDisclosure';
@@ -521,6 +523,19 @@ export const App: React.FC = () => {
 
       {/* Capture Panel - 知识库采集面板 */}
       {useAppStore((s) => s.showCapturePanel) && <CapturePanel />}
+
+      {/* Desktop Collector Panel - 全局记忆时间线面板 */}
+      {useAppStore((s) => s.showDesktopPanel) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => useAppStore.getState().setShowDesktopPanel(false)}
+          />
+          <div className="relative w-full max-w-4xl h-[80vh] bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn flex flex-col">
+            <NativeDesktopSection />
+          </div>
+        </div>
+      )}
 
 
       </div>

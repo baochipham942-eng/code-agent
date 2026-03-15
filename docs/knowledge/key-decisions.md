@@ -2,7 +2,7 @@
 
 ## Active Context
 
-**Current Focus**: 评测系统修复 + 架构清理收尾
+**Current Focus**: Light Memory + 桌面活动视觉分析
 **Key Deadline**: [none]
 **Blockers**: 模板 .pptx 文件待从开源项目提取（P2 planned）
 
@@ -15,6 +15,10 @@
 - bash 预处理: JSON-wrapper + heredoc 截断 + 工具混淆检测 + stderr 合并输出
 - maxTokens: 按模型查表（MODEL_MAX_OUTPUT_TOKENS），DEFAULT=16384, EXTENDED=32768
 - 工具描述: Claude Code 风格（明确边界 + 交叉引用 + 后果说明）
+
+- 桌面活动截图格式: JPG（替代 PNG，~80% 空间节省）
+- 桌面活动视觉分析: 后台智谱 GLM-4V-Plus 生成 analyzeText（对标 StepFun analyze_text）
+- Light Memory: File-as-Memory 架构，~700 行代码替代旧 13K+ 行 vector/embedding 系统
 
 ## Critical Preferences
 

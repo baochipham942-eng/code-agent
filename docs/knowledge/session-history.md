@@ -1,5 +1,15 @@
 # 会话历史记录
 
+## 2026-03-15 (session 15): 桌面活动视觉分析 + Light Memory IPC
+
+- 桌面活动视觉分析: 截图 PNG→JPG（~80% 空间节省）+ 后台智谱 GLM-4V-Plus 生成 analyzeText
+- 对标 StepFun（阶跃AI）analyze_text 字段：每次截图后 AI 理解生成自然语言描述
+- 新增 desktopVisionAnalyzer.ts（后台轮询未分析截图 → 调视觉 API → 写回 SQLite）
+- Rust 侧: DesktopActivityEvent 新增 analyze_text、SQLite 自动迁移、desktop_update_analyze_text 命令
+- UI: 详情面板优先展示 AI 分析文本、时间线事件显示分析摘要
+- Light Memory IPC: lightMemoryIpc.ts + MemoryTab 重写 + 消息气泡记忆按钮
+- 净变化: 9 文件, +833 行
+
 ## 2026-03-09 (session 13): Local Bridge 服务 + 产品矩阵 + 平台架构扩展
 
 - Phase 1: packages/bridge/ 独立包 — 12 工具 + 三级权限 + 沙箱 + Auth Token + 6 平台脚本

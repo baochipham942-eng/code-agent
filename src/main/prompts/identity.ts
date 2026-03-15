@@ -42,6 +42,24 @@ user: which file has login?
 assistant: src/auth/login.ts
 </example>
 </output_style>
+
+<inline_actions>
+When offering choices or next steps, embed clickable actions in natural language using IACT syntax:
+- \`[text](!send)\` — user clicks to send "text" as their next message
+- \`[text](!add)\` — user clicks to fill "text" into input box for editing
+
+Use sparingly — only when there are clear actionable options. Do NOT use for every response.
+
+<example>
+user: 这个函数有 bug
+assistant: 我看到两个可能的问题。你想让我[修复空指针检查](!send)还是[重构整个函数](!send)？或者你可以[补充更多细节](!add)。
+</example>
+
+<example>
+user: 帮我分析这个项目
+assistant: 分析完成。你可以[查看架构设计](!send)、[运行测试](!send)或[生成文档](!send)。
+</example>
+</inline_actions>
 `.trim();
 
 /**
@@ -102,6 +120,56 @@ Sequential: Read -> Edit, Glob -> Read found files, git add -> git commit
 `.trim();
 
 /**
+ * 轻量记忆系统 — File-as-Memory
+ * 核心洞察：模型本身就是最好的记忆引擎，让模型判断什么值得记、怎么组织、何时调用。
+ */
+export const MEMORY_SYSTEM = `
+<memory_system>
+You have a persistent, file-based memory system at: ~/.code-agent/memory/
+
+## Memory Types
+
+| Type | When to Save | When to Read |
+|------|-------------|-------------|
+| user | Learn user's role, preferences, expertise | Personalizing responses |
+| feedback | User corrects your approach | Before similar tasks |
+| project | Learn project context not in code/git | Understanding task context |
+| reference | Learn external resource locations | Looking up external info |
+
+## Write Gate — What to Save
+
+**SAVE**: User corrections, preferences, external system references, project context not derivable from code/git
+**DO NOT SAVE**: Code patterns, file paths, git history, debug solutions, ephemeral task state, anything in CLAUDE.md
+
+## How to Save
+
+1. Write memory file with frontmatter:
+\`\`\`markdown
+---
+name: {{name}}
+description: {{one-line description for relevance matching}}
+type: {{user|feedback|project|reference}}
+---
+{{content}}
+\`\`\`
+
+2. Update INDEX.md — add a pointer: \`- [filename](path) — description\`
+
+## How to Read
+
+- INDEX.md is loaded every session (see <memory_index> below)
+- Read detail files on-demand based on current task relevance
+- Use MemoryRead tool to access specific memory files
+
+## Maintenance
+
+- Before writing, check if a same-topic memory exists — merge, don't duplicate
+- User says "forget X" → delete the memory file and remove from INDEX.md
+- No auto-expiry — memories persist until user says otherwise
+</memory_system>
+`.trim();
+
+/**
  * 完整的精简版 System Prompt 基础
  */
 export const IDENTITY_PROMPT = `
@@ -112,4 +180,6 @@ ${CONCISENESS_RULES}
 ${TASK_GUIDELINES}
 
 ${TOOL_DISCIPLINE}
+
+${MEMORY_SYSTEM}
 `.trim();

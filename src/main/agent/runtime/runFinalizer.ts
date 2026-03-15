@@ -27,6 +27,8 @@ import { getMemoryService } from '../../memory/memoryService';
 import { getContinuousLearningService } from '../../memory/continuousLearningService';
 import { sanitizeMemoryContent } from '../../memory/sanitizeMemoryContent';
 import { buildSeedMemoryBlock } from '../../memory/seedMemoryInjector';
+import { recordSessionEnd } from '../../lightMemory/sessionMetadata';
+import { appendConversationSummary } from '../../lightMemory/recentConversations';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { generateMessageId } from '../../../shared/utils/id';
@@ -191,6 +193,15 @@ export class RunFinalizer {
         logger.error('[AgentLoop] Session end hook error:', error);
       }
     }
+
+    // Light Memory: Record session stats + conversation summary
+    const messageCount = this.ctx.messages.length;
+    recordSessionEnd(messageCount).catch(() => { /* non-critical */ });
+
+    // Extract conversation summary from user messages
+    this.extractAndSaveConversationSummary().catch((err) => {
+      logger.error('[RunFinalizer] Conversation summary extraction failed:', err);
+    });
 
     // Pre-completion Hook: Only check explicit Tasks (persistent), not auto-parsed todos
     // 对标 Claude Code：模型返回 text response 即视为完成，不覆盖模型的判断
@@ -432,5 +443,39 @@ export class RunFinalizer {
         logger.debug('[RunFinalizer] Failed to generate follow-up suggestions', { error });
       }
     })();
+  }
+
+  /**
+   * Extract a conversation summary from user messages and save it.
+   * Only summarizes what the user asked — not assistant replies (following ChatGPT pattern).
+   */
+  private async extractAndSaveConversationSummary(): Promise<void> {
+    const userMessages = this.ctx.messages
+      .filter((m: { role: string; content?: string }) => m.role === 'user' && m.content)
+      .map((m: { content?: string }) => m.content || '');
+
+    if (userMessages.length === 0) return;
+
+    // Extract title from first user message (truncate to 50 chars)
+    const firstMsg = userMessages[0];
+    const title = firstMsg.length > 50 ? firstMsg.slice(0, 50).trim() + '...' : firstMsg.trim();
+
+    // Extract highlights: take first line of each unique user message (up to 3)
+    const highlights = userMessages
+      .slice(0, 5)
+      .map(msg => {
+        const firstLine = msg.split('\n')[0].trim();
+        return firstLine.length > 60 ? firstLine.slice(0, 60) + '...' : firstLine;
+      })
+      .filter((v, i, a) => a.indexOf(v) === i) // dedupe
+      .slice(0, 3);
+
+    const today = new Date().toISOString().split('T')[0];
+
+    await appendConversationSummary({
+      date: today,
+      title: title.replace(/"/g, "'"),
+      highlights,
+    });
   }
 }

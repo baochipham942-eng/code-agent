@@ -98,7 +98,10 @@ import {
 } from './connectors';
 
 
-// Memory tools
+// Light Memory tools (File-as-Memory)
+import { memoryWriteTool, memoryReadTool } from '../lightMemory';
+
+// Memory tools (legacy)
 import {
   memoryTool,
   codeIndexTool,
@@ -415,7 +418,11 @@ export class ToolRegistry {
     this.register(xlwingsExecuteTool);
 
 
-    // Gen 5 tools
+    // Light Memory tools (File-as-Memory)
+    this.register(memoryWriteTool);
+    this.register(memoryReadTool);
+
+    // Gen 5 tools (legacy memory — will be deprecated)
     this.register(memoryTool); // unified store + search (replaces memory_store & memory_search)
     this.register(codeIndexTool);
     this.register(autoLearnTool);

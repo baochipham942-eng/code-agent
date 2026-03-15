@@ -36,6 +36,28 @@
 | **多渠道接入** | `src/main/channels/` | 飞书 Webhook 等渠道支持 |
 | **Skills 系统** | `src/main/skills/` | 用户可定义技能 |
 
+### v0.16.52+ 轻量记忆系统（Light Memory, 2026-03-15）
+
+| 模块 | 位置 | 描述 |
+|------|------|------|
+| **Index Loader** | `src/main/lightMemory/indexLoader.ts` | 加载 `~/.code-agent/memory/INDEX.md` 到 system prompt |
+| **MemoryWrite 工具** | `src/main/lightMemory/memoryWriteTool.ts` | 写入/删除记忆文件 + 自动维护索引 |
+| **MemoryRead 工具** | `src/main/lightMemory/memoryReadTool.ts` | 按需读取记忆详情 |
+| **Session Metadata** | `src/main/lightMemory/sessionMetadata.ts` | 追踪使用频率/模型分布（借鉴 ChatGPT） |
+| **Recent Conversations** | `src/main/lightMemory/recentConversations.ts` | ~15 条近期对话摘要（借鉴 ChatGPT） |
+
+**6 层上下文注入架构**（对标 ChatGPT 逆向工程发现的 6 层结构）:
+```
+[0] System Instructions    — identity.ts（行为规则 + memory_system prompt）
+[1] Session Metadata       — 使用频率/活跃天数/模型分布
+[2] Memory Index           — INDEX.md 常驻注入（File-as-Memory 核心）
+[3] Recent Conversations   — ~15 条近期对话摘要（只摘用户意图）
+[4] RAG Context            — buildEnhancedSystemPrompt（旧系统，待废弃）
+[5] Current Session        — 滑动窗口
+```
+
+**设计原则**: 模型本身就是最好的记忆引擎。~553 行代码 + prompt 替代旧 13K+ 行 vector/embedding 系统。
+
 ### v0.16.52+ 架构清理与评测修复（2026-03-09 ~ 03-12）
 
 | 改动 | 描述 |

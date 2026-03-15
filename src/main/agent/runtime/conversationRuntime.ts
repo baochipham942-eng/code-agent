@@ -32,6 +32,7 @@ import { getDesktopActivityUnderstandingService } from '../../memory/desktopActi
 import { buildWorkspaceActivityContextBlock } from '../../memory/workspaceActivitySearchService';
 import { sanitizeMemoryContent } from '../../memory/sanitizeMemoryContent';
 import { buildSeedMemoryBlock } from '../../memory/seedMemoryInjector';
+import { recordSessionStart } from '../../lightMemory/sessionMetadata';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { generateMessageId } from '../../../shared/utils/id';
@@ -721,6 +722,9 @@ export class ConversationRuntime {
         this.contextAssembly.injectSystemMessage(`<user-prompt-hook>\n${promptResult.message}\n</user-prompt-hook>`);
       }
     }
+
+    // Record session start for usage tracking (Light Memory)
+    recordSessionStart().catch(() => { /* non-critical */ });
 
     // Session start hooks
     if (this.ctx.hookManager && !isSimpleTask) {

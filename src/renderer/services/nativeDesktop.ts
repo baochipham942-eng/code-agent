@@ -70,6 +70,7 @@ export interface DesktopActivityEvent {
   batteryPercent?: number | null;
   batteryCharging?: boolean | null;
   screenshotPath?: string | null;
+  analyzeText?: string | null;
   fingerprint: string;
 }
 
@@ -150,6 +151,13 @@ export async function stopNativeDesktopCollector(): Promise<NativeDesktopCollect
 
 export async function listRecentNativeDesktopEvents(limit = 8): Promise<DesktopActivityEvent[]> {
   return invoke<DesktopActivityEvent[]>('desktop_list_recent_events', { limit });
+}
+
+export async function updateNativeDesktopAnalyzeText(eventId: string, analyzeText: string): Promise<boolean> {
+  return invoke<boolean>('desktop_update_analyze_text', {
+    eventId,
+    analyzeText,
+  });
 }
 
 export async function openNativeDesktopSystemSettings(kind: SettingsPaneKind): Promise<boolean> {

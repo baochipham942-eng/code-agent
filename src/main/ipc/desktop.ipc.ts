@@ -6,6 +6,7 @@ import type { IpcMain } from 'electron';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '@shared/ipc';
 import type { DesktopSearchQuery, DesktopTimelineQuery } from '@shared/types';
 import { getNativeDesktopService } from '../services/nativeDesktopService';
+import { startDesktopVisionAnalyzer } from '../services/desktopVisionAnalyzer';
 import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('DesktopIPC');
@@ -57,6 +58,9 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
       } satisfies IPCResponse<unknown>;
     }
   });
+
+  // 启动后台视觉分析器（自动分析有截图但无 analyzeText 的事件）
+  startDesktopVisionAnalyzer();
 
   logger.info('Desktop handlers registered');
 }

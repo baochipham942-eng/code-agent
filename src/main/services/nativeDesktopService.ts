@@ -168,6 +168,7 @@ export class NativeDesktopService {
       event.browserUrl,
       event.browserTitle,
       event.documentPath,
+      event.analyzeText,
       event.sessionState,
       event.powerSource,
       event.fingerprint,

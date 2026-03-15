@@ -89,6 +89,7 @@ pub struct DesktopActivityEvent {
     battery_percent: Option<u8>,
     battery_charging: Option<bool>,
     screenshot_path: Option<String>,
+    analyze_text: Option<String>,
     fingerprint: String,
 }
 
@@ -360,13 +361,13 @@ fn collector_event_file_for_date(event_dir: &PathBuf) -> Result<PathBuf, String>
 }
 
 fn default_screenshot_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    Ok(native_screenshot_dir(app)?.join(format!("native_screenshot_{}.png", now_ms())))
+    Ok(native_screenshot_dir(app)?.join(format!("native_screenshot_{}.jpg", now_ms())))
 }
 
 fn collector_screenshot_path(screenshot_dir: &PathBuf) -> Result<PathBuf, String> {
     let daily_dir = screenshot_dir.join(current_date_string());
     fs::create_dir_all(&daily_dir).map_err(|error| format!("Failed to create screenshot directory: {error}"))?;
-    Ok(daily_dir.join(format!("collector_{}.png", now_ms())))
+    Ok(daily_dir.join(format!("collector_{}.jpg", now_ms())))
 }
 
 #[cfg(target_os = "macos")]
@@ -924,7 +925,12 @@ fn capture_screenshot_to_path(output_path: &PathBuf, silent: bool) -> Result<Scr
         if silent {
             args.push("-x");
         }
-        args.extend_from_slice(&["-t", "png", &output_str]);
+        let format = if output_str.ends_with(".jpg") || output_str.ends_with(".jpeg") {
+            "jpg"
+        } else {
+            "png"
+        };
+        args.extend_from_slice(&["-t", format, &output_str]);
         run_command_with_timeout("screencapture", &args, Duration::from_secs(10))?;
     }
 
@@ -966,6 +972,7 @@ fn build_activity_event(
         battery_percent: snapshot.battery_percent,
         battery_charging: snapshot.battery_charging,
         screenshot_path,
+        analyze_text: None,
         fingerprint,
     }
 }
@@ -1053,6 +1060,7 @@ CREATE TABLE IF NOT EXISTS desktop_activity_events (
   battery_percent INTEGER,
   battery_charging INTEGER,
   screenshot_path TEXT,
+  analyze_text TEXT,
   fingerprint TEXT NOT NULL,
   raw_json TEXT NOT NULL
 );
@@ -1061,13 +1069,19 @@ CREATE INDEX IF NOT EXISTS idx_desktop_activity_events_app_name ON desktop_activ
 CREATE INDEX IF NOT EXISTS idx_desktop_activity_events_browser_url ON desktop_activity_events (browser_url);
 "#;
 
-    run_sqlite(sqlite_path, sql)
+    run_sqlite(sqlite_path, sql)?;
+
+    // Migrate: add analyze_text column if missing (existing databases)
+    let migrate_sql = "ALTER TABLE desktop_activity_events ADD COLUMN analyze_text TEXT;";
+    let _ = run_sqlite(sqlite_path, migrate_sql); // ignore error if column already exists
+
+    Ok(())
 }
 
 fn persist_activity_event_sqlite(sqlite_path: &PathBuf, event: &DesktopActivityEvent) -> Result<(), String> {
     let raw_json = serde_json::to_string(event).map_err(|error| format!("Failed to serialize event JSON: {error}"))?;
     let sql = format!(
-        "INSERT OR REPLACE INTO desktop_activity_events (id, captured_at_ms, app_name, bundle_id, window_title, browser_url, browser_title, document_path, session_state, idle_seconds, power_source, on_ac_power, battery_percent, battery_charging, screenshot_path, fingerprint, raw_json) VALUES ({id}, {captured_at_ms}, {app_name}, {bundle_id}, {window_title}, {browser_url}, {browser_title}, {document_path}, {session_state}, {idle_seconds}, {power_source}, {on_ac_power}, {battery_percent}, {battery_charging}, {screenshot_path}, {fingerprint}, {raw_json});",
+        "INSERT OR REPLACE INTO desktop_activity_events (id, captured_at_ms, app_name, bundle_id, window_title, browser_url, browser_title, document_path, session_state, idle_seconds, power_source, on_ac_power, battery_percent, battery_charging, screenshot_path, analyze_text, fingerprint, raw_json) VALUES ({id}, {captured_at_ms}, {app_name}, {bundle_id}, {window_title}, {browser_url}, {browser_title}, {document_path}, {session_state}, {idle_seconds}, {power_source}, {on_ac_power}, {battery_percent}, {battery_charging}, {screenshot_path}, {analyze_text}, {fingerprint}, {raw_json});",
         id = sql_text(&event.id),
         captured_at_ms = event.captured_at_ms,
         app_name = sql_text(&event.app_name),
@@ -1083,6 +1097,7 @@ fn persist_activity_event_sqlite(sqlite_path: &PathBuf, event: &DesktopActivityE
         battery_percent = sql_u8_opt(event.battery_percent),
         battery_charging = sql_bool_opt(event.battery_charging),
         screenshot_path = sql_text_opt(&event.screenshot_path),
+        analyze_text = sql_text_opt(&event.analyze_text),
         fingerprint = sql_text(&event.fingerprint),
         raw_json = sql_text(&raw_json),
     );
@@ -1486,6 +1501,40 @@ pub fn desktop_list_recent_events(
         return Ok(sqlite_events);
     }
     read_recent_events_from_disk(&native_events_dir(&app)?, limit)
+}
+
+#[tauri::command]
+pub fn desktop_update_analyze_text(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, NativeDesktopState>,
+    event_id: String,
+    analyze_text: String,
+) -> Result<bool, String> {
+    let sqlite_path = native_sqlite_path(&app)?;
+    if !sqlite_path.exists() {
+        return Err("SQLite database not found".to_string());
+    }
+
+    // Update SQLite
+    let sql = format!(
+        "UPDATE desktop_activity_events SET analyze_text = {}, raw_json = json_set(raw_json, '$.analyzeText', {}) WHERE id = {};",
+        sql_text(&analyze_text),
+        sql_text(&analyze_text),
+        sql_text(&event_id),
+    );
+    run_sqlite(&sqlite_path, &sql)?;
+
+    // Update in-memory events
+    if let Ok(mut shared) = state.shared.lock() {
+        for event in shared.recent_events.iter_mut() {
+            if event.id == event_id {
+                event.analyze_text = Some(analyze_text.clone());
+                break;
+            }
+        }
+    }
+
+    Ok(true)
 }
 
 #[tauri::command]

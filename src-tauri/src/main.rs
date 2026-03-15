@@ -17,6 +17,7 @@ use native_desktop::{
     desktop_capture_screenshot, desktop_get_capabilities, desktop_get_collector_status,
     desktop_get_frontmost_context, desktop_get_permission_status, desktop_list_recent_events,
     desktop_open_system_settings, desktop_start_collector, desktop_stop_collector,
+    desktop_update_analyze_text,
     NativeDesktopState,
 };
 
@@ -320,7 +321,8 @@ fn main() {
             desktop_start_collector,
             desktop_stop_collector,
             desktop_list_recent_events,
-            desktop_open_system_settings
+            desktop_open_system_settings,
+            desktop_update_analyze_text
         ])
         .setup(|app| {
             if is_server_running() {

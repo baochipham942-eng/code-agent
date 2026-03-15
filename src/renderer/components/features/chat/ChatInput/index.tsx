@@ -83,6 +83,29 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
     return () => { unsubscribe?.(); };
   }, []);
 
+  // IACT protocol: listen for inline interaction events from message bubbles
+  useEffect(() => {
+    const handleSend = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail;
+      if (text?.trim()) {
+        onSend(text.trim());
+      }
+    };
+    const handleAdd = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail;
+      if (text?.trim()) {
+        setValue(prev => prev.trim() ? `${prev} ${text}` : text);
+        inputAreaRef.current?.focus();
+      }
+    };
+    window.addEventListener('iact:send', handleSend);
+    window.addEventListener('iact:add', handleAdd);
+    return () => {
+      window.removeEventListener('iact:send', handleSend);
+      window.removeEventListener('iact:add', handleAdd);
+    };
+  }, [onSend]);
+
   // Clear suggestions when user starts typing
   useEffect(() => {
     if (value.trim().length > 0) {

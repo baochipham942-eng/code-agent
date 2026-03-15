@@ -10,7 +10,7 @@ import remarkBreaks from 'remark-breaks';
 import rehypeKatex from 'rehype-katex';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Code2, Copy, Check, ExternalLink, Play, ZoomIn, ZoomOut } from 'lucide-react';
+import { Code2, Copy, Check, ExternalLink, Play, ZoomIn, ZoomOut, Send, PenLine } from 'lucide-react';
 import mermaid from 'mermaid';
 import type { MessageContentProps } from './types';
 import { UI } from '@shared/constants';
@@ -589,8 +589,49 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
         return <hr className="my-4 border-zinc-700" />;
       },
 
-      // Links
+      // Links - with IACT protocol support for inline interactions
       a({ href, children }) {
+        // IACT: [text](!send) — click to send text as user message
+        if (href === '!send') {
+          const text = typeof children === 'string' ? children
+            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
+            : String(children ?? '');
+          return (
+            <button
+              type="button"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('iact:send', { detail: text }));
+              }}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-primary-500/10 text-primary-400 hover:bg-primary-500/20 hover:text-primary-300 border border-primary-500/20 hover:border-primary-500/40 transition-all cursor-pointer text-sm font-medium"
+              title="点击发送"
+            >
+              {children}
+              <Send className="w-3 h-3 opacity-60" />
+            </button>
+          );
+        }
+
+        // IACT: [text](!add) — click to fill text into input box
+        if (href === '!add') {
+          const text = typeof children === 'string' ? children
+            : Array.isArray(children) ? children.map(c => typeof c === 'string' ? c : '').join('')
+            : String(children ?? '');
+          return (
+            <button
+              type="button"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('iact:add', { detail: text }));
+              }}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 hover:text-amber-300 border border-amber-500/20 hover:border-amber-500/40 transition-all cursor-pointer text-sm font-medium"
+              title="点击填入输入框"
+            >
+              {children}
+              <PenLine className="w-3 h-3 opacity-60" />
+            </button>
+          );
+        }
+
+        // Regular links
         return (
           <a
             href={href}

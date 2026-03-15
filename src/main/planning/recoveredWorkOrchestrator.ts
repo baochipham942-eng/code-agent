@@ -16,7 +16,7 @@ import {
   type DesktopPlanningSyncResult,
 } from '../memory/desktopActivityPlanningBridge';
 import type { PlanningService } from './planningService';
-import type { TaskPhase, TaskPlan, TaskStep } from './types';
+import type { TaskPhase, TaskPhaseStatus, TaskPlan, TaskStep } from './types';
 
 const logger = createLogger('RecoveredWorkOrchestrator');
 
@@ -104,6 +104,7 @@ function pushSuggestion(
   seen: Set<string>,
   text: string,
   source: PromptSuggestion['source'],
+  extra?: Pick<PromptSuggestion, 'category' | 'timestampMs' | 'priority'>,
 ): void {
   const normalized = dedupeSuggestionText(text);
   if (!normalized || seen.has(normalized) || suggestions.length >= MAX_SUGGESTIONS) {
@@ -115,6 +116,7 @@ function pushSuggestion(
     id: buildSuggestionId(source, normalized),
     text,
     source,
+    ...extra,
   });
 }
 
@@ -177,6 +179,13 @@ function mergePhaseNotes(existing: string | undefined, next: string): string {
     return current;
   }
   return truncate(`${current} | ${next}`, MAX_NOTE_LENGTH);
+}
+
+function computePhaseStatus(steps: TaskStep[]): TaskPhaseStatus {
+  if (steps.length === 0) return 'pending';
+  if (steps.every((s) => s.status === 'completed' || s.status === 'skipped')) return 'completed';
+  if (steps.some((s) => s.status === 'in_progress')) return 'in_progress';
+  return 'pending';
 }
 
 function countPlanMutations(result: DesktopPlanningSyncResult): boolean {
@@ -263,6 +272,16 @@ async function ensureWorkspaceRecoveryPhase(
     createdWorkspaceReviewStep = true;
   }
 
+  // Recompute phase status based on step states
+  const refreshedPlan = await planningService.plan.read();
+  const refreshedPhase = findPhaseByTitle(refreshedPlan, WORKSPACE_RECOVERY_PHASE_TITLE);
+  if (refreshedPhase) {
+    const desiredStatus = computePhaseStatus(refreshedPhase.steps);
+    if (refreshedPhase.status !== desiredStatus) {
+      await planningService.plan.updatePhaseStatus(refreshedPhase.id, desiredStatus);
+    }
+  }
+
   return {
     createdWorkspacePhase,
     createdWorkspaceReviewStep,
@@ -291,9 +310,15 @@ export async function buildRecoveredWorkSuggestions(options: {
       const next = planningService.plan.getNextPendingTask();
 
       if (current?.step.content) {
-        pushSuggestion(suggestions, seen, current.step.content, 'history');
+        pushSuggestion(suggestions, seen, current.step.content, 'history', {
+          category: 'plan_step',
+          priority: 'high',
+        });
       } else if (next?.step.content) {
-        pushSuggestion(suggestions, seen, next.step.content, 'history');
+        pushSuggestion(suggestions, seen, next.step.content, 'history', {
+          category: 'plan_step',
+          priority: 'medium',
+        });
       }
     }
   } catch (error) {
@@ -308,7 +333,11 @@ export async function buildRecoveredWorkSuggestions(options: {
       sinceHours: 12,
     });
     for (const todo of todos) {
-      pushSuggestion(suggestions, seen, todo.content, 'history');
+      pushSuggestion(suggestions, seen, todo.content, 'history', {
+        category: 'desktop_task',
+        timestampMs: todo.createdAtMs,
+        priority: 'medium',
+      });
     }
   } catch (error) {
     logger.debug('Failed to build recovered-work suggestions from desktop activity', {

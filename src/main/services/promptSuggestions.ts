@@ -10,6 +10,9 @@ export interface PromptSuggestion {
   id: string;
   text: string;
   source: 'context' | 'git' | 'history' | 'files';
+  category?: 'plan_step' | 'desktop_task' | 'workspace_signal';
+  timestampMs?: number;
+  priority?: 'high' | 'medium' | 'low';
 }
 
 /**

@@ -45,6 +45,8 @@
 | **MemoryRead 工具** | `src/main/lightMemory/memoryReadTool.ts` | 按需读取记忆详情 |
 | **Session Metadata** | `src/main/lightMemory/sessionMetadata.ts` | 追踪使用频率/模型分布（借鉴 ChatGPT） |
 | **Recent Conversations** | `src/main/lightMemory/recentConversations.ts` | ~15 条近期对话摘要（借鉴 ChatGPT） |
+| **前端面板** | `src/renderer/.../settings/tabs/MemoryTab.tsx` | Light Memory 文件浏览器（替代旧 10+ 组件） |
+| **IPC 服务** | `src/main/lightMemory/lightMemoryIpc.ts` | 列出/读取/删除记忆文件 + 综合统计 |
 
 **6 层上下文注入架构**（对标 ChatGPT 逆向工程发现的 6 层结构）:
 ```
@@ -56,7 +58,7 @@
 [5] Current Session        — 滑动窗口
 ```
 
-**设计原则**: 模型本身就是最好的记忆引擎。~553 行代码 + prompt 替代旧 13K+ 行 vector/embedding 系统。
+**设计原则**: 模型本身就是最好的记忆引擎。~700 行代码（含前端+IPC）+ prompt 替代旧 13K+ 行 vector/embedding 系统。
 
 ### v0.16.52+ 架构清理与评测修复（2026-03-09 ~ 03-12）
 
@@ -405,4 +407,3 @@ agentLoop.executeTool(Read)
 | `src/renderer/services/httpTransport.ts` | 前端 SSE 拦截层 |
 | `src/renderer/components/features/chat/ChatView.tsx` | 对话拦截集成 |
 | `src/renderer/components/features/settings/MCPSettings.tsx` | MCP 设置页 Bridge 手风琴 |
-| `src/renderer/components/features/settings/ProductMatrixSettings.tsx` | 产品矩阵设置页 |

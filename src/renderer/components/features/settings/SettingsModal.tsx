@@ -38,7 +38,7 @@ import ipcService from '../../../services/ipcService';
 // Types
 // ============================================================================
 
-type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'cloud' | 'mcp' | 'skills' | 'channels' | 'agents' | 'soul' | 'cron' | 'memory' | 'update' | 'products' | 'about';
+type SettingsTab = 'general' | 'model' | 'appearance' | 'cache' | 'cloud' | 'mcp' | 'skills' | 'channels' | 'agents' | 'soul' | 'cron' | 'memory' | 'update' | 'products' | 'desktop' | 'about';
 
 // ============================================================================
 // Component

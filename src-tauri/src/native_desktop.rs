@@ -252,22 +252,57 @@ fn path_to_string(path: &PathBuf) -> String {
 }
 
 fn run_command(binary: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new(binary)
+    run_command_with_timeout(binary, args, Duration::from_secs(5))
+}
+
+fn run_command_with_timeout(binary: &str, args: &[&str], timeout: Duration) -> Result<String, String> {
+    let mut child = Command::new(binary)
         .args(args)
-        .output()
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|error| format!("Failed to run {binary}: {error}"))?;
 
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let detail = if stderr.is_empty() { stdout } else { stderr };
-        Err(if detail.is_empty() {
-            format!("{binary} exited with status {}", output.status)
-        } else {
-            detail
-        })
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let stdout = child.stdout.take().map(|mut s| {
+                    let mut buf = String::new();
+                    std::io::Read::read_to_string(&mut s, &mut buf).ok();
+                    buf
+                }).unwrap_or_default();
+                let stderr = child.stderr.take().map(|mut s| {
+                    let mut buf = String::new();
+                    std::io::Read::read_to_string(&mut s, &mut buf).ok();
+                    buf
+                }).unwrap_or_default();
+
+                if status.success() {
+                    return Ok(stdout.trim().to_string());
+                } else {
+                    let stderr = stderr.trim().to_string();
+                    let stdout = stdout.trim().to_string();
+                    let detail = if stderr.is_empty() { stdout } else { stderr };
+                    return Err(if detail.is_empty() {
+                        format!("{binary} exited with status {status}")
+                    } else {
+                        detail
+                    });
+                }
+            }
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!("{binary} timed out after {}s", timeout.as_secs()));
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+            Err(error) => {
+                return Err(format!("Failed to wait for {binary}: {error}"));
+            }
+        }
     }
 }
 
@@ -379,13 +414,15 @@ fn probe_accessibility_permission() -> NativePermissionStatus {
 #[cfg(target_os = "macos")]
 fn probe_screen_capture_permission() -> NativePermissionStatus {
     let probe_path = env::temp_dir().join(format!("code-agent-screen-probe-{}.png", now_ms()));
-    let output = Command::new("screencapture")
-        .args(["-x", "-t", "png"])
-        .arg(&probe_path)
-        .output();
+    let probe_path_str = probe_path.to_string_lossy().to_string();
+    let output = run_command_with_timeout(
+        "screencapture",
+        &["-x", "-t", "png", &probe_path_str],
+        Duration::from_secs(5),
+    );
 
     let result = match output {
-        Ok(output) if output.status.success() => match fs::metadata(&probe_path) {
+        Ok(_) => match fs::metadata(&probe_path) {
             Ok(meta) if meta.len() > 0 => NativePermissionStatus {
                 kind: "screenCapture".to_string(),
                 status: "granted".to_string(),
@@ -402,15 +439,10 @@ fn probe_screen_capture_permission() -> NativePermissionStatus {
                 detail: Some(format!("Screenshot file unavailable: {error}")),
             },
         },
-        Ok(output) => NativePermissionStatus {
-            kind: "screenCapture".to_string(),
-            status: "denied".to_string(),
-            detail: Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
-        },
         Err(error) => NativePermissionStatus {
             kind: "screenCapture".to_string(),
             status: "denied".to_string(),
-            detail: Some(format!("Failed to run screencapture: {error}")),
+            detail: Some(format!("screencapture failed: {error}")),
         },
     };
 
@@ -887,19 +919,13 @@ fn capture_screenshot_to_path(output_path: &PathBuf, silent: bool) -> Result<Scr
 
     #[cfg(target_os = "macos")]
     {
-        let mut command = Command::new("screencapture");
+        let output_str = output_path.to_string_lossy().to_string();
+        let mut args: Vec<&str> = Vec::new();
         if silent {
-            command.arg("-x");
+            args.push("-x");
         }
-        command.args(["-t", "png"]).arg(output_path);
-
-        let output = command
-            .output()
-            .map_err(|error| format!("Failed to run screencapture: {error}"))?;
-
-        if !output.status.success() {
-            return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
-        }
+        args.extend_from_slice(&["-t", "png", &output_str]);
+        run_command_with_timeout("screencapture", &args, Duration::from_secs(10))?;
     }
 
     #[cfg(not(target_os = "macos"))]

@@ -9,6 +9,7 @@ import { getMemoryService } from '../memory/memoryService';
 import { getVectorStore } from '../memory/vectorStore';
 import type { MemoryItem, MemoryCategory, MemoryExport, MemoryStats } from '../../shared/types';
 import { createLogger } from '../services/infra/logger';
+import { listMemoryFiles, readMemoryFile, deleteMemoryFile, getLightMemoryStats } from '../lightMemory/lightMemoryIpc';
 
 const logger = createLogger('MemoryIPC');
 
@@ -482,6 +483,19 @@ export function registerMemoryHandlers(ipcMain: IpcMain): void {
           break;
         case 'getStats':
           data = await handleGetMemoryStats();
+          break;
+        // Light Memory actions
+        case 'lightList':
+          data = await listMemoryFiles();
+          break;
+        case 'lightRead':
+          data = await readMemoryFile(request.filename as string);
+          break;
+        case 'lightDelete':
+          data = await deleteMemoryFile(request.filename as string);
+          break;
+        case 'lightStats':
+          data = await getLightMemoryStats();
           break;
         default:
           return { success: false, error: `Unknown action: ${request.action}` };

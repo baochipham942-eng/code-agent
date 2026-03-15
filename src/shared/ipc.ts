@@ -1019,15 +1019,16 @@ export interface IpcInvokeHandlers {
 
   // Memory (Phase 2/3)
   [IPC_CHANNELS.MEMORY]: (payload: {
-    action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights';
+    action: 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'getStats' | 'add' | 'getLearningInsights' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats';
     category?: MemoryCategory;
     id?: string;
     content?: string;
     data?: MemoryExport;
     item?: Partial<MemoryItem>;
+    filename?: string;
   }) => Promise<{
     success: boolean;
-    data?: MemoryItem[] | MemoryStatsNew | MemoryExport | { deleted: number } | { imported: number; skipped: number } | MemoryItem;
+    data?: MemoryItem[] | MemoryStatsNew | MemoryExport | { deleted: number } | { imported: number; skipped: number } | MemoryItem | unknown;
     error?: string;
   }>;
   [IPC_CHANNELS.MEMORY_CONFIRM_RESPONSE]: (payload: { id: string; confirmed: boolean }) => Promise<void>;

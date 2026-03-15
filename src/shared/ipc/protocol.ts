@@ -92,7 +92,7 @@ export type McpAction =
 /**
  * Memory 通道 actions
  */
-export type MemoryAction = 'store' | 'search' | 'getContext' | 'getStats' | 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import';
+export type MemoryAction = 'store' | 'search' | 'getContext' | 'getStats' | 'list' | 'update' | 'delete' | 'deleteByCategory' | 'export' | 'import' | 'lightList' | 'lightRead' | 'lightDelete' | 'lightStats';
 
 /**
  * Planning 通道 actions

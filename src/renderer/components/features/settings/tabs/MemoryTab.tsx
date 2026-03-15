@@ -1,5 +1,6 @@
 // ============================================================================
-// MemoryTab - Memory Management Settings Tab
+// MemoryTab - Light Memory File Browser
+// Displays memory files from ~/.code-agent/memory/ with session stats
 // ============================================================================
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -8,274 +9,162 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
-  Download,
-  Upload,
   Trash2,
+  FileText,
+  Activity,
+  MessageSquare,
   AlertCircle,
   CheckCircle,
+  Brain,
 } from 'lucide-react';
-import { Button, Input } from '../../../primitives';
+import { Input } from '../../../primitives';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { MemoryCard } from './MemoryCard';
-import { MemoryEditModal } from './MemoryEditModal';
-import { KeyDecisionsPanel } from './KeyDecisionsPanel';
-import { useI18n } from '../../../../hooks/useI18n';
-import { createLogger } from '../../../../utils/logger';
-import type { MemoryItem, MemoryCategory, MemoryStats } from '@shared/types';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
 
-const logger = createLogger('MemoryTab');
+// ============================================================================
+// Types
+// ============================================================================
 
-// Category info with icons
-const CATEGORIES: Array<{
-  key: MemoryCategory;
-  icon: string;
-  labelKey: string;
-  descKey: string;
-}> = [
-  { key: 'about_me', icon: '👤', labelKey: 'aboutMe', descKey: 'aboutMeDesc' },
-  { key: 'preference', icon: '⭐', labelKey: 'preference', descKey: 'preferenceDesc' },
-  { key: 'frequent_info', icon: '📋', labelKey: 'frequentInfo', descKey: 'frequentInfoDesc' },
-  { key: 'learned', icon: '💡', labelKey: 'learned', descKey: 'learnedDesc' },
-];
+interface LightMemoryFile {
+  filename: string;
+  name: string;
+  description: string;
+  type: string;
+  content: string;
+  updatedAt: string;
+}
+
+interface LightMemoryStats {
+  totalFiles: number;
+  byType: Record<string, number>;
+  sessionStats: {
+    activeDays: string[];
+    totalSessions: number;
+    recentSessionDepths: number[];
+    modelUsage: Record<string, number>;
+  } | null;
+  recentConversations: string[];
+}
+
+// Memory type config
+const TYPE_CONFIG: Record<string, { icon: string; label: string; color: string }> = {
+  user: { icon: '👤', label: '用户', color: 'text-blue-400' },
+  feedback: { icon: '💬', label: '反馈', color: 'text-amber-400' },
+  project: { icon: '📁', label: '项目', color: 'text-green-400' },
+  reference: { icon: '🔗', label: '引用', color: 'text-purple-400' },
+  unknown: { icon: '📄', label: '未分类', color: 'text-zinc-400' },
+};
 
 // ============================================================================
 // Component
 // ============================================================================
 
 export const MemoryTab: React.FC = () => {
-  const { t } = useI18n();
-  const [memories, setMemories] = useState<MemoryItem[]>([]);
-  const [stats, setStats] = useState<MemoryStats | null>(null);
+  const [files, setFiles] = useState<LightMemoryFile[]>([]);
+  const [stats, setStats] = useState<LightMemoryStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [expandedCategories, setExpandedCategories] = useState<Set<MemoryCategory>>(
-    new Set(['about_me', 'preference', 'frequent_info', 'learned'])
-  );
+  const [expandedTypes, setExpandedTypes] = useState<Set<string>>(new Set(['user', 'feedback', 'project', 'reference']));
+  const [selectedFile, setSelectedFile] = useState<LightMemoryFile | null>(null);
+  const [deletingFile, setDeletingFile] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showConversations, setShowConversations] = useState(false);
 
-  // Edit modal state
-  const [editingMemory, setEditingMemory] = useState<MemoryItem | null>(null);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-
-  // Delete confirmation state
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [clearingCategory, setClearingCategory] = useState<MemoryCategory | null>(null);
-
-  // Load memories
-  const loadMemories = async () => {
+  // Load data
+  const loadData = async () => {
     try {
       setIsLoading(true);
-      const [memoriesResult, statsResult] = await Promise.all([
-        ipcService.invoke(IPC_CHANNELS.MEMORY, { action: 'list' }) as Promise<{ success: boolean; data?: MemoryItem[] }>,
-        ipcService.invoke(IPC_CHANNELS.MEMORY, { action: 'getStats' }) as Promise<{ success: boolean; data?: MemoryStats }>,
+      const [filesResult, statsResult] = await Promise.all([
+        ipcService.invoke(IPC_CHANNELS.MEMORY, { action: 'lightList' }) as Promise<{ success: boolean; data?: LightMemoryFile[] }>,
+        ipcService.invoke(IPC_CHANNELS.MEMORY, { action: 'lightStats' }) as Promise<{ success: boolean; data?: LightMemoryStats }>,
       ]);
-      if (memoriesResult?.success && memoriesResult.data) {
-        setMemories(memoriesResult.data);
+      if (filesResult?.success && filesResult.data) {
+        setFiles(filesResult.data);
       }
       if (statsResult?.success && statsResult.data) {
         setStats(statsResult.data);
       }
-    } catch (error) {
-      logger.error('Failed to load memories', error);
+    } catch {
       setMessage({ type: 'error', text: '加载记忆失败' });
     } finally {
       setIsLoading(false);
     }
   };
 
+  useEffect(() => { loadData(); }, []);
+
+  // Auto-clear message
   useEffect(() => {
-    loadMemories();
-  }, []);
+    if (message) {
+      const timer = setTimeout(() => setMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [message]);
 
-  // Filter memories by search query
-  const filteredMemories = useMemo(() => {
-    if (!searchQuery.trim()) return memories;
-    const query = searchQuery.toLowerCase();
-    return memories.filter(
-      (m) =>
-        m.content.toLowerCase().includes(query) ||
-        m.tags?.some((tag: string) => tag.toLowerCase().includes(query))
+  // Filter files by search
+  const filteredFiles = useMemo(() => {
+    if (!searchQuery.trim()) return files;
+    const q = searchQuery.toLowerCase();
+    return files.filter(f =>
+      f.name.toLowerCase().includes(q) ||
+      f.description.toLowerCase().includes(q) ||
+      f.content.toLowerCase().includes(q)
     );
-  }, [memories, searchQuery]);
+  }, [files, searchQuery]);
 
-  // Group memories by category
-  const memoriesByCategory = useMemo(() => {
-    const grouped: Record<MemoryCategory, MemoryItem[]> = {
-      about_me: [],
-      preference: [],
-      frequent_info: [],
-      learned: [],
-    };
-    for (const memory of filteredMemories) {
-      if (grouped[memory.category]) {
-        grouped[memory.category].push(memory);
-      }
+  // Group files by type
+  const filesByType = useMemo(() => {
+    const grouped: Record<string, LightMemoryFile[]> = {};
+    for (const f of filteredFiles) {
+      const t = f.type || 'unknown';
+      if (!grouped[t]) grouped[t] = [];
+      grouped[t].push(f);
     }
     return grouped;
-  }, [filteredMemories]);
+  }, [filteredFiles]);
 
-  // Toggle category expansion
-  const toggleCategory = (category: MemoryCategory) => {
-    setExpandedCategories((prev) => {
+  // Toggle type expansion
+  const toggleType = (type: string) => {
+    setExpandedTypes(prev => {
       const next = new Set(prev);
-      if (next.has(category)) {
-        next.delete(category);
-      } else {
-        next.add(category);
-      }
+      if (next.has(type)) next.delete(type);
+      else next.add(type);
       return next;
     });
   };
 
-  // Handle edit
-  const handleEdit = (memory: MemoryItem) => {
-    setEditingMemory(memory);
-    setIsEditModalOpen(true);
-  };
-
-  // Handle save edit
-  const handleSaveEdit = async (id: string, content: string) => {
+  // Delete file
+  const handleDelete = async (filename: string) => {
     try {
       const result = await ipcService.invoke(IPC_CHANNELS.MEMORY, {
-        action: 'update',
-        id,
-        content,
-      });
+        action: 'lightDelete',
+        filename,
+      }) as { success: boolean; data?: boolean };
       if (result?.success) {
-        setMessage({ type: 'success', text: '记忆已更新' });
-        await loadMemories();
+        setMessage({ type: 'success', text: `已删除 ${filename}` });
+        if (selectedFile?.filename === filename) setSelectedFile(null);
+        await loadData();
       } else {
-        setMessage({ type: 'error', text: result?.error || '更新失败' });
+        setMessage({ type: 'error', text: '删除失败' });
       }
-    } catch (error) {
-      logger.error('Failed to update memory', error);
-      setMessage({ type: 'error', text: '更新失败' });
-    }
-    setIsEditModalOpen(false);
-    setEditingMemory(null);
-  };
-
-  // Handle delete
-  const handleDelete = async (id: string) => {
-    try {
-      const result = await ipcService.invoke(IPC_CHANNELS.MEMORY, {
-        action: 'delete',
-        id,
-      });
-      if (result?.success) {
-        setMessage({ type: 'success', text: '记忆已删除' });
-        await loadMemories();
-      } else {
-        setMessage({ type: 'error', text: result?.error || '删除失败' });
-      }
-    } catch (error) {
-      logger.error('Failed to delete memory', error);
+    } catch {
       setMessage({ type: 'error', text: '删除失败' });
     }
-    setDeletingId(null);
+    setDeletingFile(null);
   };
 
-  // Handle clear category
-  const handleClearCategory = async (category: MemoryCategory) => {
-    try {
-      const result = await ipcService.invoke(IPC_CHANNELS.MEMORY, {
-        action: 'deleteByCategory',
-        category,
-      }) as { success: boolean; data?: { deleted: number }; error?: string } | undefined;
-      if (result?.success) {
-        setMessage({ type: 'success', text: `已清空 ${result.data?.deleted || 0} 条记忆` });
-        await loadMemories();
-      } else {
-        setMessage({ type: 'error', text: result?.error || '清空失败' });
-      }
-    } catch (error) {
-      logger.error('Failed to clear category', error);
-      setMessage({ type: 'error', text: '清空失败' });
-    }
-    setClearingCategory(null);
-  };
-
-  // Handle export
-  const handleExport = async () => {
-    try {
-      const result = await ipcService.invoke(IPC_CHANNELS.MEMORY, {
-        action: 'export',
-      });
-      if (result?.success && result.data) {
-        const blob = new Blob([JSON.stringify(result.data, null, 2)], {
-          type: 'application/json',
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `memories-${new Date().toISOString().split('T')[0]}.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        setMessage({ type: 'success', text: '导出成功' });
-      } else {
-        setMessage({ type: 'error', text: result?.error || '导出失败' });
-      }
-    } catch (error) {
-      logger.error('Failed to export memories', error);
-      setMessage({ type: 'error', text: '导出失败' });
-    }
-  };
-
-  // Handle import
-  const handleImport = async () => {
-    try {
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = '.json';
-      input.onchange = async (e) => {
-        const file = (e.target as HTMLInputElement).files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-          try {
-            const data = JSON.parse(event.target?.result as string);
-            const result = await ipcService.invoke(IPC_CHANNELS.MEMORY, {
-              action: 'import',
-              data,
-            }) as { success: boolean; data?: { imported: number }; error?: string } | undefined;
-            if (result?.success) {
-              setMessage({ type: 'success', text: `导入成功: ${result.data?.imported || 0} 条` });
-              await loadMemories();
-            } else {
-              setMessage({ type: 'error', text: result?.error || '导入失败' });
-            }
-          } catch {
-            setMessage({ type: 'error', text: '无效的 JSON 文件' });
-          }
-        };
-        reader.readAsText(file);
-      };
-      input.click();
-    } catch (error) {
-      logger.error('Failed to import memories', error);
-      setMessage({ type: 'error', text: '导入失败' });
-    }
-  };
-
-  // Get category label
-  const getCategoryLabel = (key: string) => {
-    const labels: Record<string, string> = {
-      aboutMe: '关于我',
-      aboutMeDesc: '身份、角色、沟通风格',
-      preference: '我的偏好',
-      preferenceDesc: '格式、风格、工具偏好',
-      frequentInfo: '常用信息',
-      frequentInfoDesc: '邮箱、模板、常用数据',
-      learned: '学到的经验',
-      learnedDesc: 'AI 观察到的模式和习惯',
-    };
-    return (t.memory as Record<string, string>)?.[key] || labels[key] || key;
+  // Format relative date
+  const formatDate = (iso: string) => {
+    const date = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return '今天';
+    if (diffDays === 1) return '昨天';
+    if (diffDays < 7) return `${diffDays}天前`;
+    return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
   };
 
   if (isLoading) {
@@ -286,180 +175,219 @@ export const MemoryTab: React.FC = () => {
     );
   }
 
-      <WebModeBanner />
   return (
     <div className="space-y-4">
+      <WebModeBanner />
+
       {/* Header */}
-      <div>
-        <h3 className="text-sm font-medium text-zinc-200 mb-1">
-          {(t.memory as Record<string, string>)?.title || '记忆管理'}
-        </h3>
-        <p className="text-xs text-zinc-400">
-          {(t.memory as Record<string, string>)?.description ||
-            '查看和管理 AI 记住的关于你的信息'}
-        </p>
+      <div className="flex items-center gap-2">
+        <Brain className="w-5 h-5 text-indigo-400" />
+        <div>
+          <h3 className="text-sm font-medium text-zinc-200">Light Memory</h3>
+          <p className="text-xs text-zinc-500">文件式记忆系统 · ~/.code-agent/memory/</p>
+        </div>
       </div>
 
-      {/* Stats */}
+      {/* Session Stats */}
       {stats && (
         <div className="grid grid-cols-4 gap-2">
           <div className="bg-zinc-800 rounded-lg p-2 text-center">
-            <div className="text-lg font-bold text-zinc-200">{stats.total}</div>
-            <div className="text-xs text-zinc-400">总计</div>
+            <div className="text-lg font-bold text-zinc-200">{stats.totalFiles}</div>
+            <div className="text-xs text-zinc-400">记忆文件</div>
           </div>
           <div className="bg-zinc-800 rounded-lg p-2 text-center">
-            <div className="text-lg font-bold text-indigo-400">{stats.explicitCount}</div>
-            <div className="text-xs text-zinc-400">手动添加</div>
+            <div className="text-lg font-bold text-indigo-400">
+              {stats.sessionStats?.totalSessions ?? 0}
+            </div>
+            <div className="text-xs text-zinc-400">总会话</div>
           </div>
           <div className="bg-zinc-800 rounded-lg p-2 text-center">
-            <div className="text-lg font-bold text-cyan-400">{stats.learnedCount}</div>
-            <div className="text-xs text-zinc-400">自动学习</div>
+            <div className="text-lg font-bold text-cyan-400">
+              {stats.sessionStats ? (() => {
+                const depths = stats.sessionStats.recentSessionDepths;
+                return depths.length > 0
+                  ? (depths.reduce((a, b) => a + b, 0) / depths.length).toFixed(0)
+                  : '0';
+              })() : '0'}
+            </div>
+            <div className="text-xs text-zinc-400">平均深度</div>
           </div>
           <div className="bg-zinc-800 rounded-lg p-2 text-center">
-            <div className="text-lg font-bold text-amber-400">{stats.recentlyAdded}</div>
-            <div className="text-xs text-zinc-400">近 7 天</div>
+            <div className="text-lg font-bold text-amber-400">
+              {stats.sessionStats ? (() => {
+                const weekAgo = new Date();
+                weekAgo.setDate(weekAgo.getDate() - 7);
+                const weekAgoStr = weekAgo.toISOString().split('T')[0];
+                return stats.sessionStats.activeDays.filter(d => d >= weekAgoStr).length;
+              })() : 0}
+            </div>
+            <div className="text-xs text-zinc-400">7日活跃</div>
           </div>
         </div>
       )}
 
-      {/* Search & Actions */}
-      <div className="flex items-center gap-2">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-          <Input
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索记忆..."
-            className="pl-9"
-          />
+      {/* Model Usage */}
+      {stats?.sessionStats?.modelUsage && Object.keys(stats.sessionStats.modelUsage).length > 0 && (
+        <div className="bg-zinc-800 rounded-lg p-2">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Activity className="w-3.5 h-3.5 text-zinc-400" />
+            <span className="text-xs text-zinc-400">模型使用</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {Object.entries(stats.sessionStats.modelUsage)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 5)
+              .map(([model, count]) => {
+                const total = Object.values(stats.sessionStats!.modelUsage).reduce((a, b) => a + b, 0);
+                const pct = Math.round((count / total) * 100);
+                return (
+                  <span key={model} className="px-2 py-0.5 text-xs bg-zinc-700 rounded text-zinc-300">
+                    {model} <span className="text-zinc-500">{pct}%</span>
+                  </span>
+                );
+              })}
+          </div>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={isWebMode()}
-          onClick={handleExport}
-          title="导出"
-        >
-          <Download className="w-4 h-4" />
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={isWebMode()}
-          onClick={handleImport}
-          title="导入"
-        >
-          <Upload className="w-4 h-4" />
-        </Button>
+      )}
+
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+        <Input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="搜索记忆文件..."
+          className="pl-9"
+        />
       </div>
 
-      {/* Category Lists */}
-      <div className="space-y-2 max-h-[280px] overflow-y-auto">
-        {CATEGORIES.map((cat) => {
-          const categoryMemories = memoriesByCategory[cat.key];
-          const isExpanded = expandedCategories.has(cat.key);
-          const count = categoryMemories.length;
+      {/* Memory Files by Type */}
+      <div className="space-y-2 max-h-[200px] overflow-y-auto">
+        {Object.entries(filesByType).length === 0 ? (
+          <div className="text-center py-6 text-zinc-500 text-sm">
+            暂无记忆文件。AI 会在对话中自动创建记忆。
+          </div>
+        ) : (
+          Object.entries(filesByType)
+            .sort(([a], [b]) => {
+              const order = ['user', 'feedback', 'project', 'reference', 'unknown'];
+              return order.indexOf(a) - order.indexOf(b);
+            })
+            .map(([type, typeFiles]) => {
+              const config = TYPE_CONFIG[type] || TYPE_CONFIG.unknown;
+              const isExpanded = expandedTypes.has(type);
 
-          return (
-            <div key={cat.key} className="bg-zinc-800 rounded-lg overflow-hidden">
-              {/* Category Header */}
-              <button
-                onClick={() => toggleCategory(cat.key)}
-                className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800 transition-colors"
-              >
-                {isExpanded ? (
-                  <ChevronDown className="w-4 h-4 text-zinc-400" />
-                ) : (
-                  <ChevronRight className="w-4 h-4 text-zinc-400" />
-                )}
-                <span className="text-base">{cat.icon}</span>
-                <span className="text-sm font-medium text-zinc-200 flex-1 text-left">
-                  {getCategoryLabel(cat.labelKey)}
-                </span>
-                <span className="text-xs text-zinc-500">{count} 条</span>
-                {count > 0 && (
+              return (
+                <div key={type} className="bg-zinc-800 rounded-lg overflow-hidden">
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setClearingCategory(cat.key);
-                    }}
-                    className="p-1 hover:bg-zinc-600 rounded text-zinc-500 hover:text-red-400 transition-colors"
-                    title="清空分类"
+                    onClick={() => toggleType(type)}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-750 transition-colors"
                   >
-                    <Trash2 className="w-3 h-3" />
+                    {isExpanded ? (
+                      <ChevronDown className="w-4 h-4 text-zinc-400" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-zinc-400" />
+                    )}
+                    <span className="text-base">{config.icon}</span>
+                    <span className={`text-sm font-medium ${config.color} flex-1 text-left`}>
+                      {config.label}
+                    </span>
+                    <span className="text-xs text-zinc-500">{typeFiles.length} 个</span>
                   </button>
-                )}
-              </button>
 
-              {/* Category Content */}
-              {isExpanded && (
-                <div className="px-3 pb-2 space-y-1">
-                  {count === 0 ? (
-                    <p className="text-xs text-zinc-500 py-2 text-center">
-                      暂无记忆
-                    </p>
-                  ) : (
-                    categoryMemories.map((memory) => (
-                      <MemoryCard
-                        key={memory.id}
-                        memory={memory}
-                        onEdit={() => handleEdit(memory)}
-                        onDelete={() => setDeletingId(memory.id)}
-                        isDeleting={deletingId === memory.id}
-                        onConfirmDelete={() => handleDelete(memory.id)}
-                        onCancelDelete={() => setDeletingId(null)}
-                      />
-                    ))
+                  {isExpanded && (
+                    <div className="px-3 pb-2 space-y-1">
+                      {typeFiles.map(file => (
+                        <div
+                          key={file.filename}
+                          className={`group flex items-start gap-2 p-2 rounded-lg cursor-pointer transition-colors ${
+                            selectedFile?.filename === file.filename
+                              ? 'bg-indigo-500/10 border border-indigo-500/30'
+                              : 'hover:bg-zinc-700'
+                          }`}
+                          onClick={() => setSelectedFile(
+                            selectedFile?.filename === file.filename ? null : file
+                          )}
+                        >
+                          <FileText className="w-4 h-4 text-zinc-500 mt-0.5 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm text-zinc-200 truncate">{file.name}</div>
+                            <div className="text-xs text-zinc-500 truncate">{file.description}</div>
+                            {selectedFile?.filename === file.filename && (
+                              <div className="mt-2 text-xs text-zinc-300 whitespace-pre-wrap max-h-32 overflow-y-auto bg-zinc-800 rounded p-2">
+                                {file.content || '(空)'}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="text-xs text-zinc-600">{formatDate(file.updatedAt)}</span>
+                            {deletingFile === file.filename ? (
+                              <div className="flex gap-1">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); setDeletingFile(null); }}
+                                  className="px-1.5 py-0.5 text-xs bg-zinc-600 rounded hover:bg-zinc-500"
+                                >
+                                  取消
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDelete(file.filename); }}
+                                  className="px-1.5 py-0.5 text-xs bg-red-600 rounded hover:bg-red-500 text-white"
+                                  disabled={isWebMode()}
+                                >
+                                  确认
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setDeletingFile(file.filename); }}
+                                className="p-1 opacity-0 group-hover:opacity-100 hover:bg-zinc-600 rounded text-zinc-400 hover:text-red-400 transition-all"
+                                title="删除"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
-          );
-        })}
+              );
+            })
+        )}
       </div>
 
-      {/* Key Decisions Panel */}
-      <KeyDecisionsPanel />
-
-      {/* Clear Category Confirmation */}
-      {clearingCategory && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center">
-          <div
-            className="absolute inset-0 bg-black/60"
-            onClick={() => setClearingCategory(null)}
-          />
-          <div className="relative bg-zinc-900 rounded-lg p-4 max-w-sm border border-zinc-700">
-            <h4 className="text-sm font-medium text-zinc-200 mb-2">确认清空</h4>
-            <p className="text-xs text-zinc-400 mb-4">
-              确定要清空「
-              {CATEGORIES.find((c) => c.key === clearingCategory)?.icon}{' '}
-              {getCategoryLabel(
-                CATEGORIES.find((c) => c.key === clearingCategory)?.labelKey || ''
-              )}
-              」分类下的所有记忆吗？此操作不可恢复。
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setClearingCategory(null)}
-              >
-                取消
-              </Button>
-              <Button
-                variant="danger"
-                size="sm"
-                disabled={isWebMode()}
-                onClick={() => handleClearCategory(clearingCategory)}
-              >
-                清空
-              </Button>
+      {/* Recent Conversations */}
+      {stats?.recentConversations && stats.recentConversations.length > 0 && (
+        <div className="bg-zinc-800 rounded-lg overflow-hidden">
+          <button
+            onClick={() => setShowConversations(!showConversations)}
+            className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-750 transition-colors"
+          >
+            {showConversations ? (
+              <ChevronDown className="w-4 h-4 text-zinc-400" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-zinc-400" />
+            )}
+            <MessageSquare className="w-4 h-4 text-zinc-400" />
+            <span className="text-sm font-medium text-zinc-300 flex-1 text-left">
+              最近会话
+            </span>
+            <span className="text-xs text-zinc-500">{stats.recentConversations.length} 条</span>
+          </button>
+          {showConversations && (
+            <div className="px-3 pb-2 space-y-0.5 max-h-32 overflow-y-auto">
+              {stats.recentConversations.map((line, i) => (
+                <div key={i} className="text-xs text-zinc-400 py-0.5">
+                  {line.replace(/^- /, '')}
+                </div>
+              ))}
             </div>
-          </div>
+          )}
         </div>
       )}
 
-      {/* Message */}
+      {/* Message Toast */}
       {message && (
         <div
           className={`flex items-center gap-2 p-2 rounded-lg text-xs ${
@@ -475,19 +403,6 @@ export const MemoryTab: React.FC = () => {
           )}
           <span>{message.text}</span>
         </div>
-      )}
-
-      {/* Edit Modal */}
-      {editingMemory && (
-        <MemoryEditModal
-          isOpen={isEditModalOpen}
-          memory={editingMemory}
-          onClose={() => {
-            setIsEditModalOpen(false);
-            setEditingMemory(null);
-          }}
-          onSave={handleSaveEdit}
-        />
       )}
     </div>
   );

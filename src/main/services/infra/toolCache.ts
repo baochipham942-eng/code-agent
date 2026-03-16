@@ -81,6 +81,7 @@ export class ToolCache implements Disposable {
   private memoryCache: Map<string, CacheEntry> = new Map();
   private stats: { hits: number; misses: number } = { hits: 0, misses: 0 };
   private sessionId: string | null = null;
+  private _dbErrorLogged = false;
 
   constructor(config?: Partial<ToolCacheConfig>) {
     this.config = {
@@ -178,7 +179,10 @@ export class ToolCache implements Disposable {
           return dbResult;
         }
       } catch (error) {
-        logger.error('Failed to get cached tool result from DB', error as Error);
+        if (!this._dbErrorLogged) {
+          this._dbErrorLogged = true;
+          logger.warn('DB cache unavailable, using memory-only cache:', (error as Error).message);
+        }
       }
     }
 
@@ -226,7 +230,10 @@ export class ToolCache implements Disposable {
         const db = getDatabase();
         db.saveToolExecution(this.sessionId, null, toolName, args, result, ttl);
       } catch (error) {
-        logger.error('Failed to save tool result to DB', error as Error);
+        if (!this._dbErrorLogged) {
+          this._dbErrorLogged = true;
+          logger.warn('DB cache unavailable, using memory-only cache:', (error as Error).message);
+        }
       }
     }
   }
@@ -317,7 +324,7 @@ export class ToolCache implements Disposable {
         const db = getDatabase();
         cleaned += db.cleanExpiredCache();
       } catch (error) {
-        logger.error('Failed to clean expired cache from DB', error as Error);
+        // DB 不可用时静默跳过清理
       }
     }
 

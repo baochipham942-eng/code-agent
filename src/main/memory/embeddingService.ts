@@ -4,7 +4,7 @@
 // Features auto-fallback mechanism for resilience
 // ============================================================================
 
-import { DEFAULT_PROVIDER, MODEL_API_ENDPOINTS, MEMORY } from '../../shared/constants';
+import { MODEL_API_ENDPOINTS, MEMORY } from '../../shared/constants';
 import { createLogger } from '../services/infra/logger';
 import {
   EMBEDDING_DIMENSIONS,
@@ -419,7 +419,7 @@ export class EmbeddingService {
       dimension: DEFAULT_EMBEDDING_DIMENSION, // 统一为 1024
       batchSize: 100,
       cacheEnabled: true,
-      fallbackChain: ['deepseek', 'openai', 'gemini', 'local'],
+      fallbackChain: ['openai', 'gemini', 'local'], // DeepSeek 无 embedding API，已移除
     };
 
     const finalConfig = { ...defaultConfig, ...config };
@@ -741,7 +741,7 @@ let embeddingServiceInstance: EmbeddingService | null = null;
 export function getEmbeddingService(): EmbeddingService {
   if (!embeddingServiceInstance) {
     embeddingServiceInstance = new EmbeddingService({
-      provider: DEFAULT_PROVIDER as EmbeddingConfig['provider'], // Use centralized default
+      provider: 'local', // Embedding provider 独立于对话模型，fallback chain 自动选择可用的云端 provider
       cacheEnabled: true,
     });
   }

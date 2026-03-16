@@ -589,13 +589,11 @@ export class ContextAssembly {
         systemPrompt += `
 
 <deferred-tools>
-以下工具可通过 tool_search 发现和加载：
+除了核心工具外，以下工具可通过 ToolSearch 发现和加载。当核心工具无法完成任务时（例如需要浏览器操作、截图、PPT/Excel 生成、图片分析等），你必须先用 ToolSearch 加载对应工具。
+
 ${deferredToolsSummary}
 
-使用方法：
-- 关键字搜索：tool_search("pdf") → 搜索 PDF 相关工具
-- 直接选择：tool_search("select:web_fetch") → 加载指定工具
-- 必须前缀：tool_search("+mcp search") → 只搜索 MCP 相关工具
+用法：ToolSearch("browser") 搜索浏览器工具 | ToolSearch("select:Browser") 直接加载
 </deferred-tools>`;
       }
     }

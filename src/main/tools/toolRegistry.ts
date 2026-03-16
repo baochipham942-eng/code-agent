@@ -9,7 +9,7 @@ import type {
 import type { Tool, ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
 export type { Tool, ToolContext, ToolExecutionResult, PermissionRequestData } from './types';
 import { getCloudConfigService } from '../services/cloud';
-import { toolSearchTool, CORE_TOOLS, getToolSearchService } from './search';
+import { toolSearchTool, CORE_TOOLS, DEFERRED_TOOLS_META, getToolSearchService } from './search';
 
 // Import tool definitions - organized by function
 
@@ -673,8 +673,24 @@ export class ToolRegistry {
    * @returns 延迟工具名称列表字符串
    */
   getDeferredToolsSummary(): string {
-    const deferred = this.getDeferredToolDefinitions();
-    return deferred.map(t => t.name).join('\n');
+    const allMeta = [
+      ...DEFERRED_TOOLS_META,
+    ];
+
+    // 按 tags 分组，便于模型快速定位
+    const grouped = new Map<string, string[]>();
+    for (const meta of allMeta) {
+      const category = meta.tags[0] || 'other';
+      if (!grouped.has(category)) grouped.set(category, []);
+      grouped.get(category)!.push(`${meta.name}: ${meta.shortDescription}`);
+    }
+
+    const lines: string[] = [];
+    for (const [category, tools] of grouped) {
+      lines.push(`[${category}] ${tools.join(' | ')}`);
+    }
+
+    return lines.join('\n');
   }
 }
 

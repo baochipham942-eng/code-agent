@@ -78,6 +78,10 @@ export class DatabaseService {
   private db: BetterSqlite3.Database | null = null;
   private dbPath: string;
   private _initPromise: Promise<void> | null = null;
+  private _initFailed = false;
+  private _retryCount = 0;
+  private readonly MAX_RETRIES = 3;
+  private _retryTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Repositories
   private sessionRepo!: SessionRepository;
@@ -120,11 +124,41 @@ export class DatabaseService {
   }
 
   async initialize(): Promise<void> {
-    // 防止重复初始化
-    if (this._initPromise) return this._initPromise;
+    // 已初始化成功，跳过
+    if (this.db) return;
+    // 正在初始化中，等待
+    if (this._initPromise && !this._initFailed) return this._initPromise;
 
-    this._initPromise = this._doInitialize();
+    this._initFailed = false;
+    this._initPromise = this._doInitialize().catch((err) => {
+      this._initFailed = true;
+      this._scheduleRetry();
+      throw err;
+    });
     return this._initPromise;
+  }
+
+  /**
+   * 初始化失败后自动重试（指数退避，最多 MAX_RETRIES 次）
+   */
+  private _scheduleRetry(): void {
+    if (this._retryCount >= this.MAX_RETRIES || !Database) return;
+
+    this._retryCount++;
+    const delay = Math.min(1000 * Math.pow(2, this._retryCount - 1), 10000);
+    logger.warn(`Database init retry ${this._retryCount}/${this.MAX_RETRIES} in ${delay}ms`);
+
+    this._retryTimer = setTimeout(async () => {
+      try {
+        this._initPromise = null;
+        this._initFailed = false;
+        await this.initialize();
+        logger.info(`Database recovered after ${this._retryCount} retries`);
+        this._retryCount = 0;
+      } catch {
+        // _scheduleRetry will be called again by initialize().catch
+      }
+    }, delay);
   }
 
   private async _doInitialize(): Promise<void> {
@@ -140,21 +174,32 @@ export class DatabaseService {
     if (!Database) {
       throw new Error('better-sqlite3 not available (CLI mode or native module missing)');
     }
-    this.db = new Database(this.dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('foreign_keys = ON');
 
-    this.createTables();
-    this.migrateSessionsTable();
-    this.migrateTelemetryTurnsTable();
-    this.createIndexes();
+    try {
+      this.db = new Database(this.dbPath);
+      this.db.pragma('journal_mode = WAL');
+      this.db.pragma('foreign_keys = ON');
 
-    // 初始化 Repositories
-    this.sessionRepo = new SessionRepository(this.db);
-    this.memoryRepo = new MemoryRepository(this.db);
-    this.configRepo = new ConfigRepository(this.db);
-    this.captureRepo = new CaptureRepository(this.db);
-    this.experimentRepo = new ExperimentRepository(this.db);
+      this.createTables();
+      this.migrateSessionsTable();
+      this.migrateTelemetryTurnsTable();
+      this.createIndexes();
+
+      // 初始化 Repositories
+      this.sessionRepo = new SessionRepository(this.db);
+      this.memoryRepo = new MemoryRepository(this.db);
+      this.configRepo = new ConfigRepository(this.db);
+      this.captureRepo = new CaptureRepository(this.db);
+      this.experimentRepo = new ExperimentRepository(this.db);
+    } catch (err) {
+      // 初始化失败时回退状态，避免 this.db 已赋值但 Repository 未初始化
+      logger.error('Database initialization failed, resetting state:', err);
+      if (this.db) {
+        try { this.db.close(); } catch { /* ignore close errors */ }
+      }
+      this.db = null;
+      throw err;
+    }
   }
 
   /**
@@ -835,6 +880,10 @@ export class DatabaseService {
   // --------------------------------------------------------------------------
 
   close(): void {
+    if (this._retryTimer) {
+      clearTimeout(this._retryTimer);
+      this._retryTimer = null;
+    }
     if (this.db) {
       this.db.close();
       this.db = null;
@@ -878,9 +927,19 @@ export class DatabaseService {
     if (!this.db) {
       if (!this._ensureDbWarned) {
         this._ensureDbWarned = true;
-        logger.warn('Database not initialized — operations will be skipped until init completes');
+        logger.warn(
+          'Database not initialized — DB operations will be skipped. ' +
+          (this._retryCount < this.MAX_RETRIES
+            ? `Auto-retry in progress (${this._retryCount}/${this.MAX_RETRIES}).`
+            : 'All retries exhausted. Restart the app to recover.')
+        );
       }
       throw new Error('Database not initialized');
+    }
+    // DB 恢复后重置警告标记
+    if (this._ensureDbWarned) {
+      this._ensureDbWarned = false;
+      logger.info('Database connection restored — operations resumed');
     }
   }
 

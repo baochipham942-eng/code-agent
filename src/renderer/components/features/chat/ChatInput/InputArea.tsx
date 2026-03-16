@@ -94,6 +94,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
   ) => {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const isComposingRef = useRef(false);
 
     // 暴露 ref 方法
     useImperativeHandle(ref, () => ({
@@ -113,8 +114,8 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
     // 处理键盘事件
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       // Submit on Enter (without Shift)
-      // 重要: 检查 isComposing 避免中文输入法选词时误触发
-      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      // 双重检查: isComposing (标准) + compositionEnd ref (兼容搜狗/百度等输入法)
+      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !isComposingRef.current) {
         e.preventDefault();
         onSubmit();
         return;
@@ -248,6 +249,8 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onCompositionStart={() => { isComposingRef.current = true; }}
+          onCompositionEnd={() => { isComposingRef.current = false; }}
           onPaste={handlePaste}
           onFocus={() => onFocusChange(true)}
           onBlur={() => onFocusChange(false)}

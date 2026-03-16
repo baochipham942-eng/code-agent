@@ -9,6 +9,7 @@ import { execFileSync } from 'child_process';
 import { app } from 'electron';
 import { createLogger } from './infra/logger';
 import type {
+  AudioSegment,
   DesktopActivityEvent,
   DesktopActivityStats,
   DesktopCollectorStatus,
@@ -240,6 +241,27 @@ export class NativeDesktopService {
       .filter((result) => result.score > 0)
       .sort((a, b) => b.score - a.score || b.event.capturedAtMs - a.event.capturedAtMs)
       .slice(0, query.limit || 20);
+  }
+
+  listAudioSegments(from: number, to: number): AudioSegment[] {
+    const sqlitePath = this.getSqliteDbPath();
+    if (!fs.existsSync(sqlitePath)) return [];
+
+    try {
+      const output = execFileSync(
+        'sqlite3',
+        [
+          '-json',
+          sqlitePath,
+          `SELECT id, start_at_ms, end_at_ms, duration_ms, wav_path, transcript, speaker_id, asr_engine FROM audio_segments WHERE start_at_ms >= ${from} AND start_at_ms < ${to} AND transcript IS NOT NULL AND transcript != '' ORDER BY start_at_ms ASC LIMIT 200;`,
+        ],
+        { encoding: 'utf-8' }
+      ).trim();
+      if (!output) return [];
+      return JSON.parse(output) as AudioSegment[];
+    } catch {
+      return [];
+    }
   }
 
   getStats(query: DesktopTimelineQuery = {}): DesktopActivityStats {

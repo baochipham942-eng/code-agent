@@ -380,26 +380,41 @@ fn run_osascript(_script: &str) -> Result<String, String> {
     Err("AppleScript is only available on macOS".to_string())
 }
 
+// FFI: call macOS permission APIs directly from the Tauri process (not via subprocess)
+// so TCC checks apply to the correct app bundle.
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGPreflightScreenCaptureAccess() -> bool;
+    fn CGRequestScreenCaptureAccess() -> bool;
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn AXIsProcessTrusted() -> bool;
+}
+
+/// Track whether we've already requested screen capture permission this session.
+#[cfg(target_os = "macos")]
+static SCREEN_CAPTURE_REQUESTED: AtomicBool = AtomicBool::new(false);
+
 #[cfg(target_os = "macos")]
 fn probe_accessibility_permission() -> NativePermissionStatus {
-    let script = r#"
-        tell application "System Events"
-          set frontApp to first application process whose frontmost is true
-          return name of frontApp
-        end tell
-    "#;
-
-    match run_osascript(script) {
-        Ok(_) => NativePermissionStatus {
+    // Call AXIsProcessTrusted() directly via FFI — checks THIS process's TCC record
+    let trusted = unsafe { AXIsProcessTrusted() };
+    if trusted {
+        NativePermissionStatus {
             kind: "accessibility".to_string(),
             status: "granted".to_string(),
-            detail: Some("System Events automation is available.".to_string()),
-        },
-        Err(error) => NativePermissionStatus {
+            detail: Some("AXIsProcessTrusted() returned true.".to_string()),
+        }
+    } else {
+        NativePermissionStatus {
             kind: "accessibility".to_string(),
             status: "denied".to_string(),
-            detail: Some(error),
-        },
+            detail: Some("AXIsProcessTrusted() returned false. Enable in System Settings > Privacy > Accessibility.".to_string()),
+        }
     }
 }
 
@@ -414,41 +429,21 @@ fn probe_accessibility_permission() -> NativePermissionStatus {
 
 #[cfg(target_os = "macos")]
 fn probe_screen_capture_permission() -> NativePermissionStatus {
-    let probe_path = env::temp_dir().join(format!("code-agent-screen-probe-{}.png", now_ms()));
-    let probe_path_str = probe_path.to_string_lossy().to_string();
-    let output = run_command_with_timeout(
-        "screencapture",
-        &["-x", "-t", "png", &probe_path_str],
-        Duration::from_secs(5),
-    );
-
-    let result = match output {
-        Ok(_) => match fs::metadata(&probe_path) {
-            Ok(meta) if meta.len() > 0 => NativePermissionStatus {
-                kind: "screenCapture".to_string(),
-                status: "granted".to_string(),
-                detail: Some("Screen capture command succeeded.".to_string()),
-            },
-            Ok(_) => NativePermissionStatus {
-                kind: "screenCapture".to_string(),
-                status: "unknown".to_string(),
-                detail: Some("screencapture succeeded but returned an empty file.".to_string()),
-            },
-            Err(error) => NativePermissionStatus {
-                kind: "screenCapture".to_string(),
-                status: "denied".to_string(),
-                detail: Some(format!("Screenshot file unavailable: {error}")),
-            },
-        },
-        Err(error) => NativePermissionStatus {
+    // Call CGPreflightScreenCaptureAccess() directly via FFI — checks THIS process's TCC record
+    let granted = unsafe { CGPreflightScreenCaptureAccess() };
+    if granted {
+        NativePermissionStatus {
+            kind: "screenCapture".to_string(),
+            status: "granted".to_string(),
+            detail: Some("CGPreflightScreenCaptureAccess() returned true.".to_string()),
+        }
+    } else {
+        NativePermissionStatus {
             kind: "screenCapture".to_string(),
             status: "denied".to_string(),
-            detail: Some(format!("screencapture failed: {error}")),
-        },
-    };
-
-    let _ = fs::remove_file(&probe_path);
-    result
+            detail: Some("Screen Recording permission not granted. Enable in System Settings > Privacy > Screen Recording.".to_string()),
+        }
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -460,38 +455,82 @@ fn probe_screen_capture_permission() -> NativePermissionStatus {
     }
 }
 
+/// Get the window title of the frontmost app via AppleScript.
+/// Falls back to None silently on error (e.g. if the app doesn't support it).
+#[cfg(target_os = "macos")]
+fn frontmost_window_title(_app_name: &str) -> Option<String> {
+    // System Events approach works for most apps without per-app Automation permission
+    let script = format!(
+        r#"tell application "System Events"
+            set frontApp to first process whose frontmost is true
+            if (count of windows of frontApp) > 0 then
+                return name of front window of frontApp
+            else
+                return ""
+            end if
+        end tell"#
+    );
+    match run_osascript(&script) {
+        Ok(title) => {
+            let t = title.trim().to_string();
+            if t.is_empty() { None } else { Some(t) }
+        }
+        Err(_) => None,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn frontmost_window_title(_app_name: &str) -> Option<String> {
+    None
+}
+
 #[cfg(target_os = "macos")]
 fn frontmost_app_triplet() -> Result<(String, Option<String>, Option<String>), String> {
-    let script = r#"
-        tell application "System Events"
-          set frontApp to first application process whose frontmost is true
-          set appName to name of frontApp
-          set bundleId to bundle identifier of frontApp
-          try
-            set winTitle to name of front window of frontApp
-          on error
-            set winTitle to ""
-          end try
-          return appName & linefeed & bundleId & linefeed & winTitle
-        end tell
-    "#;
+    // Use lsappinfo (no permission prompt) for app name + bundle ID
+    let front_output = run_command_with_timeout(
+        "lsappinfo",
+        &["info", "-only", "name", "-only", "bundleid", "-app", &{
+            let f = Command::new("lsappinfo").arg("front").output()
+                .map_err(|e| format!("lsappinfo front failed: {e}"))?;
+            String::from_utf8_lossy(&f.stdout).trim().to_string()
+        }],
+        Duration::from_secs(3),
+    )?;
 
-    let output = run_osascript(script)?;
-    let mut lines = output.lines();
-    let app_name = lines.next().unwrap_or("").trim().to_string();
-    let bundle_id = trim_or_none(lines.next().unwrap_or(""));
-    let remaining = lines.collect::<Vec<_>>().join("\n");
-    let window_title = trim_or_none(&remaining);
+    let mut app_name = String::new();
+    let mut bundle_id: Option<String> = None;
+    for line in front_output.lines() {
+        let line = line.trim().trim_matches('"');
+        if let Some(val) = line.strip_prefix("LSDisplayName\"=\"") {
+            app_name = val.trim_matches('"').to_string();
+        } else if let Some(val) = line.strip_prefix("CFBundleIdentifier\"=\"") {
+            bundle_id = trim_or_none(val.trim_matches('"'));
+        } else if line.contains("LSDisplayName") {
+            if let Some(v) = line.split('=').nth(1) {
+                app_name = v.trim().trim_matches('"').to_string();
+            }
+        } else if line.contains("CFBundleIdentifier") {
+            if let Some(v) = line.split('=').nth(1) {
+                bundle_id = trim_or_none(v.trim().trim_matches('"'));
+            }
+        }
+    }
 
     if app_name.is_empty() {
-        return Err("Could not resolve frontmost application.".to_string());
+        return Err("Could not resolve frontmost application from lsappinfo.".to_string());
     }
+
+    // Get window title via CGWindowListCopyWindowInfo (requires Screen Recording permission,
+    // which is now stable thanks to "Code Agent Dev" signing certificate)
+    let window_title = frontmost_window_title(&app_name);
 
     Ok((app_name, bundle_id, window_title))
 }
 
 #[cfg(target_os = "macos")]
 fn browser_context(app_name: &str) -> Result<(Option<String>, Option<String>), String> {
+    // Browser URL/title extraction via AppleScript requires per-app automation permission
+    // which triggers macOS popups on ad-hoc signed apps. Silently skip if unavailable.
     let script = match app_name {
         "Safari" => Some(
             r#"
@@ -522,7 +561,11 @@ fn browser_context(app_name: &str) -> Result<(Option<String>, Option<String>), S
         return Ok((None, None));
     };
 
-    let output = run_osascript(&script)?;
+    // Use unwrap_or to silently skip on permission errors (no popup retry)
+    let output = match run_osascript(&script) {
+        Ok(output) => output,
+        Err(_) => return Ok((None, None)),
+    };
     if output.trim().is_empty() {
         return Ok((None, None));
     }
@@ -599,20 +642,27 @@ fn normalize_document_path(raw_value: &str) -> Option<String> {
 
 #[cfg(target_os = "macos")]
 fn frontmost_document_path() -> Result<Option<String>, String> {
-    let script = r#"
-        tell application "System Events"
-          tell first application process whose frontmost is true
-            try
-              return value of attribute "AXDocument" of front window
-            on error
-              return ""
-            end try
-          end tell
-        end tell
-    "#;
+    // Use swift + Accessibility API to get AXDocument — requires Accessibility permission
+    // but does NOT trigger the AppleScript automation popup
+    let output = Command::new("/usr/bin/swift")
+        .args(["-e", r#"
+            import ApplicationServices
+            let app = AXUIElementCreateSystemWide()
+            var focusedApp: AnyObject?
+            AXUIElementCopyAttributeValue(app, kAXFocusedApplicationAttribute as CFString, &focusedApp)
+            guard let appEl = focusedApp else { exit(0) }
+            var focusedWindow: AnyObject?
+            AXUIElementCopyAttributeValue(appEl as! AXUIElement, kAXFocusedWindowAttribute as CFString, &focusedWindow)
+            guard let winEl = focusedWindow else { exit(0) }
+            var docValue: AnyObject?
+            AXUIElementCopyAttributeValue(winEl as! AXUIElement, "AXDocument" as CFString, &docValue)
+            if let doc = docValue as? String { print(doc) }
+        "#])
+        .output()
+        .map_err(|e| format!("swift AXDocument failed: {e}"))?;
 
-    let output = run_osascript(script)?;
-    Ok(normalize_document_path(&output))
+    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok(normalize_document_path(&raw))
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -875,8 +925,10 @@ fn cleanup_native_desktop_storage(
 
 fn capture_frontmost_context_snapshot() -> Result<FrontmostContextSnapshot, String> {
     let (app_name, bundle_id, window_title) = frontmost_app_triplet()?;
+    // Now that we have a stable signing certificate, per-app Automation permissions persist.
+    // Browser URL/title and document path are safe to query.
     let (browser_url, browser_title) = browser_context(&app_name).unwrap_or((None, None));
-    let document_path = frontmost_document_path().ok().flatten();
+    let document_path = frontmost_document_path().unwrap_or(None);
     let session = session_snapshot(&app_name).unwrap_or_default();
     let power = power_snapshot().unwrap_or_default();
 
@@ -920,6 +972,21 @@ fn capture_screenshot_to_path(output_path: &PathBuf, silent: bool) -> Result<Scr
 
     #[cfg(target_os = "macos")]
     {
+        // Check permission via FFI — runs in THIS process so TCC checks the correct app bundle.
+        let granted = unsafe { CGPreflightScreenCaptureAccess() };
+        if !granted {
+            // First time this session: trigger the system permission dialog via CGRequestScreenCaptureAccess().
+            // This shows the popup ONCE; subsequent calls just return the cached result.
+            if !SCREEN_CAPTURE_REQUESTED.swap(true, Ordering::SeqCst) {
+                let requested = unsafe { CGRequestScreenCaptureAccess() };
+                if !requested {
+                    return Err("Screen Recording permission not granted. A permission dialog should appear — please allow it and restart the app.".to_string());
+                }
+            } else {
+                return Err("Screen Recording permission not granted. Enable in System Settings > Privacy > Screen Recording, then restart the app.".to_string());
+            }
+        }
+
         let output_str = output_path.to_string_lossy().to_string();
         let mut args: Vec<&str> = Vec::new();
         if silent {
@@ -1167,7 +1234,7 @@ fn read_recent_events_from_sqlite(
     }
 
     let sql = format!(
-        "SELECT raw_json FROM desktop_activity_events ORDER BY captured_at_ms DESC LIMIT {};",
+        "SELECT raw_json, analyze_text FROM desktop_activity_events ORDER BY captured_at_ms DESC LIMIT {};",
         limit.clamp(1, 100)
     );
     let output = Command::new("sqlite3")
@@ -1202,7 +1269,15 @@ fn read_recent_events_from_sqlite(
             continue;
         };
 
-        if let Ok(event) = serde_json::from_str::<DesktopActivityEvent>(raw_json) {
+        if let Ok(mut event) = serde_json::from_str::<DesktopActivityEvent>(raw_json) {
+            // Merge analyze_text from SQLite column (written async by vision analyzer)
+            if event.analyze_text.is_none() {
+                if let Some(at) = row.get("analyze_text").and_then(|v| v.as_str()) {
+                    if !at.is_empty() {
+                        event.analyze_text = Some(at.to_string());
+                    }
+                }
+            }
             events.push(event);
         }
     }
@@ -1440,7 +1515,11 @@ pub fn desktop_start_collector(
                         let sqlite_error = persist_activity_event_sqlite(&sqlite_db_path_for_thread, &event).err();
                         if let Ok(mut shared) = shared.lock() {
                             shared.status.last_event_at_ms = Some(event.captured_at_ms);
-                            shared.status.last_error = sqlite_error;
+                            // Only overwrite last_error if sqlite actually failed;
+                            // preserve earlier screenshot errors otherwise.
+                            if sqlite_error.is_some() {
+                                shared.status.last_error = sqlite_error;
+                            }
                             shared.status.last_fingerprint = Some(event.fingerprint.clone());
                             shared.status.total_events_written += 1;
                             shared.status.events_file = Some(path_to_string(&events_file));
@@ -1492,13 +1571,15 @@ pub fn desktop_list_recent_events(
     limit: Option<usize>,
 ) -> Result<Vec<DesktopActivityEvent>, String> {
     let limit = limit.unwrap_or(10).clamp(1, 100);
-    let in_memory = state.recent_events(limit)?;
-    if !in_memory.is_empty() {
-        return Ok(in_memory);
-    }
+    // Always prefer SQLite — it has the most complete data including analyze_text
+    // (which is written by the Node-side vision analyzer, not available in Rust memory)
     let sqlite_events = read_recent_events_from_sqlite(&native_sqlite_path(&app)?, limit)?;
     if !sqlite_events.is_empty() {
         return Ok(sqlite_events);
+    }
+    let in_memory = state.recent_events(limit)?;
+    if !in_memory.is_empty() {
+        return Ok(in_memory);
     }
     read_recent_events_from_disk(&native_events_dir(&app)?, limit)
 }

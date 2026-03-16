@@ -430,10 +430,18 @@ async function initializeServices(): Promise<void> {
   // 加载 .env 文件（确保 API Key 等环境变量可用）
   try {
     const dotenv = await import("dotenv");
-    const envPath = path.join(process.cwd(), ".env");
-    if (fs.existsSync(envPath)) {
-      dotenv.config({ path: envPath });
-      logger.info(`.env loaded from ${envPath}`);
+    // 按优先级搜索 .env：cwd → 脚本所在目录 → 资源目录（Tauri 打包）
+    const candidates = [
+      path.join(process.cwd(), ".env"),
+      path.join(__dirname, ".env"),
+      path.join(__dirname, "..", ".env"),
+    ];
+    for (const envPath of candidates) {
+      if (fs.existsSync(envPath)) {
+        dotenv.config({ path: envPath });
+        logger.info(`.env loaded from ${envPath}`);
+        break;
+      }
     }
   } catch (e) {
     logger.warn(".env loading failed:", (e as Error).message);
@@ -928,8 +936,8 @@ function createApp(): express.Express {
 
   // Auth — Bearer token required for all /api/* except /api/health
   app.use('/api', (req: Request, res: Response, next: NextFunction) => {
-    // Health endpoint is exempt from auth (used for liveness probes)
-    if (req.path === '/health') {
+    // Health and screenshot endpoints are exempt from auth
+    if (req.path === '/health' || req.path === '/screenshot') {
       next();
       return;
     }
@@ -993,6 +1001,42 @@ function createApp(): express.Express {
         : (message === 'Missing file field' || message === 'Upload aborted' ? 400 : 500);
       res.status(status).json({ error: message });
     }
+  });
+
+  // ── Screenshot proxy (serves local screenshot files via HTTP) ────────
+  app.get('/api/screenshot', (req: Request, res: Response) => {
+    const filePath = Array.isArray(req.query.path) ? req.query.path[0] : req.query.path;
+
+    if (typeof filePath !== 'string' || filePath.trim().length === 0) {
+      res.status(400).json({ error: 'Missing path query parameter' });
+      return;
+    }
+
+    const resolved = path.resolve(filePath);
+
+    // Security: only serve image files from known screenshot directories
+    const isScreenshotDir = resolved.includes('/native-desktop/screenshots/')
+      || resolved.includes('/.code-agent/native-desktop/');
+    const isImageExt = /\.(jpg|jpeg|png|webp|gif)$/i.test(resolved);
+
+    if (!isScreenshotDir || !isImageExt) {
+      res.status(403).json({ error: 'Access denied: not a screenshot path' });
+      return;
+    }
+
+    if (!fs.existsSync(resolved)) {
+      res.status(404).json({ error: 'File not found' });
+      return;
+    }
+
+    const ext = path.extname(resolved).toLowerCase().replace('.', '');
+    const mimeMap: Record<string, string> = {
+      jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+      webp: 'image/webp', gif: 'image/gif',
+    };
+    res.setHeader('Content-Type', mimeMap[ext] || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    fs.createReadStream(resolved).pipe(res);
   });
 
   app.get('/api/workspace/file', async (req: Request, res: Response) => {

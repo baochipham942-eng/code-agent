@@ -51,10 +51,13 @@
       "../node_modules/isolated-vm/**/*",
       "../node_modules/tree-sitter/**/*",
       "../node_modules/tree-sitter-typescript/**/*",
-      "../node_modules/node-pty/**/*"
+      "../node_modules/node-pty/**/*",
+      "../node_modules/onnxruntime-node/**/*",
+      "../node_modules/avr-vad/dist/*.onnx"
     ],
     "macOS": {
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "Code Agent Dev"
     }
   },
   "plugins": {

@@ -7,7 +7,25 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '@shared/ipc';
 import type { DesktopSearchQuery, DesktopTimelineQuery } from '@shared/types';
 import { getNativeDesktopService } from '../services/nativeDesktopService';
 import { startDesktopVisionAnalyzer } from '../services/desktopVisionAnalyzer';
+import { startDesktopAudioCapture, stopDesktopAudioCapture } from '../services/desktopAudioCapture';
 import { createLogger } from '../services/infra/logger';
+
+// 会议应用列表 — 检测到前台是这些 app 时自动启动音频采集
+const MEETING_APPS = new Set([
+  'zoom.us', 'Zoom', 'zoom',
+  '飞书', 'Lark', 'Feishu',
+  '钉钉', 'DingTalk',
+  '腾讯会议', 'Tencent Meeting', 'WeMeet',
+  '企业微信', 'WeChat Work', 'WeCom',
+  'Microsoft Teams', 'Teams',
+  'Slack',
+  'Google Meet',
+  'Webex', 'Cisco Webex Meetings',
+  'Discord',
+  'FaceTime',
+]);
+let meetingAudioActive = false;
+let meetingCheckTimer: ReturnType<typeof setInterval> | null = null;
 
 const logger = createLogger('DesktopIPC');
 
@@ -43,6 +61,11 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
           return { success: true, data: service.getStats(payload) } satisfies IPCResponse<unknown>;
         }
 
+        case 'getAudioSegments': {
+          const payload = request.payload as { from: number; to: number };
+          return { success: true, data: service.listAudioSegments(payload.from, payload.to) } satisfies IPCResponse<unknown>;
+        }
+
         default:
           return {
             success: false,
@@ -61,6 +84,30 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
 
   // 启动后台视觉分析器（自动分析有截图但无 analyzeText 的事件）
   startDesktopVisionAnalyzer();
+
+  // 会议 app 检测 — 只在检测到会议应用时启动音频采集
+  meetingCheckTimer = setInterval(() => {
+    try {
+      const ctx = service.getCurrentContext();
+      const appName = ctx?.appName || '';
+      const isMeeting = MEETING_APPS.has(appName);
+
+      if (isMeeting && !meetingAudioActive) {
+        logger.info('[音频采集] 检测到会议应用，启动音频采集', { app: appName });
+        meetingAudioActive = true;
+        startDesktopAudioCapture().catch((err) => {
+          logger.warn('[音频采集] 启动失败', { error: err instanceof Error ? err.message : String(err) });
+          meetingAudioActive = false;
+        });
+      } else if (!isMeeting && meetingAudioActive) {
+        logger.info('[音频采集] 会议应用已退出，停止音频采集', { app: appName });
+        stopDesktopAudioCapture();
+        meetingAudioActive = false;
+      }
+    } catch {
+      // 忽略检查错误
+    }
+  }, 10_000); // 每 10 秒检查一次前台 app
 
   logger.info('Desktop handlers registered');
 }

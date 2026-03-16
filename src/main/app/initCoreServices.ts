@@ -31,16 +31,25 @@ export async function initializeCoreServices(): Promise<ConfigService> {
   // 并行初始化 ConfigService 和 Database（无依赖关系）
   const configService = new ConfigService();
 
-  const [,] = await Promise.all([
+  const [configResult, dbResult] = await Promise.allSettled([
     configService.initialize(),
     initDatabase(),
   ]);
 
+  // ConfigService 是关键依赖，失败必须抛错
+  if (configResult.status === 'rejected') {
+    throw configResult.reason;
+  }
+
   const userDataPath = app.getPath('userData');
-  logger.info('Config & Database initialized (parallel)', {
-    path: path.join(userDataPath, 'code-agent.db'),
-    elapsed: Date.now() - startTime,
-  });
+  if (dbResult.status === 'rejected') {
+    logger.error('Database initialization failed — DB features will be unavailable:', dbResult.reason);
+  } else {
+    logger.info('Config & Database initialized (parallel)', {
+      path: path.join(userDataPath, 'code-agent.db'),
+      elapsed: Date.now() - startTime,
+    });
+  }
 
   // Initialize memory service (depends on database)
   initMemoryService({

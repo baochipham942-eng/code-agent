@@ -160,6 +160,32 @@ export async function updateNativeDesktopAnalyzeText(eventId: string, analyzeTex
   });
 }
 
+export interface AudioSegment {
+  id: string;
+  start_at_ms: number;
+  end_at_ms: number;
+  duration_ms: number;
+  wav_path?: string | null;
+  transcript: string;
+  speaker_id?: number | null;
+  asr_engine?: string | null;
+}
+
+export async function listAudioSegments(from: number, to: number): Promise<AudioSegment[]> {
+  try {
+    const resp = await fetch('/api/domain/desktop/getAudioSegments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'getAudioSegments', payload: { from, to } }),
+    });
+    if (!resp.ok) return [];
+    const result = await resp.json();
+    return result?.success ? (result.data || []) : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function openNativeDesktopSystemSettings(kind: SettingsPaneKind): Promise<boolean> {
   return invoke<boolean>('desktop_open_system_settings', {
     request: { kind },

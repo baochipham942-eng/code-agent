@@ -71,6 +71,17 @@ export interface DesktopActivityStats {
   }>;
 }
 
+export interface AudioSegment {
+  id: string;
+  start_at_ms: number;
+  end_at_ms: number;
+  duration_ms: number;
+  wav_path?: string | null;
+  transcript: string;
+  speaker_id?: number | null;
+  asr_engine?: string | null;
+}
+
 export interface DesktopActivitySliceSummary {
   sliceKey: string;
   fromMs: number;

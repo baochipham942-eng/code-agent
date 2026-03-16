@@ -38,6 +38,7 @@ const NATIVE_EXTERNALS = [
   'docx',
   'node-pty',
   '@ui-tars/sdk',
+  'onnxruntime-node',
 ];
 
 const ELECTRON_ALIAS = { electron: './src/web/electronMock.ts' };

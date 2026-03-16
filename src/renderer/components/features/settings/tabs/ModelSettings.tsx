@@ -11,6 +11,7 @@ import type { ModelProvider } from '@shared/types';
 import { UI, MODEL, PROVIDER_MODELS, PROVIDER_MODELS_MAP } from '@shared/constants';
 import type { ProviderModelEntry } from '@shared/constants';
 import { createLogger } from '../../../../utils/logger';
+import { toast } from '../../../../hooks/useToast';
 
 const logger = createLogger('ModelSettings');
 
@@ -70,6 +71,7 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
   const { t } = useI18n();
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [isTesting, setIsTesting] = useState(false);
 
   // Build provider display list with i18n names where available
   const providers = useMemo(() =>
@@ -113,6 +115,30 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
       setSaveStatus('error');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    if (!config.apiKey) {
+      toast.warning('请先填写 API Key');
+      return;
+    }
+    setIsTesting(true);
+    try {
+      const result = await ipcService.invokeDomain<{ success: boolean; error?: string }>(
+        IPC_DOMAINS.SETTINGS,
+        'testApiKey',
+        { provider: config.provider, apiKey: config.apiKey }
+      );
+      if (result?.success) {
+        toast.success('连接成功');
+      } else {
+        toast.error(result?.error || '连接失败');
+      }
+    } catch {
+      toast.error('连接测试失败');
+    } finally {
+      setIsTesting(false);
     }
   };
 
@@ -196,8 +222,8 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
         </div>
       </div>
 
-      {/* Save Button */}
-      <div className="pt-4 border-t border-zinc-700">
+      {/* Save + Test Connection */}
+      <div className="pt-4 border-t border-zinc-700 flex gap-3">
         <Button
           disabled={isWebMode()}
           onClick={handleSave}
@@ -207,6 +233,15 @@ export const ModelSettings: React.FC<ModelSettingsProps> = ({ config, onChange }
           className={saveStatus === 'success' ? '!bg-green-600 hover:!bg-green-500' : ''}
         >
           {isSaving ? t.common.saving || 'Saving...' : saveStatus === 'success' ? t.common.saved || 'Saved!' : saveStatus === 'error' ? t.common.error || 'Error' : t.common.save || 'Save'}
+        </Button>
+        <Button
+          disabled={isWebMode() || !config.apiKey}
+          onClick={handleTestConnection}
+          loading={isTesting}
+          variant="secondary"
+          className="shrink-0"
+        >
+          测试连接
         </Button>
       </div>
     </div>

@@ -3,7 +3,7 @@
 // ============================================================================
 
 // 🔴 必须在所有其他导入之前设置 CLI 模式标志
-// 这让 native 模块（isolated-vm, keytar）可以跳过加载
+// 这让 native 模块（keytar 等）可以跳过加载
 process.env.CODE_AGENT_CLI_MODE = 'true';
 
 import { Command } from 'commander';

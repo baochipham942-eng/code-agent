@@ -20,7 +20,7 @@ export function isElectron(): boolean {
  * 优先级：URL 参数 > localStorage > 默认值
  */
 export function getApiBaseUrl(): string {
-  if (typeof window === 'undefined') return 'http://localhost:8080';
+  if (typeof window === 'undefined') return 'http://localhost:8180';
 
   // 从 URL 参数读取
   const urlParams = new URLSearchParams(window.location.search);

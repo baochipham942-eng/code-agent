@@ -115,6 +115,60 @@ export interface ImageTemplate {
   h: number;
 }
 
+export interface ChartSlotTemplate {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface FallbackTemplate {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  fontSize: number;
+}
+
+/** Cards3 Schema 渲染器的微偏移量 */
+export interface Cards3SchemaOffsets {
+  numberYOffset: number;       // 序号 Y 偏移
+  numberSize: number;          // 序号区域尺寸
+  dividerYOffset: number;      // 分隔线 Y 偏移
+  titleYOffset: number;        // 卡片标题 Y 偏移
+  titleH: number;              // 卡片标题高度
+  descYOffset: number;         // 描述 Y 偏移
+  descBottomPadding: number;   // 描述底部留白
+  shortDescScale: number;      // 短描述时高度缩放系数
+}
+
+/** Cards2 Schema 渲染器的微偏移量 */
+export interface Cards2SchemaOffsets {
+  mainTitleH: number;          // 主卡片标题高度
+  mainTitleGap: number;        // 标题与描述间距
+  rightTitleH: number;         // 右侧卡片标题高度
+  rightTitleGap: number;       // 右侧标题下方偏移
+  rightDescGap: number;        // 右侧描述底部预留
+}
+
+/** Comparison Schema 渲染器的微偏移量 */
+export interface ComparisonSchemaOffsets {
+  headerPaddingY: number;      // 标题区 Y 偏移
+  headerH: number;             // 标题区高度
+  contentStartAfterHeader: number; // 内容区起始偏移（相对 cardY）
+  contentPaddingBottom: number;    // 卡片底部预留
+}
+
+/** Timeline Schema 渲染器的微偏移量 */
+export interface TimelineSchemaOffsets {
+  labelH: number;              // 标题标签高度
+  dotNumberFontSize: number;   // 圆点内编号字号
+  maxStepWidth: number;        // 单步最大宽度
+  totalPadding: number;        // 总水平留白
+  contentPaddingX: number;     // 内容水平留白
+  minContentH: number;         // 最小内容高度
+}
+
 /** 完整的布局模板配置 */
 export interface LayoutTemplate {
   stats: StatsTemplate;
@@ -125,6 +179,12 @@ export interface LayoutTemplate {
   twoColumn: TwoColumnTemplate;
   pageNumber: PageNumberTemplate;
   image: ImageTemplate;
+  chartSlot: ChartSlotTemplate;
+  fallback: FallbackTemplate;
+  cards3Schema: Cards3SchemaOffsets;
+  cards2Schema: Cards2SchemaOffsets;
+  comparisonSchema: ComparisonSchemaOffsets;
+  timelineSchema: TimelineSchemaOffsets;
 }
 
 // ============================================================================
@@ -230,6 +290,50 @@ const DEFAULT_TEMPLATE: LayoutTemplate = {
     w: 4.6,
     h: 3.8,
   },
+  chartSlot: {
+    x: 5.1,
+    y: 1.55,
+    w: 4.3,
+    h: 3.6,
+  },
+  fallback: {
+    x: 0.5,
+    y: 1.5,
+    w: 9,
+    h: 3.5,
+    fontSize: 14,
+  },
+  cards3Schema: {
+    numberYOffset: 0.3,
+    numberSize: 0.7,
+    dividerYOffset: 1.0,
+    titleYOffset: 1.15,
+    titleH: 0.4,
+    descYOffset: 1.6,
+    descBottomPadding: 1.9,
+    shortDescScale: 0.85,
+  },
+  cards2Schema: {
+    mainTitleH: 0.6,
+    mainTitleGap: 0.7,
+    rightTitleH: 0.35,
+    rightTitleGap: 0.4,
+    rightDescGap: 0.5,
+  },
+  comparisonSchema: {
+    headerPaddingY: 0.15,
+    headerH: 0.4,
+    contentStartAfterHeader: 0.65,
+    contentPaddingBottom: 1.0,
+  },
+  timelineSchema: {
+    labelH: 0.5,
+    dotNumberFontSize: 9,
+    maxStepWidth: 2.6,
+    totalPadding: 1.2,
+    contentPaddingX: 0.2,
+    minContentH: 1.0,
+  },
 };
 
 /** Apple Keynote 风格模板 */
@@ -331,6 +435,12 @@ const APPLE_TEMPLATE: LayoutTemplate = {
     w: 4.6,
     h: 3.8,
   },
+  chartSlot: DEFAULT_TEMPLATE.chartSlot,
+  fallback: DEFAULT_TEMPLATE.fallback,
+  cards3Schema: DEFAULT_TEMPLATE.cards3Schema,
+  cards2Schema: DEFAULT_TEMPLATE.cards2Schema,
+  comparisonSchema: DEFAULT_TEMPLATE.comparisonSchema,
+  timelineSchema: DEFAULT_TEMPLATE.timelineSchema,
 };
 
 /** 企业正式风格 */

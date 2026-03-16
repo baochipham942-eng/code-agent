@@ -7,8 +7,7 @@ import type { ThemeConfig, LayoutType, SlideData, SlideImage, ChartSlotData, Cha
 import { isAppleDark } from './themes';
 import { MASTER } from './slideMasters';
 import { detectChartData, renderNativeChart } from './charts';
-import { selectFont, normalizeCJKSpacing, calculateFitFontSize, isCJKDominant } from './typography';
-import { getSpacingConfig } from './spacing';
+import { selectFont, normalizeCJKSpacing } from './typography';
 import { getTemplateForTheme } from './layoutTemplates';
 import type { LayoutTemplate } from './layoutTemplates';
 import type {
@@ -264,7 +263,8 @@ export function fillSlide(
     slide.addText(slideData.title, { placeholder: 'slideTitle' });
     slide.addText(bulletText, { placeholder: 'body' });
     // 右侧图表
-    renderNativeChart(pptx, slide, chartData, theme, { x: 5.1, y: 1.55, w: 4.3, h: 3.6 });
+    const chartTpl = getTemplateForTheme('default').chartSlot;
+    renderNativeChart(pptx, slide, chartData, theme, { x: chartTpl.x, y: chartTpl.y, w: chartTpl.w, h: chartTpl.h });
     return;
   }
 
@@ -329,10 +329,11 @@ export function fillSlide(
       break;
     default: {
       // fallback: 坐标定位（HERO_NUMBER 无 body placeholder）
+      const fb = getTemplateForTheme('default').fallback;
       const text = slideData.points.map(p => `  ${normalizeCJKSpacing(p)}`).join('\n');
       slide.addText(text, {
-        x: 0.5, y: 1.5, w: 9, h: 3.5,
-        fontSize: 14, fontFace: theme.fontBody,
+        x: fb.x, y: fb.y, w: fb.w, h: fb.h,
+        fontSize: fb.fontSize, fontFace: theme.fontBody,
         color: theme.textSecondary, valign: 'top',
       });
       break;
@@ -741,18 +742,19 @@ export function fillStructuredSlide(
       fillQuoteFromSchema(slide, data.content as QuoteContent, theme);
       break;
     case 'chart':
-      fillChartFromSchema(pptx, slide, data.content as ChartContent, theme, chartData);
+      fillChartFromSchema(pptx, slide, data.content as ChartContent, theme, chartData, tpl);
       break;
     case 'two-column':
       fillTwoColumnFromSchema(slide, data.content as TwoColumnContent, theme, apple, tpl);
       break;
     default: {
       // fallback: 尝试提取 points 并用 body placeholder
+      const fb = tpl.fallback;
       const fallbackPoints = extractPointsFromContent(data);
       const text = fallbackPoints.map(p => `  ${normalizeCJKSpacing(p)}`).join('\n');
       slide.addText(text, {
-        x: 0.5, y: 1.5, w: 9, h: 3.5,
-        fontSize: 14, fontFace: theme.fontBody,
+        x: fb.x, y: fb.y, w: fb.w, h: fb.h,
+        fontSize: fb.fontSize, fontFace: theme.fontBody,
         color: theme.textSecondary, valign: 'top',
       });
     }
@@ -820,6 +822,7 @@ function fillStatsFromSchema(slide: any, content: StatsContent, theme: ThemeConf
 
 function fillCards2FromSchema(slide: any, content: Cards2Content, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
   const t = tpl.cards2;
+  const s = tpl.cards2Schema;
   // 左侧主卡片
   slide.addShape('roundRect', {
     x: t.leftX, y: t.cardY, w: t.leftW, h: t.cardH,
@@ -830,14 +833,14 @@ function fillCards2FromSchema(slide: any, content: Cards2Content, theme: ThemeCo
 
   // 主卡片标题
   slide.addText(normalizeCJKSpacing(content.mainCard.title), {
-    x: t.leftX + t.padding, y: t.cardY + t.padding, w: t.leftW - t.padding * 2, h: 0.6,
+    x: t.leftX + t.padding, y: t.cardY + t.padding, w: t.leftW - t.padding * 2, h: s.mainTitleH,
     fontSize: t.titleFontSize + 2, fontFace: theme.fontTitle,
     color: theme.textPrimary, bold: true, valign: 'middle',
   });
 
   // 主卡片描述
   slide.addText(normalizeCJKSpacing(content.mainCard.description), {
-    x: t.leftX + t.padding, y: t.cardY + t.padding + 0.7, w: t.leftW - t.padding * 2, h: t.cardH - t.padding * 2 - 0.7,
+    x: t.leftX + t.padding, y: t.cardY + t.padding + s.mainTitleGap, w: t.leftW - t.padding * 2, h: t.cardH - t.padding * 2 - s.mainTitleGap,
     fontSize: t.bodyFontSize, fontFace: selectFont(content.mainCard.description, theme.fontBody, theme.fontBody, theme.fontTitleCN, theme.fontBodyCN),
     color: theme.textSecondary, valign: 'top',
     shrinkText: true,
@@ -859,13 +862,13 @@ function fillCards2FromSchema(slide: any, content: Cards2Content, theme: ThemeCo
     });
 
     slide.addText(normalizeCJKSpacing(card.title), {
-      x: x + t.padding, y: y + 0.05, w: t.rightW - t.padding * 2, h: 0.35,
+      x: x + t.padding, y: y + 0.05, w: t.rightW - t.padding * 2, h: s.rightTitleH,
       fontSize: t.bodyFontSize, fontFace: theme.fontTitle,
       color: theme.accent, bold: true, valign: 'middle',
     });
 
     slide.addText(normalizeCJKSpacing(card.description), {
-      x: x + t.padding, y: y + 0.4, w: t.rightW - t.padding * 2, h: rightCardH - 0.5,
+      x: x + t.padding, y: y + s.rightTitleGap, w: t.rightW - t.padding * 2, h: rightCardH - s.rightDescGap,
       fontSize: t.bodyFontSize - 1, fontFace: selectFont(card.description, theme.fontBody, theme.fontBody, theme.fontTitleCN, theme.fontBodyCN),
       color: theme.textSecondary, valign: 'top',
       shrinkText: true,
@@ -875,6 +878,7 @@ function fillCards2FromSchema(slide: any, content: Cards2Content, theme: ThemeCo
 
 function fillCards3FromSchema(slide: any, content: Cards3Content, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
   const t = tpl.cards3;
+  const s = tpl.cards3Schema;
   const cards = content.cards.slice(0, 3);
 
   // 自适应居中：根据实际卡片数量计算起始 X
@@ -883,7 +887,7 @@ function fillCards3FromSchema(slide: any, content: Cards3Content, theme: ThemeCo
 
   // 短描述自适应高度
   const maxDescLen = Math.max(...cards.map(c => c.description.length));
-  const baseH = maxDescLen < 40 ? t.baseH * 0.85 : t.baseH;
+  const baseH = maxDescLen < 40 ? t.baseH * s.shortDescScale : t.baseH;
 
   cards.forEach((card, i) => {
     const x = dynamicStartX + i * (t.cardWidth + t.gap);
@@ -892,6 +896,7 @@ function fillCards3FromSchema(slide: any, content: Cards3Content, theme: ThemeCo
     const heightBonus = isCenter ? t.centerHBonus : 0;
     const cardY = t.baseY + yOffset;
     const cardH = baseH + heightBonus;
+    const halfNum = s.numberSize / 2;
 
     slide.addShape('roundRect', {
       x, y: cardY, w: t.cardWidth, h: cardH,
@@ -902,20 +907,20 @@ function fillCards3FromSchema(slide: any, content: Cards3Content, theme: ThemeCo
 
     // 序号
     slide.addText(String(i + 1), {
-      x: x + t.cardWidth / 2 - 0.35, y: cardY + 0.3, w: 0.7, h: 0.7,
+      x: x + t.cardWidth / 2 - halfNum, y: cardY + s.numberYOffset, w: s.numberSize, h: s.numberSize,
       fontSize: t.numberFontSize, fontFace: theme.fontTitle,
       color: theme.accent, bold: true, align: 'center', valign: 'middle',
     });
 
     // 分隔线
     slide.addShape('rect', {
-      x: x + 0.5, y: cardY + 1.0, w: t.cardWidth - 1, h: 0.01,
+      x: x + 0.5, y: cardY + s.dividerYOffset, w: t.cardWidth - 1, h: 0.01,
       fill: { color: theme.cardBorder, transparency: apple ? 30 : 0 },
     });
 
     // 卡片标题
     slide.addText(normalizeCJKSpacing(card.title), {
-      x: x + 0.3, y: cardY + 1.15, w: t.cardWidth - 0.6, h: 0.4,
+      x: x + 0.3, y: cardY + s.titleYOffset, w: t.cardWidth - 0.6, h: s.titleH,
       fontSize: t.bodyFontSize + 1, fontFace: theme.fontTitle,
       color: theme.textPrimary, bold: true, align: 'center', valign: 'middle',
     });
@@ -923,7 +928,7 @@ function fillCards3FromSchema(slide: any, content: Cards3Content, theme: ThemeCo
     // 卡片描述
     const descFontSize = adaptiveFontSize(card.description, t.bodyFontSize);
     slide.addText(normalizeCJKSpacing(card.description), {
-      x: x + 0.3, y: cardY + 1.6, w: t.cardWidth - 0.6, h: cardH - 1.9,
+      x: x + 0.3, y: cardY + s.descYOffset, w: t.cardWidth - 0.6, h: cardH - s.descBottomPadding,
       fontSize: descFontSize, fontFace: selectFont(card.description, theme.fontBody, theme.fontBody, theme.fontTitleCN, theme.fontBodyCN),
       color: theme.textSecondary, valign: 'top', align: 'center',
       shrinkText: true,
@@ -939,11 +944,12 @@ function fillListFromSchema(slide: any, content: ListContent | HighlightContent,
 
 function fillTimelineFromSchema(slide: any, content: TimelineContent, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
   const t = tpl.timeline;
+  const ts = tpl.timelineSchema;
   const steps = content.steps.slice(0, 4);
   const n = steps.length;
 
   // 动态居中：根据步骤数计算列宽和起始位置
-  const stepW = Math.min(2.6, (10 - 1.2) / n);
+  const stepW = Math.min(ts.maxStepWidth, (10 - ts.totalPadding) / n);
   const totalW = stepW * n;
   const sx = (10 - totalW) / 2;
   const lineY = t.baseY;
@@ -972,13 +978,13 @@ function fillTimelineFromSchema(slide: any, content: TimelineContent, theme: The
     // 圆点内编号
     slide.addText(`${i + 1}`, {
       x: cx - halfDot, y: lineY, w: t.dotSize, h: t.dotSize,
-      fontSize: 9, fontFace: theme.fontTitle,
+      fontSize: ts.dotNumberFontSize, fontFace: theme.fontTitle,
       color: theme.bgColor, bold: true, align: 'center', valign: 'middle',
     });
 
     // 标题（线上方）
     slide.addText(step.title, {
-      x: colX, y: lineY + t.labelYOffset, w: stepW, h: 0.5,
+      x: colX, y: lineY + t.labelYOffset, w: stepW, h: ts.labelH,
       fontSize: t.labelFontSize, fontFace: theme.fontTitle,
       color: theme.accent, bold: true, align: 'center',
       shrinkText: true,
@@ -987,14 +993,14 @@ function fillTimelineFromSchema(slide: any, content: TimelineContent, theme: The
     // 描述（线下方）— 自适应内容高度和字号
     const maxDescLen = Math.max(...steps.map(s => s.description.length));
     const cjkRatio = (step.description.match(/[\u4e00-\u9fff]/g) || []).length / Math.max(step.description.length, 1);
-    const charsPerLine = Math.floor((stepW - 0.4) * (cjkRatio > 0.3 ? 5 : 8)); // CJK ~5字/英寸，Latin ~8字/英寸
+    const charsPerLine = Math.floor((stepW - ts.contentPaddingX * 2) * (cjkRatio > 0.3 ? 5 : 8)); // CJK ~5字/英寸，Latin ~8字/英寸
     const estimatedLines = Math.ceil(maxDescLen / Math.max(charsPerLine, 1));
     const lineH = t.contentFontSize * 1.6 / 72; // pt → inches with line spacing
-    const neededH = Math.max(1.0, Math.min(t.contentHeight, estimatedLines * lineH + 0.3));
+    const neededH = Math.max(ts.minContentH, Math.min(t.contentHeight, estimatedLines * lineH + 0.3));
     const contentFontSize = adaptiveFontSize(step.description, t.contentFontSize);
 
     slide.addText(normalizeCJKSpacing(step.description), {
-      x: colX + 0.2, y: lineY + t.dotSize + t.contentYOffset, w: stepW - 0.4, h: neededH,
+      x: colX + ts.contentPaddingX, y: lineY + t.dotSize + t.contentYOffset, w: stepW - ts.contentPaddingX * 2, h: neededH,
       fontSize: contentFontSize, fontFace: selectFont(step.description, theme.fontBody, theme.fontBody, theme.fontTitleCN, theme.fontBodyCN),
       color: theme.textSecondary, align: 'center', valign: 'top',
       shrinkText: true,
@@ -1004,10 +1010,11 @@ function fillTimelineFromSchema(slide: any, content: TimelineContent, theme: The
 
 function fillComparisonFromSchema(slide: any, content: ComparisonContent, theme: ThemeConfig, apple: boolean, tpl: LayoutTemplate) {
   const t = tpl.comparison;
+  const s = tpl.comparisonSchema;
   const leftPoints = content.left.points;
   const rightPoints = content.right.points;
   const maxHalf = Math.max(leftPoints.length, rightPoints.length);
-  const rowH = Math.min(t.maxRowH, (t.cardH - 1.0) / Math.max(maxHalf, 1));
+  const rowH = Math.min(t.maxRowH, (t.cardH - s.contentPaddingBottom) / Math.max(maxHalf, 1));
 
   // 左侧卡片
   slide.addShape('roundRect', {
@@ -1019,7 +1026,7 @@ function fillComparisonFromSchema(slide: any, content: ComparisonContent, theme:
 
   // 左标题
   slide.addText(normalizeCJKSpacing(content.left.title), {
-    x: t.leftX + 0.3, y: t.cardY + 0.15, w: t.leftW - 0.6, h: 0.4,
+    x: t.leftX + 0.3, y: t.cardY + s.headerPaddingY, w: t.leftW - 0.6, h: s.headerH,
     fontSize: t.fontSize + 1, fontFace: theme.fontTitle,
     color: theme.accent, bold: true, valign: 'middle',
   });
@@ -1027,7 +1034,7 @@ function fillComparisonFromSchema(slide: any, content: ComparisonContent, theme:
   leftPoints.forEach((point, i) => {
     const pointFontSize = adaptiveFontSize(point, t.fontSize);
     slide.addText(normalizeCJKSpacing(point), {
-      x: t.leftX + 0.3, y: t.cardY + 0.65 + i * rowH, w: t.leftW - 0.6, h: rowH,
+      x: t.leftX + 0.3, y: t.cardY + s.contentStartAfterHeader + i * rowH, w: t.leftW - 0.6, h: rowH,
       fontSize: pointFontSize, fontFace: selectFont(point, theme.fontBody, theme.fontBody, theme.fontTitleCN, theme.fontBodyCN),
       color: theme.textSecondary, valign: 'middle',
       shrinkText: true,
@@ -1044,7 +1051,7 @@ function fillComparisonFromSchema(slide: any, content: ComparisonContent, theme:
 
   // 右标题
   slide.addText(normalizeCJKSpacing(content.right.title), {
-    x: t.rightX + 0.3, y: t.cardY + 0.15, w: t.rightW - 0.6, h: 0.4,
+    x: t.rightX + 0.3, y: t.cardY + s.headerPaddingY, w: t.rightW - 0.6, h: s.headerH,
     fontSize: t.fontSize + 1, fontFace: theme.fontTitle,
     color: theme.accent, bold: true, valign: 'middle',
   });
@@ -1052,7 +1059,7 @@ function fillComparisonFromSchema(slide: any, content: ComparisonContent, theme:
   rightPoints.forEach((point, i) => {
     const pointFontSize = adaptiveFontSize(point, t.fontSize);
     slide.addText(normalizeCJKSpacing(point), {
-      x: t.rightX + 0.3, y: t.cardY + 0.65 + i * rowH, w: t.rightW - 0.6, h: rowH,
+      x: t.rightX + 0.3, y: t.cardY + s.contentStartAfterHeader + i * rowH, w: t.rightW - 0.6, h: rowH,
       fontSize: pointFontSize, fontFace: selectFont(point, theme.fontBody, theme.fontBody, theme.fontTitleCN, theme.fontBodyCN),
       color: theme.textSecondary, valign: 'middle',
       shrinkText: true,
@@ -1067,14 +1074,15 @@ function fillQuoteFromSchema(slide: any, content: QuoteContent, theme: ThemeConf
   }
 }
 
-function fillChartFromSchema(pptx: any, slide: any, content: ChartContent, theme: ThemeConfig, chartData: ChartSlotData | null) {
+function fillChartFromSchema(pptx: any, slide: any, content: ChartContent, theme: ThemeConfig, chartData: ChartSlotData | null, tpl: LayoutTemplate) {
   // 左侧要点
   const bulletText = content.points.map(p => `  ${normalizeCJKSpacing(p)}`).join('\n');
   slide.addText(bulletText, { placeholder: 'body' });
 
   // 右侧图表
+  const cs = tpl.chartSlot;
   if (chartData) {
-    renderNativeChart(pptx, slide, chartData, theme, { x: 5.1, y: 1.55, w: 4.3, h: 3.6 });
+    renderNativeChart(pptx, slide, chartData, theme, { x: cs.x, y: cs.y, w: cs.w, h: cs.h });
   } else if (content.chartData) {
     // 从 schema 直接构建图表数据
     const schemaChart: ChartSlotData = {
@@ -1083,7 +1091,7 @@ function fillChartFromSchema(pptx: any, slide: any, content: ChartContent, theme
       labels: content.chartData.labels,
       values: content.chartData.values,
     };
-    renderNativeChart(pptx, slide, schemaChart, theme, { x: 5.1, y: 1.55, w: 4.3, h: 3.6 });
+    renderNativeChart(pptx, slide, schemaChart, theme, { x: cs.x, y: cs.y, w: cs.w, h: cs.h });
   }
 }
 

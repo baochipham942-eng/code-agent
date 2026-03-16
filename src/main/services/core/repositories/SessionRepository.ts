@@ -160,34 +160,43 @@ export class SessionRepository {
   }
 
   updateSession(sessionId: string, updates: Partial<Session>, options?: SessionWriteOptions & { isDeleted?: boolean }): void {
-    const session = this.getSession(sessionId, { includeDeleted: true });
-    if (!session) throw new Error(`Session not found: ${sessionId}`);
-
+    // Use COALESCE to avoid read-before-write: only update fields that are provided
     const stmt = this.db.prepare(`
       UPDATE sessions
-      SET title = ?, generation_id = ?, model_provider = ?, model_name = ?,
-          working_directory = ?, updated_at = ?, workspace = ?, status = ?, last_token_usage = ?, is_deleted = ?, synced_at = ?
+      SET title = COALESCE(?, title),
+          generation_id = COALESCE(?, generation_id),
+          model_provider = COALESCE(?, model_provider),
+          model_name = COALESCE(?, model_name),
+          working_directory = COALESCE(?, working_directory),
+          updated_at = COALESCE(?, updated_at),
+          workspace = COALESCE(?, workspace),
+          status = COALESCE(?, status),
+          last_token_usage = COALESCE(?, last_token_usage),
+          is_deleted = COALESCE(?, is_deleted),
+          synced_at = COALESCE(?, synced_at)
       WHERE id = ?
     `);
 
     const lastTokenUsage = updates.lastTokenUsage !== undefined
       ? JSON.stringify(updates.lastTokenUsage)
-      : (session.lastTokenUsage ? JSON.stringify(session.lastTokenUsage) : null);
+      : null; // null means keep existing via COALESCE
 
-    stmt.run(
-      updates.title ?? session.title,
-      updates.generationId ?? session.generationId,
-      updates.modelConfig?.provider ?? session.modelConfig.provider,
-      updates.modelConfig?.model ?? session.modelConfig.model,
-      updates.workingDirectory ?? session.workingDirectory,
+    const result = stmt.run(
+      updates.title ?? null,
+      updates.generationId ?? null,
+      updates.modelConfig?.provider ?? null,
+      updates.modelConfig?.model ?? null,
+      updates.workingDirectory ?? null,
       updates.updatedAt ?? Date.now(),
-      updates.workspace !== undefined ? updates.workspace : session.workspace,
-      updates.status ?? session.status ?? 'idle',
+      updates.workspace !== undefined ? updates.workspace : null,
+      updates.status ?? null,
       lastTokenUsage,
-      (options?.isDeleted ?? session.isDeleted) ? 1 : 0,
-      this.resolveSyncedAt(options),
+      options?.isDeleted !== undefined ? (options.isDeleted ? 1 : 0) : null,
+      this.resolveSyncedAt(options) ?? null,
       sessionId
     );
+
+    if (result.changes === 0) throw new Error(`Session not found: ${sessionId}`);
   }
 
   deleteSession(sessionId: string, options?: SessionWriteOptions & { deletedAt?: number }): void {
@@ -413,16 +422,20 @@ export class SessionRepository {
   saveTodos(sessionId: string, todos: TodoItem[]): void {
     const now = Date.now();
 
-    this.db.prepare('DELETE FROM todos WHERE session_id = ?').run(sessionId);
+    const saveFn = this.db.transaction(() => {
+      this.db.prepare('DELETE FROM todos WHERE session_id = ?').run(sessionId);
 
-    const stmt = this.db.prepare(`
-      INSERT INTO todos (session_id, content, status, active_form, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
+      const stmt = this.db.prepare(`
+        INSERT INTO todos (session_id, content, status, active_form, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
 
-    for (const todo of todos) {
-      stmt.run(sessionId, todo.content, todo.status, todo.activeForm, now, now);
-    }
+      for (const todo of todos) {
+        stmt.run(sessionId, todo.content, todo.status, todo.activeForm, now, now);
+      }
+    });
+
+    saveFn();
   }
 
   getTodos(sessionId: string): TodoItem[] {

@@ -3,7 +3,7 @@
 // 支持 DeepSeek、OpenAI、Anthropic 等多个 Provider
 // ============================================================================
 
-import { API_VERSIONS, getDefaultModelForProvider, getProviderEndpoint, normalizeProviderId } from '../../../src/shared/constants.js';
+import { API_VERSIONS, getDefaultModelForProvider, getProviderEndpoint, normalizeProviderId } from '../../../src/shared/constants/index.js';
 import type { ModelProvider as SharedModelProvider, ModelProviderAlias } from '../../../src/shared/types/model.js';
 
 export type ModelProvider = SharedModelProvider | ModelProviderAlias;

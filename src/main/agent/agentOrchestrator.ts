@@ -11,14 +11,14 @@ import type {
   ModelConfig,
   ModelProvider,
 } from '../../shared/types';
-import type { ReportStyle, AgentRunOptions, ResearchUserSettings } from '../research/types';
+import type { AgentRunOptions, ResearchUserSettings } from '../research/types';
 import { AgentLoop } from './agentLoop';
 import { SYSTEM_PROMPT } from '../prompts/builder';
 import { ToolRegistry } from '../tools/toolRegistry';
 import { ToolExecutor } from '../tools/toolExecutor';
 import { getConfirmationGate } from './confirmationGate';
 import type { ConfigService } from '../services/core/configService';
-import { getSessionManager, getAuthService } from '../services';
+import { getSessionManager } from '../services';
 import type { PlanningService } from '../planning';
 import { DeepResearchMode, SemanticResearchOrchestrator } from '../research';
 import { analyzeTask } from './hybrid/taskRouter';
@@ -26,88 +26,36 @@ import { classifyIntent } from '../routing/intentClassifier';
 import { getSessionStateManager } from '../session/sessionStateManager';
 import { ModelRouter } from '../model/modelRouter';
 import { generateMessageId, generatePermissionRequestId } from '../../shared/utils/id';
-import { app } from 'electron';
 import { createLogger } from '../services/infra/logger';
-// Auto Agent Generation
 import { getAgentRequirementsAnalyzer } from './agentRequirementsAnalyzer';
-import { getDynamicAgentFactory } from './dynamicAgentFactory';
-import { getAutoAgentCoordinator } from './autoAgentCoordinator';
-import {
-  DEFAULT_MODELS,
-  DEFAULT_PROVIDER,
-  MODEL_MAX_TOKENS,
-  getDefaultModelForProvider,
-  getProviderInfo,
-  normalizeProviderId,
-} from '../../shared/constants';
-import { PROVIDER_REGISTRY } from '../model/providerRegistry';
 import { getModelSessionState } from '../session/modelSessionState';
-// Agent Routing
 import { getRoutingService } from '../routing';
 import type { RoutingContext, RoutingResolution } from '../../shared/types/agentRouting';
-// Session Event Service (for evaluation)
-// sessionEventService loaded dynamically — excluded from production bundle
-// Telemetry Collector
 import { getTelemetryCollector } from '../telemetry';
-// Task Complexity → Effort Level mapping
 import { taskComplexityAnalyzer } from '../planning/taskComplexityAnalyzer';
 import type { EffortLevel } from '../../shared/types/agent';
-// TaskList Manager (可视化任务列表)
 import { getTaskListManager, type TaskListManager } from './taskList';
-// DAG Visualization for normal conversations
 import { TaskDAG } from '../scheduler/TaskDAG';
-import { sendDAGInitEvent, buildDAGVisualizationState } from '../scheduler/dagEventBridge';
-import { BrowserWindow } from 'electron';
-import { DAG_CHANNELS } from '../../shared/ipc/channels';
-import type { DAGVisualizationEvent, TaskStatusEventData } from '../../shared/types/dagVisualization';
+import { sendDAGInitEvent } from '../scheduler/dagEventBridge';
+
+// Sub-modules
+import { type AgentOrchestratorConfig, MAX_MESSAGES_IN_MEMORY } from './orchestrator/types';
+import {
+  mapAgentEventToDAGStatus,
+  mapAutoAgentStatusToDAGStatus,
+  buildDAGStatusEvent,
+} from './orchestrator/dagManager';
+import { resolveModelConfig, getDefaultModelByProvider, getPermissionLevel } from './orchestrator/modelConfigResolver';
+import { runDeepResearch, checkAndRunSemanticResearch } from './orchestrator/researchRunner';
+import { runAutoAgentMode } from './orchestrator/autoAgentRunner';
+
+export type { AgentOrchestratorConfig } from './orchestrator/types';
 
 const logger = createLogger('AgentOrchestrator');
 
 // ----------------------------------------------------------------------------
-// Types
-// ----------------------------------------------------------------------------
-
-/**
- * Agent Orchestrator 配置
- * @internal
- */
-export interface AgentOrchestratorConfig {
-  configService: ConfigService;
-  onEvent: (event: AgentEvent) => void;
-  planningService?: PlanningService;
-}
-
-// ----------------------------------------------------------------------------
 // Agent Orchestrator
 // ----------------------------------------------------------------------------
-
-/**
- * Agent Orchestrator - AI Agent 的主控制器
- *
- * 负责管理 Agent 的完整生命周期，包括：
- * - 对话消息历史管理
- * - 权限请求和响应处理
- * - 模型配置获取
- * - AgentLoop 创建和启动
- * - 工作目录管理
- *
- * @example
- * ```typescript
- * const orchestrator = new AgentOrchestrator({
- *   configService,
- *   onEvent: (event) => console.log(event),
- * });
- *
- * await orchestrator.sendMessage('帮我写一个贪吃蛇游戏');
- * orchestrator.cancel(); // 取消执行
- * ```
- *
- * @see AgentLoop - 核心执行循环
- * @see ToolRegistry - 工具注册表
- * @see ToolExecutor - 工具执行器
- */
-// 消息历史最大长度（内存管理）
-const MAX_MESSAGES_IN_MEMORY = 200;
 
 export class AgentOrchestrator {
   private configService: ConfigService;
@@ -118,7 +66,7 @@ export class AgentOrchestrator {
   private semanticResearchOrchestrator: SemanticResearchOrchestrator | null = null;
   private onEvent: (event: AgentEvent) => void;
   private workingDirectory: string;
-  private isDefaultWorkingDirectory: boolean = true; // Track if using default sandbox
+  private isDefaultWorkingDirectory: boolean = true;
   private messages: Message[] = [];
   private pendingPermissions: Map<string, {
     resolve: (response: PermissionResponse) => void;
@@ -142,17 +90,21 @@ export class AgentOrchestrator {
   private taskListManager: TaskListManager;
   private sessionId: string | null = null;
 
+  // Dependency injection: decoupled from Electron APIs
+  private getHomeDir: () => string;
+  private broadcastDAGEvent?: (event: import('../../shared/types/dagVisualization').DAGVisualizationEvent) => void;
+
   constructor(config: AgentOrchestratorConfig) {
     this.configService = config.configService;
     this.onEvent = config.onEvent;
+    this.getHomeDir = config.getHomeDir ?? (() => process.cwd());
+    this.broadcastDAGEvent = config.broadcastDAGEvent;
 
-    // 设置默认工作目录为 app/work 文件夹
     this.workingDirectory = this.initializeWorkDirectory();
-    this.isDefaultWorkingDirectory = true; // Default sandbox
+    this.isDefaultWorkingDirectory = true;
     logger.info('Initial working directory:', this.workingDirectory);
     this.planningService = config.planningService;
 
-    // Initialize tool registry and executor
     this.toolRegistry = new ToolRegistry();
     this.toolExecutor = new ToolExecutor({
       toolRegistry: this.toolRegistry,
@@ -160,24 +112,15 @@ export class AgentOrchestrator {
       workingDirectory: this.workingDirectory,
     });
 
-    // Initialize TaskList manager
     this.taskListManager = getTaskListManager();
   }
 
-  /**
-   * 初始化工作目录
-   * 默认使用用户主目录，避免回退到 app 内部目录或 process.cwd()（可能是项目源码目录）
-   *
-   * 性能优化：目录创建延迟到后台执行，构造函数不阻塞
-   */
   private initializeWorkDirectory(): string {
     try {
-      // 优先使用用户主目录（安全、可预测）
-      const homeDir = app.getPath('home');
+      const homeDir = this.getHomeDir();
       logger.debug('Default working directory set to home:', homeDir);
       return homeDir;
     } catch (error) {
-      // 如果获取 home 路径失败（如在测试环境），回退到当前目录
       logger.warn('Failed to get home path, falling back to cwd:', error);
       return process.cwd();
     }
@@ -187,34 +130,15 @@ export class AgentOrchestrator {
   // Public Methods
   // --------------------------------------------------------------------------
 
-  /**
-   * 发送用户消息并启动 Agent 执行循环
-   *
-   * @param content - 用户消息内容
-   * @param attachments - 可选的附件列表（图片、文件等）
-   * @param options - 可选的运行选项（模式、报告风格等）
-   * @returns Promise 在 Agent 执行完成后 resolve
-   * @throws 执行过程中的错误会通过 onEvent 发送 error 事件
-   *
-   * @example
-   * ```typescript
-   * await orchestrator.sendMessage('请帮我创建一个 React 组件');
-   * await orchestrator.sendMessage('分析这张图片', [{ type: 'image', data: base64 }]);
-   * await orchestrator.sendMessage('研究 AI Agent', undefined, { mode: 'deep-research', reportStyle: 'academic' });
-   * ```
-   */
   async sendMessage(
     content: string,
     attachments?: unknown[],
     options?: AgentRunOptions
   ): Promise<void> {
-    const systemPrompt = SYSTEM_PROMPT;
     const settings = this.configService.getSettings();
     const sessionManager = getSessionManager();
-
     const sessionId = await this.resolveSessionId();
 
-    // Create user message
     const userMessage: Message = {
       id: this.generateId(),
       role: 'user',
@@ -225,9 +149,7 @@ export class AgentOrchestrator {
 
     this.addMessage(userMessage);
     logger.debug('User message added, hasAttachments:', !!userMessage.attachments?.length, 'count:', userMessage.attachments?.length || 0);
-    // Note: Don't emit user message event - frontend already added it
 
-    // 持久化保存用户消息
     try {
       if (sessionId) {
         await sessionManager.addMessageToSession(sessionId, userMessage);
@@ -257,9 +179,7 @@ export class AgentOrchestrator {
       }
     }
 
-    // Create agent loop with session-aware event handler
-    // Wrap onEvent to inject sessionId, ensuring events are associated with the correct session
-    // Lazily load evaluation sessionEventService (excluded from production bundle)
+    // Session-aware event handler with telemetry
     let eventService: { saveEvent: (sid: string, event: AgentEvent) => void } | null = null;
     if (process.env.EVAL_DISABLED !== 'true') {
       try {
@@ -269,31 +189,24 @@ export class AgentOrchestrator {
     }
     const telemetryCollector = getTelemetryCollector();
     const sessionAwareOnEvent = (event: AgentEvent) => {
-      // Inject sessionId into all events for proper session isolation
       this.onEvent({ ...event, sessionId } as AgentEvent & { sessionId?: string });
-      // Save event to database for evaluation analysis
       if (sessionId) {
         eventService?.saveEvent(sessionId, event);
-        // Telemetry: forward event to collector for timeline recording
         telemetryCollector.handleEvent(sessionId, event);
       }
     };
 
-    // Check if deep research mode is explicitly requested
+    // Route to appropriate mode
     const mode = options?.mode ?? 'normal';
 
     if (mode === 'deep-research') {
-      // Manual deep research mode (user explicitly requested)
       await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig);
     } else if (mode === 'normal') {
-      // === Fast path: keyword-based research detection ===
       const analysis = analyzeTask(content);
       if (analysis.taskType === 'research') {
         logger.info('Auto-detected research task (keyword match), routing to deep research pipeline');
         await this.runDeepResearchMode(content, options?.reportStyle, sessionAwareOnEvent, modelConfig);
       } else if (!['code', 'data', 'ppt', 'image', 'video'].includes(analysis.taskType)) {
-        // === Slow path: LLM classification for ambiguous cases ===
-        // Only for messages not obviously code/data/media tasks
         try {
           const modelRouter = new ModelRouter();
           const intent = await classifyIntent(content, modelRouter);
@@ -308,590 +221,17 @@ export class AgentOrchestrator {
           await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined);
         }
       } else {
-        // Obvious non-research task type (code/data/ppt/image/video)
         await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined);
       }
     } else {
-      // Normal Mode: 指挥家统一处理任务分类和执行
-      // 不再前置 LLM 调用做意图分析，由 AgentLoop 在第一轮直接判断
       await this.runNormalMode(content, sessionAwareOnEvent, modelConfig, sessionId ?? undefined);
     }
   }
 
-  /**
-   * 检查并运行语义研究模式
-   *
-   * @returns true 如果研究模式被触发并执行，false 否则
-   */
-  private async checkAndRunSemanticResearch(
-    content: string,
-    reportStyle: ReportStyle | undefined,
-    onEvent: (event: AgentEvent) => void,
-    modelConfig: ModelConfig,
-    sessionId?: string
-  ): Promise<boolean> {
-    // Create model router
-    const modelRouter = new ModelRouter();
-
-    // Create semantic research orchestrator
-    this.semanticResearchOrchestrator = new SemanticResearchOrchestrator({
-      modelRouter,
-      toolExecutor: this.toolExecutor,
-      onEvent,
-      userSettings: this.researchUserSettings,
-    });
-
-    try {
-      // Run semantic analysis and potential research
-      const result = await this.semanticResearchOrchestrator.run(
-        content,
-        false, // Don't force research
-        reportStyle
-      );
-
-      if (result.researchTriggered && result.success && result.report) {
-        // Research was triggered and completed successfully
-        // Add report as assistant message
-        const reportMessage: Message = {
-          id: this.generateId(),
-          role: 'assistant',
-          content: result.report.content,
-          timestamp: Date.now(),
-        };
-        this.addMessage(reportMessage);
-
-        // Emit message event
-        onEvent({
-          type: 'message',
-          data: reportMessage,
-        });
-
-        logger.info('Semantic research completed:', {
-          duration: result.duration,
-          intent: result.classification?.intent,
-        });
-
-        // Emit completion event
-        onEvent({ type: 'agent_complete', data: null });
-
-        return true;
-      }
-
-      // Research was not triggered or failed
-      if (result.researchTriggered && !result.success) {
-        logger.warn('Semantic research failed:', result.error);
-      }
-
-      return false;
-    } catch (error) {
-      logger.error('Semantic research exception:', error);
-      return false;
-    } finally {
-      this.semanticResearchOrchestrator = null;
-    }
-  }
-
-  /**
-   * 运行深度研究模式
-   */
-  private async runDeepResearchMode(
-    topic: string,
-    reportStyle: ReportStyle | undefined,
-    onEvent: (event: AgentEvent) => void,
-    modelConfig: ModelConfig
-  ): Promise<void> {
-    logger.info('========== Starting deep research mode ==========');
-    logger.info('Topic:', topic);
-    logger.info('Report style:', reportStyle);
-
-    // Create model router
-    const modelRouter = new ModelRouter();
-
-    // Create deep research mode instance
-    this.deepResearchMode = new DeepResearchMode({
-      modelRouter,
-      toolExecutor: this.toolExecutor,
-      onEvent,
-    });
-
-    try {
-      const result = await this.deepResearchMode.run(topic, reportStyle ?? 'default');
-
-      if (result.success && result.report) {
-        // 将报告作为 assistant 消息添加
-        const reportMessage: Message = {
-          id: this.generateId(),
-          role: 'assistant',
-          content: result.report.content,
-          timestamp: Date.now(),
-        };
-        this.addMessage(reportMessage);
-
-        // 发送消息事件
-        onEvent({
-          type: 'message',
-          data: reportMessage,
-        });
-      }
-
-      logger.info('========== Deep research completed ==========');
-      logger.info('Success:', result.success);
-      logger.info('Duration:', result.duration, 'ms');
-    } catch (error) {
-      logger.error('========== Deep research EXCEPTION ==========');
-      logger.error('Error:', error);
-      onEvent({
-        type: 'error',
-        data: {
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
-      });
-    } finally {
-      this.deepResearchMode = null;
-      // 发送完成事件
-      onEvent({ type: 'agent_complete', data: null });
-    }
-  }
-
-  /**
-   * 运行正常模式
-   */
-  private async runNormalMode(
-    content: string,
-    onEvent: (event: AgentEvent) => void,
-    modelConfig: ModelConfig,
-    sessionId?: string
-  ): Promise<void> {
-    // Update session state to running
-    const sessionStateManager = getSessionStateManager();
-    if (sessionId) {
-      sessionStateManager.updateStatus(sessionId, 'running');
-      // Telemetry: start session tracking
-      getTelemetryCollector().startSession(sessionId, {
-        title: content.substring(0, 80),
-        generationId: 'gen8',
-        modelProvider: modelConfig.provider,
-        modelName: modelConfig.model,
-        workingDirectory: this.workingDirectory,
-      });
-    }
-
-    try {
-      // Check if auto agent generation is needed
-      const requirementsAnalyzer = getAgentRequirementsAnalyzer();
-      const requirements = await requirementsAnalyzer.analyze(content, this.workingDirectory);
-
-      // Delegate 模式：强制使用 auto agent 模式，orchestrator 不直接执行工具
-      if (this.delegateMode && !requirements.needsAutoAgent) {
-        logger.info('[DelegateMode] Forcing auto agent mode — orchestrator will not execute tools directly');
-        // 覆盖分析结果，强制走多 agent 路径
-        requirements.needsAutoAgent = true;
-        requirements.executionStrategy = requirements.executionStrategy || 'parallel';
-        requirements.confidence = Math.max(requirements.confidence, 0.8);
-        onEvent({
-          type: 'notification',
-          data: { message: 'Delegate 模式：任务将委派给子 Agent 执行' },
-        });
-      }
-
-      if (requirements.needsAutoAgent) {
-        // Use auto agent mode
-        await this.runAutoAgentMode(
-          content,
-          requirements,
-          onEvent,
-          modelConfig,
-          sessionId
-        );
-      } else {
-        // Use standard agent loop
-        await this.runStandardAgentLoop(
-          content,
-          onEvent,
-          modelConfig,
-          sessionId
-        );
-      }
-    } catch (error) {
-      logger.error('========== Normal mode EXCEPTION ==========');
-      logger.error('Error:', error);
-      logger.error('Stack:', error instanceof Error ? error.stack : 'no stack');
-      onEvent({
-        type: 'error',
-        data: {
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
-      });
-    } finally {
-      // Update session state to idle
-      if (sessionId) {
-        sessionStateManager.updateStatus(sessionId, 'idle');
-        // Sync smart title from sessions table to telemetry
-        try {
-          const sm = getSessionManager();
-          const session = await sm.getSession(sessionId);
-          if (session?.title && session.title !== 'New Chat' && session.title !== '新对话' && !session.title.startsWith('Session ')) {
-            getTelemetryCollector().updateSessionTitle(sessionId, session.title);
-          }
-        } catch { /* ignore - title sync is best effort */ }
-        // Sync token usage to sessions table before ending telemetry
-        try {
-          const sessionData = getTelemetryCollector().getSessionData(sessionId);
-          if (sessionData && (sessionData.totalInputTokens > 0 || sessionData.totalOutputTokens > 0)) {
-            const sm = getSessionManager();
-            await sm.updateSession(sessionId, {
-              lastTokenUsage: {
-                inputTokens: sessionData.totalInputTokens,
-                outputTokens: sessionData.totalOutputTokens,
-                totalTokens: sessionData.totalTokens,
-              },
-            } as any);
-          }
-        } catch { /* ignore - token sync is best effort */ }
-        // Telemetry: end session tracking
-        getTelemetryCollector().endSession(sessionId);
-      }
-    }
-  }
-
-  /**
-   * 运行标准 Agent Loop
-   */
-  private async runStandardAgentLoop(
-    content: string,
-    onEvent: (event: AgentEvent) => void,
-    modelConfig: ModelConfig,
-    sessionId?: string
-  ): Promise<void> {
-    // Create simple DAG for visualization (single task for normal conversation)
-    const dagId = `conv-${sessionId || Date.now()}`;
-    const dag = new TaskDAG(dagId, content.substring(0, 50) + (content.length > 50 ? '...' : ''));
-    dag.addAgentTask('main', {
-      role: 'general-purpose',
-      prompt: content,
-    }, {
-      name: '对话处理',
-      description: content.substring(0, 100),
-    });
-
-    // Send DAG init event for visualization
-    sendDAGInitEvent(dag);
-
-    // Wrap onEvent to sync DAG status updates
-    const dagAwareOnEvent = (event: AgentEvent) => {
-      // Forward original event
-      onEvent(event);
-
-      // Sync DAG task status based on event type
-      this.syncDAGStatus(dagId, event);
-    };
-
-    // Resolve agent routing
-    const routingResolution = await this.resolveAgentRouting(content, sessionId);
-    let effectiveModelConfig = modelConfig;
-
-
-    if (routingResolution) {
-      logger.info('Agent routing resolved', {
-        agentId: routingResolution.agent.id,
-        agentName: routingResolution.agent.name,
-        score: routingResolution.score,
-        reason: routingResolution.reason,
-      });
-
-      // Apply model override from agent config
-      if (routingResolution.agent.modelOverride) {
-        const override = routingResolution.agent.modelOverride;
-        effectiveModelConfig = {
-          ...modelConfig,
-          provider: (override.provider as ModelProvider) || modelConfig.provider,
-          model: override.model || modelConfig.model,
-          temperature: override.temperature ?? modelConfig.temperature,
-        };
-        logger.debug('Model config overridden by agent', {
-          provider: effectiveModelConfig.provider,
-          model: effectiveModelConfig.model,
-        });
-      }
-
-      // Use agent's system prompt if available
-      if (routingResolution.agent.systemPrompt) {
-        logger.debug('System prompt overridden by agent', {
-          agentId: routingResolution.agent.id,
-        });
-      }
-
-      // Notify UI about agent selection
-      onEvent({
-        type: 'notification',
-        data: {
-          message: `使用 Agent: ${routingResolution.agent.name}`,
-        },
-      });
-    }
-
-    // Create telemetry adapter for this session
-    const telemetryAdapter = sessionId
-      ? getTelemetryCollector().createAdapter(sessionId, 'main')
-      : undefined;
-
-    // Create agent loop with potentially overridden config
-    this.agentLoop = new AgentLoop({
-      systemPrompt: routingResolution?.agent?.systemPrompt || SYSTEM_PROMPT,
-      modelConfig: effectiveModelConfig,
-      toolRegistry: this.toolRegistry,
-      toolExecutor: this.toolExecutor,
-      messages: this.messages,
-      onEvent: dagAwareOnEvent, // Use DAG-aware event handler
-      planningService: this.planningService,
-      sessionId, // Pass sessionId for tracing
-      workingDirectory: this.workingDirectory,
-      isDefaultWorkingDirectory: this.isDefaultWorkingDirectory,
-      telemetryAdapter,
-    });
-
-    // Auto-map task complexity → effort level
-    const complexityAnalysis = taskComplexityAnalyzer.analyze(content);
-    const effortMap: Record<string, EffortLevel> = {
-      simple: 'low',
-      moderate: 'medium',
-      complex: 'high',
-    };
-    const effort = effortMap[complexityAnalysis.complexity] || 'high';
-    this.agentLoop.setEffortLevel(effort);
-    logger.info(`[EffortLevel] complexity=${complexityAnalysis.complexity} → effort=${effort}`);
-
-    try {
-      // Run agent loop
-      logger.info('========== Starting agent loop ==========');
-      await this.agentLoop.run(content);
-      logger.info('========== Agent loop completed normally ==========');
-    } finally {
-      logger.info('========== Finally block, agentLoop = null ==========');
-      this.agentLoop = null;
-    }
-  }
-
-  /**
-   * 解析 Agent 路由
-   */
-  private async resolveAgentRouting(
-    userMessage: string,
-    sessionId?: string
-  ): Promise<RoutingResolution | null> {
-    try {
-      const routingService = getRoutingService();
-
-      // Initialize routing service if not already
-      if (!routingService.isInitialized()) {
-        await routingService.initialize(this.workingDirectory);
-      }
-
-      const context: RoutingContext = {
-        workingDirectory: this.workingDirectory,
-        userMessage,
-        sessionId,
-      };
-
-      const resolution = routingService.resolve(context);
-
-      // Skip if default agent with no specific match
-      if (resolution.agent.id === 'default' && resolution.score <= 0) {
-        return null;
-      }
-
-      return resolution;
-    } catch (error) {
-      logger.warn('Agent routing failed, using default', { error });
-      return null;
-    }
-  }
-
-  /**
-   * 运行自动 Agent 模式
-   */
-  private async runAutoAgentMode(
-    content: string,
-    requirements: Awaited<ReturnType<ReturnType<typeof getAgentRequirementsAnalyzer>['analyze']>>,
-    onEvent: (event: AgentEvent) => void,
-    modelConfig: ModelConfig,
-    sessionId?: string
-  ): Promise<void> {
-    logger.info('========== Starting auto agent mode ==========');
-    logger.info('Task type:', requirements.taskType);
-    logger.info('Execution strategy:', requirements.executionStrategy);
-    logger.info('Confidence:', requirements.confidence);
-
-    // Create dynamic agents
-    const factory = getDynamicAgentFactory();
-    const agents = factory.create(requirements, {
-      userMessage: content,
-      workingDirectory: this.workingDirectory,
-      sessionId,
-    });
-
-    if (agents.length === 0) {
-      // Fallback to standard agent loop if no agents generated
-      logger.warn('No auto agents generated, falling back to standard loop');
-      await this.runStandardAgentLoop(content, onEvent, modelConfig, sessionId);
-      return;
-    }
-
-    // Create DAG for multi-agent visualization
-    const dagId = `auto-${sessionId || Date.now()}`;
-    const dag = new TaskDAG(dagId, `自动 Agent: ${requirements.taskType}`);
-
-    // Add task for each agent
-    const agentDependencies: string[] = [];
-    for (const agent of agents) {
-      dag.addAgentTask(agent.id, {
-        role: agent.name,
-        prompt: agent.systemPrompt.substring(0, 200),
-      }, {
-        name: agent.name,
-        description: `工具: ${agent.tools.slice(0, 3).join(', ')}${agent.tools.length > 3 ? '...' : ''}`,
-        dependencies: requirements.executionStrategy === 'sequential' ? agentDependencies.slice(-1) : [],
-      });
-      agentDependencies.push(agent.id);
-    }
-
-    // Send DAG init event for visualization
-    sendDAGInitEvent(dag);
-
-    // Notify UI about auto agent planning
-    onEvent({
-      type: 'agent_thinking',
-      data: {
-        message: `正在规划自动 Agent 执行...\n任务类型: ${requirements.taskType}\n策略: ${requirements.executionStrategy}\nAgent 数量: ${agents.length}`,
-      },
-    });
-
-    // === TaskList Integration: 写入任务列表 ===
-    this.taskListManager.reset();
-    const taskItems = agents.map((agent, idx) => {
-      return this.taskListManager.createTask({
-        subject: agent.name,
-        description: agent.systemPrompt?.substring(0, 200) || `Execute ${agent.name}`,
-        assignee: agent.name,
-        priority: idx === 0 ? 1 : 3,
-        dependencies: requirements.executionStrategy === 'sequential' && idx > 0
-          ? [agents[idx - 1].id]
-          : [],
-      });
-    });
-
-    // 如果需要审批，等待用户确认
-    if (this.taskListManager.getState().requireApproval) {
-      logger.info('[TaskList] Waiting for user approval before execution...');
-      onEvent({
-        type: 'notification',
-        data: { message: '任务列表已生成，等待审批...' },
-      });
-      try {
-        await Promise.all(taskItems.map(t => this.taskListManager.waitForApproval(t.id)));
-      } catch (error) {
-        logger.info('[TaskList] Approval rejected or reset');
-        onEvent({ type: 'agent_complete', data: null });
-        return;
-      }
-    }
-
-    // Execute agents through coordinator
-    const coordinator = getAutoAgentCoordinator();
-    const toolMap = new Map<string, import('../tools/toolRegistry').Tool>();
-    for (const tool of this.toolRegistry.getAllTools()) {
-      toolMap.set(tool.name, tool);
-    }
-
-    const result = await coordinator.execute(agents, requirements, {
-      sessionId: sessionId || 'unknown',
-      modelConfig,
-      toolRegistry: toolMap,
-      toolContext: {
-        workingDirectory: this.workingDirectory,
-        requestPermission: async () => true, // Auto-approve for auto agents
-      },
-      onProgress: (agentId, status, progress) => {
-        // Sync DAG task status
-        this.syncAutoAgentDAGStatus(dagId, agentId, status);
-
-        // === TaskList Integration: 同步任务状态 ===
-        const matchingTask = taskItems.find(t => t.subject === agentId || t.description?.includes(agentId));
-        if (matchingTask) {
-          if (status === 'running') {
-            this.taskListManager.startExecution(matchingTask.id);
-          } else if (status === 'completed') {
-            this.taskListManager.completeExecution(matchingTask.id, `Agent ${agentId} completed`);
-          } else if (status === 'failed') {
-            this.taskListManager.failExecution(matchingTask.id, `Agent ${agentId} failed`);
-          }
-        }
-
-        onEvent({
-          type: 'agent_thinking',
-          data: {
-            message: `Agent ${agentId}: ${status}${progress !== undefined ? ` (${progress}%)` : ''}`,
-            agentId,
-            progress,
-          },
-        });
-      },
-    });
-
-    // Process result
-    if (result.success && result.aggregatedOutput) {
-      // Create assistant message with aggregated output
-      const assistantMessage: Message = {
-        id: this.generateId(),
-        role: 'assistant',
-        content: result.aggregatedOutput,
-        timestamp: Date.now(),
-      };
-      this.addMessage(assistantMessage);
-
-      // Save and emit message
-      const sessionManager = getSessionManager();
-      try {
-        if (this.sessionId) {
-          await sessionManager.addMessageToSession(this.sessionId, assistantMessage);
-        } else {
-          await sessionManager.addMessage(assistantMessage);
-        }
-      } catch (error) {
-        logger.error('Failed to save auto agent result:', error);
-      }
-
-      onEvent({
-        type: 'message',
-        data: assistantMessage,
-      });
-    }
-
-    // Log summary
-    logger.info('========== Auto agent mode completed ==========');
-    logger.info('Success:', result.success);
-    logger.info('Total iterations:', result.totalIterations);
-    logger.info('Total cost:', result.totalCost);
-    if (result.errors.length > 0) {
-      logger.warn('Errors:', result.errors);
-    }
-
-    // Emit completion
-    onEvent({ type: 'agent_complete', data: null });
-  }
-
-  /**
-   * 取消当前正在执行的 Agent 任务
-   *
-   * @returns Promise 在取消操作完成后 resolve
-   */
   async cancel(): Promise<void> {
     logger.info('Cancel requested');
-
-    // 获取当前会话 ID 用于事件
     const sessionId = this.sessionId ?? getSessionManager().getCurrentSessionId();
 
-    // 清除中断排队状态
     this.isInterrupting = false;
     this.pendingSteerMessages = [];
 
@@ -908,8 +248,6 @@ export class AgentOrchestrator {
       this.semanticResearchOrchestrator = null;
     }
 
-    // 立即发送 agent_complete 事件，让前端更新状态
-    // 这样用户可以立即看到反馈，而不需要等待当前 API 请求完成
     this.onEvent({
       type: 'agent_complete',
       data: null,
@@ -917,18 +255,6 @@ export class AgentOrchestrator {
     } as AgentEvent & { sessionId?: string });
   }
 
-  /**
-   * 实时转向：h2A 风格的中断与继续
-   *
-   * 核心改进（对比旧版）：
-   * 1. 不再销毁 AgentLoop + 新建 — 而是通过 steer() 注入消息，同一 Loop 继续运行
-   * 2. 不再注入 <direction-change> XML — 用户消息直接以 user role 追加
-   * 3. 通过 AbortController 立即终止正在进行的 API 流，而非轮询等待
-   * 4. 支持消息排队 — 用户连续快速输入不会互相覆盖
-   *
-   * @param newMessage - 用户的新消息内容
-   * @param attachments - 可选的附件（当前仅在 fallback 路径使用）
-   */
   async interruptAndContinue(
     newMessage: string,
     attachments?: unknown[]
@@ -937,7 +263,6 @@ export class AgentOrchestrator {
     const sessionManager = getSessionManager();
     const sessionId = this.sessionId ?? sessionManager.getCurrentSessionId();
 
-    // P3: 消息排队 — 如果正在处理另一个中断，排队等待
     if (this.isInterrupting) {
       logger.info('[AgentOrchestrator] Already interrupting, queuing message');
       this.pendingSteerMessages.push(newMessage);
@@ -946,18 +271,15 @@ export class AgentOrchestrator {
 
     this.isInterrupting = true;
 
-    // 发送中断开始事件
     this.onEvent({
       type: 'interrupt_start',
       data: { message: '正在调整方向...', newUserMessage: newMessage },
       sessionId,
     } as AgentEvent & { sessionId?: string });
 
-    // 优先路径：AgentLoop 正在运行 — 使用 steer() 消息注入（不销毁 Loop）
     if (this.agentLoop) {
       this.agentLoop.steer(newMessage);
 
-      // 处理排队的消息（steer 会在下一个 inference 前生效，连续 steer 会累积）
       while (this.pendingSteerMessages.length > 0) {
         const queued = this.pendingSteerMessages.shift()!;
         this.agentLoop.steer(queued);
@@ -974,7 +296,6 @@ export class AgentOrchestrator {
       return;
     }
 
-    // Fallback 路径：深度研究/语义研究模式 — 仍需取消后重启
     if (this.deepResearchMode) {
       this.deepResearchMode.cancel();
       this.deepResearchMode = null;
@@ -992,45 +313,25 @@ export class AgentOrchestrator {
 
     this.isInterrupting = false;
 
-    // 处理排队的消息
     const allMessages = [newMessage, ...this.pendingSteerMessages.splice(0)];
-    // 只发送最后一条（合并用户意图）
     await this.sendMessage(allMessages[allMessages.length - 1], attachments);
   }
 
-
-  /**
-   * 检查是否正在处理中
-   */
   isProcessing(): boolean {
     return this.agentLoop !== null ||
            this.deepResearchMode !== null ||
            this.semanticResearchOrchestrator !== null;
   }
 
-  /**
-   * 设置研究用户设置
-   *
-   * @param settings - 研究设置
-   */
   setResearchUserSettings(settings: Partial<ResearchUserSettings>): void {
     this.researchUserSettings = { ...this.researchUserSettings, ...settings };
     logger.debug('Research user settings updated:', this.researchUserSettings);
   }
 
-  /**
-   * 获取研究用户设置
-   */
   getResearchUserSettings(): Partial<ResearchUserSettings> {
     return { ...this.researchUserSettings };
   }
 
-  /**
-   * 处理用户对权限请求的响应
-   *
-   * @param requestId - 权限请求的唯一标识符
-   * @param response - 用户的响应（'allow' | 'allow_session' | 'deny'）
-   */
   handlePermissionResponse(requestId: string, response: PermissionResponse): void {
     const pending = this.pendingPermissions.get(requestId);
     if (pending) {
@@ -1039,74 +340,15 @@ export class AgentOrchestrator {
     }
   }
 
-  /**
-   * 设置 Agent 的工作目录
-   *
-   * @param path - 新的工作目录路径
-   */
   setWorkingDirectory(path: string): void {
     this.workingDirectory = path;
-    this.isDefaultWorkingDirectory = false; // User explicitly set a directory
+    this.isDefaultWorkingDirectory = false;
     this.toolExecutor.setWorkingDirectory(path);
     logger.info('Working directory changed to:', path);
-
-    // 自动初始化 LSP 语言服务器（异步，不阻塞）
     this.initializeLSP(path);
-
-    // 更新 SkillWatcher 监听的项目目录（异步，不阻塞）
     this.updateSkillWatcher(path);
   }
 
-  /**
-   * 初始化 LSP 语言服务器
-   * 异步执行，不阻塞主流程
-   */
-  private initializeLSP(workspaceRoot: string): void {
-    import('../lsp').then(async ({ initializeLSPManager, getLSPManager }) => {
-      try {
-        // 如果已有 manager 且工作目录相同，跳过
-        const existingManager = getLSPManager();
-        if (existingManager) {
-          logger.debug('LSP manager already exists, reinitializing for new workspace');
-        }
-
-        await initializeLSPManager(workspaceRoot);
-        logger.info('LSP initialized for workspace:', workspaceRoot);
-      } catch (error) {
-        // LSP 初始化失败不影响主功能
-        logger.warn('LSP initialization failed (non-blocking)', { error });
-      }
-    }).catch((error) => {
-      logger.warn('Failed to import LSP module', { error });
-    });
-  }
-
-  /**
-   * 更新 SkillWatcher 监听的项目目录
-   * 异步执行，不阻塞主流程
-   */
-  private updateSkillWatcher(workingDirectory: string): void {
-    import('../services/skills').then(async ({ getSkillWatcher }) => {
-      try {
-        const watcher = getSkillWatcher();
-        if (watcher.isInitialized()) {
-          await watcher.updateProjectDirectory(workingDirectory);
-          logger.debug('SkillWatcher updated for workspace:', workingDirectory);
-        }
-      } catch (error) {
-        // SkillWatcher 更新失败不影响主功能
-        logger.warn('SkillWatcher update failed (non-blocking)', { error });
-      }
-    }).catch((error) => {
-      logger.warn('Failed to import skills module', { error });
-    });
-  }
-
-  /**
-   * 获取当前工作目录
-   *
-   * @returns 当前工作目录的绝对路径
-   */
   getWorkingDirectory(): string {
     return this.workingDirectory;
   }
@@ -1119,10 +361,6 @@ export class AgentOrchestrator {
   // Agent Teams: Delegate 模式和 Plan 审批
   // ========================================================================
 
-  /**
-   * 启用/禁用 Delegate 模式
-   * 启用后 orchestrator 不直接执行工具，只做任务分配和消息转发
-   */
   setDelegateMode(enabled: boolean): void {
     this.delegateMode = enabled;
     logger.info(`[AgentOrchestrator] Delegate mode ${enabled ? 'enabled' : 'disabled'}`);
@@ -1132,10 +370,6 @@ export class AgentOrchestrator {
     return this.delegateMode;
   }
 
-  /**
-   * 启用/禁用 Plan 审批
-   * 启用后 teammate 需先生成 plan，由 lead 审批后才执行
-   */
   setRequirePlanApproval(enabled: boolean): void {
     this.requirePlanApproval = enabled;
     logger.info(`[AgentOrchestrator] Plan approval ${enabled ? 'required' : 'not required'}`);
@@ -1145,11 +379,6 @@ export class AgentOrchestrator {
     return this.requirePlanApproval;
   }
 
-  /**
-   * 设置规划服务实例
-   *
-   * @param service - PlanningService 实例
-   */
   setPlanningService(service: PlanningService): void {
     this.planningService = service;
   }
@@ -1158,50 +387,26 @@ export class AgentOrchestrator {
     this.sessionId = sessionId;
   }
 
-  /**
-   * 设置消息历史
-   *
-   * 用于恢复会话时加载历史消息，确保 Agent 能够继续之前的对话。
-   * 会完全替换当前的消息历史。
-   *
-   * @param messages - 历史消息数组
-   */
   setMessages(messages: Message[]): void {
     this.messages = [...messages];
     logger.debug(`Messages set, count: ${this.messages.length}`);
   }
 
-  /**
-   * 获取当前消息历史
-   *
-   * @returns 消息数组的副本
-   */
   getMessages(): Message[] {
     return [...this.messages];
   }
 
-  /**
-   * 清空消息历史
-   *
-   * 用于开始新对话时重置状态
-   */
   clearMessages(): void {
     this.messages = [];
     logger.debug('Messages cleared');
   }
 
-  /**
-   * 添加消息到历史（带内存管理）
-   *
-   * 性能优化：限制内存中消息数量，防止长会话 OOM
-   * 超出限制时保留最近的消息
-   *
-   * @param message - 要添加的消息
-   */
+  // --------------------------------------------------------------------------
+  // Private Methods
+  // --------------------------------------------------------------------------
+
   private addMessage(message: Message): void {
     this.messages.push(message);
-
-    // 内存管理：限制消息数量
     if (this.messages.length > MAX_MESSAGES_IN_MEMORY) {
       const trimCount = this.messages.length - MAX_MESSAGES_IN_MEMORY;
       this.messages = this.messages.slice(trimCount);
@@ -1209,15 +414,10 @@ export class AgentOrchestrator {
     }
   }
 
-  // --------------------------------------------------------------------------
-  // Private Methods
-  // --------------------------------------------------------------------------
-
   private async resolveSessionId(): Promise<string | null> {
     if (this.sessionId) {
       return this.sessionId;
     }
-
     const currentSession = await getSessionManager().getCurrentSession();
     return currentSession?.id || null;
   }
@@ -1229,18 +429,15 @@ export class AgentOrchestrator {
       timestamp: Date.now(),
     };
 
-    // Auto-approve all permissions in AUTO_TEST mode
     if (process.env.AUTO_TEST) {
       logger.info(`[AUTO_TEST] Auto-approving permission: ${request.type} for ${request.tool}`);
       return true;
     }
 
-    // Check auto-approve settings
     const settings = this.configService.getSettings();
-    const permissionLevel = this.getPermissionLevel(request.type);
+    const permissionLevel = getPermissionLevel(request.type);
     const forceConfirm = request.forceConfirm === true;
 
-    // Dev mode: auto-approve all permissions (configurable)
     if (!forceConfirm && settings.permissions.devModeAutoApprove) {
       logger.info(`[DevMode] Auto-approving permission: ${request.type} for ${request.tool}`);
       return true;
@@ -1250,12 +447,10 @@ export class AgentOrchestrator {
       return true;
     }
 
-    // Send permission request to UI with timeout
-    const PERMISSION_TIMEOUT = 60000; // 60 seconds timeout
+    const PERMISSION_TIMEOUT = 60000;
 
     return new Promise((resolve) => {
       const timeoutId = setTimeout(() => {
-        // Timeout - deny permission
         this.pendingPermissions.delete(fullRequest.id);
         logger.warn(`Timeout for ${request.type} on ${request.tool}, denying`);
         resolve(false);
@@ -1275,225 +470,296 @@ export class AgentOrchestrator {
     });
   }
 
-  private getPermissionLevel(type: PermissionRequest['type']): 'read' | 'write' | 'execute' | 'network' {
-    switch (type) {
-      case 'file_read':
-        return 'read';
-      case 'file_write':
-      case 'file_edit':
-        return 'write';
-      case 'command':
-      case 'dangerous_command':
-        return 'execute';
-      case 'network':
-        return 'network';
-      default:
-        return 'read';
-    }
-  }
-
+  /** Delegates to extracted resolveModelConfig */
   private getModelConfig(settings: ReturnType<ConfigService['getSettings']>): ModelConfig {
-    const authService = getAuthService();
-    const currentUser = authService.getCurrentUser();
-    const isAdmin = currentUser?.isAdmin === true;
-
-    // 从用户配置获取选择的 provider 和 model
-    const userProviderStr = settings.models?.default || settings.models?.defaultProvider || DEFAULT_PROVIDER;
-    const normalizedProvider = normalizeProviderId(userProviderStr) ?? DEFAULT_PROVIDER;
-    const providerConfig =
-      settings.models?.providers?.[normalizedProvider as keyof typeof settings.models.providers]
-      ?? settings.models?.providers?.[userProviderStr as keyof typeof settings.models.providers];
-    const userModel = providerConfig?.model || this.getDefaultModel(normalizedProvider);
-
-    // 获取对应的 API Key
-    const selectedApiKey = this.configService.getApiKey(normalizedProvider);
-
-    let selectedProvider: ModelProvider = normalizedProvider;
-    let selectedModel = userModel;
-
-    logger.info(`[模型选择] 用户配置: provider=${selectedProvider}, model=${selectedModel}`);
-    logger.debug(`Is admin: ${isAdmin}, hasApiKey: ${!!selectedApiKey}`);
-
-    // 优先使用本地 API Key（无论是否管理员）
-    // 只有当本地 Key 不存在且是管理员时，才走云端代理
-    if (selectedApiKey) {
-      logger.info(`[模型选择] 使用本地 API Key: ${selectedProvider}`);
-      return {
-        provider: selectedProvider,
-        model: selectedModel,
-        apiKey: selectedApiKey,
-        baseUrl: providerConfig?.baseUrl,
-        temperature: 0.7,
-        maxTokens: MODEL_MAX_TOKENS.DEFAULT,
-      };
-    }
-
-    // 没有本地 Key，管理员走云端代理
-    if (isAdmin) {
-      const providerInfo = getProviderInfo(selectedProvider);
-      if (!providerInfo?.cloudProxySupported) {
-        const fallbackProvider = DEFAULT_PROVIDER as ModelProvider;
-        logger.warn(
-          `[模型选择] 云端代理不支持 ${selectedProvider}，回退到默认 provider ${fallbackProvider}`
-        );
-        selectedProvider = fallbackProvider;
-        selectedModel = this.getDefaultModel(fallbackProvider);
-      }
-      logger.info(`[模型选择] 管理员使用云端代理: ${selectedProvider}`);
-      return {
-        provider: selectedProvider,
-        model: selectedModel,
-        apiKey: undefined,
-        useCloudProxy: true,
-        temperature: 0.7,
-        maxTokens: MODEL_MAX_TOKENS.DEFAULT,
-      };
-    }
-
-    // 非管理员且没有 Key，报错
-    logger.warn(`[模型选择] 未配置 ${selectedProvider} API Key`);
-    return {
-      provider: selectedProvider,
-      model: selectedModel,
-      apiKey: undefined,
-      temperature: 0.7,
-      maxTokens: MODEL_MAX_TOKENS.DEFAULT,
-    };
+    return resolveModelConfig(this.configService, settings);
   }
 
   private generateId(): string {
     return generateMessageId();
   }
 
-  private getDefaultModel(provider: string): string {
-    const normalizedProvider = normalizeProviderId(provider) ?? provider;
-    const sharedDefaultModel = getDefaultModelForProvider(normalizedProvider);
-    if (sharedDefaultModel) {
-      return sharedDefaultModel;
-    }
-
-    // 从 PROVIDER_REGISTRY 获取每个 provider 的第一个模型作为默认
-    const reg = PROVIDER_REGISTRY[normalizedProvider];
-    if (reg && reg.models.length > 0) {
-      return reg.models[0].id;
-    }
-    return DEFAULT_MODELS.chat;
+  /** Delegates to extracted runDeepResearch */
+  private async runDeepResearchMode(
+    topic: string,
+    reportStyle: import('../research/types').ReportStyle | undefined,
+    onEvent: (event: AgentEvent) => void,
+    modelConfig: ModelConfig
+  ): Promise<void> {
+    await runDeepResearch(topic, reportStyle, onEvent, modelConfig, {
+      toolExecutor: this.toolExecutor,
+      generateId: () => this.generateId(),
+      addMessage: (msg) => this.addMessage(msg),
+    });
   }
 
-  /**
-   * 同步 DAG 任务状态到前端可视化
-   * 根据 AgentEvent 类型更新对应的 DAG 任务状态
-   */
-  private syncDAGStatus(dagId: string, event: AgentEvent): void {
-    let statusUpdate: TaskStatusEventData | null = null;
-
-    switch (event.type) {
-      case 'turn_start':
-        // 任务开始执行
-        statusUpdate = {
-          type: 'task:status',
-          taskId: 'main',
-          status: 'running',
-          startedAt: Date.now(),
-        };
-        break;
-
-      case 'agent_complete':
-        // 任务完成
-        statusUpdate = {
-          type: 'task:status',
-          taskId: 'main',
-          status: 'completed',
-          completedAt: Date.now(),
-        };
-        break;
-
-      case 'error':
-        // 任务失败
-        statusUpdate = {
-          type: 'task:status',
-          taskId: 'main',
-          status: 'failed',
-          completedAt: Date.now(),
-        };
-        break;
+  private async runNormalMode(
+    content: string,
+    onEvent: (event: AgentEvent) => void,
+    modelConfig: ModelConfig,
+    sessionId?: string
+  ): Promise<void> {
+    const sessionStateManager = getSessionStateManager();
+    if (sessionId) {
+      sessionStateManager.updateStatus(sessionId, 'running');
+      getTelemetryCollector().startSession(sessionId, {
+        title: content.substring(0, 80),
+        generationId: 'gen8',
+        modelProvider: modelConfig.provider,
+        modelName: modelConfig.model,
+        workingDirectory: this.workingDirectory,
+      });
     }
 
-    if (statusUpdate) {
-      this.sendDAGStatusEvent(dagId, statusUpdate);
-    }
-  }
+    try {
+      const requirementsAnalyzer = getAgentRequirementsAnalyzer();
+      const requirements = await requirementsAnalyzer.analyze(content, this.workingDirectory);
 
-  /**
-   * 同步自动 Agent 模式的 DAG 任务状态
-   * 根据 onProgress 回调的状态更新对应 Agent 任务的状态
-   */
-  private syncAutoAgentDAGStatus(dagId: string, agentId: string, status: string): void {
-    // Map onProgress status to DAG task status
-    let taskStatus: 'pending' | 'ready' | 'running' | 'completed' | 'failed' | 'cancelled' | 'skipped';
+      if (this.delegateMode && !requirements.needsAutoAgent) {
+        logger.info('[DelegateMode] Forcing auto agent mode — orchestrator will not execute tools directly');
+        requirements.needsAutoAgent = true;
+        requirements.executionStrategy = requirements.executionStrategy || 'parallel';
+        requirements.confidence = Math.max(requirements.confidence, 0.8);
+        onEvent({
+          type: 'notification',
+          data: { message: 'Delegate 模式：任务将委派给子 Agent 执行' },
+        });
+      }
 
-    switch (status) {
-      case 'pending':
-      case 'queued':
-        taskStatus = 'pending';
-        break;
-      case 'running':
-      case 'executing':
-        taskStatus = 'running';
-        break;
-      case 'completed':
-      case 'done':
-      case 'success':
-        taskStatus = 'completed';
-        break;
-      case 'failed':
-      case 'error':
-        taskStatus = 'failed';
-        break;
-      case 'cancelled':
-      case 'stopped':
-        taskStatus = 'cancelled';
-        break;
-      case 'skipped':
-        taskStatus = 'skipped';
-        break;
-      default:
-        // Unknown status, treat as running
-        taskStatus = 'running';
-    }
-
-    const statusUpdate: TaskStatusEventData = {
-      type: 'task:status',
-      taskId: agentId,
-      status: taskStatus,
-      ...(taskStatus === 'running' ? { startedAt: Date.now() } : {}),
-      ...(taskStatus === 'completed' || taskStatus === 'failed' ? { completedAt: Date.now() } : {}),
-    };
-
-    this.sendDAGStatusEvent(dagId, statusUpdate);
-  }
-
-  /**
-   * 发送 DAG 状态更新事件到渲染进程
-   */
-  private sendDAGStatusEvent(dagId: string, statusUpdate: TaskStatusEventData): void {
-    const vizEvent: DAGVisualizationEvent = {
-      type: 'task:status',
-      dagId,
-      timestamp: Date.now(),
-      data: statusUpdate,
-    };
-
-    // Send to all renderer windows
-    const windows = BrowserWindow.getAllWindows();
-    for (const win of windows) {
-      if (!win.isDestroyed() && win.webContents) {
+      if (requirements.needsAutoAgent) {
+        await runAutoAgentMode(content, requirements, onEvent, modelConfig, {
+          toolRegistry: this.toolRegistry,
+          workingDirectory: this.workingDirectory,
+          sessionId: this.sessionId,
+          taskListManager: this.taskListManager,
+          generateId: () => this.generateId(),
+          addMessage: (msg) => this.addMessage(msg),
+          sendDAGStatusEvent: (dagId, agentId, status) => this.syncAutoAgentDAGStatus(dagId, agentId, status),
+          runStandardAgentLoop: (c, e, m, s) => this.runStandardAgentLoop(c, e, m, s),
+        }, sessionId);
+      } else {
+        await this.runStandardAgentLoop(content, onEvent, modelConfig, sessionId);
+      }
+    } catch (error) {
+      logger.error('========== Normal mode EXCEPTION ==========');
+      logger.error('Error:', error);
+      logger.error('Stack:', error instanceof Error ? error.stack : 'no stack');
+      onEvent({
+        type: 'error',
+        data: {
+          message: error instanceof Error ? error.message : 'Unknown error',
+        },
+      });
+    } finally {
+      if (sessionId) {
+        sessionStateManager.updateStatus(sessionId, 'idle');
         try {
-          win.webContents.send(DAG_CHANNELS.EVENT, vizEvent);
-        } catch {
-          // Ignore send errors
-        }
+          const sm = getSessionManager();
+          const session = await sm.getSession(sessionId);
+          if (session?.title && session.title !== 'New Chat' && session.title !== '新对话' && !session.title.startsWith('Session ')) {
+            getTelemetryCollector().updateSessionTitle(sessionId, session.title);
+          }
+        } catch { /* ignore - title sync is best effort */ }
+        try {
+          const sessionData = getTelemetryCollector().getSessionData(sessionId);
+          if (sessionData && (sessionData.totalInputTokens > 0 || sessionData.totalOutputTokens > 0)) {
+            const sm = getSessionManager();
+            await sm.updateSession(sessionId, {
+              lastTokenUsage: {
+                inputTokens: sessionData.totalInputTokens,
+                outputTokens: sessionData.totalOutputTokens,
+                totalTokens: sessionData.totalTokens,
+              },
+            } as any);
+          }
+        } catch { /* ignore - token sync is best effort */ }
+        getTelemetryCollector().endSession(sessionId);
       }
     }
+  }
+
+  private async runStandardAgentLoop(
+    content: string,
+    onEvent: (event: AgentEvent) => void,
+    modelConfig: ModelConfig,
+    sessionId?: string
+  ): Promise<void> {
+    const dagId = `conv-${sessionId || Date.now()}`;
+    const dag = new TaskDAG(dagId, content.substring(0, 50) + (content.length > 50 ? '...' : ''));
+    dag.addAgentTask('main', {
+      role: 'general-purpose',
+      prompt: content,
+    }, {
+      name: '对话处理',
+      description: content.substring(0, 100),
+    });
+
+    sendDAGInitEvent(dag);
+
+    const dagAwareOnEvent = (event: AgentEvent) => {
+      onEvent(event);
+      this.syncDAGStatus(dagId, event);
+    };
+
+    const routingResolution = await this.resolveAgentRouting(content, sessionId);
+    let effectiveModelConfig = modelConfig;
+
+    if (routingResolution) {
+      logger.info('Agent routing resolved', {
+        agentId: routingResolution.agent.id,
+        agentName: routingResolution.agent.name,
+        score: routingResolution.score,
+        reason: routingResolution.reason,
+      });
+
+      if (routingResolution.agent.modelOverride) {
+        const override = routingResolution.agent.modelOverride;
+        effectiveModelConfig = {
+          ...modelConfig,
+          provider: (override.provider as ModelProvider) || modelConfig.provider,
+          model: override.model || modelConfig.model,
+          temperature: override.temperature ?? modelConfig.temperature,
+        };
+        logger.debug('Model config overridden by agent', {
+          provider: effectiveModelConfig.provider,
+          model: effectiveModelConfig.model,
+        });
+      }
+
+      if (routingResolution.agent.systemPrompt) {
+        logger.debug('System prompt overridden by agent', {
+          agentId: routingResolution.agent.id,
+        });
+      }
+
+      onEvent({
+        type: 'notification',
+        data: {
+          message: `使用 Agent: ${routingResolution.agent.name}`,
+        },
+      });
+    }
+
+    const telemetryAdapter = sessionId
+      ? getTelemetryCollector().createAdapter(sessionId, 'main')
+      : undefined;
+
+    this.agentLoop = new AgentLoop({
+      systemPrompt: routingResolution?.agent?.systemPrompt || SYSTEM_PROMPT,
+      modelConfig: effectiveModelConfig,
+      toolRegistry: this.toolRegistry,
+      toolExecutor: this.toolExecutor,
+      messages: this.messages,
+      onEvent: dagAwareOnEvent,
+      planningService: this.planningService,
+      sessionId,
+      workingDirectory: this.workingDirectory,
+      isDefaultWorkingDirectory: this.isDefaultWorkingDirectory,
+      telemetryAdapter,
+    });
+
+    const complexityAnalysis = taskComplexityAnalyzer.analyze(content);
+    const effortMap: Record<string, EffortLevel> = {
+      simple: 'low',
+      moderate: 'medium',
+      complex: 'high',
+    };
+    const effort = effortMap[complexityAnalysis.complexity] || 'high';
+    this.agentLoop.setEffortLevel(effort);
+    logger.info(`[EffortLevel] complexity=${complexityAnalysis.complexity} → effort=${effort}`);
+
+    try {
+      logger.info('========== Starting agent loop ==========');
+      await this.agentLoop.run(content);
+      logger.info('========== Agent loop completed normally ==========');
+    } finally {
+      logger.info('========== Finally block, agentLoop = null ==========');
+      this.agentLoop = null;
+    }
+  }
+
+  private async resolveAgentRouting(
+    userMessage: string,
+    sessionId?: string
+  ): Promise<RoutingResolution | null> {
+    try {
+      const routingService = getRoutingService();
+
+      if (!routingService.isInitialized()) {
+        await routingService.initialize(this.workingDirectory);
+      }
+
+      const context: RoutingContext = {
+        workingDirectory: this.workingDirectory,
+        userMessage,
+        sessionId,
+      };
+
+      const resolution = routingService.resolve(context);
+
+      if (resolution.agent.id === 'default' && resolution.score <= 0) {
+        return null;
+      }
+
+      return resolution;
+    } catch (error) {
+      logger.warn('Agent routing failed, using default', { error });
+      return null;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // DAG Status Sync (delegates to dagManager helpers)
+  // --------------------------------------------------------------------------
+
+  private syncDAGStatus(dagId: string, event: AgentEvent): void {
+    const statusUpdate = mapAgentEventToDAGStatus(event);
+    if (statusUpdate) {
+      const vizEvent = buildDAGStatusEvent(dagId, statusUpdate);
+      this.broadcastDAGEvent?.(vizEvent);
+    }
+  }
+
+  private syncAutoAgentDAGStatus(dagId: string, agentId: string, status: string): void {
+    const statusUpdate = mapAutoAgentStatusToDAGStatus(agentId, status);
+    const vizEvent = buildDAGStatusEvent(dagId, statusUpdate);
+    this.broadcastDAGEvent?.(vizEvent);
+  }
+
+  // --------------------------------------------------------------------------
+  // LSP & SkillWatcher (async, non-blocking)
+  // --------------------------------------------------------------------------
+
+  private initializeLSP(workspaceRoot: string): void {
+    import('../lsp').then(async ({ initializeLSPManager, getLSPManager }) => {
+      try {
+        const existingManager = getLSPManager();
+        if (existingManager) {
+          logger.debug('LSP manager already exists, reinitializing for new workspace');
+        }
+        await initializeLSPManager(workspaceRoot);
+        logger.info('LSP initialized for workspace:', workspaceRoot);
+      } catch (error) {
+        logger.warn('LSP initialization failed (non-blocking)', { error });
+      }
+    }).catch((error) => {
+      logger.warn('Failed to import LSP module', { error });
+    });
+  }
+
+  private updateSkillWatcher(workingDirectory: string): void {
+    import('../services/skills').then(async ({ getSkillWatcher }) => {
+      try {
+        const watcher = getSkillWatcher();
+        if (watcher.isInitialized()) {
+          await watcher.updateProjectDirectory(workingDirectory);
+          logger.debug('SkillWatcher updated for workspace:', workingDirectory);
+        }
+      } catch (error) {
+        logger.warn('SkillWatcher update failed (non-blocking)', { error });
+      }
+    }).catch((error) => {
+      logger.warn('Failed to import skills module', { error });
+    });
   }
 }

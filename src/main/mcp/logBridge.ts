@@ -5,7 +5,7 @@
 
 import http from 'http';
 import { logCollector, LogSource } from './logCollector.js';
-import { PORTS } from '../../shared/constants.js';
+import { PORTS } from '../../shared/constants/index.js';
 
 // Command handler type
 export type CommandHandler = (command: string, params: Record<string, unknown>) => Promise<{

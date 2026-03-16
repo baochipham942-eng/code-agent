@@ -23,7 +23,7 @@ let currentTask: {
 
 export const serveCommand = new Command('serve')
   .description('启动 HTTP API 服务')
-  .option('--port <port>', '服务端口', '8080')
+  .option('--port <port>', '服务端口', '8180')
   .option('--host <host>', '绑定地址', '127.0.0.1')
   .action(async (options: { port: string; host: string }, command: Command) => {
     const globalOpts = command.parent?.opts() as CLIGlobalOptions;

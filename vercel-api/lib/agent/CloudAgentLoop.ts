@@ -13,7 +13,7 @@ import {
   type StreamEvent,
 } from './ModelClient.js';
 import { CLOUD_TOOL_SCHEMAS } from '../tools/CloudToolRegistry.js';
-import { PRODUCTION_CLOUD_API_URL } from '../../../src/shared/constants.js';
+import { PRODUCTION_CLOUD_API_URL } from '../../../src/shared/constants/index.js';
 
 export interface AgentMessage {
   role: 'user' | 'assistant' | 'system';

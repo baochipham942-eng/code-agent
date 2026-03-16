@@ -44,6 +44,7 @@ export interface Database {
           last_sync_at?: string | null;
           is_admin?: boolean;
         };
+        Relationships: [];
       };
       devices: {
         Row: {
@@ -67,6 +68,7 @@ export interface Database {
           sync_cursor?: number;
           last_active_at?: string;
         };
+        Relationships: [];
       };
       sessions: {
         Row: {
@@ -104,6 +106,7 @@ export interface Database {
           updated_at?: number;
           source_device_id?: string | null;
         };
+        Relationships: [];
       };
       messages: {
         Row: {
@@ -139,6 +142,7 @@ export interface Database {
           updated_at?: number;
           source_device_id?: string | null;
         };
+        Relationships: [];
       };
       user_preferences: {
         Row: {
@@ -161,6 +165,7 @@ export interface Database {
           updated_at?: number;
           source_device_id?: string | null;
         };
+        Relationships: [];
       };
       project_knowledge: {
         Row: {
@@ -194,6 +199,7 @@ export interface Database {
           updated_at?: number;
           source_device_id?: string | null;
         };
+        Relationships: [];
       };
       todos: {
         Row: {
@@ -225,6 +231,7 @@ export interface Database {
           updated_at?: number;
           source_device_id?: string | null;
         };
+        Relationships: [];
       };
       invite_codes: {
         Row: {
@@ -245,6 +252,7 @@ export interface Database {
           use_count?: number;
           is_active?: boolean;
         };
+        Relationships: [];
       };
       vector_documents: {
         Row: {
@@ -285,10 +293,72 @@ export interface Database {
           updated_at?: number;
           source_device_id?: string | null;
         };
+        Relationships: [];
+      };
+      cloud_tasks: {
+        Row: {
+          id: string;
+          user_id: string;
+          session_id: string | null;
+          project_id: string | null;
+          type: string;
+          title: string;
+          description: string;
+          encrypted_prompt: Record<string, unknown> | null;
+          encryption_key_id: string | null;
+          priority: string;
+          location: string;
+          max_iterations: number;
+          timeout_ms: number;
+          status: string;
+          progress: number;
+          current_step: string | null;
+          encrypted_result: Record<string, unknown> | null;
+          error: string | null;
+          metadata: Record<string, unknown>;
+          created_at: string;
+          started_at: string | null;
+          completed_at: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          id: string;
+          user_id?: string;
+          session_id?: string | null;
+          project_id?: string | null;
+          type: string;
+          title: string;
+          description?: string;
+          encrypted_prompt?: Record<string, unknown> | null;
+          encryption_key_id?: string | null;
+          priority?: string;
+          location?: string;
+          max_iterations?: number;
+          timeout_ms?: number;
+          status?: string;
+          progress?: number;
+          metadata?: Record<string, unknown>;
+        };
+        Update: {
+          status?: string;
+          progress?: number;
+          current_step?: string | null;
+          encrypted_result?: Record<string, unknown> | null;
+          error?: string | null;
+          metadata?: Record<string, unknown>;
+          started_at?: string | null;
+          completed_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
       };
     };
     Views: Record<string, never>;
     Functions: {
+      enqueue_cloud_task: {
+        Args: { p_task_id: string };
+        Returns: void;
+      };
       increment_invite_code_usage: {
         Args: { code_value: string };
         Returns: void;
@@ -462,4 +532,5 @@ export type MessageRow = Database['public']['Tables']['messages']['Row'];
 export type UserPreferenceRow = Database['public']['Tables']['user_preferences']['Row'];
 export type InviteCodeRow = Database['public']['Tables']['invite_codes']['Row'];
 export type VectorDocumentRow = Database['public']['Tables']['vector_documents']['Row'];
+export type CloudTaskRow = Database['public']['Tables']['cloud_tasks']['Row'];
 export type VectorMatchResult = Database['public']['Functions']['match_vectors']['Returns'][number];

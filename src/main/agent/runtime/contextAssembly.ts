@@ -17,20 +17,17 @@ import type {
   AgentTaskPhase,
 } from '../../../shared/types';
 import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
-import { parseStructuredOutput, generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
 import type { ToolRegistryLike } from '../../tools/types';
 import type { ToolExecutor } from '../../tools/toolExecutor';
 import { getToolSearchService } from '../../tools/search';
 import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
 import type { PlanningService } from '../../planning';
-import { getMemoryService } from '../../memory/memoryService';
 import { getContinuousLearningService } from '../../memory/continuousLearningService';
 import { sanitizeMemoryContent } from '../../memory/sanitizeMemoryContent';
 import { buildSeedMemoryBlock } from '../../memory/seedMemoryInjector';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { generateMessageId } from '../../../shared/utils/id';
-import { taskComplexityAnalyzer } from '../../planning/taskComplexityAnalyzer';
 import { classifyIntent } from '../../routing/intentClassifier';
 import { getTaskOrchestrator } from '../../planning/taskOrchestrator';
 import { getMaxIterations } from '../../services/cloud/featureFlagService';
@@ -101,6 +98,31 @@ import { createHash } from 'crypto';
 import type { RuntimeContext } from './runtimeContext';
 import type { RunFinalizer } from './runFinalizer';
 
+// Process-level file read cache to avoid redundant readFileSync calls
+const fileCache = new Map<string, { content: string; mtime: number }>();
+function cachedReadFileSync(path: string): string {
+  try {
+    const stat = require('fs').statSync(path);
+    const cached = fileCache.get(path);
+    if (cached && cached.mtime === stat.mtimeMs) return cached.content;
+    const content = readFileSync(path, 'utf-8');
+    fileCache.set(path, { content, mtime: stat.mtimeMs });
+    return content;
+  } catch {
+    fileCache.delete(path);
+    throw new Error(`Cannot read file: ${path}`);
+  }
+}
+
+// Directory listing cache (30s TTL)
+const dirCache = new Map<string, { files: string[]; ts: number }>();
+function cachedReaddirSync(dir: string): string[] {
+  const cached = dirCache.get(dir);
+  if (cached && Date.now() - cached.ts < 30_000) return cached.files;
+  const files = readdirSync(dir);
+  dirCache.set(dir, { files, ts: Date.now() });
+  return files;
+}
 
 
 const logger = createLogger('AgentLoop');
@@ -830,7 +852,7 @@ ${deferredToolsSummary}
 
     for (const skillPath of candidates) {
       try {
-        const content = readFileSync(skillPath, 'utf-8');
+        const content = cachedReadFileSync(skillPath);
         // Strip YAML frontmatter
         const stripped = content.replace(/^---[\s\S]*?---\n*/m, '');
         logger.info('Loaded research skill prompt', { path: skillPath });
@@ -1121,7 +1143,7 @@ ${deferredToolsSummary}
 
           // 注入输出目录文件列表（防止多轮对话压缩后遗忘已创建文件）
           try {
-            const allOutputFiles = readdirSync(this.ctx.workingDirectory)
+            const allOutputFiles = cachedReaddirSync(this.ctx.workingDirectory)
               .filter(f => /\.(xlsx|xls|csv|png|pdf|json)$/i.test(f))
               .sort();
             if (allOutputFiles.length > 0) {

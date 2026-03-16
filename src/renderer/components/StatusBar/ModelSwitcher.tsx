@@ -11,6 +11,7 @@ import {
   getProviderDisplayName,
   getModelDisplayLabel,
 } from '@shared/constants';
+import { toast } from '../../hooks/useToast';
 
 interface ModelOption {
   provider: string;
@@ -70,7 +71,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
           setOverrideModel(res.data.model);
         }
       })
-      .catch(() => {});
+      .catch(() => toast.error('加载模型覆盖失败'));
   }, [sessionId]);
 
   const handleSelect = useCallback(
@@ -84,7 +85,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
         });
         setOverrideModel(option.model);
       } catch {
-        // 静默处理
+        toast.error('模型切换失败');
       }
       setOpen(false);
     },
@@ -101,7 +102,7 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
       );
       setOverrideModel(null);
     } catch {
-      // 静默处理
+      toast.error('清除模型覆盖失败');
     }
     setOpen(false);
   }, [sessionId]);

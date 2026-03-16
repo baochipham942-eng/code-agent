@@ -672,7 +672,6 @@ class SyncService implements Disposable {
 
     await supabase
       .from('devices')
-      // @ts-expect-error Supabase types issue
       .update({
         sync_cursor: newCursor,
         last_active_at: new Date().toISOString(),

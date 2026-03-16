@@ -48,15 +48,6 @@ vi.mock('electron', () => ({
   },
 }));
 
-// isolated-vm: C++ 原生模块，sandbox.ts 已改为懒加载，
-// 但仍需 mock 以防被直接引用
-vi.mock('isolated-vm', () => ({
-  Isolate: class MockIsolate {
-    createContextSync() { return { global: { setSync: () => {} }, release: () => {} }; }
-    compileScriptSync() { return { run: () => ({}) }; }
-    dispose() {}
-  },
-}));
 
 // node-pty: PTY 原生模块，在 vitest fork worker 中可能干扰进程信号处理
 vi.mock('node-pty', () => ({

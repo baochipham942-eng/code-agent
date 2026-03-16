@@ -113,7 +113,7 @@ export class CLIConfigService {
           execute: false,
         } as Record<PermissionLevel, boolean>,
         blockedCommands: [],
-        devModeAutoApprove: true, // CLI 模式默认开启自动批准
+        devModeAutoApprove: false, // CLI 模式需要 --yes flag 显式开启
       },
       ui: {
         theme: 'dark',

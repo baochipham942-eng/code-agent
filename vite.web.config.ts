@@ -65,7 +65,7 @@ export default defineConfig({
     proxy: {
       // 开发模式下将 API 请求代理到 serve.ts
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:8180',
         changeOrigin: true,
       },
     },

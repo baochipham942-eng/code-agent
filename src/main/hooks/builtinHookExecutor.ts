@@ -24,7 +24,11 @@ import {
 import {
   sessionStartAgentsInjectHook,
 } from './builtins/agentsHooks';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { createLogger } from '../services/infra/logger';
+
+const execFileAsync = promisify(execFile);
 
 const logger = createLogger('BuiltinHookExecutor');
 
@@ -421,15 +425,63 @@ export class BuiltinHookExecutor {
     context: BuiltinHookContext,
     startTime: number
   ): Promise<BuiltinHookResult> {
-    // TODO: 实现 git 状态检查
-    // 这需要调用 bash 工具检查 git status
     const minChanges = (config.options?.minChanges as number) || 3;
 
-    return {
-      action: 'allow',
-      message: `Auto-commit reminder configured (min changes: ${minChanges})`,
-      duration: Date.now() - startTime,
-    };
+    try {
+      const { stdout } = await execFileAsync('git', ['status', '--porcelain'], {
+        cwd: context.workingDirectory,
+        timeout: 5000,
+      });
+
+      const changedFiles = stdout.trim().split('\n').filter(Boolean);
+      const changeCount = changedFiles.length;
+
+      if (changeCount >= minChanges) {
+        // 按类型分类
+        let staged = 0;
+        let unstaged = 0;
+        let untracked = 0;
+        for (const line of changedFiles) {
+          const index = line[0];
+          const worktree = line[1];
+          if (index === '?' && worktree === '?') {
+            untracked++;
+          } else {
+            if (index !== ' ' && index !== '?') staged++;
+            if (worktree !== ' ' && worktree !== '?') unstaged++;
+          }
+        }
+
+        const parts: string[] = [];
+        if (staged > 0) parts.push(`${staged} staged`);
+        if (unstaged > 0) parts.push(`${unstaged} unstaged`);
+        if (untracked > 0) parts.push(`${untracked} untracked`);
+
+        return {
+          action: 'allow',
+          message: `⚠️ 检测到 ${changeCount} 个文件变更（${parts.join(', ')}），建议提交代码。`,
+          duration: Date.now() - startTime,
+        };
+      }
+
+      return {
+        action: 'allow',
+        message: changeCount > 0
+          ? `Git: ${changeCount} 个文件变更，低于提醒阈值 (${minChanges})`
+          : 'Git: 工作区干净，无需提交',
+        duration: Date.now() - startTime,
+      };
+    } catch {
+      // 非 git 仓库或 git 不可用，静默跳过
+      logger.debug('Auto-commit reminder: git status check failed', {
+        workingDirectory: context.workingDirectory,
+      });
+      return {
+        action: 'allow',
+        message: 'Auto-commit reminder skipped (not a git repository or git unavailable)',
+        duration: Date.now() - startTime,
+      };
+    }
   }
 
 

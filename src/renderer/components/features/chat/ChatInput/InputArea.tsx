@@ -114,8 +114,8 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
     // 处理键盘事件
     const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       // Submit on Enter (without Shift)
-      // 双重检查: isComposing (标准) + compositionEnd ref (兼容搜狗/百度等输入法)
-      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !isComposingRef.current) {
+      // 三重检查: isComposing (标准) + compositionEnd ref (兼容搜狗/百度) + keyCode 229 (IME 标准信号)
+      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && !isComposingRef.current && e.nativeEvent.keyCode !== 229) {
         e.preventDefault();
         onSubmit();
         return;
@@ -250,7 +250,11 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           onCompositionStart={() => { isComposingRef.current = true; }}
-          onCompositionEnd={() => { isComposingRef.current = false; }}
+          onCompositionEnd={() => {
+            // 某些中文输入法（搜狗/百度）事件顺序: compositionEnd → keyDown
+            // 延迟重置以确保 keyDown 检查时 ref 仍为 true
+            setTimeout(() => { isComposingRef.current = false; }, 50);
+          }}
           onPaste={handlePaste}
           onFocus={() => onFocusChange(true)}
           onBlur={() => onFocusChange(false)}

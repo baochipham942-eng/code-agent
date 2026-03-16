@@ -18,14 +18,6 @@ export default defineConfig({
           'vendor-react': ['react', 'react-dom'],
           // 状态管理
           'vendor-zustand': ['zustand'],
-          // UI 组件库
-          'vendor-radix': [
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-tabs',
-            '@radix-ui/react-tooltip',
-            '@radix-ui/react-scroll-area',
-          ],
           // 代码高亮
           'vendor-prism': ['prismjs'],
           // Markdown 渲染
@@ -46,7 +38,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:8180',
         changeOrigin: true,
         bypass(req) {
           // Don't proxy Vite module requests (source files, HMR)

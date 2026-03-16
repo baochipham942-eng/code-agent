@@ -5,7 +5,7 @@
   "identifier": "com.linchen.code-agent",
   "build": {
     "beforeDevCommand": "npm run build:web && node dist/web/webServer.cjs &",
-    "devUrl": "http://localhost:8080",
+    "devUrl": "http://localhost:8180",
     "frontendDist": "../dist/renderer"
   },
   "app": {
@@ -19,11 +19,11 @@
         "minHeight": 640,
         "resizable": true,
         "visible": false,
-        "url": "http://localhost:8080"
+        "url": "http://localhost:8180"
       }
     ],
     "security": {
-      "csp": "default-src 'self' http://localhost:8080 https://localhost:8080 data: blob:; connect-src 'self' http://localhost:8080 ws://localhost:8080 https://localhost:8080 wss://localhost:8080; img-src 'self' data: blob: http://localhost:8080 https://localhost:8080; style-src 'self' 'unsafe-inline' http://localhost:8080 https://localhost:8080; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:8080 https://localhost:8080; font-src 'self' data: http://localhost:8080 https://localhost:8080; frame-src 'self' http://localhost:8080 https://localhost:8080"
+      "csp": "default-src 'self' http://localhost:8180 https://localhost:8180 data: blob:; connect-src 'self' http://localhost:8180 ws://localhost:8180 https://localhost:8180 wss://localhost:8180; img-src 'self' data: blob: http://localhost:8180 https://localhost:8180; style-src 'self' 'unsafe-inline' http://localhost:8180 https://localhost:8180; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:8180 https://localhost:8180; font-src 'self' data: http://localhost:8180 https://localhost:8180; frame-src 'self' http://localhost:8180 https://localhost:8180"
     }
   },
   "bundle": {
@@ -45,10 +45,8 @@
       "../dist/web/webServer.cjs.map",
       "../dist/renderer/**/*",
       "../package.json",
-      "../.env",
       "../node_modules/better-sqlite3/**/*",
       "../node_modules/keytar/**/*",
-      "../node_modules/isolated-vm/**/*",
       "../node_modules/tree-sitter/**/*",
       "../node_modules/tree-sitter-typescript/**/*",
       "../node_modules/node-pty/**/*",

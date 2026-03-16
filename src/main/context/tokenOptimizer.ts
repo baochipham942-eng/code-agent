@@ -818,8 +818,8 @@ export function observationMask(
     // 只处理 tool role 的消息
     if (msg.role !== 'tool') return msg;
 
-    // 跳过已经 mask/cleared 的消息
-    if (!msg.content || msg.content.includes('[output cleared') || msg.content === '[cleared]') return msg;
+    // 跳过已经 mask/cleared 的消息（包括之前 observation masking 处理过的）
+    if (!msg.content || msg.content.includes('[output cleared') || msg.content === '[cleared]' || msg.content.startsWith('[Observation masked')) return msg;
 
     // 跳过内容很短的消息
     const tokens = estimateTokens(msg.content);

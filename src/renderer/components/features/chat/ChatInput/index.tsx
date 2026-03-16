@@ -14,6 +14,7 @@ import { AttachmentBar } from './AttachmentBar';
 import { SendButton } from './SendButton';
 import { SuggestionBar } from './SuggestionBar';
 import { VoiceInputButton } from './VoiceInputButton';
+import { CommandPalette } from '../../../CommandPalette';
 import { useFileUpload } from './useFileUpload';
 import { useFileAutocomplete } from '../../../../hooks/useFileAutocomplete';
 import { useSessionUIStore } from '../../../../stores/sessionUIStore';
@@ -61,6 +62,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   const [isDragOver, setIsDragOver] = useState(false);
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [suggestions, setSuggestions] = useState<Array<{ id: string; text: string; source: string }>>([]);
+  const [showCommandPalette, setShowCommandPalette] = useState(false);
   const inputAreaRef = useRef<InputAreaRef>(null);
   const { processFile, processFolderEntry } = useFileUpload();
 
@@ -122,9 +124,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
   // @ file autocomplete
   const { matches: fileMatches, isOpen: isAutocompleteOpen, query: atQuery, search: searchFiles, dismiss: dismissAutocomplete } = useFileAutocomplete();
 
-  // Track input changes for @ autocomplete
+  // Track input changes for @ autocomplete and / command palette
   const handleValueChange = useCallback((newValue: string) => {
     setValue(newValue);
+    // Detect / prefix to open command palette
+    if (newValue === '/') {
+      setShowCommandPalette(true);
+      setValue('');
+      return;
+    }
     // Check for @ pattern at cursor position (approximate: end of string)
     searchFiles(newValue, newValue.length);
   }, [searchFiles]);
@@ -275,6 +283,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* Command Palette triggered by / */}
+      <CommandPalette isOpen={showCommandPalette} onClose={() => setShowCommandPalette(false)} />
       <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
         {/* Plan 入口按钮 - 仅当有 Plan 时显示 */}
         {hasPlan && onPlanClick && (

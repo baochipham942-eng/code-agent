@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { EventEmitter } from 'events';
-import { getSupabase } from '../services';
+import { getSupabase, type CloudTaskRow, type Database } from '../services';
 import { encryptForCloud, decryptFromCloud } from '../utils/crypto';
 import { getTaskRouter } from './taskRouter';
 import type {
@@ -115,27 +115,27 @@ export class CloudTaskService extends EventEmitter {
         if (client) {
           const { data: user } = await client.auth.getUser();
 
-          const insertData = {
+          type CloudTaskInsert = Database['public']['Tables']['cloud_tasks']['Insert'];
+          const insertData: CloudTaskInsert = {
             id: taskId,
             user_id: user.user?.id,
-            session_id: request.sessionId,
-            project_id: request.projectId,
+            session_id: request.sessionId ?? null,
+            project_id: request.projectId ?? null,
             type: request.type,
             title: request.title,
             description: request.description,
-            encrypted_prompt: encryptedPrompt,
-            encryption_key_id: encryptionKeyId,
+            encrypted_prompt: encryptedPrompt as Record<string, unknown> | undefined,
+            encryption_key_id: encryptionKeyId ?? null,
             priority: request.priority || 'normal',
             location,
             max_iterations: request.maxIterations || 20,
             timeout_ms: request.timeout || this.config.defaultTimeout,
-            status: 'pending' as const,
+            status: 'pending',
             progress: 0,
             metadata: request.metadata || {},
           };
 
-          // TODO: Supabase 类型系统限制，需要 as any 绕过 PostgrestFilterBuilder 泛型约束
-          const { error } = await (client.from('cloud_tasks') as any).insert(insertData);
+          const { error } = await client.from('cloud_tasks').insert(insertData);
 
           if (error) {
             logger.error(' Failed to create cloud task:', error);
@@ -326,12 +326,13 @@ export class CloudTaskService extends EventEmitter {
             encryptedResult = encrypted.encrypted;
           }
 
-          const updateData: Record<string, unknown> = {
+          type CloudTaskUpdate = Database['public']['Tables']['cloud_tasks']['Update'];
+          const updateData: CloudTaskUpdate = {
             status: updates.status,
             progress: updates.progress,
             current_step: updates.currentStep,
             error: updates.error,
-            encrypted_result: encryptedResult,
+            encrypted_result: encryptedResult as Record<string, unknown> | undefined,
             updated_at: now,
           };
 
@@ -343,8 +344,7 @@ export class CloudTaskService extends EventEmitter {
             updateData.started_at = now;
           }
 
-          // TODO: Supabase 类型系统限制，需要 as any 绕过 PostgrestFilterBuilder 泛型约束
-          const { error } = await (client.from('cloud_tasks') as any).update(updateData).eq('id', taskId);
+          const { error } = await client.from('cloud_tasks').update(updateData).eq('id', taskId);
 
           if (error) {
             logger.error(' Failed to update cloud task:', error);
@@ -433,8 +433,7 @@ export class CloudTaskService extends EventEmitter {
 
       if (client) {
         try {
-          // TODO: Supabase RPC 调用没有强类型定义
-          const { error } = await (client as any).rpc('enqueue_cloud_task', { p_task_id: taskId });
+          const { error } = await client.rpc('enqueue_cloud_task', { p_task_id: taskId });
 
           if (error) {
             logger.error(' Failed to enqueue task:', error);
@@ -551,30 +550,23 @@ export class CloudTaskService extends EventEmitter {
     if (!client) return null;
 
     try {
-      // TODO: Supabase 类型系统限制，需要 as any 绕过 PostgrestFilterBuilder 泛型约束
-      const { data, error } = await (client.from('cloud_tasks') as any)
+      const { data, error } = await client
+        .from('cloud_tasks')
         .select('status, progress, current_step, error, completed_at')
         .eq('id', taskId)
         .single();
 
       if (error || !data) return null;
 
-      // 使用类型断言将 data 转为具体结构
-      const progressData = data as {
-        status: CloudTaskStatus;
-        progress: number;
-        current_step?: string;
-        error?: string;
-        completed_at?: string;
-      };
+      const progressData = data;
 
       const task = this.localTasks.get(taskId);
       if (task) {
-        task.status = progressData.status;
+        task.status = progressData.status as CloudTaskStatus;
         task.progress = progressData.progress;
-        task.currentStep = progressData.current_step;
-        task.error = progressData.error;
-        task.completedAt = progressData.completed_at;
+        task.currentStep = progressData.current_step ?? undefined;
+        task.error = progressData.error ?? undefined;
+        task.completedAt = progressData.completed_at ?? undefined;
         this.localTasks.set(taskId, task);
       }
 
@@ -592,14 +584,14 @@ export class CloudTaskService extends EventEmitter {
   /**
    * 将数据库行映射为 CloudTask
    */
-  private mapDbRowToTask(row: Record<string, unknown>): CloudTask {
+  private mapDbRowToTask(row: CloudTaskRow): CloudTask {
     // 解密 prompt
     let prompt = '';
     if (row.encrypted_prompt && row.encryption_key_id) {
       try {
         prompt = decryptFromCloud(
-          row.encrypted_prompt as EncryptedPayload,
-          row.encryption_key_id as string
+          row.encrypted_prompt as unknown as EncryptedPayload,
+          row.encryption_key_id
         );
       } catch {
         // 解密失败，可能是密钥不可用
@@ -612,8 +604,8 @@ export class CloudTaskService extends EventEmitter {
     if (row.encrypted_result && row.encryption_key_id) {
       try {
         result = decryptFromCloud(
-          row.encrypted_result as EncryptedPayload,
-          row.encryption_key_id as string
+          row.encrypted_result as unknown as EncryptedPayload,
+          row.encryption_key_id
         );
       } catch {
         logger.warn(' Failed to decrypt result');
@@ -621,28 +613,28 @@ export class CloudTaskService extends EventEmitter {
     }
 
     return {
-      id: row.id as string,
-      userId: row.user_id as string,
-      sessionId: row.session_id as string | undefined,
-      projectId: row.project_id as string | undefined,
+      id: row.id,
+      userId: row.user_id,
+      sessionId: row.session_id ?? undefined,
+      projectId: row.project_id ?? undefined,
       type: row.type as CloudTask['type'],
-      title: row.title as string,
-      description: row.description as string,
+      title: row.title,
+      description: row.description,
       prompt,
       priority: row.priority as CloudTask['priority'],
       location: row.location as CloudTask['location'],
-      maxIterations: row.max_iterations as number,
-      timeout: row.timeout_ms as number,
+      maxIterations: row.max_iterations,
+      timeout: row.timeout_ms,
       status: row.status as CloudTaskStatus,
-      progress: row.progress as number,
-      currentStep: row.current_step as string | undefined,
+      progress: row.progress,
+      currentStep: row.current_step ?? undefined,
       result,
-      error: row.error as string | undefined,
-      createdAt: row.created_at as string,
-      startedAt: row.started_at as string | undefined,
-      completedAt: row.completed_at as string | undefined,
-      updatedAt: row.updated_at as string,
-      metadata: row.metadata as Record<string, unknown>,
+      error: row.error ?? undefined,
+      createdAt: row.created_at,
+      startedAt: row.started_at ?? undefined,
+      completedAt: row.completed_at ?? undefined,
+      updatedAt: row.updated_at,
+      metadata: row.metadata,
     };
   }
 

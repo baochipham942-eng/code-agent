@@ -11,9 +11,6 @@ vi.mock('electron', () => ({
   },
 }));
 
-// Mock isolated-vm (causes Node version issues)
-vi.mock('isolated-vm', () => ({}));
-
 // Mock services
 vi.mock('../../src/main/services', () => ({
   getSessionManager: vi.fn(() => ({

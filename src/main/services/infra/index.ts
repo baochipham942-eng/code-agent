@@ -54,6 +54,7 @@ export {
   type UserPreferenceRow,
   type InviteCodeRow,
   type VectorDocumentRow,
+  type CloudTaskRow,
   type VectorMatchResult,
 } from './supabaseService';
 

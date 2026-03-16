@@ -28,7 +28,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     id: 'deepseek',
     name: 'DeepSeek',
     requiresApiKey: true,
-    baseUrl: 'https://api.deepseek.com/v1',
+    baseUrl: MODEL_API_ENDPOINTS.deepseek,
     models: [
       {
         id: 'deepseek-chat',
@@ -66,7 +66,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     id: 'claude',
     name: 'Anthropic Claude',
     requiresApiKey: true,
-    baseUrl: 'https://api.anthropic.com/v1',
+    baseUrl: MODEL_API_ENDPOINTS.claude,
     models: [
       {
         id: 'claude-opus-4-6',
@@ -164,7 +164,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     id: 'openai',
     name: 'OpenAI',
     requiresApiKey: true,
-    baseUrl: 'https://api.openai.com/v1',
+    baseUrl: MODEL_API_ENDPOINTS.openai,
     models: [
       {
         id: 'gpt-4o',
@@ -197,7 +197,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     id: 'groq',
     name: 'Groq (极速推理)',
     requiresApiKey: true,
-    baseUrl: 'https://api.groq.com/openai/v1',
+    baseUrl: MODEL_API_ENDPOINTS.groq,
     models: [
       // === Llama 4 (2026最新) ===
       {
@@ -287,8 +287,8 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     id: 'zhipu',
     name: '智谱 GLM',
     requiresApiKey: true,
-    baseUrl: 'https://api.0ki.cn/api/paas/v4',
-    codingBaseUrl: 'https://api.0ki.cn/api/coding/paas/v4',
+    baseUrl: MODEL_API_ENDPOINTS.zhipu,
+    codingBaseUrl: MODEL_API_ENDPOINTS.zhipuCoding,
     models: [
       // === 旗舰模型 ===
       {
@@ -402,8 +402,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     id: 'qwen',
     name: '通义千问 (百炼)',
     requiresApiKey: true,
-    // 注意：国内用 dashscope.aliyuncs.com，新加坡用 dashscope-intl.aliyuncs.com
-    baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
+    baseUrl: MODEL_API_ENDPOINTS.qwen,
     models: [
       // === 旗舰语言模型 ===
       {
@@ -694,7 +693,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     id: 'moonshot',
     name: 'Moonshot (Kimi)',
     requiresApiKey: true,
-    baseUrl: 'https://api.moonshot.cn/v1',
+    baseUrl: MODEL_API_ENDPOINTS.moonshot,
     models: [
       {
         id: 'kimi-k2.5',
@@ -742,7 +741,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     id: 'minimax',
     name: 'MiniMax',
     requiresApiKey: true,
-    baseUrl: 'https://api.minimax.chat/v1',
+    baseUrl: MODEL_API_ENDPOINTS.minimax,
     models: [
       {
         id: 'abab6.5s-chat',
@@ -790,7 +789,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     id: 'gemini',
     name: 'Google Gemini',
     requiresApiKey: true,
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    baseUrl: MODEL_API_ENDPOINTS.gemini,
     models: [
       // === Gemini 3 (2026最新) ===
       {
@@ -840,7 +839,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     id: 'perplexity',
     name: 'Perplexity',
     requiresApiKey: true,
-    baseUrl: 'https://api.perplexity.ai',
+    baseUrl: MODEL_API_ENDPOINTS.perplexity,
     models: [
       {
         id: 'sonar-pro',
@@ -868,7 +867,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     id: 'openrouter',
     name: 'OpenRouter (中转)',
     requiresApiKey: true,
-    baseUrl: 'https://openrouter.ai/api/v1',
+    baseUrl: MODEL_API_ENDPOINTS.openrouter,
     models: [
       // === Google Gemini 3 (2026最新) ===
       {

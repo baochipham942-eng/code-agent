@@ -821,6 +821,9 @@ export class DatabaseService {
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_cron_executions_scheduled ON cron_executions(scheduled_at DESC)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_heartbeats_enabled ON heartbeats(enabled)`);
 
+    // Sync optimization: index for finding unsynced sessions
+    this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_synced_at ON sessions(synced_at)`);
+
     // Session Events indexes
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_session_events_session ON session_events(session_id)`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_session_events_type ON session_events(event_type)`);

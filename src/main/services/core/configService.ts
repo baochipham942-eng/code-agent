@@ -110,7 +110,6 @@ function loadEnvFile(): void {
 
 loadEnvFile();
 logger.info('SUPABASE_URL from env:', process.env.SUPABASE_URL ? 'SET' : 'NOT SET');
-logger.info('DEEPSEEK_API_KEY from env:', process.env.DEEPSEEK_API_KEY ? `${process.env.DEEPSEEK_API_KEY.substring(0, 10)}...` : 'NOT SET');
 
 // Default settings
 const DEFAULT_SETTINGS: AppSettings = {

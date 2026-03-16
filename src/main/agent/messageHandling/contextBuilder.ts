@@ -176,12 +176,8 @@ export async function buildEnhancedSystemPrompt(
     const memoryService = getMemoryService();
     let enhancedPrompt = basePrompt;
 
-    // Determine RAG level based on generation
-    const genNum = parseInt('gen8'.replace('gen', ''), 10);
-    const isFullRAG = genNum >= 5;
-    const isLightRAG = genNum >= 3 && genNum < 5;
-
-    if (isFullRAG) {
+    // Full RAG: code, knowledge, and cloud search
+    {
       // Gen5+: Full RAG with code, knowledge, and cloud search
       // Check cache first to avoid redundant queries
       let ragContext: string | undefined;
@@ -234,12 +230,10 @@ export async function buildEnhancedSystemPrompt(
       if (ragContext && ragContext.trim().length > 0) {
         enhancedPrompt += `\n\n## Relevant Context from Memory\n\nThe following context was retrieved from your knowledge base and may be helpful:\n\n${ragContext}`;
       }
-    } else if (isLightRAG) {
-      // Gen3-4: Lightweight RAG - only project knowledge, no code/conversation search
     }
 
-    // Entity relationship context (Gen5+)
-    if (isFullRAG) {
+    // Entity relationship context
+    {
       try {
         const proactive = getProactiveContextService();
         const entities = proactive.detectEntities(userQuery);
@@ -299,8 +293,7 @@ export async function buildEnhancedSystemPrompt(
       }
     }
 
-    const ragType = isFullRAG ? 'full' : isLightRAG ? 'light' : 'none';
-    logger.debug(`Enhanced system prompt with ${ragType} RAG for ${'gen8'}`);
+    logger.debug('Enhanced system prompt with full RAG');
     return enhancedPrompt;
   } catch (error) {
     logger.error('Failed to build enhanced system prompt:', error);

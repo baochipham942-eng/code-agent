@@ -12,10 +12,14 @@
 // - Kimi Agent Swarm 的稀疏汇报协议
 // - DynTaskMAS 的并行执行引擎
 // - TDAG 的动态依赖调整
+//
+// 子模块：
+// - swarmTypes.ts: 类型定义
+// - swarmCoordinator.ts: 协调器（汇报收集、冲突检测、结果聚合）
+// - resourceLock.ts: 资源锁管理器
 // ============================================================================
 
 import { createLogger } from '../../services/infra/logger';
-import { initiateShutdown } from '../shutdownProtocol';
 import type { DynamicAgentConfig } from './dynamicFactory';
 import type { SwarmConfig } from './taskRouter';
 import { getSwarmEventEmitter, type SwarmEventEmitter } from '../../ipc/swarm.ipc';
@@ -25,234 +29,34 @@ import { getAgentWorkerManager, type AgentWorkerManager } from '../worker/agentW
 import { getPermissionProxy } from '../worker/permissionProxy';
 import { TeammateProxy } from '../worker/teammateProxy';
 import { WorkerMonitor } from '../worker/workerMonitor';
-import { analyzeTask } from './taskRouter';
 import type { SwarmVerificationResult } from '../../../shared/types/swarm';
 
+// Re-export all types from swarmTypes (preserving public API)
+export type {
+  AgentStatus,
+  ReportType,
+  AgentReport,
+  AgentRuntime,
+  SwarmResult,
+  AgentExecutor,
+  ExtendedSwarmConfig,
+} from './swarmTypes';
+
+// Import types for internal use
+import type {
+  AgentReport,
+  AgentRuntime,
+  SwarmResult,
+  AgentExecutor,
+  ExtendedSwarmConfig,
+  ReportType,
+} from './swarmTypes';
+
+// Import sub-modules
+import { SwarmCoordinator } from './swarmCoordinator';
+import { ResourceLockManager } from './resourceLock';
+
 const logger = createLogger('AgentSwarm');
-
-// ============================================================================
-// Types
-// ============================================================================
-
-// Import and re-export AgentStatus from shared types
-import type { AgentStatus } from '../../../shared/types/swarm';
-export type { AgentStatus };
-
-/**
- * 汇报类型
- */
-export type ReportType =
-  | 'started'      // 开始执行
-  | 'progress'     // 进度更新（仅 full 模式）
-  | 'completed'    // 完成
-  | 'failed'       // 失败
-  | 'conflict'     // 检测到冲突
-  | 'resource';    // 需要资源
-
-/**
- * Agent 汇报
- */
-export interface AgentReport {
-  agentId: string;
-  agentName: string;
-  type: ReportType;
-  timestamp: number;
-  data: {
-    status?: AgentStatus;
-    output?: string;
-    error?: string;
-    progress?: number;
-    resourceNeeded?: string;
-    conflictWith?: string;
-  };
-}
-
-/**
- * Agent 运行时状态
- */
-export interface AgentRuntime {
-  agent: DynamicAgentConfig;
-  status: AgentStatus;
-  startTime?: number;
-  endTime?: number;
-  output?: string;
-  error?: string;
-  iterations: number;
-  reports: AgentReport[];
-}
-
-/**
- * Swarm 执行结果
- */
-export interface SwarmResult {
-  success: boolean;
-  agents: AgentRuntime[];
-  aggregatedOutput: string;
-  totalTime: number;
-  statistics: {
-    total: number;
-    completed: number;
-    failed: number;
-    cancelled: number;
-    parallelPeak: number;
-    totalIterations: number;
-  };
-  /** Verification result (if verifier is available) */
-  verification?: SwarmVerificationResult;
-}
-
-/**
- * Agent 执行器接口
- */
-export interface AgentExecutor {
-  execute(
-    agent: DynamicAgentConfig,
-    onReport: (report: AgentReport) => void
-  ): Promise<{ success: boolean; output: string; error?: string }>;
-}
-
-// ============================================================================
-// Coordinator
-// ============================================================================
-
-/**
- * Swarm 协调器
- *
- * 负责：
- * 1. 收集所有 Agent 的汇报
- * 2. 检测冲突
- * 3. 聚合结果
- */
-class SwarmCoordinator {
-  private reports: AgentReport[] = [];
-  private conflicts: Array<{ agentA: string; agentB: string; resource: string }> = [];
-
-  /**
-   * 接收汇报
-   */
-  receive(report: AgentReport): void {
-    this.reports.push(report);
-
-    // 检测冲突
-    if (report.type === 'conflict' && report.data.conflictWith) {
-      this.conflicts.push({
-        agentA: report.agentId,
-        agentB: report.data.conflictWith,
-        resource: report.data.resourceNeeded || 'unknown',
-      });
-    }
-
-    logger.debug('Coordinator received report', {
-      agentId: report.agentId,
-      type: report.type,
-      status: report.data.status,
-    });
-  }
-
-  /**
-   * 获取冲突列表
-   */
-  getConflicts() {
-    return this.conflicts;
-  }
-
-  /**
-   * 聚合结果
-   */
-  aggregate(runtimes: AgentRuntime[]): string {
-    const outputs: string[] = [];
-
-    // 按完成顺序排序
-    const sorted = [...runtimes]
-      .filter(r => r.status === 'completed' && r.output)
-      .sort((a, b) => (a.endTime || 0) - (b.endTime || 0));
-
-    for (const runtime of sorted) {
-      outputs.push(`## ${runtime.agent.name}\n\n${runtime.output}`);
-    }
-
-    // 添加失败信息
-    const failed = runtimes.filter(r => r.status === 'failed');
-    if (failed.length > 0) {
-      outputs.push('\n## Failed Agents\n');
-      for (const runtime of failed) {
-        outputs.push(`- ${runtime.agent.name}: ${runtime.error || 'Unknown error'}`);
-      }
-    }
-
-    return outputs.join('\n\n');
-  }
-
-  /**
-   * 重置
-   */
-  reset(): void {
-    this.reports = [];
-    this.conflicts = [];
-  }
-}
-
-// ============================================================================
-// Resource Lock
-// ============================================================================
-
-/**
- * 资源锁管理器
- */
-class ResourceLockManager {
-  private locks: Map<string, { owner: string; timestamp: number }> = new Map();
-
-  /**
-   * 尝试获取锁
-   */
-  acquire(resource: string, agentId: string, timeout = 30000): boolean {
-    const existing = this.locks.get(resource);
-
-    // 检查是否已被锁定
-    if (existing) {
-      // 检查是否超时
-      if (Date.now() - existing.timestamp > timeout) {
-        logger.warn('Lock timeout, forcing release', { resource, previousOwner: existing.owner });
-        this.locks.delete(resource);
-      } else {
-        return false;
-      }
-    }
-
-    this.locks.set(resource, { owner: agentId, timestamp: Date.now() });
-    return true;
-  }
-
-  /**
-   * 释放锁
-   */
-  release(resource: string, agentId: string): boolean {
-    const lock = this.locks.get(resource);
-    if (lock && lock.owner === agentId) {
-      this.locks.delete(resource);
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * 释放 Agent 的所有锁
-   */
-  releaseAll(agentId: string): void {
-    for (const [resource, lock] of this.locks) {
-      if (lock.owner === agentId) {
-        this.locks.delete(resource);
-      }
-    }
-  }
-
-  /**
-   * 重置所有锁
-   */
-  reset(): void {
-    this.locks.clear();
-  }
-}
 
 // ============================================================================
 // Agent Swarm
@@ -263,18 +67,6 @@ class ResourceLockManager {
  *
  * 管理多个 Agent 的并行执行，支持依赖管理和冲突检测。
  */
-/**
- * 扩展 Swarm 配置：进程隔离选项
- */
-export interface ExtendedSwarmConfig extends SwarmConfig {
-  /** 是否启用进程隔离（默认 true） */
-  processIsolation?: boolean;
-  /** 最大 worker 进程数（默认 4） */
-  maxWorkers?: number;
-  /** 单个 worker 超时（ms，默认 300000） */
-  workerTimeout?: number;
-}
-
 export class AgentSwarm {
   private coordinator = new SwarmCoordinator();
   private lockManager = new ResourceLockManager();
@@ -475,7 +267,7 @@ export class AgentSwarm {
     this.lockManager.reset();
 
     for (const agent of agents) {
-      const status: AgentStatus = agent.dependencies.length === 0 ? 'ready' : 'pending';
+      const status: import('./swarmTypes').AgentStatus = agent.dependencies.length === 0 ? 'ready' : 'pending';
       this.runtimes.set(agent.id, {
         agent,
         status,
@@ -861,7 +653,7 @@ export class AgentSwarm {
 
     this.eventEmitter.started(tasks.length);
 
-    // Worker loop: claim → execute → claim until no tasks left
+    // Worker loop: claim -> execute -> claim until no tasks left
     const workerLoop = async (workerId: string) => {
       while (!this.cancelled) {
         const claimed = claimService.claimNext(workerId);

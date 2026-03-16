@@ -82,19 +82,6 @@ export {
   type AgentBusConfig,
 } from './agentBus';
 
-// Dynamic Coordinator (Gen7 - Dynamic Multi-Agent Orchestration)
-// DEPRECATED: Disconnected during architecture cleanup. Not used anywhere.
-// export {
-//   getDynamicCoordinator,
-//   initDynamicCoordinator,
-//   resetDynamicCoordinator,
-//   DynamicCoordinator,
-//   type AgentRuntimeState,
-//   type CoordinationResult,
-//   type CoordinatorContext,
-//   type DynamicCoordinatorConfig,
-// } from './dynamicCoordinator';
-
 // Parallel Agent Coordinator
 export {
   getParallelAgentCoordinator,

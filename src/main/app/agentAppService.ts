@@ -17,7 +17,6 @@ import type { TaskManager } from '../task';
 import type { ConfigService } from '../services';
 import { getSessionManager, type SessionWithMessages } from '../services';
 import { getMemoryService } from '../memory/memoryService';
-import { getMemoryTriggerService } from '../memory/memoryTriggerService';
 import { getModelSessionState } from '../session/modelSessionState';
 import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../../shared/constants';
 
@@ -88,7 +87,6 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
     const sessionManager = getSessionManager();
     const memoryService = getMemoryService();
-    const memoryTrigger = getMemoryTriggerService();
     const settings = configService.getSettings();
     const workingDirectory = this.getWorkingDirectory();
 
@@ -113,17 +111,12 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
     memoryService.setContext(session.id, workingDirectory || undefined);
 
-    memoryTrigger.onSessionStart(session.id, workingDirectory).catch((err) => {
-      console.warn('Memory trigger failed:', err);
-    });
-
     return session;
   }
 
   async loadSession(sessionId: string): Promise<Session> {
     const sessionManager = getSessionManager();
     const memoryService = getMemoryService();
-    const memoryTrigger = getMemoryTriggerService();
 
     const session = await sessionManager.restoreSession(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
@@ -143,10 +136,6 @@ export class AgentAppServiceImpl implements AgentApplicationService {
       orchestrator.setWorkingDirectory(session.workingDirectory);
     }
     // NOTE: 当 session.workingDirectory 为空时，orchestrator 使用默认值（用户主目录）
-
-    memoryTrigger.onSessionStart(sessionId, session.workingDirectory).catch((err) => {
-      console.warn('Memory trigger failed:', err);
-    });
 
     return session;
   }
@@ -224,9 +213,15 @@ export class AgentAppServiceImpl implements AgentApplicationService {
 
   // === Memory ===
 
-  async getMemoryContext(sessionId: string, workingDirectory?: string, query?: string): Promise<unknown> {
-    const memoryTrigger = getMemoryTriggerService();
-    return memoryTrigger.onSessionStart(sessionId, workingDirectory, query);
+  async getMemoryContext(_sessionId: string, _workingDirectory?: string, _query?: string): Promise<unknown> {
+    // Old memoryTriggerService removed — return empty context
+    return {
+      projectKnowledge: [],
+      relevantCode: [],
+      recentConversations: [],
+      userPreferences: {},
+      stats: { projectKnowledgeCount: 0, relevantCodeCount: 0, conversationCount: 0, retrievalTimeMs: 0 },
+    };
   }
 
   // === Model Override ===

@@ -74,15 +74,6 @@ export {
   type ProactiveContextConfig,
 } from './proactiveContext';
 
-// Memory Trigger Service (Session Start Auto-trigger)
-export {
-  MemoryTriggerService,
-  getMemoryTriggerService,
-  initMemoryTriggerService,
-  type SessionMemoryContext,
-  type MemoryTriggerConfig,
-} from './memoryTriggerService';
-
 // Session Summarizer (Smart Forking Phase 2)
 export {
   SessionSummarizer,
@@ -91,16 +82,6 @@ export {
   type SessionSummary,
   type SummarizerConfig,
 } from './sessionSummarizer';
-
-// Fork Detector (Smart Forking Phase 2)
-export {
-  ForkDetector,
-  getForkDetector,
-  initForkDetector,
-  type RelevantSession,
-  type ForkDetectionResult,
-  type ForkDetectorConfig,
-} from './forkDetector';
 
 // Context Injector (Smart Forking Phase 2)
 export {
@@ -123,30 +104,6 @@ export {
   type AgentPersona,
   type LearnedPreferences,
 } from './coreMemory';
-
-// Pattern Extractor
-export {
-  PatternExtractor,
-  getPatternExtractor,
-  createPatternExtractor,
-  type PatternType,
-  type ExtractedPattern,
-  type ToolExecution,
-  type ExtractionConfig,
-} from './patternExtractor';
-
-// Skill Synthesizer
-export {
-  SkillSynthesizer,
-  getSkillSynthesizer,
-  createSkillSynthesizer,
-  type SkillType,
-  type SynthesizedSkill,
-  type SkillTrigger,
-  type SkillContent,
-  type SkillUsageTracking,
-  type SynthesisConfig,
-} from './skillSynthesizer';
 
 // Continuous Learning Service
 export {
@@ -202,10 +159,3 @@ export {
   needsUserConfirmation,
 } from './memoryNotification';
 
-// Memory Deduplicator
-export {
-  MemoryDeduplicator,
-  getMemoryDeduplicator,
-  type DeduplicateResult,
-  type RelationCandidate,
-} from './memoryDeduplicator';

@@ -231,8 +231,7 @@ export class TaskSyncService extends EventEmitter {
         }
 
         const task = pending.data as CloudTask;
-        // TODO: Supabase 类型系统限制，需要 as any 绕过 PostgrestFilterBuilder 泛型约束
-        const { error } = await (client.from('cloud_tasks') as any).upsert({
+        const { error } = await client.from('cloud_tasks').upsert({
             id: task.id,
             user_id: task.userId,
             session_id: task.sessionId,
@@ -304,8 +303,8 @@ export class TaskSyncService extends EventEmitter {
       }
 
       // 获取自上次同步以来更新的任务
-      // TODO: Supabase 类型系统限制，需要 as any 绕过 PostgrestFilterBuilder 泛型约束
-      let query = (client.from('cloud_tasks') as any)
+      let query = client
+        .from('cloud_tasks')
         .select('*')
         .order('updated_at', { ascending: false })
         .limit(this.config.batchSize);
@@ -337,10 +336,10 @@ export class TaskSyncService extends EventEmitter {
             if (cloudUpdated > localUpdated) {
               // 云端更新，应用到本地
               await this.cloudService.updateTask(row.id, {
-                status: row.status,
+                status: row.status as CloudTaskStatus,
                 progress: row.progress,
-                currentStep: row.current_step,
-                error: row.error,
+                currentStep: row.current_step ?? undefined,
+                error: row.error ?? undefined,
                 metadata: row.metadata,
               });
               success++;

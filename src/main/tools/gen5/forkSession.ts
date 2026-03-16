@@ -7,17 +7,29 @@
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import {
-  getForkDetector,
-  type ForkDetectionResult,
-  type RelevantSession,
-} from '../../memory/forkDetector';
-import {
   getContextInjector,
   type InjectedContext,
 } from '../../memory/contextInjector';
 import { getSessionSummarizer } from '../../memory/sessionSummarizer';
 import { getDatabase } from '../../services';
 import { createLogger } from '../../services/infra/logger';
+
+// Stub types — old forkDetector module removed
+interface RelevantSession {
+  sessionId: string;
+  title: string;
+  createdAt: number;
+  messageCount: number;
+  topics?: string[];
+  projectPath?: string;
+  relevanceScore: number;
+}
+
+interface ForkDetectionResult {
+  relevantSessions: RelevantSession[];
+  suggestedAction: 'fork' | 'ask' | 'new';
+  reason: string;
+}
 
 const logger = createLogger('ForkSessionTool');
 
@@ -160,40 +172,14 @@ async function forkSpecificSession(
  * 列出最近会话
  */
 async function listRecentSessions(
-  limit: number,
-  projectPath?: string
+  _limit: number,
+  _projectPath?: string
 ): Promise<ToolExecutionResult> {
-  logger.info('Listing recent sessions', { limit, projectPath });
-
-  const detector = getForkDetector();
-
-  let sessions: RelevantSession[];
-  if (projectPath) {
-    sessions = await detector.getSessionsByProject(projectPath, limit);
-  } else {
-    sessions = await detector.getRecentSessions(limit);
-  }
-
-  if (sessions.length === 0) {
-    return {
-      success: true,
-      output: '没有找到历史会话记录。',
-      metadata: { action: 'list', count: 0 },
-    };
-  }
-
+  // Old forkDetector removed — return empty list
   return {
     success: true,
-    output: formatSessionList(sessions, '最近的会话'),
-    metadata: {
-      action: 'list',
-      count: sessions.length,
-      sessions: sessions.map((s) => ({
-        id: s.sessionId,
-        title: s.title,
-        createdAt: s.createdAt,
-      })),
-    },
+    output: '没有找到历史会话记录。',
+    metadata: { action: 'list', count: 0 },
   };
 }
 
@@ -202,41 +188,17 @@ async function listRecentSessions(
  */
 async function searchAndSuggestSessions(
   query: string,
-  projectPath?: string
+  _projectPath?: string
 ): Promise<ToolExecutionResult> {
-  logger.info('Searching for relevant sessions', { query, projectPath });
-
-  const detector = getForkDetector();
-  const result = await detector.detectRelevantSessions(query, projectPath);
-
-  if (result.relevantSessions.length === 0) {
-    return {
-      success: true,
-      output: `没有找到与 "${query}" 相关的历史会话。\n\n建议：开始新会话。`,
-      metadata: {
-        action: 'search',
-        query,
-        suggestedAction: 'new',
-        count: 0,
-      },
-    };
-  }
-
-  const output = formatSearchResult(result, query);
-
+  // Old forkDetector removed — return no results
   return {
     success: true,
-    output,
+    output: `没有找到与 "${query}" 相关的历史会话。\n\n建议：开始新会话。`,
     metadata: {
       action: 'search',
       query,
-      suggestedAction: result.suggestedAction,
-      count: result.relevantSessions.length,
-      sessions: result.relevantSessions.map((s) => ({
-        id: s.sessionId,
-        title: s.title,
-        score: s.relevanceScore,
-      })),
+      suggestedAction: 'new',
+      count: 0,
     },
   };
 }

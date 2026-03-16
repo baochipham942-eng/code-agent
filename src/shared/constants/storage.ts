@@ -1,0 +1,65 @@
+/** 内存/向量配置 */
+export const MEMORY = {
+  /** 默认相似度阈值 */
+  SIMILARITY_THRESHOLD: 0.7,
+  /** 最大返回结果数 */
+  MAX_RESULTS: 10,
+  /** 嵌入维度 */
+  EMBEDDING_DIMENSION: 1536,
+  /** 索引刷新间隔 (ms) */
+  INDEX_REFRESH_INTERVAL: 300000,
+  /** Entity relation time decay half-life in days */
+  RELATION_DECAY_DAYS: 30,
+  /** Minimum confidence after decay to keep a relation */
+  RELATION_MIN_CONFIDENCE: 0.1,
+  /** Minimum confidence for context builder relation queries */
+  RELATION_CONTEXT_MIN_CONFIDENCE: 0.2,
+  /** Embedding cache TTL in ms (10 min) */
+  EMBEDDING_CACHE_TTL: 10 * 60 * 1000,
+  /** Deduplication Jaccard similarity threshold */
+  DEDUP_SIMILARITY_THRESHOLD: 0.85,
+} as const;
+
+/** 向量存储配置 */
+export const VECTOR_STORE = {
+  /** 最大文档数 */
+  MAX_DOCUMENTS: 10000,
+  /** 默认 TopK */
+  DEFAULT_TOP_K: 10,
+  /** 默认相似度阈值 */
+  DEFAULT_THRESHOLD: 0.7,
+  /** 分块大小 */
+  CHUNK_SIZE: 1000,
+  /** 分块重叠 */
+  CHUNK_OVERLAP: 100,
+} as const;
+
+/** Embedding 服务配置 */
+export const EMBEDDING = {
+  /** 最大缓存大小 */
+  MAX_CACHE_SIZE: 10000,
+  /** 批量处理大小 */
+  BATCH_SIZE: 100,
+} as const;
+
+/** 历史记录配置 */
+export const HISTORY = {
+  /** 使用记录最大条数 */
+  MAX_USAGE_HISTORY: 1000,
+  /** Token 记录最大条数 */
+  MAX_TOKEN_HISTORY: 1000,
+} as const;
+
+/** 资源管理常量 */
+export const RESOURCE_MANAGEMENT = {
+  /** 磁盘空间警告阈值（1GB） */
+  DISK_WARNING_BYTES: 1024 * 1024 * 1024,
+  /** 磁盘空间临界阈值（100MB） */
+  DISK_CRITICAL_BYTES: 100 * 1024 * 1024,
+  /** 日志文件最大大小（10MB） */
+  LOG_MAX_FILE_SIZE: 10 * 1024 * 1024,
+  /** 日志文件最大数量 */
+  LOG_MAX_FILES: 10,
+  /** 优雅关闭超时（5秒） */
+  GRACEFUL_SHUTDOWN_TIMEOUT: 5_000,
+} as const;

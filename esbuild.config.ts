@@ -23,7 +23,6 @@ import { mkdirSync } from 'fs';
 const NATIVE_EXTERNALS = [
   'better-sqlite3',
   'keytar',
-  'isolated-vm',
   'tree-sitter',
   'tree-sitter-typescript',
   'playwright',
@@ -115,6 +114,8 @@ function defineTargets(isDev: boolean): Record<string, BuildTarget> {
 // ---------------------------------------------------------------------------
 // Build executor
 // ---------------------------------------------------------------------------
+const BUILD_TIMEOUT_MS = 60_000;
+
 async function build(target: BuildTarget): Promise<void> {
   const start = Date.now();
 
@@ -138,6 +139,9 @@ async function build(target: BuildTarget): Promise<void> {
   target.postBuild?.();
 
   const elapsed = Date.now() - start;
+  if (elapsed > BUILD_TIMEOUT_MS) {
+    console.warn(`  ⚠ ${target.name} took ${elapsed}ms (>${BUILD_TIMEOUT_MS}ms)`);
+  }
   console.log(`  ✓ ${target.name} → ${target.outfile} (${elapsed}ms)`);
 }
 
@@ -162,12 +166,17 @@ async function main() {
 
   console.log(`Building ${selected.length} target(s)${isDev ? ' (dev)' : ''}...`);
 
-  // Build all targets in parallel
+  // Build all targets in parallel — allSettled ensures one failure doesn't block others
   const results = await Promise.allSettled(selected.map((name) => build(targets[name])));
-  const failed = results.filter((r) => r.status === 'rejected');
+  const failures = results
+    .map((r, i) => (r.status === 'rejected' ? { name: selected[i], reason: r.reason } : null))
+    .filter(Boolean) as { name: string; reason: unknown }[];
 
-  if (failed.length > 0) {
-    console.error(`\n${failed.length} target(s) failed.`);
+  if (failures.length > 0) {
+    console.error(`\n${failures.length} target(s) failed:`);
+    for (const f of failures) {
+      console.error(`  ✗ ${f.name}: ${f.reason instanceof Error ? f.reason.message : f.reason}`);
+    }
     process.exit(1);
   }
 

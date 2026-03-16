@@ -746,3 +746,37 @@ This version of Node.js requires NODE_MODULE_VERSION 139.
 - provider 名称 ≠ 厂商名称：code-agent 内部用 `'claude'` 不用 `'anthropic'`，新增 provider 映射时必须和 `DEFAULT_PROVIDER` / constants 对齐
 - 401 不一定是 Key 无效：先 curl 直测 API 确认 Key 有效，再排查应用层是否真的把 Key 发出去了
 - 三级 fallback（SecureStorage → config.json → env）中任一层返回空字符串，要确保 fall through 而不是当"找到了"
+
+### 2026-03-16: 中文输入法 Enter 选词误触发提交 ✅ 已修复
+
+**症状**: 使用搜狗/百度等中文输入法时，按 Enter 选择候选词会直接提交消息
+
+**第一次修复（无效）**: 添加 `compositionStart/End` ref + `isComposing` 双重检查
+```typescript
+// ❌ 无效 — compositionEnd 在 keyDown 之前触发
+onCompositionEnd={() => { isComposingRef.current = false; }}
+```
+
+**根因**: 某些中文输入法的事件顺序是 `compositionEnd → keyDown`（而非标准的 `keyDown → compositionEnd`），导致 `isComposingRef` 在 `keyDown` 检查时已经被重置为 `false`
+
+**正确修复（三重检查）**:
+1. **`e.nativeEvent.isComposing`** — 标准 API（Chrome/Firefox 可靠，但部分 IME 不准）
+2. **`isComposingRef` + 50ms 延迟重置** — 解决 compositionEnd 先于 keyDown 的时序问题
+3. **`keyCode === 229`** — 浏览器在 IME 组合输入时 keyDown 的 keyCode 固定为 229，最可靠的信号
+
+```typescript
+// compositionEnd 延迟重置
+onCompositionEnd={() => {
+  setTimeout(() => { isComposingRef.current = false; }, 50);
+}}
+
+// keyDown 三重检查
+if (e.key === 'Enter' && !e.shiftKey
+    && !e.nativeEvent.isComposing
+    && !isComposingRef.current
+    && e.nativeEvent.keyCode !== 229) {
+```
+
+**通用规则**: Web 应用处理 Enter 提交时，必须同时检查 `isComposing` + `compositionRef`（延迟重置）+ `keyCode !== 229`，三重防御才能兼容所有 IME
+
+**相关代码**: `src/renderer/components/features/chat/ChatInput/InputArea.tsx`

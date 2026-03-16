@@ -17,10 +17,8 @@ import type {
   AgentTaskPhase,
 } from '../../../shared/types';
 import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
-import { parseStructuredOutput, generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
 import type { ToolRegistryLike } from '../../tools/types';
 import type { ToolExecutor } from '../../tools/toolExecutor';
-import { getToolSearchService } from '../../tools/search';
 import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
 import type { PlanningService } from '../../planning';
 import { getMemoryService } from '../../memory/memoryService';
@@ -30,7 +28,6 @@ import { buildSeedMemoryBlock } from '../../memory/seedMemoryInjector';
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { generateMessageId } from '../../../shared/utils/id';
-import { taskComplexityAnalyzer } from '../../planning/taskComplexityAnalyzer';
 import { classifyIntent } from '../../routing/intentClassifier';
 import { getTaskOrchestrator } from '../../planning/taskOrchestrator';
 import { getMaxIterations } from '../../services/cloud/featureFlagService';
@@ -201,22 +198,12 @@ export class LearningPipeline {
       `[AgentLoop] Continuous learning: ${result.patternsExtracted} patterns, ${result.skillsSynthesized} skills`
     );
 
-    // Write extracted patterns as entity relations via SQLite database (with dedup)
+    // Write extracted patterns as entity relations via SQLite database
     try {
       const { getDatabase } = await import('../../services/core/databaseService');
-      const { getMemoryDeduplicator } = await import('../../memory/memoryDeduplicator');
       const db = getDatabase();
-      const dedup = getMemoryDeduplicator(db);
 
-      // Collect all candidate relations first
-      const candidates: Array<{
-        sourceId: string;
-        targetId: string;
-        relationType: 'modifies' | 'references';
-        confidence: number;
-        evidence: string;
-        sessionId: string;
-      }> = [];
+      let relationsInserted = 0;
 
       for (const pattern of result.patterns || []) {
         if (pattern.confidence < 0.7) continue;
@@ -226,7 +213,7 @@ export class LearningPipeline {
 
         for (const file of filesModified.slice(0, 5)) {
           for (const tool of toolsUsed.slice(0, 5)) {
-            candidates.push({
+            db.addRelation({
               sourceId: file,
               targetId: tool,
               relationType: 'modifies',
@@ -234,13 +221,14 @@ export class LearningPipeline {
               evidence: (pattern.content || pattern.type || '').substring(0, 200),
               sessionId: this.ctx.sessionId!,
             });
+            relationsInserted++;
           }
         }
 
         // File co-modification relations
         for (let i = 0; i < Math.min(filesModified.length, 5); i++) {
           for (let j = i + 1; j < Math.min(filesModified.length, 5); j++) {
-            candidates.push({
+            db.addRelation({
               sourceId: filesModified[i],
               targetId: filesModified[j],
               relationType: 'references',
@@ -248,23 +236,15 @@ export class LearningPipeline {
               evidence: `Co-modified in pattern: ${pattern.type}`,
               sessionId: this.ctx.sessionId!,
             });
+            relationsInserted++;
           }
         }
       }
 
-      // Deduplicate before writing
-      const { toInsert, toMerge } = dedup.deduplicateRelations(candidates);
-      for (const rel of toInsert) {
-        db.addRelation(rel);
-      }
-      for (const { existingId, candidate } of toMerge) {
-        db.updateRelationConfidence(existingId, candidate.confidence, candidate.evidence);
-      }
-
       // Notify frontend about learned patterns
-      if (toInsert.length > 0) {
+      if (relationsInserted > 0) {
         const { notifyMemoryLearned } = await import('../../memory/memoryNotification');
-        const summary = `${result.patternsExtracted} patterns, ${toInsert.length} relations`;
+        const summary = `${result.patternsExtracted} patterns, ${relationsInserted} relations`;
         notifyMemoryLearned(summary, 'learned', 'pattern', 0.9);
       }
     } catch (err) {

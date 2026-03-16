@@ -5,7 +5,9 @@
 import type { IpcMain } from 'electron';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { AgentApplicationService, SwitchModelParams } from '../../shared/types/appService';
-import type { SessionMemoryContext } from '../memory/memoryTriggerService';
+
+/** Inline stub — old memoryTriggerService removed */
+type SessionMemoryContext = unknown;
 
 // ----------------------------------------------------------------------------
 // Public Registration

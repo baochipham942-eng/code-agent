@@ -17,14 +17,10 @@ import type {
   AgentTaskPhase,
 } from '../../../shared/types';
 import type { StructuredOutputConfig, StructuredOutputResult } from '../../agent/structuredOutput';
-import { parseStructuredOutput, generateFormatCorrectionPrompt } from '../../agent/structuredOutput';
 import type { ToolRegistryLike } from '../../tools/types';
 import type { ToolExecutor } from '../../tools/toolExecutor';
-import { getToolSearchService } from '../../tools/search';
 import { ModelRouter, ContextLengthExceededError } from '../../model/modelRouter';
 import type { PlanningService } from '../../planning';
-import { getMemoryService } from '../../memory/memoryService';
-import { getContinuousLearningService } from '../../memory/continuousLearningService';
 import { sanitizeMemoryContent } from '../../memory/sanitizeMemoryContent';
 import { buildSeedMemoryBlock } from '../../memory/seedMemoryInjector';
 import { recordSessionEnd } from '../../lightMemory/sessionMetadata';
@@ -32,7 +28,6 @@ import { appendConversationSummary } from '../../lightMemory/recentConversations
 import { getConfigService, getAuthService, getLangfuseService, getBudgetService, BudgetAlertLevel, getSessionManager } from '../../services';
 import { logCollector } from '../../mcp/logCollector.js';
 import { generateMessageId } from '../../../shared/utils/id';
-import { taskComplexityAnalyzer } from '../../planning/taskComplexityAnalyzer';
 import { classifyIntent } from '../../routing/intentClassifier';
 import { getTaskOrchestrator } from '../../planning/taskOrchestrator';
 import { getMaxIterations } from '../../services/cloud/featureFlagService';

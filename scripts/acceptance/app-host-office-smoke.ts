@@ -20,7 +20,7 @@ Commands:
   exec --tool <name> [--params <json> | --params-file <path>] [--allow-write]
 
 Options:
-  --base-url <url>   App-host base URL. Default: http://127.0.0.1:8080
+  --base-url <url>   App-host base URL. Default: http://127.0.0.1:8180
   --token <token>    Optional auth token. If omitted, try CODE_AGENT_TOKEN env, then page HTML.
   --project <path>   Optional project root passed to the host executor.
   --session <id>     Optional session id.
@@ -120,7 +120,7 @@ async function run(): Promise<void> {
   }
 
   const command = args.positionals[0] || 'smoke';
-  const baseUrl = normalizeBaseUrl(getStringOption(args, 'base-url') || 'http://127.0.0.1:8080');
+  const baseUrl = normalizeBaseUrl(getStringOption(args, 'base-url') || 'http://127.0.0.1:8180');
   const token = await resolveToken(baseUrl, getStringOption(args, 'token'));
   const project = getStringOption(args, 'project');
   const sessionId = getStringOption(args, 'session');

@@ -6,27 +6,9 @@
 // 请求/响应格式
 // ----------------------------------------------------------------------------
 
-/**
- * IPC 请求格式
- */
-export interface IPCRequest<T = unknown> {
-  action: string;
-  payload?: T;
-  requestId?: string; // 用于追踪请求
-}
-
-/**
- * IPC 响应格式
- */
-export interface IPCResponse<T = unknown> {
-  success: boolean;
-  data?: T;
-  error?: {
-    code: string;
-    message: string;
-    details?: unknown;
-  };
-}
+// IPCRequest / IPCResponse / IPC_DOMAINS 已迁移到 domains.ts
+// 此处保留 Action types、工具函数、错误代码
+import type { IPCRequest, IPCResponse } from './domains';
 
 // ----------------------------------------------------------------------------
 // 领域通道定义
@@ -149,27 +131,7 @@ export interface IPCChannelActions {
  */
 export type IPCChannel = keyof IPCChannelActions;
 
-/**
- * 新版通道名称常量
- */
-export const IPC_DOMAINS = {
-  AGENT: 'agent',
-  SESSION: 'session',
-  AUTH: 'auth',
-  SYNC: 'sync',
-  CLOUD: 'cloud',
-  WORKSPACE: 'workspace',
-  SETTINGS: 'settings',
-  UPDATE: 'update',
-  MCP: 'mcp',
-  MEMORY: 'memory',
-  PLANNING: 'planning',
-  WINDOW: 'window',
-  DATA: 'data',
-  DEVICE: 'device',
-  DAG: 'dag',
-  DESKTOP: 'desktop',
-} as const;
+// IPC_DOMAINS 已迁移到 domains.ts（带 'domain:' 前缀的版本为正式版）
 
 // ----------------------------------------------------------------------------
 // 类型工具

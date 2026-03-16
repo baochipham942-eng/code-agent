@@ -12,6 +12,18 @@ import { createLogger } from '../services/infra/logger';
 
 const logger = createLogger('TokenEstimator');
 
+// LRU cache for token estimates (avoids re-computing for same content)
+const TOKEN_CACHE_MAX = 200;
+const tokenCache = new Map<number, number>();
+
+function simpleHash(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  }
+  return h;
+}
+
 /**
  * Character-to-token ratios for different content types
  * Based on empirical analysis of Claude tokenization
@@ -147,6 +159,16 @@ export function estimateTokens(text: string): number {
     return 0;
   }
 
+  // LRU cache lookup
+  const hash = simpleHash(text);
+  const cached = tokenCache.get(hash);
+  if (cached !== undefined) {
+    // Move to end (most recent)
+    tokenCache.delete(hash);
+    tokenCache.set(hash, cached);
+    return cached;
+  }
+
   const analysis = analyzeContent(text);
   const { totalChars, cjkChars, codeChars, whitespaceChars, specialChars, primaryType } = analysis;
 
@@ -187,7 +209,16 @@ export function estimateTokens(text: string): number {
     tokens += specialChars * 0.1; // Small adjustment for special chars
   }
 
-  return Math.ceil(tokens);
+  const result = Math.ceil(tokens);
+
+  // Store in LRU cache, evict oldest if full
+  if (tokenCache.size >= TOKEN_CACHE_MAX) {
+    const oldest = tokenCache.keys().next().value;
+    if (oldest !== undefined) tokenCache.delete(oldest);
+  }
+  tokenCache.set(hash, result);
+
+  return result;
 }
 
 /**

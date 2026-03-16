@@ -8,6 +8,7 @@ import { IPC_CHANNELS } from '@shared/ipc';
 import { isWebMode } from '../../../../utils/platform';
 import { WebModeBanner } from '../WebModeBanner';
 import ipcService from '../../../../services/ipcService';
+import { toast } from '../../../../hooks/useToast';
 
 // 权限模式类型
 type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions';
@@ -36,7 +37,7 @@ export const GeneralSettings: React.FC = () => {
           setPermissionMode(currentMode as PermissionMode);
         }
       } catch (error) {
-        console.error('Failed to load permission mode:', error);
+        toast.error('加载权限模式失败');
       } finally {
         setIsLoading(false);
       }
@@ -51,7 +52,7 @@ export const GeneralSettings: React.FC = () => {
         setPermissionMode(newMode);
       }
     } catch (error) {
-      console.error('Failed to set permission mode:', error);
+      toast.error('设置权限模式失败');
     }
   };
 

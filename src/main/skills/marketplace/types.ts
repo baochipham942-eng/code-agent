@@ -139,94 +139,13 @@ export interface UninstallResult {
 }
 
 // ----------------------------------------------------------------------------
-// Marketplace Info (for IPC)
+// IPC Types (canonical definitions in shared/types/marketplace.ts)
+// Re-exported here for backward compatibility with main/ imports
 // ----------------------------------------------------------------------------
-
-export interface MarketplaceInfo {
-  /** Marketplace name (unique identifier) */
-  name: string;
-  /** Marketplace description */
-  description?: string;
-  /** Source configuration */
-  source: MarketplaceSource;
-  /** Installation location */
-  installLocation: string;
-  /** Last updated timestamp */
-  lastUpdated: string;
-  /** Number of plugins */
-  pluginCount: number;
-  /** Auto update enabled */
-  autoUpdate?: boolean;
-}
-
-// ----------------------------------------------------------------------------
-// Marketplace Plugin Entry (for IPC)
-// ----------------------------------------------------------------------------
-
-export interface MarketplacePluginEntry {
-  /** Plugin name */
-  name: string;
-  /** Plugin description */
-  description?: string;
-  /** Marketplace name */
-  marketplace: string;
-  /** Plugin source path */
-  source: string;
-  /** Available skills */
-  skills?: string[];
-  /** Available commands */
-  commands?: string[];
-  /** Tags */
-  tags?: string[];
-  /** Version */
-  version?: string;
-  /** Author */
-  author?: string;
-  /** Is installed */
-  isInstalled?: boolean;
-  /** Is enabled (if installed) */
-  isEnabled?: boolean;
-}
-
-// ----------------------------------------------------------------------------
-// Installed Plugin (for IPC)
-// ----------------------------------------------------------------------------
-
-export interface InstalledPlugin {
-  /** Plugin name */
-  name: string;
-  /** Marketplace name */
-  marketplace: string;
-  /** Installation scope */
-  scope: PluginScope;
-  /** Is enabled */
-  isEnabled: boolean;
-  /** Project path (for project scope) */
-  projectPath?: string;
-  /** Installed at timestamp */
-  installedAt: string;
-  /** Plugin root directory */
-  pluginRoot?: string;
-  /** Installed skills */
-  skills: string[];
-  /** Installed commands */
-  commands: string[];
-}
-
-// ----------------------------------------------------------------------------
-// Result Types (for IPC)
-// ----------------------------------------------------------------------------
-
-export interface MarketplaceResult<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-}
-
-export interface PluginInstallResult {
-  success: boolean;
-  plugin?: InstalledPlugin;
-  installedSkills?: string[];
-  installedCommands?: string[];
-  error?: string;
-}
+export type {
+  MarketplaceInfo,
+  MarketplacePluginEntry,
+  InstalledPlugin,
+  MarketplaceResult,
+  PluginInstallResult,
+} from '../../../shared/types/marketplace';

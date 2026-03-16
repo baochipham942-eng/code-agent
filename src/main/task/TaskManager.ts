@@ -10,6 +10,8 @@ import type { ConfigService } from '../services/core/configService';
 import type { PlanningService } from '../planning';
 import { Semaphore } from './Semaphore';
 import { createLogger } from '../services/infra/logger';
+import { app, BrowserWindow } from 'electron';
+import { DAG_CHANNELS } from '../../shared/ipc/channels';
 
 const logger = createLogger('TaskManager');
 
@@ -630,6 +632,14 @@ export class TaskManager extends EventEmitter {
 
           // 2. Persist messages via sessionManager
           await this.persistEventToSession(sessionId, event);
+        },
+        getHomeDir: () => app.getPath('home'),
+        broadcastDAGEvent: (event) => {
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed() && win.webContents) {
+              try { win.webContents.send(DAG_CHANNELS.EVENT, event); } catch {}
+            }
+          }
         },
       });
       orchestrator.setSessionId(sessionId);

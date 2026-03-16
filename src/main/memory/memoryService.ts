@@ -15,7 +15,6 @@ import {
 } from './vectorStore';
 import type { Message, TodoItem, ToolResult } from '../../shared/types';
 import { MEMORY_TIMEOUTS } from '../../shared/constants';
-import { getMemoryDecayManager, type MemoryRecord as DecayMemoryRecord } from './memoryDecay';
 import { getErrorLearningService } from './errorLearning';
 
 // ----------------------------------------------------------------------------
@@ -916,28 +915,14 @@ export class MemoryService {
   }
 
   // --------------------------------------------------------------------------
-  // Memory Decay Integration
+  // Memory Decay (simplified — old memoryDecay module removed)
   // --------------------------------------------------------------------------
 
   /**
-   * 获取记忆的衰减后置信度
+   * 获取记忆的衰减后置信度（simplified: return stored confidence as-is）
    */
   getDecayedConfidence(memory: import('../services').MemoryRecord): number {
-    const decayManager = getMemoryDecayManager();
-
-    // 将 DB MemoryRecord 转换为 DecayMemoryRecord
-    const decayRecord: DecayMemoryRecord = {
-      id: memory.id,
-      content: memory.content,
-      createdAt: memory.createdAt,
-      lastAccessedAt: memory.lastAccessedAt ?? memory.updatedAt,
-      accessCount: memory.accessCount,
-      confidence: memory.confidence,
-      category: memory.category,
-      metadata: memory.metadata,
-    };
-
-    return decayManager.calculateDecayedConfidence(decayRecord);
+    return memory.confidence;
   }
 
   /**
@@ -956,28 +941,12 @@ export class MemoryService {
     minConfidence?: number;
   } = {}): Array<import('../services').MemoryRecord & { decayedConfidence: number }> {
     const memories = this.listMemories(options);
-    const decayManager = getMemoryDecayManager();
 
-    // 计算衰减后的置信度并过滤
-    const result = memories.map((memory) => {
-      const decayRecord: DecayMemoryRecord = {
-        id: memory.id,
-        content: memory.content,
-        createdAt: memory.createdAt,
-        lastAccessedAt: memory.lastAccessedAt ?? memory.updatedAt,
-        accessCount: memory.accessCount,
-        confidence: memory.confidence,
-        category: memory.category,
-        metadata: memory.metadata,
-      };
+    const result = memories.map((memory) => ({
+      ...memory,
+      decayedConfidence: memory.confidence,
+    }));
 
-      return {
-        ...memory,
-        decayedConfidence: decayManager.calculateDecayedConfidence(decayRecord),
-      };
-    });
-
-    // 如果指定了最小置信度，则过滤
     if (options.minConfidence !== undefined) {
       return result.filter((m) => m.decayedConfidence >= options.minConfidence!);
     }
@@ -990,22 +959,7 @@ export class MemoryService {
    */
   getMemoriesToCleanup(): import('../services').MemoryRecord[] {
     const memories = this.listMemories({ limit: 1000 });
-    const decayManager = getMemoryDecayManager();
-
-    return memories.filter((memory) => {
-      const decayRecord: DecayMemoryRecord = {
-        id: memory.id,
-        content: memory.content,
-        createdAt: memory.createdAt,
-        lastAccessedAt: memory.lastAccessedAt ?? memory.updatedAt,
-        accessCount: memory.accessCount,
-        confidence: memory.confidence,
-        category: memory.category,
-        metadata: memory.metadata,
-      };
-
-      return decayManager.shouldCleanup(decayRecord);
-    });
+    return memories.filter((memory) => memory.confidence < 0.05);
   }
 
   /**
@@ -1031,25 +985,11 @@ export class MemoryService {
     const memory = this.getMemoryById(id);
     if (!memory) return null;
 
-    const decayManager = getMemoryDecayManager();
-    const decayRecord: DecayMemoryRecord = {
-      id: memory.id,
-      content: memory.content,
-      createdAt: memory.createdAt,
-      lastAccessedAt: memory.lastAccessedAt ?? memory.updatedAt,
-      accessCount: memory.accessCount,
-      confidence: memory.confidence,
-      category: memory.category,
-      metadata: memory.metadata,
-    };
+    this.recordMemoryAccess(id);
 
-    // 计算强化后的记录
-    const reinforced = decayManager.recordAccess(decayRecord);
-
-    // 更新数据库中的记忆
-    return this.updateMemory(id, {
-      confidence: reinforced.confidence,
-    });
+    // Boost confidence slightly on access (capped at 1.0)
+    const boosted = Math.min(1.0, memory.confidence + 0.05);
+    return this.updateMemory(id, { confidence: boosted });
   }
 
   /**
@@ -1064,20 +1004,22 @@ export class MemoryService {
     byCategory: Record<string, { count: number; avgConfidence: number }>;
   } {
     const memories = this.listMemories({ limit: 1000 });
-    const decayManager = getMemoryDecayManager();
+    const total = memories.length;
+    const needsCleanup = memories.filter((m) => m.confidence < 0.05).length;
+    const avgConfidence = total > 0 ? memories.reduce((s, m) => s + m.confidence, 0) / total : 0;
+    const avgAccessCount = total > 0 ? memories.reduce((s, m) => s + m.accessCount, 0) / total : 0;
 
-    const decayRecords: DecayMemoryRecord[] = memories.map((memory) => ({
-      id: memory.id,
-      content: memory.content,
-      createdAt: memory.createdAt,
-      lastAccessedAt: memory.lastAccessedAt ?? memory.updatedAt,
-      accessCount: memory.accessCount,
-      confidence: memory.confidence,
-      category: memory.category,
-      metadata: memory.metadata,
-    }));
+    const byCategory: Record<string, { count: number; avgConfidence: number }> = {};
+    for (const m of memories) {
+      if (!byCategory[m.category]) byCategory[m.category] = { count: 0, avgConfidence: 0 };
+      byCategory[m.category].count++;
+      byCategory[m.category].avgConfidence += m.confidence;
+    }
+    for (const cat of Object.keys(byCategory)) {
+      byCategory[cat].avgConfidence /= byCategory[cat].count;
+    }
 
-    return decayManager.getStats(decayRecords);
+    return { total, valid: total - needsCleanup, needsCleanup, avgConfidence, avgAccessCount, byCategory };
   }
 
   // --------------------------------------------------------------------------

@@ -20,7 +20,11 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
 
   useEffect(() => {
     if (reasoningRef.current) {
-      setReasoningHeight(reasoningRef.current.scrollHeight);
+      requestAnimationFrame(() => {
+        if (reasoningRef.current) {
+          setReasoningHeight(reasoningRef.current.scrollHeight);
+        }
+      });
     }
   }, [showReasoning, message.reasoning]);
 

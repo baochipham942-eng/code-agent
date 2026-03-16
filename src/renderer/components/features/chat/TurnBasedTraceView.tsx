@@ -34,7 +34,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
       bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
     prevTurnCountRef.current = turnCount;
-  }, [projection.turns, projection.activeTurnIndex]);
+  }, [projection.turns.length, projection.activeTurnIndex]);
 
   // Scroll-to-top detection for loading older messages
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {

@@ -195,7 +195,7 @@ export const ChartBlock = memo(function ChartBlock({ spec: rawSpec }: { spec: st
           )}
         </button>
       </div>
-      <div className="p-4">
+      <div className="p-4 select-none">
         <ChartRenderer spec={parsedSpec} />
       </div>
     </div>

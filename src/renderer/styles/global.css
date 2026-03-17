@@ -179,6 +179,19 @@ div::-moz-selection {
   color: #FFFFFF !important;
 }
 
+/* Suppress selection highlight on chart SVGs */
+.recharts-wrapper,
+.recharts-wrapper svg,
+.recharts-wrapper svg * {
+  outline: none !important;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.recharts-wrapper *::selection {
+  background: transparent !important;
+}
+
 /* ============================================================================
    Focus Styles
    ============================================================================ */

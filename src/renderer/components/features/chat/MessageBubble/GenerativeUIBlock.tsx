@@ -16,6 +16,10 @@ body {
   font-size: 14px;
 }
 * { box-sizing: border-box; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(113, 113, 122, 0.4); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(113, 113, 122, 0.6); }
 </style>`;
 
 const HEIGHT_REPORTER_SCRIPT = `<script>

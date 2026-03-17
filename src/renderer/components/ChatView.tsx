@@ -265,10 +265,23 @@ export const ChatView: React.FC = () => {
         onDragLeave={handleGlobalDragLeave}
         onDrop={handleGlobalDrop}
       >
-      {/* Global drag overlay */}
+      {/* Global drag overlay — captures events directly to avoid iframe drag counter desync */}
       {isGlobalDragOver && (
-        <div className="absolute inset-0 flex items-center justify-center bg-zinc-900/80 backdrop-blur-sm z-50 border-2 border-dashed border-primary-500 rounded-xl pointer-events-none">
-          <div className="flex flex-col items-center gap-3 text-primary-400">
+        <div
+          className="absolute inset-0 flex items-center justify-center bg-zinc-900/80 backdrop-blur-sm z-50 border-2 border-dashed border-primary-500 rounded-xl"
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            // Only hide when leaving the overlay itself (not entering a child)
+            if (e.currentTarget === e.target) {
+              dragCounterRef.current = 0;
+              setIsGlobalDragOver(false);
+            }
+          }}
+          onDrop={handleGlobalDrop}
+        >
+          <div className="flex flex-col items-center gap-3 text-primary-400 pointer-events-none">
             <Image className="w-12 h-12" />
             <span className="text-lg font-medium">拖放文件或文件夹到这里</span>
           </div>

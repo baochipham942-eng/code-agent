@@ -2,14 +2,11 @@
 // Agents - Display active agents for current session
 // ============================================================================
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Users, Workflow, GitBranch } from 'lucide-react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useMultiAgentDetection, type CollaborationPattern } from '../../hooks/useMultiAgentDetection';
 import { useI18n } from '../../hooks/useI18n';
-import { EVALUATION_CHANNELS } from '@shared/ipc';
-import type { TestReportListItem } from '@shared/ipc';
-import ipcService from '../../services/ipcService';
 
 // Agent 角色颜色映射
 const AGENT_COLORS: Record<string, string> = {
@@ -25,27 +22,8 @@ const AGENT_COLORS: Record<string, string> = {
   default: 'text-zinc-400',
 };
 
-// Agent 角色图标
-const AGENT_ICONS: Record<string, string> = {
-  main: '🤖',
-  coder: '💻',
-  reviewer: '🔍',
-  explore: '🔎',
-  plan: '📋',
-  tester: '🧪',
-  debugger: '🐛',
-  documenter: '📝',
-  architect: '🏗️',
-};
-
 // 协作模式显示（排除 null）
 type NonNullPattern = Exclude<CollaborationPattern, null>;
-const PATTERN_INFO: Record<NonNullPattern, { icon: React.ReactNode; label: string; color: string }> = {
-  single: { icon: <Bot className="w-3 h-3" />, label: '单 Agent', color: 'text-zinc-400' },
-  sequential: { icon: <Workflow className="w-3 h-3" />, label: '顺序协作', color: 'text-blue-400' },
-  parallel: { icon: <Users className="w-3 h-3" />, label: '并行协作', color: 'text-emerald-400' },
-  hierarchical: { icon: <GitBranch className="w-3 h-3" />, label: '层级编排', color: 'text-purple-400' },
-};
 
 export const Agents: React.FC = () => {
   const { t } = useI18n();
@@ -58,13 +36,16 @@ export const Agents: React.FC = () => {
     return AGENT_COLORS[agent.toLowerCase()] || AGENT_COLORS.default;
   };
 
-  // 获取 agent 图标
-  const getAgentIcon = (agent: string) => {
-    return AGENT_ICONS[agent.toLowerCase()] || '🤖';
+  // 协作模式信息（使用 i18n）
+  const patternInfoMap: Record<NonNullPattern, { icon: React.ReactNode; label: string; color: string }> = {
+    single: { icon: <Bot className="w-3 h-3" />, label: t.taskPanel.patternSingle, color: 'text-zinc-400' },
+    sequential: { icon: <Workflow className="w-3 h-3" />, label: t.taskPanel.patternSequential, color: 'text-blue-400' },
+    parallel: { icon: <Users className="w-3 h-3" />, label: t.taskPanel.patternParallel, color: 'text-emerald-400' },
+    hierarchical: { icon: <GitBranch className="w-3 h-3" />, label: t.taskPanel.patternHierarchical, color: 'text-purple-400' },
   };
 
   // 获取协作模式信息
-  const patternInfo = pattern ? PATTERN_INFO[pattern] : PATTERN_INFO.single;
+  const patternInfo = pattern ? patternInfoMap[pattern] : patternInfoMap.single;
 
   return (
     <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl p-3 border border-white/[0.04]">
@@ -103,7 +84,7 @@ export const Agents: React.FC = () => {
                 key={agent}
                 className="flex items-center gap-2 py-1 px-2 bg-zinc-800 rounded"
               >
-                <span className="text-sm">{getAgentIcon(agent)}</span>
+                <Bot className={`w-3.5 h-3.5 ${getAgentColor(agent)} flex-shrink-0`} />
                 <span className={`text-sm ${getAgentColor(agent)} truncate`}>
                   {agent}
                 </span>
@@ -117,84 +98,9 @@ export const Agents: React.FC = () => {
           {/* 多 Agent 提示 */}
           {isMultiAgent && (
             <div className="text-xs text-zinc-500 pt-1 border-t border-white/[0.04]">
-              {agentCount} 个 Agent 协同工作中
+              {t.taskPanel.agentsWorking.replace('{count}', String(agentCount))}
             </div>
           )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-export const EvalAgentsView: React.FC = () => {
-  const [reports, setReports] = useState<TestReportListItem[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const loadReports = async () => {
-      setLoading(true);
-      try {
-        const result = await ipcService.invoke(EVALUATION_CHANNELS.LIST_TEST_REPORTS);
-        if (mounted) {
-          setReports((result ?? []).slice(0, 5));
-        }
-      } catch {
-        if (mounted) {
-          setReports([]);
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    loadReports();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  const getPassRateColor = (passRate: number): string => {
-    if (passRate >= 0.8) return 'text-emerald-400';
-    if (passRate >= 0.6) return 'text-amber-400';
-    return 'text-red-400';
-  };
-
-  return (
-    <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl p-3 border border-white/[0.04]">
-      <div className="flex items-center gap-2 mb-3">
-        <Bot className="w-4 h-4 text-blue-400 flex-shrink-0" />
-        <span className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Eval Agents</span>
-      </div>
-
-      {loading ? (
-        <div className="text-xs text-zinc-500">加载评测报告中...</div>
-      ) : reports.length === 0 ? (
-        <div className="text-xs text-zinc-500">暂无评测报告</div>
-      ) : (
-        <div className="space-y-2">
-          {reports.map((report) => {
-            const passRate = report.total > 0 ? report.passed / report.total : 0;
-            return (
-              <div
-                key={report.filePath}
-                className="flex items-center justify-between py-1.5 px-2 bg-zinc-800 rounded"
-              >
-                <div className="min-w-0">
-                  <div className="text-xs text-zinc-400 truncate">{report.fileName}</div>
-                  <div className="text-[11px] text-zinc-500">
-                    Score {Math.round(report.averageScore)} · {report.passed}/{report.total}
-                  </div>
-                </div>
-                <div className={`text-xs font-medium ${getPassRateColor(passRate)}`}>
-                  {Math.round(passRate * 100)}%
-                </div>
-              </div>
-            );
-          })}
         </div>
       )}
     </div>

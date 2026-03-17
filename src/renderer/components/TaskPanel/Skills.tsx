@@ -102,7 +102,7 @@ export const Skills: React.FC = () => {
                       onClick={() => unmountSkill(mount.skillName)}
                       disabled={loading}
                       className="p-0.5 text-zinc-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
-                      title="卸载"
+                      title={t.taskPanel.unmountSkill}
                     >
                       <Minus className="w-3 h-3" />
                     </button>
@@ -119,7 +119,7 @@ export const Skills: React.FC = () => {
                 className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-400 transition-colors"
               >
                 <Plus className="w-3 h-3" />
-                <span>添加 ({unmountedSkills.length})</span>
+                <span>{t.taskPanel.addSkills.replace('{count}', String(unmountedSkills.length))}</span>
               </button>
 
               {showAvailable && (
@@ -137,7 +137,7 @@ export const Skills: React.FC = () => {
                   ))}
                   {unmountedSkills.length > 8 && (
                     <div className="text-xs text-zinc-500 text-center py-1">
-                      +{unmountedSkills.length - 8} 更多
+                      +{unmountedSkills.length - 8} {t.taskPanel.more}
                     </div>
                   )}
                 </div>

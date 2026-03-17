@@ -470,10 +470,11 @@ export class MessageProcessor {
     };
     await this.contextAssembly.addAndPersistMessage(toolMessage);
 
-    // === 工具执行后自动推进任务状态 ===
-    this.runFinalizer.autoAdvanceTodos(toolCalls, toolResults);
-
+    // === 先解析模型输出的任务列表（模型显式标记优先） ===
     this.runFinalizer.tryParseTodosFromResponse(response);
+
+    // === 再根据工具执行情况自动推进（仅对修改类操作生效） ===
+    this.runFinalizer.autoAdvanceTodos(toolCalls, toolResults);
 
     // Flush hook message buffer at end of iteration
     this.contextAssembly.flushHookMessageBuffer();

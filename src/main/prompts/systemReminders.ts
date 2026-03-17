@@ -318,6 +318,7 @@ export interface TaskFeatures {
   isPlanningTask: boolean;
   isPPTTask: boolean;
   isDataTask: boolean;
+  isExcelTask: boolean;
   isDocumentTask: boolean;
   isImageTask: boolean;
   isVideoTask: boolean;
@@ -405,6 +406,13 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     '表格处理', '数据处理',
   ];
 
+  // Excel 专属关键词（isDataTask 的子集，用于触发 Excel 场景化提醒）
+  const excelKeywords = [
+    'excel', 'xlsx', 'xls', '公式', '函数', 'vba', 'vlookup',
+    '透视表', '单元格', '数据清洗', '去重', '汇总',
+    'sheet', '工作表', 'openpyxl', 'xlwings',
+  ];
+
   // 文档生成任务关键词
   const documentKeywords = [
     '文章', '报告', '文档', '撰写', '写一篇',
@@ -450,6 +458,8 @@ export function detectTaskFeatures(prompt: string, fileExtensions?: string[]): T
     isPlanningTask: planningKeywords.some((k) => normalizedPrompt.includes(k)),
     isPPTTask: hasPPTFile || pptKeywords.some((k) => normalizedPrompt.includes(k)),
     isDataTask: hasDataFile || dataKeywords.some((k) => normalizedPrompt.includes(k)),
+    isExcelTask: hasDataFile && allExtensions.some(ext => ['.xlsx', '.xls'].includes(ext)) ||
+                 excelKeywords.some((k) => normalizedPrompt.includes(k)),
     isDocumentTask: hasDocFile || documentKeywords.some((k) => normalizedPrompt.includes(k)),
     isImageTask: hasImageFile || imageKeywords.some((k) => normalizedPrompt.includes(k)),
     isVideoTask: hasVideoFile || videoKeywords.some((k) => normalizedPrompt.includes(k)),

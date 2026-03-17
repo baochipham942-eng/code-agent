@@ -1,5 +1,16 @@
 # 会话历史记录
 
+## 2026-03-17 (session 16): Generative UI — 图表 + HTML 小程序内联渲染
+
+- 复刻 Claude Code 2026-03-12 Generative UI 能力（对标 Anthropic + op7418/歸藏 实现）
+- Phase 1: ChartBlock — Recharts 6 种图表（bar/line/area/pie/radar/scatter），暗色主题，JSON 复制
+- Phase 2: GenerativeUIBlock — 沙箱 iframe（sandbox="allow-scripts"），自动注入暗色 CSS + 高度自适应（MutationObserver + postMessage），Source/Preview 切换
+- Phase 3: System Prompt 注入（generativeUI.ts）+ Artifact 类型定义 + MessageContent 路由（chart/generative_ui 代码块）
+- Bug 修复: Tooltip cursor 在暗色主题下显示浅灰色 → 改为 rgba(255,255,255,0.06)
+- 新增依赖: recharts
+- 关键文件: ChartBlock.tsx, GenerativeUIBlock.tsx, generativeUI.ts, MessageContent.tsx, message.ts, builder.ts
+- 净变化: 3 新文件 + 3 修改文件
+
 ## 2026-03-15 (session 15): 桌面活动视觉分析 + Light Memory IPC
 
 - 桌面活动视觉分析: 截图 PNG→JPG（~80% 空间节省）+ 后台智谱 GLM-4V-Plus 生成 analyzeText

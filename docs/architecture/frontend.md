@@ -11,6 +11,8 @@
 | **MessageBubble** | `MessageBubble.tsx` | 消息气泡 + 工具调用显示 |
 | **ToolCallDisplay** | (in MessageBubble) | 工具调用可折叠面板 |
 | **Sidebar** | `Sidebar.tsx` | 会话列表 + 搜索 |
+| **ChartBlock** | `ChartBlock.tsx` | Recharts 交互式图表渲染（bar/line/area/pie/radar/scatter） |
+| **GenerativeUIBlock** | `GenerativeUIBlock.tsx` | 沙箱 iframe HTML 小程序渲染 |
 
 ## useAgent Hook 事件处理
 

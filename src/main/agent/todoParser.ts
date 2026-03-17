@@ -95,7 +95,7 @@ function parseCheckboxTodos(content: string): TodoItem[] | null {
       continue;
     } else {
       // 非 checkbox 行：如果已收集到足够项则停止，否则重置
-      if (consecutiveCount >= 3) {
+      if (consecutiveCount >= 2) {
         break;
       }
       consecutiveCount = 0;
@@ -104,7 +104,7 @@ function parseCheckboxTodos(content: string): TodoItem[] | null {
   }
 
   // 至少 3 项才认为是任务列表
-  if (items.length >= 3) {
+  if (items.length >= 2) {
     return items;
   }
   return null;

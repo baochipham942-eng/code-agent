@@ -230,6 +230,46 @@ export const en: Translations = {
     viewAllConnectors: 'View all connectors',
     working: 'Working...',
     tools: 'tools',
+    // TaskMonitor
+    monitorTitle: 'Task Monitor',
+    workIn: 'Working in {folderName}',
+    sectionTodos: 'Todos',
+    todosEmpty: 'No todos yet',
+    sectionArtifacts: 'Artifacts',
+    artifactsEmpty: 'No artifacts yet',
+    sectionSkillsMcp: 'Skills & MCP',
+    skillsMcpEmpty: 'No skills used yet',
+    // Progress (legacy)
+    noProgress: 'No progress yet',
+    showMore: 'Show {count} more',
+    phaseThinking: 'Thinking',
+    phaseGenerating: 'Generating',
+    phaseToolPending: 'Preparing',
+    phaseToolRunning: 'Running',
+    phaseCompleted: 'Completed',
+    phaseFailed: 'Failed',
+    phaseRead: 'Reading code',
+    phaseEdit: 'Editing code',
+    phaseExecute: 'Running verification',
+    phaseSearch: 'Searching',
+    phaseMcp: 'Tool calls',
+    phaseOps: '{count} ops',
+    // WorkingFolder
+    inputDirPlaceholder: 'Enter workspace path',
+    confirm: 'OK',
+    // Connectors
+    status: 'Status',
+    toolCount: 'Tools',
+    more: 'more',
+    // Agents
+    patternSingle: 'Single Agent',
+    patternSequential: 'Sequential',
+    patternParallel: 'Parallel',
+    patternHierarchical: 'Hierarchical',
+    agentsWorking: '{count} agents collaborating',
+    // Skills
+    unmountSkill: 'Unmount',
+    addSkills: 'Add ({count})',
   },
 
   // Memory Tab

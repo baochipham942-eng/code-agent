@@ -212,6 +212,46 @@ export const zh = {
     viewAllConnectors: '查看所有连接器',
     working: '工作中...',
     tools: '工具',
+    // TaskMonitor
+    monitorTitle: '任务监控',
+    workIn: '工作于 {folderName}',
+    sectionTodos: '待办',
+    todosEmpty: '暂无待办',
+    sectionArtifacts: '产物',
+    artifactsEmpty: '没有产物',
+    sectionSkillsMcp: '技能 & MCP',
+    skillsMcpEmpty: '没有技能',
+    // Progress (legacy)
+    noProgress: '暂无进度',
+    showMore: '展开 {count} 项',
+    phaseThinking: '分析中',
+    phaseGenerating: '生成中',
+    phaseToolPending: '准备执行',
+    phaseToolRunning: '执行中',
+    phaseCompleted: '已完成',
+    phaseFailed: '失败',
+    phaseRead: '阅读代码',
+    phaseEdit: '修改代码',
+    phaseExecute: '执行验证',
+    phaseSearch: '搜索信息',
+    phaseMcp: '调用工具',
+    phaseOps: '{count} 次操作',
+    // WorkingFolder
+    inputDirPlaceholder: '输入工作目录路径',
+    confirm: '确定',
+    // Connectors
+    status: '状态',
+    toolCount: '工具数',
+    more: '更多',
+    // Agents
+    patternSingle: '单 Agent',
+    patternSequential: '顺序协作',
+    patternParallel: '并行协作',
+    patternHierarchical: '层级编排',
+    agentsWorking: '{count} 个 Agent 协同工作中',
+    // Skills
+    unmountSkill: '卸载',
+    addSkills: '添加 ({count})',
   },
 
   // Memory Tab

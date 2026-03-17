@@ -156,6 +156,7 @@ import { WebFetchUnifiedTool } from './network/WebFetchUnifiedTool';
 import { ReadDocumentTool } from './network/ReadDocumentTool';
 import { BrowserTool } from './vision/BrowserTool';
 import { ComputerTool } from './vision/ComputerTool';
+import { ExcelAutomateTool } from './excel';
 
 // ----------------------------------------------------------------------------
 // Tool Interface (re-exported from ./types to avoid circular deps)
@@ -218,6 +219,10 @@ const ALIAS_DEFAULT_PARAMS: Record<string, Record<string, unknown>> = {
   read_pdf:  { action: 'read', format: 'pdf' },
   read_docx: { action: 'read', format: 'docx' },
   read_xlsx: { action: 'read', format: 'xlsx' },
+
+  // ExcelAutomate unified tool
+  excel_generate:   { action: 'generate' },
+  xlwings_execute:  { action: 'automate' },
 };
 
 const TOOL_ALIASES: Record<string, string> = {
@@ -291,6 +296,9 @@ const TOOL_ALIASES: Record<string, string> = {
 
   screenshot: 'Computer',
   computer_use: 'Computer',
+
+  excel_generate:  'ExcelAutomate',
+  xlwings_execute: 'ExcelAutomate',
 };
 
 // ----------------------------------------------------------------------------
@@ -467,6 +475,7 @@ export class ToolRegistry {
     this.register(ReadDocumentTool);
     this.register(BrowserTool);
     this.register(ComputerTool);
+    this.register(ExcelAutomateTool);
 
     // Tool Search (核心工具，始终可用)
     this.register(toolSearchTool);

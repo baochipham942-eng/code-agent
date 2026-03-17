@@ -3,12 +3,12 @@
 // ============================================================================
 
 import React, { useState, useMemo } from 'react';
-import { FileText, FolderOpen, ChevronDown, ChevronRight, Plus, Copy } from 'lucide-react';
+import { FileText, FolderOpen, ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import { useAppStore } from '../../stores/appStore';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useI18n } from '../../hooks/useI18n';
 import { IPC_CHANNELS } from '@shared/ipc';
-import { isWebMode, copyPathToClipboard } from '../../utils/platform';
+import { isWebMode } from '../../utils/platform';
 import ipcService from '../../services/ipcService';
 
 interface FileInfo {
@@ -140,7 +140,7 @@ export const WorkingFolder: React.FC = () => {
             </div>
           ) : (
             isWebMode() ? (
-              <WebDirInput onSubmit={(p) => handleSelectDirectory(p)} />
+              <WebDirInput onSubmit={(p) => handleSelectDirectory(p)} placeholder={t.taskPanel.inputDirPlaceholder} confirmLabel={t.taskPanel.confirm} />
             ) : (
               <button
                 onClick={() => handleSelectDirectory()}
@@ -175,7 +175,7 @@ export const WorkingFolder: React.FC = () => {
 };
 
 /** Web mode: inline directory path input */
-function WebDirInput({ onSubmit }: { onSubmit: (path: string) => void }) {
+function WebDirInput({ onSubmit, placeholder, confirmLabel }: { onSubmit: (path: string) => void; placeholder: string; confirmLabel: string }) {
   const [value, setValue] = React.useState('');
   return (
     <div className="flex gap-2 mb-2">
@@ -183,14 +183,14 @@ function WebDirInput({ onSubmit }: { onSubmit: (path: string) => void }) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && onSubmit(value)}
-        placeholder="输入工作目录路径"
+        placeholder={placeholder}
         className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-200 outline-none"
       />
       <button
         onClick={() => onSubmit(value)}
         className="px-2 py-1.5 rounded-md bg-zinc-700 hover:bg-zinc-600 text-xs text-zinc-200"
       >
-        确定
+        {confirmLabel}
       </button>
     </div>
   );

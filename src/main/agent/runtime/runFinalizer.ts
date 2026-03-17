@@ -272,20 +272,24 @@ export class RunFinalizer {
     const todos = getSessionTodos(this.ctx.sessionId);
     if (todos.length === 0) return;
 
-    // 只有当有成功的工具执行时才推进
     const hasSuccessfulTool = toolResults.some(r => r.success);
     if (!hasSuccessfulTool) return;
 
-    // 检查是否有 in_progress 的任务
     const hasInProgress = todos.some(t => t.status === 'in_progress');
     if (!hasInProgress) return;
 
-    // 计算成功工具调用的累计数量（简单策略：每轮成功的工具调用推进一次）
+    // 只在有修改类操作时才推进任务（纯读取不算完成任务）
+    const hasModification = toolCalls.some(tc => {
+      const name = tc.name.toLowerCase();
+      return name === 'edit' || name === 'write' || name === 'bash' || name === 'notebookedit';
+    });
+    if (!hasModification) return;
+
     const { updated, todos: advanced } = completeCurrentAndAdvance(todos);
     if (updated) {
       setSessionTodos(this.ctx.sessionId, advanced);
       this.ctx.onEvent({ type: 'todo_update', data: advanced });
-      logger.debug(`[AgentLoop] 自动推进任务状态`);
+      logger.debug(`[AgentLoop] 自动推进任务状态（检测到修改类操作）`);
     }
   }
 

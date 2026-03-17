@@ -353,6 +353,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     source: 'builtin',
   },
   {
+    name: 'ExcelAutomate',
+    shortDescription: 'Excel 自动化（读取/生成/实时操作/列出工作表/读取范围）',
+    tags: ['document', 'shell'],
+    aliases: ['excel', 'xlsx', 'spreadsheet', 'xlwings', 'excel_generate', 'read_xlsx', 'xlwings_execute'],
+    source: 'builtin',
+  },
+  {
     name: 'excel_generate',
     shortDescription: '生成 Excel 表格',
     tags: ['document'],

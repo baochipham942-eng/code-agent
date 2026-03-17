@@ -95,12 +95,23 @@ export const Connectors: React.FC = () => {
       try {
         const status = await getMcpStatus();
         if (status && status.connectedServers) {
-          // Transform connectedServers array to McpServer format
-          setServers(status.connectedServers.map((name: string) => ({
-            name,
-            status: 'connected' as const,
-            toolCount: undefined,
-          })));
+          setServers(status.connectedServers.map((server: any) => {
+            // Handle both string[] and object[] formats
+            if (typeof server === 'string') {
+              // Try to get tool count from serverDetails if available
+              const details = status.serverDetails?.[server];
+              return {
+                name: server,
+                status: 'connected' as const,
+                toolCount: details?.toolCount ?? details?.tools?.length,
+              };
+            }
+            return {
+              name: server.name,
+              status: server.status || 'connected',
+              toolCount: server.toolCount ?? server.tools?.length,
+            };
+          }));
         }
       } catch (error) {
         // Silently fail - MCP might not be available
@@ -196,7 +207,7 @@ export const Connectors: React.FC = () => {
                   {isServerExpanded && (
                     <div className="px-2 py-2 bg-zinc-900 text-xs space-y-1">
                       <div className="flex justify-between text-zinc-400">
-                        <span>Status:</span>
+                        <span>{t.taskPanel.status}:</span>
                         <span className={
                           server.status === 'connected' ? 'text-green-400' :
                           server.status === 'error' ? 'text-red-400' :
@@ -207,7 +218,7 @@ export const Connectors: React.FC = () => {
                       </div>
                       {server.toolCount !== undefined && (
                         <div className="flex justify-between text-zinc-400">
-                          <span>Tools:</span>
+                          <span>{t.taskPanel.toolCount}:</span>
                           <span>{server.toolCount}</span>
                         </div>
                       )}
@@ -268,15 +279,20 @@ export const Connectors: React.FC = () => {
                       key={tool.name}
                       className="flex items-center gap-2 py-1 px-2 rounded bg-zinc-800 text-xs"
                     >
+                      {tool.serverName && (
+                        <span className="text-zinc-600 flex-shrink-0">{tool.serverName}</span>
+                      )}
                       <span className="flex-1 text-zinc-400 truncate">
-                        {tool.serverName ? `${tool.serverName}` : tool.name.replace('mcp__', '').replace('mcp_', '')}
+                        {tool.serverName
+                          ? tool.name.replace(`mcp__${tool.serverName}__`, '').replace(`mcp_${tool.serverName}_`, '')
+                          : tool.name.replace('mcp__', '').replace('mcp_', '')}
                       </span>
                       <span className="text-zinc-600">{tool.count}x</span>
                     </div>
                   ))}
                   {mcpTools.length > 5 && (
                     <div className="text-[10px] text-zinc-600 px-2">
-                      +{mcpTools.length - 5} 更多
+                      +{mcpTools.length - 5} {t.taskPanel.more}
                     </div>
                   )}
                 </div>

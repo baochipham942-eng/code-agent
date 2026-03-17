@@ -7,22 +7,34 @@
 // 3. toolElapsed - 工具执行耗时 + 超时警告
 // ============================================================================
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useAppStore } from '../../stores/appStore';
-import { Check, ChevronDown, ChevronRight, ListChecks, Loader2, Clock, AlertTriangle } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, ListChecks, Loader2, Clock, AlertTriangle, Eye, Pencil, Terminal, Search, Plug } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
 import type { ToolProgressData, ToolTimeoutData, AgentEvent } from '@shared/types';
 import ipcService from '../../services/ipcService';
 
-// Phase 到中文的映射
-const PHASE_LABELS: Record<string, string> = {
-  thinking: '分析中',
-  generating: '生成中',
-  tool_pending: '准备执行',
-  tool_running: '执行中',
-  completed: '已完成',
-  failed: '失败',
+// 工具分类
+type PhaseType = 'read' | 'edit' | 'execute' | 'search' | 'mcp';
+
+function classifyTool(name: string): PhaseType | null {
+  const n = name.toLowerCase();
+  if (n.startsWith('mcp__') || n.startsWith('mcp_')) return 'mcp';
+  if (['read', 'glob', 'grep'].some(k => n.includes(k))) return 'read';
+  if (['edit', 'write'].some(k => n.includes(k))) return 'edit';
+  if (n === 'bash' || n.includes('notebook')) return 'execute';
+  if (['search', 'fetch'].some(k => n.includes(k))) return 'search';
+  return null;
+}
+
+// 阶段图标映射
+const PHASE_ICONS: Record<PhaseType, React.FC<{ className?: string }>> = {
+  read: Eye,
+  edit: Pencil,
+  execute: Terminal,
+  search: Search,
+  mcp: Plug,
 };
 
 /**
@@ -37,9 +49,19 @@ function formatElapsed(ms: number): string {
 }
 
 export const Progress: React.FC = () => {
-  const { todos, currentSessionId } = useSessionStore();
+  const { todos, currentSessionId, messages } = useSessionStore();
   const sessionTaskProgress = useAppStore((state) => state.sessionTaskProgress);
   const { t } = useI18n();
+
+  const phaseLabels: Record<string, string> = {
+    thinking: t.taskPanel.phaseThinking,
+    generating: t.taskPanel.phaseGenerating,
+    tool_pending: t.taskPanel.phaseToolPending,
+    tool_running: t.taskPanel.phaseToolRunning,
+    completed: t.taskPanel.phaseCompleted,
+    failed: t.taskPanel.phaseFailed,
+  };
+
   const [isExpanded, setIsExpanded] = useState(true);
   const [toolProgress, setToolProgress] = useState<ToolProgressData | null>(null);
   const [toolTimeout, setToolTimeout] = useState<ToolTimeoutData | null>(null);
@@ -105,6 +127,46 @@ export const Progress: React.FC = () => {
   // 是否有工具执行耗时要显示
   const showToolElapsed = toolProgress && toolProgress.elapsedMs >= 5000;
 
+  // 从工具调用历史推导工作阶段（当无显式 todos 时）
+  const toolPhases = useMemo(() => {
+    if (totalCount > 0) return []; // 有显式 todos 时不需要
+
+    const phases: Array<{ type: PhaseType; count: number; status: 'completed' | 'in_progress' }> = [];
+
+    // 只扫描最近 30 条消息
+    for (const msg of messages.slice(-30)) {
+      if (!msg.toolCalls) continue;
+      for (const tc of msg.toolCalls) {
+        const phase = classifyTool(tc.name);
+        if (!phase) continue;
+
+        const last = phases[phases.length - 1];
+        if (last && last.type === phase) {
+          last.count++;
+        } else {
+          // 新阶段开始，之前的阶段标记为已完成
+          if (phases.length > 0) {
+            phases[phases.length - 1].status = 'completed';
+          }
+          phases.push({ type: phase, count: 1, status: 'in_progress' });
+        }
+      }
+    }
+
+    return phases;
+  }, [messages, totalCount]);
+
+  const phaseLabel = (type: PhaseType): string => {
+    const map: Record<PhaseType, string> = {
+      read: t.taskPanel.phaseRead,
+      edit: t.taskPanel.phaseEdit,
+      execute: t.taskPanel.phaseExecute,
+      search: t.taskPanel.phaseSearch,
+      mcp: t.taskPanel.phaseMcp,
+    };
+    return map[type];
+  };
+
   return (
     <div className="bg-white/[0.02] backdrop-blur-sm rounded-xl p-3 border border-white/[0.04]">
       {/* Header - always visible */}
@@ -144,13 +206,13 @@ export const Progress: React.FC = () => {
               ) : todo.status === 'in_progress' ? (
                 <div className="w-5 h-5 rounded-full bg-primary-500 flex items-center justify-center flex-shrink-0 animate-pulse">
                   <span className="text-xs font-medium text-white">
-                    {todos.findIndex(t => t === todo) + 1}
+                    {todos.findIndex(item => item === todo) + 1}
                   </span>
                 </div>
               ) : (
                 <div className="w-5 h-5 rounded-full bg-zinc-600 flex items-center justify-center flex-shrink-0">
                   <span className="text-xs font-medium text-zinc-400">
-                    {todos.findIndex(t => t === todo) + 1}
+                    {todos.findIndex(item => item === todo) + 1}
                   </span>
                 </div>
               )}
@@ -176,7 +238,7 @@ export const Progress: React.FC = () => {
               onClick={() => setShowAll(true)}
               className="text-xs text-zinc-500 hover:text-zinc-400 py-1"
             >
-              Show {hiddenCount} more
+              {t.taskPanel.showMore.replace('{count}', String(hiddenCount))}
             </button>
           )}
         </div>
@@ -189,7 +251,7 @@ export const Progress: React.FC = () => {
             <Loader2 className="w-4 h-4 text-primary-500 animate-spin flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <span className="text-sm text-zinc-200">
-                {taskProgress.step || PHASE_LABELS[taskProgress.phase] || taskProgress.phase}
+                {taskProgress.step || phaseLabels[taskProgress.phase] || taskProgress.phase}
               </span>
               {taskProgress.tool && (
                 <span className="text-xs text-zinc-500 ml-2">
@@ -259,6 +321,40 @@ export const Progress: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* 无显式 todos 时：显示工具阶段进度 */}
+      {isExpanded && totalCount === 0 && !showRealtimeProgress && !showToolElapsed && (
+        toolPhases.length > 0 ? (
+          <div className="space-y-1 mt-3">
+            {toolPhases.map((phase, index) => {
+              const PhaseIcon = PHASE_ICONS[phase.type];
+              return (
+                <div key={`${phase.type}-${index}`} className="flex items-center gap-3 py-1.5">
+                  {phase.status === 'completed' ? (
+                    <div className="w-5 h-5 rounded-full bg-primary-500 flex items-center justify-center flex-shrink-0">
+                      <Check className="w-3 h-3 text-white" />
+                    </div>
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-primary-500/20 flex items-center justify-center flex-shrink-0 animate-pulse">
+                      <PhaseIcon className="w-3 h-3 text-primary-400" />
+                    </div>
+                  )}
+                  <span className={`text-sm flex-1 ${
+                    phase.status === 'completed' ? 'text-zinc-500' : 'text-zinc-200'
+                  }`}>
+                    {phaseLabel(phase.type)}
+                  </span>
+                  <span className="text-xs text-zinc-600">
+                    {t.taskPanel.phaseOps.replace('{count}', String(phase.count))}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-xs text-zinc-600 mt-3 py-2">{t.taskPanel.noProgress}</div>
+        )
       )}
     </div>
   );

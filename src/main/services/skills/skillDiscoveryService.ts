@@ -6,13 +6,13 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import type { ParsedSkill, SkillSource } from '../../../shared/types/agentSkill';
-import { parseSkillMd, parseSkillMetadataOnly, hasSkillMd } from './skillParser';
+import { parseSkillMetadataOnly, hasSkillMd } from './skillParser';
 import { bridgeCloudSkill } from './skillBridge';
 import { getBuiltinSkills } from './builtinSkills';
 import { getCloudConfigService } from '../cloud';
 import { createLogger } from '../infra/logger';
 import { getToolSearchService } from '../../tools/search';
-import { getSkillsDir, resolvePathWithFallback } from '../../config';
+import { getSkillsDir } from '../../config';
 
 const logger = createLogger('SkillDiscoveryService');
 
@@ -55,24 +55,20 @@ class SkillDiscoveryService {
     // 1. 加载内置 Skills（最低优先级）
     await this.loadBuiltinSkills();
 
-    // 2. 加载用户级 Skills（支持新旧路径）
+    // 2. 加载用户级 Skills（两个目录都扫描，.code-agent 优先级更高）
+    //    先扫 ~/.claude/skills/（通用），再扫 ~/.code-agent/skills/（专属，同名覆盖）
     const skillsDirs = getSkillsDir(workingDirectory);
-    const userSkillsResolved = await resolvePathWithFallback(
-      skillsDirs.user.new,
-      skillsDirs.user.legacy
-    );
-    await this.scanDirectory(userSkillsResolved.resolved, 'user');
+    await this.scanDirectory(skillsDirs.user.legacy, 'user');
+    await this.scanDirectory(skillsDirs.user.new, 'user');
 
     // 3. 加载远程库 Skills
     await this.loadFromLibraries();
 
-    // 4. 加载项目级 Skills（最高优先级，支持新旧路径）
+    // 4. 加载项目级 Skills（最高优先级，两个目录都扫描）
+    //    先扫 .claude/skills/（通用），再扫 .code-agent/skills/（专属，同名覆盖）
     if (skillsDirs.project) {
-      const projectSkillsResolved = await resolvePathWithFallback(
-        skillsDirs.project.new,
-        skillsDirs.project.legacy
-      );
-      await this.scanDirectory(projectSkillsResolved.resolved, 'project');
+      await this.scanDirectory(skillsDirs.project.legacy, 'project');
+      await this.scanDirectory(skillsDirs.project.new, 'project');
     }
 
     this.initialized = true;

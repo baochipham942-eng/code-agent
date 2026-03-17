@@ -88,6 +88,24 @@ read it before answering. Investigate first, then respond.
 3. Verify with tests if available
 4. Run lint/typecheck if available
 
+## Recon-Before-Action (for complex data tasks)
+When the task involves unknown data structures (files, databases, APIs, spreadsheets),
+spend the FIRST tool call on a global overview — not on the task itself:
+- Files/Dirs: list structure, entry points, key configs
+- Spreadsheets: list all sheets + dimensions + headers in ONE call
+- Databases: schema overview (tables, columns, types) before querying
+- APIs: read docs/schema before calling endpoints
+This single recon step often saves 3-5 exploratory iterations later.
+
+## One-Shot Script (for deterministic multi-step tasks)
+When the task is a deterministic transformation (input → process → output) with known logic,
+write a COMPLETE script and execute it in ONE tool call — do NOT do it interactively step by step.
+- Batch file ops: one shell script, not N individual mv/cp commands
+- Data processing: one Python/SQL script, not cell-by-cell tool calls
+- Multi-sheet Excel: one openpyxl script that reads all + processes + writes + saves
+- API batch calls: one script with loop/pagination, not per-page tool calls
+Combine with Recon: Recon (1 call) → Script (1 call) → Verify (1 call) = 3 iterations total.
+
 Editing a file without reading it first causes incorrect patches — always Read before Edit.
 Committing without being asked disrupts the user's workflow — never commit unless explicitly requested.
 Follow existing code style to maintain consistency across the codebase.

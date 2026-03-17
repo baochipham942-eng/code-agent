@@ -129,4 +129,33 @@ export const CONTENT_GENERATION_REMINDERS: ReminderDefinition[] = [
     exclusiveGroup: 'task-type-selection',
     category: 'tool',
   },
+  {
+    id: 'EXCEL_DATA_WORKFLOW',
+    priority: 1,
+    content: `<system-reminder>
+**Excel 数据处理必须遵循的流程**：
+
+**第一步：全局概览（必须，用一次工具调用完成）**
+- 用 Python openpyxl 一次性获取：所有 sheet 名称、各 sheet 维度（行列数）、表头
+- 示例：\`for s in wb.sheetnames: ws=wb[s]; print(f"{s}: {ws.max_row}x{ws.max_column}, headers={[c.value for c in ws[1]]}")\`
+- 禁止硬编码列名/sheet 名，必须从概览中获取
+
+**第二步：处理规范（优先用公式，其次用安全的 Python）**
+- **优先 Excel 公式**：SUM/SUMIF/INDEX/MATCH/VLOOKUP 等原生公式比 Python 循环更可靠、更快
+- **必须用 Python 时**：cell.value 类型不可预测（可能是 str/None/int/float），算术前必须转换：
+  \`val = float(cell.value) if cell.value is not None else 0\`
+- 去重：用 subset 指定主键列
+- 聚合：用 groupby + agg 明确分组键和聚合函数
+- **批量操作**：一次写入所有目标单元格，然后一次 save，不要循环中反复 save
+
+**第三步：输出验证**
+- 检查 sheet 数量、列名、数据行数是否符合预期
+- 确认无全空列、无数据丢失
+- 输出关键数据摘要（行数、汇总值）供用户确认
+</system-reminder>`,
+    tokens: 300,
+    shouldInclude: (ctx) => ctx.taskFeatures.isExcelTask ? 1.0 : 0,
+    exclusiveGroup: 'task-type-selection',
+    category: 'tool',
+  },
 ];

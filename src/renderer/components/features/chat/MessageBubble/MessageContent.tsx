@@ -20,6 +20,8 @@ import type { Element } from 'hast';
 import { useAppStore } from '../../../../stores/appStore';
 import { wrapFilePathsInBackticks } from './filePathProcessor';
 import { isWebMode, copyPathToClipboard } from '../../../../utils/platform';
+import { ChartBlock } from './ChartBlock';
+import { GenerativeUIBlock } from './GenerativeUIBlock';
 
 // Language display names and colors
 const languageConfig: Record<string, { color: string; name: string }> = {
@@ -68,6 +70,8 @@ const languageConfig: Record<string, { color: string; name: string }> = {
   graphql: { color: 'text-pink-400', name: 'GraphQL' },
   gql: { color: 'text-pink-400', name: 'GraphQL' },
   mermaid: { color: 'text-pink-300', name: 'Mermaid' },
+  chart: { color: 'text-emerald-400', name: 'Chart' },
+  generative_ui: { color: 'text-violet-400', name: 'Generative UI' },
 };
 
 // Initialize mermaid once
@@ -478,6 +482,12 @@ export const MessageContent: React.FC<MessageContentProps> = memo(function Messa
           const language = className.replace('language-', '');
           if (language === 'mermaid') {
             return <MermaidDiagram code={codeContent} />;
+          }
+          if (language === 'chart') {
+            return <ChartBlock spec={codeContent} />;
+          }
+          if (language === 'generative_ui') {
+            return <GenerativeUIBlock code={codeContent} />;
           }
           return <CodeBlock language={language} code={codeContent} />;
         }

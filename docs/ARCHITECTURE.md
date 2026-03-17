@@ -70,6 +70,17 @@
 
 **对标 StepFun（阶跃AI）全局记忆**：每次截图后由视觉模型生成"用户正在做什么"的自然语言描述（`analyzeText`），类似 StepFun 的 `analyze_text` 字段。UI 详情面板优先展示 AI 分析文本，搜索范围纳入分析结果。
 
+### v0.16.53+ Generative UI（2026-03-17）
+
+| 模块 | 位置 | 描述 |
+|------|------|------|
+| **ChartBlock** | `src/renderer/.../MessageBubble/ChartBlock.tsx` | Recharts 6 种图表渲染（bar/line/area/pie/radar/scatter），暗色主题 |
+| **GenerativeUIBlock** | `src/renderer/.../MessageBubble/GenerativeUIBlock.tsx` | 沙箱 iframe HTML 小程序渲染（sandbox="allow-scripts"） |
+| **Generative UI Prompt** | `src/main/prompts/generativeUI.ts` | System Prompt 注入，教 AI 何时使用 chart vs generative_ui |
+| **Artifact 类型** | `src/shared/types/message.ts` | 版本化可视化产物追踪（chart/generative_ui） |
+
+**渲染路由**：MessageContent 的 markdown code block handler 检测 `chart` / `generative_ui` 语言标签，路由到对应 React 组件（与已有 `mermaid` 路由同一模式）。
+
 ### v0.16.52+ 架构清理与评测修复（2026-03-09 ~ 03-12）
 
 | 改动 | 描述 |

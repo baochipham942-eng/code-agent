@@ -8,6 +8,7 @@
 import { IDENTITY_PROMPT } from './identity';
 import { getSoul } from './soulLoader';
 import { TOOLS_PROMPT } from './base';
+import { GENERATIVE_UI_PROMPT } from './generativeUI';
 // 规则已内联到 identity.ts，无需静态导入
 // 动态提醒系统可按需加载特定规则
 import { getToolDescriptions } from './tools';
@@ -72,7 +73,7 @@ export function buildPrompt(): string {
     throw new Error('Base prompt not found');
   }
 
-  return [getSoul(), basePrompt, ...toolDescriptions, ...rules].join('\n\n');
+  return [getSoul(), basePrompt, ...toolDescriptions, ...rules, GENERATIVE_UI_PROMPT].join('\n\n');
 }
 
 export const SYSTEM_PROMPT: string = buildPrompt();

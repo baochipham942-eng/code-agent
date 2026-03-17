@@ -101,6 +101,7 @@
     "pptxgenjs": "3.12.0",
     "qrcode": "^1.5.4",
     "react-virtuoso": "^4.18.1",
+    "recharts": "^3.8.0",
     "reflect-metadata": "^0.2.2",
     "sharp": "^0.34.5",
     "sqlite-vec": "^0.1.7-alpha.2",

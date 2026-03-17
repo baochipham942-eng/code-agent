@@ -60,6 +60,16 @@ export interface CompactionBlock {
   compactedTokenCount: number;    // 被压缩的 token 数量
 }
 
+// Generative UI Artifact（可视化产物）
+export interface Artifact {
+  id: string;           // 唯一标识，如 'artifact_1'
+  type: 'chart' | 'generative_ui';
+  title?: string;       // 可视化标题
+  content: string;      // chart JSON spec 或 HTML 源码
+  version: number;      // 版本号，用于追踪修改
+  parentId?: string;    // 如果是更新，指向原始 artifact
+}
+
 export interface Message {
   id: string;
   role: MessageRole;
@@ -90,4 +100,6 @@ export interface Message {
   // Token usage from API response
   inputTokens?: number;
   outputTokens?: number;
+  // Generative UI Artifacts（生成式 UI 产物追踪）
+  artifacts?: Artifact[];
 }

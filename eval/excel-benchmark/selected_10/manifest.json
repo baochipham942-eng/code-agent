@@ -1,0 +1,152 @@
+[
+  {
+    "case": 1,
+    "id": 59196,
+    "type": "Cell-Level Manipulation",
+    "instruction": "I need a formula to determine which column contains the highest value in a row, and then return the heading of that column. My Excel sheet example is attached.",
+    "answer_position": "H3:H5",
+    "files": [
+      "2_59196_answer.xlsx",
+      "3_59196_answer.xlsx",
+      "3_59196_input.xlsx",
+      "1_59196_answer.xlsx",
+      "2_59196_input.xlsx",
+      "1_59196_input.xlsx"
+    ]
+  },
+  {
+    "case": 2,
+    "id": "CF_28766",
+    "type": "Sheet-Level Manipulation",
+    "instruction": "I need help creating a formula in Excel that will allow me to identify and highlight with yellow only the second and subsequent cells containing duplicate names within a single day across multiple rows and columns. Multiple entries can occur for each person on the same day, and I want to avoid counting the first occurrence as a duplicate. I've attempted to use the COUNTIF function and VLOOKUP, and even tried combining the individuals' dates with their names in a separate column, using conditional formatting to highlight duplicates. Unfortunately, it's also highlighting the first occurrence, which I want to exclude. I'm seeking a solution that will help me correct these duplicates by highlighting only the second instance of a name on the same day, without affecting the first entry. I have provided my workbook for reference.",
+    "answer_position": "'Sheet1'!C3:G14",
+    "files": [
+      "1_CF_28766_answer.xlsx",
+      "3_CF_28766_input.xlsx",
+      "3_CF_28766_answer.xlsx",
+      "2_CF_28766_input.xlsx",
+      "1_CF_28766_input.xlsx",
+      "2_CF_28766_answer.xlsx"
+    ]
+  },
+  {
+    "case": 3,
+    "id": "382-29",
+    "type": "Sheet-Level Manipulation",
+    "instruction": "I have an Excel file with four sheets; three contain data and the fourth is a Totals sheet. I need a macro that can sum the quantities from a specific cell on each of the data sheets and then display the total on the Totals sheet. The process should be done for cells B2 through B26. In the attached workbook, I've manually calculated the total for cell B2 as an example, but my actual workbook will have around 100 sheets, and therefore I'm looking for an automated solution to perform this calculation instead of doing it by hand.",
+    "answer_position": "'Totals'!B2:B26",
+    "files": [
+      "3_382-29_answer.xlsx",
+      "3_382-29_input.xlsx",
+      "2_382-29_input.xlsx",
+      "1_382-29_answer.xlsx",
+      "1_382-29_input.xlsx",
+      "2_382-29_answer.xlsx"
+    ]
+  },
+  {
+    "case": 4,
+    "id": "66-1",
+    "type": "Sheet-Level Manipulation",
+    "instruction": "In my stock list, products have their dimensions mentioned at the end of their description in the note. I want to calculate the square meter (m2) area for each product, using these width and height dimensions. Since there are multiple products, I am looking to automate this process using a macro rather than a formula. Can someone assist me in creating a macro that can read the dimensions from the description and calculate the m2 for each product?",
+    "answer_position": "'Sheet1'!E2:E11",
+    "files": [
+      "2_66-1_input.xlsx",
+      "1_66-1_answer.xlsx",
+      "3_66-1_input.xlsx",
+      "1_66-1_input.xlsx",
+      "2_66-1_answer.xlsx",
+      "3_66-1_answer.xlsx"
+    ]
+  },
+  {
+    "case": 5,
+    "id": "353-50",
+    "type": "Sheet-Level Manipulation",
+    "instruction": "How can I set up an Excel macro to accomplish the following tasks? First, it should insert a new column that corresponds to the previous month relative to the current date when the macro is run. For instance, if the macro is executed in November, it should add a column for October. Additionally, the macro should prevent the insertion of the same month column if run multiple times within the same month; it should only insert a new column when the next month is reached. For example, it should only insert a column for November when the macro is run in December. Second, the macro should also copy and paste both the data and the formula from the preceding month into the newly inserted column. I've attached my spreadsheet as 'Query.xlsm' for reference.",
+    "answer_position": "'Sheet1'!AL23:AO34",
+    "files": [
+      "2_353-50_answer.xlsx",
+      "1_353-50_answer.xlsx",
+      "1_353-50_input.xlsx",
+      "2_353-50_input.xlsx",
+      "3_353-50_input.xlsx",
+      "3_353-50_answer.xlsx"
+    ]
+  },
+  {
+    "case": 6,
+    "id": "91-3",
+    "type": "Sheet-Level Manipulation",
+    "instruction": "How can I transpose multiple sheets in an Excel file where each contains multiple words in column B, and create a final report sheet that lists sheet names in column A, generates headers B:H based on the content found in the sheets' column B, and calculates values for columns I:K using existing formulas? In this process, if there are duplicate items within the same sheet, they should be merged and summed for amounts in columns C or D, but the merging should happen only within individual sheets, not across all sheets. Additionally, the final sheet needs to be cleared every time the macro is run to accommodate updated data and newly added sheets that maintain the same structure as the existing ones.",
+    "answer_position": "'FINAL'!B1:K5",
+    "files": [
+      "3_91-3_answer.xlsx",
+      "2_91-3_answer.xlsx",
+      "1_91-3_input.xlsx",
+      "1_91-3_answer.xlsx",
+      "3_91-3_input.xlsx",
+      "2_91-3_input.xlsx"
+    ]
+  },
+  {
+    "case": 7,
+    "id": 46167,
+    "type": "Cell-Level Manipulation",
+    "instruction": "How can I create a formula in Excel that will calculate the sum of multiple cells subject to a specific criterion? Specifically, I want to sum the quantities (QTY) in a column for the rows where the 'PRODUCT ID' matches a given value (e.g., 111111). Please output the answer in D2. For example, the expected result of this sum for 'PRODUCT ID' 111111 should be 270, deriving from the individual QTY values of 50, 60, 70, and 90.        Sum of QTYs where PRODUCT ID=111111.",
+    "answer_position": "D2",
+    "files": [
+      "2_46167_input.xlsx",
+      "1_46167_answer.xlsx",
+      "2_46167_answer.xlsx",
+      "3_46167_input.xlsx",
+      "3_46167_answer.xlsx",
+      "1_46167_input.xlsx"
+    ]
+  },
+  {
+    "case": 8,
+    "id": 58994,
+    "type": "Cell-Level Manipulation",
+    "instruction": "I have a column with values formatted as 'What:Who-Size-SKU' (e.g., 'FG:BJ-155-00310'), and I need to extract the 'Size' component to convert it into a corresponding gallon size (e.g., '155' to '15.5 gals'). What formula can I use to filter and display this information? I've tried using VLOOKUP without consistent success. Additionally, can you explain the syntax of the formula '=LOOKUP(2,1/(ISNUMBER(SEARCH(\"-\"&$A$8:$A$18&\"-\",E8))),$B$8:$B$18)' suggested by another user, specifically, if '-search' is an additional formula within it? Finally, how would I adjust the formula if the data I need to reference is on a different worksheet?\n \nMy current formula is:\nVLOOKUP(E8,'C:/Users/jesse/Desktop/2020 Monthly Sales Info.xlsx'!Table3[#数据],2,FALSE)",
+    "answer_position": "'Sheet1'!F8",
+    "files": [
+      "3_58994_input.xlsx",
+      "1_58994_answer.xlsx",
+      "2_58994_input.xlsx",
+      "2_58994_answer.xlsx",
+      "3_58994_answer.xlsx",
+      "1_58994_input.xlsx"
+    ]
+  },
+  {
+    "case": 9,
+    "id": 55427,
+    "type": "Cell-Level Manipulation",
+    "instruction": "I am attempting to consolidate data about schools from multiple spreadsheets using INDEX and MATCH functions. Specifically, I'm using the formula =INDEX('URN lookup'!$D$2:$D$1461,MATCH(L2,'URN lookup'!$K$2:$K$1461,0)) to look up a DFES number which is located in Column B of the attached 'School data.xlsx', by matching values from column L. However, this formula is not yielding the correct results, and I'm unsure why it is failing. Furthermore, I want to merge additional data that includes a Unique Reference Number (URN) for each school, along with another 15 columns of data. I need help figuring out the issue with my current formula to be able to proceed with merging the rest of the data.",
+    "answer_position": "'Compiled and located schools da'!B2:B1461",
+    "files": [
+      "3_55427_input.xlsx",
+      "1_55427_answer.xlsx",
+      "2_55427_input.xlsx",
+      "2_55427_answer.xlsx",
+      "3_55427_answer.xlsx",
+      "1_55427_input.xlsx"
+    ]
+  },
+  {
+    "case": 10,
+    "id": 44389,
+    "type": "Cell-Level Manipulation",
+    "instruction": "How can I create a formula in Excel that returns the column header of the smallest value greater than zero in each row, while also providing an indication such as 'multiple results' if there's more than one value that matches the lowest value above zero? If there are multiple results, separate them by commas.",
+    "answer_position": "P2:P7",
+    "files": [
+      "2_44389_input.xlsx",
+      "3_44389_input.xlsx",
+      "3_44389_answer.xlsx",
+      "2_44389_answer.xlsx",
+      "1_44389_answer.xlsx",
+      "1_44389_input.xlsx"
+    ]
+  }
+]

@@ -21,8 +21,8 @@ use native_desktop::{
     NativeDesktopState,
 };
 
-const SERVER_URL: &str = "http://localhost:8080";
-const HEALTH_URL: &str = "http://localhost:8080/api/health";
+const SERVER_URL: &str = "http://localhost:8180";
+const HEALTH_URL: &str = "http://localhost:8180/api/health";
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(30);
 const HEALTH_INTERVAL: Duration = Duration::from_millis(500);
 

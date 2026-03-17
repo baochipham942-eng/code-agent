@@ -21,6 +21,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
+import { execSync } from 'child_process';
 import express from 'express';
 import type { Request, Response } from 'express';
 import { setupAllIpcHandlers, type IpcDependencies } from '../main/ipc';
@@ -411,6 +412,31 @@ function createApp(): express.Express {
 }
 
 // ============================================================================
+// Port cleanup
+// ============================================================================
+
+/** Kill any process holding the target port (zombie node processes from previous runs) */
+async function killPortHolder(port: number): Promise<void> {
+  try {
+    const pids = execSync(`lsof -ti:${port}`, { encoding: 'utf-8' }).trim();
+    if (!pids) return;
+
+    // Don't kill ourselves
+    const myPid = process.pid.toString();
+    const targetPids = pids.split('\n').filter((p) => p !== myPid);
+    if (targetPids.length === 0) return;
+
+    console.log(`  Killing zombie process(es) on port ${port}: PID ${targetPids.join(', ')}`);
+    execSync(`kill -9 ${targetPids.join(' ')}`, { encoding: 'utf-8' });
+
+    // Brief wait for OS to release the port
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  } catch {
+    // lsof returns exit code 1 when no match — port is free
+  }
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -433,9 +459,22 @@ async function main(): Promise<void> {
 
   // 3. 启动 HTTP 服务
   console.log('[3/3] Starting HTTP server...');
+
+  // 启动前清理：kill 占用目标端口的僵尸进程
+  await killPortHolder(port);
+
   const app = createApp();
 
   const server = http.createServer(app);
+
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n  ❌ Port ${port} is still in use after cleanup attempt.`);
+      console.error(`     Run: lsof -ti:${port} | xargs kill -9`);
+      process.exit(1);
+    }
+    throw err;
+  });
 
   server.listen(port, host, () => {
     console.log();

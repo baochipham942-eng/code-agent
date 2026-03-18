@@ -110,11 +110,11 @@ prompt 要强调：
 使用以下脚本合成：
 
 ```bash
-npx -y bun /Users/linchen/.agents/skills/baoyu-slide-deck/scripts/merge-to-pptx.ts <slide-deck-dir>
-npx -y bun /Users/linchen/.agents/skills/baoyu-slide-deck/scripts/merge-to-pdf.ts <slide-deck-dir>
+node .claude/skills/frontend-slides/scripts/merge-to-pptx.mjs <slide-deck-dir>
+node .claude/skills/frontend-slides/scripts/merge-to-pdf.mjs <slide-deck-dir>
 ```
 
-如果 `bun` 不可用，明确告诉用户缺少运行依赖，并保留已生成的 `outline.md`、`prompts/` 和图片，不要丢工作成果。
+如果 `node` 或运行依赖不可用，明确告诉用户缺少运行依赖，并保留已生成的 `outline.md`、`prompts/` 和图片，不要丢工作成果。
 
 ### 6. 交付
 

@@ -118,33 +118,35 @@ task(subagent_type="code-review", prompt="维度3: ...")
 <system-reminder>
 **PPT 生成任务**：检测到演示文稿生成需求。
 
-**输出格式**：PPTX 文件（可用 PowerPoint/WPS/Keynote 打开编辑）
+**默认路径**：优先使用 \`frontend-slides\` skill（或 \`/ppt\` 兼容入口），不要默认调用 legacy \`ppt_generate\`
+
+**输出格式**：优先产出 slide deck 目录 + PPTX/PDF 文件（可用 PowerPoint/WPS/Keynote 打开编辑）
 
 **工作流程**：
 1. 如有本地文档素材 → 使用 ReadDocument/Read 读取
-2. 如需图表 → 使用 mermaid_export 生成 PNG 图片
-3. 如需配图 → 使用 image_generate 生成
-4. 最后调用 ppt_generate 生成 PPTX，通过 images 参数嵌入图片
+2. 调用 \`skill({ "command": "frontend-slides", "args": "..." })\` 或处理 \`/ppt\`
+3. 先生成 \`outline.md\` 与逐页 prompts
+4. 如需图表/配图 → 生成逐页图片
+5. 合成为 PPTX / PDF
 
-**ppt_generate 调用示例**：
+**frontend-slides 调用示例**：
 \`\`\`
-ppt_generate({
-  topic: "标题",
-  content: "# 封面\\n## 副标题\\n# 第一章\\n- 要点1\\n- 要点2",
-  theme: "dracula",  // 或 tech/professional/corporate
-  images: [{ slide_index: 1, image_path: "/path/chart.png", position: "center" }]
+skill({
+  command: "frontend-slides",
+  args: "Code Agent 产品介绍，10 页，商务汇报风格"
 })
 \`\`\`
 
-**主题选择**：
-- 技术分享 → dracula（暗色科技风）
-- 产品介绍 → professional（商务蓝白）
-- 企业汇报 → corporate（企业正式）
-- 其他 → tech（深蓝科技风）
+**风格选择**：
+- 技术分享 → \`blueprint\` / \`editorial-infographic\`
+- 产品介绍 → \`bold-editorial\`
+- 企业汇报 → \`corporate\`
+- 高管简报 → \`minimal\`
 
 **禁止**：
-- ❌ 不要用 Write 生成 slides.md（用户要的是 PPTX）
-- ❌ 不要把 Mermaid 代码直接放到 content 里（必须先用 mermaid_export 转 PNG）
+- ❌ 不要默认调用 \`ppt_generate\`
+- ❌ 不要跳过 \`outline.md\` / \`prompts/\` 直接粗糙出图
+- ❌ 不要把 Mermaid 代码直接塞给图片生成模型
 </system-reminder>
 `,
 

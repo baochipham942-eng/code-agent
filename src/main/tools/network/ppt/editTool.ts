@@ -171,9 +171,9 @@ export const pptEditTool: Tool = {
         }
 
         case 'insert_slide': {
-          // For insert, we inform the user to use ppt_generate instead
+          // For insert, prefer frontend-slides instead of the legacy ppt_generate workflow
           // Direct XML insertion is complex and error-prone
-          resultMessage = '插入新幻灯片建议使用 ppt_generate 重新生成。当前支持在已有幻灯片上 replace_title / replace_content。';
+          resultMessage = '插入新幻灯片建议使用 frontend-slides（或 /ppt）重新生成。当前支持在已有幻灯片上 replace_title / replace_content。';
           break;
         }
 

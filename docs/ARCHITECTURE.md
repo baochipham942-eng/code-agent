@@ -70,6 +70,20 @@
 
 **对标 StepFun（阶跃AI）全局记忆**：每次截图后由视觉模型生成"用户正在做什么"的自然语言描述（`analyzeText`），类似 StepFun 的 `analyze_text` 字段。UI 详情面板优先展示 AI 分析文本，搜索范围纳入分析结果。
 
+### v0.16.53+ 富文档结构化编辑（2026-03-19）
+
+| 模块 | 位置 | 描述 |
+|------|------|------|
+| **Excel 原子编辑** | `src/main/tools/excel/excelEdit.ts` | 14 种操作（set_cell/range/formula, insert/delete rows/columns, style, sheet 管理） |
+| **Word 原子编辑** | `src/main/tools/document/docxEdit.ts` | 7 种操作（replace_text, replace/insert/delete/append paragraph, heading, text style） |
+| **SnapshotManager** | `src/main/tools/document/snapshotManager.ts` | 统一文档快照层（创建/恢复/清理，最多 20 个/文件） |
+| **DocEdit 统一入口** | `src/main/tools/document/docEditTool.ts` | 自动识别格式（.xlsx/.pptx/.docx）路由到对应引擎 |
+| **PPT 编辑加固** | `src/main/tools/network/ppt/editTool.ts` | +2 新操作（reorder_slides, update_notes），接入 SnapshotManager |
+
+**设计原则**：原子操作替代全量重写，~80% token 节省。编辑前自动快照到 `.doc-snapshots/`，失败自动回滚。
+
+**对标悟空 RealDoc**：按行号/关键词/范围定位 → 原子修改 → 自动版本快照。Excel 用 ExcelJS cell 级操作，PPT/Word 用 JSZip 操作 Office Open XML。
+
 ### v0.16.53+ Generative UI（2026-03-17）
 
 | 模块 | 位置 | 描述 |
@@ -266,6 +280,8 @@
 | Gen8 | 自我进化 | + strategy_optimize, tool_create |
 
 > **Phase 2 工具合并**: 31 个延迟加载工具合并为 9 个统一工具（Process, MCPUnified, TaskManager, Plan, PlanMode, WebFetch, ReadDocument, Browser, Computer），使用 action 参数分发。旧名通过 TOOL_ALIASES 保持兼容。详见 [ADR-006](./decisions/006-deferred-tools-consolidation.md)。
+>
+> **Phase 3 文档编辑统一**: DocEdit 统一入口 + ExcelAutomate(edit) + ppt_edit 加固。富文档从全量生成升级为原子级增量编辑（Excel 14 操作 / PPT 8 操作 / Word 7 操作），SnapshotManager 提供快照回滚。
 
 ### 目录结构
 

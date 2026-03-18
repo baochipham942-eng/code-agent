@@ -157,6 +157,16 @@ export const askUserQuestionTool: Tool = {
     logger.info('Sending questions to UI', { requestId: request.id });
     mainWindow.webContents.send(IPC_CHANNELS.USER_QUESTION_ASK, request);
 
+    // Desktop notification when app is not focused
+    try {
+      const { notificationService } = await import('../../services/infra/notificationService');
+      notificationService.notifyNeedsInput({
+        sessionId: _context.sessionId || '',
+        title: '等待回答',
+        body: questions[0]?.question || '请回答问题',
+      });
+    } catch { /* ignore */ }
+
     // Wait for response with timeout
     const TIMEOUT_MS = INTERACTION_TIMEOUTS.USER_QUESTION;
 

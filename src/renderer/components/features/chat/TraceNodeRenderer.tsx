@@ -3,14 +3,15 @@
 // Reuses existing MessageContent, ToolCallDisplay, UserMessage components
 // ============================================================================
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import type { TraceNode } from '@shared/types/trace';
 import type { ToolCall } from '@shared/types';
 import { MessageContent } from './MessageBubble/MessageContent';
 import { ToolCallDisplay } from './MessageBubble/ToolCallDisplay/index';
 import { AttachmentDisplay } from './MessageBubble/AttachmentPreview';
 import { ExpandableContent } from './ExpandableContent';
-import { Archive, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react';
+import { Archive, ChevronDown, ChevronRight, AlertTriangle, Copy, Check, FileText } from 'lucide-react';
+import { UI } from '@shared/constants';
 
 interface TraceNodeRendererProps {
   node: TraceNode;
@@ -57,11 +58,30 @@ const UserNode: React.FC<{ content: string; attachments?: import('@shared/types'
   </div>
 );
 
+// ---- Strip markdown to plain text ----
+function stripMarkdown(md: string): string {
+  return md
+    .replace(/^#{1,6}\s+/gm, '')           // headings
+    .replace(/\*\*(.+?)\*\*/g, '$1')       // bold
+    .replace(/\*(.+?)\*/g, '$1')           // italic
+    .replace(/`{3}[\s\S]*?`{3}/g, (m) =>   // code blocks → keep content
+      m.replace(/^`{3}.*\n?/, '').replace(/`{3}$/, ''))
+    .replace(/`(.+?)`/g, '$1')             // inline code
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // links
+    .replace(/^[-*+]\s+/gm, '• ')          // unordered lists
+    .replace(/^\d+\.\s+/gm, '')            // ordered lists
+    .replace(/^>\s+/gm, '')                // blockquotes
+    .replace(/\n{3,}/g, '\n\n')            // collapse blank lines
+    .trim();
+}
+
 // ---- Assistant Text Node ----
 const AssistantTextNode: React.FC<{ node: TraceNode }> = ({ node }) => {
   const [showReasoning, setShowReasoning] = useState(false);
   const reasoningRef = useRef<HTMLDivElement>(null);
   const [reasoningHeight, setReasoningHeight] = useState<number | null>(null);
+  const [copied, setCopied] = useState<'markdown' | 'plain' | null>(null);
+  const [hovered, setHovered] = useState(false);
 
   const reasoningContent = node.thinking || node.reasoning;
 
@@ -71,8 +91,40 @@ const AssistantTextNode: React.FC<{ node: TraceNode }> = ({ node }) => {
     }
   }, [showReasoning, reasoningContent]);
 
+  const handleCopy = useCallback(async (mode: 'markdown' | 'plain') => {
+    if (!node.content) return;
+    const text = mode === 'markdown' ? node.content : stripMarkdown(node.content);
+    await navigator.clipboard.writeText(text);
+    setCopied(mode);
+    setTimeout(() => setCopied(null), UI.COPY_FEEDBACK_DURATION);
+  }, [node.content]);
+
   return (
-    <div>
+    <div
+      className="relative group/msg"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* Copy action bar - top right on hover */}
+      {node.content && hovered && (
+        <div className="absolute -top-1 right-0 flex items-center gap-0.5 bg-zinc-800 border border-zinc-700 rounded-md px-0.5 py-0.5 z-10 shadow-lg">
+          <button
+            onClick={() => handleCopy('markdown')}
+            className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+            title="复制 Markdown"
+          >
+            {copied === 'markdown' ? <Check className="w-3 h-3 text-green-400" /> : <FileText className="w-3 h-3" />}
+          </button>
+          <button
+            onClick={() => handleCopy('plain')}
+            className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+            title="复制纯文本"
+          >
+            {copied === 'plain' ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+          </button>
+        </div>
+      )}
+
       {/* Thinking/Reasoning fold */}
       {reasoningContent?.trim() && (
         <div className="mb-2">

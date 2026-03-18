@@ -5,13 +5,17 @@
 
 import React, { useRef, useEffect } from 'react';
 import type { TraceProjection } from '@shared/types/trace';
+import type { TaskPlan } from '@shared/types';
 import { TurnCard } from './TurnCard';
+import { PermissionCard } from '../../PermissionDialog/PermissionCard';
+import { InlinePlanCard } from './InlinePlanCard';
 
 interface TurnBasedTraceViewProps {
   projection: TraceProjection;
   hasOlderMessages?: boolean;
   isLoadingOlder?: boolean;
   onLoadOlder?: () => void;
+  plan?: TaskPlan | null;
 }
 
 export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
@@ -19,6 +23,7 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   hasOlderMessages,
   isLoadingOlder,
   onLoadOlder,
+  plan,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -72,6 +77,12 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
           />
         );
       })}
+
+      {/* Inline Plan Card - shows plan progress in message flow */}
+      {plan && <InlinePlanCard plan={plan} />}
+
+      {/* Inline Permission Card - appears in message flow instead of floating */}
+      <PermissionCard />
 
       {/* Scroll anchor */}
       <div ref={bottomRef} />

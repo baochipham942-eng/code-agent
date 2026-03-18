@@ -721,6 +721,16 @@ export class TaskManager extends EventEmitter {
         this.turnStateBySession.delete(sessionId);
       }
 
+      // Send desktop notification on permission request (needs user input)
+      if (event.type === 'permission_request' && event.data) {
+        const req = event.data as { tool?: string; command?: string };
+        notificationService.notifyNeedsInput({
+          sessionId,
+          title: '需要授权',
+          body: req.tool ? `${req.tool}: ${req.command || '请求执行权限'}` : '请求执行权限',
+        });
+      }
+
       // Send desktop notification on task complete
       if (event.type === 'task_complete' && event.data) {
         const session = await sessionManager.getSession(sessionId);

@@ -2,7 +2,7 @@
 // Context Health IPC Handlers - 上下文健康度 IPC 处理
 // ============================================================================
 
-import { ipcMain } from 'electron';
+import { ipcMain } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getContextHealthService } from '../context/contextHealthService';
 import { getAutoCompressor } from '../context/autoCompressor';

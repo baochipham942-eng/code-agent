@@ -3,7 +3,7 @@
 // 支持云端优先的渐进加载策略
 // ============================================================================
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow } from '../../platform';
 import { getDatabase, type StoredSession } from '../core';
 import { getToolCache } from './toolCache';
 import { getAuthService } from '../auth/authService';

@@ -3,7 +3,7 @@
 // 使用 Groq Whisper API 进行语音转文字
 // ============================================================================
 
-import { ipcMain, IpcMain } from 'electron';
+import { ipcMain, IpcMain } from '../platform';
 import Groq from 'groq-sdk';
 import { createLogger } from '../services/infra/logger';
 import { getConfigService } from '../services/core/configService';

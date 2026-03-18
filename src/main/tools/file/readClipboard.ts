@@ -2,7 +2,7 @@
 // Read Clipboard Tool - 读取系统剪贴板内容
 // ============================================================================
 
-import { clipboard, nativeImage } from 'electron';
+import { clipboard, nativeImage } from '../../platform';
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 
 export const readClipboardTool: Tool = {

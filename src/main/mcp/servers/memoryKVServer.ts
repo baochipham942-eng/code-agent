@@ -5,7 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { app } from 'electron';
+import { app } from '../../platform';
 import { InProcessMCPServer } from '../inProcessServer';
 import { createLogger } from '../../services/infra/logger';
 import type { ToolResult } from '../../../shared/types';

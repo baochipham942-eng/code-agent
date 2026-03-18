@@ -2,7 +2,7 @@
 // DAG Event Bridge - Forwards DAG events to renderer process
 // ============================================================================
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow } from '../platform';
 import { DAG_CHANNELS } from '../../shared/ipc/channels';
 import type {
   DAGVisualizationEvent,

@@ -2,7 +2,7 @@
 // Evaluation IPC Handlers - 评测系统 IPC 处理器
 // ============================================================================
 
-import { app, ipcMain } from 'electron';
+import { app, ipcMain } from '../platform';
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -282,7 +282,7 @@ export function registerEvaluationHandlers(): void {
     try {
       const { loadAllTestSuites } = await import('../testing/testCaseLoader');
       const path = await import('path');
-      const { app } = await import('electron');
+      const { app } = await import('../platform');
 
       // Try multiple possible test case directories
       const possibleDirs = [

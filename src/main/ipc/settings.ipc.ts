@@ -2,8 +2,8 @@
 // Settings IPC Handlers - settings:* 通道
 // ============================================================================
 
-import type { IpcMain } from 'electron';
-import { app } from 'electron';
+import type { IpcMain } from '../platform';
+import { app } from '../platform';
 import { IPC_CHANNELS, IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { AppSettings } from '../../shared/types';
 import type { ConfigService } from '../services';
@@ -232,7 +232,7 @@ export function registerSettingsHandlers(
   // ========== Window Domain Handler (TASK-04) ==========
   ipcMain.handle(IPC_DOMAINS.WINDOW, async (_, request: IPCRequest): Promise<IPCResponse> => {
     const { action } = request;
-    const { BrowserWindow } = await import('electron');
+    const { BrowserWindow } = await import('../platform');
     const mainWindow = BrowserWindow.getFocusedWindow();
 
     try {
@@ -269,13 +269,13 @@ export function registerSettingsHandlers(
 
   /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'minimize' */
   ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, async () => {
-    const { BrowserWindow } = await import('electron');
+    const { BrowserWindow } = await import('../platform');
     BrowserWindow.getFocusedWindow()?.minimize();
   });
 
   /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'maximize' */
   ipcMain.handle(IPC_CHANNELS.WINDOW_MAXIMIZE, async () => {
-    const { BrowserWindow } = await import('electron');
+    const { BrowserWindow } = await import('../platform');
     const mainWindow = BrowserWindow.getFocusedWindow();
     if (mainWindow?.isMaximized()) mainWindow.unmaximize();
     else mainWindow?.maximize();
@@ -283,7 +283,7 @@ export function registerSettingsHandlers(
 
   /** @deprecated Use IPC_DOMAINS.WINDOW with action: 'close' */
   ipcMain.handle(IPC_CHANNELS.WINDOW_CLOSE, async () => {
-    const { BrowserWindow } = await import('electron');
+    const { BrowserWindow } = await import('../platform');
     BrowserWindow.getFocusedWindow()?.close();
   });
 

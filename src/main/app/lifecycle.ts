@@ -2,7 +2,7 @@
 // Lifecycle - App 生命周期管理
 // ============================================================================
 
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow } from '../platform';
 import { getDatabase, getLangfuseService } from '../services';
 import { getMemoryService } from '../memory/memoryService';
 import { getMCPClient } from '../mcp/mcpClient';

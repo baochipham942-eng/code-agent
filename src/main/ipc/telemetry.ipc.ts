@@ -2,7 +2,7 @@
 // Telemetry IPC Handlers - 遥测系统 IPC 处理器
 // ============================================================================
 
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow } from '../platform';
 import { TELEMETRY_CHANNELS } from '../../shared/ipc/channels';
 import { getTelemetryStorage } from '../telemetry/telemetryStorage';
 // extractStructuredReplay loaded dynamically — excluded from production bundle

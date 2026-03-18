@@ -2,7 +2,7 @@
 // Agent Routing IPC Handlers - agent-routing:* 通道
 // ============================================================================
 
-import type { IpcMain } from 'electron';
+import type { IpcMain } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type { AgentRoutingConfig } from '../../shared/types/agentRouting';
 import { getRoutingService } from '../routing';

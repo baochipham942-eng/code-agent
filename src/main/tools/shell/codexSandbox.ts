@@ -13,7 +13,7 @@ import { access, constants as fsConstants, readFile } from 'fs/promises';
 import { readFileSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
-import { app } from 'electron';
+import { app } from '../../platform';
 import { getMCPClient } from '../../mcp/mcpClient';
 import { CODEX_SANDBOX } from '../../../shared/constants';
 import { createLogger } from '../../services/infra/logger';

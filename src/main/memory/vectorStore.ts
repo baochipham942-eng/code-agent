@@ -6,7 +6,7 @@
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { app } from 'electron';
+import { app } from '../platform';
 import { getEmbeddingService, type EmbeddingService } from './embeddingService';
 import {
   DEFAULT_EMBEDDING_DIMENSION,

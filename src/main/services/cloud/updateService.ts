@@ -2,7 +2,7 @@
 // UpdateService - Client-side update check and download management
 // ============================================================================
 
-import { app, shell } from 'electron';
+import { app, shell } from '../../platform';
 import https from 'https';
 import http from 'http';
 import fs from 'fs';

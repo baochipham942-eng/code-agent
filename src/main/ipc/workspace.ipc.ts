@@ -2,8 +2,8 @@
 // Workspace IPC Handlers - workspace:* 通道
 // ============================================================================
 
-import type { IpcMain, BrowserWindow } from 'electron';
-import { dialog } from 'electron';
+import type { IpcMain, BrowserWindow } from '../platform';
+import { dialog } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { FileInfo } from '../../shared/types';
 import type { AgentApplicationService } from '../../shared/types/appService';
@@ -62,7 +62,7 @@ async function handleOpenPath(
   payload: { filePath: string },
   getAppService: () => AgentApplicationService | null
 ): Promise<string> {
-  const { shell } = await import('electron');
+  const { shell } = await import('../platform');
   const pathModule = await import('path');
 
   let resolvedPath = payload.filePath;
@@ -82,7 +82,7 @@ async function handleShowItemInFolder(
   payload: { filePath: string },
   getAppService: () => AgentApplicationService | null
 ): Promise<void> {
-  const { shell } = await import('electron');
+  const { shell } = await import('../platform');
   const pathModule = await import('path');
 
   let resolvedPath = payload.filePath;
@@ -101,7 +101,7 @@ async function handleShowItemInFolder(
 async function handleDownloadFile(
   payload: { url: string; filename?: string }
 ): Promise<{ filePath: string }> {
-  const { app } = await import('electron');
+  const { app } = await import('../platform');
   const fs = await import('fs/promises');
   const pathModule = await import('path');
 

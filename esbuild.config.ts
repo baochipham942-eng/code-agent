@@ -40,6 +40,9 @@ const NATIVE_EXTERNALS = [
   'onnxruntime-node',
 ];
 
+// Electron alias 仅作为安全网：src/main/ 已全部迁移到 platform 模块，
+// 但第三方库可能仍 require('electron')（如 electron-store）。
+// TODO: 验证无第三方库需要后删除此 alias 和 electronMock.ts
 const ELECTRON_ALIAS = { electron: './src/web/electronMock.ts' };
 
 // ---------------------------------------------------------------------------

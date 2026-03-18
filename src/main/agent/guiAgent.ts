@@ -2,7 +2,7 @@
 // GUI Agent - 基于 Claude Computer Use 的屏幕控制能力
 // ============================================================================
 
-import { screen, desktopCapturer, clipboard } from 'electron';
+import { screen, desktopCapturer, clipboard } from '../platform';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import type {
@@ -89,7 +89,7 @@ export class GUIAgent {
       throw new Error('No screen source available');
     }
 
-    const thumbnail = primarySource.thumbnail;
+    const thumbnail = primarySource.thumbnail as { toDataURL(): string };
     const dataUrl = thumbnail.toDataURL();
     const base64Data = dataUrl.replace(/^data:image\/png;base64,/, '');
 

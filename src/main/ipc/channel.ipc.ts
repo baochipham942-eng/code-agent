@@ -3,7 +3,7 @@
 // 处理多通道接入相关的 IPC 通信
 // ============================================================================
 
-import type { IpcMain, BrowserWindow } from 'electron';
+import type { IpcMain, BrowserWindow } from '../platform';
 import { CHANNEL_CHANNELS } from '../../shared/ipc/channels';
 import { getChannelManager } from '../channels';
 import type {

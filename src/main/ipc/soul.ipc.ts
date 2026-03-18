@@ -2,7 +2,7 @@
 // Soul IPC Handlers
 // ============================================================================
 
-import { ipcMain } from 'electron';
+import { ipcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { loadSoul, getSoul } from '../prompts/soulLoader';
 import { getUserConfigDir, getProjectConfigDir } from '../config/configPaths';

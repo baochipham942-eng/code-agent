@@ -2,7 +2,7 @@
 // Window Management - 窗口创建和管理
 // ============================================================================
 
-import { BrowserWindow, shell } from 'electron';
+import { BrowserWindow, shell } from '../platform';
 import path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { initContextHealthService } from '../context/contextHealthService';
@@ -87,7 +87,7 @@ export async function createWindow(): Promise<void> {
   // Check for development mode: NODE_ENV or ELECTRON_IS_DEV or running from source
   const isDev = process.env.NODE_ENV === 'development' ||
     process.env.ELECTRON_IS_DEV === '1' ||
-    !require('electron').app.isPackaged;
+    !require('../platform').app.isPackaged;
 
   if (isDev) {
     logger.info('Loading development URL...');

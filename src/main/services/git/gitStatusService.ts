@@ -4,7 +4,7 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { BrowserWindow } from 'electron';
+import { BrowserWindow } from '../../platform';
 import { createLogger } from '../infra/logger';
 
 const execAsync = promisify(exec);

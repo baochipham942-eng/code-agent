@@ -30,18 +30,10 @@ const SENSITIVE_KEYS = [
 // File Sink - 日志文件持久化
 // ----------------------------------------------------------------------------
 
-/** 获取日志目录：优先 Electron userData，CLI 模式回退到 ~/.code-agent */
+/** 获取日志目录 */
 function getLogDir(): string {
-  try {
-    const { app } = require('electron');
-    if (app?.getPath) {
-      return path.join(app.getPath('userData'), 'logs');
-    }
-  } catch {
-    // Not in Electron environment
-  }
-  const dataDir = process.env.CODE_AGENT_DATA_DIR || path.join(os.homedir(), '.code-agent');
-  return path.join(dataDir, 'logs');
+  const { getUserDataPath } = require('../../platform/appPaths');
+  return path.join(getUserDataPath(), 'logs');
 }
 
 function getDateString(date: Date = new Date()): string {

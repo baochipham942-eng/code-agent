@@ -2,7 +2,7 @@
 // Agent IPC Handlers - agent:* 通道
 // ============================================================================
 
-import type { IpcMain } from 'electron';
+import type { IpcMain } from '../platform';
 import {
   IPC_CHANNELS,
   IPC_DOMAINS,

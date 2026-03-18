@@ -2,7 +2,7 @@
 // Status IPC Handlers - 状态相关的 IPC 通道
 // ============================================================================
 
-import { ipcMain, type BrowserWindow } from 'electron';
+import { ipcMain, type BrowserWindow } from '../platform';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { createLogger } from '../services/infra/logger';

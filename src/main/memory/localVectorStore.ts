@@ -6,7 +6,7 @@
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { app } from 'electron';
+import { app } from '../platform';
 // 延迟加载 better-sqlite3，CLI 模式下原生模块 ABI 不匹配
 import type BetterSqlite3 from 'better-sqlite3';
 let Database: typeof BetterSqlite3 | null = null;

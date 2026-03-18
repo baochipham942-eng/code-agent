@@ -2,7 +2,7 @@
 // Background Task IPC Handlers - 后台任务管理
 // ============================================================================
 
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { getBackgroundTaskManager } from '../session/backgroundTaskManager';
 import { BACKGROUND_CHANNELS } from '../../shared/ipc/channels';

@@ -2,8 +2,8 @@
 // Update IPC Handlers - update:* 通道
 // ============================================================================
 
-import type { IpcMain } from 'electron';
-import { app } from 'electron';
+import type { IpcMain } from '../platform';
+import { app } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { UpdateInfo } from '../../shared/types';
 import { getUpdateService, isUpdateServiceInitialized } from '../services/cloud/updateService';

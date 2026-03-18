@@ -7,7 +7,7 @@
 import type { Browser, Page, BrowserContext } from 'playwright';
 import * as path from 'path';
 import * as fs from 'fs';
-import { app } from 'electron';
+import { app } from '../../platform';
 import { logCollector } from '../../mcp/logCollector.js';
 import { createLogger } from './logger';
 import type { Disposable } from '../serviceRegistry';

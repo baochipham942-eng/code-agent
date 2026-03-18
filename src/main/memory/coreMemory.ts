@@ -5,7 +5,7 @@
 // 基于 Smart Forking Phase 2 的 Prompt 5 设计。
 // ============================================================================
 
-import { app } from 'electron';
+import { app } from '../platform';
 import * as fs from 'fs';
 import * as path from 'path';
 import { createLogger } from '../services/infra/logger';

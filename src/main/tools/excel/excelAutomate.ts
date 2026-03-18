@@ -9,8 +9,9 @@ import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { excelGenerateTool } from '../network/excelGenerate';
 import { readXlsxTool } from '../network/readXlsx';
 import { xlwingsExecuteTool } from '../network/xlwingsExecute';
+import { executeExcelEdit } from './excelEdit';
 
-type ExcelAction = 'read' | 'generate' | 'automate' | 'list_sheets' | 'get_range';
+type ExcelAction = 'read' | 'generate' | 'edit' | 'automate' | 'list_sheets' | 'get_range';
 
 export const ExcelAutomateTool: Tool = {
   name: 'ExcelAutomate',
@@ -37,6 +38,33 @@ Parameters:
 - theme: "professional" | "colorful" | "minimal" | "dark" (default: professional)
 - output_path: Output file path (default: working directory)
 - sheet_name: Worksheet name (default: Sheet1)
+
+### edit — Atomic edits on an existing Excel file
+Performs incremental cell/row/column level edits instead of regenerating the entire file.
+Auto-creates a backup snapshot before editing. ~80% less tokens than regeneration.
+
+Parameters:
+- file_path (required): Path to the existing .xlsx file
+- operations (required): JSON array of edit operations
+- dry_run: Preview changes without applying (default: false)
+
+**Available operations:**
+- set_cell: { action: "set_cell", sheet?: "Sheet1", cell: "B7", value: 42000, format?: { bold: true } }
+- set_range: { action: "set_range", range: "A1:C2", values: [["a","b","c"],[1,2,3]] }
+- set_formula: { action: "set_formula", cell: "B8", formula: "=SUM(B2:B7)" }
+- insert_rows: { action: "insert_rows", after: 5, data: [["new","row"]] }
+- delete_rows: { action: "delete_rows", from: 3, count: 2 }
+- insert_columns: { action: "insert_columns", after: "C", headers: ["New Col"] }
+- delete_columns: { action: "delete_columns", from: "D", count: 1 }
+- set_style: { action: "set_style", range: "A1:D1", style: { bold: true, fill: "E2EFDA" } }
+- rename_sheet: { action: "rename_sheet", sheet: "Sheet1", newName: "Sales" }
+- add_sheet: { action: "add_sheet", name: "Q2" }
+- delete_sheet: { action: "delete_sheet", sheet: "Temp" }
+- set_column_width: { action: "set_column_width", column: "A", width: 20 }
+- merge_cells: { action: "merge_cells", range: "A1:D1" }
+- auto_filter: { action: "auto_filter", range: "A1:D100" }
+
+**Format options for set_cell/set_style:** bold, italic, fontSize, fontColor (hex), fill (hex), numberFormat, alignment, border
 
 ### automate — Live Excel automation via xlwings
 Operates on the currently open Excel workbook. Requires Excel app + xlwings installed.
@@ -74,8 +102,17 @@ Parameters:
     properties: {
       action: {
         type: 'string',
-        enum: ['read', 'generate', 'automate', 'list_sheets', 'get_range'],
+        enum: ['read', 'generate', 'edit', 'automate', 'list_sheets', 'get_range'],
         description: 'The Excel action to perform',
+      },
+      // --- edit params ---
+      operations: {
+        type: 'array',
+        description: '[edit] Array of edit operations (set_cell, set_range, set_formula, insert_rows, delete_rows, etc.)',
+      },
+      dry_run: {
+        type: 'boolean',
+        description: '[edit] Preview changes without applying (default: false)',
       },
       // --- read params ---
       file_path: {
@@ -182,6 +219,24 @@ Parameters:
         return excelGenerateTool.execute(
           { title: params.title, data: params.data, theme: params.theme, output_path: params.output_path, sheet_name: params.sheet_name },
           context
+        );
+      }
+
+      case 'edit': {
+        // Delegate to excelEdit
+        if (!params.file_path) {
+          return { success: false, error: 'action "edit" requires file_path parameter' };
+        }
+        if (!params.operations) {
+          return { success: false, error: 'action "edit" requires operations parameter' };
+        }
+        return executeExcelEdit(
+          {
+            file_path: params.file_path as string,
+            operations: params.operations as import('./excelEdit').ExcelEditParams['operations'],
+            dry_run: params.dry_run as boolean | undefined,
+          },
+          context,
         );
       }
 

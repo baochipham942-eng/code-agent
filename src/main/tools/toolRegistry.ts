@@ -157,6 +157,7 @@ import { ReadDocumentTool } from './network/ReadDocumentTool';
 import { BrowserTool } from './vision/BrowserTool';
 import { ComputerTool } from './vision/ComputerTool';
 import { ExcelAutomateTool } from './excel';
+import { DocEditTool } from './document/docEditTool';
 
 // ----------------------------------------------------------------------------
 // Tool Interface (re-exported from ./types to avoid circular deps)
@@ -222,6 +223,7 @@ const ALIAS_DEFAULT_PARAMS: Record<string, Record<string, unknown>> = {
 
   // ExcelAutomate unified tool
   excel_generate:   { action: 'generate' },
+  excel_edit:       { action: 'edit' },
   xlwings_execute:  { action: 'automate' },
 };
 
@@ -298,7 +300,12 @@ const TOOL_ALIASES: Record<string, string> = {
   computer_use: 'Computer',
 
   excel_generate:  'ExcelAutomate',
+  excel_edit:      'ExcelAutomate',
   xlwings_execute: 'ExcelAutomate',
+
+  // DocEdit unified tool
+  doc_edit:        'DocEdit',
+  docx_edit:       'DocEdit',
 };
 
 // ----------------------------------------------------------------------------
@@ -476,6 +483,7 @@ export class ToolRegistry {
     this.register(BrowserTool);
     this.register(ComputerTool);
     this.register(ExcelAutomateTool);
+    this.register(DocEditTool);
 
     // Tool Search (核心工具，始终可用)
     this.register(toolSearchTool);

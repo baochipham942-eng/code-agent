@@ -15,6 +15,9 @@ export type { TaskStatusBarProps } from './chat/TaskStatusBar';
 // Agent Team Components
 export { AgentTeamPanel } from './agentTeam';
 
+// Cron Components
+export { CronCenterPanel } from './cron';
+
 // Settings Components
 export {
   SettingsModal,

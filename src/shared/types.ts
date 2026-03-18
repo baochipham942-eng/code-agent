@@ -39,3 +39,51 @@ export * from './types/desktop';
 
 // Checkpoint types (文件检查点)
 export * from './types/checkpoint';
+
+// Skill Repository types
+export * from './types/skillRepository';
+
+// Built-in Agent types (Gen7+)
+export * from './types/builtInAgents';
+
+// Workflow types (Gen7+)
+export * from './types/workflow';
+
+// Gen7 unified exports
+export * from './types/gen7';
+
+// Lab types (实验室)
+export * from './types/lab';
+
+// Channel types (多通道接入)
+export * from './types/channel';
+
+// Cron types (定时任务)
+export * from './types/cron';
+
+// ToolSearch types (工具延迟加载)
+export * from './types/toolSearch';
+
+// Swarm types (Agent Swarm 监控)
+export * from './types/swarm';
+
+// Diff types (E3: 变更追踪)
+export * from './types/diff';
+
+// Citation types (E1: 引用溯源)
+export * from './types/citation';
+
+// Confirmation types (E2: 确认门控)
+export * from './types/confirmation';
+
+// Capture types (浏览器采集)
+export * from './types/capture';
+
+// Error types
+export * from './types/error';
+
+// Application Service interface
+export * from './types/appService';
+
+// Trace types
+export * from './types/trace';

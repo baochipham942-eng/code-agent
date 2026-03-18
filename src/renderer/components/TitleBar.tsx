@@ -4,7 +4,7 @@
 import React from 'react';
 import { useAppStore } from '../stores/appStore';
 import { useDisclosure } from '../hooks/useDisclosure';
-import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, GitBranch, FlaskConical, Monitor } from 'lucide-react';
+import { PanelLeftClose, PanelLeft, PanelRightClose, PanelRight, GitBranch, FlaskConical, Monitor, Clock3 } from 'lucide-react';
 import { isTauriMode } from '../utils/platform';
 import { IconButton } from './primitives';
 // 奶酪图标组件
@@ -29,6 +29,8 @@ export const TitleBar: React.FC = () => {
     setShowEvalCenter,
     showDesktopPanel,
     setShowDesktopPanel,
+    showCronCenter,
+    setShowCronCenter,
     workingDirectory,
   } = useAppStore();
   // 获取当前会话 ID
@@ -82,6 +84,15 @@ export const TitleBar: React.FC = () => {
           size="md"
           windowNoDrag
           className="text-emerald-400/70 hover:text-emerald-400"
+        />
+        <IconButton
+          icon={<Clock3 className="w-4 h-4" />}
+          aria-label={showCronCenter ? '隐藏定时任务中心' : '显示定时任务中心'}
+          onClick={() => setShowCronCenter(!showCronCenter)}
+          variant="ghost"
+          size="md"
+          windowNoDrag
+          className={showCronCenter ? 'text-amber-400' : 'text-amber-400/70 hover:text-amber-400'}
         />
         {/* DAG Panel Toggle (Advanced+ mode) */}
         {dagPanelEnabled && (

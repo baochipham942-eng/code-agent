@@ -610,23 +610,18 @@ export class WorkspaceArtifactIndexService implements Disposable {
     if (this.initialized) return;
     this.initialized = true;
 
-    await this.refreshRecentArtifacts().catch((error) => {
-      logger.warn('Initial workspace artifact refresh failed', { error: String(error) });
-    });
+    // Lazy mode: don't collect mail/reminders/calendar on startup to avoid
+    // macOS auto-launching those apps. Data is fetched on first use via ensureFreshData().
+    logger.info('Workspace artifact index service initialized (lazy mode — data collected on first use)');
+  }
 
+  private startRefreshTimer(): void {
+    if (this.refreshTimer) return;
     this.refreshTimer = setInterval(() => {
       this.refreshRecentArtifacts().catch((error) => {
         logger.warn('Scheduled workspace artifact refresh failed', { error: String(error) });
       });
     }, this.config.refreshIntervalMs);
-
-    logger.info('Workspace artifact index service initialized', {
-      refreshIntervalMs: this.config.refreshIntervalMs,
-      maxMailboxes: this.config.maxMailboxes,
-      maxMessagesPerMailbox: this.config.maxMessagesPerMailbox,
-      maxCalendarEvents: this.config.maxCalendarEvents,
-      maxReminders: this.config.maxReminders,
-    });
   }
 
   async dispose(): Promise<void> {
@@ -643,6 +638,8 @@ export class WorkspaceArtifactIndexService implements Disposable {
       return;
     }
     await this.refreshRecentArtifacts();
+    // Start periodic refresh after first successful fetch
+    this.startRefreshTimer();
   }
 
   async refreshRecentArtifacts(): Promise<WorkspaceArtifactIndexRun> {

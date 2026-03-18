@@ -125,13 +125,13 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         ref={modalRef}
         tabIndex={-1}
-        className={`relative w-full ${sizeClasses[size]} bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn outline-none ${className}`}
+        className={`relative w-full ${sizeClasses[size]} max-h-[90vh] flex flex-col bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn outline-none ${className}`}
         onClick={handleModalClick}
       >
         {/* Header */}
         {(header || title) && (
           <div
-            className={`flex items-center gap-3 px-6 py-4 border-b border-zinc-700 ${headerBgClass || ''}`}
+            className={`flex items-center gap-3 px-6 py-4 border-b border-zinc-700 shrink-0 ${headerBgClass || ''}`}
           >
             {header ? (
               header
@@ -158,11 +158,11 @@ export const Modal: React.FC<ModalProps> = ({
         )}
 
         {/* Content */}
-        <div className="px-6 py-4">{children}</div>
+        <div className="px-6 py-4 overflow-y-auto min-h-0 flex-1">{children}</div>
 
         {/* Footer */}
         {footer && (
-          <div className="px-6 py-4 border-t border-zinc-700 flex justify-end gap-3">
+          <div className="px-6 py-4 border-t border-zinc-700 flex justify-end gap-3 shrink-0">
             {footer}
           </div>
         )}

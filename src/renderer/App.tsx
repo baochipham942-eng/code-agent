@@ -25,6 +25,7 @@ import { LabPage } from './components/features/lab/LabPage';
 import { EvalCenterPanel } from './components/features/evalCenter';
 import { BackgroundTaskPanel } from './components/features/background';
 import { CapturePanel } from './components/features/capture';
+import { CronCenterPanel } from './components/features/cron/CronCenterPanel';
 import { NativeDesktopSection } from './components/features/settings/sections/NativeDesktopSection';
 import { isTauriMode } from './utils/platform';
 import { ApiKeySetupModal, ToolCreateConfirmModal, type ToolCreateRequest } from './components/ConfirmModal';
@@ -58,6 +59,7 @@ export const App: React.FC = () => {
     showTaskPanel,
     setShowTaskPanel,
     showSkillsPanel,
+    showCronCenter,
     setShowSkillsPanel,
     showLab,
     showEvalCenter,
@@ -525,6 +527,11 @@ export const App: React.FC = () => {
 
       {/* Capture Panel - 知识库采集面板 */}
       {useAppStore((s) => s.showCapturePanel) && <CapturePanel />}
+
+      {/* Cron Center - 定时任务中心 */}
+      {showCronCenter && (
+        <CronCenterPanel onClose={() => useAppStore.getState().setShowCronCenter(false)} />
+      )}
 
       {/* Desktop Collector Panel - 全局记忆时间线面板 */}
       {useAppStore((s) => s.showDesktopPanel) && (

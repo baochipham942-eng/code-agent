@@ -3,7 +3,7 @@
 // 桌面通知服务 - 在 App 非焦点时发送任务完成通知
 // ============================================================================
 
-import { Notification, BrowserWindow, app } from 'electron';
+import { Notification, BrowserWindow, app } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { createLogger } from './logger';
 import type { Disposable } from '../serviceRegistry';

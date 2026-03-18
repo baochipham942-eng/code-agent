@@ -1,4 +1,4 @@
-import { ipcMain, globalShortcut, clipboard, BrowserWindow } from 'electron';
+import { ipcMain, globalShortcut, clipboard, BrowserWindow } from '../platform';
 import { spawn, ChildProcess, execFile } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';

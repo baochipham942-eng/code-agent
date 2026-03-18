@@ -3,7 +3,7 @@
 // ============================================================================
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import { createLogger } from '../../services/infra/logger';
 import { INTERACTION_TIMEOUTS } from '../../../shared/constants';

@@ -5,7 +5,7 @@
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import type { UserQuestionRequest, UserQuestionResponse, UserQuestion } from '../../../shared/types';
 import { IPC_CHANNELS } from '../../../shared/ipc';
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from '../../platform';
 import { createLogger } from '../../services/infra/logger';
 import { INTERACTION_TIMEOUTS } from '../../../shared/constants';
 

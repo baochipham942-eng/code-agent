@@ -2,7 +2,7 @@
 // Marketplace IPC Handlers - marketplace:* 通道
 // ============================================================================
 
-import type { IpcMain } from 'electron';
+import type { IpcMain } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import {
   listMarketplaces,

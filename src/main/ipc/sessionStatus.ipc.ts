@@ -2,7 +2,7 @@
 // Session Status IPC Handlers - 会话状态 IPC 处理
 // ============================================================================
 
-import { ipcMain } from 'electron';
+import { ipcMain } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getSessionStateManager } from '../session/sessionStateManager';
 import { createLogger } from '../services/infra/logger';

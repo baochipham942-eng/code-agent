@@ -3,7 +3,7 @@
 // 处理实验室模型训练相关的 IPC 通信
 // ============================================================================
 
-import type { IpcMain, BrowserWindow } from 'electron';
+import type { IpcMain, BrowserWindow } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { getLabService } from '../services/lab';
 import type {

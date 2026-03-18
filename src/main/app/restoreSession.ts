@@ -4,7 +4,7 @@
 // Uses TaskManager to manage orchestrator lifecycle (per-session model).
 // ============================================================================
 
-import { app } from 'electron';
+import { app } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { getSessionManager } from '../services';
 import { getMemoryService } from '../memory/memoryService';

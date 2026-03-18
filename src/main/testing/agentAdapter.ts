@@ -190,10 +190,10 @@ export class StandaloneAgentAdapter implements AgentInterface {
       return;
     }
 
-    // Check if electron mock is already injected (e.g., by CJS entry point)
+    // Check if platform module is available (e.g., by CJS entry point)
     try {
-      const electron = require('electron');
-      if (electron?.app?.getName?.()) {
+      const { app } = require('../platform');
+      if (app?.getName?.()) {
         StandaloneAgentAdapter._electronMockInjected = true;
         return;
       }
@@ -210,7 +210,7 @@ export class StandaloneAgentAdapter implements AgentInterface {
       const Module = _require('module') as any;
       const originalRequire = Module.prototype.require;
       Module.prototype.require = function(id: string) {
-        if (id === 'electron') {
+        if (id === 'electron' || id === '../platform') {
           return electronMock;
         }
         return originalRequire.apply(this, arguments);

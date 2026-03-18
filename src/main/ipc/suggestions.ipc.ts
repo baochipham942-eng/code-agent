@@ -4,7 +4,7 @@
 // Context-aware suggestions are now pushed via SSE (suggestions_update event)
 // This handler remains as a no-op for backward compatibility
 
-import { ipcMain } from 'electron';
+import { ipcMain } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { createLogger } from '../services/infra/logger';
 

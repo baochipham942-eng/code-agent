@@ -2,7 +2,7 @@
 // Code Agent - Main Process Entry
 // ============================================================================
 
-import { app, BrowserWindow, ipcMain, globalShortcut } from 'electron';
+import { app, BrowserWindow, ipcMain, globalShortcut } from './platform';
 import { createLogger } from './services/infra/logger';
 
 const logger = createLogger('Main');

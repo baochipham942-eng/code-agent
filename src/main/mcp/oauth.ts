@@ -389,12 +389,10 @@ export async function startOAuthFlow(
 
       // 打开系统浏览器（Electron 桌面应用场景，不使用内嵌 webview）
       try {
-        const { shell } = await import('electron').catch(() => ({ shell: null }));
+        const { shell } = await import('../platform').catch(() => ({ shell: null }));
         if (shell) {
-          // Electron 环境：使用 shell.openExternal
           await shell.openExternal(authUrl);
         } else {
-          // Node.js 环境：使用系统命令打开浏览器
           const { exec } = await import('child_process');
           const platform = process.platform;
           let command: string;

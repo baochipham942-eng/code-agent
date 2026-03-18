@@ -3,7 +3,7 @@
 // 当 AI 学到新记忆时通知前端
 // ============================================================================
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type { MemoryLearnedEvent, MemoryConfirmRequest } from '../../shared/types/memory';
 import { createLogger } from '../services/infra/logger';

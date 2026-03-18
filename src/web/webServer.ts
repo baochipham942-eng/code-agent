@@ -14,8 +14,8 @@
 // ⚠️ webEnvInit 必须是第一个 import — 设置 CODE_AGENT_CLI_MODE 防止 keytar SIGSEGV
 import './webEnvInit';
 
-// electron mock 通过 esbuild --alias:electron=./src/web/electronMock.ts 注入
-import { handlers, ipcMain as mockIpcMain, BrowserWindow } from './electronMock';
+// Platform 模块替代 electron mock
+import { handlers, ipcMain as mockIpcMain, BrowserWindow, onRendererPush } from '../main/platform';
 
 import http from 'http';
 import os from 'os';
@@ -58,8 +58,13 @@ import { createSessionsRouter } from './routes/sessions';
 import { createDevRouter } from './routes/dev';
 import type { PendingDevPermissionRequest } from './routes/dev';
 
-// Re-export broadcastSSE so electronMock.ts `require('./webServer')` still works
+// Re-export broadcastSSE for backward compatibility
 export { broadcastSSE };
+
+// Bridge: platform rendererBus → SSE clients
+onRendererPush((channel, data) => {
+  broadcastSSE(channel, data);
+});
 
 // 活跃 AgentLoop 实例追踪（用于 cancel）
 const activeAgentLoops = new Map<string, { cancel(): void }>();
@@ -477,6 +482,10 @@ async function main(): Promise<void> {
   });
 
   server.listen(port, host, () => {
+    // Write token to .dev-token for Vite dev server to read
+    const devTokenPath = path.join(process.cwd(), '.dev-token');
+    fs.writeFileSync(devTokenPath, SERVER_AUTH_TOKEN, 'utf-8');
+
     console.log();
     // Machine-readable startup JSON (Tauri main.rs parses this)
     console.log(JSON.stringify({ port, token: SERVER_AUTH_TOKEN }));
@@ -497,6 +506,9 @@ async function main(): Promise<void> {
   // 优雅退出
   const shutdown = () => {
     console.log('\nShutting down...');
+    // Clean up dev token file
+    const devTokenPath = path.join(process.cwd(), '.dev-token');
+    try { fs.unlinkSync(devTokenPath); } catch {}
     cleanupUploadDirs();
     server.close();
     process.exit(0);

@@ -3,7 +3,7 @@
 // Handles user authentication with Supabase
 // ============================================================================
 
-import { shell } from 'electron';
+import { shell } from '../../platform';
 import crypto from 'crypto';
 import {
   getSupabase,

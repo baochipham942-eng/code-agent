@@ -3,7 +3,7 @@
 // 处理 Skill 仓库管理和会话挂载相关的 IPC 请求
 // ============================================================================
 
-import type { IpcMain } from 'electron';
+import type { IpcMain } from '../platform';
 import { SKILL_CHANNELS } from '../../shared/ipc/channels';
 import { getSkillRepositoryService } from '../services/skills/skillRepositoryService';
 import { getSessionSkillService } from '../services/skills/sessionSkillService';

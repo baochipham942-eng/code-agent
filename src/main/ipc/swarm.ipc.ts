@@ -2,7 +2,7 @@
 // Swarm IPC - Agent Swarm 事件推送到渲染进程
 // ============================================================================
 
-import { BrowserWindow, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from '../platform';
 import type { SwarmEvent, AgentStatus } from '../../shared/types/swarm';
 import type { AgentApplicationService } from '../../shared/types/appService';
 

@@ -76,12 +76,12 @@ export function buildRuntimeModeBlock(): string {
   // Self-awareness: app identity and source code location
   let appIdentity = '';
   try {
-    const { app } = require('electron');
-    const appName = app.getName() || 'Code Agent';
-    const appVersion = app.getVersion() || 'unknown';
-    const isPackaged = app.isPackaged;
+    const { getAppName, getAppVersion, isPackaged } = require('../../platform/appPaths');
+    const appName = getAppName() || 'Code Agent';
+    const appVersion = getAppVersion() || 'unknown';
+    const packed = isPackaged();
     // In dev mode: source = process.cwd(); packaged: source = app.getAppPath()
-    const sourcePath = isPackaged ? '' : process.cwd();
+    const sourcePath = packed ? '' : process.cwd();
     appIdentity = `\nYou ARE the "${appName}" application (v${appVersion}).`;
     if (sourcePath) {
       appIdentity += `\nYour own source code is at: ${sourcePath}`;

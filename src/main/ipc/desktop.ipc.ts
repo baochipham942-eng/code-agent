@@ -2,7 +2,7 @@
 // Desktop IPC Handlers - 原生桌面活动查询
 // ============================================================================
 
-import type { IpcMain } from 'electron';
+import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '@shared/ipc';
 import type { DesktopSearchQuery, DesktopTimelineQuery } from '@shared/types';
 import { getNativeDesktopService } from '../services/nativeDesktopService';

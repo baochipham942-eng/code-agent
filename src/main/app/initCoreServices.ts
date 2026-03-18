@@ -2,7 +2,7 @@
 // Phase 1: Core Services - 必须在窗口创建前完成
 // ============================================================================
 
-import { app } from 'electron';
+import { app } from '../platform';
 import path from 'path';
 import { createLogger } from '../services/infra/logger';
 import { loadShellEnvironment } from '../services/infra/shellEnvironment';

@@ -4,7 +4,7 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { BrowserWindow } from 'electron';
+import { BrowserWindow } from '../platform';
 import { v4 as uuidv4 } from 'uuid';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import type {

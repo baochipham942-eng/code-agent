@@ -4,7 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { app } from 'electron';
+import { app } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import { maskSensitiveData } from './sensitiveDetector';
 

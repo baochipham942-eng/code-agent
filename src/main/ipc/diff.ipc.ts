@@ -2,7 +2,7 @@
 // Diff IPC Handlers
 // ============================================================================
 
-import { ipcMain } from 'electron';
+import { ipcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getDiffTracker } from '../services/diff/diffTracker';
 import { createLogger } from '../services/infra/logger';

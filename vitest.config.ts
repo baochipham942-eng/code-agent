@@ -4,10 +4,8 @@ import path from 'path';
 export default defineConfig({
   resolve: {
     alias: {
-      // electron 包在 Node.js 环境下返回二进制路径字符串，不是 API 对象
-      // 在 vitest 中用 mock 替换，提供 app/BrowserWindow/ipcMain 等 API stub
-      // electron 包在 Node.js 环境下返回二进制路径字符串，不是 API 对象
-      electron: path.resolve(__dirname, 'tests/__mocks__/electron.ts'),
+      // electron alias 保留作为安全网（第三方库可能 require('electron')）
+      electron: path.resolve(__dirname, 'src/main/platform/index.ts'),
       // keytar 原生模块为 Electron Node.js 编译，在系统 Node.js 中会 SIGSEGV
       keytar: path.resolve(__dirname, 'tests/__mocks__/keytar.ts'),
       // tsconfig paths — 让 @shared/@renderer/@main 别名在 vitest 中生效

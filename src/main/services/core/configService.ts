@@ -4,7 +4,7 @@
 
 import path from 'path';
 import fs from 'fs/promises';
-import { app } from 'electron';
+import { app } from '../../platform';
 import type { AppSettings, ModelProvider } from '../../../shared/types';
 import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
@@ -73,7 +73,7 @@ export function safeLog(message: string, ...args: unknown[]): void {
 }
 
 // Load .env file from project root or app resources
-import { app as electronApp } from 'electron';
+import { app as electronApp } from '../../platform';
 
 function loadEnvFile(): void {
   // Try multiple paths for .env file

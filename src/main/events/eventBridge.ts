@@ -5,7 +5,7 @@
 // 向后兼容现有 IPC channel 名
 // ============================================================================
 
-import type { BrowserWindow } from 'electron';
+import type { BrowserWindow } from '../platform';
 import type { BusEvent, EventDomain } from './types';
 import { getEventBus } from './eventBus';
 import { createLogger } from '../services/infra/logger';

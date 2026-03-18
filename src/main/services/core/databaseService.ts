@@ -4,7 +4,7 @@
 
 import path from 'path';
 import fs from 'fs';
-import { app } from 'electron';
+import { app } from '../../platform';
 import { createLogger } from '../infra/logger';
 import { getServiceRegistry } from '../serviceRegistry';
 

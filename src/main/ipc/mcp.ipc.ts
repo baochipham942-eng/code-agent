@@ -2,7 +2,7 @@
 // MCP IPC Handlers - mcp:* 通道
 // ============================================================================
 
-import type { IpcMain } from 'electron';
+import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getMCPClient, refreshMCPServersFromCloud } from '../mcp/mcpClient';
 

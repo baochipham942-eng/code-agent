@@ -2,8 +2,8 @@
 // TaskList IPC Handlers - 前端 ↔ 后端通信
 // ============================================================================
 
-import { ipcMain } from 'electron';
-import { BrowserWindow } from 'electron';
+import { ipcMain } from '../../platform';
+import { BrowserWindow } from '../../platform';
 import { getTaskListManager } from './index';
 import { createLogger } from '../../services/infra/logger';
 import type { TaskItemIpc, TaskListEventIpc } from '../../../shared/ipc';

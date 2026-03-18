@@ -2,7 +2,7 @@
 // Cron IPC Handlers
 // ============================================================================
 
-import { ipcMain } from 'electron';
+import { ipcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { getCronService } from '../cron/cronService';
 import { ModelRouter } from '../model/modelRouter';

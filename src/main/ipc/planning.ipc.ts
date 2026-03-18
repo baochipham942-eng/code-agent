@@ -2,7 +2,7 @@
 // Planning IPC Handlers - planning:* 通道
 // ============================================================================
 
-import type { IpcMain } from 'electron';
+import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { PlanningState } from '../../shared/types';
 import type { PlanningService } from '../planning';

@@ -4,7 +4,7 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import { app } from 'electron';
+import { app } from '../platform';
 import type {
   PluginManifest,
   PluginEntry,

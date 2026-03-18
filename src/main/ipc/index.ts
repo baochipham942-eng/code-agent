@@ -2,7 +2,7 @@
 // IPC Module - 统一注册所有 IPC handlers
 // ============================================================================
 
-import type { IpcMain, BrowserWindow } from 'electron';
+import type { IpcMain, BrowserWindow } from '../platform';
 import type { ConfigService } from '../services';
 import type { PlanningService } from '../planning';
 import type { TaskManager } from '../task';

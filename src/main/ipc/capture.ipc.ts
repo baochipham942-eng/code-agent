@@ -2,7 +2,7 @@
 // Capture IPC Handlers - 浏览器采集内容 IPC 通道
 // ============================================================================
 
-import type { IpcMain } from 'electron';
+import type { IpcMain } from '../platform';
 import path from 'path';
 import fs from 'fs';
 import { execFile } from 'child_process';
@@ -130,7 +130,7 @@ export function registerCaptureHandlers(ipcMain: IpcMain): void {
         }
 
         case 'selectFiles': {
-          const { dialog } = await import('electron');
+          const { dialog } = await import('../platform');
           const result = await dialog.showOpenDialog({
             title: '选择文件导入到知识库',
             properties: ['openFile', 'multiSelections'],

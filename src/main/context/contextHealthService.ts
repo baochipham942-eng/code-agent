@@ -2,7 +2,7 @@
 // Context Health Service - 上下文健康状态管理服务
 // ============================================================================
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow } from '../platform';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import { CONTEXT_WINDOWS, DEFAULT_CONTEXT_WINDOW, DEFAULT_MODEL } from '../../shared/constants';
 import {

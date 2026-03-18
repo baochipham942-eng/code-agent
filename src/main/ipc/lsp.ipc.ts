@@ -2,7 +2,7 @@
 // LSP IPC Handlers - 语言服务器状态查询
 // ============================================================================
 
-import { ipcMain } from 'electron';
+import { ipcMain } from '../platform';
 import { LSP_CHANNELS } from '../../shared/ipc/channels';
 import {
   getLSPManager,

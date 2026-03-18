@@ -2,7 +2,7 @@
 // Session State Manager - 会话运行时状态管理（支持多会话并行）
 // ============================================================================
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow } from '../platform';
 import type { Message } from '../../shared/types';
 import type { ContextHealthState } from '../../shared/types/contextHealth';
 import { createEmptyHealthState } from '../../shared/types/contextHealth';

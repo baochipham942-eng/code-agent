@@ -4,7 +4,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { app } from 'electron';
+import { app } from '../platform';
 
 export type LogLevel = 'INFO' | 'WARN' | 'ERROR' | 'DEBUG';
 export type LogSource = 'browser' | 'agent' | 'tool';

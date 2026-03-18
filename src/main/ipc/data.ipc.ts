@@ -2,8 +2,8 @@
 // Data Management IPC Handlers - data/cache:* 通道
 // ============================================================================
 
-import type { IpcMain } from 'electron';
-import { app } from 'electron';
+import type { IpcMain } from '../platform';
+import { app } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import { createLogger } from '../services/infra/logger';
 

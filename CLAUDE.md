@@ -63,7 +63,7 @@ cargo tauri build    # 打包 macOS（~33MB DMG）
 
 ### 提交纪律
 - 每完成一个功能点立即提交，不要积攒
-- **后台 Agent 产物必须 review**：commit 前用 `git diff --stat` 检查每个文件的变更行数，行数异常的必须 `git diff <file>` 逐行确认，尤其是 SSE/IPC 协议文件（webServer.ts、electronMock.ts）和共享类型文件
+- **后台 Agent 产物必须 review**：commit 前用 `git diff --stat` 检查每个文件的变更行数，行数异常的必须 `git diff <file>` 逐行确认，尤其是 SSE/IPC 协议文件（webServer.ts、platform/）和共享类型文件
 
 ### 代码品味
 - 避免过度工程，只做必要的事

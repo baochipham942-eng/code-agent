@@ -10,7 +10,7 @@ import type { ConfigService } from '../services/core/configService';
 import type { PlanningService } from '../planning';
 import { Semaphore } from './Semaphore';
 import { createLogger } from '../services/infra/logger';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow } from '../platform';
 import { DAG_CHANNELS } from '../../shared/ipc/channels';
 
 const logger = createLogger('TaskManager');

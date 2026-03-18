@@ -6,7 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Disposable } from '../serviceRegistry';
 import { getServiceRegistry } from '../serviceRegistry';
-import { app } from 'electron';
+import { app } from '../../platform';
 
 // ============================================================================
 // Constants

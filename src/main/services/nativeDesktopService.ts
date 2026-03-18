@@ -6,7 +6,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
-import { app } from 'electron';
+import { app } from '../platform';
 import { createLogger } from './infra/logger';
 import type {
   AudioSegment,

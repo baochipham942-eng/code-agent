@@ -2,7 +2,7 @@
 // Auth IPC Handlers - auth:* 通道
 // ============================================================================
 
-import type { IpcMain } from 'electron';
+import type { IpcMain } from '../platform';
 import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '../../shared/ipc';
 import type { AuthUser, AuthStatus } from '../../shared/types';
 import { getAuthService } from '../services';

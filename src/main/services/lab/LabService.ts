@@ -7,7 +7,7 @@ import { spawn, ChildProcess, execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow } from '../../platform';
 import { IPC_CHANNELS } from '../../../shared/ipc';
 import type {
   LabProjectType,

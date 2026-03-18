@@ -17,7 +17,7 @@
       "@main/*": ["src/main/*"],
       "@renderer/*": ["src/renderer/*"],
       "@shared/*": ["src/shared/*"],
-      "electron": ["src/web/electronMock.ts"]
+      "electron": ["src/main/platform/index.ts"]
     },
     "types": ["node"],
     "experimentalDecorators": true,

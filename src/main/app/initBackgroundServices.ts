@@ -2,7 +2,7 @@
 // Phase 2: Background Services - 窗口创建后异步执行，不阻塞用户交互
 // ============================================================================
 
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow } from '../platform';
 import { createLogger } from '../services/infra/logger';
 import {
   ConfigService,

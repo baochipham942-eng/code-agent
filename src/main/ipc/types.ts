@@ -2,7 +2,7 @@
 // IPC Types - IPC 处理器类型定义
 // ============================================================================
 
-import type { IpcMain } from 'electron';
+import type { IpcMain } from '../platform';
 
 /**
  * IPC 处理器注册函数类型

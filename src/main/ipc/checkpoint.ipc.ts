@@ -1,6 +1,6 @@
 // src/main/ipc/checkpoint.ipc.ts
 
-import type { IpcMain } from 'electron';
+import type { IpcMain } from '../platform';
 import { getFileCheckpointService } from '../services/checkpoint';
 import { createLogger } from '../services/infra/logger';
 import type { FileCheckpoint } from '../../shared/types';

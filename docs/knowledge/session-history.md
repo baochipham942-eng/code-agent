@@ -1,5 +1,32 @@
 # 会话历史记录
 
+## 2026-03-19 (session 18): 富文档结构化编辑 — Excel/PPT/Word 原子操作 + 统一 DocEdit
+
+- 对标阿里悟空 RealDoc 设计理念，从"全量生成"升级为"原子级 patch"
+- **P1 Excel 原子编辑**: excelEdit.ts — 14 种操作（set_cell/range/formula, insert/delete rows/columns, style, sheet 管理），接入 ExcelAutomateTool 的 `edit` action
+- **P3 SnapshotManager**: snapshotManager.ts — 统一文档快照层（.doc-snapshots/），编辑前自动快照，失败自动回滚，最多保留 20 个/文件
+- **P2 PPT 编辑加固**: editTool.ts +2 新操作（reorder_slides, update_notes），从内联 backup 迁移到 SnapshotManager
+- **P5 统一 DocEdit 入口**: docEditTool.ts — 自动识别文件扩展名路由到 Excel/PPT/Word 引擎
+- **P4 Word 增量编辑**: docxEdit.ts — 7 种操作（replace_text, replace/insert/delete/append paragraph, heading, text style），JSZip 操作 word/document.xml
+- Token 节省: ~80%（原子操作 vs 全量重写）
+- 新增 4 文件 + 修改 6 文件, +1128 行, typecheck 零错误
+- 关键新文件: excelEdit.ts, snapshotManager.ts, docxEdit.ts, docEditTool.ts
+- 关键修改: excelAutomate.ts, editTool.ts, toolRegistry.ts, deferredTools.ts
+
+## 2026-03-18~19 (session 17): FloatBoat 启发特性 Phase 1-4
+
+- 基于 FloatBoat AI 分析，实施 4 个 Phase 的功能改造
+- **Phase 1**: IACT 扩展指令（!run/!open/!preview/!copy）+ Agent contextModifier 引导
+- **Phase 2**: react-resizable-panels 三栏可拖拽布局 + FileExplorerPanel 文件浏览器（多标签、树形浏览、拖拽到 Chat）+ explorerStore
+- **Phase 3**: Combo Skills 录制 — comboRecorder.ts 订阅 EventBus `agent:tool_call_end`，自动检测可复用工作流，ComboSkillCard 前端建议卡片，6 个 IPC 通道
+- **Phase 4**: Tauri System Tray（MenuBuilder 菜单：新建对话/粘贴上下文/退出）+ 全局快捷键 Cmd+Shift+A（tauri-plugin-global-shortcut）+ MemoFloater 浮窗（通过 iact:send 复用 ChatInput 管道）
+- react-resizable-panels API 踩坑：导出名为 Group/Panel/Separator（非 PanelGroup/PanelResizeHandle），用 orientation（非 direction），Panel 必须是 Group 直接子元素
+- Tauri 2.x tray API 踩坑：MenuBuilder.text()/separator()/quit() 链式调用，TrayIconBuilder.on_menu_event() 3 参数闭包
+- 新增依赖: react-resizable-panels, @tauri-apps/api@^2, tauri-plugin-global-shortcut
+- 关键新文件: FileExplorerPanel.tsx, explorerStore.ts, comboRecorder.ts, ComboSkillCard.tsx, MemoFloater.tsx
+- 关键修改: App.tsx (布局重构+MemoFloater), main.rs (tray+shortcut), Cargo.toml, channels.ts, skill.ipc.ts, agentOrchestrator.ts, initBackgroundServices.ts, ChatInput/index.tsx
+- 净变化: 6 新文件 + 8 修改文件, TypeScript typecheck 零错误, cargo check 零错误
+
 ## 2026-03-17 (session 16): Generative UI — 图表 + HTML 小程序内联渲染
 
 - 复刻 Claude Code 2026-03-12 Generative UI 能力（对标 Anthropic + op7418/歸藏 实现）

@@ -26,7 +26,7 @@ import type { CLIConfig, CLIEventHandler } from './types';
 import type { ModelConfig, Message, AgentEvent } from '../shared/types';
 import type { TelemetryAdapter } from '../shared/types/telemetry';
 import { SYSTEM_PROMPT } from '../main/prompts/builder';
-import { DEFAULT_MODELS, DEFAULT_PROVIDER, MODEL_MAX_TOKENS } from '../shared/constants';
+import { DEFAULT_MODELS, DEFAULT_PROVIDER, getModelMaxOutputTokens } from '../shared/constants';
 import { composeTelemetryAdapters } from '../main/agent/metricsCollector';
 
 // 延迟导入的模块
@@ -187,6 +187,24 @@ export function getToolExecutor(): InstanceType<typeof ToolExecutor> | null {
   return toolExecutor;
 }
 
+/**
+ * 对齐全局 CLI 服务到当前 Agent 的工作目录。
+ * Web/Tauri 长进程会重复复用同一个单例，需要在每次创建 Agent 时刷新。
+ */
+export async function syncCLIWorkingDirectory(workingDirectory: string): Promise<void> {
+  if (!initialized) {
+    throw new Error('CLI services not initialized. Call initializeCLIServices() first.');
+  }
+
+  const resolvedWorkingDirectory = path.resolve(workingDirectory);
+  toolExecutor?.setWorkingDirectory(resolvedWorkingDirectory);
+
+  if (getSkillDiscoveryService) {
+    const skillDiscoveryService = getSkillDiscoveryService();
+    await skillDiscoveryService.ensureInitialized(resolvedWorkingDirectory);
+  }
+}
+
 export function getSessionManager(): CLISessionManager {
   if (!sessionManager) {
     throw new Error('CLI services not initialized. Call initializeCLIServices() first.');
@@ -231,7 +249,7 @@ export function buildCLIConfig(options: {
     model,
     apiKey: config.getApiKey(provider) || '',
     temperature: settings.model?.temperature || 0.7,
-    maxTokens: settings.model?.maxTokens || MODEL_MAX_TOKENS.DEFAULT,
+    maxTokens: getModelMaxOutputTokens(model),
   };
 
   // Determine output format: explicit --output-format takes priority over --json
@@ -318,6 +336,15 @@ export function createAgentLoop(
       : extraTelemetryAdapter;
   }
 
+  // SessionEventService: 保存完整 SSE 事件到 session_events 表（用于评测）
+  let eventService: { saveEvent: (sid: string, event: AgentEvent) => void } | null = null;
+  if (process.env.EVAL_DISABLED !== 'true') {
+    try {
+      const mod = require('../evaluation/sessionEventService');
+      eventService = mod.getSessionEventService();
+    } catch { /* evaluation module not available */ }
+  }
+
   // 创建 AgentLoop
   const agentLoop = new AgentLoop({
     systemPrompt,
@@ -330,6 +357,20 @@ export function createAgentLoop(
         console.error('[AgentEvent]', event.type);
       }
       onEvent(event);
+
+      // Telemetry: 写入 telemetry_* 表（model_calls, tool_calls, turns 等）
+      if (effectiveSessionId && getTelemetryCollector) {
+        try {
+          const collector = getTelemetryCollector();
+          collector.handleEvent(effectiveSessionId, event);
+        } catch { /* telemetry failure should not block agent */ }
+      }
+      // SessionEvents: 写入 session_events 表（完整事件流，用于评测回放）
+      if (effectiveSessionId && eventService) {
+        try {
+          eventService.saveEvent(effectiveSessionId, event);
+        } catch { /* event persistence failure should not block agent */ }
+      }
     },
     enableHooks: config.enablePlanning, // 规划模式启用 hooks
     planningService,

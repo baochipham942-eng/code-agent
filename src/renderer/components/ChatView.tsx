@@ -21,10 +21,10 @@ import { useLocalBridgeStore } from '../stores/localBridgeStore';
 import { isWebMode } from '../utils/platform';
 
 import { PreviewPanel } from './PreviewPanel';
-import { PlanPanel } from './features/chat/PlanPanel';
+// PlanPanel moved to inline display in TurnBasedTraceView
 import { SemanticResearchIndicator } from './features/chat/SemanticResearchIndicator';
 import { RewindPanel } from './RewindPanel';
-import { PermissionCard } from './PermissionDialog/PermissionCard';
+// PermissionCard moved to inline display in TurnBasedTraceView
 import type { MessageAttachment, TaskPlan } from '../../shared/types';
 import { IPC_CHANNELS, IPC_DOMAINS } from '@shared/ipc';
 import ipcService from '../services/ipcService';
@@ -35,7 +35,6 @@ import {
   Image,
   Sparkles,
   Terminal,
-  Zap,
 } from 'lucide-react';
 
 export const ChatView: React.FC = () => {
@@ -45,7 +44,7 @@ export const ChatView: React.FC = () => {
 
   // Plan 状态
   const [plan, setPlan] = useState<TaskPlan | null>(null);
-  const [showPlanPanel, setShowPlanPanel] = useState(false);
+  // Plan is now inline in TurnBasedTraceView (no modal state needed)
 
   // Rewind Panel 状态 (Esc+Esc)
   const [showRewindPanel, setShowRewindPanel] = useState(false);
@@ -304,6 +303,7 @@ export const ChatView: React.FC = () => {
               hasOlderMessages={hasOlderMessages}
               isLoadingOlder={isLoadingOlder}
               onLoadOlder={loadOlderMessages}
+              plan={plan}
             />
           )}
         </div>
@@ -346,8 +346,7 @@ export const ChatView: React.FC = () => {
           onClose={() => setShowDirPicker(false)}
         />
 
-        {/* Permission Card - 浮动在输入框上方 */}
-        <PermissionCard />
+        {/* Permission Card moved inline into TurnBasedTraceView */}
 
         {/* Input */}
         <ChatInput
@@ -357,18 +356,14 @@ export const ChatView: React.FC = () => {
           isProcessing={effectiveIsProcessing}
           isInterrupting={isInterrupting}
           onStop={cancel}
-          hasPlan={!!plan}
-          onPlanClick={() => setShowPlanPanel(true)}
+          hasPlan={false}
         />
       </div>
 
       {/* HTML Preview Panel */}
       {showPreviewPanel && <PreviewPanel />}
 
-      {/* Plan Panel Modal */}
-      {showPlanPanel && plan && (
-        <PlanPanel plan={plan} onClose={() => setShowPlanPanel(false)} />
-      )}
+      {/* Plan is now inline in TurnBasedTraceView */}
 
       {/* Rewind Panel (Esc+Esc) */}
       <RewindPanel isOpen={showRewindPanel} onClose={() => setShowRewindPanel(false)} />

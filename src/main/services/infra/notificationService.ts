@@ -50,6 +50,36 @@ class NotificationService implements Disposable {
   }
 
   /**
+   * 发送 "需要输入" 通知（权限请求、用户提问）
+   */
+  notifyNeedsInput(data: { sessionId: string; title: string; body: string }): void {
+    if (!this.shouldNotify()) return;
+
+    const notification = new Notification({
+      title: data.title,
+      body: data.body,
+      silent: false,
+      urgency: 'critical',
+      ...(process.platform === 'darwin' && { sound: 'default' }),
+    });
+
+    notification.on('click', () => {
+      const windows = BrowserWindow.getAllWindows();
+      if (windows.length > 0) {
+        const mainWindow = windows[0];
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+        mainWindow.webContents.send(IPC_CHANNELS.NOTIFICATION_CLICKED, {
+          sessionId: data.sessionId,
+        });
+      }
+    });
+
+    notification.show();
+    logger.info('Needs-input notification sent', { title: data.title });
+  }
+
+  /**
    * 发送任务完成通知
    */
   notifyTaskComplete(data: TaskNotificationData): void {

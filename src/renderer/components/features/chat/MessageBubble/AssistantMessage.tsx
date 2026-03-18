@@ -4,6 +4,7 @@
 // ============================================================================
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Copy, Check, FileText } from 'lucide-react';
 import type { AssistantMessageProps } from './types';
 import { MessageContent } from './MessageContent';
 import { ToolCallDisplay } from './ToolCallDisplay/index';
@@ -17,6 +18,8 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
   const reasoningRef = useRef<HTMLDivElement>(null);
   const [reasoningHeight, setReasoningHeight] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [copied, setCopied] = useState<'markdown' | 'plain' | null>(null);
+  const [hovered, setHovered] = useState(false);
 
   useEffect(() => {
     if (reasoningRef.current) {
@@ -52,11 +55,53 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
     }
   }, [message.id]);
 
+  const handleCopy = useCallback(async (mode: 'markdown' | 'plain') => {
+    if (!message.content) return;
+    const text = mode === 'markdown'
+      ? message.content
+      : message.content
+          .replace(/^#{1,6}\s+/gm, '')
+          .replace(/\*\*(.+?)\*\*/g, '$1')
+          .replace(/\*(.+?)\*/g, '$1')
+          .replace(/`{3}[\s\S]*?`{3}/g, (m) => m.replace(/^`{3}.*\n?/, '').replace(/`{3}$/, ''))
+          .replace(/`(.+?)`/g, '$1')
+          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+          .trim();
+    await navigator.clipboard.writeText(text);
+    setCopied(mode);
+    setTimeout(() => setCopied(null), UI.COPY_FEEDBACK_DURATION);
+  }, [message.content]);
+
   const reasoningContent = message.thinking || message.reasoning;
   const effortLabel = message.effortLevel || '';
 
   return (
-    <div className="py-2 px-4" onContextMenu={handleContextMenu}>
+    <div
+      className="py-2 px-4 relative group/msg"
+      onContextMenu={handleContextMenu}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* Copy action bar - top right on hover */}
+      {message.content && hovered && (
+        <div className="absolute top-1 right-4 flex items-center gap-0.5 bg-zinc-800 border border-zinc-700 rounded-md px-0.5 py-0.5 z-10 shadow-lg">
+          <button
+            onClick={() => handleCopy('markdown')}
+            className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+            title="复制 Markdown"
+          >
+            {copied === 'markdown' ? <Check className="w-3 h-3 text-green-400" /> : <FileText className="w-3 h-3" />}
+          </button>
+          <button
+            onClick={() => handleCopy('plain')}
+            className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
+            title="复制纯文本"
+          >
+            {copied === 'plain' ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
+          </button>
+        </div>
+      )}
+
       {/* Context menu */}
       {contextMenu && (
         <div

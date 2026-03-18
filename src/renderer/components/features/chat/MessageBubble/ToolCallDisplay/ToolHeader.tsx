@@ -6,6 +6,7 @@
 import React from 'react';
 import type { ToolCall } from '@shared/types';
 import { formatParams, formatDuration, getToolDisplayName } from './utils';
+import { getToolStatusLabel } from './statusLabels';
 import type { ToolStatus } from './styles';
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
 
 export function ToolHeader({ toolCall, status }: Props) {
   const displayName = getToolDisplayName(toolCall.name);
+  const statusLabel = getToolStatusLabel(toolCall, status);
   const params = formatParams(toolCall);
   const duration = toolCall.result?.duration;
   const isSandboxed = (toolCall.name === 'bash' || toolCall.name === 'Bash') &&
@@ -23,6 +25,9 @@ export function ToolHeader({ toolCall, status }: Props) {
 
   return (
     <div className="flex items-center gap-2 flex-1 min-w-0">
+      {/* Status label - dynamic per-tool text */}
+      <span className="text-zinc-500 text-xs flex-shrink-0">{statusLabel}</span>
+
       {/* Tool name - always semibold, neutral color */}
       <span className="text-zinc-200 font-semibold">{displayName}</span>
 

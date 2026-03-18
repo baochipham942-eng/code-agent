@@ -231,6 +231,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             content: output,
             timestamp: Date.now(),
           });
+          // 回填 result 到对应的 toolCall（前端渲染状态需要）
+          const callId = event.data.toolCallId;
+          if (callId) {
+            const tc = assistantToolCalls.find(t => t.id === callId);
+            if (tc) {
+              tc.result = {
+                success: !!event.data.success,
+                output: event.data.success ? String(event.data.output || '').substring(0, 200) : undefined,
+                error: event.data.success ? undefined : String(event.data.error || 'unknown'),
+              };
+            }
+          }
           // 工具失败时通知前端
           if (!event.data.success) {
             consecutiveToolFailures++;
@@ -244,10 +256,17 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
             consecutiveToolFailures = 0;
           }
         }
-      }, messages, undefined, undefined, bridgeToolExecutor);
+      }, messages, sessionId, undefined, bridgeToolExecutor);
 
       // 存储当前 agentLoop 引用，供 cancel 使用
       activeAgentLoops.set(sessionId, agentLoop);
+
+      // 新会话时立即通知前端刷新列表（不等 agentLoop 完成）
+      if (history.length === 0) {
+        const title = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
+        broadcastSSE('session:updated', { sessionId, updates: { title } });
+        broadcastSSE('session:list-updated', undefined);
+      }
 
       await agentLoop.run(prompt);
 
@@ -297,6 +316,18 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       // ── 持久化到数据库（优先走 SM 保持缓存一致）──
       if (dbAvailable) {
         try {
+          // 确保 session 在 DB 中存在（SM 和直写都需要）
+          const { getDatabase: ensureDb } = await import('../../main/services/core/databaseService');
+          const dbForSession = ensureDb();
+          if (!dbForSession.getSession(sessionId)) {
+            const { DEFAULT_PROVIDER, DEFAULT_MODELS } = await import('../../shared/constants');
+            dbForSession.createSessionWithId(sessionId, {
+              title: prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt,
+              generationId: 'gen8',
+              modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.chat },
+            });
+          }
+
           const sm = await tryGetSessionManager();
           if (sm) {
             // 通过 SM 写入，同时更新 DB 和 sessionCache
@@ -317,18 +348,9 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
               } as import('../../shared/types').Message);
             }
           } else {
-            // SM 不可用时降级为直写 DB
+            // SM 不可用时降级为直写 DB（session 已在上面 ensure 创建）
             const { getDatabase } = await import('../../main/services/core/databaseService');
             const db = getDatabase();
-            const existingSession = db.getSession(sessionId);
-            if (!existingSession) {
-              const { DEFAULT_PROVIDER, DEFAULT_MODELS } = await import('../../shared/constants');
-              db.createSessionWithId(sessionId, {
-                title: prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt,
-                generationId: 'gen8',
-                modelConfig: { provider: DEFAULT_PROVIDER, model: DEFAULT_MODELS.chat },
-              });
-            }
             db.addMessage(sessionId, {
               id: msgId,
               role: 'user',
@@ -413,11 +435,7 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
         logger.warn('Failed to persist messages to Supabase:', (sbErr as Error).message);
       }
 
-      // 通知前端更新会话标题（第一轮消息时）
-      if (history.length === 0) {
-        const title = prompt.length > 30 ? prompt.substring(0, 30) + '...' : prompt;
-        broadcastSSE('session:updated', { sessionId, updates: { title } });
-      }
+      // session:updated 和 session:list-updated 已在 agentLoop.run() 之前广播
 
       // 发送 agent_complete（useAgent 依赖此事件清除处理状态）
       sendSSE(res, 'agent_complete', { sessionId });
@@ -428,6 +446,12 @@ export function createAgentRouter(deps: AgentRouterDeps): Router {
       });
     } finally {
       activeAgentLoops.delete(sessionId);
+      // Telemetry: 结束会话追踪（写入聚合指标到 telemetry_sessions）
+      try {
+        const { getTelemetryCollector } = await import('../../main/telemetry');
+        const collector = getTelemetryCollector();
+        collector.endSession(sessionId);
+      } catch { /* telemetry cleanup failure is non-fatal */ }
       res.end();
     }
   });

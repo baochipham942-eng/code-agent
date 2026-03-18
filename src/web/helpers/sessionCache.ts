@@ -11,6 +11,7 @@ export interface CachedToolCall {
   id: string;
   name: string;
   arguments?: Record<string, unknown>;
+  result?: { success: boolean; output?: string; error?: string };
 }
 
 export interface CachedMessage {

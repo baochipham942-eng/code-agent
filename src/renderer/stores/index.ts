@@ -56,6 +56,7 @@ export {
 } from './taskStore';
 export { useSwarmStore } from './swarmStore';
 export { useTelemetryStore } from './telemetryStore';
+export { useCronStore, type CronJobFilterMode } from './cronStore';
 
 // -----------------------------------------------------------------------------
 // Selectors - 优化渲染性能

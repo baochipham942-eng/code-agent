@@ -4,9 +4,9 @@
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../../types';
 import * as fs from 'fs';
-import * as path from 'path';
+import { createSnapshot, restoreLatest } from '../../document/snapshotManager';
 
-type EditAction = 'replace_title' | 'replace_content' | 'replace_slide' | 'delete_slide' | 'insert_slide' | 'extract_style';
+type EditAction = 'replace_title' | 'replace_content' | 'replace_slide' | 'delete_slide' | 'insert_slide' | 'extract_style' | 'reorder_slides' | 'update_notes';
 
 interface PPTEditParams {
   file_path: string;
@@ -15,21 +15,25 @@ interface PPTEditParams {
   content?: string;
   title?: string;
   points?: string[];
+  order?: number[];
+  notes?: string;
 }
 
 export const pptEditTool: Tool = {
   name: 'ppt_edit',
   description: `编辑已有的 PPTX 文件。
 
-**6 种操作：**
+**8 种操作：**
 - replace_title: 替换指定页的标题
 - replace_content: 替换指定页的正文内容
 - replace_slide: 用新内容替换整张幻灯片
 - delete_slide: 删除指定页
-- insert_slide: 在指定位置插入新页
+- insert_slide: 在指定位置插入新页（建议用 /ppt 重新生成）
 - extract_style: 提取 PPTX 的主题样式
+- reorder_slides: 调整幻灯片顺序（order: [2,0,1,3]）
+- update_notes: 更新指定页的演讲者备注
 
-每次编辑前自动备份原文件。`,
+每次编辑前自动创建快照（可回滚）。`,
   requiresPermission: true,
   permissionLevel: 'write',
   inputSchema: {
@@ -41,7 +45,7 @@ export const pptEditTool: Tool = {
       },
       action: {
         type: 'string',
-        enum: ['replace_title', 'replace_content', 'replace_slide', 'delete_slide', 'insert_slide', 'extract_style'],
+        enum: ['replace_title', 'replace_content', 'replace_slide', 'delete_slide', 'insert_slide', 'extract_style', 'reorder_slides', 'update_notes'],
         description: '编辑操作类型',
       },
       slide_index: {
@@ -61,6 +65,15 @@ export const pptEditTool: Tool = {
         items: { type: 'string' },
         description: '要点列表（用于 replace_content、replace_slide、insert_slide）',
       },
+      order: {
+        type: 'array',
+        items: { type: 'number' },
+        description: '幻灯片新顺序（用于 reorder_slides，如 [2,0,1,3]）',
+      },
+      notes: {
+        type: 'string',
+        description: '演讲者备注文本（用于 update_notes）',
+      },
     },
     required: ['file_path', 'action'],
   },
@@ -76,6 +89,8 @@ export const pptEditTool: Tool = {
       content,
       title,
       points,
+      order,
+      notes,
     } = params as unknown as PPTEditParams;
 
     if (!fs.existsSync(file_path)) {
@@ -85,9 +100,8 @@ export const pptEditTool: Tool = {
     try {
       const JSZip = require('jszip');
 
-      // Backup before edit
-      const backupPath = file_path.replace(/\.pptx$/i, `.backup-${Date.now()}.pptx`);
-      fs.copyFileSync(file_path, backupPath);
+      // Create snapshot before edit
+      const snapshot = createSnapshot(file_path, `ppt-edit: ${action}`);
 
       const data = fs.readFileSync(file_path);
       const zip = await JSZip.loadAsync(data);
@@ -196,24 +210,89 @@ export const pptEditTool: Tool = {
             metadata: { styleConfig },
           };
         }
+
+        case 'reorder_slides': {
+          if (!order || order.length === 0) {
+            return { success: false, error: 'reorder_slides 需要 order 参数（如 [2,0,1,3]）' };
+          }
+
+          // Count existing slides
+          const slideFiles = Object.keys(zip.files).filter(f => /^ppt\/slides\/slide\d+\.xml$/.test(f));
+          if (order.length !== slideFiles.length) {
+            return { success: false, error: `order 长度 (${order.length}) 必须等于幻灯片数 (${slideFiles.length})` };
+          }
+
+          // Read all slides into memory
+          const slideContents: Map<number, string> = new Map();
+          const slideRels: Map<number, string | null> = new Map();
+          for (let i = 0; i < slideFiles.length; i++) {
+            const slideFile = `ppt/slides/slide${i + 1}.xml`;
+            const relFile = `ppt/slides/_rels/slide${i + 1}.xml.rels`;
+            slideContents.set(i, await zip.files[slideFile].async('string'));
+            slideRels.set(i, zip.files[relFile] ? await zip.files[relFile].async('string') : null);
+          }
+
+          // Write slides in new order
+          for (let newIdx = 0; newIdx < order.length; newIdx++) {
+            const oldIdx = order[newIdx];
+            const slideFile = `ppt/slides/slide${newIdx + 1}.xml`;
+            const relFile = `ppt/slides/_rels/slide${newIdx + 1}.xml.rels`;
+            zip.file(slideFile, slideContents.get(oldIdx)!);
+            const rel = slideRels.get(oldIdx);
+            if (rel) zip.file(relFile, rel);
+          }
+
+          resultMessage = `已调整幻灯片顺序: [${order.join(',')}]`;
+          break;
+        }
+
+        case 'update_notes': {
+          if (slide_index === undefined) {
+            return { success: false, error: 'update_notes 需要 slide_index 参数' };
+          }
+          const notesFile = `ppt/notesSlides/notesSlide${slide_index + 1}.xml`;
+          const noteText = notes || content || '';
+          const escapedNote = escapeXml(noteText);
+
+          if (zip.files[notesFile]) {
+            // Update existing notes
+            let notesXml = await zip.files[notesFile].async('string');
+            // Replace body text in notes
+            let noteReplaced = false;
+            notesXml = notesXml.replace(/<a:t>([^<]*)<\/a:t>/g, (match: string) => {
+              if (!noteReplaced) {
+                noteReplaced = true;
+                return match; // Keep slide number reference
+              }
+              return `<a:t>${escapedNote}</a:t>`;
+            });
+            zip.file(notesFile, notesXml);
+          }
+          resultMessage = `已更新第 ${slide_index + 1} 页演讲者备注`;
+          break;
+        }
       }
 
       // Write modified file
-      if ((action as string) !== 'extract_style') {
+      const noWriteActions = new Set(['extract_style']);
+      if (!noWriteActions.has(action)) {
         const outputBuffer = await zip.generateAsync({ type: 'nodebuffer' });
         fs.writeFileSync(file_path, outputBuffer);
       }
 
       return {
         success: true,
-        output: `${resultMessage}\n备份: ${backupPath}`,
-        metadata: { backupPath, action, slideIndex: slide_index },
+        output: `${resultMessage}\nSnapshot: ${snapshot.id}`,
+        metadata: { snapshotId: snapshot.id, action, slideIndex: slide_index },
       };
     } catch (error: unknown) {
+      // Restore from snapshot on failure
+      restoreLatest(file_path);
+
       const message = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: `PPT 编辑失败: ${message}`,
+        error: `PPT 编辑失败 (已从快照恢复): ${message}`,
       };
     }
   },

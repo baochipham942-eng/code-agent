@@ -354,9 +354,9 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   },
   {
     name: 'ExcelAutomate',
-    shortDescription: 'Excel 自动化（读取/生成/实时操作/列出工作表/读取范围）',
+    shortDescription: 'Excel 自动化（读取/生成/原子编辑/实时操作/列出工作表/读取范围）',
     tags: ['document', 'shell'],
-    aliases: ['excel', 'xlsx', 'spreadsheet', 'xlwings', 'excel_generate', 'read_xlsx', 'xlwings_execute'],
+    aliases: ['excel', 'xlsx', 'spreadsheet', 'xlwings', 'excel_generate', 'excel_edit', 'read_xlsx', 'xlwings_execute'],
     source: 'builtin',
   },
   {
@@ -364,6 +364,13 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
     shortDescription: '生成 Excel 表格',
     tags: ['document'],
     aliases: ['excel', 'xlsx', 'spreadsheet'],
+    source: 'builtin',
+  },
+  {
+    name: 'DocEdit',
+    shortDescription: '文档增量编辑（Excel/PPT/Word 原子操作 + 自动快照）',
+    tags: ['document'],
+    aliases: ['doc_edit', 'docx_edit', 'document_edit', 'edit_document'],
     source: 'builtin',
   },
   {

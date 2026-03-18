@@ -33,6 +33,7 @@ import { createLogger } from '../../../services/infra/logger';
 import { VLM_REQUEST_TIMEOUT } from './constants';
 
 const logger = createLogger('PPTGenerate');
+const LEGACY_PPT_GENERATE_ENV = 'ENABLE_LEGACY_PPT_GENERATE';
 
 
 // Use require for pptxgenjs (CJS compatible with Electron)
@@ -44,7 +45,10 @@ function getPptxGenJS() {
 
 export const pptGenerateTool: Tool = {
   name: 'ppt_generate',
-  description: `生成研究驱动、设计师品质的 PowerPoint 演示文稿（v7 工作流）。
+  description: `遗留 PowerPoint 生成器（v7 工作流，默认禁用）。
+
+默认请改用 frontend-slides skill 或 /ppt 兼容入口。
+只有在显式设置环境变量 ${LEGACY_PPT_GENERATE_ENV}=1 时才允许继续执行。
 
 **v7 新特性：**
 - 自动深度搜索：每次生成前自动 web_search 获取最新数据，确保内容有真实数据支撑
@@ -204,6 +208,15 @@ export const pptGenerateTool: Tool = {
     params: Record<string, unknown>,
     context: ToolContext
   ): Promise<ToolExecutionResult> {
+    if (process.env[LEGACY_PPT_GENERATE_ENV] !== '1') {
+      return {
+        success: false,
+        error:
+          `ppt_generate 已临时禁用。请改用 frontend-slides skill 或 /ppt。` +
+          ` 如需调试遗留实现，请显式设置 ${LEGACY_PPT_GENERATE_ENV}=1。`,
+      };
+    }
+
     const {
       topic,
       content,

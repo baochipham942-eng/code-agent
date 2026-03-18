@@ -36,6 +36,7 @@ Commit message 格式：
     userInvocable: true,
     executionContext: 'inline',
     source: 'builtin',
+    loaded: true,
     bins: ['git'],
   },
   {
@@ -62,6 +63,7 @@ Commit message 格式：
     userInvocable: true,
     executionContext: 'inline',
     source: 'builtin',
+    loaded: true,
   },
   {
     name: 'test',
@@ -91,6 +93,7 @@ Commit message 格式：
     userInvocable: true,
     executionContext: 'inline',
     source: 'builtin',
+    loaded: true,
   },
   {
     name: 'explain',
@@ -111,6 +114,7 @@ Commit message 格式：
     userInvocable: true,
     executionContext: 'inline',
     source: 'builtin',
+    loaded: true,
   },
   {
     name: 'refactor',
@@ -136,6 +140,7 @@ Commit message 格式：
     userInvocable: true,
     executionContext: 'inline',
     source: 'builtin',
+    loaded: true,
   },
   {
     name: 'docker',
@@ -159,79 +164,10 @@ Commit message 格式：
     userInvocable: true,
     executionContext: 'inline',
     source: 'builtin',
+    loaded: true,
     bins: ['docker'],
   },
-  {
-    name: 'ppt',
-    description: '研究驱动的智能 PPT 生成（v7：自动搜索 + SCQA + 视觉审查）',
-    promptContent: `# PPT 生成专家 (v7)
-
-你是麦肯锡级别的演示文稿专家。ppt_generate v7 内置深度搜索和 SCQA 叙事框架。
-
-## 工作流程
-
-### 场景 A：公共主题（推荐 — 最简方式）
-直接调用 ppt_generate，它会自动搜索最新数据：
-\`\`\`
-ppt_generate({ topic: "AI Agent 2026 趋势", theme: "neon-green", slides_count: 10 })
-\`\`\`
-内置深度搜索会自动获取最新统计、事实和案例。
-
-### 场景 B：本地项目
-先读取项目信息，用 content 参数传入：
-1. \`read_file("README.md")\` → 提取关键信息
-2. 组织为 content 传入 ppt_generate
-
-### 场景 C：用户提供完整内容
-用 slides JSON 或 content 参数直接传入。
-
-## v7 自动能力
-
-| 能力 | 说明 |
-|------|------|
-| 深度搜索 | 自动 web_search 3-5 组关键词，提取真实数据 |
-| SCQA 叙事 | 麦肯锡框架：背景→矛盾→方案→行动号召 |
-| Action Title | 标题是结论（"市场 $680 亿"）而非主题（"市场分析"） |
-| Speaker Notes | 每页自动生成 100-200 字演讲稿 |
-| 图表注入 | 从搜索数据自动构建原生可编辑图表 |
-| 视觉审查 | 生成后自动截图+VLM 审查（需 LibreOffice） |
-
-## 控制参数
-
-- \`research: false\` — 跳过搜索（加快生成）
-- \`review: false\` — 跳过视觉审查
-- \`theme\` — neon-green/neon-blue/neon-purple/apple-dark/corporate 等
-
-## 内容质量标准
-
-❌ 空洞："支持多语言"、"性能优秀"
-✅ 具体："50+ 编程语言"、"延迟 < 100ms，比传统方案快 3 倍"
-
-每个要点必须有 **"so what"** — 不只说事实，还说为什么重要。
-
-## 禁止事项
-
-1. 禁止内容空洞 — 必须有具体数据
-2. 禁止每页都放图表 — 10 页最多 3-4 张
-3. 禁止少于 8 页`,
-    basePath: '',
-    allowedTools: [
-      'ask_user_question',
-      'read_file',
-      'read_pdf',
-      'glob',
-      'list_directory',
-      'web_search',
-      'web_fetch',
-      'mermaid_export',
-      'ppt_generate',
-      'image_analyze',
-    ],
-    disableModelInvocation: false,
-    userInvocable: true,
-    executionContext: 'inline',
-    source: 'builtin',
-  },
+  // ppt builtin skill 已移除 — 使用项目级 frontend-slides / ppt skills 替代
   {
     name: 'data-cleaning',
     description: '系统性数据清洗与分析 — 处理 Excel/CSV 数据时自动使用，覆盖去重、缺失值、异常值修正、格式标准化、分类统计等',
@@ -302,6 +238,7 @@ print(result.describe())
     userInvocable: true,
     executionContext: 'inline',
     source: 'builtin',
+    loaded: true,
     bins: ['python3'],
   },
   {
@@ -385,6 +322,7 @@ openpyxl.chart 可嵌入 xlsx，matplotlib 可生成独立 png。图表和数据
     userInvocable: true,
     executionContext: 'inline',
     source: 'builtin',
+    loaded: true,
     bins: ['python3'],
   },
 ];

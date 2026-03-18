@@ -319,9 +319,9 @@ export const DEFERRED_TOOLS_META: DeferredToolMeta[] = [
   // ============================================================================
   {
     name: 'ppt_generate',
-    shortDescription: '生成 PowerPoint 演示文稿',
+    shortDescription: '遗留 PPT 生成器，默认禁用；优先使用 frontend-slides skill 或 /ppt',
     tags: ['document', 'media'],
-    aliases: ['ppt', 'powerpoint', 'slides', 'presentation'],
+    aliases: ['legacy ppt', 'legacy powerpoint'],
     source: 'builtin',
   },
   {

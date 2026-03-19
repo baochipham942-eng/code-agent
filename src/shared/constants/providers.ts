@@ -17,6 +17,8 @@ export const MODEL_API_ENDPOINTS = {
   groq: 'https://api.groq.com/openai/v1',
   /** 智谱 GLM (OKI 代理) */
   zhipu: 'https://api.0ki.cn/api/paas/v4',
+  /** 智谱官方 API (图像生成等 0ki 不支持的功能) */
+  zhipuOfficial: 'https://open.bigmodel.cn/api/paas/v4',
   /** 智谱 Coding 套餐 (OKI 代理) */
   zhipuCoding: 'https://api.0ki.cn/api/coding/paas/v4',
   /** 通义千问 (国际版) */

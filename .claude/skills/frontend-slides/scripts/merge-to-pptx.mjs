@@ -70,6 +70,62 @@ function findBasePrompt() {
   return readFileSync(basePromptPath, 'utf-8');
 }
 
+function detectImageMimeType(buffer) {
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 &&
+    buffer[1] === 0x50 &&
+    buffer[2] === 0x4e &&
+    buffer[3] === 0x47 &&
+    buffer[4] === 0x0d &&
+    buffer[5] === 0x0a &&
+    buffer[6] === 0x1a &&
+    buffer[7] === 0x0a
+  ) {
+    return 'image/png';
+  }
+
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+
+  return null;
+}
+
+function getTextPreview(buffer) {
+  return buffer
+    .toString('utf8', 0, Math.min(buffer.length, 32))
+    .replace(/[^\x20-\x7e]+/g, ' ')
+    .trim();
+}
+
+function loadValidatedSlideImage(slide) {
+  const imageData = readFileSync(slide.path);
+  const detectedMimeType = detectImageMimeType(imageData);
+
+  if (!detectedMimeType) {
+    const preview = getTextPreview(imageData);
+    throw new Error(
+      `Invalid slide image: ${slide.filename} is not a PNG/JPEG file.` +
+      (preview ? ` First bytes: "${preview}"` : '')
+    );
+  }
+
+  const ext = extname(slide.filename).toLowerCase();
+  const expectedMimeType = ext === '.png' ? 'image/png' : 'image/jpeg';
+  if (expectedMimeType !== detectedMimeType) {
+    // CogView 等 API 可能返回 JPEG 但扩展名为 .png，自动修正而非报错
+    console.warn(
+      `Warning: ${slide.filename} extension ${ext} does not match actual format ${detectedMimeType}. Using detected format.`
+    );
+  }
+
+  return {
+    imageData,
+    mimeType: detectedMimeType,
+  };
+}
+
 async function createPptx(slides, outputPath) {
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_16x9';
@@ -81,10 +137,8 @@ async function createPptx(slides, outputPath) {
 
   for (const slide of slides) {
     const deckSlide = pptx.addSlide();
-    const imageData = readFileSync(slide.path);
+    const { imageData, mimeType } = loadValidatedSlideImage(slide);
     const base64 = imageData.toString('base64');
-    const ext = extname(slide.filename).toLowerCase().replace('.', '');
-    const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
 
     deckSlide.addImage({
       data: `data:${mimeType};base64,${base64}`,

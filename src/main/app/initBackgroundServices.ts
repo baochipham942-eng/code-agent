@@ -471,6 +471,15 @@ export async function initializeBackgroundInfra(configService: ConfigService): P
     logger.warn('EventBus initialization failed (non-blocking)', { error: String(error) });
   }
 
+  // Initialize ComboRecorder (subscribes to tool_call_end events)
+  try {
+    const { getComboRecorder } = await import('../services/skills/comboRecorder');
+    getComboRecorder().init();
+    logger.info('ComboRecorder initialized');
+  } catch (error) {
+    logger.warn('ComboRecorder initialization failed (non-blocking)', { error: String(error) });
+  }
+
   initDesktopActivityUnderstandingService()
     .then(() => logger.info('DesktopActivityUnderstandingService initialized'))
     .catch((error) => logger.warn('DesktopActivityUnderstandingService initialization failed (non-blocking)', {

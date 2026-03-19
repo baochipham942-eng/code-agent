@@ -1,9 +1,36 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import fs from 'fs';
+
+/**
+ * Vite plugin: inject web server auth token into HTML during dev.
+ * The token is written to .dev-token by webServer.ts on startup.
+ */
+function devAuthTokenPlugin(): Plugin {
+  return {
+    name: 'dev-auth-token',
+    apply: 'serve',
+    transformIndexHtml(html) {
+      try {
+        const tokenPath = path.resolve(__dirname, '.dev-token');
+        const token = fs.readFileSync(tokenPath, 'utf-8').trim();
+        if (token) {
+          return html.replace(
+            '<head>',
+            `<head><script>window.__CODE_AGENT_TOKEN__="${token}";</script>`
+          );
+        }
+      } catch {
+        // .dev-token not yet created — web server hasn't started
+      }
+      return html;
+    },
+  };
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), devAuthTokenPlugin()],
   root: 'src/renderer',
   base: './',
   build: {

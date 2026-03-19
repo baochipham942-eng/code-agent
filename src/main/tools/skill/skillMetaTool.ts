@@ -215,19 +215,17 @@ export const skillMetaTool: Tool = {
     // 获取 skill（确保服务已初始化）
     const discoveryService = getSkillDiscoveryService();
 
-    // 如果服务未初始化，先初始化
-    if (!discoveryService.isInitialized()) {
-      logger.warn('SkillDiscoveryService not initialized, initializing now...');
-      try {
-        await discoveryService.initialize(context.workingDirectory || process.cwd());
-        logger.info('SkillDiscoveryService initialized on demand');
-      } catch (error) {
-        logger.error('Failed to initialize SkillDiscoveryService on demand', { error });
-        return {
-          success: false,
-          error: `Skill 系统初始化失败: ${error instanceof Error ? error.message : String(error)}`,
-        };
-      }
+    try {
+      await discoveryService.ensureInitialized(context.workingDirectory || process.cwd());
+      logger.info('SkillDiscoveryService ready for execution', {
+        workingDirectory: discoveryService.getWorkingDirectory(),
+      });
+    } catch (error) {
+      logger.error('Failed to initialize SkillDiscoveryService on demand', { error });
+      return {
+        success: false,
+        error: `Skill 系统初始化失败: ${error instanceof Error ? error.message : String(error)}`,
+      };
     }
 
     const skill = discoveryService.getSkill(command);

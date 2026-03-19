@@ -239,8 +239,8 @@ export class SessionRepository {
 
   addMessage(sessionId: string, message: Message, options?: MessageWriteOptions): void {
     const stmt = this.db.prepare(`
-      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, thinking, effort_level, synced_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO messages (id, session_id, role, content, timestamp, tool_calls, tool_results, attachments, thinking, effort_level, synced_at, content_parts)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const attachmentsMeta = message.attachments?.map(a => ({
@@ -268,7 +268,8 @@ export class SessionRepository {
       attachmentsMeta ? JSON.stringify(attachmentsMeta) : null,
       thinkingContent,
       message.effortLevel || null,
-      this.resolveSyncedAt(options)
+      this.resolveSyncedAt(options),
+      message.contentParts ? JSON.stringify(message.contentParts) : null
     );
 
     if (!options?.skipTimestampUpdate) {
@@ -412,6 +413,7 @@ export class SessionRepository {
       attachments: row.attachments ? JSON.parse(row.attachments as string) : undefined,
       thinking: (row.thinking as string) || undefined,
       effortLevel: (row.effort_level as Message['effortLevel']) || undefined,
+      contentParts: row.content_parts ? JSON.parse(row.content_parts as string) : undefined,
     };
   }
 

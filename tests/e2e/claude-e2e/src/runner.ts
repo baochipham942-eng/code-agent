@@ -174,6 +174,7 @@ export class TestRunner extends EventEmitter {
             prompt: stepPrompt,
             workDir: project.path,
             model: testCase.cliOptions?.model,
+            provider: testCase.cliOptions?.provider,
             allowedTools: testCase.cliOptions?.allowedTools,
             timeout,
           });
@@ -367,6 +368,7 @@ ${testCase.prompt}`;
       prompt: nudgePrompt,
       workDir,
       model: testCase.cliOptions?.model,
+      provider: testCase.cliOptions?.provider,
       allowedTools: testCase.cliOptions?.allowedTools,
       timeout,
     });
@@ -443,6 +445,7 @@ ${testCase.prompt}`;
         prompt: testCase.prompt,
         workDir: project.path,
         model: testCase.cliOptions?.model,
+        provider: testCase.cliOptions?.provider,
         allowedTools: testCase.cliOptions?.allowedTools,
         plan: testCase.cliOptions?.plan,
         timeout,

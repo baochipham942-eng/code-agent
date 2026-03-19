@@ -43,13 +43,17 @@ class SkillDiscoveryService {
   private initialized = false;
   private workingDirectory = '';
 
+  private normalizeWorkingDirectory(workingDirectory: string): string {
+    return path.resolve(workingDirectory);
+  }
+
   /**
    * 初始化 Skill 发现服务
    *
    * @param workingDirectory - 当前工作目录
    */
   async initialize(workingDirectory: string): Promise<void> {
-    this.workingDirectory = workingDirectory;
+    this.workingDirectory = this.normalizeWorkingDirectory(workingDirectory);
     this.skills.clear();
 
     // 1. 加载内置 Skills（最低优先级）
@@ -57,7 +61,7 @@ class SkillDiscoveryService {
 
     // 2. 加载用户级 Skills（两个目录都扫描，.code-agent 优先级更高）
     //    先扫 ~/.claude/skills/（通用），再扫 ~/.code-agent/skills/（专属，同名覆盖）
-    const skillsDirs = getSkillsDir(workingDirectory);
+    const skillsDirs = getSkillsDir(this.workingDirectory);
     await this.scanDirectory(skillsDirs.user.legacy, 'user');
     await this.scanDirectory(skillsDirs.user.new, 'user');
 
@@ -79,6 +83,17 @@ class SkillDiscoveryService {
 
     // 注册 Skills 到 ToolSearchService，支持通过 tool_search 发现
     this.registerSkillsToToolSearch();
+  }
+
+  /**
+   * Ensure the discovery state matches the requested working directory.
+   * Long-lived desktop/web processes can switch projects between runs.
+   */
+  async ensureInitialized(workingDirectory: string): Promise<void> {
+    const normalized = this.normalizeWorkingDirectory(workingDirectory);
+    if (!this.initialized || this.workingDirectory !== normalized) {
+      await this.initialize(normalized);
+    }
   }
 
   /**
@@ -293,6 +308,13 @@ class SkillDiscoveryService {
    */
   isInitialized(): boolean {
     return this.initialized;
+  }
+
+  /**
+   * 获取当前初始化所使用的工作目录
+   */
+  getWorkingDirectory(): string {
+    return this.workingDirectory;
   }
 
   /**

@@ -7,7 +7,7 @@ import { IPC_DOMAINS, type IPCRequest, type IPCResponse } from '@shared/ipc';
 import type { DesktopSearchQuery, DesktopTimelineQuery } from '@shared/types';
 import { getNativeDesktopService } from '../services/nativeDesktopService';
 import { startDesktopVisionAnalyzer } from '../services/desktopVisionAnalyzer';
-import { startDesktopAudioCapture, stopDesktopAudioCapture } from '../services/desktopAudioCapture';
+import { startDesktopAudioCapture, stopDesktopAudioCapture, getAudioCaptureStatus } from '../services/desktopAudioCapture';
 import { createLogger } from '../services/infra/logger';
 
 // 会议应用列表 — 检测到前台是这些 app 时自动启动音频采集
@@ -25,6 +25,7 @@ const MEETING_APPS = new Set([
   'FaceTime',
 ]);
 let meetingAudioActive = false;
+let manualAudioActive = false; // 手动录制模式 — 不受会议 app 检测影响
 let meetingCheckTimer: ReturnType<typeof setInterval> | null = null;
 
 const logger = createLogger('DesktopIPC');
@@ -66,6 +67,26 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
           return { success: true, data: service.listAudioSegments(payload.from, payload.to) } satisfies IPCResponse<unknown>;
         }
 
+        case 'startAudioCapture': {
+          if (manualAudioActive || meetingAudioActive) {
+            return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
+          }
+          manualAudioActive = true;
+          await startDesktopAudioCapture();
+          return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
+        }
+
+        case 'stopAudioCapture': {
+          manualAudioActive = false;
+          meetingAudioActive = false;
+          stopDesktopAudioCapture();
+          return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
+        }
+
+        case 'getAudioCaptureStatus': {
+          return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
+        }
+
         default:
           return {
             success: false,
@@ -92,14 +113,14 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
       const appName = ctx?.appName || '';
       const isMeeting = MEETING_APPS.has(appName);
 
-      if (isMeeting && !meetingAudioActive) {
+      if (isMeeting && !meetingAudioActive && !manualAudioActive) {
         logger.info('[音频采集] 检测到会议应用，启动音频采集', { app: appName });
         meetingAudioActive = true;
         startDesktopAudioCapture().catch((err) => {
           logger.warn('[音频采集] 启动失败', { error: err instanceof Error ? err.message : String(err) });
           meetingAudioActive = false;
         });
-      } else if (!isMeeting && meetingAudioActive) {
+      } else if (!isMeeting && meetingAudioActive && !manualAudioActive) {
         logger.info('[音频采集] 会议应用已退出，停止音频采集', { app: appName });
         stopDesktopAudioCapture();
         meetingAudioActive = false;

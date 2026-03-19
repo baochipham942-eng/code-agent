@@ -15,6 +15,8 @@ import {
   X,
   FileText,
   ArrowLeft,
+  Mic,
+  MicOff,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import {
@@ -23,7 +25,11 @@ import {
   listAudioSegments,
   startNativeDesktopCollector,
   stopNativeDesktopCollector,
+  startAudioCapture,
+  stopAudioCapture,
+  getAudioCaptureStatus,
   type AudioSegment,
+  type AudioCaptureStatus,
   type DesktopActivityEvent,
   type NativeDesktopCollectorStatus,
 } from '../../../../services/nativeDesktop';
@@ -819,16 +825,20 @@ export const NativeDesktopSection: React.FC = () => {
   const [collectorBusy, setCollectorBusy] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedHour, setSelectedHour] = useState<number>(new Date().getHours());
+  const [audioStatus, setAudioStatus] = useState<AudioCaptureStatus | null>(null);
+  const [audioBusy, setAudioBusy] = useState(false);
   const hourListRef = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async () => {
     try {
-      const [status, events] = await Promise.all([
+      const [status, events, audio] = await Promise.all([
         getNativeDesktopCollectorStatus(),
         listRecentNativeDesktopEvents(50),
+        getAudioCaptureStatus(),
       ]);
       setCollectorStatus(status);
       setRecentEvents(events);
+      if (audio) setAudioStatus(audio);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -839,10 +849,10 @@ export const NativeDesktopSection: React.FC = () => {
   useEffect(() => { loadData(); }, [loadData]);
 
   useEffect(() => {
-    if (!collectorStatus?.running) return;
+    if (!collectorStatus?.running && !audioStatus?.capturing) return;
     const timer = window.setInterval(loadData, 5000);
     return () => window.clearInterval(timer);
-  }, [collectorStatus?.running, loadData]);
+  }, [collectorStatus?.running, audioStatus?.capturing, loadData]);
 
   const handleToggleCollector = async () => {
     setCollectorBusy(true);
@@ -865,6 +875,21 @@ export const NativeDesktopSection: React.FC = () => {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setCollectorBusy(false);
+    }
+  };
+
+  const handleToggleAudio = async () => {
+    setAudioBusy(true);
+    setError(null);
+    try {
+      const result = audioStatus?.capturing
+        ? await stopAudioCapture()
+        : await startAudioCapture();
+      if (result) setAudioStatus(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAudioBusy(false);
     }
   };
 
@@ -930,6 +955,23 @@ export const NativeDesktopSection: React.FC = () => {
           </div>
 
           <button
+            onClick={handleToggleAudio}
+            disabled={audioBusy}
+            title={audioStatus?.capturing ? '停止录音' : '开始录音（会议纪要）'}
+            className={`px-2.5 py-1 rounded-lg text-[11px] inline-flex items-center gap-1 transition-colors ${
+              audioStatus?.capturing
+                ? 'bg-rose-600/80 text-white hover:bg-rose-500 animate-pulse'
+                : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+            } disabled:opacity-50`}
+          >
+            {audioStatus?.capturing ? (
+              <><MicOff className="w-3 h-3" /> 录音中</>
+            ) : (
+              <><Mic className="w-3 h-3" /> 录音</>
+            )}
+          </button>
+
+          <button
             onClick={handleToggleCollector}
             disabled={collectorBusy}
             className={`px-2.5 py-1 rounded-lg text-[11px] inline-flex items-center gap-1 transition-colors ${
@@ -960,6 +1002,11 @@ export const NativeDesktopSection: React.FC = () => {
           <span>{appCount} 个应用</span>
           {screenshotCount > 0 && <span>{screenshotCount} 张截图</span>}
           {analyzedCount > 0 && <span>{analyzedCount} 条 AI 分析</span>}
+          {audioStatus?.capturing && (
+            <span className="text-rose-400">
+              录音中 · {audioStatus.totalSegments} 段 · {audioStatus.asrEngine}
+            </span>
+          )}
         </div>
       )}
 

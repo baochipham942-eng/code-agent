@@ -184,23 +184,21 @@ export interface AudioSegment {
 
 export async function listAudioSegments(from: number, to: number): Promise<AudioSegment[]> {
   try {
-    const resp = await fetch('/api/domain/desktop/getAudioSegments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'getAudioSegments', payload: { from, to } }),
-    });
-    if (!resp.ok) return [];
-    const result = await resp.json();
-    return result?.success ? (result.data || []) : [];
+    return await postDesktopAction<AudioSegment[]>('getAudioSegments', { from, to });
   } catch {
     return [];
   }
 }
 
+function getAuthHeaders(): Record<string, string> {
+  const token = (window as unknown as Record<string, unknown>).__CODE_AGENT_TOKEN__ as string | undefined;
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
 async function postDesktopAction<T>(action: string, payload?: Record<string, unknown>): Promise<T> {
   const resp = await fetch('/api/domain/desktop/' + action, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
     body: JSON.stringify({ action, payload }),
   });
   if (!resp.ok) throw new Error(`请求失败: ${resp.status}`);

@@ -5,6 +5,7 @@
 
 import type { Tool, ToolContext, ToolExecutionResult } from '../types';
 import { getSpawnedAgent, listSpawnedAgents } from './spawnAgent';
+import { getSpawnGuard } from '../../agent/spawnGuard';
 
 type MessageAction = 'status' | 'list' | 'result' | 'cancel';
 
@@ -138,26 +139,25 @@ ${agent.result || '(no output)'}`,
           return { success: false, error: 'agentId required for cancel action' };
         }
 
-        const agent = getSpawnedAgent(agentId);
-        if (!agent) {
+        const guard = getSpawnGuard();
+        const managed = guard.get(agentId);
+        if (!managed) {
           return { success: false, error: `Agent not found: ${agentId}` };
         }
 
-        if (agent.status !== 'running') {
+        if (managed.status !== 'running') {
           return {
             success: true,
-            output: `Agent [${agentId}] is not running (status: ${agent.status})`,
+            output: `Agent [${agentId}] is not running (status: ${managed.status})`,
           };
         }
 
-        // Note: Actual cancellation would require storing the executor reference
-        // For now, we just mark it as cancelled
-        agent.status = 'failed';
-        agent.error = 'Cancelled by user';
+        // Real cancellation via SpawnGuard (sends abort signal)
+        guard.cancel(agentId);
 
         return {
           success: true,
-          output: `Agent [${agentId}] cancellation requested.`,
+          output: `Agent [${agentId}] cancelled via abort signal.`,
         };
       }
 

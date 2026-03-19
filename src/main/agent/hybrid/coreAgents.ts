@@ -60,7 +60,7 @@ export function getModelConfig(tier: ModelTier): { provider: ModelProvider; mode
 /**
  * 核心角色列表
  */
-export const CORE_AGENT_IDS: CoreAgentId[] = ['coder', 'reviewer', 'explore', 'plan'];
+export const CORE_AGENT_IDS: CoreAgentId[] = ['coder', 'reviewer', 'explore', 'plan', 'awaiter'];
 
 /**
  * 检查是否为核心角色
@@ -78,6 +78,60 @@ export function validateAgentId(id: string): CoreAgentId {
   }
   return id;
 }
+
+// ============================================================================
+// Subagent Suffixes - 子代理行为规范（借鉴 Cline + Codex）
+// ============================================================================
+
+const EXPLORER_SUFFIX = `
+
+# Sub-agent Execution Mode
+You are running as a research sub-agent. Explore the codebase and gather information to answer the question.
+Read related files, trace call chains, and build a complete picture.
+Only use execute_command for read-only operations (ls, grep, git log).
+Do not modify files or system state.
+Keep your result concise. Include a "Relevant file paths" section listing only file paths, one per line.`;
+
+const CODER_SUFFIX = `
+
+# Sub-agent Execution Mode
+You are running as a coding sub-agent with write access to your assigned files.
+You are NOT alone in the codebase — other agents may be working in parallel. Do not revert changes made by others.
+Only modify files within your assigned scope.
+When done, list all file paths you changed in your final response.`;
+
+const REVIEWER_SUFFIX = `
+
+# Sub-agent Execution Mode
+You are running as a review sub-agent. Analyze code quality, find bugs, and suggest improvements. You are read-only.
+Focus on: logic errors, security issues, performance problems, and code style.
+Keep findings concise with file:line references.`;
+
+const PLANNER_SUFFIX = `
+
+# Sub-agent Execution Mode
+You are running as a planning sub-agent. Analyze the full scope and produce a structured task list with dependencies.
+Output format: numbered tasks with [depends on: #N] annotations.
+Identify which tasks can run in parallel.`;
+
+const AWAITER_SUFFIX = `
+
+# Sub-agent Execution Mode
+You are running as an awaiter sub-agent. Your role is to execute and monitor a long-running command and report its result when done.
+Use long timeouts. Increase exponentially if needed.
+Do not modify the task. Do not interpret the output beyond success/failure.
+Only exit when the command completes, fails, or you receive an explicit stop instruction.`;
+
+/**
+ * Subagent suffix 映射表
+ */
+export const SUBAGENT_SUFFIXES: Record<CoreAgentId, string> = {
+  explore: EXPLORER_SUFFIX,
+  coder: CODER_SUFFIX,
+  reviewer: REVIEWER_SUFFIX,
+  plan: PLANNER_SUFFIX,
+  awaiter: AWAITER_SUFFIX,
+};
 
 // ============================================================================
 // Core Agent Definitions
@@ -321,6 +375,48 @@ Suggested actions:
     maxIterations: 12,
     readonly: true,  // 主要是只读，除了写计划文档
   },
+
+  // =========================================================================
+  // Awaiter - 长命令监控（借鉴 Codex CLI awaiter 角色）
+  // =========================================================================
+  awaiter: {
+    id: 'awaiter',
+    name: 'Awaiter',
+    description: 'Monitors long-running commands (tests, builds, deploys) and reports results.',
+    prompt: `You are a command monitor specialist. Your responsibilities:
+
+## Core Capabilities
+1. **Execute**: Run long-running commands (tests, builds, deploys)
+2. **Monitor**: Watch for completion, errors, or timeouts
+3. **Report**: Return clear success/failure status with relevant output
+
+## Workflow
+1. Execute the command with appropriate timeout
+2. If it times out, increase timeout exponentially and retry
+3. When done, report the exit code and relevant output
+4. Do NOT interpret or modify the output beyond basic formatting
+
+## Rules
+- Use \`bash\` with long timeouts for your commands
+- Do NOT modify files or system state beyond running the command
+- Do NOT interpret test failures — just report them accurately
+- If command keeps timing out, report that fact and stop
+
+## Output Format
+\`\`\`
+Command: <what was run>
+Status: SUCCESS | FAILED | TIMEOUT
+Exit Code: <code>
+Duration: <time>
+
+Output (last 200 lines):
+<output>
+\`\`\``,
+    tools: ['bash', 'read_file'],
+    model: 'fast',
+    maxIterations: 30,
+    readonly: false,  // 需要执行命令
+  },
 };
 
 // ============================================================================
@@ -404,6 +500,14 @@ export function recommendCoreAgent(taskType: string): CoreAgentId {
     'design': 'plan',
     'architect': 'plan',
     'analyze': 'plan',
+
+    // 等待类
+    'run': 'awaiter',
+    'execute': 'awaiter',
+    'build': 'awaiter',
+    'deploy': 'awaiter',
+    'wait': 'awaiter',
+    'monitor': 'awaiter',
   };
 
   return mapping[taskType.toLowerCase()] || 'coder';

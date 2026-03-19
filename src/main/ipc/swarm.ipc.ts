@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { BrowserWindow, ipcMain } from '../platform';
-import type { SwarmEvent, AgentStatus } from '../../shared/types/swarm';
+import type { SwarmEvent, AgentStatus, SwarmAggregation } from '../../shared/types/swarm';
 import type { AgentApplicationService } from '../../shared/types/appService';
 
 // ============================================================================
@@ -197,6 +197,36 @@ export class SwarmEventEmitter {
         result: {
           success: statistics.failed === 0,
           totalTime: statistics.totalTime,
+        },
+      },
+    });
+  }
+
+  /**
+   * Swarm 完成（带聚合结果）
+   */
+  completedWithAggregation(statistics: {
+    total: number;
+    completed: number;
+    failed: number;
+    parallelPeak: number;
+    totalTime: number;
+  }, aggregation: SwarmAggregation): void {
+    emitSwarmEvent({
+      type: 'swarm:completed',
+      timestamp: Date.now(),
+      data: {
+        statistics: {
+          ...statistics,
+          running: 0,
+          pending: 0,
+          totalTokens: 0,
+          totalToolCalls: aggregation.totalIterations,
+        },
+        result: {
+          success: statistics.failed === 0,
+          totalTime: statistics.totalTime,
+          aggregation,
         },
       },
     });

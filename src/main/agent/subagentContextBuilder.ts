@@ -136,6 +136,9 @@ export const AGENT_CONTEXT_LEVELS: Record<string, ContextLevel> = {
   'devops': 'relevant',
   'documenter': 'relevant',
 
+  // 等待类
+  'awaiter': 'minimal',
+
   // 其他
   'general-purpose': 'full',
   'bash-executor': 'minimal',

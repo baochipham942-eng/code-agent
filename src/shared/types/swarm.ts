@@ -31,6 +31,12 @@ export interface SwarmAgentState {
   toolCalls?: number;
   lastReport?: string;
   error?: string;
+  /** Cost incurred by this agent (USD) */
+  cost?: number;
+  /** Result preview text (first ~200 chars) */
+  resultPreview?: string;
+  /** Files this agent changed */
+  filesChanged?: string[];
 }
 
 /**
@@ -50,6 +56,21 @@ export interface SwarmExecutionState {
     totalTokens: number;
     totalToolCalls: number;
   };
+  /** Result aggregation (populated after swarm:completed) */
+  aggregation?: SwarmAggregation;
+}
+
+/**
+ * Aggregated team result for UI display
+ */
+export interface SwarmAggregation {
+  summary: string;
+  filesChanged: string[];
+  totalCost: number;
+  totalDuration: number;
+  speedup: number;
+  successRate: number;
+  totalIterations: number;
 }
 
 /**
@@ -107,6 +128,7 @@ export interface SwarmEvent {
       totalTime: number;
       aggregatedOutput?: string;
       verification?: SwarmVerificationResult;
+      aggregation?: SwarmAggregation;
     };
     // Agent Teams 扩展数据
     message?: {

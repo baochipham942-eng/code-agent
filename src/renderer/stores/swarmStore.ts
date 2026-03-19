@@ -3,11 +3,13 @@
 // ============================================================================
 
 import { create } from 'zustand';
-import type { SwarmAgentState, SwarmExecutionState, SwarmEvent, SwarmVerificationResult } from '@shared/types/swarm';
+import type { SwarmAgentState, SwarmExecutionState, SwarmEvent, SwarmVerificationResult, SwarmAggregation } from '@shared/types/swarm';
 
 interface SwarmStore extends SwarmExecutionState {
   /** Verification result from deterministic verifier */
   verification?: SwarmVerificationResult;
+  /** Result aggregation */
+  aggregation?: SwarmAggregation;
   // Actions
   handleEvent: (event: SwarmEvent) => void;
   reset: () => void;
@@ -137,6 +139,7 @@ export const useSwarmStore = create<SwarmStore>((set, get) => ({
           isRunning: false,
           statistics: data.statistics || state.statistics,
           verification: data.result?.verification || undefined,
+          aggregation: data.result?.aggregation || undefined,
         }));
         break;
     }

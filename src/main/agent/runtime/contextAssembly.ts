@@ -67,6 +67,7 @@ import { AntiPatternDetector } from '../../agent/antiPattern/detector';
 import { cleanXmlResidues } from '../../agent/antiPattern/cleanXml';
 import { GoalTracker } from '../../agent/goalTracker';
 import { NudgeManager } from '../../agent/nudgeManager';
+import { buildActiveAgentContext, drainCompletionNotifications } from '../../agent/activeAgentContext';
 import { getSessionRecoveryService } from '../../agent/sessionRecovery';
 import { getIncompleteTasks } from '../../tools/planning/taskStore';
 import {
@@ -618,6 +619,18 @@ ${deferredToolsSummary}
 用法：ToolSearch("browser") 搜索浏览器工具 | ToolSearch("select:Browser") 直接加载
 </deferred-tools>`;
       }
+    }
+
+    // 注入活跃子代理上下文（Phase 3: 让主 Agent 感知当前 team 状态）
+    const activeAgentBlock = buildActiveAgentContext();
+    if (activeAgentBlock) {
+      systemPrompt += activeAgentBlock;
+    }
+
+    // 注入后台 agent 完成通知（Codex-style async notifications）
+    const completionNotifications = drainCompletionNotifications();
+    if (completionNotifications.length > 0) {
+      systemPrompt += '\n\n' + completionNotifications.join('\n');
     }
 
     // 拼接持久化系统上下文（任务指导、模式 reminder 等）

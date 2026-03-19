@@ -31,6 +31,7 @@ import { compactSubagentMessages } from './subagentCompaction';
 import { SUBAGENT_COMPACTION } from '../../shared/constants';
 import { createTimedAbortController, combineAbortSignals } from './shutdownProtocol';
 import { getPlanApprovalGate } from './planApproval';
+import { getSpawnGuard } from './spawnGuard';
 
 const logger = createLogger('SubagentExecutor');
 
@@ -120,6 +121,8 @@ interface SubagentContext {
   parentToolUseId?: string;
   /** AbortSignal 用于取消任务执行 */
   abortSignal?: AbortSignal;
+  /** SpawnGuard agent ID — used to drain message queue for send_input */
+  spawnGuardId?: string;
 }
 
 // ----------------------------------------------------------------------------
@@ -328,6 +331,17 @@ export class SubagentExecutor {
             iterations,
             agentId: pipelineContext.agentId,
           };
+        }
+
+        // Drain send_input message queue (Phase 3: mid-loop injection)
+        if (context.spawnGuardId) {
+          const pendingMessages = getSpawnGuard().drainMessages(context.spawnGuardId);
+          if (pendingMessages.length > 0) {
+            for (const msg of pendingMessages) {
+              messages.push({ role: 'user', content: `[Parent agent message]: ${msg}` });
+            }
+            logger.info(`[${config.name}] Injected ${pendingMessages.length} queued messages`);
+          }
         }
 
         // Check budget before each iteration

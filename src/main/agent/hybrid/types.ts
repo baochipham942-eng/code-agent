@@ -6,7 +6,7 @@
 /**
  * 核心角色 ID（4 个）
  */
-export type CoreAgentId = 'coder' | 'reviewer' | 'explore' | 'plan';
+export type CoreAgentId = 'coder' | 'reviewer' | 'explore' | 'plan' | 'awaiter';
 
 /**
  * 模型层级（3 级）

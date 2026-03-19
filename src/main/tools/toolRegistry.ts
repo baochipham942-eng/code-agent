@@ -140,6 +140,11 @@ import {
   TeammateTool,
   // DEPRECATED: spawnAgentTool, agentMessageTool, workflowOrchestrateTool, teammateTool removed — use PascalCase versions
   planReviewTool,
+  // Phase 2: Agent lifecycle tools
+  WaitAgentTool,
+  CloseAgentTool,
+  // Phase 3: Agent communication
+  SendInputTool,
 } from './multiagent';
 
 
@@ -251,6 +256,9 @@ const TOOL_ALIASES: Record<string, string> = {
   agent_message: 'AgentMessage',
   workflow_orchestrate: 'WorkflowOrchestrate',
   teammate: 'Teammate',
+  wait_agent: 'WaitAgent',
+  close_agent: 'CloseAgent',
+  send_input: 'SendInput',
 
   // Memory aliases
   memory_store: 'memory',
@@ -470,6 +478,11 @@ export class ToolRegistry {
     this.register(TeammateTool);
     // Plan review (cross-agent approval)
     this.register(planReviewTool);
+    // Phase 2: Agent lifecycle control
+    this.register(WaitAgentTool);
+    this.register(CloseAgentTool);
+    // Phase 3: Agent communication
+    this.register(SendInputTool);
 
 
     // Phase 2: Unified tools (consolidated from multiple tools)

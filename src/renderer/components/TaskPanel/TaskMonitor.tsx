@@ -47,15 +47,21 @@ function formatElapsed(ms: number): string {
   return `${mins}m ${secs}s`;
 }
 
+// 核心产出物扩展名（最终交付物，应排在前面）
+const CORE_EXTENSIONS = new Set(['.pptx', '.pdf', '.xlsx', '.docx', '.mp4', '.html']);
+
 interface ArtifactInfo {
   path: string;
   name: string;
+  isCore?: boolean;
 }
 
 export const TaskMonitor: React.FC = () => {
   const { todos, currentSessionId, messages } = useSessionStore();
   const { workingDirectory } = useAppStore();
   const sessionTaskProgress = useAppStore((state) => state.sessionTaskProgress);
+  const processingSessionIds = useAppStore((state) => state.processingSessionIds);
+  const isProcessing = currentSessionId ? processingSessionIds.has(currentSessionId) : false;
   const { mountedSkills, setCurrentSession } = useSkillStore();
   const { t } = useI18n();
 
@@ -108,6 +114,22 @@ export const TaskMonitor: React.FC = () => {
   const completedCount = todos.filter((item) => item.status === 'completed').length;
   const totalCount = todos.length;
 
+  // 从工具调用中检测被调用的 skills（补充 mountedSkills 未覆盖的情况）
+  const invokedSkills = useMemo(() => {
+    const skillNames = new Set<string>();
+    for (const msg of messages.slice(-50)) {
+      if (!msg.toolCalls) continue;
+      for (const tc of msg.toolCalls) {
+        if (tc.name === 'Skill') {
+          const args = tc.arguments as Record<string, unknown>;
+          const cmd = (args?.command || args?.skill) as string | undefined;
+          if (cmd) skillNames.add(cmd);
+        }
+      }
+    }
+    return Array.from(skillNames);
+  }, [messages]);
+
   // Phase-based 进度推导（无 todos 时的回退方案）
   const toolPhases = useMemo(() => {
     if (totalCount > 0) return [];
@@ -126,30 +148,94 @@ export const TaskMonitor: React.FC = () => {
         }
       }
     }
+    // 会话结束后（非处理中），最后一个 phase 也标记为 completed
+    if (phases.length > 0 && !isProcessing) {
+      phases[phases.length - 1].status = 'completed';
+    }
     return phases;
-  }, [messages, totalCount]);
+  }, [messages, totalCount, isProcessing]);
 
-  // 产物：从 Write/Edit 工具调用中提取
+  // 产物：从工具调用中提取生成的文件
+  // 注意：历史消息加载后 arguments 和 metadata 可能为空，需要从 result.output 文本中提取路径
   const artifacts = useMemo(() => {
     const files: ArtifactInfo[] = [];
     const seenPaths = new Set<string>();
-    for (const message of messages.slice(-20).reverse()) {
-      if (!message.toolCalls) continue;
-      for (const toolCall of message.toolCalls) {
-        if (['Write', 'Edit'].includes(toolCall.name)) {
-          const args = toolCall.arguments as Record<string, unknown>;
-          const filePath = (args?.path || args?.file_path) as string | undefined;
-          if (filePath && !seenPaths.has(filePath)) {
-            seenPaths.add(filePath);
-            files.push({ path: filePath, name: filePath.split('/').pop() || filePath });
-            if (files.length >= 8) break;
+    const seenNames = new Set<string>();
+    const addPath = (filePath: string) => {
+      if (!filePath) return;
+      // Normalize: trim whitespace, remove trailing slashes, collapse double slashes
+      let normalized = filePath.trim().replace(/\/+$/, '').replace(/\/\//g, '/');
+      // Resolve relative paths against workingDirectory
+      if (workingDirectory && !normalized.startsWith('/') && !normalized.startsWith('~')) {
+        normalized = `${workingDirectory}/${normalized}`;
+      }
+      if (seenPaths.has(normalized)) return;
+      // 只保留有实际文件扩展名的路径，跳过纯目录
+      const name = normalized.split('/').pop() || '';
+      if (!name.includes('.')) return;
+      // Deduplicate by filename: if same filename already seen, skip (same file written multiple times)
+      if (seenNames.has(name)) return;
+      seenPaths.add(normalized);
+      seenNames.add(name);
+      const ext = name.substring(name.lastIndexOf('.')).toLowerCase();
+      files.push({ path: normalized, name, isCore: CORE_EXTENSIONS.has(ext) });
+    };
+    // 从 result.output 提取文件路径（兼容 arguments 被清空的历史消息）
+    const extractPathsFromOutput = (output: string, toolName?: string) => {
+      let match;
+      // 匹配带前缀的绝对路径
+      const pathPattern = /(?:Updated file|Created file|[Ss]aved to|已保存到|Written to|Created|Generated)[:\s]+([/~][^\s,\n"']+\.\w+)/gi;
+      while ((match = pathPattern.exec(output)) !== null) {
+        addPath(match[1]);
+      }
+      // 兜底：匹配所有绝对路径（带常见扩展名）
+      const absPathPattern = /(?:^|\s)(\/[^\s,\n"']+\.(?:png|jpg|jpeg|pdf|pptx|xlsx|docx|html|mp4|json|md))\b/gi;
+      while ((match = absPathPattern.exec(output)) !== null) {
+        addPath(match[1]);
+      }
+      // Bash 特殊处理：从 [cwd: /path] 提取工作目录，拼接 Created: 的相对路径
+      if (toolName === 'Bash') {
+        const cwdMatch = output.match(/\[cwd:\s*([^\]]+)\]/);
+        const cwd = cwdMatch?.[1];
+        if (cwd) {
+          const relPattern = /Created[:\s]+([^\s/][^\s,\n"']+\.(?:pptx|pdf|png|html|mp4))\b/gi;
+          while ((match = relPattern.exec(output)) !== null) {
+            addPath(`${cwd}/${match[1]}`);
           }
         }
       }
-      if (files.length >= 8) break;
+    };
+    for (const message of messages.slice(-30).reverse()) {
+      if (!message.toolCalls) continue;
+      for (const toolCall of message.toolCalls) {
+        const args = toolCall.arguments as Record<string, unknown>;
+        // 1. 从 arguments 提取（实时消息）
+        if (['Write', 'Edit'].includes(toolCall.name)) {
+          const filePath = (args?.path || args?.file_path) as string | undefined;
+          if (filePath) addPath(filePath);
+        }
+        if (['image_generate', 'video_generate'].includes(toolCall.name)) {
+          if (args?.output_path) addPath(args.output_path as string);
+        }
+        // 2. 从 metadata 提取
+        const meta = toolCall.result?.metadata as Record<string, unknown> | undefined;
+        if (meta) {
+          for (const key of ['filePath', 'imagePath', 'videoPath', 'outputPath', 'pptxPath', 'pdfPath']) {
+            if (meta[key] && typeof meta[key] === 'string') addPath(meta[key] as string);
+          }
+        }
+        // 3. 从 result.output 文本提取（兼容历史消息）
+        if (toolCall.result?.output) {
+          extractPathsFromOutput(toolCall.result.output, toolCall.name);
+        }
+        if (files.length >= 10) break;
+      }
+      if (files.length >= 10) break;
     }
+    // 核心产出物排在前面
+    files.sort((a, b) => (a.isCore === b.isCore ? 0 : a.isCore ? -1 : 1));
     return files;
-  }, [messages]);
+  }, [messages, workingDirectory]);
 
   const folderName = workingDirectory ? workingDirectory.split('/').pop() || workingDirectory : null;
   const showToolElapsed = toolProgress && toolProgress.elapsedMs >= 5000;
@@ -306,7 +392,7 @@ export const TaskMonitor: React.FC = () => {
 
           {/* Section 3: 技能 & MCP */}
           <Section title={t.taskPanel.sectionSkillsMcp}>
-            {mountedSkills.length > 0 ? (
+            {mountedSkills.length > 0 || invokedSkills.length > 0 ? (
               <div className="space-y-0.5">
                 {mountedSkills.map((mount) => (
                   <div key={mount.skillName} className="flex items-center gap-2 py-0.5">
@@ -314,6 +400,14 @@ export const TaskMonitor: React.FC = () => {
                     <span className="text-xs text-zinc-400 truncate">{mount.skillName}</span>
                   </div>
                 ))}
+                {invokedSkills
+                  .filter((name) => !mountedSkills.some((m) => m.skillName === name))
+                  .map((name) => (
+                    <div key={`invoked-${name}`} className="flex items-center gap-2 py-0.5">
+                      <Sparkles className="w-3 h-3 text-emerald-400/70 flex-shrink-0" />
+                      <span className="text-xs text-zinc-400 truncate">{name}</span>
+                    </div>
+                  ))}
               </div>
             ) : (
               <EmptyState text={t.taskPanel.skillsMcpEmpty} />

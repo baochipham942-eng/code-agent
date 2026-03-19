@@ -10,10 +10,19 @@ import { TraceNodeRenderer } from './TraceNodeRenderer';
 interface TurnCardProps {
   turn: TraceTurn;
   defaultExpanded?: boolean;
+  /** Force expand for search matches */
+  forceExpanded?: boolean;
+  /** This turn contains the active search match */
+  highlightActive?: boolean;
 }
 
-export const TurnCard: React.FC<TurnCardProps> = ({ turn, defaultExpanded = false }) => {
+export const TurnCard: React.FC<TurnCardProps> = ({ turn, defaultExpanded = false, forceExpanded, highlightActive }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
+
+  // Auto-expand when search matches
+  React.useEffect(() => {
+    if (forceExpanded) setExpanded(true);
+  }, [forceExpanded]);
 
   const stats = useMemo(() => {
     const toolCount = turn.nodes.filter(n => n.type === 'tool_call').length;
@@ -37,7 +46,9 @@ export const TurnCard: React.FC<TurnCardProps> = ({ turn, defaultExpanded = fals
 
   return (
     <div className={`border border-zinc-800 rounded-lg mb-2 transition-colors ${
-      isStreaming ? 'border-primary-500/30 bg-primary-500/5' : 'hover:border-zinc-700'
+      isStreaming ? 'border-primary-500/30 bg-primary-500/5' :
+      highlightActive ? 'border-amber-500/40 bg-amber-500/5' :
+      'hover:border-zinc-700'
     }`}>
       {/* Header */}
       <button
@@ -84,8 +95,13 @@ export const TurnCard: React.FC<TurnCardProps> = ({ turn, defaultExpanded = fals
       {/* Content */}
       {expanded && (
         <div className="px-4 pb-3 space-y-2">
-          {turn.nodes.map(node => (
-            <TraceNodeRenderer key={node.id} node={node} />
+          {turn.nodes.map((node, i) => (
+            <TraceNodeRenderer
+              key={node.id}
+              node={node}
+              attachments={node.attachments}
+              isStreaming={isStreaming && i === turn.nodes.length - 1}
+            />
           ))}
 
           {/* Streaming indicator at bottom of active turn */}

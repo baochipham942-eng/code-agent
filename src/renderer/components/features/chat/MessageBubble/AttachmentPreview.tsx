@@ -19,6 +19,8 @@ import type { AttachmentDisplayProps, AttachmentIconConfig } from './types';
 import type { AttachmentCategory, MessageAttachment } from '@shared/types';
 import { formatFileSize, FOLDER_SUMMARY_THRESHOLD, categoryLabels } from './utils';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
+import { SpreadsheetBlock } from './SpreadsheetBlock';
+import { DocumentBlock } from './DocumentBlock';
 
 // Get attachment icon config based on category
 function getAttachmentIconConfig(category: AttachmentCategory | undefined): AttachmentIconConfig {
@@ -66,6 +68,16 @@ const AttachmentItem: React.FC<{
         </div>
       </div>
     );
+  }
+
+  // Excel with JSON data → interactive SpreadsheetBlock
+  if (category === 'excel' && attachment.sheetsJson) {
+    return <SpreadsheetBlock spec={attachment.sheetsJson} />;
+  }
+
+  // Word (.docx) with JSON data → interactive DocumentBlock
+  if (category === 'document' && attachment.docxJson) {
+    return <DocumentBlock spec={attachment.docxJson} />;
   }
 
   const { icon, color, label } = getAttachmentIconConfig(category);

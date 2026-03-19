@@ -21,6 +21,7 @@ export interface TraceNode {
   reasoning?: string;
   thinking?: string;
   subtype?: 'compaction' | 'error' | 'skill_status';
+  attachments?: import('./message').MessageAttachment[];
 }
 
 export interface TraceTurn {

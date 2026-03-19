@@ -61,8 +61,31 @@ export function useFileUpload() {
       return null;
     }
 
+    // Word (.docx) 文件处理
+    if (category === 'document' && filePath && file.name.toLowerCase().endsWith('.docx')) {
+      try {
+        const result = await ipcService.extractDocxHtml(filePath);
+        if (result) {
+          const docxJson = JSON.stringify({
+            title: file.name.replace(/\.docx$/i, ''),
+            paragraphs: result.paragraphs,
+            text: result.text,
+            wordCount: result.wordCount,
+          });
+          return {
+            id, type: 'file', category: 'document', name: displayName, size: file.size,
+            mimeType: file.type || 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            data: result.text, path: filePath, docxJson,
+          };
+        }
+      } catch (e) {
+        logger.warn('Docx extraction failed', { error: e });
+      }
+      return null;
+    }
+
     if (category === 'document') {
-      logger.warn('Office documents (.docx, .pptx) are not yet supported');
+      logger.warn('Office documents (.pptx) are not yet supported');
       return null;
     }
 
@@ -70,10 +93,18 @@ export function useFileUpload() {
     if (category === 'excel' && filePath) {
       const result = await ipcService.extractExcelText(filePath);
       if (result) {
+        // Also extract JSON for SpreadsheetBlock interactive rendering
+        let sheetsJson: string | undefined;
+        try {
+          const jsonResult = await ipcService.extractExcelJson(filePath);
+          if (jsonResult) sheetsJson = JSON.stringify(jsonResult);
+        } catch { /* non-blocking */ }
+
         return {
           id, type: 'file', category: 'excel', name: displayName, size: file.size,
           mimeType: file.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           data: result.text, sheetCount: result.sheetCount, rowCount: result.rowCount, path: filePath,
+          sheetsJson,
         };
       }
       logger.warn('Excel extraction failed, falling back to binary warning');

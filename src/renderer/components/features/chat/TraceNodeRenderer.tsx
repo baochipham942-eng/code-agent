@@ -17,14 +17,16 @@ interface TraceNodeRendererProps {
   node: TraceNode;
   /** Message attachments for user nodes */
   attachments?: import('@shared/types').MessageAttachment[];
+  /** Whether this node is in a currently streaming turn */
+  isStreaming?: boolean;
 }
 
-export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({ node, attachments }) => {
+export const TraceNodeRenderer: React.FC<TraceNodeRendererProps> = ({ node, attachments, isStreaming }) => {
   switch (node.type) {
     case 'user':
       return <UserNode content={node.content} attachments={attachments} />;
     case 'assistant_text':
-      return <AssistantTextNode node={node} />;
+      return <AssistantTextNode node={node} isStreaming={isStreaming} />;
     case 'tool_call':
       return <ToolCallNode node={node} />;
     case 'system':
@@ -76,7 +78,7 @@ function stripMarkdown(md: string): string {
 }
 
 // ---- Assistant Text Node ----
-const AssistantTextNode: React.FC<{ node: TraceNode }> = ({ node }) => {
+const AssistantTextNode: React.FC<{ node: TraceNode; isStreaming?: boolean }> = ({ node, isStreaming: turnStreaming }) => {
   const [showReasoning, setShowReasoning] = useState(false);
   const reasoningRef = useRef<HTMLDivElement>(null);
   const [reasoningHeight, setReasoningHeight] = useState<number | null>(null);
@@ -156,6 +158,9 @@ const AssistantTextNode: React.FC<{ node: TraceNode }> = ({ node }) => {
       {node.content && (
         <div className="text-zinc-200 leading-relaxed select-text">
           <MessageContent content={node.content} isUser={false} />
+          {turnStreaming && (
+            <span className="inline-block w-[2px] h-[1em] bg-primary-400 align-text-bottom animate-pulse ml-0.5" />
+          )}
         </div>
       )}
     </div>

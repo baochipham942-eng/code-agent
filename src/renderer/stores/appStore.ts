@@ -43,6 +43,7 @@ interface AppState {
   showCapturePanel: boolean;
   showDesktopPanel: boolean;
   showCronCenter: boolean;
+  showFileExplorer: boolean;
   voicePasteStatus: 'idle' | 'recording' | 'transcribing' | 'processing';
   sidebarCollapsed: boolean;
 
@@ -109,6 +110,7 @@ interface AppState {
   setShowCapturePanel: (show: boolean) => void;
   setShowDesktopPanel: (show: boolean) => void;
   setShowCronCenter: (show: boolean) => void;
+  setShowFileExplorer: (show: boolean) => void;
   setVoicePasteStatus: (status: 'idle' | 'recording' | 'transcribing' | 'processing') => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
   setLanguage: (language: Language) => void;
@@ -168,6 +170,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   showCapturePanel: false, // Capture panel hidden by default
   showDesktopPanel: false,
   showCronCenter: false,
+  showFileExplorer: false,
   voicePasteStatus: 'idle' as const,
   sidebarCollapsed: false,
 
@@ -232,6 +235,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setShowCapturePanel: (show) => set({ showCapturePanel: show }),
   setShowDesktopPanel: (show) => set({ showDesktopPanel: show }),
   setShowCronCenter: (show) => set({ showCronCenter: show }),
+  setShowFileExplorer: (show) => set({ showFileExplorer: show }),
   setVoicePasteStatus: (status) => set({ voicePasteStatus: status }),
   setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
   setLanguage: (language) => set({ language }),
@@ -278,7 +282,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setPreviewFilePath: (path) => set({ previewFilePath: path }),
   setShowPreviewPanel: (show) => set({ showPreviewPanel: show }),
-  openPreview: (filePath) => set({ previewFilePath: filePath, showPreviewPanel: true }),
+  openPreview: (filePath) => {
+    // Resolve relative paths against workingDirectory
+    let resolved = filePath;
+    if (filePath && !filePath.startsWith('/')) {
+      const wd = get().workingDirectory;
+      if (wd) resolved = `${wd}/${filePath}`;
+    }
+    set({ previewFilePath: resolved, showPreviewPanel: true });
+  },
   closePreview: () => set({ previewFilePath: null, showPreviewPanel: false }),
 
   setPendingPermissionRequest: (request, sessionId = null) =>

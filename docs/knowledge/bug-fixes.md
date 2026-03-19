@@ -32,3 +32,31 @@
 - UI: ChatView ThinkingIndicator 增加 ctx% 显示，颜色跟随阈值（≥60% 琥珀，≥85% 红）
 - commit: 0efc21d，已推送 main
 - 关键文件: tokenOptimizer.ts, contextHealthService.ts, agentLoop.ts, orchestrator.ts, edit.ts, ChatView.tsx, constants.ts
+
+## Session 20 修复 (2026-03-19): Deep Research 触发失败 + 引擎效率
+
+### 错误模式: 默认值语义歧义
+
+**问题**: `taskType` 默认值 `'code'` 身兼两义 — 既是"确认为编程任务"，也是"什么都没匹配到"。agentOrchestrator 排除列表 `['code', 'data', 'ppt', 'image', 'video']` 包含 `'code'`，导致所有未被正则捕获的 prompt 跳过 LLM 意图分类 fallback，Deep Research 引擎成了死代码。
+
+**根因链路**: 用户输入"请深入研究…" → 正则缺"深入研究" → taskType 保持默认 `'code'` → `'code'` 在排除列表 → 跳过 LLM 分类 → 走 normalMode
+
+**修复**: 默认值 `'code'` → `'unknown'`（表示"正则未命中"），新增编程任务显式正则
+
+**泛化规则**: 当一个变量既作为"默认/未知状态"又作为"有效业务值"时，必须拆分为两个明确的语义（`'unknown'` vs `'code'`）。条件分支中的排除列表要考虑默认值是否会被误排除。
+
+### 错误模式: 中文 \b 边界
+
+**问题**: 正则 `\b(实现|重构)\b` 无法匹配中文上下文中的"帮我实现"，因为 `\b` 只对 ASCII 单词边界有效。
+
+**修复**: 中文关键词不用 `\b`，英文关键词保留 `\b`，拆为两条正则
+
+**泛化规则**: 中英文混合正则必须分开处理边界匹配
+
+### Deep Research 引擎效率
+
+**问题**: 搜索效率低下（17 次搜索含大量重复查询），content extraction 浪费主模型 fallback 链
+
+**修复**: 6 项优化（query 去重、域名黑名单、并行化、阈值调整、URL 排序、quickModel 提取）
+
+**效果**: tool 调用 -72%，耗时 -30%，输出 +132%

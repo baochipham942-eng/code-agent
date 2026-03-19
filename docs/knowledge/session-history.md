@@ -1,5 +1,26 @@
 # 会话历史记录
 
+## 2026-03-19 (session 20): Deep Research E2E 诊断 + 8 项修复
+
+通过 CLI E2E 测试发现 Deep Research 引擎存在效率和触发问题，完成 8 项修复：
+
+**DR 引擎效率优化 (6 项)**:
+- [P0] auto-extract 使用 quickModel (GLM-4-Flash) 替代主模型 fallback 链，避免污染降级链
+- [P0] query 级去重 — researchExecutor + progressiveLoop 双路径，normalizeQuery + Set 追踪
+- [P1] 域名黑名单 — 静态付费墙列表(medium/wsj/nytimes等) + 运行时失败追踪(≥2次自动屏蔽)
+- [P1] reflection follow-up 查询从串行改为 Promise.all 并行
+- [P2] 降低覆盖度阈值 — standard 0.75→0.60, deep 0.85→0.70，防止过早终止
+- [P2] URL 质量排序 — 权威域名(github/arxiv/wikipedia)优先抓取
+
+**DR 触发修复 (2 项)**:
+- 意图分类正则补充"深入研究""对比选型""趋势分析"等常见表达
+- **架构修复**: taskType 默认值 `'code'` → `'unknown'`，解锁 LLM 意图分类 fallback（根因：'code' 既是编程确认又是默认值，agentOrchestrator 排除列表含 'code' 导致 LLM 分类被跳过）
+
+**quickModel 修复**: `quickTask()` 新增可选 maxTokens 参数，extraction 场景从 512 提到 2048
+
+**E2E 验证**: tool 调用 18→5(-72%), 耗时 22.5min→15.8min(-30%), 输出 token +132%
+- 关键修改: taskRouter.ts, agentOrchestrator.ts(间接), adaptiveConfig.ts, progressiveLoop.ts, researchExecutor.ts, contentExtractor.ts, searchUtils.ts, quickModel.ts
+
 ## 2026-03-19 (session 19): SpreadsheetBlock 交互式电子表格
 
 - 新增 SpreadsheetBlock 组件 — Excel 数据在对话中可交互渲染

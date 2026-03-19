@@ -34,6 +34,9 @@ const ASR_TIMEOUT_MS = 120_000;
 // Power management check interval
 const POWER_CHECK_INTERVAL_MS = 60_000;
 
+// sox/rec paths — Tauri app 的 PATH 不含 /opt/homebrew/bin
+const REC_PATHS = ['/opt/homebrew/bin/rec', '/usr/local/bin/rec', '/usr/bin/rec'];
+
 // Whisper-cpp paths
 const WHISPER_PATHS = ['/opt/homebrew/bin/whisper-cpp', '/usr/local/bin/whisper-cpp'];
 const WHISPER_MODEL_DIR = path.join(os.homedir(), '.cache', 'whisper');
@@ -56,7 +59,23 @@ let powerMode: 'full' | 'reduced' | 'paused' = 'full';
 let powerCheckTimer: ReturnType<typeof setInterval> | null = null;
 let totalSegments = 0;
 let asrQueue: Array<{ wavPath: string; startMs: number; endMs: number }> = [];
+let recBinaryPath: string | null = null; // 缓存 rec 二进制路径
 let asrProcessing = false;
+
+/** 查找 rec 二进制 — 优先绝对路径（Tauri app PATH 受限），缓存结果 */
+function findRecBinary(): string | null {
+  if (recBinaryPath) return recBinaryPath;
+  for (const p of REC_PATHS) {
+    if (fs.existsSync(p)) { recBinaryPath = p; return p; }
+  }
+  // Fallback: which
+  try {
+    recBinaryPath = execFileSync('which', ['rec'], { encoding: 'utf-8' }).trim();
+    return recBinaryPath;
+  } catch {
+    return null;
+  }
+}
 
 // ============================================================================
 // VAD State Machine (ported from meeting-cli VadEngine)
@@ -552,7 +571,8 @@ function startRecCapture(): boolean {
 
   try {
     // Spawn sox rec: output raw 16kHz mono PCM to stdout
-    recProcess = spawn('rec', [
+    const recBin = findRecBinary() || 'rec';
+    recProcess = spawn(recBin, [
       '-q', '-t', 'raw', '-r', String(SAMPLE_RATE), '-c', '1', '-b', '16', '-e', 'signed-integer', '-',
     ], { stdio: ['ignore', 'pipe', 'ignore'] });
 
@@ -629,9 +649,7 @@ export async function startDesktopAudioCapture(): Promise<void> {
   if (capturing) return;
 
   // Check sox availability
-  try {
-    execFileSync('which', ['rec'], { encoding: 'utf-8' });
-  } catch {
+  if (!findRecBinary()) {
     logger.warn('[音频采集] sox/rec 未安装，跳过音频采集。安装: brew install sox');
     return;
   }
@@ -695,7 +713,7 @@ export function getAudioCaptureStatus() {
   return {
     capturing,
     vadReady: vadInstance?.isSpeaking !== undefined,
-    soxAvailable: (() => { try { execFileSync('which', ['rec'], { encoding: 'utf-8' }); return true; } catch { return false; } })(),
+    soxAvailable: !!findRecBinary(),
     asrEngine: findWhisperBinary() ? 'whisper-cpp' : findQwenAsrModel() ? 'qwen3-asr' : 'none',
     powerMode,
     totalSegments,

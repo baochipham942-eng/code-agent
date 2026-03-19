@@ -73,7 +73,22 @@ export function registerDesktopHandlers(ipcMain: IpcMain): void {
           }
           manualAudioActive = true;
           await startDesktopAudioCapture();
-          return { success: true, data: getAudioCaptureStatus() } satisfies IPCResponse<unknown>;
+          const audioSt = getAudioCaptureStatus();
+          if (!audioSt.capturing) {
+            // 启动失败 — 回退标志位，返回错误原因
+            manualAudioActive = false;
+            const reason = !audioSt.soxAvailable
+              ? 'sox 未安装，请运行: brew install sox'
+              : audioSt.asrEngine === 'none'
+                ? '未找到 ASR 引擎（whisper-cpp 或 qwen3-asr）'
+                : 'VAD 初始化失败';
+            return {
+              success: false,
+              error: { code: 'AUDIO_START_FAILED', message: `录音启动失败：${reason}` },
+              data: audioSt,
+            } satisfies IPCResponse<unknown>;
+          }
+          return { success: true, data: audioSt } satisfies IPCResponse<unknown>;
         }
 
         case 'stopAudioCapture': {

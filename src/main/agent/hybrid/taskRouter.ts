@@ -246,8 +246,8 @@ export function analyzeTask(task: string): TaskAnalysis {
     }
   }
 
-  // 推断任务类型
-  let taskType = 'code';
+  // 推断任务类型（默认 'unknown' 表示无正则命中，允许 LLM 分类 fallback）
+  let taskType = 'unknown';
   if (/\b(review|审查|检查)\b/i.test(task)) taskType = 'review';
   if (/深度搜索|深入研究|深入调研|全面分析|深度调研|深入搜索|深度分析|研究报告|详细调研|对比.*选型|选型.*对比|趋势.*分析|deep\s*research|comprehensive\s*research|in-depth\s*(analysis|research|study)|thorough\s*research/i.test(task)) taskType = 'research';
   else if (/\b(search|find|explore|查找|搜索|探索)\b/i.test(task)) taskType = 'search';
@@ -258,6 +258,11 @@ export function analyzeTask(task: string): TaskAnalysis {
   if (/\b(文章|报告|文档|撰写|write.*article|write.*report|write.*document)\b/i.test(task)) taskType = 'document';
   if (/\b(生成.*图|画.*图|image|draw|generate.*image|生图|插图)\b/i.test(task)) taskType = 'image';
   if (/\b(生成.*视频|做.*视频|制作.*视频|视频生成|video|generate.*video|短视频|动画)\b/i.test(task)) taskType = 'video';
+  // 编程任务显式匹配（原默认值 'code' 已改为 'unknown'，需显式捕获）
+  if (taskType === 'unknown' && (
+    /实现|写.*代码|写.*函数|写.*方法|修复|重构|编码|开发.*功能|创建.*组件/i.test(task) ||
+    /\b(refactor|implement|fix.*bug|write.*code|write.*function|add.*feature|debug|create.*component)\b/i.test(task)
+  )) taskType = 'code';
 
   // 计算置信度
   let confidence = 0.5;

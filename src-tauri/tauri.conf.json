@@ -55,8 +55,7 @@
     ],
     "macOS": {
       "minimumSystemVersion": "11.0",
-      "signingIdentity": "Code Agent Dev",
-      "infoPlistPath": "Info.plist"
+      "signingIdentity": "Code Agent Dev"
     }
   },
   "plugins": {

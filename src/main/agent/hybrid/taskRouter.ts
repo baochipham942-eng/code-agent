@@ -249,7 +249,7 @@ export function analyzeTask(task: string): TaskAnalysis {
   // 推断任务类型
   let taskType = 'code';
   if (/\b(review|审查|检查)\b/i.test(task)) taskType = 'review';
-  if (/深度搜索|深入调研|全面分析|深度调研|深入搜索|深度分析|研究报告|详细调研|deep\s*research|comprehensive\s*research|in-depth\s*analysis|thorough\s*research/i.test(task)) taskType = 'research';
+  if (/深度搜索|深入研究|深入调研|全面分析|深度调研|深入搜索|深度分析|研究报告|详细调研|对比.*选型|选型.*对比|趋势.*分析|deep\s*research|comprehensive\s*research|in-depth\s*(analysis|research|study)|thorough\s*research/i.test(task)) taskType = 'research';
   else if (/\b(search|find|explore|查找|搜索|探索)\b/i.test(task)) taskType = 'search';
   if (/\b(plan|design|规划|设计)\b/i.test(task)) taskType = 'plan';
   if (/\b(test|测试)\b/i.test(task)) taskType = 'test';

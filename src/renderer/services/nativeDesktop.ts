@@ -197,31 +197,34 @@ export async function listAudioSegments(from: number, to: number): Promise<Audio
   }
 }
 
-async function postDesktopAction<T>(action: string, payload?: Record<string, unknown>): Promise<T | null> {
-  try {
-    const resp = await fetch('/api/domain/desktop/' + action, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, payload }),
-    });
-    if (!resp.ok) return null;
-    const result = await resp.json();
-    return result?.success ? (result.data || null) : null;
-  } catch {
-    return null;
+async function postDesktopAction<T>(action: string, payload?: Record<string, unknown>): Promise<T> {
+  const resp = await fetch('/api/domain/desktop/' + action, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, payload }),
+  });
+  if (!resp.ok) throw new Error(`请求失败: ${resp.status}`);
+  const result = await resp.json();
+  if (!result?.success) {
+    throw new Error(result?.error?.message || '操作失败');
   }
+  return result.data as T;
 }
 
-export async function startAudioCapture(): Promise<AudioCaptureStatus | null> {
+export async function startAudioCapture(): Promise<AudioCaptureStatus> {
   return postDesktopAction<AudioCaptureStatus>('startAudioCapture');
 }
 
-export async function stopAudioCapture(): Promise<AudioCaptureStatus | null> {
+export async function stopAudioCapture(): Promise<AudioCaptureStatus> {
   return postDesktopAction<AudioCaptureStatus>('stopAudioCapture');
 }
 
 export async function getAudioCaptureStatus(): Promise<AudioCaptureStatus | null> {
-  return postDesktopAction<AudioCaptureStatus>('getAudioCaptureStatus');
+  try {
+    return await postDesktopAction<AudioCaptureStatus>('getAudioCaptureStatus');
+  } catch {
+    return null;
+  }
 }
 
 export async function openNativeDesktopSystemSettings(kind: SettingsPaneKind): Promise<boolean> {

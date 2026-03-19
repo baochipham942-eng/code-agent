@@ -61,7 +61,7 @@ const DEFAULT_CONFIG: AutoCompressionConfig = {
   targetUsage: 0.5,
   preserveRecentCount: 6,
   useAISummary: true,
-  aiSummaryThreshold: 0.9,
+  aiSummaryThreshold: 0.8,
   triggerTokens: 100000,
   pauseAfterCompaction: false,
 };

@@ -120,7 +120,7 @@
 
 - P0: tokenOptimizer.ts 新增 observationMask() 函数（L1 分层压缩），用 placeholder 替换旧 tool result，保留 tool call 骨架，避免再搜索循环（借鉴 JetBrains Junie）
 - P1: 3 处摘要 prompt 统一改为 Codex "handoff" 框架（5 段结构 + 6 条规则），压缩产物加 [Context Handoff] 接力前缀（借鉴 Codex CLI）
-- autoCompressor.ts 集成三层递进策略：L1 Masking (≥60%) → L2 Truncate (≥85%) → L3 AI Summary (≥90%)
+- autoCompressor.ts 集成三层递进策略：L1 Masking (≥60%) → L2 Truncate (≥85%) → L3 AI Summary (≥80%)
 - constants.ts 新增 OBSERVATION_MASKING 常量
 - 关键文件: tokenOptimizer.ts, autoCompressor.ts, constants.ts
 

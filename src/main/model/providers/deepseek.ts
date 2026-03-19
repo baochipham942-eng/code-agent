@@ -97,7 +97,7 @@ export async function callDeepSeek(
       signal,
     });
 
-    logger.info(' DeepSeek raw response:', JSON.stringify(response.data, null, 2).substring(0, 2000));
+    logger.debug('DeepSeek raw response:', JSON.stringify(response.data, null, 2).substring(0, 2000));
     return parseOpenAIResponse(response.data);
   } catch (error: unknown) {
     const errMsg = error instanceof Error ? error.message : String(error);

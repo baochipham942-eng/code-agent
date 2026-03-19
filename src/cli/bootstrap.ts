@@ -61,7 +61,10 @@ let currentTelemetrySessionId: string | null = null;
 export async function initializeCLIServices(): Promise<void> {
   if (initialized) return;
 
-  console.error('Initializing CLI services...');
+  const isDebug = process.env.DEBUG === 'true' || process.argv.includes('--debug');
+  const cliLog = isDebug ? (...args: unknown[]) => console.error(...args) : () => {};
+
+  cliLog('Initializing CLI services...');
 
   // 设置环境变量
   const dataDir = getCLIDataDir();
@@ -71,12 +74,12 @@ export async function initializeCLIServices(): Promise<void> {
   // 初始化配置服务
   configService = getCLIConfigService();
   await configService.initialize();
-  console.error('ConfigService initialized');
+  cliLog('ConfigService initialized');
 
   // 初始化数据库
   try {
     databaseService = await initCLIDatabase();
-    console.error('Database initialized');
+    cliLog('Database initialized');
   } catch (error) {
     // 数据库失败不阻止 CLI 运行，只是缓存和会话持久化不可用
     // 原生模块 ABI 不匹配时只打一行警告，不打完整堆栈
@@ -86,7 +89,7 @@ export async function initializeCLIServices(): Promise<void> {
 
   // 初始化会话管理器
   sessionManager = getCLISessionManager();
-  console.error('SessionManager initialized');
+  cliLog('SessionManager initialized');
 
   // 动态导入核心模块
   try {
@@ -106,7 +109,7 @@ export async function initializeCLIServices(): Promise<void> {
     const telemetryModule = await import('../main/telemetry');
     getTelemetryCollector = telemetryModule.getTelemetryCollector;
   } catch (error) {
-    console.error('Failed to import core modules:', error);
+    console.error('Fatal: Failed to import core modules:', error);
     throw error;
   }
 
@@ -121,7 +124,7 @@ export async function initializeCLIServices(): Promise<void> {
     requestPermission: async () => true, // CLI 模式自动批准
     workingDirectory: process.cwd(),
   });
-  console.error('ToolRegistry & ToolExecutor initialized');
+  cliLog('ToolRegistry & ToolExecutor initialized');
 
   // 初始化记忆服务
   try {
@@ -143,9 +146,9 @@ export async function initializeCLIServices(): Promise<void> {
     // 设置上下文（使用工作目录作为 projectPath）
     memoryService.setContext(`cli-${Date.now()}`, process.cwd());
 
-    console.error('Memory service initialized');
+    cliLog('Memory service initialized');
   } catch (error) {
-    console.error('Failed to initialize memory service:', error);
+    cliLog('Failed to initialize memory service:', error);
     // 不阻止 CLI 运行，记忆功能降级
   }
 
@@ -153,14 +156,14 @@ export async function initializeCLIServices(): Promise<void> {
   try {
     const skillDiscoveryService = getSkillDiscoveryService();
     await skillDiscoveryService.initialize(process.cwd());
-    console.error('SkillDiscoveryService initialized');
+    cliLog('SkillDiscoveryService initialized');
   } catch (error) {
-    console.error('Failed to initialize SkillDiscoveryService:', error);
+    cliLog('Failed to initialize SkillDiscoveryService:', error);
     // 不抛出错误，允许 CLI 继续运行（skills 功能降级）
   }
 
   initialized = true;
-  console.error('CLI services initialized');
+  cliLog('CLI services initialized');
 }
 
 /**
@@ -399,7 +402,9 @@ export function createAgentLoop(
  * 清理资源
  */
 export async function cleanup(): Promise<void> {
-  console.error('Cleaning up CLI services...');
+  // cleanup 时不依赖 cliLog（可能在 close 之后调用），保留 console.error 但用 debug 守卫
+  const isDebugCleanup = process.env.DEBUG === 'true' || process.argv.includes('--debug');
+  if (isDebugCleanup) console.error('Cleaning up CLI services...');
 
   // Telemetry: 结束会话并同步 token 使用到 sessions 表
   if (currentTelemetrySessionId && getTelemetryCollector) {
@@ -431,5 +436,5 @@ export async function cleanup(): Promise<void> {
   }
 
   initialized = false;
-  console.error('CLI services cleaned up');
+  if (isDebugCleanup) console.error('CLI services cleaned up');
 }

@@ -483,7 +483,7 @@ export const Sidebar: React.FC = () => {
             </button>
             {/* User Dropdown Menu */}
             {showUserMenu && (
-              <div className="absolute bottom-full left-2 right-2 mb-2 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl overflow-hidden">
+              <div className="absolute bottom-full left-2 right-2 mb-2 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl overflow-hidden z-50">
                 <button
                   onClick={() => {
                     setShowSettings(true);

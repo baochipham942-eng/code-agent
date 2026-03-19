@@ -58,9 +58,9 @@
     "tauri:build": "npm run rebuild-native:system && npm run build && cargo tauri build && bash scripts/tauri-install.sh"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.52.0",
+    "@anthropic-ai/sdk": "^0.80.0",
     "@larksuiteoapi/node-sdk": "^1.56.1",
-    "@modelcontextprotocol/sdk": "^1.10.2",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@supabase/supabase-js": "^2.90.1",
     "@tauri-apps/api": "^2.10.1",
     "@types/dagre": "^0.7.53",

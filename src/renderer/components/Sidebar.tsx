@@ -465,6 +465,8 @@ export const Sidebar: React.FC = () => {
           <>
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
+              aria-label="用户菜单"
+              aria-expanded={showUserMenu}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.04] transition-colors"
             >
               {user.avatarUrl ? (

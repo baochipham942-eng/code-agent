@@ -305,4 +305,43 @@ export const en: Translations = {
     createdAt: 'Created At',
     saveHint: 'Press Cmd/Ctrl + Enter to save',
   },
+
+  // Generative UI Components
+  generativeUI: {
+    // Common actions
+    copy: 'Copy',
+    copied: 'Copied!',
+    // ChartBlock
+    chart: 'Chart',
+    // GenerativeUIBlock
+    generativeUI: 'Generative UI',
+    source: 'Source',
+    open: 'Open',
+    loading: 'Loading...',
+    // DocumentBlock
+    document: 'Document',
+    paragraphUnit: 'paragraphs',
+    wordUnit: 'words',
+    listItem: 'List Item',
+    paragraph: 'Paragraph',
+    rewrite: 'Rewrite',
+    simplify: 'Simplify',
+    restyle: 'Restyle',
+    insertAfter: 'Insert After',
+    // SpreadsheetBlock
+    spreadsheet: 'Spreadsheet',
+    rowUnit: 'rows',
+    columnUnit: 'cols',
+    selected: 'Selected',
+    columns: 'columns',
+    sum: 'Sum',
+    avg: 'Avg',
+    range: 'Range',
+    visualize: 'Visualize',
+    pivot: 'Pivot Table',
+    filterAnalysis: 'Filter',
+    sort: 'Sort',
+    clickToSelect: 'Click to select, Cmd+click for multi-select',
+    total: 'total',
+  },
 };

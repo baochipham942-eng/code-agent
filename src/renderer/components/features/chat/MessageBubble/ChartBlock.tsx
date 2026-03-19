@@ -1,5 +1,6 @@
 import { useState, useCallback, memo, useMemo } from 'react';
 import { BarChart3, Copy, Check } from 'lucide-react';
+import { useI18n } from '../../../../hooks/useI18n';
 import {
   ResponsiveContainer,
   BarChart, Bar,
@@ -156,6 +157,7 @@ const ChartRenderer = memo(function ChartRenderer({ spec }: { spec: ChartSpec })
 
 export const ChartBlock = memo(function ChartBlock({ spec: rawSpec }: { spec: string }) {
   const [copied, setCopied] = useState(false);
+  const { t } = useI18n();
 
   const parsedSpec = useMemo(() => parseSpec(rawSpec), [rawSpec]);
 
@@ -175,7 +177,7 @@ export const ChartBlock = memo(function ChartBlock({ spec: rawSpec }: { spec: st
         <div className="flex items-center gap-2">
           <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
           <span className="text-xs font-medium text-emerald-400">
-            {parsedSpec.title || 'Chart'}
+            {parsedSpec.title || t.generativeUI.chart}
           </span>
         </div>
         <button
@@ -185,7 +187,7 @@ export const ChartBlock = memo(function ChartBlock({ spec: rawSpec }: { spec: st
           {copied ? (
             <>
               <Check className="w-3.5 h-3.5 text-green-400" />
-              <span className="text-green-400">Copied!</span>
+              <span className="text-green-400">{t.generativeUI.copied}</span>
             </>
           ) : (
             <>

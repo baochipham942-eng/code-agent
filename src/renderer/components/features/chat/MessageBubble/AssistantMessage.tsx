@@ -77,6 +77,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
 
   return (
     <div
+      aria-label="助手消息"
       className="py-2 px-4 relative group/msg"
       onContextMenu={handleContextMenu}
       onMouseEnter={() => setHovered(true)}
@@ -89,6 +90,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
             onClick={() => handleCopy('markdown')}
             className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
             title="复制 Markdown"
+            aria-label="复制 Markdown"
           >
             {copied === 'markdown' ? <Check className="w-3 h-3 text-green-400" /> : <FileText className="w-3 h-3" />}
           </button>
@@ -96,6 +98,7 @@ export const AssistantMessage: React.FC<AssistantMessageProps> = ({ message }) =
             onClick={() => handleCopy('plain')}
             className="flex items-center gap-1 px-1.5 py-0.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700 rounded transition-colors"
             title="复制纯文本"
+            aria-label="复制纯文本"
           >
             {copied === 'plain' ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
           </button>

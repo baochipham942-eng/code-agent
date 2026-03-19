@@ -7,46 +7,13 @@
 // 3. toolElapsed - 工具执行耗时 + 超时警告
 // ============================================================================
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useAppStore } from '../../stores/appStore';
-import { Check, ChevronDown, ChevronRight, ListChecks, Loader2, Clock, AlertTriangle, Eye, Pencil, Terminal, Search, Plug } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, ListChecks, Loader2, Clock, AlertTriangle } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
-import type { ToolProgressData, ToolTimeoutData, AgentEvent } from '@shared/types';
-import ipcService from '../../services/ipcService';
-
-// 工具分类
-type PhaseType = 'read' | 'edit' | 'execute' | 'search' | 'mcp';
-
-function classifyTool(name: string): PhaseType | null {
-  const n = name.toLowerCase();
-  if (n.startsWith('mcp__') || n.startsWith('mcp_')) return 'mcp';
-  if (['read', 'glob', 'grep'].some(k => n.includes(k))) return 'read';
-  if (['edit', 'write'].some(k => n.includes(k))) return 'edit';
-  if (n === 'bash' || n.includes('notebook')) return 'execute';
-  if (['search', 'fetch'].some(k => n.includes(k))) return 'search';
-  return null;
-}
-
-// 阶段图标映射
-const PHASE_ICONS: Record<PhaseType, React.FC<{ className?: string }>> = {
-  read: Eye,
-  edit: Pencil,
-  execute: Terminal,
-  search: Search,
-  mcp: Plug,
-};
-
-/**
- * 格式化毫秒为可读时长
- */
-function formatElapsed(ms: number): string {
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}m ${secs}s`;
-}
+import { classifyTool, PHASE_ICONS, formatElapsed, type PhaseType } from './taskPanelUtils';
+import { useToolProgress } from './useToolProgress';
 
 export const Progress: React.FC = () => {
   const { todos, currentSessionId, messages } = useSessionStore();
@@ -63,54 +30,8 @@ export const Progress: React.FC = () => {
   };
 
   const [isExpanded, setIsExpanded] = useState(true);
-  const [toolProgress, setToolProgress] = useState<ToolProgressData | null>(null);
-  const [toolTimeout, setToolTimeout] = useState<ToolTimeoutData | null>(null);
+  const { toolProgress, toolTimeout } = useToolProgress(currentSessionId);
   const taskProgress = currentSessionId ? sessionTaskProgress[currentSessionId] ?? null : null;
-
-  // 订阅 IPC 事件获取实时进度
-  const handleAgentEvent = useCallback((event: AgentEvent & { sessionId?: string }) => {
-    if (event.sessionId && currentSessionId && event.sessionId !== currentSessionId) {
-      return;
-    }
-
-    switch (event.type) {
-      case 'tool_progress':
-        if (event.data) {
-          setToolProgress(event.data as ToolProgressData);
-        }
-        break;
-      case 'tool_timeout':
-        if (event.data) {
-          setToolTimeout(event.data as ToolTimeoutData);
-        }
-        break;
-      case 'tool_call_end':
-        // 工具完成时清除该工具的进度和超时状态
-        if (event.data) {
-          const toolCallId = (event.data as { toolCallId?: string }).toolCallId;
-          setToolProgress((prev) => prev?.toolCallId === toolCallId ? null : prev);
-          setToolTimeout((prev) => prev?.toolCallId === toolCallId ? null : prev);
-        }
-        break;
-      case 'agent_complete':
-        // Agent 完成时清除所有状态（包括任务进度）
-        setToolProgress(null);
-        setToolTimeout(null);
-        break;
-    }
-  }, [currentSessionId]);
-
-  useEffect(() => {
-    setToolProgress(null);
-    setToolTimeout(null);
-  }, [currentSessionId]);
-
-  useEffect(() => {
-    const unsubscribe = ipcService.on('agent:event' as any, handleAgentEvent);
-    return () => {
-      unsubscribe?.();
-    };
-  }, [handleAgentEvent]);
 
   const completedCount = todos.filter((item) => item.status === 'completed').length;
   const totalCount = todos.length;

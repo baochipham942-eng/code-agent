@@ -125,6 +125,9 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         ref={modalRef}
         tabIndex={-1}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         className={`relative w-full ${sizeClasses[size]} max-h-[90vh] flex flex-col bg-zinc-900 rounded-xl border border-zinc-700 shadow-2xl overflow-hidden animate-fadeIn outline-none ${className}`}
         onClick={handleModalClick}
       >
@@ -147,7 +150,7 @@ export const Modal: React.FC<ModalProps> = ({
                   <button
                     onClick={onClose}
                     className="p-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
-                    aria-label="Close modal"
+                    aria-label="关闭"
                   >
                     <X className="w-5 h-5" />
                   </button>

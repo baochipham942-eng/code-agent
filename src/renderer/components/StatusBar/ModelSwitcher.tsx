@@ -114,6 +114,8 @@ export function ModelSwitcher({ currentModel }: ModelSwitcherProps) {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
+        aria-label="切换模型"
+        aria-expanded={open}
         className={`
           font-medium cursor-pointer
           hover:text-purple-300 transition-colors

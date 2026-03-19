@@ -6,6 +6,7 @@
 import { memo, useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { Sheet, Download, Copy, Check, ChevronLeft, ChevronRight, BarChart3, Table2, Filter, ArrowUpDown } from 'lucide-react';
 import { UI } from '@shared/constants';
+import { useI18n } from '../../../../hooks/useI18n';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -73,7 +74,7 @@ function inferColumnType(rows: unknown[][], colIndex: number): 'number' | 'text'
   return numCount > textCount ? 'number' : 'text';
 }
 
-function getColumnStats(rows: unknown[][], colIndex: number, type: string): string {
+function getColumnStats(rows: unknown[][], colIndex: number, type: string, labels: { sum: string; avg: string; range: string }): string {
   if (type !== 'number' || rows.length === 0) return '';
   const nums = rows
     .map(r => r[colIndex])
@@ -83,7 +84,7 @@ function getColumnStats(rows: unknown[][], colIndex: number, type: string): stri
   const avg = sum / nums.length;
   const min = Math.min(...nums);
   const max = Math.max(...nums);
-  return `合计: ${sum.toLocaleString()} · 均值: ${avg.toLocaleString(undefined, { maximumFractionDigits: 1 })} · 范围: ${min.toLocaleString()}~${max.toLocaleString()}`;
+  return `${labels.sum}: ${sum.toLocaleString()} · ${labels.avg}: ${avg.toLocaleString(undefined, { maximumFractionDigits: 1 })} · ${labels.range}: ${min.toLocaleString()}~${max.toLocaleString()}`;
 }
 
 // ── Action Bar ─────────────────────────────────────────────────────────────
@@ -97,22 +98,23 @@ const ActionBar = memo(function ActionBar({
   headers: string[];
   onAction: (action: string) => void;
 }) {
+  const { t } = useI18n();
   const colNames = selectedColumns.map(i => headers[i]).filter(Boolean);
   const label = colNames.length === 1
     ? `"${colNames[0]}"`
-    : `${colNames.length} 列`;
+    : `${colNames.length} ${t.generativeUI.columns}`;
 
   const actions = [
-    { key: 'visualize', label: '可视化', icon: BarChart3, color: 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20' },
-    { key: 'pivot', label: '透视表', icon: Table2, color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20' },
-    { key: 'filter', label: '筛选分析', icon: Filter, color: 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20' },
-    { key: 'sort', label: '排序', icon: ArrowUpDown, color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/20' },
+    { key: 'visualize', label: t.generativeUI.visualize, icon: BarChart3, color: 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20' },
+    { key: 'pivot', label: t.generativeUI.pivot, icon: Table2, color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20' },
+    { key: 'filter', label: t.generativeUI.filterAnalysis, icon: Filter, color: 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20' },
+    { key: 'sort', label: t.generativeUI.sort, icon: ArrowUpDown, color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/20' },
   ];
 
   return (
     <div className="flex items-center gap-2 px-3 py-2 bg-zinc-800/80 border-t border-zinc-700 animate-fadeIn">
       <span className="text-xs text-zinc-400 shrink-0">
-        已选 {label}
+        {t.generativeUI.selected} {label}
       </span>
       <div className="flex items-center gap-1.5 flex-1 overflow-x-auto">
         {actions.map(({ key, label: actionLabel, icon: Icon, color }) => (
@@ -171,6 +173,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec }
   const [selectedColumns, setSelectedColumns] = useState<number[]>([]);
   const [page, setPage] = useState(0);
   const tableRef = useRef<HTMLDivElement>(null);
+  const { t } = useI18n();
 
   const parsedSpec = useMemo(() => parseSpec(rawSpec), [rawSpec]);
 
@@ -267,8 +270,13 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec }
   if (!parsedSpec || !sheet) return null;
 
   // Selected column stats
+  const statsLabels = useMemo(() => ({
+    sum: t.generativeUI.sum,
+    avg: t.generativeUI.avg,
+    range: t.generativeUI.range,
+  }), [t]);
   const selectedStats = selectedColumns.length === 1
-    ? getColumnStats(allRows, selectedColumns[0], columnTypes[selectedColumns[0]])
+    ? getColumnStats(allRows, selectedColumns[0], columnTypes[selectedColumns[0]], statsLabels)
     : '';
 
   return (
@@ -278,10 +286,10 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec }
         <div className="flex items-center gap-2">
           <Sheet className="w-3.5 h-3.5 text-emerald-400" />
           <span className="text-xs font-medium text-emerald-400">
-            {parsedSpec.title || sheet.name || 'Spreadsheet'}
+            {parsedSpec.title || sheet.name || t.generativeUI.spreadsheet}
           </span>
           <span className="text-xs text-zinc-500">
-            {totalRows} 行 · {headers.length} 列
+            {totalRows} {t.generativeUI.rowUnit} · {headers.length} {t.generativeUI.columnUnit}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -290,9 +298,9 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec }
             className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all text-xs"
           >
             {copied ? (
-              <><Check className="w-3.5 h-3.5 text-green-400" /><span className="text-green-400">Copied!</span></>
+              <><Check className="w-3.5 h-3.5 text-green-400" /><span className="text-green-400">{t.generativeUI.copied}</span></>
             ) : (
-              <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
+              <><Copy className="w-3.5 h-3.5" /><span>{t.generativeUI.copy}</span></>
             )}
           </button>
           <button
@@ -335,7 +343,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec }
                         ? `${selColor} text-zinc-100`
                         : 'text-zinc-300 hover:bg-zinc-700/50'
                     }`}
-                    title={`${header} (${columnTypes[ci]}) · 点击选中，Cmd+点击多选`}
+                    title={`${header} (${columnTypes[ci]}) · ${t.generativeUI.clickToSelect}`}
                   >
                     <div className="flex items-center gap-1">
                       <span className="truncate max-w-[150px]">{header}</span>
@@ -392,7 +400,7 @@ export const SpreadsheetBlock = memo(function SpreadsheetBlock({ spec: rawSpec }
           </button>
           <span className="text-xs text-zinc-500">
             {page * MAX_VISIBLE_ROWS + 1}-{Math.min((page + 1) * MAX_VISIBLE_ROWS, allRows.length)} / {allRows.length}
-            {allRows.length < totalRows && <span className="text-zinc-600"> (共 {totalRows})</span>}
+            {allRows.length < totalRows && <span className="text-zinc-600"> ({t.generativeUI.total} {totalRows})</span>}
           </span>
           <button
             onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}

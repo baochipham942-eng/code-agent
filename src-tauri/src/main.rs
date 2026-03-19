@@ -9,7 +9,12 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use tauri::{Manager, RunEvent};
+use tauri::{
+    Manager, RunEvent, Emitter,
+    menu::MenuBuilder,
+    tray::TrayIconBuilder,
+};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutEvent};
 
 mod native_desktop;
 
@@ -305,9 +310,62 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let menu = MenuBuilder::new(app)
+        .text("new_chat", "新建对话")
+        .text("paste_context", "粘贴为上下文")
+        .separator()
+        .quit()
+        .build()?;
+
+    let _tray = TrayIconBuilder::new()
+        .tooltip("Code Agent")
+        .menu(&menu)
+        .on_menu_event(move |app_handle, event| {
+            let activate_window = |handle: &tauri::AppHandle| {
+                if let Some(win) = handle.get_webview_window("main") {
+                    win.show().ok();
+                    win.set_focus().ok();
+                }
+            };
+            match event.id().as_ref() {
+                "new_chat" => {
+                    activate_window(app_handle);
+                    app_handle.emit("memo:new_chat", ()).ok();
+                }
+                "paste_context" => {
+                    activate_window(app_handle);
+                    app_handle.emit("memo:paste_context", ()).ok();
+                }
+                _ => {}
+            }
+        })
+        .build(app)?;
+
+    Ok(())
+}
+
+fn setup_global_shortcut(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let handle = app.handle().clone();
+
+    app.global_shortcut().on_shortcut(
+        "CmdOrCtrl+Shift+A",
+        move |_app_handle, _shortcut: &Shortcut, _event: ShortcutEvent| {
+            if let Some(win) = handle.get_webview_window("main") {
+                win.show().ok();
+                win.set_focus().ok();
+            }
+            handle.emit("memo:activate", ()).ok();
+        },
+    )?;
+
+    Ok(())
+}
+
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(AppState::default())
         .manage(NativeDesktopState::default())
         .invoke_handler(tauri::generate_handler![
@@ -342,6 +400,16 @@ fn main() {
                 let _ = window.eval(&format!("window.location.replace('{SERVER_URL}')"));
                 let _ = window.show();
                 let _ = window.set_focus();
+            }
+
+            // System Tray
+            if let Err(e) = setup_tray(app) {
+                eprintln!("Failed to setup tray: {e}");
+            }
+
+            // Global Shortcut (Cmd+Shift+A)
+            if let Err(e) = setup_global_shortcut(app) {
+                eprintln!("Failed to setup global shortcut: {e}");
             }
 
             Ok(())

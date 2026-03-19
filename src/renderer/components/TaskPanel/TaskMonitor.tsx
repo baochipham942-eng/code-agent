@@ -5,47 +5,18 @@
 // 借鉴 QoderWork 的 TaskMonitor 设计（逆向验证）
 // ============================================================================
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useSessionStore } from '../../stores/sessionStore';
 import { useAppStore } from '../../stores/appStore';
 import { useSkillStore } from '../../stores/skillStore';
 import {
   Check, ChevronDown, ChevronRight, ClipboardList,
-  Loader2, Clock, AlertTriangle, Eye, Pencil, Terminal,
-  Search, Plug, FileText, Sparkles, FolderOpen,
+  Loader2, Clock, AlertTriangle,
+  FileText, Sparkles, FolderOpen,
 } from 'lucide-react';
 import { useI18n } from '../../hooks/useI18n';
-import type { ToolProgressData, ToolTimeoutData, AgentEvent } from '@shared/types';
-import ipcService from '../../services/ipcService';
-
-// 工具分类（用于 phase-based 进度推导）
-type PhaseType = 'read' | 'edit' | 'execute' | 'search' | 'mcp';
-
-function classifyTool(name: string): PhaseType | null {
-  const n = name.toLowerCase();
-  if (n.startsWith('mcp__') || n.startsWith('mcp_')) return 'mcp';
-  if (['read', 'glob', 'grep'].some(k => n.includes(k))) return 'read';
-  if (['edit', 'write'].some(k => n.includes(k))) return 'edit';
-  if (n === 'bash' || n.includes('notebook')) return 'execute';
-  if (['search', 'fetch'].some(k => n.includes(k))) return 'search';
-  return null;
-}
-
-const PHASE_ICONS: Record<PhaseType, React.FC<{ className?: string }>> = {
-  read: Eye,
-  edit: Pencil,
-  execute: Terminal,
-  search: Search,
-  mcp: Plug,
-};
-
-function formatElapsed(ms: number): string {
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}m ${secs}s`;
-}
+import { classifyTool, PHASE_ICONS, formatElapsed, type PhaseType } from './taskPanelUtils';
+import { useToolProgress } from './useToolProgress';
 
 // 核心产出物扩展名（最终交付物，应排在前面）
 const CORE_EXTENSIONS = new Set(['.pptx', '.pdf', '.xlsx', '.docx', '.mp4', '.html']);
@@ -66,48 +37,13 @@ export const TaskMonitor: React.FC = () => {
   const { t } = useI18n();
 
   const [isExpanded, setIsExpanded] = useState(true);
-  const [toolProgress, setToolProgress] = useState<ToolProgressData | null>(null);
-  const [toolTimeout, setToolTimeout] = useState<ToolTimeoutData | null>(null);
+  const { toolProgress, toolTimeout } = useToolProgress(currentSessionId);
   const taskProgress = currentSessionId ? sessionTaskProgress[currentSessionId] ?? null : null;
 
   // 同步 skill store 的 session
   useEffect(() => {
     if (currentSessionId) setCurrentSession(currentSessionId);
   }, [currentSessionId, setCurrentSession]);
-
-  // 订阅工具进度事件
-  const handleAgentEvent = useCallback((event: AgentEvent & { sessionId?: string }) => {
-    if (event.sessionId && currentSessionId && event.sessionId !== currentSessionId) return;
-    switch (event.type) {
-      case 'tool_progress':
-        if (event.data) setToolProgress(event.data as ToolProgressData);
-        break;
-      case 'tool_timeout':
-        if (event.data) setToolTimeout(event.data as ToolTimeoutData);
-        break;
-      case 'tool_call_end':
-        if (event.data) {
-          const toolCallId = (event.data as { toolCallId?: string }).toolCallId;
-          setToolProgress((prev) => prev?.toolCallId === toolCallId ? null : prev);
-          setToolTimeout((prev) => prev?.toolCallId === toolCallId ? null : prev);
-        }
-        break;
-      case 'agent_complete':
-        setToolProgress(null);
-        setToolTimeout(null);
-        break;
-    }
-  }, [currentSessionId]);
-
-  useEffect(() => {
-    setToolProgress(null);
-    setToolTimeout(null);
-  }, [currentSessionId]);
-
-  useEffect(() => {
-    const unsubscribe = ipcService.on('agent:event' as any, handleAgentEvent);
-    return () => { unsubscribe?.(); };
-  }, [handleAgentEvent]);
 
   // ── 数据计算 ──
 
@@ -296,7 +232,7 @@ export const TaskMonitor: React.FC = () => {
 
           {/* 实时进度指示器 */}
           {isAgentWorking && (
-            <div className="flex items-center gap-2 py-1 px-2 bg-primary-500/5 rounded-lg">
+            <div role="status" aria-live="polite" className="flex items-center gap-2 py-1 px-2 bg-primary-500/5 rounded-lg">
               <Loader2 className="w-3.5 h-3.5 text-primary-500 animate-spin flex-shrink-0" />
               <span className="text-xs text-zinc-300 flex-1 truncate">
                 {taskProgress.step || taskProgress.phase}

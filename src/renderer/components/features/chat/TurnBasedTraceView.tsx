@@ -58,6 +58,9 @@ export const TurnBasedTraceView: React.FC<TurnBasedTraceViewProps> = ({
   return (
     <div
       ref={containerRef}
+      role="log"
+      aria-live="polite"
+      aria-label="对话消息"
       className="h-full overflow-y-auto px-4 py-3"
       onScroll={handleScroll}
     >

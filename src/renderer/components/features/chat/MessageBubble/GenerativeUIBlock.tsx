@@ -7,6 +7,7 @@ import { Sparkles, Code2, Copy, Check, ExternalLink } from 'lucide-react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { UI } from '@shared/constants';
+import { useI18n } from '../../../../hooks/useI18n';
 
 const INJECTED_STYLES = `<style>
 body {
@@ -88,6 +89,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
   const [iframeHeight, setIframeHeight] = useState(100);
   const [loaded, setLoaded] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const { t } = useI18n();
 
   const srcdoc = buildSrcdoc(code);
 
@@ -133,7 +135,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
       <div className="flex items-center justify-between px-4 py-2 bg-zinc-800 border-b border-zinc-700">
         <div className="flex items-center gap-2">
           <Sparkles className="w-3.5 h-3.5 text-violet-400" />
-          <span className="text-xs font-medium text-violet-400">Generative UI</span>
+          <span className="text-xs font-medium text-violet-400">{t.generativeUI.generativeUI}</span>
         </div>
         <div className="flex items-center gap-1">
           <button
@@ -143,7 +145,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
             }`}
           >
             <Code2 className="w-3.5 h-3.5" />
-            <span>Source</span>
+            <span>{t.generativeUI.source}</span>
           </button>
           <button
             onClick={handleCopy}
@@ -152,12 +154,12 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
             {copied ? (
               <>
                 <Check className="w-3.5 h-3.5 text-green-400" />
-                <span className="text-green-400">Copied!</span>
+                <span className="text-green-400">{t.generativeUI.copied}</span>
               </>
             ) : (
               <>
                 <Copy className="w-3.5 h-3.5" />
-                <span>Copy</span>
+                <span>{t.generativeUI.copy}</span>
               </>
             )}
           </button>
@@ -166,7 +168,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
             className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all text-xs"
           >
             <ExternalLink className="w-3.5 h-3.5" />
-            <span>Open</span>
+            <span>{t.generativeUI.open}</span>
           </button>
         </div>
       </div>
@@ -178,7 +180,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
         <div className="relative">
           {!loaded && (
             <div className="absolute inset-0 flex items-center justify-center bg-zinc-900 text-zinc-500 text-xs">
-              Loading...
+              {t.generativeUI.loading}
             </div>
           )}
           <iframe
@@ -187,7 +189,7 @@ export const GenerativeUIBlock = memo(function GenerativeUIBlock({ code }: { cod
             srcDoc={srcdoc}
             style={{ height: `${iframeHeight}px`, minHeight: '100px', maxHeight: '600px' }}
             className="w-full border-0 bg-zinc-900"
-            title="Generative UI"
+            title={t.generativeUI.generativeUI}
             onLoad={() => setLoaded(true)}
           />
         </div>

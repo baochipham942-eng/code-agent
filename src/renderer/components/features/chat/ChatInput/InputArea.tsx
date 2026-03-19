@@ -246,6 +246,7 @@ export const InputArea = forwardRef<InputAreaRef, InputAreaProps>(
         <textarea
           ref={textareaRef}
           data-chat-input
+          aria-label="发送消息"
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}

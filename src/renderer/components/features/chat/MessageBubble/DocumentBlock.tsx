@@ -6,6 +6,7 @@
 import { memo, useState, useCallback, useMemo } from 'react';
 import { FileText, Copy, Check, Download, Pencil, Trash2, Type, ListPlus, Scissors } from 'lucide-react';
 import { UI } from '@shared/constants';
+import { useI18n } from '../../../../hooks/useI18n';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -45,16 +46,17 @@ const ActionBar = memo(function ActionBar({
   paragraph: Paragraph;
   onAction: (action: string) => void;
 }) {
+  const { t } = useI18n();
   const typeLabel = paragraph.type === 'heading'
     ? `H${paragraph.level}`
-    : paragraph.type === 'list-item' ? '列表项' : '段落';
+    : paragraph.type === 'list-item' ? t.generativeUI.listItem : t.generativeUI.paragraph;
 
   const actions = [
-    { key: 'rewrite', label: '重写', icon: Pencil, color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20' },
-    { key: 'simplify', label: '精简', icon: Scissors, color: 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20' },
-    { key: 'restyle', label: '改格式', icon: Type, color: 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20' },
-    { key: 'insert_after', label: '后面插入', icon: ListPlus, color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/20' },
-    { key: 'delete', label: '删除', icon: Trash2, color: 'text-red-400 bg-red-500/10 hover:bg-red-500/20 border-red-500/20' },
+    { key: 'rewrite', label: t.generativeUI.rewrite, icon: Pencil, color: 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20' },
+    { key: 'simplify', label: t.generativeUI.simplify, icon: Scissors, color: 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/20' },
+    { key: 'restyle', label: t.generativeUI.restyle, icon: Type, color: 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/20' },
+    { key: 'insert_after', label: t.generativeUI.insertAfter, icon: ListPlus, color: 'text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border-purple-500/20' },
+    { key: 'delete', label: t.common.delete, icon: Trash2, color: 'text-red-400 bg-red-500/10 hover:bg-red-500/20 border-red-500/20' },
   ];
 
   return (
@@ -128,6 +130,7 @@ const ParagraphItem = memo(function ParagraphItem({
 export const DocumentBlock = memo(function DocumentBlock({ spec: rawSpec }: { spec: string }) {
   const [copied, setCopied] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const { t } = useI18n();
 
   const parsedSpec = useMemo(() => parseSpec(rawSpec), [rawSpec]);
   const paragraphs = parsedSpec?.paragraphs || [];
@@ -187,10 +190,10 @@ export const DocumentBlock = memo(function DocumentBlock({ spec: rawSpec }: { sp
         <div className="flex items-center gap-2">
           <FileText className="w-3.5 h-3.5 text-blue-400" />
           <span className="text-xs font-medium text-blue-400">
-            {parsedSpec.title || 'Document'}
+            {parsedSpec.title || t.generativeUI.document}
           </span>
           <span className="text-xs text-zinc-500">
-            {paragraphs.length} 段 · {wordCount > 0 ? `${wordCount} 词` : ''}
+            {paragraphs.length} {t.generativeUI.paragraphUnit} · {wordCount > 0 ? `${wordCount} ${t.generativeUI.wordUnit}` : ''}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -199,9 +202,9 @@ export const DocumentBlock = memo(function DocumentBlock({ spec: rawSpec }: { sp
             className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-all text-xs"
           >
             {copied ? (
-              <><Check className="w-3.5 h-3.5 text-green-400" /><span className="text-green-400">Copied!</span></>
+              <><Check className="w-3.5 h-3.5 text-green-400" /><span className="text-green-400">{t.generativeUI.copied}</span></>
             ) : (
-              <><Copy className="w-3.5 h-3.5" /><span>Copy</span></>
+              <><Copy className="w-3.5 h-3.5" /><span>{t.generativeUI.copy}</span></>
             )}
           </button>
           <button

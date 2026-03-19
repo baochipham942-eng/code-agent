@@ -287,6 +287,45 @@ export const zh = {
     createdAt: '创建时间',
     saveHint: '按 Cmd/Ctrl + Enter 快速保存',
   },
+
+  // Generative UI Components
+  generativeUI: {
+    // Common actions
+    copy: '复制',
+    copied: '已复制',
+    // ChartBlock
+    chart: '图表',
+    // GenerativeUIBlock
+    generativeUI: '交互组件',
+    source: '源码',
+    open: '打开',
+    loading: '加载中...',
+    // DocumentBlock
+    document: '文档',
+    paragraphUnit: '段',
+    wordUnit: '词',
+    listItem: '列表项',
+    paragraph: '段落',
+    rewrite: '重写',
+    simplify: '精简',
+    restyle: '改格式',
+    insertAfter: '后面插入',
+    // SpreadsheetBlock
+    spreadsheet: '电子表格',
+    rowUnit: '行',
+    columnUnit: '列',
+    selected: '已选',
+    columns: '列',
+    sum: '合计',
+    avg: '均值',
+    range: '范围',
+    visualize: '可视化',
+    pivot: '透视表',
+    filterAnalysis: '筛选分析',
+    sort: '排序',
+    clickToSelect: '点击选中，Cmd+点击多选',
+    total: '共',
+  },
 };
 
 export type Translations = typeof zh;

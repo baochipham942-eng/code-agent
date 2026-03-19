@@ -10,7 +10,7 @@ import { AttachmentDisplay } from './AttachmentPreview';
 
 export const UserMessage: React.FC<UserMessageProps> = ({ message }) => {
   return (
-    <div className="py-3 px-4 select-text">
+    <div className="py-3 px-4 select-text" aria-label="用户消息">
       {/* Attachments above text */}
       {message.attachments && message.attachments.length > 0 && (
         <div className="mb-2">
